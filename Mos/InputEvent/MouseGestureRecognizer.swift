@@ -19,11 +19,12 @@ enum MouseGestureDirection: Equatable {
             return SystemShortcut.missionControl.identifier
         case .down:
             return SystemShortcut.appExpose.identifier
-        // Horizontal directions follow the trackpad swipe: the content follows the hand.
+        // Horizontal directions move the view the way the mouse moves:
+        // moving left goes to the Space on the left.
         case .left:
-            return SystemShortcut.moveSpaceRight.identifier
-        case .right:
             return SystemShortcut.moveSpaceLeft.identifier
+        case .right:
+            return SystemShortcut.moveSpaceRight.identifier
         }
     }
 }

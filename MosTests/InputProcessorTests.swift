@@ -43,8 +43,8 @@ final class InputProcessorTests: XCTestCase {
 
     func testMouseGestureRecognizerRecognizesCardinalDirections() {
         let cases: [(CGFloat, CGFloat, MouseGestureDirection, String)] = [
-            (-45, 0, .left, SystemShortcut.moveSpaceRight.identifier),
-            (45, 0, .right, SystemShortcut.moveSpaceLeft.identifier),
+            (-45, 0, .left, SystemShortcut.moveSpaceLeft.identifier),
+            (45, 0, .right, SystemShortcut.moveSpaceRight.identifier),
             (0, -45, .up, SystemShortcut.missionControl.identifier),
             (0, 45, .down, SystemShortcut.appExpose.identifier),
         ]
@@ -171,7 +171,7 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
         waitForMainQueue()
 
-        let expected = resolvedShortcut(SystemShortcut.moveSpaceLeft)
+        let expected = resolvedShortcut(SystemShortcut.moveSpaceRight)
         XCTAssertEqual(executedShortcuts.count, 1)
         XCTAssertEqual(executedShortcuts.first?.0, expected.code)
         XCTAssertEqual(executedShortcuts.first?.1, expected.flags)
@@ -205,7 +205,7 @@ final class InputProcessorTests: XCTestCase {
         )
         waitForMainQueue()
 
-        let expected = resolvedShortcut(SystemShortcut.moveSpaceRight)
+        let expected = resolvedShortcut(SystemShortcut.moveSpaceLeft)
         XCTAssertEqual(executedShortcuts.count, 1)
         XCTAssertEqual(executedShortcuts.first?.0, expected.code)
         XCTAssertEqual(executedShortcuts.first?.1, expected.flags)
@@ -235,7 +235,7 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
         waitForMainQueue()
 
-        let expected = resolvedShortcut(SystemShortcut.moveSpaceLeft)
+        let expected = resolvedShortcut(SystemShortcut.moveSpaceRight)
         XCTAssertEqual(executedShortcuts.count, 1)
         XCTAssertEqual(executedShortcuts[0].0, expected.code)
         XCTAssertEqual(executedShortcuts[0].1, expected.flags)
@@ -265,7 +265,7 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
         waitForMainQueue()
 
-        let expected = resolvedShortcut(SystemShortcut.moveSpaceLeft)
+        let expected = resolvedShortcut(SystemShortcut.moveSpaceRight)
         XCTAssertEqual(executedShortcuts.count, 1)
         XCTAssertEqual(executedShortcuts[0].0, expected.code)
         XCTAssertEqual(executedShortcuts[0].1, expected.flags)
@@ -296,7 +296,7 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
         waitForMainQueue()
 
-        let initial = resolvedShortcut(SystemShortcut.moveSpaceLeft)
+        let initial = resolvedShortcut(SystemShortcut.moveSpaceRight)
         XCTAssertEqual(executedShortcuts.count, 1)
         XCTAssertEqual(executedShortcuts[0].0, initial.code)
         XCTAssertEqual(executedShortcuts[0].1, initial.flags)
