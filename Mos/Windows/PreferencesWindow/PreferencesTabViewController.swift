@@ -27,7 +27,41 @@ import Cocoa
 class PreferencesTabViewController: NSTabViewController {
     
     let backgroundVisualEffectView = NSVisualEffectView()
-    
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        insertMouseTab()
+    }
+
+    /// The Mouse tab (Logitech hardware settings) is built in code, so Main.storyboard
+    /// stays as it is. It goes right after Buttons; the storyboard tabs keep their order.
+    private func insertMouseTab() {
+        let identifier = MousePreferencesViewController.tabIdentifier
+        guard !tabViewItems.contains(where: { ($0.identifier as? String) == identifier }) else { return }
+        let controller = MousePreferencesViewController()
+        let item = NSTabViewItem(viewController: controller)
+        item.identifier = identifier
+        item.label = controller.title ?? ""
+        item.image = MousePreferencesViewController.tabImage()
+        let buttonsIndex = tabViewItems.firstIndex { ($0.identifier as? String) == PANEL_IDENTIFIER.buttons }
+        insertTabViewItem(item, at: buttonsIndex.map { $0 + 1 } ?? tabViewItems.count)
+    }
+
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        removeToolbarFlexibleSpaces()
+    }
+
+    /// PreferencesWindowController spreads the tabs with flexible spaces. With seven tabs
+    /// those spaces push About into the toolbar's overflow menu at the 450 pt window width,
+    /// so the tabs sit side by side instead (still centred). Runs after windowDidLoad.
+    func removeToolbarFlexibleSpaces() {
+        guard let toolbar = view.window?.toolbar else { return }
+        for index in toolbar.items.indices.reversed() where toolbar.items[index].itemIdentifier == .flexibleSpace {
+            toolbar.removeItem(at: index)
+        }
+    }
+
     override func viewDidAppear() {
         // 移除已有约束
         view.removeConstraints(view.constraints)
