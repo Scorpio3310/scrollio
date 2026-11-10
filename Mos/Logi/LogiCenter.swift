@@ -102,6 +102,36 @@ final class LogiCenter {
     // MARK: - Reporting refresh
     func refreshReportingStates() { manager.refreshReportingStates() }
 
+    // MARK: - Scroll wheel hardware settings (contract: Mos/Logi/Wheel/LogiWheelTypes.swift)
+
+    /// Connected Logitech mice that expose wheel settings (SmartShift 0x2110 / 0x2111).
+    /// Values are the last ones read from each device. Main thread only.
+    func wheelDeviceStates() -> [LogiWheelDeviceState] {
+        #if DEBUG
+        precondition(Thread.isMainThread, "LogiCenter is main-thread-only")
+        #endif
+        return manager.wheelDeviceStates()
+    }
+
+    /// Re-reads wheel state from connected devices; posts `wheelStateChanged` when
+    /// answers arrive (or right away when no device has a wheel feature).
+    func refreshWheelStates() {
+        #if DEBUG
+        precondition(Thread.isMainThread, "LogiCenter is main-thread-only")
+        #endif
+        manager.refreshWheelStates()
+    }
+
+    /// Remembers `settings` for devices that (re)connect later and writes them to every
+    /// connected device that supports them. Never writes when `settings.managedByMos`
+    /// is false. Main thread only.
+    func applyWheelSettings(_ settings: LogiWheelSettings) {
+        #if DEBUG
+        precondition(Thread.isMainThread, "LogiCenter is main-thread-only")
+        #endif
+        manager.applyWheelSettings(settings)
+    }
+
     // MARK: - Debug panel
     func showDebugPanel() {
         #if DEBUG

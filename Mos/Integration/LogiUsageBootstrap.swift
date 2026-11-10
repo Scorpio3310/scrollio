@@ -18,6 +18,8 @@ enum LogiUsageBootstrap {
         Options.shared.observe([.buttons, .scroll, .application]) { _ in
             refreshAll()
         }
+        // Logitech 滚轮硬件设置 (SmartShift / 灵敏度 / 齿感力度), 见 LogiUsageBootstrap+Wheel
+        installWheelObserver()
     }
 
     static func refreshAll() {

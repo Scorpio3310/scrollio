@@ -82,20 +82,8 @@ extension LogiCenter {
     /// Posted on the main thread whenever `wheelDeviceStates()` may have changed.
     static let wheelStateChanged = Notification.Name("LogiWheelStateChanged")
 
-    /// Connected Logitech mice that expose wheel settings. Main thread only.
-    func wheelDeviceStates() -> [LogiWheelDeviceState] {
-        // STUB: implemented by the Logi wheel work package.
-        return []
-    }
-
-    /// Re-reads wheel state from connected devices; posts `wheelStateChanged` when done.
-    func refreshWheelStates() {
-        // STUB: implemented by the Logi wheel work package.
-    }
-
-    /// Writes `settings` to every connected device that supports them. No-op when
-    /// `settings.managedByMos` is false. Main thread only.
-    func applyWheelSettings(_ settings: LogiWheelSettings) {
-        // STUB: implemented by the Logi wheel work package.
-    }
+    // The wheel methods live in LogiCenter.swift (they need the private session manager):
+    //   func wheelDeviceStates() -> [LogiWheelDeviceState]
+    //   func refreshWheelStates()
+    //   func applyWheelSettings(_ settings: LogiWheelSettings)
 }

@@ -321,6 +321,8 @@ class LogiDeviceSession {
     /// SmartShift v2 / enhanced: 提供可调 ratchet torque (即 Logi Options+ 的 Scroll force 齿感力度).
     /// internal: Debug 面板需要引用同一常量.
     static let featureSmartShiftEnhanced: UInt16 = 0x2111
+    /// SmartShift v1 (MX Master 3S 等): 模式 + autoDisengage 阈值, 无 torque. 0x2111 存在时优先 0x2111.
+    static let featureSmartShift: UInt16 = 0x2110
     /// Force Sensing Button (MX Master 4 压感按钮): 调节按压激活阈值. internal: Debug 面板需引用.
     static let featureForceSensing: UInt16 = 0x19C0
     /// DeviceNameType (0x0005): fn2 getDeviceType 返回权威设备类型枚举. 用于接收器 slot 显示类型
@@ -329,6 +331,8 @@ class LogiDeviceSession {
     private static let hidppShortReportId: UInt8 = 0x10
     private static let hidppLongReportId: UInt8 = 0x11
     private static let hidppErrorFeatureIdx: UInt8 = 0xFF
+    /// Mos 请求报文低 4 位的 software id. 设备响应原样回带; 设备主动事件为 0.
+    static let hidppSoftwareId: UInt8 = 0x01
 
     // HID++ 1.0 sub-IDs (receiver register access)
     private static let hidpp10GetRegister: UInt8 = 0x81
@@ -422,6 +426,10 @@ class LogiDeviceSession {
         let desired: Set<UInt16>
         let toDivert: Set<UInt16>
         let toUndivert: Set<UInt16>
+        /// 录制开始时重发 divert=ON 的 CID = desired 全集. lastApplied 只是 Mos 的记账: 设备
+        /// 可能已静默丢掉 divert (固件休眠唤醒 / Logi Options+ 清 BLE divert), 只发 toDivert
+        /// 会跳过这些键 (MX Master 4 模式切换键 0x00C4 录不到). SetControlReporting 幂等, 重发安全.
+        var toAssert: Set<UInt16> { desired }
     }
 
     private func primeFromRegistry() {
@@ -1037,6 +1045,7 @@ class LogiDeviceSession {
         receiverOptionalProbedSlots.removeAll()
         receiverTakeoverDebounce.values.forEach { $0.cancel() }
         receiverTakeoverDebounce.removeAll()
+        dropAllWheelControllers()
         discoveryTimer?.invalidate()
         discoveryTimer = nil
         controlInfoQueryTimer?.invalidate()
@@ -1074,37 +1083,39 @@ class LogiDeviceSession {
 
     // MARK: - HID++ Send
 
+    /// 构造 HID++ 2.0 long request: [0x11, devIdx, featureIdx, fn<<4 | swid, params(≤16)...].
+    /// functionId 是 0...15 的函数号 (不是已左移的 0x10/0x20): 传入已左移的值会在 UInt8 里溢出
+    /// 成 fn0, 设备执行错误的函数 (历史 bug: HiRes/ScrollInvert/ThumbWheel/PointerSpeed 动作).
+    /// 越界值返回 nil, 调用方不发送.
+    static func hidppLongRequest(deviceIndex: UInt8, featureIndex: UInt8, functionId: UInt8, params: [UInt8]) -> [UInt8]? {
+        guard functionId <= 0x0F else { return nil }
+        var report = [UInt8](repeating: 0, count: 20)
+        report[0] = hidppLongReportId
+        report[1] = deviceIndex
+        report[2] = featureIndex
+        report[3] = (functionId << 4) | hidppSoftwareId
+        for (i, p) in params.prefix(16).enumerated() { report[4 + i] = p }
+        return report
+    }
+
     /// 发送 HID++ 请求
     /// BLE 直连: long report (20 bytes) + report ID in payload (hidapi 兼容)
-    /// Receiver: TODO - 可能需要不同格式, 待 Bolt/Unifying 测试后实现
+    /// Receiver: 同样的 long report, report[1] = slot
+    /// functionId: 函数号 0...15 (见 hidppLongRequest)
     private func sendRequest(featureIndex: UInt8, functionId: UInt8, params: [UInt8] = []) {
-        var report: [UInt8]
+        let report: [UInt8]
         let result: IOReturn
 
         switch connectionMode {
-        case .bleDirect:
-            // BLE: long report, hidapi 兼容 (report ID in payload)
-            report = [UInt8](repeating: 0, count: 20)
-            report[0] = Self.hidppLongReportId
-            report[1] = deviceIndex
-            report[2] = featureIndex
-            report[3] = (functionId << 4) | 0x01
-            for (i, p) in params.prefix(16).enumerated() { report[4 + i] = p }
-            result = IOHIDDeviceSetReport(
-                hidDevice, kIOHIDReportTypeOutput,
-                CFIndex(report[0]), report, report.count
-            )
-
-        case .receiver:
-            // TODO: Unifying/Bolt receiver 传输
-            // 可能需要: short report (7 bytes), 不同的 payload 格式
-            // 需要先实现 HID++ 1.0 槽位枚举
-            report = [UInt8](repeating: 0, count: 20)
-            report[0] = Self.hidppLongReportId
-            report[1] = deviceIndex
-            report[2] = featureIndex
-            report[3] = (functionId << 4) | 0x01
-            for (i, p) in params.prefix(16).enumerated() { report[4 + i] = p }
+        case .bleDirect, .receiver:
+            guard let built = Self.hidppLongRequest(
+                deviceIndex: deviceIndex, featureIndex: featureIndex, functionId: functionId, params: params
+            ) else {
+                assertionFailure("HID++ functionId must be 0...15, got \(functionId)")
+                LogiDebugPanel.log(device: deviceInfo.name, type: .error, message: "Not sent: invalid HID++ function id \(functionId) for feature index \(featureIndex)")
+                return
+            }
+            report = built
             result = IOHIDDeviceSetReport(
                 hidDevice, kIOHIDReportTypeOutput,
                 CFIndex(report[0]), report, report.count
@@ -1238,7 +1249,12 @@ class LogiDeviceSession {
             }
 
             self.controlInfoRetryCounts.removeValue(forKey: index)
-            LogiDebugPanel.log("[\(self.deviceInfo.name)] GetControlInfo[\(index)] timed out, skipping")
+            // 跳过 = 该控件不会进入 discoveredControls, 永远无法 divert / 录制. 以 warning 记录.
+            LogiDebugPanel.log(
+                device: self.deviceInfo.name,
+                type: .warning,
+                message: "GetControlInfo[\(index)] timed out, skipping: this control cannot be diverted or recorded until the device reconnects or features are re-discovered"
+            )
             self.advanceControlInfoQuery()
         }
     }
@@ -1808,6 +1824,7 @@ class LogiDeviceSession {
         receiverOptionalProbedSlots.remove(slot)  // 全新发现 -> 可选功能允许重探
         // 全新发现: 清该 slot 的 per-slot 发现状态(startup 本为默认, 显式清以支持 Phase 4 重扫).
         featureIndex.removeAll()
+        dropWheelController(slot: slot)
         discoveredControls.removeAll()
         reprogInitComplete = false
         reprogControlCount = 0
@@ -1885,7 +1902,13 @@ class LogiDeviceSession {
         // 在最终巡检的那台(鼠标)探测可选功能(haptic/scrollForce 等). 移到此处(而非逐 slot)
         // 才能只探测巡检的鼠标而非 sweep 最后一个 slot. probeOptionalFeatures 自带 once 守卫.
         receiverOptionalProbedSlots.insert(deviceIndex)  // 巡检游标那台已探, inspectSlot 不重探
+        let probeAlreadyRan = optionalProbeSent
         probeOptionalFeatures()
+        if probeAlreadyRan {
+            // 热插拔重连: 探测链不会再跑 (once 守卫), 但该 slot 的 featureIndex 已被清空.
+            // 按需补发现滚轮 feature, 让托管设置在重连后重放.
+            discoverWheelFeatureIfNeeded(slot: deviceIndex) {}
+        }
         LogiDebugPanel.log("[\(deviceInfo.name)] Takeover sweep complete: managed=\(receiverManagedSlots.sorted()) cursor=\(deviceIndex)\(mouseSlot != nil ? " (mouse)" : "")")
         NotificationCenter.default.post(name: LogiSessionManager.sessionChangedNotification, object: nil)
         // sweep 结束后再排空一次: 消费其间因 0x41 新入队的 slot.
@@ -2048,6 +2071,7 @@ class LogiDeviceSession {
         lastApplied.removeAll()
         divertedCIDs.removeAll()
         deviceIndex = saved
+        dropWheelController(slot: slot)
         LogiDebugPanel.log("[\(deviceInfo.name)] Slot \(slot) disconnected; released takeover state (managed=\(receiverManagedSlots.sorted()))")
     }
 
@@ -2308,7 +2332,6 @@ class LogiDeviceSession {
 
     // MARK: - Logi Action Execution
 
-    private var pendingSmartShiftToggle: UInt8? = nil
     private var pendingDPICycle: (featureIndex: UInt8, direction: Direction)? = nil
     private var pendingDPIListQuery: (featureIndex: UInt8, direction: Direction)? = nil
     private var currentDPI: UInt16 = 0
@@ -2319,32 +2342,22 @@ class LogiDeviceSession {
     private var pendingThumbWheelToggle = false
     private var pendingPointerSpeedCycle = false
 
-    /// SmartShift 切换
+    /// SmartShift 切换 (free-spin <-> ratchet, 保留阈值与 torque).
+    /// 走滚轮控制器: 0x2111 (MX Master 4 只有它) 读 fn1 写 fn2, 0x2110 读 fn0 写 fn1.
     func executeSmartShiftToggle() {
-        // SmartShift feature ID = 0x2110
-        let smartShiftFeatureId: UInt16 = 0x2110
-        if let idx = featureIndex[smartShiftFeatureId] {
-            // 已知 feature index, 直接切换
-            toggleSmartShift(featureIndex: idx)
-        } else {
-            // 先发现 feature
-            discoverFeature(featureId: smartShiftFeatureId) { [weak self] idx in
-                guard let self = self, let idx = idx else {
-                    LogiDebugPanel.log("[\(self?.deviceInfo.name ?? "?")] SmartShift feature not supported")
-                    return
-                }
-                self.featureIndex[smartShiftFeatureId] = idx
-                self.toggleSmartShift(featureIndex: idx)
-            }
+        let slot = deviceIndex
+        if let wheel = wheelControllers[slot] {
+            wheel.toggleMode()
+            return
         }
-    }
-
-    private func toggleSmartShift(featureIndex: UInt8) {
-        // getRatchetControlMode: function 0
-        // 响应: byte[4] = wheelMode (1=freewheel, 2=ratchet)
-        sendRequest(featureIndex: featureIndex, functionId: 0)
-        // 响应在 handleInputReport 中处理 -> handleSmartShiftResponse
-        pendingSmartShiftToggle = featureIndex
+        discoverWheelFeatureIfNeeded(slot: slot) { [weak self] in
+            guard let self = self else { return }
+            guard let wheel = self.wheelControllers[slot] else {
+                LogiDebugPanel.log("[\(self.deviceInfo.name)] SmartShift feature not supported (no 0x2110 / 0x2111)")
+                return
+            }
+            wheel.toggleMode()
+        }
     }
 
     /// DPI 循环
@@ -2436,8 +2449,8 @@ class LogiDeviceSession {
     private func executeHiResScrollToggle() {
         if let idx = featureIndex[Self.featureHiResWheel] {
             pendingHiResScrollToggle = true
-            // Get current mode (function 0x10)
-            sendRequest(featureIndex: idx, functionId: 0x10, params: [])
+            // getWheelMode (fn1)
+            sendRequest(featureIndex: idx, functionId: 1, params: [])
         } else {
             discoverFeature(featureId: Self.featureHiResWheel) { [weak self] idx in
                 guard let self = self, let idx = idx else {
@@ -2446,7 +2459,7 @@ class LogiDeviceSession {
                 }
                 self.featureIndex[Self.featureHiResWheel] = idx
                 self.pendingHiResScrollToggle = true
-                self.sendRequest(featureIndex: idx, functionId: 0x10, params: [])
+                self.sendRequest(featureIndex: idx, functionId: 1, params: [])
             }
         }
     }
@@ -2455,7 +2468,7 @@ class LogiDeviceSession {
     private func executeScrollInvertToggle() {
         if let idx = featureIndex[Self.featureHiResWheel] {
             pendingScrollInvertToggle = true
-            sendRequest(featureIndex: idx, functionId: 0x10, params: [])
+            sendRequest(featureIndex: idx, functionId: 1, params: [])  // getWheelMode
         } else {
             discoverFeature(featureId: Self.featureHiResWheel) { [weak self] idx in
                 guard let self = self, let idx = idx else {
@@ -2464,7 +2477,7 @@ class LogiDeviceSession {
                 }
                 self.featureIndex[Self.featureHiResWheel] = idx
                 self.pendingScrollInvertToggle = true
-                self.sendRequest(featureIndex: idx, functionId: 0x10, params: [])
+                self.sendRequest(featureIndex: idx, functionId: 1, params: [])
             }
         }
     }
@@ -2473,7 +2486,7 @@ class LogiDeviceSession {
     private func executeThumbWheelToggle() {
         if let idx = featureIndex[Self.featureThumbWheel] {
             pendingThumbWheelToggle = true
-            sendRequest(featureIndex: idx, functionId: 0x10, params: [])
+            sendRequest(featureIndex: idx, functionId: 1, params: [])  // getThumbwheelStatus
         } else {
             discoverFeature(featureId: Self.featureThumbWheel) { [weak self] idx in
                 guard let self = self, let idx = idx else {
@@ -2482,7 +2495,7 @@ class LogiDeviceSession {
                 }
                 self.featureIndex[Self.featureThumbWheel] = idx
                 self.pendingThumbWheelToggle = true
-                self.sendRequest(featureIndex: idx, functionId: 0x10, params: [])
+                self.sendRequest(featureIndex: idx, functionId: 1, params: [])
             }
         }
     }
@@ -2491,7 +2504,7 @@ class LogiDeviceSession {
     private func executePointerSpeedCycle() {
         if let idx = featureIndex[Self.featurePointerSpeed] {
             pendingPointerSpeedCycle = true
-            sendRequest(featureIndex: idx, functionId: 0x00, params: [])
+            sendRequest(featureIndex: idx, functionId: 0, params: [])  // getPointerSpeed
         } else {
             discoverFeature(featureId: Self.featurePointerSpeed) { [weak self] idx in
                 guard let self = self, let idx = idx else {
@@ -2500,7 +2513,7 @@ class LogiDeviceSession {
                 }
                 self.featureIndex[Self.featurePointerSpeed] = idx
                 self.pendingPointerSpeedCycle = true
-                self.sendRequest(featureIndex: idx, functionId: 0x00, params: [])
+                self.sendRequest(featureIndex: idx, functionId: 0, params: [])
             }
         }
     }
@@ -2532,6 +2545,8 @@ class LogiDeviceSession {
         featureDeviceNameType,     // 0x0005 (查权威设备类型, 见 probeNextOptionalFeature)
         featureHaptic,             // 0x19B0
         featureSmartShiftEnhanced, // 0x2111
+        featureSmartShift,         // 0x2110 (MX Master 3S 等无 0x2111 的滚轮)
+        featureHiResWheel,         // 0x2121 (ratchetSwitch 事件: 模式切换键)
         featureForceSensing,       // 0x19C0
         0x8060, 0x8061,            // Report Rate / Extended Report Rate
         0x2202,                    // Extended Adjustable DPI
@@ -2548,6 +2563,10 @@ class LogiDeviceSession {
     ]
     private var optionalProbeSent = false
     private var optionalProbeIndex = 0
+
+    #if DEBUG
+    internal static var optionalProbeFeaturesForTests: [UInt16] { optionalProbeFeatures }
+    #endif
 
     /// 握手完成后探测一批可选 feature, 让 Debug 面板 FEATURES 表能列出它们.
     /// 必须串行 (一次一个): IRoot getFeature 响应不带 featureId, handleDiscoveryResponse
@@ -2582,7 +2601,10 @@ class LogiDeviceSession {
             }
             return
         }
-        // 可选功能探测链走完(pendingDiscovery 此刻已空): 排空热插拔期间入队的 slot.
+        // 可选功能探测链走完(pendingDiscovery 此刻已空): 建立滚轮控制器 (读状态, 托管时写入).
+        // 放在链尾而非发现 0x2111 时: 避免滚轮读写与后续 getFeature 交错.
+        resolveWheelController(slot: deviceIndex)
+        // 排空热插拔期间入队的 slot.
         // 探测链较长(~18 个 feature, 含超时), 期间设备重连很常见, 必须在此排空避免搁置.
         pumpPendingDivertQueue()
     }
@@ -2760,6 +2782,8 @@ class LogiDeviceSession {
     private func resetScrollForceDiscoveryState() {
         scrollForceTunableTorque = nil
         scrollForceStatus = nil
+        // 同一 slot 的 featureIndex 被清空 / 重探: 滚轮控制器随之失效, 探测结束后重建
+        dropWheelController(slot: deviceIndex)
     }
 
     private func withScrollForceFeature(_ body: @escaping (UInt8) -> Void) {
@@ -2776,6 +2800,188 @@ class LogiDeviceSession {
                 body(idx)
             }
         }
+    }
+
+    // MARK: - Scroll Wheel Settings (0x2110 SmartShift / 0x2111 SmartShift Enhanced)
+    //
+    // 每个 slot 一个 LogiWheelController (BLE 直连 slot = 0xFF). 协议字节与映射见
+    // Mos/Logi/Wheel/LogiWheelProtocol.swift. 建立时机: 可选功能探测链走完 (含缓存命中),
+    // receiver 重连 slot 的 sweep 结束, 或 SmartShift Toggle 按需发现. 建立即读状态,
+    // 且仅当 LogiSessionManager.wheelSettings.managedByMos 时写入 (重连后自动重放).
+
+    private var wheelControllers: [UInt8: LogiWheelController] = [:]
+    private var wheelRefreshWorkItems: [UInt8: DispatchWorkItem] = [:]
+    /// ratchetSwitch 事件合并窗口: 连续切换只重读一次
+    private static let wheelRefreshDelay: TimeInterval = 0.3
+
+    var hasWheelControllers: Bool { !wheelControllers.isEmpty }
+
+    /// 按 slot 已发现的 feature index 建立/保留滚轮控制器. 0x2111 优先 (MX Master 4 只有它).
+    private func resolveWheelController(slot: UInt8) {
+        let indices = slotStates[slot]?.featureIndex ?? [:]
+        let feature: LogiWheelFeature
+        let index: UInt8
+        if let idx = indices[Self.featureSmartShiftEnhanced] {
+            feature = .smartShiftEnhanced
+            index = idx
+        } else if let idx = indices[Self.featureSmartShift] {
+            feature = .smartShift
+            index = idx
+        } else {
+            dropWheelController(slot: slot)
+            return
+        }
+        let desired = LogiSessionManager.shared.wheelSettings
+        if let existing = wheelControllers[slot], existing.feature == feature, existing.featureIndex == index {
+            existing.start(desired: desired)
+            return
+        }
+        let name = deviceInfo.name
+        let controller = LogiWheelController(
+            feature: feature,
+            featureIndex: index,
+            send: { [weak self] functionId, params in
+                self?.sendWheelRequest(slot: slot, featureIndex: index, functionId: functionId, params: params)
+            },
+            onChange: {
+                LogiSessionManager.shared.notifyWheelStateChanged()
+            },
+            log: { message in
+                LogiDebugPanel.log(device: name, type: .info, message: "[Wheel slot \(String(format: "0x%02X", slot))] \(message)")
+            }
+        )
+        wheelControllers[slot] = controller
+        LogiDebugPanel.log("[\(name)] Wheel feature \(String(format: "0x%04X", feature.featureId)) at index \(String(format: "0x%02X", index)) (slot \(String(format: "0x%02X", slot)), managedByMos=\(desired.managedByMos))")
+        LogiSessionManager.shared.notifyWheelStateChanged()
+        controller.start(desired: desired)
+    }
+
+    private func dropWheelController(slot: UInt8) {
+        wheelRefreshWorkItems.removeValue(forKey: slot)?.cancel()
+        guard wheelControllers.removeValue(forKey: slot) != nil else { return }
+        LogiSessionManager.shared.notifyWheelStateChanged()
+    }
+
+    private func dropAllWheelControllers() {
+        wheelRefreshWorkItems.values.forEach { $0.cancel() }
+        wheelRefreshWorkItems.removeAll()
+        guard !wheelControllers.isEmpty else { return }
+        wheelControllers.removeAll()
+        LogiSessionManager.shared.notifyWheelStateChanged()
+    }
+
+    /// 滚轮请求总是发往控制器所属 slot (receiver 巡检游标可能已移到别的 slot).
+    private func sendWheelRequest(slot: UInt8, featureIndex: UInt8, functionId: UInt8, params: [UInt8]) {
+        let saved = deviceIndex
+        deviceIndex = slot
+        sendRequest(featureIndex: featureIndex, functionId: functionId, params: params)
+        deviceIndex = saved
+    }
+
+    private func scheduleWheelStatusRefresh(slot: UInt8) {
+        guard wheelControllers[slot] != nil else { return }
+        wheelRefreshWorkItems[slot]?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.wheelRefreshWorkItems[slot] = nil
+            self.wheelControllers[slot]?.refresh()
+        }
+        wheelRefreshWorkItems[slot] = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.wheelRefreshDelay, execute: item)
+    }
+
+    /// 当前路由 slot 尚无滚轮 feature index 时按需串行发现 0x2111, 再 0x2110.
+    /// 另有 getFeature 在飞时不发 (IRoot 响应不带 featureId, 并发会张冠李戴), 直接回调.
+    private func discoverWheelFeatureIfNeeded(slot: UInt8, completion: @escaping () -> Void) {
+        guard deviceIndex == slot else { completion(); return }
+        if featureIndex[Self.featureSmartShiftEnhanced] != nil || featureIndex[Self.featureSmartShift] != nil {
+            resolveWheelController(slot: slot)
+            completion()
+            return
+        }
+        guard pendingDiscovery.isEmpty else {
+            LogiDebugPanel.log("[\(deviceInfo.name)] Wheel feature discovery deferred: another discovery in flight")
+            completion()
+            return
+        }
+        discoverFeature(featureId: Self.featureSmartShiftEnhanced) { [weak self] idx in
+            guard let self = self else { return }
+            if let idx = idx {
+                self.recordWheelFeatureIndex(Self.featureSmartShiftEnhanced, index: idx, slot: slot)
+                self.resolveWheelController(slot: slot)
+                completion()
+                self.pumpPendingDivertQueue()
+                return
+            }
+            self.discoverFeature(featureId: Self.featureSmartShift) { [weak self] idx in
+                guard let self = self else { return }
+                if let idx = idx {
+                    self.recordWheelFeatureIndex(Self.featureSmartShift, index: idx, slot: slot)
+                }
+                self.resolveWheelController(slot: slot)
+                completion()
+                self.pumpPendingDivertQueue()
+            }
+        }
+    }
+
+    private func recordWheelFeatureIndex(_ featureId: UInt16, index: UInt8, slot: UInt8) {
+        slotStates[slot, default: PerSlotState()].featureIndex[featureId] = index
+        if deviceIndex == slot {
+            Self.saveCachedFeatureIndex(for: deviceInfo.productId, featureMap: featureIndex)
+        }
+    }
+
+    // MARK: Wheel API (LogiSessionManager -> LogiCenter)
+
+    /// 写入托管设置; managedByMos == false 时什么也不发.
+    func applyWheelSettings(_ settings: LogiWheelSettings) {
+        guard settings.managedByMos else { return }
+        for slot in wheelControllers.keys.sorted() {
+            wheelControllers[slot]?.apply(settings)
+        }
+    }
+
+    /// 重读所有 slot 的滚轮状态. 返回是否有可读的滚轮.
+    @discardableResult
+    func refreshWheelStates() -> Bool {
+        for slot in wheelControllers.keys.sorted() {
+            wheelControllers[slot]?.refresh()
+        }
+        return !wheelControllers.isEmpty
+    }
+
+    func wheelDeviceStates() -> [LogiWheelDeviceState] {
+        return wheelControllers.keys.sorted().compactMap { slot in
+            guard let wheel = wheelControllers[slot] else { return nil }
+            return LogiWheelDeviceState(
+                id: wheelDeviceId(slot: slot),
+                deviceName: wheelDeviceName(slot: slot),
+                supportsSmartShift: true,
+                supportsScrollForce: wheel.supportsScrollForce,
+                mode: wheel.mode,
+                smartShiftSensitivity: wheel.smartShiftSensitivity,
+                scrollForce: wheel.scrollForce
+            )
+        }
+    }
+
+    /// 稳定 id: BLE = VID:PID; receiver = VID:receiverPID:slot:wirelessPID. 跨重连不变,
+    /// 同型号重复时由 LogiSessionManager 追加序号.
+    private func wheelDeviceId(slot: UInt8) -> String {
+        if connectionMode == .receiver {
+            let wpid = receiverPairedDevices.first(where: { $0.slot == slot })?.wirelessPID ?? 0
+            return String(format: "%04X:%04X:%d:%04X", deviceInfo.vendorId, deviceInfo.productId, Int(slot), wpid)
+        }
+        return String(format: "%04X:%04X", deviceInfo.vendorId, deviceInfo.productId)
+    }
+
+    private func wheelDeviceName(slot: UInt8) -> String {
+        if connectionMode == .receiver,
+           let paired = receiverPairedDevices.first(where: { $0.slot == slot }), !paired.name.isEmpty {
+            return paired.name
+        }
+        return deviceInfo.name
     }
 
     // MARK: - Force Sensing Button (0x19C0)
@@ -2873,6 +3079,11 @@ class LogiDeviceSession {
 
     // MARK: - Report Parsing
 
+    /// HID++ 2.0 错误只有在原请求是 IRoot (index 0x00, getFeature) 时才终止在飞的 feature discovery.
+    static func hidppErrorCancelsDiscovery(originalFeatureIndex: UInt8) -> Bool {
+        return originalFeatureIndex == 0x00
+    }
+
     private static func isGetControlReportingQueryResponse(_ report: UnsafeBufferPointer<UInt8>) -> Bool {
         guard report.count >= 9 else { return false }
         let functionId = report[3] >> 4
@@ -2935,6 +3146,11 @@ class LogiDeviceSession {
         default:
             return .ignored
         }
+    }
+
+    /// GetControlInfo 响应的 CID 已记录过 (迟到的重复响应). CID 0 是空槽位, 不按重复处理.
+    static func isDuplicateControlInfo(cid: UInt16, known: [UInt16]) -> Bool {
+        return cid != 0 && known.contains(cid)
     }
 
     private static func shouldRetryControlInfoTimeout(
@@ -3197,6 +3413,8 @@ class LogiDeviceSession {
         let hex = report.prefix(min(report.count, 20)).map { String(format: "%02X", $0) }.joined(separator: " ")
         let featureIdx = report[2]
         let functionId = report[3] >> 4
+        // 响应回带 Mos 的 software id; 设备主动事件 (如 0x2121 ratchetSwitch) swid=0
+        let isOwnResponse = (report[3] & 0x0F) == Self.hidppSoftwareId
         let rxDecoded = decodeReport(report)
         let isError = featureIdx == Self.hidppErrorFeatureIdx ||
             (connectionMode == .receiver && featureIdx == Self.hidpp10ErrorMsg)
@@ -3270,10 +3488,18 @@ class LogiDeviceSession {
             let errorCode = report.count > 6 ? report[6] : 0
             LogiDebugPanel.log("[\(deviceInfo.name)] HID++ Error: feat=\(String(format: "0x%02X", originalFeatureIdx)) func=\(originalFuncId) err=\(String(format: "0x%02X", errorCode))")
 
-            // Feature discovery pending callbacks
-            for (featureId, callback) in pendingDiscovery {
-                callback(nil)
-                pendingDiscovery.removeValue(forKey: featureId)
+            // Feature discovery pending callbacks: 只有 IRoot (index 0x00) 的错误才属于 getFeature.
+            // 其它 feature 的错误 (如滚轮 SetState 被拒) 不得把在飞的 discovery 误判为"不支持".
+            if Self.hidppErrorCancelsDiscovery(originalFeatureIndex: originalFeatureIdx) {
+                for (featureId, callback) in pendingDiscovery {
+                    callback(nil)
+                    pendingDiscovery.removeValue(forKey: featureId)
+                }
+            }
+
+            // 滚轮 feature (0x2110/0x2111) 的错误交给该 slot 的滚轮控制器
+            if let wheel = wheelControllers[deviceIndex], originalFeatureIdx == wheel.featureIndex {
+                wheel.handleError(functionId: originalFuncId, errorCode: errorCode)
             }
 
             // REPROG_V4 query 错误: 跳过该 CID 继续下一个, 防止 Bolt receiver 上 query 链路卡死
@@ -3400,6 +3626,23 @@ class LogiDeviceSession {
             return
         }
 
+        // Scroll wheel (0x2110 / 0x2111): 本 slot 的滚轮控制器解析模式/阈值/torque.
+        // 0x2111 的报文继续落到下面的 Scroll Force 块, 让 Debug 面板状态保持同步.
+        if isOwnResponse, let wheel = wheelControllers[deviceIndex], featureIdx == wheel.featureIndex {
+            wheel.handleResponse(functionId: functionId, report: Array(report))
+            if wheel.feature == .smartShift { return }
+        }
+
+        // HiResWheel (0x2121) ratchetSwitch 事件 (event 1, swid 0): 模式切换键改了滚轮模式.
+        // data[0] = 1 ratchet / 0 free-spin (Solaar notifications.py). 不信任事件本身
+        // (SmartShift 自动脱开时语义未确认), 合并后从 0x2110/0x2111 重读权威状态.
+        if !isOwnResponse, functionId == 1,
+           let hiresIdx = featureIndex[Self.featureHiResWheel], featureIdx == hiresIdx {
+            LogiDebugPanel.log("[\(deviceInfo.name)] Wheel ratchet switch event: \(report[4] == 1 ? "ratchet" : "free-spin")")
+            scheduleWheelStatusRefresh(slot: deviceIndex)
+            return
+        }
+
         // Scroll Force (0x2111) responses: fn0=Capabilities, fn1=Status; fn2 仅为 ACK
         if let scrollForceIdx = featureIndex[Self.featureSmartShiftEnhanced], featureIdx == scrollForceIdx {
             switch functionId {
@@ -3435,17 +3678,6 @@ class LogiDeviceSession {
             default:
                 break  // ButtonCount / SetConfig 的 ACK
             }
-            return
-        }
-
-        // SmartShift response (pending toggle)
-        if let smartShiftIdx = pendingSmartShiftToggle, featureIdx == smartShiftIdx && functionId == 0 {
-            pendingSmartShiftToggle = nil
-            let currentMode = report[4]  // 1=freewheel, 2=ratchet
-            let newMode: UInt8 = (currentMode == 2) ? 1 : 2
-            LogiDebugPanel.log("[\(deviceInfo.name)] SmartShift: \(currentMode == 2 ? "ratchet" : "freewheel") -> \(newMode == 2 ? "ratchet" : "freewheel")")
-            // setRatchetControlMode: function 1, params: wheelMode
-            sendRequest(featureIndex: smartShiftIdx, functionId: 1, params: [newMode])
             return
         }
 
@@ -3535,18 +3767,18 @@ class LogiDeviceSession {
 
         // HiResWheel response (pending HiRes toggle or ScrollInvert toggle)
         if let hiresIdx = featureIndex[Self.featureHiResWheel], featureIdx == hiresIdx {
-            if pendingHiResScrollToggle && functionId == 1 {  // response to function 0x10 (0x10 >> 4 = 1)
+            if pendingHiResScrollToggle && functionId == 1 && isOwnResponse {  // getWheelMode (fn1) 响应
                 let currentMode = report[4]
                 let newMode = currentMode ^ 0x02  // Toggle bit 1 (resolution)
-                sendRequest(featureIndex: hiresIdx, functionId: 0x20, params: [newMode])
+                sendRequest(featureIndex: hiresIdx, functionId: 2, params: [newMode])  // setWheelMode (fn2)
                 pendingHiResScrollToggle = false
                 LogiDebugPanel.log("[\(deviceInfo.name)] HiResScroll: \((newMode & 0x02) != 0 ? "ON" : "OFF")")
                 return
             }
-            if pendingScrollInvertToggle && functionId == 1 {  // response to function 0x10 (0x10 >> 4 = 1)
+            if pendingScrollInvertToggle && functionId == 1 && isOwnResponse {  // getWheelMode (fn1) 响应
                 let currentMode = report[4]
                 let newMode = currentMode ^ 0x04  // Toggle bit 2 (invert)
-                sendRequest(featureIndex: hiresIdx, functionId: 0x20, params: [newMode])
+                sendRequest(featureIndex: hiresIdx, functionId: 2, params: [newMode])  // setWheelMode (fn2)
                 pendingScrollInvertToggle = false
                 LogiDebugPanel.log("[\(deviceInfo.name)] ScrollInvert: \((newMode & 0x04) != 0 ? "ON" : "OFF")")
                 return
@@ -3555,11 +3787,11 @@ class LogiDeviceSession {
 
         // ThumbWheel response
         if let thumbIdx = featureIndex[Self.featureThumbWheel], featureIdx == thumbIdx {
-            if pendingThumbWheelToggle && functionId == 1 {  // response to function 0x10 (0x10 >> 4 = 1)
+            if pendingThumbWheelToggle && functionId == 1 && isOwnResponse {  // getThumbwheelStatus (fn1) 响应
                 let byte1 = report[4]
                 let byte2 = report[5]
                 let newByte1 = byte1 ^ 0x01  // Toggle bit 0 (divert mode)
-                sendRequest(featureIndex: thumbIdx, functionId: 0x20, params: [newByte1, byte2])
+                sendRequest(featureIndex: thumbIdx, functionId: 2, params: [newByte1, byte2])  // setThumbwheelReporting (fn2)
                 pendingThumbWheelToggle = false
                 LogiDebugPanel.log("[\(deviceInfo.name)] ThumbWheel: \((newByte1 & 0x01) != 0 ? "DIVERT" : "NORMAL")")
                 return
@@ -3568,7 +3800,7 @@ class LogiDeviceSession {
 
         // PointerSpeed response
         if let speedIdx = featureIndex[Self.featurePointerSpeed], featureIdx == speedIdx {
-            if pendingPointerSpeedCycle && functionId == 0 {  // response to function 0x00 (0x00 >> 4 = 0)
+            if pendingPointerSpeedCycle && functionId == 0 && isOwnResponse {  // getPointerSpeed (fn0) 响应
                 let currentHi = report[4]
                 let currentLo = report[5]
                 let currentSpeed = (UInt16(currentHi) << 8) | UInt16(currentLo)
@@ -3582,7 +3814,7 @@ class LogiDeviceSession {
                     nextSpeed = presets[0]  // Wrap around to 0.5x
                 }
 
-                sendRequest(featureIndex: speedIdx, functionId: 0x10,
+                sendRequest(featureIndex: speedIdx, functionId: 1,  // setPointerSpeed (fn1)
                             params: [UInt8(nextSpeed >> 8), UInt8(nextSpeed & 0xFF)])
                 pendingPointerSpeedCycle = false
                 let speedStr = String(format: "%.1fx", Double(nextSpeed) / 256.0)
@@ -3630,6 +3862,17 @@ class LogiDeviceSession {
         let flags = UInt16(flags1) | (UInt16(flags2) << 8)
         // Solaar: bit 4 = reprogrammable (0x10), bit 5 = divertable (0x20)
         let isDivertable = (flags & 0x20) != 0
+
+        // 超时重试后原请求的迟到响应会与重试响应各到一次: 第二个不是"下一个索引"的答案,
+        // 忽略且不推进, 否则同一控件被记两次且查询索引错位.
+        if Self.isDuplicateControlInfo(cid: cid, known: discoveredControls.map { $0.cid }) {
+            LogiDebugPanel.log(
+                device: deviceInfo.name,
+                type: .warning,
+                message: "GetControlInfo duplicate response for CID \(String(format: "0x%04X", cid)) ignored (late reply after a retry)"
+            )
+            return
+        }
 
         discoveredControls.append(ControlInfo(cid: cid, taskId: taskId, flags: flags, isDivertable: isDivertable))
         LogiDebugPanel.log("[\(deviceInfo.name)] Control[\(reprogQueryIndex)]: CID=\(String(format: "0x%04X", cid)) flags=\(String(format: "0x%04X", flags)) divertable=\(isDivertable)")
@@ -3964,7 +4207,7 @@ class LogiDeviceSession {
         )
         #endif
         releaseActiveButtonState(for: plan.toUndivert, reason: "recording uses native mouse events")
-        for cid in plan.toDivert.sorted() {
+        for cid in plan.toAssert.sorted() {
             setControlReporting(featureIndex: idx, cid: cid, divert: true)
         }
         for cid in plan.toUndivert.sorted() {
@@ -3974,7 +4217,7 @@ class LogiDeviceSession {
         // applyUsage diff (toUndivert = lastApplied - targetCIDs) can correctly
         // compute toUndivert for recording-only HID++ CIDs after recording ends.
         self.lastApplied = plan.desired
-        LogiDebugPanel.log("[\(deviceInfo.name)] Temporarily diverted \(plan.desired.count)/\(divertable.count) controls (recording mode)")
+        LogiDebugPanel.log("[\(deviceInfo.name)] Temporarily diverted \(plan.desired.count)/\(divertable.count) controls (recording mode; re-asserted \(plan.toAssert.subtracting(plan.toDivert).count) already-applied)")
     }
 
     /// 录制结束: 恢复到只 divert 有绑定的状态

@@ -31,6 +31,12 @@ internal class LogiSessionManager {
     private(set) var isActive = false
     private let deliveryModes = LogiButtonDeliveryModeStore()
 
+    /// 用户的滚轮设置 (由 Integration 层从 Options 推入). 新连接/重连的设备据此决定
+    /// 是否写入; managedByMos == false 时任何设备都不会被写. 见 LogiSessionManager+Wheel.
+    var wheelSettings = LogiWheelSettings.default
+    /// wheelStateChanged 合并发送标志 (同一 runloop 内多次变化只 post 一次)
+    var wheelStateNotificationScheduled = false
+
     // MARK: - Lifecycle
 
     func start() {
@@ -85,6 +91,7 @@ internal class LogiSessionManager {
         isActive = false
         // sessions 被清空后重算一次, 把 lastKnownBusy 归位并让 UI 同步关闭 spinner.
         recomputeAndNotifyActivityState()
+        notifyWheelStateChanged()
         LogiDebugPanel.log("[LogitechHID] Stopped")
     }
 
@@ -130,6 +137,7 @@ internal class LogiSessionManager {
         sessions[device] = session
         session.setup()
         NotificationCenter.default.post(name: Self.sessionChangedNotification, object: nil)
+        notifyWheelStateChanged()
     }
 
     /// 决定 Mos 是否应为某条 Logitech HID 接口创建会话。
@@ -151,6 +159,7 @@ internal class LogiSessionManager {
         deliveryModes.removeModes(forDeviceNamed: session.deviceInfo.name, productId: session.deviceInfo.productId)
         session.teardown()
         NotificationCenter.default.post(name: Self.sessionChangedNotification, object: nil)
+        notifyWheelStateChanged()
         // 断开的 session 可能曾处于 busy 状态, 重新聚合一次防止 spinner 卡住.
         recomputeAndNotifyActivityState()
     }
