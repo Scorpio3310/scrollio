@@ -6261,7 +6261,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Erweiterte Einstellungen"
+            "value" : "Scrollen"
           }
         },
         "el" : {
@@ -6291,13 +6291,13 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "고급 설정"
+            "value" : "스크롤"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Расширенные"
+            "value" : "Прокрутка"
           }
         },
         "th" : {
