@@ -23,6 +23,8 @@ class ScrollCore: ScrollActionPort {
         didSet { ScrollPoster.shared.updateShifting(enable: toggleScroll) }
     }
     var blockSmooth = false
+    // 竖向滚轮转速追踪 (free-spin / 加速度), 仅在滚动事件回调中访问
+    private var spinTracker = ScrollSpinTracker()
     // 非修饰键热键的按下状态跟踪
     var dashKeyHeld = false
     var toggleKeyHeld = false
@@ -144,11 +146,30 @@ class ScrollCore: ScrollActionPort {
         var smoothedY = 0.0
         var smoothedX = 0.0
 
+        // 快速滚动调校 (全局): 竖向滚轮按转速应用 free-spin / 加速度, 横向 (拇指滚轮) 只有冲刺倍率
+        let tuning = Options.shared.scrollTuning
+        let simTrackpad = ScrollCore.isSimTrackpadEnabled(for: ScrollCore.shared.application)
+        let amplification = ScrollCore.shared.dashAmplification
+        let horizontalTuning = tuning.resolve(
+            speed: speed, durationTransition: duration, spin: .idle,
+            simulateTrackpad: simTrackpad, amplification: amplification
+        )
+        var verticalTuning = horizontalTuning
+
         if shouldSmoothVertical {
+            let lines = scrollEvent.Y.lineDelta
+            let spin = ScrollCore.shared.spinTracker.register(
+                lines: lines,
+                at: ScrollEventClock.seconds(fromTimestamp: event.timestamp)
+            )
+            verticalTuning = tuning.resolve(
+                speed: speed, durationTransition: duration, spin: spin,
+                simulateTrackpad: simTrackpad, amplification: amplification
+            )
             if scrollEvent.Y.usableValue.magnitude < step {
                 ScrollEvent.normalizeY(scrollEvent, step)
             }
-            smoothedY = scrollEvent.Y.usableValue
+            smoothedY = verticalTuning.verticalDistance(regular: scrollEvent.Y.usableValue, lines: lines, step: step)
         }
         if shouldSmoothHorizontal {
             if scrollEvent.X.usableValue.magnitude < step {
@@ -163,14 +184,11 @@ class ScrollCore: ScrollActionPort {
         let shouldSmoothAny = (smoothedY != 0.0) || (smoothedX != 0.0)
 
         if shouldSmoothAny {
-            ScrollPoster.shared.update(
-                event: event,
-                duration: duration,
-                y: smoothedY,
-                x: smoothedX,
-                speed: speed,
-                amplification: ScrollCore.shared.dashAmplification
-            ).tryStart()
+            let input = ScrollCore.posterInput(
+                y: smoothedY, x: smoothedX, step: step,
+                vertical: verticalTuning, horizontal: horizontalTuning
+            )
+            ScrollPoster.shared.update(event: event, input: input).tryStart()
         }
 
         if needsPassthrough {
@@ -194,6 +212,32 @@ class ScrollCore: ScrollActionPort {
         }
     }
     
+    /// 由已解析的调校结果组装 ScrollPoster 输入。有竖向输入时使用竖向的平滑时长与 free-spin 状态。
+    static func posterInput(
+        y: Double, x: Double, step: Double,
+        vertical: ScrollTuningResolution, horizontal: ScrollTuningResolution
+    ) -> ScrollPosterInput {
+        let leading = y != 0.0 ? vertical : horizontal
+        return ScrollPosterInput(
+            y: y * vertical.speed,
+            x: x * horizontal.speed,
+            notch: (y: step * vertical.speed, x: step * horizontal.speed),
+            duration: leading.durationTransition,
+            bypassFilter: ScrollMotion.shouldBypassFilter(
+                transition: leading.durationTransition,
+                freeSpinBlend: leading.freeSpinBlend
+            )
+        )
+    }
+
+    /// 与 ScrollPoster 的配置快照相同的规则: 例外应用 (不继承) 用自身设置, 否则用全局设置
+    static func isSimTrackpadEnabled(for application: Application?) -> Bool {
+        if let application = application, !application.inherit {
+            return application.scroll.smoothSimTrackpad
+        }
+        return Options.shared.scroll.smoothSimTrackpad
+    }
+
     // MARK: - HID++ 滚动热键处理
 
     /// 跟踪当前由哪个 HID++ 按键码激活了热键状态
