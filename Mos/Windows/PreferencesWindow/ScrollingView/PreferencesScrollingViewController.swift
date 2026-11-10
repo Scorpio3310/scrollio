@@ -67,7 +67,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         syncViewWithOptions()
     }
 
-    /// Inserts the "Scroll Presets & Free-Spin…" button between the duration description and
+    /// Inserts the "Presets & Fast Scrolling…" button between the duration description and
     /// the reset button by re-pinning the reset button's top constraint.
     private func installScrollTuningButton() {
         guard let anchor = scrollDurationDescriptionLabel,
