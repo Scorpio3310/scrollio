@@ -281,7 +281,8 @@ final class MouseInteractionSessionController {
 
         InputProcessor.shared.handleMouseGestureMovement(
             deltaX: CGFloat(event.getDoubleValueField(.mouseEventDeltaX)),
-            deltaY: CGFloat(event.getDoubleValueField(.mouseEventDeltaY))
+            deltaY: CGFloat(event.getDoubleValueField(.mouseEventDeltaY)),
+            location: event.location
         )
         MouseGesturePointerLock.shared.constrain(event)
         rewriteMouseInteractionEvent(event)
