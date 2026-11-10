@@ -2520,7 +2520,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Umschalttaste"
+            "value" : "Umwandlungstaste"
           }
         },
         "el" : {
@@ -2658,7 +2658,7 @@
         "th" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "เปิดใช้งานการเลื่อนแบบไร้รอยต่อ"
+            "value" : "เลื่อนแบบไร้รอยต่อ"
           }
         },
         "tr" : {
@@ -5685,7 +5685,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bindestrich-Taste"
+            "value" : "Beschleunigungstaste"
           }
         },
         "el" : {
@@ -5715,7 +5715,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "대시 키"
+            "value" : "가속 키"
           }
         },
         "ru" : {
