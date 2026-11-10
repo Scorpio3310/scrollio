@@ -47,7 +47,13 @@ class InputProcessor: ModifierFlagsProviding {
     }
 
     private final class ActiveMouseGestureSession {
+        /// Snapshot at button-down, so editing settings mid-hold cannot mix two configurations.
+        let settings: MouseGestureSettings
         var recognizer = MouseGestureRecognizer()
+
+        init(settings: MouseGestureSettings) {
+            self.settings = settings
+        }
     }
 
     private struct MosScrollTapReplay {
@@ -70,6 +76,7 @@ class InputProcessor: ModifierFlagsProviding {
         }
         activeBindings.removeAll()
         activeMouseGestures.removeAll()
+        MouseGesturePointerLock.shared.unlock()
         activeModifierFlags = 0
         MouseInteractionSessionController.shared.clearAllSessions()
         MouseInteractionSessionController.shared.refreshMotionTapState()
@@ -161,7 +168,11 @@ class InputProcessor: ModifierFlagsProviding {
     private func beginMouseGesture(key: TriggerKey) {
         // A duplicate down for a held button keeps the running gesture.
         guard activeMouseGestures[key] == nil else { return }
-        activeMouseGestures[key] = ActiveMouseGestureSession()
+        let session = ActiveMouseGestureSession(settings: Options.shared.gesture)
+        activeMouseGestures[key] = session
+        if session.settings.freezePointer {
+            MouseGesturePointerLock.shared.lock()
+        }
         MouseInteractionSessionController.shared.refreshMotionTapState()
     }
 
@@ -171,10 +182,13 @@ class InputProcessor: ModifierFlagsProviding {
             return false
         }
 
+        if activeMouseGestures.isEmpty {
+            MouseGesturePointerLock.shared.unlock()
+        }
         if session.recognizer.shouldReplayClick {
-            // Match gesture-button behavior in Logi Options+: a plain click opens
-            // Mission Control.
-            executeMouseGestureShortcut(named: SystemShortcut.missionControl.identifier)
+            // A plain click without movement runs the click action (Mission Control by
+            // default, like the gesture button in Logi Options+).
+            executeMouseGestureAction(named: session.settings.clickAction)
         }
         MouseInteractionSessionController.shared.refreshMotionTapState()
         return true
@@ -185,23 +199,35 @@ class InputProcessor: ModifierFlagsProviding {
         guard !activeMouseGestures.isEmpty else { return }
         guard deltaX != 0 || deltaY != 0 else { return }
 
-        var recognizedDirection: MouseGestureDirection?
+        var recognizedAction: String?
         for session in activeMouseGestures.values {
             if let direction = session.recognizer.append(deltaX: deltaX, deltaY: deltaY),
-               recognizedDirection == nil {
-                recognizedDirection = direction
+               recognizedAction == nil {
+                recognizedAction = session.settings.actionIdentifier(for: direction)
             }
         }
-        if let recognizedDirection {
-            executeMouseGestureShortcut(named: recognizedDirection.shortcutIdentifier)
+        if let recognizedAction {
+            executeMouseGestureAction(named: recognizedAction)
         }
     }
 
-    /// Posts the shortcut after the CGEvent tap callback returns. Posting a synthetic
-    /// shortcut from inside the callback re-enters the event pipeline and can time out the tap.
-    private func executeMouseGestureShortcut(named identifier: String) {
+    /// Runs one gesture action as a single press: trigger actions fire once, stateful ones
+    /// (mouse buttons, custom keys) get a down followed by an up.
+    ///
+    /// Posts after the CGEvent tap callback returns. Posting a synthetic event from inside
+    /// the callback re-enters the event pipeline and can time out the tap.
+    private func executeMouseGestureAction(named identifier: String) {
+        guard !identifier.isEmpty else { return }
         DispatchQueue.main.async {
-            ShortcutExecutor.shared.execute(named: identifier)
+            guard let action = ShortcutExecutor.shared.resolveAction(named: identifier) else { return }
+            let result = ShortcutExecutor.shared.execute(action: action, phase: .down)
+            if action.executionMode == .stateful {
+                ShortcutExecutor.shared.execute(
+                    action: action,
+                    phase: .up,
+                    mouseSessionID: result.mouseSessionID
+                )
+            }
         }
     }
 

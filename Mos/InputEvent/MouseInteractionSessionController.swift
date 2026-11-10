@@ -282,6 +282,7 @@ final class MouseInteractionSessionController {
             deltaX: CGFloat(event.getDoubleValueField(.mouseEventDeltaX)),
             deltaY: CGFloat(event.getDoubleValueField(.mouseEventDeltaY))
         )
+        MouseGesturePointerLock.shared.constrain(event)
         rewriteMouseInteractionEvent(event)
         return Unmanaged.passUnretained(event)
     }

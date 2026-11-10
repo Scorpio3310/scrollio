@@ -3,9 +3,23 @@ import XCTest
 
 final class InputProcessorTests: XCTestCase {
 
+    /// Calls the gesture pointer lock made; the real pointer is never touched in tests.
+    private var pointerAssociations: [Bool] = []
+    private var pointerWarps: [CGPoint] = []
+    private let pointerAnchor = CGPoint(x: 100, y: 100)
+
     override func setUp() {
         super.setUp()
         Options.shared.buttons.binding = []
+        Options.shared.gesture = .default
+        pointerAssociations = []
+        pointerWarps = []
+        let anchor = pointerAnchor
+        MouseGesturePointerLock.shared.setTestingDriver(MouseGesturePointerDriver(
+            currentLocation: { anchor },
+            setAssociated: { [weak self] in self?.pointerAssociations.append($0) },
+            warp: { [weak self] in self?.pointerWarps.append($0) }
+        ))
         ButtonUtils.shared.invalidateCache()
         MouseInteractionSessionController.shared.setTestingMotionTapHooks()
         MouseInteractionSessionController.shared.clearAllSessions()
@@ -24,6 +38,9 @@ final class InputProcessorTests: XCTestCase {
     }
 
     override func tearDown() {
+        // Gesture actions post asynchronously; drain them while the test observers are still
+        // installed, so a late action neither leaks into the next test nor posts a real key.
+        waitForMainQueue()
         InputProcessor.shared.clearActiveBindings()
         ScrollCore.shared.dashScroll = false
         ScrollCore.shared.dashAmplification = 1.0
@@ -36,6 +53,8 @@ final class InputProcessorTests: XCTestCase {
         MouseInteractionSessionController.shared.clearTestingMotionTapHooks()
         ShortcutExecutor.shared.clearTestingMouseEventObserver()
         ShortcutExecutor.shared.clearTestingKeyboardShortcutObserver()
+        MouseGesturePointerLock.shared.clearTestingDriver()
+        Options.shared.gesture = .default
         Options.shared.buttons.binding = []
         ButtonUtils.shared.invalidateCache()
         super.tearDown()
@@ -53,8 +72,172 @@ final class InputProcessorTests: XCTestCase {
             var recognizer = MouseGestureRecognizer()
             let direction = recognizer.append(deltaX: deltaX, deltaY: deltaY)
             XCTAssertEqual(direction, expectedDirection)
-            XCTAssertEqual(direction?.shortcutIdentifier, expectedShortcut)
+            XCTAssertEqual(
+                direction.map { MouseGestureSettings.default.actionIdentifier(for: $0) },
+                expectedShortcut
+            )
         }
+    }
+
+    // MARK: - Gesture settings
+
+    func testGestureSettingsInvertHorizontalSwapsOnlyLeftAndRight() {
+        var settings = MouseGestureSettings.default
+        settings.invertHorizontal = true
+
+        XCTAssertEqual(settings.actionIdentifier(for: .left), SystemShortcut.moveSpaceRight.identifier)
+        XCTAssertEqual(settings.actionIdentifier(for: .right), SystemShortcut.moveSpaceLeft.identifier)
+        XCTAssertEqual(settings.actionIdentifier(for: .up), SystemShortcut.missionControl.identifier)
+        XCTAssertEqual(settings.actionIdentifier(for: .down), SystemShortcut.appExpose.identifier)
+    }
+
+    func testGestureSettingsDecodeFillsMissingFieldsWithDefaults() throws {
+        let data = Data(#"{"upAction":"copy","invertHorizontal":true}"#.utf8)
+        let settings = try JSONDecoder().decode(MouseGestureSettings.self, from: data)
+
+        var expected = MouseGestureSettings.default
+        expected.upAction = "copy"
+        expected.invertHorizontal = true
+        XCTAssertEqual(settings, expected)
+    }
+
+    func testGestureSettingsRoundTripThroughJSON() throws {
+        var settings = MouseGestureSettings.default
+        settings.leftAction = ""
+        settings.clickAction = SystemShortcut.navigateBack.identifier
+        settings.freezePointer = false
+        let data = try JSONEncoder().encode(settings)
+        XCTAssertEqual(try JSONDecoder().decode(MouseGestureSettings.self, from: data), settings)
+    }
+
+    func testGestureNavigationRunsConfiguredDirectionAction() {
+        configureGestureBinding()
+        Options.shared.gesture.upAction = SystemShortcut.copy.identifier
+        let executed = recordKeyboardShortcuts()
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 0, deltaY: -45)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        waitForMainQueue()
+
+        let expected = resolvedShortcut(SystemShortcut.copy)
+        XCTAssertEqual(executed().count, 1)
+        XCTAssertEqual(executed().first?.0, expected.code)
+        XCTAssertEqual(executed().first?.1, expected.flags)
+    }
+
+    func testGestureNavigationInvertedHorizontalRunsOppositeSpaceAction() {
+        configureGestureBinding()
+        Options.shared.gesture.invertHorizontal = true
+        let executed = recordKeyboardShortcuts()
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: -45, deltaY: 0)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        waitForMainQueue()
+
+        let expected = resolvedShortcut(SystemShortcut.moveSpaceRight)
+        XCTAssertEqual(executed().count, 1)
+        XCTAssertEqual(executed().first?.0, expected.code)
+        XCTAssertEqual(executed().first?.1, expected.flags)
+    }
+
+    func testGestureNavigationEmptyDirectionActionDoesNothing() {
+        configureGestureBinding()
+        Options.shared.gesture.leftAction = ""
+        let executed = recordKeyboardShortcuts()
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: -45, deltaY: 0)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        waitForMainQueue()
+
+        XCTAssertTrue(executed().isEmpty)
+    }
+
+    func testGestureNavigationClickRunsConfiguredClickAction() {
+        configureGestureBinding()
+        Options.shared.gesture.clickAction = SystemShortcut.copy.identifier
+        let executed = recordKeyboardShortcuts()
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        waitForMainQueue()
+
+        let expected = resolvedShortcut(SystemShortcut.copy)
+        XCTAssertEqual(executed().count, 1)
+        XCTAssertEqual(executed().first?.0, expected.code)
+        XCTAssertEqual(executed().first?.1, expected.flags)
+    }
+
+    func testGestureNavigationStatefulActionPressesAndReleases() {
+        configureGestureBinding()
+        Options.shared.gesture.rightAction = SystemShortcut.mouseBackClick.identifier
+        var postedTypes: [CGEventType] = []
+        ShortcutExecutor.shared.setTestingMouseEventObserver { postedTypes.append($0.type) }
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 45, deltaY: 0)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        waitForMainQueue()
+
+        XCTAssertEqual(postedTypes, [.otherMouseDown, .otherMouseUp])
+    }
+
+    // MARK: - Gesture pointer freeze
+
+    func testGestureNavigationFreezesPointerOnlyWhileHeld() {
+        configureGestureBinding()
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        XCTAssertTrue(MouseGesturePointerLock.shared.isLocked)
+        XCTAssertEqual(MouseGesturePointerLock.shared.anchor, pointerAnchor)
+        XCTAssertEqual(pointerAssociations, [false])
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        XCTAssertFalse(MouseGesturePointerLock.shared.isLocked)
+        XCTAssertEqual(pointerAssociations, [false, true])
+    }
+
+    func testGestureNavigationDoesNotFreezePointerWhenDisabled() {
+        configureGestureBinding()
+        Options.shared.gesture.freezePointer = false
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        XCTAssertFalse(MouseGesturePointerLock.shared.isLocked)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        XCTAssertTrue(pointerAssociations.isEmpty)
+    }
+
+    func testGestureNavigationCancellationReleasesPointer() {
+        configureGestureBinding()
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        InputProcessor.shared.clearActiveBindings()
+
+        XCTAssertFalse(MouseGesturePointerLock.shared.isLocked)
+        XCTAssertEqual(pointerAssociations, [false, true])
+    }
+
+    func testGesturePointerLockKeepsMotionAtAnchorAndWarpsBackOnDrift() {
+        configureGestureBinding()
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+
+        let atAnchor = makeMouseMoveEvent(deltaX: 3, deltaY: 0, location: pointerAnchor)
+        MouseGesturePointerLock.shared.constrain(atAnchor)
+        XCTAssertTrue(pointerWarps.isEmpty)
+
+        let drifted = makeMouseMoveEvent(deltaX: 40, deltaY: 0, location: CGPoint(x: 140, y: 100))
+        MouseGesturePointerLock.shared.constrain(drifted)
+        XCTAssertEqual(drifted.location, pointerAnchor)
+        XCTAssertEqual(pointerWarps, [pointerAnchor])
+        XCTAssertEqual(drifted.getDoubleValueField(.mouseEventDeltaX), 40)
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        let afterRelease = makeMouseMoveEvent(deltaX: 40, deltaY: 0, location: CGPoint(x: 180, y: 100))
+        MouseGesturePointerLock.shared.constrain(afterRelease)
+        XCTAssertEqual(afterRelease.location, CGPoint(x: 180, y: 100))
+        XCTAssertEqual(pointerWarps.count, 1)
     }
 
     func testMouseGestureRecognizerKeepsVerticalGesturesOneShot() {
@@ -1423,11 +1606,24 @@ final class InputProcessorTests: XCTestCase {
         return event
     }
 
-    private func makeMouseMoveEvent(deltaX: Double, deltaY: Double) -> CGEvent {
+    /// Captures keyboard shortcuts posted by ShortcutExecutor; call the result to read them.
+    private func recordKeyboardShortcuts() -> () -> [(CGKeyCode, UInt64)] {
+        var executed: [(CGKeyCode, UInt64)] = []
+        ShortcutExecutor.shared.setTestingKeyboardShortcutObserver { code, flags, _ in
+            executed.append((code, flags))
+        }
+        return { executed }
+    }
+
+    private func makeMouseMoveEvent(
+        deltaX: Double,
+        deltaY: Double,
+        location: CGPoint = CGPoint(x: 40, y: 40)
+    ) -> CGEvent {
         let event = CGEvent(
             mouseEventSource: nil,
             mouseType: .mouseMoved,
-            mouseCursorPosition: CGPoint(x: 40, y: 40),
+            mouseCursorPosition: location,
             mouseButton: .center
         )!
         event.setDoubleValueField(.mouseEventDeltaX, value: deltaX)

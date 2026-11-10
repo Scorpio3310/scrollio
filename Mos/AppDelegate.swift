@@ -123,6 +123,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // 运行后启动滚动处理
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         guard AppRuntime.shouldRunAppStartupSideEffects else { return }
+        // 上次运行若在手势冻结指针时退出, 先恢复指针与鼠标的关联
+        MouseGesturePointerLock.shared.forceRelease()
         LogiCenter.shared.installBridge(LogiIntegrationBridge.shared)
         ShortcutExecutor.shared.scrollActionPort = ScrollCore.shared
         ShortcutExecutor.shared.modifierFlagsProvider = InputProcessor.shared
@@ -146,6 +148,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // 关闭前停止滚动处理
     func applicationWillTerminate(_ aNotification: Notification) {
         guard AppRuntime.shouldRunAppStartupSideEffects else { return }
+        MouseGesturePointerLock.shared.forceRelease()
         LogiCenter.shared.stop()
         ScrollCore.shared.disable()
         ButtonCore.shared.disable()

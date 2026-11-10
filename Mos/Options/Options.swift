@@ -42,6 +42,10 @@ struct OptionItem {
         static let Bindings = "buttonBindings"
     }
 
+    struct Gesture {
+        static let Settings = "mouseGestureSettings"
+    }
+
     struct Application {
         static let Allowlist = "allowlist"
         static let Applications = "applications"
@@ -50,7 +54,7 @@ struct OptionItem {
 
 /// 配置分组: 变更通知与脏组写入的粒度
 enum OptionsGroup: CaseIterable {
-    case general, update, scroll, buttons, application
+    case general, update, scroll, buttons, application, gesture
 }
 
 class Options {
@@ -84,6 +88,10 @@ class Options {
     // 应用
     var application = OPTIONS_APPLICATION_DEFAULT() {
         didSet { markChanged(.application) }
+    }
+    // 手势导航 (所有 Gesture Navigation 绑定共用)
+    var gesture = MouseGestureSettings.default {
+        didSet { markChanged(.gesture) }
     }
 
     /// 保留无法 decode 的 binding 原始 JSON 元素 (来自未来 Mos 版本).
@@ -231,6 +239,8 @@ extension Options {
         // 应用
         application.allowlist = UserDefaults.standard.bool(forKey: OptionItem.Application.Allowlist)
         application.applications = loadApplicationsData()
+        // 手势导航
+        gesture = loadGestureSettings()
         // 解锁
         readingOptionsLock = false
     }
@@ -278,7 +288,22 @@ extension Options {
             } else {
                 NSLog("Failed to serialize applications data, skipping save")
             }
+        case .gesture:
+            if let data = try? encoder.encode(gesture) {
+                UserDefaults.standard.set(data, forKey: OptionItem.Gesture.Settings)
+            } else {
+                NSLog("Failed to serialize gesture settings, skipping save")
+            }
         }
+    }
+
+    // 手势导航设置; 缺失或损坏时回退默认值
+    private func loadGestureSettings() -> MouseGestureSettings {
+        guard let data = UserDefaults.standard.data(forKey: OptionItem.Gesture.Settings),
+              let settings = try? decoder.decode(MouseGestureSettings.self, from: data) else {
+            return .default
+        }
+        return settings
     }
 
     // 安全加载按钮绑定数据

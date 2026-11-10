@@ -7,26 +7,12 @@
 
 import Cocoa
 
+/// Physical pointer direction. `MouseGestureSettings` maps it to an action.
 enum MouseGestureDirection: Equatable {
     case up
     case down
     case left
     case right
-
-    var shortcutIdentifier: String {
-        switch self {
-        case .up:
-            return SystemShortcut.missionControl.identifier
-        case .down:
-            return SystemShortcut.appExpose.identifier
-        // Horizontal directions move the view the way the mouse moves:
-        // moving left goes to the Space on the left.
-        case .left:
-            return SystemShortcut.moveSpaceLeft.identifier
-        case .right:
-            return SystemShortcut.moveSpaceRight.identifier
-        }
-    }
 }
 
 /// Recognizes at most one direction per button hold.
