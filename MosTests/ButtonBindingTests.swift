@@ -21,7 +21,8 @@ final class ButtonBindingTests: XCTestCase {
 
     private func makeButtonCell(
         binding: ButtonBinding,
-        onOpenTargetSelectionRequested: @escaping () -> Void = {}
+        onOpenTargetSelectionRequested: @escaping () -> Void = {},
+        onGestureSettingsRequested: @escaping () -> Void = {}
     ) -> ButtonTableCellView {
         let cell = ButtonTableCellView(frame: NSRect(x: 0, y: 0, width: 420, height: 44))
         let keyContainer = NSView(frame: NSRect(x: 0, y: 0, width: 140, height: 44))
@@ -37,10 +38,100 @@ final class ButtonBindingTests: XCTestCase {
             onShortcutSelected: { _ in },
             onCustomShortcutRecorded: { _ in },
             onOpenTargetSelectionRequested: onOpenTargetSelectionRequested,
-            onDeleteRequested: {}
+            onDeleteRequested: {},
+            onGestureSettingsRequested: onGestureSettingsRequested
         )
 
         return cell
+    }
+
+    private func gestureSettingsMenuItem(in cell: ButtonTableCellView) -> NSMenuItem? {
+        return cell.actionPopUpButton.menu?.items.first {
+            $0.representedObject as? String == ButtonTableCellView.gestureSettingsMenuMarker
+        }
+    }
+
+    private func makeBinding(_ shortcut: SystemShortcut.Shortcut) -> ButtonBinding {
+        return ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil),
+            systemShortcutName: shortcut.identifier
+        )
+    }
+
+    // MARK: - Gesture Navigation settings entry
+
+    func testGestureSettingsMenuItem_visibleOnlyForGestureNavigationBinding() throws {
+        let gestureCell = makeButtonCell(binding: makeBinding(SystemShortcut.mouseGestureNavigation))
+        let gestureMenu = try XCTUnwrap(gestureCell.actionPopUpButton.menu)
+        gestureCell.menuWillOpen(gestureMenu)
+        let gestureItem = try XCTUnwrap(gestureSettingsMenuItem(in: gestureCell))
+        XCTAssertFalse(gestureItem.isHidden)
+        XCTAssertEqual(gestureMenu.index(of: gestureItem), 3)
+
+        let copyCell = makeButtonCell(binding: makeBinding(SystemShortcut.copy))
+        let copyMenu = try XCTUnwrap(copyCell.actionPopUpButton.menu)
+        copyCell.menuWillOpen(copyMenu)
+        XCTAssertEqual(gestureSettingsMenuItem(in: copyCell)?.isHidden, true)
+    }
+
+    func testGestureSettingsMenuItem_requestsSettingsWithoutChangingBinding() throws {
+        var requests = 0
+        let cell = makeButtonCell(
+            binding: makeBinding(SystemShortcut.mouseGestureNavigation),
+            onGestureSettingsRequested: { requests += 1 }
+        )
+        let item = try XCTUnwrap(gestureSettingsMenuItem(in: cell))
+
+        cell.shortcutSelected(item)
+        flushMainQueue()
+
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(
+            cell.actionPopUpButton.menu?.items.first?.title,
+            SystemShortcut.mouseGestureNavigation.localizedName
+        )
+    }
+
+    func testSelectingGestureNavigation_opensSettings() {
+        var requests = 0
+        var selected: [String?] = []
+        let cell = makeButtonCell(
+            binding: makeBinding(SystemShortcut.copy),
+            onGestureSettingsRequested: { requests += 1 }
+        )
+        cell.configure(
+            with: makeBinding(SystemShortcut.copy),
+            onShortcutSelected: { selected.append($0?.identifier) },
+            onCustomShortcutRecorded: { _ in },
+            onOpenTargetSelectionRequested: {},
+            onDeleteRequested: {},
+            onGestureSettingsRequested: { requests += 1 }
+        )
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.representedObject = SystemShortcut.mouseGestureNavigation
+
+        cell.shortcutSelected(item)
+        flushMainQueue()
+
+        XCTAssertEqual(selected, [SystemShortcut.mouseGestureNavigation.identifier])
+        XCTAssertEqual(requests, 1)
+    }
+
+    func testGestureSettingsActionCategories_offerOneShotActionsOnly() {
+        let identifiers = MouseGestureSettingsPopover.actionCategories(showLogiActions: false)
+            .flatMap { $0.shortcuts.map(\.identifier) }
+
+        XCTAssertTrue(identifiers.contains(SystemShortcut.moveSpaceLeft.identifier))
+        XCTAssertTrue(identifiers.contains(SystemShortcut.navigateBack.identifier))
+        XCTAssertTrue(identifiers.contains(SystemShortcut.mouseBackClick.identifier))
+        XCTAssertFalse(identifiers.contains(SystemShortcut.mouseGestureNavigation.identifier))
+        XCTAssertFalse(identifiers.contains(SystemShortcut.modifierShift.identifier))
+        XCTAssertFalse(identifiers.contains(SystemShortcut.mosScrollDash.identifier))
+        XCTAssertFalse(identifiers.contains(SystemShortcut.logiSmartShiftToggle.identifier))
+
+        let withLogi = MouseGestureSettingsPopover.actionCategories(showLogiActions: true)
+            .flatMap { $0.shortcuts.map(\.identifier) }
+        XCTAssertTrue(withLogi.contains(SystemShortcut.logiSmartShiftToggle.identifier))
     }
 
     private func flushMainQueue() {

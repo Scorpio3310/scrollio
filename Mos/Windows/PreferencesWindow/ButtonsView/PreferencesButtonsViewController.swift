@@ -16,6 +16,7 @@ class PreferencesButtonsViewController: NSViewController {
     // MARK: - Data
     private var buttonBindings: [ButtonBinding] = []
     private var currentOpenTargetPopover: OpenTargetConfigPopover?
+    private var currentGestureSettingsPopover: MouseGestureSettingsPopover?
 
     // MARK: - UI Elements
     // 表格
@@ -79,6 +80,7 @@ class PreferencesButtonsViewController: NSViewController {
     override func viewWillDisappear() {
         // 切 tab / 关窗时彻底收敛 popover + 轮询, 避免后台空转.
         closeActivityPopoverIfNeeded()
+        currentGestureSettingsPopover?.hide()
     }
 
     deinit {
@@ -267,6 +269,23 @@ extension PreferencesButtonsViewController {
         }
         popover.show(at: cell.actionPopUpButton, existing: existing)
     }
+
+    private func presentGestureSettingsPopover(forBindingID id: UUID) {
+        guard let index = buttonBindings.firstIndex(where: { $0.id == id }) else { return }
+        guard let row = tableView.row(forBinding: id, in: buttonBindings) else { return }
+        guard let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? ButtonTableCellView else { return }
+
+        let trigger = buttonBindings[index].triggerEvent
+        let isLogiTrigger = trigger.type == .mouse && LogiCenter.shared.isLogiCode(trigger.code)
+
+        let popover = MouseGestureSettingsPopover()
+        currentGestureSettingsPopover = popover
+        popover.onClose = { [weak self, weak popover] in
+            guard let self, self.currentGestureSettingsPopover === popover else { return }
+            self.currentGestureSettingsPopover = nil
+        }
+        popover.show(at: cell.actionPopUpButton, showLogiActions: isLogiTrigger)
+    }
 }
 
 /**
@@ -310,6 +329,9 @@ extension PreferencesButtonsViewController: NSTableViewDelegate, NSTableViewData
                 },
                 onBindingUpdated: { [weak self] updated in
                     self?.replaceButtonBinding(updated)
+                },
+                onGestureSettingsRequested: { [weak self] in
+                    self?.presentGestureSettingsPopover(forBindingID: binding.id)
                 }
             )
             return cell

@@ -48,6 +48,11 @@ class ButtonTableCellView: NSTableCellView, NSMenuDelegate {
     /// 当用户从 PopUpButton 菜单选择 "打开…" 时触发,
     /// 由 PreferencesButtonsViewController 弹出 OpenTargetConfigPopover.
     private var onOpenTargetSelectionRequested: (() -> Void)?
+    /// 选择 "手势导航" 或其 "手势设置…" 菜单项时触发, 由 controller 弹出 MouseGestureSettingsPopover.
+    private var onGestureSettingsRequested: (() -> Void)?
+
+    /// "手势设置…" 菜单项的 representedObject 标记, 插在 "取消绑定" 之后.
+    static let gestureSettingsMenuMarker = "__gestureSettings__"
 
     // MARK: - Custom Recording
     private lazy var customRecorder: KeyRecorder = {
@@ -90,10 +95,12 @@ class ButtonTableCellView: NSTableCellView, NSMenuDelegate {
         onCustomShortcutRecorded: @escaping (String) -> Void,
         onOpenTargetSelectionRequested: @escaping () -> Void,
         onDeleteRequested: @escaping () -> Void,
-        onBindingUpdated: @escaping (ButtonBinding) -> Void = { _ in }
+        onBindingUpdated: @escaping (ButtonBinding) -> Void = { _ in },
+        onGestureSettingsRequested: @escaping () -> Void = {}
     ) {
         // 保存回调
         self.onShortcutSelected = onShortcutSelected
+        self.onGestureSettingsRequested = onGestureSettingsRequested
         self.onDeleteRequested = onDeleteRequested
         self.onCustomShortcutRecorded = onCustomShortcutRecorded
         self.onOpenTargetSelectionRequested = onOpenTargetSelectionRequested
@@ -600,6 +607,7 @@ class ButtonTableCellView: NSTableCellView, NSMenuDelegate {
             action: #selector(shortcutSelected(_:)),
             showLogiActions: showLogiActions
         )
+        insertGestureSettingsItem(into: menu)
 
         // 初始状态禁用所有 keyEquivalent，防止意外触发
         // 只在菜单打开时（menuWillOpen）临时启用，以显示快捷键样式
@@ -612,6 +620,28 @@ class ButtonTableCellView: NSTableCellView, NSMenuDelegate {
         refreshActionDisplay()
     }
     
+    /// "手势设置…" 菜单项: 紧跟 "未绑定/取消绑定" (索引 3), 仅当前动作为手势导航时显示.
+    private func insertGestureSettingsItem(into menu: NSMenu) {
+        guard menu.items.count >= 3 else { return }
+        let item = NSMenuItem(
+            title: NSLocalizedString("gesture-settings-menu", comment: ""),
+            action: #selector(shortcutSelected(_:)),
+            keyEquivalent: ""
+        )
+        item.target = self
+        item.representedObject = Self.gestureSettingsMenuMarker as NSString
+        if #available(macOS 11.0, *) {
+            item.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: nil)
+        }
+        item.isHidden = !isGestureNavigationBound
+        menu.insertItem(item, at: 3)
+    }
+
+    private var isGestureNavigationBound: Bool {
+        guard case .namedShortcut(let shortcut) = actionState else { return false }
+        return shortcut.identifier == SystemShortcut.mouseGestureNavigation.identifier
+    }
+
     // MARK: - 私有方法
 
     func refreshActionDisplay() {
@@ -657,6 +687,13 @@ class ButtonTableCellView: NSTableCellView, NSMenuDelegate {
             return
         }
 
+        // "手势设置…": 绑定不变, 只弹出设置 popover
+        if sender.representedObject as? String == Self.gestureSettingsMenuMarker {
+            restoreTransientSelectorDisplay()
+            onGestureSettingsRequested?()
+            return
+        }
+
         // 系统/Logi/鼠标 等预定义快捷键, 或 nil = 取消绑定.
         let shortcut = sender.representedObject as? SystemShortcut.Shortcut
         applyLocalBindingChange { old in
@@ -674,6 +711,13 @@ class ButtonTableCellView: NSTableCellView, NSMenuDelegate {
         // 延迟重绘虚线和冲突指示器 (等待 PopUpButton 布局更新)
         DispatchQueue.main.async {
             self.refreshConflictIndicator()
+        }
+
+        // 刚选中手势导航: 直接展示其设置, 用户能立即看到各方向的动作
+        if shortcut?.identifier == SystemShortcut.mouseGestureNavigation.identifier {
+            DispatchQueue.main.async { [weak self] in
+                self?.onGestureSettingsRequested?()
+            }
         }
     }
 
@@ -748,6 +792,12 @@ extension ButtonTableCellView {
             placeholderItem.isHidden = false
             firstSeparator.isHidden = false
             unboundItem.title = NSLocalizedString("unbind", comment: "")
+        }
+
+        if let gestureSettingsItem = menu.items.first(where: {
+            $0.representedObject as? String == Self.gestureSettingsMenuMarker
+        }) {
+            gestureSettingsItem.isHidden = !isGestureNavigationBound
         }
     }
 
