@@ -378,6 +378,7 @@ final class MousePreferencesTabPlacementTests: XCTestCase {
         XCTAssertTrue(mouseItem.viewController is MousePreferencesViewController)
         XCTAssertNotNil(mouseItem.image)
         XCTAssertFalse(mouseItem.label.isEmpty)
+        XCTAssertNotEqual(mouseItem.label, "mouse-tab-title", "the tab label must be localized")
         XCTAssertEqual(tabs.selectedTabViewItemIndex, 0)
     }
 
