@@ -34,6 +34,11 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     @IBOutlet weak var scrollDurationDescriptionLabel: NSTextField?
     @IBOutlet weak var resetToDefaultsButton: NSButton!
     var resetButtonHeightConstraint: NSLayoutConstraint?
+    // 快速滚动 (预设 / free-spin / 加速度) 入口, 代码创建并插在时长说明与重置按钮之间
+    private var scrollTuningButton: NSButton?
+    private var scrollTuningButtonHeightConstraint: NSLayoutConstraint?
+    private var scrollTuningPopover: ScrollTuningSettingsPopover?
+    private static let scrollTuningButtonHeight: CGFloat = 24
     // Constants
     let DefaultConfigForCompare = OPTIONS_SCROLL_DEFAULT()
     private var scrollDurationDescriptionDefaultText: String?
@@ -56,8 +61,64 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         scrollDurationDescriptionDefaultText = scrollDurationDescriptionLabel?.stringValue
         // 设置 KeyRecorder 代理
         keyRecorder.delegate = self
+        // 快速滚动入口
+        installScrollTuningButton()
         // 读取设置
         syncViewWithOptions()
+    }
+
+    /// Inserts the "Scroll Presets & Free-Spin…" button between the duration description and
+    /// the reset button by re-pinning the reset button's top constraint.
+    private func installScrollTuningButton() {
+        guard let anchor = scrollDurationDescriptionLabel,
+              let container = resetToDefaultsButton.superview,
+              let resetTop = container.constraints.first(where: {
+                  ($0.firstItem as? NSView) === resetToDefaultsButton && $0.firstAttribute == .top
+              }) else { return }
+
+        let button = NSButton(
+            title: NSLocalizedString("scroll-tuning-button", comment: ""),
+            target: self,
+            action: #selector(scrollTuningClick(_:))
+        )
+        button.bezelStyle = .rounded
+        button.translatesAutoresizingMaskIntoConstraints = false
+        if #available(macOS 11.0, *) {
+            button.image = NSImage(systemSymbolName: "speedometer", accessibilityDescription: nil)
+            button.imagePosition = .imageLeading
+        }
+        container.addSubview(button)
+
+        let height = button.heightAnchor.constraint(equalToConstant: Self.scrollTuningButtonHeight)
+        resetTop.isActive = false
+        NSLayoutConstraint.activate([
+            height,
+            button.topAnchor.constraint(equalTo: anchor.bottomAnchor, constant: 14),
+            button.leadingAnchor.constraint(equalTo: anchor.leadingAnchor),
+            resetToDefaultsButton.topAnchor.constraint(equalTo: button.bottomAnchor, constant: 14),
+        ])
+        scrollTuningButton = button
+        scrollTuningButtonHeightConstraint = height
+    }
+
+    @objc private func scrollTuningClick(_ sender: NSButton) {
+        let popover = ScrollTuningSettingsPopover()
+        popover.onSettingsChanged = { [weak self] in
+            self?.syncViewWithOptions()
+        }
+        popover.onClose = { [weak self, weak popover] in
+            guard let self, self.scrollTuningPopover === popover else { return }
+            self.scrollTuningPopover = nil
+        }
+        scrollTuningPopover = popover
+        popover.show(at: sender)
+    }
+
+    /// The tuning is global, so the entry is hidden in per-app scroll settings.
+    private func updateScrollTuningButtonVisibility() {
+        let visible = currentTargetApplication == nil
+        scrollTuningButton?.isHidden = !visible
+        scrollTuningButtonHeightConstraint?.constant = visible ? Self.scrollTuningButtonHeight : 0
     }
 
     override func prepare(for segue: NSStoryboardSegue, sender: Any?) {
@@ -240,6 +301,8 @@ extension PreferencesScrollingViewController {
         } else if let defaultText = scrollDurationDescriptionDefaultText {
             scrollDurationDescriptionLabel?.stringValue = defaultText
         }
+        // 快速滚动入口仅在全局配置中显示
+        updateScrollTuningButtonVisibility()
         // 更新重置按钮状态
         updateResetButtonState()
     }

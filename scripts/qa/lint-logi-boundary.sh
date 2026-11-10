@@ -35,6 +35,9 @@ ZONE_A_ALLOW=(
     SessionActivityStatus
     LogiIntegrationBridge
     LogiUsageBootstrap
+    LogiWheelMode
+    LogiWheelSettings
+    LogiWheelDeviceState
 )
 
 ZONE_B_ADDITIONAL=(

@@ -46,6 +46,14 @@ struct OptionItem {
         static let Settings = "mouseGestureSettings"
     }
 
+    struct ScrollTuning {
+        static let Settings = "scrollTuning"
+    }
+
+    struct MouseWheel {
+        static let Settings = "logiWheelSettings"
+    }
+
     struct Application {
         static let Allowlist = "allowlist"
         static let Applications = "applications"
@@ -54,7 +62,7 @@ struct OptionItem {
 
 /// 配置分组: 变更通知与脏组写入的粒度
 enum OptionsGroup: CaseIterable {
-    case general, update, scroll, buttons, application, gesture
+    case general, update, scroll, buttons, application, gesture, scrollTuning, logiWheel
 }
 
 class Options {
@@ -92,6 +100,14 @@ class Options {
     // 手势导航 (所有 Gesture Navigation 绑定共用)
     var gesture = MouseGestureSettings.default {
         didSet { markChanged(.gesture) }
+    }
+    // 快速滚动调校 (free-spin / 加速度), 全局生效, 不随 per-app 覆盖
+    var scrollTuning = ScrollTuningSettings.default {
+        didSet { markChanged(.scrollTuning) }
+    }
+    // Logitech 滚轮硬件设置 (SmartShift 模式 / 灵敏度 / 齿感力度), 仅在 managedByMos 时写入设备
+    var logiWheel = LogiWheelSettings.default {
+        didSet { markChanged(.logiWheel) }
     }
 
     /// 保留无法 decode 的 binding 原始 JSON 元素 (来自未来 Mos 版本).
@@ -241,6 +257,10 @@ extension Options {
         application.applications = loadApplicationsData()
         // 手势导航
         gesture = loadGestureSettings()
+        // 快速滚动调校
+        scrollTuning = loadScrollTuningSettings()
+        // Logitech 滚轮
+        logiWheel = loadLogiWheelSettings()
         // 解锁
         readingOptionsLock = false
     }
@@ -294,7 +314,37 @@ extension Options {
             } else {
                 NSLog("Failed to serialize gesture settings, skipping save")
             }
+        case .scrollTuning:
+            if let data = try? encoder.encode(scrollTuning) {
+                UserDefaults.standard.set(data, forKey: OptionItem.ScrollTuning.Settings)
+            } else {
+                NSLog("Failed to serialize scroll tuning settings, skipping save")
+            }
+        case .logiWheel:
+            if let data = try? encoder.encode(logiWheel) {
+                UserDefaults.standard.set(data, forKey: OptionItem.MouseWheel.Settings)
+            } else {
+                NSLog("Failed to serialize Logitech wheel settings, skipping save")
+            }
         }
+    }
+
+    // Logitech 滚轮设置; 缺失或损坏时回退默认值 (默认不接管设备)
+    private func loadLogiWheelSettings() -> LogiWheelSettings {
+        guard let data = UserDefaults.standard.data(forKey: OptionItem.MouseWheel.Settings),
+              let settings = try? decoder.decode(LogiWheelSettings.self, from: data) else {
+            return .default
+        }
+        return settings
+    }
+
+    // 快速滚动调校; 缺失或损坏时回退默认值
+    private func loadScrollTuningSettings() -> ScrollTuningSettings {
+        guard let data = UserDefaults.standard.data(forKey: OptionItem.ScrollTuning.Settings),
+              let settings = try? decoder.decode(ScrollTuningSettings.self, from: data) else {
+            return .default
+        }
+        return settings
     }
 
     // 手势导航设置; 缺失或损坏时回退默认值
