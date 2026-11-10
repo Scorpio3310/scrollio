@@ -130,7 +130,7 @@ button.title = NSLocalizedString("Auth", comment: "Authorization button title")
    Non-Chinese README variants currently use English screenshots.
 5. Switch macOS to the new language (System Preferences ▸ Language & Region) and run through:
    - Welcome / Introduction windows
-   - Preferences tabs (General, Scrolling, Application, Buttons, Updates, About)
+   - Preferences tabs (General, Scrolling, Buttons, Mouse, Application, Updates, About)
    - Buttons recorder, shortcut pop-ups, simulated trackpad switches
 6. Capture screenshots or notes for strings that require layout tweaks (long text, truncation).
 
@@ -171,6 +171,10 @@ xcodebuild -importLocalizations -project Mos.xcodeproj -localizationPath build/l
 - **Buttons panel:** Strings originate from `Windows/PreferencesWindow/ButtonsView/`, especially `ButtonTableCellView.swift` and `PreferencesButtonsViewController.swift`.
 - **Welcome & Introduction:** See `Windows/WelcomeWindow` and `Windows/IntroductionWindow` for onboarding copy.
 - **Monitor window:** Mixing scroll/button logs relies on keys such as `buttonsLog`, `eventMonitor`, etc. in `Localizable.xcstrings`.
+- **Scrolling tab, Presets & Fast Scrolling popover:** `Windows/PreferencesWindow/ScrollingView/` (`scroll-preset-*`, `scroll-tuning-*`; the slider titles are chosen in code from `scroll-tuning-free-spin-smoothness`, `scroll-tuning-free-spin-speed` and `scroll-tuning-acceleration`).
+- **Mouse tab (Logitech wheel settings):** `Windows/PreferencesWindow/MouseView/` (`mouse-*`). Keep SmartShift, Logi Options+, MX Master and HID++ untranslated.
+- **Gesture Settings popover:** `Windows/PreferencesWindow/ButtonsView/MouseGestureSettingsPopover.swift` (`gesture-*`).
+- `MosTests/PreferencesLocalizationTests.swift` checks that these keys exist in every shipped locale; add new keys of these panels to its list.
 
 When new modules land (e.g. gesture editor, theme manager), append them here so translators know where to look.
 
