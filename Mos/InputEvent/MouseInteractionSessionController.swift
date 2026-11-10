@@ -280,8 +280,7 @@ final class MouseInteractionSessionController {
 
         InputProcessor.shared.handleMouseGestureMovement(
             deltaX: CGFloat(event.getDoubleValueField(.mouseEventDeltaX)),
-            deltaY: CGFloat(event.getDoubleValueField(.mouseEventDeltaY)),
-            timestamp: TimeInterval(event.timestamp) / 1_000_000_000
+            deltaY: CGFloat(event.getDoubleValueField(.mouseEventDeltaY))
         )
         rewriteMouseInteractionEvent(event)
         return Unmanaged.passUnretained(event)

@@ -70,11 +70,11 @@ final class InputProcessorTests: XCTestCase {
     func testMouseGestureRecognizerOnlyRecognizesOneDirectionPerHold() {
         var recognizer = MouseGestureRecognizer()
 
-        XCTAssertEqual(recognizer.append(deltaX: 45, deltaY: 0, timestamp: 10), .right)
-        XCTAssertNil(recognizer.append(deltaX: 200, deltaY: 0, timestamp: 10.01))
-        XCTAssertNil(recognizer.append(deltaX: -400, deltaY: 0, timestamp: 10.02))
-        XCTAssertNil(recognizer.append(deltaX: -200, deltaY: 0, timestamp: 10.03))
-        XCTAssertNil(recognizer.append(deltaX: -40, deltaY: 0, timestamp: 10.26))
+        XCTAssertEqual(recognizer.append(deltaX: 45, deltaY: 0), .right)
+        XCTAssertNil(recognizer.append(deltaX: 200, deltaY: 0))
+        XCTAssertNil(recognizer.append(deltaX: -400, deltaY: 0))
+        XCTAssertNil(recognizer.append(deltaX: -200, deltaY: 0))
+        XCTAssertNil(recognizer.append(deltaX: -40, deltaY: 0))
         XCTAssertEqual(recognizer.recognizedDirection, .right)
         XCTAssertFalse(recognizer.shouldReplayClick)
     }
@@ -227,8 +227,8 @@ final class InputProcessorTests: XCTestCase {
         }
 
         XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
-        InputProcessor.shared.handleMouseGestureMovement(deltaX: 45, deltaY: 0, timestamp: 10)
-        InputProcessor.shared.handleMouseGestureMovement(deltaX: 200, deltaY: 0, timestamp: 10.01)
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 45, deltaY: 0)
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 200, deltaY: 0)
 
         wait(for: [firstAction], timeout: 1)
         wait(for: [unexpectedRepeat], timeout: 0.25)
@@ -257,8 +257,8 @@ final class InputProcessorTests: XCTestCase {
         }
 
         XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
-        InputProcessor.shared.handleMouseGestureMovement(deltaX: 45, deltaY: 0, timestamp: 10)
-        InputProcessor.shared.handleMouseGestureMovement(deltaX: 40, deltaY: 0, timestamp: 10.20)
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 45, deltaY: 0)
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 40, deltaY: 0)
 
         wait(for: [firstAction], timeout: 1)
         wait(for: [unexpectedRepeat], timeout: 0.25)
@@ -287,10 +287,10 @@ final class InputProcessorTests: XCTestCase {
         }
 
         XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
-        InputProcessor.shared.handleMouseGestureMovement(deltaX: 45, deltaY: 0, timestamp: 10)
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 45, deltaY: 0)
         wait(for: [firstAction], timeout: 1)
 
-        InputProcessor.shared.handleMouseGestureMovement(deltaX: -200, deltaY: 0, timestamp: 10.20)
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: -200, deltaY: 0)
         wait(for: [unexpectedReversal], timeout: 0.25)
 
         XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)

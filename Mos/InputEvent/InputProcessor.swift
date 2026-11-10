@@ -24,17 +24,12 @@ class InputProcessor: ModifierFlagsProviding {
     init() { NSLog("Module initialized: InputProcessor") }
 
     private static let mosScrollTapReplayMovementTolerance: CGFloat = 8.0
-    private static let horizontalMouseGestureActionInterval: TimeInterval = 0.12
-    private static let maximumPendingHorizontalMouseGestureSteps = 2
 
     // MARK: - Active Bindings Table
     /// 跟踪当前按下中的 stateful 动作, 用于 Up 事件配对
     private var activeBindings: [TriggerKey: ActiveBindingSession] = [:]
+    /// 按住中的手势导航按键, 每个按键一次按住对应一个识别器
     private var activeMouseGestures: [TriggerKey: ActiveMouseGestureSession] = [:]
-    private var pendingHorizontalMouseGestureSteps = 0
-    private var horizontalMouseGestureActionWorkItem: DispatchWorkItem?
-    private var horizontalMouseGestureActionToken = 0
-    private var lastHorizontalMouseGestureActionTime: TimeInterval?
 
     var hasActiveMouseGestureSessions: Bool {
         return !activeMouseGestures.isEmpty
@@ -75,7 +70,6 @@ class InputProcessor: ModifierFlagsProviding {
         }
         activeBindings.removeAll()
         activeMouseGestures.removeAll()
-        resetHorizontalMouseGestureActions()
         activeModifierFlags = 0
         MouseInteractionSessionController.shared.clearAllSessions()
         MouseInteractionSessionController.shared.refreshMotionTapState()
@@ -162,11 +156,11 @@ class InputProcessor: ModifierFlagsProviding {
         return .consumed
     }
 
+    // MARK: - Mouse Gesture Navigation
+
     private func beginMouseGesture(key: TriggerKey) {
+        // A duplicate down for a held button keeps the running gesture.
         guard activeMouseGestures[key] == nil else { return }
-        if activeMouseGestures.isEmpty {
-            resetHorizontalMouseGestureActions()
-        }
         activeMouseGestures[key] = ActiveMouseGestureSession()
         MouseInteractionSessionController.shared.refreshMotionTapState()
     }
@@ -177,149 +171,38 @@ class InputProcessor: ModifierFlagsProviding {
             return false
         }
 
-        if activeMouseGestures.isEmpty {
-            finishHorizontalMouseGestureActions()
-        }
         if session.recognizer.shouldReplayClick {
             // Match gesture-button behavior in Logi Options+: a plain click opens
-            // Mission Control. Defer posting until the mouse event tap returns.
-            DispatchQueue.main.async {
-                ShortcutExecutor.shared.execute(named: SystemShortcut.missionControl.identifier)
-            }
+            // Mission Control.
+            executeMouseGestureShortcut(named: SystemShortcut.missionControl.identifier)
         }
         MouseInteractionSessionController.shared.refreshMotionTapState()
         return true
     }
 
-    func handleMouseGestureMovement(
-        deltaX: CGFloat,
-        deltaY: CGFloat,
-        timestamp: TimeInterval = ProcessInfo.processInfo.systemUptime
-    ) {
+    /// Feeds pointer movement from the motion tap into every held gesture button.
+    func handleMouseGestureMovement(deltaX: CGFloat, deltaY: CGFloat) {
         guard !activeMouseGestures.isEmpty else { return }
         guard deltaX != 0 || deltaY != 0 else { return }
 
         var recognizedDirection: MouseGestureDirection?
         for session in activeMouseGestures.values {
-            if let direction = session.recognizer.append(
-                deltaX: deltaX,
-                deltaY: deltaY,
-                timestamp: timestamp
-            ),
+            if let direction = session.recognizer.append(deltaX: deltaX, deltaY: deltaY),
                recognizedDirection == nil {
                 recognizedDirection = direction
             }
         }
         if let recognizedDirection {
-            scheduleMouseGestureAction(recognizedDirection)
+            executeMouseGestureShortcut(named: recognizedDirection.shortcutIdentifier)
         }
     }
 
-    private func scheduleMouseGestureAction(_ direction: MouseGestureDirection) {
-        switch direction {
-        case .left, .right:
-            enqueueHorizontalMouseGestureAction(direction)
-        case .up, .down:
-            // Returning from the CGEvent tap callback before posting a synthetic
-            // shortcut avoids re-entering the event pipeline and timing out the tap.
-            DispatchQueue.main.async {
-                ShortcutExecutor.shared.execute(named: direction.shortcutIdentifier)
-            }
+    /// Posts the shortcut after the CGEvent tap callback returns. Posting a synthetic
+    /// shortcut from inside the callback re-enters the event pipeline and can time out the tap.
+    private func executeMouseGestureShortcut(named identifier: String) {
+        DispatchQueue.main.async {
+            ShortcutExecutor.shared.execute(named: identifier)
         }
-    }
-
-    private func enqueueHorizontalMouseGestureAction(_ direction: MouseGestureDirection) {
-        let step = direction == .left ? -1 : 1
-        if pendingHorizontalMouseGestureSteps != 0,
-           (pendingHorizontalMouseGestureSteps > 0) != (step > 0) {
-            // Redirection should feel immediate: discard stale queued movement in
-            // the old direction instead of making the user unwind it one step at a time.
-            pendingHorizontalMouseGestureSteps = step
-        } else {
-            let pending = pendingHorizontalMouseGestureSteps + step
-            pendingHorizontalMouseGestureSteps = min(
-                Self.maximumPendingHorizontalMouseGestureSteps,
-                max(-Self.maximumPendingHorizontalMouseGestureSteps, pending)
-            )
-        }
-        scheduleNextHorizontalMouseGestureActionIfNeeded()
-    }
-
-    private func scheduleNextHorizontalMouseGestureActionIfNeeded() {
-        guard pendingHorizontalMouseGestureSteps != 0,
-              horizontalMouseGestureActionWorkItem == nil else {
-            return
-        }
-
-        let now = ProcessInfo.processInfo.systemUptime
-        let delay: TimeInterval
-        if let lastActionTime = lastHorizontalMouseGestureActionTime {
-            delay = max(0, Self.horizontalMouseGestureActionInterval - (now - lastActionTime))
-        } else {
-            delay = 0
-        }
-
-        horizontalMouseGestureActionToken &+= 1
-        let token = horizontalMouseGestureActionToken
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self,
-                  token == self.horizontalMouseGestureActionToken else {
-                return
-            }
-            self.horizontalMouseGestureActionWorkItem = nil
-            self.dispatchNextHorizontalMouseGestureAction()
-        }
-        horizontalMouseGestureActionWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
-    }
-
-    private func dispatchNextHorizontalMouseGestureAction() {
-        guard !activeMouseGestures.isEmpty else {
-            resetHorizontalMouseGestureActions()
-            return
-        }
-        guard pendingHorizontalMouseGestureSteps != 0 else { return }
-
-        let direction: MouseGestureDirection
-        if pendingHorizontalMouseGestureSteps < 0 {
-            pendingHorizontalMouseGestureSteps += 1
-            direction = .left
-        } else {
-            pendingHorizontalMouseGestureSteps -= 1
-            direction = .right
-        }
-
-        lastHorizontalMouseGestureActionTime = ProcessInfo.processInfo.systemUptime
-        ShortcutExecutor.shared.execute(named: direction.shortcutIdentifier)
-        scheduleNextHorizontalMouseGestureActionIfNeeded()
-    }
-
-    private func finishHorizontalMouseGestureActions() {
-        let pendingDirection: MouseGestureDirection?
-        if lastHorizontalMouseGestureActionTime == nil,
-           pendingHorizontalMouseGestureSteps != 0 {
-            pendingDirection = pendingHorizontalMouseGestureSteps < 0 ? .left : .right
-        } else {
-            pendingDirection = nil
-        }
-
-        resetHorizontalMouseGestureActions()
-
-        // Preserve a quick flick even when mouseUp reaches the main run loop before
-        // the first queued action. Repeats are intentionally dropped after release.
-        if let pendingDirection {
-            DispatchQueue.main.async {
-                ShortcutExecutor.shared.execute(named: pendingDirection.shortcutIdentifier)
-            }
-        }
-    }
-
-    private func resetHorizontalMouseGestureActions() {
-        horizontalMouseGestureActionWorkItem?.cancel()
-        horizontalMouseGestureActionWorkItem = nil
-        horizontalMouseGestureActionToken &+= 1
-        pendingHorizontalMouseGestureSteps = 0
-        lastHorizontalMouseGestureActionTime = nil
     }
 
     private func releaseActiveBinding(for event: InputEvent) -> Bool {

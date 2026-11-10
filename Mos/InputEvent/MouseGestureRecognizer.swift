@@ -19,6 +19,7 @@ enum MouseGestureDirection: Equatable {
             return SystemShortcut.missionControl.identifier
         case .down:
             return SystemShortcut.appExpose.identifier
+        // Horizontal directions follow the trackpad swipe: the content follows the hand.
         case .left:
             return SystemShortcut.moveSpaceRight.identifier
         case .right:
@@ -27,50 +28,37 @@ enum MouseGestureDirection: Equatable {
     }
 }
 
+/// Recognizes at most one direction per button hold.
+///
+/// Movement accumulates from the button-down position. Once the displacement on one
+/// axis passes `activationDistance` and clearly dominates the other axis, that direction
+/// commits and every later movement in the same hold is ignored. A new hold starts a
+/// new recognizer, so one physical swipe can never cross more than one Space.
 struct MouseGestureRecognizer {
     static let defaultActivationDistance: CGFloat = 40
     static let defaultClickTolerance: CGFloat = 10
     static let defaultDominanceRatio: CGFloat = 1.2
-    static let defaultHorizontalRearmInterval: TimeInterval = 0.16
 
     private let activationDistance: CGFloat
     private let clickTolerance: CGFloat
     private let dominanceRatio: CGFloat
-    private let horizontalRearmInterval: TimeInterval
-
-    private enum LockedAxis {
-        case horizontal
-        case vertical
-    }
 
     private(set) var displacement = CGPoint.zero
     private(set) var maximumDistanceFromOrigin: CGFloat = 0
     private(set) var recognizedDirection: MouseGestureDirection?
-    private var lockedAxis: LockedAxis?
-    private var horizontalRemainder: CGFloat = 0
-    private var horizontalNeedsRearm = false
-    private var lastHorizontalDirection: MouseGestureDirection?
-    private var lastMovementTimestamp: TimeInterval?
 
     init(
         activationDistance: CGFloat = defaultActivationDistance,
         clickTolerance: CGFloat = defaultClickTolerance,
-        dominanceRatio: CGFloat = defaultDominanceRatio,
-        horizontalRearmInterval: TimeInterval = defaultHorizontalRearmInterval
+        dominanceRatio: CGFloat = defaultDominanceRatio
     ) {
         self.activationDistance = activationDistance
         self.clickTolerance = clickTolerance
         self.dominanceRatio = dominanceRatio
-        self.horizontalRearmInterval = horizontalRearmInterval
     }
 
-    mutating func append(
-        deltaX: CGFloat,
-        deltaY: CGFloat,
-        timestamp: TimeInterval = ProcessInfo.processInfo.systemUptime
-    ) -> MouseGestureDirection? {
-        let movementGap = lastMovementTimestamp.map { max(0, timestamp - $0) }
-        lastMovementTimestamp = timestamp
+    /// Adds one mouse movement delta and returns the direction when it first commits.
+    mutating func append(deltaX: CGFloat, deltaY: CGFloat) -> MouseGestureDirection? {
         displacement.x += deltaX
         displacement.y += deltaY
         maximumDistanceFromOrigin = max(
@@ -78,79 +66,28 @@ struct MouseGestureRecognizer {
             hypot(displacement.x, displacement.y)
         )
 
-        // Treat each button hold as one gesture transaction. Once a direction
-        // commits, later movement is ignored until mouseUp creates a new session.
         guard recognizedDirection == nil else { return nil }
-
-        switch lockedAxis {
-        case .horizontal:
-            return appendHorizontalMovement(deltaX, movementGap: movementGap)
-        case .vertical:
-            return nil
-        case nil:
-            break
-        }
 
         let horizontal = abs(displacement.x)
         let vertical = abs(displacement.y)
         guard max(horizontal, vertical) >= activationDistance else { return nil }
 
+        let direction: MouseGestureDirection
         if horizontal >= vertical * dominanceRatio {
-            lockedAxis = .horizontal
-            horizontalRemainder = displacement.x
-            return recognizeHorizontalDirectionIfNeeded()
+            direction = displacement.x < 0 ? .left : .right
         } else if vertical >= horizontal * dominanceRatio {
             // CGEvent mouse delta Y is positive when moving down.
-            lockedAxis = .vertical
-            let direction: MouseGestureDirection = displacement.y < 0 ? .up : .down
-            recognizedDirection = direction
-            return direction
+            direction = displacement.y < 0 ? .up : .down
         } else {
+            // Diagonal movement: wait until one axis clearly dominates.
             return nil
         }
-    }
 
-    private mutating func appendHorizontalMovement(
-        _ deltaX: CGFloat,
-        movementGap: TimeInterval?
-    ) -> MouseGestureDirection? {
-        if horizontalNeedsRearm,
-           let movementGap,
-           movementGap >= horizontalRearmInterval {
-            horizontalNeedsRearm = false
-            horizontalRemainder = 0
-        }
-
-        if horizontalNeedsRearm {
-            horizontalRemainder += deltaX
-            switch lastHorizontalDirection {
-            case .right:
-                // Continuing the same swipe must not spill into the next desktop.
-                // Only opposite travel is accumulated so reversal remains immediate.
-                horizontalRemainder = min(0, horizontalRemainder)
-            case .left:
-                horizontalRemainder = max(0, horizontalRemainder)
-            default:
-                horizontalRemainder = 0
-            }
-            return recognizeHorizontalDirectionIfNeeded()
-        }
-
-        horizontalRemainder += deltaX
-        return recognizeHorizontalDirectionIfNeeded()
-    }
-
-    private mutating func recognizeHorizontalDirectionIfNeeded() -> MouseGestureDirection? {
-        guard abs(horizontalRemainder) >= activationDistance else { return nil }
-
-        let direction: MouseGestureDirection = horizontalRemainder < 0 ? .left : .right
-        horizontalRemainder = 0
-        horizontalNeedsRearm = true
-        lastHorizontalDirection = direction
         recognizedDirection = direction
         return direction
     }
 
+    /// True when the hold ended without a gesture and the pointer barely moved.
     var shouldReplayClick: Bool {
         guard recognizedDirection == nil else { return false }
         return maximumDistanceFromOrigin <= clickTolerance
