@@ -9,6 +9,19 @@
 import Cocoa
 import os
 
+/// One wheel event for ScrollPoster, already resolved by ScrollCore (speed, tuning, dash).
+struct ScrollPosterInput {
+    /// Signed distance to add per axis (px).
+    var y: Double
+    var x: Double
+    /// Distance of one notch per axis at the current speed and multipliers (px), for the lead cap floor.
+    var notch: (y: Double, x: Double)
+    /// Per-frame interpolation factor at 60 Hz.
+    var duration: Double
+    /// Skip ScrollFilter (see ScrollMotion.shouldBypassFilter).
+    var bypassFilter: Bool
+}
+
 class ScrollPoster {
 
     // 单例
@@ -26,6 +39,12 @@ class ScrollPoster {
     // 滚动配置
     private var shifting = false
     private var duration = Options.shared.scroll.durationTransition
+    private var bypassFilter = false
+    // 领先量限制 (buffer - current), 滚轮停下后滑行尽快结束
+    private var leadLimiterY = ScrollLeadLimiter()
+    private var leadLimiterX = ScrollLeadLimiter()
+    // 上一帧的显示时间 (mach host time), 用于按真实帧间隔换算插值系数; 0 表示新会话
+    private var lastFrameHostTime: UInt64 = 0
     // 输入节奏追踪
     private var lastManualEventTime: CFTimeInterval = 0.0
     private var manualInputEnded = true
@@ -68,6 +87,16 @@ class ScrollPoster {
 // MARK: - 滚动数据更新控制
 extension ScrollPoster {
     func update(event: CGEvent, duration: Double, y: Double, x: Double, speed: Double, amplification: Double = 1) -> Self {
+        let gain = speed * amplification
+        return update(event: event, input: ScrollPosterInput(
+            y: y * gain,
+            x: x * gain,
+            notch: (y: abs(y * gain), x: abs(x * gain)),
+            duration: duration,
+            bypassFilter: ScrollMotion.shouldBypassFilter(transition: duration, freeSpinBlend: 0)
+        ))
+    }
+    func update(event: CGEvent, input: ScrollPosterInput) -> Self {
         guard dispatchContext.capture(event: event) else {
             return self
         }
@@ -75,23 +104,8 @@ extension ScrollPoster {
         defer { os_unfair_lock_unlock(&stateLock) }
         // 捕获本次手势的配置快照 (主线程读 Options/ScrollCore, CVDisplayLink 线程只读)
         captureConfigSnapshotLocked()
-        // 更新滚动配置
-        self.duration = duration
-        // 更新滚动数据
-        if y*delta.y > 0 {
-            buffer.y += y * speed * amplification
-        } else {
-            buffer.y = y * speed * amplification
-            current.y = 0.0
-        }
-        if x*delta.x > 0 {
-            buffer.x += x * speed * amplification
-        } else {
-            buffer.x = x * speed * amplification
-            current.x = 0.0
-        }
-        delta = (y: y, x: x)
         let now = CFAbsoluteTimeGetCurrent()
+        applyInputLocked(input, at: now)
         let interval = lastManualEventTime > 0.0 ? now - lastManualEventTime : nil
         let separatedByTime = interval == nil ? true : interval! >= manualSeparationThreshold
         let phase = ScrollPhase.shared.phase
@@ -105,6 +119,39 @@ extension ScrollPoster {
         momentumEndScheduledTime = nil
         trackingEndScheduledTime = nil
         return self
+    }
+    /// 更新滚动配置与缓冲 (调用方须持有 stateLock)
+    private func applyInputLocked(_ input: ScrollPosterInput, at now: CFTimeInterval) {
+        duration = input.duration
+        bypassFilter = input.bypassFilter
+        let timeConstant = ScrollMotion.timeConstant(forTransition: input.duration)
+        // 同向累加, 反向则重新开始
+        if input.y*delta.y > 0 {
+            buffer.y += input.y
+        } else {
+            buffer.y = input.y
+            current.y = 0.0
+            leadLimiterY.reset()
+        }
+        if input.x*delta.x > 0 {
+            buffer.x += input.x
+        } else {
+            buffer.x = input.x
+            current.x = 0.0
+            leadLimiterX.reset()
+        }
+        // 限制领先量: 滚轮减速或停下时, 不再继续释放之前积累的距离
+        if input.y != 0.0 {
+            let inputSpeed = leadLimiterY.register(distance: input.y, at: now, timeConstant: timeConstant)
+            let cap = ScrollLeadLimiter.cap(notch: input.notch.y, distance: input.y, inputSpeed: inputSpeed, timeConstant: timeConstant)
+            buffer.y = ScrollLeadLimiter.limit(buffer: buffer.y, current: current.y, cap: cap)
+        }
+        if input.x != 0.0 {
+            let inputSpeed = leadLimiterX.register(distance: input.x, at: now, timeConstant: timeConstant)
+            let cap = ScrollLeadLimiter.cap(notch: input.notch.x, distance: input.x, inputSpeed: inputSpeed, timeConstant: timeConstant)
+            buffer.x = ScrollLeadLimiter.limit(buffer: buffer.x, current: current.x, cap: cap)
+        }
+        delta = (y: input.y, x: input.x)
     }
     func updateShifting(enable: Bool) {
         os_unfair_lock_lock(&stateLock)
@@ -160,6 +207,25 @@ extension ScrollPoster {
     func diagnosticsSnapshot() -> (postedFrames: UInt64, droppedFramesByGeneration: UInt64, droppedFramesByTTL: UInt64, skippedSyntheticEvents: UInt64, updateSnapshotFailures: UInt64) {
         dispatchContext.diagnosticsSnapshot()
     }
+
+    /// Applies an input to the buffer without capturing the event or touching the scroll phase.
+    func applyInputForTests(_ input: ScrollPosterInput, at time: CFTimeInterval) {
+        os_unfair_lock_lock(&stateLock)
+        applyInputLocked(input, at: time)
+        lastManualEventTime = time
+        os_unfair_lock_unlock(&stateLock)
+    }
+    /// Advances the motion by one frame without posting; returns the frame's output.
+    func advanceForTests(frameInterval: Double, now: CFTimeInterval) -> (y: Double, x: Double) {
+        os_unfair_lock_lock(&stateLock)
+        defer { os_unfair_lock_unlock(&stateLock) }
+        return advanceMotionLocked(frameInterval: frameInterval, now: now)
+    }
+    var motionStateForTests: (current: (y: Double, x: Double), buffer: (y: Double, x: Double), duration: Double, bypassFilter: Bool) {
+        os_unfair_lock_lock(&stateLock)
+        defer { os_unfair_lock_unlock(&stateLock) }
+        return (current, buffer, duration, bypassFilter)
+    }
 #endif
 
     private func resetUnlocked() {
@@ -168,6 +234,9 @@ extension ScrollPoster {
         current = ( y: 0.0, x: 0.0 )
         delta = ( y: 0.0, x: 0.0 )
         buffer = ( y: 0.0, x: 0.0 )
+        leadLimiterY.reset()
+        leadLimiterX.reset()
+        lastFrameHostTime = 0
         // 重置插值器
         filter.reset()
         ScrollPhase.shared.reset()
@@ -195,7 +264,7 @@ extension ScrollPoster {
         let result = CVDisplayLinkCreateWithActiveCGDisplays(&newPoster)
         if result == kCVReturnSuccess, let validPoster = newPoster {
             CVDisplayLinkSetOutputCallback(validPoster, { (displayLink, inNow, inOutputTime, flagsIn, flagsOut, displayLinkContext) -> CVReturn in
-                ScrollPoster.shared.processing()
+                ScrollPoster.shared.processing(outputTime: inOutputTime.pointee)
                 return kCVReturnSuccess
             }, nil)
             poster = validPoster
@@ -396,25 +465,15 @@ private extension ScrollPoster {
     }
 
     // 处理滚动事件
-    func processing() {
+    func processing(outputTime: CVTimeStamp) {
         var pendingStopPhase: Phase?
         os_unfair_lock_lock(&stateLock)
         lastCallbackTime = CFAbsoluteTimeGetCurrent()
-        // 计算插值
-        let frame = (
-            y: Interpolator.lerp(src: current.y, dest: buffer.y, trans: duration),
-            x: Interpolator.lerp(src: current.x, dest: buffer.x, trans: duration)
-        )
-        // 更新滚动位置
-        current = (
-            y: current.y + frame.y,
-            x: current.x + frame.x
-        )
-        // 平滑滚动结果
-        let filledValue = filter.fill(with: frame)
+        let now = CFAbsoluteTimeGetCurrent()
+        // 插值并平滑 (按真实帧间隔)
+        let filledValue = advanceMotionLocked(frameInterval: frameIntervalLocked(outputTime), now: now)
         // 变换滚动结果，将滤波后的插值映射到当前姿态（考虑灵敏度、方向等因素）
         let shiftedValue = shift(with: filledValue)
-        let now = CFAbsoluteTimeGetCurrent()
         // 检测是否已经超过手动输入的持续时间阈值，准备结束手动阶段
         if !manualInputEnded && lastManualEventTime > 0.0 && now - lastManualEventTime > manualContinuationThreshold {
             let endPlan = ScrollPhase.shared.onManualInputEnded()
@@ -478,6 +537,48 @@ private extension ScrollPoster {
             stop(phase)
             return
         }
+    }
+
+    /// 推进一帧: 插值 current -> buffer 并经滤波 (或跳过滤波) 得到本帧输出。调用方须持有 stateLock。
+    func advanceMotionLocked(frameInterval: Double, now: CFTimeInterval) -> (y: Double, x: Double) {
+        // 按真实帧间隔换算插值系数 (以 60Hz 为参考, 不同刷新率下滚动时长一致)
+        var trans = ScrollMotion.transition(duration, frameInterval: frameInterval)
+        // 输入停顿足够久后快速走完剩余的尾巴 (指数逼近末段的缓慢蠕动), 距离不丢失
+        let timeConstant = ScrollMotion.timeConstant(forTransition: duration)
+        let finishingTail = lastManualEventTime > 0.0
+            && now - lastManualEventTime > ScrollLeadLimiter.tailGap(timeConstant: timeConstant)
+        if finishingTail {
+            trans = max(trans, ScrollMotion.transition(ScrollLeadLimiter.tailTransition, frameInterval: frameInterval))
+        }
+        // 计算插值
+        let frame = (
+            y: Interpolator.lerp(src: current.y, dest: buffer.y, trans: trans),
+            x: Interpolator.lerp(src: current.x, dest: buffer.x, trans: trans)
+        )
+        // 更新滚动位置
+        current = (
+            y: current.y + frame.y,
+            x: current.x + frame.x
+        )
+        // 平滑滚动结果; 插值本身已足够直接 (或 free-spin) 时跳过滤波, 去掉其额外延迟
+        if bypassFilter || finishingTail {
+            return filter.passThrough(with: frame, catchUp: trans)
+        }
+        return filter.fill(with: frame, weight: ScrollMotion.transition(ScrollFilter.defaultWeight, frameInterval: frameInterval))
+    }
+
+    /// 本帧与上一帧显示时间的间隔 (秒); 新会话的第一帧使用显示器标称帧间隔。调用方须持有 stateLock。
+    func frameIntervalLocked(_ outputTime: CVTimeStamp) -> Double {
+        let hostTime = outputTime.hostTime
+        defer { lastFrameHostTime = hostTime }
+        if lastFrameHostTime != 0 && hostTime > lastFrameHostTime {
+            return Double(hostTime - lastFrameHostTime) * ScrollEventClock.secondsPerTick
+        }
+        let periodValid = outputTime.flags & CVTimeStampFlags.videoRefreshPeriodValid.rawValue != 0
+        if periodValid && outputTime.videoRefreshPeriod > 0 && outputTime.videoTimeScale > 0 {
+            return Double(outputTime.videoRefreshPeriod) / Double(outputTime.videoTimeScale)
+        }
+        return ScrollMotion.referenceFrameInterval
     }
 
     /// 主线程读取当前 (全局 / 例外应用) 配置存入快照。调用方须持有 stateLock。
