@@ -10,6 +10,11 @@
 //  pointer back to where the hold started. The lock always re-attaches on release,
 //  on cancellation, after a safety timeout and when Mos starts or quits.
 //
+//  The warp has a side effect on macOS 27 (documented by Mac Mouse Fix): it takes effect a
+//  few events late, and the first event back on the anchor then reports the jump as mouse
+//  movement. `MouseGestureWarpDeltaCompensator` removes that false delta for callers that
+//  follow the hand continuously.
+//
 
 import Cocoa
 
@@ -33,6 +38,57 @@ struct MouseGesturePointerDriver {
     )
 }
 
+/// Recovers the physical mouse movement from motion events seen while the pointer lock
+/// falls back to warping. Pure, so it can be tested with plain values.
+///
+/// Pattern: the pointer drifts off the anchor for one or more events, then one event shows
+/// it back on the anchor. On macOS 27 that event's delta is "hand movement + the jump back";
+/// on older systems the warp adds nothing. Both readings are tried, and the one closer to
+/// the previous event's movement wins, because a hand does not change speed by the whole
+/// drift distance between two events.
+struct MouseGestureWarpDeltaCompensator {
+    /// After the warp the pointer sits on the anchor rounded down to whole points.
+    static let anchorTolerance: CGFloat = 1
+
+    private var driftedLocation: CGPoint?
+    private var previousDelta = CGPoint.zero
+
+    mutating func reset() {
+        driftedLocation = nil
+        previousDelta = .zero
+    }
+
+    /// - Parameters:
+    ///   - delta: the event's reported delta.
+    ///   - location: the event's location before the lock rewrites it.
+    mutating func physicalDelta(_ delta: CGPoint, location: CGPoint, anchor: CGPoint) -> CGPoint {
+        let isOnAnchor = abs(location.x - anchor.x) <= Self.anchorTolerance
+            && abs(location.y - anchor.y) <= Self.anchorTolerance
+        guard isOnAnchor else {
+            driftedLocation = location
+            previousDelta = delta
+            return delta
+        }
+        guard let drifted = driftedLocation else {
+            previousDelta = delta
+            return delta
+        }
+        driftedLocation = nil
+
+        let jump = CGPoint(x: anchor.x - drifted.x, y: anchor.y - drifted.y)
+        let withoutJump = CGPoint(x: delta.x - jump.x, y: delta.y - jump.y)
+        let result = Self.distance(withoutJump, previousDelta) < Self.distance(delta, previousDelta)
+            ? withoutJump
+            : delta
+        previousDelta = result
+        return result
+    }
+
+    private static func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        return hypot(a.x - b.x, a.y - b.y)
+    }
+}
+
 final class MouseGesturePointerLock {
     static let shared = MouseGesturePointerLock()
 
@@ -49,6 +105,7 @@ final class MouseGesturePointerLock {
 
     private(set) var anchor: CGPoint?
     private var safetyWorkItem: DispatchWorkItem?
+    private var warpCompensator = MouseGestureWarpDeltaCompensator()
 
     var isLocked: Bool { anchor != nil }
 
@@ -57,6 +114,7 @@ final class MouseGesturePointerLock {
         guard anchor == nil else { return }
         guard let location = driver.currentLocation() else { return }
         anchor = location
+        warpCompensator.reset()
         driver.setAssociated(false)
 
         let workItem = DispatchWorkItem { [weak self] in
@@ -83,6 +141,14 @@ final class MouseGesturePointerLock {
         safetyWorkItem = nil
         anchor = nil
         driver.setAssociated(true)
+    }
+
+    /// The physical mouse movement behind a motion event, with the false delta of the warp
+    /// fallback removed. Call once per motion event, before `constrain` rewrites the
+    /// location. Returns `delta` unchanged while the pointer is not locked.
+    func physicalDelta(_ delta: CGPoint, at location: CGPoint) -> CGPoint {
+        guard let anchor else { return delta }
+        return warpCompensator.physicalDelta(delta, location: location, anchor: anchor)
     }
 
     /// Called for every motion event while locked: hides the movement from apps and

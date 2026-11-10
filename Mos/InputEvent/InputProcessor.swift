@@ -50,11 +50,29 @@ class InputProcessor: ModifierFlagsProviding {
         /// Snapshot at button-down, so editing settings mid-hold cannot mix two configurations.
         let settings: MouseGestureSettings
         var recognizer = MouseGestureRecognizer()
+        /// Set in "follow the hand" mode; the recognizer above is then unused.
+        var interactive: InteractiveGestureSession?
 
         init(settings: MouseGestureSettings) {
             self.settings = settings
         }
     }
+
+    // MARK: - Interactive Gesture State
+    /// The hold that drives the interactive swipe. Only one swipe can run at a time, so a
+    /// second gesture button pressed meanwhile behaves like the discrete mode.
+    private var interactiveGestureKey: TriggerKey?
+    /// Movement received in the motion tap callback and not yet handed to the session.
+    private var pendingInteractiveDelta = CGPoint.zero
+    private var isInteractiveFlushScheduled = false
+    /// Invalidates a scheduled flush that is no longer wanted.
+    private var interactiveFlushToken = 0
+    private var lastInteractiveFlushTime = -TimeInterval.infinity
+    private var interactiveFrameDuration = InteractiveGestureEnvironment.fallbackScreen.frameDuration
+    /// Counts swipes, so a terminal event queued for one swipe can never end a later one.
+    private var interactiveSwipeGeneration = 0
+    private var interactiveWatchdog: DispatchWorkItem?
+    private var interactiveEnvironment = InteractiveGestureEnvironment.system
 
     private struct MosScrollTapReplay {
         let context: MouseTapReplayContext
@@ -75,6 +93,7 @@ class InputProcessor: ModifierFlagsProviding {
             )
         }
         activeBindings.removeAll()
+        cancelInteractiveGesture()
         activeMouseGestures.removeAll()
         MouseGesturePointerLock.shared.unlock()
         activeModifierFlags = 0
@@ -166,13 +185,20 @@ class InputProcessor: ModifierFlagsProviding {
     // MARK: - Mouse Gesture Navigation
 
     private func beginMouseGesture(key: TriggerKey) {
-        // A duplicate down for a held button keeps the running gesture.
-        guard activeMouseGestures[key] == nil else { return }
+        if let existing = activeMouseGestures[key] {
+            // A duplicate down for a held button keeps the running gesture.
+            guard existing.interactive?.phase == .finished else { return }
+            // The watchdog gave up on that hold because its button-up never came: start over.
+            if interactiveGestureKey == key {
+                interactiveGestureKey = nil
+            }
+        }
         let session = ActiveMouseGestureSession(settings: Options.shared.gesture)
         activeMouseGestures[key] = session
         if session.settings.freezePointer {
             MouseGesturePointerLock.shared.lock()
         }
+        beginInteractiveGestureIfEnabled(session, key: key)
         MouseInteractionSessionController.shared.refreshMotionTapState()
     }
 
@@ -185,7 +211,9 @@ class InputProcessor: ModifierFlagsProviding {
         if activeMouseGestures.isEmpty {
             MouseGesturePointerLock.shared.unlock()
         }
-        if session.recognizer.shouldReplayClick {
+        if session.interactive != nil {
+            releaseInteractiveGesture(session, key: key)
+        } else if session.recognizer.shouldReplayClick {
             // A plain click without movement runs the click action (Mission Control by
             // default, like the gesture button in Logi Options+).
             executeMouseGestureAction(named: session.settings.clickAction)
@@ -195,12 +223,16 @@ class InputProcessor: ModifierFlagsProviding {
     }
 
     /// Feeds pointer movement from the motion tap into every held gesture button.
-    func handleMouseGestureMovement(deltaX: CGFloat, deltaY: CGFloat) {
+    /// `location` is the event's pointer location before the pointer lock rewrites it.
+    func handleMouseGestureMovement(deltaX: CGFloat, deltaY: CGFloat, location: CGPoint? = nil) {
         guard !activeMouseGestures.isEmpty else { return }
+        if interactiveGestureKey != nil {
+            accumulateInteractiveMovement(deltaX: deltaX, deltaY: deltaY, location: location)
+        }
         guard deltaX != 0 || deltaY != 0 else { return }
 
         var recognizedAction: String?
-        for session in activeMouseGestures.values {
+        for session in activeMouseGestures.values where session.interactive == nil {
             if let direction = session.recognizer.append(deltaX: deltaX, deltaY: deltaY),
                recognizedAction == nil {
                 recognizedAction = session.settings.actionIdentifier(for: direction)
@@ -230,6 +262,177 @@ class InputProcessor: ModifierFlagsProviding {
             }
         }
     }
+
+    // MARK: - Interactive Gesture ("follow the hand")
+
+    private func beginInteractiveGestureIfEnabled(_ session: ActiveMouseGestureSession, key: TriggerKey) {
+        guard session.settings.mode == .interactive,
+              interactiveGestureKey == nil,
+              DockSwipeSynthesizer.shared.isAvailable else {
+            // Not available (or already driven by another button): the hold stays discrete.
+            return
+        }
+        let environment = interactiveEnvironment
+        let screen = environment.screen()
+        session.interactive = InteractiveGestureSession(
+            configuration: InteractiveGestureSession.Configuration(
+                progressPerPoint: DockSwipeGeometry.progressPerPoint(
+                    screenWidth: screen.width,
+                    spaceCount: screen.spaceCount,
+                    trackingSpeed: session.settings.trackingSpeed
+                ),
+                maximumProgress: DockSwipeGeometry.progressPerSpace(spaceCount: screen.spaceCount),
+                invertHorizontal: session.settings.invertHorizontal
+            ),
+            startTime: environment.now()
+        )
+        interactiveGestureKey = key
+        interactiveFrameDuration = screen.frameDuration
+        pendingInteractiveDelta = .zero
+
+        let watchdog = DispatchWorkItem { [weak self] in
+            self?.interactiveGestureWatchdogFired(key: key)
+        }
+        interactiveWatchdog?.cancel()
+        interactiveWatchdog = watchdog
+        let timeout = session.interactive?.configuration.watchdogTimeout ?? MouseGesturePointerLock.safetyTimeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: watchdog)
+    }
+
+    /// Runs inside the motion tap callback: only adds up the movement. The session sees it
+    /// on the main queue at most once per display frame, because the Dock stutters when
+    /// swipe events arrive faster than it draws, and nothing may be posted from the callback.
+    private func accumulateInteractiveMovement(deltaX: CGFloat, deltaY: CGFloat, location: CGPoint?) {
+        var delta = CGPoint(x: deltaX, y: deltaY)
+        if let location {
+            // The pointer freeze can add a false delta when it has to warp the pointer back.
+            delta = MouseGesturePointerLock.shared.physicalDelta(delta, at: location)
+        }
+        guard delta != .zero else { return }
+        pendingInteractiveDelta.x += delta.x
+        pendingInteractiveDelta.y += delta.y
+        scheduleInteractiveFlush()
+    }
+
+    private func scheduleInteractiveFlush() {
+        guard !isInteractiveFlushScheduled else { return }
+        isInteractiveFlushScheduled = true
+        interactiveFlushToken += 1
+        let token = interactiveFlushToken
+        let environment = interactiveEnvironment
+        // The first movement after a pause goes out on the next main-queue turn; while the
+        // hand keeps moving, flushes are one frame apart.
+        let delay = max(0, lastInteractiveFlushTime + interactiveFrameDuration - environment.now())
+        environment.schedule(delay) { [weak self] in
+            guard let self, self.interactiveFlushToken == token else { return }
+            self.flushInteractiveMovement()
+        }
+    }
+
+    private func flushInteractiveMovement() {
+        assertMainThread()
+        isInteractiveFlushScheduled = false
+        let delta = pendingInteractiveDelta
+        pendingInteractiveDelta = .zero
+        guard delta != .zero,
+              let key = interactiveGestureKey,
+              let session = activeMouseGestures[key] else { return }
+        let now = interactiveEnvironment.now()
+        lastInteractiveFlushTime = now
+        let commands = session.interactive?.move(deltaX: delta.x, deltaY: delta.y, at: now) ?? []
+        perform(commands, for: session)
+    }
+
+    private func releaseInteractiveGesture(_ session: ActiveMouseGestureSession, key: TriggerKey) {
+        var pending = CGPoint.zero
+        if interactiveGestureKey == key {
+            pending = pendingInteractiveDelta
+            pendingInteractiveDelta = .zero
+            interactiveGestureKey = nil
+            interactiveWatchdog?.cancel()
+            interactiveWatchdog = nil
+        }
+        let commands = session.interactive?.release(
+            pendingDeltaX: pending.x,
+            pendingDeltaY: pending.y,
+            at: interactiveEnvironment.now()
+        ) ?? []
+
+        // The button-up arrives inside an event tap callback, so the swipe events wait for
+        // the next main-queue turn, like the actions (which defer themselves).
+        let swipeCommands = commands.filter { $0.isSwipeCommand }
+        if !swipeCommands.isEmpty {
+            let generation = interactiveSwipeGeneration
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.interactiveSwipeGeneration == generation else { return }
+                self.perform(swipeCommands, for: session)
+            }
+        }
+        perform(commands.filter { !$0.isSwipeCommand }, for: session)
+    }
+
+    /// Reverts a running swipe at once. Unlike a release this posts synchronously: the
+    /// callers are the cancel paths (event tap disabled, sleep, quit), where the main queue
+    /// may never run again and a deferred event would leave the desktop between two Spaces.
+    private func cancelInteractiveGesture() {
+        interactiveWatchdog?.cancel()
+        interactiveWatchdog = nil
+        if let key = interactiveGestureKey, let session = activeMouseGestures[key] {
+            let commands = session.interactive?.cancel() ?? []
+            perform(commands.filter { $0.isSwipeCommand }, for: session)
+        }
+        // Also covers a released swipe whose terminal event is still queued.
+        DockSwipeSynthesizer.shared.cancel()
+        interactiveGestureKey = nil
+        pendingInteractiveDelta = .zero
+        isInteractiveFlushScheduled = false
+        interactiveFlushToken += 1
+    }
+
+    private func interactiveGestureWatchdogFired(key: TriggerKey) {
+        guard interactiveGestureKey == key, let session = activeMouseGestures[key] else { return }
+        NSLog("InputProcessor: interactive gesture watchdog, abandoning the hold")
+        let commands = session.interactive?.expire() ?? []
+        perform(commands, for: session)
+    }
+
+    private func perform(_ commands: [InteractiveGestureSession.Command], for session: ActiveMouseGestureSession) {
+        for command in commands {
+            switch command {
+            case .begin(let axis):
+                interactiveSwipeGeneration += 1
+                DockSwipeSynthesizer.shared.begin(axis: axis)
+            case .update(let progress):
+                DockSwipeSynthesizer.shared.update(progress: progress)
+            case .end(let velocity):
+                DockSwipeSynthesizer.shared.end(velocity: velocity)
+            case .cancel:
+                DockSwipeSynthesizer.shared.cancel()
+            case .discrete(let direction):
+                executeMouseGestureAction(named: session.settings.actionIdentifier(for: direction))
+            case .click:
+                executeMouseGestureAction(named: session.settings.clickAction)
+            }
+        }
+    }
+
+    #if DEBUG
+    /// A new environment brings its own clock, so the frame pacing starts over.
+    func setTestingInteractiveGestureEnvironment(_ environment: InteractiveGestureEnvironment) {
+        interactiveEnvironment = environment
+        lastInteractiveFlushTime = -TimeInterval.infinity
+    }
+
+    func clearTestingInteractiveGestureEnvironment() {
+        setTestingInteractiveGestureEnvironment(.system)
+    }
+
+    /// Runs the watchdog now instead of after its timeout.
+    func fireInteractiveGestureWatchdogForTests() {
+        guard let key = interactiveGestureKey else { return }
+        interactiveGestureWatchdogFired(key: key)
+    }
+    #endif
 
     private func releaseActiveBinding(for event: InputEvent) -> Bool {
         let key = TriggerKey(type: event.type, code: event.code)

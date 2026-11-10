@@ -33,6 +33,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "mouseGestureNavigation", "gesture-settings-menu", "gesture-direction-up", "gesture-direction-down",
         "gesture-direction-left", "gesture-direction-right", "gesture-direction-click", "gesture-action-none",
         "gesture-invert-horizontal", "gesture-freeze-pointer", "gesture-settings-footnote",
+        "gesture-mode-discrete", "gesture-mode-interactive", "gesture-mode-interactive-note",
+        "gesture-mode-interactive-unavailable", "gesture-follow-horizontal-value",
     ]
 
     private static let missing = "\u{1}missing"

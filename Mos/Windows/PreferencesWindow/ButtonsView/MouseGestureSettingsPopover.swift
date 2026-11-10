@@ -1,18 +1,68 @@
 //
 //  MouseGestureSettingsPopover.swift
 //  Mos
-//  Gesture Navigation settings: action per direction and click, invert left/right,
+//  Gesture Navigation settings: mode, action per direction and click, invert left/right,
 //  freeze pointer. Changes apply immediately to Options.shared.gesture.
 //
 
 import Cocoa
 
+/// What the mode control and the action rows show for a stored mode. Pure.
+struct MouseGestureModePresentation: Equatable {
+    /// The mode in effect, shown as selected.
+    var selectedMode: MouseGestureMode
+    /// False greys out "Follow the hand".
+    var isInteractiveSelectable: Bool
+    /// False disables the Left and Right rows: the swipe owns sideways movement.
+    var areHorizontalActionsEditable: Bool
+    /// Localization key of the note under the mode control.
+    var noteKey: String
+
+    /// Without the swipe synthesizer Mos runs discrete whatever is stored, so the control
+    /// shows discrete. The stored mode is left alone and applies again once it is available.
+    static func make(storedMode: MouseGestureMode, isInteractiveAvailable: Bool) -> MouseGestureModePresentation {
+        let selected: MouseGestureMode = isInteractiveAvailable ? storedMode : .discrete
+        return MouseGestureModePresentation(
+            selectedMode: selected,
+            isInteractiveSelectable: isInteractiveAvailable,
+            areHorizontalActionsEditable: selected == .discrete,
+            noteKey: isInteractiveAvailable
+                ? "gesture-mode-interactive-note"
+                : "gesture-mode-interactive-unavailable"
+        )
+    }
+}
+
 final class MouseGestureSettingsPopover: NSObject, NSPopoverDelegate {
 
     var onClose: (() -> Void)?
 
+    /// Identifiers for the controls (tests and accessibility tooling).
+    enum Identifier {
+        static let mode = NSUserInterfaceItemIdentifier("gesture-mode")
+        static let modeNote = NSUserInterfaceItemIdentifier("gesture-mode-note")
+        static let invertHorizontal = NSUserInterfaceItemIdentifier("gesture-invert-horizontal")
+
+        static func action(_ direction: String) -> NSUserInterfaceItemIdentifier {
+            return NSUserInterfaceItemIdentifier("gesture-action-\(direction)")
+        }
+    }
+
     private var popover: NSPopover?
     private var showLogiActions = false
+    private let isInteractiveAvailable: () -> Bool
+    /// Controls of the content view built last; they follow the mode.
+    private var actionPopUps: [NSPopUpButton] = []
+    private weak var modeControl: NSSegmentedControl?
+    private weak var modeNote: NSTextField?
+
+    /// Segment order of the mode control.
+    private static let modes: [MouseGestureMode] = [.discrete, .interactive]
+
+    init(isInteractiveAvailable: @escaping () -> Bool = { DockSwipeSynthesizer.shared.isAvailable }) {
+        self.isInteractiveAvailable = isInteractiveAvailable
+        super.init()
+    }
 
     /// Minimum sizes; long translations widen the popups (up to `maximumPopupWidth`) and the popover.
     private static let contentWidth: CGFloat = 330
@@ -33,6 +83,22 @@ final class MouseGestureSettingsPopover: NSObject, NSPopoverDelegate {
             case .right: return "gesture-direction-right"
             case .click: return "gesture-direction-click"
             }
+        }
+
+        /// Stable name for `Identifier.action`.
+        var name: String {
+            switch self {
+            case .up: return "up"
+            case .down: return "down"
+            case .left: return "left"
+            case .right: return "right"
+            case .click: return "click"
+            }
+        }
+
+        /// Sideways rows belong to the swipe in "follow the hand" mode.
+        var isHorizontal: Bool {
+            return self == .left || self == .right
         }
 
         var symbol: String {
@@ -99,6 +165,24 @@ final class MouseGestureSettingsPopover: NSObject, NSPopoverDelegate {
         let title = NSTextField(labelWithString: NSLocalizedString("mouseGestureNavigation", comment: ""))
         title.font = NSFont.boldSystemFont(ofSize: 13)
 
+        let mode = NSSegmentedControl(
+            labels: [
+                NSLocalizedString("gesture-mode-discrete", comment: ""),
+                NSLocalizedString("gesture-mode-interactive", comment: ""),
+            ],
+            trackingMode: .selectOne,
+            target: self,
+            action: #selector(modeChanged(_:))
+        )
+        mode.identifier = Identifier.mode
+        // Spans the popover; each segment as wide as its label needs.
+        mode.segmentDistribution = .fillProportionally
+
+        let modeNote = NSTextField(wrappingLabelWithString: "")
+        modeNote.identifier = Identifier.modeNote
+        modeNote.font = NSFont.systemFont(ofSize: 11)
+        modeNote.textColor = NSColor.secondaryLabelColor
+
         var labels: [NSTextField] = []
         var popups: [NSPopUpButton] = []
         let rows: [[NSView]] = Slot.allCases.map { slot in
@@ -124,6 +208,7 @@ final class MouseGestureSettingsPopover: NSObject, NSPopoverDelegate {
             target: self,
             action: #selector(invertToggled(_:))
         )
+        invert.identifier = Identifier.invertHorizontal
         invert.state = Options.shared.gesture.invertHorizontal ? .on : .off
 
         let freeze = NSButton(
@@ -137,29 +222,40 @@ final class MouseGestureSettingsPopover: NSObject, NSPopoverDelegate {
         footnote.font = NSFont.systemFont(ofSize: 11)
         footnote.textColor = NSColor.tertiaryLabelColor
 
-        let stack = NSStackView(views: [title, grid, separator, invert, freeze, footnote])
+        let stack = NSStackView(views: [title, mode, modeNote, grid, separator, invert, freeze, footnote])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
-        stack.setCustomSpacing(14, after: title)
+        stack.setCustomSpacing(12, after: title)
+        stack.setCustomSpacing(6, after: mode)
+        stack.setCustomSpacing(14, after: modeNote)
         stack.setCustomSpacing(12, after: grid)
         stack.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(stack)
 
-        // Popups fit the actions shown now (long translated names such as "Move Space Left"),
-        // within limits; the popover grows with them and with long checkbox titles.
+        // Popups fit the actions shown now (long translated names such as "Move Space Left")
+        // and the value the Left / Right rows show in follow mode, within limits; the popover
+        // grows with them, with long checkbox titles and with the mode control.
         let labelColumnWidth = ceil(labels.map { $0.fittingSize.width }.max() ?? 0)
-        let widestPopup = popups.map { $0.cell?.cellSize.width ?? $0.fittingSize.width }.max() ?? 0
-        let popupWidth = min(Self.maximumPopupWidth, max(Self.popupWidth, ceil(widestPopup)))
-        for popup in popups {
-            popup.widthAnchor.constraint(equalToConstant: popupWidth).isActive = true
-        }
+        let widestPopup = max(
+            popups.map { Self.fittingWidth(of: $0) }.max() ?? 0,
+            popups.first.map { Self.fittingWidth(of: $0, title: Self.followHorizontalValue) } ?? 0
+        )
+        let minimumPopupWidth = min(Self.maximumPopupWidth, max(Self.popupWidth, ceil(widestPopup)))
         let widestCheckbox = ceil([invert, freeze].map { $0.fittingSize.width }.max() ?? 0)
         let contentWidth = max(
             Self.contentWidth,
-            2 * Self.padding + labelColumnWidth + Self.columnSpacing + popupWidth,
-            2 * Self.padding + widestCheckbox
+            2 * Self.padding + labelColumnWidth + Self.columnSpacing + minimumPopupWidth,
+            2 * Self.padding + widestCheckbox,
+            2 * Self.padding + ceil(mode.fittingSize.width)
         )
+        // The popups take the room the labels leave, so every row ends at the right edge,
+        // in line with the mode control and the separator.
+        let popupWidth = contentWidth - 2 * Self.padding - labelColumnWidth - Self.columnSpacing
+        grid.column(at: 0).width = labelColumnWidth
+        for popup in popups {
+            popup.widthAnchor.constraint(equalToConstant: popupWidth).isActive = true
+        }
 
         let padding = Self.padding
         NSLayoutConstraint.activate([
@@ -170,7 +266,14 @@ final class MouseGestureSettingsPopover: NSObject, NSPopoverDelegate {
             stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -padding),
             separator.widthAnchor.constraint(equalTo: stack.widthAnchor),
             footnote.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            mode.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            modeNote.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
+
+        actionPopUps = popups
+        modeControl = mode
+        self.modeNote = modeNote
+        applyModePresentation()
 
         let vc = NSViewController()
         vc.view = container
@@ -182,6 +285,7 @@ final class MouseGestureSettingsPopover: NSObject, NSPopoverDelegate {
     private func makeActionPopUp(for slot: Slot) -> NSPopUpButton {
         let popup = NSPopUpButton(frame: .zero, pullsDown: true)
         popup.tag = slot.rawValue
+        popup.identifier = Identifier.action(slot.name)
         popup.translatesAutoresizingMaskIntoConstraints = false
 
         let menu = NSMenu()
@@ -249,6 +353,26 @@ final class MouseGestureSettingsPopover: NSObject, NSPopoverDelegate {
         return categories.filter { !$0.shortcuts.isEmpty }
     }
 
+    /// Shown in the Left / Right rows while the swipe owns sideways movement.
+    private static var followHorizontalValue: String {
+        return NSLocalizedString("gesture-follow-horizontal-value", comment: "")
+    }
+
+    /// Width a popup needs for its current title, or for `title` (without an icon).
+    private static func fittingWidth(of popup: NSPopUpButton, title: String? = nil) -> CGFloat {
+        guard let title, let titleItem = popup.menu?.items.first else {
+            return popup.cell?.cellSize.width ?? popup.fittingSize.width
+        }
+        let current = (title: titleItem.title, image: titleItem.image)
+        titleItem.title = title
+        titleItem.image = nil
+        defer {
+            titleItem.title = current.title
+            titleItem.image = current.image
+        }
+        return popup.cell?.cellSize.width ?? popup.fittingSize.width
+    }
+
     private func updateTitle(of popup: NSPopUpButton, identifier: String) {
         guard let titleItem = popup.menu?.items.first else { return }
         if let shortcut = SystemShortcut.getShortcut(named: identifier) {
@@ -267,10 +391,53 @@ final class MouseGestureSettingsPopover: NSObject, NSPopoverDelegate {
         slot.store(identifier, in: &settings)
         Options.shared.gesture = settings
 
-        let popups = popover?.contentViewController?.view.descendantPopUps ?? []
-        if let popup = popups.first(where: { $0.tag == slot.rawValue }) {
+        if let popup = actionPopUps.first(where: { $0.tag == slot.rawValue }) {
             updateTitle(of: popup, identifier: identifier)
         }
+    }
+
+    // MARK: - Mode
+
+    private var modePresentation: MouseGestureModePresentation {
+        return MouseGestureModePresentation.make(
+            storedMode: Options.shared.gesture.mode,
+            isInteractiveAvailable: isInteractiveAvailable()
+        )
+    }
+
+    /// Brings the mode control, its note and the Left / Right rows in line with the mode.
+    private func applyModePresentation() {
+        let presentation = modePresentation
+        if let modeControl, let interactiveSegment = Self.modes.firstIndex(of: .interactive) {
+            modeControl.selectedSegment = Self.modes.firstIndex(of: presentation.selectedMode) ?? 0
+            modeControl.setEnabled(presentation.isInteractiveSelectable, forSegment: interactiveSegment)
+        }
+        modeNote?.stringValue = NSLocalizedString(presentation.noteKey, comment: "")
+
+        let settings = Options.shared.gesture
+        for popup in actionPopUps {
+            guard let slot = Slot(rawValue: popup.tag), slot.isHorizontal else { continue }
+            popup.isEnabled = presentation.areHorizontalActionsEditable
+            if presentation.areHorizontalActionsEditable {
+                updateTitle(of: popup, identifier: slot.value(in: settings))
+            } else if let titleItem = popup.menu?.items.first {
+                // The configured action is kept for the discrete mode; it just does not apply now.
+                titleItem.title = Self.followHorizontalValue
+                titleItem.image = nil
+            }
+        }
+    }
+
+    @objc private func modeChanged(_ sender: NSSegmentedControl) {
+        guard Self.modes.indices.contains(sender.selectedSegment) else { return }
+        let mode = Self.modes[sender.selectedSegment]
+        // An unavailable mode cannot be picked, even if the segment were reached another way.
+        if mode == .interactive && !isInteractiveAvailable() {
+            applyModePresentation()
+            return
+        }
+        Options.shared.gesture.mode = mode
+        applyModePresentation()
     }
 
     @objc private func invertToggled(_ sender: NSButton) {
@@ -286,14 +453,5 @@ final class MouseGestureSettingsPopover: NSObject, NSPopoverDelegate {
             return NSImage(systemSymbolName: name, accessibilityDescription: nil)
         }
         return nil
-    }
-}
-
-private extension NSView {
-    var descendantPopUps: [NSPopUpButton] {
-        subviews.flatMap { view -> [NSPopUpButton] in
-            if let popup = view as? NSPopUpButton { return [popup] }
-            return view.descendantPopUps
-        }
     }
 }
