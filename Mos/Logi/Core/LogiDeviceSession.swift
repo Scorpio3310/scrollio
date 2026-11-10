@@ -424,6 +424,10 @@ class LogiDeviceSession {
         let desired: Set<UInt16>
         let toDivert: Set<UInt16>
         let toUndivert: Set<UInt16>
+        /// 录制开始时重发 divert=ON 的 CID = desired 全集. lastApplied 只是 Mos 的记账: 设备
+        /// 可能已静默丢掉 divert (固件休眠唤醒 / Logi Options+ 清 BLE divert), 只发 toDivert
+        /// 会跳过这些键 (MX Master 4 模式切换键 0x00C4 录不到). SetControlReporting 幂等, 重发安全.
+        var toAssert: Set<UInt16> { desired }
     }
 
     private func primeFromRegistry() {
@@ -1242,7 +1246,12 @@ class LogiDeviceSession {
             }
 
             self.controlInfoRetryCounts.removeValue(forKey: index)
-            LogiDebugPanel.log("[\(self.deviceInfo.name)] GetControlInfo[\(index)] timed out, skipping")
+            // 跳过 = 该控件不会进入 discoveredControls, 永远无法 divert / 录制. 以 warning 记录.
+            LogiDebugPanel.log(
+                device: self.deviceInfo.name,
+                type: .warning,
+                message: "GetControlInfo[\(index)] timed out, skipping: this control cannot be diverted or recorded until the device reconnects or features are re-discovered"
+            )
             self.advanceControlInfoQuery()
         }
     }
@@ -2941,6 +2950,11 @@ class LogiDeviceSession {
         }
     }
 
+    /// GetControlInfo 响应的 CID 已记录过 (迟到的重复响应). CID 0 是空槽位, 不按重复处理.
+    static func isDuplicateControlInfo(cid: UInt16, known: [UInt16]) -> Bool {
+        return cid != 0 && known.contains(cid)
+    }
+
     private static func shouldRetryControlInfoTimeout(
         connectionMode: ConnectionMode,
         retryCount: Int
@@ -3637,6 +3651,17 @@ class LogiDeviceSession {
         // Solaar: bit 4 = reprogrammable (0x10), bit 5 = divertable (0x20)
         let isDivertable = (flags & 0x20) != 0
 
+        // 超时重试后原请求的迟到响应会与重试响应各到一次: 第二个不是"下一个索引"的答案,
+        // 忽略且不推进, 否则同一控件被记两次且查询索引错位.
+        if Self.isDuplicateControlInfo(cid: cid, known: discoveredControls.map { $0.cid }) {
+            LogiDebugPanel.log(
+                device: deviceInfo.name,
+                type: .warning,
+                message: "GetControlInfo duplicate response for CID \(String(format: "0x%04X", cid)) ignored (late reply after a retry)"
+            )
+            return
+        }
+
         discoveredControls.append(ControlInfo(cid: cid, taskId: taskId, flags: flags, isDivertable: isDivertable))
         LogiDebugPanel.log("[\(deviceInfo.name)] Control[\(reprogQueryIndex)]: CID=\(String(format: "0x%04X", cid)) flags=\(String(format: "0x%04X", flags)) divertable=\(isDivertable)")
 
@@ -3970,7 +3995,7 @@ class LogiDeviceSession {
         )
         #endif
         releaseActiveButtonState(for: plan.toUndivert, reason: "recording uses native mouse events")
-        for cid in plan.toDivert.sorted() {
+        for cid in plan.toAssert.sorted() {
             setControlReporting(featureIndex: idx, cid: cid, divert: true)
         }
         for cid in plan.toUndivert.sorted() {
@@ -3980,7 +4005,7 @@ class LogiDeviceSession {
         // applyUsage diff (toUndivert = lastApplied - targetCIDs) can correctly
         // compute toUndivert for recording-only HID++ CIDs after recording ends.
         self.lastApplied = plan.desired
-        LogiDebugPanel.log("[\(deviceInfo.name)] Temporarily diverted \(plan.desired.count)/\(divertable.count) controls (recording mode)")
+        LogiDebugPanel.log("[\(deviceInfo.name)] Temporarily diverted \(plan.desired.count)/\(divertable.count) controls (recording mode; re-asserted \(plan.toAssert.subtracting(plan.toDivert).count) already-applied)")
     }
 
     /// 录制结束: 恢复到只 divert 有绑定的状态
