@@ -57,10 +57,12 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
     private var popover: NSPopover?
     private var controls: Controls?
 
+    /// Minimum widths; long translations widen the popover and the value column.
     private static let contentWidth: CGFloat = 340
     private static let padding: CGFloat = 16
     private static let columnSpacing: CGFloat = 10
     private static let valueColumnWidth: CGFloat = 48
+    private static let minimumSliderWidth: CGFloat = 120
     private static let customPresetTag = -1
 
     /// Identifiers for the controls (tests and accessibility tooling).
@@ -226,7 +228,8 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
         grid.column(at: 0).xPlacement = .trailing
         grid.column(at: 1).xPlacement = .fill
         grid.column(at: 2).xPlacement = .trailing
-        grid.column(at: 2).width = Self.valueColumnWidth
+        let valueColumnWidth = Self.fittedValueColumnWidth(font: smoothness.valueLabel.font)
+        grid.column(at: 2).width = valueColumnWidth
         // Popup, description and checkbox span the slider and value columns; separators span all.
         for row in [0, 1, 3] {
             grid.mergeCells(inHorizontalRange: NSRange(location: 1, length: 2), verticalRange: NSRange(location: row, length: 1))
@@ -257,9 +260,20 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
 
         // Fixed widths keep wrapping labels deterministic. The description reserves the height
         // of its longest text so the popover does not jump when switching presets.
-        let innerWidth = Self.contentWidth - 2 * Self.padding
+        // Long translations (preset names, the free-spin checkbox) widen the popover instead
+        // of being cut off.
         let labelColumnWidth = ceil([presetLabel, smoothness.label, speed.label, acceleration.label]
             .map { $0.fittingSize.width }.max() ?? 0)
+        let controlColumnWidth = ceil(max(
+            presetPopUp.fittingSize.width,
+            freeSpinCheckbox.fittingSize.width,
+            Self.minimumSliderWidth + Self.columnSpacing + valueColumnWidth
+        ))
+        let contentWidth = max(
+            Self.contentWidth,
+            2 * Self.padding + labelColumnWidth + Self.columnSpacing + controlColumnWidth
+        )
+        let innerWidth = contentWidth - 2 * Self.padding
         let descriptionWidth = innerWidth - labelColumnWidth - Self.columnSpacing
         presetDescription.preferredMaxLayoutWidth = descriptionWidth
         footnote.preferredMaxLayoutWidth = innerWidth
@@ -271,7 +285,7 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
 
         let padding = Self.padding
         NSLayoutConstraint.activate([
-            container.widthAnchor.constraint(equalToConstant: Self.contentWidth),
+            container.widthAnchor.constraint(equalToConstant: contentWidth),
             stack.topAnchor.constraint(equalTo: container.topAnchor, constant: padding),
             stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: padding),
             stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -padding),
@@ -365,6 +379,23 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
     /// Every text the preset description can show.
     private static var descriptionTexts: [String] {
         ScrollPreset.allCases.map { $0.localizedDescription } + [customDescription, smoothOffDescription]
+    }
+
+    /// Wide enough for every value text (e.g. a long "Off" or "100 %"), at least `valueColumnWidth`.
+    private static func fittedValueColumnWidth(font: NSFont?) -> CGFloat {
+        let texts = [
+            ScrollTuningControlValues.smoothnessText(ScrollTuningSettings.freeSpinSmoothnessRange.upperBound),
+            ScrollTuningControlValues.speedText(ScrollTuningSettings.freeSpinSpeedRange.upperBound),
+            ScrollTuningControlValues.accelerationText(0),
+            ScrollTuningControlValues.accelerationText(ScrollTuningSettings.accelerationRange.upperBound),
+        ]
+        let probe = NSTextField(labelWithString: "")
+        probe.font = font
+        let widest = texts.map { text -> CGFloat in
+            probe.stringValue = text
+            return probe.fittingSize.width
+        }.max() ?? 0
+        return max(valueColumnWidth, ceil(widest))
     }
 
     // MARK: - Sync

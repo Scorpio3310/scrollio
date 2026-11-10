@@ -14,9 +14,12 @@ final class MouseGestureSettingsPopover: NSObject, NSPopoverDelegate {
     private var popover: NSPopover?
     private var showLogiActions = false
 
+    /// Minimum sizes; long translations widen the popups (up to `maximumPopupWidth`) and the popover.
     private static let contentWidth: CGFloat = 330
     private static let padding: CGFloat = 16
+    private static let columnSpacing: CGFloat = 10
     private static let popupWidth: CGFloat = 210
+    private static let maximumPopupWidth: CGFloat = 300
 
     /// Which setting a popup edits.
     private enum Slot: Int, CaseIterable {
@@ -96,15 +99,20 @@ final class MouseGestureSettingsPopover: NSObject, NSPopoverDelegate {
         let title = NSTextField(labelWithString: NSLocalizedString("mouseGestureNavigation", comment: ""))
         title.font = NSFont.boldSystemFont(ofSize: 13)
 
+        var labels: [NSTextField] = []
+        var popups: [NSPopUpButton] = []
         let rows: [[NSView]] = Slot.allCases.map { slot in
             let label = NSTextField(labelWithString: "\(slot.symbol)  " + NSLocalizedString(slot.labelKey, comment: ""))
             label.alignment = .right
             label.textColor = NSColor.secondaryLabelColor
-            return [label, makeActionPopUp(for: slot)]
+            let popup = makeActionPopUp(for: slot)
+            labels.append(label)
+            popups.append(popup)
+            return [label, popup]
         }
         let grid = NSGridView(views: rows)
         grid.rowSpacing = 8
-        grid.columnSpacing = 10
+        grid.columnSpacing = Self.columnSpacing
         grid.column(at: 0).xPlacement = .trailing
         grid.rowAlignment = .firstBaseline
 
@@ -138,9 +146,24 @@ final class MouseGestureSettingsPopover: NSObject, NSPopoverDelegate {
         stack.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(stack)
 
+        // Popups fit the actions shown now (long translated names such as "Move Space Left"),
+        // within limits; the popover grows with them and with long checkbox titles.
+        let labelColumnWidth = ceil(labels.map { $0.fittingSize.width }.max() ?? 0)
+        let widestPopup = popups.map { $0.cell?.cellSize.width ?? $0.fittingSize.width }.max() ?? 0
+        let popupWidth = min(Self.maximumPopupWidth, max(Self.popupWidth, ceil(widestPopup)))
+        for popup in popups {
+            popup.widthAnchor.constraint(equalToConstant: popupWidth).isActive = true
+        }
+        let widestCheckbox = ceil([invert, freeze].map { $0.fittingSize.width }.max() ?? 0)
+        let contentWidth = max(
+            Self.contentWidth,
+            2 * Self.padding + labelColumnWidth + Self.columnSpacing + popupWidth,
+            2 * Self.padding + widestCheckbox
+        )
+
         let padding = Self.padding
         NSLayoutConstraint.activate([
-            container.widthAnchor.constraint(equalToConstant: Self.contentWidth),
+            container.widthAnchor.constraint(equalToConstant: contentWidth),
             stack.topAnchor.constraint(equalTo: container.topAnchor, constant: padding),
             stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: padding),
             stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -padding),
@@ -160,7 +183,6 @@ final class MouseGestureSettingsPopover: NSObject, NSPopoverDelegate {
         let popup = NSPopUpButton(frame: .zero, pullsDown: true)
         popup.tag = slot.rawValue
         popup.translatesAutoresizingMaskIntoConstraints = false
-        popup.widthAnchor.constraint(equalToConstant: Self.popupWidth).isActive = true
 
         let menu = NSMenu()
         menu.autoenablesItems = false
