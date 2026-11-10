@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0D5E7AB00000000000000003 /* MosTests/MousePreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D5E7AB00000000000000002 /* MosTests/MousePreferencesTests.swift */; };
+		1A5E00000000000000000502 /* MosTests/MouseGestureInteractiveModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5E00000000000000000501 /* MosTests/MouseGestureInteractiveModeTests.swift */; };
 		1A5E00000000000000000302 /* MosTests/InteractiveGestureSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5E00000000000000000301 /* MosTests/InteractiveGestureSessionTests.swift */; };
 		1A5E00000000000000000402 /* MosTests/DockSwipeSynthesizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5E00000000000000000401 /* MosTests/DockSwipeSynthesizerTests.swift */; };
 		1A5E00000000000000000102 /* MosTests/ScrollingResetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5E00000000000000000101 /* MosTests/ScrollingResetTests.swift */; };
@@ -87,6 +88,7 @@
 
 /* Begin PBXFileReference section */
 		0D5E7AB00000000000000002 /* MosTests/MousePreferencesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/MousePreferencesTests.swift; sourceTree = SOURCE_ROOT; };
+		1A5E00000000000000000501 /* MosTests/MouseGestureInteractiveModeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/MouseGestureInteractiveModeTests.swift; sourceTree = SOURCE_ROOT; };
 		1A5E00000000000000000301 /* MosTests/InteractiveGestureSessionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/InteractiveGestureSessionTests.swift; sourceTree = SOURCE_ROOT; };
 		1A5E00000000000000000401 /* MosTests/DockSwipeSynthesizerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/DockSwipeSynthesizerTests.swift; sourceTree = SOURCE_ROOT; };
 		1A5E00000000000000000101 /* MosTests/ScrollingResetTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollingResetTests.swift; sourceTree = SOURCE_ROOT; };
@@ -201,6 +203,7 @@
 				AA1011FA00000000000000B1 /* MosTests/ScrollTargetApplicationRulesTests.swift */,
 				A1B2C3D4E5F6A7B8C9D0E1F3 /* MosTests/ButtonBindingTests.swift */,
 				0D5E7AB00000000000000002 /* MosTests/MousePreferencesTests.swift */,
+				1A5E00000000000000000501 /* MosTests/MouseGestureInteractiveModeTests.swift */,
 				1A5E00000000000000000301 /* MosTests/InteractiveGestureSessionTests.swift */,
 				1A5E00000000000000000401 /* MosTests/DockSwipeSynthesizerTests.swift */,
 				1A5E00000000000000000101 /* MosTests/ScrollingResetTests.swift */,
@@ -433,6 +436,7 @@
 				FECC8D1CC04A0A99B1E1A8EB /* MosTests/InterpolatorTests.swift in Sources */,
 				A1B2C3D4E5F6A7B8C9D0E1F2 /* MosTests/ButtonBindingTests.swift in Sources */,
 				0D5E7AB00000000000000003 /* MosTests/MousePreferencesTests.swift in Sources */,
+				1A5E00000000000000000502 /* MosTests/MouseGestureInteractiveModeTests.swift in Sources */,
 				1A5E00000000000000000302 /* MosTests/InteractiveGestureSessionTests.swift in Sources */,
 				1A5E00000000000000000402 /* MosTests/DockSwipeSynthesizerTests.swift in Sources */,
 				1A5E00000000000000000102 /* MosTests/ScrollingResetTests.swift in Sources */,
