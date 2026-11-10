@@ -22,7 +22,8 @@ enum PhysicalMouseTarget: Equatable {
 final class MouseInteractionSessionController {
     static let shared = MouseInteractionSessionController()
 
-    private static let motionEventMask: CGEventMask =
+    /// Mouse movement only. Mos's own dock swipe events (types 29 and 30) never reach this tap.
+    static let motionEventMask: CGEventMask =
         (CGEventMask(1 << CGEventType.mouseMoved.rawValue)) |
         (CGEventMask(1 << CGEventType.leftMouseDragged.rawValue)) |
         (CGEventMask(1 << CGEventType.rightMouseDragged.rawValue)) |
