@@ -327,7 +327,7 @@ struct DockSwipeEventFactory {
         }
 
         guard let event = Self.makeMarkedEvent(type: DockSwipeEventEncoding.dockControlEventType) else { return nil }
-        // The CGEvent keeps its own reference to the IOHIDEvent.
+        // SkyLight copies the IOHIDEvent into the CGEvent, so ours is released on return.
         bridge.attach(event, swipe)
         return event
     }
