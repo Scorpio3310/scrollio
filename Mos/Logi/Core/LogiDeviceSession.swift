@@ -329,6 +329,8 @@ class LogiDeviceSession {
     private static let hidppShortReportId: UInt8 = 0x10
     private static let hidppLongReportId: UInt8 = 0x11
     private static let hidppErrorFeatureIdx: UInt8 = 0xFF
+    /// Mos 请求报文低 4 位的 software id. 设备响应原样回带; 设备主动事件为 0.
+    static let hidppSoftwareId: UInt8 = 0x01
 
     // HID++ 1.0 sub-IDs (receiver register access)
     private static let hidpp10GetRegister: UInt8 = 0x81
@@ -1074,37 +1076,39 @@ class LogiDeviceSession {
 
     // MARK: - HID++ Send
 
+    /// 构造 HID++ 2.0 long request: [0x11, devIdx, featureIdx, fn<<4 | swid, params(≤16)...].
+    /// functionId 是 0...15 的函数号 (不是已左移的 0x10/0x20): 传入已左移的值会在 UInt8 里溢出
+    /// 成 fn0, 设备执行错误的函数 (历史 bug: HiRes/ScrollInvert/ThumbWheel/PointerSpeed 动作).
+    /// 越界值返回 nil, 调用方不发送.
+    static func hidppLongRequest(deviceIndex: UInt8, featureIndex: UInt8, functionId: UInt8, params: [UInt8]) -> [UInt8]? {
+        guard functionId <= 0x0F else { return nil }
+        var report = [UInt8](repeating: 0, count: 20)
+        report[0] = hidppLongReportId
+        report[1] = deviceIndex
+        report[2] = featureIndex
+        report[3] = (functionId << 4) | hidppSoftwareId
+        for (i, p) in params.prefix(16).enumerated() { report[4 + i] = p }
+        return report
+    }
+
     /// 发送 HID++ 请求
     /// BLE 直连: long report (20 bytes) + report ID in payload (hidapi 兼容)
-    /// Receiver: TODO - 可能需要不同格式, 待 Bolt/Unifying 测试后实现
+    /// Receiver: 同样的 long report, report[1] = slot
+    /// functionId: 函数号 0...15 (见 hidppLongRequest)
     private func sendRequest(featureIndex: UInt8, functionId: UInt8, params: [UInt8] = []) {
-        var report: [UInt8]
+        let report: [UInt8]
         let result: IOReturn
 
         switch connectionMode {
-        case .bleDirect:
-            // BLE: long report, hidapi 兼容 (report ID in payload)
-            report = [UInt8](repeating: 0, count: 20)
-            report[0] = Self.hidppLongReportId
-            report[1] = deviceIndex
-            report[2] = featureIndex
-            report[3] = (functionId << 4) | 0x01
-            for (i, p) in params.prefix(16).enumerated() { report[4 + i] = p }
-            result = IOHIDDeviceSetReport(
-                hidDevice, kIOHIDReportTypeOutput,
-                CFIndex(report[0]), report, report.count
-            )
-
-        case .receiver:
-            // TODO: Unifying/Bolt receiver 传输
-            // 可能需要: short report (7 bytes), 不同的 payload 格式
-            // 需要先实现 HID++ 1.0 槽位枚举
-            report = [UInt8](repeating: 0, count: 20)
-            report[0] = Self.hidppLongReportId
-            report[1] = deviceIndex
-            report[2] = featureIndex
-            report[3] = (functionId << 4) | 0x01
-            for (i, p) in params.prefix(16).enumerated() { report[4 + i] = p }
+        case .bleDirect, .receiver:
+            guard let built = Self.hidppLongRequest(
+                deviceIndex: deviceIndex, featureIndex: featureIndex, functionId: functionId, params: params
+            ) else {
+                assertionFailure("HID++ functionId must be 0...15, got \(functionId)")
+                LogiDebugPanel.log(device: deviceInfo.name, type: .error, message: "Not sent: invalid HID++ function id \(functionId) for feature index \(featureIndex)")
+                return
+            }
+            report = built
             result = IOHIDDeviceSetReport(
                 hidDevice, kIOHIDReportTypeOutput,
                 CFIndex(report[0]), report, report.count
@@ -2436,8 +2440,8 @@ class LogiDeviceSession {
     private func executeHiResScrollToggle() {
         if let idx = featureIndex[Self.featureHiResWheel] {
             pendingHiResScrollToggle = true
-            // Get current mode (function 0x10)
-            sendRequest(featureIndex: idx, functionId: 0x10, params: [])
+            // getWheelMode (fn1)
+            sendRequest(featureIndex: idx, functionId: 1, params: [])
         } else {
             discoverFeature(featureId: Self.featureHiResWheel) { [weak self] idx in
                 guard let self = self, let idx = idx else {
@@ -2446,7 +2450,7 @@ class LogiDeviceSession {
                 }
                 self.featureIndex[Self.featureHiResWheel] = idx
                 self.pendingHiResScrollToggle = true
-                self.sendRequest(featureIndex: idx, functionId: 0x10, params: [])
+                self.sendRequest(featureIndex: idx, functionId: 1, params: [])
             }
         }
     }
@@ -2455,7 +2459,7 @@ class LogiDeviceSession {
     private func executeScrollInvertToggle() {
         if let idx = featureIndex[Self.featureHiResWheel] {
             pendingScrollInvertToggle = true
-            sendRequest(featureIndex: idx, functionId: 0x10, params: [])
+            sendRequest(featureIndex: idx, functionId: 1, params: [])  // getWheelMode
         } else {
             discoverFeature(featureId: Self.featureHiResWheel) { [weak self] idx in
                 guard let self = self, let idx = idx else {
@@ -2464,7 +2468,7 @@ class LogiDeviceSession {
                 }
                 self.featureIndex[Self.featureHiResWheel] = idx
                 self.pendingScrollInvertToggle = true
-                self.sendRequest(featureIndex: idx, functionId: 0x10, params: [])
+                self.sendRequest(featureIndex: idx, functionId: 1, params: [])
             }
         }
     }
@@ -2473,7 +2477,7 @@ class LogiDeviceSession {
     private func executeThumbWheelToggle() {
         if let idx = featureIndex[Self.featureThumbWheel] {
             pendingThumbWheelToggle = true
-            sendRequest(featureIndex: idx, functionId: 0x10, params: [])
+            sendRequest(featureIndex: idx, functionId: 1, params: [])  // getThumbwheelStatus
         } else {
             discoverFeature(featureId: Self.featureThumbWheel) { [weak self] idx in
                 guard let self = self, let idx = idx else {
@@ -2482,7 +2486,7 @@ class LogiDeviceSession {
                 }
                 self.featureIndex[Self.featureThumbWheel] = idx
                 self.pendingThumbWheelToggle = true
-                self.sendRequest(featureIndex: idx, functionId: 0x10, params: [])
+                self.sendRequest(featureIndex: idx, functionId: 1, params: [])
             }
         }
     }
@@ -2491,7 +2495,7 @@ class LogiDeviceSession {
     private func executePointerSpeedCycle() {
         if let idx = featureIndex[Self.featurePointerSpeed] {
             pendingPointerSpeedCycle = true
-            sendRequest(featureIndex: idx, functionId: 0x00, params: [])
+            sendRequest(featureIndex: idx, functionId: 0, params: [])  // getPointerSpeed
         } else {
             discoverFeature(featureId: Self.featurePointerSpeed) { [weak self] idx in
                 guard let self = self, let idx = idx else {
@@ -2500,7 +2504,7 @@ class LogiDeviceSession {
                 }
                 self.featureIndex[Self.featurePointerSpeed] = idx
                 self.pendingPointerSpeedCycle = true
-                self.sendRequest(featureIndex: idx, functionId: 0x00, params: [])
+                self.sendRequest(featureIndex: idx, functionId: 0, params: [])
             }
         }
     }
@@ -3197,6 +3201,8 @@ class LogiDeviceSession {
         let hex = report.prefix(min(report.count, 20)).map { String(format: "%02X", $0) }.joined(separator: " ")
         let featureIdx = report[2]
         let functionId = report[3] >> 4
+        // 响应回带 Mos 的 software id; 设备主动事件 (如 0x2121 ratchetSwitch) swid=0
+        let isOwnResponse = (report[3] & 0x0F) == Self.hidppSoftwareId
         let rxDecoded = decodeReport(report)
         let isError = featureIdx == Self.hidppErrorFeatureIdx ||
             (connectionMode == .receiver && featureIdx == Self.hidpp10ErrorMsg)
@@ -3535,18 +3541,18 @@ class LogiDeviceSession {
 
         // HiResWheel response (pending HiRes toggle or ScrollInvert toggle)
         if let hiresIdx = featureIndex[Self.featureHiResWheel], featureIdx == hiresIdx {
-            if pendingHiResScrollToggle && functionId == 1 {  // response to function 0x10 (0x10 >> 4 = 1)
+            if pendingHiResScrollToggle && functionId == 1 && isOwnResponse {  // getWheelMode (fn1) 响应
                 let currentMode = report[4]
                 let newMode = currentMode ^ 0x02  // Toggle bit 1 (resolution)
-                sendRequest(featureIndex: hiresIdx, functionId: 0x20, params: [newMode])
+                sendRequest(featureIndex: hiresIdx, functionId: 2, params: [newMode])  // setWheelMode (fn2)
                 pendingHiResScrollToggle = false
                 LogiDebugPanel.log("[\(deviceInfo.name)] HiResScroll: \((newMode & 0x02) != 0 ? "ON" : "OFF")")
                 return
             }
-            if pendingScrollInvertToggle && functionId == 1 {  // response to function 0x10 (0x10 >> 4 = 1)
+            if pendingScrollInvertToggle && functionId == 1 && isOwnResponse {  // getWheelMode (fn1) 响应
                 let currentMode = report[4]
                 let newMode = currentMode ^ 0x04  // Toggle bit 2 (invert)
-                sendRequest(featureIndex: hiresIdx, functionId: 0x20, params: [newMode])
+                sendRequest(featureIndex: hiresIdx, functionId: 2, params: [newMode])  // setWheelMode (fn2)
                 pendingScrollInvertToggle = false
                 LogiDebugPanel.log("[\(deviceInfo.name)] ScrollInvert: \((newMode & 0x04) != 0 ? "ON" : "OFF")")
                 return
@@ -3555,11 +3561,11 @@ class LogiDeviceSession {
 
         // ThumbWheel response
         if let thumbIdx = featureIndex[Self.featureThumbWheel], featureIdx == thumbIdx {
-            if pendingThumbWheelToggle && functionId == 1 {  // response to function 0x10 (0x10 >> 4 = 1)
+            if pendingThumbWheelToggle && functionId == 1 && isOwnResponse {  // getThumbwheelStatus (fn1) 响应
                 let byte1 = report[4]
                 let byte2 = report[5]
                 let newByte1 = byte1 ^ 0x01  // Toggle bit 0 (divert mode)
-                sendRequest(featureIndex: thumbIdx, functionId: 0x20, params: [newByte1, byte2])
+                sendRequest(featureIndex: thumbIdx, functionId: 2, params: [newByte1, byte2])  // setThumbwheelReporting (fn2)
                 pendingThumbWheelToggle = false
                 LogiDebugPanel.log("[\(deviceInfo.name)] ThumbWheel: \((newByte1 & 0x01) != 0 ? "DIVERT" : "NORMAL")")
                 return
@@ -3568,7 +3574,7 @@ class LogiDeviceSession {
 
         // PointerSpeed response
         if let speedIdx = featureIndex[Self.featurePointerSpeed], featureIdx == speedIdx {
-            if pendingPointerSpeedCycle && functionId == 0 {  // response to function 0x00 (0x00 >> 4 = 0)
+            if pendingPointerSpeedCycle && functionId == 0 && isOwnResponse {  // getPointerSpeed (fn0) 响应
                 let currentHi = report[4]
                 let currentLo = report[5]
                 let currentSpeed = (UInt16(currentHi) << 8) | UInt16(currentLo)
@@ -3582,7 +3588,7 @@ class LogiDeviceSession {
                     nextSpeed = presets[0]  // Wrap around to 0.5x
                 }
 
-                sendRequest(featureIndex: speedIdx, functionId: 0x10,
+                sendRequest(featureIndex: speedIdx, functionId: 1,  // setPointerSpeed (fn1)
                             params: [UInt8(nextSpeed >> 8), UInt8(nextSpeed & 0xFF)])
                 pendingPointerSpeedCycle = false
                 let speedStr = String(format: "%.1fx", Double(nextSpeed) / 256.0)
