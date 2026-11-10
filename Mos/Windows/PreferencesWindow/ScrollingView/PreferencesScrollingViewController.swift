@@ -230,11 +230,13 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     }
     
     // 重置
+    // 全局配置同时重置快速滚动设置 (预设 / free-spin / 加速度); 分应用配置只有滚动选项
     @IBAction func resetToDefaultClick(_ sender: NSButton) {
         if let target = currentTargetApplication {
             target.scroll = OPTIONS_SCROLL_DEFAULT()
         } else {
             Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+            Options.shared.scrollTuning = ScrollTuningSettings.default
         }
         syncViewWithOptions()
     }
@@ -306,11 +308,15 @@ extension PreferencesScrollingViewController {
         // 更新重置按钮状态
         updateResetButtonState()
     }
+    /// 是否有可重置的改动: 滚动选项偏离默认值, 或 (仅全局配置) 快速滚动设置偏离默认值
+    var hasSettingsToReset: Bool {
+        guard !isTargetApplicationInheritOptions() else { return false }
+        if getTargetApplicationScrollOptions() != DefaultConfigForCompare { return true }
+        return currentTargetApplication == nil && Options.shared.scrollTuning != ScrollTuningSettings.default
+    }
     // 更新重置按钮状态与显示
     func updateResetButtonState() {
-        let isNotInherit = !isTargetApplicationInheritOptions()
-        let scroll = getTargetApplicationScrollOptions()
-        let shouldShowResetButton = isNotInherit && scroll != DefaultConfigForCompare
+        let shouldShowResetButton = hasSettingsToReset
         // 动画过渡
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = ANIMATION.duration
