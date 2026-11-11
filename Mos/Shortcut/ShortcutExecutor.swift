@@ -155,18 +155,32 @@ class ShortcutExecutor {
         }
 
         // 发送按键按下事件
-        if let keyDown = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true) {
-            keyDown.flags = CGEventFlags(rawValue: flags)
+        if let keyDown = Self.shortcutKeyEvent(code: code, flags: flags, keyDown: true,
+                                               preserveFlagsOnKeyUp: preserveFlagsOnKeyUp, source: source) {
             keyDown.post(tap: .cghidEventTap)
         }
 
         // 发送按键抬起事件
-        if let keyUp = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false) {
-            if preserveFlagsOnKeyUp {
-                keyUp.flags = CGEventFlags(rawValue: flags)
-            }
+        if let keyUp = Self.shortcutKeyEvent(code: code, flags: flags, keyDown: false,
+                                             preserveFlagsOnKeyUp: preserveFlagsOnKeyUp, source: source) {
             keyUp.post(tap: .cghidEventTap)
         }
+    }
+
+    /// The key down or key up of a shortcut, marked as Scrollio's own (`MosEventMarker`) like
+    /// every other key and click it posts. Unmarked they came back through the app's own
+    /// taps: a keyboard trigger bound to the shortcut it is itself ran again in a loop, and
+    /// the button tap added held virtual modifiers to them.
+    static func shortcutKeyEvent(code: CGKeyCode, flags: UInt64, keyDown: Bool,
+                                 preserveFlagsOnKeyUp: Bool, source: CGEventSource?) -> CGEvent? {
+        guard let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: keyDown) else {
+            return nil
+        }
+        if keyDown || preserveFlagsOnKeyUp {
+            event.flags = CGEventFlags(rawValue: flags)
+        }
+        event.setIntegerValueField(.eventSourceUserData, value: MosEventMarker.syntheticCustom)
+        return event
     }
 
     /// 执行系统快捷键 (从SystemShortcut.Shortcut对象)

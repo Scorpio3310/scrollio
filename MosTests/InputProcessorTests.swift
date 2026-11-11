@@ -2037,6 +2037,41 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertFalse(InputProcessor.repeatsWhileHeld(.mosScroll(role: .dash)))
     }
 
+    // MARK: - Shortcuts Scrollio posts are marked as its own
+
+    func testShortcutKeyEventsAreMarkedAsScrolliosOwn() throws {
+        let command = CGEventFlags.maskCommand.rawValue
+        let down = try XCTUnwrap(ShortcutExecutor.shortcutKeyEvent(code: 8, flags: command, keyDown: true,
+                                                                   preserveFlagsOnKeyUp: false, source: nil))
+        let up = try XCTUnwrap(ShortcutExecutor.shortcutKeyEvent(code: 8, flags: command, keyDown: false,
+                                                                 preserveFlagsOnKeyUp: false, source: nil))
+        XCTAssertEqual(down.type, .keyDown)
+        XCTAssertEqual(up.type, .keyUp)
+        XCTAssertEqual(down.keyCode, 8)
+        XCTAssertEqual(up.keyCode, 8)
+        XCTAssertEqual(down.getIntegerValueField(.eventSourceUserData), MosEventMarker.syntheticCustom)
+        XCTAssertEqual(up.getIntegerValueField(.eventSourceUserData), MosEventMarker.syntheticCustom)
+        XCTAssertTrue(down.flags.contains(.maskCommand))
+        XCTAssertFalse(up.flags.contains(.maskCommand), "the key up carries the flags only when asked to")
+        let keptUp = try XCTUnwrap(ShortcutExecutor.shortcutKeyEvent(code: 48, flags: command, keyDown: false,
+                                                                     preserveFlagsOnKeyUp: true, source: nil))
+        XCTAssertTrue(keptUp.flags.contains(.maskCommand))
+        XCTAssertEqual(keptUp.getIntegerValueField(.eventSourceUserData), MosEventMarker.syntheticCustom)
+    }
+
+    /// What the mark is for: the button tap lets a posted shortcut through untouched. Before,
+    /// a keyboard trigger bound to the shortcut it is itself ran again for its own output.
+    func testTheButtonTapLetsAPostedShortcutThroughWithoutRunningABinding() throws {
+        bindKey(8, flags: .maskCommand, to: SystemShortcut.copy.identifier)
+        let executed = recordKeyboardShortcuts()
+        let posted = try XCTUnwrap(ShortcutExecutor.shortcutKeyEvent(code: 8, flags: CGEventFlags.maskCommand.rawValue,
+                                                                     keyDown: true, preserveFlagsOnKeyUp: false, source: nil))
+
+        let proxy = CGEventTapProxy(bitPattern: 1)!
+        XCTAssertNotNil(ButtonCore.shared.buttonEventCallBack(proxy, .keyDown, posted, nil))
+        XCTAssertEqual(executed().count, 0)
+    }
+
     private func configureGestureBinding(type: EventType = .mouse, code: UInt16 = 3) {
         let trigger = RecordedEvent(
             type: type,
