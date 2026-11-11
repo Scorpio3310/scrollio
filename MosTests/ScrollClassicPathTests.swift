@@ -1075,6 +1075,36 @@ final class ScrollGlideFollowerTests: XCTestCase {
         // The Finder is AppKit: its lists follow the touch only.
         XCTAssertFalse(ScrollUtils.isChromiumBased(bundleURL: URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")))
     }
+
+    /// Three kinds of apps: Safari gets no trackpad-style events at all (with them it does not
+    /// scroll smoothly), a Chromium-based app the flick, everything else the long touch.
+    func testTheFormFollowsTheApp() throws {
+        let electron = try app("Editor.app", files: ["Contents/Frameworks/Electron Framework.framework/Resources/resources.pak"])
+        let plain = try app("Plain.app", files: ["Contents/MacOS/Plain"])
+        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "com.apple.Safari", bundleURL: plain), .plainScrolling)
+        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "com.apple.SafariTechnologyPreview", bundleURL: plain), .plainScrolling)
+        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "com.example.editor", bundleURL: electron), .followsGlide)
+        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "com.apple.finder", bundleURL: plain), .touchOnly)
+        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: nil, bundleURL: plain), .touchOnly)
+        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "org.mozilla.firefox", bundleURL: plain), .touchOnly, "not checked on screen")
+    }
+
+    /// What the switch comes to for each kind of app. Safari: no phases, exactly as with the
+    /// switch off, which is the one way it is known to scroll as it should.
+    func testTheSwitchAndTheApp_decideTheForm() {
+        func form(_ switchOn: Bool, _ target: ScrollUtils.TrackpadStyleTarget?) -> [Bool] {
+            let form = ScrollPoster.trackpadStyleForm(switchOn: switchOn, target: target)
+            return [form.phases, form.flick, form.withheld]
+        }
+        //                                          phases flick  withheld
+        XCTAssertEqual(form(true, .plainScrolling), [false, false, true], "Safari")
+        XCTAssertEqual(form(true, .followsGlide), [true, true, false], "Chromium")
+        XCTAssertEqual(form(true, .touchOnly), [true, false, false], "native apps")
+        XCTAssertEqual(form(true, nil), [true, false, false], "an app that is not known")
+        for target in [ScrollUtils.TrackpadStyleTarget.plainScrolling, .followsGlide, .touchOnly] {
+            XCTAssertEqual(form(false, target), [false, false, false], "the switch is off")
+        }
+    }
 }
 
 // MARK: - The system log
@@ -1129,6 +1159,9 @@ final class ScrollSystemLogTests: XCTestCase {
         session.touches = 1
         session.glideInputs = 4
         XCTAssertTrue(ScrollSystemLog.message(for: session, endedWith: "MomentumEnd").contains("trackpad-style off, ended"))
+        session.trackpadStyleWithheld = true
+        XCTAssertTrue(ScrollSystemLog.message(for: session, endedWith: "MomentumEnd").contains("trackpad-style off (not sent to this app), ended"))
+        session.trackpadStyleWithheld = false
         session.trackpadStyle = true
         XCTAssertTrue(ScrollSystemLog.message(for: session, endedWith: "MomentumEnd").contains("trackpad-style on (long touch: 1 touches), ended"))
         session.flick = true
@@ -1180,5 +1213,57 @@ final class ScrollSystemLogTests: XCTestCase {
         XCTAssertNotNil(ScrollSystemLog.notePassthrough(.trackpad, now: 101), "another reason has its own limit")
         let next = ScrollSystemLog.notePassthrough(.smoothingOff, now: 100 + ScrollSystemLog.passthroughInterval, detail: detail)
         XCTAssertEqual(next, "wheel events let through unsmoothed (51): smoothing is off for this event (x)")
+    }
+
+    /// The thumb wheel's line, one per roll: the tuning of its functions is read from it on the
+    /// owner's machine, so its wording is part of the contract.
+    func testThumbWheelLine_saysWhatTheWheelSentAndWhatRan() {
+        var roll = ScrollSystemLog.ThumbWheelRoll(id: 1, settings: ThumbWheelSettings(function: .tabs), at: 10)
+        roll.events = 14
+        roll.lastEventAt = 10.62
+        roll.longestGap = 0.085
+        roll.lines = -9
+        roll.fixed = -9.4
+        roll.largestFixed = 1.25
+        roll.points = -212
+        roll.largestPoints = 31
+        roll.directionChanges = 1
+        roll.stepsNext = 3
+        roll.stepsPrevious = 1
+        roll.travel = 14
+        XCTAssertEqual(
+            ScrollSystemLog.thumbWheelMessage(for: roll),
+            "thumb wheel: 14 events in 620 ms (longest gap 85 ms), lines -9, fixed -9.40 (largest 1.25), points -212 (largest 31), 1 direction change, not continuous, switch tabs x1.00, travel 14.0: 3 steps next, 1 previous"
+        )
+
+        var one = ScrollSystemLog.ThumbWheelRoll(id: 2, settings: .default, at: 5)
+        one.add(ThumbWheelEvent(lineDelta: 1, fixedDelta: 1, pointDelta: 10, isContinuous: true), at: 5)
+        XCTAssertEqual(
+            ScrollSystemLog.thumbWheelMessage(for: one),
+            "thumb wheel: 1 event in 0 ms (longest gap 0 ms), lines 1, fixed 1.00 (largest 1.00), points 10 (largest 10), 0 direction changes, continuous, scroll sideways x1.00, travel 0.0: 0 steps"
+        )
+
+        var swapped = ScrollSystemLog.ThumbWheelRoll(id: 3, settings: ThumbWheelSettings(function: .volume, speed: 1.5, swapsDirection: true), at: 0)
+        swapped.add(ThumbWheelEvent(lineDelta: 2, fixedDelta: 2.25, pointDelta: 24, isContinuous: false), travel: -1.5, at: 0)
+        swapped.add(ThumbWheelEvent(lineDelta: -1, fixedDelta: -0.5, pointDelta: -31, isContinuous: true), travel: 1.5, at: 0.05)
+        swapped.add(ThumbWheelEvent(lineDelta: -1, fixedDelta: -0.5, pointDelta: -9, isContinuous: false), travel: 1.5, at: 0.08)
+        swapped.pendingSteps = 2
+        swapped.stepsRan(-1)
+        XCTAssertEqual(swapped.pendingSteps, 1, "one still to run: not counted")
+        XCTAssertEqual(
+            ScrollSystemLog.thumbWheelMessage(for: swapped),
+            "thumb wheel: 3 events in 80 ms (longest gap 50 ms), lines 0, fixed 1.25 (largest 2.25), points -16 (largest 31), 1 direction change, partly continuous (1 of 3), volume x1.50 swapped, travel 4.5: 1 step previous"
+        )
+        swapped.stepsRan(2)
+        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: swapped).hasSuffix(": 2 steps next, 1 previous"))
+        swapped.pendingSteps = 13
+        swapped.stepsDropped(12)
+        XCTAssertEqual(swapped.pendingSteps, 1)
+        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: swapped).hasSuffix("volume x1.50 swapped, travel 4.5: 2 steps next, 1 previous, 12 dropped"),
+                      "the steps the pacer dropped, only when there are any")
+        XCTAssertEqual(
+            ThumbWheelFunction.allCases.map(\.logName),
+            ["scroll sideways", "zoom", "switch tabs", "switch desktops", "back and forward", "volume"]
+        )
     }
 }

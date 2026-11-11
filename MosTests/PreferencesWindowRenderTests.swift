@@ -15,10 +15,19 @@
 //  without vibrancy, see PreferencesBackgroundView); and the app is not active, so the
 //  controls show their inactive grey instead of the accent colour.
 //
+//  The accent colour of the app's own drawings (the lit parts of the mouse, the previews,
+//  the number on a lit button, a key that is already bound) is the app's purple whatever
+//  accent this Mac's user chose: `ForcedAppAccent` makes `NSColor.controlAccentColor`
+//  return the asset catalog's `AccentColor` while the pictures are drawn. macOS gives an
+//  app its own accent only while the user's choice is "Multicolour", and the tests do not
+//  change that setting; colours AppKit works out by itself (a list's selection, the
+//  switches) still follow the user's choice.
+//
 //  Only runs when asked to:
 //  `TEST_RUNNER_SCROLLIO_SHOTS_DIR=<folder> xcodebuild … test -only-testing:MosTests/PreferencesWindowRenderTests`.
 //
 
+import ObjectiveC
 import XCTest
 @testable import Mos_Debug
 
@@ -29,6 +38,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
     private var savedMouse = LogiMouseSettings.default
     private var savedWheel = LogiWheelSettings.default
     private var savedGesture = MouseGestureSettings.default
+    private var savedThumbWheel = ThumbWheelSettings.default
     private var savedBindings: [ButtonBinding] = []
     private var savedAllowlist = false
     private var addedApplications: [String] = []
@@ -41,13 +51,16 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
         directory = URL(fileURLWithPath: folder, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try ForcedAppAccent.install()
         savedScroll = Options.shared.scroll
         savedMouse = Options.shared.logiMouse
         savedWheel = Options.shared.logiWheel
         savedGesture = Options.shared.gesture
+        savedThumbWheel = Options.shared.thumbWheel
         savedBindings = Options.shared.buttons.binding
         savedAllowlist = Options.shared.application.allowlist
         Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+        Options.shared.thumbWheel = .default
     }
 
     override func tearDown() {
@@ -57,12 +70,14 @@ final class PreferencesWindowRenderTests: XCTestCase {
         Options.shared.logiMouse = savedMouse
         Options.shared.logiWheel = savedWheel
         Options.shared.gesture = savedGesture
+        Options.shared.thumbWheel = savedThumbWheel
         Options.shared.buttons.binding = savedBindings
         Options.shared.application.allowlist = savedAllowlist
         for key in addedApplications where Options.shared.application.applications.get(by: key) != nil {
             Options.shared.application.applications.remove(from: key)
         }
         addedApplications = []
+        ForcedAppAccent.uninstall()
         super.tearDown()
     }
 
@@ -82,6 +97,60 @@ final class PreferencesWindowRenderTests: XCTestCase {
                     .uiStateDefaults = self.uiDefaults(advanced: advanced)
             })
         }
+    }
+
+    /// The thumb wheel (`thumb-wheel-<case>-<appearance>.png`). Scrolling: the defaults, also
+    /// in the 640 pt window of a first opening; "Switch Tabs" at 1.5× with the direction
+    /// swapped; "Back and Forward" (its symbol); scrolling sideways with smoothing off (the speed's line says where it
+    /// applies). Buttons, an MX Master 4: its row at the defaults ("Default"),
+    /// "Switch Tabs" with the row selected (the card lights the thumb wheel), the row pointed
+    /// at; "Back and Forward"; an MX Master 3S.
+    func testRenderThumbWheel() throws {
+        func scrolling(_ name: String) throws {
+            try renderPane(PANEL_IDENTIFIER.scrolling, name: name, prepare: { preferences in
+                (preferences.controller(for: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)?
+                    .uiStateDefaults = self.uiDefaults(advanced: false)
+            })
+        }
+        Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+        Options.shared.thumbWheel = .default
+        try scrolling("thumb-wheel-scrolling-default")
+        // In the window of a first opening (640 pt): where the group sits without scrolling.
+        try renderPane(PANEL_IDENTIFIER.scrolling, name: "thumb-wheel-scrolling-default-window",
+                       windowHeight: PreferencesWindowLayout.defaultContentHeight, prepare: { preferences in
+            (preferences.controller(for: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)?
+                .uiStateDefaults = self.uiDefaults(advanced: false)
+        })
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .tabs, speed: 1.5, swapsDirection: true)
+        try scrolling("thumb-wheel-scrolling-tabs")
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .backForward)
+        try scrolling("thumb-wheel-scrolling-back-forward")
+        Options.shared.thumbWheel = .default
+        Options.shared.scroll.smooth = false
+        try scrolling("thumb-wheel-scrolling-smoothing-off")
+        Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+
+        func source(_ name: String?) -> ButtonsDeviceSource {
+            return ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { name }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+        }
+        Options.shared.buttons.binding = [
+            binding(1001, SystemShortcut.screenshotSelection.identifier),
+            binding(5, SystemShortcut.copy.identifier, modifiers: UInt(CGEventFlags.maskAlternate.rawValue)),
+        ]
+        try renderButtons(name: "thumb-wheel-buttons-mx4-default", source: source("MX Master 4"))
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .tabs, speed: 1.5, swapsDirection: true)
+        try renderButtons(name: "thumb-wheel-buttons-mx4-tabs-selected", source: source("MX Master 4")) { buttons in
+            buttons.list.select(ButtonsListLayout.thumbWheelRowID)
+        }
+        try renderButtons(name: "thumb-wheel-buttons-mx4-tabs-hovered", source: source("MX Master 4")) { buttons in
+            if let row = buttons.thumbWheelRow {
+                self.hover(buttons, row: row)
+            }
+        }
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .backForward)
+        try renderButtons(name: "thumb-wheel-buttons-mx4-back-forward", source: source("MX Master 4"))
+        Options.shared.thumbWheel = .default
+        try renderButtons(name: "thumb-wheel-buttons-mx3s", source: source("MX Master 3S"))
     }
 
     func testRenderMouse() throws {
@@ -631,7 +700,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
     }
 
     /// Points at a row: a mouse-moved event handed to the list, never posted.
-    private func hover(_ buttons: PreferencesButtonsViewController, row: ButtonBindingRow) {
+    private func hover(_ buttons: PreferencesButtonsViewController, row: PreferencesListRow) {
         guard let window = buttons.view.window else { return }
         window.contentView?.layoutSubtreeIfNeeded()
         let point = row.convert(NSPoint(x: row.bounds.midX, y: row.bounds.midY), to: nil)
@@ -853,6 +922,82 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try renderPane(PANEL_IDENTIFIER.application, name: "app-page-long-name", afterLoad: { controller in
             (controller as? PreferencesApplicationViewController)?.openApplication(withID: long.path)
         })
+    }
+
+    // MARK: - Menu bar
+
+    /// The status item's image (`status-item-<scale>x-<bar>.png`, at the bar's size in
+    /// pixels, and `status-item-sheet.png`, the four magnified without smoothing): the
+    /// template image in the ink of a light and of a dark menu bar, centred in a 24 pt bar
+    /// as the status item centres it, at 1x and 2x.
+    func testRenderStatusItemIcon() throws {
+        let image = try XCTUnwrap(NSImage(named: "AppStatusBarIcon"))
+        XCTAssertTrue(image.isTemplate)
+        let bar = NSSize(width: 34, height: 24)
+        let bars: [(name: String, appearance: NSAppearance.Name, fill: NSColor, ink: NSColor)] = [
+            ("light", .aqua, NSColor(white: 0.94, alpha: 1), NSColor(white: 0, alpha: 0.85)),
+            ("dark", .darkAqua, NSColor(white: 0.12, alpha: 1), NSColor(white: 1, alpha: 0.9)),
+        ]
+        var pictures: [NSBitmapImageRep] = []
+        for scale in [1, 2] {
+            for item in bars {
+                let rep = try XCTUnwrap(NSBitmapImageRep(
+                    bitmapDataPlanes: nil, pixelsWide: Int(bar.width) * scale, pixelsHigh: Int(bar.height) * scale,
+                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+                ))
+                rep.size = bar
+                let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: rep))
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = context
+                try XCTUnwrap(NSAppearance(named: item.appearance)).performAsCurrentDrawingAppearance {
+                    item.fill.setFill()
+                    NSRect(origin: .zero, size: bar).fill()
+                    let rect = NSRect(
+                        x: (bar.width - image.size.width) / 2, y: (bar.height - image.size.height) / 2,
+                        width: image.size.width, height: image.size.height
+                    )
+                    // A template image in the bar's ink: its alpha, filled with the ink.
+                    context.cgContext.beginTransparencyLayer(in: rect, auxiliaryInfo: nil)
+                    image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+                    item.ink.setFill()
+                    rect.fill(using: .sourceIn)
+                    context.cgContext.endTransparencyLayer()
+                }
+                NSGraphicsContext.restoreGraphicsState()
+                let png = try XCTUnwrap(rep.representation(using: .png, properties: [:]))
+                try png.write(to: directory.appendingPathComponent("status-item-\(scale)x-\(item.name).png"))
+                pictures.append(rep)
+            }
+        }
+        // The sheet: 1x light and dark on top, 2x light and dark under them, all four as
+        // large in points: a pixel of 1x is 16 × 16, one of 2x is 8 × 8.
+        let cell = NSSize(width: bar.width * 16, height: bar.height * 16)
+        let sheet = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: Int(cell.width) * 2 + 24, pixelsHigh: Int(cell.height) * 2 + 24,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: sheet))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        context.imageInterpolation = .none
+        NSColor(white: 0.5, alpha: 1).setFill()
+        NSRect(x: 0, y: 0, width: sheet.pixelsWide, height: sheet.pixelsHigh).fill()
+        for (index, rep) in pictures.enumerated() {
+            let column = index % 2
+            let row = 1 - index / 2
+            let target = NSRect(
+                x: CGFloat(column) * (cell.width + 24), y: CGFloat(row) * (cell.height + 24),
+                width: cell.width, height: cell.height
+            )
+            rep.draw(in: target, from: .zero, operation: .copy, fraction: 1, respectFlipped: false, hints: [
+                .interpolation: NSNumber(value: NSImageInterpolation.none.rawValue),
+            ])
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        let png = try XCTUnwrap(sheet.representation(using: .png, properties: [:]))
+        try png.write(to: directory.appendingPathComponent("status-item-sheet.png"))
     }
 
     // MARK: - Kit
@@ -1357,5 +1502,31 @@ private final class ListRenderController: NSViewController {
         PreferencesGroupedForm.add([switchBox, section], to: content)
         view = root
         root.setFrameSize(root.fittingSize)
+    }
+}
+
+/// Makes `NSColor.controlAccentColor` return the app's own accent colour (the asset
+/// catalog's `AccentColor`) for the pictures, whatever accent this Mac's user chose: macOS
+/// gives an app its own accent only while the user's choice is "Multicolour", and the tests
+/// do not change that setting. Only what asks for `controlAccentColor` follows: the app's
+/// drawings do; colours AppKit works out by itself (a list's selection, the switches) do not.
+/// Also used by WelcomeGuideRenderTests.
+enum ForcedAppAccent {
+
+    private static var original: IMP?
+    private static let selector = #selector(getter: NSColor.controlAccentColor)
+
+    static func install() throws {
+        guard original == nil else { return }
+        let accent = try XCTUnwrap(NSColor(named: AppAccent.assetName))
+        let method = try XCTUnwrap(class_getClassMethod(NSColor.self, selector))
+        let replacement: @convention(block) (AnyObject) -> NSColor = { _ in accent }
+        original = method_setImplementation(method, imp_implementationWithBlock(replacement))
+    }
+
+    static func uninstall() {
+        guard let original, let method = class_getClassMethod(NSColor.self, selector) else { return }
+        method_setImplementation(method, original)
+        self.original = nil
     }
 }

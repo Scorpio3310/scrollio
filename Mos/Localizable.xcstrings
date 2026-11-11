@@ -4030,7 +4030,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Trackpad-style events"
+            "value": "Trackpad-style events (Beta)"
           }
         }
       }
@@ -4198,6 +4198,50 @@
           "stringUnit": {
             "state": "translated",
             "value": "Shows the first-launch steps again, including Accessibility access."
+          }
+        }
+      }
+    },
+    "about-github": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio on GitHub"
+          }
+        }
+      }
+    },
+    "about-github-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source code and new versions."
+          }
+        }
+      }
+    },
+    "about-github-open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open"
+          }
+        }
+      }
+    },
+    "about-github-open-accessibility": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Scrollio on GitHub in your web browser"
           }
         }
       }
@@ -5725,6 +5769,258 @@
           "stringUnit": {
             "state": "translated",
             "value": "Other buttons and keys"
+          }
+        }
+      }
+    },
+    "thumb-wheel-title": {
+      "comment": "Scrolling pane: the title of the group for the sideways wheel of a mouse. Buttons pane: the row of an MX Master's thumb wheel, and the card's title while that row is pointed at or selected",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thumb wheel"
+          }
+        }
+      }
+    },
+    "thumb-wheel-function-scroll": {
+      "comment": "Thumb wheel: the function that scrolls left and right (the default), in the Scrolling pane's pop-up (Title Case, as menu items)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll Sideways"
+          }
+        }
+      }
+    },
+    "thumb-wheel-function-zoom": {
+      "comment": "Thumb wheel: the function that zooms in and out",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoom"
+          }
+        }
+      }
+    },
+    "thumb-wheel-function-tabs": {
+      "comment": "Thumb wheel: the function that goes to the next or previous tab (Title Case, as menu items)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch Tabs"
+          }
+        }
+      }
+    },
+    "thumb-wheel-function-desktops": {
+      "comment": "Thumb wheel: the function that goes to the desktop (Space) on the right or left (Title Case, as menu items)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch Desktops"
+          }
+        }
+      }
+    },
+    "thumb-wheel-function-back-forward": {
+      "comment": "Thumb wheel: the function that goes back or forward in apps that support it (Title Case, as menu items)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back and Forward"
+          }
+        }
+      }
+    },
+    "thumb-wheel-function-volume": {
+      "comment": "Thumb wheel: the function that turns the volume up or down",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volume"
+          }
+        }
+      }
+    },
+    "thumb-wheel-function-scroll-hint": {
+      "comment": "Thumb wheel: under the function, what a turn does while it scrolls (the default)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrolls sideways."
+          }
+        }
+      }
+    },
+    "thumb-wheel-function-zoom-hint": {
+      "comment": "Thumb wheel: under the function, what a turn does while it zooms",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zooms the page in and out."
+          }
+        }
+      }
+    },
+    "thumb-wheel-function-tabs-hint": {
+      "comment": "Thumb wheel: under the function, what a turn does while it switches tabs",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switches between tabs."
+          }
+        }
+      }
+    },
+    "thumb-wheel-function-desktops-hint": {
+      "comment": "Thumb wheel: under the function, what a turn does while it switches desktops",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switches between desktops."
+          }
+        }
+      }
+    },
+    "thumb-wheel-function-back-forward-hint": {
+      "comment": "Thumb wheel: under the function, what a turn does while it goes back and forward",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Goes back and forward."
+          }
+        }
+      }
+    },
+    "thumb-wheel-function-volume-hint": {
+      "comment": "Thumb wheel: under the function, what a turn does while it changes the volume",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turns the volume up and down."
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-function": {
+      "comment": "Scrolling pane, Thumb wheel group: the row with the pop-up of what a turn of the thumb wheel does",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Action"
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-speed": {
+      "comment": "Scrolling pane, Thumb wheel group: the speed slider, 0.25x to 3x",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speed"
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-speed-hint-scroll": {
+      "comment": "Scrolling pane, Thumb wheel group: under Speed while the thumb wheel scrolls",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How far a turn scrolls sideways."
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-speed-hint-steps": {
+      "comment": "Scrolling pane, Thumb wheel group: under Speed while the thumb wheel zooms, switches tabs or desktops, goes back and forward or changes the volume",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How little of a turn each step needs."
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-speed-hint-smoothing-off": {
+      "comment": "Scrolling pane, Thumb wheel group: under Speed while the thumb wheel scrolls and Smooth scrolling is off (apps with their own settings may still smooth it)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Applies where Smooth scrolling is on."
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-swap": {
+      "comment": "Scrolling pane, Thumb wheel group: the switch that turns the thumb wheel's direction around",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swap direction"
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-swap-hint": {
+      "comment": "Scrolling pane, Thumb wheel group: under Swap direction",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turns the thumb wheel the other way."
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-note": {
+      "comment": "Scrolling pane: the muted line under the Thumb wheel group, which wheel it is about",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For the sideways wheel: an MX Master's thumb wheel, or a wheel that tilts."
           }
         }
       }

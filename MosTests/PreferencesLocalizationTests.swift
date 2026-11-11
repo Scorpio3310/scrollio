@@ -60,6 +60,16 @@ final class PreferencesLocalizationTests: XCTestCase {
         "scrolling-undo-reset",
         "scrolling-speed-value", "scrolling-glide-time-shorter", "scrolling-glide-time-longer",
         "scrolling-step-smaller", "scrolling-step-larger", "key-recorder-waiting-single-key",
+        // The thumb wheel: its group here, its names and lines (also the Buttons pane's row).
+        "thumb-wheel-title",
+        "thumb-wheel-function-scroll", "thumb-wheel-function-zoom", "thumb-wheel-function-tabs",
+        "thumb-wheel-function-desktops", "thumb-wheel-function-back-forward", "thumb-wheel-function-volume",
+        "thumb-wheel-function-scroll-hint", "thumb-wheel-function-zoom-hint", "thumb-wheel-function-tabs-hint",
+        "thumb-wheel-function-desktops-hint", "thumb-wheel-function-back-forward-hint",
+        "thumb-wheel-function-volume-hint",
+        "scrolling-thumb-wheel-function", "scrolling-thumb-wheel-speed",
+        "scrolling-thumb-wheel-speed-hint-scroll", "scrolling-thumb-wheel-speed-hint-steps",
+        "scrolling-thumb-wheel-swap", "scrolling-thumb-wheel-swap-hint", "scrolling-thumb-wheel-note",
     ]
 
     /// Buttons pane: the card, the list and its rows, the action menu, "Which Button Is
@@ -135,6 +145,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-accessibility-allowed", "general-accessibility-not-allowed", "general-accessibility-open-settings",
         "about-app-name", "about-tagline", "about-version", "about-credit", "about-welcome-guide",
         "about-welcome-guide-open", "about-welcome-guide-hint",
+        "about-github", "about-github-hint", "about-github-open", "about-github-open-accessibility",
         "about-version-commit", "about-version-commit-date",
     ]
 

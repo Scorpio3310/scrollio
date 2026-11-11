@@ -7,12 +7,17 @@
 //  scene is a shell.
 //
 //  On top a preview, then a box with what most people need: smooth scrolling, its feel,
-//  the speed and the direction. Under it "While you hold a key" with the three keys, which
-//  work from the first launch, so they always show. The last box starts with "Advanced"
+//  the speed and the direction. Under it "Thumb wheel": what the sideways wheel of a mouse
+//  does, its speed and its direction, with a line under the box on which wheel that is;
+//  global only, so not on an app's page (VoiceOver hears it as a group of that name, so its
+//  "Speed" is not taken for the main wheel's). Then "While you hold a key" with the three
+//  keys, which work from the first launch, so they always show. The last box starts with "Advanced"
 //  (closed by default), which opens the exact glide time, the smallest step and
 //  trackpad-style events in that box. "Reset to defaults" sits under the boxes; Edit › Undo
 //  takes a reset back.
-//  The tab only edits scroll options: Options.shared.scroll, or the target application's own.
+//  The tab edits scroll options (Options.shared.scroll, or the target application's own) and,
+//  on the tab itself, Options.shared.thumbWheel, which the Buttons pane edits too: a change
+//  made there shows here at once (ThumbWheelSettingsChange).
 //
 //  Created by Caldis on 2017/1/26.
 //  Copyright © 2017年 Caldis. All rights reserved.
@@ -153,6 +158,11 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         static let glideTime = NSUserInterfaceItemIdentifier("scrolling-glide-time")
         static let smallestStep = NSUserInterfaceItemIdentifier("scrolling-smallest-step")
         static let trackpadEvents = NSUserInterfaceItemIdentifier("scrolling-trackpad-events")
+        static let thumbWheelFunction = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-function")
+        static let thumbWheelFunctionHint = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-function-hint")
+        static let thumbWheelSpeed = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-speed")
+        static let thumbWheelSwap = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-swap")
+        static let thumbWheelNote = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-note")
         static let reset = NSUserInterfaceItemIdentifier("scrolling-reset")
 
         static func key(_ key: ScrollHoldKey) -> NSUserInterfaceItemIdentifier {
@@ -176,6 +186,8 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     }
     private static let keyButtonWidth: CGFloat = 150
     private static let keyClearButtonSize: CGFloat = 20
+    /// The thumb wheel's pop-up: room for the longest function with its symbol.
+    static let thumbWheelPopUpWidth: CGFloat = 180
 
     // MARK: - State
 
@@ -240,10 +252,24 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// "While you hold a key": its title and box, and the row of each key.
     private(set) var keysSection: PreferencesGroupSection!
     private(set) var keyRows: [PreferencesGroupRow] = []
-    /// The boxes (as sections), top to bottom: the main box, the keys, "Advanced".
+    /// "Thumb wheel": its title and box, the line under the box, and its three rows. Only on
+    /// the tab (hidden on an app's page: the thumb wheel has no per-app settings).
+    private(set) var thumbWheelSection: PreferencesGroupSection!
+    /// The line under the box (in a holder that insets it, which is what hides).
+    private(set) var thumbWheelNote: NSTextField!
+    private(set) var thumbWheelFunctionRow: PreferencesGroupRow!
+    private(set) var thumbWheelFunctionPopUp: NSPopUpButton!
+    private(set) var thumbWheelSpeedRow: PreferencesSliderRow!
+    private(set) var thumbWheelSpeedSlider: NSSlider!
+    private(set) var thumbWheelSwapRow: PreferencesSwitchRow!
+    private(set) var thumbWheelSwapSwitch: NSSwitch!
+    /// The boxes (as sections), top to bottom: the main box, the thumb wheel, the keys,
+    /// "Advanced".
     private(set) var sections: [PreferencesGroupSection] = []
     /// What "Advanced" shows and hides: the three rows of its box under it.
     private(set) var advancedRows: [NSView] = []
+    /// Hears of every change of the thumb wheel settings (the Buttons pane edits them too).
+    private var thumbWheelObserver: NSObjectProtocol?
 
     // MARK: - Lifecycle
 
@@ -271,7 +297,20 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         keyRows = ScrollHoldKey.allCases.map { makeKeyRow($0) }
         let keys = PreferencesGroupSection(title: text("scrolling-keys-header"), width: width, rows: keyRows)
         keysSection = keys
-        sections = [basic, keys, advanced]
+        let thumbWheel = PreferencesGroupSection(title: ThumbWheelPresentation.title, width: width, rows: [
+            makeThumbWheelFunctionRow(), makeThumbWheelSpeedRow(), makeThumbWheelSwapRow(),
+        ])
+        thumbWheelSection = thumbWheel
+        let thumbWheelNoteHolder = makeThumbWheelNote()
+        // For VoiceOver one group named "Thumb wheel": its "Speed" is not the main wheel's,
+        // its "Action" is the thumb wheel's. The title is the group's name, not a text of its
+        // own; the line under the box is the group's help.
+        thumbWheel.setAccessibilityElement(true)
+        thumbWheel.setAccessibilityRole(.group)
+        thumbWheel.setAccessibilityLabel(ThumbWheelPresentation.title)
+        thumbWheel.setAccessibilityHelp(thumbWheelNote.stringValue)
+        thumbWheel.titleLabel?.setAccessibilityElement(false)
+        sections = [basic, thumbWheel, keys, advanced]
 
         let reset = PreferencesGroupedForm.makePushButton(
             title: text("scrolling-reset"),
@@ -284,10 +323,15 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         advancedRows = [glideTimeRow, smallestStepRow, trackpadEventsRow]
         advancedRow.revealedViews = advancedRows
 
+        // The thumb wheel above the keys, so the default window shows it. Hidden (an app's
+        // page) it takes no room, and the keys keep the gap above their title.
         PreferencesGroupedForm.add(
-            [preview, basic, keys, advanced, PreferencesGroupFooter(trailing: [reset])],
+            [preview, basic, thumbWheel, thumbWheelNoteHolder, keys, advanced, PreferencesGroupFooter(trailing: [reset])],
             to: content
         )
+        // The line about the thumb wheel sits close under its box, as the muted lines of the
+        // other panes do.
+        content.setCustomSpacing(PreferencesGroupedForm.noteSpacing, after: thumbWheel)
 
         keyRecorder.delegate = self
         view = root
@@ -301,6 +345,16 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         super.viewDidLoad()
         // On an app's page: the page takes its size from these settings.
         (parent as? PreferencesScrollingContainer)?.fitToContent()
+        // The thumb wheel settings may change under Buttons while this tab exists.
+        thumbWheelObserver = ThumbWheelSettingsChange.addObserver { [weak self] in
+            self?.syncViewWithOptions()
+        }
+    }
+
+    deinit {
+        if let thumbWheelObserver {
+            ThumbWheelSettingsChange.removeObserver(thumbWheelObserver)
+        }
     }
 
     override func viewWillAppear() {
@@ -358,9 +412,43 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
             keyRows[key.rawValue].isEnabled = editable
         }
         updateKeyButtons(in: scroll, enabled: editable)
+        syncThumbWheel()
 
         resetToDefaultsButton.isEnabled = hasSettingsToReset
         updatePreviewScene()
+    }
+
+    /// The thumb wheel group: on the tab only. It shows Options.shared.thumbWheel and writes
+    /// nothing. The speed slider is always on: with "Smooth scrolling" off an app with its
+    /// own settings may still smooth the wheel at this speed, and the line says so.
+    private func syncThumbWheel() {
+        let shown = currentTargetApplication == nil
+        thumbWheelSection.isHidden = !shown
+        // The line's holder is what the column of boxes holds.
+        thumbWheelNote.superview?.isHidden = !shown
+        guard shown else { return }
+
+        let settings = Options.shared.thumbWheel
+        let function = settings.function
+        if let index = ThumbWheelFunction.allCases.firstIndex(of: function),
+           thumbWheelFunctionPopUp.indexOfSelectedItem != index {
+            thumbWheelFunctionPopUp.selectItem(at: index)
+        }
+        if thumbWheelFunctionRow.explanation != function.localizedHint {
+            thumbWheelFunctionRow.explanation = function.localizedHint
+        }
+
+        let speedRow = thumbWheelSpeedRow!
+        if !speedRow.isTracking {
+            speedRow.showValue(settings.speed)
+        }
+        speedRow.valueText = ThumbWheelPresentation.speedText(settings.speed)
+        let speedHint = text(ThumbWheelPresentation.speedHintKey(for: function, smoothing: Options.shared.scroll.smooth))
+        if speedRow.explanation != speedHint {
+            speedRow.explanation = speedHint
+        }
+
+        thumbWheelSwapRow.isOn = settings.swapsDirection
     }
 
     /// A slider row and its value. A refresh arriving while the user drags this knob must
@@ -380,9 +468,13 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         row.isEnabled = enabled
     }
 
-    /// True while the options differ from the defaults (an app that inherits has none of its own).
+    /// True while the options differ from the defaults (an app that inherits has none of its
+    /// own). On the tab the thumb wheel settings count too; on an app's page they do not.
     var hasSettingsToReset: Bool {
         guard !isTargetApplicationInheritOptions() else { return false }
+        if currentTargetApplication == nil, Options.shared.thumbWheel != .default {
+            return true
+        }
         return getTargetApplicationScrollOptions() != OPTIONS_SCROLL_DEFAULT()
     }
 
@@ -545,10 +637,39 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         syncViewWithOptions()
     }
 
+    /// The thumb wheel's function. Written only when it changes; the tab (and the Buttons
+    /// pane) then follow through ThumbWheelSettingsChange.
+    @objc func thumbWheelFunctionChanged(_ sender: NSPopUpButton) {
+        guard let function = ThumbWheelPresentation.function(of: sender.selectedItem) else { return }
+        if Options.shared.thumbWheel.function != function {
+            Options.shared.thumbWheel.function = function
+        }
+        syncViewWithOptions()
+    }
+
+    /// The thumb wheel's speed, on the slider's grid of 0.05. The slider sends nothing for a
+    /// press that does not move its knob, and a value it already has is not written again.
+    @objc func thumbWheelSpeedChanged(_ sender: NSSlider) {
+        let value = ThumbWheelPresentation.speedSetting.snapped(sender.doubleValue)
+        if Options.shared.thumbWheel.speed != value {
+            Options.shared.thumbWheel.speed = value
+        }
+        syncViewWithOptions()
+    }
+
+    @objc func thumbWheelSwapClick(_ sender: NSSwitch) {
+        let swaps = sender.state == .on
+        if Options.shared.thumbWheel.swapsDirection != swaps {
+            Options.shared.thumbWheel.swapsDirection = swaps
+        }
+        syncViewWithOptions()
+    }
+
     /// Back to the scroll options of a new installation: the "Smooth" feel, the default
-    /// speed and step, the three default keys, trackpad-style events off. "Advanced" stays
-    /// as it is. One click, no question: Edit › Undo ("Undo Reset Scrolling") brings back
-    /// every value it changed.
+    /// speed and step, the three default keys, trackpad-style events off; on the tab also the
+    /// thumb wheel (scrolls sideways at 1×, not swapped). "Advanced" stays as it is. One
+    /// click, no question: Edit › Undo ("Undo Reset Scrolling") brings back every value it
+    /// changed.
     @objc func resetToDefaultClick(_ sender: NSButton) {
         Self.resetScrollOptions(of: currentTargetApplication, undoManager: undoTarget) { [weak self] in
             self?.syncViewWithOptions()
@@ -563,15 +684,28 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         return paneUndoManager ?? view.window?.undoManager
     }
 
-    /// Gives the app (nil: the Scrolling tab) new default scroll options; Undo gives back
-    /// the ones it had. The undo target is the settings, not this controller: an app's page
-    /// and its controller are gone once the list shows again, and its Undo still works.
+    /// What a reset replaces: the scroll options, and on the tab the thumb wheel settings
+    /// (nil on an app's page: they are not the app's and are left alone).
+    private struct ResettableSettings {
+        var scroll: OPTIONS_SCROLL_DEFAULT
+        var thumbWheel: ThumbWheelSettings?
+
+        /// The defaults for the app (nil: the tab).
+        static func defaults(for application: Application?) -> ResettableSettings {
+            return ResettableSettings(scroll: OPTIONS_SCROLL_DEFAULT(), thumbWheel: application == nil ? .default : nil)
+        }
+    }
+
+    /// Gives the app (nil: the Scrolling tab) new default scroll options, and the tab default
+    /// thumb wheel settings; Undo gives back the ones it had. The undo target is the
+    /// settings, not this controller: an app's page and its controller are gone once the
+    /// list shows again, and its Undo still works.
     private static func resetScrollOptions(
         of application: Application?,
         undoManager undo: UndoManager?,
         didChange: @escaping () -> Void
     ) {
-        let previous = replaceScrollOptions(of: application, with: OPTIONS_SCROLL_DEFAULT())
+        let previous = replaceSettings(of: application, with: .defaults(for: application))
         didChange()
         guard let undo else { return }
         undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
@@ -580,14 +714,14 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         undo.setActionName(NSLocalizedString("scrolling-undo-reset", comment: ""))
     }
 
-    /// Undo of a reset: the options from before it, every value as it was. Redo resets again.
+    /// Undo of a reset: the settings from before it, every value as it was. Redo resets again.
     private static func restoreScrollOptions(
-        _ options: OPTIONS_SCROLL_DEFAULT,
+        _ settings: ResettableSettings,
         of application: Application?,
         undoManager undo: UndoManager?,
         didChange: @escaping () -> Void
     ) {
-        replaceScrollOptions(of: application, with: options)
+        replaceSettings(of: application, with: settings)
         didChange()
         guard let undo else { return }
         undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
@@ -596,21 +730,25 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         undo.setActionName(NSLocalizedString("scrolling-undo-reset", comment: ""))
     }
 
-    /// Puts `options` in place of the app's (nil: the global) scroll options and returns the
-    /// ones it replaced. A reset only ever swaps the whole container, so the replaced one
-    /// keeps every value it had.
+    /// Puts `settings` in place of the app's (nil: the global) scroll options, and of the
+    /// thumb wheel settings when it has them, and returns the ones it replaced. A reset only
+    /// ever swaps the whole scroll container, so the replaced one keeps every value it had.
+    /// The thumb wheel settings are written only when they differ.
     @discardableResult
-    private static func replaceScrollOptions(
+    private static func replaceSettings(
         of application: Application?,
-        with options: OPTIONS_SCROLL_DEFAULT
-    ) -> OPTIONS_SCROLL_DEFAULT {
+        with settings: ResettableSettings
+    ) -> ResettableSettings {
         if let application {
             let previous = application.scroll
-            application.scroll = options
-            return previous
+            application.scroll = settings.scroll
+            return ResettableSettings(scroll: previous, thumbWheel: nil)
         }
-        let previous = Options.shared.scroll
-        Options.shared.scroll = options
+        let previous = ResettableSettings(scroll: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
+        Options.shared.scroll = settings.scroll
+        if let thumbWheel = settings.thumbWheel, Options.shared.thumbWheel != thumbWheel {
+            Options.shared.thumbWheel = thumbWheel
+        }
         return previous
     }
 
@@ -742,6 +880,97 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         trackpadEventsRow = row
         trackpadEventsSwitch = row.toggle
         return row
+    }
+
+    // MARK: Thumb wheel
+
+    /// "Action": the six functions in a pop-up, each with its symbol; the line under the
+    /// title says what the chosen one does.
+    private func makeThumbWheelFunctionRow() -> PreferencesGroupRow {
+        let popUp = NSPopUpButton(frame: .zero, pullsDown: false)
+        popUp.identifier = Identifier.thumbWheelFunction
+        popUp.target = self
+        popUp.action = #selector(thumbWheelFunctionChanged(_:))
+        popUp.translatesAutoresizingMaskIntoConstraints = false
+        popUp.widthAnchor.constraint(equalToConstant: Self.thumbWheelPopUpWidth).isActive = true
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for function in ThumbWheelFunction.allCases {
+            // The pop-up sends its own action; the items only carry the function.
+            menu.addItem(ThumbWheelPresentation.menuItem(for: function, target: nil, action: nil))
+        }
+        // macOS 27 hides menu item images unless asked: every function keeps its symbol.
+        menu.keepItemImagesVisible()
+        popUp.menu = menu
+        thumbWheelFunctionPopUp = popUp
+
+        let row = PreferencesGroupRow(
+            title: text("scrolling-thumb-wheel-function"),
+            explanation: ThumbWheelFunction.scroll.localizedHint,
+            accessory: popUp
+        )
+        // Room for the longest line, so picking another function never changes the height.
+        row.reservedExplanations = ThumbWheelFunction.allCases.map(\.localizedHint)
+        row.explanationLabel.identifier = Identifier.thumbWheelFunctionHint
+        thumbWheelFunctionRow = row
+        return row
+    }
+
+    /// "Speed": 0.25× to 3× in steps of 0.05, its value next to it ("1.25×"). What it
+    /// changes depends on the function: the line under the title says which.
+    private func makeThumbWheelSpeedRow() -> PreferencesGroupRow {
+        let setting = ThumbWheelPresentation.speedSetting
+        let row = PreferencesSliderRow(
+            title: text("scrolling-thumb-wheel-speed"),
+            explanation: text(ThumbWheelPresentation.speedHintKey(for: .scroll, smoothing: true)),
+            range: setting.range,
+            scale: setting.scale,
+            ends: (low: text("scrolling-speed-shorter"), high: text("scrolling-speed-farther")),
+            target: self,
+            action: #selector(thumbWheelSpeedChanged(_:))
+        )
+        row.slider.identifier = Identifier.thumbWheelSpeed
+        row.reservedExplanations = ThumbWheelPresentation.speedHintKeys.map(text)
+        thumbWheelSpeedRow = row
+        thumbWheelSpeedSlider = row.slider
+        return row
+    }
+
+    private func makeThumbWheelSwapRow() -> PreferencesGroupRow {
+        let row = PreferencesSwitchRow(
+            title: text("scrolling-thumb-wheel-swap"),
+            explanation: text("scrolling-thumb-wheel-swap-hint"),
+            target: self,
+            action: #selector(thumbWheelSwapClick(_:))
+        )
+        row.toggle.identifier = Identifier.thumbWheelSwap
+        thumbWheelSwapRow = row
+        thumbWheelSwapSwitch = row.toggle
+        return row
+    }
+
+    /// The muted line under the thumb wheel's box: which wheel that is. Inset like the text
+    /// of the rows above it.
+    private func makeThumbWheelNote() -> NSView {
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        let label = NSTextField(wrappingLabelWithString: text("scrolling-thumb-wheel-note"))
+        label.identifier = Identifier.thumbWheelNote
+        label.font = PreferencesGroupedForm.explanationFont
+        label.textColor = PreferencesGroupedForm.explanationColor(enabled: true)
+        label.isSelectable = false
+        label.preferredMaxLayoutWidth = Self.boxWidth - 2 * inset
+        label.translatesAutoresizingMaskIntoConstraints = false
+        thumbWheelNote = label
+        let holder = NSView()
+        holder.translatesAutoresizingMaskIntoConstraints = false
+        holder.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: holder.topAnchor),
+            label.bottomAnchor.constraint(equalTo: holder.bottomAnchor),
+            label.leadingAnchor.constraint(equalTo: holder.leadingAnchor, constant: inset),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: holder.trailingAnchor, constant: -inset),
+        ])
+        return holder
     }
 
     /// A slider with the words for its ends under it, the setting's tick marks and, on the

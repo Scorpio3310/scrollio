@@ -411,6 +411,16 @@ final class GesturePreviewViewTests: XCTestCase {
         return (colour.redComponent + colour.greenComponent + colour.blueComponent) / 3
     }
 
+    /// The accent colour as a picture rendered in that appearance draws it: the app's
+    /// accent has a lighter shade in dark (#BF62D9) than in light (#9B44B3).
+    private func accent(dark: Bool) throws -> NSColor {
+        var resolved: NSColor?
+        try XCTUnwrap(NSAppearance(named: dark ? .darkAqua : .aqua)).performAsCurrentDrawingAppearance {
+            resolved = NSColor.controlAccentColor.usingColorSpace(.deviceRGB)
+        }
+        return try XCTUnwrap(resolved)
+    }
+
     func testItDrawsInLightAndDark() throws {
         let light = try render(scene(), dark: false, time: 0)
         let dark = try render(scene(), dark: true, time: 0)
@@ -443,7 +453,7 @@ final class GesturePreviewViewTests: XCTestCase {
         let x = mouseOrigin.x + button.midX, y = mouseOrigin.y + button.midY
         let idle = try colour(in: up, x: x, y: y)
         let pressed = try colour(in: held, x: x, y: y)
-        let accent = try XCTUnwrap(NSColor.controlAccentColor.usingColorSpace(.deviceRGB))
+        let accent = try accent(dark: false)
         func distance(_ a: NSColor, _ b: NSColor) -> CGFloat {
             return abs(a.redComponent - b.redComponent) + abs(a.greenComponent - b.greenComponent) + abs(a.blueComponent - b.blueComponent)
         }
@@ -483,7 +493,7 @@ final class GesturePreviewViewTests: XCTestCase {
             let button = preview.buttonRect
             let point = preview.frame.origin
             let colour = try self.colour(in: held, x: point.x + button.midX, y: point.y + button.midY)
-            let accent = try XCTUnwrap(NSColor.controlAccentColor.usingColorSpace(.deviceRGB))
+            let accent = try accent(dark: true)
             XCTAssertLessThan(abs(colour.redComponent - accent.redComponent) + abs(colour.greenComponent - accent.greenComponent)
                               + abs(colour.blueComponent - accent.blueComponent), 0.3, "\(model)")
         }

@@ -126,6 +126,8 @@ class ScrollPoster {
     //   `manualContinuationThreshold`), and only the tail goes out as momentum.
     // - The Chromium engine (Chrome, Dia, Arc, Electron apps) scrolls by the momentum events
     //   too. For it the scroll is a flick (`config.flick`), as described below.
+    // - Safari gets no phases at all, as with the switch off: with them it does not scroll
+    //   smoothly (`ScrollUtils.TrackpadStyleTarget.plainScrolling` says what was tried).
     //
     // A real flick is a short touch (3 or 4 events, ~50 ms) and then a long glide (momentum).
     // At a page edge apps treat the two very differently: the touch drags the page past the edge
@@ -164,9 +166,12 @@ class ScrollPoster {
         /// "Trackpad-style events": the frames carry trackpad phases.
         var simTrackpadEnabled: Bool
         /// Trackpad-style for an app that scrolls by the events of a glide (`ScrollUtils
-        /// .followsGlideEvents`): a short touch and its glide. Without it the touch lasts as long
+        /// .trackpadStyleTarget`): a short touch and its glide. Without it the touch lasts as long
         /// as the wheel turns, as it always did.
         var flick: Bool
+        /// The switch is on, but this app gets no trackpad-style events (Safari:
+        /// `ScrollUtils.TrackpadStyleTarget.plainScrolling`); `simTrackpadEnabled` is false then.
+        var withheld = false
         var deadZone: Double
     }
     private var config = ConfigSnapshot(simTrackpadEnabled: false, flick: false, deadZone: 1.0)
@@ -216,6 +221,23 @@ class ScrollPoster {
 
 // MARK: - 滚动数据更新控制
 extension ScrollPoster {
+    /// What "Trackpad-style events" come to for an app of the given kind (nil: not known, as
+    /// touch-only): whether the frames carry phases at all, as a flick or as one long touch, and
+    /// whether the switch is on but the app gets none.
+    static func trackpadStyleForm(switchOn: Bool, target: ScrollUtils.TrackpadStyleTarget?) -> (phases: Bool, flick: Bool, withheld: Bool) {
+        guard switchOn else {
+            return (phases: false, flick: false, withheld: false)
+        }
+        switch target {
+        case .plainScrolling:
+            return (phases: false, flick: false, withheld: true)
+        case .followsGlide:
+            return (phases: true, flick: true, withheld: false)
+        case .touchOnly, nil:
+            return (phases: true, flick: false, withheld: false)
+        }
+    }
+
     func update(event: CGEvent, input: ScrollPosterInput) -> Self {
         guard dispatchContext.capture(event: event) else {
             return self
@@ -243,6 +265,7 @@ extension ScrollPoster {
         sessionLog.lastInputAt = now
         sessionLog.trackpadStyle = config.simTrackpadEnabled
         sessionLog.flick = config.flick
+        sessionLog.trackpadStyleWithheld = config.withheld
         inputSequence &+= 1
         if !config.flick {
             // The form can differ per app: a turn asked for in a flick is not carried into a
@@ -961,10 +984,14 @@ private extension ScrollPoster {
         } else {
             simTrackpad = Options.shared.scroll.smoothSimTrackpad
         }
-        let flick = simTrackpad && event.map { ScrollUtils.shared.followsGlideEvents($0) } == true
+        // Looked up with trackpad-style events only: the first time an app is seen it reads
+        // the app's bundle.
+        let target = simTrackpad ? event.map { ScrollUtils.shared.trackpadStyleTarget(of: $0) } : nil
+        let form = Self.trackpadStyleForm(switchOn: simTrackpad, target: target)
         return ConfigSnapshot(
-            simTrackpadEnabled: simTrackpad,
-            flick: flick,
+            simTrackpadEnabled: form.phases,
+            flick: form.flick,
+            withheld: form.withheld,
             deadZone: OPTIONS_SCROLL_DEFAULT.usableDeadZone(Options.shared.scroll.deadZone)
         )
     }

@@ -545,3 +545,87 @@ final class ScrollSettingsUsableValuesTests: XCTestCase {
         }
     }
 }
+
+/// The thumb wheel's settings (`ThumbWheelSettings`, `Options.thumbWheel`): stored as JSON
+/// under "thumbWheelSettings", read tolerantly value by value.
+final class ThumbWheelSettingsTests: XCTestCase {
+
+    private func decode(_ json: String) -> ThumbWheelSettings {
+        return Options.decodeThumbWheelSettings(Data(json.utf8))
+    }
+
+    /// The defaults are what the app did before the settings existed.
+    func testDefaults_scrollSidewaysAtTheMainWheelsSpeed_notSwapped() {
+        let settings = ThumbWheelSettings.default
+        XCTAssertEqual(settings.function, .scroll)
+        XCTAssertEqual(settings.speed, 1.0)
+        XCTAssertFalse(settings.swapsDirection)
+        XCTAssertEqual(settings, ThumbWheelSettings())
+        XCTAssertEqual(ThumbWheelSettings.defaultSpeed, 1.0)
+        XCTAssertEqual(ThumbWheelSettings.speedRange, 0.25...3.0)
+        XCTAssertEqual(ThumbWheelFunction.allCases, [.scroll, .zoom, .tabs, .desktops, .backForward, .volume])
+        XCTAssertEqual(ThumbWheelFunction.allCases.map(\.rawValue), ["scroll", "zoom", "tabs", "desktops", "backForward", "volume"], "stored names")
+    }
+
+    func testSpeed_staysInsideItsRange() {
+        XCTAssertEqual(ThumbWheelSettings(speed: 10).speed, 3.0)
+        XCTAssertEqual(ThumbWheelSettings(speed: 0.1).speed, 0.25)
+        XCTAssertEqual(ThumbWheelSettings(speed: -2).speed, 0.25)
+        XCTAssertEqual(ThumbWheelSettings(speed: 1.75).speed, 1.75)
+        XCTAssertEqual(ThumbWheelSettings(speed: .nan).speed, 1.0, "not a number: the default")
+        XCTAssertEqual(ThumbWheelSettings(speed: .infinity).speed, 1.0)
+        var settings = ThumbWheelSettings()
+        settings.speed = 7
+        XCTAssertEqual(settings.speed, 3.0, "a later change is kept in range too")
+        settings.speed = 0
+        XCTAssertEqual(settings.speed, 0.25)
+        settings.speed = -.infinity
+        XCTAssertEqual(settings.speed, 1.0)
+    }
+
+    /// Each value on its own: a missing, unreadable or unknown one falls back to its default,
+    /// the others are kept; unknown keys are ignored.
+    func testDecoding_isTolerantValueByValue() {
+        XCTAssertEqual(decode(#"{"function":"volume","speed":2.5,"swapsDirection":true}"#),
+                       ThumbWheelSettings(function: .volume, speed: 2.5, swapsDirection: true))
+        XCTAssertEqual(decode(#"{"function":"swipe","speed":2.5,"swapsDirection":true}"#),
+                       ThumbWheelSettings(function: .scroll, speed: 2.5, swapsDirection: true), "an unknown function")
+        XCTAssertEqual(decode(#"{"function":"tabs","speed":"fast","swapsDirection":true}"#),
+                       ThumbWheelSettings(function: .tabs, speed: 1, swapsDirection: true), "a speed that is no number")
+        XCTAssertEqual(decode(#"{"function":"tabs","speed":9,"swapsDirection":1}"#),
+                       ThumbWheelSettings(function: .tabs, speed: 3, swapsDirection: false), "out of range; not a Bool")
+        XCTAssertEqual(decode(#"{"function":3,"speed":0.5}"#),
+                       ThumbWheelSettings(function: .scroll, speed: 0.5, swapsDirection: false))
+        XCTAssertEqual(decode(#"{"swapsDirection":true,"later":"a key of a newer version"}"#),
+                       ThumbWheelSettings(swapsDirection: true))
+        XCTAssertEqual(decode("{}"), .default)
+        XCTAssertEqual(decode(#"{"function":null,"speed":null,"swapsDirection":null}"#), .default)
+    }
+
+    /// The Options helper: missing or unreadable data gives the defaults.
+    func testOptionsDecodeHelper_missingOrUnreadableDataGivesTheDefaults() {
+        XCTAssertEqual(Options.decodeThumbWheelSettings(nil), .default)
+        XCTAssertEqual(Options.decodeThumbWheelSettings(Data()), .default)
+        XCTAssertEqual(Options.decodeThumbWheelSettings(Data("not json".utf8)), .default)
+        XCTAssertEqual(decode("[1, 2]"), .default)
+        XCTAssertEqual(decode(#""zoom""#), .default)
+        XCTAssertEqual(decode(#"{"function":"zoom"}"#), ThumbWheelSettings(function: .zoom))
+    }
+
+    /// What is stored reads back as it was, under three frozen keys.
+    func testRoundTrip_andTheStoredForm() throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        for function in ThumbWheelFunction.allCases {
+            for (speed, swaps) in [(0.25, false), (1.0, true), (2.75, true), (3.0, false)] {
+                let settings = ThumbWheelSettings(function: function, speed: speed, swapsDirection: swaps)
+                let data = try encoder.encode(settings)
+                XCTAssertEqual(Options.decodeThumbWheelSettings(data), settings)
+            }
+        }
+        let stored = String(decoding: try encoder.encode(ThumbWheelSettings(function: .backForward, speed: 1.5, swapsDirection: true)), as: UTF8.self)
+        XCTAssertEqual(stored, #"{"function":"backForward","speed":1.5,"swapsDirection":true}"#)
+        XCTAssertEqual(OptionItem.ThumbWheel.Settings, "thumbWheelSettings")
+        XCTAssertFalse(ScrollSettingsCleanup.retiredDefaultsKeys.contains(OptionItem.ThumbWheel.Settings), "a new key, not a retired one")
+    }
+}

@@ -5,9 +5,9 @@
 //  The General pane: the card with the app's name and version (what the About pane
 //  showed), "Scrollio is paused" with Resume, "Open at login" and its approval row, "Show
 //  in menu bar" (the stored "hide" shown the other way round), the Accessibility row, no
-//  developer tools, and at the bottom the Welcome Guide and the credit line. The login
-//  item, the permission, the pause, System Settings, the menu bar icon and the windows are
-//  replaced; nothing is shown on screen.
+//  developer tools, and at the bottom the Welcome Guide, Scrollio on GitHub and the credit
+//  line. The login item, the permission, the pause, System Settings, the menu bar icon, the
+//  windows and the browser are replaced; nothing is shown on screen and no page is opened.
 //
 
 import XCTest
@@ -57,6 +57,7 @@ final class PreferencesGeneralTests: XCTestCase {
         var paused = false
         var resumes = 0
         var welcomeGuidesOpened = 0
+        var openedURLs: [URL] = []
     }
 
     private var savedAutoLaunch = false
@@ -96,6 +97,7 @@ final class PreferencesGeneralTests: XCTestCase {
             world.paused = false
         }
         pane.showWelcomeGuide = { world.welcomeGuidesOpened += 1 }
+        pane.openURL = { world.openedURLs.append($0) }
         _ = pane.view
         return pane
     }
@@ -229,6 +231,37 @@ final class PreferencesGeneralTests: XCTestCase {
         click(pane.welcomeGuideButton)
         XCTAssertEqual(world.welcomeGuidesOpened, 1)
         XCTAssertEqual(world.accessibilitySettingsOpened, 0)
+        XCTAssertEqual(world.openedURLs, [])
+    }
+
+    /// Under the Welcome Guide, in its box: the repository, opened in the default browser.
+    func testScrollioOnGitHubOpensTheRepository() throws {
+        install(.notRegistered)
+        let world = World()
+        let pane = try makePane(world)
+        let row = try XCTUnwrap(pane.gitHubRow)
+        let button = try XCTUnwrap(pane.gitHubButton)
+        XCTAssertEqual(row.title, "Scrollio on GitHub")
+        XCTAssertEqual(row.explanation, "Source code and new versions.")
+        XCTAssertEqual(button.title, "Open", "it opens no window of Scrollio's")
+        XCTAssertEqual(button.bezelStyle, .push)
+        XCTAssertTrue(isShown(row))
+        XCTAssertTrue(row.controls.contains { $0 === button })
+        // The same box, right under the Welcome Guide.
+        let box = try XCTUnwrap(row.superview as? NSStackView)
+        XCTAssertTrue(pane.welcomeGuideRow.superview === box)
+        let rows = box.arrangedSubviews.filter { !$0.isHidden }
+        XCTAssertEqual(rows.firstIndex { $0 === row }, try XCTUnwrap(rows.firstIndex { $0 === pane.welcomeGuideRow }) + 1)
+        // VoiceOver hears where it goes, not only "Open".
+        XCTAssertEqual(button.accessibilityLabel(), "Open Scrollio on GitHub in your web browser")
+        XCTAssertTrue(button.accessibilityTitleUIElement() as? NSTextField === row.titleLabel)
+        XCTAssertEqual(button.toolTip, "https://github.com/Scorpio3310/scrollio")
+
+        XCTAssertEqual(PreferencesGeneralViewController.gitHubURL.absoluteString, "https://github.com/Scorpio3310/scrollio")
+        click(button)
+        XCTAssertEqual(world.openedURLs, [URL(string: "https://github.com/Scorpio3310/scrollio")!])
+        XCTAssertEqual(world.welcomeGuidesOpened, 0)
+        XCTAssertEqual(world.accessibilitySettingsOpened, 0)
     }
 
     /// The licence (CC BY-NC 4.0) asks for the attribution: it is always on the pane, last.
@@ -254,16 +287,19 @@ final class PreferencesGeneralTests: XCTestCase {
         }
     }
 
-    /// The links and donations of Mos's About pane did not come along.
+    /// The links and donations of Mos's About pane did not come along. The one link is
+    /// Scrollio's own repository ("Scrollio on GitHub"), not Mos's.
     func testNothingOfTheOldAboutPaneIsLeft() throws {
         install(.notRegistered)
         let pane = try makePane(World())
-        let removed = ["Home Page", "GitHub", "Contributors", "Donate", "Feed", "Welcome Window", "Buy me a coffee"]
+        let removed = ["Home Page", "Contributors", "Donate", "Feed", "Welcome Window", "Buy me a coffee"]
         for text in shownTexts(pane) {
             for word in removed {
                 XCTAssertFalse(text.localizedCaseInsensitiveContains(word), "'\(text)' still mentions \(word)")
             }
         }
+        XCTAssertEqual(shownTexts(pane).filter { $0.localizedCaseInsensitiveContains("GitHub") }, ["Scrollio on GitHub"])
+        XCTAssertFalse(PreferencesGeneralViewController.gitHubURL.absoluteString.localizedCaseInsensitiveContains("caldis"))
         XCTAssertFalse(allSubviews(of: pane.view).contains { ($0 as? NSButton)?.bezelStyle == .helpButton })
         for name in ["AlipayQR", "WechatpayQR", "PaypalLogo", "BuyMeACoffee", "MEOW"] {
             XCTAssertNil(NSImage(named: name), "donation asset \(name) is still in the bundle")
@@ -514,6 +550,7 @@ final class PreferencesGeneralTests: XCTestCase {
             (pane.openLoginItemsButton!, pane.loginApprovalRow!),
             (pane.openAccessibilitySettingsButton!, pane.accessibilityRow!),
             (pane.welcomeGuideButton!, pane.welcomeGuideRow!),
+            (pane.gitHubButton!, pane.gitHubRow!),
         ] {
             XCTAssertTrue(button.accessibilityTitleUIElement() as? NSTextField === row.titleLabel, button.title)
         }

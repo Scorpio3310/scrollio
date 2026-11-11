@@ -43,27 +43,53 @@ class ScrollUtils {
         return cachedRunningApplication
     }
     
-    // MARK: - Apps that scroll by the events of a glide
+    // MARK: - What the app under the pointer does with trackpad-style events
 
-    /// Bundle path -> answer of `isChromiumBased`. Main thread.
-    private var glideFollowerByBundlePath: [String: Bool] = [:]
+    /// What an app does with the events of a glide ("momentum"), so that "Trackpad-style
+    /// events" can be sent in the form it scrolls by (ScrollPoster).
+    enum TrackpadStyleTarget: Equatable {
+        /// AppKit and UIKit scroll views, and anything not known: they follow the touch only and
+        /// compute the glide themselves. One touch for as long as the wheel turns.
+        case touchOnly
+        /// The Chromium engine (Chrome, Dia, Arc, Edge, Electron and CEF apps) scrolls by the
+        /// glide's events: a flick.
+        case followsGlide
+        /// Safari: no trackpad-style events at all, the frames go out as with the switch off.
+        /// With phases Safari does not scroll smoothly (owner, build 1521; the frames went out as
+        /// always). WebKit reads, on every scroll event that has a phase, the record of the
+        /// hardware event the frame still carries as a copy of the wheel event: its time (the
+        /// same for every frame of a tick) and the wheel's raw delta, for a glide of its own.
+        /// Frames made anew without that record did not scroll Safari at all (build 1538).
+        case plainScrolling
+    }
 
-    /// Whether the app a wheel event goes to scrolls by the events of a glide ("momentum"), so
-    /// that "Trackpad-style events" can send it a flick (ScrollPoster). The Chromium engine does:
-    /// Chrome, Dia, Arc, Edge, Electron and CEF apps. AppKit and UIKit scroll views do not: they
-    /// follow the touch only and compute the glide themselves. Anything not known to follow
-    /// (Safari and Firefox too: not checked on screen) counts as not following. Main thread.
-    func followsGlideEvents(_ event: CGEvent) -> Bool {
-        guard let bundleURL = getRunningApplication(from: event)?.bundleURL else {
-            return false
+    /// Bundle path -> answer. Main thread.
+    private var trackpadStyleTargetByBundlePath: [String: TrackpadStyleTarget] = [:]
+
+    /// The kind of the app a wheel event goes to; looked into once per app. Main thread.
+    func trackpadStyleTarget(of event: CGEvent) -> TrackpadStyleTarget {
+        guard let application = getRunningApplication(from: event), let bundleURL = application.bundleURL else {
+            return .touchOnly
         }
-        if let known = glideFollowerByBundlePath[bundleURL.path] {
+        if let known = trackpadStyleTargetByBundlePath[bundleURL.path] {
             return known
         }
-        let follows = Self.isChromiumBased(bundleURL: bundleURL)
-        glideFollowerByBundlePath[bundleURL.path] = follows
-        return follows
+        let target = Self.trackpadStyleTarget(bundleIdentifier: application.bundleIdentifier, bundleURL: bundleURL)
+        trackpadStyleTargetByBundlePath[bundleURL.path] = target
+        return target
     }
+
+    /// Safari by its name, a Chromium-based app by what its bundle carries. (Firefox, and web
+    /// views inside other apps, count as touch-only: not checked on screen, and a web view
+    /// cannot be told from the app's own lists.)
+    static func trackpadStyleTarget(bundleIdentifier: String?, bundleURL: URL, fileManager: FileManager = .default) -> TrackpadStyleTarget {
+        if let identifier = bundleIdentifier, safariBundleIdentifiers.contains(identifier) {
+            return .plainScrolling
+        }
+        return isChromiumBased(bundleURL: bundleURL, fileManager: fileManager) ? .followsGlide : .touchOnly
+    }
+
+    static let safariBundleIdentifiers: Set<String> = ["com.apple.Safari", "com.apple.SafariTechnologyPreview"]
 
     /// A Chromium-based app carries the engine's resources (`resources.pak`) in one of its
     /// frameworks: "Google Chrome Framework", "Electron Framework", "Chromium Embedded
@@ -163,6 +189,15 @@ class ScrollUtils {
         }
         return lastSourceIsRemoteControl
     }
+
+#if DEBUG
+    /// Tests: events from this source process count as a remote desktop's (until another
+    /// source is seen, or `nil` forgets it).
+    func treatAsRemoteForTests(sourcePID: pid_t?) {
+        lastSourcePID = sourcePID ?? 0
+        lastSourceIsRemoteControl = sourcePID != nil
+    }
+#endif
 
     /// 检测事件是否来自已被平滑的远程源
     /// 返回 true 表示应跳过平滑处理

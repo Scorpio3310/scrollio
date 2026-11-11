@@ -51,6 +51,10 @@ struct OptionItem {
         static let Settings = "logiMouseSettings"
     }
 
+    struct ThumbWheel {
+        static let Settings = "thumbWheelSettings"
+    }
+
     struct Application {
         static let Allowlist = "allowlist"
         static let Applications = "applications"
@@ -59,7 +63,7 @@ struct OptionItem {
 
 /// 配置分组: 变更通知与脏组写入的粒度
 enum OptionsGroup: CaseIterable {
-    case general, scroll, buttons, application, gesture, logiWheel, logiMouse
+    case general, scroll, buttons, application, gesture, logiWheel, logiMouse, thumbWheel
 }
 
 class Options {
@@ -103,6 +107,11 @@ class Options {
     // optional (nil = leave the mouse's own); written only while `logiMouseManaged` is on.
     var logiMouse = LogiMouseSettings.default {
         didSet { markChanged(.logiMouse) }
+    }
+    // What the sideways wheel does (function, speed, direction): ThumbWheelSettings. Used by
+    // the scroll engine only; nothing is written to a mouse.
+    var thumbWheel = ThumbWheelSettings.default {
+        didSet { markChanged(.thumbWheel) }
     }
     /// "Let Scrollio manage this mouse": the one switch for everything Scrollio writes to a
     /// Logitech mouse (wheel and basic settings). Stored as `logiWheel.managedByMos`.
@@ -264,6 +273,8 @@ extension Options {
         logiWheel = Self.decodeLogiWheelSettings(UserDefaults.standard.data(forKey: OptionItem.MouseWheel.Settings))
         // Logitech basic mouse settings
         logiMouse = Self.decodeLogiMouseSettings(UserDefaults.standard.data(forKey: OptionItem.MouseBasics.Settings))
+        // The sideways wheel
+        thumbWheel = Self.decodeThumbWheelSettings(UserDefaults.standard.data(forKey: OptionItem.ThumbWheel.Settings))
         // What the Scrolling tab can no longer show is brought in line (global and per app),
         // and the keys of retired settings are removed. Still inside the lock: nothing is
         // notified or saved, the next save writes it.
@@ -337,6 +348,12 @@ extension Options {
             } else {
                 NSLog("Failed to serialize Logitech mouse settings, skipping save")
             }
+        case .thumbWheel:
+            if let data = try? encoder.encode(thumbWheel) {
+                UserDefaults.standard.set(data, forKey: OptionItem.ThumbWheel.Settings)
+            } else {
+                NSLog("Failed to serialize thumb wheel settings, skipping save")
+            }
         }
     }
 
@@ -345,6 +362,17 @@ extension Options {
     static func decodeLogiMouseSettings(_ data: Data?) -> LogiMouseSettings {
         guard let data = data,
               let settings = try? JSONDecoder().decode(LogiMouseSettings.self, from: data) else {
+            return .default
+        }
+        return settings
+    }
+
+    /// Thumb wheel settings from their stored JSON. Missing or unreadable data gives the
+    /// default (scrolls sideways, as before the settings existed); single bad values fall
+    /// back to their defaults.
+    static func decodeThumbWheelSettings(_ data: Data?) -> ThumbWheelSettings {
+        guard let data = data,
+              let settings = try? JSONDecoder().decode(ThumbWheelSettings.self, from: data) else {
             return .default
         }
         return settings

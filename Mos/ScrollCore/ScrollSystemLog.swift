@@ -7,7 +7,8 @@
 //      log show --last 10m --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "scroll"'
 //
 //  One line per finished scroll (never per event), and one line now and then when wheel
-//  events are let through unsmoothed, with the reason. Tests pass on a simulated wheel; this
+//  events are let through unsmoothed, with the reason; one line per roll of the sideways
+//  (thumb) wheel, with what it sent and what it ran. Tests pass on a simulated wheel; this
 //  is how to see what happened on the real one.
 //
 
@@ -39,6 +40,8 @@ enum ScrollSystemLog {
         /// Trackpad-style as a flick (a short touch and its glide, for apps that scroll by the
         /// glide's events) instead of one touch for as long as the wheel turns.
         var flick = false
+        /// The switch is on, but the app under the pointer gets no trackpad-style events (Safari).
+        var trackpadStyleWithheld = false
         /// How many touches ("began") the scroll was sent as, and how many of its wheel events
         /// went on with a glide instead of beginning a touch (a flick only).
         var touches = 0
@@ -62,7 +65,7 @@ enum ScrollSystemLog {
         let tau = ScrollMotion.timeConstant(forTransition: session.transition)
         let trackpadStyle: String
         if !session.trackpadStyle {
-            trackpadStyle = "off"
+            trackpadStyle = session.trackpadStyleWithheld ? "off (not sent to this app)" : "off"
         } else if session.flick {
             trackpadStyle = "on (flick: \(session.touches) touches, \(session.glideInputs) wheel events into a glide)"
         } else {
@@ -170,5 +173,166 @@ enum ScrollSystemLog {
 
     static func noteFingerTookOverWheelGlide() {
         logger.notice("\(fingerTookOverMessage, privacy: .public)")
+    }
+
+    // MARK: - The sideways wheel (ThumbWheelEngine)
+
+    /// What one roll of the sideways wheel (the thumb wheel) added up to: from its first event
+    /// until the wheel rested (`ThumbWheelTuning.logRollRest`), or `ThumbWheelTuning.logInterval`
+    /// of a longer roll. Times are the events' own. The deltas are those the events arrived
+    /// with, before "Reverse wheel direction" and "Swap direction": the log is how we learn
+    /// what a wheel sends, and what the tuning numbers are read from.
+    struct ThumbWheelRoll: Equatable {
+        /// Tells the rolls apart (the steps of a roll run after its events were counted).
+        var id: Int
+        /// The settings of the roll's events (a change ends the roll).
+        var function: ThumbWheelFunction
+        var speed: Double
+        var swapsDirection: Bool
+        /// The events' own times of the first and the last event (the line's duration, gaps).
+        var startedAt: TimeInterval
+        var lastEventAt: TimeInterval
+        /// When the callback saw the first and the last event, on the engine's clock: the look
+        /// at the roll compares these with the same clock, whatever base the events' times have.
+        var firstSeenAt: TimeInterval
+        var lastSeenAt: TimeInterval
+        var events = 0
+        var continuousEvents = 0
+        /// Sums of the integer line delta, the fixed-point line delta and the point delta.
+        var lines: Int64 = 0
+        var fixed = 0.0
+        var points = 0.0
+        /// The largest |fixed-point delta| and |point delta| of one event.
+        var largestFixed = 0.0
+        var largestPoints = 0.0
+        /// The longest time between two events of the roll (s).
+        var longestGap: TimeInterval = 0
+        /// The stepper's travel, in units after acceleration and speed, either direction
+        /// (0 while the wheel scrolls).
+        var travel = 0.0
+        /// How often the wheel turned the other way (the sums cancel out then).
+        var directionChanges = 0
+        /// The sign of the last event that moved (−1, 0 before any, +1).
+        var lastDirection = 0
+        /// Steps that ran, toward "next" and toward "previous".
+        var stepsNext = 0
+        var stepsPrevious = 0
+        /// Steps the pacer dropped (too many waiting, or waiting in the old direction when the
+        /// wheel turned back, or when the roll or the function ended).
+        var droppedSteps = 0
+        /// Steps decided but not run yet (on the main queue, or waiting in the pacer). Not in
+        /// the line: a step that never runs (dropped by a stop) is not counted.
+        var pendingSteps = 0
+
+        init(id: Int, settings: ThumbWheelSettings, at time: TimeInterval, seenAt: TimeInterval? = nil) {
+            self.id = id
+            function = settings.function
+            speed = settings.speed
+            swapsDirection = settings.swapsDirection
+            startedAt = time
+            lastEventAt = time
+            firstSeenAt = seenAt ?? time
+            lastSeenAt = seenAt ?? time
+        }
+
+        /// - Parameters:
+        ///   - travel: the event's travel in units (signed or not); `time`: its own time;
+        ///     `seenAt`: the clock when the callback saw it.
+        mutating func add(_ event: ThumbWheelEvent, travel: Double = 0, at time: TimeInterval, seenAt: TimeInterval? = nil) {
+            if events > 0 { longestGap = max(longestGap, time - lastEventAt) }
+            events += 1
+            if travel.isFinite { self.travel += travel.magnitude }
+            if event.isContinuous { continuousEvents += 1 }
+            lines = lines &+ event.lineDelta
+            if event.fixedDelta.isFinite {
+                fixed += event.fixedDelta
+                largestFixed = max(largestFixed, event.fixedDelta.magnitude)
+            }
+            if event.pointDelta.isFinite {
+                points += event.pointDelta
+                largestPoints = max(largestPoints, event.pointDelta.magnitude)
+            }
+            let travel = ThumbWheelStepper.lines(lineDelta: event.lineDelta, fixedDelta: event.fixedDelta, pointDelta: event.pointDelta)
+            let direction = travel > 0 ? 1 : (travel < 0 ? -1 : 0)
+            if direction != 0 {
+                if lastDirection != 0 && direction != lastDirection { directionChanges += 1 }
+                lastDirection = direction
+            }
+            lastEventAt = time
+            lastSeenAt = seenAt ?? time
+        }
+
+        /// Steps ran (positive toward "next").
+        mutating func stepsRan(_ steps: Int) {
+            pendingSteps = max(0, pendingSteps - abs(steps))
+            if steps > 0 { stepsNext += steps } else { stepsPrevious -= steps }
+        }
+
+        /// Steps the pacer dropped; they were pending.
+        mutating func stepsDropped(_ count: Int) {
+            guard count > 0 else { return }
+            pendingSteps = max(0, pendingSteps - count)
+            droppedSteps += count
+        }
+
+        /// The wheel has rested before an event at `time` (its own time): the roll is over.
+        func hasRested(at time: TimeInterval) -> Bool {
+            return time >= lastEventAt + ThumbWheelTuning.logRollRest
+        }
+
+        /// When its line is due, on the engine's clock: once no event came for a rest, or once
+        /// the roll has gone on for `logInterval`, whichever comes first.
+        var lineDueAt: TimeInterval {
+            return min(lastSeenAt + ThumbWheelTuning.logRollRest, firstSeenAt + ThumbWheelTuning.logInterval)
+        }
+
+        func matches(_ settings: ThumbWheelSettings) -> Bool {
+            return function == settings.function && speed == settings.speed && swapsDirection == settings.swapsDirection
+        }
+    }
+
+    /// One line per roll, for example
+    /// `thumb wheel: 14 events in 620 ms (longest gap 85 ms), lines -9, fixed -9.40 (largest 1.25), points -212 (largest 31), 1 direction change, not continuous, volume x3.00, travel 56.8: 7 steps next, 15 dropped`
+    /// ("dropped": steps the pacer did not run; only when there are any).
+    static func thumbWheelMessage(for roll: ThumbWheelRoll) -> String {
+        let continuity: String
+        if roll.continuousEvents == 0 {
+            continuity = "not continuous"
+        } else if roll.continuousEvents == roll.events {
+            continuity = "continuous"
+        } else {
+            continuity = "partly continuous (\(roll.continuousEvents) of \(roll.events))"
+        }
+        let steps: String
+        switch (roll.stepsNext, roll.stepsPrevious) {
+        case (0, 0):
+            steps = "0 steps"
+        case (let next, 0):
+            steps = "\(next) \(next == 1 ? "step" : "steps") next"
+        case (0, let previous):
+            steps = "\(previous) \(previous == 1 ? "step" : "steps") previous"
+        case (let next, let previous):
+            steps = "\(next) \(next == 1 ? "step" : "steps") next, \(previous) previous"
+        }
+        let dropped = roll.droppedSteps > 0 ? ", \(roll.droppedSteps) dropped" : ""
+        return String(
+            format: "thumb wheel: %ld %@ in %.0f ms (longest gap %.0f ms), lines %lld, fixed %.2f (largest %.2f), points %.0f (largest %.0f), %ld %@, %@, %@ x%.2f%@, travel %.1f: %@",
+            roll.events, roll.events == 1 ? "event" : "events",
+            max(0, roll.lastEventAt - roll.startedAt) * 1000,
+            max(0, roll.longestGap) * 1000,
+            roll.lines, roll.fixed, roll.largestFixed, roll.points, roll.largestPoints,
+            roll.directionChanges, roll.directionChanges == 1 ? "direction change" : "direction changes",
+            continuity,
+            roll.function.logName, roll.speed, roll.swapsDirection ? " swapped" : "",
+            roll.travel,
+            steps + dropped
+        )
+    }
+
+    /// Main queue, never inside the tap callback.
+    static func noteThumbWheelRoll(_ roll: ThumbWheelRoll) {
+        guard roll.events > 0 else { return }
+        let line = thumbWheelMessage(for: roll)
+        logger.notice("\(line, privacy: .public)")
     }
 }
