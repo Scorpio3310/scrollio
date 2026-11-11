@@ -354,7 +354,7 @@ final class ScrollSettingsLoadTests: XCTestCase {
         XCTAssertEqual(loaded.scroll.step, 12)
     }
 
-    func testReadOptions_keepsTheOwnersSettings() {
+    func testReadOptions_keepsSettingsThatAreInRange() {
         // Speed 6.3 with the "Smooth" feel: inside every range, so nothing moves.
         store("optionsExist", forKey: OptionItem.General.OptionsExist)
         store(6.3, forKey: OptionItem.Scroll.Speed)
