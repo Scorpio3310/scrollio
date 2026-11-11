@@ -4,8 +4,9 @@
 //  The menu bar icon and its menu.
 //
 //  With Accessibility access, top to bottom: one disabled line per Logitech mouse with its
-//  battery ("MX Master 4: 75%"), "Pause Scrollio" or "Resume Scrollio", "Settings…", and
-//  "Quit Scrollio". While Option is held (always in the debug build) the diagnostic windows
+//  battery ("MX Master 4: 75%"), "Smooth Scrolling in Safari" for the app in front (while the
+//  event handling runs; `AppSmoothing`), "Pause Scrollio" or "Resume Scrollio", "Settings…",
+//  and "Quit Scrollio". While Option is held (always in the debug build) the diagnostic windows
 //  are added above Quit: Logitech Diagnostics in every build, Scroll Monitor and Test
 //  Toasts only in the debug build. Without the access: "Allow Accessibility Access…" (the
 //  Welcome Guide) and Quit.
@@ -13,6 +14,11 @@
 //  The icon is dimmed while the event handling does not run: paused, the access is missing,
 //  or the access is there but an event tap could not be created or stays off because its
 //  restarts are throttled (AppRunController, Interceptor). Its tooltip says which.
+//
+//  While a Logitech mouse's battery is low and not charging, its percentage stands next to the
+//  icon ("8%", "Low" for a mouse that reports only levels), the lowest of several mice, and
+//  VoiceOver reads "Scrollio, mouse battery 8%". It follows what LogiCenter reports
+//  (`mouseStateChanged`) and goes when the mouse charges, recovers or disconnects.
 //
 //  What the menu lists is decided by `StatusMenu` from a `StatusMenu.State`, and what its
 //  items do is in `StatusMenuActions`, so both are tested without a status item.
@@ -33,12 +39,15 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
 
     private var isOpen = false
     private var observers: [NSObjectProtocol] = []
+    /// How the button places its icon without a battery next to it.
+    private var plainImagePosition: NSControl.ImagePosition = .imageOnly
 
     // 初始化
     override func awakeFromNib() {
         NSLog("Module initialized: StatusItemManager")
         // 设置图标/行为
         item.button?.image = #imageLiteral(resourceName: "AppStatusBarIcon")
+        plainImagePosition = item.button?.imagePosition ?? .imageOnly
         // 设置事件响应
         item.menu = self
         item.menu?.delegate = self
@@ -58,16 +67,23 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
             ) { [weak self] _ in
                 self?.updateIcon()
             },
-            // Answers to the battery read made when the menu opened.
+            // What the mice report (also when one connects, disconnects or the Logitech
+            // sessions stop): the battery next to the icon, and the answers to the battery
+            // read made when the menu opened.
             NotificationCenter.default.addObserver(
                 forName: LogiCenter.mouseStateChanged,
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                guard let self, self.isOpen else { return }
-                StatusMenu.updateBatteryItems(in: self, with: StatusMenu.batteries(from: LogiCenter.shared.mouseDeviceStates()))
+                guard let self else { return }
+                let mice = LogiCenter.shared.mouseDeviceStates()
+                self.show(StatusMenu.batteryBadge(for: mice))
+                if self.isOpen {
+                    StatusMenu.updateBatteryItems(in: self, with: StatusMenu.batteries(from: mice))
+                }
             },
         ]
+        show(StatusMenu.batteryBadge(for: LogiCenter.shared.mouseDeviceStates()))
     }
 
     deinit {
@@ -90,6 +106,16 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
         item.button?.toolTip = look.toolTip
     }
 
+    /// The battery of a mouse that runs low next to the icon, and the item's name for VoiceOver.
+    func show(_ badge: StatusMenu.BatteryBadge) {
+        guard let button = item.button else { return }
+        if button.title != badge.title {
+            button.title = badge.title
+            button.imagePosition = badge.title.isEmpty ? plainImagePosition : .imageLeading
+        }
+        button.setAccessibilityLabel(badge.accessibilityLabel)
+    }
+
     /// The state the menu is built from, read when it opens.
     static func liveState() -> StatusMenu.State {
         let hasAccess = Utils.isHadAccessibilityPermissions()
@@ -102,7 +128,36 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
             hasAccess: hasAccess,
             isPaused: AppRunController.shared.isPaused,
             showsDiagnostics: showsDiagnostics,
-            batteries: hasAccess ? StatusMenu.batteries(from: LogiCenter.shared.mouseDeviceStates()) : []
+            batteries: hasAccess ? StatusMenu.batteries(from: LogiCenter.shared.mouseDeviceStates()) : [],
+            appSmoothing: hasAccess ? liveAppSmoothingItem() : nil
+        )
+    }
+
+    /// "Smooth Scrolling in …" for the app in front. Opening this menu does not change which
+    /// app is in front: Scrollio is a menu-bar app.
+    static func liveAppSmoothingItem() -> StatusMenu.AppSmoothingItem? {
+        let controller = AppRunController.shared
+        let running = NSWorkspace.shared.frontmostApplication
+        let front = running.map(frontApp)
+        let list = Options.shared.application
+        return StatusMenu.appSmoothingItem(
+            front: front,
+            isScrollio: running?.processIdentifier == ProcessInfo.processInfo.processIdentifier,
+            scrollingRuns: controller.coresActive && !controller.isPaused && !Interceptor.hasThrottledTap,
+            rule: front.map { AppSmoothing.rule(of: AppSmoothing.entry(for: $0, in: list.applications)) } ?? .notListed,
+            scrollingSmooth: Options.shared.scroll.smooth,
+            limitedToListedApps: list.allowlist
+        )
+    }
+
+    /// A running app as the menu names and finds it.
+    static func frontApp(_ running: NSRunningApplication) -> AppSmoothing.App {
+        let bundle = running.bundleURL?.path
+        let program = running.executableURL?.path
+        return AppSmoothing.App(
+            name: running.localizedName ?? Utils.getApplicationName(fromPath: bundle ?? program),
+            bundlePath: bundle,
+            executablePath: program
         )
     }
 }
@@ -157,6 +212,8 @@ enum StatusMenu {
         var showsDiagnostics: Bool
         /// One line per Logitech mouse that reports its battery.
         var batteries: [Battery]
+        /// "Smooth Scrolling in Safari" for the app in front; nil: no such item.
+        var appSmoothing: AppSmoothingItem? = nil
         /// The developer tools (Scroll Monitor, Test Toasts) are offered only in the debug build.
         var isDebugBuild: Bool = StatusMenu.isDebugBuild
     }
@@ -182,8 +239,40 @@ enum StatusMenu {
         let symbolName: String
     }
 
+    /// "Smooth Scrolling in Safari", checked while Safari is smoothed; a click changes its
+    /// rule (`AppSmoothing.toggle`).
+    struct AppSmoothingItem: Equatable {
+        let app: AppSmoothing.App
+        let title: String
+        let isChecked: Bool
+        let isEnabled: Bool
+    }
+
+    /// The item for the app in front. None without an app in front (or one without a path),
+    /// for Scrollio itself, and while Scrollio does not run its event taps (paused, could not
+    /// start, a tap kept off): smoothing then is in effect nowhere.
+    ///
+    /// - Parameters:
+    ///   - rule: what the per-app list holds for `front`.
+    ///   - scrollingSmooth: "Smooth scrolling" of the Scrolling settings.
+    ///   - limitedToListedApps: "Limit scrolling to these apps".
+    static func appSmoothingItem(
+        front: AppSmoothing.App?, isScrollio: Bool, scrollingRuns: Bool,
+        rule: AppSmoothing.Rule, scrollingSmooth: Bool, limitedToListedApps: Bool
+    ) -> AppSmoothingItem? {
+        guard let front, front.pathToStore != nil, !isScrollio, scrollingRuns else { return nil }
+        let decision = AppSmoothing.decide(rule: rule, scrollingSmooth: scrollingSmooth, limitedToListedApps: limitedToListedApps)
+        return AppSmoothingItem(
+            app: front,
+            title: String(format: NSLocalizedString("status-menu-app-smoothing", comment: ""), front.name),
+            isChecked: decision.isSmoothed,
+            isEnabled: decision.change != nil
+        )
+    }
+
     enum Item: Equatable {
         case battery(Battery)
+        case appSmoothing(AppSmoothingItem)
         case separator
         case pause
         case resume
@@ -205,6 +294,9 @@ enum StatusMenu {
         var items: [Item] = state.batteries.map(Item.battery)
         if !items.isEmpty {
             items.append(.separator)
+        }
+        if let appSmoothing = state.appSmoothing {
+            items += [.appSmoothing(appSmoothing), .separator]
         }
         items += [state.isPaused ? .resume : .pause, .settings, .separator]
         if state.showsDiagnostics {
@@ -256,6 +348,18 @@ enum StatusMenu {
             line.image = NSImage(systemSymbolName: battery.symbolName, accessibilityDescription: nil)
             line.tag = batteryTag
             return line
+        case .appSmoothing(let appSmoothing):
+            // Without an action AppKit shows it disabled.
+            let toggle = NSMenuItem(
+                title: appSmoothing.title,
+                action: appSmoothing.isEnabled ? #selector(StatusMenuActions.appSmoothingClicked(_:)) : nil,
+                keyEquivalent: ""
+            )
+            toggle.target = actions
+            toggle.isEnabled = appSmoothing.isEnabled
+            toggle.state = appSmoothing.isChecked ? .on : .off
+            toggle.representedObject = appSmoothing.app
+            return toggle
         case .separator:
             return .separator()
         case .pause:
@@ -274,6 +378,56 @@ enum StatusMenu {
             return action("status-menu-allow-access", #selector(StatusMenuActions.allowAccessClicked(_:)))
         case .quit:
             return action("main-menu-quit", #selector(StatusMenuActions.quitClicked(_:)), shortcut: "q")
+        }
+    }
+
+    /// What stands next to the menu bar icon: the battery of a Logitech mouse that runs low.
+    struct BatteryBadge: Equatable {
+        /// "8%", "Low"; empty while no mouse runs low.
+        let title: String
+        /// The status item for VoiceOver: "Scrollio", "Scrollio, mouse battery 8%".
+        let accessibilityLabel: String
+
+        /// Nothing next to the icon.
+        static var plain: BatteryBadge {
+            return BatteryBadge(title: "", accessibilityLabel: NSLocalizedString("status-item-accessibility", comment: ""))
+        }
+    }
+
+    /// The badge for the connected mice: the lowest battery that is low and not charging.
+    /// Low is BatteryWatcher's rule, the one of the warnings: 10 % or less, or the mouse's
+    /// own "low" or "critical". A mouse that reports only a level (or coarse steps, whose
+    /// number the warnings leave out too) shows "Low".
+    static func batteryBadge(for mice: [LogiMouseDeviceState]) -> BatteryBadge {
+        let low = mice.compactMap(\.battery).filter { battery in
+            !BatteryWatcher.isCharging(battery) && BatteryWatcher.alert(for: battery) > BatteryWatcher.Alert.none
+        }
+        guard let lowest = low.min(by: isEmptier) else { return .plain }
+        if let percent = lowest.percent, !lowest.isApproximate {
+            let text = MouseText.percent(percent)
+            return BatteryBadge(
+                title: text,
+                accessibilityLabel: String(format: NSLocalizedString("status-item-accessibility-battery", comment: ""), text)
+            )
+        }
+        return BatteryBadge(
+            title: NSLocalizedString("status-item-battery-low", comment: ""),
+            accessibilityLabel: NSLocalizedString("status-item-accessibility-battery-low", comment: "")
+        )
+    }
+
+    /// `a` is emptier than `b`: almost empty before low, then the smaller number; a battery
+    /// without a number after one with.
+    private static func isEmptier(_ a: LogiMouseDeviceState.Battery, than b: LogiMouseDeviceState.Battery) -> Bool {
+        let alertA = BatteryWatcher.alert(for: a)
+        let alertB = BatteryWatcher.alert(for: b)
+        if alertA != alertB {
+            return alertA > alertB
+        }
+        switch (a.percent, b.percent) {
+        case let (percentA?, percentB?): return percentA < percentB
+        case (.some, nil): return true
+        default: return false
         }
     }
 
@@ -319,6 +473,10 @@ final class StatusMenuActions: NSObject {
     var showScrollMonitor: () -> Void = {
         WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.monitorWindowController)
     }
+    /// "Smooth Scrolling in …": decided again with the settings as they are, then changed.
+    var toggleAppSmoothing: (AppSmoothing.App) -> Void = { app in
+        AppSmoothing.toggle(app, list: Options.shared.application, scrolling: Options.shared.scroll)
+    }
     var showDiagnostics: () -> Void = { LogiCenter.shared.showDebugPanel() }
     var showTestToasts: () -> Void = { Toast.showTestPanel() }
     var quit: () -> Void = { NSApp.terminate(nil) }
@@ -326,6 +484,10 @@ final class StatusMenuActions: NSObject {
     @objc func settingsClicked(_ sender: Any?) { showSettings() }
     @objc func allowAccessClicked(_ sender: Any?) { showWelcomeGuide() }
     @objc func togglePauseClicked(_ sender: Any?) { togglePause() }
+    @objc func appSmoothingClicked(_ sender: Any?) {
+        guard let app = (sender as? NSMenuItem)?.representedObject as? AppSmoothing.App else { return }
+        toggleAppSmoothing(app)
+    }
     @objc func scrollMonitorClicked(_ sender: Any?) { showScrollMonitor() }
     @objc func diagnosticsClicked(_ sender: Any?) { showDiagnostics() }
     @objc func testToastsClicked(_ sender: Any?) { showTestToasts() }
