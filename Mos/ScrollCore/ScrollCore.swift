@@ -32,6 +32,13 @@ class ScrollCore: ScrollActionPort {
     private var mosBlockActionCount = 0
     /// Who moves the page when the trackpad and the wheel overlap. Main thread (scroll tap).
     var handover = ScrollHandover()
+    /// The sideways wheel's functions and its log line. Main thread (scroll tap, main queue).
+    var thumbWheelEngine = ThumbWheelEngine()
+#if DEBUG
+    /// Tests: receives what a smoothed wheel event would give the poster, instead of the
+    /// poster (nothing glides, nothing is posted).
+    static var posterInputObserverForTests: ((ScrollPosterInput) -> Void)?
+#endif
     // 例外应用数据
     var application: Application?
     var currentApplication: Application? // 用于区分按下热键及抬起时的作用目标
@@ -123,13 +130,34 @@ class ScrollCore: ScrollActionPort {
             if hasVerticalDelta || hasHorizontalDelta { ScrollSystemLog.notePassthrough(.trackpad) }
             return Unmanaged.passUnretained(event)
         }
+        // 当事件来自远程桌面，且其发送的事件 isContinuous=1.0，此时跳过本地平滑
+        let remoteSmoothed = ScrollUtils.shared.isRemoteSmoothedEvent(event)
+        // The sideways wheel (the thumb wheel of an MX Master, or a wheel that tilts) has its
+        // own settings. The tap's run loop source is on the main run loop (in the common modes,
+        // so this also runs while a menu is open): Options are read here, on the main thread,
+        // as everywhere in this callback; one copy of a small struct, nothing allocated.
+        let thumbWheel = Options.shared.thumbWheel
+        let sideways = ScrollCore.isSidewaysWheelEvent(
+            hasVerticalDelta: hasVerticalDelta,
+            hasHorizontalDelta: hasHorizontalDelta,
+            remoteSmoothed: remoteSmoothed,
+            holdKeyDown: ScrollCore.shared.toggleScroll || event.flags.contains(.maskShift)
+        )
+        // A turn that runs a function (zoom, tabs, ...) is swallowed further down: it is not
+        // smoothed and never reaches an app, whatever "Smooth scrolling", an app's rule, the
+        // allowlist or Launchpad say.
+        let runsThumbWheelFunction = sideways && thumbWheel.function != .scroll
+        // Its X deltas as they arrived, before any direction rule (for the stepper and the log).
+        let thumbWheelEvent = sideways
+            ? ThumbWheelEvent(axis: scrollEvent.X, isContinuous: event.getDoubleValueField(.scrollWheelEventIsContinuous) != 0)
+            : nil
         // A wheel event takes over a trackpad glide that still runs, whether it is smoothed or
-        // not: let through raw, it would still move the page against the glide.
-        if hasVerticalDelta || hasHorizontalDelta {
+        // not: let through raw, it would still move the page against the glide. A turn of the
+        // thumb wheel that runs a function moves no page: the glide goes on.
+        if (hasVerticalDelta || hasHorizontalDelta) && !runsThumbWheelFunction {
             ScrollCore.shared.handover.wheelEvent()
         }
-        // 当事件来自远程桌面，且其发送的事件 isContinuous=1.0，此时跳过本地平滑
-        if ScrollUtils.shared.isRemoteSmoothedEvent(event) {
+        if remoteSmoothed {
             ScrollSystemLog.notePassthrough(.remoteSmoothed)
             return Unmanaged.passUnretained(event)
         }
@@ -175,8 +203,23 @@ class ScrollCore: ScrollActionPort {
         if hasVerticalDelta && verticalReversePreference {
             ScrollEvent.reverseY(scrollEvent)
         }
-        if hasHorizontalDelta && enableReverseHorizontal {
+        // The thumb wheel's "Swap direction" turns a sideways event around once more, after
+        // "Reverse wheel direction" (global or the app's): X is turned around once or not at
+        // all. (Two `reverseX` would not undo each other: each writes the negated original.)
+        let flipsHorizontal = ScrollCore.flipsHorizontal(
+            reverseRule: enableReverseHorizontal,
+            swapsSideways: sideways && thumbWheel.swapsDirection
+        )
+        if hasHorizontalDelta && flipsHorizontal {
             ScrollEvent.reverseX(scrollEvent)
+        }
+        if let thumbWheelEvent = thumbWheelEvent {
+            ScrollCore.shared.thumbWheelEngine.handle(thumbWheelEvent, settings: thumbWheel, flipped: flipsHorizontal)
+            if runsThumbWheelFunction {
+                // Swallowed: the steps run on the main queue. No glide starts or changes, and
+                // the hand-over above left a trackpad glide alone.
+                return nil
+            }
         }
 
         let verticalPreference = willShiftVerticalToHorizontal ? enableSmoothHorizontal : enableSmoothVertical
@@ -211,9 +254,22 @@ class ScrollCore: ScrollActionPort {
 
         if shouldSmoothAny {
             // 每个事件的距离: max(step, |point delta|) × 速度 × 冲刺倍率; 一格为 step × 速度 × 冲刺倍率
-            let gain = speed * ScrollCore.shared.dashAmplification
-            let input = ScrollPosterInput(y: smoothedY * gain, x: smoothedX * gain, notch: step * gain, duration: duration)
+            // The sideways wheel scrolls at its own speed on top (1 at the default: the same).
+            let input = ScrollCore.posterInput(
+                smoothedY: smoothedY, smoothedX: smoothedX, step: step, speed: speed,
+                dash: ScrollCore.shared.dashAmplification,
+                sidewaysSpeed: sideways ? thumbWheel.speed : 1.0,
+                duration: duration
+            )
+#if DEBUG
+            if let observe = ScrollCore.posterInputObserverForTests {
+                observe(input)
+            } else {
+                ScrollPoster.shared.update(event: event, input: input).tryStart()
+            }
+#else
             ScrollPoster.shared.update(event: event, input: input).tryStart()
+#endif
         }
 
         if needsPassthrough {
@@ -248,6 +304,34 @@ class ScrollCore: ScrollActionPort {
             // No delta on either axis: nothing to smooth and nothing to report.
             return Unmanaged.passUnretained(event)
         }
+    }
+
+    // MARK: - The sideways wheel (pure)
+
+    /// Whether a wheel event is a sideways wheel event, the only kind the thumb wheel's
+    /// settings (`Options.thumbWheel`) apply to: it moves sideways only (a horizontal delta, no
+    /// vertical one), it was not smoothed by a remote desktop client, and no hold key turns the
+    /// main wheel sideways (Scrollio's "scroll sideways" key, `toggleScroll`, or Shift, with
+    /// which some drivers, Logitech's among them, already send the main wheel's turns sideways).
+    /// An event with both deltas is not one. Trackpad events and Scrollio's own are let through
+    /// before this is asked.
+    static func isSidewaysWheelEvent(hasVerticalDelta: Bool, hasHorizontalDelta: Bool, remoteSmoothed: Bool, holdKeyDown: Bool) -> Bool {
+        return hasHorizontalDelta && !hasVerticalDelta && !remoteSmoothed && !holdKeyDown
+    }
+
+    /// Whether X is turned around: by "Reverse wheel direction" (global or the app's), or by
+    /// the thumb wheel's "Swap direction" for a sideways event; both together cancel out.
+    static func flipsHorizontal(reverseRule: Bool, swapsSideways: Bool) -> Bool {
+        return reverseRule != swapsSideways
+    }
+
+    /// What the poster gets for one smoothed wheel event: each axis's distance (max(Step,
+    /// |delta|), done before) × Speed × dash, and for a sideways event × the thumb wheel's own
+    /// speed as well; the notch the same way. With `sidewaysSpeed` 1 it is exactly what it was
+    /// before the thumb wheel had a speed (× 1 changes no Double).
+    static func posterInput(smoothedY: Double, smoothedX: Double, step: Double, speed: Double, dash: Double, sidewaysSpeed: Double, duration: Double) -> ScrollPosterInput {
+        let gain = speed * dash * sidewaysSpeed
+        return ScrollPosterInput(y: smoothedY * gain, x: smoothedX * gain, notch: step * gain, duration: duration)
     }
 
     /// Why an event with an unsmoothed axis is let through.
@@ -521,6 +605,8 @@ class ScrollCore: ScrollActionPort {
         releaseHeldScrollKeys()
         // Without the tap the end of a glide is not seen: the next start knows of none.
         handover = ScrollHandover()
+        // Steps of the thumb wheel not yet run are dropped; the next turn starts a new roll.
+        thumbWheelEngine.reset()
     }
 
     /// Forgets every scroll key held down (the keyboard and mouse keys of the Scrolling tab,
