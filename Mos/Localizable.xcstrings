@@ -46,26 +46,6 @@
         }
       }
     },
-    "Auth": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Allow Access"
-          }
-        }
-      }
-    },
-    "Authorized": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Authorized"
-          }
-        }
-      }
-    },
     "bold": {
       "extractionState": "manual",
       "localizations": {
@@ -1461,6 +1441,237 @@
           "stringUnit": {
             "state": "translated",
             "value": "Welcome Guide"
+          }
+        }
+      }
+    },
+    "intro-title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Welcome to Scrollio"
+          }
+        }
+      }
+    },
+    "intro-subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smooth scrolling, gestures and button actions for your mouse."
+          }
+        }
+      }
+    },
+    "intro-access-heading": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio needs Accessibility access"
+          }
+        }
+      }
+    },
+    "intro-access-explanation": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It reads mouse events to smooth scrolling and to run your gestures and button actions. macOS allows that only with this permission."
+          }
+        }
+      }
+    },
+    "intro-step-open-settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the Accessibility settings"
+          }
+        }
+      }
+    },
+    "intro-step-open-settings-detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System Settings › Privacy & Security › Accessibility"
+          }
+        }
+      }
+    },
+    "intro-step-turn-on": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn on Scrollio"
+          }
+        }
+      }
+    },
+    "intro-step-turn-on-detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the switch next to Scrollio in the list. macOS may ask for your password or Touch ID."
+          }
+        }
+      }
+    },
+    "intro-step-accessibility": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Step %1$d: %2$@"
+          }
+        }
+      }
+    },
+    "intro-status-missing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accessibility access is not allowed yet"
+          }
+        }
+      }
+    },
+    "intro-status-missing-detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This changes by itself as soon as you turn Scrollio on."
+          }
+        }
+      }
+    },
+    "intro-status-granted": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accessibility access is allowed"
+          }
+        }
+      }
+    },
+    "intro-status-granted-detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio is running. Open Preferences from its menu bar icon."
+          }
+        }
+      }
+    },
+    "intro-status-granted-detail-hidden-icon": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio is running. Its menu bar icon is hidden: open Scrollio again to reach its settings."
+          }
+        }
+      }
+    },
+    "intro-open-settings-button": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Accessibility Settings"
+          }
+        }
+      }
+    },
+    "intro-get-started-button": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get Started"
+          }
+        }
+      }
+    },
+    "intro-done-button": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        }
+      }
+    },
+    "intro-help-link": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Having trouble?"
+          }
+        }
+      }
+    },
+    "intro-help-heading": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio is in the list but does not work?"
+          }
+        }
+      }
+    },
+    "intro-help-text": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This can happen after an update. In the Accessibility list, select Scrollio and remove it with the minus (–) button. Then add it again: drag Scrollio from Finder into the list and turn it on."
+          }
+        }
+      }
+    },
+    "intro-help-finder-button": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Scrollio in Finder"
           }
         }
       }

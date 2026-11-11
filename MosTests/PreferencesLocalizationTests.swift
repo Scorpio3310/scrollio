@@ -2,8 +2,8 @@ import XCTest
 @testable import Mos_Debug
 
 /// Strings of the reorganised preferences (Mouse tab, Presets & Fast Scrolling, Gesture
-/// Settings) must exist in every shipped locale, keep their format specifiers, and never
-/// fall back to the raw key. Several keys are built from variables in code, so a missing
+/// Settings) and of the Introduction window must exist in every shipped locale, keep their
+/// format specifiers, and never fall back to the raw key. Several keys are built from variables in code, so a missing
 /// one would only show up as the key itself in the UI.
 final class PreferencesLocalizationTests: XCTestCase {
 
@@ -37,6 +37,14 @@ final class PreferencesLocalizationTests: XCTestCase {
         "gesture-mode-interactive-unavailable", "gesture-follow-horizontal-value",
         // About
         "about-tab-title", "about-app-name", "about-version", "about-credit", "about-welcome-guide",
+        // Introduction window
+        "intro-title", "intro-subtitle", "intro-access-heading", "intro-access-explanation",
+        "intro-step-open-settings", "intro-step-open-settings-detail", "intro-step-turn-on",
+        "intro-step-turn-on-detail", "intro-step-accessibility",
+        "intro-status-missing", "intro-status-missing-detail", "intro-status-granted",
+        "intro-status-granted-detail", "intro-status-granted-detail-hidden-icon",
+        "intro-open-settings-button", "intro-get-started-button", "intro-done-button",
+        "intro-help-link", "intro-help-heading", "intro-help-text", "intro-help-finder-button",
     ]
 
     private static let missing = "\u{1}missing"

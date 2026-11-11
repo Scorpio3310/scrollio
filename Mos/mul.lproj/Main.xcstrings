@@ -13,18 +13,6 @@
         }
       }
     },
-    "1su-Cm-MUc.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"After the update, macOS sometimes fails to authorize correctly.\\nRemove Scrollio from the list first, and then re-add Scrollio to authorize. (You can also drag the icon above directly)\"; ObjectID = \"1su-Cm-MUc\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "After the update, macOS sometimes fails to authorize correctly.\nRemove Scrollio from the list first, and then re-add Scrollio to authorize. (You can also drag the icon above directly)"
-          }
-        }
-      }
-    },
     "2dJ-u6-vHd.title" : {
       "comment" : "Class = \"NSButtonCell\"; title = \"Disabled\"; ObjectID = \"2dJ-u6-vHd\";",
       "extractionState" : "extracted_with_value",
@@ -69,17 +57,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "⌃ Control"
-          }
-        }
-      }
-    },
-    "11f-uB-gEM.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Introducting\"; ObjectID = \"11f-uB-gEM\";",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Introducing"
           }
         }
       }
@@ -344,18 +321,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Sets the duration of the scroll animation"
-          }
-        }
-      }
-    },
-    "DYt-9m-sTf.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Allow to access\"; ObjectID = \"DYt-9m-sTf\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Allow to access"
           }
         }
       }
@@ -846,18 +811,6 @@
         }
       }
     },
-    "t00-ho-RN1.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Not effective?\"; ObjectID = \"t00-ho-RN1\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Not effective?"
-          }
-        }
-      }
-    },
     "t2D-X2-Y6W.title" : {
       "comment" : "Class = \"NSButtonCell\"; title = \"Reset to defaults\"; ObjectID = \"t2D-X2-Y6W\";",
       "extractionState" : "extracted_with_value",
@@ -1048,18 +1001,6 @@
         }
       }
     },
-    "XMw-QE-lsq.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Getting trouble ?\"; ObjectID = \"XMw-QE-lsq\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Having trouble?"
-          }
-        }
-      }
-    },
     "xoR-7p-3qj.title" : {
       "comment" : "Class = \"NSButtonCell\"; title = \"Launch Scrollio at Login\"; ObjectID = \"xoR-7p-3qj\";",
       "localizations" : {
@@ -1067,29 +1008,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Launch on Login"
-          }
-        }
-      }
-    },
-    "yFl-4N-WcD.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Your mouse is about to get a smoothest scrolling experience.\\nPick up your mouse, we just have a few thing that you need to check.\"; ObjectID = \"yFl-4N-WcD\";",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your mouse is about to get a smoother scrolling experience.\nPick up your mouse, there are a few things you need to check."
-          }
-        }
-      }
-    },
-    "YHn-dn-A4n.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Scrollio\"; ObjectID = \"YHn-dn-A4n\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Scrollio"
           }
         }
       }

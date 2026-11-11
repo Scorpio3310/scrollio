@@ -32,7 +32,7 @@ final class AboutPreferencesViewController: NSViewController {
     private(set) var creditLabel: NSTextField!
 
     /// Opens the Welcome Guide. Tests replace it, so no window is shown.
-    var showWelcomeGuide: () -> Void = AboutPreferencesViewController.showIntroductionWindow
+    var showWelcomeGuide: () -> Void = IntroductionWindowController.showWelcomeGuide
 
     // MARK: - Lifecycle
 
@@ -130,15 +130,6 @@ final class AboutPreferencesViewController: NSViewController {
 
     @objc func welcomeGuideClicked(_ sender: NSButton) {
         showWelcomeGuide()
-    }
-
-    private static func showIntroductionWindow() {
-        WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.introductionWindowController, withTitle: "")
-        // Opened by hand: the permission check must not close the window on its own.
-        if let windowController = WindowManager.shared.refs[WINDOW_IDENTIFIER.introductionWindowController] as? IntroductionWindowController,
-           let viewController = windowController.contentViewController as? IntroductionViewController {
-            viewController.setManuallyOpened(true)
-        }
     }
 
     // MARK: - Toolbar

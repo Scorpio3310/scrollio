@@ -11,6 +11,7 @@
 		0A5E7AB00000000000000012 /* MosTests/StoryboardIntegrityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A5E7AB00000000000000011 /* MosTests/StoryboardIntegrityTests.swift */; };
 		9D5E7AB10000000000000102 /* MosTests/PreferencesFormTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D5E7AB10000000000000101 /* MosTests/PreferencesFormTests.swift */; };
 		9D5E7AB10000000000000202 /* MosTests/PreferencesWindowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D5E7AB10000000000000201 /* MosTests/PreferencesWindowTests.swift */; };
+		9D5E7AB20000000000000202 /* MosTests/IntroductionWindowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D5E7AB20000000000000201 /* MosTests/IntroductionWindowTests.swift */; };
 		9D5E7AB10000000000000302 /* MosTests/PreferencesGesturesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D5E7AB10000000000000301 /* MosTests/PreferencesGesturesTests.swift */; };
 		1A5E00000000000000000602 /* MosTests/LegacyMosTakeoverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5E00000000000000000601 /* MosTests/LegacyMosTakeoverTests.swift */; };
 		C0DE4EA10000000000000502 /* MosTests/ScrollPosterStopHandoffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE4EA10000000000000501 /* MosTests/ScrollPosterStopHandoffTests.swift */; };
@@ -105,6 +106,7 @@
 		0A5E7AB00000000000000011 /* MosTests/StoryboardIntegrityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/StoryboardIntegrityTests.swift; sourceTree = SOURCE_ROOT; };
 		9D5E7AB10000000000000101 /* MosTests/PreferencesFormTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/PreferencesFormTests.swift; sourceTree = SOURCE_ROOT; };
 		9D5E7AB10000000000000201 /* MosTests/PreferencesWindowTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/PreferencesWindowTests.swift; sourceTree = SOURCE_ROOT; };
+		9D5E7AB20000000000000201 /* MosTests/IntroductionWindowTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/IntroductionWindowTests.swift; sourceTree = SOURCE_ROOT; };
 		9D5E7AB10000000000000301 /* MosTests/PreferencesGesturesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/PreferencesGesturesTests.swift; sourceTree = SOURCE_ROOT; };
 		1A5E00000000000000000601 /* MosTests/LegacyMosTakeoverTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LegacyMosTakeoverTests.swift; sourceTree = SOURCE_ROOT; };
 		C0DE4EA10000000000000501 /* MosTests/ScrollPosterStopHandoffTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollPosterStopHandoffTests.swift; sourceTree = SOURCE_ROOT; };
@@ -235,6 +237,7 @@
 				0A5E7AB00000000000000011 /* MosTests/StoryboardIntegrityTests.swift */,
 				9D5E7AB10000000000000101 /* MosTests/PreferencesFormTests.swift */,
 				9D5E7AB10000000000000201 /* MosTests/PreferencesWindowTests.swift */,
+				9D5E7AB20000000000000201 /* MosTests/IntroductionWindowTests.swift */,
 				9D5E7AB10000000000000301 /* MosTests/PreferencesGesturesTests.swift */,
 				1A5E00000000000000000601 /* MosTests/LegacyMosTakeoverTests.swift */,
 				C0DE4EA10000000000000501 /* MosTests/ScrollPosterStopHandoffTests.swift */,
@@ -466,6 +469,7 @@
 				0A5E7AB00000000000000012 /* MosTests/StoryboardIntegrityTests.swift in Sources */,
 				9D5E7AB10000000000000102 /* MosTests/PreferencesFormTests.swift in Sources */,
 				9D5E7AB10000000000000202 /* MosTests/PreferencesWindowTests.swift in Sources */,
+				9D5E7AB20000000000000202 /* MosTests/IntroductionWindowTests.swift in Sources */,
 				9D5E7AB10000000000000302 /* MosTests/PreferencesGesturesTests.swift in Sources */,
 				1A5E00000000000000000602 /* MosTests/LegacyMosTakeoverTests.swift in Sources */,
 				C0DE4EA10000000000000502 /* MosTests/ScrollPosterStopHandoffTests.swift in Sources */,

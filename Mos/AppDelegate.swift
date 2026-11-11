@@ -182,7 +182,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 LogiCenter.shared.start()
             } else {
                 // 如果应用不在辅助权限列表内, 则弹出欢迎窗口
-                WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.introductionWindowController, withTitle: "")
+                WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.introductionWindowController)
                 // 启动定时器检测权限, 当拥有授权时启动滚动处理
                 // 统一由 permissionRecoveryTimer 持有, 使 sessionDidResign 可取消, 避免反复休眠/切换用户时叠加
                 permissionRecoveryTimer?.invalidate()
@@ -197,6 +197,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+    /// The Introduction window saw the permission arrive. The recovery timer would notice
+    /// at its next tick, up to 10 s later; this is that tick, now, so the window can say
+    /// that Scrollio is running. Nothing to do when no timer is waiting.
+    func accessibilityPermissionWasGranted() {
+        permissionRecoveryTimer?.fire()
+    }
+
     // 在切换用户时停止滚动处理
     @objc func sessionDidActive(notification: NSNotification){
         startWithAccessibilityPermissionsChecker(nil)
