@@ -998,6 +998,13 @@ extension PreferencesButtonsViewController: KeyRecorderDelegate {
         return NSLocalizedString("buttons-gesture-needs-mouse-button", comment: "")
     }
 
+    /// What the recorder's popover asks for while it waits: a mouse button only while the
+    /// gesture button is set up; nil (the mode's own text) otherwise.
+    func waitingHint(_ recorder: KeyRecorder, mode: KeyRecordingMode) -> String? {
+        guard Self.needsMouseButton(pendingAction) else { return nil }
+        return NSLocalizedString("buttons-recorder-waiting-gesture", comment: "")
+    }
+
     /// The card shows the button at once; a listed one's row flashes while the recorder
     /// says "Duplicate key", and the card answers "That's <row title>" with its part lit
     /// (or its number by the mouse). A new one is added, or a listed one without an action

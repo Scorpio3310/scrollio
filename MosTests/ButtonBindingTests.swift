@@ -1151,9 +1151,107 @@ final class ButtonBindingTests: XCTestCase {
         )
         XCTAssertEqual(popover.testingHintFontPointSize, 10)
         XCTAssertEqual(popover.testingHintAlignment, NSTextAlignment.center)
-        XCTAssertEqual(popover.testingHintBottomPadding, 5)
+        XCTAssertTrue(popover.testingHintIsVisible)
 
         popover.hide()
+    }
+
+    /// What each mode takes, in words: the popover said nothing but "?" while it waited.
+    func testKeyRecorderWaitingHintSaysWhatEachModeTakes() {
+        XCTAssertEqual(KeyRecordingMode.combination.waitingHint, "Press a mouse button,\nor a key with ⌘, ⌥, ⌃ or ⇧")
+        XCTAssertEqual(KeyRecordingMode.singleKey.waitingHint, "Press a key or a mouse button")
+        XCTAssertEqual(KeyRecordingMode.adaptive.waitingHint, "Press a shortcut, a key or a mouse button")
+
+        // The recorder asks its delegate first; nil (and no delegate) is the mode's own text.
+        final class Delegate: KeyRecorderDelegate {
+            var hint: String?
+            func onEventRecorded(_ recorder: KeyRecorder, didRecordEvent event: InputEvent, isDuplicate: Bool) {}
+            func waitingHint(_ recorder: KeyRecorder, mode: KeyRecordingMode) -> String? { hint }
+        }
+        final class Silent: KeyRecorderDelegate {
+            func onEventRecorded(_ recorder: KeyRecorder, didRecordEvent event: InputEvent, isDuplicate: Bool) {}
+        }
+        let recorder = KeyRecorder()
+        XCTAssertEqual(recorder.waitingHint(for: .singleKey), KeyRecordingMode.singleKey.waitingHint)
+        let silent = Silent()
+        recorder.delegate = silent
+        XCTAssertEqual(recorder.waitingHint(for: .adaptive), KeyRecordingMode.adaptive.waitingHint, "the default answer is nil")
+        let delegate = Delegate()
+        recorder.delegate = delegate
+        XCTAssertEqual(recorder.waitingHint(for: .combination), KeyRecordingMode.combination.waitingHint)
+        delegate.hint = "Press a mouse button"
+        XCTAssertEqual(recorder.waitingHint(for: .combination), "Press a mouse button")
+    }
+
+    /// The popover says what to press and "Press Esc to cancel" from the start; a refused
+    /// press replaces the Esc line, and the waiting hint stays above.
+    func testKeyPopoverSaysWhatToPressFromTheStart() throws {
+        let popover = KeyPopover()
+        var spoken: [String] = []
+        popover.announce = { spoken.append($0) }
+        popover.testingPrepareContent(waitingHint: KeyRecordingMode.combination.waitingHint)
+
+        XCTAssertEqual(popover.testingWaitingText, KeyRecordingMode.combination.waitingHint)
+        XCTAssertEqual(popover.testingHintText, "Press Esc to cancel")
+        XCTAssertTrue(popover.testingHintIsVisible, "on from the start, not after five refused presses")
+        let content = try XCTUnwrap(popover.testingContentView)
+        XCTAssertEqual(content.accessibilityLabel(), "Press a mouse button, or a key with ⌘, ⌥, ⌃ or ⇧")
+
+        // Five refused presses ask for Esc again: it is there already, nothing changes.
+        popover.showEscHint()
+        XCTAssertEqual(popover.testingHintText, "Press Esc to cancel")
+        XCTAssertEqual(spoken, [])
+
+        popover.showRefusalHint("Gestures need a mouse button")
+        XCTAssertEqual(popover.testingHintText, "Gestures need a mouse button")
+        XCTAssertEqual(popover.testingWaitingText, KeyRecordingMode.combination.waitingHint, "the waiting hint stays")
+        XCTAssertEqual(spoken, ["Gestures need a mouse button"], "VoiceOver hears why")
+        popover.hide()
+    }
+
+    /// The popover grows to fit its texts: two lines are taller than one, a long one is as
+    /// wide as its text, and none is cut.
+    func testKeyPopoverGrowsToFitTheWaitingHint() throws {
+        func size(_ hint: String) throws -> NSSize {
+            let popover = KeyPopover()
+            popover.testingPrepareContent(waitingHint: hint)
+            defer { popover.hide() }
+            let content = try XCTUnwrap(popover.testingContentView)
+            XCTAssertEqual(popover.testingContentSize, content.fittingSize, hint)
+            // Each row centred, off the sides; the "?" slot as small as its key.
+            let rows = popover.testingRowFrames
+            XCTAssertEqual(rows.count, 3)
+            for row in rows {
+                XCTAssertGreaterThanOrEqual(row.minX, 16 - 0.5, hint)
+                XCTAssertLessThanOrEqual(row.maxX, content.bounds.width - 16 + 0.5, hint)
+                XCTAssertEqual(row.midX, content.bounds.midX, accuracy: 1, hint)
+            }
+            XCTAssertLessThanOrEqual(rows[1].width, 40, "the \"?\" slot is not stretched")
+            return content.fittingSize
+        }
+        let twoLines = try size(KeyRecordingMode.combination.waitingHint)
+        let oneLine = try size(KeyRecordingMode.singleKey.waitingHint)
+        let long = try size(KeyRecordingMode.adaptive.waitingHint)
+        let short = try size("Press a mouse button")
+        XCTAssertGreaterThan(twoLines.height, oneLine.height + 10, "the second line has its room")
+        XCTAssertEqual(oneLine.height, long.height)
+        XCTAssertGreaterThan(long.width, oneLine.width)
+        XCTAssertGreaterThan(long.width, 250, "as wide as its text, not the old 165")
+        XCTAssertLessThanOrEqual(long.width, KeyPopover.maxTextWidth + 40, "wraps rather than grows past its width")
+        XCTAssertGreaterThanOrEqual(short.width, 165, "never narrower than before")
+        XCTAssertLessThan(short.width, oneLine.width)
+        let wrapped = try size(String(repeating: "Press a shortcut, a key or a mouse button. ", count: 3))
+        XCTAssertGreaterThan(wrapped.height, twoLines.height, "a longer text wraps")
+        XCTAssertLessThanOrEqual(wrapped.width, KeyPopover.maxTextWidth + 40)
+    }
+
+    func testKeyPopoverSpokenTextJoinsItsLines() {
+        XCTAssertEqual(
+            KeyPopover.spokenText(["Press a mouse button,\nor a key", "Press Esc to cancel"]),
+            "Press a mouse button, or a key. Press Esc to cancel"
+        )
+        XCTAssertEqual(KeyPopover.spokenText(["Press a key…", "", "Esc?"]), "Press a key… Esc?")
+        XCTAssertEqual(KeyPopover.spokenText(["One"]), "One")
     }
 
     /// A refusal the delegate gives a reason for shows that reason in the hint's place;

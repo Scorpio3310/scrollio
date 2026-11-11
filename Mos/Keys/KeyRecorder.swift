@@ -19,6 +19,25 @@ enum KeyRecordingMode {
     case adaptive
 }
 
+extension KeyRecordingMode {
+    /// What the recorder's popover asks for while it waits: what this mode records (see
+    /// `InputEvent.isRecordable`, `isRecordableAsSingleKey`, `isRecordableAsAdaptive`).
+    var waitingHint: String {
+        switch self {
+        case .combination:
+            // A mouse button (left and right only with a modifier), or a key with a
+            // modifier (F-keys also alone).
+            return NSLocalizedString("key-recorder-waiting-combination", comment: "Key recorder popover while it waits (Buttons pane +)")
+        case .singleKey:
+            // Any key, a modifier alone, or a mouse button other than left and right.
+            return NSLocalizedString("key-recorder-waiting-single-key", comment: "Key recorder popover while it waits (Scrolling pane hold keys)")
+        case .adaptive:
+            // A key, a key with modifiers, modifiers alone, or a mouse button but the left.
+            return NSLocalizedString("key-recorder-waiting-adaptive", comment: "Key recorder popover while it waits (Keyboard Shortcut… action)")
+        }
+    }
+}
+
 protocol KeyRecorderDelegate: AnyObject {
     /// 录制开始回调
     func onRecordingStarted(_ recorder: KeyRecorder)
@@ -35,6 +54,10 @@ protocol KeyRecorderDelegate: AnyObject {
     /// Why `validateRecordedEvent` refused `event`, as the recorder's hint shows it; nil:
     /// a duplicate ("Duplicate key").
     func refusalHint(_ recorder: KeyRecorder, event: InputEvent) -> String?
+
+    /// What the recorder's popover asks for while it waits, when the caller takes less than
+    /// `mode` does; nil: the mode's own text (`KeyRecordingMode.waitingHint`).
+    func waitingHint(_ recorder: KeyRecorder, mode: KeyRecordingMode) -> String?
 }
 
 /// 默认实现 (替代 @objc optional 语义)
@@ -48,6 +71,10 @@ extension KeyRecorderDelegate {
     }
 
     func refusalHint(_ recorder: KeyRecorder, event: InputEvent) -> String? {
+        return nil
+    }
+
+    func waitingHint(_ recorder: KeyRecorder, mode: KeyRecordingMode) -> String? {
         return nil
     }
 }
@@ -103,6 +130,12 @@ class KeyRecorder: NSObject {
         return isDuplicate ? duplicateFeedbackDelay : recordedFeedbackDelay
     }
 
+    /// What the popover asks for while it waits in `mode`: the delegate's text, or the
+    /// mode's own.
+    func waitingHint(for mode: KeyRecordingMode) -> String {
+        return delegate?.waitingHint(self, mode: mode) ?? mode.waitingHint
+    }
+
     // UI 组件
     private var keyPopover: KeyPopover?
     
@@ -152,9 +185,9 @@ class KeyRecorder: NSObject {
         // 确保清理任何存在的录制界面
         keyPopover?.hide()
         keyPopover = nil
-        // 立即显示 Popover (不等待 HID++ divert)
+        // 立即显示 Popover (不等待 HID++ divert), saying what to press from the start
         keyPopover = KeyPopover()
-        keyPopover?.show(at: sourceView)
+        keyPopover?.show(at: sourceView, waitingHint: waitingHint(for: mode))
         // 异步 divert 所有 Logitech 按键 (BLE 通信有延迟); not when the recording already ended
         DispatchQueue.main.async { [weak self] in
             guard let self, self.interceptor === tap else { return }

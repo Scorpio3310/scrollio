@@ -5377,6 +5377,54 @@
         }
       }
     },
+    "key-recorder-waiting-combination": {
+      "comment": "Key recorder popover while it waits for a button (Buttons pane +): what to press",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press a mouse button,\nor a key with ⌘, ⌥, ⌃ or ⇧"
+          }
+        }
+      }
+    },
+    "key-recorder-waiting-single-key": {
+      "comment": "Key recorder popover while it waits for a hold key (Scrolling pane): what to press",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press a key or a mouse button"
+          }
+        }
+      }
+    },
+    "key-recorder-waiting-adaptive": {
+      "comment": "Key recorder popover while it waits for a Keyboard Shortcut… action: what to press",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press a shortcut, a key or a mouse button"
+          }
+        }
+      }
+    },
+    "buttons-recorder-waiting-gesture": {
+      "comment": "Key recorder popover while Gestures > Set Up… waits for the gesture button: what to press",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press a mouse button"
+          }
+        }
+      }
+    },
     "buttons-default": {
       "comment": "Buttons pane: the action pull-down of a button of the connected mouse that has no action, and its menu item that clears the action; the card's line under such a button",
       "extractionState": "manual",

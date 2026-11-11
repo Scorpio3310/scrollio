@@ -188,6 +188,8 @@ class KeyPreview: NSStackView {
         label.textColor = (status == .recorded || status == .duplicate) ? NSColor.white : NSColor.labelColor
         label.alignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
+        // The "?" slot is not read out: the popover's waiting hint says what to press.
+        label.setAccessibilityElement(!isWaiting)
         container.addSubview(label)
 
         // 设置约束
