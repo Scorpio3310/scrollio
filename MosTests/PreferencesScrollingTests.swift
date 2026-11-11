@@ -1056,6 +1056,39 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertTrue(controller.thumbWheelSection.isHidden)
     }
 
+    // MARK: - Thumb wheel: review findings (these fail on purpose until fixed)
+
+    /// QA proof: VoiceOver names the thumb wheel's speed slider exactly as the main wheel's
+    /// ("Speed"), and the section title above it is not part of either name, so the two
+    /// sliders of the tab cannot be told apart by name (Tab with Full Keyboard Access reads
+    /// "Speed, 1.00×, slider" for both). The tab already gives look-alike controls names of
+    /// their own (the three clear buttons: "Clear Scroll faster", …).
+    func testQAThumbWheelSpeedHasANameOfItsOwnForVoiceOver() {
+        let controller = makeController()
+        let main = controller.scrollSpeedSlider.accessibilityLabel()
+        let thumbWheel = controller.thumbWheelSpeedSlider.accessibilityLabel()
+        XCTAssertNotEqual(thumbWheel, main, "two sliders on one tab both named \"\(main ?? "")\"")
+    }
+
+    /// QA proof: the speed slider is dimmed and cannot be moved while "Smooth scrolling" is
+    /// off, although an app with its own settings and smoothing on still smooths the thumb
+    /// wheel at this speed (ScrollCore: the app's own `isSmooth`, then `posterInput(...,
+    /// sidewaysSpeed: thumbWheel.speed)`). The thumb wheel has no per-app speed, so this
+    /// slider is the only place to set the speed used in that app.
+    func testQAThumbWheelSpeedStaysAdjustableWhileAnAppSmoothsWithItsOwnSettings() {
+        let saved = Options.shared.application.applications
+        addTeardownBlock { Options.shared.application.applications = saved }
+        let application = makeApplication(inherit: false)
+        application.scroll.smooth = true
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [application], matchKey: "path")
+        Options.shared.scroll.smooth = false
+        XCTAssertTrue(application.isSmooth(false), "the app's own rule smooths it")
+
+        let controller = makeController()
+        XCTAssertEqual(Options.shared.thumbWheel.function, .scroll)
+        XCTAssertTrue(controller.thumbWheelSpeedSlider.isEnabled, "the speed still applies in the app with smoothing on")
+    }
+
     // MARK: - Advanced
 
     func testAdvancedIsClosedByDefaultAndHidesItsRows() {
