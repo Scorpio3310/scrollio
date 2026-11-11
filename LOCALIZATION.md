@@ -48,8 +48,10 @@ show up as the raw key in the UI.
 ## The test
 
 `PreferencesLocalizationTests` checks, for every locale in its `locales` list (now
-`["en"]`), that each listed key exists, is not empty, is not shown as the raw key, and
-has the same format specifiers as the English value.
+`["en"]`), that each listed key exists, is not empty and is not shown as the raw key, and
+that every string code formats with `String(format:)` takes the arguments its call site
+passes (the table `formatArguments`: key, then "@" for a String and "d" for an Int, in
+order). When you format a new string, add its key and arguments to that table.
 
 ## Adding a language
 
