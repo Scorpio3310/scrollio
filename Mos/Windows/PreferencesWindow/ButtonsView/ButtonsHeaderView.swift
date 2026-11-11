@@ -4,7 +4,10 @@
 //  The card at the top of the Buttons pane, with the metrics and colours of the Mouse
 //  pane's card (MouseHeaderView): on the left the mouse seen from above, its buttons
 //  drawn, on the right what the pane is about. The button of the row under the pointer
-//  (or the selected row, or the button just recorded) lights up in the accent colour.
+//  (or the selected row, or the button just recorded) lights up in the accent colour; a
+//  button the drawing cannot show ("Button 5") gets its number on a badge by the mouse and
+//  a line on how to find it. Idle, a second line says how to tell the buttons apart: "+"
+//  and a press of a listed button makes the card answer "That's …".
 //
 
 import Cocoa
@@ -16,13 +19,32 @@ struct ButtonsHeaderContent: Equatable {
     var title: String
     var subtitle: String?
     var part: ButtonsMousePart?
+    /// A smaller line under the subtitle: how to find out which button is which.
+    var hint: String? = nil
+    /// The number of a button the drawing cannot show ("Button 5"), on a badge by the mouse.
+    var number: Int? = nil
 
-    /// A row the card is about: its title, its action and its part of the mouse.
+    /// A row the card is about: its title, its action and its picture.
     struct Focus: Equatable {
         var title: String
         /// The action's name; nil: none.
         var action: String?
-        var part: ButtonsMousePart?
+        var picture: ButtonTriggerPicture
+        var reason: Reason = .row
+
+        /// Why the card is about the button.
+        enum Reason: Equatable {
+            /// Its row is pointed at or selected.
+            case row
+            /// "+" caught it and the list does not have it yet.
+            case recorded
+            /// "+" caught a button the list has: the card says "That's …".
+            case answer
+        }
+
+        var part: ButtonsMousePart? {
+            return picture.part
+        }
     }
 
     /// - Parameters:
@@ -40,10 +62,15 @@ struct ButtonsHeaderContent: Equatable {
             )
         }
         if let focus {
+            let title = focus.reason == .answer ? String(format: text("buttons-header-answer"), focus.title) : focus.title
+            // A listed button the drawing cannot show: the mouse tells which one it is.
+            let hint = focus.reason == .row && focus.picture.isUnplaced ? text("buttons-header-find-this-one") : nil
             return ButtonsHeaderContent(
-                title: focus.title,
+                title: title,
                 subtitle: focus.action ?? text("buttons-header-no-action"),
-                part: focus.part
+                part: focus.part,
+                hint: hint,
+                number: focus.picture.number
             )
         }
         let subtitle: String
@@ -53,7 +80,7 @@ struct ButtonsHeaderContent: Equatable {
         default: subtitle = String(format: text("buttons-header-count"), boundCount)
         }
         let name = deviceName.flatMap { $0.isEmpty ? nil : $0 } ?? text("buttons-header-your-mouse")
-        return ButtonsHeaderContent(title: name, subtitle: subtitle, part: nil)
+        return ButtonsHeaderContent(title: name, subtitle: subtitle, part: nil, hint: text("buttons-header-find-hint"))
     }
 
     private static func text(_ key: String) -> String {
@@ -83,6 +110,12 @@ final class ButtonsHeaderView: NSView {
     let artwork = ButtonsMouseArtworkView()
     let titleLabel = NSTextField(labelWithString: "")
     let subtitleLabel = NSTextField(wrappingLabelWithString: "")
+    /// How to find out which button is which, under the subtitle.
+    let hintLabel = NSTextField(wrappingLabelWithString: "")
+
+    static var hintFont: NSFont {
+        return NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -106,17 +139,24 @@ final class ButtonsHeaderView: NSView {
         subtitleLabel.textColor = .secondaryLabelColor
         subtitleLabel.isSelectable = false
         subtitleLabel.maximumNumberOfLines = 3
+        hintLabel.font = Self.hintFont
+        hintLabel.textColor = .secondaryLabelColor
+        hintLabel.isSelectable = false
+        hintLabel.maximumNumberOfLines = 2
         // The column right of the mouse in the pane's box width; `layout` follows the card.
-        subtitleLabel.preferredMaxLayoutWidth = PreferencesGroupedForm.boxWidth(paneWidth: PreferencesWindowLayout.contentWidth)
+        let textWidth = PreferencesGroupedForm.boxWidth(paneWidth: PreferencesWindowLayout.contentWidth)
             - Self.artworkColumnWidth - Self.textTrailingInset
-        for label in [titleLabel, subtitleLabel] {
+        subtitleLabel.preferredMaxLayoutWidth = textWidth
+        hintLabel.preferredMaxLayoutWidth = textWidth
+        for label in [titleLabel, subtitleLabel, hintLabel] {
             label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         }
 
-        let text = NSStackView(views: [titleLabel, subtitleLabel])
+        let text = NSStackView(views: [titleLabel, subtitleLabel, hintLabel])
         text.orientation = .vertical
         text.alignment = .leading
         text.spacing = 4
+        text.setCustomSpacing(8, after: subtitleLabel)
         text.detachesHiddenViews = true
         text.translatesAutoresizingMaskIntoConstraints = false
         addSubview(text)
@@ -143,10 +183,10 @@ final class ButtonsHeaderView: NSView {
 
     override func layout() {
         super.layout()
-        // The subtitle wraps in the column right of the mouse.
+        // The subtitle and the hint wrap in the column right of the mouse.
         let width = max(0, bounds.width - Self.artworkColumnWidth - Self.textTrailingInset)
-        if width > 0, abs(subtitleLabel.preferredMaxLayoutWidth - width) > 0.5 {
-            subtitleLabel.preferredMaxLayoutWidth = width
+        for label in [subtitleLabel, hintLabel] where width > 0 && abs(label.preferredMaxLayoutWidth - width) > 0.5 {
+            label.preferredMaxLayoutWidth = width
         }
     }
 
@@ -154,8 +194,11 @@ final class ButtonsHeaderView: NSView {
         titleLabel.stringValue = content.title
         subtitleLabel.stringValue = content.subtitle ?? ""
         subtitleLabel.isHidden = content.subtitle == nil
+        hintLabel.stringValue = content.hint ?? ""
+        hintLabel.isHidden = content.hint == nil
         artwork.setEmphasis(content.part, animated: animated)
-        setAccessibilityLabel([content.title, content.subtitle].compactMap { $0 }.joined(separator: ", "))
+        artwork.setNumber(content.number, animated: animated)
+        setAccessibilityLabel([content.title, content.subtitle, content.hint].compactMap { $0 }.joined(separator: ", "))
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -200,6 +243,8 @@ final class ButtonsMouseArtworkView: NSView {
     private(set) var emphasis: ButtonsMousePart?
     private(set) var highlights: [ButtonsMousePart: ButtonsMouseHighlight] = [:]
     let base = MouseArtworkView()
+    /// The number of a button the drawing cannot show, as the row's picture has it.
+    let badge = ButtonsMouseNumberBadge()
 
     init() {
         super.init(frame: NSRect(origin: .zero, size: Self.size))
@@ -217,11 +262,41 @@ final class ButtonsMouseArtworkView: NSView {
             addSubview(highlight)
             highlights[part] = highlight
         }
+        badge.alphaValue = 0
+        addSubview(badge)
         setAccessibilityElement(false)
     }
 
     required init?(coder: NSCoder) {
         fatalError("ButtonsMouseArtworkView is built in code")
+    }
+
+    /// Where the badge's middle is: on the body's right edge, low, where the row's picture
+    /// has it.
+    static let badgeCentre = MouseArtworkView.point(72, 98)
+
+    /// Shows `number` on the badge, or fades the badge out (nil).
+    func setNumber(_ number: Int?, animated: Bool) {
+        if let number {
+            badge.number = number
+            let size = ButtonsMouseMiniature.badgeSize(
+                for: number, font: ButtonsMouseNumberBadge.font, height: ButtonsMouseNumberBadge.height
+            )
+            badge.frame = NSRect(
+                x: Self.badgeCentre.x - size.width / 2, y: Self.badgeCentre.y - size.height / 2,
+                width: size.width, height: size.height
+            )
+        }
+        let alpha: CGFloat = number == nil ? 0 : 1
+        guard animated else {
+            badge.alphaValue = alpha
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.fadeDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            badge.animator().alphaValue = alpha
+        }
     }
 
     override var isFlipped: Bool { return true }
@@ -325,6 +400,32 @@ final class ButtonsMouseArtworkView: NSView {
             shape.stroke()
         }
         MouseArtworkHighlight.drawWheel(in: MouseArtworkView.wheelRect, fill: MouseArtworkPalette.wheel, ridges: MouseArtworkPalette.wheelRidge)
+    }
+}
+
+/// A button's number in the accent colour, by the mouse: the card is about a button the
+/// drawing cannot show.
+final class ButtonsMouseNumberBadge: NSView {
+
+    static let height: CGFloat = 20
+    static var font: NSFont {
+        return NSFont.systemFont(ofSize: 12, weight: .bold)
+    }
+
+    /// The number shown; kept while the badge fades out.
+    var number: Int? {
+        didSet { needsDisplay = true }
+    }
+
+    override var isFlipped: Bool { return true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        return nil
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let number else { return }
+        ButtonsMouseMiniature.drawBadge(number, in: bounds, font: Self.font, fill: .controlAccentColor, text: .white)
     }
 }
 

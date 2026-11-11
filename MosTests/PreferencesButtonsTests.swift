@@ -3,7 +3,8 @@
 //  MosTests
 //
 //  The Buttons pane: what its rows and its card are called, which part of the mouse a
-//  button lights, the notes under the rows, recording a button (stubbed: no event is
+//  button lights (on the card and in each row's picture), how a button the drawing cannot
+//  show is found ("That's …"), the notes under the rows, recording a button (stubbed: no event is
 //  recorded or posted), removing with Undo (also from another pane), the keyboard focus,
 //  what closes with the pane, the action menu, "Checking buttons…", and that stored
 //  bindings load and save unchanged. Nothing is shown on screen and no HID device is
@@ -320,13 +321,14 @@ final class PreferencesButtonsTests: XCTestCase {
 
     func testTheCardSaysHowManyButtonsHaveActions() {
         typealias Content = ButtonsHeaderContent
+        let findHint = "Not sure which is which? Click + and press a button."
         XCTAssertEqual(Content.make(deviceName: nil, boundCount: 0, isRecording: false, focus: nil),
-                       Content(title: "Your mouse", subtitle: "No buttons set up yet", part: nil))
+                       Content(title: "Your mouse", subtitle: "No buttons set up yet", part: nil, hint: findHint))
         XCTAssertEqual(Content.make(deviceName: "MX Master 3S", boundCount: 1, isRecording: false, focus: nil),
-                       Content(title: "MX Master 3S", subtitle: "1 button has an action", part: nil))
+                       Content(title: "MX Master 3S", subtitle: "1 button has an action", part: nil, hint: findHint))
         XCTAssertEqual(Content.make(deviceName: "", boundCount: 4, isRecording: false, focus: nil),
-                       Content(title: "Your mouse", subtitle: "4 buttons have actions", part: nil))
-        let focus = Content.Focus(title: "Back button", action: nil, part: .back)
+                       Content(title: "Your mouse", subtitle: "4 buttons have actions", part: nil, hint: findHint))
+        let focus = Content.Focus(title: "Back button", action: nil, picture: .mouse(part: .back, number: nil))
         XCTAssertEqual(Content.make(deviceName: nil, boundCount: 4, isRecording: false, focus: focus),
                        Content(title: "Back button", subtitle: "No action", part: .back))
         XCTAssertEqual(Content.make(deviceName: nil, boundCount: 4, isRecording: true, focus: focus),
@@ -335,7 +337,10 @@ final class PreferencesButtonsTests: XCTestCase {
 
     func testTheCardFollowsTheSelectedRowAndCountsOnlyBoundButtons() {
         let pane = makePane([binding(3, SystemShortcut.mouseGestureNavigation.identifier), binding(4), binding(1000, "copy")])
-        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "MX Master 4", subtitle: "2 buttons have actions", part: nil))
+        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(
+            title: "MX Master 4", subtitle: "2 buttons have actions", part: nil,
+            hint: "Not sure which is which? Click + and press a button."
+        ))
 
         pane.list.select(pane.rows[0].id)
         XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "Back button", subtitle: "Gesture Navigation", part: .back))
@@ -352,7 +357,212 @@ final class PreferencesButtonsTests: XCTestCase {
 
         pane.list.select(nil)
         XCTAssertNil(pane.headerView.artwork.emphasis)
-        XCTAssertEqual(pane.headerView.accessibilityLabel(), "MX Master 4, 2 buttons have actions")
+        XCTAssertEqual(pane.headerView.accessibilityLabel(), "MX Master 4, 2 buttons have actions, Not sure which is which? Click + and press a button.")
+        XCTAssertFalse(pane.headerView.hintLabel.isHidden)
+    }
+
+    // MARK: - Which button is which
+
+    /// A row's picture lights its part only where the place is certain; a button the Mac
+    /// knows by its number shows its number, a key a keyboard.
+    func testWhichPictureARowShows() {
+        func picture(_ code: UInt16, type: EventType = .mouse) -> ButtonTriggerPicture {
+            return ButtonTriggerPicture.make(for: RecordedEvent(type: type, code: code, modifiers: 0, deviceFilter: nil))
+        }
+        XCTAssertEqual(picture(40, type: .keyboard), .key)
+        XCTAssertEqual(picture(5, type: .keyboard), .key, "a key code is no button number")
+        XCTAssertEqual(picture(0), .mouse(part: .left, number: nil))
+        XCTAssertEqual(picture(3), .mouse(part: .back, number: nil))
+        XCTAssertEqual(picture(4), .mouse(part: .forward, number: nil))
+        XCTAssertEqual(picture(5), .mouse(part: nil, number: 5), "where Button 5 is, only the mouse can tell")
+        XCTAssertEqual(picture(6), .mouse(part: nil, number: 6))
+        XCTAssertEqual(picture(1001), .mouse(part: .modeShift, number: nil), "the button behind the wheel, as a Logitech control")
+        XCTAssertEqual(picture(1000), .mouse(part: .gesture, number: nil))
+        XCTAssertEqual(picture(2000 + 0x01A0), .mouse(part: .gesture, number: nil))
+        XCTAssertEqual(picture(2000 + 0x005B), .mouse(part: nil, number: nil), "a Logitech control with a name but no place in the drawing")
+        XCTAssertTrue(picture(6).isUnplaced)
+        XCTAssertTrue(picture(2000 + 0x005B).isUnplaced)
+        XCTAssertFalse(picture(3).isUnplaced)
+        XCTAssertFalse(picture(40, type: .keyboard).isUnplaced)
+    }
+
+    /// The owner's MX Master 4 over Bluetooth: Gesture Navigation on Button 6, a shortcut on
+    /// Button 5, a screenshot on the mode shift button.
+    func testEveryRowShowsWhereItsButtonIs() throws {
+        let custom = "custom::21:\(UInt64(CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue))"
+        let pane = makePane([
+            binding(6, SystemShortcut.mouseGestureNavigation.identifier),
+            binding(5, custom),
+            binding(1001, SystemShortcut.screenshotSelection.identifier),
+            binding(40, "copy", modifiers: control | option, type: .keyboard),
+        ])
+        XCTAssertEqual(pane.rows.map(\.title), ["Button 6", "Button 5", "Mode shift button", "⌃⌥ K"])
+        XCTAssertEqual(pane.rows.map(\.picture), [
+            .mouse(part: nil, number: 6), .mouse(part: nil, number: 5), .mouse(part: .modeShift, number: nil), .key,
+        ])
+        XCTAssertEqual(pane.rows.map(\.explanation), [
+            "Hold and move the mouse. Set the directions under Gestures.",
+            "An extra button on your mouse.",
+            nil,
+            nil,
+        ])
+        XCTAssertEqual(pane.rows[1].accessibilityLabel(), "Button 5, An extra button on your mouse.")
+        for row in pane.rows {
+            let icon = try XCTUnwrap(row.iconView, row.title)
+            XCTAssertEqual(icon.image?.size, ButtonsMouseMiniature.size, row.title)
+            XCTAssertEqual(icon.image?.isTemplate, false)
+        }
+
+        // Another trigger for the same row ("Use Standard Button"): the picture follows.
+        let row = pane.rows[1]
+        let old = try XCTUnwrap(pane.binding(for: row.binding.id))
+        pane.replaceBinding(ButtonBinding(
+            id: old.id, triggerEvent: RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil),
+            systemShortcutName: old.systemShortcutName, isEnabled: true, createdAt: old.createdAt
+        ))
+        XCTAssertTrue(pane.rows[1] === row)
+        XCTAssertEqual(row.picture, .mouse(part: .forward, number: nil))
+        XCTAssertNil(row.explanation)
+    }
+
+    /// A numbered button's row says it is an extra one only when nothing more pressing
+    /// is to be said: a problem or what the action needs comes first.
+    func testTheExtraButtonNoteComesLast() {
+        scrollKeys = [ScrollHotkey(type: .mouse, code: 7)]
+        let pane = makePane([binding(5), binding(6, SystemShortcut.mosScrollDash.identifier), binding(7, "copy"), binding(8, "copy"), binding(2000 + 0x005B, "copy")])
+        XCTAssertEqual(pane.rows.map(\.explanation), [
+            "Choose what this button does.",
+            "Works while you hold the button.",
+            "Also set under Scrolling\u{A0}›\u{A0}While\u{A0}you\u{A0}hold\u{A0}a\u{A0}key.",
+            "An extra button on your mouse.",
+            nil,
+        ])
+    }
+
+    /// The picture fills the row's part in the accent colour, in light and in dark, and
+    /// lights nothing for a button it cannot show.
+    func testThePictureFillsTheRowsPartInTheAccentColour() throws {
+        let frame = NSRect(origin: .zero, size: ButtonsMouseMiniature.size)
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = try XCTUnwrap(NSAppearance(named: name))
+            // The accent colour as the same drawing gives it back.
+            let accent = try pixels(of: nil, appearance: appearance)(NSPoint(x: 12, y: 12))
+            let unlit = try pixels(of: .mouse(part: nil, number: nil), appearance: appearance)
+            for part in ButtonsMousePart.allCases {
+                let bounds = ButtonsMouseMiniature.shape(of: part, in: frame).bounds
+                let middle = NSPoint(x: bounds.midX, y: bounds.midY)
+                let lit = try pixels(of: .mouse(part: part, number: nil), appearance: appearance)
+                XCTAssertLessThan(distance(lit(middle), accent), 0.03, "\(part) lit in \(name.rawValue)")
+                if accent.saturationComponent > 0.3 {
+                    XCTAssertGreaterThan(distance(unlit(middle), accent), 0.2, "\(part) not lit in \(name.rawValue)")
+                }
+                XCTAssertTrue(ButtonsMouseMiniature.bodyPath(in: frame).contains(middle) || part == .back || part == .forward,
+                              "\(part) is on the mouse")
+            }
+        }
+    }
+
+    /// The picture drawn at four times its size in sRGB (nil: the accent colour all over);
+    /// the colour at a point of the picture (top-left origin, in points).
+    private func pixels(of picture: ButtonTriggerPicture?, appearance: NSAppearance) throws -> (NSPoint) -> NSColor {
+        let scale = 4
+        let size = ButtonsMouseMiniature.size
+        let width = Int(size.width) * scale
+        let height = Int(size.height) * scale
+        let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+        let context = try XCTUnwrap(CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.scaleBy(x: CGFloat(scale), y: CGFloat(scale))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        appearance.performAsCurrentDrawingAppearance {
+            if let picture {
+                ButtonsMouseMiniature.image(for: picture, highlighted: false).draw(in: NSRect(origin: .zero, size: size))
+            } else {
+                NSColor.controlAccentColor.setFill()
+                NSRect(origin: .zero, size: size).fill()
+            }
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        let rep = NSBitmapImageRep(cgImage: try XCTUnwrap(context.makeImage()))
+        return { point in
+            let color = rep.colorAt(x: Int(point.x * CGFloat(scale)), y: Int(point.y * CGFloat(scale))) ?? .clear
+            return color.usingColorSpace(.sRGB) ?? color
+        }
+    }
+
+    private func distance(_ a: NSColor, _ b: NSColor) -> CGFloat {
+        guard let a = a.usingColorSpace(.sRGB), let b = b.usingColorSpace(.sRGB) else { return .infinity }
+        return max(abs(a.redComponent - b.redComponent), abs(a.greenComponent - b.greenComponent), abs(a.blueComponent - b.blueComponent))
+    }
+
+    /// The card under a button the drawing cannot show: how to find it, and its number by
+    /// the mouse; "That's …" when "+" catches a listed button.
+    func testTheCardSaysHowToFindAButtonItCannotShow() {
+        typealias Content = ButtonsHeaderContent
+        let find = "Click + and press buttons on your mouse to find this one."
+        let six = Content.Focus(title: "Button 6", action: "Copy", picture: .mouse(part: nil, number: 6))
+        XCTAssertEqual(Content.make(deviceName: "MX Master 4", boundCount: 1, isRecording: false, focus: six),
+                       Content(title: "Button 6", subtitle: "Copy", part: nil, hint: find, number: 6))
+        var answer = six
+        answer.reason = .answer
+        XCTAssertEqual(Content.make(deviceName: "MX Master 4", boundCount: 1, isRecording: false, focus: answer),
+                       Content(title: "That's Button 6", subtitle: "Copy", part: nil, number: 6))
+        let tilt = Content.Focus(title: "Left Tilt button", action: nil, picture: .mouse(part: nil, number: nil))
+        XCTAssertEqual(Content.make(deviceName: nil, boundCount: 0, isRecording: false, focus: tilt),
+                       Content(title: "Left Tilt button", subtitle: "No action", part: nil, hint: find))
+        var recorded = six
+        recorded.reason = .recorded
+        XCTAssertEqual(Content.make(deviceName: "MX Master 4", boundCount: 1, isRecording: false, focus: recorded),
+                       Content(title: "Button 6", subtitle: "Copy", part: nil, number: 6), "just pressed: no need to find it")
+        let key = Content.Focus(title: "⌃⌥ K", action: "Copy", picture: .key)
+        XCTAssertEqual(Content.make(deviceName: nil, boundCount: 0, isRecording: false, focus: key),
+                       Content(title: "⌃⌥ K", subtitle: "Copy", part: nil), "a key needs no finding")
+        var back = Content.Focus(title: "Back button", action: "Copy", picture: .mouse(part: .back, number: nil))
+        back.reason = .answer
+        XCTAssertEqual(Content.make(deviceName: nil, boundCount: 0, isRecording: false, focus: back),
+                       Content(title: "That's Back button", subtitle: "Copy", part: .back))
+
+        // In the pane: the selected Button 6, then the mode shift button.
+        let pane = makePane([binding(6, SystemShortcut.mouseGestureNavigation.identifier), binding(1001, "copy")])
+        pane.list.select(pane.rows[0].id)
+        XCTAssertEqual(pane.headerView.content, Content(title: "Button 6", subtitle: "Gesture Navigation", part: nil, hint: find, number: 6))
+        XCTAssertFalse(pane.headerView.hintLabel.isHidden)
+        XCTAssertEqual(pane.headerView.hintLabel.stringValue, find)
+        XCTAssertEqual(pane.headerView.artwork.badge.number, 6)
+        XCTAssertEqual(pane.headerView.artwork.badge.alphaValue, 1)
+        XCTAssertNil(pane.headerView.artwork.emphasis)
+        XCTAssertEqual(pane.headerView.accessibilityLabel(), "Button 6, Gesture Navigation, \(find)")
+        pane.list.select(pane.rows[1].id)
+        XCTAssertEqual(pane.headerView.content, Content(title: "Mode shift button", subtitle: "Copy", part: .modeShift))
+        XCTAssertTrue(pane.headerView.hintLabel.isHidden)
+        XCTAssertEqual(pane.headerView.artwork.badge.alphaValue, 0)
+        XCTAssertEqual(pane.headerView.artwork.emphasis, .modeShift)
+    }
+
+    /// "+" and a listed numbered button: its row flashes and the card answers "That's
+    /// Button 6" with its number by the mouse, for as long as a recorded button shows.
+    func testPressingAListedNumberedButtonAfterPlusSaysWhichRowItIs() {
+        let pane = makePane([binding(3, "copy"), binding(6, SystemShortcut.mouseGestureNavigation.identifier)])
+        let recorder = KeyRecorder()
+        pane.beginAddingBinding()
+        pane.onRecordingStarted(recorder)
+        let event = mouseEvent(6)
+        XCTAssertFalse(pane.validateRecordedEvent(recorder, event: event))
+        pane.onEventRecorded(recorder, didRecordEvent: event, isDuplicate: true)
+        XCTAssertEqual(pane.list.selectedID, pane.rows[1].id)
+        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "That's Button 6", subtitle: "Gesture Navigation", part: nil, number: 6))
+        XCTAssertEqual(pane.headerView.artwork.badge.alphaValue, 1)
+        pane.onRecordingStopped(recorder, didRecord: true)
+        flush(PreferencesButtonsViewController.recordedPartDuration - 0.5)
+        XCTAssertEqual(pane.headerView.content.title, "That's Button 6", "still the answer")
+        flush(0.7)
+        // Then the card is about the selected row again.
+        XCTAssertEqual(pane.headerView.content.title, "Button 6")
+        XCTAssertEqual(pane.headerView.content.hint, "Click + and press buttons on your mouse to find this one.")
+        XCTAssertEqual(Options.shared.buttons.binding.count, 2)
     }
 
     // MARK: - Rows
@@ -369,7 +579,7 @@ final class PreferencesButtonsTests: XCTestCase {
             "Hold and move the mouse. Set the directions under Gestures.",
             "Works while you hold the button.",
             "Choose what this button does.",
-            nil,
+            "An extra button on your mouse.",
         ])
         pane.view.layoutSubtreeIfNeeded()
         for row in pane.rows {
@@ -442,7 +652,9 @@ final class PreferencesButtonsTests: XCTestCase {
         let oneLine = NSTextField(labelWithString: "Xg")
         oneLine.font = PreferencesGroupedForm.explanationFont
         let lineHeight = oneLine.fittingSize.height
+        // Right of the row's picture, left of the pull-down.
         let column = PreferencesButtonsViewController.boxWidth - 2 * PreferencesGroupedForm.rowHorizontalInset
+            - PreferencesListRow.imageIconSize - PreferencesListRow.iconSpacing
             - ButtonActionPullDown.width - PreferencesGroupedForm.controlSpacing
         for row in pane.rows {
             XCTAssertTrue(row.accessory === row.pullDown, row.title)
@@ -585,7 +797,8 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertFalse(pane.validateRecordedEvent(recorder, event: event), "the recorder says Duplicate key")
         pane.onEventRecorded(recorder, didRecordEvent: event, isDuplicate: true)
         XCTAssertEqual(pane.list.selectedID, pane.rows[0].id)
-        XCTAssertEqual(pane.headerView.content.title, "Back button")
+        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "That's Back button", subtitle: "Copy", part: .back))
+        XCTAssertEqual(pane.headerView.artwork.emphasis, .back)
         pane.onRecordingStopped(recorder, didRecord: true)
         flush()
         XCTAssertEqual(Options.shared.buttons.binding.count, 2)

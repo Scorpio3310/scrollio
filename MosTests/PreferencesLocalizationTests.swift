@@ -60,6 +60,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-trigger-logitech", "buttons-trigger-logitech-twin", "buttons-trigger-key",
         "buttons-header-your-mouse", "buttons-header-count", "buttons-header-one", "buttons-header-none",
         "buttons-header-no-action", "buttons-header-recording", "buttons-header-recording-hint",
+        "buttons-header-find-hint", "buttons-header-find-this-one", "buttons-header-answer", "buttons-note-extra-button",
         "buttons-empty-title", "buttons-empty-hint", "buttons-list-label",
         "buttons-note-gesture-navigation", "buttons-note-hold-action", "buttons-note-no-action",
         "buttons-note-scroll-key", "buttons-note-conflict", "buttons-note-contended", "buttons-note-bluetooth",

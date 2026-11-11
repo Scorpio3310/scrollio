@@ -751,6 +751,8 @@ final class PreferencesKeyboardAccessibilityTests: XCTestCase {
             let wanted = descendants(of: page).filter { view in
                 guard isShown(view, in: page) else { return false }
                 if view is PreferencesListBox { return true }
+                // A picture (a row's icon) takes no keyboard focus.
+                if let image = view as? NSImageView, !image.isEditable { return false }
                 guard let control = view as? NSControl, !(control is NSTextField) else { return false }
                 return control.isEnabled && !(view.superview is NSControl)
             }

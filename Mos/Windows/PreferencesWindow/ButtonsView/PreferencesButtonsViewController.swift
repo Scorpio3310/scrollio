@@ -3,10 +3,12 @@
 //  Mos
 //  "Buttons" preferences pane, built in code on the grouped kit like Scrolling, Gestures and
 //  Mouse; the storyboard scene is a shell. On top a card with the mouse whose button the
-//  pane is about lit up, then the list of buttons (PreferencesListBox): each row names the
-//  button, says what its action needs or what is wrong with it, and has the action
-//  pull-down. "+" records a button (or a key with a modifier), "−" removes one, and the
-//  window's Undo puts it back. Only Options.shared.buttons.binding is edited, in the format
+//  pane is about lit up, then the list of buttons (PreferencesListBox): each row shows
+//  where the button is in a small picture, names the button, says what its action needs or
+//  what is wrong with it, and has the action pull-down. A button the drawing cannot show
+//  ("Button 5") is found by asking the mouse: "+" and pressing it makes the card say
+//  "That's Button 5". "+" records a button (or a key with a modifier), "−" removes one,
+//  and the window's Undo puts it back. Only Options.shared.buttons.binding is edited, in the format
 //  it always had.
 //  Created by Claude on 2025/8/10.
 //  Copyright © 2025年 Caldis. All rights reserved.
@@ -47,7 +49,8 @@ class PreferencesButtonsViewController: NSViewController {
     static var boxWidth: CGFloat {
         return PreferencesGroupedForm.boxWidth(paneWidth: paneWidth)
     }
-    /// A button just recorded stays lit this long, whatever the pointer is over.
+    /// A button just recorded (or "That's …" for a listed one) stays on the card this long,
+    /// whatever the pointer is over.
     static let recordedPartDuration: TimeInterval = 1.5
     /// "Checking buttons…" stays at least this long, so it never only flickers.
     static let busyMinimumDuration: TimeInterval = 0.5
@@ -561,11 +564,14 @@ class PreferencesButtonsViewController: NSViewController {
         )
     }
 
-    func focus(for binding: ButtonBinding) -> ButtonsHeaderContent.Focus {
+    /// What the card says about `binding`'s row, pointed at or selected, or (`.answer`)
+    /// pressed after "+" ("That's …").
+    func focus(for binding: ButtonBinding, reason: ButtonsHeaderContent.Focus.Reason = .row) -> ButtonsHeaderContent.Focus {
         return ButtonsHeaderContent.Focus(
             title: title(for: binding.triggerEvent),
             action: resolver.actionName(of: binding),
-            part: ButtonsMousePart.part(for: binding.triggerEvent)
+            picture: ButtonTriggerPicture.make(for: binding.triggerEvent),
+            reason: reason
         )
     }
 
@@ -667,23 +673,25 @@ extension PreferencesButtonsViewController: KeyRecorderDelegate {
         return takesPendingAction(existing, action: pendingAction)
     }
 
-    /// The card shows the button at once; a duplicate's row flashes while the recorder
-    /// says "Duplicate key". A new one is added, or a listed one without an action gets the
-    /// waiting action, when the recorder closes.
+    /// The card shows the button at once; a listed one's row flashes while the recorder
+    /// says "Duplicate key", and the card answers "That's <row title>" with its part lit
+    /// (or its number by the mouse). A new one is added, or a listed one without an action
+    /// gets the waiting action, when the recorder closes.
     func onEventRecorded(_ recorder: KeyRecorder, didRecordEvent event: InputEvent, isDuplicate: Bool) {
         let trigger = normalizedTrigger(for: event)
         isRecording = false
         if let existing = existingBinding(for: trigger), !takesPendingAction(existing, action: pendingAction) {
             pendingRecorded = nil
             list.flash(existing.id)
-            showRecorded(focus(for: existing))
+            showRecorded(focus(for: existing, reason: .answer))
             return
         }
         pendingRecorded = trigger
         showRecorded(ButtonsHeaderContent.Focus(
             title: title(for: trigger),
             action: pendingAction.map(\.localizedName),
-            part: ButtonsMousePart.part(for: trigger)
+            picture: ButtonTriggerPicture.make(for: trigger),
+            reason: .recorded
         ))
     }
 

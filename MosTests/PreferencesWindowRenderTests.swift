@@ -247,6 +247,119 @@ final class PreferencesWindowRenderTests: XCTestCase {
             buttons.list.select(buttons.rows[2].id)
         }
         try renderMouseParts()
+        try renderRowPictures()
+    }
+
+    /// Which button is which: the owner's MX Master 4 over Bluetooth (Gesture Navigation on
+    /// Button 6, a shortcut on Button 5, a screenshot on the mode shift button), a row of
+    /// every part the drawing knows and a key, numbered buttons, and the card's answer
+    /// after "+" ("That's …").
+    func testRenderButtonIdentity() throws {
+        let plain = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { "MX Master 4" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+        let optionCommand = UInt64(CGEventFlags.maskCommand.rawValue | CGEventFlags.maskAlternate.rawValue)
+        Options.shared.buttons.binding = [
+            binding(6, SystemShortcut.mouseGestureNavigation.identifier),
+            binding(5, "custom::17:\(optionCommand)"),
+            binding(1001, SystemShortcut.screenshotSelection.identifier),
+        ]
+        try renderButtons(name: "buttons-owner", source: plain)
+        try renderButtons(name: "buttons-owner-hovered-button-6", source: plain) { buttons in
+            self.hover(buttons, rowAt: 0)
+        }
+        try renderButtons(name: "buttons-owner-selected-button-5", source: plain) { buttons in
+            buttons.list.select(buttons.rows[1].id)
+        }
+        try renderButtons(name: "buttons-owner-thats-button-6", source: plain) { buttons in
+            self.answer(buttons, code: 6)
+        }
+        try renderButtons(name: "buttons-owner-thats-mode-shift", source: plain) { buttons in
+            self.answer(buttons, code: 1001)
+        }
+
+        let controlOption = UInt(CGEventFlags.maskControl.rawValue | CGEventFlags.maskAlternate.rawValue)
+        Options.shared.buttons.binding = [
+            binding(0, SystemShortcut.copy.identifier, modifiers: UInt(CGEventFlags.maskCommand.rawValue)),
+            binding(1, SystemShortcut.paste.identifier, modifiers: UInt(CGEventFlags.maskCommand.rawValue)),
+            binding(2, SystemShortcut.missionControl.identifier),
+            binding(3, SystemShortcut.navigateBack.identifier),
+            binding(4, SystemShortcut.navigateForward.identifier),
+            binding(1000, SystemShortcut.mouseGestureNavigation.identifier),
+            binding(1001, SystemShortcut.logiSmartShiftToggle.identifier),
+            binding(2000 + 0x01A0, SystemShortcut.missionControl.identifier, modifiers: UInt(CGEventFlags.maskAlternate.rawValue)),
+            ButtonBinding(
+                triggerEvent: RecordedEvent(type: .keyboard, code: 40, modifiers: controlOption, deviceFilter: nil),
+                systemShortcutName: SystemShortcut.screenshotSelection.identifier
+            ),
+        ]
+        try renderButtons(name: "buttons-every-part", source: plain) { buttons in
+            buttons.list.select(buttons.rows[3].id)
+        }
+
+        Options.shared.buttons.binding = [
+            binding(5, SystemShortcut.copy.identifier),
+            binding(6, ""),
+            binding(7, SystemShortcut.paste.identifier),
+            binding(12, SystemShortcut.missionControl.identifier),
+            binding(2000 + 0x005B, SystemShortcut.navigateBack.identifier),
+        ]
+        try renderButtons(name: "buttons-numbered-hovered", source: plain) { buttons in
+            self.hover(buttons, rowAt: 3)
+        }
+    }
+
+    /// "+" waits, then a listed button is pressed: the recorder is stubbed, nothing is
+    /// recorded from the system.
+    private func answer(_ buttons: PreferencesButtonsViewController, code: UInt16) {
+        let recorder = KeyRecorder()
+        buttons.onRecordingStarted(recorder)
+        let event = InputEvent(type: .mouse, code: code, modifiers: [], phase: .down, source: .hidPP, device: nil)
+        buttons.onEventRecorded(recorder, didRecordEvent: event, isDuplicate: true)
+    }
+
+    /// The rows' pictures: each part lit, buttons the drawing cannot show (with and
+    /// without a number) and a key, on the list's box and on the selection, at their size
+    /// on a Retina screen and at six times that.
+    private func renderRowPictures() throws {
+        let pictures: [ButtonTriggerPicture] = ButtonsMousePart.allCases.map { .mouse(part: $0, number: nil) }
+            + [.mouse(part: nil, number: 5), .mouse(part: nil, number: 6), .mouse(part: nil, number: 12), .mouse(part: nil, number: nil), .key]
+        let cell: CGFloat = 32
+        let size = ButtonsMouseMiniature.size
+        let bounds = NSRect(x: 0, y: 0, width: cell * CGFloat(pictures.count), height: cell * 2)
+        for (suffix, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            for scale in [CGFloat(2), 6] {
+                let canvas = try XCTUnwrap(NSBitmapImageRep(
+                    bitmapDataPlanes: nil, pixelsWide: Int(bounds.width * scale), pixelsHigh: Int(bounds.height * scale),
+                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+                ))
+                canvas.size = bounds.size
+                let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: canvas))
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = context
+                appearance.performAsCurrentDrawingAppearance {
+                    NSColor.windowBackgroundColor.setFill()
+                    bounds.fill()
+                    PreferencesGroupedForm.boxFillColor.setFill()
+                    NSRect(x: 0, y: cell, width: bounds.width, height: cell).fill()
+                    NSColor.controlAccentColor.setFill()
+                    NSRect(x: 0, y: 0, width: bounds.width, height: cell).fill()
+                    for (index, picture) in pictures.enumerated() {
+                        for (row, highlighted) in [(1, false), (0, true)] {
+                            let frame = NSRect(
+                                x: CGFloat(index) * cell + (cell - size.width) / 2,
+                                y: CGFloat(row) * cell + (cell - size.height) / 2,
+                                width: size.width, height: size.height
+                            )
+                            ButtonsMouseMiniature.image(for: picture, highlighted: highlighted).draw(in: frame)
+                        }
+                    }
+                }
+                NSGraphicsContext.restoreGraphicsState()
+                let png = try XCTUnwrap(canvas.representation(using: .png, properties: [:]))
+                try png.write(to: directory.appendingPathComponent("buttons-row-pictures-\(Int(scale))x-\(suffix).png"))
+            }
+        }
     }
 
     /// The mouse of the Buttons pane with nothing lit, then each part lit, side by side on

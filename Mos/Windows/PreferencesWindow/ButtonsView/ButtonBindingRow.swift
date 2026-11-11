@@ -1,9 +1,11 @@
 //
 //  ButtonBindingRow.swift
 //  Mos
-//  One button of the Buttons pane: a row of the kit's list with the button's name, a line
-//  under it only when there is something to say (what the action needs, or a problem after
-//  an orange sign), an ⓘ that explains a problem, and the action pull-down.
+//  One button of the Buttons pane: a row of the kit's list with a small picture of where
+//  the button is (ButtonsMouseMiniature), the button's name, a line under it only when
+//  there is something to say (what the action needs, a problem after an orange sign, or
+//  that a numbered button is an extra one), an ⓘ that explains a problem, and the action
+//  pull-down.
 //
 
 import Cocoa
@@ -21,6 +23,9 @@ struct ButtonRowNote: Equatable {
         case holdAction
         /// No action yet.
         case noAction
+        /// A button the Mac knows only by its number ("Button 5"): where it is, the mouse
+        /// tells when "+" records it.
+        case extraButton
         /// The button is also a key under Scrolling › While you hold a key.
         case alsoScrollKey
         /// What the Logitech mouse says about the button.
@@ -41,7 +46,7 @@ struct ButtonRowNote: Equatable {
 
     var tone: Tone {
         switch kind {
-        case .gestureNavigation, .holdAction, .noAction:
+        case .gestureNavigation, .holdAction, .noAction, .extraButton:
             return .plain
         case .alsoScrollKey:
             return .problem
@@ -64,7 +69,7 @@ struct ButtonRowNote: Equatable {
         switch kind {
         case .alsoScrollKey: return Self.text("buttons-scroll-key-title")
         case .capture(let status): return Self.text(status.titleKey)
-        case .gestureNavigation, .holdAction, .noAction: return text
+        case .gestureNavigation, .holdAction, .noAction, .extraButton: return text
         }
     }
 
@@ -72,11 +77,12 @@ struct ButtonRowNote: Equatable {
         switch kind {
         case .alsoScrollKey: return Self.text("buttons-scroll-key-detail")
         case .capture(let status): return Self.text(status.detailKey)
-        case .gestureNavigation, .holdAction, .noAction: return ""
+        case .gestureNavigation, .holdAction, .noAction, .extraButton: return ""
         }
     }
 
-    /// The line for `binding`: a problem first, then what the action needs, else nothing.
+    /// The line for `binding`: a problem first, then what the action needs, then for a
+    /// numbered button that it is an extra one, else nothing.
     /// - Parameters:
     ///   - captureStatus: what the Logitech mouse says about the trigger (`.normal` for
     ///     any other button).
@@ -102,6 +108,18 @@ struct ButtonRowNote: Equatable {
             }
             return ButtonRowNote(kind: .capture(captureStatus), text: line)
         }
+        if let action = actionNote(for: binding) {
+            return action
+        }
+        if ButtonTriggerPicture.number(for: trigger) != nil {
+            return ButtonRowNote(kind: .extraButton, text: text("buttons-note-extra-button"))
+        }
+        return nil
+    }
+
+    /// What the action needs: an action at all, the directions of Gesture Navigation, the
+    /// button held for a scroll action.
+    private static func actionNote(for binding: ButtonBinding) -> ButtonRowNote? {
         switch CellActionState(binding: binding) {
         case .unbound, .recordingPrompt:
             return ButtonRowNote(kind: .noAction, text: text("buttons-note-no-action"))
@@ -132,6 +150,8 @@ final class ButtonBindingRow: PreferencesListRow {
 
     private(set) var binding: ButtonBinding
     private(set) var note: ButtonRowNote?
+    /// What the picture before the title shows.
+    private(set) var picture: ButtonTriggerPicture
     let pullDown: ButtonActionPullDown
     /// The ⓘ before the pull-down, on the title line; it shows while the note is a problem
     /// or a hint. It is not part of the accessory: the note under the title runs on below
@@ -139,11 +159,15 @@ final class ButtonBindingRow: PreferencesListRow {
     let infoButton: NSButton
     /// Keeps the title off the ⓘ while it shows.
     private var titleBeforeInfo: NSLayoutConstraint?
+    /// The picture the icon shows now, and whether drawn for the selection.
+    private var shownPicture: (picture: ButtonTriggerPicture, highlighted: Bool)?
 
     init(binding: ButtonBinding, title: String, note: ButtonRowNote?, pullDown: ButtonActionPullDown) {
         self.binding = binding
         self.note = note
         self.pullDown = pullDown
+        let picture = ButtonTriggerPicture.make(for: binding.triggerEvent)
+        self.picture = picture
 
         let configuration = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
         let image = NSImage(systemSymbolName: "info.circle", accessibilityDescription: nil)?
@@ -160,6 +184,7 @@ final class ButtonBindingRow: PreferencesListRow {
             id: binding.id,
             title: title,
             explanation: note?.text,
+            icon: .image(ButtonsMouseMiniature.image(for: picture, highlighted: false)),
             accessory: pullDown,
             centeredOn: pullDown,
             controls: [pullDown]
@@ -182,6 +207,8 @@ final class ButtonBindingRow: PreferencesListRow {
     func update(binding: ButtonBinding, title: String, note: ButtonRowNote?) {
         self.binding = binding
         self.note = note
+        // "Use Standard Button" gives the row another trigger.
+        picture = ButtonTriggerPicture.make(for: binding.triggerEvent)
         if self.title != title {
             self.title = title
         }
@@ -209,6 +236,7 @@ final class ButtonBindingRow: PreferencesListRow {
     /// white on the selection.
     override func applyEnabled() {
         super.applyEnabled()
+        applyPicture()
         // The ⓘ draws like the pull-down: light on the accent-coloured selection.
         infoButton.appearance = accessory?.appearance
         infoButton.contentTintColor = isHighlighted ? .alternateSelectedControlTextColor : .secondaryLabelColor
@@ -231,6 +259,16 @@ final class ButtonBindingRow: PreferencesListRow {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         infoButton.appearance = accessory?.appearance
+        iconView?.needsDisplay = true
+    }
+
+    /// The picture for the row's trigger, in white on the accent-coloured selection.
+    private func applyPicture() {
+        guard let iconView else { return }
+        let wanted = (picture: picture, highlighted: isHighlighted)
+        if let shownPicture, shownPicture == wanted { return }
+        shownPicture = wanted
+        iconView.image = ButtonsMouseMiniature.image(for: wanted.picture, highlighted: wanted.highlighted)
     }
 
     /// The note as text: the label holds the sign in front of it.
