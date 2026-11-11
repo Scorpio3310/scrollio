@@ -2,10 +2,11 @@
 //  PreferencesApplicationTests.swift
 //  MosTests
 //
-//  The Apps pane: the truthful allowlist switch, the list of apps (rows, "+" menu of
-//  running apps, Choose in Finder, duplicates, remove with undo, also from another pane
-//  and after the app was added again), an app's page opened in
-//  place of the list and back again, "Use settings from Scrolling" dimming the settings,
+//  The Apps pane: the truthful allowlist switch and its line while the list is empty, the
+//  list of apps (rows, "+" menu of running apps, Choose in Finder, the new app's page
+//  opened at once, duplicates, remove with undo, also from another pane and after the app
+//  was added again), an app's page opened in place of the list and back again, "Use
+//  settings from Scrolling" dimming the settings and, switched off, starting from them,
 //  and the stored apps loading and saving unchanged. Nothing is shown on screen: the menu,
 //  the open panel and the running apps go through seams, windows are never ordered in.
 //
@@ -190,6 +191,52 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(storedPaths(), [], "the switch leaves the list alone")
     }
 
+    /// The limit on with no app on the list switches smoothing and reversing off in every
+    /// app: a muted line under the switch says so, only then.
+    func testTheLimitWithAnEmptyListSaysEveryAppScrollsTheWayMacOSDoes() throws {
+        Options.shared.application.allowlist = false
+        let controller = makeController()
+        let note = try XCTUnwrap(controller.allowlistEmptyNote)
+        XCTAssertTrue(note.isHidden, "the limit is off")
+        let offHeight = controller.view.frame.height
+
+        controller.allowlistSwitch.state = .on
+        send(controller.allowlistSwitch)
+        XCTAssertFalse(note.isHidden)
+        XCTAssertEqual(controller.allowlistEmptyLabel.stringValue, "No apps on the list yet: every app scrolls the way macOS does.")
+        XCTAssertEqual(controller.allowlistEmptyLabel.identifier, PreferencesApplicationViewController.Identifier.allowlistEmpty)
+        XCTAssertEqual(controller.allowlistEmptyLabel.textColor, PreferencesGroupedForm.explanationColor(enabled: true))
+        XCTAssertGreaterThan(controller.view.frame.height, offHeight, "the pane makes room for it")
+        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+        // Right under the switch's box, above the list.
+        let content = try XCTUnwrap(note.superview as? NSStackView)
+        XCTAssertEqual(content.arrangedSubviews.firstIndex(of: note), 1)
+        XCTAssertTrue(content.arrangedSubviews[0] === controller.allowlistSection)
+        XCTAssertEqual(content.customSpacing(after: controller.allowlistSection), PreferencesGroupedForm.noteSpacing)
+
+        // An app on the list: the line goes; removed again, it comes back.
+        controller.addApplication(path: Self.calculator, knownPaths: [Self.calculator])
+        controller.showList(focusList: false)
+        XCTAssertTrue(note.isHidden)
+        XCTAssertEqual(content.customSpacing(after: controller.allowlistSection), PreferencesGroupedForm.sectionSpacing)
+        controller.removeApplication(withID: Self.calculator)
+        XCTAssertFalse(note.isHidden)
+
+        // Off again, or switched off elsewhere: gone.
+        controller.allowlistSwitch.state = .off
+        send(controller.allowlistSwitch)
+        XCTAssertTrue(note.isHidden)
+        XCTAssertEqual(controller.view.frame.height, offHeight, accuracy: 0.5)
+        Options.shared.application.allowlist = true
+        controller.viewWillAppear()
+        XCTAssertFalse(note.isHidden)
+        XCTAssertEqual(storedPaths(), [], "the line changes nothing")
+
+        XCTAssertTrue(PreferencesApplicationViewController.showsAllowlistEmptyNote(allowlist: true, applicationCount: 0))
+        XCTAssertFalse(PreferencesApplicationViewController.showsAllowlistEmptyNote(allowlist: true, applicationCount: 1))
+        XCTAssertFalse(PreferencesApplicationViewController.showsAllowlistEmptyNote(allowlist: false, applicationCount: 0))
+    }
+
     func testAnEmptyListSaysHowToAddAnApp() {
         let controller = makeController()
         XCTAssertTrue(controller.list.rows.isEmpty)
@@ -247,13 +294,33 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertTrue(menu.items[3].isEnabled)
 
         // Picking a running app adds it by its program's path, as the pane always stored
-        // running apps, and selects it.
+        // running apps, selects it and opens its page: adding alone changes nothing.
         menu.performActionForItem(at: 1)
         XCTAssertEqual(storedPaths(), [Self.calculator, Self.textEditProgram])
         XCTAssertEqual(controller.list.selectedID, AnyHashable(Self.textEditProgram))
         let added = try XCTUnwrap(Options.shared.application.applications.get(by: Self.textEditProgram))
         XCTAssertTrue(added.inherit, "a new app starts with the Scrolling settings")
         XCTAssertEqual(controller.list.rows.last?.title, "TextEdit")
+        let page = try XCTUnwrap(controller.detailController, "the new app's page opens")
+        XCTAssertTrue(page.application === added)
+        XCTAssertTrue(controller.currentPage === page.view)
+        XCTAssertEqual(page.inheritSwitch.state, .on)
+
+        // Back on the list, the same app picked again: it blinks, no page opens.
+        controller.showList(focusList: false)
+        controller.addRunningApplication(try XCTUnwrap(controller.makeAddMenu().items.first { $0.title == "TextEdit" }))
+        XCTAssertNil(controller.detailController)
+        XCTAssertEqual(storedPaths(), [Self.calculator, Self.textEditProgram])
+    }
+
+    /// The page opens in the window with the keyboard on it, as a double-click opens it.
+    func testAnAppAddedInTheWindowOpensItsPageWithTheKeyboardOnIt() throws {
+        let controller = makeController(running: [candidate(Self.textEdit, program: Self.textEditProgram, name: "TextEdit")])
+        let window = makeWindow(for: controller)
+        controller.addRunningApplication(try XCTUnwrap(controller.makeAddMenu().items.first))
+        let page = try XCTUnwrap(controller.detailController)
+        XCTAssertTrue(window.firstResponder === page.view, "Esc goes back to the list straight away")
+        XCTAssertEqual(controller.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
     }
 
     func testWithoutRunningAppsThePlusMenuOnlyOffersFinder() throws {
@@ -275,6 +342,7 @@ final class PreferencesApplicationTests: XCTestCase {
 
         XCTAssertEqual(storedPaths(), [Self.calculator, Self.textEdit])
         XCTAssertEqual(controller.list.selectedID, AnyHashable(Self.textEdit), "the last new app is selected")
+        XCTAssertEqual(controller.detailController?.application.path, Self.textEdit, "and its page opens")
 
         // Cancelled: nothing changes.
         controller.chooseApplications = { _, completion in completion([]) }
@@ -311,6 +379,7 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(textEdit.path, Self.textEdit)
         XCTAssertEqual(storedPaths(), [Self.calculatorProgram, Self.textEdit])
         XCTAssertEqual(controller.list.selectedID, AnyHashable(Self.textEdit))
+        XCTAssertNil(controller.detailController, "nothing was added: the list stays")
     }
 
     // MARK: - Removing
@@ -410,12 +479,15 @@ final class PreferencesApplicationTests: XCTestCase {
         remove(Self.calculator, in: controller, undo: undo)
         XCTAssertEqual(storedPaths(), [Self.textEdit])
 
-        // Added again, chosen in Finder: a new entry with the Scrolling settings.
+        // Added again, chosen in Finder: a new entry with the Scrolling settings, its page
+        // open; back to the list.
         controller.addApplications(at: [URL(fileURLWithPath: Self.calculator)])
         let again = try XCTUnwrap(Options.shared.application.applications.get(by: Self.calculator))
         XCTAssertFalse(again === calculator)
         XCTAssertTrue(again.inherit)
         XCTAssertEqual(storedPaths(), [Self.textEdit, Self.calculator])
+        XCTAssertTrue(controller.detailController?.application === again)
+        controller.showList(focusList: false)
 
         window.makeFirstResponder(nil)
         undo.undo()
@@ -630,6 +702,89 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertTrue(rows.allSatisfy(\.isEnabled))
         XCTAssertEqual(scrolling.scrollSpeedSlider.doubleValue, 1.5, accuracy: 1e-9)
         XCTAssertEqual(controller.list.rows.first?.explanation, "Uses its own scrolling settings")
+    }
+
+    /// A new app's own options are those of a new installation: switched off as they were,
+    /// Reverse would come back on and Speed and the keys go to the factory values. Never
+    /// edited, they start as a copy of the Scrolling settings; edited ones are kept.
+    func testSwitchingOffUseSettingsFromScrollingStartsFromTheScrollingSettings() throws {
+        Options.shared.scroll.reversesWheel = false
+        Options.shared.scroll.speed = 8.5
+        Options.shared.scroll.dash = nil
+        Options.shared.scroll.duration = ScrollFeel.glide.duration
+        let fresh = application(Self.calculator, inherit: true)
+        let edited = application(Self.textEdit, inherit: true)
+        edited.scroll.speed = 2
+        Options.shared.application.applications = Self.makeStore([fresh, edited])
+        let controller = makeController()
+
+        controller.openApplication(withID: Self.calculator)
+        var page = try XCTUnwrap(controller.detailController)
+        page.inheritSwitch.state = .off
+        send(page.inheritSwitch)
+        XCTAssertFalse(fresh.inherit)
+        XCTAssertEqual(fresh.scroll, Options.shared.scroll, "the wheel scrolls on as before")
+        XCTAssertFalse(fresh.scroll === Options.shared.scroll, "a copy: the app's own container")
+        XCTAssertFalse(fresh.scroll.reversesWheel)
+        let scrolling = try XCTUnwrap(page.scrollingController)
+        XCTAssertEqual(scrolling.reverseSwitch.state, .off)
+        XCTAssertEqual(scrolling.scrollSpeedSlider.doubleValue, 8.5, accuracy: 1e-9)
+        XCTAssertEqual(scrolling.feelControl.selectedSegment, ScrollFeel.glide.rawValue)
+        XCTAssertTrue(scrolling.speedRow.isEnabled)
+        // Its own from now on: a change stays with the app.
+        scrolling.scrollSpeedSlider.doubleValue = 3
+        send(scrolling.scrollSpeedSlider)
+        XCTAssertEqual(fresh.scroll.speed, 3)
+        XCTAssertEqual(Options.shared.scroll.speed, 8.5)
+        // On and off again: its own options are edited now, so they stay.
+        page.inheritSwitch.state = .on
+        send(page.inheritSwitch)
+        page.inheritSwitch.state = .off
+        send(page.inheritSwitch)
+        XCTAssertEqual(fresh.scroll.speed, 3)
+
+        // Edited earlier: kept, Reverse and all.
+        controller.showList(focusList: false)
+        controller.openApplication(withID: Self.textEdit)
+        page = try XCTUnwrap(controller.detailController)
+        page.inheritSwitch.state = .off
+        send(page.inheritSwitch)
+        XCTAssertEqual(edited.scroll.speed, 2)
+        XCTAssertTrue(edited.scroll.reversesWheel, "the app's own value")
+        XCTAssertEqual(edited.scroll.dash, OPTIONS_SCROLL_DEFAULT().dash)
+
+        // Stored as before: the same keys, the copied values.
+        let stored = try XCTUnwrap(try storedObject()?.firstObject as? NSDictionary)
+        XCTAssertEqual(Set(stored.allKeys.compactMap { $0 as? String }), ["path", "displayName", "inherit", "scroll"])
+        XCTAssertEqual((stored["scroll"] as? NSDictionary)?["reverse"] as? Bool, false)
+    }
+
+    /// Every scroll option is copied (each one set to a value of its own here).
+    func testAdoptingTheScrollingSettingsCopiesEveryOption() {
+        let global = OPTIONS_SCROLL_DEFAULT()
+        global.smooth = false
+        global.reverse = false
+        global.reverseVertical = false
+        global.reverseHorizontal = false
+        global.dash = ScrollHotkey(type: .mouse, code: 4)
+        global.toggle = nil
+        global.block = ScrollHotkey(type: .keyboard, code: KeyCode.controlL)
+        global.step = 12
+        global.speed = 2.5
+        global.duration = ScrollFeel.float.duration
+        global.deadZone = 0.5
+        global.smoothSimTrackpad = true
+        global.smoothVertical = false
+        global.smoothHorizontal = false
+        let app = Application(path: Self.calculator)
+        let own = app.scroll
+        XCTAssertTrue(app.adoptScrollOptionsIfUnedited(from: global))
+        XCTAssertEqual(app.scroll, global)
+        XCTAssertTrue(app.scroll === own, "the same container, new values")
+        XCTAssertFalse(app.adoptScrollOptionsIfUnedited(from: OPTIONS_SCROLL_DEFAULT()), "edited now: kept")
+        XCTAssertEqual(app.scroll, global)
+        // Global settings that are the defaults: nothing to copy.
+        XCTAssertFalse(Application(path: Self.textEdit).adoptScrollOptionsIfUnedited(from: OPTIONS_SCROLL_DEFAULT()))
     }
 
     func testThePageFollowsAdvancedAndTheSettingsEditOnlyTheApp() throws {

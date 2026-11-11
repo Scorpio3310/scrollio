@@ -583,14 +583,16 @@ final class PreferencesWindowRenderTests: XCTestCase {
         buttons.list.mouseMoved(with: event)
     }
 
-    /// The empty list, and a list with apps (one with settings of its own, selected) and the
-    /// switch on, in a key and a non-key window.
+    /// The empty list (the limit off, and on with its muted line), and a list with apps (one
+    /// with settings of its own, selected) and the switch on, in a key and a non-key window.
     func testRenderApps() throws {
         let stored = Options.shared.application.applications
         addTeardownBlock { Options.shared.application.applications = stored }
         Options.shared.application.applications = EnhanceArray<Application>(matchKey: "path")
         Options.shared.application.allowlist = false
         try renderPane(PANEL_IDENTIFIER.application, name: "apps-empty")
+        Options.shared.application.allowlist = true
+        try renderPane(PANEL_IDENTIFIER.application, name: "apps-empty-limit-on")
 
         let calculator = Application(path: "/System/Applications/Calculator.app")
         calculator.inherit = false

@@ -6,9 +6,11 @@
 //  the storyboard scene is a shell.
 //
 //  On top "Limit scrolling to these apps" (the allowlist: it only gates smoothing and
-//  reversing, so it says so; buttons and gestures work everywhere). Under it the list of
-//  apps, each with its icon, its name and whether it has settings of its own. "+" offers
-//  the running apps and "Choose in Finder…", "−" and Delete remove (Edit › Undo brings the
+//  reversing, so it says so; buttons and gestures work everywhere). While it is on and no
+//  app is on the list, a muted line under it says that every app then scrolls the way
+//  macOS does. Then the list of apps, each with its icon, its name and whether it has
+//  settings of its own. "+" offers the running apps and "Choose in Finder…" and opens the
+//  page of the app it added; "−" and Delete remove (Edit › Undo brings the
 //  app back with its settings; when it was added again meanwhile, its settings go onto
 //  that entry, and Redo takes them off again). Double-click, Return or the chevron open the
 //  app's page (ApplicationDetailViewController) in place of the list; "‹ Apps", Esc and ⌘[
@@ -69,6 +71,7 @@ class PreferencesApplicationViewController: NSViewController {
         static let allowlist = NSUserInterfaceItemIdentifier("apps-limit")
         static let list = NSUserInterfaceItemIdentifier("apps-list")
         static let chooseInFinder = NSUserInterfaceItemIdentifier("apps-choose-in-finder")
+        static let allowlistEmpty = NSUserInterfaceItemIdentifier("apps-limit-empty")
     }
 
     // MARK: - Seams
@@ -103,6 +106,11 @@ class PreferencesApplicationViewController: NSViewController {
     // MARK: - Views (read access for tests)
 
     private(set) var allowlistRow: PreferencesSwitchRow!
+    private(set) var allowlistSection: PreferencesGroupSection!
+    /// "No apps on the list yet: …", under the switch while it is on and the list is empty.
+    private(set) var allowlistEmptyLabel: NSTextField!
+    /// The label, inset like the texts of the rows; hidden while it does not apply.
+    private(set) var allowlistEmptyNote: NSView!
     private(set) var listSection: PreferencesListSection!
     /// The list and the switch above it.
     private(set) var listPage: NSView!
@@ -113,6 +121,8 @@ class PreferencesApplicationViewController: NSViewController {
     private(set) var rowApplications: [String: Application] = [:]
     /// What the pane shows: `listPage` or the open app's page.
     private(set) var currentPage: NSView?
+    /// The stack of the list page: the switch's box, the muted line, the list.
+    private var listContent: NSStackView!
 
     var list: PreferencesListBox { return listSection.list }
     var allowlistSwitch: NSSwitch { return allowlistRow.toggle }
@@ -136,6 +146,14 @@ class PreferencesApplicationViewController: NSViewController {
         allowlist.toggle.identifier = Identifier.allowlist
         allowlistRow = allowlist
         let allowlistSection = PreferencesGroupSection(width: Self.boxWidth, rows: [allowlist])
+        self.allowlistSection = allowlistSection
+        let emptyNote = makeAllowlistEmptyNote()
+        // Shown as it should be from the start: loading changes no height.
+        emptyNote.isHidden = !Self.showsAllowlistEmptyNote(
+            allowlist: Options.shared.application.allowlist,
+            applicationCount: Options.shared.application.applications.count
+        )
+        allowlistEmptyNote = emptyNote
 
         let list = PreferencesListBox(
             width: Self.boxWidth,
@@ -154,7 +172,8 @@ class PreferencesApplicationViewController: NSViewController {
         }
         listSection = PreferencesListSection(title: text("apps-list-header"), list: list)
 
-        PreferencesGroupedForm.add([allowlistSection, listSection], to: content)
+        PreferencesGroupedForm.add([allowlistSection, emptyNote, listSection], to: content)
+        listContent = content
         listPage = page
 
         view = root
@@ -227,7 +246,31 @@ class PreferencesApplicationViewController: NSViewController {
     func syncViewWithOptions() {
         guard isViewLoaded else { return }
         allowlistRow.isOn = Options.shared.application.allowlist
+        updateAllowlistEmptyNote()
         detailController?.syncViewWithOptions()
+    }
+
+    /// The limit is on and no app is on the list: smoothing and reversing are off in every
+    /// app. The muted line under the switch says so.
+    static func showsAllowlistEmptyNote(allowlist: Bool, applicationCount: Int) -> Bool {
+        return allowlist && applicationCount == 0
+    }
+
+    private func updateAllowlistEmptyNote() {
+        let shows = Self.showsAllowlistEmptyNote(
+            allowlist: Options.shared.application.allowlist,
+            applicationCount: applications.count
+        )
+        // Close under the switch's box while it shows, as the muted lines of the other panes.
+        listContent.setCustomSpacing(
+            shows ? PreferencesGroupedForm.noteSpacing : PreferencesGroupedForm.sectionSpacing,
+            after: allowlistSection
+        )
+        guard allowlistEmptyNote.isHidden == shows else { return }
+        allowlistEmptyNote.isHidden = !shows
+        if currentPage === listPage {
+            contentHeightDidChange()
+        }
     }
 
     /// Shows the stored apps in the list (the selection stays on the same app).
@@ -245,6 +288,7 @@ class PreferencesApplicationViewController: NSViewController {
         }
         rowApplications = targets
         list.setRows(rows)
+        updateAllowlistEmptyNote()
         // The open app is no longer on the list (a removal was redone): back to the list.
         if let detail = detailController, index(of: detail.application) == nil {
             showList(focusList: true)
@@ -338,8 +382,9 @@ class PreferencesApplicationViewController: NSViewController {
         return panel
     }
 
-    /// Adds the apps chosen in Finder (by their bundle's path) and selects the last new one;
-    /// when every one was on the list already, the first of them blinks.
+    /// Adds the apps chosen in Finder (by their bundle's path) and opens the page of the last
+    /// new one (a new app uses the Scrolling settings until it is changed there); when every
+    /// one was on the list already, the first of them blinks.
     func addApplications(at urls: [URL]) {
         var added: Application?
         var existing: Application?
@@ -355,25 +400,27 @@ class PreferencesApplicationViewController: NSViewController {
         }
         reloadRows()
         if let id = added.flatMap(rowID(for:)) {
-            list.select(id)
-        } else if let id = existing.flatMap(rowID(for:)) {
+            openApplication(withID: id)
+            return
+        }
+        if let id = existing.flatMap(rowID(for:)) {
             list.flash(id)
         }
         focusList()
     }
 
-    /// Adds the app stored as `path` and selects it; an app the list holds already (under
-    /// any of `knownPaths`) is selected and blinks instead.
+    /// Adds the app stored as `path` and opens its page, where its settings are; an app the
+    /// list holds already (under any of `knownPaths`) is selected and blinks instead.
     @discardableResult
     func addApplication(path: String, knownPaths: [String]) -> Application {
         let (application, isNew) = insertApplication(path: path, knownPaths: knownPaths)
         reloadRows()
         if let id = rowID(for: application) {
             if isNew {
-                list.select(id)
-            } else {
-                list.flash(id)
+                openApplication(withID: id)
+                return application
             }
+            list.flash(id)
         }
         focusList()
         return application
@@ -530,6 +577,29 @@ class PreferencesApplicationViewController: NSViewController {
     private func focusList() {
         guard let window = view.window, list.window === window else { return }
         window.makeFirstResponder(list)
+    }
+
+    /// One muted line, inset like the texts of the rows above it.
+    private func makeAllowlistEmptyNote() -> NSView {
+        let label = NSTextField(wrappingLabelWithString: text("apps-limit-empty"))
+        label.identifier = Identifier.allowlistEmpty
+        label.font = PreferencesGroupedForm.explanationFont
+        label.textColor = PreferencesGroupedForm.explanationColor(enabled: true)
+        label.isSelectable = false
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        label.preferredMaxLayoutWidth = Self.boxWidth - 2 * inset
+        label.translatesAutoresizingMaskIntoConstraints = false
+        allowlistEmptyLabel = label
+        let holder = NSView()
+        holder.translatesAutoresizingMaskIntoConstraints = false
+        holder.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: holder.topAnchor),
+            label.bottomAnchor.constraint(equalTo: holder.bottomAnchor),
+            label.leadingAnchor.constraint(equalTo: holder.leadingAnchor, constant: inset),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: holder.trailingAnchor, constant: -inset),
+        ])
+        return holder
     }
 
     private func text(_ key: String) -> String {

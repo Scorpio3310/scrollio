@@ -5141,6 +5141,18 @@
           }
         }
       }
+    },
+    "apps-limit-empty": {
+      "comment": "Apps pane: muted line under \"Limit scrolling to these apps\" while it is on and no app is on the list (smoothing and reversing are then off in every app)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No apps on the list yet: every app scrolls the way macOS does."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

@@ -111,7 +111,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-limit", "apps-limit-hint", "apps-list-header", "apps-row-inherit", "apps-row-own",
         "apps-empty-title", "apps-empty-hint", "apps-choose-in-finder", "apps-open-panel-prompt",
         "apps-undo-remove", "apps-back", "apps-back-accessibility", "apps-detail-inherit",
-        "apps-detail-inherit-on", "apps-detail-inherit-off",
+        "apps-detail-inherit-on", "apps-detail-inherit-off", "apps-limit-empty",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).
