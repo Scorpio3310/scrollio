@@ -29,6 +29,15 @@ class Interceptor {
         return history.filter { $0 > windowStart }.count >= autoRestartLimit
     }
 
+    /// Counts one automatic restart unless the throttle refuses it: drops the entries that
+    /// left the window, and adds `now` when the restart may go ahead.
+    static func admitAutoRestart(history: inout [Date], now: Date) -> Bool {
+        history.removeAll { now.timeIntervalSince($0) >= autoRestartWindow }
+        guard !isAutoRestartThrottled(history: history, now: now) else { return false }
+        history.append(now)
+        return true
+    }
+
     /// 重启时的额外清理操作 (由调用方注入, 避免 Interceptor 耦合特定子系统)
     /// 注意: 闭包不应捕获 Interceptor 实例, 否则会形成循环引用
     var onRestart: (() -> Void)?
@@ -110,17 +119,25 @@ extension Interceptor {
                 return
             }
             if !self.isRunning() {
-                let now = Date()
-                self.autoRestartHistory.removeAll { now.timeIntervalSince($0) >= Self.autoRestartWindow }
-                guard !Self.isAutoRestartThrottled(history: self.autoRestartHistory, now: now) else {
-                    NSLog("Scrollio: event tap auto-restart throttled (%d restarts within %.0fs), cooling down",
-                          Self.autoRestartLimit, Self.autoRestartWindow)
-                    return
-                }
-                self.autoRestartHistory.append(now)
-                self.restart()
+                self.restartUnlessThrottled()
             }
         })
+    }
+
+    /// An automatic restart: the keeper found the tap off, or the system turned it off
+    /// because a callback took too long (`tapDisabledByTimeout`, handled in the callback so
+    /// the tap is not left off until the keeper's next look, up to 5 s later). Both go
+    /// through the same throttle.
+    /// - Returns: false when the throttle refused it.
+    @discardableResult
+    func restartUnlessThrottled() -> Bool {
+        guard Self.admitAutoRestart(history: &autoRestartHistory, now: Date()) else {
+            NSLog("Scrollio: event tap auto-restart throttled (%d restarts within %.0fs), cooling down",
+                  Self.autoRestartLimit, Self.autoRestartWindow)
+            return false
+        }
+        restart()
+        return true
     }
 
     /// Installs a keeper timer, invalidating the one it replaces. A replaced timer that is

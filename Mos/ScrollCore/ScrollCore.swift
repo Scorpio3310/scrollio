@@ -65,6 +65,11 @@ class ScrollCore: ScrollActionPort {
         // Tap 被系统禁用或重启边界时，强制清理 poster 上下文并失效历史异步帧
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             ScrollPoster.shared.stop(.TrackingEnd)
+            if type == .tapDisabledByTimeout {
+                // On again now: until the keeper's next look the wheel went by raw (and the
+                // other way round with "reverse" on).
+                ScrollCore.shared.scrollEventInterceptor?.restartUnlessThrottled()
+            }
             return Unmanaged.passUnretained(event)
         }
         if type != .scrollWheel {
