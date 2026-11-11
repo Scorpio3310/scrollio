@@ -97,16 +97,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSWorkspace.sessionDidResignActiveNotification,
             object: nil
         )
-        // 监听系统休眠/唤醒, 复用 session 生命周期方法
+        // 监听系统休眠/唤醒 (a wake while another user has the Mac starts nothing)
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
-            selector: #selector(AppDelegate.sessionDidResign),
+            selector: #selector(AppDelegate.willSleep),
             name: NSWorkspace.willSleepNotification,
             object: nil
         )
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
-            selector: #selector(AppDelegate.sessionDidActive),
+            selector: #selector(AppDelegate.didWake),
             name: NSWorkspace.didWakeNotification,
             object: nil
         )
@@ -163,9 +163,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ aNotification: Notification) {
         guard AppRuntime.shouldRunAppStartupSideEffects else { return }
         MouseGesturePointerLock.shared.forceRelease()
-        LogiCenter.shared.stop()
-        ScrollCore.shared.disable()
-        ButtonCore.shared.disable()
+        // The same stop as sleep: the event taps, then the Logitech mice get their buttons back.
+        AppRunController.shared.stop()
         // 写入尚未 flush 的脏配置组
         Options.shared.flushPendingSaves()
     }
@@ -179,10 +178,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // 在切换用户或休眠时停止滚动处理, 回来时再启动 (暂停中则保持暂停)
     @objc func sessionDidActive(notification: NSNotification) {
-        AppRunController.shared.start()
+        AppRunController.shared.sessionDidBecomeActive()
     }
     @objc func sessionDidResign(notification: NSNotification) {
+        AppRunController.shared.sessionDidResign()
+    }
+    @objc func willSleep(notification: NSNotification) {
         AppRunController.shared.stop()
+    }
+    @objc func didWake(notification: NSNotification) {
+        AppRunController.shared.start()
     }
     // 辅助功能权限在运行时被撤销 (可能由多个 Interceptor 同时触发, 此方法必须幂等)
     @objc func handleAccessibilityPermissionLost() {
