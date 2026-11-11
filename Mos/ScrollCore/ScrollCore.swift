@@ -30,6 +30,8 @@ class ScrollCore: ScrollActionPort {
     private var mosDashActionCount = 0
     private var mosToggleActionCount = 0
     private var mosBlockActionCount = 0
+    /// Who moves the page when the trackpad and the wheel overlap. Main thread (scroll tap).
+    var handover = ScrollHandover()
     // 例外应用数据
     var application: Application?
     var currentApplication: Application? // 用于区分按下热键及抬起时的作用目标
@@ -100,11 +102,35 @@ class ScrollCore: ScrollActionPort {
         // 无法区分黑苹果, 因为黑苹果的触控板驱动直接模拟鼠标输入
         // 无法区分 Magic Mouse, 因为其滚动特征与内置的 Trackpad 一致
         if scrollEvent.isTrackpad() {
+            // Trackpad and wheel together (ScrollHandover): a finger that begins to scroll
+            // stops the wheel's glide; the rest of a trackpad glide the wheel took over is dropped.
+            let scrollPhase = event.getDoubleValueField(.scrollWheelEventScrollPhase)
+            if ScrollCore.stopWheelGlide(forTrackpadScrollPhase: scrollPhase) {
+                ScrollSystemLog.noteFingerTookOverWheelGlide()
+            }
+            switch ScrollCore.shared.handover.trackpadEvent(
+                scrollPhase: scrollPhase,
+                momentumPhase: event.getDoubleValueField(.scrollWheelEventMomentumPhase),
+                hasDelta: hasVerticalDelta || hasHorizontalDelta
+            ) {
+            case .swallow:
+                ScrollHandoverTrace.note(event, takenForTrackpad: true, swallowed: true)
+                return nil
+            case .letThroughEndingTakeover(let dropped):
+                ScrollSystemLog.noteWheelTookOverGlide(droppedMomentumEvents: dropped)
+            case .letThrough:
+                break
+            }
             if hasVerticalDelta || hasHorizontalDelta { ScrollSystemLog.notePassthrough(.trackpad) }
             ScrollHandoverTrace.note(event, takenForTrackpad: true)
             return Unmanaged.passUnretained(event)
         }
         ScrollHandoverTrace.note(event, takenForTrackpad: false)
+        // A wheel event takes over a trackpad glide that still runs, whether it is smoothed or
+        // not: let through raw, it would still move the page against the glide.
+        if hasVerticalDelta || hasHorizontalDelta {
+            ScrollCore.shared.handover.wheelEvent()
+        }
         // 当事件来自远程桌面，且其发送的事件 isContinuous=1.0，此时跳过本地平滑
         if ScrollUtils.shared.isRemoteSmoothedEvent(event) {
             ScrollSystemLog.notePassthrough(.remoteSmoothed)
@@ -440,6 +466,17 @@ class ScrollCore: ScrollActionPort {
         ScrollPoster.shared.stop()
         return nil
     }
+
+    /// Wheel to trackpad: a finger that begins to scroll on the trackpad while Scrollio's glide
+    /// from the wheel still runs stops that glide at once, as a left click does, so that only
+    /// the finger moves the page. Main thread.
+    /// - Returns: whether a glide was stopped.
+    @discardableResult
+    static func stopWheelGlide(forTrackpadScrollPhase scrollPhase: Double, poster: ScrollPoster = .shared) -> Bool {
+        guard ScrollHandover.fingerTakesOver(scrollPhase: scrollPhase), poster.isGliding else { return false }
+        poster.stop()
+        return true
+    }
     
     // MARK: - 事件运行管理
     // 启动
@@ -485,6 +522,8 @@ class ScrollCore: ScrollActionPort {
         hotkeyEventInterceptor = nil
         mouseEventInterceptor = nil
         releaseHeldScrollKeys()
+        // Without the tap the end of a glide is not seen: the next start knows of none.
+        handover = ScrollHandover()
     }
 
     /// Forgets every scroll key held down (the keyboard and mouse keys of the Scrolling tab,

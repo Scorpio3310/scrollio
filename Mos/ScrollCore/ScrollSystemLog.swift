@@ -138,6 +138,24 @@ enum ScrollSystemLog {
         passthroughCounts = [Int](repeating: 0, count: PassthroughReason.allCases.count)
     }
 #endif
+
+    // MARK: - Hand-overs between the trackpad and the wheel (ScrollHandover)
+
+    /// Written when the glide the wheel took over has ended: one line per hand-over.
+    static func wheelTookOverMessage(droppedMomentumEvents: Int) -> String {
+        return "handover: the wheel took over a trackpad glide: \(droppedMomentumEvents) momentum events dropped"
+    }
+
+    static let fingerTookOverMessage = "handover: a finger on the trackpad took over: the wheel's glide stopped"
+
+    static func noteWheelTookOverGlide(droppedMomentumEvents: Int) {
+        let line = wheelTookOverMessage(droppedMomentumEvents: droppedMomentumEvents)
+        logger.notice("\(line, privacy: .public)")
+    }
+
+    static func noteFingerTookOverWheelGlide() {
+        logger.notice("\(fingerTookOverMessage, privacy: .public)")
+    }
 }
 
 // MARK: - Trackpad to wheel hand-over (diagnostics)
@@ -146,7 +164,9 @@ enum ScrollSystemLog {
 /// seconds. The owner reported (2026-11-11) that scrolling on the trackpad and then taking
 /// over with the mouse wheel, while the trackpad's glide still runs, freezes the wheel or
 /// makes it stutter. The per-scroll line cannot show that, so this writes one line per
-/// scroll event around such a hand-over, at most `maxLines` per hand-over.
+/// scroll event around such a hand-over, at most `maxLines` per hand-over. The cause it
+/// showed is fixed (`ScrollHandover`, `ScrollEvent.isTrackpad`); it stays for one more round
+/// so that the fix can be checked on the owner's Mac, then goes.
 ///
 /// Away from a hand-over it costs one clock read and one comparison per scroll event.
 /// Main thread only (the scroll tap's callback).
@@ -192,21 +212,22 @@ enum ScrollHandoverTrace {
         category: "scroll"
     )
 
-    /// One scroll event that reached the tap, and how Scrollio took it.
-    static func note(_ event: CGEvent, takenForTrackpad: Bool) {
+    /// One scroll event that reached the tap, and how Scrollio took it. `swallowed`: a
+    /// trackpad event dropped because the wheel took over its glide (`ScrollHandover`).
+    static func note(_ event: CGEvent, takenForTrackpad: Bool, swallowed: Bool = false) {
         let decision = state.note(takenForTrackpad: takenForTrackpad, now: ProcessInfo.processInfo.systemUptime)
         guard case let .line(sinceOther, opens) = decision else { return }
         if opens {
-            logger.notice("handover: trackpad and wheel within \(State.window, privacy: .public) s of each other; events follow (T = taken for trackpad, let through; W = wheel, handled)")
+            logger.notice("handover: trackpad and wheel within \(State.window, privacy: .public) s of each other; events follow (T = taken for trackpad, let through; S = trackpad glide dropped, the wheel took over; W = wheel, handled)")
         }
-        let line = describe(event, takenForTrackpad: takenForTrackpad, sinceOther: sinceOther)
+        let line = describe(event, takenForTrackpad: takenForTrackpad, swallowed: swallowed, sinceOther: sinceOther)
         logger.notice("\(line, privacy: .public)")
     }
 
-    static func describe(_ event: CGEvent, takenForTrackpad: Bool, sinceOther: TimeInterval) -> String {
+    static func describe(_ event: CGEvent, takenForTrackpad: Bool, swallowed: Bool = false, sinceOther: TimeInterval) -> String {
         return String(
             format: "handover %@ +%.0f ms phase %.0f momentum %.0f count %.0f continuous %.0f line %lld,%lld point %.1f,%.1f fixed %.2f pid %lld",
-            takenForTrackpad ? "T" : "W",
+            swallowed ? "S" : (takenForTrackpad ? "T" : "W"),
             sinceOther * 1000,
             event.getDoubleValueField(.scrollWheelEventScrollPhase),
             event.getDoubleValueField(.scrollWheelEventMomentumPhase),

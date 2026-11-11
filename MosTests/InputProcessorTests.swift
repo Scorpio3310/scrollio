@@ -1195,7 +1195,6 @@ final class InputProcessorTests: XCTestCase {
         guard let scrollEvent = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 1, wheel2: 0, wheel3: 0) else {
             return XCTFail("Expected scroll wheel event to be creatable")
         }
-        ScrollEvent.isTrackpadCallCount = ScrollEvent.isTrackpadCallSamplingRate - 1
         _ = ScrollCore.shared.scrollEventCallBack(CGEventTapProxy(bitPattern: 1)!, .scrollWheel, scrollEvent, nil)
 
         XCTAssertEqual(
@@ -1227,7 +1226,6 @@ final class InputProcessorTests: XCTestCase {
         guard let scrollEvent = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 1, wheel2: 0, wheel3: 0) else {
             return XCTFail("Expected scroll wheel event to be creatable")
         }
-        ScrollEvent.isTrackpadCallCount = ScrollEvent.isTrackpadCallSamplingRate - 1
         _ = ScrollCore.shared.scrollEventCallBack(CGEventTapProxy(bitPattern: 1)!, .scrollWheel, scrollEvent, nil)
 
         XCTAssertFalse(ScrollCore.shared.dashScroll)
