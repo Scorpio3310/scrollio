@@ -41,17 +41,13 @@ final class ScrollPosterStopHandoffTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func input(_ y: Double, momentum: ScrollMomentumSettings? = nil) -> ScrollPosterInput {
+    private func input(_ y: Double) -> ScrollPosterInput {
         let trans = OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: 3.13)
-        return ScrollPosterInput(
-            y: y, x: 0, notch: (y: abs(y), x: 0), duration: trans,
-            bypassFilter: ScrollMotion.shouldBypassFilter(freeSpinBlend: 0),
-            momentum: momentum
-        )
+        return ScrollPosterInput(y: y, x: 0, notch: abs(y), duration: trans)
     }
 
-    private func wheel(_ y: Double, momentum: ScrollMomentumSettings? = nil) {
-        poster.inputForTests(input(y, momentum: momentum), at: now)
+    private func wheel(_ y: Double) {
+        poster.inputForTests(input(y), at: now)
     }
 
     /// Runs display frames until one asks for the stop (at most 20 simulated seconds).
@@ -101,15 +97,8 @@ final class ScrollPosterStopHandoffTests: XCTestCase {
         XCTAssertEqual(phases.phase, .Idle)
     }
 
-    func testOnlyOneRequestIsMadePerWheelInput_classic() throws {
+    func testOnlyOneRequestIsMadePerWheelInput() throws {
         wheel(40)
-        _ = try XCTUnwrap(runUntilStopRequest())
-        XCTAssertTrue(runFrames(30).isEmpty)
-    }
-
-    /// In precise mode every frame of a finished motion finds it finished again.
-    func testOnlyOneRequestIsMadePerWheelInput_precise() throws {
-        wheel(40, momentum: .default)
         _ = try XCTUnwrap(runUntilStopRequest())
         XCTAssertTrue(runFrames(30).isEmpty)
     }
@@ -132,7 +121,7 @@ final class ScrollPosterStopHandoffTests: XCTestCase {
         // The display link is still running: it scrolls the tick and then asks again.
         let second = try XCTUnwrap(runUntilStopRequest())
         XCTAssertNotEqual(second.inputSequence, request.inputSequence)
-        // (A classic gesture does not post the frames under the dead zone: the last few pixels stay unsent.)
+        // (Frames under the dead zone are not posted: the last few pixels stay unsent.)
         XCTAssertEqual(movedY - movedBefore, 37, accuracy: 4.0)
         XCTAssertTrue(poster.performRequestedStop(second))
         XCTAssertEqual(poster.motionStateForTests.current.y, 0)

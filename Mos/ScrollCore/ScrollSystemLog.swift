@@ -33,8 +33,6 @@ enum ScrollSystemLog {
         var lastFrameAt: CFTimeInterval = 0
         var duration = 0.0
         var trackpadStyle = false
-        var precise = false
-        var freeSpinInputs = 0
 
         var isEmpty: Bool { return inputs == 0 }
     }
@@ -43,14 +41,12 @@ enum ScrollSystemLog {
         guard !session.isEmpty else { return }
         let tau = ScrollMotion.timeConstant(forTransition: OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: session.duration))
         let message = String(
-            format: "scroll: %d wheel events %.0f px in -> %d frames %.0f px out (largest %.1f), wheel %.0f ms, glide after the last event %.0f ms, Duration %.2f (tau %.0f ms), trackpad-style %@, %@%@, ended %@",
+            format: "scroll: %d wheel events %.0f px in -> %d frames %.0f px out (largest %.1f), wheel %.0f ms, glide after the last event %.0f ms, Duration %.2f (tau %.0f ms), trackpad-style %@, ended %@",
             session.inputs, session.inputDistance, session.frames, session.postedDistance, session.largestFrame,
             (session.lastInputAt - session.startedAt) * 1000,
             max(0, session.lastFrameAt - session.lastInputAt) * 1000,
             session.duration, tau * 1000,
             session.trackpadStyle ? "on" : "off",
-            session.precise ? "precise" : "classic",
-            session.freeSpinInputs > 0 ? ", free-spin \(session.freeSpinInputs)" : "",
             phase
         )
         logger.notice("\(message, privacy: .public)")

@@ -180,34 +180,4 @@ final class ScrollFilterTests: XCTestCase {
         }
         XCTAssertTrue(output.allSatisfy { $0 >= 0 }, "slows down, never moves backwards")
     }
-
-    func testPassThrough_isAnUnfilteredFillThatReleasesPending() {
-        for _ in 0..<3 {
-            _ = sut.fill(with: (y: 10, x: 0))
-        }
-        let pending = sut.pending.y
-        XCTAssertGreaterThan(pending, 0)
-        let out = sut.passThrough(with: (y: 10, x: 0), catchUp: 0.5)
-        XCTAssertEqual(out.y, 10 + pending * 0.5, accuracy: 1e-9)
-        XCTAssertEqual(sut.pending.y, pending * 0.5, accuracy: 1e-9)
-    }
-
-    func testIsAtRest() {
-        XCTAssertTrue(sut.isAtRest)
-        _ = sut.fill(with: (y: 1, x: 0))
-        XCTAssertFalse(sut.isAtRest)
-        sut.reset()
-        XCTAssertTrue(sut.isAtRest)
-    }
-
-    func testResetAxis_clearsOnlyThatAxis() {
-        _ = sut.fill(with: (y: 10, x: -6))
-        sut.resetY()
-        XCTAssertEqual(sut.value().y, 0)
-        XCTAssertEqual(sut.pending.y, 0)
-        XCTAssertNotEqual(sut.value().x, 0)
-        sut.resetX()
-        XCTAssertEqual(sut.value().x, 0)
-        XCTAssertEqual(sut.pending.x, 0)
-    }
 }
