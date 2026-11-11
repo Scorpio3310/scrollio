@@ -415,6 +415,31 @@ final class ScrollSettingsLoadTests: XCTestCase {
         XCTAssertEqual(defaults.data(forKey: OptionItem.Application.Applications), stored, "nothing was removed")
     }
 
+    /// A scroll key stored by an older version as a number that is no key code trapped in
+    /// UInt16(_:): the app crashed at every launch. The default is used, nothing is written.
+    func testReadOptions_usesTheDefaultForALegacyScrollKeyOutOfRange() {
+        store("optionsExist", forKey: OptionItem.General.OptionsExist)
+        store(70_000, forKey: OptionItem.Scroll.Dash)
+        store(-1, forKey: OptionItem.Scroll.Toggle)
+        store(58, forKey: OptionItem.Scroll.Block)
+
+        Options.shared.readOptions()
+
+        XCTAssertEqual(Options.shared.scroll.dash, OPTIONS_SCROLL_DEFAULT().dash)
+        XCTAssertEqual(Options.shared.scroll.toggle, OPTIONS_SCROLL_DEFAULT().toggle)
+        XCTAssertEqual(Options.shared.scroll.block, ScrollHotkey(type: .keyboard, code: 58), "a key code still migrates")
+        XCTAssertEqual(defaults.object(forKey: OptionItem.Scroll.Dash) as? Int, 70_000, "the stored value is not rewritten")
+    }
+
+    func testLegacyScrollKeyCodes() {
+        XCTAssertEqual(Options.legacyScrollHotkey(keyCode: 58), ScrollHotkey(type: .keyboard, code: 58))
+        XCTAssertEqual(Options.legacyScrollHotkey(keyCode: 0), ScrollHotkey(type: .keyboard, code: 0))
+        XCTAssertEqual(Options.legacyScrollHotkey(keyCode: 65_535), ScrollHotkey(type: .keyboard, code: 65_535))
+        XCTAssertNil(Options.legacyScrollHotkey(keyCode: 65_536))
+        XCTAssertNil(Options.legacyScrollHotkey(keyCode: -1))
+        XCTAssertNil(Options.legacyScrollHotkey(keyCode: Int.max))
+    }
+
     func testReadOptions_keepsSettingsThatAreInRange() {
         // Speed 6.3 with the "Smooth" feel: inside every range, so nothing moves.
         store("optionsExist", forKey: OptionItem.General.OptionsExist)

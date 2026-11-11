@@ -455,8 +455,11 @@ extension Options {
 
         // 旧格式迁移: Int (keyboard keyCode only)
         if let intValue = rawValue as? Int {
+            guard let hotkey = Self.legacyScrollHotkey(keyCode: intValue) else {
+                NSLog("Legacy ScrollHotkey for \(key) is out of range (\(intValue)), using default")
+                return defaultValue
+            }
             // 迁移为新格式
-            let hotkey = ScrollHotkey(type: .keyboard, code: UInt16(intValue))
             saveScrollHotkey(hotkey, forKey: key)
             return hotkey
         }
@@ -466,6 +469,13 @@ extension Options {
         // 如果配置不存在（首次启动），返回默认值
         let optionsExist = UserDefaults.standard.object(forKey: OptionItem.General.OptionsExist) != nil
         return optionsExist ? nil : defaultValue
+    }
+
+    /// A scroll key stored by older versions as a bare key code. A number that is no key code
+    /// gives nil: `UInt16(_:)` trapped on it, and the app crashed at every launch.
+    static func legacyScrollHotkey(keyCode: Int) -> ScrollHotkey? {
+        guard let code = UInt16(exactly: keyCode) else { return nil }
+        return ScrollHotkey(type: .keyboard, code: code)
     }
 
     // 保存滚动热键
