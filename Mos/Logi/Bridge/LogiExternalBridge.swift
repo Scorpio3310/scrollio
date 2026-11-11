@@ -10,6 +10,10 @@ internal protocol LogiExternalBridge: AnyObject {
     func dispatchLogiButtonEvent(_ event: InputEvent) -> LogiDispatchResult
     func handleLogiScrollHotkey(code: UInt16, phase: InputPhase)
     func showLogiToast(_ message: String, severity: LogiToastSeverity)
+    /// Movement of a held button the mouse tracks itself (raw XY), in sensor counts: +x
+    /// right, +y towards the user. Only sent for a hold whose button-down event had
+    /// `tracksMovementOnDevice` set, about 125 times a second. Hot path.
+    func handleLogiGestureMovement(code: UInt16, deltaX: Int, deltaY: Int)
 }
 
 internal enum LogiDispatchResult: Equatable {

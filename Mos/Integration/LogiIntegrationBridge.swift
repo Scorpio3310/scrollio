@@ -55,6 +55,10 @@ final class LogiIntegrationBridge: LogiExternalBridge {
         _ = ScrollCore.shared.handleScrollHotkey(code: code, isDown: phase == .down)
     }
 
+    func handleLogiGestureMovement(code: UInt16, deltaX: Int, deltaY: Int) {
+        InputProcessor.shared.handleDeviceGestureMovement(code: code, countsX: deltaX, countsY: deltaY)
+    }
+
     func showLogiToast(_ message: String, severity: LogiToastSeverity) {
         let style: Toast.Style
         switch severity {

@@ -43,7 +43,9 @@ final class MouseInteractionSessionController {
     private var testStopMotionTap: (() -> Void)?
     var activeSessionCount: Int { activeSessions.count }
     private var hasActiveVirtualModifiers: Bool { InputProcessor.shared.activeModifierFlags != 0 }
-    private var hasActiveMouseGestures: Bool { InputProcessor.shared.hasActiveMouseGestureSessions }
+    /// Only gesture holds that read pointer movement need the tap; a hold the mouse
+    /// tracks itself (raw XY over HID++) does not.
+    private var hasActiveMouseGestures: Bool { InputProcessor.shared.hasPointerTrackedMouseGestureSessions }
 
     init(
         startMotionTap: (() -> Void)? = nil,

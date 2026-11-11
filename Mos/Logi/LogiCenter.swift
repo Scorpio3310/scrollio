@@ -132,6 +132,51 @@ final class LogiCenter {
         manager.applyWheelSettings(settings)
     }
 
+    // MARK: - Gesture Navigation hardware support (contract: Mos/Logi/Gesture/LogiGestureTypes.swift)
+
+    /// Mos codes of the Logitech buttons whose holds the mouse should track itself (raw XY
+    /// diversion) instead of moving the pointer. Remembered for mice that connect later and
+    /// applied together with the button diverts. Pass an empty set to turn it off: armed
+    /// controls are then put back to normal pointer movement. Main thread only.
+    func setGestureTrackingCodes(_ codes: Set<UInt16>) {
+        #if DEBUG
+        precondition(Thread.isMainThread, "LogiCenter is main-thread-only")
+        LogiTrace.log("[Center] setGestureTrackingCodes codes=\(LogiTrace.codes(codes))")
+        #endif
+        guard manager.setGestureTrackingCodes(codes) else { return }
+        // Same coalesced pass that applies binding changes, so a control whose binding and
+        // tracking change together gets one write.
+        registry.scheduleReapply()
+    }
+
+    /// Plays a haptic cue on the mouse `code` was last pressed on. Does nothing unless that
+    /// mouse has haptics and the user has them switched on; never changes the mouse's
+    /// intensity or power saving. Main thread only.
+    func playGestureHaptic(_ cue: MouseGestureHapticCue, forMosCode code: UInt16) {
+        #if DEBUG
+        precondition(Thread.isMainThread, "LogiCenter is main-thread-only")
+        #endif
+        manager.playGestureHaptic(cue, forMosCode: code)
+    }
+
+    /// A connected mouse has a control that can report movement itself.
+    func supportsGestureDeviceTracking() -> Bool {
+        return manager.supportsGestureDeviceTracking
+    }
+
+    /// A connected mouse has a haptic motor.
+    func supportsGestureHaptics() -> Bool {
+        return manager.supportsGestureHaptics
+    }
+
+    /// Asks the mice again whether their haptics are switched on.
+    func refreshGestureStates() {
+        #if DEBUG
+        precondition(Thread.isMainThread, "LogiCenter is main-thread-only")
+        #endif
+        manager.refreshGestureStates()
+    }
+
     // MARK: - Debug panel
     func showDebugPanel() {
         #if DEBUG

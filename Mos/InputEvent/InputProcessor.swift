@@ -35,6 +35,14 @@ class InputProcessor: ModifierFlagsProviding {
         return !activeMouseGestures.isEmpty
     }
 
+    /// Held gesture buttons that read pointer movement, the only ones that need the motion
+    /// tap. A hold the mouse tracks itself gets its movement from `handleDeviceGestureMovement`.
+    private var pointerTrackedGestureCount = 0
+
+    var hasPointerTrackedMouseGestureSessions: Bool {
+        return pointerTrackedGestureCount > 0
+    }
+
     private struct TriggerKey: Hashable {
         let type: EventType
         let code: UInt16
@@ -49,12 +57,25 @@ class InputProcessor: ModifierFlagsProviding {
     private final class ActiveMouseGestureSession {
         /// Snapshot at button-down, so editing settings mid-hold cannot mix two configurations.
         let settings: MouseGestureSettings
+        /// Fixed for the whole hold: movement from the other source never reaches it.
+        let movementSource: MouseGestureMovementSource
+        /// The button to name when asking for a haptic cue: set for buttons that arrive
+        /// over HID++ while haptic feedback is on, nil otherwise.
+        let hapticCode: UInt16?
         var recognizer = MouseGestureRecognizer()
         /// Set in "follow the hand" mode; the recognizer above is then unused.
         var interactive: InteractiveGestureSession?
 
-        init(settings: MouseGestureSettings) {
+        init(settings: MouseGestureSettings, movementSource: MouseGestureMovementSource, hapticCode: UInt16?) {
             self.settings = settings
+            self.movementSource = movementSource
+            self.hapticCode = hapticCode
+        }
+
+        /// The pointer is only frozen for holds that read it: a mouse that tracks the hold
+        /// itself already keeps the pointer still.
+        var freezesPointer: Bool {
+            return settings.freezePointer && movementSource == .pointer
         }
     }
 
@@ -62,6 +83,8 @@ class InputProcessor: ModifierFlagsProviding {
     /// The hold that drives the interactive swipe. Only one swipe can run at a time, so a
     /// second gesture button pressed meanwhile behaves like the discrete mode.
     private var interactiveGestureKey: TriggerKey?
+    /// Movement source of that hold (kept apart so the motion tap callback needs no lookup).
+    private var interactiveGestureSource = MouseGestureMovementSource.pointer
     /// Movement received in the motion tap callback and not yet handed to the session.
     private var pendingInteractiveDelta = CGPoint.zero
     private var isInteractiveFlushScheduled = false
@@ -73,6 +96,12 @@ class InputProcessor: ModifierFlagsProviding {
     private var interactiveSwipeGeneration = 0
     private var interactiveWatchdog: DispatchWorkItem?
     private var interactiveEnvironment = InteractiveGestureEnvironment.system
+    /// Plays a haptic cue on the mouse a button belongs to. Replaced in tests.
+    private var gestureHapticPlayer: (MouseGestureHapticCue, UInt16) -> Void = InputProcessor.systemGestureHapticPlayer
+
+    private static let systemGestureHapticPlayer: (MouseGestureHapticCue, UInt16) -> Void = { cue, code in
+        LogiCenter.shared.playGestureHaptic(cue, forMosCode: code)
+    }
 
     private struct MosScrollTapReplay {
         let context: MouseTapReplayContext
@@ -95,6 +124,7 @@ class InputProcessor: ModifierFlagsProviding {
         activeBindings.removeAll()
         cancelInteractiveGesture()
         activeMouseGestures.removeAll()
+        pointerTrackedGestureCount = 0
         MouseGesturePointerLock.shared.unlock()
         activeModifierFlags = 0
         MouseInteractionSessionController.shared.clearAllSessions()
@@ -147,7 +177,7 @@ class InputProcessor: ModifierFlagsProviding {
         }
         if binding.systemShortcutName == SystemShortcut.mouseGestureNavigation.identifier {
             guard event.type == .mouse else { return .passthrough }
-            beginMouseGesture(key: key)
+            beginMouseGesture(key: key, event: event)
             return .consumed
         }
 
@@ -184,7 +214,7 @@ class InputProcessor: ModifierFlagsProviding {
 
     // MARK: - Mouse Gesture Navigation
 
-    private func beginMouseGesture(key: TriggerKey) {
+    private func beginMouseGesture(key: TriggerKey, event: InputEvent) {
         if let existing = activeMouseGestures[key] {
             // A duplicate down for a held button keeps the running gesture.
             guard existing.interactive?.phase == .finished else { return }
@@ -192,10 +222,27 @@ class InputProcessor: ModifierFlagsProviding {
             if interactiveGestureKey == key {
                 interactiveGestureKey = nil
             }
+            if existing.movementSource == .pointer {
+                pointerTrackedGestureCount -= 1
+            }
         }
-        let session = ActiveMouseGestureSession(settings: Options.shared.gesture)
+        let settings = Options.shared.gesture
+        var hapticCode: UInt16?
+        if settings.hapticFeedback, case .hidPP = event.source {
+            hapticCode = event.code
+        }
+        let session = ActiveMouseGestureSession(
+            settings: settings,
+            // The event says what the mouse does for this hold; the setting only decides
+            // whether the mouse was asked to (LogiUsageBootstrap).
+            movementSource: event.tracksMovementOnDevice ? .device : .pointer,
+            hapticCode: hapticCode
+        )
         activeMouseGestures[key] = session
-        if session.settings.freezePointer {
+        if session.movementSource == .pointer {
+            pointerTrackedGestureCount += 1
+        }
+        if session.freezesPointer {
             MouseGesturePointerLock.shared.lock()
         }
         beginInteractiveGestureIfEnabled(session, key: key)
@@ -207,8 +254,12 @@ class InputProcessor: ModifierFlagsProviding {
         guard let session = activeMouseGestures.removeValue(forKey: key) else {
             return false
         }
+        if session.movementSource == .pointer {
+            pointerTrackedGestureCount -= 1
+        }
 
-        if activeMouseGestures.isEmpty {
+        // Holds tracked by the mouse never locked the pointer and do not keep it locked.
+        if pointerTrackedGestureCount == 0 {
             MouseGesturePointerLock.shared.unlock()
         }
         if session.interactive != nil {
@@ -224,23 +275,77 @@ class InputProcessor: ModifierFlagsProviding {
 
     /// Feeds pointer movement from the motion tap into every held gesture button.
     /// `location` is the event's pointer location before the pointer lock rewrites it.
+    ///
+    /// Holds the mouse tracks itself are skipped: their movement arrives through
+    /// `handleDeviceGestureMovement`, and counting the pointer as well would double it.
     func handleMouseGestureMovement(deltaX: CGFloat, deltaY: CGFloat, location: CGPoint? = nil) {
-        guard !activeMouseGestures.isEmpty else { return }
-        if interactiveGestureKey != nil {
+        guard pointerTrackedGestureCount > 0 else { return }
+        if interactiveGestureKey != nil, interactiveGestureSource == .pointer {
             accumulateInteractiveMovement(deltaX: deltaX, deltaY: deltaY, location: location)
         }
         guard deltaX != 0 || deltaY != 0 else { return }
 
         var recognizedAction: String?
-        for session in activeMouseGestures.values where session.interactive == nil {
-            if let direction = session.recognizer.append(deltaX: deltaX, deltaY: deltaY),
-               recognizedAction == nil {
-                recognizedAction = session.settings.actionIdentifier(for: direction)
+        for session in activeMouseGestures.values
+        where session.interactive == nil && session.movementSource == .pointer {
+            if let direction = session.recognizer.append(deltaX: deltaX, deltaY: deltaY) {
+                let action = session.settings.actionIdentifier(for: direction)
+                playLockInHaptic(for: session, action: action)
+                if recognizedAction == nil {
+                    recognizedAction = action
+                }
             }
         }
         if let recognizedAction {
             executeMouseGestureAction(named: recognizedAction)
         }
+    }
+
+    /// Feeds movement a mouse reports itself (Logitech raw XY, in sensor counts) into the
+    /// hold of that one button. Runs in the HID report callback on the main thread, about
+    /// 125 times a second; like the motion tap path it never posts anything itself.
+    func handleDeviceGestureMovement(code: UInt16, countsX: Int, countsY: Int) {
+        let key = TriggerKey(type: .mouse, code: code)
+        guard let session = activeMouseGestures[key], session.movementSource == .device else { return }
+        let deltaX = CGFloat(countsX) * MouseGestureDeviceTracking.pointsPerCount
+        let deltaY = CGFloat(countsY) * MouseGestureDeviceTracking.pointsPerCount
+        guard deltaX != 0 || deltaY != 0 else { return }
+
+        if interactiveGestureKey == key {
+            // No pointer location: the pointer is not frozen by Mos, so there is no warp
+            // to compensate for.
+            accumulateInteractiveMovement(deltaX: deltaX, deltaY: deltaY, location: nil)
+            return
+        }
+        guard session.interactive == nil,
+              let direction = session.recognizer.append(deltaX: deltaX, deltaY: deltaY) else { return }
+        let action = session.settings.actionIdentifier(for: direction)
+        playLockInHaptic(for: session, action: action)
+        executeMouseGestureAction(named: action)
+    }
+
+    // MARK: - Haptic cues
+    //
+    // - lockIn (light): a discrete action fires, or a "follow the hand" swipe begins.
+    // - commit (stronger): a swipe is released towards a switch
+    //   (`InteractiveGestureSession.isExpectedToSwitch`).
+    // Only for buttons that arrive over HID++ and while "haptic feedback" is on; the mouse
+    // side decides whether it can and may play (LogiCenter.playGestureHaptic).
+
+    /// Asks the mouse that owns the held button for a haptic cue. Deferred like the actions:
+    /// the callers run inside event callbacks, and the request is a blocking device write.
+    private func playGestureHaptic(_ cue: MouseGestureHapticCue, for session: ActiveMouseGestureSession) {
+        guard let code = session.hapticCode else { return }
+        let player = gestureHapticPlayer
+        DispatchQueue.main.async {
+            player(cue, code)
+        }
+    }
+
+    /// A direction with "No Action" assigned fires nothing, so it gives no cue either.
+    private func playLockInHaptic(for session: ActiveMouseGestureSession, action: String) {
+        guard !action.isEmpty else { return }
+        playGestureHaptic(.lockIn, for: session)
     }
 
     /// Runs one gesture action as a single press: trigger actions fire once, stateful ones
@@ -287,6 +392,7 @@ class InputProcessor: ModifierFlagsProviding {
             startTime: environment.now()
         )
         interactiveGestureKey = key
+        interactiveGestureSource = session.movementSource
         interactiveFrameDuration = screen.frameDuration
         pendingInteractiveDelta = .zero
 
@@ -402,14 +508,20 @@ class InputProcessor: ModifierFlagsProviding {
             case .begin(let axis):
                 interactiveSwipeGeneration += 1
                 DockSwipeSynthesizer.shared.begin(axis: axis)
+                playGestureHaptic(.lockIn, for: session)
             case .update(let progress):
                 DockSwipeSynthesizer.shared.update(progress: progress)
             case .end(let velocity):
                 DockSwipeSynthesizer.shared.end(velocity: velocity)
+                if session.interactive?.isExpectedToSwitch(releaseVelocity: velocity) == true {
+                    playGestureHaptic(.commit, for: session)
+                }
             case .cancel:
                 DockSwipeSynthesizer.shared.cancel()
             case .discrete(let direction):
-                executeMouseGestureAction(named: session.settings.actionIdentifier(for: direction))
+                let action = session.settings.actionIdentifier(for: direction)
+                playLockInHaptic(for: session, action: action)
+                executeMouseGestureAction(named: action)
             case .click:
                 executeMouseGestureAction(named: session.settings.clickAction)
             }
@@ -431,6 +543,14 @@ class InputProcessor: ModifierFlagsProviding {
     func fireInteractiveGestureWatchdogForTests() {
         guard let key = interactiveGestureKey else { return }
         interactiveGestureWatchdogFired(key: key)
+    }
+
+    func setTestingGestureHapticPlayer(_ player: @escaping (MouseGestureHapticCue, UInt16) -> Void) {
+        gestureHapticPlayer = player
+    }
+
+    func clearTestingGestureHapticPlayer() {
+        gestureHapticPlayer = InputProcessor.systemGestureHapticPlayer
     }
     #endif
 

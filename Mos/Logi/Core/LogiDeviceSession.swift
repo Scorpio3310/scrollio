@@ -469,6 +469,11 @@ class LogiDeviceSession {
         let divertable = Set(discoveredControls.filter { $0.isDivertable }.map { $0.cid })
         let policy = LogiButtonDeliveryPolicy.default
         let transport = LogiTransportIdentity(connectionMode)
+        // Gesture Navigation: which of the diverted controls the mouse should track itself.
+        // The controller folds raw XY into the reporting flags of the writes below.
+        let gesture = gestureController(slot: deviceIndex)
+        gesture.setRawXYCapableControls(Self.rawXYCapableCIDs(in: discoveredControls))
+        gesture.setRawXYRequest(Self.rawXYRequestCIDs(forMosCodes: LogiSessionManager.shared.gestureTrackingCodes))
         #if DEBUG
         let projection = aggregateMosCodes.sorted().map { code -> String in
             let cid = LogiCIDDirectory.toCID(code) ?? LogiCIDDirectory.cid(forNativeMouseButton: code)
@@ -512,6 +517,9 @@ class LogiDeviceSession {
             setControlReporting(featureIndex: reprogIdx, cid: cid, divert: false)
         }
         self.lastApplied = targetCIDs
+        // Controls that stay diverted got no write above: re-state the ones whose raw XY
+        // state changed (the setting was toggled while the binding stayed).
+        gesture.reconcile(diverted: targetCIDs)
         scheduleBLEStandardUndivertGuard(for: nativeFirstCIDs)
     }
 
@@ -1057,11 +1065,15 @@ class LogiDeviceSession {
         cancelDivertReassertion()
         cancelBLEStandardUndivertGuard()
         releaseAllActiveButtonState(reason: "teardown")
+        // Raw XY first, on every slot: a control left armed would keep freezing the pointer
+        // while it is held, with nobody listening to its movement.
+        disarmAllGestureControllers()
         if let reprogIdx = featureIndex[Self.featureReprogV4] {
             for cid in divertedCIDs {
                 setControlReporting(featureIndex: reprogIdx, cid: cid, divert: false)
             }
         }
+        dropAllGestureControllers()
         cancelDivertReassertion()
         pendingSetControlReportingAcks.removeAll()
         lastApplied.removeAll()
@@ -1274,10 +1286,13 @@ class LogiDeviceSession {
     }
 
     private func setControlReporting(featureIndex: UInt8, cid: UInt16, divert: Bool) {
+        // The slot's gesture controller picks the flags: the plain divert bytes (0x03 / 0x02)
+        // unless raw XY is wanted on this control or has to be cleared from it.
+        let flagsByte = gestureController(slot: deviceIndex).reportingFlags(cid: cid, divert: divert)
         sendControlReporting(
             featureIndex: featureIndex,
             cid: cid,
-            divert: divert,
+            flagsByte: flagsByte,
             updateLocalState: true,
             debugSource: "setControlReporting"
         )
@@ -1286,16 +1301,17 @@ class LogiDeviceSession {
     private func sendControlReporting(
         featureIndex: UInt8,
         cid: UInt16,
-        divert: Bool,
+        flagsByte: UInt8,
         updateLocalState: Bool,
         debugSource: String
     ) {
         let params = Self.controlReportingParams(
             connectionMode: connectionMode,
             cid: cid,
-            divert: divert
+            flagsByte: flagsByte
         )
         guard !params.isEmpty else { return }
+        let divert = flagsByte & LogiGestureProtocol.flagDivert != 0
         recordPendingSetControlReportingAck(cid: cid, params: params)
         sendRequest(featureIndex: featureIndex, functionId: 3,
                          params: params)
@@ -1375,15 +1391,21 @@ class LogiDeviceSession {
         cid: UInt16,
         divert: Bool
     ) -> [UInt8] {
-        let cidH = UInt8(cid >> 8)
-        let cidL = UInt8(cid & 0xFF)
         // HID++ Xvalid: bit0=divert value, bit1=divert valid.
-        let flagsByte: UInt8 = divert ? 0x03 : 0x02
+        let change: LogiGestureProtocol.ReportingChange = divert ? .divert : .undivert
+        return controlReportingParams(connectionMode: connectionMode, cid: cid, flagsByte: change.flags)
+    }
 
+    /// flagsByte: 见 LogiGestureProtocol.ReportingChange (divert 与 raw XY 的 value/valid 位).
+    private static func controlReportingParams(
+        connectionMode: ConnectionMode,
+        cid: UInt16,
+        flagsByte: UInt8
+    ) -> [UInt8] {
         switch connectionMode {
         case .bleDirect, .receiver:
             // targetCID=0x0000: 不改变现有 remap 目标; BLE/Bolt 默认保持同一策略.
-            return [cidH, cidL, flagsByte, 0x00, 0x00]
+            return LogiGestureProtocol.reportingParams(cid: cid, flags: flagsByte)
         case .unsupported:
             return []
         }
@@ -1418,6 +1440,7 @@ class LogiDeviceSession {
         releaseAllActiveButtonState(reason: "rediscover")
         lastApplied.removeAll()
         divertedCIDs.removeAll()
+        dropGestureController(slot: deviceIndex)
         LogiDebugPanel.log("[\(deviceInfo.name)] Re-discovering features...")
         setDiscoveryInFlight(true)
         // 复用 startFreshDiscovery 的完整握手流程: 成功走 sendGetControlCount,
@@ -1527,6 +1550,7 @@ class LogiDeviceSession {
         releaseAllActiveButtonState(reason: "target slot changed")
         lastApplied.removeAll()
         divertedCIDs.removeAll()
+        dropGestureController(slot: slot)
         setDiscoveryInFlight(true)
         LogiDebugPanel.log("[\(deviceInfo.name)] Target slot changed to \(slot)")
     }
@@ -1825,6 +1849,7 @@ class LogiDeviceSession {
         // 全新发现: 清该 slot 的 per-slot 发现状态(startup 本为默认, 显式清以支持 Phase 4 重扫).
         featureIndex.removeAll()
         dropWheelController(slot: slot)
+        dropGestureController(slot: slot)
         discoveredControls.removeAll()
         reprogInitComplete = false
         reprogControlCount = 0
@@ -1907,7 +1932,11 @@ class LogiDeviceSession {
         if probeAlreadyRan {
             // 热插拔重连: 探测链不会再跑 (once 守卫), 但该 slot 的 featureIndex 已被清空.
             // 按需补发现滚轮 feature, 让托管设置在重连后重放.
-            discoverWheelFeatureIfNeeded(slot: deviceIndex) {}
+            // 同理补发现 haptic feature (手势触觉提示), 排在滚轮之后保持 getFeature 串行.
+            let slot = deviceIndex
+            discoverWheelFeatureIfNeeded(slot: slot) { [weak self] in
+                self?.discoverGestureHapticFeatureIfNeeded(slot: slot)
+            }
         }
         LogiDebugPanel.log("[\(deviceInfo.name)] Takeover sweep complete: managed=\(receiverManagedSlots.sorted()) cursor=\(deviceIndex)\(mouseSlot != nil ? " (mouse)" : "")")
         NotificationCenter.default.post(name: LogiSessionManager.sessionChangedNotification, object: nil)
@@ -2072,6 +2101,7 @@ class LogiDeviceSession {
         divertedCIDs.removeAll()
         deviceIndex = saved
         dropWheelController(slot: slot)
+        dropGestureController(slot: slot)
         LogiDebugPanel.log("[\(deviceInfo.name)] Slot \(slot) disconnected; released takeover state (managed=\(receiverManagedSlots.sorted()))")
     }
 
@@ -2129,7 +2159,7 @@ class LogiDeviceSession {
                     let cid = (UInt16(params[0]) << 8) | UInt16(params[1])
                     let cidName = LogiCIDDirectory.name(forCID: cid)
                     let divert = params[2] & 0x01 != 0
-                    return "REPROG.SetControlReporting(CID=\(String(format: "0x%04X", cid)) \(cidName), divert=\(divert ? "ON" : "OFF"))"
+                    return "REPROG.SetControlReporting(CID=\(String(format: "0x%04X", cid)) \(cidName), divert=\(divert ? "ON" : "OFF")\(Self.rawXYDescription(flagsByte: params[2])))"
                 }
                 return "REPROG.SetControlReporting"
             default: return "REPROG.func\(functionId)"
@@ -2153,6 +2183,12 @@ class LogiDeviceSession {
             }
         }
         return "Feature[0x\(String(format: "%02X", featureIndex))].func\(functionId)"
+    }
+
+    /// ", rawXY=ON/OFF" when the flags byte states the raw XY bit, else nothing.
+    private static func rawXYDescription(flagsByte: UInt8) -> String {
+        guard flagsByte & LogiGestureProtocol.flagRawXYValid != 0 else { return "" }
+        return flagsByte & LogiGestureProtocol.flagRawXY != 0 ? ", rawXY=ON" : ", rawXY=OFF"
     }
 
     private func decodeReport(_ report: UnsafeBufferPointer<UInt8>) -> String {
@@ -2231,6 +2267,9 @@ class LogiDeviceSession {
             if !reprogInitComplete && funcId == 0 {
                 return "REPROG.func0 swid=\(softwareId) ignored during init"
             }
+            if let delta = LogiGestureProtocol.rawXYDelta(report) {
+                return "RAW XY: dx=\(delta.deltaX) dy=\(delta.deltaY)"
+            }
             if funcId == 1 {
                 let cid = (UInt16(report[4]) << 8) | UInt16(report[5])
                 let name = LogiCIDDirectory.name(forCID: cid)
@@ -2254,7 +2293,7 @@ class LogiDeviceSession {
                 if let ack = Self.parseSetControlReportingAck(report) {
                     let cidName = LogiCIDDirectory.name(forCID: ack.cid)
                     let divert = ack.temporaryDivertEnabled ? "ON" : "OFF"
-                    return "REPROG.SetControlReporting ACK: CID=\(String(format: "0x%04X", ack.cid)) (\(cidName)) divert=\(divert)"
+                    return "REPROG.SetControlReporting ACK: CID=\(String(format: "0x%04X", ack.cid)) (\(cidName)) divert=\(divert)\(Self.rawXYDescription(flagsByte: ack.flagsByte))"
                 }
                 return "REPROG.SetControlReporting ACK"
             }
@@ -2604,6 +2643,7 @@ class LogiDeviceSession {
         // 可选功能探测链走完(pendingDiscovery 此刻已空): 建立滚轮控制器 (读状态, 托管时写入).
         // 放在链尾而非发现 0x2111 时: 避免滚轮读写与后续 getFeature 交错.
         resolveWheelController(slot: deviceIndex)
+        resolveGestureHaptics(slot: deviceIndex)
         // 排空热插拔期间入队的 slot.
         // 探测链较长(~18 个 feature, 含超时), 期间设备重连很常见, 必须在此排空避免搁置.
         pumpPendingDivertQueue()
@@ -2984,6 +3024,171 @@ class LogiDeviceSession {
         return deviceInfo.name
     }
 
+    // MARK: - Gesture Navigation (raw XY 0x1B04 + haptic cues 0x19B0)
+    //
+    // One LogiGestureController per slot (BLE direct slot = 0xFF), created on first use.
+    // Byte layouts: Mos/Logi/Gesture/LogiGestureProtocol.swift. The controller decides the
+    // reporting flags of every control this session diverts (setControlReporting), so raw
+    // XY is armed together with the divert when applyUsage runs and cleared with it. It is
+    // dropped whenever the slot is discovered anew or disconnects: the mouse forgets its
+    // temporary flags then, too.
+
+    private var gestureControllers: [UInt8: LogiGestureController] = [:]
+
+    private func gestureController(slot: UInt8) -> LogiGestureController {
+        if let existing = gestureControllers[slot] { return existing }
+        let name = deviceInfo.name
+        let controller = LogiGestureController(
+            sendReporting: { [weak self] cid, flags in
+                self?.sendGestureReporting(slot: slot, cid: cid, flagsByte: flags)
+            },
+            sendHaptic: { [weak self] functionId, params in
+                self?.sendGestureHapticRequest(slot: slot, functionId: functionId, params: params)
+            },
+            deliverMovement: { cid, deltaX, deltaY in
+                LogiCenter.shared.externalBridge.handleLogiGestureMovement(
+                    code: LogiCIDDirectory.toMosCode(cid), deltaX: deltaX, deltaY: deltaY
+                )
+            },
+            schedule: { delay, work in
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+            },
+            onChange: {
+                LogiSessionManager.shared.notifyGestureStateChanged()
+            },
+            log: { message in
+                LogiDebugPanel.log(device: name, type: .info, message: "[Gesture slot \(String(format: "0x%02X", slot))] \(message)")
+            }
+        )
+        gestureControllers[slot] = controller
+        return controller
+    }
+
+    private func dropGestureController(slot: UInt8) {
+        guard gestureControllers.removeValue(forKey: slot) != nil else { return }
+        LogiSessionManager.shared.notifyGestureStateChanged()
+    }
+
+    private func dropAllGestureControllers() {
+        guard !gestureControllers.isEmpty else { return }
+        gestureControllers.removeAll()
+        LogiSessionManager.shared.notifyGestureStateChanged()
+    }
+
+    /// Teardown: undivert + raw XY off (0x22) for every control Mos armed, on every slot.
+    private func disarmAllGestureControllers() {
+        for slot in gestureControllers.keys.sorted() {
+            gestureControllers[slot]?.disarmAll()
+        }
+    }
+
+    /// Reporting writes the controller starts itself (reconcile, fallback, disarm) always
+    /// go to its own slot; the receiver cursor may point elsewhere.
+    private func sendGestureReporting(slot: UInt8, cid: UInt16, flagsByte: UInt8) {
+        let saved = deviceIndex
+        deviceIndex = slot
+        defer { deviceIndex = saved }
+        guard currentReceiverTargetIsConnected,
+              let reprogIdx = featureIndex[Self.featureReprogV4] else { return }
+        sendControlReporting(
+            featureIndex: reprogIdx,
+            cid: cid,
+            flagsByte: flagsByte,
+            updateLocalState: true,
+            debugSource: "gestureReporting"
+        )
+    }
+
+    private func sendGestureHapticRequest(slot: UInt8, functionId: UInt8, params: [UInt8]) {
+        let saved = deviceIndex
+        deviceIndex = slot
+        defer { deviceIndex = saved }
+        guard currentReceiverTargetIsConnected,
+              let hapticIdx = featureIndex[Self.featureHaptic] else { return }
+        sendRequest(featureIndex: hapticIdx, functionId: functionId, params: params)
+    }
+
+    /// Fast path of handleInputReport. True when the report was raw XY movement of a hold
+    /// this session tracks; nothing is allocated or logged for it.
+    private func handleTrackedRawXYMovement(_ report: UnsafeBufferPointer<UInt8>) -> Bool {
+        guard report[3] == LogiGestureProtocol.rawXYEventFunctionByte else { return false }
+        let slot = connectionMode == .receiver ? report[1] : deviceIndex
+        guard let controller = gestureControllers[slot], controller.hasTrackedHold,
+              let reprogIdx = slotStates[slot]?.featureIndex[Self.featureReprogV4], report[2] == reprogIdx,
+              let delta = LogiGestureProtocol.rawXYDelta(report) else { return false }
+        controller.handleRawXY(deltaX: delta.deltaX, deltaY: delta.deltaY)
+        return true
+    }
+
+    /// Raw XY movement nobody asked for: no tracked hold on this slot (armed by another
+    /// app, left over from a Mos that died, or the arm echo is still on its way).
+    private func handleUntrackedRawXYEvent(_ report: UnsafeBufferPointer<UInt8>) {
+        guard let delta = LogiGestureProtocol.rawXYDelta(report) else { return }
+        LogiDebugPanel.log(device: deviceInfo.name, type: .info,
+            message: "Raw XY event without a tracked hold ignored (dx=\(delta.deltaX), dy=\(delta.deltaY))")
+    }
+
+    /// Hands the haptic feature index of a slot to its controller, which then reads the
+    /// waveform list and whether haptics are switched on.
+    private func resolveGestureHaptics(slot: UInt8) {
+        let index = slotStates[slot]?.featureIndex[Self.featureHaptic]
+        guard index != nil || gestureControllers[slot] != nil else { return }
+        gestureController(slot: slot).setHapticFeature(index: index)
+    }
+
+    /// A slot that reconnected lost its feature indices and the optional probe does not run
+    /// twice: look the haptic feature up on demand. Skipped while another getFeature is in
+    /// flight (IRoot answers carry no feature id).
+    private func discoverGestureHapticFeatureIfNeeded(slot: UInt8) {
+        guard deviceIndex == slot else { return }
+        if featureIndex[Self.featureHaptic] != nil {
+            resolveGestureHaptics(slot: slot)
+            return
+        }
+        guard pendingDiscovery.isEmpty else { return }
+        discoverFeature(featureId: Self.featureHaptic) { [weak self] idx in
+            guard let self = self else { return }
+            if let idx = idx {
+                self.slotStates[slot, default: PerSlotState()].featureIndex[Self.featureHaptic] = idx
+            }
+            self.resolveGestureHaptics(slot: slot)
+            self.pumpPendingDivertQueue()
+        }
+    }
+
+    /// Divertable controls that can report raw XY (getCidInfo flags2 bit0).
+    static func rawXYCapableCIDs(in controls: [ControlInfo]) -> Set<UInt16> {
+        return Set(controls.filter {
+            $0.isDivertable && LogiGestureProtocol.supportsRawXY(controlFlags: $0.flags)
+        }.map { $0.cid })
+    }
+
+    /// Mos codes -> CIDs. Codes without a Logitech control (plain mouse buttons) drop out.
+    static func rawXYRequestCIDs(forMosCodes codes: Set<UInt16>) -> Set<UInt16> {
+        return Set(codes.compactMap { LogiCIDDirectory.toCID($0) })
+    }
+
+    // MARK: Gesture API (LogiSessionManager -> LogiCenter)
+
+    var supportsGestureRawXY: Bool {
+        return gestureControllers.values.contains { $0.supportsRawXY }
+    }
+
+    var supportsGestureHaptics: Bool {
+        return gestureControllers.values.contains { $0.supportsHaptics }
+    }
+
+    func refreshGestureHaptics() {
+        for slot in gestureControllers.keys.sorted() {
+            gestureControllers[slot]?.refreshHaptics()
+        }
+    }
+
+    @discardableResult
+    func playGestureHaptic(_ cue: MouseGestureHapticCue, slot: UInt8) -> Bool {
+        return gestureControllers[slot]?.play(cue) ?? false
+    }
+
     // MARK: - Force Sensing Button (0x19C0)
 
     /// Force sensing info / current 响应抵达或缓存更新时发出. object = 本 session.
@@ -3148,6 +3353,17 @@ class LogiDeviceSession {
         }
     }
 
+    enum ReprogInitFunction1Route: Equatable {
+        case getControlInfoResponse
+        case rawXYEvent
+    }
+
+    /// init 阶段 REPROG function 1 的路由: software id 0 是设备主动上报的 raw XY 位移事件,
+    /// 其余 (Mos 自己的 swid) 才是 GetControlInfo 响应. 混淆会把位移字节当成一个控件记下来.
+    private static func reprogInitFunction1Route(_ report: UnsafeBufferPointer<UInt8>) -> ReprogInitFunction1Route {
+        return LogiGestureProtocol.isRawXYEvent(report) ? .rawXYEvent : .getControlInfoResponse
+    }
+
     /// GetControlInfo 响应的 CID 已记录过 (迟到的重复响应). CID 0 是空槽位, 不按重复处理.
     static func isDuplicateControlInfo(cid: UInt16, known: [UInt16]) -> Bool {
         return cid != 0 && known.contains(cid)
@@ -3212,6 +3428,20 @@ class LogiDeviceSession {
         return bytes.withUnsafeBufferPointer { report in
             reprogInitFunction0Route(report)
         }
+    }
+
+    internal static func reprogInitFunction1RouteForTests(_ bytes: [UInt8]) -> ReprogInitFunction1Route {
+        return bytes.withUnsafeBufferPointer { report in
+            reprogInitFunction1Route(report)
+        }
+    }
+
+    internal static func controlReportingParamsForTests(
+        connectionMode: ConnectionMode,
+        cid: UInt16,
+        flagsByte: UInt8
+    ) -> [UInt8] {
+        return controlReportingParams(connectionMode: connectionMode, cid: cid, flagsByte: flagsByte)
     }
 
     internal static func shouldRetryControlInfoTimeoutForTests(
@@ -3404,11 +3634,16 @@ class LogiDeviceSession {
         if markQueried {
             discoveredControls[idx].reportingQueried = true
         }
+        gestureController(slot: deviceIndex).noteDeviceReporting(cid: response.cid, reportingFlags: response.reportingFlags)
     }
 
     func handleInputReport(_ report: UnsafeBufferPointer<UInt8>) {
         guard report.count >= 7 else { return }
         guard report[0] == Self.hidppShortReportId || report[0] == Self.hidppLongReportId else { return }
+
+        // Raw XY movement of a tracked hold arrives about 125 times a second: route it
+        // before anything is formatted, logged or decoded.
+        if handleTrackedRawXYMovement(report) { return }
 
         let hex = report.prefix(min(report.count, 20)).map { String(format: "%02X", $0) }.joined(separator: " ")
         let featureIdx = report[2]
@@ -3512,6 +3747,8 @@ class LogiDeviceSession {
                 case 2 where reportingQueryTimer != nil:  // GetControlReporting
                     LogiDebugPanel.log("[\(deviceInfo.name)] GetControlReporting[\(reportingQueryIndex)] returned error, skipping")
                     advanceReportingQuery()
+                case LogiGestureProtocol.setReportingFunction:  // SetControlReporting: 等待中的 raw XY arm 视为被拒
+                    gestureControllers[deviceIndex]?.handleReportingError()
                 default:
                     break
                 }
@@ -3558,8 +3795,10 @@ class LogiDeviceSession {
                     handleDivertedButtonEvent(report)
                 } else if Self.isReportingStateNotification(report) {
                     handleReportingStateNotification(report)
+                } else if LogiGestureProtocol.isRawXYEvent(report) {
+                    handleUntrackedRawXYEvent(report)
                 }
-                // function 1/其他 function 2 等忽略
+                // 其他 function 1 / function 2 等忽略
             } else {
                 // init 阶段: 按 function ID 路由
                 switch functionId {
@@ -3581,7 +3820,15 @@ class LogiDeviceSession {
                         )
                         #endif
                     }
-                case 1: handleGetControlInfoResponse(report)
+                case 1:
+                    switch Self.reprogInitFunction1Route(report) {
+                    case .getControlInfoResponse:
+                        handleGetControlInfoResponse(report)
+                    case .rawXYEvent:
+                        // A control armed before this discovery is being held: its movement
+                        // shares function 1 with GetControlInfo but is no answer to it.
+                        handleUntrackedRawXYEvent(report)
+                    }
                 // Redundant fallback: normal reporting queries have a timer and route above.
                 case 2 where Self.isGetControlReportingQueryResponse(report):
                     handleGetControlReportingResponse(report)
@@ -3606,6 +3853,10 @@ class LogiDeviceSession {
 
         // Haptic (0x19B0) responses: fn0=GetCapabilities, fn1=GetState; fn2/fn4 仅为 ACK
         if let hapticIdx = featureIndex[Self.featureHaptic], featureIdx == hapticIdx {
+            // Gesture cues keep their own per-slot copy of "enabled" and the waveform mask.
+            if isOwnResponse {
+                gestureControllers[deviceIndex]?.handleHapticResponse(functionId: functionId, report: Array(report))
+            }
             switch functionId {
             case 0:
                 guard let mask = Self.parseHapticCapabilitiesMask(report) else { break }
@@ -3989,6 +4240,8 @@ class LogiDeviceSession {
     private func handleSetControlReportingAck(_ report: UnsafeBufferPointer<UInt8>) {
         guard let ack = Self.parseSetControlReportingAck(report) else { return }
         let isOwnAck = consumePendingSetControlReportingAck(ack)
+        // An echoed arm request (0x33) makes the next press of the control device-tracked.
+        gestureControllers[deviceIndex]?.handleReportingAcknowledgement(cid: ack.cid, flags: ack.flagsByte)
         #if DEBUG
         LogiTrace.log(
             "[Session] handle SetReporting ACK cid=\(String(format: "0x%04X", ack.cid)) flags=\(String(format: "0x%02X", ack.flagsByte)) target=\(String(format: "0x%04X", ack.targetCID)) own=\(isOwnAck) lastApplied=\(LogiTrace.cids(lastApplied)) diverted=\(LogiTrace.cids(divertedCIDs))",
@@ -4046,6 +4299,7 @@ class LogiDeviceSession {
         lastApplied.remove(cid)
         divertedCIDs.remove(cid)
         releaseActiveButtonState(for: [cid], reason: "divert cleared externally")
+        gestureControllers[deviceIndex]?.forget(cid: cid)
         let mode = LogiSessionManager.shared.recordExternalClear(for: ownershipKey(forCID: cid))
         guard Self.shouldReassertAfterExternalClear(mode: mode) else {
             LogiDebugPanel.log("[\(deviceInfo.name)] External \(reason) cleared divert for \(String(format: "0x%04X", cid)); reassert suspended (\(mode.debugLabel))")
@@ -4146,6 +4400,7 @@ class LogiDeviceSession {
         lastApplied = result.lastApplied
         divertedCIDs = result.divertedCIDs
         for cid in result.lostCIDs.sorted() {
+            gestureControllers[deviceIndex]?.forget(cid: cid)
             let mode = LogiSessionManager.shared.recordExternalClear(for: ownershipKey(forCID: cid))
             LogiDebugPanel.log(
                 "[\(deviceInfo.name)] Reconciled lost divert state for CID \(String(format: "0x%04X", cid)); delivery=\(mode.debugLabel)"
@@ -4323,14 +4578,27 @@ class LogiDeviceSession {
 
     private func dispatchButtonEvent(cid: UInt16, isDown: Bool) {
         let currentFlags = CGEventSource.flagsState(.combinedSessionState)
+        // Armed for raw XY: the mouse keeps the pointer still during this hold and reports
+        // its movement over HID++ (handleTrackedRawXYMovement).
+        var tracksMovementOnDevice = false
+        if isDown {
+            tracksMovementOnDevice = gestureControllers[deviceIndex]?.buttonDown(cid: cid) ?? false
+        } else {
+            gestureControllers[deviceIndex]?.buttonUp(cid: cid)
+        }
         let event = InputEvent(
             type: .mouse,
             code: LogiCIDDirectory.toMosCode(cid),
             modifiers: currentFlags,
             phase: isDown ? .down : .up,
             source: .hidPP,
-            device: deviceInfo
+            device: deviceInfo,
+            tracksMovementOnDevice: tracksMovementOnDevice
         )
+        if isDown {
+            // Haptic cues for this hold go to this device (and this receiver slot) only.
+            LogiSessionManager.shared.noteButtonPress(mosCode: event.code, session: self, slot: deviceIndex)
+        }
 
         // Always-fired raw event (deterministic for wizard + debug observers)
         NotificationCenter.default.post(
