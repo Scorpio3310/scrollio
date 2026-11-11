@@ -7,7 +7,6 @@
 //
 
 import Cocoa
-import LoginServiceKit
 
 // 实用方法
 public class Utils {
@@ -28,16 +27,9 @@ public class Utils {
     }
 
 
-    // 切换自启
+    // 切换自启 (SMAppService.mainApp, 见 LoginItem.swift)
     class func launchAtStartup(on: Bool) {
-        let bundlePath = Bundle.main.bundlePath
-        if on {
-            if !LoginServiceKit.isExistLoginItems(at: bundlePath) {
-                LoginServiceKit.addLoginItems(at: bundlePath)
-            }
-        } else {
-            LoginServiceKit.removeLoginItems(at: bundlePath)
-        }
+        LoginItem.setEnabled(on)
     }
     
     // 菜单
