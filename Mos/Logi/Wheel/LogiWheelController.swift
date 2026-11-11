@@ -10,6 +10,9 @@
 //  - Reads first, writes only for managed settings and only after a fresh status read,
 //    and only when something actually differs (values live in device NVM).
 //  - Every write is followed by a read-back.
+//  - The capabilities read has a reply timeout. A lost reply is asked for again; when
+//    the mouse stays silent, managed settings are written without the torque byte
+//    instead of waiting for a reply that never comes, and the next refresh asks again.
 //  - Main thread only (HID++ callbacks run on the main run loop).
 //
 
@@ -18,11 +21,20 @@ import Foundation
 final class LogiWheelController {
 
     typealias Send = (_ functionId: UInt8, _ params: [UInt8]) -> Void
+    /// Runs the block on the main queue after the delay.
+    typealias Schedule = (_ delay: TimeInterval, _ work: @escaping () -> Void) -> Void
+
+    /// How long the mouse has to answer the capabilities read. Its answers normally take
+    /// a few milliseconds; the gesture controller waits the same 2 s for its echoes.
+    static let replyTimeout: TimeInterval = 2
+    /// Capabilities reads sent in a row without an answer before going on without them.
+    static let maxCapabilitiesAttempts = 3
 
     let feature: LogiWheelFeature
     let featureIndex: UInt8
 
     private let send: Send
+    private let schedule: Schedule
     private let onChange: () -> Void
     private let log: (String) -> Void
 
@@ -38,17 +50,27 @@ final class LogiWheelController {
     private var statusReadOutstanding = false
     private var capabilitiesRequested = false
     private var capabilitiesUnavailable = false
+    /// Every capabilities read went unanswered. Unlike `capabilitiesUnavailable` (the mouse
+    /// answered with an error or a short reply) this is not final: the next refresh asks again.
+    private var capabilitiesTimedOut = false
+    /// Identifies the capabilities read a timeout belongs to.
+    private var capabilitiesRequestToken = 0
+    /// Managed settings that went out without the torque byte because the capabilities read
+    /// timed out. Applied once more, in full, if the capabilities arrive after all.
+    private var settingsAppliedWithoutCapabilities: LogiWheelSettings?
 
     init(
         feature: LogiWheelFeature,
         featureIndex: UInt8,
         send: @escaping Send,
+        schedule: @escaping Schedule,
         onChange: @escaping () -> Void,
         log: @escaping (String) -> Void = { _ in }
     ) {
         self.feature = feature
         self.featureIndex = featureIndex
         self.send = send
+        self.schedule = schedule
         self.onChange = onChange
         self.log = log
     }
@@ -60,9 +82,11 @@ final class LogiWheelController {
         return feature == .smartShiftEnhanced && capabilities?.tunableTorque == true
     }
 
-    /// Torque support is known (0x2110 has nothing to ask; 0x2111 needs getCapabilities).
+    /// Torque support is settled (0x2110 has nothing to ask; 0x2111 needs getCapabilities,
+    /// or its error, or the give-up after `maxCapabilitiesAttempts` unanswered reads).
     var capabilitiesKnown: Bool {
-        return feature.capabilitiesFunction == nil || capabilities != nil || capabilitiesUnavailable
+        return feature.capabilitiesFunction == nil || capabilities != nil
+            || capabilitiesUnavailable || capabilitiesTimedOut
     }
 
     var mode: LogiWheelMode? { status.flatMap { LogiWheelProtocol.mode(for: $0) } }
@@ -82,6 +106,7 @@ final class LogiWheelController {
     /// if (and only if) it is managed by Mos.
     func start(desired: LogiWheelSettings) {
         pendingSettings = desired.managedByMos ? desired : nil
+        settingsAppliedWithoutCapabilities = nil
         refresh()
     }
 
@@ -94,6 +119,7 @@ final class LogiWheelController {
     /// Writes `settings` after a fresh status read. No-op (and drops anything queued)
     /// when the settings are not managed by Mos.
     func apply(_ settings: LogiWheelSettings) {
+        settingsAppliedWithoutCapabilities = nil
         guard settings.managedByMos else {
             pendingSettings = nil
             return
@@ -115,6 +141,8 @@ final class LogiWheelController {
     @discardableResult
     func handleResponse(functionId: UInt8, report: [UInt8]) -> Bool {
         if let capabilitiesFunction = feature.capabilitiesFunction, functionId == capabilitiesFunction {
+            capabilitiesRequested = false
+            capabilitiesTimedOut = false
             if let caps = LogiWheelProtocol.parseCapabilities(report) {
                 capabilities = caps
                 log("capabilities: tunableTorque=\(caps.tunableTorque) defaultAutoDisengage=\(caps.autoDisengageDefault) defaultTorque=\(caps.defaultTorque)")
@@ -123,6 +151,15 @@ final class LogiWheelController {
                 log("capabilities: short response")
             }
             onChange()
+            // The answer came after the settings had gone out without torque: apply them
+            // again, behind a fresh status read like any other write.
+            let incomplete = settingsAppliedWithoutCapabilities
+            settingsAppliedWithoutCapabilities = nil
+            if let incomplete, supportsScrollForce, pendingSettings == nil {
+                pendingSettings = incomplete
+                requestStatus()
+                return true
+            }
             if !statusReadOutstanding { flushPendingWork() }
             return true
         }
@@ -148,6 +185,7 @@ final class LogiWheelController {
     func handleError(functionId: UInt8, errorCode: UInt8) {
         log(String(format: "error 0x%02X on fn%d", errorCode, functionId))
         if let capabilitiesFunction = feature.capabilitiesFunction, functionId == capabilitiesFunction {
+            capabilitiesRequested = false
             capabilitiesUnavailable = true
             onChange()
             if !statusReadOutstanding { flushPendingWork() }
@@ -167,7 +205,36 @@ final class LogiWheelController {
         guard let capabilitiesFunction = feature.capabilitiesFunction,
               capabilities == nil, !capabilitiesUnavailable, !capabilitiesRequested else { return }
         capabilitiesRequested = true
+        capabilitiesTimedOut = false
+        sendCapabilitiesRequest(capabilitiesFunction, attempt: 1)
+    }
+
+    private func sendCapabilitiesRequest(_ capabilitiesFunction: UInt8, attempt: Int) {
+        capabilitiesRequestToken += 1
+        let token = capabilitiesRequestToken
         send(capabilitiesFunction, [])
+        schedule(Self.replyTimeout) { [weak self] in
+            self?.capabilitiesReplyTimedOut(capabilitiesFunction, token: token, attempt: attempt)
+        }
+    }
+
+    /// No reply (and no error) to a capabilities read. Without this the controller waited
+    /// forever: `capabilitiesRequested` stayed set, so the read was never repeated, and
+    /// managed settings were held back until the mouse reconnected.
+    private func capabilitiesReplyTimedOut(_ capabilitiesFunction: UInt8, token: Int, attempt: Int) {
+        // An answer, an error or a newer read settled this one.
+        guard token == capabilitiesRequestToken, capabilitiesRequested,
+              capabilities == nil, !capabilitiesUnavailable else { return }
+        if attempt < Self.maxCapabilitiesAttempts {
+            log("capabilities: no reply, asking again (\(attempt + 1)/\(Self.maxCapabilitiesAttempts))")
+            sendCapabilitiesRequest(capabilitiesFunction, attempt: attempt + 1)
+            return
+        }
+        log("capabilities: no reply, continuing without torque")
+        capabilitiesRequested = false
+        capabilitiesTimedOut = true
+        onChange()
+        if !statusReadOutstanding { flushPendingWork() }
     }
 
     private func requestStatus() {
@@ -179,6 +246,7 @@ final class LogiWheelController {
         guard let status = status else { return }
         if let settings = pendingSettings, capabilitiesKnown {
             pendingSettings = nil
+            settingsAppliedWithoutCapabilities = capabilitiesTimedOut ? settings : nil
             let params = LogiWheelProtocol.setParams(
                 for: settings,
                 feature: feature,
