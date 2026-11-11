@@ -122,6 +122,20 @@ class KeyRecorder: NSObject {
     func startRecording(from sourceView: NSView, mode: KeyRecordingMode = .combination) {
         // Guard: 防止重复执行
         guard !isRecording else { return }
+        // The event tap first. Without it nothing can be recorded (no Accessibility access):
+        // then nothing is shown and no Logitech button is diverted for recording (that divert
+        // would never be ended, and every Logitech button would stay swallowed until the app
+        // quits). The delegate only hears that nothing was recorded, so a "Press a key" prompt
+        // goes away.
+        let tap: Interceptor
+        do {
+            tap = try makeEventTap(eventMask, Self.recordingCallback)
+        } catch {
+            NSLog("[EventRecorder] Failed to start: \(error)")
+            delegate?.onRecordingStopped(self, didRecord: false)
+            return
+        }
+        interceptor = tap
         isRecording = true
         recordingMode = mode
         delegate?.onRecordingStarted(self)
@@ -133,110 +147,112 @@ class KeyRecorder: NSObject {
         // 立即显示 Popover (不等待 HID++ divert)
         keyPopover = KeyPopover()
         keyPopover?.show(at: sourceView)
-        // 异步 divert 所有 Logitech 按键 (BLE 通信有延迟)
-        DispatchQueue.main.async {
+        // 异步 divert 所有 Logitech 按键 (BLE 通信有延迟); not when the recording already ended
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.interceptor === tap else { return }
             LogiCenter.shared.beginKeyRecording()
         }
-        // 监听事件
-        do {
-            // 监听回调事件通知
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(handleRecordedEvent(_:)),
+        // 监听回调事件通知
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleRecordedEvent(_:)),
+            name: KeyRecorder.FINISH_NOTI_NAME,
+            object: nil
+        )
+        // 监听修饰键变化通知
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleModifierFlagsChanged(_:)),
+            name: KeyRecorder.FLAG_CHANGE_NOTI_NAME,
+            object: nil
+        )
+        // 监听录制取消通知
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleRecordingCancelled(_:)),
+            name: KeyRecorder.CANCEL_NOTI_NAME,
+            object: nil
+        )
+        // 监听 HID++ 事件 (如果 LogiCenter 已启动)
+        hidEventObserver = NotificationCenter.default.addObserver(
+            forName: LogiCenter.buttonEventRelay,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self, self.isRecording, !self.isRecorded else { return }
+            guard let mosEvent = notification.userInfo?["event"] as? InputEvent else { return }
+            guard mosEvent.phase == .down else { return }
+            NotificationCenter.default.post(
                 name: KeyRecorder.FINISH_NOTI_NAME,
-                object: nil
+                object: mosEvent
             )
-            // 监听修饰键变化通知
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(handleModifierFlagsChanged(_:)),
-                name: KeyRecorder.FLAG_CHANGE_NOTI_NAME,
-                object: nil
-            )
-            // 监听录制取消通知
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(handleRecordingCancelled(_:)),
-                name: KeyRecorder.CANCEL_NOTI_NAME,
-                object: nil
-            )
-            // 启动拦截器
-            interceptor = try Interceptor(
-                event: eventMask,
-                handleBy: { (proxy, type, event, refcon) in
-                    // 跳过 Mos 合成事件, 避免 executeCustom 的合成事件干扰录制
-                    if event.getIntegerValueField(.eventSourceUserData) == MosEventMarker.syntheticCustom {
-                        return nil
-                    }
-                    let recordedEvent = event
-                    switch type {
-                    case .flagsChanged:
-                        // 修饰键变化，发送通知 (单键模式下也用于完成录制)
-                        DispatchQueue.main.async {
-                            NotificationCenter.default.post(
-                                name: KeyRecorder.FLAG_CHANGE_NOTI_NAME,
-                                object: recordedEvent
-                            )
-                        }
-                    case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-                        // 鼠标按键
-                        DispatchQueue.main.async {
-                            NotificationCenter.default.post(
-                                name: KeyRecorder.FINISH_NOTI_NAME,
-                                object: recordedEvent
-                            )
-                        }
-                    case .keyDown:
-                        // ESC键特殊处理：取消录制
-                        if recordedEvent.keyCode == KeyCode.escape {
-                            DispatchQueue.main.async {
-                                NotificationCenter.default.post(
-                                    name: KeyRecorder.CANCEL_NOTI_NAME,
-                                    object: nil
-                                )
-                            }
-                        } else {
-                            // 普通按键录制
-                            DispatchQueue.main.async {
-                                NotificationCenter.default.post(
-                                    name: KeyRecorder.FINISH_NOTI_NAME,
-                                    object: recordedEvent
-                                )
-                            }
-                        }
-                    default:
-                        break
-                    }
-                    return nil
-                },
-                listenOn: CGEventTapLocation.cgSessionEventTap,
-                placeAt: CGEventTapPlacement.headInsertEventTap,
-                for: CGEventTapOptions.defaultTap
-            )
-            // 监听 HID++ 事件 (如果 LogiCenter 已启动)
-            hidEventObserver = NotificationCenter.default.addObserver(
-                forName: LogiCenter.buttonEventRelay,
-                object: nil,
-                queue: .main
-            ) { [weak self] notification in
-                guard let self = self, self.isRecording, !self.isRecorded else { return }
-                guard let mosEvent = notification.userInfo?["event"] as? InputEvent else { return }
-                guard mosEvent.phase == .down else { return }
+        }
+        // 启动超时保护定时器
+        startTimeoutTimer()
+        // Log
+        NSLog("[EventRecorder] Started")
+    }
+
+    /// Creates the recording tap (session level, in front of everything, swallowing what it
+    /// records). Tests replace it: a test never installs a real tap.
+    var makeEventTap: (_ mask: CGEventMask, _ callback: @escaping CGEventTapCallBack) throws -> Interceptor = { mask, callback in
+        try Interceptor(
+            event: mask,
+            handleBy: callback,
+            listenOn: CGEventTapLocation.cgSessionEventTap,
+            placeAt: CGEventTapPlacement.headInsertEventTap,
+            for: CGEventTapOptions.defaultTap
+        )
+    }
+
+    /// The recording tap's callback: hands what it sees to the main thread, swallows it.
+    private static let recordingCallback: CGEventTapCallBack = { (proxy, type, event, refcon) in
+        // 跳过 Mos 合成事件, 避免 executeCustom 的合成事件干扰录制
+        if event.getIntegerValueField(.eventSourceUserData) == MosEventMarker.syntheticCustom {
+            return nil
+        }
+        let recordedEvent = event
+        switch type {
+        case .flagsChanged:
+            // 修饰键变化，发送通知 (单键模式下也用于完成录制)
+            DispatchQueue.main.async {
                 NotificationCenter.default.post(
-                    name: KeyRecorder.FINISH_NOTI_NAME,
-                    object: mosEvent
+                    name: KeyRecorder.FLAG_CHANGE_NOTI_NAME,
+                    object: recordedEvent
                 )
             }
-            // 启动超时保护定时器
-            startTimeoutTimer()
-            // Log
-            NSLog("[EventRecorder] Started")
-        } catch {
-            NSLog("[EventRecorder] Failed to start: \(error)")
-            // 如果创建失败，重置状态
-            isRecording = false
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            // 鼠标按键
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: KeyRecorder.FINISH_NOTI_NAME,
+                    object: recordedEvent
+                )
+            }
+        case .keyDown:
+            // ESC键特殊处理：取消录制
+            if recordedEvent.keyCode == KeyCode.escape {
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(
+                        name: KeyRecorder.CANCEL_NOTI_NAME,
+                        object: nil
+                    )
+                }
+            } else {
+                // 普通按键录制
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(
+                        name: KeyRecorder.FINISH_NOTI_NAME,
+                        object: recordedEvent
+                    )
+                }
+            }
+        default:
+            break
         }
+        return nil
     }
+
     // 修饰键变化处理
     @objc private func handleModifierFlagsChanged(_ notification: NSNotification) {
         guard isRecording && !isRecorded else { return }

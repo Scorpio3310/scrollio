@@ -22,27 +22,5 @@ extension NSColor {
             : NSColor(calibratedRed: 0.95, green: 0.35, blue: 0.30, alpha: 1.0)
     }
 
-    // MARK: - PrimaryButton Colors
-
-    /// PrimaryButton 背景色 (普通状态)
-    static func getPrimaryButtonBackground(for view: NSView?) -> NSColor {
-        return Utils.isDarkMode(for: view)
-            ? NSColor(red: 0.08, green: 0.26, blue: 0.52, alpha: 0.75)
-            : NSColor(red: 0.0, green: 0.478, blue: 1.0, alpha: 0.15)
-    }
-
-    /// PrimaryButton 背景色 (Hover 状态)
-    static func getPrimaryButtonBackgroundHovered(for view: NSView?) -> NSColor {
-        return Utils.isDarkMode(for: view)
-            ? NSColor(red: 0.08, green: 0.26, blue: 0.52, alpha: 0.95)
-            : NSColor(red: 0.0, green: 0.478, blue: 1.0, alpha: 0.25)
-    }
-
-    /// PrimaryButton 边框色
-    static func getPrimaryButtonBorder(for view: NSView?) -> NSColor {
-        return Utils.isDarkMode(for: view)
-            ? NSColor(red: 0.36, green: 0.64, blue: 1.0, alpha: 1.0)
-            : NSColor(red: 0.0, green: 0.478, blue: 1.0, alpha: 0.6)
-    }
 }
 

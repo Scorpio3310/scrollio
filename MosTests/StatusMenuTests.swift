@@ -286,6 +286,8 @@ final class AppRunControllerTests: XCTestCase {
     /// The outside world of the controller: the permission, and what it started and showed.
     private final class World {
         var access = true
+        /// Whether every event tap can be created.
+        var tapsStart = true
         var log: [String] = []
     }
 
@@ -303,7 +305,7 @@ final class AppRunControllerTests: XCTestCase {
     private func make(_ world: World) -> AppRunController {
         let controller = AppRunController(environment: AppRunController.Environment(
             hasAccess: { world.access },
-            startCores: { world.log.append("start") },
+            startCores: { world.log.append("start"); return world.tapsStart },
             stopCores: { world.log.append("stop") },
             showWelcomeGuide: { world.log.append("guide") },
             showAccessLostToast: { world.log.append("toast") }
@@ -455,6 +457,125 @@ final class AppRunControllerTests: XCTestCase {
         controller.accessWasLost()
         XCTAssertEqual(world.log, [])
         XCTAssertFalse(controller.isWaitingForAccess)
+    }
+
+    /// A second wake (or a session that becomes active twice) does not start the cores again.
+    func testCoresThatRunAreNotStartedAgain() {
+        let world = World()
+        let controller = make(world)
+        controller.start()
+        controller.start()
+        controller.sessionDidBecomeActive()
+        XCTAssertEqual(world.log, ["start"])
+        XCTAssertTrue(controller.coresActive)
+    }
+
+    /// Fast user switching: the Mac sleeps and wakes while another user has it. Waking must
+    /// not start the cores (a Logitech mouse would be diverted to this account and lose its
+    /// buttons for the other user); switching back does.
+    func testWakingWhileAnotherUserHasTheMacStartsNothing() {
+        let world = World()
+        let controller = make(world)
+        controller.start()
+        world.log = []
+
+        controller.sessionDidResign()
+        XCTAssertEqual(world.log, ["stop"])
+        XCTAssertFalse(controller.coresActive)
+
+        controller.stop()       // willSleep
+        controller.start()      // didWake, still the other user's session
+        XCTAssertFalse(world.log.contains("start"), "\(world.log)")
+        XCTAssertFalse(world.log.contains("guide"), "\(world.log)")
+        XCTAssertFalse(controller.coresActive)
+        XCTAssertFalse(controller.isWaitingForAccess)
+
+        controller.sessionDidBecomeActive()
+        XCTAssertEqual(world.log.last, "start")
+        XCTAssertTrue(controller.coresActive)
+    }
+
+    /// Resuming in another user's session cannot happen from the menu, but a pause that ends
+    /// there must not start anything either; switching back starts.
+    func testAPausedSessionSwitchStaysStoppedUntilBoth() {
+        let world = World()
+        let controller = make(world)
+        controller.start()
+        controller.setPaused(true)
+        controller.sessionDidResign()
+        controller.sessionDidBecomeActive()
+        XCTAssertFalse(controller.coresActive, "still paused")
+        controller.setPaused(false)
+        XCTAssertTrue(controller.coresActive)
+    }
+
+    /// A start that fails half-way (an event tap could not be created) stops whatever did
+    /// start, so no tap stays installed while the cores count as stopped, and tries again.
+    func testAStartThatFailsHalfWayStopsEverythingAndTriesAgain() {
+        let world = World()
+        world.tapsStart = false
+        let controller = make(world)
+        controller.start()
+        XCTAssertEqual(world.log, ["start", "stop"])
+        XCTAssertFalse(controller.coresActive)
+        XCTAssertTrue(controller.isWaitingForAccess, "a timer tries again")
+        XCTAssertEqual(controller.recoveryTimer?.timeInterval, AppRunController.launchRecoveryInterval)
+
+        // A permission-lost report from the failing tap changes nothing more.
+        controller.accessWasLost()
+        XCTAssertEqual(world.log, ["start", "stop"])
+
+        world.tapsStart = true
+        controller.accessibilityPermissionWasGranted()   // the timer's next look, now
+        XCTAssertEqual(world.log, ["start", "stop", "start"])
+        XCTAssertTrue(controller.coresActive)
+        XCTAssertFalse(controller.isWaitingForAccess)
+    }
+
+    // MARK: - The order of the live cores
+
+    private func parts(_ log: Recorder, failing: String? = nil) -> [AppRunController.Environment.Part] {
+        let names: [String] = ["scroll", "button"]
+        return names.map { (name: String) -> AppRunController.Environment.Part in
+            AppRunController.Environment.Part(
+                start: { log.entries.append("\(name) on") },
+                stop: { log.entries.append("\(name) off") },
+                isRunning: { name != failing }
+            )
+        }
+    }
+
+    private final class Recorder {
+        var entries: [String] = []
+    }
+
+    private func logitech(_ log: Recorder) -> AppRunController.Environment.Part {
+        return AppRunController.Environment.Part(
+            start: { log.entries.append("logi on") },
+            stop: { log.entries.append("logi off") },
+            isRunning: { true }
+        )
+    }
+
+    func testTheTapsStartFirstAndTheLogitechSessionsOnlyWhenEveryTapRuns() {
+        let log = Recorder()
+        let cores = AppRunController.Environment.cores(eventTaps: parts(log), logitech: logitech(log))
+        XCTAssertTrue(cores.start())
+        XCTAssertEqual(log.entries, ["scroll on", "button on", "logi on"])
+
+        let failing = Recorder()
+        let half = AppRunController.Environment.cores(eventTaps: parts(failing, failing: "button"), logitech: logitech(failing))
+        XCTAssertFalse(half.start())
+        XCTAssertEqual(failing.entries, ["scroll on", "button on"], "no Logitech divert without the button tap")
+    }
+
+    /// The Logitech teardown writes to the mice synchronously on the main thread: the event
+    /// taps are off before, so no active tap waits for this thread meanwhile.
+    func testStoppingTurnsTheTapsOffBeforeTheLogitechSessions() {
+        let log = Recorder()
+        let cores = AppRunController.Environment.cores(eventTaps: parts(log), logitech: logitech(log))
+        cores.stop()
+        XCTAssertEqual(log.entries, ["scroll off", "button off", "logi off"])
     }
 
     func testTheToastText() {

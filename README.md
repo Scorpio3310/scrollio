@@ -24,16 +24,19 @@ See [Attribution and licence](#attribution-and-licence).
 - Trackpad-style scroll events (gesture phases), so apps bounce at the top and bottom.
 - Scroll keys: hold a key or button to scroll faster, scroll sideways, or pause
   smoothing (for exact steps, for example when zooming with ⌘ and the wheel).
-- Per-app settings: an app can inherit the global settings or override them, and an
-  allowlist can limit Scrollio to chosen apps.
+- Per-app scrolling (the Apps pane): an app can use the Scrolling settings or keep its
+  own, on a page of its own. "Limit scrolling to these apps" makes the apps not listed
+  scroll the way macOS does; buttons and gestures still work in every app.
 - With several displays, the motion is timed to the display the pointer is on.
 
 **Buttons**
 
 - Bind any mouse button or key to an action: system shortcuts (Mission Control, Spaces,
-  screenshots and more), custom key combinations, mouse buttons, or opening an app,
-  file or script.
-- Bindings can be limited to one device and overridden per app.
+  screenshots and more), custom key combinations, mouse buttons, the scroll keys, Gesture
+  Navigation, or opening an app, file or script.
+- A drawing of the mouse lights the button a row is about; a row says when its button is
+  also a scroll key or another app (Logi Options+) may take it over.
+- Removing a button or an app can be undone (Edit > Undo).
 
 **Gestures**
 
@@ -53,12 +56,25 @@ See [Attribution and licence](#attribution-and-licence).
   after each reconnect. With several mice connected, your choices go to all of them.
 - Movement tracked by the mouse itself during a gesture, and haptic feedback on mice
   that have it.
-- A diagnostics panel for HID++ traffic.
+- A low-battery warning: one toast when a mouse reaches 10 % and one more at 5 %,
+  again only after it was charged.
+- Logitech Diagnostics, a window with the HID++ details of connected mice (General >
+  Advanced).
 
 **App**
 
-- Lives in the menu bar; can launch at login.
-- Preferences in one window with a sidebar of panes, as in System Settings.
+- Lives in the menu bar. Its menu shows each Logitech mouse's battery, "Pause Scrollio" /
+  "Resume Scrollio" (a pause stops the event handling and gives the Logitech mice their
+  buttons back; it is not remembered, a relaunch runs again), Settings and Quit. With
+  Option held it also lists Scroll Monitor, Logitech Diagnostics and Test Toasts. The
+  icon is dimmed while Scrollio is paused or waits for the Accessibility access.
+- The menu bar icon can be hidden (General > Show in menu bar); opening the app again
+  then shows the settings, or the Welcome Guide while the access is missing.
+- Can open at login; General says when macOS waits for that to be approved in System
+  Settings, and whether the Accessibility access is allowed.
+- Settings in one window with a sidebar of panes, as in System Settings.
+- Stops while the Mac sleeps or another user has it, and starts again when this user is
+  back.
 - It quits a running Mos at launch and, on the first launch, copies its settings.
 
 ## Diagnostics
@@ -91,8 +107,17 @@ The debug build logs under `com.nikklemenc.Scrollio.debug`. Nothing is logged pe
   rule and allowlist), smoothing on but not for this axis, no display link.
 - Category `logi`: what a Logitech mouse reported (battery, DPI, haptic state, press
   force, wheel mode, SmartShift threshold and wheel force; once per change), every
-  decision to write or not to write and why, the read-back
+  decision to write or not to write and why (wheel lines start with the mouse's name and
+  receiver slot, for example `[MX Master 4 slot 0x01] Wheel: Mode: ... already set, no
+  write`; a value you never set is "not set by the user, left alone"), the read-back
   after a write, requests the mouse refused or did not answer, and each gesture haptic cue.
+- Starting and stopping (launch and wake, another user, "Pause Scrollio", the
+  Accessibility access lost or back, event taps that could not be created) are plain
+  lines of the app's process, without a category:
+
+  ```bash
+  log show --last 1h --predicate 'process == "Scrollio" AND (eventMessage CONTAINS "Initialization" OR eventMessage CONTAINS "Paused" OR eventMessage CONTAINS "Resumed" OR eventMessage CONTAINS "Accessibility" OR eventMessage CONTAINS "event taps" OR eventMessage CONTAINS "has the Mac")'
+  ```
 
 Nothing in these lines identifies a person or an app's content, and nothing leaves the Mac.
 

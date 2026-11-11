@@ -42,17 +42,6 @@ struct BrandTagConfig: Equatable {
         textColor: NSColor(calibratedWhite: 0.15, alpha: 1.0)
     )
 
-    /// Mos: 深色蓝紫渐变, 呼应应用图标的霓虹光环主题
-    static let mos = BrandTagConfig(
-        name: "Scrollio",
-        bgColor: NSColor(calibratedRed: 0.05, green: 0.07, blue: 0.16, alpha: 1.0),  // #0D1229
-        textColor: NSColor(calibratedRed: 0.92, green: 0.98, blue: 1.0, alpha: 1.0), // #EBFAFF
-        innerHighlightColor: NSColor(calibratedRed: 0.86, green: 0.94, blue: 1.0, alpha: 0.18),
-        gradientColors: [
-            NSColor(calibratedRed: 0.06, green: 0.10, blue: 0.36, alpha: 1.0), // #0F1A5C
-            NSColor(calibratedRed: 0.50, green: 0.22, blue: 0.85, alpha: 1.0), // #8038D9
-        ]
-    )
 }
 
 private final class BrandTagBackgroundView: NSView {
@@ -88,26 +77,9 @@ struct BrandTag {
         return LogiCenter.shared.isLogiCode(code)
     }
 
-    /// 快捷键 ID 是否属于某个品牌
-    static func isLogiAction(_ identifier: String) -> Bool {
-        return identifier.hasPrefix("logi")
-    }
-
-    /// 快捷键 ID 是否属于 Mos 标签动作
-    static func isMosAction(_ identifier: String) -> Bool {
-        return identifier.hasPrefix("mos")
-    }
-
     /// 获取按键码对应的标签配置 (nil = 非标签按键)
     static func tagForCode(_ code: UInt16) -> BrandTagConfig? {
         if isLogiCode(code) { return .logi }
-        return nil
-    }
-
-    /// 获取快捷键 ID 对应的标签配置 (nil = 非标签动作)
-    static func tagForAction(_ identifier: String) -> BrandTagConfig? {
-        if isLogiAction(identifier) { return .logi }
-        if isMosAction(identifier) { return .mos }
         return nil
     }
 
@@ -116,43 +88,11 @@ struct BrandTag {
         return tagForCode(code)
     }
 
-    /// 获取快捷键 ID 对应的品牌配置 (兼容旧调用, nil = 非品牌/标签动作)
-    static func brandForAction(_ identifier: String) -> BrandTagConfig? {
-        return tagForAction(identifier)
-    }
-
     // MARK: - 标签文字 (用于 NSButton.title 等纯文本场景)
 
     /// 在名称前添加品牌前缀 (纯文本 fallback)
     static func prefixedName(_ name: String, brand: BrandTagConfig) -> String {
         return "[\(brand.name)] \(name)"
-    }
-
-    /// 创建带品牌 tag 的 NSAttributedString (用于 NSButton.attributedTitle)
-    /// 渲染为: [彩色tag] + 空格 + 按键名
-    static func attributedTitle(_ name: String, brand: BrandTagConfig, fontSize: CGFloat = 12) -> NSAttributedString {
-        let result = NSMutableAttributedString()
-
-        // Tag 部分: 品牌名 + 圆角背景
-        let tagAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: fontSize - 4, weight: .bold),
-            .foregroundColor: brand.textColor,
-            .backgroundColor: brand.bgColor,
-        ]
-        // 用空格包裹让背景色有 padding 效果
-        result.append(NSAttributedString(string: " \(brand.name) ", attributes: tagAttrs))
-
-        // 间距
-        result.append(NSAttributedString(string: " ", attributes: [.font: NSFont.systemFont(ofSize: fontSize - 4)]))
-
-        // 按键名部分
-        let nameAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: fontSize),
-            .foregroundColor: NSColor.labelColor,
-        ]
-        result.append(NSAttributedString(string: name, attributes: nameAttrs))
-
-        return result
     }
 
     // MARK: - 标签 NSView (用于 KeyPreview 等自定义 View 场景)
@@ -235,34 +175,5 @@ struct BrandTag {
         innerHighlightColor.setStroke()
         highlightPath.lineWidth = 1
         highlightPath.stroke()
-    }
-
-    /// 创建 [品牌标签] + [原图标] 的组合图片
-    static func createPrefixedImage(brand: BrandTagConfig, original: NSImage?, fontSize: CGFloat = 7, tagHeight: CGFloat = 12, gap: CGFloat = 5) -> NSImage {
-        let tagImage = createTagImage(brand: brand, fontSize: fontSize, height: tagHeight)
-        let tagSize = tagImage.size
-        let iconSize = original?.size ?? .zero
-        let totalHeight = max(tagSize.height, iconSize.height)
-        let totalWidth = tagSize.width + (original != nil ? gap + iconSize.width : 0) + 2
-
-        let image = NSImage(size: NSSize(width: totalWidth, height: totalHeight))
-        image.lockFocus()
-        // Tag
-        tagImage.draw(in: NSRect(x: 0, y: (totalHeight - tagSize.height) / 2, width: tagSize.width, height: tagSize.height),
-                      from: .zero, operation: .sourceOver, fraction: 1.0)
-        // Original icon
-        if let icon = original {
-            let iconRect = NSRect(x: tagSize.width + gap, y: (totalHeight - iconSize.height) / 2, width: iconSize.width, height: iconSize.height)
-            icon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
-            // 模板图标在 lockFocus 上下文中默认渲染为黑色,
-            // 用 labelColor + sourceAtop 着色, 使其在暗色模式下自动变为白色
-            if icon.isTemplate {
-                NSColor.labelColor.setFill()
-                iconRect.fill(using: .sourceAtop)
-            }
-        }
-        image.unlockFocus()
-        image.isTemplate = false
-        return image
     }
 }

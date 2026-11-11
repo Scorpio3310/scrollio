@@ -70,6 +70,8 @@
 		A7E1C0E00000000000000009 /* MosTests/LogiMouseSettingsPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0E0000000000000000A /* MosTests/LogiMouseSettingsPersistenceTests.swift */; };
 		A7E1C0E0000000000000000B /* MosTests/LogiBasicsSessionFixesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0E0000000000000000C /* MosTests/LogiBasicsSessionFixesTests.swift */; };
 		A7E1C0E0000000000000000D /* MosTests/LogiMouseBasicsManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0E0000000000000000E /* MosTests/LogiMouseBasicsManagerTests.swift */; };
+		D0A2C0E00000000000000001 /* MosTests/KeyRecorderStartTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A2C0E00000000000000002 /* MosTests/KeyRecorderStartTests.swift */; };
+		D0A2C0E00000000000000003 /* MosTests/StoredDataCanaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A2C0E00000000000000004 /* MosTests/StoredDataCanaryTests.swift */; };
 		A7E1C0E0000000000000000F /* MosTests/LogiWheelSettingsPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0E00000000000000010 /* MosTests/LogiWheelSettingsPersistenceTests.swift */; };
 		D1A2B3C4E5F6A7B8C9D01100 /* MosTests/LogiConflictDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01101 /* MosTests/LogiConflictDetectorTests.swift */; };
 		D1A2B3C4E5F6A7B8C9D01200 /* MosTests/LogiReportingDidCompleteEmptyPathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01201 /* MosTests/LogiReportingDidCompleteEmptyPathTests.swift */; };
@@ -180,6 +182,8 @@
 		A7E1C0E0000000000000000A /* MosTests/LogiMouseSettingsPersistenceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiMouseSettingsPersistenceTests.swift; sourceTree = SOURCE_ROOT; };
 		A7E1C0E0000000000000000C /* MosTests/LogiBasicsSessionFixesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiBasicsSessionFixesTests.swift; sourceTree = SOURCE_ROOT; };
 		A7E1C0E0000000000000000E /* MosTests/LogiMouseBasicsManagerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiMouseBasicsManagerTests.swift; sourceTree = SOURCE_ROOT; };
+		D0A2C0E00000000000000002 /* MosTests/KeyRecorderStartTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/KeyRecorderStartTests.swift; sourceTree = SOURCE_ROOT; };
+		D0A2C0E00000000000000004 /* MosTests/StoredDataCanaryTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/StoredDataCanaryTests.swift; sourceTree = SOURCE_ROOT; };
 		A7E1C0E00000000000000010 /* MosTests/LogiWheelSettingsPersistenceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiWheelSettingsPersistenceTests.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01101 /* MosTests/LogiConflictDetectorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiConflictDetectorTests.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01201 /* MosTests/LogiReportingDidCompleteEmptyPathTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiReportingDidCompleteEmptyPathTests.swift; sourceTree = SOURCE_ROOT; };
@@ -313,6 +317,8 @@
 				A7E1C0E0000000000000000C /* MosTests/LogiBasicsSessionFixesTests.swift */,
 				A7E1C0E0000000000000000E /* MosTests/LogiMouseBasicsManagerTests.swift */,
 				A7E1C0E00000000000000010 /* MosTests/LogiWheelSettingsPersistenceTests.swift */,
+				D0A2C0E00000000000000004 /* MosTests/StoredDataCanaryTests.swift */,
+				D0A2C0E00000000000000002 /* MosTests/KeyRecorderStartTests.swift */,
 				D1A2B3C4E5F6A7B8C9D01101 /* MosTests/LogiConflictDetectorTests.swift */,
 				D1A2B3C4E5F6A7B8C9D01201 /* MosTests/LogiReportingDidCompleteEmptyPathTests.swift */,
 				D1A2B3C4E5F6A7B8C9D01203 /* MosTests/LogiPersistenceCanaryTests.swift */,
@@ -560,6 +566,8 @@
 				A7E1C0E0000000000000000B /* MosTests/LogiBasicsSessionFixesTests.swift in Sources */,
 				A7E1C0E0000000000000000D /* MosTests/LogiMouseBasicsManagerTests.swift in Sources */,
 				A7E1C0E0000000000000000F /* MosTests/LogiWheelSettingsPersistenceTests.swift in Sources */,
+				D0A2C0E00000000000000003 /* MosTests/StoredDataCanaryTests.swift in Sources */,
+				D0A2C0E00000000000000001 /* MosTests/KeyRecorderStartTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D01100 /* MosTests/LogiConflictDetectorTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D01200 /* MosTests/LogiReportingDidCompleteEmptyPathTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D01202 /* MosTests/LogiPersistenceCanaryTests.swift in Sources */,
