@@ -115,6 +115,20 @@ class ScrollPoster {
 #if DEBUG
     /// Tests: receives every frame instead of posting it.
     var frameRecorderForTests: ((ScrollOutgoingFrame) -> Void)?
+    /// The cumulative drop counters of the dispatch context, as `stop` logs them.
+    struct DropCounts: Equatable {
+        var byGeneration: UInt64 = 0
+        var byTTL: UInt64 = 0
+        var snapshotFailures: UInt64 = 0
+
+        /// The counters only grow: once one was above 0, every stop logged a line. A line is
+        /// written when they changed since the last one.
+        func isLogDue(lastLogged: DropCounts) -> Bool {
+            return self != DropCounts() && self != lastLogged
+        }
+    }
+    /// What the last diagnostics line said (main thread, in `stop`).
+    private var lastLoggedDrops = DropCounts()
 #endif
     // CVDisplayLink 恢复机制
     private var keeper: Timer?
@@ -435,7 +449,10 @@ extension ScrollPoster {
         }
 #if DEBUG
         let diag = diagnosticsSnapshot()
-        if diag.droppedFramesByGeneration > 0 || diag.droppedFramesByTTL > 0 || diag.updateSnapshotFailures > 0 {
+        let drops = DropCounts(byGeneration: diag.droppedFramesByGeneration, byTTL: diag.droppedFramesByTTL,
+                               snapshotFailures: diag.updateSnapshotFailures)
+        if drops.isLogDue(lastLogged: lastLoggedDrops) {
+            lastLoggedDrops = drops
             NSLog("[ScrollPoster] diag: posted=%llu dropGen=%llu dropTTL=%llu skipSynth=%llu snapFail=%llu",
                   diag.postedFrames, diag.droppedFramesByGeneration, diag.droppedFramesByTTL,
                   diag.skippedSyntheticEvents, diag.updateSnapshotFailures)

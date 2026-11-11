@@ -197,6 +197,20 @@ final class ScrollPosterStopHandoffTests: XCTestCase {
         XCTAssertEqual(phases.phase, .Idle)
     }
 
+    // MARK: - The diagnostics line of a Debug build
+
+    /// The drop counters are cumulative: after the first dropped frame every stop wrote the
+    /// same line again. A line is written when they changed.
+    func testTheDiagnosticsLineIsWrittenOnlyWhenTheDropsChanged() {
+        typealias Drops = ScrollPoster.DropCounts
+        XCTAssertFalse(Drops().isLogDue(lastLogged: Drops()), "nothing dropped: no line")
+        let one = Drops(byGeneration: 1)
+        XCTAssertTrue(one.isLogDue(lastLogged: Drops()))
+        XCTAssertFalse(one.isLogDue(lastLogged: one), "the same counts: no second line")
+        XCTAssertTrue(Drops(byGeneration: 1, byTTL: 2).isLogDue(lastLogged: one))
+        XCTAssertTrue(Drops(byGeneration: 1, snapshotFailures: 1).isLogDue(lastLogged: one))
+    }
+
     // MARK: - Threads
 
     /// The display link callback, run on a background thread like the real one, leaves the
