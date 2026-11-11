@@ -126,6 +126,8 @@ class ScrollPoster {
     //   `manualContinuationThreshold`), and only the tail goes out as momentum.
     // - The Chromium engine (Chrome, Dia, Arc, Electron apps) scrolls by the momentum events
     //   too. For it the scroll is a flick (`config.flick`), as described below.
+    // - WebKit (Safari) does as well, but only when the events carry no record of the wheel's
+    //   hardware event: for it the flick goes out as newly made events (`config.plainEvents`).
     //
     // A real flick is a short touch (3 or 4 events, ~50 ms) and then a long glide (momentum).
     // At a page edge apps treat the two very differently: the touch drags the page past the edge
@@ -164,9 +166,12 @@ class ScrollPoster {
         /// "Trackpad-style events": the frames carry trackpad phases.
         var simTrackpadEnabled: Bool
         /// Trackpad-style for an app that scrolls by the events of a glide (`ScrollUtils
-        /// .followsGlideEvents`): a short touch and its glide. Without it the touch lasts as long
+        /// .trackpadStyleTarget`): a short touch and its glide. Without it the touch lasts as long
         /// as the wheel turns, as it always did.
         var flick: Bool
+        /// The frames are newly made events instead of copies of the wheel event (Safari; see
+        /// `ScrollDispatchContext.eventWithoutHardwareRecord`). A flick only.
+        var plainEvents = false
         var deadZone: Double
     }
     private var config = ConfigSnapshot(simTrackpadEnabled: false, flick: false, deadZone: 1.0)
@@ -243,6 +248,7 @@ extension ScrollPoster {
         sessionLog.lastInputAt = now
         sessionLog.trackpadStyle = config.simTrackpadEnabled
         sessionLog.flick = config.flick
+        sessionLog.plainEvents = config.plainEvents
         inputSequence &+= 1
         if !config.flick {
             // The form can differ per app: a turn asked for in a flick is not carried into a
@@ -961,10 +967,13 @@ private extension ScrollPoster {
         } else {
             simTrackpad = Options.shared.scroll.smoothSimTrackpad
         }
-        let flick = simTrackpad && event.map { ScrollUtils.shared.followsGlideEvents($0) } == true
+        // Looked up with trackpad-style events only: the first time an app is seen it reads
+        // the app's bundle.
+        let target = simTrackpad ? event.map { ScrollUtils.shared.trackpadStyleTarget(of: $0) } : nil
         return ConfigSnapshot(
             simTrackpadEnabled: simTrackpad,
-            flick: flick,
+            flick: target == .followsGlide || target == .followsGlideWithoutHardwareRecord,
+            plainEvents: target == .followsGlideWithoutHardwareRecord,
             deadZone: OPTIONS_SCROLL_DEFAULT.usableDeadZone(Options.shared.scroll.deadZone)
         )
     }
@@ -1011,7 +1020,7 @@ private extension ScrollPoster {
             return true
         }
 #endif
-        guard let snapshot = preparedSnapshot ?? dispatchContext.preparePostingSnapshot() else {
+        guard let snapshot = preparedSnapshot ?? dispatchContext.preparePostingSnapshot(withoutHardwareRecord: config.plainEvents) else {
             return false
         }
         frame.write(to: snapshot.event)

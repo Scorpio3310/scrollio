@@ -40,6 +40,8 @@ enum ScrollSystemLog {
         /// Trackpad-style as a flick (a short touch and its glide, for apps that scroll by the
         /// glide's events) instead of one touch for as long as the wheel turns.
         var flick = false
+        /// The flick went out as newly made events, without the wheel's hardware record (Safari).
+        var plainEvents = false
         /// How many touches ("began") the scroll was sent as, and how many of its wheel events
         /// went on with a glide instead of beginning a touch (a flick only).
         var touches = 0
@@ -65,7 +67,8 @@ enum ScrollSystemLog {
         if !session.trackpadStyle {
             trackpadStyle = "off"
         } else if session.flick {
-            trackpadStyle = "on (flick: \(session.touches) touches, \(session.glideInputs) wheel events into a glide)"
+            let form = session.plainEvents ? "flick, new events" : "flick"
+            trackpadStyle = "on (\(form): \(session.touches) touches, \(session.glideInputs) wheel events into a glide)"
         } else {
             trackpadStyle = "on (long touch: \(session.touches) touches)"
         }
