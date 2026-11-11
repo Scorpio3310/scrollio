@@ -322,6 +322,80 @@ final class ScrollPreviewViewTests: XCTestCase {
         XCTAssertGreaterThan(thumb.frame.minX, thumbAtTheLeft.minX)
     }
 
+    /// A frame of the demo moves the page and turns the wheel: neither card is redrawn, and
+    /// the page is only moved.
+    func testAFrameRedrawsLessThanTheWholeView() throws {
+        let view = makeView()
+        // A window with a window server window (never shown): its views get their layers
+        // and are redrawn as on screen.
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 200),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(view)
+        addTeardownBlock { window.close() }
+        let page = try page(of: view)
+        let cards: [NSView] = descendants(of: view, as: ScrollPreviewDeviceCard.self)
+            + descendants(of: view, as: ScrollPreviewScreenCard.self)
+        XCTAssertEqual(cards.count, 2)
+        view.showLoop(at: Loop.lastClickTime)
+        window.displayIfNeeded()
+        drawPendingLayers(of: view)
+        XCTAssertNotNil(page.layer, "a layer of its own")
+        let before = page.frame.origin
+
+        view.showLoop(at: Loop.lastClickTime + 0.05)
+
+        XCTAssertNotEqual(page.frame.origin, before, "the page moved")
+        for card in cards {
+            XCTAssertEqual(card.layer?.needsDisplay(), false, "\(type(of: card)) is not redrawn")
+        }
+        // The page clips to its bounds, so moving it draws nothing.
+        XCTAssertTrue(page.clipsToBounds)
+    }
+
+    /// Draws what waits to be drawn in every layer under `view`, as the screen would.
+    private func drawPendingLayers(of view: NSView) {
+        view.layer?.displayIfNeeded()
+        view.subviews.forEach(drawPendingLayers)
+    }
+
+    /// Scrolled out of the visible part of the pane, the demo pauses; it goes on as soon as
+    /// some of it shows again.
+    func testItPausesWhileScrolledOutOfSight() {
+        let view = makeView()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 200),
+            styleMask: [.borderless], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 200))
+        let document = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 1000))
+        document.addSubview(view)
+        scroll.documentView = document
+        scroll.contentView.postsBoundsChangedNotifications = true
+        window.contentView?.addSubview(scroll)
+        addTeardownBlock {
+            view.setAnimating(false)
+            window.close()
+        }
+
+        scroll.contentView.scroll(to: .zero)
+        view.setAnimating(true)
+        XCTAssertFalse(view.visibleRect.intersection(view.bounds).isEmpty)
+        XCTAssertTrue(view.isTimerRunning)
+
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: 600))
+        XCTAssertTrue(view.visibleRect.intersection(view.bounds).isEmpty)
+        XCTAssertFalse(view.isTimerRunning, "not while it is scrolled out of sight")
+        XCTAssertEqual(view.loopTime, 0, "it rests")
+
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: 100))
+        XCTAssertFalse(view.visibleRect.intersection(view.bounds).isEmpty, "partly in sight")
+        XCTAssertTrue(view.isTimerRunning)
+    }
+
     func testTheKeyIsPressedWhileTheWheelTurns() throws {
         let view = makeView()
         view.scene = scene(.faster)

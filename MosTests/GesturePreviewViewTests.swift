@@ -243,6 +243,101 @@ final class GesturePreviewViewTests: XCTestCase {
         XCTAssertGreaterThan(arrow?.from.x ?? 0, mouse.frame.maxX - GesturePreviewMouse.margin)
     }
 
+    /// A frame of the demo moves the mouse and redraws only the small rectangle of the arrow
+    /// ahead of it: the device card, half of the view, is not redrawn.
+    func testAFrameRedrawsLessThanTheWholeView() throws {
+        let view = makeView()
+        // A window with a window server window (never shown): its views get their layers
+        // and are redrawn as on screen.
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 200),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(view)
+        addTeardownBlock { window.close() }
+        view.scene = scene(focus: .right)
+        let card = view.deviceCard
+        view.showLoop(at: Loop.moveStart + Loop.moveDuration * 0.4)
+        XCTAssertFalse(card.arrowView.isHidden, "the arrow shows while the mouse moves")
+        window.displayIfNeeded()
+        drawPendingLayers(of: view)
+        XCTAssertNotNil(card.arrowView.layer, "a layer of its own")
+        XCTAssertEqual(card.layer?.needsDisplay(), false)
+        let arrowBefore = card.arrowView.frame
+        let mouseBefore = card.mouse.frame.origin
+
+        view.showLoop(at: Loop.moveStart + Loop.moveDuration * 0.6)
+
+        XCTAssertGreaterThan(card.mouse.frame.minX, mouseBefore.x, "the mouse moved")
+        XCTAssertEqual(card.layer?.needsDisplay(), false, "the card is not redrawn")
+        XCTAssertEqual(card.arrowView.layer?.needsDisplay(), true, "the arrow is")
+        // What moves clips to its bounds, so moving it draws nothing.
+        XCTAssertTrue(card.mouse.clipsToBounds)
+        XCTAssertTrue(card.arrowView.clipsToBounds)
+        let arrow = card.arrowView.frame
+        XCTAssertGreaterThan(arrow.minX, arrowBefore.minX, "and moved with the mouse")
+        XCTAssertLessThan(arrow.width * arrow.height, view.bounds.width * view.bounds.height / 20)
+        XCTAssertTrue(card.bounds.contains(arrow))
+        XCTAssertEqual(arrow, arrow.integral, "on whole points: the arrow keeps its pixels")
+        let segment = try XCTUnwrap(card.arrowSegment)
+        XCTAssertTrue(arrow.contains(segment.from) && arrow.contains(segment.to), "where the card drew it")
+        let subviews = card.subviews
+        XCTAssertLessThan(try XCTUnwrap(subviews.firstIndex(of: card.arrowView)), try XCTUnwrap(subviews.firstIndex(of: card.mouse)),
+                          "under the mouse")
+
+        // Back at rest there is no arrow.
+        view.showLoop(at: view.loop.length - 0.05)
+        XCTAssertTrue(card.arrowView.isHidden)
+    }
+
+    /// Draws what waits to be drawn in every layer under `view`, as the screen would.
+    private func drawPendingLayers(of view: NSView) {
+        view.layer?.displayIfNeeded()
+        view.subviews.forEach(drawPendingLayers)
+    }
+
+    /// Scrolled out of the visible part of the pane, the demo pauses; it goes on as soon as
+    /// some of it shows again.
+    func testItPausesWhileScrolledOutOfSight() {
+        let view = makeView()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 200),
+            styleMask: [.borderless], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 200))
+        let document = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 1000))
+        document.addSubview(view)
+        scroll.documentView = document
+        scroll.contentView.postsBoundsChangedNotifications = true
+        window.contentView?.addSubview(scroll)
+        addTeardownBlock {
+            view.setAnimating(false)
+            window.close()
+        }
+
+        scroll.contentView.scroll(to: .zero)
+        view.setAnimating(true)
+        XCTAssertFalse(view.visibleRect.intersection(view.bounds).isEmpty)
+        XCTAssertTrue(view.isTimerRunning)
+
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: 600))
+        XCTAssertTrue(view.visibleRect.intersection(view.bounds).isEmpty)
+        XCTAssertFalse(view.isTimerRunning, "not while it is scrolled out of sight")
+        XCTAssertEqual(view.loopTime, 0, "it rests")
+
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: 100))
+        XCTAssertFalse(view.visibleRect.intersection(view.bounds).isEmpty, "partly in sight")
+        XCTAssertTrue(view.isTimerRunning)
+
+        // Laid out without a size yet, it waits for one.
+        view.setFrameSize(.zero)
+        XCTAssertFalse(view.isTimerRunning)
+        view.setFrameSize(size)
+        XCTAssertTrue(view.isTimerRunning)
+    }
+
     func testTheDesktopCardShowsTheFrame() {
         let view = makeView()
         view.scene = scene(mode: .interactive)

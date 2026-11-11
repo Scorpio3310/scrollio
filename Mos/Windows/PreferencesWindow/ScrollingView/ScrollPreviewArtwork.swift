@@ -88,16 +88,27 @@ private func capsule(_ rect: NSRect) -> NSBezierPath {
     return NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
 }
 
-/// Base class of the artwork: top-left origin, and nothing here takes a click.
+/// Base class of the artwork: top-left origin, and nothing here takes a click. A frame of
+/// the demo redraws only the pieces that change: every piece has a layer of its own (also
+/// one that starts hidden, which otherwise draws into its parent's), and draws inside its
+/// bounds and clips to them (a view that does not, the default since macOS 14, is drawn
+/// again each time it moves, and the pieces move on every frame).
 class ScrollPreviewArtworkView: NSView {
     override var isFlipped: Bool { return true }
 
     init() {
         super.init(frame: .zero)
+        drawOnlyWhatChanges()
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
+        drawOnlyWhatChanges()
+    }
+
+    private func drawOnlyWhatChanges() {
+        wantsLayer = true
+        clipsToBounds = true
     }
 }
 
@@ -755,6 +766,19 @@ final class ScrollPreviewPage: ScrollPreviewArtworkView {
 
 /// The thumb of the window's scroller.
 final class ScrollPreviewThumb: ScrollPreviewArtworkView {
+
+    /// The one piece that does not clip: its capsule fills its bounds exactly, and clipped
+    /// at a position between pixels its anti-aliased ends would come out fainter. It is
+    /// tiny, so drawing it again as it moves costs next to nothing.
+    override init() {
+        super.init()
+        clipsToBounds = false
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        clipsToBounds = false
+    }
 
     override func setFrameSize(_ newSize: NSSize) {
         let changed = newSize != frame.size
