@@ -4,7 +4,8 @@
 //
 //  Renders the panes of the Preferences window off screen, the way the window shows them:
 //  every pane in its 520 pt column of the real window, in its main states, light and dark,
-//  and the per-app scrolling popover. The appearance is set on the window, so every pane
+//  the per-app scrolling popover, and the kit's list (PreferencesListBox) in a key and a
+//  non-key window. The appearance is set on the window, so every pane
 //  gets it through the window's materials, as on screen (the parent, not the pane: a pane
 //  given its appearance directly misses the vibrancy of the material above it). The window
 //  is never shown.
@@ -127,10 +128,15 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
-    func testRenderOlderPanes() throws {
+    func testRenderGeneral() throws {
         try renderPane(PANEL_IDENTIFIER.general, name: "general")
-        try renderPane(AboutPreferencesViewController.tabIdentifier, name: "about")
+    }
 
+    func testRenderAbout() throws {
+        try renderPane(AboutPreferencesViewController.tabIdentifier, name: "about")
+    }
+
+    func testRenderButtons() throws {
         // The window calls viewWillAppear, which shows or hides the empty list's hint.
         let appear: (NSViewController) -> Void = { $0.viewWillAppear() }
         Options.shared.buttons.binding = []
@@ -143,7 +149,10 @@ final class PreferencesWindowRenderTests: XCTestCase {
             binding(7, SystemShortcut.copy.identifier, display: ["Mouse 8"]),
         ]
         try renderPane(PANEL_IDENTIFIER.buttons, name: "buttons-bindings", afterLoad: appear)
+    }
 
+    func testRenderApps() throws {
+        let appear: (NSViewController) -> Void = { $0.viewWillAppear() }
         Options.shared.application.allowlist = false
         try renderPane(PANEL_IDENTIFIER.application, name: "apps", afterLoad: appear)
         for path in ["/System/Applications/Calculator.app", "/System/Applications/TextEdit.app"]
@@ -153,6 +162,23 @@ final class PreferencesWindowRenderTests: XCTestCase {
             addedApplications.append(path)
         }
         try renderPane(PANEL_IDENTIFIER.application, name: "apps-with-apps", afterLoad: appear)
+    }
+
+    // MARK: - Kit
+
+    /// The kit's list in a pane: four rows (symbol and app icons, explanations, a pull-down,
+    /// a chevron, one selected) with a note under the box, and an empty list. The selection
+    /// in a key window and in one that is not.
+    func testRenderListBox() throws {
+        for key in [true, false] {
+            let state = key ? "key" : "not-key"
+            try renderPane(PANEL_IDENTIFIER.general, name: "list-\(state)", key: key, replacement: {
+                ListRenderController(empty: false)
+            })
+        }
+        try renderPane(PANEL_IDENTIFIER.general, name: "list-empty", replacement: {
+            ListRenderController(empty: true)
+        })
     }
 
     /// The per-app popover, in the popover's material.
@@ -246,9 +272,11 @@ final class PreferencesWindowRenderTests: XCTestCase {
         })
     }
 
-    /// The Preferences window as the app makes it, in `appearance`. Never shown.
+    /// The Preferences window as the app makes it, in `appearance`; key unless `key` is
+    /// false. Never shown.
     private func makeWindow(
         appearance: NSAppearance.Name,
+        key: Bool = true,
         prepare: (PreferencesSplitViewController) -> Void = { _ in }
     ) throws -> (NSWindow, PreferencesSplitViewController) {
         let storyboard = NSStoryboard(name: "Main", bundle: app)
@@ -262,6 +290,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: true
         )
         window.isReleasedWhenClosed = false
+        window.isKey = key
         controller.window = window
         window.appearance = NSAppearance(named: appearance)
         let preferences = PreferencesSplitViewController(storyboard: storyboard, uiStateDefaults: nil)
@@ -281,12 +310,13 @@ final class PreferencesWindowRenderTests: XCTestCase {
     private func renderPane(
         _ identifier: String,
         name: String,
+        key: Bool = true,
         prepare: @escaping (PreferencesSplitViewController) -> Void = { _ in },
         replacement: (() -> NSViewController)? = nil,
         afterLoad: @escaping (NSViewController) -> Void = { _ in }
     ) throws {
         for (suffix, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
-            let (window, preferences) = try makeWindow(appearance: appearanceName, prepare: prepare)
+            let (window, preferences) = try makeWindow(appearance: appearanceName, key: key, prepare: prepare)
             XCTAssertTrue(preferences.selectPane(withIdentifier: identifier), identifier)
             if let replacement {
                 preferences.host.show(replacement())
@@ -366,8 +396,89 @@ final class PreferencesWindowRenderTests: XCTestCase {
     }
 }
 
-/// Counts as the key and main window, so controls draw as in the window the user works in.
+/// Counts as the key and main window, so controls draw as in the window the user works in;
+/// or, with `isKey` off, as a window behind another.
 private final class RenderWindow: NSWindow {
-    override var isKeyWindow: Bool { return true }
-    override var isMainWindow: Bool { return true }
+    var isKey = true
+    override var isKeyWindow: Bool { return isKey }
+    override var isMainWindow: Bool { return isKey }
+}
+
+/// A pane with the kit's list, as the Buttons and Apps panes build theirs.
+private final class ListRenderController: NSViewController {
+
+    private let empty: Bool
+
+    init(empty: Bool) {
+        self.empty = empty
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("built in code")
+    }
+
+    override func loadView() {
+        let paneWidth = PreferencesWindowLayout.contentWidth
+        let width = PreferencesGroupedForm.boxWidth(paneWidth: paneWidth)
+        let root = PreferencesForm.makeBackground()
+        let content = PreferencesGroupedForm.installContentStack(in: root, paneWidth: paneWidth)
+        content.setHuggingPriority(.defaultHigh, for: .vertical)
+
+        let list = PreferencesListBox(
+            width: width,
+            emptyTitle: "No buttons yet",
+            emptyExplanation: "Click + and press a mouse button to give it an action."
+        )
+        let section: NSView
+        if empty {
+            section = list
+        } else {
+            let calculator = NSWorkspace.shared.icon(forFile: "/System/Applications/Calculator.app")
+            let popUp = NSPopUpButton(frame: .zero, pullsDown: true)
+            popUp.addItem(withTitle: "")
+            popUp.addItems(withTitles: ["Copy", "Paste"])
+            popUp.item(at: 0)?.title = "Mission Control"
+            popUp.item(at: 0)?.image = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: nil)
+            popUp.widthAnchor.constraint(equalToConstant: 240).isActive = true
+            let selectedPopUp = NSPopUpButton(frame: .zero, pullsDown: true)
+            selectedPopUp.addItem(withTitle: "Gesture Navigation")
+            selectedPopUp.item(at: 0)?.image = NSImage(systemSymbolName: "hand.draw", accessibilityDescription: nil)
+            selectedPopUp.widthAnchor.constraint(equalToConstant: 240).isActive = true
+            let info = NSButton(image: NSImage(systemSymbolName: "info.circle", accessibilityDescription: nil)!, target: nil, action: nil)
+            info.isBordered = false
+            let accessory = NSStackView(views: [info, selectedPopUp])
+            accessory.spacing = 8
+            list.setRows([
+                PreferencesListRow(id: "back", title: "⌥ Back button", explanation: "Hold and move the mouse. Set the directions under Gestures.",
+                                   icon: .symbol("computermouse"), accessory: accessory, centeredOn: selectedPopUp, controls: [selectedPopUp]),
+                PreferencesListRow(id: "forward", title: "Forward button", icon: .symbol("arrow.right.circle"), accessory: popUp),
+                PreferencesListRow(id: "calculator", title: "Calculator", explanation: "Own scrolling settings",
+                                   icon: .image(calculator), showsChevron: true),
+                PreferencesListRow(id: "dimmed", title: "Button 6", explanation: "Choose what this button does.",
+                                   icon: .symbol("questionmark.circle")),
+            ])
+            list.rows[3].isEnabled = false
+            list.select("back")
+            let spinner = NSProgressIndicator()
+            spinner.style = .spinning
+            spinner.controlSize = .small
+            spinner.widthAnchor.constraint(equalToConstant: 12).isActive = true
+            spinner.heightAnchor.constraint(equalToConstant: 12).isActive = true
+            let checking = NSTextField(labelWithString: "Checking buttons…")
+            checking.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+            checking.textColor = .secondaryLabelColor
+            let busy = NSStackView(views: [spinner, checking])
+            busy.spacing = 6
+            list.footerAccessory = busy
+            section = PreferencesListSection(title: "Apps", list: list)
+        }
+        let switchBox = PreferencesGroupSection(width: width, rows: [
+            PreferencesSwitchRow(title: "Limit scrolling to these apps", explanation: "Apps not in the list scroll the way macOS does.", target: nil, action: nil),
+        ])
+        let note = PreferencesGroupedForm.makeNote("Buttons and gestures still work everywhere. A second line of the note shows where it wraps under the box.")
+        PreferencesGroupedForm.add([switchBox, section, note], to: content)
+        view = root
+        root.setFrameSize(root.fittingSize)
+    }
 }

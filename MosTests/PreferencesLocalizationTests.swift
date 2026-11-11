@@ -1,18 +1,21 @@
 import XCTest
 @testable import Mos_Debug
 
-/// Strings of the reorganised preferences (Mouse tab, Scrolling tab, Gesture
-/// Settings, Gestures tab), of the main menu and of the Introduction window must exist in every shipped
-/// locale, keep their format specifiers, and never fall back to the raw key. Several keys are built from variables in code, so a missing
-/// one would only show up as the key itself in the UI.
+/// Strings of the preferences panes, the window and its kit, the menus and the Introduction
+/// window must exist in every shipped locale, keep their format specifiers, and never fall
+/// back to the raw key. Several keys are built from variables in code, so a missing one
+/// would only show up as the key itself in the UI.
 final class PreferencesLocalizationTests: XCTestCase {
 
     /// English only for now. The string catalogs stay, so adding a language means adding
     /// its translations to the catalogs, its region to the project and its code here.
     static let locales = ["en"]
 
-    static let keys = [
-        // Mouse tab
+    // MARK: - Keys, per area
+    // Each task edits only the arrays of its own area; `keys` is their union.
+
+    /// Mouse pane.
+    static let mouseKeys = [
         "mouse-tab-title", "mouse-header-no-mouse", "mouse-header-connected", "mouse-header-connected-several",
         "mouse-battery-about", "mouse-battery-full", "mouse-battery-good", "mouse-battery-low",
         "mouse-battery-critical", "mouse-battery-not-charging", "mouse-battery-accessibility",
@@ -29,7 +32,10 @@ final class PreferencesLocalizationTests: XCTestCase {
         "mouse-haptics-strength-hint", "mouse-haptics-strength-light", "mouse-haptics-strength-strong",
         "mouse-press-force", "mouse-press-force-hint", "mouse-press-force-light", "mouse-press-force-firm",
         "mouse-value-on", "mouse-value-off", "mouse-diagnostics-button",
-        // Scrolling tab
+    ]
+
+    /// Scrolling pane.
+    static let scrollingKeys = [
         "scrolling-smooth", "scrolling-smooth-hint",
         "scrolling-feel-label", "scrolling-feel-direct", "scrolling-feel-quick", "scrolling-feel-smooth",
         "scrolling-feel-glide", "scrolling-feel-float", "scrolling-feel-direct-hint", "scrolling-feel-quick-hint",
@@ -43,14 +49,21 @@ final class PreferencesLocalizationTests: XCTestCase {
         "scrolling-keys-header", "scrolling-key-faster", "scrolling-key-faster-hint",
         "scrolling-key-sideways", "scrolling-key-sideways-hint", "scrolling-key-pause", "scrolling-key-pause-hint",
         "scrolling-key-clear", "scrolling-reset",
-        // Gesture Settings
+    ]
+
+    /// Buttons pane: the Gesture Navigation action and the Gesture Settings popover.
+    static let buttonsKeys = [
         "mouseGestureNavigation", "gesture-navigation-menu-tooltip",
-        "gesture-settings-menu", "gesture-direction-up", "gesture-direction-down",
+        "gesture-settings-menu", "gesture-settings-footnote",
+    ]
+
+    /// Gestures pane, and the gesture controls it shares with the Gesture Settings popover.
+    static let gesturesKeys = [
+        "gesture-direction-up", "gesture-direction-down",
         "gesture-direction-left", "gesture-direction-right", "gesture-direction-click", "gesture-action-none",
-        "gesture-invert-horizontal", "gesture-freeze-pointer", "gesture-settings-footnote",
+        "gesture-invert-horizontal", "gesture-freeze-pointer",
         "gesture-mode-discrete", "gesture-mode-interactive", "gesture-mode-interactive-note",
         "gesture-mode-interactive-unavailable", "gesture-follow-horizontal-value",
-        // Gestures tab
         "gestures-tab-title", "gesture-mode-label", "gesture-mode-discrete-description",
         "gesture-mode-interactive-description", "gesture-invert-horizontal-hint", "gesture-freeze-pointer-hint",
         "gesture-tracking-speed-label", "gesture-tracking-speed-hint", "gesture-tracking-speed-hint-discrete",
@@ -59,22 +72,40 @@ final class PreferencesLocalizationTests: XCTestCase {
         "gestures-behaviour-header", "gestures-logitech-header", "gestures-logitech-needs", "gestures-buttons-note",
         "mouse-gesture-device-tracking", "mouse-gesture-device-tracking-hint", "mouse-gesture-device-tracking-unavailable",
         "mouse-gesture-haptics", "mouse-gesture-haptics-hint", "mouse-gesture-haptics-unavailable",
-        // About
-        "about-tab-title", "about-app-name", "about-version", "about-credit", "about-welcome-guide",
-        "about-welcome-guide-open", "about-welcome-guide-hint",
-        // General pane
+    ]
+
+    /// Apps pane.
+    static let appsKeys: [String] = []
+
+    /// General pane.
+    static let generalKeys = [
         "general-launch-at-login", "general-launch-at-login-hint",
         "general-hide-menu-bar-icon", "general-hide-menu-bar-icon-hint",
-        // Window
-        "preferences-sidebar",
-        // Main menu
+    ]
+
+    /// About pane.
+    static let aboutKeys = [
+        "about-tab-title", "about-app-name", "about-version", "about-credit", "about-welcome-guide",
+        "about-welcome-guide-open", "about-welcome-guide-hint",
+    ]
+
+    /// The window and the kit: the sidebar, the + and − under a list.
+    static let windowKeys = [
+        "preferences-sidebar", "list-add", "list-remove",
+    ]
+
+    /// Main menu and status-bar menu.
+    static let menuKeys = [
         "main-menu-application", "main-menu-about", "main-menu-settings", "main-menu-services",
         "main-menu-hide", "main-menu-hide-others", "main-menu-show-all", "main-menu-quit",
         "main-menu-edit", "main-menu-undo", "main-menu-redo", "main-menu-cut", "main-menu-copy",
         "main-menu-paste", "main-menu-select-all", "main-menu-window", "main-menu-minimize",
         "main-menu-zoom", "main-menu-close", "main-menu-bring-all-to-front", "main-menu-help",
         "main-menu-welcome-guide",
-        // Introduction window
+    ]
+
+    /// Introduction window (Welcome Guide).
+    static let introKeys = [
         "intro-title", "intro-subtitle", "intro-access-heading", "intro-access-explanation",
         "intro-step-open-settings", "intro-step-open-settings-detail", "intro-step-turn-on",
         "intro-step-turn-on-detail", "intro-step-accessibility",
@@ -83,6 +114,9 @@ final class PreferencesLocalizationTests: XCTestCase {
         "intro-open-settings-button", "intro-get-started-button", "intro-done-button",
         "intro-help-link", "intro-help-heading", "intro-help-text", "intro-help-finder-button",
     ]
+
+    static let keys = mouseKeys + scrollingKeys + buttonsKeys + gesturesKeys + appsKeys
+        + generalKeys + aboutKeys + windowKeys + menuKeys + introKeys
 
     private static let missing = "\u{1}missing"
 
@@ -96,6 +130,13 @@ final class PreferencesLocalizationTests: XCTestCase {
         let regex = try! NSRegularExpression(pattern: "%(?:\\d+\\$)?[@dDuUxXoOfeEgGcCsSpaAF]|%%")
         let range = NSRange(text.startIndex..., in: text)
         return regex.matches(in: text, range: range).map { (text as NSString).substring(with: $0.range) }.sorted()
+    }
+
+    /// A key belongs to one area, so two tasks never list the same key.
+    func testEveryKeyIsListedOnce() {
+        var seen = Set<String>()
+        let repeated = Self.keys.filter { !seen.insert($0).inserted }
+        XCTAssertEqual(repeated, [])
     }
 
     func testEveryLocaleTranslatesThePreferencesStrings() throws {
