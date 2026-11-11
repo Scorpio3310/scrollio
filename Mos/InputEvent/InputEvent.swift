@@ -61,6 +61,12 @@ struct InputEvent {
     /// still and reports the movement separately (Logitech raw XY over HID++). False for
     /// everything else, including the matching button-up.
     let tracksMovementOnDevice: Bool
+    /// True for a button-up that Mos makes up itself because the real one may never arrive
+    /// (the mouse disconnected or went to sleep mid-hold, or its buttons were re-diverted).
+    /// It unwinds what the press started (held keys, virtual modifiers, a gesture hold)
+    /// but never runs what only a real release runs: no click action, no tap replay, no
+    /// committed swipe. Always false for a button-down.
+    let isSyntheticRelease: Bool
 
     /// 从 CGEvent 构造
     /// 注意: .flagsChanged 事件也属于键盘域 (修饰键按下/抬起), 必须和 keyDown/keyUp 同类处理
@@ -78,12 +84,13 @@ struct InputEvent {
         self.source = .cgEvent(event)
         self.device = nil
         self.tracksMovementOnDevice = false
+        self.isSyntheticRelease = false
     }
 
     /// 从 HID++ 数据构造
     init(type: EventType, code: UInt16, modifiers: CGEventFlags,
          phase: InputPhase, source: InputSource, device: InputDevice?,
-         tracksMovementOnDevice: Bool = false) {
+         tracksMovementOnDevice: Bool = false, isSyntheticRelease: Bool = false) {
         self.type = type
         self.code = code
         self.modifiers = modifiers
@@ -91,6 +98,7 @@ struct InputEvent {
         self.source = source
         self.device = device
         self.tracksMovementOnDevice = tracksMovementOnDevice
+        self.isSyntheticRelease = isSyntheticRelease && phase == .up
     }
 
     // MARK: - Display

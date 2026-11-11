@@ -4575,11 +4575,11 @@ class LogiDeviceSession {
                 type: .buttonEvent,
                 message: "Synthetic Button UP: CID \(String(format: "0x%04X", cid)) (\(cidName)) [\(reason)]"
             )
-            dispatchButtonEvent(cid: cid, isDown: false)
+            dispatchButtonEvent(cid: cid, isDown: false, isSyntheticRelease: true)
         }
     }
 
-    private func dispatchButtonEvent(cid: UInt16, isDown: Bool) {
+    private func dispatchButtonEvent(cid: UInt16, isDown: Bool, isSyntheticRelease: Bool = false) {
         let currentFlags = CGEventSource.flagsState(.combinedSessionState)
         // Armed for raw XY: the mouse keeps the pointer still during this hold and reports
         // its movement over HID++ (handleTrackedRawXYMovement).
@@ -4596,7 +4596,8 @@ class LogiDeviceSession {
             phase: isDown ? .down : .up,
             source: .hidPP,
             device: deviceInfo,
-            tracksMovementOnDevice: tracksMovementOnDevice
+            tracksMovementOnDevice: tracksMovementOnDevice,
+            isSyntheticRelease: isSyntheticRelease
         )
         if isDown {
             // Haptic cues for this hold go to this device (and this receiver slot) only.

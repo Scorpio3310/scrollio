@@ -466,6 +466,31 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         guard case .end? = swipeCalls.last else { return XCTFail("expected end, got \(swipeCalls)") }
     }
 
+    // MARK: - Synthetic release (the mouse went away mid-hold)
+
+    func testSyntheticReleaseRevertsTheSwipeInsteadOfCommittingIt() {
+        configureGestureBinding(mode: .interactive)
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: -300, deltaY: 0)
+        runScheduledWork()
+        XCTAssertEqual(swipeCalls.first, .begin(.horizontal))
+
+        // A real release here would end the swipe with a velocity and may switch Spaces.
+        let synthetic = InputEvent(
+            type: .mouse, code: 3, modifiers: [], phase: .up, source: .hidPP, device: nil,
+            isSyntheticRelease: true
+        )
+        XCTAssertEqual(InputProcessor.shared.process(synthetic), .consumed)
+        waitForMainQueue()
+
+        XCTAssertEqual(swipeCalls.last, .cancel)
+        XCTAssertFalse(swipeCalls.contains { if case .end = $0 { return true } else { return false } })
+        XCTAssertFalse(InputProcessor.shared.hasActiveMouseGestureSessions)
+        XCTAssertFalse(MouseGesturePointerLock.shared.isLocked)
+        XCTAssertFalse(MouseInteractionSessionController.shared.isMotionTapRunning)
+    }
+
     // MARK: - Popover rules
 
     func testModePresentationRules() {

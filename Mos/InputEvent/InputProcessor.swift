@@ -268,6 +268,13 @@ class InputProcessor: ModifierFlagsProviding {
         // The watchdog already released everything this hold owned; its late button-up is
         // only swallowed, so the app under the pointer never sees an up without a down.
         guard !session.isAbandoned else { return true }
+        if event.isSyntheticRelease {
+            // The hold was interrupted (the mouse went away), not released: unwind it like
+            // the watchdog does. No click action, a running swipe is reverted, the pointer
+            // and the motion tap are released.
+            abandonMouseGesture(session, key: key)
+            return true
+        }
         if session.movementSource == .pointer {
             pointerTrackedGestureCount -= 1
         }
@@ -637,7 +644,9 @@ class InputProcessor: ModifierFlagsProviding {
             mouseSessionID: session.mouseSessionID,
             inputModifiers: event.modifiers
         )
-        if let tapReplay = session.mosScrollTapReplay,
+        // A made-up release (the mouse went away mid-hold) is not a tap.
+        if !event.isSyntheticRelease,
+           let tapReplay = session.mosScrollTapReplay,
            shouldReplayMosScrollTap(tapReplay, releaseEvent: event) {
             ShortcutExecutor.shared.replayMouseTap(tapReplay.context)
         }
