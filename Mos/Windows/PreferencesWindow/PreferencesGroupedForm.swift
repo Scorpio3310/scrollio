@@ -7,8 +7,8 @@
 //  on the title line; hairlines separate the rows of a box.
 //
 //  The pieces:
-//  - PreferencesGroupedForm: the numbers, the pane's content stack, section titles, the
-//    muted notes under the boxes (makeNote) and the footer line under the boxes.
+//  - PreferencesGroupedForm: the numbers, the pane's content stack, section titles and
+//    the footer line under the boxes.
 //  - PreferencesGroupBox: a box of rows, as wide as the pane's content.
 //  - PreferencesGroupSection: a box with an optional small title above it.
 //  - PreferencesGroupRow: a row with any control on the right, or below the title (stacked).
@@ -16,7 +16,6 @@
 //    common kinds.
 //  - PreferencesSliderScale: the tick marks under a slider (System Settings' little dots)
 //    and the steps its value moves in; PreferencesSlider draws them and steps by them.
-//  - PreferencesGroupNote: a muted line under a box.
 //  Lists of selectable rows with + and − (PreferencesListBox) are in PreferencesListBox.swift.
 //
 //  The numbers are measured on System Settings › Trackpad (macOS 26, 2x screenshot).
@@ -48,7 +47,7 @@ enum PreferencesGroupedForm {
     static let boxSpacing: CGFloat = 16
     /// Above a titled section and above the footer.
     static let sectionSpacing: CGFloat = 20
-    /// Between a section's title and its box, and between two notes.
+    /// Between a section's title and its box.
     static let sectionTitleSpacing: CGFloat = 6
     /// Between a box and the muted note under it.
     static let noteSpacing: CGFloat = 10
@@ -150,41 +149,26 @@ enum PreferencesGroupedForm {
         content.detachesHiddenViews = true
         content.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(content)
-        let width = content.widthAnchor.constraint(equalToConstant: boxWidth(paneWidth: paneWidth))
-        width.identifier = contentWidthIdentifier
         NSLayoutConstraint.activate([
             content.topAnchor.constraint(equalTo: root.topAnchor, constant: margin),
             content.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: margin),
             content.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -margin),
             content.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -margin),
-            width,
+            content.widthAnchor.constraint(equalToConstant: boxWidth(paneWidth: paneWidth)),
         ])
         return content
     }
 
-    /// Names the width constraint of a content stack, so a note added to it knows where to wrap.
-    private static let contentWidthIdentifier = "PreferencesGroupedForm.contentWidth"
-
     /// Adds views to the content stack, each as wide as the stack. A titled section and the
-    /// footer get `sectionSpacing` above them, a note `noteSpacing` (`sectionTitleSpacing`
-    /// under another note), everything else `boxSpacing`.
+    /// footer get `sectionSpacing` above them, everything else `boxSpacing`.
     static func add(_ views: [NSView], to content: NSStackView) {
-        let width = content.constraints.first { $0.identifier == contentWidthIdentifier }?.constant
         for view in views {
             content.addArrangedSubview(view)
             view.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
-            if let note = view as? PreferencesGroupNote, let width {
-                note.contentWidth = width
-            }
         }
         let all = content.arrangedSubviews
-        for (index, view) in all.enumerated() where index > 0 {
-            let above = all[index - 1]
-            if view is PreferencesGroupNote {
-                content.setCustomSpacing(above is PreferencesGroupNote ? sectionTitleSpacing : noteSpacing, after: above)
-            } else if needsSectionSpacing(above: view) {
-                content.setCustomSpacing(sectionSpacing, after: above)
-            }
+        for (index, view) in all.enumerated() where index > 0 && needsSectionSpacing(above: view) {
+            content.setCustomSpacing(sectionSpacing, after: all[index - 1])
         }
     }
 
@@ -207,13 +191,6 @@ enum PreferencesGroupedForm {
         label.translatesAutoresizingMaskIntoConstraints = false
         label.setAccessibilityRole(.staticText)
         return label
-    }
-
-    /// The muted line under a box ("Choose the gesture button under Buttons."): the type
-    /// and colour of an explanation, inset like the rows' text, wrapping at the content's
-    /// width. Added with `add(_:to:)` it sits `noteSpacing` under the box above it.
-    static func makeNote(_ text: String) -> PreferencesGroupNote {
-        return PreferencesGroupNote(text: text)
     }
 
     /// Lays out a section: `title` (if any) at the rows' inset, `body` under it at full width.
@@ -365,63 +342,6 @@ final class PreferencesGroupSection: NSView {
 
     required init?(coder: NSCoder) {
         fatalError("PreferencesGroupSection is built in code")
-    }
-}
-
-// MARK: - Note
-
-/// A muted line under a box (`PreferencesGroupedForm.makeNote`). It is as wide as the
-/// content stack; its text starts at the rows' inset and wraps before the other inset.
-final class PreferencesGroupNote: NSView {
-
-    let label: NSTextField
-
-    /// The width of the content the note is in. `PreferencesGroupedForm.add` sets it; it
-    /// fixes where the text wraps.
-    var contentWidth: CGFloat = 0 {
-        didSet { updateWrapWidth() }
-    }
-
-    var text: String {
-        get { return label.stringValue }
-        set { label.stringValue = newValue }
-    }
-
-    init(text: String) {
-        label = NSTextField(wrappingLabelWithString: text)
-        super.init(frame: .zero)
-        translatesAutoresizingMaskIntoConstraints = false
-        label.font = PreferencesGroupedForm.explanationFont
-        label.textColor = PreferencesGroupedForm.explanationColor(enabled: true)
-        label.isSelectable = false
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        label.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(label)
-        let inset = PreferencesGroupedForm.rowHorizontalInset
-        NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: topAnchor),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor),
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -inset),
-        ])
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("PreferencesGroupNote is built in code")
-    }
-
-    override func layout() {
-        super.layout()
-        // Outside a content stack the width is only known now.
-        if contentWidth == 0, bounds.width > 0 {
-            contentWidth = bounds.width
-        }
-    }
-
-    private func updateWrapWidth() {
-        guard contentWidth > 0 else { return }
-        label.preferredMaxLayoutWidth = max(0, contentWidth - 2 * PreferencesGroupedForm.rowHorizontalInset)
-        label.invalidateIntrinsicContentSize()
     }
 }
 

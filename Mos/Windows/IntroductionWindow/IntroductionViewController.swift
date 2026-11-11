@@ -26,8 +26,9 @@ final class IntroductionViewController: NSViewController {
 
     // MARK: - Layout
 
-    /// The window is as wide as a preferences pane and uses the type sizes of the form
-    /// kit, so the two windows look like one app.
+    /// The window is `PreferencesForm.contentWidth` (450 pt) wide, narrower than the
+    /// Preferences panes, and uses the type sizes of the form kit, so the two windows look
+    /// like one app.
     enum Layout {
         static let width = PreferencesForm.contentWidth
         static let sideMargin: CGFloat = 32

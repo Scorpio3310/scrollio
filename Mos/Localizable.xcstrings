@@ -857,17 +857,6 @@
         }
       }
     },
-    "gesture-mode-interactive-note": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Follow the hand is experimental: moving sideways slides between desktops."
-          }
-        }
-      }
-    },
     "gesture-mode-interactive-unavailable": {
       "extractionState": "manual",
       "localizations": {

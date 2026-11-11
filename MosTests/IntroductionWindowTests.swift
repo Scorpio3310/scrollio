@@ -419,7 +419,7 @@ final class IntroductionWindowTests: XCTestCase {
         return [("missing", missing), ("help", help), ("granted", granted), ("done", done)]
     }
 
-    func testTheViewIsAsWideAsAPreferencesPaneAndFitsItsContent() {
+    func testTheViewHasTheGuideWidthAndFitsItsContent() {
         for (name, controller) in controllersInEveryState() {
             let view = controller.view
             XCTAssertEqual(view.frame.width, PreferencesForm.contentWidth, name)

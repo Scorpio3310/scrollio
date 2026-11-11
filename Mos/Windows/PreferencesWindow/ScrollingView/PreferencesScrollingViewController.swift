@@ -115,8 +115,9 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// Where "Advanced" remembers whether it is open. Plain UI state, not a scroll option.
     static let advancedExpandedDefaultsKey = "scrollingAdvancedExpanded"
 
-    /// Wider than the other panes (450 pt): the sliders and the key recorders sit on the
-    /// right of their rows, and the explanations next to them still take one line.
+    /// The width of the Preferences window's column (`PreferencesWindowLayout.contentWidth`):
+    /// the sliders and the key recorders sit on the right of their rows, and the
+    /// explanations next to them still take one line.
     static let paneWidth: CGFloat = 520
     static var boxWidth: CGFloat {
         return PreferencesGroupedForm.boxWidth(paneWidth: paneWidth)

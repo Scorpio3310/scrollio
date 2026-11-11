@@ -22,7 +22,7 @@ final class ScrollPreviewView: NSView {
 
     struct Scene: Equatable {
         var smoothing = true      // false: the page jumps click by click
-        var duration = 3.69       // scroll.duration (0…5 slider scale); the default "Smooth" feel
+        var duration = 3.69       // scroll.duration (1…5 slider scale); the default "Smooth" feel
         var speed = 6.3           // scroll.speed (1…10); the default speed
         var reversed = false
         var emphasis: Emphasis = .wheel

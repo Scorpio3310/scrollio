@@ -89,7 +89,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "gesture-direction-up", "gesture-direction-down",
         "gesture-direction-left", "gesture-direction-right", "gesture-direction-click", "gesture-action-none",
         "gesture-invert-horizontal", "gesture-freeze-pointer",
-        "gesture-mode-discrete", "gesture-mode-interactive", "gesture-mode-interactive-note",
+        "gesture-mode-discrete", "gesture-mode-interactive",
         "gesture-mode-interactive-unavailable", "gesture-follow-horizontal-value",
         "gestures-tab-title", "gesture-mode-label", "gesture-mode-discrete-description",
         "gesture-mode-interactive-description", "gesture-invert-horizontal-hint", "gesture-freeze-pointer-hint",
