@@ -61,6 +61,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "mouse-gesture-haptics", "mouse-gesture-haptics-hint", "mouse-gesture-haptics-unavailable",
         // About
         "about-tab-title", "about-app-name", "about-version", "about-credit", "about-welcome-guide",
+        // Window
+        "preferences-sidebar",
         // Main menu
         "main-menu-application", "main-menu-about", "main-menu-settings", "main-menu-services",
         "main-menu-hide", "main-menu-hide-others", "main-menu-show-all", "main-menu-quit",
@@ -81,7 +83,7 @@ final class PreferencesLocalizationTests: XCTestCase {
     private static let missing = "\u{1}missing"
 
     private func bundle(for locale: String) -> Bundle? {
-        let app = Bundle(for: PreferencesTabViewController.self)
+        let app = Bundle(for: PreferencesSplitViewController.self)
         guard let path = app.path(forResource: locale, ofType: "lproj") else { return nil }
         return Bundle(path: path)
     }

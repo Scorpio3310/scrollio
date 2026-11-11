@@ -2856,6 +2856,18 @@
         }
       }
     },
+    "preferences-sidebar": {
+      "comment": "Accessibility label of the list of panes on the left of the Preferences window.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sidebar"
+          }
+        }
+      }
+    },
     "Press ESC to cancel recording": {
       "comment": "ESC hint in key recording popover",
       "localizations": {

@@ -609,7 +609,7 @@ final class PreferencesGesturesTests: XCTestCase {
 
     func testEveryLocaleTranslatesTheGesturesTab() {
         let missing = "\u{1}missing"
-        let app = Bundle(for: PreferencesTabViewController.self)
+        let app = Bundle(for: PreferencesSplitViewController.self)
         let keys = [
             "gestures-tab-title", "gesture-mode-label",
             "gesture-mode-discrete-description", "gesture-mode-interactive-description",

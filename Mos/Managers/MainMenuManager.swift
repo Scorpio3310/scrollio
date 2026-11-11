@@ -38,8 +38,8 @@ final class MainMenuManager: NSObject {
 
     // MARK: - Seams (tests replace them, so no window is shown)
 
-    /// Opens the Preferences window, on the tab with this identifier when one is given.
-    var showPreferences: (_ tabIdentifier: String?) -> Void = MainMenuManager.showPreferencesWindow
+    /// Opens the Preferences window, on the pane with this identifier when one is given.
+    var showPreferences: (_ paneIdentifier: String?) -> Void = MainMenuManager.showPreferencesWindow
     /// Opens the Introduction window, like the link in the About tab.
     var showWelcomeGuide: () -> Void = IntroductionWindowController.showWelcomeGuide
 
@@ -203,13 +203,13 @@ final class MainMenuManager: NSObject {
         showWelcomeGuide()
     }
 
-    private static func showPreferencesWindow(tabIdentifier: String?) {
+    private static func showPreferencesWindow(paneIdentifier: String?) {
         let identifier = WINDOW_IDENTIFIER.preferencesWindowController
         WindowManager.shared.showWindow(withIdentifier: identifier)
-        guard let tabIdentifier,
-              let tabs = WindowManager.shared.refs[identifier]?.contentViewController as? PreferencesTabViewController
+        guard let paneIdentifier,
+              let preferences = WindowManager.shared.refs[identifier]?.contentViewController as? PreferencesSplitViewController
         else { return }
-        tabs.selectTab(withIdentifier: tabIdentifier)
+        preferences.selectPane(withIdentifier: paneIdentifier)
     }
 
     // MARK: - Helpers

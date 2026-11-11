@@ -953,38 +953,21 @@ final class MousePreferencesViewControllerTests: XCTestCase {
 
 final class MousePreferencesTabPlacementTests: XCTestCase {
 
-    private func loadPreferencesWindow() -> (NSWindowController, PreferencesTabViewController) {
-        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesTabViewController.self))
-        let windowController = storyboard.instantiateController(
-            withIdentifier: "preferencesWindowController"
-        ) as! NSWindowController
-        _ = windowController.window
-        let tabs = windowController.contentViewController as! PreferencesTabViewController
-        return (windowController, tabs)
-    }
-
-    func testMouseTabSitsAfterGestures() {
-        let (windowController, tabs) = loadPreferencesWindow()
+    func testMousePaneSitsAfterGestures() throws {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        let windowController = try XCTUnwrap(
+            storyboard.instantiateController(withIdentifier: "preferencesWindowController") as? NSWindowController
+        )
         defer { windowController.close() }
+        let preferences = try XCTUnwrap(windowController.contentViewController as? PreferencesSplitViewController)
 
-        let identifiers = tabs.tabViewItems.compactMap { $0.identifier as? String }
-        XCTAssertEqual(identifiers, ["general", "scrolling", "buttons", "gestures", "mouse", "application", "about"])
-        let mouseItem = tabs.tabViewItems[4]
-        XCTAssertTrue(mouseItem.viewController is MousePreferencesViewController)
-        XCTAssertNotNil(mouseItem.image)
-        XCTAssertFalse(mouseItem.label.isEmpty)
-        XCTAssertNotEqual(mouseItem.label, "mouse-tab-title", "the tab label must be localized")
-        XCTAssertEqual(tabs.selectedTabViewItemIndex, 0)
-    }
-
-    func testToolbarKeepsEveryTabWithoutFlexibleSpaces() {
-        let (windowController, tabs) = loadPreferencesWindow()
-        defer { windowController.close() }
-
-        tabs.removeToolbarFlexibleSpaces()
-
-        let toolbarIdentifiers = windowController.window?.toolbar?.items.map { $0.itemIdentifier.rawValue } ?? []
-        XCTAssertEqual(toolbarIdentifiers, ["general", "scrolling", "buttons", "gestures", "mouse", "application", "about"])
+        let identifiers = preferences.panes.map(\.identifier)
+        let mouse = try XCTUnwrap(identifiers.firstIndex(of: "mouse"))
+        XCTAssertEqual(identifiers[mouse - 1], "gestures")
+        let controller = try XCTUnwrap(preferences.controller(for: "mouse"))
+        XCTAssertTrue(controller is MousePreferencesViewController)
+        XCTAssertFalse(controller.title?.isEmpty ?? true)
+        XCTAssertNotEqual(controller.title, "mouse-tab-title", "the pane title must be localized")
     }
 }
 

@@ -14,7 +14,7 @@ import XCTest
 
 final class StoryboardIntegrityTests: XCTestCase {
 
-    private let bundle = Bundle(for: PreferencesTabViewController.self)
+    private let bundle = Bundle(for: PreferencesSplitViewController.self)
 
     private var storyboard: NSStoryboard {
         return NSStoryboard(name: "Main", bundle: bundle)
@@ -64,10 +64,10 @@ final class StoryboardIntegrityTests: XCTestCase {
                 // The permission poll starts when the window appears, which it never does here.
                 XCTAssertNil(intro.accessibilityPermissionsCheckerTimer)
             }
-            if let tabs = content as? PreferencesTabViewController {
-                for item in tabs.tabViewItems {
-                    let pane = try XCTUnwrap(item.viewController, "\(identifier): tab \(item.label)")
-                    _ = pane.view
+            if let preferences = content as? PreferencesSplitViewController {
+                for pane in preferences.panes {
+                    let controller = try XCTUnwrap(preferences.controller(for: pane.identifier), "\(identifier): pane \(pane.identifier)")
+                    _ = controller.view
                 }
             }
             XCTAssertFalse(controller.window?.isVisible ?? true, identifier)
