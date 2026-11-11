@@ -18,6 +18,23 @@ class PreferencesGeneralViewController: NSViewController {
         // 读取设置
         syncViewWithOptions()
     }
+
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        refreshLaunchAtLoginState()
+    }
+
+    /// The login item lives in the system, and System Settings can switch it while the app
+    /// runs, so the checkbox shows what the system says each time the pane appears.
+    /// Assigning the state that was just read changes nothing in the system
+    /// (LoginItem.setEnabled is a no-op then).
+    func refreshLaunchAtLoginState() {
+        let enabled = LoginItem.isEnabled
+        if Options.shared.general.autoLaunch != enabled {
+            Options.shared.general.autoLaunch = enabled
+        }
+        syncViewWithOptions()
+    }
     
     // 自启
     @IBAction func launchOnLoginClick(_ sender: NSButton) {

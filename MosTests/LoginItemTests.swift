@@ -191,4 +191,41 @@ final class LoginItemTests: XCTestCase {
             XCTAssertEqual(fake.status, status)
         }
     }
+
+    // MARK: - The General pane follows System Settings
+
+    private func makeGeneralPane() throws -> PreferencesGeneralViewController {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesGeneralViewController.self))
+        let pane = try XCTUnwrap(
+            storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.general) as? PreferencesGeneralViewController
+        )
+        _ = pane.view
+        return pane
+    }
+
+    func testTheGeneralPaneRereadsTheLoginItemEachTimeItAppears() throws {
+        LoginItem.service = InertLoginItemService()
+        Options.shared.general.autoLaunch = false
+        let fake = install(.notRegistered)
+        let pane = try makeGeneralPane()
+        XCTAssertEqual(pane.launchOnLoginCheckBox.state, .off)
+
+        // Switched on in System Settings while the app runs.
+        fake.status = .enabled
+        pane.viewWillAppear()
+        XCTAssertEqual(pane.launchOnLoginCheckBox.state, .on)
+        XCTAssertTrue(Options.shared.general.autoLaunch)
+
+        // Switched off there again (it now waits for approval).
+        fake.status = .requiresApproval
+        pane.viewWillAppear()
+        XCTAssertEqual(pane.launchOnLoginCheckBox.state, .off)
+        XCTAssertFalse(Options.shared.general.autoLaunch)
+
+        // Reading never changes the system.
+        XCTAssertEqual(fake.registerCalls, 0)
+        XCTAssertEqual(fake.unregisterCalls, 0)
+        XCTAssertEqual(fake.openSettingsCalls, 0)
+        XCTAssertEqual(fake.status, .requiresApproval)
+    }
 }
