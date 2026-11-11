@@ -343,7 +343,9 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         scene.smoothing = scroll.smooth
         scene.duration = scroll.duration
         scene.speed = scroll.speed
-        scene.reversed = scroll.reversesWheel
+        // The preview turns the vertical wheel: reversed as the engine reverses that axis
+        // (the switch is also on when only the horizontal one is).
+        scene.reversed = scroll.reverse && scroll.reverseVertical
         scene.emphasis = previewEmphasis
         if previewView.scene != scene {
             previewView.scene = scene

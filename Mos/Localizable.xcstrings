@@ -5105,6 +5105,42 @@
           }
         }
       }
+    },
+    "buttons-header-not-on-this-mouse": {
+      "comment": "Buttons pane card: under a button whose place is known (a Logitech gesture button, a thumb panel) that the mouse in the drawing does not have",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The mouse shown doesn't have this button."
+          }
+        }
+      }
+    },
+    "buttons-note-key-gesture-navigation": {
+      "comment": "Buttons pane: under a keyboard key that has Gesture Navigation from before (only a mouse button can run it); after an orange warning sign",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A key cannot run Gesture Navigation. Choose a mouse button."
+          }
+        }
+      }
+    },
+    "mouse-macos-tracking-speed-value": {
+      "comment": "Mouse pane: what VoiceOver reads as the value of the macOS Tracking speed slider: the stop (1 = slowest) and the number of stops, e.g. 4 of 10",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d of %d"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

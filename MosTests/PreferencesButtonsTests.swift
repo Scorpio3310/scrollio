@@ -636,7 +636,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(pane.headerView.artwork.model, .mxMaster3)
         XCTAssertEqual(pane.rows.map(\.mouse), [.mxMaster3, .mxMaster3, .mxMaster3])
         XCTAssertEqual(pane.rows.map(\.picture), [
-            .mouse(part: nil, number: nil), .mouse(part: nil, number: 5), .mouse(part: nil, number: 6),
+            .mouse(part: nil, number: nil, notDrawn: .thumbPanel), .mouse(part: nil, number: 5, notDrawn: .thumbPanel), .mouse(part: nil, number: 6),
         ])
         XCTAssertEqual(try XCTUnwrap(pane.placeMenu(for: six)).items.compactMap { ($0.representedObject as? ButtonPlaceChoice)?.part },
                        [.gestureButton, .backButton, .forwardButton, .modeShiftButton, .middleButton])
@@ -651,6 +651,69 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(pane.headerView.artwork.model, .generic)
         XCTAssertEqual(try XCTUnwrap(pane.placeMenu(for: six)).items.compactMap { ($0.representedObject as? ButtonPlaceChoice)?.part },
                        [.backButton, .forwardButton, .middleButton])
+    }
+
+    /// The card names the mouse the Mouse pane's card names: another mouse with the same
+    /// drawing (an MX Master 3 after an MX Master 3S) renames it too.
+    func testTheCardFollowsTheShownMousesName() {
+        deviceName = "MX Master 3S"
+        let pane = makePane([binding(3, "copy")])
+        XCTAssertEqual(pane.headerView.content.title, "MX Master 3S")
+        XCTAssertEqual(pane.headerView.artwork.model, .mxMaster3)
+
+        deviceName = "MX Master 3"
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(pane.headerView.content.title, "MX Master 3", "same drawing, another name")
+        XCTAssertEqual(pane.headerView.artwork.model, .mxMaster3)
+
+        deviceName = "MX Master 4"
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(pane.headerView.content.title, "MX Master 4")
+        XCTAssertEqual(pane.headerView.artwork.model, .mxMaster4)
+
+        deviceName = nil
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(pane.headerView.content.title, "Your mouse")
+        XCTAssertEqual(pane.headerView.artwork.model, .generic)
+        XCTAssertEqual(Options.shared.buttons.binding.count, 1)
+    }
+
+    /// A button whose place is known but that the shown mouse does not have (a thumb panel
+    /// while an MX Master 3S is connected, a Logitech gesture button on the plain drawing) is
+    /// not asked to be found or placed, and its menu keeps the stored answer ticked and
+    /// disabled: nothing is lost by accident, and nothing is saved by showing it.
+    func testAKnownButtonTheShownMouseLacksIsNotAskedToBeFound() throws {
+        let panelAnswer = ButtonBinding(triggerEvent: placed(6, .thumbPanel), systemShortcutName: "copy", isEnabled: true)
+        deviceName = "MX Master 3S"
+        let pane = makePane([panelAnswer, binding(1000, "copy")])
+        let stored = Options.shared.buttons.binding
+        let notHere = "The mouse shown doesn't have this button."
+        XCTAssertEqual(pane.rows[0].title, "Thumb panel (button 6)")
+        XCTAssertEqual(pane.rows[0].picture, .mouse(part: nil, number: 6, notDrawn: .thumbPanel))
+        XCTAssertFalse(pane.rows[0].picture.isUnplaced)
+        pane.list.select(pane.rows[0].id)
+        XCTAssertEqual(pane.headerView.content.hint, notHere)
+        XCTAssertEqual(pane.headerView.content.number, 6)
+
+        let menu = try XCTUnwrap(pane.placeMenu(for: pane.rows[0].binding.id))
+        let ticked = menu.items.filter { $0.state == .on }
+        XCTAssertEqual(ticked.map(\.title), ["Thumb Panel"])
+        XCTAssertFalse(try XCTUnwrap(ticked.first).isEnabled, "the stored answer cannot be chosen again here")
+        XCTAssertEqual(menu.items.filter { $0.representedObject != nil && !$0.isEnabled }.map(\.title), ["Thumb Panel"])
+        XCTAssertEqual(menu.items.last?.title, "Not on This List")
+        XCTAssertTrue(try XCTUnwrap(menu.items.last).isEnabled)
+        XCTAssertEqual(Options.shared.buttons.binding, stored, "showing it saves nothing")
+
+        // The Logitech gesture button with no Logitech mouse connected: the plain drawing.
+        deviceName = nil
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(pane.headerView.artwork.model, .generic)
+        pane.list.select(pane.rows[1].id)
+        XCTAssertEqual(pane.headerView.content.title, "Gesture button")
+        XCTAssertEqual(pane.headerView.content.hint, notHere)
+        XCTAssertNil(pane.placeMenu(for: pane.rows[1].binding.id), "its place is known: no menu")
+        XCTAssertEqual(Options.shared.buttons.binding, stored)
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.triggerEvent.mousePart), [.thumbPanel, nil], "the answer is kept")
     }
 
     /// The owner's MX Master 4 over Bluetooth: Gesture Navigation on Button 6, a shortcut on
@@ -1025,6 +1088,37 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(scrollKey.titleLabel.stringValue, "Also a key under Scrolling")
     }
 
+    /// A key that has Gesture Navigation from before does nothing with it (the input side
+    /// passes it through): its row says so as a problem, not "Hold and move the mouse", and
+    /// the ⓘ says why. A mouse button with it keeps the plain note. Nothing is saved.
+    func testAKeyWithGestureNavigationSaysItCannotRunIt() throws {
+        let gesture = SystemShortcut.mouseGestureNavigation.identifier
+        let pane = makePane([
+            binding(41, gesture, modifiers: UInt(CGEventFlags.maskCommand.rawValue), type: .keyboard),
+            binding(3, gesture),
+        ])
+        let stored = Options.shared.buttons.binding
+        XCTAssertEqual(pane.rows.map(\.explanation), [
+            "A key cannot run Gesture Navigation. Choose a mouse button.",
+            "Hold and move the mouse. Set the directions under Gestures.",
+        ])
+        XCTAssertEqual(pane.rows.map { $0.note?.tone }, [.problem, .plain])
+        XCTAssertFalse(pane.rows[0].infoButton.isHidden)
+        XCTAssertTrue(pane.rows[1].infoButton.isHidden)
+        let line = pane.rows[0].explanationLabel.attributedStringValue
+        XCTAssertTrue(line.containsAttachments(in: NSRange(location: 0, length: line.length)), "after the warning sign")
+        XCTAssertEqual(line.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .systemOrange)
+        XCTAssertEqual(pane.rows[0].accessibilityLabel(), "\(pane.rows[0].title), A key cannot run Gesture Navigation. Choose a mouse button.")
+
+        let popover = try XCTUnwrap(pane.showProblem(of: pane.rows[0], relativeTo: pane.rows[0].infoButton))
+        _ = popover.view
+        XCTAssertEqual(popover.titleLabel.stringValue, "Gestures need a mouse button")
+        XCTAssertEqual(popover.detailLabel.stringValue, "A key cannot be held while the mouse moves.")
+        XCTAssertNil(popover.standardButton)
+        pane.problemPopover?.close()
+        XCTAssertEqual(Options.shared.buttons.binding, stored)
+    }
+
     /// The ⓘ sits on the title line just before the pull-down, and the note under the title
     /// runs on below it: no problem takes more than two lines.
     func testProblemNotesRunUnderTheInfoButtonInTwoLinesAtMost() throws {
@@ -1223,8 +1317,6 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertNil(pane.pendingAction)
     }
 
-    /// "Set Up…" and a button that is in the list without an action: it gets Gesture
-    /// Navigation. One with an action keeps it and only flashes.
     /// Gesture Navigation is held while the mouse moves: a key cannot be the gesture button.
     /// Gestures › Set Up… refuses one, adds nothing and says why; a mouse button still works.
     func testSetUpRefusesAKeyAsTheGestureButton() {
@@ -1239,7 +1331,8 @@ final class PreferencesButtonsTests: XCTestCase {
             "The mouse button you will hold for gestures.\nPress Esc to cancel.",
             "no \"or a key\" while the gesture button is set up"
         )
-        XCTAssertFalse(pane.validateRecordedEvent(recorder, event: key), "refused, as a duplicate is")
+        XCTAssertFalse(pane.validateRecordedEvent(recorder, event: key), "refused")
+        XCTAssertEqual(pane.refusalHint(recorder, event: key), "Gestures need a mouse button", "not \"Duplicate key\"")
         pane.onEventRecorded(recorder, didRecordEvent: key, isDuplicate: true)
         XCTAssertEqual(pane.headerView.content.title, "Gestures need a mouse button")
         XCTAssertEqual(pane.headerView.content.subtitle, "A key cannot be held while the mouse moves.")
@@ -1252,7 +1345,16 @@ final class PreferencesButtonsTests: XCTestCase {
         pane.onRecordingStarted(recorder)
         XCTAssertEqual(pane.headerView.content.subtitle, "Or a key with ⌘, ⌥, ⌃ or ⇧.\nPress Esc to cancel.")
         XCTAssertTrue(pane.validateRecordedEvent(recorder, event: key))
+        XCTAssertNil(pane.refusalHint(recorder, event: key))
         pane.onRecordingStopped(recorder, didRecord: false)
+
+        // A listed button refused while the gesture button is set up is a duplicate.
+        let listed = makePane([binding(4, "copy")])
+        listed.beginAddingBinding(action: SystemShortcut.mouseGestureNavigation)
+        listed.onRecordingStarted(recorder)
+        XCTAssertFalse(listed.validateRecordedEvent(recorder, event: mouseEvent(4)))
+        XCTAssertNil(listed.refusalHint(recorder, event: mouseEvent(4)), "\"Duplicate key\"")
+        listed.onRecordingStopped(recorder, didRecord: false)
     }
 
     /// A key is not offered Gesture Navigation in its menu; a mouse button is. A key that
@@ -1271,6 +1373,8 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(rows[2].pullDown.gestureNavigationItem).isHidden, false, "a key that has it already")
     }
 
+    /// "Set Up…" and a button that is in the list without an action: it gets Gesture
+    /// Navigation. One with an action keeps it and only flashes.
     func testSetUpGivesAListedButtonWithoutAnActionGestureNavigation() throws {
         let unbound = binding(3)
         let bound = binding(4, "copy")

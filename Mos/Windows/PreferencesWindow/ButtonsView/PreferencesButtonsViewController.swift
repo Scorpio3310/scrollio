@@ -37,9 +37,8 @@ struct ButtonsDeviceSource {
             guard LogiCenter.shared.isLogiCode(code) else { return .normal }
             return ButtonCapturePresentationStatus.from(LogiCenter.shared.buttonCaptureDiagnosis(forMosCode: code))
         },
-        // The mouse the Mouse pane's card is about (the one with the most settings), so
-        // the two cards never name different mice.
-        deviceName: { MousePaneModel.ordered(LogiCenter.shared.mouseDeviceStates()).first?.deviceName },
+        // The mouse the Mouse pane's card is about, so the two cards never name different mice.
+        deviceName: { MousePaneModel.shownMouse()?.deviceName },
         isBusy: { LogiCenter.shared.isBusy },
         refresh: { LogiCenter.shared.refreshReportingStates() },
         warnBluetoothButton: { LogiCenter.shared.showBLEHIDPPUnstableToast(forMosCode: $0) }
@@ -100,6 +99,8 @@ class PreferencesButtonsViewController: NSViewController {
     private(set) var buttonBindings: [ButtonBinding] = []
     /// The drawing of the connected mouse, on the card and in every row's picture.
     private(set) var mouse: MouseArtworkModel = .generic
+    /// The name of the mouse the card was last made for (`deviceSource.deviceName()`).
+    private(set) var shownDeviceName: String?
     /// "+" waits for a button: the card says "Press a button".
     private(set) var isRecording = false
     /// The recorder is open, from its start until it reports that it stopped (after a
@@ -181,9 +182,12 @@ class PreferencesButtonsViewController: NSViewController {
                 self?.updateHeader()
             })
         }
-        // Another mouse connected or the one there left: the drawings follow.
+        // Another mouse connected or the one there left: the drawings and the card's name
+        // follow (another mouse may have the same drawing).
         observers.append(center.addObserver(forName: LogiCenter.mouseStateChanged, object: nil, queue: .main) { [weak self] _ in
-            guard let self, self.connectedMouse() != self.mouse else { return }
+            guard let self else { return }
+            let name = self.deviceSource.deviceName()
+            guard MouseArtworkModel.model(forDeviceName: name) != self.mouse || name != self.shownDeviceName else { return }
             self.reloadRows()
             self.updateHeader()
         })
@@ -644,9 +648,11 @@ class PreferencesButtonsViewController: NSViewController {
             focus = self.focus(for: binding)
         }
         let bound = buttonBindings.filter { CellActionState(binding: $0).hasBoundAction }.count
+        let deviceName = deviceSource.deviceName()
+        shownDeviceName = deviceName
         headerView.mouse = mouse
         headerView.content = ButtonsHeaderContent.make(
-            deviceName: deviceSource.deviceName(),
+            deviceName: deviceName,
             boundCount: bound,
             isRecording: isRecording,
             mouseButtonOnly: Self.needsMouseButton(pendingAction),
@@ -769,10 +775,18 @@ extension PreferencesButtonsViewController: KeyRecorderDelegate {
     /// unless it has no action and gets the one waiting (Gestures › Set Up…).
     func validateRecordedEvent(_ recorder: KeyRecorder, event: InputEvent) -> Bool {
         let trigger = normalizedTrigger(for: event)
-        // A key cannot be the gesture button (Gestures › Set Up…): refused like a duplicate.
+        // A key cannot be the gesture button (Gestures › Set Up…): refused, and the
+        // recorder says why (`refusalHint`).
         if Self.needsMouseButton(pendingAction), trigger.type == .keyboard { return false }
         guard let existing = existingBinding(for: trigger) else { return true }
         return takesPendingAction(existing, action: pendingAction)
+    }
+
+    /// The recorder's hint for a refused event: a key while the gesture button is set up
+    /// ("Gestures need a mouse button"); nil (a duplicate) otherwise.
+    func refusalHint(_ recorder: KeyRecorder, event: InputEvent) -> String? {
+        guard Self.needsMouseButton(pendingAction), normalizedTrigger(for: event).type == .keyboard else { return nil }
+        return NSLocalizedString("buttons-gesture-needs-mouse-button", comment: "")
     }
 
     /// The card shows the button at once; a listed one's row flashes while the recorder

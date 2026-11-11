@@ -760,12 +760,18 @@ struct PreferencesSliderScale: Equatable {
 ///
 /// A press that does not move the knob changes nothing: no action goes out, so a stored
 /// value that is not on the scale stays as it is and nothing is sent on to a mouse. A
-/// slider that is off sends nothing at all.
+/// slider that is off sends nothing at all. Such a press ends with `onPressEndedWithoutAction`
+/// instead, so the pane can show what arrived while it was held.
 final class PreferencesSlider: NSSlider {
 
     var scale: PreferencesSliderScale? {
         didSet { applyScale() }
     }
+
+    /// The user let go and no action went out (the knob had not moved, or the slider was
+    /// turned off meanwhile). A refresh skipped this knob while it was pressed: the pane
+    /// shows the current value now. Never the action, and nothing to store.
+    var onPressEndedWithoutAction: (() -> Void)?
 
     /// True between the user pressing on the slider and letting go.
     private(set) var isTracking = false
@@ -796,6 +802,7 @@ final class PreferencesSlider: NSSlider {
             if let pressed, doubleValue != pressed {
                 doubleValue = pressed
             }
+            onPressEndedWithoutAction?()
             return
         }
         sendAction(action, to: target)

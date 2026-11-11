@@ -31,6 +31,26 @@ struct MacPointerState: Equatable {
     var pointerAcceleration: Bool?
 }
 
+extension MacPointerState {
+    /// The state as read. A negative speed (`com.apple.mouse.scaling = -1`, the old way to
+    /// switch pointer acceleration off) is no stop of the slider: the speed counts as
+    /// unreadable (its row hides, so no move can write a positive speed and turn
+    /// acceleration back on) and acceleration as off. A speed that is not finite counts as
+    /// unreadable. Nothing is written.
+    init(readSpeed: Double?, readAcceleration: Bool?) {
+        if let speed = readSpeed, speed.isFinite, speed >= 0 {
+            trackingSpeed = speed
+        } else {
+            trackingSpeed = nil
+        }
+        if let speed = readSpeed, speed < 0 {
+            pointerAcceleration = false
+        } else {
+            pointerAcceleration = readAcceleration
+        }
+    }
+}
+
 struct MacPointerSettings {
 
     var readTrackingSpeed: () -> Double?
@@ -41,7 +61,7 @@ struct MacPointerSettings {
     var writePointerAcceleration: (Bool) -> Bool
 
     func read() -> MacPointerState {
-        return MacPointerState(trackingSpeed: readTrackingSpeed(), pointerAcceleration: readPointerAcceleration())
+        return MacPointerState(readSpeed: readTrackingSpeed(), readAcceleration: readPointerAcceleration())
     }
 
     // MARK: - The scale of System Settings

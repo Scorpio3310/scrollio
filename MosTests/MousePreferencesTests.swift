@@ -751,6 +751,29 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertNotNil(model.firmness)
     }
 
+    /// One choice of the shown mouse for every pane: the one with the most settings, the
+    /// first of equals; the Mouse card's mouse is it, and so are the Buttons card's name
+    /// and the gesture preview's drawing (both read `shownMouse`).
+    func testTheShownMouseIsOneChoice() {
+        let lists: [[LogiMouseDeviceState]] = [
+            [Fixtures.mxMaster3S(), Fixtures.mxMaster4()],
+            [Fixtures.mxMaster4(), Fixtures.mxMaster3S()],
+            [Fixtures.mxMaster3(), Fixtures.mxMaster3S()],
+            [Fixtures.mxMaster3S()],
+        ]
+        XCTAssertEqual(lists.map { MousePaneModel.shownMouse(among: $0)?.deviceName }, [
+            "MX Master 4", "MX Master 4", "MX Master 3", "MX Master 3S",
+        ])
+        for devices in lists {
+            let model = MousePaneModel(devices: devices, settings: .default, wheel: .default)
+            XCTAssertEqual(model.header.title, MousePaneModel.shownMouse(among: devices)?.deviceName)
+            XCTAssertEqual(MousePaneModel.ordered(devices).first?.id, MousePaneModel.shownMouse(among: devices)?.id)
+            XCTAssertEqual(MousePaneModel.ordered(devices).count, devices.count)
+        }
+        XCTAssertNil(MousePaneModel.shownMouse(among: []))
+        XCTAssertEqual(MousePaneModel.ordered([]).count, 0)
+    }
+
     // MARK: - "On the mouse"
 
     func testNoLineUnderAValueYouNeverSet() {
@@ -996,6 +1019,61 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertEqual(controller.sensitivityRow.valueText, MouseText.percent(80))
     }
 
+    /// A press that does not move a knob sends nothing; a mouse update that came while it
+    /// was held (the refresh skips a pressed knob) shows when it is let go. Nothing is
+    /// stored, nothing goes to the mouse or to macOS, no sample pulse plays.
+    func testAPressLetGoWithoutAMoveShowsWhatArrivedMeanwhile() throws {
+        // Managed, with no sensitivity or strength of your own: the sliders show the mouse's.
+        manage(sensitivity: nil)
+        Options.shared.logiMouse.hapticsOn = true
+        let controller = makeController([Fixtures.mxMaster4(hapticsOn: true, strength: 50, sensitivity: 50)])
+        let sensitivity = try XCTUnwrap(controller.sensitivitySlider as? PreferencesSlider)
+        let strength = try XCTUnwrap(controller.strengthSlider as? PreferencesSlider)
+        XCTAssertTrue(sensitivity.isEnabled)
+        XCTAssertTrue(strength.isEnabled)
+        let storedMouse = Options.shared.logiMouse
+        let storedWheel = Options.shared.logiWheel
+        XCTAssertEqual(controller.sensitivityRow.valueText, MouseText.percent(50))
+        let sensitivityKnob = sensitivity.doubleValue
+        let strengthKnob = strength.doubleValue
+
+        for slider in [sensitivity, strength] {
+            slider.beginTracking()
+            // AppKit sends on the press, the knob where it was: nothing goes out.
+            XCTAssertFalse(slider.sendAction(slider.action, to: slider.target))
+        }
+        devices = [Fixtures.mxMaster4(hapticsOn: true, strength: 100, sensitivity: 30)]
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(sensitivity.doubleValue, sensitivityKnob, "a pressed knob is left alone")
+        XCTAssertEqual(controller.sensitivityRow.valueText, MouseText.percent(50))
+        XCTAssertEqual(strength.doubleValue, strengthKnob)
+
+        sensitivity.endTracking()
+        XCTAssertEqual(controller.sensitivityRow.valueText, MouseText.percent(30), "shown once let go")
+        XCTAssertNotEqual(sensitivity.doubleValue, sensitivityKnob)
+        strength.endTracking()
+        XCTAssertEqual(controller.strengthRow.valueText, MouseText.percent(100))
+        XCTAssertNotEqual(strength.doubleValue, strengthKnob)
+
+        XCTAssertEqual(Options.shared.logiMouse, storedMouse, "nothing stored")
+        XCTAssertEqual(Options.shared.logiWheel, storedWheel)
+        XCTAssertEqual(sampleCount, 0, "no sample pulse")
+        XCTAssertEqual(mac.writes, 0)
+
+        // The macOS tracking speed: a value read during the press shows once let go,
+        // and nothing is written to macOS.
+        let tracking = try XCTUnwrap(controller.trackingSpeedSlider as? PreferencesSlider)
+        let trackingKnob = tracking.doubleValue
+        tracking.beginTracking()
+        mac.trackingSpeed = 3
+        controller.reloadMacPointerSettings()
+        XCTAssertEqual(tracking.doubleValue, trackingKnob)
+        tracking.endTracking()
+        XCTAssertEqual(tracking.doubleValue, Double(try XCTUnwrap(MacPointerSettings.trackingSpeeds.firstIndex(of: 3))))
+        XCTAssertEqual(mac.writes, 0, "nothing written to macOS")
+        XCTAssertEqual(Options.shared.logiMouse, storedMouse)
+    }
+
     // MARK: - The header lights up the part
 
     func testEachRowLightsUpItsPartOfTheMouse() {
@@ -1169,9 +1247,13 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         mac.trackingSpeed = 1.2
         let controller = makeController()
         XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 5, "1.2 is nearest the 1.0 stop")
+        mac.trackingSpeed = 5
+        controller.reloadMacPointerSettings()
+        XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 9, "above the scale: the fast end")
+        // A negative value is no speed (`-1` switched acceleration off): the row hides.
         mac.trackingSpeed = -1
         controller.reloadMacPointerSettings()
-        XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 0, "below the scale: the slow end")
+        XCTAssertTrue(controller.trackingSpeedRow.isHidden)
         controller.syncControls()
         XCTAssertEqual(mac.writes, 0, "showing a value never writes it")
     }
@@ -1211,6 +1293,31 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
         controller.viewDidDisappear()
         XCTAssertEqual(mac.writes, 0)
+    }
+
+    /// VoiceOver reads the stop, not the slider's bare index: "4 of 10", and it follows the
+    /// knob (an arrow key, VoiceOver's increment, a value read from macOS). Reading the
+    /// description writes nothing.
+    func testVoiceOverReadsTheTrackingSpeedStop() throws {
+        let controller = makeController()
+        let slider = try XCTUnwrap(controller.trackingSpeedSlider as? PreferencesSlider)
+        XCTAssertEqual(MacPointerSettings.trackingSpeeds.count, 10)
+        XCTAssertEqual(slider.accessibilityValueDescription(), "4 of 10", "0.6875 is the fourth stop")
+        XCTAssertEqual(mac.writes, 0)
+
+        XCTAssertTrue(slider.accessibilityPerformIncrement())
+        XCTAssertEqual(mac.trackingSpeedWrites, [0.875])
+        XCTAssertEqual(slider.accessibilityValueDescription(), "5 of 10")
+
+        mac.trackingSpeed = 0
+        controller.reloadMacPointerSettings()
+        XCTAssertEqual(slider.accessibilityValueDescription(), "1 of 10")
+        mac.trackingSpeed = 3
+        controller.reloadMacPointerSettings()
+        XCTAssertEqual(slider.accessibilityValueDescription(), "10 of 10")
+        XCTAssertEqual(MouseText.trackingSpeedStop(-3), "1 of 10", "kept on the scale")
+        XCTAssertEqual(MouseText.trackingSpeedStop(42), "10 of 10")
+        XCTAssertEqual(mac.trackingSpeedWrites, [0.875])
     }
 
     func testTrackingSpeedWritesTheValueOfTheStop() {
@@ -1264,6 +1371,27 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         slider.endTracking()
         XCTAssertEqual(slider.doubleValue, 3, "let go: back where macOS is")
         XCTAssertEqual(mac.trackingSpeed, 0.6875)
+    }
+
+    /// `com.apple.mouse.scaling = -1` (acceleration off, the old way) or a speed that is not
+    /// finite: the speed row hides (no move can write a positive speed and turn acceleration
+    /// back on), acceleration shows off for -1. Nothing is written, also when the pane is
+    /// shown again.
+    func testANegativeTrackingSpeedHidesItsRowAndShowsAccelerationOff() {
+        mac.trackingSpeed = -1
+        mac.pointerAcceleration = true
+        let controller = makeController([Fixtures.mxMaster4()])
+        XCTAssertTrue(controller.trackingSpeedRow.isHidden)
+        XCTAssertFalse(controller.pointerAccelerationRow.isHidden)
+        XCTAssertFalse(controller.pointerAccelerationRow.isOn)
+        controller.reloadMacPointerSettings()
+        controller.viewWillAppear()
+        XCTAssertEqual(mac.writes, 0)
+        mac.trackingSpeed = .nan
+        controller.reloadMacPointerSettings()
+        XCTAssertTrue(controller.trackingSpeedRow.isHidden)
+        XCTAssertTrue(controller.pointerAccelerationRow.isOn)
+        XCTAssertEqual(mac.writes, 0)
     }
 
     /// A value macOS does not give hides its row, and the box once both are hidden; the
@@ -1547,6 +1675,24 @@ final class MacPointerSettingsTests: XCTestCase {
         XCTAssertNil(read(nil, NSNumber(value: true)), "a Boolean is no speed")
         XCTAssertNil(read(nil, "fast"))
         XCTAssertNil(read(nil, nil))
+    }
+
+    /// `com.apple.mouse.scaling = -1` (the old way to switch acceleration off) is no stop of
+    /// the slider: the speed counts as unreadable and acceleration as off; a speed that is
+    /// not finite is unreadable.
+    func testANegativeOrNonFiniteSpeedIsUnreadableAndANegativeOneTurnsAccelerationOff() {
+        typealias State = MacPointerState
+        XCTAssertEqual(State(readSpeed: -1, readAcceleration: true), State(trackingSpeed: nil, pointerAcceleration: false))
+        XCTAssertEqual(State(readSpeed: -1, readAcceleration: nil), State(trackingSpeed: nil, pointerAcceleration: false))
+        XCTAssertEqual(State(readSpeed: -0.5, readAcceleration: true), State(trackingSpeed: nil, pointerAcceleration: false))
+        XCTAssertEqual(State(readSpeed: .nan, readAcceleration: true), State(trackingSpeed: nil, pointerAcceleration: true))
+        XCTAssertEqual(State(readSpeed: .infinity, readAcceleration: false), State(trackingSpeed: nil, pointerAcceleration: false))
+        XCTAssertEqual(State(readSpeed: -.infinity, readAcceleration: true), State(trackingSpeed: nil, pointerAcceleration: false))
+        XCTAssertEqual(State(readSpeed: 0, readAcceleration: true), State(trackingSpeed: 0, pointerAcceleration: true), "0 is the slowest stop")
+        XCTAssertEqual(State(readSpeed: 1.5, readAcceleration: false), State(trackingSpeed: 1.5, pointerAcceleration: false))
+        XCTAssertEqual(State(readSpeed: nil, readAcceleration: nil), State())
+        // In effect as -1.0 in 16.16 fixed point, as macOS applies the stored -1.
+        XCTAssertEqual(MacPointerSystem.trackingSpeed(property: NSNumber(value: -65536), preference: nil), -1)
     }
 
     /// On unless linear tracking is set; on is also the macOS default.

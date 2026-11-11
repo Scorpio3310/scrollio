@@ -175,6 +175,12 @@ final class MousePreferencesViewController: NSViewController {
             to: content
         )
 
+        // A refresh skips a pressed knob; a press let go without a move sends nothing, so
+        // the pane shows here what arrived meanwhile (it only reads, nothing is written).
+        for row in [trackingSpeedRow!, pointerSpeedRow!, sensitivityRow!, firmnessRow!, strengthRow!, pressForceRow!] {
+            row.slider.onPressEndedWithoutAction = { [weak self] in self?.syncControls() }
+        }
+
         rowParts = [
             (trackingSpeedRow, .body), (pointerAccelerationRow, .body),
             (pointerSpeedRow, .body),
@@ -332,12 +338,16 @@ final class MousePreferencesViewController: NSViewController {
     }
 
     /// The "Pointer (macOS)" box. A knob the user is dragging stays where the pointer has it.
+    /// VoiceOver reads the stop the knob is on ("4 of 10"): the slider shows no value.
     private func applyMacPointer(_ mac: MacPointerPaneModel) {
         if let index = mac.trackingSpeedIndex {
             trackingSpeedRow.isHidden = false
             if !trackingSpeedRow.isTracking {
                 trackingSpeedSlider.doubleValue = Double(index)
             }
+            trackingSpeedSlider.setAccessibilityValueDescription(
+                MouseText.trackingSpeedStop(Int(trackingSpeedSlider.doubleValue.rounded()))
+            )
         } else {
             trackingSpeedRow.isHidden = true
         }

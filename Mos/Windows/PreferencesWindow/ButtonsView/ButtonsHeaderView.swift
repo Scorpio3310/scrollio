@@ -71,11 +71,14 @@ struct ButtonsHeaderContent: Equatable {
         }
         if let focus {
             let title = focus.reason == .answer ? String(format: text("buttons-header-answer"), focus.title) : focus.title
-            // A listed button the drawing cannot show: the mouse tells which one it is, and
+            // A listed button whose place is not known: the mouse tells which one it is, and
             // a numbered one can be said to be a part ("Which button is this?" at its picture).
+            // A known part the shown mouse does not have needs no finding.
             var hint: String?
             if focus.reason == .row && focus.picture.isUnplaced {
                 hint = text(focus.picture.number == nil ? "buttons-header-find-this-one" : "buttons-header-place-this-one")
+            } else if focus.reason == .row && focus.picture.notDrawn != nil {
+                hint = text("buttons-header-not-on-this-mouse")
             }
             return ButtonsHeaderContent(
                 title: title,

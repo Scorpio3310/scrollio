@@ -842,6 +842,27 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertTrue(controller.previewView.scene.smoothing)
     }
 
+    /// The preview shows the vertical wheel: only the horizontal axis reversed (settings
+    /// from older builds or Mos) leaves it running the normal way, while the switch is on.
+    func testPreviewIsReversedOnlyWhenTheVerticalWheelIs() {
+        Options.shared.scroll.reverse = true
+        Options.shared.scroll.reverseVertical = false
+        Options.shared.scroll.reverseHorizontal = true
+        let controller = makeController()
+        XCTAssertTrue(controller.reverseRow.isOn, "the switch: either axis")
+        XCTAssertFalse(controller.previewView.scene.reversed, "the preview: the vertical wheel")
+
+        Options.shared.scroll.reverseVertical = true
+        Options.shared.scroll.reverseHorizontal = false
+        controller.syncViewWithOptions()
+        XCTAssertTrue(controller.previewView.scene.reversed)
+
+        Options.shared.scroll.reverse = false
+        Options.shared.scroll.reverseVertical = true
+        controller.syncViewWithOptions()
+        XCTAssertFalse(controller.previewView.scene.reversed, "the main flag off stops both axes")
+    }
+
     func testPreviewPointsOutAKeyWhileItsRowIsHoveredFocusedOrRecording() {
         let controller = makeController(advanced: true)
         XCTAssertEqual(controller.previewView.scene.emphasis, .wheel)

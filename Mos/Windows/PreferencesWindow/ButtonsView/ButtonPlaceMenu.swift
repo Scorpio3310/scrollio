@@ -6,7 +6,8 @@
 //  menu; it lists the parts the shown mouse has by name with their pictures, the one chosen
 //  ticked and the ones another row has marked, and "Not on This List" to take the answer
 //  back. The answer only changes what the pane shows (`RecordedEvent.mousePart`); one the
-//  shown mouse does not have is kept and shows again on a mouse that has it.
+//  shown mouse does not have is kept, listed ticked but disabled (so it is not lost by
+//  accident), and shows again on a mouse that has it.
 //
 
 import Cocoa
@@ -23,6 +24,9 @@ struct ButtonPlaceMenuModel: Equatable {
         /// Another button of the list is here already ("Used by button 5", "Already in
         /// the list"); still offered.
         let mark: String?
+        /// The shown mouse has the part. Only the chosen part can be listed without it:
+        /// ticked and disabled, so the stored answer shows and is not lost by accident.
+        var isOnMouse = true
     }
 
     /// The button's number ("Button 6").
@@ -57,8 +61,11 @@ struct ButtonPlaceMenuModel: Equatable {
             }
         }
         let chosen = trigger.placedPart
-        let items = PlacedMousePart.allCases.filter { mouse.has($0.drawingPart.artworkPart) }.map { part in
-            Item(part: part, title: menuTitle(of: part), isChosen: part == chosen, mark: marks[part])
+        // The parts of the shown mouse, and the stored answer even when the mouse lacks it.
+        let items = PlacedMousePart.allCases.compactMap { part -> Item? in
+            let isOnMouse = mouse.has(part.drawingPart.artworkPart)
+            guard isOnMouse || part == chosen else { return nil }
+            return Item(part: part, title: menuTitle(of: part), isChosen: part == chosen, mark: marks[part], isOnMouse: isOnMouse)
         }
         return ButtonPlaceMenuModel(number: number, mouse: mouse, items: items)
     }
@@ -94,9 +101,10 @@ final class ButtonPlaceChoice: NSObject {
 enum ButtonPlaceMenu {
 
     /// The menu of `model` for the row `bindingID`: a section title, each part with its
-    /// picture (ticked when chosen, a mark at the end when another button has it), then
-    /// "Not on This List" with the button's number as the row shows it unplaced. Every item
-    /// sends `action` to `target` with a `ButtonPlaceChoice`.
+    /// picture (ticked when chosen, a mark at the end when another button has it; a chosen
+    /// part the mouse does not have is disabled), then "Not on This List" with the button's
+    /// number as the row shows it unplaced. Every item sends `action` to `target` with a
+    /// `ButtonPlaceChoice`.
     static func make(_ model: ButtonPlaceMenuModel, bindingID: UUID, target: AnyObject, action: Selector) -> NSMenu {
         let title = ButtonPlaceMenuModel.text("buttons-place-title")
         let menu = NSMenu(title: title)
@@ -107,9 +115,10 @@ enum ButtonPlaceMenu {
             menuItem.target = target
             menuItem.representedObject = ButtonPlaceChoice(bindingID: bindingID, part: item.part)
             menuItem.image = ButtonsMouseMiniature.image(
-                for: .mouse(part: item.part.drawingPart, number: nil), mouse: model.mouse, highlighted: false
+                for: .mouse(part: item.isOnMouse ? item.part.drawingPart : nil, number: nil), mouse: model.mouse, highlighted: false
             )
             menuItem.state = item.isChosen ? .on : .off
+            menuItem.isEnabled = item.isOnMouse
             if let mark = item.mark {
                 menuItem.badge = NSMenuItemBadge(string: mark)
             }
