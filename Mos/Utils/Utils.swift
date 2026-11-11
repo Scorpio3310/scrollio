@@ -32,26 +32,6 @@ public class Utils {
         LoginItem.setEnabled(on)
     }
     
-    // 菜单
-    class func attachImage(to menuItem:NSMenuItem, withImage image: NSImage) {
-        menuItem.image = image
-        menuItem.image?.size = NSSize(width: 13, height: 13)
-    }
-    @discardableResult class func addMenuItem(to menuControl:NSMenu, title: String, icon: NSImage? = nil, action: Selector?, target: AnyObject? = nil, represent: Any? = nil) -> NSMenuItem {
-        let displayTitle = icon != nil ? " " + title : title
-        let menuItem = menuControl.addItem(withTitle: displayTitle, action: action, keyEquivalent: "")
-        menuItem.target = target ?? menuControl
-        menuItem.representedObject = represent
-        if let icon = icon {
-            attachImage(to: menuItem, withImage: icon)
-        }
-        return menuItem
-    }
-    @discardableResult class func addMenuItemWithSeparator(to menuControl:NSMenu, title: String, icon: NSImage? = nil, action: Selector?, target: Any? = nil, represent: Any? = nil) -> NSMenuItem {
-        menuControl.addItem(NSMenuItem.separator())
-        return addMenuItem(to: menuControl, title: title, icon: icon, action: action)
-    }
-    
     // 动画
     // 需要设置 allowsImplicitAnimation = true 才能让 contentSize 有动画, https://stackoverflow.com/a/46946957/6727040
     class func groupAnimatorContainer(_ group: (NSAnimationContext?)->Void, completionHandler: @escaping ()->Void = {()}) {

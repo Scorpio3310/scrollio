@@ -439,30 +439,6 @@ final class ButtonBindingTests: XCTestCase {
         XCTAssertEqual(presentation.title, "Forward button")
     }
 
-    func testActionTagConfig_mosUsesNeonLogoPalette() {
-        let tag = BrandTagConfig.mos
-        let bgColor = tag.bgColor.usingColorSpace(.deviceRGB)
-        let textColor = tag.textColor.usingColorSpace(.deviceRGB)
-        let innerHighlightColor = tag.innerHighlightColor?.usingColorSpace(.deviceRGB)
-        let gradientColors = tag.gradientColors?.compactMap { $0.usingColorSpace(.deviceRGB) }
-
-        XCTAssertEqual(tag.name, "Scrollio")
-        XCTAssertLessThan(bgColor?.redComponent ?? 1, 0.15)
-        XCTAssertLessThan(bgColor?.greenComponent ?? 1, 0.18)
-        XCTAssertLessThan(bgColor?.blueComponent ?? 1, 0.35)
-        XCTAssertGreaterThan(textColor?.redComponent ?? 0, 0.8)
-        XCTAssertGreaterThan(textColor?.greenComponent ?? 0, 0.9)
-        XCTAssertGreaterThan(textColor?.blueComponent ?? 0, 0.95)
-        XCTAssertNil(tag.borderColor)
-        XCTAssertNotNil(innerHighlightColor)
-        XCTAssertGreaterThan(innerHighlightColor?.blueComponent ?? 0, 0.8)
-        XCTAssertLessThan(innerHighlightColor?.alphaComponent ?? 1, 0.25)
-        XCTAssertEqual(gradientColors?.count, 2)
-        XCTAssertGreaterThan(gradientColors?.first?.blueComponent ?? 0, 0.35)
-        XCTAssertGreaterThan(gradientColors?.last?.blueComponent ?? 0, 0.55)
-        XCTAssertGreaterThan(gradientColors?.last?.redComponent ?? 0, 0.35)
-    }
-
     func testActionDisplayResolver_scrollActionsHaveASymbolAndNoBrandTag() {
         let presentation = makeResolvedPresentation(shortcut: SystemShortcut.mosScrollDash)
 

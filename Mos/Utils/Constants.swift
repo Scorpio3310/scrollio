@@ -29,12 +29,6 @@ struct PANEL_IDENTIFIER {
     static let list = [general, scrolling, buttons, application]
 }
 
-// 气泡弹窗
-struct POPOVER_IDENTIFIER {
-    static let statusItemPopoverViewController = "statusItemPopoverViewController"
-    static let statusItemMainPanelViewController = "statusItemMainPanelViewController"
-}
-
 // 合成事件标记 (用于 eventSourceUserData 字段, 区分 Mos 合成事件与物理事件)
 enum MosEventMarker {
     /// ShortcutExecutor.executeCustom 发出的合成键盘/修饰键事件
