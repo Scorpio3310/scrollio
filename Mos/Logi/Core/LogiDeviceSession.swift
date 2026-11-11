@@ -899,18 +899,22 @@ class LogiDeviceSession {
         0x04, // Presenter
     ]
 
-    /// 接管集合: 需要各自 discovery+divert 常驻接管的 slot.
-    /// 过滤 isConnected && hasBinding(wirelessPID) && 非已知非鼠标类型; 按 slot 升序.
-    /// 绑定过滤是性能考虑(§4.6): 不给用户没绑定的设备做 divert, 避免无谓 HID++ 负载与 Options+ 争用.
-    /// 注: 当前绑定注册表是全局的(UsageRegistry 单一 aggregate), hasBinding 对所有设备同真同假;
-    /// 保留 wirelessPID 参数以便未来按设备细分. 类型未知的 slot 也会纳入(见 receiverNonDivertDeviceTypes),
-    /// 其 divert 仍被 applyUsage 按各设备实际 divertable CID 过滤, 不会误伤键盘按键.
-    static func receiverDivertSlots(
-        devices: [ReceiverPairedDevice],
-        hasBinding: (UInt16) -> Bool
-    ) -> [UInt8] {
+    /// Whether a receiver slot is taken over (discovered, kept as a session slot): connected
+    /// and not a known keyboard / numpad / presenter (an unknown type counts as a mouse, see
+    /// receiverNonDivertDeviceTypes). Bindings play no part: the Mouse pane, the battery line
+    /// and the managed wheel and basic values need the slot without any Logitech button
+    /// binding. Bindings only decide what is diverted (applyUsage diverts nothing for an
+    /// empty aggregate).
+    static func receiverSlotIsTakeoverCandidate(connected: Bool, deviceType: UInt8) -> Bool {
+        return connected && !receiverNonDivertDeviceTypes.contains(deviceType)
+    }
+
+    /// 接管集合: 启动时需要各自 discovery 常驻接管的 slot (receiverSlotIsTakeoverCandidate), 按 slot 升序.
+    /// 类型未知的 slot 也会纳入(见 receiverNonDivertDeviceTypes); sweep 后非鼠标 slot 不进
+    /// receiverManagedSlots, 其 divert 仍被 applyUsage 按各设备实际 divertable CID 过滤, 不会误伤键盘按键.
+    static func receiverTakeoverSlots(devices: [ReceiverPairedDevice]) -> [UInt8] {
         return devices
-            .filter { $0.isConnected && hasBinding($0.wirelessPID) && !receiverNonDivertDeviceTypes.contains($0.deviceType) }
+            .filter { receiverSlotIsTakeoverCandidate(connected: $0.isConnected, deviceType: $0.deviceType) }
             .map { $0.slot }
             .sorted()
     }
@@ -930,7 +934,8 @@ class LogiDeviceSession {
 
     /// 多设备热插拔(§Phase 4): 某 slot 的 0x41 连接/断开通知该做什么(纯决策).
     /// - 断开: 若该 slot 正被接管 -> release(释放其按键状态 + 标记未 init); 否则 ignore
-    /// - 连接: 若已接管 -> ignore(防振荡, "已 init 且在线则忽略"); 否则若是 divert 候选 -> takeover
+    /// - 连接: 若已接管 -> ignore(防振荡, "已 init 且在线则忽略"); 否则若是接管候选 -> takeover
+    ///   (isDivertCandidate = receiverSlotIsTakeoverCandidate: connected and mouse-like, bindings play no part)
     /// 关键: 鼠标关机 / 按背面键切 Bolt 主机再切回, 重连会丢失 divert 状态, 必须重新
     /// discovery+divert(takeover), 否则其 HID++ 按键不再生效. 全为离散事件驱动, 不违红线(§2).
     static func receiverSlotConnectionAction(
@@ -1831,10 +1836,9 @@ class LogiDeviceSession {
             return
         }
 
-        // 接管集合: 已连接 + 鼠标 + 有绑定的 slot 各自 discovery+divert 常驻接管.
-        // 绑定当前是全局的(UsageRegistry 单一 aggregate), 有任一绑定则所有鼠标进入接管集.
-        let bindingsExist = !LogiCenter.shared.registry.aggregatedCacheIsEmpty
-        let divertSlots = Self.receiverDivertSlots(devices: receiverPairedDevices) { _ in bindingsExist }
+        // 接管集合: 已连接 + 像鼠标的 slot 各自 discovery 常驻接管, 与有无按键绑定无关
+        // (Mouse pane / battery / managed values 也需要它); 绑定只决定 applyUsage divert 什么.
+        let divertSlots = Self.receiverTakeoverSlots(devices: receiverPairedDevices)
 
         // 巡检 slot 始终发现(面板要显示其 features)且排最后, 让路由游标最终停靠它;
         // 其余接管 slot 在前, 只做 discovery+divert, 不做可选功能探测(§4.3).
@@ -2030,11 +2034,11 @@ class LogiDeviceSession {
             }
 
             // 多设备热插拔(Phase 4): 每个 slot 的 0x41 各自决策, 不再单目标抢占式 retarget.
+            // Taken over whatever the bindings say (they only decide what applyUsage diverts).
             let dev = receiverPairedDevices.first(where: { $0.slot == devIdx })
-            let bindingsExist = !LogiCenter.shared.registry.aggregatedCacheIsEmpty
-            let isDivertCandidate = connected
-                && !Self.receiverNonDivertDeviceTypes.contains(dev?.deviceType ?? 0)
-                && bindingsExist
+            let isDivertCandidate = Self.receiverSlotIsTakeoverCandidate(
+                connected: connected, deviceType: dev?.deviceType ?? 0
+            )
             let action = Self.receiverSlotConnectionAction(
                 slot: devIdx,
                 connected: connected,
@@ -2071,9 +2075,9 @@ class LogiDeviceSession {
         receiverPairedDevices[idx].lastError = nil
 
         let device = receiverPairedDevices.first(where: { $0.slot == slot })
-        let bindingsExist = !LogiCenter.shared.registry.aggregatedCacheIsEmpty
-        let isDivertCandidate = !Self.receiverNonDivertDeviceTypes.contains(device?.deviceType ?? 0)
-            && bindingsExist
+        let isDivertCandidate = Self.receiverSlotIsTakeoverCandidate(
+            connected: true, deviceType: device?.deviceType ?? 0
+        )
         let action = Self.receiverPeripheralActivityAction(
             slot: slot,
             wasConnected: wasConnected,

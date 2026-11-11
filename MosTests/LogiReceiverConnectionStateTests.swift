@@ -88,7 +88,7 @@ final class LogiReceiverConnectionStateTests: XCTestCase {
         XCTAssertNil(LogiDeviceSession.chooseReceiverTargetSlot(devices: []))
     }
 
-    // MARK: - receiverDivertSlots (Phase 2 接管集合)
+    // MARK: - receiverTakeoverSlots (Phase 2 接管集合; bindings play no part since 2026-11)
 
     private func device(
         slot: UInt8,
@@ -103,30 +103,25 @@ final class LogiReceiverConnectionStateTests: XCTestCase {
         return d
     }
 
-    func testDivertSlotsIncludesOnlyConnectedBoundMice() {
+    func testTakeoverSlotsIncludeEveryConnectedMouse() {
         let devices = [
             device(slot: 1, connected: true, type: 0x01, pid: 0xB350),  // Keyboard -> excluded
-            device(slot: 2, connected: true, type: 0x02, pid: 0x4082),  // Mouse, bound
+            device(slot: 2, connected: true, type: 0x02, pid: 0x4082),  // Mouse
             device(slot: 3, connected: false, type: 0x02, pid: 0x4082), // Mouse, disconnected -> excluded
-            device(slot: 4, connected: true, type: 0x02, pid: 0x999),   // Mouse, no binding -> excluded
-            device(slot: 5, connected: true, type: 0x02, pid: 0x4082)   // Mouse, bound
+            device(slot: 4, connected: true, type: 0x02, pid: 0x999),   // Mouse without a binding -> included
+            device(slot: 5, connected: true, type: 0x02, pid: 0x4082)   // Mouse
         ]
-        let bound: Set<UInt16> = [0x4082]
-        XCTAssertEqual(
-            LogiDeviceSession.receiverDivertSlots(devices: devices) { bound.contains($0) },
-            [2, 5]
-        )
+        XCTAssertEqual(LogiDeviceSession.receiverTakeoverSlots(devices: devices), [2, 4, 5])
     }
 
-    func testDivertSlotsEmptyWhenNoBindings() {
+    /// Regression (launch path): with no Logitech button binding at all the mice were left out,
+    /// so a mouse that was not the inspection slot got no Mouse pane, battery or managed values.
+    func testTakeoverSlotsDoNotNeedBindings() {
         let devices = [
             device(slot: 2, connected: true, type: 0x02, pid: 0x4082),
             device(slot: 3, connected: true, type: 0x02, pid: 0x4083)
         ]
-        XCTAssertEqual(
-            LogiDeviceSession.receiverDivertSlots(devices: devices) { _ in false },
-            []
-        )
+        XCTAssertEqual(LogiDeviceSession.receiverTakeoverSlots(devices: devices), [2, 3])
     }
 
     func testDivertSlotsSortedAscending() {
@@ -135,7 +130,7 @@ final class LogiReceiverConnectionStateTests: XCTestCase {
             device(slot: 2, connected: true, type: 0x02, pid: 0x4082)
         ]
         XCTAssertEqual(
-            LogiDeviceSession.receiverDivertSlots(devices: devices) { _ in true },
+            LogiDeviceSession.receiverTakeoverSlots(devices: devices),
             [2, 5]
         )
     }
@@ -148,7 +143,7 @@ final class LogiReceiverConnectionStateTests: XCTestCase {
             device(slot: 4, connected: true, type: 0x00, pid: 0x0000)   // 未知(实为鼠标)
         ]
         XCTAssertEqual(
-            LogiDeviceSession.receiverDivertSlots(devices: devices) { _ in true },
+            LogiDeviceSession.receiverTakeoverSlots(devices: devices),
             [1, 4]
         )
     }
@@ -161,7 +156,7 @@ final class LogiReceiverConnectionStateTests: XCTestCase {
             device(slot: 5, connected: true, type: 0x02, pid: 0x0000)   // Mouse -> included
         ]
         XCTAssertEqual(
-            LogiDeviceSession.receiverDivertSlots(devices: devices) { _ in true },
+            LogiDeviceSession.receiverTakeoverSlots(devices: devices),
             [4, 5]
         )
     }
@@ -305,6 +300,49 @@ final class LogiReceiverConnectionStateTests: XCTestCase {
                 slot: 7, connected: false, isDivertCandidate: false, alreadyManaged: true),
             .ignore
         )
+    }
+
+    /// Regression (A): a (re)connected mouse-like slot is a takeover candidate whatever the
+    /// bindings say; only known keyboards, numpads and presenters are left alone.
+    func testReconnectedMouseIsTakenOverWithoutBindings() {
+        XCTAssertTrue(LogiDeviceSession.receiverSlotIsTakeoverCandidate(connected: true, deviceType: 0x02))
+        XCTAssertTrue(LogiDeviceSession.receiverSlotIsTakeoverCandidate(connected: true, deviceType: 0x00),
+                      "receivers that do not report a type (Bolt) still take the mouse over")
+        XCTAssertFalse(LogiDeviceSession.receiverSlotIsTakeoverCandidate(connected: true, deviceType: 0x01))
+        XCTAssertFalse(LogiDeviceSession.receiverSlotIsTakeoverCandidate(connected: true, deviceType: 0x03))
+        XCTAssertFalse(LogiDeviceSession.receiverSlotIsTakeoverCandidate(connected: true, deviceType: 0x04))
+        XCTAssertFalse(LogiDeviceSession.receiverSlotIsTakeoverCandidate(connected: false, deviceType: 0x02))
+
+        let candidate = LogiDeviceSession.receiverSlotIsTakeoverCandidate(connected: true, deviceType: 0x02)
+        XCTAssertEqual(
+            LogiDeviceSession.receiverSlotConnectionAction(
+                slot: 2, connected: true, isDivertCandidate: candidate, alreadyManaged: false),
+            .takeover(2)
+        )
+        XCTAssertEqual(
+            LogiDeviceSession.receiverPeripheralActivityAction(
+                slot: 2, wasConnected: false, isDivertCandidate: candidate, alreadyManaged: false),
+            .takeover(2)
+        )
+    }
+
+    /// The takeover no longer waits for a binding, so it must not divert anything by
+    /// itself: with an empty aggregate applyUsage has nothing to divert and nothing native-first
+    /// to undivert, on a receiver and over Bluetooth.
+    func testEmptyAggregateDivertsNothing() {
+        let divertable: Set<UInt16> = [0x0050, 0x0051, 0x0052, 0x0053, 0x0056, 0x00C3, 0x00C4, 0x00D7]
+        for transport in [LogiTransportIdentity.receiver, .bleDirect] {
+            let policy = LogiButtonDeliveryPolicy(standardMouseButtonsUseNativeEvents: true)
+            XCTAssertEqual(LogiDeviceSession.targetCIDsForUsageForTests(
+                aggregateMosCodes: [], divertableCIDs: divertable,
+                transport: transport, phase: .normal, policy: policy,
+                deliveryModeForCID: { _ in .hidpp }
+            ), [])
+            XCTAssertEqual(LogiDeviceSession.nativeFirstCIDsForUsageForTests(
+                aggregateMosCodes: [], divertableCIDs: divertable,
+                transport: transport, phase: .normal, policy: policy
+            ), [])
+        }
     }
 
     func testPeripheralActivityTakesOverPreviouslyOfflineSlotOnce() {
