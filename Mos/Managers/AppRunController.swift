@@ -24,6 +24,8 @@
 //  stays installed while the cores count as stopped, and the timer tries again.
 //  Stopping: the event taps first, then the Logitech sessions, whose teardown gives the mice
 //  their buttons back with synchronous HID writes; no active tap waits on this thread then.
+//  The pointer-movement tap of gesture holds is made on demand while the cores run; the stop
+//  releases it with the event taps, and the next hold makes a new one.
 //
 //  Every change posts `didChangeNotification`; the status item and the General pane follow it.
 //  What starting and stopping does is in `Environment`, so the tests run the rules without
@@ -69,8 +71,18 @@ final class AppRunController {
 
         /// The order of starting and stopping. Start: the event taps in order, then the
         /// Logitech sessions, only once every tap runs (false otherwise). Stop: the event taps,
+        /// then the taps made on demand while the cores run (`onDemandTaps`, each a release),
         /// then the Logitech sessions.
-        static func cores(eventTaps: [Part], logitech: Part) -> (start: () -> Bool, stop: () -> Void) {
+        ///
+        /// A tap made on demand (the pointer-movement tap of gesture holds) does not start with
+        /// the cores; it is released when they stop, so the next use makes a new one. Kept
+        /// across a loss of the Accessibility access or a switch to another user, it could
+        /// stay off for good.
+        static func cores(
+            eventTaps: [Part],
+            onDemandTaps: [() -> Void] = [],
+            logitech: Part
+        ) -> (start: () -> Bool, stop: () -> Void) {
             let start: () -> Bool = {
                 for tap in eventTaps {
                     tap.start()
@@ -82,6 +94,9 @@ final class AppRunController {
             let stop: () -> Void = {
                 for tap in eventTaps {
                     tap.stop()
+                }
+                for release in onDemandTaps {
+                    release()
                 }
                 logitech.stop()
             }
@@ -98,6 +113,8 @@ final class AppRunController {
                          stop: { ButtonCore.shared.disable() },
                          isRunning: { ButtonCore.shared.isActive }),
                 ],
+                // After ButtonCore, whose stop already ended any gesture hold.
+                onDemandTaps: [{ MouseInteractionSessionController.shared.releaseMotionTap() }],
                 logitech: Part(start: { LogiCenter.shared.start() },
                                stop: { LogiCenter.shared.stop() },
                                isRunning: { true })

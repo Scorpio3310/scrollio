@@ -118,6 +118,117 @@ final class MouseInteractionSessionControllerTests: XCTestCase {
         XCTAssertEqual(stopCount, 1)
     }
 
+    // MARK: - The tap: made on demand, replaced when it stays off, released with the cores
+
+    /// A pointer-movement tap that runs after `start` unless it is stale.
+    private final class FakeMotionTap: PointerMotionTap {
+        /// False: macOS no longer serves it (kept across a loss of the Accessibility access or
+        /// a switch to another user); enabling it changes nothing.
+        var runsAfterStart: Bool
+        private(set) var running = false
+        private(set) var starts = 0
+        private(set) var pauses = 0
+        private(set) var stops = 0
+
+        init(runsAfterStart: Bool) { self.runsAfterStart = runsAfterStart }
+
+        func start() throws { starts += 1; running = runsAfterStart }
+        func pause() { pauses += 1; running = false }
+        func stop() { stops += 1; running = false }
+        func isRunning() -> Bool { running }
+    }
+
+    /// Makes the taps, each started as `Interceptor.init` starts it; whether each runs is
+    /// taken from the list in order (true once it is used up).
+    private final class FakeMotionTapFactory {
+        private var runsAfterStart: [Bool]
+        private(set) var made: [FakeMotionTap] = []
+
+        init(_ runsAfterStart: [Bool]) { self.runsAfterStart = runsAfterStart }
+
+        func make() throws -> PointerMotionTap {
+            let tap = FakeMotionTap(runsAfterStart: runsAfterStart.isEmpty ? true : runsAfterStart.removeFirst())
+            try tap.start()
+            made.append(tap)
+            return tap
+        }
+    }
+
+    func testAPausedTapIsStartedAgainNotMadeAgain() {
+        let factory = FakeMotionTapFactory([true])
+        let controller = MouseInteractionSessionController(makeMotionTap: factory.make)
+
+        let first = controller.beginSession(target: .left)
+        XCTAssertTrue(controller.isMotionTapRunning)
+        controller.endSession(id: first)
+        XCTAssertFalse(controller.isMotionTapRunning)
+        XCTAssertEqual(factory.made.first?.pauses, 1)
+
+        _ = controller.beginSession(target: .left)
+        XCTAssertTrue(controller.isMotionTapRunning)
+        XCTAssertEqual(factory.made.count, 1)
+        XCTAssertEqual(factory.made.first?.starts, 2)
+    }
+
+    /// The reported failure: after Accessibility was switched off and on, the kept tap no
+    /// longer ran, every gesture hold read no movement and kept the pointer frozen. A tap
+    /// that is off right after it was started is now dropped and a new one made.
+    func testAKeptTapThatStaysOffIsReplaced() {
+        let factory = FakeMotionTapFactory([true, true])
+        let controller = MouseInteractionSessionController(makeMotionTap: factory.make)
+        controller.endSession(id: controller.beginSession(target: .left))
+        factory.made[0].runsAfterStart = false
+
+        _ = controller.beginSession(target: .left)
+
+        XCTAssertTrue(controller.isMotionTapRunning)
+        XCTAssertEqual(factory.made.count, 2)
+        XCTAssertEqual(factory.made[0].stops, 1, "the stale tap is switched off and let go")
+        XCTAssertTrue(factory.made[1].isRunning())
+        XCTAssertEqual(
+            MouseInteractionSessionController.motionTapReplacedLine(droppedKeptTap: true),
+            "The pointer movement event tap was off right after it was started (the one kept from an earlier use): "
+                + "made a new one, which runs"
+        )
+    }
+
+    /// A new tap that is off too is made once more; then the controller gives up until the
+    /// next use instead of making taps in a loop.
+    func testANewTapThatStaysOffIsMadeOnceMoreThenGivenUp() {
+        let factory = FakeMotionTapFactory([false, false, true])
+        let controller = MouseInteractionSessionController(makeMotionTap: factory.make)
+
+        _ = controller.beginSession(target: .left)
+        XCTAssertFalse(controller.isMotionTapRunning)
+        XCTAssertEqual(factory.made.count, MouseInteractionSessionController.motionTapAttempts)
+        XCTAssertEqual(factory.made.map(\.stops), [1, 1], "no tap that does not run is kept")
+
+        // The next use tries again.
+        _ = controller.beginSession(target: .right)
+        XCTAssertTrue(controller.isMotionTapRunning)
+        XCTAssertEqual(factory.made.count, 3)
+    }
+
+    /// The cores stop: the tap is let go, not only paused, and the next use makes a new one.
+    func testReleasingLetsTheTapGoAndTheNextUseMakesANewOne() {
+        let factory = FakeMotionTapFactory([true, true])
+        let controller = MouseInteractionSessionController(makeMotionTap: factory.make)
+        _ = controller.beginSession(target: .left)
+
+        controller.releaseMotionTap()
+        XCTAssertFalse(controller.isMotionTapRunning)
+        XCTAssertEqual(controller.activeSessionCount, 0)
+        XCTAssertEqual(factory.made[0].stops, 1)
+
+        // Releasing again, with nothing there, is harmless.
+        controller.releaseMotionTap()
+        XCTAssertEqual(factory.made[0].stops, 1)
+
+        _ = controller.beginSession(target: .left)
+        XCTAssertTrue(controller.isMotionTapRunning)
+        XCTAssertEqual(factory.made.count, 2)
+    }
+
     func testRewriteMouseInteractionEvent_withSyntheticLeftConvertsMouseMovedToLeftDragged() {
         let controller = MouseInteractionSessionController(startMotionTap: {}, stopMotionTap: {})
         _ = controller.beginSession(target: .left)

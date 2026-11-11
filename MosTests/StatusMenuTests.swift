@@ -747,6 +747,24 @@ final class AppRunControllerTests: XCTestCase {
         XCTAssertEqual(log.entries, ["scroll off", "button off", "logi off"])
     }
 
+    /// The pointer-movement tap of gesture holds is made on demand: starting the cores does
+    /// not make it, stopping them releases it (after ButtonCore, which ends a hold), so a tap
+    /// kept across lost Accessibility access or another user cannot stay off for good.
+    func testStoppingReleasesTheTapsMadeOnDemandAfterTheEventTaps() {
+        let log = Recorder()
+        let cores = AppRunController.Environment.cores(
+            eventTaps: parts(log),
+            onDemandTaps: [{ log.entries.append("motion released") }],
+            logitech: logitech(log)
+        )
+        XCTAssertTrue(cores.start())
+        XCTAssertEqual(log.entries, ["scroll on", "button on", "logi on"])
+
+        log.entries = []
+        cores.stop()
+        XCTAssertEqual(log.entries, ["scroll off", "button off", "motion released", "logi off"])
+    }
+
     func testTheToastText() {
         XCTAssertEqual(
             NSLocalizedString("toast-accessibility-lost", comment: ""),
