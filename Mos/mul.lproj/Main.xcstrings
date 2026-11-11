@@ -877,7 +877,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "No application is Special"
+            "value" : "No apps added yet"
           }
         }
       }
@@ -1055,7 +1055,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Getting trouble ?"
+            "value" : "Having trouble?"
           }
         }
       }
