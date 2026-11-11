@@ -799,7 +799,7 @@ final class PreferencesApplicationTests: XCTestCase {
 
         let closed = controller.view.frame.height
         scrolling.setAdvancedExpanded(true)
-        XCTAssertGreaterThan(controller.view.frame.height, closed + 200, "the pane grows with Advanced")
+        XCTAssertGreaterThan(controller.view.frame.height, closed + 150, "the pane grows with Advanced")
         XCTAssertEqual(controller.view.frame.height, controller.view.fittingSize.height, accuracy: 0.5)
         scrolling.setAdvancedExpanded(false)
         XCTAssertEqual(controller.view.frame.height, closed, accuracy: 0.5)

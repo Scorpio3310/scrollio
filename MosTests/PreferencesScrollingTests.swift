@@ -3,7 +3,8 @@
 //  MosTests
 //
 //  The Scrolling tab: every control reads and writes the right scroll option, Feel and
-//  the glide time slider never disagree, "Advanced" opens, closes and is remembered, the
+//  the glide time slider never disagree, the keys always show, "Advanced" opens, closes and
+//  is remembered, the
 //  preview follows the options, the rows sit in the boxes of the grouped form, and the
 //  same view edits one app's own options on that app's page under Apps. Nothing is shown
 //  on screen and no key is recorded for real.
@@ -118,10 +119,14 @@ final class PreferencesScrollingTests: XCTestCase {
         controller.view.layoutSubtreeIfNeeded()
         var order: [NSView] = [
             controller.previewView, controller.smoothSwitch, controller.feelControl,
-            controller.scrollSpeedSlider, controller.reverseSwitch, controller.advancedButton,
-            controller.glideTimeSlider, controller.smallestStepSlider, controller.trackpadEventsSwitch,
+            controller.scrollSpeedSlider, controller.reverseSwitch,
         ]
+        // The keys under the main box, "Advanced" last.
         order.append(contentsOf: controller.keyBindButtons)
+        order.append(contentsOf: [
+            controller.advancedButton, controller.glideTimeSlider, controller.smallestStepSlider,
+            controller.trackpadEventsSwitch,
+        ] as [NSView])
         order.append(controller.resetToDefaultsButton)
         let tops: [CGFloat] = order.map { frame(of: $0, in: controller).maxY }
         XCTAssertEqual(tops, tops.sorted(by: >), "from the top of the pane down")
@@ -140,17 +145,21 @@ final class PreferencesScrollingTests: XCTestCase {
         let reset = frame(of: controller.resetToDefaultsButton, in: controller)
         XCTAssertEqual(reset.maxX, width - margin, accuracy: 1)
         XCTAssertEqual(reset.minY, margin, accuracy: 1)
+        let advancedBox = frame(of: controller.advancedSection.box, in: controller)
+        XCTAssertEqual(advancedBox.minY - reset.maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 1)
         let keysBox = frame(of: controller.keysSection.box, in: controller)
-        XCTAssertEqual(keysBox.minY - reset.maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 1)
+        XCTAssertEqual(keysBox.minY - advancedBox.maxY, PreferencesGroupedForm.boxSpacing, accuracy: 1)
 
-        // Closed, it moves up under the box of "Advanced".
+        // Closed, it moves up under the box of "Advanced", which stays under the keys.
         send(controller.advancedButton)
         controller.view.setFrameSize(controller.view.fittingSize)
         controller.view.layoutSubtreeIfNeeded()
         let closedReset = frame(of: controller.resetToDefaultsButton, in: controller)
-        let advancedBox = frame(of: controller.sections[1].box, in: controller)
-        XCTAssertEqual(advancedBox.minY - closedReset.maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 1)
+        let closedAdvancedBox = frame(of: controller.advancedSection.box, in: controller)
+        XCTAssertEqual(closedAdvancedBox.minY - closedReset.maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 1)
         XCTAssertEqual(closedReset.minY, margin, accuracy: 1)
+        let closedKeysBox = frame(of: controller.keysSection.box, in: controller)
+        XCTAssertEqual(closedKeysBox.minY - closedAdvancedBox.maxY, PreferencesGroupedForm.boxSpacing, accuracy: 1)
     }
 
     func testRowsAreGroupedInThreeBoxes() {
@@ -158,17 +167,18 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(controller.sections.count, 3)
         let boxes = controller.sections.map(\.box)
         XCTAssertEqual(boxes[0].rows, [controller.smoothRow, controller.feelRow, controller.speedRow, controller.reverseRow])
-        XCTAssertEqual(boxes[1].rows, [
+        XCTAssertEqual(boxes[1].rows, controller.keyRows)
+        XCTAssertEqual(boxes[2].rows, [
             controller.advancedRow, controller.glideTimeRow, controller.smallestStepRow, controller.trackpadEventsRow,
         ])
-        XCTAssertEqual(boxes[2].rows, controller.keyRows)
         XCTAssertEqual(controller.keyRows.count, ScrollHoldKey.allCases.count)
 
         // Only the keys' box has a title above it, the small title of System Settings.
         XCTAssertNil(controller.sections[0].titleLabel)
-        XCTAssertNil(controller.sections[1].titleLabel)
+        XCTAssertNil(controller.advancedSection.titleLabel)
         XCTAssertEqual(controller.keysSection.titleLabel?.stringValue, "While you hold a key")
-        XCTAssertTrue(controller.sections[2] === controller.keysSection)
+        XCTAssertTrue(controller.sections[1] === controller.keysSection)
+        XCTAssertTrue(controller.sections[2] === controller.advancedSection)
 
         // Each row is one setting, named by its title; its control is named the same.
         XCTAssertEqual(controller.smoothRow.title, "Smooth scrolling")
@@ -684,18 +694,21 @@ final class PreferencesScrollingTests: XCTestCase {
         _ = controller.view
 
         XCTAssertFalse(controller.isAdvancedExpanded)
-        XCTAssertEqual(controller.advancedRows.count, 4, "two sliders, the switch and the keys' box")
-        XCTAssertTrue(controller.advancedRows.last === controller.keysSection)
+        let opened: [NSView] = [controller.glideTimeRow, controller.smallestStepRow, controller.trackpadEventsRow]
+        XCTAssertEqual(controller.advancedRows, opened, "two sliders and the switch")
         XCTAssertTrue(controller.advancedRows.allSatisfy(\.isHidden))
         // The box of "Advanced" shows only its header row, without hairlines.
-        XCTAssertEqual(controller.sections[1].box.visibleRows, [controller.advancedRow])
-        XCTAssertEqual(controller.sections[1].box.separatorRects, [])
-        // What is always there.
-        let alwaysThere: [NSView] = [
+        XCTAssertEqual(controller.advancedSection.box.visibleRows, [controller.advancedRow])
+        XCTAssertEqual(controller.advancedSection.box.separatorRects, [])
+        // What is always there: the keys too, which work from the first launch.
+        var alwaysThere: [NSView] = [
             controller.previewView, controller.smoothSwitch, controller.feelControl,
             controller.scrollSpeedSlider, controller.reverseSwitch, controller.advancedButton,
-            controller.resetToDefaultsButton, controller.sections[0], controller.sections[1],
+            controller.resetToDefaultsButton, controller.sections[0], controller.advancedSection,
+            controller.keysSection,
         ]
+        alwaysThere.append(contentsOf: controller.keyBindButtons)
+        alwaysThere.append(contentsOf: controller.keyRows)
         for view in alwaysThere {
             XCTAssertFalse(view.isHiddenOrHasHiddenAncestor)
         }
@@ -712,11 +725,12 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertTrue(controller.isAdvancedExpanded)
         XCTAssertTrue(controller.advancedRows.allSatisfy { !$0.isHidden })
         controller.view.layoutSubtreeIfNeeded()
-        XCTAssertEqual(controller.sections[1].box.separatorRects.count, 3, "a hairline above each opened row")
+        XCTAssertEqual(controller.advancedSection.box.separatorRects.count, 3, "a hairline above each opened row")
         XCTAssertTrue(uiDefaults.bool(forKey: key))
         XCTAssertTrue(controller.advancedButton.isAccessibilityExpanded())
+        XCTAssertFalse(controller.keysSection.isHidden, "the keys show either way")
         let openHeight = controller.view.fittingSize.height
-        XCTAssertGreaterThan(openHeight, closedHeight + 200)
+        XCTAssertGreaterThan(openHeight, closedHeight + 150)
         XCTAssertEqual(controller.view.frame.height, openHeight, "the pane follows its content")
 
         // The next time the tab is made it opens as it was left.
@@ -729,6 +743,7 @@ final class PreferencesScrollingTests: XCTestCase {
         send(controller.advancedButton)
         XCTAssertFalse(controller.isAdvancedExpanded)
         XCTAssertTrue(controller.advancedRows.allSatisfy(\.isHidden))
+        XCTAssertFalse(controller.keysSection.isHidden)
         XCTAssertFalse(uiDefaults.bool(forKey: key))
         XCTAssertEqual(controller.view.frame.height, closedHeight)
     }
@@ -899,21 +914,29 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(controller.previewView.scene.emphasis, .sideways)
     }
 
-    func testPreviewOnlyPointsOutKeysWhileAdvancedIsOpen() {
-        let controller = makeController(advanced: true)
+    /// The keys always show: the preview points out the key of the row under the pointer,
+    /// focused or recording, whether "Advanced" is open or not.
+    func testPreviewPointsOutTheKeysWithAdvancedClosedOrOpen() {
+        let controller = makeController(advanced: false)
+        XCTAssertFalse(controller.isAdvancedExpanded)
         controller.keyRowHoverChanged(.faster, inside: true)
         XCTAssertEqual(controller.previewView.scene.emphasis, .faster)
-
-        send(controller.advancedButton)
-        XCTAssertFalse(controller.isAdvancedExpanded)
-        XCTAssertEqual(controller.previewView.scene.emphasis, .wheel)
-
-        // Closed: nothing a hidden row reports reaches the preview.
-        controller.keyRowHoverChanged(.sideways, inside: true)
+        controller.keyRowHoverChanged(.faster, inside: false)
         controller.keyFocusChanged(.pause, focused: true)
-        controller.recordingKey = .faster
+        XCTAssertEqual(controller.previewView.scene.emphasis, .paused)
+        controller.recordingKey = .sideways
+        XCTAssertEqual(controller.previewEmphasis, .sideways)
+
+        // Opening and closing "Advanced" leaves it as it is.
+        send(controller.advancedButton)
+        XCTAssertTrue(controller.isAdvancedExpanded)
+        XCTAssertEqual(controller.previewView.scene.emphasis, .sideways)
+        send(controller.advancedButton)
+        XCTAssertEqual(controller.previewView.scene.emphasis, .sideways)
+
+        controller.recordingKey = nil
+        controller.keyFocusChanged(.pause, focused: false)
         XCTAssertEqual(controller.previewView.scene.emphasis, .wheel)
-        XCTAssertEqual(controller.previewEmphasis, .wheel)
     }
 
     func testKeyRowsReportThePointerThroughTrackingAreas() {
@@ -1047,7 +1070,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(heightChanges, changes + 1, "the page hears of it")
         let open = page.view.fittingSize.height
         XCTAssertEqual(open, tab.view.fittingSize.height + header, accuracy: 0.5)
-        XCTAssertGreaterThan(open, closed + 200)
+        XCTAssertGreaterThan(open, closed + 150)
         tab.setAdvancedExpanded(false)
         XCTAssertEqual(page.view.fittingSize.height, closed, accuracy: 0.5)
 
