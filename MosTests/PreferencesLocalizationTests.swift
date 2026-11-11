@@ -88,7 +88,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "categoryMosMouseScroll", "categoryLogiActions", "categoryFinderActions",
         "open-target-title", "open-target-empty-primary", "open-target-empty-secondary",
         "open-target-arguments-placeholder", "open-target-stale-warning", "open-target-cancel", "open-target-done",
-        "appExposeApps",
+        "appExposeApps", "categoryMissionControlAndSpaces",
     ]
 
     /// Gestures pane and its gesture controls.

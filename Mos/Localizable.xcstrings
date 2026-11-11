@@ -97,17 +97,6 @@
         }
       }
     },
-    "categoryFunctionKeys": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Function Keys"
-          }
-        }
-      }
-    },
     "categoryLogiActions": {
       "extractionState": "manual",
       "localizations": {
@@ -2806,7 +2795,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shutdown Dialog"
+            "value": "Shut Down…"
           }
         }
       }
@@ -5192,6 +5181,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Larger"
+          }
+        }
+      }
+    },
+    "categoryMissionControlAndSpaces": {
+      "comment": "Action menus: the group with Mission Control, Apps (Launchpad), Show Desktop and Move Space Left / Right",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mission Control & Spaces"
           }
         }
       }

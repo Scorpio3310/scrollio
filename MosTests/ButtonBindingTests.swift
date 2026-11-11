@@ -744,7 +744,10 @@ final class ButtonBindingTests: XCTestCase {
         XCTAssertEqual(shownTitle(pullDown), SystemShortcut.copy.localizedName)
     }
 
-    func testBuildShortcutMenu_functionKeysHoldEscapeButNotGestureNavigation() {
+    /// The groups say what the actions do: "Mission Control & Spaces" first, the other keys
+    /// of Apple keyboards and Escape under System. Order and titles only: every action
+    /// keeps its identifier, and a stored binding still finds it.
+    func testBuildShortcutMenu_groupsMissionControlAndSpacesAndMovesTheRestToSystem() throws {
         let menu = NSMenu()
         let target = ShortcutMenuTestTarget()
 
@@ -754,17 +757,44 @@ final class ButtonBindingTests: XCTestCase {
             action: #selector(ShortcutMenuTestTarget.noop(_:))
         )
 
-        let functionCategoryName = SystemShortcut.localizedCategoryName("categoryFunctionKeys")
-        guard let functionCategoryIndex = menu.items.firstIndex(where: { $0.title == functionCategoryName }) else {
-            return XCTFail("Expected function keys category to exist in shortcut menu")
+        func identifiers(in categoryTitle: String) throws -> [String] {
+            let item = try XCTUnwrap(menu.items.first { $0.title == categoryTitle }, categoryTitle)
+            XCTAssertNotNil(item.image, "\(categoryTitle) has a symbol")
+            return try XCTUnwrap(item.submenu).items.compactMap {
+                ($0.representedObject as? SystemShortcut.Shortcut)?.identifier
+            }
         }
+        let categoryTitles = menu.items.filter { $0.submenu != nil }.map(\.title)
+        XCTAssertEqual(categoryTitles.first, "Mission Control & Spaces", "first, where Function Keys was")
+        XCTAssertFalse(categoryTitles.contains("Function Keys"))
+        XCTAssertEqual(try identifiers(in: "Mission Control & Spaces"), [
+            "missionControl", "appExpose", "showDesktop", "moveSpaceLeft", "moveSpaceRight",
+        ])
+        XCTAssertEqual(try identifiers(in: "System"), [
+            "spotlight", "dictation", "characterViewer", "doNotDisturb", "escapeKey",
+            "forceQuit", "lockScreen", "logout", "shutdownDialog",
+        ])
+        XCTAssertFalse(SystemShortcut.shortcutsByCategory.flatMap(\.shortcuts).contains { $0.identifier == "mouseGestureNavigation" })
+        XCTAssertEqual(SystemShortcut.shutdownDialog.localizedName, "Shut Down…")
+        XCTAssertEqual(SystemShortcut.shutdownDialog.identifier, "shutdownDialog")
 
-        let functionItems = menu.items[functionCategoryIndex].submenu?.items.compactMap {
-            ($0.representedObject as? SystemShortcut.Shortcut)?.identifier
-        } ?? []
+        // The Gestures pane offers the same groups.
+        XCTAssertEqual(
+            MouseGestureSettingsControls.actionCategories(showLogiActions: false).first?.category,
+            "categoryMissionControlAndSpaces"
+        )
 
-        XCTAssertTrue(functionItems.contains("escapeKey"))
-        XCTAssertFalse(functionItems.contains("mouseGestureNavigation"))
+        // Stored bindings of every moved action resolve and run as before.
+        for identifier in ["missionControl", "appExpose", "showDesktop", "moveSpaceLeft", "moveSpaceRight",
+                           "dictation", "doNotDisturb", "escapeKey", "shutdownDialog"] {
+            let stored = try XCTUnwrap(SystemShortcut.getShortcut(named: identifier), identifier)
+            XCTAssertEqual(stored.identifier, identifier)
+            guard case .systemShortcut(let resolved)? = ShortcutExecutor.shared.resolveAction(named: identifier) else {
+                XCTFail("\(identifier) is still an action")
+                continue
+            }
+            XCTAssertEqual(resolved, identifier)
+        }
     }
 
     func testBuildShortcutMenu_listsGestureNavigationAtTopLevelNextToOpen() throws {
