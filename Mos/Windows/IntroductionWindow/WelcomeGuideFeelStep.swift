@@ -163,6 +163,14 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
 /// One preset: the path of the page over time for three clicks, and its name. A radio
 /// button: the five are one group (arrow keys move between them), VoiceOver reads the
 /// name and the line that says how it feels.
+///
+/// The card tracks the mouse itself. AppKit's radio cell takes a click only on the title
+/// it would draw beside its circle, a strip 47 × 16 pt at the left of the card's middle
+/// that this card never shows: a click on the drawn name, the curve or an edge did nothing.
+/// Here the whole card takes the click, as a button does: pressed while the pointer is
+/// on it, chosen when the button is released on it, also the first click into a window
+/// that is not key, and never the start of a window drag (the guide's window moves by
+/// its background).
 final class WelcomeGuideFeelButton: NSButton {
 
     static let size = NSSize(width: 100, height: 64)
@@ -205,6 +213,120 @@ final class WelcomeGuideFeelButton: NSButton {
         didSet { needsDisplay = true }
     }
 
+    override var isHighlighted: Bool {
+        didSet { if isHighlighted != oldValue { needsDisplay = true } }
+    }
+
+    // MARK: The mouse
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
+    }
+
+    override var mouseDownCanMoveWindow: Bool {
+        return false
+    }
+
+    /// As a push button tracks: pressed while the pointer is on the card, chosen when the
+    /// button goes up on it; released elsewhere, nothing changes.
+    override func mouseDown(with event: NSEvent) {
+        guard isEnabled, let window else { return }
+        var inside = contains(event)
+        isHighlighted = inside
+        while let next = window.nextEvent(matching: [.leftMouseUp, .leftMouseDragged]) {
+            inside = contains(next)
+            isHighlighted = inside
+            if next.type == .leftMouseUp { break }
+        }
+        isHighlighted = false
+        if inside {
+            choose()
+        }
+    }
+
+    private func contains(_ event: NSEvent) -> Bool {
+        return bounds.contains(convert(event.locationInWindow, from: nil))
+    }
+
+    /// Selects this card and tells the step: the click, Space, Return, an arrow key, and
+    /// VoiceOver's press (`performClick`).
+    func choose() {
+        state = .on
+        sendAction(action, to: target)
+    }
+
+    override func performClick(_ sender: Any?) {
+        guard isEnabled else { return }
+        choose()
+    }
+
+    // MARK: VoiceOver
+
+    /// A radio button's value: 1 chosen, 0 not.
+    override func accessibilityValue() -> Any? {
+        return NSNumber(value: state == .on ? 1 : 0)
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        guard isEnabled else { return false }
+        choose()
+        return true
+    }
+
+    // MARK: The keyboard
+
+    /// The five cards, left to right (the order of their row).
+    private var group: [WelcomeGuideFeelButton] {
+        let row = (superview as? NSStackView)?.arrangedSubviews ?? superview?.subviews ?? [self]
+        return row.compactMap { $0 as? WelcomeGuideFeelButton }
+    }
+
+    /// The card Tab stops at: the selected one, the first while none is (a custom glide
+    /// time). Tab reaches the group once; the arrow keys move inside it.
+    var isGroupEntry: Bool {
+        let cards = group
+        return (cards.first { $0.state == .on } ?? cards.first) === self
+    }
+
+    override var canBecomeKeyView: Bool {
+        return isGroupEntry && super.canBecomeKeyView
+    }
+
+    /// Left and up choose the card before, right and down the one after (as a radio group:
+    /// the focus and the choice move together); Space chooses the focused card, and so does
+    /// Return while it is not chosen yet (then Return goes on to the window's main button).
+    override func keyDown(with event: NSEvent) {
+        guard isEnabled, let key = event.charactersIgnoringModifiers?.unicodeScalars.first?.value else {
+            return super.keyDown(with: event)
+        }
+        switch Int(key) {
+        case NSLeftArrowFunctionKey, NSUpArrowFunctionKey:
+            move(by: -1)
+        case NSRightArrowFunctionKey, NSDownArrowFunctionKey:
+            move(by: 1)
+        case 0x20:
+            choose()
+        case 0x0D, 0x03:
+            if state == .on {
+                super.keyDown(with: event)
+            } else {
+                choose()
+            }
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
+    private func move(by offset: Int) {
+        let cards = group
+        guard let index = cards.firstIndex(where: { $0 === self }) else { return }
+        let target = cards[min(max(0, index + offset), cards.count - 1)]
+        if target !== self {
+            window?.makeFirstResponder(target)
+        }
+        target.choose()
+    }
+
     /// Where the page is over 1.4 s after three clicks 0.15 s apart, as the engine moves it
     /// (ScrollPreviewMotion), from 0 (bottom of the box) to the three clicks' distance (top).
     static func curvePoints(duration: Double) -> [NSPoint] {
@@ -234,7 +356,7 @@ final class WelcomeGuideFeelButton: NSButton {
         (selected ? WelcomeGuidePalette.selectedFill : WelcomeGuidePalette.box).setFill()
         box.fill()
         if isHighlighted {
-            NSColor.black.withAlphaComponent(0.06).setFill()
+            WelcomeGuidePalette.pressed.setFill()
             box.fill()
         }
         if selected {
@@ -601,7 +723,8 @@ final class WelcomeGuideFeelDesktopCard: WelcomeGuideFlippedView {
 
 /// The page to scroll: a real scroll view. It tells when the pointer comes and goes and
 /// when the wheel turns on it, and whether that was a trackpad (a scroll phase that is not
-/// one of Scrollio's own smoothed frames).
+/// one of Scrollio's own smoothed frames). A press on it never drags the window (which
+/// moves by its background): its clip view and its page say so.
 final class WelcomeGuideTryScrollView: NSScrollView {
 
     var onHover: ((Bool) -> Void)?
@@ -611,8 +734,15 @@ final class WelcomeGuideTryScrollView: NSScrollView {
     private var trackpadSeen = false
     private var tracking: NSTrackingArea?
 
+    /// The clip view of the page: where the page does not reach (a bounce at either end),
+    /// a press does not drag the window either.
+    private final class ClipView: NSClipView {
+        override var mouseDownCanMoveWindow: Bool { return false }
+    }
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        contentView = ClipView(frame: contentView.frame)
         hasVerticalScroller = true
         hasHorizontalScroller = false
         autohidesScrollers = true
@@ -680,6 +810,11 @@ final class WelcomeGuideSamplePage: WelcomeGuideFlippedView {
 
     required init?(coder: NSCoder) {
         fatalError("built in code")
+    }
+
+    /// The window moves by its background; a press on the page to scroll must not move it.
+    override var mouseDownCanMoveWindow: Bool {
+        return false
     }
 
     override func draw(_ dirtyRect: NSRect) {

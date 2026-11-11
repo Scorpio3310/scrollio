@@ -8,7 +8,9 @@
 //  only the glide time, the bar (Back, dots, the main button) and a window that never
 //  changes its size. The permission, the app's run state, System Settings, Finder, the
 //  popover and VoiceOver are replaced; nothing is shown on screen (windows are created but
-//  never ordered in).
+//  never ordered in, except those that take real clicks: AppKit delivers mouse
+//  events only to a window that is ordered in, so `GuideEventWindow` is, far off every
+//  display, transparent and closed to the real mouse).
 //
 //  WelcomeGuideRenderTests at the end draws every step off screen, light and dark, when
 //  `TEST_RUNNER_SCROLLIO_SHOTS_DIR` is set.
@@ -683,6 +685,464 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(picture.scrollView.contentView.bounds.minX, 0)
     }
 
+    // MARK: - Real clicks and keys
+
+    /// The guide in a window styled as the real one (IntroductionWindowController.style:
+    /// movable by its background, title bar transparent over the content) that AppKit
+    /// delivers events to (`GuideEventWindow`). Never key: the first click counts too.
+    private func makeEventWindow(for controller: IntroductionViewController) -> NSWindow {
+        let window = GuideEventWindow.make(size: WelcomeGuideLayout.windowSize)
+        IntroductionWindowController.style(window)
+        window.contentViewController = controller
+        window.putOutOfSight()
+        addTeardownBlock {
+            window.orderOut(nil)
+            window.close()
+        }
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertTrue(window.isMovableByWindowBackground)
+        XCTAssertFalse(window.isKeyWindow)
+        return window
+    }
+
+    /// Points of `view` (its own coordinates): the middle, and 2 pt inside each edge of
+    /// `rect` (the view's bounds unless given: a push button's bezel is smaller).
+    private func points(in view: NSView, rect: NSRect? = nil) -> [(String, NSPoint)] {
+        let area = rect ?? view.bounds
+        return [
+            ("middle", NSPoint(x: area.midX, y: area.midY)),
+            ("left edge", NSPoint(x: area.minX + 2, y: area.midY)),
+            ("right edge", NSPoint(x: area.maxX - 2, y: area.midY)),
+            ("top edge", NSPoint(x: area.midX, y: view.isFlipped ? area.minY + 2 : area.maxY - 2)),
+            ("bottom edge", NSPoint(x: area.midX, y: view.isFlipped ? area.maxY - 2 : area.minY + 2)),
+        ]
+    }
+
+    /// The visible bezel of a push button, in its own coordinates.
+    private func bezel(of button: NSButton) -> NSRect {
+        let alignment = button.alignmentRect(forFrame: button.frame)
+        return button.convert(alignment, from: button.superview)
+    }
+
+    /// The view AppKit hands a click at `point` of `view` to: it must be `view` or inside
+    /// it, and must not let the press drag the window (which moves by its background).
+    private func assertTakesTheClick(
+        _ view: NSView, at point: NSPoint, _ name: String, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        guard let frameView = view.window?.contentView?.superview else {
+            return XCTFail("\(name): not in a window", file: file, line: line)
+        }
+        let hit = frameView.hitTest(view.convert(point, to: nil))
+        XCTAssertTrue(hit.map { $0 === view || $0.isDescendant(of: view) } ?? false,
+                      "\(name): the click goes to \(hit.map { String(describing: type(of: $0)) } ?? "nothing")", file: file, line: line)
+        XCTAssertEqual(hit?.mouseDownCanMoveWindow, false, "\(name): a press there drags the window", file: file, line: line)
+    }
+
+    /// A click as the mouse makes it: down at the first point of `path` (in `view`'s
+    /// coordinates), a drag through the others, up at the last. The events go into the
+    /// application's queue and from there to the window, as the run loop hands them on; a
+    /// control that tracks the mouse in a loop of its own takes the rest of the click from
+    /// the queue itself. With `whilePressed` the rest comes a moment after the down, from a
+    /// timer that also runs inside such a loop, and `whilePressed` runs while the button is held.
+    private func realClick(
+        _ view: NSView, path: [NSPoint], whilePressed: (() -> Void)? = nil,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        guard let window = view.window, let first = path.first, let last = path.last else {
+            return XCTFail("nothing to click", file: file, line: line)
+        }
+        func event(_ type: NSEvent.EventType, at point: NSPoint) -> NSEvent {
+            return NSEvent.mouseEvent(
+                with: type, location: view.convert(point, to: nil), modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1
+            )!
+        }
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        var restPosted = false
+        var downInProgress = false
+        var postedDuringDown = false
+        func postRest() {
+            whilePressed?()
+            for point in path.dropFirst() {
+                NSApp.postEvent(event(.leftMouseDragged, at: point), atStart: false)
+            }
+            NSApp.postEvent(event(.leftMouseUp, at: last), atStart: false)
+            restPosted = true
+            postedDuringDown = downInProgress
+        }
+        NSApp.postEvent(event(.leftMouseDown, at: first), atStart: false)
+        if whilePressed == nil {
+            postRest()
+        } else {
+            RunLoop.main.add(Timer(timeInterval: 0.02, repeats: false) { _ in postRest() }, forMode: .common)
+        }
+        let deadline = Date(timeIntervalSinceNow: 3)
+        while Date() < deadline {
+            guard let next = NSApp.nextEvent(matching: mask, until: Date(timeIntervalSinceNow: 0.05), inMode: .default, dequeue: true) else {
+                continue
+            }
+            downInProgress = next.type == .leftMouseDown
+            window.sendEvent(next)
+            downInProgress = false
+            if next.type == .leftMouseUp {
+                return
+            }
+            // The control tracked the mouse in its own loop and took the up from the queue.
+            let upQueued = NSApp.nextEvent(matching: .leftMouseUp, until: .distantPast, inMode: .default, dequeue: false) != nil
+            if next.type == .leftMouseDown && (postedDuringDown || (restPosted && !upQueued)) {
+                return
+            }
+        }
+        XCTFail("the click never finished", file: file, line: line)
+    }
+
+    /// A click at `point` with the pointer moving `move` points toward the middle between
+    /// down and up (a hand is never quite still).
+    private func realClick(
+        _ view: NSView, at point: NSPoint, move: CGFloat = 0, whilePressed: (() -> Void)? = nil,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let towardX: CGFloat = point.x <= view.bounds.midX ? 1 : -1
+        let towardY: CGFloat = point.y <= view.bounds.midY ? 1 : -1
+        let path = move == 0 ? [point] : [point, NSPoint(x: point.x + move * towardX, y: point.y + move * towardY)]
+        realClick(view, path: path, whilePressed: whilePressed, file: file, line: line)
+    }
+
+    private func press(_ characters: String, keyCode: UInt16, in window: NSWindow) {
+        let arrow = characters.unicodeScalars.first.map { $0.value >= 0xF700 } ?? false
+        let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: arrow ? [.numericPad, .function] : [],
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+            characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode
+        )!
+        window.sendEvent(event)
+    }
+
+    private func arrow(_ key: Int) -> String {
+        return String(Character(UnicodeScalar(UInt32(key))!))
+    }
+
+    /// The feel step in a window that takes real events, its demo running: the clock is on
+    /// (no display ticks off screen, so `tick` plays the moments the clock would show).
+    private func makeFeelWindow() -> (IntroductionViewController, NSWindow) {
+        let controller = makeFeelController()
+        let window = makeEventWindow(for: controller)
+        let picture = controller.feelStep.artwork
+        picture.isWindowVisible = { _ in true }
+        picture.updateClock()
+        XCTAssertTrue(picture.isClockRunning, "the demo runs")
+        return (controller, window)
+    }
+
+    private var demoTime: TimeInterval = 0
+    /// Where the demo put the page at each moment `tick` played.
+    private var demoPagePositions: Set<CGFloat> = []
+
+    /// What happens while the button is held: the demo moves the page, the window's poll ticks.
+    private func tick(_ controller: IntroductionViewController) {
+        let picture = controller.feelStep.artwork
+        for _ in 0..<3 {
+            demoTime += 1.0 / 60
+            picture.show(time: demoTime)
+            demoPagePositions.insert(picture.scrollView.contentView.bounds.minY)
+        }
+        controller.accessibilityPermissionsChecker(nil)
+    }
+
+    /// Lets a change of step finish (its crossfade, with Reduce Motion: nothing moves).
+    private func settle() {
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
+    }
+
+    private func chosenFeels(_ step: WelcomeGuideFeelStep) -> [ScrollFeel] {
+        return step.feelButtons.filter { $0.state == .on }.map(\.feel)
+    }
+
+    /// The owner's report: "clicking a card selects it only sometimes". AppKit's radio cell
+    /// took a click only on the title it would draw (47 × 16 pt left of the middle), not on
+    /// the name drawn under the curve, the curve or the edges.
+    func testAClickAnywhereOnAFeelCardChoosesItWhileTheDemoRuns() {
+        let (controller, _) = makeFeelWindow()
+        let step = controller.feelStep
+        for card in step.feelButtons {
+            let size = WelcomeGuideFeelButton.size
+            // The drawing: the curve in the top half, the name under it (top-left origin).
+            let spots = points(in: card) + [
+                ("curve", NSPoint(x: size.width / 2 - 20, y: 20)),
+                ("name", NSPoint(x: size.width / 2, y: size.height - 16)),
+            ]
+            for (spot, point) in spots {
+                for move in [0, 2] as [CGFloat] {
+                    let name = "\(card.feel.name), \(spot), moved \(move) pt"
+                    // Another feel first, so that the click has something to change.
+                    let other = card.feel == .direct ? ScrollFeel.float : .direct
+                    other.apply(to: world.scroll)
+                    step.refresh()
+                    XCTAssertEqual(chosenFeels(step), [other], name)
+                    assertTakesTheClick(card, at: point, name)
+                    var pressedWhileHeld = false
+                    realClick(card, at: point, move: move) {
+                        pressedWhileHeld = card.isHighlighted
+                        self.tick(controller)
+                    }
+                    XCTAssertTrue(pressedWhileHeld, "\(name): no pressed look while the button is held")
+                    XCTAssertFalse(card.isHighlighted, name)
+                    XCTAssertEqual(chosenFeels(step), [card.feel], name)
+                    XCTAssertEqual(world.scroll.duration, card.feel.duration, name)
+                    XCTAssertEqual(step.hintLabel.stringValue, card.feel.localizedHint, name)
+                }
+            }
+        }
+        XCTAssertTrue(step.artwork.isClockRunning, "the demo still runs")
+        XCTAssertGreaterThan(demoPagePositions.count, 10, "the demo moved the page while the cards were pressed")
+        XCTAssertEqual(controller.currentStep, .feel)
+    }
+
+    /// As a button: the choice is made where the button goes up. Pressed on a card and let
+    /// go off it, nothing changes; dragged off and back on, it counts.
+    func testAPressThatLeavesTheCardChoosesNothing() {
+        let (controller, _) = makeFeelWindow()
+        let step = controller.feelStep
+        let glide = step.feelButtons[ScrollFeel.glide.rawValue]
+        let middle = NSPoint(x: glide.bounds.midX, y: glide.bounds.midY)
+        let below = NSPoint(x: middle.x, y: glide.bounds.maxY + 30)
+        realClick(glide, path: [middle, below]) {
+            self.tick(controller)
+        }
+        XCTAssertEqual(chosenFeels(step), [.smooth], "released off the card")
+        XCTAssertEqual(world.scroll.duration, ScrollFeel.smooth.duration)
+        XCTAssertFalse(glide.isHighlighted)
+
+        var pressed = false
+        realClick(glide, path: [middle, below, NSPoint(x: middle.x + 3, y: middle.y)]) {
+            pressed = glide.isHighlighted
+        }
+        XCTAssertTrue(pressed, "pressed while the pointer is on it")
+        XCTAssertEqual(chosenFeels(step), [.glide], "dragged off and back on")
+        XCTAssertEqual(world.scroll.duration, ScrollFeel.glide.duration)
+
+        // Pressed on one card, released on another: neither.
+        let quick = step.feelButtons[ScrollFeel.quick.rawValue]
+        let float = step.feelButtons[ScrollFeel.float.rawValue]
+        let onFloat = quick.convert(NSPoint(x: float.bounds.midX, y: float.bounds.midY), from: float)
+        realClick(quick, path: [middle, onFloat])
+        XCTAssertEqual(chosenFeels(step), [.glide])
+        XCTAssertEqual(world.scroll.duration, ScrollFeel.glide.duration)
+    }
+
+    func testTheFeelCardsAreOneRadioGroupForTheKeyboard() throws {
+        // Keys go to the focused view of a window whether it shows or not. This one does not:
+        // a window that shows without being key (as the event window must) lets no key
+        // reach its main button, and the guide's own is key while one types in it.
+        let controller = makeFeelController()
+        let window = makeWindow(for: controller)
+        IntroductionWindowController.style(window)
+        controller.view.layoutSubtreeIfNeeded()
+        let step = controller.feelStep
+        let cards = step.feelButtons
+        let group = try XCTUnwrap(cards.first?.superview)
+        XCTAssertTrue(cards.allSatisfy { $0.superview === group })
+        XCTAssertEqual(group.accessibilityRole(), .radioGroup)
+        XCTAssertEqual(group.accessibilityLabel(), "Feel")
+        XCTAssertTrue(group.isAccessibilityElement())
+
+        // Tab stops once, at the chosen card (it follows System Settings › Keyboard ›
+        // Keyboard navigation, as every control of the window does).
+        XCTAssertEqual(cards.filter(\.isGroupEntry).map(\.feel), [.smooth])
+        for card in cards where !card.isGroupEntry || !NSApp.isFullKeyboardAccessEnabled {
+            XCTAssertFalse(card.canBecomeKeyView, "\(card.feel.name): a second Tab stop")
+        }
+
+        // The arrows move the choice and the focus together, and stop at the ends.
+        let smooth = cards[ScrollFeel.smooth.rawValue]
+        XCTAssertTrue(window.makeFirstResponder(smooth))
+        press(arrow(NSRightArrowFunctionKey), keyCode: 124, in: window)
+        XCTAssertEqual(chosenFeels(step), [.glide])
+        XCTAssertEqual(world.scroll.duration, ScrollFeel.glide.duration)
+        XCTAssertTrue(window.firstResponder === cards[ScrollFeel.glide.rawValue])
+        XCTAssertEqual(cards.filter(\.isGroupEntry).map(\.feel), [.glide], "Tab now stops at Glide")
+        press(arrow(NSDownArrowFunctionKey), keyCode: 125, in: window)
+        press(arrow(NSRightArrowFunctionKey), keyCode: 124, in: window)
+        XCTAssertEqual(chosenFeels(step), [.float], "the last card stays")
+        for _ in 0..<5 {
+            press(arrow(NSLeftArrowFunctionKey), keyCode: 123, in: window)
+        }
+        XCTAssertEqual(chosenFeels(step), [.direct])
+        press(arrow(NSUpArrowFunctionKey), keyCode: 126, in: window)
+        XCTAssertEqual(chosenFeels(step), [.direct], "the first card stays")
+        XCTAssertTrue(window.firstResponder === cards[ScrollFeel.direct.rawValue])
+        XCTAssertEqual(world.scroll.duration, ScrollFeel.direct.duration)
+
+        // A custom glide time: nothing chosen, the first card is the stop. Space chooses it.
+        world.scroll.duration = 3.4
+        step.refresh()
+        XCTAssertTrue(chosenFeels(step).isEmpty)
+        XCTAssertEqual(cards.filter(\.isGroupEntry).map(\.feel), [.direct])
+        press(" ", keyCode: 49, in: window)
+        XCTAssertEqual(chosenFeels(step), [.direct])
+        XCTAssertEqual(world.scroll.duration, ScrollFeel.direct.duration)
+
+        // Return chooses a focused card that is not chosen yet; on a chosen one it is the
+        // window's main button (Continue).
+        world.scroll.duration = 3.4
+        step.refresh()
+        press("\r", keyCode: 36, in: window)
+        XCTAssertEqual(chosenFeels(step), [.direct])
+        XCTAssertEqual(controller.currentStep, .feel, "the first Return chose")
+        press("\r", keyCode: 36, in: window)
+        XCTAssertEqual(controller.currentStep, .finish, "the second went on")
+        XCTAssertEqual(world.scroll.duration, ScrollFeel.direct.duration)
+    }
+
+    func testVoiceOverReadsAndPressesTheFeelCards() {
+        let (controller, _) = makeFeelWindow()
+        let step = controller.feelStep
+        for card in step.feelButtons {
+            XCTAssertEqual(card.accessibilityRole(), .radioButton)
+            XCTAssertEqual(card.accessibilityLabel(), card.feel.localizedName)
+            XCTAssertEqual(card.accessibilityHelp(), card.feel.localizedHint)
+            XCTAssertTrue(card.accessibilityParent() as AnyObject? === card.superview, "inside the Feel group")
+        }
+        let quick = step.feelButtons[ScrollFeel.quick.rawValue]
+        XCTAssertTrue(quick.accessibilityPerformPress())
+        XCTAssertEqual(chosenFeels(step), [.quick])
+        XCTAssertEqual(world.scroll.duration, ScrollFeel.quick.duration)
+        XCTAssertEqual((quick.accessibilityValue() as? NSNumber)?.intValue, 1)
+        XCTAssertEqual((step.feelButtons[ScrollFeel.smooth.rawValue].accessibilityValue() as? NSNumber)?.intValue, 0)
+    }
+
+    /// The page to scroll is a real scroll view: the wheel reaches it where the pointer is,
+    /// and a press on it does not drag the window. The window still moves by its background.
+    func testTheTryBoxTakesTheWheelAndAPressThereDoesNotDragTheWindow() throws {
+        let (controller, window) = makeFeelWindow()
+        let picture = controller.feelStep.artwork
+        let box = picture.scrollView
+        let frameView = try XCTUnwrap(window.contentView?.superview)
+        for (spot, point) in points(in: box) {
+            let hit = try XCTUnwrap(frameView.hitTest(box.convert(point, to: nil)), spot)
+            XCTAssertTrue(hit.isDescendant(of: box), "\(spot): the wheel goes to \(type(of: hit))")
+            var view: NSView? = hit
+            while let current = view, current !== box.superview {
+                XCTAssertFalse(current.mouseDownCanMoveWindow, "\(spot): a press on \(type(of: current)) drags the window")
+                view = current.superview
+            }
+        }
+        // AppKit sends the wheel to the view under the pointer, which hands it to its scroll view.
+        let middle = box.convert(NSPoint(x: box.bounds.midX, y: box.bounds.midY), to: nil)
+        let hit = try XCTUnwrap(frameView.hitTest(middle))
+        hit.scrollWheel(with: try scrollEvent(phase: 0, synthetic: false))
+        XCTAssertTrue(picture.hasUserScrolled)
+        XCTAssertTrue(picture.isDemoPaused)
+
+        // A click in the box changes nothing of the guide.
+        realClick(box, at: NSPoint(x: box.bounds.midX, y: box.bounds.midY), move: 2)
+        XCTAssertEqual(controller.currentStep, .feel)
+        XCTAssertEqual(chosenFeels(controller.feelStep), [.smooth])
+
+        // The background and the text still move the window.
+        let title = controller.feelStep.titleLabel!
+        for view in [controller.pictureHost!, title] as [NSView] {
+            let spot = view === title ? NSPoint(x: title.bounds.midX, y: title.bounds.midY) : NSPoint(x: 6, y: 6)
+            let background = try XCTUnwrap(frameView.hitTest(view.convert(spot, to: nil)))
+            XCTAssertTrue(background.mouseDownCanMoveWindow, "\(type(of: background)) no longer moves the window")
+        }
+    }
+
+    /// Every other control of the guide, through real events: in the middle and near each
+    /// edge, with a 2 pt move between down and up.
+    func testEveryControlOfTheGuideTakesARealClick() throws {
+        world.runAfterGrant = .running
+        // Steps change by a crossfade: nothing under the pointer slides while it clicks.
+        world.reduceMotion = true
+        let controller = world.makeController(flow: .full)
+        _ = makeEventWindow(for: controller)
+        /// A push button is clicked on its bezel, anything else on its bounds.
+        func spots(of control: NSControl) -> [(String, NSPoint)] {
+            control.window?.contentView?.layoutSubtreeIfNeeded()
+            let push = (control as? NSButton).flatMap { $0.isBordered && $0.bezelStyle == .push ? $0 : nil }
+            return points(in: control, rect: push.map(bezel(of:)))
+        }
+        func clickEverywhere(_ control: NSControl, _ name: String, after: (String) -> Void) {
+            for index in 0..<5 {
+                let (spot, point) = spots(of: control)[index]
+                assertTakesTheClick(control, at: point, "\(name), \(spot)")
+                realClick(control, at: point, move: 2)
+                after("\(name), \(spot)")
+            }
+        }
+
+        // Continue and Back walk the steps.
+        clickEverywhere(controller.primaryButton, "Continue") { spot in
+            XCTAssertEqual(controller.currentStep, .access, spot)
+            controller.go(by: -1)
+            self.settle()
+        }
+        controller.go(by: 1)
+        settle()
+        clickEverywhere(controller.backButton, "Back") { spot in
+            XCTAssertEqual(controller.currentStep, .welcome, spot)
+            controller.go(by: 1)
+            self.settle()
+        }
+
+        // Open Accessibility Settings, and "Having trouble?" (its help opens and closes).
+        XCTAssertEqual(controller.currentStep, .access)
+        realClick(controller.primaryButton, at: spots(of: controller.primaryButton)[1].1, move: 2)
+        XCTAssertEqual(world.requests, 1)
+        XCTAssertEqual(world.settingsOpened, 1)
+        var helpShown = false
+        clickEverywhere(controller.helpButton, "Having trouble?") { spot in
+            helpShown.toggle()
+            XCTAssertEqual(controller.isHelpShown, helpShown, spot)
+        }
+
+        // The help's own button, as its popover shows it.
+        let help = WelcomeGuideHelpViewController(showInFinder: { self.world.reveals += 1 })
+        let helpWindow = GuideEventWindow.make(size: help.view.frame.size)
+        helpWindow.contentViewController = help
+        helpWindow.putOutOfSight()
+        addTeardownBlock {
+            helpWindow.orderOut(nil)
+            helpWindow.close()
+        }
+        clickEverywhere(help.finderButton, "Show Scrollio in Finder") { _ in }
+        XCTAssertEqual(world.reveals, 5)
+
+        // The feel step's switch.
+        world.accessGranted = true
+        controller.accessibilityPermissionsChecker(nil)
+        controller.go(by: 1)
+        settle()
+        XCTAssertEqual(controller.currentStep, .feel)
+        var reversed = world.scroll.reversesWheel
+        clickEverywhere(controller.feelStep.reverseRow.toggle, "Reverse wheel direction") { spot in
+            reversed.toggle()
+            XCTAssertEqual(self.world.scroll.reversesWheel, reversed, spot)
+            XCTAssertEqual(controller.feelStep.reverseRow.isOn, reversed, spot)
+        }
+
+        // The last step: Open at login, Done and Open Settings (which closes the window).
+        controller.go(by: 1)
+        settle()
+        XCTAssertEqual(controller.currentStep, .finish)
+        var opensAtLogin = controller.openAtLoginChoice
+        clickEverywhere(controller.finishStep.loginRow.toggle, "Open at login") { spot in
+            opensAtLogin.toggle()
+            XCTAssertEqual(controller.openAtLoginChoice, opensAtLogin, spot)
+        }
+        for (spot, point) in spots(of: controller.primaryButton) {
+            assertTakesTheClick(controller.primaryButton, at: point, "Done, \(spot)")
+        }
+        for (spot, point) in spots(of: controller.secondaryButton) {
+            assertTakesTheClick(controller.secondaryButton, at: point, "Open Settings, \(spot)")
+        }
+        install(.notRegistered)
+        realClick(controller.secondaryButton, at: spots(of: controller.secondaryButton)[2].1, move: 2)
+        XCTAssertEqual(world.appSettingsOpened, 1)
+        XCTAssertTrue(world.progress.isFinished)
+    }
+
     // MARK: - The wheel direction
 
     func testTheFeelStepShowsAndFlipsTheWheelDirectionAsTheScrollingPaneDoes() throws {
@@ -1171,6 +1631,41 @@ private extension IntroductionViewController {
     }
 }
 
+/// A window AppKit delivers synthesized mouse and key events to as it does to the guide's
+/// own. AppKit hands a mouse-down only to a window that is ordered in, so this one is, but
+/// nothing of it can be seen or reached: it lies far off every display (it may: its frame
+/// is not moved onto a screen), is fully transparent and lets the real mouse through. It
+/// never becomes key or main, so every click is the first click into a window that is not
+/// key, and it never touches the frontmost app.
+private final class GuideEventWindow: NSWindow {
+
+    static func make(size: NSSize) -> GuideEventWindow {
+        let window = GuideEventWindow(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+            backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.animationBehavior = .none
+        window.hasShadow = false
+        return window
+    }
+
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        return frameRect
+    }
+
+    override var canBecomeKey: Bool { return false }
+    override var canBecomeMain: Bool { return false }
+
+    func putOutOfSight() {
+        alphaValue = 0
+        ignoresMouseEvents = true
+        setFrameOrigin(NSPoint(x: -30_000, y: -30_000))
+        orderBack(nil)
+    }
+}
+
 private extension WelcomeGuideAccessState {
     static var allReady: [WelcomeGuideAccessState] {
         return [WelcomeGuideAccessState.missing, .starting, .running, .paused, .couldNotStart].filter(\.isReady)
@@ -1233,7 +1728,9 @@ final class WelcomeGuideRenderTests: XCTestCase {
             let frameView = content.superview ?? content
             frameView.layoutSubtreeIfNeeded()
             let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            // AppKit draws the keyboard focus ring on screen only: it is drawn here as it would be.
             try write(frameView, rect: frameView.convert(content.bounds, from: content), appearance: appearance,
+                      focused: window.firstResponder as? WelcomeGuideFeelButton,
                       to: directory.appendingPathComponent("\(name)-\(suffix).png"))
         }
     }
@@ -1314,6 +1811,19 @@ final class WelcomeGuideRenderTests: XCTestCase {
                 XCTAssertEqual(world.scroll.duration, feel.duration)
             }
         }
+        // Glide held down (Smooth chosen), and Quick focused from the keyboard.
+        try render("guide-3-feel-pressed", configure: { $0.accessGranted = true; $0.run = .running }) { controller, _ in
+            self.toStep(.feel, in: controller)
+            controller.feelStep.feelButtons[ScrollFeel.glide.rawValue].isHighlighted = true
+            controller.feelStep.artwork.show(time: 0.75)
+        }
+        try render("guide-3-feel-focused", configure: { $0.accessGranted = true; $0.run = .running }) { controller, _ in
+            self.toStep(.feel, in: controller)
+            let quick = controller.feelStep.feelButtons[ScrollFeel.quick.rawValue]
+            quick.choose()
+            XCTAssertTrue(quick.window?.makeFirstResponder(quick) ?? false)
+            controller.feelStep.artwork.show(time: 0.75)
+        }
         try render("guide-3-feel-reversed-off", configure: {
             $0.accessGranted = true
             $0.run = .running
@@ -1371,7 +1881,9 @@ final class WelcomeGuideRenderTests: XCTestCase {
     }
 
     /// Draws `view` at 2x over the window colour (the materials draw nothing off screen).
-    private func write(_ view: NSView, rect: NSRect? = nil, appearance: NSAppearance, to url: URL) throws {
+    private func write(
+        _ view: NSView, rect: NSRect? = nil, appearance: NSAppearance, focused: NSView? = nil, to url: URL
+    ) throws {
         view.display()
         let area = rect ?? view.bounds
         let bounds = NSRect(origin: .zero, size: area.size)
@@ -1392,6 +1904,18 @@ final class WelcomeGuideRenderTests: XCTestCase {
             bounds.fill()
         }
         rep.draw(in: bounds)
+        if let focused {
+            let frame = view.convert(focused.bounds, from: focused).offsetBy(dx: -area.minX, dy: -area.minY)
+            appearance.performAsCurrentDrawingAppearance {
+                NSGraphicsContext.saveGraphicsState()
+                let transform = NSAffineTransform()
+                transform.translateX(by: frame.minX, yBy: frame.minY)
+                transform.concat()
+                NSFocusRingPlacement.only.set()
+                focused.drawFocusRingMask()
+                NSGraphicsContext.restoreGraphicsState()
+            }
+        }
         NSGraphicsContext.restoreGraphicsState()
         let png = try XCTUnwrap(canvas.representation(using: .png, properties: [:]))
         try png.write(to: url)

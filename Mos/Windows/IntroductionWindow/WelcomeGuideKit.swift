@@ -154,6 +154,8 @@ enum WelcomeGuidePalette {
     }
     /// The box behind a choice and behind the status line.
     static let box = ink(0.045, 0.06)
+    /// Over a choice while the mouse button is down on it: darker in light, lighter in dark.
+    static let pressed = ink(0.07, 0.09)
     static let boxEdge = NSColor(name: nil) { appearance in
         let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         if PreferencesGroupedForm.isHighContrast(appearance) {

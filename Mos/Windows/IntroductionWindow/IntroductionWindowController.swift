@@ -18,6 +18,16 @@ class IntroductionWindowController: NSWindowController, NSWindowDelegate {
     override func windowDidLoad() {
         super.windowDidLoad()
         guard let window = window else { return }
+        Self.style(window)
+        // Always in the middle of the screen, not cascaded from the last window.
+        shouldCascadeWindows = false
+        window.center()
+    }
+
+    /// How the guide's window looks and behaves; also the tests' windows that take real
+    /// clicks. It moves by its background: every control of the guide (and the page of the
+    /// feel step) says that a press on it does not (`mouseDownCanMoveWindow`).
+    static func style(_ window: NSWindow) {
         // The content names the window; the title is still set, for the Window menu,
         // Mission Control and VoiceOver.
         window.title = NSLocalizedString("intro-title", comment: "")
@@ -32,9 +42,6 @@ class IntroductionWindowController: NSWindowController, NSWindowDelegate {
         window.contentMinSize = WelcomeGuideLayout.windowSize
         window.contentMaxSize = WelcomeGuideLayout.windowSize
         window.standardWindowButton(.zoomButton)?.isEnabled = false
-        // Always in the middle of the screen, not cascaded from the last window.
-        shouldCascadeWindows = false
-        window.center()
     }
 
     func windowWillClose(_ notification: Notification) {
