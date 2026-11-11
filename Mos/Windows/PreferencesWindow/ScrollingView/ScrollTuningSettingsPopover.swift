@@ -60,6 +60,8 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
 
     private var popover: NSPopover?
     private var controls: Controls?
+    /// The preset popup of the content view built last (shared with the Scrolling tab).
+    private var presetPicker: ScrollPresetPicker?
 
     /// Minimum widths; long translations widen the popover and the value column.
     private static let contentWidth: CGFloat = 340
@@ -67,7 +69,6 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
     private static let columnSpacing: CGFloat = 10
     private static let valueColumnWidth: CGFloat = 48
     private static let minimumSliderWidth: CGFloat = 120
-    private static let customPresetTag = -1
 
     /// Identifiers for the controls (tests and accessibility tooling).
     enum Identifier {
@@ -157,7 +158,6 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
     }
 
     private struct Controls {
-        let presetPopUp: NSPopUpButton
         let presetDescription: NSTextField
         let freeSpinCheckbox: NSButton
         let sliders: [SliderRow]
@@ -200,7 +200,15 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
 
         // Preset
         let presetLabel = makeRowLabel(NSLocalizedString("scroll-tuning-preset-label", comment: ""))
-        let presetPopUp = makePresetPopUp()
+        let presetPicker = ScrollPresetPicker(identifier: Identifier.preset)
+        presetPicker.onChoice = { [weak self] applied in
+            if applied {
+                self?.onSettingsChanged?()
+            }
+            self?.syncControls()
+        }
+        self.presetPicker = presetPicker
+        let presetPopUp = presetPicker.popUp
         presetPopUp.setAccessibilityLabel(presetLabel.stringValue)
         let presetDescription = NSTextField(wrappingLabelWithString: "")
         presetDescription.identifier = Identifier.presetDescription
@@ -317,7 +325,7 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
         thumbWheelHint.preferredMaxLayoutWidth = descriptionWidth
         footnote.preferredMaxLayoutWidth = innerWidth
         let descriptionBounds = NSRect(x: 0, y: 0, width: descriptionWidth, height: .greatestFiniteMagnitude)
-        let descriptionHeight = Self.descriptionTexts.map { text -> CGFloat in
+        let descriptionHeight = ScrollPresetPicker.descriptionTexts.map { text -> CGFloat in
             presetDescription.stringValue = text
             return ceil(presetDescription.cell?.cellSize(forBounds: descriptionBounds).height ?? 0)
         }.max() ?? 0
@@ -337,7 +345,6 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
         ])
 
         controls = Controls(
-            presetPopUp: presetPopUp,
             presetDescription: presetDescription,
             freeSpinCheckbox: freeSpinCheckbox,
             sliders: [smoothness, speed, acceleration],
@@ -364,29 +371,6 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
         let separator = NSBox()
         separator.boxType = .separator
         return separator
-    }
-
-    private func makePresetPopUp() -> NSPopUpButton {
-        let popup = NSPopUpButton(frame: .zero, pullsDown: false)
-        popup.identifier = Identifier.preset
-        popup.target = self
-        popup.action = #selector(presetSelected(_:))
-
-        let menu = NSMenu()
-        menu.autoenablesItems = false
-        for (index, preset) in ScrollPreset.allCases.enumerated() {
-            let item = NSMenuItem(title: preset.localizedName, action: nil, keyEquivalent: "")
-            item.tag = index
-            menu.addItem(item)
-        }
-        menu.addItem(NSMenuItem.separator())
-        // Selected when the values match no preset; choosing it changes nothing.
-        let custom = NSMenuItem(title: ScrollPreset.customLocalizedName, action: nil, keyEquivalent: "")
-        custom.tag = Self.customPresetTag
-        menu.addItem(custom)
-
-        popup.menu = menu
-        return popup
     }
 
     private func makeThumbWheelPopUp() -> NSPopUpButton {
@@ -431,19 +415,6 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
         return SliderRow(kind: kind, label: label, slider: slider, valueLabel: valueLabel)
     }
 
-    private static var customDescription: String {
-        NSLocalizedString("scroll-preset-custom-description", comment: "")
-    }
-
-    private static var smoothOffDescription: String {
-        NSLocalizedString("scroll-preset-smooth-off-description", comment: "")
-    }
-
-    /// Every text the preset description can show.
-    private static var descriptionTexts: [String] {
-        ScrollPreset.allCases.map { $0.localizedDescription } + [customDescription, smoothOffDescription]
-    }
-
     /// Wide enough for every value text (e.g. a long "Off" or "100 %"), at least `valueColumnWidth`.
     private static func fittedValueColumnWidth(font: NSFont?) -> CGFloat {
         let texts = [
@@ -466,16 +437,10 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
     /// Reads the global settings into every control.
     private func syncControls(except activeSlider: NSSlider? = nil) {
         guard let controls else { return }
-        let scroll = Options.shared.scroll
         let tuning = Options.shared.scrollTuning
-        let preset = ScrollPreset.matching(scroll: scroll, tuning: tuning)
 
-        if let preset, let index = ScrollPreset.allCases.firstIndex(of: preset) {
-            controls.presetPopUp.selectItem(withTag: index)
-            controls.presetDescription.stringValue = preset.localizedDescription
-        } else {
-            controls.presetPopUp.selectItem(withTag: Self.customPresetTag)
-            controls.presetDescription.stringValue = scroll.smooth ? Self.customDescription : Self.smoothOffDescription
+        if let presetPicker {
+            controls.presetDescription.stringValue = presetPicker.sync()
         }
 
         controls.freeSpinCheckbox.state = tuning.freeSpinEnabled ? .on : .off
@@ -508,15 +473,6 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
     }
 
     // MARK: - Actions
-
-    @objc private func presetSelected(_ sender: NSPopUpButton) {
-        let tag = sender.selectedTag()
-        if ScrollPreset.allCases.indices.contains(tag) {
-            ScrollPreset.allCases[tag].apply()
-            onSettingsChanged?()
-        }
-        syncControls()
-    }
 
     @objc private func freeSpinToggled(_ sender: NSButton) {
         Options.shared.scrollTuning.freeSpinEnabled = sender.state == .on

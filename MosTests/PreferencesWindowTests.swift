@@ -327,3 +327,154 @@ final class PreferencesTextSizeTests: XCTestCase {
         XCTAssertEqual(scrolling.scrollDurationDescriptionLabel?.font?.pointSize, PreferencesForm.hintFontSize)
     }
 }
+
+/// The preset row at the top of the global Scrolling tab. It shares its popup with the
+/// Presets & Fast Scrolling popover and is hidden in per-app scroll settings.
+final class PreferencesScrollingPresetRowTests: XCTestCase {
+
+    private var originalScroll: OPTIONS_SCROLL_DEFAULT!
+    private var originalTuning: ScrollTuningSettings!
+
+    override func setUp() {
+        super.setUp()
+        originalScroll = Options.shared.scroll
+        originalTuning = Options.shared.scrollTuning
+        // A fresh container, so the tests never edit the one they restore.
+        Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+        Options.shared.scrollTuning = .default
+    }
+
+    override func tearDown() {
+        Options.shared.scroll = originalScroll
+        Options.shared.scrollTuning = originalTuning
+        originalScroll = nil
+        originalTuning = nil
+        super.tearDown()
+    }
+
+    private func makeController(target: Application? = nil) -> PreferencesScrollingViewController {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesScrollingViewController.self))
+        let controller = storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.scrolling) as! PreferencesScrollingViewController
+        controller.currentTargetApplication = target
+        _ = controller.view
+        // As in the window: the pane is as tall as its content.
+        controller.view.setFrameSize(controller.view.fittingSize)
+        controller.view.layoutSubtreeIfNeeded()
+        return controller
+    }
+
+    private func choose(_ preset: ScrollPreset, in popUp: NSPopUpButton) {
+        popUp.selectItem(withTag: ScrollPreset.allCases.firstIndex(of: preset)!)
+        XCTAssertTrue(popUp.sendAction(popUp.action, to: popUp.target))
+    }
+
+    func testRowIsTheFirstRowOfTheGlobalTab() throws {
+        ScrollPreset.smooth.apply()
+        let controller = makeController()
+        let popUp = try XCTUnwrap(controller.presetPicker?.popUp)
+        let description = try XCTUnwrap(controller.presetDescriptionLabel)
+
+        XCTAssertFalse(popUp.isHidden)
+        XCTAssertEqual(
+            popUp.itemTitles.filter { !$0.isEmpty },
+            ScrollPreset.allCases.map(\.localizedName) + [ScrollPreset.customLocalizedName]
+        )
+        XCTAssertEqual(popUp.titleOfSelectedItem, "Smooth")
+        XCTAssertEqual(description.stringValue, ScrollPreset.smooth.localizedDescription)
+        XCTAssertEqual(description.font?.pointSize, PreferencesForm.hintFontSize)
+        XCTAssertEqual(popUp.accessibilityLabel(), "Preset")
+
+        // Above "Smooth Scrolling" and on the same grid (the root view is not flipped).
+        let root = controller.view
+        let popUpFrame = root.convert(popUp.alignmentRect(forFrame: popUp.frame), from: popUp.superview)
+        let first = controller.scrollSmoothCheckBox!
+        let firstFrame = root.convert(first.alignmentRect(forFrame: first.frame), from: first.superview)
+        XCTAssertGreaterThan(popUpFrame.minY, firstFrame.maxY)
+        XCTAssertEqual(popUpFrame.minX, firstFrame.minX, accuracy: 0.5)
+        XCTAssertEqual(root.bounds.maxY - popUpFrame.maxY, 20, accuracy: 0.5)
+    }
+
+    func testChoosingAPresetWritesTheGlobalSettingsAndUpdatesTheTab() throws {
+        let controller = makeController()
+        let popUp = try XCTUnwrap(controller.presetPicker?.popUp)
+
+        choose(.direct, in: popUp)
+
+        let direct = ScrollPreset.direct.values
+        XCTAssertEqual(Options.shared.scroll.step, direct.step)
+        XCTAssertEqual(Options.shared.scroll.speed, direct.speed)
+        XCTAssertEqual(Options.shared.scroll.duration, direct.effectiveDuration)
+        XCTAssertEqual(Options.shared.scrollTuning, direct.tuning)
+        XCTAssertEqual(controller.scrollSpeedSlider.doubleValue, direct.speed, accuracy: 1e-9)
+        XCTAssertEqual(controller.scrollDurationSlider.doubleValue, direct.effectiveDuration, accuracy: 1e-9)
+        XCTAssertEqual(popUp.titleOfSelectedItem, "Direct")
+        XCTAssertEqual(controller.presetDescriptionLabel?.stringValue, ScrollPreset.direct.localizedDescription)
+        XCTAssertEqual(ScrollPreset.current, .direct)
+    }
+
+    func testRowFollowsTheValuesOfTheTab() throws {
+        ScrollPreset.balanced.apply()
+        let controller = makeController()
+        let popUp = try XCTUnwrap(controller.presetPicker?.popUp)
+        XCTAssertEqual(popUp.titleOfSelectedItem, "Balanced")
+
+        // A value changed by hand: no preset matches any more.
+        Options.shared.scroll.speed = 4.4
+        controller.syncViewWithOptions()
+        XCTAssertEqual(popUp.titleOfSelectedItem, ScrollPreset.customLocalizedName)
+        XCTAssertEqual(controller.presetDescriptionLabel?.stringValue, ScrollPresetPicker.customDescription)
+
+        // "Custom" changes nothing.
+        let before = Options.shared.scroll.speed
+        popUp.selectItem(withTag: ScrollPresetPicker.customTag)
+        XCTAssertTrue(popUp.sendAction(popUp.action, to: popUp.target))
+        XCTAssertEqual(Options.shared.scroll.speed, before)
+
+        Options.shared.scroll.smooth = false
+        controller.syncViewWithOptions()
+        XCTAssertEqual(controller.presetDescriptionLabel?.stringValue, ScrollPresetPicker.smoothOffDescription)
+    }
+
+    func testResetToDefaultsUpdatesTheRow() throws {
+        let controller = makeController()
+        let popUp = try XCTUnwrap(controller.presetPicker?.popUp)
+        choose(.direct, in: popUp)
+        XCTAssertTrue(controller.hasSettingsToReset)
+
+        controller.resetToDefaultClick(controller.resetToDefaultsButton)
+
+        XCTAssertEqual(Options.shared.scroll, OPTIONS_SCROLL_DEFAULT())
+        XCTAssertEqual(Options.shared.scrollTuning, .default)
+        let expected = ScrollPreset.current?.localizedName ?? ScrollPreset.customLocalizedName
+        XCTAssertEqual(popUp.titleOfSelectedItem, expected)
+    }
+
+    func testRowIsHiddenInPerAppSettings() throws {
+        let application = Application(path: "/Applications/PresetRowTest.app")
+        application.inherit = false
+        let perApp = makeController(target: application)
+        let popUp = try XCTUnwrap(perApp.presetPicker?.popUp)
+        XCTAssertTrue(popUp.isHidden)
+        XCTAssertEqual(perApp.presetDescriptionLabel?.isHidden, true)
+
+        // The first row keeps its place at the top, 20 pt under the edge.
+        let root = perApp.view
+        let first = perApp.scrollSmoothCheckBox!
+        let firstFrame = root.convert(first.alignmentRect(forFrame: first.frame), from: first.superview)
+        XCTAssertEqual(root.bounds.maxY - firstFrame.maxY, 20, accuracy: 0.5)
+
+        // And the global tab is taller by exactly the row.
+        let global = makeController()
+        XCTAssertGreaterThan(global.view.fittingSize.height, perApp.view.fittingSize.height)
+    }
+
+    func testThePopoverUsesTheSamePicker() throws {
+        ScrollPreset.smooth.apply()
+        let popover = ScrollTuningSettingsPopover()
+        let view = popover.makeContentViewController().view
+        let popUp = try XCTUnwrap(allSubviews(of: view).compactMap { $0 as? NSPopUpButton }
+            .first { $0.identifier == ScrollTuningSettingsPopover.Identifier.preset })
+        XCTAssertTrue(popUp.target is ScrollPresetPicker)
+        XCTAssertEqual(popUp.titleOfSelectedItem, "Smooth")
+    }
+}
