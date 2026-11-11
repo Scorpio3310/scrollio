@@ -232,18 +232,38 @@ extension CGEvent {
 
     /// The time of day of the event, "14:03:27.512" (Monitor window).
     var timestampFormatted: String {
-        return CGEvent.timestampFormatter.string(from: CGEvent.date(ofTimestamp: timestamp))
+        return CGEvent.timeOfDay(ofUptime: uptimeSeconds)
     }
 
-    /// The clock time of an event. Its timestamp counts nanoseconds since the Mac started,
-    /// on the clock of `systemUptime` (which stands still while the Mac sleeps), so the
-    /// event happened `uptime - timestamp` before `now`.
+    /// When the event happened, in seconds since the Mac started, on the clock of
+    /// `systemUptime` (which stands still while the Mac sleeps). The unit of the raw
+    /// `timestamp` is not the same on every Mac (nanoseconds, or mach ticks on Apple
+    /// silicon), so AppKit converts it (`NSEvent.timestamp`); only an event no `NSEvent`
+    /// can be made of is read as nanoseconds.
+    var uptimeSeconds: TimeInterval {
+        if let event = NSEvent(cgEvent: self) {
+            return event.timestamp
+        }
+        return Double(timestamp) / 1_000_000_000
+    }
+
+    /// The time of day of a moment `eventUptime` seconds after the Mac started: it was
+    /// `uptime - eventUptime` before `now`. One formatter for every line.
+    static func timeOfDay(
+        ofUptime eventUptime: TimeInterval,
+        now: Date = Date(),
+        uptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> String {
+        return timestampFormatter.string(from: date(ofUptime: eventUptime, now: now, uptime: uptime))
+    }
+
+    /// The clock time of a moment `eventUptime` seconds after the Mac started.
     static func date(
-        ofTimestamp timestamp: CGEventTimestamp,
+        ofUptime eventUptime: TimeInterval,
         now: Date = Date(),
         uptime: TimeInterval = ProcessInfo.processInfo.systemUptime
     ) -> Date {
-        return now.addingTimeInterval(Double(timestamp) / 1_000_000_000 - uptime)
+        return now.addingTimeInterval(eventUptime - uptime)
     }
 
     /// One formatter for every line of the Monitor window.
