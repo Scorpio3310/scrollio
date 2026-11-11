@@ -55,6 +55,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "scrolling-key-sideways", "scrolling-key-sideways-hint", "scrolling-key-pause", "scrolling-key-pause-hint",
         "scrolling-key-clear-for", "scrolling-key-none", "scrolling-reset",
         "scrolling-undo-reset",
+        "scrolling-speed-value", "scrolling-glide-time-shorter", "scrolling-glide-time-longer",
+        "scrolling-step-smaller", "scrolling-step-larger",
     ]
 
     /// Buttons pane: the card, the list and its rows, the action menu, "Which Button Is
@@ -184,6 +186,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "mouse-wheel-readback-one": "@",
         // Scrolling pane
         "scrolling-key-clear-for": "@",
+        "scrolling-speed-value": "@",
         // Buttons pane (ButtonTriggerNaming also names the Scrolling pane's hold keys)
         "buttons-trigger-placed": "@d",
         "buttons-trigger-number": "d",

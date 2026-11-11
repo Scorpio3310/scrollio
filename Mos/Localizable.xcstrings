@@ -5135,6 +5135,66 @@
           }
         }
       }
+    },
+    "scrolling-speed-value": {
+      "comment": "Scrolling pane: the value next to the Speed slider, a factor; the argument is the number in the user's locale, e.g. 6.3× or 6,3×",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@×"
+          }
+        }
+      }
+    },
+    "scrolling-glide-time-shorter": {
+      "comment": "Scrolling pane: under the left end of the Glide time slider",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shorter"
+          }
+        }
+      }
+    },
+    "scrolling-glide-time-longer": {
+      "comment": "Scrolling pane: under the right end of the Glide time slider",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Longer"
+          }
+        }
+      }
+    },
+    "scrolling-step-smaller": {
+      "comment": "Scrolling pane: under the left end of the Smallest step slider",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smaller"
+          }
+        }
+      }
+    },
+    "scrolling-step-larger": {
+      "comment": "Scrolling pane: under the right end of the Smallest step slider",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Larger"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

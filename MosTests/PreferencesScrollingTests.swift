@@ -83,6 +83,11 @@ final class PreferencesScrollingTests: XCTestCase {
         return NSLocalizedString(key, comment: "")
     }
 
+    /// What the Speed slider writes, in the locale the tests run in ("6.3×", "6,3×").
+    private func speedText(_ value: Double) -> String {
+        return ScrollingSlider.speed.shownText(for: value)
+    }
+
     private func allSubviews(of view: NSView) -> [NSView] {
         return view.subviews.flatMap { [$0] + allSubviews(of: $0) }
     }
@@ -205,7 +210,10 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertTrue(controller.feelRow.explanationLabel === controller.feelHintLabel)
         XCTAssertEqual(controller.speedRow.lowEndLabel?.stringValue, "Slow")
         XCTAssertEqual(controller.speedRow.highEndLabel?.stringValue, "Fast")
-        XCTAssertNil(controller.glideTimeRow.lowEndLabel)
+        XCTAssertEqual(controller.glideTimeRow.lowEndLabel?.stringValue, "Shorter")
+        XCTAssertEqual(controller.glideTimeRow.highEndLabel?.stringValue, "Longer")
+        XCTAssertEqual(controller.smallestStepRow.lowEndLabel?.stringValue, "Smaller")
+        XCTAssertEqual(controller.smallestStepRow.highEndLabel?.stringValue, "Larger")
     }
 
     func testTextsOfTheTab() {
@@ -216,7 +224,8 @@ final class PreferencesScrollingTests: XCTestCase {
         let shown = allSubviews(of: controller.view).compactMap { ($0 as? NSTextField)?.stringValue }
         let expected = [
             "Smooth scrolling", "Feel", "Speed", "Slow", "Fast", "Reverse wheel direction",
-            "Glide time", "Smallest step", "Trackpad-style events", "While you hold a key",
+            "Glide time", "Shorter", "Longer", "Smallest step", "Smaller", "Larger",
+            "Trackpad-style events", "While you hold a key",
             "Scroll faster", "Scroll sideways", "Pause smoothing",
             text("scrolling-smooth-hint"), text("scrolling-speed-hint"), text("scrolling-reverse-hint"),
             text("scrolling-glide-time-hint"), text("scrolling-step-hint"), text("scrolling-trackpad-events-hint"),
@@ -317,7 +326,8 @@ final class PreferencesScrollingTests: XCTestCase {
             choose(feel, in: controller)
             XCTAssertEqual(Options.shared.scroll.duration, feel.duration, "\(feel)")
             XCTAssertEqual(controller.glideTimeSlider.doubleValue, feel.duration, accuracy: 1e-9, "\(feel)")
-            XCTAssertEqual(controller.glideTimeValueLabel.stringValue, ScrollSliderSetting.glideTime.text(feel.duration))
+            XCTAssertEqual(controller.glideTimeValueLabel.stringValue, "", "no number")
+            XCTAssertEqual(controller.glideTimeSlider.accessibilityValueDescription(), ScrollingSlider.glideTime.spokenValue(for: feel.duration))
             XCTAssertEqual(controller.feelHintLabel.stringValue, feel.localizedHint, "\(feel)")
 
             // And a stored Duration of that value selects it again.
@@ -355,7 +365,8 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(Options.shared.scroll.duration, 3.9, "rounded to the 0.05 grid")
         XCTAssertEqual(controller.feelControl.selectedSegment, -1)
         XCTAssertEqual(controller.feelHintLabel.stringValue, ScrollFeel.customHint)
-        XCTAssertEqual(controller.glideTimeValueLabel.stringValue, "3.90")
+        XCTAssertEqual(controller.glideTimeValueLabel.stringValue, "")
+        XCTAssertEqual(controller.glideTimeSlider.accessibilityValueDescription(), ScrollingSlider.glideTime.spokenValue(for: 3.9))
 
         // Back on a preset's value the preset is selected again: the two never disagree.
         drag(slider, to: 4.35)
@@ -387,7 +398,9 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(slider.minValue, 1)
         XCTAssertEqual(slider.maxValue, 10, "the old range: the default of 6.3 lies above 5")
         XCTAssertEqual(slider.doubleValue, 6.3, accuracy: 1e-9)
-        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, "6.3")
+        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, speedText(6.3))
+        XCTAssertTrue(speedText(6.3).hasSuffix("×"), "a factor")
+        XCTAssertEqual(slider.accessibilityValueDescription(), speedText(6.3))
         XCTAssertEqual(slider.accessibilityLabel(), "Speed")
         // A tick at every whole number; the value moves in halves between them.
         XCTAssertEqual(slider.numberOfTickMarks, 10)
@@ -396,14 +409,19 @@ final class PreferencesScrollingTests: XCTestCase {
 
         drag(slider, to: 3.14)
         XCTAssertEqual(Options.shared.scroll.speed, 3, "rounded to halves")
-        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, "3.0")
+        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, speedText(3))
         drag(slider, to: 3.3)
         XCTAssertEqual(Options.shared.scroll.speed, 3.5)
-        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, "3.5")
+        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, speedText(3.5))
 
         drag(slider, to: 10)
         XCTAssertEqual(Options.shared.scroll.speed, 10)
-        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, "10.0")
+        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, speedText(10))
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertLessThanOrEqual(
+            controller.scrollSpeedValueLabel.fittingSize.width, controller.scrollSpeedValueLabel.frame.width,
+            "the longest value fits its column"
+        )
         drag(slider, to: 1)
         XCTAssertEqual(Options.shared.scroll.speed, 1)
     }
@@ -414,20 +432,50 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(slider.minValue, 0.01)
         XCTAssertEqual(slider.maxValue, 100)
         XCTAssertEqual(slider.doubleValue, 33.6, accuracy: 1e-9)
-        XCTAssertEqual(controller.smallestStepValueLabel.stringValue, "33.6")
+        XCTAssertEqual(controller.smallestStepValueLabel.stringValue, "", "no number: the ends say which way is which")
+        XCTAssertEqual(slider.accessibilityValueDescription(), ScrollingSlider.smallestStep.spokenValue(for: 33.6))
         XCTAssertEqual(slider.accessibilityLabel(), "Smallest step")
         XCTAssertEqual(slider.numberOfTickMarks, 11, "a tick every 10")
         XCTAssertFalse(slider.allowsTickMarkValuesOnly)
 
         drag(slider, to: 12.34)
         XCTAssertEqual(Options.shared.scroll.step, 12, "whole numbers")
-        XCTAssertEqual(controller.smallestStepValueLabel.stringValue, "12")
+        XCTAssertEqual(slider.accessibilityValueDescription(), ScrollingSlider.smallestStep.spokenValue(for: 12))
         drag(slider, to: 0.3)
         XCTAssertEqual(Options.shared.scroll.step, 0.01, "the far left keeps the range's lowest value")
-        XCTAssertEqual(controller.smallestStepValueLabel.stringValue, "0.01")
+        XCTAssertEqual(slider.accessibilityValueDescription(), ScrollingSlider.smallestStep.spokenValue(for: 0.01))
         drag(slider, to: 12)
         XCTAssertEqual(Options.shared.scroll.duration, 3.69, "nothing else moves")
         XCTAssertEqual(Options.shared.scroll.speed, 6.3)
+    }
+
+    /// Speed shows its factor in the user's locale; Glide time and Smallest step show no
+    /// number, and VoiceOver reads how far along each of them the knob is.
+    func testOnlySpeedShowsANumberAndItFollowsTheLocale() {
+        let english = Locale(identifier: "en_US")
+        let slovenian = Locale(identifier: "sl_SI")
+        XCTAssertEqual(ScrollingSlider.speed.shownText(for: 6.3, locale: english), "6.3×")
+        XCTAssertEqual(ScrollingSlider.speed.shownText(for: 10, locale: english), "10.0×")
+        XCTAssertEqual(ScrollingSlider.speed.shownText(for: 1, locale: english), "1.0×")
+        XCTAssertEqual(ScrollingSlider.speed.shownText(for: 6.31, locale: english), "6.3×", "the slider's one decimal")
+        XCTAssertEqual(ScrollingSlider.speed.shownText(for: 6.3, locale: slovenian), "6,3×", "a decimal comma")
+        XCTAssertEqual(ScrollingSlider.speed.shownText(for: 7.5, locale: Locale(identifier: "de_DE")), "7,5×")
+        XCTAssertEqual(ScrollingSlider.speed.spokenValue(for: 6.3, locale: english), "6.3×", "VoiceOver reads what is shown")
+
+        for slider in [ScrollingSlider.glideTime, .smallestStep] {
+            let range = slider.setting.range
+            for value in [range.lowerBound, (range.lowerBound + range.upperBound) / 2, range.upperBound] {
+                XCTAssertEqual(slider.shownText(for: value, locale: english), "", "\(slider) shows no number")
+            }
+        }
+        XCTAssertEqual(ScrollingSlider.glideTime.spokenValue(for: 1, locale: english), "0%")
+        XCTAssertEqual(ScrollingSlider.glideTime.spokenValue(for: 3.69, locale: english), "67%")
+        XCTAssertEqual(ScrollingSlider.glideTime.spokenValue(for: 5, locale: english), "100%")
+        XCTAssertEqual(ScrollingSlider.smallestStep.spokenValue(for: 33.6, locale: english), "34%")
+        XCTAssertEqual(ScrollingSlider.smallestStep.spokenValue(for: 250, locale: english), "100%", "kept on the slider")
+        XCTAssertEqual(ScrollingSlider.smallestStep.spokenValue(for: .nan, locale: english), "0%")
+        XCTAssertTrue(ScrollingSlider.glideTime.spokenValue(for: 3.69, locale: slovenian).hasPrefix("67"))
+        XCTAssertEqual(ScrollingSlider.allCases.map(\.setting), [.speed, .glideTime, .smallestStep])
     }
 
     // MARK: - Values off the grid
@@ -454,12 +502,12 @@ final class PreferencesScrollingTests: XCTestCase {
             "loading and showing writes nothing"
         )
         XCTAssertEqual(controller.scrollSpeedSlider.doubleValue, 6.31, accuracy: 1e-9, "the knob shows the value itself")
-        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, "6.3")
+        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, speedText(6.3))
         XCTAssertEqual(controller.glideTimeSlider.doubleValue, 3.687, accuracy: 1e-9)
-        XCTAssertEqual(controller.glideTimeValueLabel.stringValue, "3.69")
+        XCTAssertEqual(controller.glideTimeValueLabel.stringValue, "")
         XCTAssertEqual(controller.feelControl.selectedSegment, ScrollFeel.smooth.rawValue, "3.687 reads as Smooth")
         XCTAssertEqual(controller.smallestStepSlider.doubleValue, 33.6, accuracy: 1e-9)
-        XCTAssertEqual(controller.smallestStepValueLabel.stringValue, "33.6")
+        XCTAssertEqual(controller.smallestStepValueLabel.stringValue, "")
 
         // The same for an app with values of its own.
         let application = makeApplication(inherit: false)

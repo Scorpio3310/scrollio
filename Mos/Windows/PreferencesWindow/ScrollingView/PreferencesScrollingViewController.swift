@@ -72,6 +72,56 @@ enum ScrollHoldKey: Int, CaseIterable {
     }
 }
 
+/// The tab's three sliders and how each shows its value. Speed writes its factor next to
+/// the slider ("6.3×"). Glide time (a scale of 1 to 5 that reads like seconds but is not)
+/// and Smallest step write no number: the words under their ends say which way is which,
+/// and VoiceOver reads where the knob is between them ("67%"). Numbers follow the user's
+/// locale ("6,3×" with a decimal comma). Display only: the stored values do not change.
+enum ScrollingSlider: CaseIterable {
+    case speed, glideTime, smallestStep
+
+    /// The range, the tick marks and the grid of the slider.
+    var setting: ScrollSliderSetting {
+        switch self {
+        case .speed: return .speed
+        case .glideTime: return .glideTime
+        case .smallestStep: return .smallestStep
+        }
+    }
+
+    /// What is written next to the slider; empty for none. A value off the grid keeps the
+    /// decimals it needs (`ScrollSliderSetting.maxDecimals`), so it is not shown as another.
+    func shownText(for value: Double, locale: Locale = .current) -> String {
+        switch self {
+        case .speed:
+            let formatter = NumberFormatter()
+            formatter.locale = locale
+            formatter.numberStyle = .decimal
+            formatter.minimumFractionDigits = setting.decimals
+            formatter.maximumFractionDigits = setting.maxDecimals
+            let number = formatter.string(from: NSNumber(value: value)) ?? ""
+            return String(format: NSLocalizedString("scrolling-speed-value", comment: ""), number)
+        case .glideTime, .smallestStep:
+            return ""
+        }
+    }
+
+    /// What VoiceOver reads as the slider's value: the text next to it, or for a slider
+    /// without one how far along its range the value lies, from the low end.
+    func spokenValue(for value: Double, locale: Locale = .current) -> String {
+        let shown = shownText(for: value, locale: locale)
+        guard shown.isEmpty else { return shown }
+        let range = setting.range
+        let span = range.upperBound - range.lowerBound
+        let fraction = span > 0 && value.isFinite ? (value - range.lowerBound) / span : 0
+        let formatter = NumberFormatter()
+        formatter.locale = locale
+        formatter.numberStyle = .percent
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: min(1, max(0, fraction)))) ?? ""
+    }
+}
+
 /// The button that records a key. It tells when it gains or loses the keyboard focus.
 final class ScrollKeyRecorderButton: NSButton {
     var onFocusChange: ((Bool) -> Void)?
@@ -318,14 +368,15 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// as it is, not snapped.
     private func sync(
         _ row: PreferencesSliderRow,
-        _ setting: ScrollSliderSetting,
+        _ slider: ScrollingSlider,
         value: Double,
         enabled: Bool
     ) {
         if !row.isTracking {
             row.showValue(value)
         }
-        row.valueText = setting.text(value)
+        row.valueText = slider.shownText(for: value)
+        row.slider.setAccessibilityValueDescription(slider.spokenValue(for: value))
         row.isEnabled = enabled
     }
 
@@ -654,6 +705,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
             titleKey: "scrolling-glide-time-label",
             hintKey: "scrolling-glide-time-hint",
             setting: .glideTime,
+            ends: (low: text("scrolling-glide-time-shorter"), high: text("scrolling-glide-time-longer")),
             identifier: Identifier.glideTime,
             action: #selector(glideTimeSliderChange(_:))
         )
@@ -668,6 +720,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
             titleKey: "scrolling-step-label",
             hintKey: "scrolling-step-hint",
             setting: .smallestStep,
+            ends: (low: text("scrolling-step-smaller"), high: text("scrolling-step-larger")),
             identifier: Identifier.smallestStep,
             action: #selector(smallestStepSliderChange(_:))
         )
@@ -690,13 +743,14 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         return row
     }
 
-    /// A slider with its value on the right of its row and the setting's tick marks under
-    /// it. All of the tab's sliders have the same width, so they line up.
+    /// A slider with the words for its ends under it, the setting's tick marks and, on the
+    /// right, the column of its value (`ScrollingSlider`). All of the tab's sliders have the
+    /// same width and keep that column, also when they write no value, so they line up.
     private func makeSliderRow(
         titleKey: String,
         hintKey: String,
         setting: ScrollSliderSetting,
-        ends: (low: String, high: String)? = nil,
+        ends: (low: String, high: String),
         identifier: NSUserInterfaceItemIdentifier,
         action: Selector
     ) -> PreferencesSliderRow {
