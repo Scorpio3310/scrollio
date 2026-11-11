@@ -177,3 +177,19 @@ final class LogiFeatureDiscoveryQueueTests: XCTestCase {
     }
 }
 
+// MARK: - IOHIDManagerOpen (B)
+
+final class LogiSessionManagerOpenTests: XCTestCase {
+
+    func testASuccessfulOpenLogsNothing() {
+        XCTAssertNil(LogiSessionManager.openFailureLogLine(result: kIOReturnSuccess))
+    }
+
+    /// The failure used to show only in the diagnostics panel's memory; now it is one line
+    /// in the system log (category logi), with the code.
+    func testAFailedOpenIsOneSystemLogLine() {
+        let line = LogiSessionManager.openFailureLogLine(result: kIOReturnNotPermitted)
+        XCTAssertEqual(line, "IOHIDManagerOpen returned 0xe00002e2; the manager stays open for the devices it could open")
+    }
+}
+

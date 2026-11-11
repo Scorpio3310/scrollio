@@ -65,6 +65,7 @@ internal class LogiSessionManager {
         hidManager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         guard let manager = hidManager else {
             LogiDebugPanel.log("[LogitechHID] Failed to create IOHIDManager")
+            LogiSystemLog.note("IOHIDManagerCreate failed; Logitech devices are not watched")
             return
         }
 
@@ -83,13 +84,29 @@ internal class LogiSessionManager {
         IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
 
         let result = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
-        if result != kIOReturnSuccess {
-            LogiDebugPanel.log("[LogitechHID] Failed to open IOHIDManager: \(String(format: "0x%08x", result))")
-            return
+        if let line = Self.openFailureLogLine(result: result) {
+            // Kept and counted as started (see openFailureLogLine): stop() then closes this
+            // manager, and a later start() does not make a second one beside it.
+            LogiDebugPanel.log("[LogitechHID] \(line)")
+            LogiSystemLog.note(line)
         }
 
         isActive = true
         LogiDebugPanel.log("[LogitechHID] Started")
+    }
+
+    /// The system-log line for an IOHIDManagerOpen result, nil for success.
+    ///
+    /// A failed open used to leave the manager scheduled but uncounted: stop() skipped it
+    /// and the next start() (wake, Resume) scheduled a second one beside it, so every device
+    /// could get two sessions. The manager is kept, as before, and now counted as started:
+    /// IOHIDManagerOpen opens every matched device and reports the error of any one it
+    /// could not open (a keyboard interface without Input Monitoring, a device another app
+    /// holds) while it stays open and keeps matching the others, so dropping it on an error
+    /// could take a working mouse away.
+    static func openFailureLogLine(result: IOReturn) -> String? {
+        guard result != kIOReturnSuccess else { return nil }
+        return String(format: "IOHIDManagerOpen returned 0x%08x; the manager stays open for the devices it could open", result)
     }
 
     func stop() {
