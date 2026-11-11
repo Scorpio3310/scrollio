@@ -227,4 +227,13 @@ final class LegacyMosTakeoverTests: XCTestCase {
         XCTAssertTrue(AppRuntime.isRunningXCTest)
         XCTAssertFalse(LegacyMosTakeover.isAllowedToRun)
     }
+
+    // MARK: - Identity
+
+    func testTheAppDoesNotCarryALegacyIdentity() {
+        let identifier = Bundle(for: AppDelegate.self).bundleIdentifier ?? ""
+        XCTAssertTrue(identifier.hasPrefix("com.nikklemenc.Scrollio"), identifier)
+        XCTAssertFalse(LegacyMosTakeover.legacyBundleIdentifiers.contains(identifier))
+        XCTAssertNotEqual(identifier, LegacyMosTakeover.legacyDefaultsDomain)
+    }
 }

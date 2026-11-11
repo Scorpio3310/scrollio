@@ -101,7 +101,7 @@
 		1A5E00000000000000000101 /* MosTests/ScrollingResetTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollingResetTests.swift; sourceTree = SOURCE_ROOT; };
 		1A5E00000000000000000201 /* MosTests/PreferencesLocalizationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/PreferencesLocalizationTests.swift; sourceTree = SOURCE_ROOT; };
 		0B2C591D2F7ADB79003D88C9 /* Debug.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = Debug.xctestplan; sourceTree = "<group>"; };
-		22142DA01E25344E00E4BFBF /* Mos Debug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Mos Debug.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		22142DA01E25344E00E4BFBF /* Scrollio Debug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Scrollio Debug.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		25DD10CB06A5D177E3BD0845 /* MosTests/ScrollDispatchContextTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollDispatchContextTests.swift; sourceTree = SOURCE_ROOT; };
 		AA1011FA00000000000000B1 /* MosTests/ScrollTargetApplicationRulesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollTargetApplicationRulesTests.swift; sourceTree = SOURCE_ROOT; };
 		2D6CF5441214A14BB8FFEDA5 /* MosTests/ScrollCoreHotkeyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollCoreHotkeyTests.swift; sourceTree = SOURCE_ROOT; };
@@ -295,7 +295,7 @@
 		22142DA11E25344E00E4BFBF /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				22142DA01E25344E00E4BFBF /* Mos Debug.app */,
+				22142DA01E25344E00E4BFBF /* Scrollio Debug.app */,
 				D3A7FDB8A6001907C9F156D6 /* MosTests.xctest */,
 			);
 			name = Products;
@@ -334,7 +334,7 @@
 				0BE5A295253A119C006D61C0 /* DGCharts */,
 			);
 			productName = Mos;
-			productReference = 22142DA01E25344E00E4BFBF /* Mos Debug.app */;
+			productReference = 22142DA01E25344E00E4BFBF /* Scrollio Debug.app */;
 			productType = "com.apple.product-type.application";
 		};
 		62CD1674CBD9855CE2042C81 /* MosTests */ = {
@@ -528,12 +528,12 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "";
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
-				PRODUCT_BUNDLE_IDENTIFIER = me.caldis.MosTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nikklemenc.ScrollioTests;
 				PRODUCT_MODULE_NAME = MosTests;
 				PRODUCT_NAME = MosTests;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Mos Debug.app/Contents/MacOS/Mos Debug";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Scrollio Debug.app/Contents/MacOS/Scrollio Debug";
 			};
 			name = Release;
 		};
@@ -679,25 +679,26 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 20260820.1;
+				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 8C592KLVN6;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Mos/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Mos Debug";
+				INFOPLIST_KEY_CFBundleDisplayName = "Scrollio Debug";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
-				MARKETING_VERSION = 4.3.0;
+				MARKETING_VERSION = 1.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				"OTHER_SWIFT_FLAGS[arch=*]" = "-DDEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.caldis.Mos.debug;
-				PRODUCT_NAME = "$(TARGET_NAME) Debug";
+				PRODUCT_BUNDLE_IDENTIFIER = com.nikklemenc.Scrollio.debug;
+				PRODUCT_MODULE_NAME = Mos_Debug;
+				PRODUCT_NAME = "Scrollio Debug";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
 				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
@@ -725,24 +726,25 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 20260820.1;
+				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 8C592KLVN6;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GCC_OPTIMIZATION_LEVEL = fast;
 				INFOPLIST_FILE = Mos/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Mos;
+				INFOPLIST_KEY_CFBundleDisplayName = Scrollio;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
-				MARKETING_VERSION = 4.3.0;
+				MARKETING_VERSION = 1.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
-				PRODUCT_BUNDLE_IDENTIFIER = com.caldis.Mos;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.nikklemenc.Scrollio;
+				PRODUCT_MODULE_NAME = Mos;
+				PRODUCT_NAME = Scrollio;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
 				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
@@ -766,12 +768,12 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "";
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
-				PRODUCT_BUNDLE_IDENTIFIER = me.caldis.MosTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nikklemenc.ScrollioTests;
 				PRODUCT_MODULE_NAME = MosTests;
 				PRODUCT_NAME = MosTests;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Mos Debug.app/Contents/MacOS/Mos Debug";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Scrollio Debug.app/Contents/MacOS/Scrollio Debug";
 			};
 			name = Debug;
 		};
