@@ -55,6 +55,8 @@ enum ButtonTriggerNaming {
             }
             switch logitech.role(code) {
             case .gesture?: return text("buttons-trigger-gesture")
+            // The MX Master 4's haptic sense panel: the Mouse pane's "thumb panel".
+            case .thumbPanel?: return text("buttons-trigger-thumb-panel")
             case .modeShift?: return text("buttons-trigger-mode-shift")
             case .middle?: return text("buttons-trigger-middle")
             case .back?: return text("buttons-trigger-back")
@@ -69,12 +71,32 @@ enum ButtonTriggerNaming {
         }
     }
 
-    /// Logitech's names that the other panes say in plain words: the MX Master 4's haptic
-    /// sense panel is the Mouse pane's "thumb panel", and "DPI" is jargon.
+    /// Logitech's names that the other panes say in plain words: "DPI" is jargon.
     private static let plainLogitechNames: [String: String] = [
-        "Haptic": "buttons-trigger-thumb-panel",
         "DPI Switch": "buttons-trigger-pointer-speed",
     ]
+
+    /// The row titles of `events`, in their order. A Logitech control that would read the
+    /// same as a standard button of the list says so ("Back button (Logitech)"); every
+    /// other title is `title(for:)`.
+    static func titles(for events: [RecordedEvent], logitech: Logitech = .live) -> [String] {
+        let titles = events.map { title(for: $0, logitech: logitech) }
+        let standard = Set(zip(events, titles).filter { !isLogitech($0.0) }.map(\.1))
+        return zip(events, titles).map { event, title in
+            guard isLogitech(event), standard.contains(title) else { return title }
+            return String(format: text("buttons-trigger-logitech-twin"), title)
+        }
+    }
+
+    /// The title of `event` among the triggers of `list` (which may hold `event` itself).
+    static func title(for event: RecordedEvent, among list: [RecordedEvent], logitech: Logitech = .live) -> String {
+        let others = list.filter { $0 != event }
+        return titles(for: others + [event], logitech: logitech).last ?? title(for: event, logitech: logitech)
+    }
+
+    private static func isLogitech(_ event: RecordedEvent) -> Bool {
+        return event.type == .mouse && LogiCenter.shared.isLogiCode(event.code)
+    }
 
     // MARK: - Keyboard shortcuts as actions
 

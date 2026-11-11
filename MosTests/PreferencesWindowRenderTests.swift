@@ -148,11 +148,12 @@ final class PreferencesWindowRenderTests: XCTestCase {
             Options.shared.general.autoLaunch = savedAutoLaunch
             LoginItem.service = LoginItem.defaultService
         }
-        let cases: [(name: String, access: Bool, login: LoginItemStatus, advanced: Bool)] = [
-            ("general", true, .enabled, false),
-            ("general-no-access", false, .notRegistered, false),
-            ("general-login-approval", true, .requiresApproval, false),
-            ("general-advanced", true, .enabled, true),
+        let cases: [(name: String, access: Bool, login: LoginItemStatus, advanced: Bool, paused: Bool)] = [
+            ("general", true, .enabled, false, false),
+            ("general-no-access", false, .notRegistered, false, false),
+            ("general-login-approval", true, .requiresApproval, false, false),
+            ("general-advanced", true, .enabled, true, false),
+            ("general-paused", true, .enabled, false, true),
         ]
         for item in cases {
             LoginItem.service = FixedLoginItem(item.login)
@@ -164,6 +165,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 guard let general = preferences.controller(for: PANEL_IDENTIFIER.general)
                     as? PreferencesGeneralViewController else { return }
                 general.isAccessGranted = { item.access }
+                general.isPaused = { item.paused }
+                general.resume = {}
                 general.isMenuBarIconHidden = { false }
                 general.uiStateDefaults = defaults
             }, afterLoad: { controller in
@@ -231,6 +234,17 @@ final class PreferencesWindowRenderTests: XCTestCase {
         )
         try renderButtons(name: "buttons-problems", source: troubled, scrollKeys: [ScrollHotkey(type: .mouse, code: 5)]) { buttons in
             buttons.list.select(buttons.rows[1].id)
+        }
+
+        // A Logitech Back button next to the standard one, and the MX Master 4's thumb
+        // panel selected: the card lights the thumb panel.
+        Options.shared.buttons.binding = [
+            binding(3, SystemShortcut.navigateBack.identifier),
+            binding(1006, SystemShortcut.mouseGestureNavigation.identifier),
+            binding(2000 + 0x01A0, SystemShortcut.missionControl.identifier),
+        ]
+        try renderButtons(name: "buttons-twins-thumb-panel", source: plain) { buttons in
+            buttons.list.select(buttons.rows[2].id)
         }
         try renderMouseParts()
     }

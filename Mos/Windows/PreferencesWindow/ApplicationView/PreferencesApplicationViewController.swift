@@ -9,9 +9,10 @@
 //  reversing, so it says so; buttons and gestures work everywhere). Under it the list of
 //  apps, each with its icon, its name and whether it has settings of its own. "+" offers
 //  the running apps and "Choose in Finder…", "−" and Delete remove (Edit › Undo brings the
-//  app back with its settings). Double-click, Return or the chevron open the app's page
-//  (ApplicationDetailViewController) in place of the list; "‹ Apps", Esc and ⌘[ come back,
-//  and leaving the pane always comes back to the list.
+//  app back with its settings; when it was added again meanwhile, its settings go onto
+//  that entry, and Redo takes them off again). Double-click, Return or the chevron open the
+//  app's page (ApplicationDetailViewController) in place of the list; "‹ Apps", Esc and ⌘[
+//  come back, and leaving the pane always comes back to the list.
 //
 //  The pane edits Options.shared.application: the allowlist switch and the list of apps.
 //  What is stored and how is unchanged: running apps are stored by their program's path,
@@ -198,6 +199,18 @@ class PreferencesApplicationViewController: NSViewController {
         return rowApplications.first { $0.value === application }?.key
     }
 
+    /// The paths under which the list may hold the app stored as `path`: the path itself,
+    /// and the app's bundle for a program inside one, or the bundle's program for a bundle.
+    static func knownPaths(forStoredPath path: String) -> [String] {
+        var paths = [path]
+        if let range = path.range(of: ".app/Contents/", options: .backwards) {
+            paths.append(String(path[..<path.index(range.lowerBound, offsetBy: 4)]))
+        } else if path.hasSuffix(".app"), let program = Bundle(path: path)?.executablePath {
+            paths.append(program)
+        }
+        return paths
+    }
+
     /// The app the list holds under one of `paths`, if any.
     func existingApplication(forPaths paths: [String]) -> Application? {
         let stored = Options.shared.application.applications
@@ -377,34 +390,74 @@ class PreferencesApplicationViewController: NSViewController {
 
     // MARK: - Removing
 
+    /// Where a removal registers its Undo: the window's undo manager while the pane is in
+    /// the window. Undo and Redo stay with the manager the removal used, also when they
+    /// run while another pane is shown (this pane is then out of the window).
+    var undoTarget: UndoManager? {
+        return view.window?.undoManager
+    }
+
     /// Removes the app of the row `id` with its settings; Undo puts it back where it was.
     func removeApplication(withID id: String) {
         guard let application = application(forRowID: id) else { return }
-        remove(application)
+        remove(application, undoManager: undoTarget)
     }
 
-    private func remove(_ application: Application) {
+    private func remove(_ application: Application, undoManager undo: UndoManager?) {
         guard let position = index(of: application) else { return }
         Options.shared.application.applications.remove(at: position)
         reloadRows()
-        undoManager?.registerUndo(withTarget: self) { controller in
-            controller.restoreApplication(application, at: position)
+        guard let undo else { return }
+        undo.registerUndo(withTarget: self) { [weak undo] controller in
+            controller.restoreApplication(application, at: position, undoManager: undo)
         }
-        undoManager?.setActionName(text("apps-undo-remove"))
+        undo.setActionName(text("apps-undo-remove"))
     }
 
-    /// Undo of a removal: the same app, with all its settings, in its old place. Redo
-    /// removes it again.
+    /// Undo of a removal: the same app, with all its settings, in its old place, selected,
+    /// and the list has the keyboard. Redo removes it again.
+    ///
+    /// The app may be on the list again (added anew after the removal): then no second
+    /// entry is made for it. The removed entry's settings go onto the entry that is there,
+    /// which stays where it is, and Redo gives that entry back the settings it had.
     func restoreApplication(_ application: Application, at position: Int) {
+        restoreApplication(application, at: position, undoManager: undoTarget)
+    }
+
+    private func restoreApplication(_ application: Application, at position: Int, undoManager undo: UndoManager?) {
         if index(of: application) == nil {
+            if let existing = existingApplication(forPaths: Self.knownPaths(forStoredPath: application.path)) {
+                apply(ApplicationSettings(of: application), to: existing, undoManager: undo)
+                return
+            }
             Options.shared.application.applications.insert(application, at: position)
         }
         reloadRows()
         list.select(rowID(for: application))
-        undoManager?.registerUndo(withTarget: self) { controller in
-            controller.remove(application)
+        focusList()
+        guard let undo else { return }
+        undo.registerUndo(withTarget: self) { [weak undo] controller in
+            controller.remove(application, undoManager: undo)
         }
-        undoManager?.setActionName(text("apps-undo-remove"))
+        undo.setActionName(text("apps-undo-remove"))
+    }
+
+    /// Gives `application` `settings` (Undo of a removal of an app that was added again);
+    /// Undo and Redo swap them back and forth under the name of the removal.
+    private func apply(_ settings: ApplicationSettings, to application: Application, undoManager undo: UndoManager?) {
+        let previous = ApplicationSettings(of: application)
+        settings.apply(to: application)
+        reloadRows()
+        if detailController?.application === application {
+            detailController?.syncViewWithOptions()
+        }
+        list.select(rowID(for: application))
+        focusList()
+        guard let undo else { return }
+        undo.registerUndo(withTarget: self) { [weak undo] controller in
+            controller.apply(previous, to: application, undoManager: undo)
+        }
+        undo.setActionName(text("apps-undo-remove"))
     }
 
     // MARK: - App page
@@ -481,6 +534,31 @@ class PreferencesApplicationViewController: NSViewController {
 
     private func text(_ key: String) -> String {
         return NSLocalizedString(key, comment: "")
+    }
+}
+
+// MARK: - Settings of an app
+
+/// What an app's entry holds besides its path, as stored: moved from one entry to another
+/// by Undo (the stored format does not change).
+struct ApplicationSettings {
+    let displayName: String?
+    let inherit: Bool
+    let scroll: OPTIONS_SCROLL_DEFAULT
+    let buttons: OPTIONS_BUTTONS_DEFAULT?
+
+    init(of application: Application) {
+        displayName = application.displayName
+        inherit = application.inherit
+        scroll = application.scroll
+        buttons = application.buttons
+    }
+
+    func apply(to application: Application) {
+        application.displayName = displayName
+        application.inherit = inherit
+        application.scroll = scroll
+        application.buttons = buttons
     }
 }
 

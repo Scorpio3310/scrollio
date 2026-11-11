@@ -14,7 +14,8 @@ enum ButtonsMousePart: Int, CaseIterable {
     case middle
     case back
     case forward
-    /// The thumb panel of a Logitech MX Master.
+    /// The thumb panel of a Logitech MX Master: the gesture button of the MX Master 3 and
+    /// 3S, the haptic sense panel of the MX Master 4.
     case gesture
     /// The small button behind the wheel.
     case modeShift
@@ -37,7 +38,7 @@ enum ButtonsMousePart: Int, CaseIterable {
         default:
             guard let role = logitechRole(event.code) else { return nil }
             switch role {
-            case .gesture: return .gesture
+            case .gesture, .thumbPanel: return .gesture
             case .modeShift: return .modeShift
             case .middle: return .middle
             case .back: return .back

@@ -612,6 +612,54 @@ final class PreferencesGesturesTests: XCTestCase {
             isLogitechCode: isLogitech
         )
         XCTAssertEqual(disabled, MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false))
+
+        // A key never starts a gesture.
+        let key = ButtonBinding(
+            triggerEvent: RecordedEvent(type: .keyboard, code: 40, modifiers: UInt(CGEventFlags.maskCommand.rawValue), deviceFilter: nil),
+            systemShortcutName: SystemShortcut.mouseGestureNavigation.identifier,
+            isEnabled: true
+        )
+        XCTAssertEqual(MouseGestureBindingSummary(bindings: [key], isLogitechCode: isLogitech),
+                       MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false))
+
+        // Named as the Buttons pane names them: a Logitech Back button next to the standard one says so.
+        let twins = MouseGestureBindingSummary(
+            bindings: [binding(SystemShortcut.mouseGestureNavigation, code: 3), binding(SystemShortcut.mouseGestureNavigation, code: 1006)],
+            isLogitechCode: isLogitech
+        )
+        XCTAssertEqual(twins.buttonTitles, ["Back button", "Back button (Logitech)"])
+    }
+
+    /// The "Gesture button" row counts only bindings that run: the Buttons pane's. Bindings
+    /// stored per app (`Application.buttons`) are never run, so they do not count.
+    func testTheGestureButtonRowCountsOnlyBindingsThatRun() {
+        let savedBindings = Options.shared.buttons.binding
+        let savedApplications = Options.shared.application.applications
+        defer {
+            Options.shared.buttons.binding = savedBindings
+            Options.shared.application.applications = savedApplications
+        }
+        let gesture = ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil),
+            systemShortcutName: SystemShortcut.mouseGestureNavigation.identifier,
+            isEnabled: true
+        )
+        let app = Application(path: "/System/Applications/Calculator.app")
+        app.buttons = OPTIONS_BUTTONS_DEFAULT()
+        app.buttons?.binding = [gesture]
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [app], matchKey: "path")
+        Options.shared.buttons.binding = []
+
+        XCTAssertFalse(MouseGestureBindingSummary.current.hasGestureButton, "only an app's dormant binding")
+        let controller = makeController()
+        controller.bindingSummary = { .current }
+        controller.reload()
+        XCTAssertEqual(controller.gestureButtonRow.explanation, "No button has the action Gesture Navigation yet.")
+        XCTAssertEqual(controller.gestureButtonButton.title, "Set Up…")
+
+        Options.shared.buttons.binding = [gesture]
+        XCTAssertEqual(MouseGestureBindingSummary.current,
+                       MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"]))
     }
 
     // MARK: - The preview

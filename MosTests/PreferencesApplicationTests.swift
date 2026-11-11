@@ -3,7 +3,8 @@
 //  MosTests
 //
 //  The Apps pane: the truthful allowlist switch, the list of apps (rows, "+" menu of
-//  running apps, Choose in Finder, duplicates, remove with undo), an app's page opened in
+//  running apps, Choose in Finder, duplicates, remove with undo, also from another pane
+//  and after the app was added again), an app's page opened in
 //  place of the list and back again, "Use settings from Scrolling" dimming the settings,
 //  and the stored apps loading and saving unchanged. Nothing is shown on screen: the menu,
 //  the open panel and the running apps go through seams, windows are never ordered in.
@@ -90,6 +91,33 @@ final class PreferencesApplicationTests: XCTestCase {
         window.contentView?.layoutSubtreeIfNeeded()
         addTeardownBlock { window.close() }
         return window
+    }
+
+    /// The pane in a container of a window (so it can be taken out, as the window does when
+    /// another pane shows). Never shown.
+    private func makeContainedWindow(for controller: NSViewController) -> (NSWindow, NSView) {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: PreferencesWindowLayout.contentWidth, height: 600),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: PreferencesWindowLayout.contentWidth, height: 600))
+        window.contentView = container
+        container.addSubview(controller.view)
+        addTeardownBlock { window.close() }
+        return (window, container)
+    }
+
+    /// Removes the app of row `id` as "−" does, in an undo group of its own.
+    private func remove(_ id: String, in controller: PreferencesApplicationViewController, undo: UndoManager) {
+        controller.list.select(id)
+        undo.beginUndoGrouping()
+        controller.list.removeButton.performClick(nil)
+        undo.endUndoGrouping()
+    }
+
+    private func storedObject() throws -> NSArray? {
+        return try JSONSerialization.jsonObject(with: try XCTUnwrap(Options.shared.application.applications.json())) as? NSArray
     }
 
     private func candidate(_ bundle: String, program: String, name: String) -> ApplicationCandidate {
@@ -357,10 +385,112 @@ final class PreferencesApplicationTests: XCTestCase {
     func testTheDeleteKeyRemovesTheSelectedApp() throws {
         Options.shared.application.applications = Self.makeStore([application(Self.calculator, inherit: true)])
         let controller = makeController()
+        let window = makeWindow(for: controller)
         controller.list.select(Self.calculator)
+        window.makeFirstResponder(controller.list)
         controller.list.keyDown(with: try key("\u{7F}", keyCode: 51))
         XCTAssertEqual(storedPaths(), [])
         XCTAssertTrue(controller.list.rows.isEmpty)
+    }
+
+    /// Removed, then added again (a fresh entry), then Undo: no second entry for the app;
+    /// the removed settings go onto the entry that is there, and Redo takes them off again.
+    func testUndoAfterTheAppWasAddedAgainPutsItsSettingsOnTheEntryThatIsThere() throws {
+        let calculator = application(Self.calculator, inherit: false)
+        calculator.scroll.speed = 2.5
+        calculator.displayName = "Numbers"
+        let textEdit = application(Self.textEdit, inherit: true)
+        Options.shared.application.applications = Self.makeStore([calculator, textEdit])
+        let before = try storedObject()
+
+        let controller = makeController()
+        let window = makeWindow(for: controller)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        remove(Self.calculator, in: controller, undo: undo)
+        XCTAssertEqual(storedPaths(), [Self.textEdit])
+
+        // Added again, chosen in Finder: a new entry with the Scrolling settings.
+        controller.addApplications(at: [URL(fileURLWithPath: Self.calculator)])
+        let again = try XCTUnwrap(Options.shared.application.applications.get(by: Self.calculator))
+        XCTAssertFalse(again === calculator)
+        XCTAssertTrue(again.inherit)
+        XCTAssertEqual(storedPaths(), [Self.textEdit, Self.calculator])
+
+        window.makeFirstResponder(nil)
+        undo.undo()
+        XCTAssertEqual(storedPaths(), [Self.textEdit, Self.calculator], "one entry for the app, where it is")
+        XCTAssertEqual(controller.list.rows.count, 2)
+        XCTAssertTrue(Options.shared.application.applications.get(by: Self.calculator) === again)
+        XCTAssertFalse(again.inherit, "the removed entry's settings")
+        XCTAssertEqual(again.scroll.speed, 2.5)
+        XCTAssertEqual(again.displayName, "Numbers")
+        XCTAssertEqual(controller.list.rows.last?.explanation, "Uses its own scrolling settings")
+        XCTAssertEqual(controller.list.selectedID, AnyHashable(Self.calculator))
+        XCTAssertTrue(window.firstResponder === controller.list)
+        XCTAssertEqual(Set((try storedObject() ?? []).compactMap { $0 as? NSDictionary }),
+                       Set((before ?? []).compactMap { $0 as? NSDictionary }),
+                       "stored as before the removal, in another order")
+
+        XCTAssertEqual(undo.redoMenuItemTitle, "Redo Remove App")
+        undo.redo()
+        XCTAssertTrue(again.inherit, "the settings it had")
+        XCTAssertEqual(again.scroll.speed, OPTIONS_SCROLL_DEFAULT().speed)
+        XCTAssertEqual(again.displayName, "")
+        XCTAssertEqual(storedPaths(), [Self.textEdit, Self.calculator])
+        undo.undo()
+        XCTAssertFalse(again.inherit)
+        XCTAssertEqual(storedPaths(), [Self.textEdit, Self.calculator])
+    }
+
+    /// The same when the app came back under its other path (picked while running, by its
+    /// program, after it was stored by its bundle).
+    func testUndoFindsTheAppAddedAgainUnderItsProgram() throws {
+        let calculator = application(Self.calculator, inherit: false)
+        Options.shared.application.applications = Self.makeStore([calculator])
+        let controller = makeController()
+        let window = makeWindow(for: controller)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        remove(Self.calculator, in: controller, undo: undo)
+        let again = controller.addApplication(path: Self.calculatorProgram, knownPaths: [Self.calculator, Self.calculatorProgram])
+
+        undo.undo()
+        XCTAssertEqual(storedPaths(), [Self.calculatorProgram])
+        XCTAssertFalse(again.inherit)
+        XCTAssertEqual(PreferencesApplicationViewController.knownPaths(forStoredPath: Self.calculatorProgram),
+                       [Self.calculatorProgram, Self.calculator])
+        XCTAssertEqual(PreferencesApplicationViewController.knownPaths(forStoredPath: Self.calculator),
+                       [Self.calculator, Self.calculatorProgram])
+        XCTAssertEqual(PreferencesApplicationViewController.knownPaths(forStoredPath: "/usr/local/bin/tool"), ["/usr/local/bin/tool"])
+    }
+
+    /// Undo from the Edit menu while another pane shows (the pane is out of the window):
+    /// the app comes back, and Redo and Undo keep working.
+    func testUndoAndRedoWorkWhileAnotherPaneShows() throws {
+        let calculator = application(Self.calculator, inherit: false)
+        Options.shared.application.applications = Self.makeStore([calculator, application(Self.textEdit, inherit: true)])
+        let controller = makeController()
+        let (window, container) = makeContainedWindow(for: controller)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        remove(Self.calculator, in: controller, undo: undo)
+        XCTAssertEqual(storedPaths(), [Self.textEdit])
+
+        controller.view.removeFromSuperview()
+        XCTAssertNil(controller.view.window)
+        undo.undo()
+        XCTAssertEqual(storedPaths(), [Self.calculator, Self.textEdit])
+        XCTAssertTrue(Options.shared.application.applications.get(by: Self.calculator) === calculator)
+        XCTAssertTrue(undo.canRedo, "the chain goes on")
+        undo.redo()
+        XCTAssertEqual(storedPaths(), [Self.textEdit])
+
+        container.addSubview(controller.view)
+        undo.undo()
+        XCTAssertEqual(storedPaths(), [Self.calculator, Self.textEdit])
+        XCTAssertEqual(controller.list.selectedID, AnyHashable(Self.calculator))
+        XCTAssertTrue(window.firstResponder === controller.list, "the list has the keyboard")
     }
 
     // MARK: - An app's page

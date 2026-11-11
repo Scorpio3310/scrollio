@@ -69,6 +69,12 @@ class PreferencesButtonsViewController: NSViewController {
     /// Starts recording a button at "+". nil: the real recorder, which taps the system's
     /// events; tests never use it.
     var startRecording: ((NSView) -> Void)?
+    /// Ends a recording that is still open (the pane went away). nil: the real recorder.
+    var stopRecording: (() -> Void)?
+    /// Shows "Open App or File" at a row's pull-down. Tests replace it: nothing is shown.
+    var presentOpenTarget: (OpenTargetConfigPopover, NSView, OpenTargetPayload?) -> Void = { popover, anchor, existing in
+        popover.show(at: anchor, existing: existing)
+    }
     /// Opens a row's action menu. The menu runs until it closes, so tests replace it.
     var openActionMenu: (NSPopUpButton) -> Void = { $0.performClick(nil) }
     /// Shows another pane of the window (the Gestures pane).
@@ -79,8 +85,11 @@ class PreferencesButtonsViewController: NSViewController {
     // MARK: - State
 
     private(set) var buttonBindings: [ButtonBinding] = []
-    /// "+" waits for a button.
+    /// "+" waits for a button: the card says "Press a button".
     private(set) var isRecording = false
+    /// The recorder is open, from its start until it reports that it stopped (after a
+    /// button was caught it stays open a moment longer to show it).
+    private(set) var isRecorderOpen = false
     /// The button just recorded: the card shows it for a moment.
     private(set) var recordedFocus: ButtonsHeaderContent.Focus?
     /// The action a binding added next gets (Gestures › Set Up…), nil: none.
@@ -88,8 +97,8 @@ class PreferencesButtonsViewController: NSViewController {
     /// What the recorder caught, kept until it closes.
     private var pendingRecorded: RecordedEvent?
     private var recordedFocusWork: DispatchWorkItem?
-    /// Ends the recording state if the recorder never reports back (it could not start).
-    private var recordingWatchdog: DispatchWorkItem?
+    /// The pane went away (another pane, the window closed) and has not come back.
+    private var isAway = false
     private var busyShownAt: Date?
     private var busyStopWork: DispatchWorkItem?
     private var observers: [NSObjectProtocol] = []
@@ -105,7 +114,8 @@ class PreferencesButtonsViewController: NSViewController {
     private(set) var busySpinner: NSProgressIndicator!
     private(set) var rows: [ButtonBindingRow] = []
     private(set) var problemPopover: NSPopover?
-    private var currentOpenTargetPopover: OpenTargetConfigPopover?
+    /// "Open App or File", while it is open.
+    private(set) var openTargetPopover: OpenTargetConfigPopover?
 
     // MARK: - Lifecycle
 
@@ -163,6 +173,7 @@ class PreferencesButtonsViewController: NSViewController {
 
     override func viewWillAppear() {
         super.viewWillAppear()
+        isAway = false
         // Bindings may have changed elsewhere (Gestures › Set Up…); then ask the mice again.
         reload()
         deviceSource.refresh()
@@ -171,8 +182,30 @@ class PreferencesButtonsViewController: NSViewController {
 
     override func viewWillDisappear() {
         super.viewWillDisappear()
+        isAway = true
+        closeTransientUI()
+    }
+
+    /// The pane goes away (another pane, the window closes): what it opened goes with it,
+    /// the ⓘ popover, "Open App or File" (as Cancel), the recorder of "+" and the
+    /// recorder of a "Keyboard Shortcut…".
+    func closeTransientUI() {
         problemPopover?.close()
         problemPopover = nil
+        if let popover = openTargetPopover {
+            openTargetPopover = nil
+            popover.hide()
+        }
+        if isRecorderOpen {
+            if let stopRecording {
+                stopRecording()
+            } else {
+                recorder.stopRecording()
+            }
+        }
+        for row in rows {
+            row.pullDown.cancelShortcutRecording()
+        }
     }
 
     deinit {
@@ -180,7 +213,6 @@ class PreferencesButtonsViewController: NSViewController {
             NotificationCenter.default.removeObserver(observer)
         }
         recordedFocusWork?.cancel()
-        recordingWatchdog?.cancel()
         busyStopWork?.cancel()
     }
 
@@ -213,8 +245,8 @@ class PreferencesButtonsViewController: NSViewController {
     func reloadRows() {
         guard let list else { return }
         let old = rows
-        rows = buttonBindings.map { binding in
-            let title = ButtonTriggerNaming.title(for: binding.triggerEvent)
+        let titles = ButtonTriggerNaming.titles(for: buttonBindings.map(\.triggerEvent))
+        rows = zip(buttonBindings, titles).map { binding, title in
             let note = note(for: binding)
             if let existing = old.first(where: { $0.id == AnyHashable(binding.id) }) {
                 existing.update(binding: binding, title: title, note: note)
@@ -320,53 +352,75 @@ class PreferencesButtonsViewController: NSViewController {
 
     // MARK: - Removing, with Undo
 
+    /// Where a removal registers its Undo: the window's undo manager while the pane is in
+    /// the window. Undo and Redo stay with the manager the removal used, also when they
+    /// run while another pane is shown (this pane is then out of the window).
     var undoTarget: UndoManager? {
         return paneUndoManager ?? view.window?.undoManager
     }
 
     /// Removes the binding; the window's Undo ("Undo Remove Button") puts it back.
     func removeBinding(id: UUID) {
+        removeBinding(id: id, undoManager: undoTarget)
+    }
+
+    private func removeBinding(id: UUID, undoManager undo: UndoManager?) {
         guard let index = buttonBindings.firstIndex(where: { $0.id == id }) else { return }
         let removed = buttonBindings.remove(at: index)
         save()
         reloadRows()
         updateHeader()
-        if let undo = undoTarget {
-            undo.registerUndo(withTarget: self) { controller in
-                controller.restoreBinding(removed, at: index)
-            }
-            undo.setActionName(text("buttons-undo-remove"))
+        guard let undo else { return }
+        undo.registerUndo(withTarget: self) { [weak undo] controller in
+            controller.restoreBinding(removed, at: index, undoManager: undo)
         }
+        undo.setActionName(text("buttons-undo-remove"))
     }
 
-    /// Puts a removed binding back where it was and selects it (Undo). Redo removes it again.
+    /// Puts a removed binding back where it was, selects it and gives the list the
+    /// keyboard (Undo). Redo removes it again.
     func restoreBinding(_ binding: ButtonBinding, at index: Int) {
+        restoreBinding(binding, at: index, undoManager: undoTarget)
+    }
+
+    private func restoreBinding(_ binding: ButtonBinding, at index: Int, undoManager undo: UndoManager?) {
         if let existing = buttonBindings.first(where: { $0.triggerEvent == binding.triggerEvent }) {
             // Recorded again meanwhile: the new one stays.
             list.select(existing.id)
+            focusList()
             return
         }
         buttonBindings.insert(binding, at: min(max(0, index), buttonBindings.count))
         save()
         reloadRows()
         list.select(binding.id)
+        focusList()
         updateHeader()
-        if let undo = undoTarget {
-            undo.registerUndo(withTarget: self) { controller in
-                controller.removeBinding(id: binding.id)
-            }
-            undo.setActionName(text("buttons-undo-remove"))
+        guard let undo else { return }
+        undo.registerUndo(withTarget: self) { [weak undo] controller in
+            controller.removeBinding(id: binding.id, undoManager: undo)
         }
+        undo.setActionName(text("buttons-undo-remove"))
+    }
+
+    /// The list takes the keyboard (after an add or an Undo), when the pane is shown.
+    private func focusList() {
+        guard !isAway, let window = view.window, list.window === window else { return }
+        window.makeFirstResponder(list)
     }
 
     // MARK: - Adding
 
     /// "+": records a button, or a key with a modifier. A new one is added without an
     /// action, selected, and its menu opens; with `action` (Gestures › Set Up…) it gets
-    /// that action instead.
+    /// that action instead, and so does a button the list has without an action.
+    ///
+    /// The recording lasts as long as the recorder says: it reports its start, and its end
+    /// however it ends (a button, Esc, its timeout, which a held modifier extends, or no
+    /// event tap). `action` waits until then.
     func beginAddingBinding(action: SystemShortcut.Shortcut? = nil) {
         _ = view
-        guard !isRecording else { return }
+        guard !isRecording, !isRecorderOpen else { return }
         pendingAction = action
         pendingRecorded = nil
         let anchor = list.addButton
@@ -375,16 +429,6 @@ class PreferencesButtonsViewController: NSViewController {
         } else {
             recorder.startRecording(from: anchor, mode: .combination)
         }
-        // The recorder stops itself after its timeout; one that never started says nothing.
-        recordingWatchdog?.cancel()
-        let watchdog = DispatchWorkItem { [weak self] in
-            guard let self, self.isRecording else { return }
-            self.isRecording = false
-            self.pendingAction = nil
-            self.updateHeader()
-        }
-        recordingWatchdog = watchdog
-        DispatchQueue.main.asyncAfter(deadline: .now() + KeyRecorder.TIMEOUT + 1, execute: watchdog)
     }
 
     private func normalizedTrigger(for event: InputEvent) -> RecordedEvent {
@@ -393,11 +437,30 @@ class PreferencesButtonsViewController: NSViewController {
         return recorded.normalizedForButtonBinding(diagnosis: diagnosis)
     }
 
-    /// Adds `trigger` (or selects and flashes the binding it already has) and returns the id.
+    /// The binding the list has for `trigger`, if any.
+    func existingBinding(for trigger: RecordedEvent) -> ButtonBinding? {
+        return buttonBindings.first { $0.triggerEvent == trigger }
+    }
+
+    /// A recorded `trigger` that the list has already, and that takes `action` (Gestures ›
+    /// Set Up…) because it has no action yet.
+    private func takesPendingAction(_ existing: ButtonBinding, action: SystemShortcut.Shortcut?) -> Bool {
+        return action != nil && !CellActionState(binding: existing).hasBoundAction
+    }
+
+    /// Adds `trigger` and returns the id. A trigger the list has already is selected and
+    /// flashes; with `action` and no action of its own it gets `action`. The list then
+    /// has the keyboard.
     @discardableResult
     func addBinding(for trigger: RecordedEvent, action: SystemShortcut.Shortcut?) -> UUID {
-        if let existing = buttonBindings.first(where: { $0.triggerEvent == trigger }) {
-            list.flash(existing.id)
+        defer { focusList() }
+        if let existing = existingBinding(for: trigger) {
+            if takesPendingAction(existing, action: action) {
+                setAction(of: existing.id, to: action)
+                list.select(existing.id)
+            } else {
+                list.flash(existing.id)
+            }
             return existing.id
         }
         let binding = ButtonBinding(
@@ -419,16 +482,17 @@ class PreferencesButtonsViewController: NSViewController {
 
     private func presentOpenTargetPopover(forBindingID id: UUID) {
         guard let binding = binding(for: id), let row = row(for: id) else { return }
+        openTargetPopover?.hide()
         let popover = OpenTargetConfigPopover()
-        currentOpenTargetPopover = popover
+        openTargetPopover = popover
         popover.onCommit = { [weak self] payload in
             self?.setAction(of: id, toOpen: payload)
-            self?.currentOpenTargetPopover = nil
+            self?.openTargetPopover = nil
         }
         popover.onCancel = { [weak self] in
-            self?.currentOpenTargetPopover = nil
+            self?.openTargetPopover = nil
         }
-        popover.show(at: row.pullDown, existing: binding.openTarget)
+        presentOpenTarget(popover, row.pullDown, binding.openTarget)
     }
 
     // MARK: - Gestures
@@ -499,7 +563,7 @@ class PreferencesButtonsViewController: NSViewController {
 
     func focus(for binding: ButtonBinding) -> ButtonsHeaderContent.Focus {
         return ButtonsHeaderContent.Focus(
-            title: ButtonTriggerNaming.title(for: binding.triggerEvent),
+            title: title(for: binding.triggerEvent),
             action: resolver.actionName(of: binding),
             part: ButtonsMousePart.part(for: binding.triggerEvent)
         )
@@ -517,6 +581,11 @@ class PreferencesButtonsViewController: NSViewController {
         }
         recordedFocusWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.recordedPartDuration, execute: work)
+    }
+
+    /// What the list calls `trigger` (with the bindings it has).
+    func title(for trigger: RecordedEvent) -> String {
+        return ButtonTriggerNaming.title(for: trigger, among: buttonBindings.map(\.triggerEvent))
     }
 
     // MARK: - "Checking buttons…"
@@ -586,21 +655,25 @@ extension PreferencesButtonsViewController: KeyRecorderDelegate {
 
     func onRecordingStarted(_ recorder: KeyRecorder) {
         isRecording = true
+        isRecorderOpen = true
         updateHeader()
     }
 
-    /// A trigger that is already in the list counts as a duplicate: the recorder says so.
+    /// A trigger that is already in the list counts as a duplicate (the recorder says so),
+    /// unless it has no action and gets the one waiting (Gestures › Set Up…).
     func validateRecordedEvent(_ recorder: KeyRecorder, event: InputEvent) -> Bool {
         let trigger = normalizedTrigger(for: event)
-        return !buttonBindings.contains { $0.triggerEvent == trigger }
+        guard let existing = existingBinding(for: trigger) else { return true }
+        return takesPendingAction(existing, action: pendingAction)
     }
 
     /// The card shows the button at once; a duplicate's row flashes while the recorder
-    /// says "Duplicate key". A new one is added when the recorder closes.
+    /// says "Duplicate key". A new one is added, or a listed one without an action gets the
+    /// waiting action, when the recorder closes.
     func onEventRecorded(_ recorder: KeyRecorder, didRecordEvent event: InputEvent, isDuplicate: Bool) {
         let trigger = normalizedTrigger(for: event)
         isRecording = false
-        if let existing = buttonBindings.first(where: { $0.triggerEvent == trigger }) {
+        if let existing = existingBinding(for: trigger), !takesPendingAction(existing, action: pendingAction) {
             pendingRecorded = nil
             list.flash(existing.id)
             showRecorded(focus(for: existing))
@@ -608,27 +681,30 @@ extension PreferencesButtonsViewController: KeyRecorderDelegate {
         }
         pendingRecorded = trigger
         showRecorded(ButtonsHeaderContent.Focus(
-            title: ButtonTriggerNaming.title(for: trigger),
+            title: title(for: trigger),
             action: pendingAction.map(\.localizedName),
             part: ButtonsMousePart.part(for: trigger)
         ))
     }
 
+    /// The recorder closed, however: the recording ends here, and only here.
     func onRecordingStopped(_ recorder: KeyRecorder, didRecord: Bool) {
-        recordingWatchdog?.cancel()
-        recordingWatchdog = nil
         isRecording = false
+        isRecorderOpen = false
         let action = pendingAction
         pendingAction = nil
         defer { updateHeader() }
         guard didRecord, let trigger = pendingRecorded else { return }
         pendingRecorded = nil
+        let isNew = existingBinding(for: trigger) == nil
         let id = addBinding(for: trigger, action: action)
         updateHeader()
-        guard action == nil else { return }
-        // The recorder's popover is gone: the new button's menu opens by itself.
+        guard action == nil, isNew else { return }
+        // The recorder's popover is gone: the new button's menu opens by itself (not when
+        // the pane went away meanwhile).
         DispatchQueue.main.async { [weak self] in
-            guard let self, let row = self.row(for: id), self.list.selectedID == AnyHashable(id) else { return }
+            guard let self, !self.isAway, let row = self.row(for: id),
+                  self.list.selectedID == AnyHashable(id) else { return }
             self.openActionMenu(row.pullDown)
         }
     }

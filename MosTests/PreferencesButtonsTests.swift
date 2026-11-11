@@ -4,9 +4,10 @@
 //
 //  The Buttons pane: what its rows and its card are called, which part of the mouse a
 //  button lights, the notes under the rows, recording a button (stubbed: no event is
-//  recorded or posted), removing with Undo, the action menu, "Checking buttons…", and that
-//  stored bindings load and save unchanged. Nothing is shown on screen and no HID device
-//  is touched.
+//  recorded or posted), removing with Undo (also from another pane), the keyboard focus,
+//  what closes with the pane, the action menu, "Checking buttons…", and that stored
+//  bindings load and save unchanged. Nothing is shown on screen and no HID device is
+//  touched.
 //
 
 import XCTest
@@ -23,6 +24,8 @@ final class PreferencesButtonsTests: XCTestCase {
     private var deviceName: String? = "MX Master 4"
     private var scrollKeys: [ScrollHotkey] = []
     private var warnedCodes: [UInt16] = []
+    private var recorderStops = 0
+    private var shownOpenTargets: [NSView] = []
 
     override func setUp() {
         super.setUp()
@@ -36,6 +39,8 @@ final class PreferencesButtonsTests: XCTestCase {
         deviceName = "MX Master 4"
         scrollKeys = []
         warnedCodes = []
+        recorderStops = 0
+        shownOpenTargets = []
     }
 
     override func tearDown() {
@@ -57,6 +62,12 @@ final class PreferencesButtonsTests: XCTestCase {
         )
         pane.scrollHoldKeys = { [unowned self] in self.scrollKeys }
         pane.startRecording = { [unowned self] anchor in self.anchors.append(anchor) }
+        pane.stopRecording = { [unowned self, unowned pane] in
+            self.recorderStops += 1
+            // As the recorder does: it reports at once that it stopped.
+            pane.onRecordingStopped(KeyRecorder(), didRecord: false)
+        }
+        pane.presentOpenTarget = { [unowned self] _, anchor, _ in self.shownOpenTargets.append(anchor) }
         pane.openActionMenu = { [unowned self] popUp in self.openedMenus.append(popUp) }
         pane.showPane = { [unowned self] identifier in self.shownPanes.append(identifier) }
         pane.paneUndoManager = UndoManager()
@@ -83,6 +94,35 @@ final class PreferencesButtonsTests: XCTestCase {
 
     private func flush(_ seconds: TimeInterval = 0.02) {
         RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+    }
+
+    /// The pane in a window of its own, inside a container (so it can be taken out, as the
+    /// window does when another pane shows). The window's undo manager takes Undo. Never shown.
+    private func makeWindow(for pane: PreferencesButtonsViewController) -> (NSWindow, NSView) {
+        pane.paneUndoManager = nil
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: PreferencesWindowLayout.contentWidth, height: 600),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: PreferencesWindowLayout.contentWidth, height: 600))
+        window.contentView = container
+        container.addSubview(pane.view)
+        pane.view.layoutSubtreeIfNeeded()
+        addTeardownBlock { window.close() }
+        return (window, container)
+    }
+
+    private func key(_ characters: String, keyCode: UInt16) throws -> NSEvent {
+        return try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode
+        ))
+    }
+
+    private func titles(_ codes: [UInt16], modifiers: [UInt16: UInt] = [:]) -> [String] {
+        let events = codes.map { RecordedEvent(type: .mouse, code: $0, modifiers: modifiers[$0] ?? 0, deviceFilter: nil) }
+        return ButtonTriggerNaming.titles(for: events)
     }
 
     private func text(_ key: String) -> String {
@@ -170,6 +210,31 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(logitech(2000 + 0x00FD), "Pointer speed button")
     }
 
+    /// A Logitech Back, Forward or Middle button reads like the standard one: only when
+    /// both are in the list does the Logitech one say so.
+    func testALogitechButtonNamedLikeAStandardOneInTheListSaysSo() throws {
+        XCTAssertEqual(titles([1006]), ["Back button"], "alone, no word more")
+        XCTAssertEqual(titles([3, 1006]), ["Back button", "Back button (Logitech)"])
+        XCTAssertEqual(titles([1006, 3]), ["Back button (Logitech)", "Back button"])
+        XCTAssertEqual(titles([1007, 4, 1005, 1000, 2000 + 0x0054]),
+                       ["Forward button (Logitech)", "Forward button", "Middle button", "Gesture button", "Back button"])
+        // Other modifiers: the rows do not read the same.
+        XCTAssertEqual(titles([3, 1006], modifiers: [3: option]), ["⌥ Back button", "Back button"])
+        XCTAssertEqual(titles([3, 1006], modifiers: [3: option, 1006: option]), ["⌥ Back button", "⌥ Back button (Logitech)"])
+
+        let native = binding(3, "copy")
+        let logitech = binding(1006, SystemShortcut.mouseGestureNavigation.identifier)
+        let pane = makePane([native, logitech])
+        XCTAssertEqual(pane.rows.map(\.title), ["Back button", "Back button (Logitech)"])
+        pane.list.select(logitech.id)
+        XCTAssertEqual(pane.headerView.content.title, "Back button (Logitech)", "the card says what the row says")
+        XCTAssertEqual(pane.rows[1].accessibilityLabel(), "Back button (Logitech), Hold and move the mouse. Set the directions under Gestures.")
+
+        // The standard one goes: the Logitech one is the Back button again.
+        pane.removeBinding(id: native.id)
+        XCTAssertEqual(pane.rows.map(\.title), ["Back button"])
+    }
+
     func testRowTitlesPutModifiersInFrontInMenuOrder() {
         let backWithOptionCommand = RecordedEvent(type: .mouse, code: 3, modifiers: option | command, deviceFilter: nil)
         XCTAssertEqual(ButtonTriggerNaming.title(for: backWithOptionCommand), "⌥⌘ Back button")
@@ -205,6 +270,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(part(1005), .middle)
         XCTAssertEqual(part(1006), .back)
         XCTAssertEqual(part(1007), .forward)
+        XCTAssertEqual(part(2000 + 0x01A0), .gesture, "the MX Master 4's thumb panel, where the 3S has its gesture button")
         XCTAssertNil(part(2000 + 0x005B), "a tilt is not drawn")
         XCTAssertNil(part(40, type: .keyboard), "a key lights nothing")
         XCTAssertNil(part(3, type: .keyboard))
@@ -234,8 +300,20 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(center.controlRole(forMosCode: 1006), .back)
         XCTAssertEqual(center.controlRole(forMosCode: 2000 + 0x0054), .back)
         XCTAssertEqual(center.controlRole(forMosCode: 1007), .forward)
+        XCTAssertEqual(center.controlRole(forMosCode: 2000 + 0x01A0), .thumbPanel)
         XCTAssertNil(center.controlRole(forMosCode: 2000 + 0x005B))
         XCTAssertNil(center.controlRole(forMosCode: 3), "a native button is not a Logitech control")
+    }
+
+    /// The MX Master 4's thumb panel lights the thumb panel of the drawing.
+    func testTheThumbPanelLightsTheThumbPanelOfTheCard() {
+        let panel = binding(2000 + 0x01A0, SystemShortcut.mouseGestureNavigation.identifier)
+        let pane = makePane([binding(3, "copy"), panel])
+        pane.list.select(panel.id)
+        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "Thumb panel", subtitle: "Gesture Navigation", part: .gesture))
+        XCTAssertEqual(pane.headerView.artwork.emphasis, .gesture)
+        XCTAssertEqual(pane.headerView.artwork.highlights[.gesture]?.alphaValue, 1)
+        XCTAssertEqual(pane.headerView.artwork.highlights[.back]?.alphaValue, 0)
     }
 
     // MARK: - The card
@@ -514,6 +592,78 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertTrue(openedMenus.isEmpty)
     }
 
+    /// The recorder gives more time while a modifier is held: the pane waits for the
+    /// recorder however long it takes, and "Set Up…"'s Gesture Navigation waits with it.
+    func testTheRecordingLastsUntilTheRecorderEndsAndKeepsTheActionOfSetUp() throws {
+        let pane = makePane()
+        let recorder = KeyRecorder()
+        pane.beginAddingBinding(action: SystemShortcut.mouseGestureNavigation)
+        pane.onRecordingStarted(recorder)
+
+        flush(KeyRecorder.TIMEOUT + 1.5)
+        XCTAssertTrue(pane.isRecording, "still recording: only the recorder ends it")
+        XCTAssertTrue(pane.isRecorderOpen)
+        XCTAssertEqual(pane.headerView.content.title, "Press a button")
+        XCTAssertEqual(pane.pendingAction?.identifier, SystemShortcut.mouseGestureNavigation.identifier)
+
+        pane.beginAddingBinding()
+        XCTAssertEqual(anchors.count, 1, "+ does not start a second recording meanwhile")
+
+        let event = mouseEvent(3, modifiers: .maskCommand)
+        pane.onEventRecorded(recorder, didRecordEvent: event, isDuplicate: false)
+        XCTAssertEqual(pane.headerView.content.subtitle, "Gesture Navigation")
+        pane.beginAddingBinding()
+        XCTAssertEqual(anchors.count, 1, "nor while the recorder shows what it caught")
+        XCTAssertEqual(pane.pendingAction?.identifier, SystemShortcut.mouseGestureNavigation.identifier)
+
+        pane.onRecordingStopped(recorder, didRecord: true)
+        XCTAssertFalse(pane.isRecorderOpen)
+        let added = try XCTUnwrap(Options.shared.buttons.binding.first)
+        XCTAssertEqual(added.triggerEvent, RecordedEvent(type: .mouse, code: 3, modifiers: command, deviceFilter: nil))
+        XCTAssertEqual(added.systemShortcutName, SystemShortcut.mouseGestureNavigation.identifier)
+        XCTAssertTrue(added.isEnabled)
+        XCTAssertNil(pane.pendingAction)
+    }
+
+    /// "Set Up…" and a button that is in the list without an action: it gets Gesture
+    /// Navigation. One with an action keeps it and only flashes.
+    func testSetUpGivesAListedButtonWithoutAnActionGestureNavigation() throws {
+        let unbound = binding(3)
+        let bound = binding(4, "copy")
+        let pane = makePane([unbound, bound])
+        let recorder = KeyRecorder()
+
+        pane.beginAddingBinding(action: SystemShortcut.mouseGestureNavigation)
+        pane.onRecordingStarted(recorder)
+        XCTAssertTrue(pane.validateRecordedEvent(recorder, event: mouseEvent(3)), "not a duplicate: it takes the action")
+        pane.onEventRecorded(recorder, didRecordEvent: mouseEvent(3), isDuplicate: false)
+        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "Back button", subtitle: "Gesture Navigation", part: .back))
+        pane.onRecordingStopped(recorder, didRecord: true)
+        flush()
+        XCTAssertEqual(Options.shared.buttons.binding.count, 2)
+        let updated = try XCTUnwrap(Options.shared.buttons.binding.first)
+        XCTAssertEqual(updated.id, unbound.id, "the same binding")
+        XCTAssertEqual(updated.systemShortcutName, SystemShortcut.mouseGestureNavigation.identifier)
+        XCTAssertTrue(updated.isEnabled)
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(unbound.id))
+        XCTAssertEqual(pane.rows.first?.explanation, "Hold and move the mouse. Set the directions under Gestures.")
+        XCTAssertTrue(openedMenus.isEmpty)
+
+        pane.beginAddingBinding(action: SystemShortcut.mouseGestureNavigation)
+        pane.onRecordingStarted(recorder)
+        XCTAssertFalse(pane.validateRecordedEvent(recorder, event: mouseEvent(4)), "a duplicate: it has an action")
+        pane.onEventRecorded(recorder, didRecordEvent: mouseEvent(4), isDuplicate: true)
+        pane.onRecordingStopped(recorder, didRecord: true)
+        XCTAssertEqual(Options.shared.buttons.binding.last?.systemShortcutName, "copy", "its own action stays")
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(bound.id))
+
+        // Without "Set Up…" a listed button without an action stays a duplicate.
+        pane.setAction(of: unbound.id, to: nil)
+        pane.beginAddingBinding()
+        pane.onRecordingStarted(recorder)
+        XCTAssertFalse(pane.validateRecordedEvent(recorder, event: mouseEvent(3)))
+    }
+
     func testCancelledRecordingAddsNothing() {
         let pane = makePane()
         let recorder = KeyRecorder()
@@ -524,6 +674,60 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertFalse(pane.isRecording)
         XCTAssertTrue(Options.shared.buttons.binding.isEmpty)
         XCTAssertEqual(pane.headerView.content.subtitle, "No buttons set up yet")
+    }
+
+    /// After a button is added the list has the keyboard, with the new row selected.
+    func testAfterAddingTheListHasTheKeyboard() throws {
+        let pane = makePane([binding(3, "copy")])
+        let (window, _) = makeWindow(for: pane)
+        let recorder = KeyRecorder()
+        pane.beginAddingBinding()
+        pane.onRecordingStarted(recorder)
+        pane.onEventRecorded(recorder, didRecordEvent: mouseEvent(4), isDuplicate: false)
+        pane.onRecordingStopped(recorder, didRecord: true)
+        let added = try XCTUnwrap(Options.shared.buttons.binding.last)
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(added.id))
+        XCTAssertTrue(window.firstResponder === pane.list)
+    }
+
+    /// Leaving the pane closes what it opened: the ⓘ popover, "Open App or File", the
+    /// recorder of "+" and the one of "Keyboard Shortcut…".
+    func testLeavingThePaneClosesItsPopoversAndRecorders() throws {
+        captureStatus = [1000: .conflict(.foreignDivert)]
+        let pane = makePane([binding(1000, "copy"), binding(3, "copy")])
+
+        // "Open App or File…" of the second row.
+        let pullDown = pane.rows[1].pullDown
+        let openItem = try XCTUnwrap(pullDown.menu?.items.first { $0.representedObject as? String == ShortcutManager.MenuMarker.openTarget })
+        pullDown.shortcutSelected(openItem)
+        XCTAssertNotNil(pane.openTargetPopover)
+        XCTAssertTrue(shownOpenTargets.first === pullDown, "shown at the row's pull-down")
+        // The ⓘ of the first row.
+        XCTAssertNotNil(pane.showProblem(of: pane.rows[0], relativeTo: pane.rows[0].infoButton))
+        XCTAssertNotNil(pane.problemPopover)
+        // "Keyboard Shortcut…" waits for a key in the first row.
+        pane.rows[0].pullDown.beginCustomShortcutSelection(startRecorder: false)
+        XCTAssertEqual(pane.rows[0].pullDown.actionState, .recordingPrompt)
+        // "+" waits for a button.
+        pane.beginAddingBinding(action: SystemShortcut.mouseGestureNavigation)
+        pane.onRecordingStarted(KeyRecorder())
+
+        pane.viewWillDisappear()
+
+        XCTAssertNil(pane.openTargetPopover)
+        XCTAssertNil(pane.problemPopover)
+        XCTAssertEqual(recorderStops, 1)
+        XCTAssertFalse(pane.isRecording)
+        XCTAssertFalse(pane.isRecorderOpen)
+        XCTAssertNil(pane.pendingAction)
+        XCTAssertNotEqual(pane.rows[0].pullDown.actionState, .recordingPrompt, "the action shows again")
+        XCTAssertEqual(Options.shared.buttons.binding.count, 2, "nothing added")
+        XCTAssertEqual(pane.headerView.content.title, "MX Master 4")
+
+        // Nothing to close: nothing is stopped.
+        pane.viewWillAppear()
+        pane.viewWillDisappear()
+        XCTAssertEqual(recorderStops, 1)
     }
 
     func testAddingABluetoothOnlyLogitechButtonWarnsOnce() {
@@ -564,14 +768,50 @@ final class PreferencesButtonsTests: XCTestCase {
     func testDeleteKeyRemovesTooAndAnEmptyListShowsItsRow() throws {
         let only = binding(3, "copy")
         let pane = makePane([only])
+        let (window, _) = makeWindow(for: pane)
         pane.list.select(only.id)
-        let delete = try XCTUnwrap(NSEvent.keyEvent(
-            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
-            characters: "\u{7F}", charactersIgnoringModifiers: "\u{7F}", isARepeat: false, keyCode: 51
-        ))
-        pane.list.keyDown(with: delete)
+        window.makeFirstResponder(pane.list)
+        pane.list.keyDown(with: try key("\u{7F}", keyCode: 51))
         XCTAssertTrue(Options.shared.buttons.binding.isEmpty)
         XCTAssertTrue(pane.list.emptyRow.superview === pane.list.rowsView)
+    }
+
+    /// Undo runs from the Edit menu while another pane shows (this one is out of the
+    /// window then): it puts the button back, and Redo and Undo keep working. Back in the
+    /// window an Undo gives the list the keyboard with the row selected.
+    func testUndoAndRedoWorkWhileAnotherPaneShows() throws {
+        let first = binding(3, "copy")
+        let second = binding(4, "paste")
+        let pane = makePane([first, second])
+        let (window, container) = makeWindow(for: pane)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+
+        pane.list.select(second.id)
+        undo.beginUndoGrouping()
+        pane.list.removeButton.performClick(nil)
+        undo.endUndoGrouping()
+        XCTAssertEqual(Options.shared.buttons.binding, [first])
+
+        // Another pane shows.
+        pane.view.removeFromSuperview()
+        XCTAssertNil(pane.view.window)
+        XCTAssertTrue(undo.canUndo)
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [first, second], "back")
+        XCTAssertTrue(undo.canRedo, "the chain goes on")
+        undo.redo()
+        XCTAssertEqual(Options.shared.buttons.binding, [first])
+        XCTAssertTrue(undo.canUndo)
+
+        // The pane is back.
+        container.addSubview(pane.view)
+        window.makeFirstResponder(nil)
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [first, second])
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(second.id))
+        XCTAssertTrue(window.firstResponder === pane.list, "the list has the keyboard")
+        XCTAssertEqual(undo.redoMenuItemTitle, "Redo Remove Button")
     }
 
     // MARK: - The action menu

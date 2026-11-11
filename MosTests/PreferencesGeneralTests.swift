@@ -2,10 +2,10 @@
 //  PreferencesGeneralTests.swift
 //  MosTests
 //
-//  The General pane: "Open at login" and its approval row, "Show in menu bar" (the stored
-//  "hide" shown the other way round), the Accessibility row and "Advanced". The login item,
-//  the permission, System Settings, the menu bar icon and the windows are replaced; nothing
-//  is shown on screen.
+//  The General pane: "Scrollio is paused" with Resume, "Open at login" and its approval
+//  row, "Show in menu bar" (the stored "hide" shown the other way round), the Accessibility
+//  row and "Advanced". The login item, the permission, the pause, System Settings, the menu
+//  bar icon and the windows are replaced; nothing is shown on screen.
 //
 
 import XCTest
@@ -54,6 +54,8 @@ final class PreferencesGeneralTests: XCTestCase {
         var accessibilitySettingsOpened = 0
         var monitorsOpened = 0
         var diagnosticsOpened = 0
+        var paused = false
+        var resumes = 0
     }
 
     private var savedAutoLaunch = false
@@ -94,6 +96,11 @@ final class PreferencesGeneralTests: XCTestCase {
         pane.setMenuBarIconHidden = { world.menuBarIconHidden = $0 }
         pane.openScrollMonitor = { world.monitorsOpened += 1 }
         pane.openDiagnostics = { world.diagnosticsOpened += 1 }
+        pane.isPaused = { world.paused }
+        pane.resume = {
+            world.resumes += 1
+            world.paused = false
+        }
         pane.uiStateDefaults = uiDefaults
         _ = pane.view
         return pane
@@ -114,6 +121,42 @@ final class PreferencesGeneralTests: XCTestCase {
     func testTheStoryboardMakesTheGeneralPane() {
         let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
         XCTAssertTrue(storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.general) is PreferencesGeneralViewController)
+    }
+
+    // MARK: - Paused
+
+    /// "Pause Scrollio" is only in the status-bar menu: with the menu bar icon hidden, the
+    /// pane is the way back.
+    func testWhilePausedTheTopRowSaysSoAndResumes() throws {
+        install(.notRegistered)
+        let world = World()
+        let pane = try makePane(world)
+        let content = try XCTUnwrap(pane.pausedSection.superview as? NSStackView)
+        XCTAssertTrue(content.arrangedSubviews.first === pane.pausedSection, "on top")
+        XCTAssertTrue(pane.pausedSection.isHidden, "not while running")
+        XCTAssertFalse(shownTexts(pane).contains("Scrollio is paused"))
+        let runningHeight = pane.view.frame.height
+
+        // Paused from the menu: the run controller says so.
+        world.paused = true
+        NotificationCenter.default.post(name: AppRunController.didChangeNotification, object: nil)
+        XCTAssertFalse(pane.pausedSection.isHidden)
+        XCTAssertEqual(pane.pausedRow.title, "Scrollio is paused")
+        XCTAssertEqual(pane.pausedRow.explanation, "Scrolling, buttons and gestures are off until you resume.")
+        XCTAssertEqual(pane.resumeButton.title, "Resume")
+        XCTAssertTrue(pane.resumeButton.accessibilityTitleUIElement() as? NSTextField === pane.pausedRow.titleLabel)
+        XCTAssertGreaterThan(pane.view.frame.height, runningHeight, "the pane makes room for it")
+        XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
+
+        click(pane.resumeButton)
+        XCTAssertEqual(world.resumes, 1)
+        XCTAssertTrue(pane.pausedSection.isHidden)
+        XCTAssertEqual(pane.view.frame.height, runningHeight, accuracy: 0.5)
+
+        // Paused while the pane was not showing: it shows when the pane appears.
+        world.paused = true
+        pane.viewWillAppear()
+        XCTAssertFalse(pane.pausedSection.isHidden)
     }
 
     // MARK: - Open at login

@@ -63,8 +63,9 @@ final class LogiCenter {
         return displayName.isEmpty ? nil : displayName
     }
     /// What a Logitech control is on the mouse, for the Buttons pane's drawing: the gesture
-    /// button, the mode shift button behind the wheel, or one of the buttons a standard mouse
-    /// has too. nil for any other control and for codes that are not Logitech's.
+    /// button, the MX Master 4's thumb panel, the mode shift button behind the wheel, or one
+    /// of the buttons a standard mouse has too. nil for any other control and for codes that
+    /// are not Logitech's.
     func controlRole(forMosCode code: UInt16) -> LogiControlRole? {
         guard let cid = LogiCIDDirectory.toCID(code) else { return nil }
         return LogiControlRole(cid: cid)
@@ -275,6 +276,9 @@ final class LogiCenter {
 enum LogiControlRole: Equatable {
     /// The gesture button under the thumb (also its virtual twin).
     case gesture
+    /// The MX Master 4's haptic sense panel under the thumb, where the MX Master 3 and 3S
+    /// have their gesture button.
+    case thumbPanel
     /// The small button behind the wheel that switches the wheel mode (SmartShift).
     case modeShift
     case middle
@@ -284,6 +288,7 @@ enum LogiControlRole: Equatable {
     init?(cid: UInt16) {
         switch cid {
         case 0x00C3, 0x00D7: self = .gesture
+        case 0x01A0: self = .thumbPanel
         case 0x00C4: self = .modeShift
         case 0x0052: self = .middle
         case 0x0053, 0x0054, 0x0055: self = .back

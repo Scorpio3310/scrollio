@@ -67,7 +67,9 @@ See [Attribution and licence](#attribution-and-licence).
   "Resume Scrollio" (a pause stops the event handling and gives the Logitech mice their
   buttons back; it is not remembered, a relaunch runs again), Settings and Quit. With
   Option held it also lists Scroll Monitor, Logitech Diagnostics and Test Toasts. The
-  icon is dimmed while Scrollio is paused or waits for the Accessibility access.
+  icon is dimmed while Scrollio is paused or waits for the Accessibility access. While
+  paused, General also says so, with a Resume button (the way back when the menu bar
+  icon is hidden).
 - The menu bar icon can be hidden (General > Show in menu bar); opening the app again
   then shows the settings, or the Welcome Guide while the access is missing.
 - Can open at login; General says when macOS waits for that to be approved in System

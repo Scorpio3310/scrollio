@@ -2,7 +2,9 @@
 //  PreferencesViewController.swift
 //  Mos
 //  "General" preferences pane, built in code on the grouped kit (PreferencesGroupedForm);
-//  the storyboard scene is a shell. Three boxes:
+//  the storyboard scene is a shell. On top, only while Scrollio is paused, "Scrollio is
+//  paused" with "Resume" (with the menu bar icon hidden there is no other way back). Then
+//  three boxes:
 //  - "Open at login" (with a row to approve it in System Settings while macOS waits for
 //    that) and "Show in menu bar";
 //  - "Permissions": whether Scrollio has Accessibility access, with a way to System
@@ -36,11 +38,19 @@ class PreferencesGeneralViewController: NSViewController {
         WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.monitorWindowController)
     }
     var openDiagnostics: () -> Void = { LogiCenter.shared.showDebugPanel() }
+    /// "Pause Scrollio" of the status-bar menu is on.
+    var isPaused: () -> Bool = { AppRunController.shared.isPaused }
+    /// Ends the pause, as "Resume Scrollio" of the status-bar menu does.
+    var resume: () -> Void = { AppRunController.shared.setPaused(false) }
     /// Keeps the state of "Advanced"; tests and screenshots give it a store of their own.
     var uiStateDefaults: UserDefaults = .standard
 
     // MARK: - Views (read access for tests)
 
+    /// The box on top, shown only while Scrollio is paused.
+    private(set) var pausedSection: PreferencesGroupSection!
+    private(set) var pausedRow: PreferencesGroupRow!
+    private(set) var resumeButton: NSButton!
     private(set) var launchOnLoginRow: PreferencesSwitchRow!
     /// Shown while macOS waits for the login item to be approved in System Settings.
     private(set) var loginApprovalRow: PreferencesGroupRow!
@@ -83,6 +93,9 @@ class PreferencesGeneralViewController: NSViewController {
         content.setHuggingPriority(.defaultHigh, for: .vertical)
         let width = PreferencesGroupedForm.boxWidth(paneWidth: Self.paneWidth)
 
+        let paused = PreferencesGroupSection(width: width, rows: [makePausedRow()])
+        paused.isHidden = true
+        pausedSection = paused
         let startup = PreferencesGroupSection(width: width, rows: [
             makeLaunchOnLoginRow(), makeLoginApprovalRow(), makeShowInMenuBarRow(),
         ])
@@ -93,7 +106,7 @@ class PreferencesGeneralViewController: NSViewController {
             makeAdvancedRow(), makeScrollMonitorRow(), makeDiagnosticsRow(),
         ])
         advancedRow.revealedViews = [scrollMonitorRow, diagnosticsRow]
-        PreferencesGroupedForm.add([startup, permissions, advanced], to: content)
+        PreferencesGroupedForm.add([paused, startup, permissions, advanced], to: content)
 
         view = root
         // The seams are set by now (before the view loads): show the real state at once, so
@@ -102,7 +115,25 @@ class PreferencesGeneralViewController: NSViewController {
         advancedRow.isExpanded = isAdvancedExpanded
         syncViewWithOptions()
         refreshAccessState()
+        refreshPauseState()
         root.setFrameSize(root.fittingSize)
+    }
+
+    /// "Scrollio is paused", with "Resume".
+    private func makePausedRow() -> PreferencesGroupRow {
+        let button = PreferencesGroupedForm.makePushButton(
+            title: text("general-resume"),
+            target: self,
+            action: #selector(resumeClicked(_:))
+        )
+        resumeButton = button
+        let row = PreferencesGroupRow(
+            title: text("general-paused"),
+            explanation: text("general-paused-hint"),
+            accessory: button
+        )
+        pausedRow = row
+        return row
     }
 
     private func makeLaunchOnLoginRow() -> PreferencesGroupRow {
@@ -246,8 +277,10 @@ class PreferencesGeneralViewController: NSViewController {
             center.addObserver(forName: .mosAccessibilityPermissionLost, object: nil, queue: .main) { [weak self] _ in
                 self?.refreshAccessState()
             },
+            // Paused, resumed, or the cores started or stopped.
             center.addObserver(forName: AppRunController.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
                 self?.refreshAccessState()
+                self?.refreshPauseState()
             },
         ]
     }
@@ -262,6 +295,24 @@ class PreferencesGeneralViewController: NSViewController {
         super.viewWillAppear()
         refreshLaunchAtLoginState()
         refreshAccessState()
+        refreshPauseState()
+    }
+
+    // MARK: - Pause
+
+    /// Shows "Scrollio is paused" while it is.
+    func refreshPauseState() {
+        guard isViewLoaded else { return }
+        let paused = isPaused()
+        guard pausedSection.isHidden == paused else { return }
+        pausedSection.isHidden = !paused
+        PreferencesForm.fitToContent(self)
+    }
+
+    @objc func resumeClicked(_ sender: NSButton) {
+        resume()
+        // The run controller posts its change; this covers a resume that posts nothing.
+        refreshPauseState()
     }
 
     // MARK: - Login item

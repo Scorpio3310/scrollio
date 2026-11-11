@@ -30,6 +30,9 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
 
     private(set) var binding: ButtonBinding
     private var isCustomRecordingActive = false
+    /// The recorder of "Keyboard Shortcut…" caught a key; it is stored after the recorder's
+    /// moment of feedback.
+    private var isShortcutCaught = false
     private let resolver = ActionDisplayResolver()
 
     /// Starts the recorder of "Keyboard Shortcut…" at the pull-down. Tests replace it: a
@@ -141,6 +144,15 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         }
     }
 
+    /// Ends a "Keyboard Shortcut…" recording that still waits for a key (the pane went
+    /// away): the recorder closes and the action shows again. A key already caught is kept.
+    func cancelShortcutRecording() {
+        customRecorder?.stopRecording()
+        guard isCustomRecordingActive, !isShortcutCaught else { return }
+        isCustomRecordingActive = false
+        refreshActionDisplay()
+    }
+
     // MARK: Menu
 
     @objc func shortcutSelected(_ sender: NSMenuItem) {
@@ -210,6 +222,7 @@ extension ButtonActionPullDown: KeyRecorderDelegate {
 
     func onRecordingStarted(_ recorder: KeyRecorder) {
         isCustomRecordingActive = true
+        isShortcutCaught = false
         refreshActionDisplay()
     }
 
@@ -230,9 +243,11 @@ extension ButtonActionPullDown: KeyRecorderDelegate {
             return
         }
         let actionName = Self.bindingName(forRecorded: event)
+        isShortcutCaught = true
         DispatchQueue.main.asyncAfter(deadline: .now() + KeyRecorder.recordingFeedbackDelay(isDuplicate: false)) { [weak self] in
             guard let self else { return }
             self.isCustomRecordingActive = false
+            self.isShortcutCaught = false
             let old = self.binding
             self.configure(with: ButtonBinding(
                 id: old.id,

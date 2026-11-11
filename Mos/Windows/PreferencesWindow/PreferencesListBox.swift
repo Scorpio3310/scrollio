@@ -425,7 +425,9 @@ final class PreferencesListBox: NSView {
     }
 
     /// ↑ and ↓ move the selection (from nothing: the last or the first row), Delete and
-    /// Forward Delete remove the selected row, Return and Enter open it.
+    /// Forward Delete remove the selected row, Return and Enter open it. Delete only while
+    /// the list itself has the keyboard: pressed in a control of a row (its pull-down) it
+    /// reaches the list too, and is passed on.
     private func handleKey(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
         switch event.specialKey {
@@ -434,7 +436,7 @@ final class PreferencesListBox: NSView {
             moveSelection(by: event.specialKey == .upArrow ? -1 : 1)
             return true
         case .delete?, .deleteForward?, .backspace?:
-            guard modifiers.subtracting(.command).isEmpty else { return false }
+            guard modifiers.subtracting(.command).isEmpty, window?.firstResponder === self else { return false }
             // With nothing selected the key does nothing (and does not beep).
             if let selectedID {
                 onRemove?(selectedID)

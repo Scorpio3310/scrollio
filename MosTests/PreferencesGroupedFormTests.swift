@@ -809,10 +809,22 @@ final class PreferencesGroupedFormTests: XCTestCase {
         }
     }
 
-    /// A window that says whether it is key as the test wants. Never shown.
+    /// A window that says whether it is key as the test wants. Never shown. A key nobody
+    /// takes is noted instead of beeping.
     private final class TestWindow: NSWindow {
         var key = false
+        private(set) var unhandledKeys = 0
         override var isKeyWindow: Bool { return key }
+        override func keyDown(with event: NSEvent) {
+            unhandledKeys += 1
+        }
+    }
+
+    /// A control of a row that can have the keyboard (a pull-down does with Full Keyboard
+    /// Access on).
+    private final class FocusableControl: NSControl {
+        override var acceptsFirstResponder: Bool { return true }
+        override var intrinsicContentSize: NSSize { return NSSize(width: 40, height: 20) }
     }
 
     private func makeWindow(with root: NSView, key: Bool = false) -> TestWindow {
@@ -997,7 +1009,9 @@ final class PreferencesGroupedFormTests: XCTestCase {
     }
 
     func testTheKeyboardMovesRemovesAndOpens() throws {
-        let (list, _) = makeList()
+        let (list, root) = makeList()
+        let window = makeWindow(with: root)
+        XCTAssertTrue(window.makeFirstResponder(list))
         let recorder = ListRecorder(list)
         XCTAssertTrue(list.acceptsFirstResponder)
         let down = try arrow(NSDownArrowFunctionKey)
@@ -1031,6 +1045,38 @@ final class PreferencesGroupedFormTests: XCTestCase {
         list.select(nil)
         list.keyDown(with: try key("\u{7F}", keyCode: 51))
         XCTAssertEqual(recorder.removed.count, 3)
+    }
+
+    /// Delete pressed in a control of a row (its pull-down) reaches the list through the
+    /// responder chain: it removes nothing, and goes on. Only the list itself removes.
+    func testDeleteInAControlOfARowRemovesNothing() throws {
+        let control = FocusableControl(frame: NSRect(x: 0, y: 0, width: 40, height: 20))
+        control.translatesAutoresizingMaskIntoConstraints = false
+        let rows = [
+            PreferencesListRow(id: "a", title: "Row a", accessory: control, controls: [control]),
+            PreferencesListRow(id: "b", title: "Row b"),
+        ]
+        let list = PreferencesListBox(width: boxWidth, rows: rows, emptyTitle: "Nothing")
+        let window = makeWindow(with: makePane([list]))
+        let recorder = ListRecorder(list)
+        list.select("a")
+        let delete = try key("\u{7F}", keyCode: 51)
+
+        XCTAssertTrue(window.makeFirstResponder(control))
+        control.keyDown(with: delete)
+        XCTAssertEqual(recorder.removed, [], "the row's control has the keyboard")
+        XCTAssertEqual(window.unhandledKeys, 1, "passed on")
+        list.keyDown(with: try key(String(Character(try XCTUnwrap(UnicodeScalar(NSDeleteFunctionKey)))), keyCode: 117, modifiers: [.function]))
+        XCTAssertEqual(recorder.removed, [])
+
+        // Nothing has the keyboard, or the window is gone: nothing either.
+        window.makeFirstResponder(nil)
+        list.keyDown(with: delete)
+        XCTAssertEqual(recorder.removed, [])
+
+        XCTAssertTrue(window.makeFirstResponder(list))
+        list.keyDown(with: delete)
+        XCTAssertEqual(recorder.removed, ["a"])
     }
 
     func testTheFooterHasAddAndRemoveAndRoomOnTheRight() throws {

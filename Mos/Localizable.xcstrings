@@ -3517,6 +3517,18 @@
         }
       }
     },
+    "buttons-trigger-logitech-twin": {
+      "comment": "Buttons pane: a Logitech control whose name a standard button of the list has too, e.g. \"Back button (Logitech)\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (Logitech)"
+          }
+        }
+      }
+    },
     "buttons-trigger-key": {
       "comment": "Buttons pane: a key without a name, by its code",
       "extractionState": "manual",
@@ -4359,6 +4371,42 @@
           "stringUnit": {
             "state": "translated",
             "value": "When it's off, open Scrollio again to reach its settings."
+          }
+        }
+      }
+    },
+    "general-paused": {
+      "comment": "General pane: the row on top while Scrollio is paused",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio is paused"
+          }
+        }
+      }
+    },
+    "general-paused-hint": {
+      "comment": "General pane: under \"Scrollio is paused\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrolling, buttons and gestures are off until you resume."
+          }
+        }
+      }
+    },
+    "general-resume": {
+      "comment": "General pane: the button that ends the pause",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume"
           }
         }
       }

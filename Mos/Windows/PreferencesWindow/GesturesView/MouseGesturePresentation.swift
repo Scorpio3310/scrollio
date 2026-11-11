@@ -65,7 +65,7 @@ struct MouseGestureControlRules: Equatable {
 
 /// What the stored button bindings mean for the Gestures tab.
 struct MouseGestureBindingSummary: Equatable {
-    /// An enabled button is bound to Gesture Navigation, so the settings have an effect.
+    /// An enabled mouse button is bound to Gesture Navigation, so the settings have an effect.
     var hasGestureButton: Bool
     /// One of those buttons is a Logitech control: Logi actions make sense as gesture actions.
     var hasLogitechGestureButton: Bool
@@ -78,26 +78,30 @@ struct MouseGestureBindingSummary: Equatable {
         self.buttonTitles = buttonTitles
     }
 
+    /// - Parameters:
+    ///   - bindings: the bindings that run (`Options.shared.buttons.binding`).
+    ///   - titles: what the Buttons pane calls the triggers of `bindings`, in order.
     init(
         bindings: [ButtonBinding],
         isLogitechCode: (UInt16) -> Bool,
-        title: (RecordedEvent) -> String = { ButtonTriggerNaming.title(for: $0) }
+        titles: ([RecordedEvent]) -> [String] = { ButtonTriggerNaming.titles(for: $0) }
     ) {
-        let gestureBindings = bindings.filter {
-            $0.isEnabled && $0.systemShortcutName == SystemShortcut.mouseGestureNavigation.identifier
+        // What InputProcessor runs: an enabled binding of a mouse button (a key never
+        // starts a gesture).
+        let runs: (ButtonBinding) -> Bool = {
+            $0.isEnabled && $0.triggerEvent.type == .mouse
+                && $0.systemShortcutName == SystemShortcut.mouseGestureNavigation.identifier
         }
+        let gestureBindings = bindings.filter(runs)
         hasGestureButton = !gestureBindings.isEmpty
-        hasLogitechGestureButton = gestureBindings.contains {
-            $0.triggerEvent.type == .mouse && isLogitechCode($0.triggerEvent.code)
-        }
-        var titles: [String] = []
-        for binding in gestureBindings {
-            let name = title(binding.triggerEvent)
-            if !titles.contains(name) {
-                titles.append(name)
+        hasLogitechGestureButton = gestureBindings.contains { isLogitechCode($0.triggerEvent.code) }
+        var names: [String] = []
+        for (binding, name) in zip(bindings, titles(bindings.map(\.triggerEvent))) where runs(binding) {
+            if !names.contains(name) {
+                names.append(name)
             }
         }
-        buttonTitles = titles
+        buttonTitles = names
     }
 
     /// The explanation of the Gestures pane's "Gesture button" row: the buttons, joined as
@@ -112,15 +116,12 @@ struct MouseGestureBindingSummary: Equatable {
         return String(format: NSLocalizedString("gestures-gesture-button-bound", comment: ""), buttons)
     }
 
-    /// The summary of the stored bindings, global and per app.
+    /// The summary of the bindings that run: the Buttons pane's. Bindings stored per app
+    /// (`Application.buttons`) are left out: nothing runs them.
     static var current: MouseGestureBindingSummary {
-        var bindings = Options.shared.buttons.binding
-        let applications = Options.shared.application.applications
-        for index in 0..<applications.count {
-            if let perApp = applications.get(by: index)?.buttons?.binding {
-                bindings.append(contentsOf: perApp)
-            }
-        }
-        return MouseGestureBindingSummary(bindings: bindings, isLogitechCode: { LogiCenter.shared.isLogiCode($0) })
+        return MouseGestureBindingSummary(
+            bindings: Options.shared.buttons.binding,
+            isLogitechCode: { LogiCenter.shared.isLogiCode($0) }
+        )
     }
 }
