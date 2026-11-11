@@ -115,8 +115,8 @@ extension Interceptor {
         }
         // 启动拦截层
         CGEvent.tapEnable(tap: tap, enable: true)
-        // 启动守护
-        Self.replaceKeeper(&keeper, with: Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        // 启动守护 (also while a menu is open: see CommonModesTimer)
+        Self.replaceKeeper(&keeper, with: CommonModesTimer.scheduled(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             // 权限被撤销时, 主动停止 tap 并通知, 不等 restart 判断
             guard AXIsProcessTrusted() else {
@@ -272,7 +272,7 @@ extension Interceptor {
         onRestart?()
         guard shouldRestart?() ?? true else { return }
         // 使用 closure timer 避免 @objc throws 方法作为 selector 的 ObjC bridge 问题
-        Self.replaceKeeper(&keeper, with: Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+        Self.replaceKeeper(&keeper, with: CommonModesTimer.scheduled(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
             try? self?.start()
         })
     }

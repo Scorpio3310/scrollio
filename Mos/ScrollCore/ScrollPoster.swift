@@ -519,7 +519,7 @@ extension ScrollPoster {
     // 守护定时器 (与 Interceptor 的 keeper 模式一致)
     func startKeeper() {
         keeper?.invalidate()
-        keeper = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        keeper = CommonModesTimer.scheduled(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             self?.healthCheck()
         }
     }
@@ -558,7 +558,7 @@ extension ScrollPoster {
         rateVerifyTimer?.invalidate()
         guard rateVerifyAttemptsLeft > 0 else { rateVerifyTimer = nil; return }
         let delay = rateVerifyDelays[rateVerifyDelays.count - rateVerifyAttemptsLeft]
-        rateVerifyTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+        rateVerifyTimer = CommonModesTimer.scheduled(withTimeInterval: delay, repeats: false) { [weak self] _ in
             self?.verifyRateAndFixIfNeeded()
         }
     }

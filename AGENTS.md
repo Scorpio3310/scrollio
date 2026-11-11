@@ -111,7 +111,8 @@ See `.agents/docs/code-map.md` for the map. The rules:
   button event taps and the Logitech sessions): launch, sleep and wake, fast user
   switching, lost Accessibility access, "Pause Scrollio", quit. An active event tap that
   is not serviced freezes input system-wide: never leave one installed while the cores
-  count as stopped, and never block the main thread while one runs.
+  count as stopped, and never block the main thread while one runs. The pointer-movement
+  tap of gesture holds is made on demand while the cores run; their stop releases it.
 
 ## Localization
 

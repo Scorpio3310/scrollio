@@ -19,8 +19,27 @@ enum PhysicalMouseTarget: Equatable {
     case other(buttonNumber: Int64)
 }
 
+/// The pointer-movement event tap as the controller uses it: an `Interceptor` in the app, a
+/// double in the tests.
+protocol PointerMotionTap: AnyObject {
+    func start() throws
+    func pause()
+    func stop()
+    func isRunning() -> Bool
+}
+
+extension Interceptor: PointerMotionTap {}
+
+/// The pointer-movement tap is made on demand: by the first gesture hold that reads pointer
+/// movement, a synthetic mouse drag or a virtual modifier. Between those it is paused. When
+/// the cores stop (AppRunController) it is released and the next use makes a new one; a
+/// tap that is off right after it was started is replaced once (`startRunningMotionTap`).
 final class MouseInteractionSessionController {
     static let shared = MouseInteractionSessionController()
+
+    /// Tries to get a running tap each time one is needed: the kept tap (or a new one),
+    /// then once more a new one.
+    static let motionTapAttempts = 2
 
     /// Mouse movement only. Mos's own dock swipe events (types 29 and 30) never reach this tap.
     static let motionEventMask: CGEventMask =
@@ -35,10 +54,12 @@ final class MouseInteractionSessionController {
 
     private let startMotionTapOverride: (() -> Void)?
     private let stopMotionTapOverride: (() -> Void)?
+    /// Makes the tap in tests; nil makes the real one (`makeSystemMotionTap`).
+    private let makeMotionTapOverride: (() throws -> PointerMotionTap)?
     private(set) var isMotionTapRunning = false
     private var activeSessions: [UUID: SyntheticMouseTarget] = [:]
     private var dominantTarget: SyntheticMouseTarget?
-    private var motionInterceptor: Interceptor?
+    private var motionTap: PointerMotionTap?
     private var testStartMotionTap: (() -> Void)?
     private var testStopMotionTap: (() -> Void)?
     var activeSessionCount: Int { activeSessions.count }
@@ -49,10 +70,12 @@ final class MouseInteractionSessionController {
 
     init(
         startMotionTap: (() -> Void)? = nil,
-        stopMotionTap: (() -> Void)? = nil
+        stopMotionTap: (() -> Void)? = nil,
+        makeMotionTap: (() throws -> PointerMotionTap)? = nil
     ) {
         self.startMotionTapOverride = startMotionTap
         self.stopMotionTapOverride = stopMotionTap
+        self.makeMotionTapOverride = makeMotionTap
     }
 
     static func dominantSyntheticTarget(from targets: [SyntheticMouseTarget]) -> SyntheticMouseTarget? {
@@ -128,6 +151,26 @@ final class MouseInteractionSessionController {
 
         guard isMotionTapRunning else { return }
         stopMotionTap()
+    }
+
+    /// The cores stop (AppRunController: sleep, another user, lost Accessibility access,
+    /// Pause, quit). The tap is released, not only paused, and the next use makes a new one:
+    /// a tap kept across a loss of the access or a switch to another user can stay off for
+    /// good. A hold still in progress ends first, as when ButtonCore stops: the pointer is
+    /// released.
+    func releaseMotionTap() {
+        if InputProcessor.shared.hasActiveMouseGestureSessions
+            || hasActiveVirtualModifiers
+            || !activeSessions.isEmpty
+            || MouseGesturePointerLock.shared.isLocked {
+            InputProcessor.shared.clearActiveBindings()
+        }
+        activeSessions.removeAll()
+        dominantTarget = nil
+        if isMotionTapRunning {
+            stopMotionTap()
+        }
+        dropMotionTap()
     }
 
     func rewriteMouseInteractionEvent(_ event: CGEvent) {
@@ -224,38 +267,84 @@ final class MouseInteractionSessionController {
             return
         }
 
-        if let motionInterceptor {
-            do {
-                try motionInterceptor.start()
-                isMotionTapRunning = true
-            } catch {
-                AppSystemLog.problem("MouseInteractionSessionController: could not start the pointer movement event tap: \(error)")
-                isMotionTapRunning = false
-            }
-            return
-        }
+        isMotionTapRunning = startRunningMotionTap()
+    }
 
-        do {
-            let interceptor = try Interceptor(
-                event: Self.motionEventMask,
-                handleBy: Self.motionEventCallback,
-                listenOn: .cgAnnotatedSessionEventTap,
-                placeAt: .tailAppendEventTap,
-                for: .defaultTap
-            )
-            interceptor.onRestart = {
-                InputProcessor.shared.clearActiveBindings()
+    /// Starts the kept tap or makes one, and checks that it runs. A tap that is off right
+    /// after it was started (kept across a loss of the Accessibility access or a switch to
+    /// another user, so macOS no longer serves it) is dropped and a new one made, once; then
+    /// it gives up until the next use. Without a running tap a gesture hold reads no movement
+    /// and, with "Freeze pointer during a gesture", keeps the pointer still for nothing.
+    /// - Returns: whether a tap runs.
+    private func startRunningMotionTap() -> Bool {
+        var droppedKeptTap = false
+        for attempt in 1...Self.motionTapAttempts {
+            let tap: PointerMotionTap
+            let isKept = motionTap != nil
+            if let kept = motionTap {
+                do {
+                    try kept.start()
+                } catch {
+                    // Only without the Accessibility access: the stop path runs meanwhile.
+                    AppSystemLog.problem("Could not start the pointer movement event tap: \(error)")
+                    dropMotionTap()
+                    return false
+                }
+                tap = kept
+            } else {
+                do {
+                    tap = try (makeMotionTapOverride ?? makeSystemMotionTap)()
+                } catch {
+                    AppSystemLog.problem("Could not create the pointer movement event tap: \(error)")
+                    return false
+                }
+                motionTap = tap
             }
-            interceptor.shouldRestart = { [weak self] in
-                guard let self else { return false }
-                return self.shouldKeepMotionTapRunning
+            if tap.isRunning() {
+                if attempt > 1 {
+                    AppSystemLog.note(Self.motionTapReplacedLine(droppedKeptTap: droppedKeptTap))
+                }
+                return true
             }
-            motionInterceptor = interceptor
-            isMotionTapRunning = true
-        } catch {
-            AppSystemLog.problem("MouseInteractionSessionController: could not create the pointer movement event tap: \(error)")
-            isMotionTapRunning = false
+            droppedKeptTap = droppedKeptTap || isKept
+            dropMotionTap()
         }
+        AppSystemLog.problem(Self.motionTapGivenUpLine)
+        return false
+    }
+
+    static func motionTapReplacedLine(droppedKeptTap: Bool) -> String {
+        return "The pointer movement event tap was off right after it was started ("
+            + (droppedKeptTap ? "the one kept from an earlier use" : "a new one")
+            + "): made a new one, which runs"
+    }
+
+    static let motionTapGivenUpLine = "The pointer movement event tap stays off: it was off right after it was "
+        + "started, and so was a new one. Gesture holds read no pointer movement until the next try, at the next hold"
+
+    private func makeSystemMotionTap() throws -> PointerMotionTap {
+        let interceptor = try Interceptor(
+            event: Self.motionEventMask,
+            handleBy: Self.motionEventCallback,
+            listenOn: .cgAnnotatedSessionEventTap,
+            placeAt: .tailAppendEventTap,
+            for: .defaultTap
+        )
+        interceptor.onRestart = {
+            InputProcessor.shared.clearActiveBindings()
+        }
+        interceptor.shouldRestart = { [weak self] in
+            guard let self else { return false }
+            return self.shouldKeepMotionTapRunning
+        }
+        return interceptor
+    }
+
+    /// Switches the tap off and lets it go (`Interceptor.deinit` removes it from the window
+    /// server); the next use makes a new one.
+    private func dropMotionTap() {
+        motionTap?.stop()
+        motionTap = nil
     }
 
     private func stopMotionTap() {
@@ -271,7 +360,7 @@ final class MouseInteractionSessionController {
             return
         }
 
-        motionInterceptor?.pause()
+        motionTap?.pause()
         isMotionTapRunning = false
     }
 

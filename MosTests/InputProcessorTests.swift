@@ -219,6 +219,23 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(pointerAssociations, [false, true])
     }
 
+    /// The cores stop (sleep, another user, lost Accessibility access, Pause) while a gesture
+    /// button is held: the pointer-movement tap is let go, and the hold still ends cleanly.
+    func testReleasingTheMotionTapMidHoldEndsTheHoldAndFreesThePointer() {
+        configureGestureBinding()
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        XCTAssertTrue(MouseInteractionSessionController.shared.isMotionTapRunning)
+        XCTAssertTrue(MouseGesturePointerLock.shared.isLocked)
+
+        MouseInteractionSessionController.shared.releaseMotionTap()
+
+        XCTAssertFalse(MouseInteractionSessionController.shared.isMotionTapRunning)
+        XCTAssertFalse(InputProcessor.shared.hasActiveMouseGestureSessions)
+        XCTAssertFalse(InputProcessor.shared.hasPointerTrackedMouseGestureSessions)
+        XCTAssertFalse(MouseGesturePointerLock.shared.isLocked)
+        XCTAssertEqual(pointerAssociations, [false, true])
+    }
+
     func testGesturePointerLockKeepsMotionAtAnchorAndWarpsBackOnDrift() {
         configureGestureBinding()
         XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)

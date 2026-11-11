@@ -522,6 +522,23 @@ final class AppRunControllerTests: XCTestCase {
         XCTAssertFalse(controller.isWaitingForAccess)
     }
 
+    /// The wait for the access goes on while the status-bar menu is open or a modal panel
+    /// runs: the timer is in the common modes (CommonModesTimer), not only the default one.
+    func testTheRecoveryTimerAlsoRunsWhileAMenuIsOpen() throws {
+        let world = World()
+        world.access = false
+        let controller = make(world)
+        controller.start()
+        let timer = try XCTUnwrap(controller.recoveryTimer)
+        for mode in [RunLoop.Mode.default, .eventTracking, .modalPanel] {
+            XCTAssertTrue(CFRunLoopContainsTimer(
+                CFRunLoopGetMain(),
+                unsafeBitCast(timer, to: CFRunLoopTimer.self),
+                CFRunLoopMode(mode.rawValue as CFString)
+            ), mode.rawValue)
+        }
+    }
+
     /// Pause is the stop path: the cores stop (LogiCenter.stop gives the mice their buttons back).
     func testPauseStopsAndResumeStarts() {
         let world = World()
@@ -834,6 +851,24 @@ final class AppRunControllerTests: XCTestCase {
         let cores = AppRunController.Environment.cores(eventTaps: parts(log), logitech: logitech(log))
         cores.stop()
         XCTAssertEqual(log.entries, ["scroll off", "button off", "logi off"])
+    }
+
+    /// The pointer-movement tap of gesture holds is made on demand: starting the cores does
+    /// not make it, stopping them releases it (after ButtonCore, which ends a hold), so a tap
+    /// kept across lost Accessibility access or another user cannot stay off for good.
+    func testStoppingReleasesTheTapsMadeOnDemandAfterTheEventTaps() {
+        let log = Recorder()
+        let cores = AppRunController.Environment.cores(
+            eventTaps: parts(log),
+            onDemandTaps: [{ log.entries.append("motion released") }],
+            logitech: logitech(log)
+        )
+        XCTAssertTrue(cores.start())
+        XCTAssertEqual(log.entries, ["scroll on", "button on", "logi on"])
+
+        log.entries = []
+        cores.stop()
+        XCTAssertEqual(log.entries, ["scroll off", "button off", "motion released", "logi off"])
     }
 
     func testTheToastText() {
