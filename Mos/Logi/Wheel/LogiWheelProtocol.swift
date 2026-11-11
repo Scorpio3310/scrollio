@@ -104,7 +104,8 @@ enum LogiWheelProtocol {
     // autoDisengage byte, so Mos uses its own documented, monotonic mapping:
     //
     //   sensitivity   1 %  -> 50  (12.5 turns/s: hardest to trigger, Solaar/OpenLogi/Mouser slider max)
-    //   sensitivity  50 %  -> 16  ( 4   turns/s: Logitech factory default, the Mos default)
+    //   sensitivity  50 %  -> 16  ( 4   turns/s: Logitech factory default,
+    //                               LogiWheelSettings.defaultSmartShiftSensitivity)
     //   sensitivity 100 %  ->  8  ( 2   turns/s: OpenLogi floor; lower values free-spin
     //                               during normal scrolling, OpenLogi issue #317)
     //
@@ -197,39 +198,62 @@ enum LogiWheelProtocol {
 
     // MARK: - Set request encoding
 
-    /// setRatchetControlMode parameters for the user's settings.
-    /// - freeSpin:   [1, unchanged, torque?]
-    /// - ratchet:    [2, 0xFF, torque?]   (auto-disengage disabled)
-    /// - smartShift: [2, threshold(sensitivity), torque?]
-    /// 0x2110 gets a third byte 0 (autoDisengageDefault unchanged). On 0x2111 the torque
-    /// byte is written only when the device reports tunable torque, otherwise 0 (unchanged).
-    /// The mode byte is always explicit: MX Master 4 ignores torque writes without it.
+    /// setRatchetControlMode parameters that change only what is given; nil leaves a field as
+    /// the mouse has it (0 = unchanged in the request).
+    /// - mode freeSpin:   [1, threshold?, torque?]
+    /// - mode ratchet:    [2, 0xFF, torque?]   (auto-disengage disabled)
+    /// - mode smartShift: [2, threshold?, torque?] (the caller gives a threshold when the mouse has none)
+    /// - mode nil:        [current mode, threshold?, torque?]
+    /// The mode byte is always explicit: MX Master 4 ignores torque writes without it, so
+    /// without a new mode the current one is repeated (unchanged when the mouse reported none
+    /// that is known). 0x2110 gets a third byte 0 (autoDisengageDefault unchanged).
     static func setParams(
-        for settings: LogiWheelSettings,
-        feature: LogiWheelFeature,
-        supportsTorque: Bool
+        mode: LogiWheelMode?,
+        threshold: UInt8?,
+        torque: UInt8?,
+        current: LogiWheelStatus,
+        feature: LogiWheelFeature
     ) -> [UInt8] {
-        let modeByte: UInt8
-        let disengageByte: UInt8
-        switch settings.mode {
-        case .freeSpin:
+        var modeByte = current.wheelMode == wheelModeFreeSpin || current.wheelMode == wheelModeRatchet
+            ? current.wheelMode : unchanged
+        var disengageByte = threshold ?? unchanged
+        switch mode {
+        case .freeSpin?:
             modeByte = wheelModeFreeSpin
-            disengageByte = unchanged
-        case .ratchet:
+        case .ratchet?:
             modeByte = wheelModeRatchet
             disengageByte = autoDisengageNever
-        case .smartShift:
+        case .smartShift?:
             modeByte = wheelModeRatchet
-            disengageByte = autoDisengage(forSensitivity: settings.smartShiftSensitivity)
+        case nil:
+            break
         }
         let thirdByte: UInt8
         switch feature {
         case .smartShift:
             thirdByte = unchanged
         case .smartShiftEnhanced:
-            thirdByte = supportsTorque ? clampedTorque(settings.scrollForce) : unchanged
+            thirdByte = torque ?? unchanged
         }
         return [modeByte, disengageByte, thirdByte]
+    }
+
+    /// The threshold of an autoDisengage byte; nil when it carries none (0, or 0xFF = always ratchet).
+    static func threshold(_ autoDisengage: UInt8) -> UInt8? {
+        return autoDisengage == unchanged || autoDisengage == autoDisengageNever ? nil : autoDisengage
+    }
+
+    /// The user's sensitivity as the mouse would keep it (its threshold, read back as a percentage).
+    static func sensitivityAsKept(_ sensitivity: Int) -> Int {
+        return Self.sensitivity(forAutoDisengage: autoDisengage(forSensitivity: sensitivity)) ?? sensitivity
+    }
+
+    /// The mouse's threshold already is the user's sensitivity: the same byte, or a percentage
+    /// within `LogiWheelSettings.sensitivityTolerance` (the mouse keeps coarse steps).
+    static func sensitivityMatches(_ sensitivity: Int, threshold: UInt8) -> Bool {
+        if threshold == autoDisengage(forSensitivity: sensitivity) { return true }
+        guard let onMouse = Self.sensitivity(forAutoDisengage: threshold) else { return false }
+        return abs(onMouse - sensitivity) <= LogiWheelSettings.sensitivityTolerance
     }
 
     /// Parameters that flip free-spin <-> ratchet and keep threshold and torque

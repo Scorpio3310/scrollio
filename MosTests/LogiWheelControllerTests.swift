@@ -2,7 +2,8 @@ import XCTest
 @testable import Mos_Debug
 
 /// LogiWheelController against fake response bytes: what it sends, when it writes,
-/// and that it never writes unless the settings are managed by Mos.
+/// that it never writes unless the settings are managed by Mos, and that a value the user
+/// never set is never written.
 final class LogiWheelControllerTests: XCTestCase {
 
     private struct Sent: Equatable {
@@ -12,6 +13,7 @@ final class LogiWheelControllerTests: XCTestCase {
 
     private var sent: [Sent] = []
     private var changes = 0
+    private var logs: [String] = []
     /// Reply timeouts the controller asked for; a test runs them when "2 s later" should happen.
     private var scheduled: [(delay: TimeInterval, work: () -> Void)] = []
 
@@ -19,6 +21,7 @@ final class LogiWheelControllerTests: XCTestCase {
         super.setUp()
         sent = []
         changes = 0
+        logs = []
         scheduled = []
     }
 
@@ -32,7 +35,8 @@ final class LogiWheelControllerTests: XCTestCase {
             schedule: { [unowned self] delay, work in
                 self.scheduled.append((delay, work))
             },
-            onChange: { [unowned self] in self.changes += 1 }
+            onChange: { [unowned self] in self.changes += 1 },
+            log: { [unowned self] in self.logs.append($0) }
         )
     }
 
@@ -51,13 +55,27 @@ final class LogiWheelControllerTests: XCTestCase {
         return bytes
     }
 
+    /// The user's settings; a value left out is not set.
     private func settings(
-        _ mode: LogiWheelMode,
-        sensitivity: Int = 50,
-        force: Int = 50,
+        _ mode: LogiWheelMode? = nil,
+        sensitivity: Int? = nil,
+        force: Int? = nil,
         managed: Bool = true
     ) -> LogiWheelSettings {
         return LogiWheelSettings(managedByMos: managed, mode: mode, smartShiftSensitivity: sensitivity, scrollForce: force)
+    }
+
+    /// An MX Master 4 class wheel (0x2111, tunable torque) that has answered with `status`.
+    private func connectedEnhanced(
+        _ desired: LogiWheelSettings,
+        status: [UInt8],
+        tunableTorque: Bool = true
+    ) -> LogiWheelController {
+        let wheel = makeController(.smartShiftEnhanced)
+        wheel.start(desired: desired)
+        wheel.handleResponse(functionId: 0, report: report(functionId: 0, payload: [tunableTorque ? 0x01 : 0x00, 0x10, 0x32]))
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: status))
+        return wheel
     }
 
     private var writes: [Sent] { sent.filter { $0.functionId == 2 } }
@@ -171,7 +189,7 @@ final class LogiWheelControllerTests: XCTestCase {
         wheel.start(desired: settings(.ratchet))
         wheel.handleResponse(functionId: 0, report: report(functionId: 0, payload: [0x01, 0x10, 0x32]))
         wheel.handleError(functionId: 1, errorCode: 0x05)
-        XCTAssertNil(wheel.pendingSettings)
+        XCTAssertTrue(wheel.pendingFields.isEmpty)
         XCTAssertTrue(writes.isEmpty)
     }
 
@@ -218,7 +236,7 @@ final class LogiWheelControllerTests: XCTestCase {
         XCTAssertTrue(wheel.capabilitiesKnown)
         XCTAssertFalse(wheel.supportsScrollForce)
         XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x02, 0xFF, 0x00])])
-        XCTAssertNil(wheel.pendingSettings)
+        XCTAssertTrue(wheel.pendingFields.isEmpty)
     }
 
     func testCapabilitiesNeverAnswered_statusArrivingLater_stillWrites() {
@@ -296,12 +314,12 @@ final class LogiWheelControllerTests: XCTestCase {
         XCTAssertTrue(writes.isEmpty)
 
         // The mouse answers this time and can tune the force: the force that could not be
-        // written before goes out now, after a fresh status read.
+        // written before goes out now, after a fresh status read, and only the force.
         wheel.handleResponse(functionId: 0, report: report(functionId: 0, payload: [0x01, 0x10, 0x32]))
         XCTAssertEqual(sent.last, Sent(functionId: 1, params: []))
         XCTAssertTrue(writes.isEmpty, "must wait for the fresh status read")
         wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0xFF, 0x32]))
-        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x02, 0xFF, 60])])
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x02, 0x00, 60])])
     }
 
     func testLateCapabilitiesWithoutTunableTorque_writeNothingMore() {
@@ -314,7 +332,7 @@ final class LogiWheelControllerTests: XCTestCase {
 
         wheel.handleResponse(functionId: 0, report: report(functionId: 0, payload: [0x00, 0x10, 0x32]))
         XCTAssertEqual(writes.count, 1)
-        XCTAssertNil(wheel.pendingSettings)
+        XCTAssertTrue(wheel.pendingFields.isEmpty)
     }
 
     // MARK: - Apply while connected
@@ -339,7 +357,7 @@ final class LogiWheelControllerTests: XCTestCase {
         wheel.apply(settings(.freeSpin, force: 50))
         XCTAssertEqual(sent, [Sent(functionId: 1, params: [])], "capabilities are cached; only a fresh status read")
         wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0x10, 0x32]))
-        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x01, 0x00, 50])])
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x01, 0x00, 0x00])], "the mouse already has force 50")
     }
 
     func testApply_latestSettingsWin() {
@@ -393,6 +411,7 @@ final class LogiWheelControllerTests: XCTestCase {
     func testManagerStoresSettings_unmanagedIsNoOp() {
         let manager = LogiSessionManager()
         XCTAssertFalse(manager.wheelSettings.managedByMos, "default never manages the device")
+        XCTAssertEqual(manager.wheelSettings, LogiWheelSettings(), "and sets nothing")
         let unmanaged = settings(.freeSpin, managed: false)
         manager.applyWheelSettings(unmanaged)
         XCTAssertEqual(manager.wheelSettings, unmanaged, "kept so devices connecting later stay untouched")
@@ -420,8 +439,236 @@ final class LogiWheelControllerTests: XCTestCase {
 
     func testDuplicateDeviceIdsAreDisambiguated() {
         let a = LogiWheelDeviceState(id: "046D:B042", deviceName: "MX Master 4", supportsSmartShift: true,
-                                     supportsScrollForce: true, mode: .ratchet, smartShiftSensitivity: nil, scrollForce: 50)
+                                     supportsScrollForce: true, mode: .init(onMouse: .ratchet, setByYou: nil),
+                                     smartShiftSensitivity: .init(onMouse: nil, setByYou: nil),
+                                     scrollForce: .init(onMouse: 50, setByYou: 70))
         let states = LogiSessionManager.disambiguatedWheelStates([a, a])
         XCTAssertEqual(states.map { $0.id }, ["046D:B042", "046D:B042#2"])
+        XCTAssertEqual(states[1].scrollForce, a.scrollForce, "only the id changes")
+        XCTAssertEqual(states[1].mode, a.mode)
+    }
+
+    // MARK: - Unset values are never written (regressions)
+
+    /// The regression: "Let Scrollio manage this mouse" turned on before the mouse had
+    /// reported wrote the stored defaults (SmartShift / 50 / 50) to it.
+    func testSwitchOnBeforeTheMouseReported_writesNothing() {
+        let wheel = makeController(.smartShiftEnhanced)
+        wheel.start(desired: .default)
+        wheel.apply(LogiWheelSettings(managedByMos: true))
+        XCTAssertNil(wheel.status, "nothing reported yet")
+
+        wheel.handleResponse(functionId: 0, report: report(functionId: 0, payload: [0x01, 0x10, 0x32]))
+        // Far from the old defaults: ratchet, force 100.
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0xFF, 100]))
+        wheel.refresh()
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0xFF, 100]))
+
+        XCTAssertTrue(writes.isEmpty)
+        XCTAssertEqual(wheel.mode, .ratchet)
+        XCTAssertEqual(wheel.scrollForce, 100)
+    }
+
+    /// The regression: with two mice, the second got the first one's values.
+    func testTwoMiceNeverExchangeValues() {
+        var sentA: [Sent] = []
+        var sentB: [Sent] = []
+        func controller(_ record: @escaping (Sent) -> Void) -> LogiWheelController {
+            return LogiWheelController(
+                feature: .smartShiftEnhanced, featureIndex: 0x0E,
+                send: { record(Sent(functionId: $0, params: $1)) },
+                schedule: { _, _ in }, onChange: {}
+            )
+        }
+        let a = controller { sentA.append($0) }
+        let b = controller { sentB.append($0) }
+        let switchedOn = LogiWheelSettings(managedByMos: true)
+        for (wheel, status) in [(a, [UInt8]([0x02, 0xFF, 100])), (b, [0x01, 0x0C, 30])] {
+            wheel.start(desired: switchedOn)
+            wheel.handleResponse(functionId: 0, report: report(functionId: 0, payload: [0x01, 0x10, 0x32]))
+            wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: status))
+        }
+        XCTAssertTrue(sentA.filter { $0.functionId == 2 }.isEmpty, "each mouse keeps its own values")
+        XCTAssertTrue(sentB.filter { $0.functionId == 2 }.isEmpty)
+
+        // The user sets one value: each mouse gets that value and keeps everything else.
+        let force = LogiWheelSettings(managedByMos: true, scrollForce: 70)
+        for (wheel, status) in [(a, [UInt8]([0x02, 0xFF, 100])), (b, [0x01, 0x0C, 30])] {
+            wheel.apply(force)
+            wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: status))
+        }
+        XCTAssertEqual(sentA.filter { $0.functionId == 2 }, [Sent(functionId: 2, params: [0x02, 0x00, 70])], "A stays ratchet")
+        XCTAssertEqual(sentB.filter { $0.functionId == 2 }, [Sent(functionId: 2, params: [0x01, 0x00, 70])], "B stays free-spin")
+    }
+
+    func testAnUnsetValueIsNeverWritten() {
+        // Only the mode is set: the force and the threshold stay as the mouse has them.
+        _ = connectedEnhanced(settings(.ratchet), status: [0x02, 0x10, 30])
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x02, 0xFF, 0x00])])
+        sent.removeAll()
+
+        // Only the force is set: the mode byte repeats the mouse's own, the threshold is untouched.
+        _ = connectedEnhanced(settings(force: 70), status: [0x01, 0x20, 30])
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x01, 0x00, 70])])
+        sent.removeAll()
+
+        // Nothing set: nothing written, however far the mouse is from any default.
+        let wheel = connectedEnhanced(settings(), status: [0x01, 0x30, 1])
+        wheel.refresh()
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0xFF, 100]))
+        wheel.apply(settings())
+        XCTAssertTrue(writes.isEmpty)
+        wheel.toggleMode()
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0xFF, 100]))
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x01, 0x00, 0x00])], "only the SmartShift Toggle the user asked for")
+    }
+
+    func testASetValueIsWrittenOnce_andNotAgainWhenTheMouseHasIt() {
+        let desired = settings(.smartShift, sensitivity: 70, force: 70)
+        let wheel = connectedEnhanced(desired, status: [0x02, 0x10, 50])
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x02, 13, 70])])
+        XCTAssertEqual(sent.last, Sent(functionId: 1, params: []), "read back")
+
+        wheel.handleResponse(functionId: 2, report: report(functionId: 2, payload: [0x02, 13, 70]))
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 13, 70]))
+        wheel.refresh()
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 13, 70]))
+        XCTAssertEqual(writes.count, 1, "the read-back and a refresh write nothing")
+
+        // The same settings again write nothing and ask nothing.
+        let before = sent
+        wheel.apply(desired)
+        XCTAssertEqual(sent, before)
+
+        // Reconnected with the values already on the mouse: read, nothing written.
+        wheel.start(desired: desired)
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 13, 70]))
+        XCTAssertEqual(writes.count, 1)
+        XCTAssertTrue(logs.contains { $0.hasPrefix("Mode:") && $0.hasSuffix("already set, no write") })
+        XCTAssertTrue(logs.contains { $0.hasPrefix("SmartShift sensitivity:") && $0.hasSuffix("already set, no write") })
+        XCTAssertTrue(logs.contains { $0.hasPrefix("Scroll force:") && $0.hasSuffix("already set, no write") })
+    }
+
+    /// The owner's settings from before the values were optional: everything already on the mouse.
+    func testTheOwnersStoredSettingsWriteNothingToHisMouse() {
+        let stored = LogiWheelSettings(managedByMos: true, mode: .smartShift, smartShiftSensitivity: 51, scrollForce: 100)
+        _ = connectedEnhanced(stored, status: [0x02, 0x10, 100])
+        XCTAssertTrue(writes.isEmpty)
+    }
+
+    func testAChangeDecidesOnlyTheValueThatChanged() {
+        // The mouse was switched to free-spin by its own button; the user then changes the force.
+        let wheel = connectedEnhanced(settings(.smartShift, force: 50), status: [0x02, 0x10, 50])
+        XCTAssertTrue(writes.isEmpty)
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x01, 0x10, 50]))
+        wheel.apply(settings(.smartShift, force: 80))
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x01, 0x10, 50]))
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x01, 0x00, 80])], "the mode is left as the mouse has it")
+    }
+
+    func testTurningTheSwitchOffAndOnDecidesEverySetValueAgain() {
+        let desired = settings(force: 70)
+        let wheel = connectedEnhanced(desired, status: [0x02, 0x10, 70])
+        XCTAssertTrue(writes.isEmpty)
+        // Logi Options+ changes the force while Scrollio does not manage the mouse.
+        var off = desired
+        off.managedByMos = false
+        wheel.apply(off)
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0x10, 40]))
+        XCTAssertTrue(writes.isEmpty, "not managed: nothing written")
+
+        wheel.apply(desired)
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0x10, 40]))
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x02, 0x00, 70])])
+    }
+
+    // MARK: - Mode and sensitivity
+
+    func testSmartShiftOnAMouseWithoutAThreshold_getsTheFactoryDefaultUnlessTheUserSetOne() {
+        _ = connectedEnhanced(settings(.smartShift), status: [0x02, 0xFF, 50])
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x02, 16, 0x00])])
+        XCTAssertTrue(logs.contains { $0.contains("writing the default 16 (50 %)") })
+        sent.removeAll()
+
+        _ = connectedEnhanced(settings(.smartShift, sensitivity: 100), status: [0x02, 0xFF, 50])
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x02, 8, 0x00])])
+    }
+
+    func testANewModeBringsTheSetSensitivityAlong() {
+        // Free-spin keeps an old threshold (16 = 50 %); the user wants SmartShift at 100 %.
+        let wheel = connectedEnhanced(settings(.freeSpin, sensitivity: 100), status: [0x02, 0x10, 50])
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x01, 0x00, 0x00])], "free-spin: the sensitivity waits")
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x01, 0x10, 50]))
+
+        wheel.apply(settings(.smartShift, sensitivity: 100))
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x01, 0x10, 50]))
+        XCTAssertEqual(writes.last, Sent(functionId: 2, params: [0x02, 8, 0x00]))
+    }
+
+    func testSensitivityAppliesOnlyInSmartShift() {
+        let wheel = connectedEnhanced(settings(sensitivity: 80), status: [0x02, 0xFF, 50])
+        XCTAssertTrue(writes.isEmpty, "a threshold would switch the ratchet mouse to SmartShift")
+        XCTAssertTrue(logs.contains { $0.contains("applies only in SmartShift") })
+
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0x10, 50]))
+        wheel.apply(settings(sensitivity: 90))
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0x10, 50]))
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x02, 10, 0x00])], "in SmartShift it is written")
+    }
+
+    func testSensitivityWithinTheCoarseStepsOfTheMouseIsNotWrittenAgain() {
+        // Threshold 17 reads back as 49 %: the same choice as 51 % (threshold 16).
+        _ = connectedEnhanced(settings(sensitivity: 51), status: [0x02, 17, 50])
+        XCTAssertTrue(writes.isEmpty)
+        // 60 % is threshold 14; the mouse at 17 is 49 %: written.
+        _ = connectedEnhanced(settings(sensitivity: 60), status: [0x02, 17, 50])
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x02, 14, 0x00])])
+    }
+
+    // MARK: - Log and state
+
+    func testEveryDecisionIsLogged() {
+        _ = connectedEnhanced(settings(force: 70), status: [0x02, 0x10, 50])
+        XCTAssertTrue(logs.contains { $0.hasPrefix("Connected:") && $0.contains("managed, user set scroll force 70") })
+        XCTAssertTrue(logs.contains("Mode: not set by the user, left alone (mouse SmartShift)"))
+        XCTAssertTrue(logs.contains("SmartShift sensitivity: not set by the user, left alone"))
+        XCTAssertTrue(logs.contains("Scroll force: mouse 50, wanted 70; writing 70"))
+        XCTAssertTrue(logs.contains { $0.hasPrefix("Writing 02 00 46") })
+
+        logs.removeAll()
+        _ = connectedEnhanced(settings(managed: false), status: [0x02, 0x10, 50])
+        XCTAssertTrue(logs.contains { $0.hasSuffix("not managed, reading only") })
+        XCTAssertFalse(logs.contains { $0.contains("writing") || $0.contains("Writing") })
+    }
+
+    func testAStatusIsLoggedOnlyWhenItChanges() {
+        let wheel = connectedEnhanced(settings(managed: false), status: [0x02, 0x10, 50])
+        let statusLines = { self.logs.filter { $0.hasPrefix("Mouse:") }.count }
+        XCTAssertEqual(statusLines(), 1)
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0x10, 50]))
+        XCTAssertEqual(statusLines(), 1)
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x01, 0x10, 50]))
+        XCTAssertEqual(statusLines(), 2)
+    }
+
+    func testDeviceStateHasTheShapeOfTheBasics() {
+        let wheel = connectedEnhanced(settings(.ratchet, sensitivity: 51, force: 150), status: [0x02, 0x10, 100])
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0x10, 100]))
+        let state = wheel.deviceState(id: "mx4", deviceName: "MX Master 4")
+        XCTAssertEqual(state.mode.onMouse, .smartShift)
+        XCTAssertEqual(state.mode.setByYou, .ratchet)
+        XCTAssertEqual(state.mode.source, .user)
+        XCTAssertFalse(state.mode.mouseMatches)
+        XCTAssertEqual(state.smartShiftSensitivity.setByYou, 50, "51 % as the mouse keeps it")
+        XCTAssertTrue(state.smartShiftSensitivity.mouseMatches)
+        XCTAssertEqual(state.scrollForce.setByYou, 100, "clamped")
+        XCTAssertTrue(state.scrollForce.mouseMatches)
+
+        let unset = connectedEnhanced(settings(), status: [0x01, 0x10, 30])
+            .deviceState(id: "mx4", deviceName: "MX Master 4")
+        XCTAssertEqual(unset.mode, .init(onMouse: .freeSpin, setByYou: nil))
+        XCTAssertEqual(unset.mode.source, .mouse)
+        XCTAssertTrue(unset.mode.mouseMatches)
+        XCTAssertEqual(unset.scrollForce, .init(onMouse: 30, setByYou: nil))
     }
 }

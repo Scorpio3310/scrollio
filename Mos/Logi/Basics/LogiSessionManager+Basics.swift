@@ -66,17 +66,7 @@ extension LogiSessionManager {
             seen[state.id] = count + 1
             guard count > 0 else { return state }
             let id = "\(state.id)#\(count + 1)"
-            let wheel = state.wheel.map {
-                LogiWheelDeviceState(
-                    id: id,
-                    deviceName: $0.deviceName,
-                    supportsSmartShift: $0.supportsSmartShift,
-                    supportsScrollForce: $0.supportsScrollForce,
-                    mode: $0.mode,
-                    smartShiftSensitivity: $0.smartShiftSensitivity,
-                    scrollForce: $0.scrollForce
-                )
-            }
+            let wheel = state.wheel.map { $0.withId(id) }
             return LogiMouseDeviceState(
                 id: id,
                 deviceName: state.deviceName,

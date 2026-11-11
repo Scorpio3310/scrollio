@@ -90,7 +90,8 @@ class Options {
     var gesture = MouseGestureSettings.default {
         didSet { markChanged(.gesture) }
     }
-    // Logitech 滚轮硬件设置 (SmartShift 模式 / 灵敏度 / 齿感力度), 仅在 managedByMos 时写入设备
+    // Logitech 滚轮硬件设置 (SmartShift 模式 / 灵敏度 / 齿感力度). Every value is optional
+    // (nil = leave the mouse's own); written only while `managedByMos` is on.
     var logiWheel = LogiWheelSettings.default {
         didSet { markChanged(.logiWheel) }
     }
@@ -253,7 +254,7 @@ extension Options {
         // 手势导航
         gesture = loadGestureSettings()
         // Logitech 滚轮
-        logiWheel = loadLogiWheelSettings()
+        logiWheel = Self.decodeLogiWheelSettings(UserDefaults.standard.data(forKey: OptionItem.MouseWheel.Settings))
         // Logitech basic mouse settings
         logiMouse = Self.decodeLogiMouseSettings(UserDefaults.standard.data(forKey: OptionItem.MouseBasics.Settings))
         // What the Scrolling tab can no longer show is brought in line (global and per app),
@@ -339,10 +340,12 @@ extension Options {
         return settings
     }
 
-    // Logitech 滚轮设置; 缺失或损坏时回退默认值 (默认不接管设备)
-    private func loadLogiWheelSettings() -> LogiWheelSettings {
-        guard let data = UserDefaults.standard.data(forKey: OptionItem.MouseWheel.Settings),
-              let settings = try? decoder.decode(LogiWheelSettings.self, from: data) else {
+    /// Logitech wheel settings from their stored JSON. Missing or unreadable data gives the
+    /// default (not managed, nothing set, nothing written); single bad values fall back to nil.
+    /// Settings stored before the values were optional carry every value and load as set.
+    static func decodeLogiWheelSettings(_ data: Data?) -> LogiWheelSettings {
+        guard let data = data,
+              let settings = try? JSONDecoder().decode(LogiWheelSettings.self, from: data) else {
             return .default
         }
         return settings

@@ -55,12 +55,15 @@ final class LogiMouseBasicsManagerTests: XCTestCase {
 
     func testDuplicateMiceGetDistinctIdsAndTheirWheelFollows() {
         let wheel = LogiWheelDeviceState(id: "046D:B042", deviceName: "MX Master 4", supportsSmartShift: true,
-                                         supportsScrollForce: true, mode: .smartShift, smartShiftSensitivity: 50, scrollForce: 50)
+                                         supportsScrollForce: true, mode: .init(onMouse: .smartShift, setByYou: nil),
+                                         smartShiftSensitivity: .init(onMouse: 50, setByYou: nil),
+                                         scrollForce: .init(onMouse: 50, setByYou: 70))
         let state = LogiMouseDeviceState(id: "046D:B042", deviceName: "MX Master 4", supported: [.battery], managed: false,
                                          battery: nil, pointerSpeed: nil, haptics: nil, pressForce: nil, wheel: wheel)
         let states = LogiSessionManager.disambiguatedMouseStates([state, state])
         XCTAssertEqual(states.map(\.id), ["046D:B042", "046D:B042#2"])
         XCTAssertEqual(states.map { $0.wheel?.id }, ["046D:B042", "046D:B042#2"])
+        XCTAssertEqual(states[1].wheel?.scrollForce, wheel.scrollForce, "the wheel keeps its values")
     }
 
     func testGestureCuesMaySwitchHapticsOnUntilTheUserSwitchedThemOff() {

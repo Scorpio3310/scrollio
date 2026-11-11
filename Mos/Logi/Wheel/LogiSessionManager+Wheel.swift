@@ -10,11 +10,14 @@ import Foundation
 
 extension LogiSessionManager {
 
-    /// Stores `settings` for devices that connect later, and writes them to every
-    /// connected wheel when (and only when) `settings.managedByMos` is true.
+    /// Stores `settings` for devices that connect later and hands them to every connected
+    /// wheel. A wheel writes only while `settings.managedByMos` is true, and only the values
+    /// the user set (see LogiWheelController).
     func applyWheelSettings(_ settings: LogiWheelSettings) {
+        if settings != wheelSettings {
+            LogiSystemLog.note("Wheel settings: \(settings.managedByMos ? "managed" : "not managed"), \(LogiWheelController.describe(settings))")
+        }
         wheelSettings = settings
-        guard settings.managedByMos else { return }
         for session in activeSessions where session.isHIDPPCandidate {
             session.applyWheelSettings(settings)
         }
@@ -45,15 +48,7 @@ extension LogiSessionManager {
             let count = seen[state.id, default: 0]
             seen[state.id] = count + 1
             guard count > 0 else { return state }
-            return LogiWheelDeviceState(
-                id: "\(state.id)#\(count + 1)",
-                deviceName: state.deviceName,
-                supportsSmartShift: state.supportsSmartShift,
-                supportsScrollForce: state.supportsScrollForce,
-                mode: state.mode,
-                smartShiftSensitivity: state.smartShiftSensitivity,
-                scrollForce: state.scrollForce
-            )
+            return state.withId("\(state.id)#\(count + 1)")
         }
     }
 
@@ -68,5 +63,20 @@ extension LogiSessionManager {
             self?.wheelStateNotificationScheduled = false
             NotificationCenter.default.post(name: LogiCenter.wheelStateChanged, object: nil)
         }
+    }
+}
+
+extension LogiWheelDeviceState {
+    /// The same state under another id (a second mouse of the same model).
+    func withId(_ id: String) -> LogiWheelDeviceState {
+        return LogiWheelDeviceState(
+            id: id,
+            deviceName: deviceName,
+            supportsSmartShift: supportsSmartShift,
+            supportsScrollForce: supportsScrollForce,
+            mode: mode,
+            smartShiftSensitivity: smartShiftSensitivity,
+            scrollForce: scrollForce
+        )
     }
 }

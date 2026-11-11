@@ -34,7 +34,9 @@ enum MouseDeviceFixtures {
     ) -> LogiWheelDeviceState {
         return LogiWheelDeviceState(
             id: id, deviceName: name, supportsSmartShift: true, supportsScrollForce: scrollForceSupported,
-            mode: mode, smartShiftSensitivity: sensitivity, scrollForce: scrollForce
+            mode: .init(onMouse: mode, setByYou: nil),
+            smartShiftSensitivity: .init(onMouse: sensitivity, setByYou: nil),
+            scrollForce: .init(onMouse: scrollForce, setByYou: nil)
         )
     }
 
@@ -166,7 +168,8 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         return controller
     }
 
-    private func manage(_ on: Bool = true, mode: LogiWheelMode = .smartShift, sensitivity: Int = 50, scrollForce: Int = 100) {
+    /// The switch, and wheel values the user set (nil = not set).
+    private func manage(_ on: Bool = true, mode: LogiWheelMode? = .smartShift, sensitivity: Int? = 50, scrollForce: Int? = 100) {
         Options.shared.logiWheel = LogiWheelSettings(
             managedByMos: on, mode: mode, smartShiftSensitivity: sensitivity, scrollForce: scrollForce
         )
@@ -766,25 +769,104 @@ final class MousePreferencesViewControllerTests: XCTestCase {
 
     // MARK: - Turning management on
 
-    func testTurningManagementOnStartsFromTheWheelOfTheMouse() {
+    /// The regression: turning the switch on copied the first mouse's wheel into the
+    /// settings. Now it takes nothing over: what was not set stays unset, and the rows show
+    /// the mouse's own values.
+    func testTurningManagementOnTakesNothingFromTheMouse() {
         Options.shared.logiMouse.pointerDPI = 1600
         let controller = makeController([Fixtures.mxMaster4(mode: .ratchet, sensitivity: nil, scrollForce: 100)])
-        XCTAssertEqual(Options.shared.logiWheel.scrollForce, 50, "the stored default")
+        XCTAssertEqual(Options.shared.logiWheel, LogiWheelSettings(), "a fresh install sets nothing")
 
         set(controller.managedSwitch, true)
-        XCTAssertEqual(
-            Options.shared.logiWheel,
-            LogiWheelSettings(managedByMos: true, mode: .ratchet, smartShiftSensitivity: 50, scrollForce: 100)
-        )
-        XCTAssertEqual(controller.firmnessSlider.doubleValue, 100, "nothing on the mouse changes")
+        XCTAssertEqual(Options.shared.logiWheel, LogiWheelSettings(managedByMos: true))
         XCTAssertEqual(Options.shared.logiMouse, LogiMouseSettings(pointerDPI: 1600), "the basics you set stay")
+        XCTAssertEqual(controller.wheelModeControl.selectedSegment, 1, "the mouse's ratchet")
+        XCTAssertEqual(controller.firmnessSlider.doubleValue, 100, "the mouse's force")
+        XCTAssertEqual(controller.firmnessRow.explanation, text("mouse-wheel-force-hint"), "nothing to differ from")
+        XCTAssertEqual(controller.wheelModeRow.explanation, MouseText.modeHint(.ratchet))
 
-        // Off and on again while managed values exist: on again starts from the mouse again.
-        Options.shared.logiWheel.scrollForce = 30
+        // Off and on again: still nothing set.
         set(controller.managedSwitch, false)
-        XCTAssertEqual(Options.shared.logiWheel.scrollForce, 30)
         set(controller.managedSwitch, true)
-        XCTAssertEqual(Options.shared.logiWheel.scrollForce, 100)
+        XCTAssertEqual(Options.shared.logiWheel, LogiWheelSettings(managedByMos: true))
+    }
+
+    /// The regression: switched on before the mouse had reported, the stored defaults
+    /// (SmartShift / 50 / 50) were kept and written to it.
+    func testTurningManagementOnBeforeTheMouseReportedSetsNothing() {
+        let controller = makeController([Fixtures.mxMaster4(mode: nil, sensitivity: nil, scrollForce: nil)])
+        set(controller.managedSwitch, true)
+        XCTAssertEqual(Options.shared.logiWheel, LogiWheelSettings(managedByMos: true))
+
+        // The mouse reports afterwards: its values show, and still nothing is set.
+        devices = [Fixtures.mxMaster4(mode: .freeSpin, sensitivity: 75, scrollForce: 30)]
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(controller.wheelModeControl.selectedSegment, 2, "free-spin")
+        XCTAssertEqual(controller.firmnessRow.valueText, MouseText.percent(30))
+        XCTAssertEqual(Options.shared.logiWheel, LogiWheelSettings(managedByMos: true))
+    }
+
+    /// The regression: with two mice the first one's wheel became the settings, and so the
+    /// second one's.
+    func testTwoMiceNeverExchangeValues() {
+        let controller = makeController([
+            Fixtures.mxMaster4(mode: .ratchet, sensitivity: nil, scrollForce: 100),
+            Fixtures.mxMaster3S(id: "mx3s", mode: .smartShift, sensitivity: 50),
+        ])
+        set(controller.managedSwitch, true)
+        XCTAssertEqual(Options.shared.logiWheel, LogiWheelSettings(managedByMos: true))
+    }
+
+    // MARK: - Wheel values the user never set
+
+    func testUnsetWheelValuesShowTheMouse() {
+        manage(mode: nil, sensitivity: nil, scrollForce: nil)
+        let controller = makeController([Fixtures.mxMaster4(mode: .smartShift, sensitivity: 72, scrollForce: 30)])
+        XCTAssertEqual(controller.wheelModeControl.selectedSegment, 0)
+        XCTAssertEqual(controller.sensitivityRow.valueText, MouseText.percent(72))
+        XCTAssertEqual(controller.sensitivitySlider.doubleValue, 70, "on the nearest tick")
+        XCTAssertEqual(controller.firmnessRow.valueText, MouseText.percent(30))
+        for row in [controller.wheelModeRow!, controller.sensitivityRow!, controller.firmnessRow!] {
+            XCTAssertTrue(row.isEnabled, row.title)
+            XCTAssertFalse(row.explanation?.contains("\n") ?? false, "no \"On the mouse\" line for a value you never set: \(row.title)")
+        }
+
+        // A set value shows instead, with the line where the mouse has something else.
+        Options.shared.logiWheel.scrollForce = 80
+        controller.syncControls()
+        XCTAssertEqual(controller.firmnessRow.valueText, MouseText.percent(80))
+        XCTAssertEqual(controller.firmnessRow.explanation, text("mouse-wheel-force-hint") + "\n" + onTheMouse(MouseText.percent(30)))
+        XCTAssertEqual(controller.sensitivityRow.valueText, MouseText.percent(72), "the others still show the mouse")
+    }
+
+    func testEachWheelControlSetsExactlyOneValue() {
+        manage(mode: nil, sensitivity: nil, scrollForce: nil)
+        let controller = makeController([Fixtures.mxMaster4(mode: .smartShift, sensitivity: 50, scrollForce: 100)])
+
+        drag(controller.sensitivitySlider, to: 70)
+        XCTAssertEqual(Options.shared.logiWheel, LogiWheelSettings(managedByMos: true, smartShiftSensitivity: 70))
+
+        drag(controller.firmnessSlider, to: 20)
+        XCTAssertEqual(Options.shared.logiWheel, LogiWheelSettings(managedByMos: true, smartShiftSensitivity: 70, scrollForce: 20))
+
+        manage(mode: nil, sensitivity: nil, scrollForce: nil)
+        controller.wheelModeControl.selectedSegment = 1
+        send(controller.wheelModeControl)
+        XCTAssertEqual(Options.shared.logiWheel, LogiWheelSettings(managedByMos: true, mode: .ratchet))
+        XCTAssertEqual(Options.shared.logiMouse, .default, "the basics are not touched")
+    }
+
+    /// SmartShift chosen on a mouse that is always ratchet: the slider shows the threshold the
+    /// mouse will get (the factory default), and the sensitivity stays unset.
+    func testSmartShiftOnARatchetMouseShowsTheDefaultSensitivity() {
+        manage(mode: nil, sensitivity: nil, scrollForce: nil)
+        let controller = makeController([Fixtures.mxMaster4(mode: .ratchet, sensitivity: nil)])
+        XCTAssertTrue(controller.sensitivityRow.isHidden)
+        controller.wheelModeControl.selectedSegment = 0
+        send(controller.wheelModeControl)
+        XCTAssertFalse(controller.sensitivityRow.isHidden)
+        XCTAssertEqual(controller.sensitivityRow.valueText, MouseText.percent(LogiWheelSettings.defaultSmartShiftSensitivity))
+        XCTAssertNil(Options.shared.logiWheel.smartShiftSensitivity)
     }
 
     // MARK: - Sample pulse and dragging
@@ -1211,7 +1293,7 @@ final class MousePreferencesRenderTests: XCTestCase {
 
         // The owner's mouse as it reports now, Scrollio managing it with nothing changed yet.
         Options.shared.logiMouse = .default
-        Options.shared.logiWheel = LogiWheelSettings(managedByMos: true, mode: .smartShift, smartShiftSensitivity: 50, scrollForce: 100)
+        Options.shared.logiWheel = LogiWheelSettings(managedByMos: true)
         let managed = tab([master4])
         try render(managed.view, name: "mx-master-4-managed", into: directory)
         for part in MousePart.allCases {

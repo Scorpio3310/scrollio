@@ -86,7 +86,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
     func testRenderMouse() throws {
         let master4 = MouseDeviceFixtures.mxMaster4()
         Options.shared.logiMouse = .default
-        Options.shared.logiWheel = LogiWheelSettings(managedByMos: true, mode: .smartShift, smartShiftSensitivity: 50, scrollForce: 100)
+        Options.shared.logiWheel = LogiWheelSettings(managedByMos: true)
         try renderMouse([master4], name: "mouse-mx-master-4-managed")
         Options.shared.logiMouse = LogiMouseSettings(pointerDPI: 1600, hapticsOn: true, hapticStrength: 60, pressForce: 5167)
         try renderMouse([master4], name: "mouse-mx-master-4-managed-haptics-on")

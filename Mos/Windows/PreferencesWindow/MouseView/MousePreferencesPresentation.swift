@@ -8,8 +8,10 @@
 //  The rules:
 //  - A row for something no connected mouse has is hidden, not disabled.
 //  - "Let Scrollio manage this mouse" off: the rows show the mouse's own values, greyed out.
-//  - On: they show the user's values; a basic setting the user never set shows the mouse's.
+//  - On: they show the user's values; a setting the user never set (basic or wheel) shows
+//    the mouse's.
 //  - "On the mouse: …" only where the user's value differs from what the mouse reports.
+//  - Turning the switch on changes no setting: nothing is taken over from a mouse.
 //
 
 import Foundation
@@ -120,8 +122,15 @@ struct MousePaneModel: Equatable {
     let pressForceRange: ClosedRange<Int>?
 
     /// The read-back of SmartShift sensitivity is coarse: the mouse keeps it in steps of up
-    /// to 6 % (at the sensitive end), so a value within 3 % of the user's is the same choice.
-    static let sensitivityTolerance = 3
+    /// to 6 % (at the sensitive end), so a value within 3 % of the user's is the same choice
+    /// (the Logi layer does not write it again either).
+    static let sensitivityTolerance = LogiWheelSettings.sensitivityTolerance
+
+    /// What a wheel row shows while the user has set nothing and the mouse has not reported:
+    /// SmartShift at the factory sensitivity, a middle force.
+    static let wheelModeFallback = LogiWheelMode.smartShift
+    static let sensitivityFallback = LogiWheelSettings.defaultSmartShiftSensitivity
+    static let scrollForceFallback = 50
 
     /// - Parameters:
     ///   - settings: `Options.shared.logiMouse`.
@@ -175,21 +184,23 @@ struct MousePaneModel: Equatable {
             pointerSpeed = nil
         }
 
-        // The wheel: mode and SmartShift sensitivity, and the firmness of its clicks.
+        // The wheel: mode and SmartShift sensitivity, and the firmness of its clicks. Like the
+        // basics, a value the user never set shows the mouse's.
         if let state = mice.lazy.compactMap({ $0.wheel }).first(where: { $0.supportsSmartShift }) {
-            let mode = managed ? wheel.mode : (state.mode ?? wheel.mode)
+            let mode = shown(mine: wheel.mode, onMouse: state.mode.onMouse, fallback: Self.wheelModeFallback)
             wheelMode = Mode(
                 mode: mode,
                 isEnabled: managed,
-                readback: readback(.wheelMode, mine: wheel.mode, onMouse: state.mode, text: MouseText.modeName)
+                readback: readback(.wheelMode, mine: wheel.mode, onMouse: state.mode.onMouse, text: MouseText.modeName)
             )
             if mode == .smartShift {
-                let value = managed ? wheel.smartShiftSensitivity : (state.smartShiftSensitivity ?? wheel.smartShiftSensitivity)
+                let onMouse = state.smartShiftSensitivity.onMouse
+                let value = shown(mine: wheel.smartShiftSensitivity, onMouse: onMouse, fallback: Self.sensitivityFallback)
                 // Compared only while the mouse is in SmartShift: in another mode it keeps an old value.
                 var differs: String?
-                if state.mode == .smartShift, let onMouse = state.smartShiftSensitivity,
-                   abs(onMouse - wheel.smartShiftSensitivity) > Self.sensitivityTolerance {
-                    differs = readback(.sensitivity, mine: wheel.smartShiftSensitivity, onMouse: onMouse, text: MouseText.percent)
+                if state.mode.onMouse == .smartShift, let mine = wheel.smartShiftSensitivity, let onMouse,
+                   abs(onMouse - mine) > Self.sensitivityTolerance {
+                    differs = readback(.sensitivity, mine: mine, onMouse: onMouse, text: MouseText.percent)
                 }
                 sensitivity = Self.percentSlider(value, range: LogiWheelSettings.sensitivityRange, enabled: managed, readback: differs)
             } else {
@@ -200,10 +211,11 @@ struct MousePaneModel: Equatable {
             sensitivity = nil
         }
         if let state = mice.lazy.compactMap({ $0.wheel }).first(where: { $0.supportsScrollForce }) {
-            let value = managed ? wheel.scrollForce : (state.scrollForce ?? wheel.scrollForce)
+            let onMouse = state.scrollForce.onMouse
+            let value = shown(mine: wheel.scrollForce, onMouse: onMouse, fallback: Self.scrollForceFallback)
             firmness = Self.percentSlider(
                 value, range: LogiWheelSettings.scrollForceRange, enabled: managed,
-                readback: readback(.firmness, mine: wheel.scrollForce, onMouse: state.scrollForce, text: MouseText.percent)
+                readback: readback(.firmness, mine: wheel.scrollForce, onMouse: onMouse, text: MouseText.percent)
             )
         } else {
             firmness = nil

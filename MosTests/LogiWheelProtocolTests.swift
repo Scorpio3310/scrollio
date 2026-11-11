@@ -11,14 +11,8 @@ final class LogiWheelProtocolTests: XCTestCase {
         return bytes
     }
 
-    private func settings(
-        _ mode: LogiWheelMode,
-        sensitivity: Int = 50,
-        force: Int = 50,
-        managed: Bool = true
-    ) -> LogiWheelSettings {
-        return LogiWheelSettings(managedByMos: managed, mode: mode, smartShiftSensitivity: sensitivity, scrollForce: force)
-    }
+    private let smartShiftStatus = LogiWheelStatus(wheelMode: 2, autoDisengage: 16, torque: 50)
+    private let freeSpinStatus = LogiWheelStatus(wheelMode: 1, autoDisengage: 16, torque: 50)
 
     // MARK: - Function numbers
 
@@ -128,31 +122,53 @@ final class LogiWheelProtocolTests: XCTestCase {
     // MARK: - SetState encoding
 
     func testSetParams_enhancedWithTorque_eachMode() {
-        XCTAssertEqual(LogiWheelProtocol.setParams(for: settings(.freeSpin, force: 70), feature: .smartShiftEnhanced, supportsTorque: true),
+        XCTAssertEqual(LogiWheelProtocol.setParams(mode: .freeSpin, threshold: nil, torque: 70, current: smartShiftStatus, feature: .smartShiftEnhanced),
                        [0x01, 0x00, 70], "free-spin keeps the stored threshold")
-        XCTAssertEqual(LogiWheelProtocol.setParams(for: settings(.ratchet, force: 70), feature: .smartShiftEnhanced, supportsTorque: true),
+        XCTAssertEqual(LogiWheelProtocol.setParams(mode: .ratchet, threshold: nil, torque: 70, current: smartShiftStatus, feature: .smartShiftEnhanced),
                        [0x02, 0xFF, 70], "ratchet disables auto-disengage")
-        XCTAssertEqual(LogiWheelProtocol.setParams(for: settings(.smartShift, sensitivity: 50, force: 70), feature: .smartShiftEnhanced, supportsTorque: true),
+        XCTAssertEqual(LogiWheelProtocol.setParams(mode: .smartShift, threshold: 16, torque: 70, current: freeSpinStatus, feature: .smartShiftEnhanced),
                        [0x02, 16, 70])
-        XCTAssertEqual(LogiWheelProtocol.setParams(for: settings(.smartShift, sensitivity: 100, force: 1), feature: .smartShiftEnhanced, supportsTorque: true),
-                       [0x02, 8, 1])
+        XCTAssertEqual(LogiWheelProtocol.setParams(mode: .smartShift, threshold: nil, torque: nil, current: freeSpinStatus, feature: .smartShiftEnhanced),
+                       [0x02, 0x00, 0x00], "the mouse's own threshold")
     }
 
-    func testSetParams_enhancedWithoutTunableTorque_leavesTorqueUnchanged() {
-        XCTAssertEqual(LogiWheelProtocol.setParams(for: settings(.smartShift, sensitivity: 1, force: 90), feature: .smartShiftEnhanced, supportsTorque: false),
-                       [0x02, 50, 0x00])
+    /// Nothing given changes nothing: the mode byte repeats the mouse's own (MX Master 4
+    /// ignores a torque write without it), the rest says "unchanged".
+    func testSetParams_withoutAModeRepeatsTheMouseMode() {
+        XCTAssertEqual(LogiWheelProtocol.setParams(mode: nil, threshold: nil, torque: 70, current: freeSpinStatus, feature: .smartShiftEnhanced),
+                       [0x01, 0x00, 70])
+        XCTAssertEqual(LogiWheelProtocol.setParams(mode: nil, threshold: 8, torque: nil, current: smartShiftStatus, feature: .smartShiftEnhanced),
+                       [0x02, 8, 0x00])
+        let nothing = LogiWheelProtocol.setParams(mode: nil, threshold: nil, torque: nil, current: smartShiftStatus, feature: .smartShiftEnhanced)
+        XCTAssertFalse(LogiWheelProtocol.needsWrite(nothing, current: smartShiftStatus))
+        XCTAssertEqual(LogiWheelProtocol.setParams(mode: nil, threshold: nil, torque: 70,
+                                                   current: LogiWheelStatus(wheelMode: 7, autoDisengage: 16, torque: 50), feature: .smartShiftEnhanced),
+                       [0x00, 0x00, 70], "an unknown mode byte is not repeated")
     }
 
     func testSetParams_basic_neverSendsTorque() {
-        XCTAssertEqual(LogiWheelProtocol.setParams(for: settings(.ratchet, force: 90), feature: .smartShift, supportsTorque: true),
+        XCTAssertEqual(LogiWheelProtocol.setParams(mode: .ratchet, threshold: nil, torque: 90, current: smartShiftStatus, feature: .smartShift),
                        [0x02, 0xFF, 0x00])
-        XCTAssertEqual(LogiWheelProtocol.setParams(for: settings(.freeSpin), feature: .smartShift, supportsTorque: false),
+        XCTAssertEqual(LogiWheelProtocol.setParams(mode: .freeSpin, threshold: nil, torque: nil, current: smartShiftStatus, feature: .smartShift),
                        [0x01, 0x00, 0x00])
     }
 
-    func testSetParams_clampsTorque() {
-        XCTAssertEqual(LogiWheelProtocol.setParams(for: settings(.ratchet, force: 150), feature: .smartShiftEnhanced, supportsTorque: true)[2], 100)
-        XCTAssertEqual(LogiWheelProtocol.setParams(for: settings(.ratchet, force: 0), feature: .smartShiftEnhanced, supportsTorque: true)[2], 1)
+    func testClampedTorque() {
+        XCTAssertEqual(LogiWheelProtocol.clampedTorque(150), 100)
+        XCTAssertEqual(LogiWheelProtocol.clampedTorque(0), 1)
+    }
+
+    func testThresholdAndSensitivityHelpers() {
+        XCTAssertNil(LogiWheelProtocol.threshold(0xFF), "always ratchet")
+        XCTAssertNil(LogiWheelProtocol.threshold(0))
+        XCTAssertEqual(LogiWheelProtocol.threshold(16), 16)
+        XCTAssertEqual(LogiWheelProtocol.sensitivityAsKept(51), 50)
+        XCTAssertEqual(LogiWheelProtocol.sensitivityAsKept(72), 75)
+        XCTAssertTrue(LogiWheelProtocol.sensitivityMatches(51, threshold: 16), "the same byte")
+        XCTAssertTrue(LogiWheelProtocol.sensitivityMatches(51, threshold: 17), "49 %: within the tolerance")
+        XCTAssertFalse(LogiWheelProtocol.sensitivityMatches(60, threshold: 17))
+        XCTAssertEqual(LogiWheelProtocol.autoDisengage(forSensitivity: LogiWheelSettings.defaultSmartShiftSensitivity),
+                       LogiWheelProtocol.autoDisengageDefault, "the default sensitivity is the factory threshold")
     }
 
     func testToggleParams_flipModeOnly() {

@@ -411,26 +411,13 @@ final class MousePreferencesViewController: NSViewController {
 
     // MARK: - Actions
 
-    /// Turning it on starts from what the mouse has: the wheel settings (which are never
-    /// "not set") take the values the mouse reports, so nothing on it changes by itself.
+    /// Only the switch changes: no value is taken over from a mouse. A setting the user never
+    /// set stays unset, so the mouse keeps its own value (the rows show it); what the user did
+    /// set is written where the mouse has something else.
     @objc func managedToggled(_ sender: NSSwitch) {
         let managed = sender.state == .on
-        var wheel = Options.shared.logiWheel
-        wheel.managedByMos = managed
-        if managed, !Options.shared.logiWheel.managedByMos,
-           let state = MousePaneModel.ordered(devices).lazy.compactMap({ $0.wheel }).first {
-            if state.supportsSmartShift, let mode = state.mode {
-                wheel.mode = mode
-            }
-            if state.supportsSmartShift, let sensitivity = state.smartShiftSensitivity {
-                wheel.smartShiftSensitivity = sensitivity
-            }
-            if state.supportsScrollForce, let force = state.scrollForce {
-                wheel.scrollForce = force
-            }
-        }
-        if wheel != Options.shared.logiWheel {
-            Options.shared.logiWheel = wheel
+        if managed != Options.shared.logiMouseManaged {
+            Options.shared.logiMouseManaged = managed
         }
         noteUserChange(MouseSetting.allCases)
         syncControls()

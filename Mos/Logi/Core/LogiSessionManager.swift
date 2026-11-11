@@ -32,7 +32,8 @@ internal class LogiSessionManager {
     private let deliveryModes = LogiButtonDeliveryModeStore()
 
     /// 用户的滚轮设置 (由 Integration 层从 Options 推入). 新连接/重连的设备据此决定
-    /// 是否写入; managedByMos == false 时任何设备都不会被写. 见 LogiSessionManager+Wheel.
+    /// 是否写入; managedByMos == false 时任何设备都不会被写, 用户未设 (nil) 的值从不写入.
+    /// 见 LogiSessionManager+Wheel.
     var wheelSettings = LogiWheelSettings.default
     /// wheelStateChanged 合并发送标志 (同一 runloop 内多次变化只 post 一次)
     var wheelStateNotificationScheduled = false

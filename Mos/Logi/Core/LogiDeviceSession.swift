@@ -2896,7 +2896,7 @@ class LogiDeviceSession {
     // 每个 slot 一个 LogiWheelController (BLE 直连 slot = 0xFF). 协议字节与映射见
     // Mos/Logi/Wheel/LogiWheelProtocol.swift. 建立时机: 可选功能探测链走完 (含缓存命中),
     // receiver 重连 slot 的 sweep 结束, 或 SmartShift Toggle 按需发现. 建立即读状态,
-    // 且仅当 LogiSessionManager.wheelSettings.managedByMos 时写入 (重连后自动重放).
+    // 且仅当 LogiSessionManager.wheelSettings.managedByMos 时写入用户设过的值 (重连后自动重放).
 
     private var wheelControllers: [UInt8: LogiWheelController] = [:]
     private var wheelRefreshWorkItems: [UInt8: DispatchWorkItem] = [:]
@@ -2926,6 +2926,8 @@ class LogiDeviceSession {
             return
         }
         let name = deviceInfo.name
+        let mouseName = deviceName(slot: slot)
+        let slotText = String(format: "0x%02X", slot)
         let controller = LogiWheelController(
             feature: feature,
             featureIndex: index,
@@ -2939,7 +2941,8 @@ class LogiDeviceSession {
                 LogiSessionManager.shared.notifyWheelStateChanged()
             },
             log: { message in
-                LogiDebugPanel.log(device: name, type: .info, message: "[Wheel slot \(String(format: "0x%02X", slot))] \(message)")
+                LogiDebugPanel.log(device: name, type: .info, message: "[Wheel slot \(slotText)] \(message)")
+                LogiSystemLog.note("[\(mouseName) slot \(slotText)] Wheel: \(message)")
             }
         )
         wheelControllers[slot] = controller
@@ -3026,9 +3029,10 @@ class LogiDeviceSession {
 
     // MARK: Wheel API (LogiSessionManager -> LogiCenter)
 
-    /// 写入托管设置; managedByMos == false 时什么也不发.
+    /// Hands the settings to every wheel. Each controller writes only while managed, and only
+    /// the values the user set; it has to see the switch go off too, so that turning it on
+    /// again decides every set value afresh.
     func applyWheelSettings(_ settings: LogiWheelSettings) {
-        guard settings.managedByMos else { return }
         for slot in wheelControllers.keys.sorted() {
             wheelControllers[slot]?.apply(settings)
         }
@@ -3049,15 +3053,7 @@ class LogiDeviceSession {
 
     private func wheelDeviceState(slot: UInt8) -> LogiWheelDeviceState? {
         guard let wheel = wheelControllers[slot] else { return nil }
-        return LogiWheelDeviceState(
-            id: deviceId(slot: slot),
-            deviceName: deviceName(slot: slot),
-            supportsSmartShift: true,
-            supportsScrollForce: wheel.supportsScrollForce,
-            mode: wheel.mode,
-            smartShiftSensitivity: wheel.smartShiftSensitivity,
-            scrollForce: wheel.scrollForce
-        )
+        return wheel.deviceState(id: deviceId(slot: slot), deviceName: deviceName(slot: slot))
     }
 
     /// 稳定 id: BLE = VID:PID; receiver = VID:receiverPID:slot:wirelessPID. 跨重连不变,

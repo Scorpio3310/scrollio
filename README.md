@@ -90,7 +90,8 @@ The debug build logs under `com.nikklemenc.Scrollio.debug`. Nothing is logged pe
   (already smoothed), smoothing off for this event (with the switch, scroll key, app
   rule and allowlist), smoothing on but not for this axis, no display link.
 - Category `logi`: what a Logitech mouse reported (battery, DPI, haptic state, press
-  force; once per change), every decision to write or not to write and why, the read-back
+  force, wheel mode, SmartShift threshold and wheel force; once per change), every
+  decision to write or not to write and why, the read-back
   after a write, requests the mouse refused or did not answer, and each gesture haptic cue.
 
 Nothing in these lines identifies a person or an app's content, and nothing leaves the Mac.
