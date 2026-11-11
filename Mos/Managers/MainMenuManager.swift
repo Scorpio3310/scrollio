@@ -203,7 +203,9 @@ final class MainMenuManager: NSObject {
         showWelcomeGuide()
     }
 
-    private static func showPreferencesWindow(paneIdentifier: String?) {
+    /// Opens the Preferences window, on the pane `paneIdentifier` when one is given. Also
+    /// used by the status-bar menu and the Welcome Guide.
+    static func showPreferencesWindow(paneIdentifier: String?) {
         let identifier = WINDOW_IDENTIFIER.preferencesWindowController
         WindowManager.shared.showWindow(withIdentifier: identifier)
         guard let paneIdentifier,

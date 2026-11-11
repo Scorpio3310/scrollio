@@ -611,7 +611,7 @@ class LogiDebugPanel: NSObject {
             backing: .buffered,
             defer: false
         )
-        panel.title = "Logitech HID++ Debug"
+        panel.title = NSLocalizedString("logitech-diagnostics-title", comment: "")
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
         panel.minSize = NSSize(width: L.minWidth, height: L.minHeight)

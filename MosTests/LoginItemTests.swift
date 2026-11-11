@@ -199,6 +199,10 @@ final class LoginItemTests: XCTestCase {
         let pane = try XCTUnwrap(
             storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.general) as? PreferencesGeneralViewController
         )
+        // Only the login item is under test: the permission and the menu bar icon are fixed.
+        pane.isAccessGranted = { true }
+        pane.isMenuBarIconHidden = { false }
+        pane.setMenuBarIconHidden = { _ in }
         _ = pane.view
         return pane
     }
@@ -249,6 +253,9 @@ final class LoginItemTests: XCTestCase {
         XCTAssertEqual(fake.openSettingsCalls, 1, "System Settings opens where it can be approved")
         XCTAssertEqual(pane.launchOnLoginSwitch.state, .off, "it does not launch at login yet")
         XCTAssertFalse(Options.shared.general.autoLaunch)
+        // The pane says what it waits for, and keeps the way to System Settings.
+        XCTAssertEqual(pane.launchOnLoginRow.explanation, "Waiting for your approval in System Settings.")
+        XCTAssertFalse(pane.loginApprovalRow.isHidden)
     }
 
     func testUncheckingAlwaysUnregisters() throws {

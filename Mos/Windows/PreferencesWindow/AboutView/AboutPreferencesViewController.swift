@@ -1,9 +1,9 @@
 //
 //  AboutPreferencesViewController.swift
 //  Mos
-//  "About" preferences pane, built in code on the grouped kit: the app icon, its name and
-//  version, a box with a button that opens the Welcome Guide again, and one credit line
-//  for the project Scrollio is based on.
+//  "About" preferences pane, built in code on the grouped kit: the app icon, its name,
+//  version and build, a box with a button that opens the Welcome Guide again, and one
+//  credit line for the project Scrollio is based on.
 //
 
 import Cocoa
@@ -125,10 +125,11 @@ final class AboutPreferencesViewController: NSViewController {
 
     // MARK: - Content
 
-    /// "Version 1.0", with the number the bundle was built with.
+    /// "Version 1.0 (1)": the version and the build number the bundle was built with.
     static func versionText(bundle: Bundle = .main) -> String {
         let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-        return String(format: NSLocalizedString("about-version", comment: ""), version)
+        let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+        return String(format: NSLocalizedString("about-version", comment: ""), version, build)
     }
 
     // MARK: - Actions

@@ -92,7 +92,7 @@ final class StoryboardIntegrityTests: XCTestCase {
         // Built in code: the scene is a shell and has no outlets of its own.
         _ = general.view
         XCTAssertNotNil(general.launchOnLoginSwitch)
-        XCTAssertNotNil(general.hideStatusBarIconSwitch)
+        XCTAssertNotNil(general.showInMenuBarSwitch)
 
         let monitor = try XCTUnwrap(
             storyboard.instantiateController(withIdentifier: WINDOW_IDENTIFIER.monitorWindowController) as? MonitorWindowController

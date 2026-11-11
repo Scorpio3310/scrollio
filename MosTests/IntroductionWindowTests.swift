@@ -30,6 +30,8 @@ final class IntroductionWindowTests: XCTestCase {
         var settingsOpened = 0
         var reveals = 0
         var grantsReported = 0
+        /// The Preferences window opened ("Open Settings").
+        var appSettingsOpened = 0
     }
 
     private func makeController(accessGranted: Bool) -> (IntroductionViewController, World) {
@@ -42,6 +44,7 @@ final class IntroductionWindowTests: XCTestCase {
         controller.openAccessibilitySettings = { world.settingsOpened += 1 }
         controller.revealApplication = { world.reveals += 1 }
         controller.accessWasGranted = { world.grantsReported += 1 }
+        controller.openAppSettings = { world.appSettingsOpened += 1 }
         _ = controller.view
         return (controller, world)
     }
@@ -158,9 +161,11 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(controller.statusLabel.stringValue, "Accessibility access is allowed")
         XCTAssertEqual(
             controller.statusDetailLabel.stringValue,
-            "Scrollio is running. Open Preferences from its menu bar icon."
+            "Scrollio is running. Open Settings from its menu bar icon."
         )
-        XCTAssertEqual(controller.primaryButton.title, "Get Started")
+        XCTAssertEqual(controller.primaryButton.title, "Open Settings")
+        XCTAssertEqual(controller.secondaryButton.title, "Done")
+        XCTAssertTrue(isShown(controller.secondaryButton))
         XCTAssertTrue(controller.primaryButton.isEnabled)
         XCTAssertEqual(controller.primaryButton.keyEquivalent, "\r")
 
@@ -178,6 +183,7 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(world.requests, 0)
         XCTAssertEqual(world.settingsOpened, 0)
         XCTAssertEqual(world.grantsReported, 0, "it was granted before the window opened: nothing to start")
+        XCTAssertEqual(world.appSettingsOpened, 0)
     }
 
     func testOpenedByHandWithAccessItSaysDone() {
@@ -185,6 +191,7 @@ final class IntroductionWindowTests: XCTestCase {
         controller.setManuallyOpened(true)
         XCTAssertTrue(controller.isManuallyOpened)
         XCTAssertEqual(controller.primaryButton.title, "Done")
+        XCTAssertFalse(isShown(controller.secondaryButton), "one button that closes the window")
         XCTAssertEqual(controller.statusLabel.stringValue, "Accessibility access is allowed")
         XCTAssertEqual(world.requests, 0)
         XCTAssertEqual(world.settingsOpened, 0)
@@ -207,18 +214,54 @@ final class IntroductionWindowTests: XCTestCase {
         _ = controller.view
         XCTAssertEqual(
             controller.statusDetailLabel.stringValue,
-            "Scrollio is running. Its menu bar icon is hidden: open Scrollio again to reach its settings."
+            "Scrollio is running. Its menu bar icon is hidden: open Scrollio again to reach Settings."
         )
     }
 
-    func testTheButtonOfTheGrantedStateClosesTheWindow() {
+    /// Opened by the app: "Open Settings" opens the Preferences (on Scrolling) and closes the guide.
+    func testOpenSettingsOpensThePreferencesAndClosesTheWindow() {
         let (controller, world) = makeController(accessGranted: true)
         let window = makeWindow(for: controller)
         let closed = expectation(forNotification: NSWindow.willCloseNotification, object: window)
         click(controller.primaryButton)
         wait(for: [closed], timeout: 1)
+        XCTAssertEqual(world.appSettingsOpened, 1)
         XCTAssertEqual(world.requests, 0)
         XCTAssertEqual(world.settingsOpened, 0)
+    }
+
+    func testDoneNextToOpenSettingsOnlyCloses() {
+        let (controller, world) = makeController(accessGranted: true)
+        let window = makeWindow(for: controller)
+        XCTAssertEqual(controller.secondaryButton.keyEquivalent, "\u{1b}", "Esc presses it")
+        XCTAssertEqual(controller.secondaryButton.bezelStyle, .push)
+        XCTAssertEqual(controller.secondaryButton.controlSize, .large)
+        let closed = expectation(forNotification: NSWindow.willCloseNotification, object: window)
+        click(controller.secondaryButton)
+        wait(for: [closed], timeout: 1)
+        XCTAssertEqual(world.appSettingsOpened, 0)
+    }
+
+    func testOpenedByHandDoneOnlyCloses() {
+        let (controller, world) = makeController(accessGranted: true)
+        controller.setManuallyOpened(true)
+        let window = makeWindow(for: controller)
+        let closed = expectation(forNotification: NSWindow.willCloseNotification, object: window)
+        click(controller.primaryButton)
+        wait(for: [closed], timeout: 1)
+        XCTAssertEqual(world.appSettingsOpened, 0)
+    }
+
+    func testTheSecondButtonIsOnlyThereWhenTheAccessIsGranted() {
+        let (controller, world) = makeController(accessGranted: false)
+        XCTAssertFalse(isShown(controller.secondaryButton))
+        world.accessGranted = true
+        controller.accessibilityPermissionsChecker(nil)
+        XCTAssertTrue(isShown(controller.secondaryButton))
+        XCTAssertEqual(controller.primaryButton.title, "Open Settings")
+        world.accessGranted = false
+        controller.accessibilityPermissionsChecker(nil)
+        XCTAssertFalse(isShown(controller.secondaryButton))
     }
 
     // MARK: - Following the permission
@@ -240,7 +283,7 @@ final class IntroductionWindowTests: XCTestCase {
         controller.accessibilityPermissionsChecker(nil)
         XCTAssertEqual(controller.accessState, .granted)
         XCTAssertEqual(controller.statusLabel.stringValue, "Accessibility access is allowed")
-        XCTAssertEqual(controller.primaryButton.title, "Get Started")
+        XCTAssertEqual(controller.primaryButton.title, "Open Settings")
         XCTAssertFalse(isShown(controller.stepLabels[0]))
         XCTAssertFalse(isShown(controller.helpButton))
         XCTAssertEqual(world.grantsReported, 1, "the app starts its event handling now")
@@ -389,7 +432,7 @@ final class IntroductionWindowTests: XCTestCase {
                 let frame = view.convert(subview.bounds, from: subview)
                 XCTAssertTrue(view.bounds.insetBy(dx: -0.5, dy: -0.5).contains(frame), "\(name): \(subview) at \(frame)")
             }
-            for centred in [controller.iconView!, controller.titleLabel!, controller.subtitleLabel!, controller.primaryButton!] {
+            for centred in [controller.iconView!, controller.titleLabel!, controller.subtitleLabel!, controller.buttonRow!] {
                 let frame = view.convert(centred.bounds, from: centred)
                 XCTAssertEqual(frame.midX, view.bounds.midX, accuracy: 0.5, name)
             }
