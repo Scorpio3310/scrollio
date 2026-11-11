@@ -26,6 +26,8 @@ final class GesturesPreferencesViewController: NSViewController {
     }
     /// All action pop-ups have this width, so they line up.
     static let popUpWidth: CGFloat = 240
+    /// Room for the widest tracking speed ("2.75×"), a little more than the kit's default.
+    static let trackingSpeedValueWidth: CGFloat = 40
     /// Between the last box and the muted lines under it.
     static let noteSpacing: CGFloat = 10
 
@@ -227,9 +229,10 @@ final class GesturesPreferencesViewController: NSViewController {
             directionRows[slot.rawValue].isEnabled = presentation.areHorizontalActionsEditable
         }
 
-        // A refresh arriving mid-drag must not snap the knob back.
+        // A refresh arriving mid-drag must not snap the knob back. A stored speed between two
+        // ticks shows on the nearer one and stays as stored until the slider is moved.
         if !PreferencesForm.isTrackingMouse {
-            trackingSpeedRow.slider.doubleValue = gesture.trackingSpeed
+            trackingSpeedRow.showValue(gesture.trackingSpeed)
         }
         trackingSpeedRow.valueText = MouseGestureTrackingSpeed.text(gesture.trackingSpeed)
         trackingSpeedRow.isEnabled = presentation.isTrackingSpeedEditable
@@ -457,7 +460,9 @@ final class GesturesPreferencesViewController: NSViewController {
             title: text("gesture-tracking-speed-label"),
             explanation: text("gesture-tracking-speed-hint"),
             range: MouseGestureSettings.trackingSpeedRange,
+            scale: MouseGestureTrackingSpeed.scale,
             ends: (low: text("gesture-tracking-speed-slower"), high: text("gesture-tracking-speed-faster")),
+            valueWidth: Self.trackingSpeedValueWidth,
             target: self,
             action: #selector(trackingSpeedChanged(_:))
         )

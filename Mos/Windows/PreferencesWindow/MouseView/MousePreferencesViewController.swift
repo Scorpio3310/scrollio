@@ -305,12 +305,12 @@ final class MousePreferencesViewController: NSViewController {
         }
         row.isHidden = false
         let control = row.slider
-        // Moving the range or the ticks would move the knob: not while it is dragged.
+        // Moving the range or the ticks would move the knob: not while it is dragged. The
+        // knob goes to the tick nearest the value; the value itself is not rewritten.
         if !dragging {
             if control.minValue != slider.range.lowerBound { control.minValue = slider.range.lowerBound }
             if control.maxValue != slider.range.upperBound { control.maxValue = slider.range.upperBound }
-            control.numberOfTickMarks = slider.tickCount
-            control.allowsTickMarkValuesOnly = slider.tickCount > 0
+            if row.scale != slider.scale { row.scale = slider.scale }
             control.doubleValue = slider.position
             row.valueText = slider.valueText
         }
@@ -465,8 +465,8 @@ final class MousePreferencesViewController: NSViewController {
         updateMouseSettings(.haptics) { $0.hapticsOn = on }
     }
 
-    /// Stores the strength as it moves; once the slider is let go the mouse plays one pulse
-    /// at the new strength.
+    /// Stores the strength as it moves; once the slider is let go (or an arrow key moved it)
+    /// the mouse plays one pulse at the new strength.
     @objc func strengthChanged(_ sender: NSSlider) {
         let value: Int
         if let choices = model.strengthChoices, !choices.isEmpty {
@@ -481,6 +481,7 @@ final class MousePreferencesViewController: NSViewController {
         }
     }
 
+    /// A tick between two whole units of the mouse writes the nearer one.
     @objc func pressForceChanged(_ sender: NSSlider) {
         guard let range = model.pressForceRange else { return }
         let value = MousePaneModel.clamp(Int(sender.doubleValue.rounded()), to: range)
@@ -629,7 +630,8 @@ final class MousePreferencesViewController: NSViewController {
     }
 
     /// A slider with words under its ends and its value on the right. The tab's sliders all
-    /// have the same width and value column, so they line up.
+    /// have the same width and value column, so they line up. Each gets its range and tick
+    /// marks from the model when the mice are known.
     private func makeSliderRow(
         titleKey: String,
         hintKey: String,
@@ -640,7 +642,8 @@ final class MousePreferencesViewController: NSViewController {
         let row = PreferencesSliderRow(
             title: MouseText.text(titleKey),
             explanation: MouseText.text(hintKey),
-            range: 0...100,
+            range: MousePaneModel.percentSliderRange,
+            scale: MousePaneModel.percentScale,
             ends: (low: MouseText.text(ends.low), high: MouseText.text(ends.high)),
             valueWidth: Self.sliderValueWidth,
             target: self,

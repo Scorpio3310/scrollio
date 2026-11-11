@@ -74,12 +74,13 @@ struct MousePaneModel: Equatable {
         let isConnected: Bool
     }
 
-    /// A slider row. Its slider runs over `range`; a slider with `tickCount` > 0 stops only
-    /// at its tick marks (one per value the mouse accepts).
+    /// A slider row. Its slider runs over `range` with the tick marks of `scale`; the knob
+    /// sits at `position`, the tick nearest the value shown in `valueText`. A value between
+    /// two ticks is shown, not changed: only moving the slider writes a tick's value.
     struct Slider: Equatable {
         let range: ClosedRange<Double>
+        let scale: PreferencesSliderScale?
         let position: Double
-        let tickCount: Int
         let valueText: String
         let isEnabled: Bool
         /// "On the mouse: …", or nil.
@@ -103,7 +104,8 @@ struct MousePaneModel: Equatable {
     let managed: Bool
     /// nil: the row is hidden.
     let pointerSpeed: Slider?
-    /// The DPI values the pointer speed slider stops at, ascending.
+    /// The DPI values the pointer speed slider stops at, ascending: `pointerLadder` as the
+    /// mouse offers it.
     let pointerChoices: [Int]
     let wheelMode: Mode?
     /// Only in SmartShift mode.
@@ -148,20 +150,22 @@ struct MousePaneModel: Equatable {
             return managed ? (mine ?? onMouse ?? fallback) : (onMouse ?? mine ?? fallback)
         }
 
-        // Pointer speed: snapped to the DPI values the mouse accepts.
+        // Pointer speed: a tick per rung of the ladder the mouse offers. The label shows the
+        // DPI as it is (snapped to what the mouse accepts), the knob the nearest rung.
         if let pointer = mice.lazy.compactMap({ $0.pointerSpeed }).first(where: { !$0.choices.isEmpty }) {
             let choices = pointer.choices
+            let rungs = Self.pointerRungs(offered: choices)
             let mine = settings.pointerDPI.map { Self.nearest($0, in: choices) }
             let value = Self.nearest(
                 shown(mine: mine, onMouse: pointer.dpi.onMouse, fallback: pointer.defaultDPI ?? choices[choices.count / 2]),
                 in: choices
             )
-            let index = choices.firstIndex(of: value) ?? 0
-            pointerChoices = choices
+            let index = rungs.firstIndex(of: Self.nearest(value, in: rungs)) ?? 0
+            pointerChoices = rungs
             pointerSpeed = Slider(
-                range: 0...Double(max(1, choices.count - 1)),
+                range: 0...Double(max(1, rungs.count - 1)),
+                scale: rungs.count > 1 ? .ticksOnly(rungs.count) : nil,
                 position: Double(index),
-                tickCount: choices.count <= Self.maxTickMarks ? choices.count : 0,
                 valueText: MouseText.dpi(value),
                 isEnabled: managed,
                 readback: readback(.pointerSpeed, mine: mine, onMouse: pointer.dpi.onMouse, text: MouseText.dpi)
@@ -224,14 +228,17 @@ struct MousePaneModel: Equatable {
                 let level = Self.nearest(value, in: few)
                 strength = Slider(
                     range: 0...Double(max(1, few.count - 1)),
+                    scale: few.count > 1 ? .ticksOnly(few.count) : nil,
                     position: Double(few.firstIndex(of: level) ?? 0),
-                    tickCount: few.count,
                     valueText: MouseText.percent(level),
                     isEnabled: managed && isOn,
                     readback: differs
                 )
             } else {
-                strength = Self.percentSlider(value, range: range, enabled: managed && isOn, readback: differs)
+                strength = Self.slider(
+                    value, over: Self.strengthSliderRange, scale: Self.strengthScale, text: MouseText.percent,
+                    enabled: managed && isOn, readback: differs
+                )
             }
             strengthChoices = few
         } else {
@@ -249,12 +256,9 @@ struct MousePaneModel: Equatable {
             )
             let share = { (force: Int) in MouseText.percent(Self.share(of: force, in: range)) }
             pressForceRange = range
-            pressForce = Slider(
-                range: Double(range.lowerBound)...Double(max(range.upperBound, range.lowerBound + 1)),
-                position: Double(value),
-                tickCount: 0,
-                valueText: share(value),
-                isEnabled: managed,
+            pressForce = Self.slider(
+                value, over: Double(range.lowerBound)...Double(max(range.upperBound, range.lowerBound + 1)),
+                scale: Self.pressForceScale, text: share, enabled: managed,
                 readback: readback(.pressForce, mine: mine, onMouse: state.force.onMouse, text: share)
             )
         } else {
@@ -263,8 +267,34 @@ struct MousePaneModel: Equatable {
         }
     }
 
-    /// More choices than this make a slider without tick marks (a dot every 50 DPI would be a smear).
-    static let maxTickMarks = 12
+    // MARK: - Scales
+
+    /// The pointer speeds the slider offers, a tick each: each rung becomes the nearest DPI
+    /// the mouse accepts (`pointerRungs`).
+    static let pointerLadder = [400, 600, 800, 1000, 1200, 1600, 2000, 2400, 3200, 4000, 6000, 8000]
+
+    /// SmartShift sensitivity and click firmness: a tick every 10 % from 0 to 100, the knob
+    /// stops only there. The lowest tick writes the setting's least value (1 %).
+    static let percentSliderRange: ClosedRange<Double> = 0...100
+    static let percentScale = PreferencesSliderScale.ticksOnly(11)
+
+    /// Haptic strength: 20, 40, 60, 80 and 100 %.
+    static let strengthSliderRange: ClosedRange<Double> = 20...100
+    static let strengthScale = PreferencesSliderScale.ticksOnly(5)
+
+    /// Thumb panel press: five ticks across the mouse's own range (0, 25, 50, 75, 100 %).
+    static let pressForceScale = PreferencesSliderScale.ticksOnly(5)
+
+    /// `pointerLadder` as a mouse offering `choices` has it: every rung replaced by the
+    /// nearest DPI of `choices`, without repeats, ascending.
+    static func pointerRungs(offered choices: [Int]) -> [Int] {
+        guard !choices.isEmpty else { return [] }
+        var rungs: [Int] = []
+        for rung in pointerLadder.map({ nearest($0, in: choices) }) where !rungs.contains(rung) {
+            rungs.append(rung)
+        }
+        return rungs.sorted()
+    }
 
     // MARK: - Helpers
 
@@ -342,13 +372,29 @@ struct MousePaneModel: Equatable {
         )
     }
 
+    /// A 0…100 % slider with a tick every 10 % for a setting stored in `range`.
     private static func percentSlider(_ value: Int, range: ClosedRange<Int>, enabled: Bool, readback: String?) -> Slider {
-        let clamped = clamp(value, to: range)
+        return slider(
+            clamp(value, to: range), over: percentSliderRange, scale: percentScale, text: MouseText.percent,
+            enabled: enabled, readback: readback
+        )
+    }
+
+    /// A slider over `range` whose knob shows `value` on the nearest tick of `scale`; the
+    /// label shows `value` itself.
+    private static func slider(
+        _ value: Int,
+        over range: ClosedRange<Double>,
+        scale: PreferencesSliderScale,
+        text: (Int) -> String,
+        enabled: Bool,
+        readback: String?
+    ) -> Slider {
         return Slider(
-            range: Double(range.lowerBound)...Double(range.upperBound),
-            position: Double(clamped),
-            tickCount: 0,
-            valueText: MouseText.percent(clamped),
+            range: range,
+            scale: scale,
+            position: scale.knobPosition(for: Double(value), in: range),
+            valueText: text(value),
             isEnabled: enabled,
             readback: readback
         )

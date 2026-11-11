@@ -256,8 +256,10 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(title(of: controls.actionPopUp(for: .click)), "No Action")
         XCTAssertTrue(MouseGestureSettingsControls.isOn(controls.invertToggle))
         XCTAssertFalse(MouseGestureSettingsControls.isOn(controls.freezeToggle))
-        XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 2.2, accuracy: 1e-9)
+        // 2.2 lies between two ticks: the knob shows it on the nearer, the label as stored.
+        XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 2.25, accuracy: 1e-9)
         XCTAssertEqual(controller.trackingSpeedRow.valueText, "2.2×")
+        XCTAssertEqual(Options.shared.gesture.trackingSpeed, 2.2, "shown, not rewritten")
     }
 
     func testReloadPicksUpChangesMadeElsewhere() {
@@ -275,7 +277,8 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(title(of: controls.actionPopUp(for: .down)), SystemShortcut.copy.localizedName)
         XCTAssertFalse(MouseGestureSettingsControls.isOn(controls.freezeToggle))
         XCTAssertTrue(controller.trackingSpeedSlider.isEnabled)
-        XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 1.8, accuracy: 1e-9)
+        XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 1.75, accuracy: 1e-9, "the nearest tick")
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, "1.8×")
         XCTAssertEqual(controller.previewView.scene.gesture.mode, .interactive)
         XCTAssertEqual(controller.previewView.scene.gesture.trackingSpeed, 1.8)
     }
@@ -292,6 +295,14 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(slider.doubleValue, 1, accuracy: 1e-9)
         XCTAssertEqual(controller.trackingSpeedRow.valueText, "1.0×")
         XCTAssertEqual(slider.accessibilityLabel(), "Tracking speed")
+        // A tick every 0.25, and the knob stops only on them.
+        XCTAssertEqual(slider.numberOfTickMarks, 11)
+        XCTAssertEqual(slider.tickMarkPosition, .below)
+        XCTAssertTrue(slider.allowsTickMarkValuesOnly)
+        XCTAssertEqual(
+            MouseGestureTrackingSpeed.scale.tickValues(in: MouseGestureSettings.trackingSpeedRange),
+            [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3]
+        )
         XCTAssertEqual(slider.identifier, GesturesPreferencesViewController.Identifier.trackingSpeed)
     }
 
@@ -300,11 +311,11 @@ final class PreferencesGesturesTests: XCTestCase {
         let controller = makeController()
         let slider = controller.trackingSpeedSlider
 
-        slider.doubleValue = 1.74
+        slider.doubleValue = 1.66
         send(slider)
-        XCTAssertEqual(Options.shared.gesture.trackingSpeed, 1.7, accuracy: 1e-9)
-        XCTAssertEqual(controller.trackingSpeedRow.valueText, "1.7×")
-        XCTAssertEqual(controller.previewView.scene.gesture.trackingSpeed, 1.7, accuracy: 1e-9)
+        XCTAssertEqual(Options.shared.gesture.trackingSpeed, 1.75, accuracy: 1e-9, "the nearest tick")
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, "1.75×")
+        XCTAssertEqual(controller.previewView.scene.gesture.trackingSpeed, 1.75, accuracy: 1e-9)
 
         slider.doubleValue = 3
         send(slider)
@@ -318,14 +329,48 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(Options.shared.gesture, expected)
     }
 
-    func testTrackingSpeedValues() {
+    func testTrackingSpeedValues() throws {
+        XCTAssertEqual(MouseGestureTrackingSpeed.step, 0.25)
         XCTAssertEqual(MouseGestureTrackingSpeed.snapped(0.1), 0.5)
         XCTAssertEqual(MouseGestureTrackingSpeed.snapped(9), 3)
-        XCTAssertEqual(MouseGestureTrackingSpeed.snapped(1.26), 1.3, accuracy: 1e-9)
+        XCTAssertEqual(MouseGestureTrackingSpeed.snapped(1.3), 1.25, accuracy: 1e-9)
+        XCTAssertEqual(MouseGestureTrackingSpeed.snapped(1.38), 1.5, accuracy: 1e-9)
         XCTAssertEqual(MouseGestureTrackingSpeed.snapped(.nan), 0.5)
         XCTAssertEqual(MouseGestureTrackingSpeed.text(0.5), "0.5×")
+        XCTAssertEqual(MouseGestureTrackingSpeed.text(0.75), "0.75×")
         XCTAssertEqual(MouseGestureTrackingSpeed.text(1), "1.0×")
+        XCTAssertEqual(MouseGestureTrackingSpeed.text(1.25), "1.25×")
         XCTAssertEqual(MouseGestureTrackingSpeed.text(2.5), "2.5×")
+        XCTAssertEqual(MouseGestureTrackingSpeed.text(1.3), "1.3×", "a stored speed off the ticks")
+
+        // Every value the slider can show fits the value column of the row.
+        let controller = makeController()
+        controller.view.layoutSubtreeIfNeeded()
+        let label = try XCTUnwrap(controller.trackingSpeedRow.valueLabel)
+        for value in MouseGestureTrackingSpeed.scale.tickValues(in: MouseGestureSettings.trackingSpeedRange) {
+            controller.trackingSpeedRow.valueText = MouseGestureTrackingSpeed.text(value)
+            XCTAssertLessThanOrEqual(label.fittingSize.width, label.frame.width, controller.trackingSpeedRow.valueText)
+        }
+    }
+
+    func testAStoredTrackingSpeedOffTheTicksIsShownNotRewritten() {
+        Options.shared.gesture.mode = .interactive
+        Options.shared.gesture.trackingSpeed = 1.3
+        let controller = makeController()
+        let slider = controller.trackingSpeedSlider as! PreferencesSlider
+        XCTAssertEqual(slider.doubleValue, 1.25, accuracy: 1e-9, "on the nearest tick")
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, "1.3×")
+
+        controller.viewWillAppear()
+        controller.reload()
+        XCTAssertEqual(Options.shared.gesture.trackingSpeed, 1.3, "loading and showing it changes nothing")
+
+        // An arrow key moves the knob one tick and writes that tick.
+        XCTAssertTrue(slider.moveKnob(by: 1))
+        XCTAssertEqual(Options.shared.gesture.trackingSpeed, 1.5, accuracy: 1e-9)
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, "1.5×")
+        XCTAssertTrue(slider.moveKnob(by: -1))
+        XCTAssertEqual(Options.shared.gesture.trackingSpeed, 1.25, accuracy: 1e-9)
     }
 
     // MARK: - Enabling rules

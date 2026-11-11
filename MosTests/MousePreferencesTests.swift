@@ -230,33 +230,45 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertFalse(Options.shared.logiMouseManaged)
     }
 
-    func testPointerSpeedStopsAtTheDPIValuesOfTheMouse() throws {
+    func testPointerSpeedStopsAtTheRungsOfTheLadder() throws {
         manage()
         let controller = makeController([Fixtures.mxMaster4()])
-        let slider = controller.pointerSpeedSlider!
+        let slider = try XCTUnwrap(controller.pointerSpeedSlider as? PreferencesSlider)
+        let ladder = MousePaneModel.pointerLadder
+        XCTAssertEqual(ladder, [400, 600, 800, 1000, 1200, 1600, 2000, 2400, 3200, 4000, 6000, 8000])
+        XCTAssertEqual(controller.model.pointerChoices, ladder, "200…8000 in steps of 50 has every rung")
         XCTAssertEqual(slider.minValue, 0)
-        XCTAssertEqual(slider.maxValue, Double(Fixtures.dpiChoices.count - 1))
-        XCTAssertEqual(slider.doubleValue, Double(try XCTUnwrap(Fixtures.dpiChoices.firstIndex(of: 1000))))
+        XCTAssertEqual(slider.maxValue, 11)
+        XCTAssertEqual(slider.numberOfTickMarks, 12)
+        XCTAssertEqual(slider.tickMarkPosition, .below)
+        XCTAssertTrue(slider.allowsTickMarkValuesOnly)
+        XCTAssertEqual(slider.doubleValue, 3, "1000 DPI")
         XCTAssertEqual(controller.pointerSpeedRow.valueText, "1000 DPI")
 
-        let index = try XCTUnwrap(Fixtures.dpiChoices.firstIndex(of: 1600))
-        drag(slider, to: Double(index) + 0.3)
+        drag(slider, to: 5.3)
         XCTAssertEqual(Options.shared.logiMouse.pointerDPI, 1600)
         XCTAssertEqual(controller.pointerSpeedRow.valueText, "1600 DPI")
-        XCTAssertEqual(slider.doubleValue, Double(index), "the knob snaps to the value")
+        XCTAssertEqual(slider.doubleValue, 5, "the knob stops on the rung")
 
-        drag(slider, to: 0)
-        XCTAssertEqual(Options.shared.logiMouse.pointerDPI, 200)
-        drag(slider, to: slider.maxValue)
-        XCTAssertEqual(Options.shared.logiMouse.pointerDPI, 8000)
-        // 157 values: no tick marks, it moves freely and snaps on the way.
-        XCTAssertEqual(slider.numberOfTickMarks, 0)
+        for (index, dpi) in ladder.enumerated() {
+            drag(slider, to: Double(index))
+            XCTAssertEqual(Options.shared.logiMouse.pointerDPI, dpi)
+            XCTAssertEqual(controller.pointerSpeedRow.valueText, MouseText.dpi(dpi))
+        }
+
+        // Arrow keys move one rung.
+        XCTAssertFalse(slider.moveKnob(by: 1), "already at 8000")
+        XCTAssertTrue(slider.moveKnob(by: -1))
+        XCTAssertEqual(Options.shared.logiMouse.pointerDPI, 6000)
+        XCTAssertTrue(slider.moveKnob(by: -1))
+        XCTAssertEqual(Options.shared.logiMouse.pointerDPI, 4000)
     }
 
-    func testAMouseWithFewDPIValuesGetsTickMarks() {
+    func testAMouseWithAShortDPIListGetsTheRungsItHas() throws {
         manage()
         let controller = makeController([Fixtures.mxMaster4(dpiChoices: [400, 800, 1600, 3200], dpi: 800)])
-        let slider = controller.pointerSpeedSlider!
+        let slider = try XCTUnwrap(controller.pointerSpeedSlider)
+        XCTAssertEqual(controller.model.pointerChoices, [400, 800, 1600, 3200])
         XCTAssertEqual(slider.numberOfTickMarks, 4)
         XCTAssertTrue(slider.allowsTickMarkValuesOnly)
         XCTAssertEqual(slider.doubleValue, 1)
@@ -267,6 +279,52 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         Options.shared.logiMouse.pointerDPI = 1000
         controller.syncControls()
         XCTAssertEqual(controller.pointerSpeedRow.valueText, "800 DPI")
+        XCTAssertEqual(slider.doubleValue, 1)
+        XCTAssertEqual(Options.shared.logiMouse.pointerDPI, 1000, "kept as stored")
+    }
+
+    func testPointerRungsAreTheLadderAsTheMouseOffersIt() {
+        let ladder = MousePaneModel.pointerLadder
+        XCTAssertEqual(MousePaneModel.pointerRungs(offered: Fixtures.dpiChoices), ladder)
+        XCTAssertEqual(MousePaneModel.pointerRungs(offered: [400, 800, 1600, 3200]), [400, 800, 1600, 3200])
+        // MX Master 3 stops at 4000: the two top rungs become 4000 once.
+        XCTAssertEqual(
+            MousePaneModel.pointerRungs(offered: Array(stride(from: 200, through: 4000, by: 50))),
+            [400, 600, 800, 1000, 1200, 1600, 2000, 2400, 3200, 4000]
+        )
+        // Each rung becomes the nearest the mouse offers (the lower one on a tie).
+        XCTAssertEqual(MousePaneModel.pointerRungs(offered: [500, 1000, 2000, 4000]), [500, 1000, 2000, 4000])
+        XCTAssertEqual(MousePaneModel.pointerRungs(offered: [1000]), [1000])
+        XCTAssertEqual(MousePaneModel.pointerRungs(offered: []), [])
+        // One value only: no tick marks, the slider has nothing to choose.
+        let model = MousePaneModel(devices: [Fixtures.mxMaster4(dpiChoices: [1000])], settings: .default, wheel: .default)
+        XCTAssertNil(model.pointerSpeed?.scale)
+    }
+
+    func testADPIBetweenTwoRungsShowsOnTheNearerTickAndIsKept() throws {
+        manage()
+        Options.shared.logiMouse.pointerDPI = 1750
+        let controller = makeController([Fixtures.mxMaster4(dpi: 1750)])
+        let slider = try XCTUnwrap(controller.pointerSpeedSlider as? PreferencesSlider)
+        XCTAssertEqual(slider.doubleValue, 5, "1600 is nearer than 2000")
+        XCTAssertEqual(controller.pointerSpeedRow.valueText, "1750 DPI")
+        XCTAssertNil(controller.pointerSpeedRow.explanation?.components(separatedBy: "\n").dropFirst().first)
+
+        controller.reloadDevices()
+        controller.viewWillAppear()
+        XCTAssertEqual(Options.shared.logiMouse.pointerDPI, 1750, "showing it writes nothing")
+
+        // Only moving the slider writes a rung.
+        XCTAssertTrue(slider.moveKnob(by: 1))
+        XCTAssertEqual(Options.shared.logiMouse.pointerDPI, 2000)
+
+        // The mouse's own value, while Scrollio does not manage it.
+        manage(false)
+        Options.shared.logiMouse = .default
+        let other = makeController([Fixtures.mxMaster4(dpi: 2300)])
+        XCTAssertEqual(other.pointerSpeedSlider.doubleValue, 7, "2400")
+        XCTAssertEqual(other.pointerSpeedRow.valueText, "2300 DPI")
+        XCTAssertNil(Options.shared.logiMouse.pointerDPI)
     }
 
     func testWheelModeWritesEachMode() {
@@ -288,13 +346,26 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         manage()
         let controller = makeController([Fixtures.mxMaster4()])
 
+        for slider in [controller.sensitivitySlider!, controller.firmnessSlider!] {
+            XCTAssertEqual(slider.minValue, 0)
+            XCTAssertEqual(slider.maxValue, 100)
+            XCTAssertEqual(slider.numberOfTickMarks, 11, "a tick every 10 %")
+            XCTAssertTrue(slider.allowsTickMarkValuesOnly)
+        }
+
         drag(controller.sensitivitySlider, to: 72.4)
-        XCTAssertEqual(Options.shared.logiWheel.smartShiftSensitivity, 72)
-        XCTAssertEqual(controller.sensitivityRow.valueText, MouseText.percent(72))
+        XCTAssertEqual(Options.shared.logiWheel.smartShiftSensitivity, 70)
+        XCTAssertEqual(controller.sensitivityRow.valueText, MouseText.percent(70))
 
         drag(controller.firmnessSlider, to: 18.6)
-        XCTAssertEqual(Options.shared.logiWheel.scrollForce, 19)
-        XCTAssertEqual(controller.firmnessRow.valueText, MouseText.percent(19))
+        XCTAssertEqual(Options.shared.logiWheel.scrollForce, 20)
+        XCTAssertEqual(controller.firmnessRow.valueText, MouseText.percent(20))
+
+        // The lowest tick writes the least the mouse takes.
+        drag(controller.firmnessSlider, to: 0)
+        XCTAssertEqual(Options.shared.logiWheel.scrollForce, 1)
+        XCTAssertEqual(controller.firmnessRow.valueText, MouseText.percent(1))
+        XCTAssertEqual(controller.firmnessSlider.doubleValue, 0)
     }
 
     func testHapticsSwitchAndStrengthWriteTheMouseSettings() {
@@ -305,15 +376,17 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         set(controller.hapticsSwitch, true)
         XCTAssertEqual(Options.shared.logiMouse.hapticsOn, true)
 
-        XCTAssertEqual(controller.strengthSlider.minValue, 1)
+        XCTAssertEqual(controller.strengthSlider.minValue, 20)
         XCTAssertEqual(controller.strengthSlider.maxValue, 100)
+        XCTAssertEqual(controller.strengthSlider.numberOfTickMarks, 5, "20, 40, 60, 80 and 100 %")
+        XCTAssertTrue(controller.strengthSlider.allowsTickMarkValuesOnly)
         drag(controller.strengthSlider, to: 63.4)
-        XCTAssertEqual(Options.shared.logiMouse.hapticStrength, 63)
-        XCTAssertEqual(controller.strengthRow.valueText, MouseText.percent(63))
+        XCTAssertEqual(Options.shared.logiMouse.hapticStrength, 60)
+        XCTAssertEqual(controller.strengthRow.valueText, MouseText.percent(60))
 
         set(controller.hapticsSwitch, false)
         XCTAssertEqual(Options.shared.logiMouse.hapticsOn, false)
-        XCTAssertEqual(Options.shared.logiMouse.hapticStrength, 63)
+        XCTAssertEqual(Options.shared.logiMouse.hapticStrength, 60)
     }
 
     func testStrengthOnAMouseWithFewLevelsStopsAtThem() {
@@ -337,6 +410,8 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         let slider = controller.pressForceSlider!
         XCTAssertEqual(slider.minValue, 4134)
         XCTAssertEqual(slider.maxValue, 6872)
+        XCTAssertEqual(slider.numberOfTickMarks, 5, "0, 25, 50, 75 and 100 % of the mouse's range")
+        XCTAssertTrue(slider.allowsTickMarkValuesOnly)
         XCTAssertEqual(slider.doubleValue, 4134, "the mouse's own value until you set one")
         XCTAssertEqual(controller.pressForceRow.valueText, MouseText.percent(0))
 
@@ -352,7 +427,7 @@ final class MousePreferencesViewControllerTests: XCTestCase {
 
         controller.wheelModeControl.selectedSegment = 0
         send(controller.wheelModeControl)
-        drag(controller.strengthSlider, to: 41)
+        drag(controller.strengthSlider, to: 80)
 
         XCTAssertEqual(
             Options.shared.logiWheel,
@@ -360,8 +435,61 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         )
         XCTAssertEqual(
             Options.shared.logiMouse,
-            LogiMouseSettings(pointerDPI: 1600, hapticsOn: true, hapticStrength: 41, pressForce: 6000)
+            LogiMouseSettings(pointerDPI: 1600, hapticsOn: true, hapticStrength: 80, pressForce: 6000)
         )
+    }
+
+    // MARK: - Tick marks
+
+    /// Values set before the sliders had tick marks stay as they are until a slider moves.
+    func testStoredValuesBetweenTicksAreShownAndNeverRewritten() {
+        manage(sensitivity: 72, scrollForce: 19)
+        let stored = LogiMouseSettings(pointerDPI: 1750, hapticsOn: true, hapticStrength: 63, pressForce: 5167)
+        Options.shared.logiMouse = stored
+        let wheel = Options.shared.logiWheel
+        let controller = makeController([Fixtures.mxMaster4(dpi: 1750, hapticsOn: true, strength: 63, pressForce: 5167, sensitivity: 72, scrollForce: 19)])
+
+        XCTAssertEqual(controller.sensitivitySlider.doubleValue, 70)
+        XCTAssertEqual(controller.sensitivityRow.valueText, MouseText.percent(72))
+        XCTAssertEqual(controller.firmnessSlider.doubleValue, 20)
+        XCTAssertEqual(controller.firmnessRow.valueText, MouseText.percent(19))
+        XCTAssertEqual(controller.strengthSlider.doubleValue, 60)
+        XCTAssertEqual(controller.strengthRow.valueText, MouseText.percent(63))
+        XCTAssertEqual(controller.pressForceSlider.doubleValue, 5503)
+        XCTAssertEqual(controller.pressForceRow.valueText, MouseText.percent(38))
+        for row in sliderRows(controller) {
+            XCTAssertNil(row.explanation?.components(separatedBy: "\n").dropFirst().first, "no \"On the mouse\" line: \(row.title)")
+        }
+
+        controller.reloadDevices()
+        controller.viewWillAppear()
+        controller.syncControls()
+        XCTAssertEqual(Options.shared.logiMouse, stored, "loading and showing write nothing")
+        XCTAssertEqual(Options.shared.logiWheel, wheel)
+    }
+
+    func testEverySliderWritesTheValueOfATick() {
+        manage()
+        Options.shared.logiMouse.hapticsOn = true
+        let controller = makeController([Fixtures.mxMaster4(hapticsOn: true)])
+        let cases: [(NSSlider, () -> Int?, [Int])] = [
+            (controller.pointerSpeedSlider, { Options.shared.logiMouse.pointerDPI }, MousePaneModel.pointerLadder),
+            (controller.sensitivitySlider, { Options.shared.logiWheel.smartShiftSensitivity }, [1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]),
+            (controller.firmnessSlider, { Options.shared.logiWheel.scrollForce }, [1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]),
+            (controller.strengthSlider, { Options.shared.logiMouse.hapticStrength }, [20, 40, 60, 80, 100]),
+            (controller.pressForceSlider, { Options.shared.logiMouse.pressForce }, [4134, 4819, 5503, 6188, 6872]),
+        ]
+        for (slider, stored, grid) in cases {
+            var written = Set<Int>()
+            for fraction in stride(from: 0.0, through: 1.0, by: 0.01) {
+                drag(slider, to: slider.minValue + fraction * (slider.maxValue - slider.minValue))
+                if let value = stored() {
+                    XCTAssertTrue(grid.contains(value), "\(value) is not a tick of \(grid)")
+                    written.insert(value)
+                }
+            }
+            XCTAssertEqual(written, Set(grid), "every tick can be reached")
+        }
     }
 
     // MARK: - What the controls show
@@ -372,13 +500,14 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         let controller = makeController([Fixtures.mxMaster4()])
 
         XCTAssertTrue(controller.managedRow.isOn)
-        XCTAssertEqual(controller.pointerSpeedSlider.doubleValue, Double(try XCTUnwrap(Fixtures.dpiChoices.firstIndex(of: 1600))))
+        XCTAssertEqual(controller.pointerSpeedSlider.doubleValue, Double(try XCTUnwrap(MousePaneModel.pointerLadder.firstIndex(of: 1600))))
         XCTAssertEqual(controller.wheelModeControl.selectedSegment, 0)
         XCTAssertEqual(controller.sensitivitySlider.doubleValue, 30)
         XCTAssertEqual(controller.firmnessSlider.doubleValue, 80)
         XCTAssertTrue(controller.hapticsRow.isOn)
         XCTAssertEqual(controller.strengthSlider.doubleValue, 40)
-        XCTAssertEqual(controller.pressForceSlider.doubleValue, 6000)
+        XCTAssertEqual(controller.pressForceSlider.doubleValue, 6187.5, "6000 shows on the nearest tick")
+        XCTAssertEqual(controller.pressForceRow.valueText, MouseText.percent(68))
         for row in settingRows(controller) {
             XCTAssertTrue(row.isEnabled, row.title)
         }
@@ -416,7 +545,8 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         let controller = makeController([Fixtures.mxMaster4(dpi: nil, hapticsOn: nil, strength: nil, pressForce: nil)])
         XCTAssertEqual(controller.pointerSpeedRow.valueText, "1000 DPI", "the mouse's default")
         XCTAssertFalse(controller.hapticsRow.isOn)
-        XCTAssertEqual(controller.pressForceSlider.doubleValue, 5167, "the mouse's default")
+        XCTAssertEqual(controller.pressForceRow.valueText, MouseText.percent(38), "the mouse's default")
+        XCTAssertEqual(controller.pressForceSlider.doubleValue, 5503, "on the tick nearest the default")
     }
 
     // MARK: - Which rows each mouse gets
@@ -459,7 +589,8 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertTrue(controller.hapticsSection.isHidden)
         XCTAssertTrue(controller.firmnessRow.isHidden)
         XCTAssertFalse(controller.pointerSpeedRow.isHidden)
-        XCTAssertEqual(controller.pointerSpeedSlider.maxValue, Double(Array(stride(from: 200, through: 4000, by: 50)).count - 1))
+        XCTAssertEqual(controller.pointerSpeedSlider.maxValue, 9, "ten rungs up to 4000 DPI")
+        XCTAssertEqual(controller.pointerSpeedSlider.numberOfTickMarks, 10)
         XCTAssertEqual(
             controller.headerView.batteryLabel.stringValue,
             String(format: text("mouse-battery-about"), MouseText.percent(50))
@@ -668,19 +799,25 @@ final class MousePreferencesViewControllerTests: XCTestCase {
 
         tracking = true
         drag(controller.strengthSlider, to: 60)
-        drag(controller.strengthSlider, to: 55)
+        drag(controller.strengthSlider, to: 75)
         XCTAssertEqual(sampleCount, 0, "not while it is dragged")
-        XCTAssertEqual(Options.shared.logiMouse.hapticStrength, 55, "stored as it moves")
+        XCTAssertEqual(Options.shared.logiMouse.hapticStrength, 80, "stored as it moves, tick by tick")
 
         tracking = false
-        drag(controller.strengthSlider, to: 50)
+        drag(controller.strengthSlider, to: 40)
         XCTAssertEqual(sampleCount, 1)
-        XCTAssertEqual(Options.shared.logiMouse.hapticStrength, 50)
+        XCTAssertEqual(Options.shared.logiMouse.hapticStrength, 40)
+
+        // An arrow key is a move that is let go at once: one pulse each.
+        let strength = controller.strengthSlider as! PreferencesSlider
+        XCTAssertTrue(strength.moveKnob(by: 1))
+        XCTAssertEqual(Options.shared.logiMouse.hapticStrength, 60)
+        XCTAssertEqual(sampleCount, 2)
 
         // Other sliders play nothing.
         drag(controller.pressForceSlider, to: 5000)
         drag(controller.firmnessSlider, to: 40)
-        XCTAssertEqual(sampleCount, 1)
+        XCTAssertEqual(sampleCount, 2)
     }
 
     func testAMouseUpdateDuringADragLeavesTheKnobAlone() {
@@ -689,16 +826,17 @@ final class MousePreferencesViewControllerTests: XCTestCase {
 
         tracking = true
         drag(controller.sensitivitySlider, to: 80)
-        controller.pressForceSlider.doubleValue = 6000
+        controller.pressForceSlider.doubleValue = 6187.5
         devices = [Fixtures.mxMaster4(dpi: 1200, pressForce: 4500, sensitivity: 40)]
         NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
         XCTAssertEqual(controller.sensitivitySlider.doubleValue, 80)
-        XCTAssertEqual(controller.pressForceSlider.doubleValue, 6000)
+        XCTAssertEqual(controller.pressForceSlider.doubleValue, 6187.5)
 
         tracking = false
         NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
         XCTAssertEqual(controller.sensitivitySlider.doubleValue, 80, "your value")
-        XCTAssertEqual(controller.pressForceSlider.doubleValue, 4500, "the mouse's: you never set one")
+        XCTAssertEqual(controller.pressForceSlider.doubleValue, 4818.5, "the tick nearest the mouse's 4500: you never set one")
+        XCTAssertEqual(controller.pressForceRow.valueText, MouseText.percent(MousePaneModel.share(of: 4500, in: 4134...6872)))
         XCTAssertEqual(controller.pointerSpeedRow.valueText, "1200 DPI")
     }
 

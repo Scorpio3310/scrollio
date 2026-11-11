@@ -311,7 +311,8 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         updatePreviewScene()
     }
 
-    /// A slider row and its value. A refresh arriving mid-drag must not move the knob.
+    /// A slider row and its value. A refresh arriving mid-drag must not move the knob. A
+    /// stored value off the slider's grid is shown as it is, not snapped.
     private func sync(
         _ row: PreferencesSliderRow,
         _ setting: ScrollSliderSetting,
@@ -320,7 +321,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         isTracking: Bool
     ) {
         if !isTracking {
-            row.slider.doubleValue = value
+            row.showValue(value)
         }
         row.valueText = setting.text(value)
         row.isEnabled = enabled
@@ -633,8 +634,8 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         return row
     }
 
-    /// A slider with its value on the right of its row. All of the tab's sliders have the
-    /// same width, so they line up.
+    /// A slider with its value on the right of its row and the setting's tick marks under
+    /// it. All of the tab's sliders have the same width, so they line up.
     private func makeSliderRow(
         titleKey: String,
         hintKey: String,
@@ -647,6 +648,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
             title: text(titleKey),
             explanation: text(hintKey),
             range: setting.range,
+            scale: setting.scale,
             ends: ends,
             target: self,
             action: action

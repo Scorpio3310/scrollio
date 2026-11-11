@@ -38,18 +38,27 @@ final class ScrollSettingsTests: XCTestCase {
         let slider = ScrollSliderSetting.glideTime
         for feel in ScrollFeel.allCases {
             XCTAssertTrue(slider.range.contains(feel.duration), "\(feel)")
-            XCTAssertEqual(slider.snapped(feel.duration), feel.duration, "\(feel) lies on the slider's grid")
+            // The slider's stop next to a preset (3.15 for Quick's 3.13) selects that preset.
+            XCTAssertEqual(ScrollFeel.matching(duration: slider.snapped(feel.duration)), feel, "\(feel)")
         }
+        // Three presets lie on the 0.05 grid; Quick and Smooth keep their own Durations.
+        XCTAssertEqual(ScrollFeel.allCases.filter { slider.snapped($0.duration) == $0.duration }, [.direct, .glide, .float])
     }
 
-    func testFeel_matchingNeedsThePresetsDuration() {
+    func testFeel_matchingAllowsThreeHundredthsEitherSide() {
+        XCTAssertEqual(ScrollFeel.matchTolerance, 0.03)
         for feel in ScrollFeel.allCases {
             XCTAssertEqual(ScrollFeel.matching(duration: feel.duration), feel)
-            XCTAssertEqual(ScrollFeel.matching(duration: feel.duration + 0.005), feel, "within the tolerance")
-            XCTAssertEqual(ScrollFeel.matching(duration: feel.duration - 0.005), feel, "within the tolerance")
-            XCTAssertNil(ScrollFeel.matching(duration: feel.duration + 0.01), "the next step of the slider is custom")
-            XCTAssertNil(ScrollFeel.matching(duration: feel.duration - 0.01))
+            XCTAssertEqual(ScrollFeel.matching(duration: feel.duration + 0.03), feel, "within the tolerance")
+            XCTAssertEqual(ScrollFeel.matching(duration: feel.duration - 0.03), feel, "within the tolerance")
+            XCTAssertNil(ScrollFeel.matching(duration: feel.duration + 0.04), "two slider steps away is custom")
+            XCTAssertNil(ScrollFeel.matching(duration: feel.duration - 0.04))
         }
+        // The owner's Duration, tuned by feel, still reads as Smooth.
+        XCTAssertEqual(ScrollFeel.matching(duration: 3.687), .smooth)
+        XCTAssertEqual(ScrollFeel.matching(duration: 3.15), .quick)
+        XCTAssertEqual(ScrollFeel.matching(duration: 3.7), .smooth)
+        XCTAssertNil(ScrollFeel.matching(duration: 3.65))
         let customs: [Double] = [1.0, 2.5, 3.9, 4.75, 5.0, .nan, .infinity]
         for custom in customs {
             XCTAssertNil(ScrollFeel.matching(duration: custom), "\(custom)")
@@ -81,37 +90,62 @@ final class ScrollSettingsTests: XCTestCase {
         XCTAssertTrue(ScrollSliderSetting.smallestStep.range.contains(defaults.step))
     }
 
+    func testSliders_ticksAndSteps() {
+        let speed = ScrollSliderSetting.speed
+        XCTAssertEqual(speed.scale, .ticks(10, step: 0.5))
+        XCTAssertEqual(speed.scale.tickValues(in: speed.range), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], "a tick at every whole number")
+        XCTAssertEqual(speed.step, 0.5)
+
+        let glide = ScrollSliderSetting.glideTime
+        XCTAssertEqual(glide.scale, .ticks(9, step: 0.05))
+        XCTAssertEqual(glide.scale.tickValues(in: glide.range), [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5])
+        XCTAssertEqual(glide.step, 0.05)
+
+        let step = ScrollSliderSetting.smallestStep
+        XCTAssertEqual(step.scale, .ticks(11, step: 1))
+        XCTAssertEqual(step.scale.tickValues(in: step.range).count, 11)
+        XCTAssertEqual(step.scale.tickValues(in: step.range).dropFirst().map { $0.rounded() }, [10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
+        XCTAssertEqual(step.step, 1)
+    }
+
     func testSliders_snapToTheirGridAndStayInRange() {
         let speed = ScrollSliderSetting.speed
         XCTAssertEqual(speed.snapped(6.5), 6.5)
-        XCTAssertEqual(speed.snapped(2.7), 2.7)
-        XCTAssertEqual(speed.snapped(2.74), 2.7)
-        XCTAssertEqual(speed.snapped(2.76), 2.8)
+        XCTAssertEqual(speed.snapped(6.31), 6.5)
+        XCTAssertEqual(speed.snapped(6.24), 6)
+        XCTAssertEqual(speed.snapped(2.76), 3)
         XCTAssertEqual(speed.snapped(0.2), 1)
         XCTAssertEqual(speed.snapped(42), 10)
         XCTAssertEqual(speed.snapped(.nan), 1)
         XCTAssertEqual(speed.snapped(.infinity), 1)
 
         let glide = ScrollSliderSetting.glideTime
-        XCTAssertEqual(glide.snapped(3.694), 3.69)
-        XCTAssertEqual(glide.snapped(3.696), 3.7)
+        XCTAssertEqual(glide.snapped(3.687), 3.7)
+        XCTAssertEqual(glide.snapped(3.674), 3.65)
+        XCTAssertEqual(glide.snapped(3.13), 3.15)
+        XCTAssertEqual(glide.snapped(4.35), 4.35)
         XCTAssertEqual(glide.snapped(0), 1)
         XCTAssertEqual(glide.snapped(9), 5)
 
         let step = ScrollSliderSetting.smallestStep
-        XCTAssertEqual(step.snapped(33.6), 33.6, "the default lies on the grid")
-        XCTAssertEqual(step.snapped(33.64), 33.6)
-        XCTAssertEqual(step.snapped(0), 0.01)
+        XCTAssertEqual(step.snapped(33.6), 34, "the default is off the whole-number grid")
+        XCTAssertEqual(step.snapped(33.4), 33)
+        XCTAssertEqual(step.snapped(0.4), 0.01, "the lowest stop is the range's own")
+        XCTAssertEqual(step.snapped(0.6), 1)
         XCTAssertEqual(step.snapped(250), 100)
     }
 
     func testSliders_valueTexts() {
         XCTAssertEqual(ScrollSliderSetting.speed.text(6.5), "6.5")
         XCTAssertEqual(ScrollSliderSetting.speed.text(10), "10.0")
+        XCTAssertEqual(ScrollSliderSetting.speed.text(6.31), "6.3")
         XCTAssertEqual(ScrollSliderSetting.glideTime.text(3.69), "3.69")
+        XCTAssertEqual(ScrollSliderSetting.glideTime.text(3.687), "3.69")
         XCTAssertEqual(ScrollSliderSetting.glideTime.text(2), "2.00")
-        XCTAssertEqual(ScrollSliderSetting.smallestStep.text(33.6), "33.6")
-        XCTAssertEqual(ScrollSliderSetting.smallestStep.text(0.01), "0.01", "never shown as 0.0")
+        XCTAssertEqual(ScrollSliderSetting.smallestStep.text(34), "34", "whole numbers on the whole-number grid")
+        XCTAssertEqual(ScrollSliderSetting.smallestStep.text(100), "100")
+        XCTAssertEqual(ScrollSliderSetting.smallestStep.text(33.6), "33.6", "a value off the grid is not shown as another")
+        XCTAssertEqual(ScrollSliderSetting.smallestStep.text(0.01), "0.01", "never shown as 0")
     }
 
     // MARK: - Direction
