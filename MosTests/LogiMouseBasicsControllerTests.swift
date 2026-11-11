@@ -543,7 +543,7 @@ final class LogiMouseBasicsControllerTests: XCTestCase {
     func testABatteryEventUpdatesTheState() {
         let controller = started()
         let changesBefore = changes
-        controller.handleEvent(featureIndex: Self.batteryIndex, functionId: 0,
+        controller.handleEvent(featureIndex: Self.batteryIndex, functionId: 0, softwareId: 0,
                                report: report(Self.batteryIndex, 0, [0x2E, 0x04, 0x01], softwareId: 0))
         XCTAssertEqual(controller.battery?.percent, 46)
         XCTAssertEqual(controller.battery?.charging, .charging)
@@ -551,11 +551,27 @@ final class LogiMouseBasicsControllerTests: XCTestCase {
         XCTAssertTrue(logs.contains("Battery: 46 %, charging, level good"))
     }
 
+    /// Regression (E): the session passes every report that is not its own answer. Another
+    /// HID++ client's fn0 answer on the battery feature (Logi Options+ asking getCapabilities,
+    /// its own software id) was parsed as a battery status: "15 %", a false low notice.
+    func testAnotherClientsAnswerOnTheBatteryIsNoBatteryEvent() {
+        let controller = started()
+        let before = controller.battery
+        let changesBefore = changes
+        for softwareId: UInt8 in [0x02, 0x03, 0x0A, 0x0F] {
+            controller.handleEvent(featureIndex: Self.batteryIndex, functionId: 0, softwareId: softwareId,
+                                   report: report(Self.batteryIndex, 0, [0x0F, 0x02, 0x00], softwareId: softwareId))
+        }
+        XCTAssertEqual(controller.battery, before)
+        XCTAssertEqual(changes, changesBefore)
+        XCTAssertFalse(logs.contains { $0.hasPrefix("Battery: 15") })
+    }
+
     func testTheSameBatteryValueIsNotLoggedAgain() {
         let controller = started()
         let count = logs.count
         let changesBefore = changes
-        controller.handleEvent(featureIndex: Self.batteryIndex, functionId: 0,
+        controller.handleEvent(featureIndex: Self.batteryIndex, functionId: 0, softwareId: 0,
                                report: report(Self.batteryIndex, 0, [0x2D, 0x04, 0x00], softwareId: 0))
         XCTAssertFalse(logs[count...].contains { $0.hasPrefix("Battery: 45") })
         XCTAssertEqual(changes, changesBefore, "nothing new to show")

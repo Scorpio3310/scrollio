@@ -286,11 +286,13 @@ final class LogiMouseBasicsController {
         return true
     }
 
-    /// A device event (software id 0) on one of this device's basic features. Only the
-    /// battery sends any.
-    func handleEvent(featureIndex: UInt8, functionId: UInt8, report: [UInt8]) {
+    /// A report on one of this device's basic features that is no answer to this app (the
+    /// session passes every report whose software id is not its own). Only a device event
+    /// (software id 0) counts, and only the battery sends any: another HID++ client's answer
+    /// (Logi Options+, its own software id) is no battery status.
+    func handleEvent(featureIndex: UInt8, functionId: UInt8, softwareId: UInt8, report: [UInt8]) {
         guard let battery = features.battery, featureIndex == battery.index,
-              LogiBatteryProtocol.isStatusEvent(functionId: functionId, softwareId: 0) else { return }
+              LogiBatteryProtocol.isStatusEvent(functionId: functionId, softwareId: softwareId) else { return }
         guard let reading = LogiBatteryProtocol.parseStatus(report, feature: battery.feature) else {
             log("Battery: unreadable event \(Self.hex(report))")
             return

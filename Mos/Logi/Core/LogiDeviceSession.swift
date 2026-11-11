@@ -4123,7 +4123,8 @@ class LogiDeviceSession {
             if isOwnResponse {
                 basics.handleResponse(featureIndex: featureIdx, functionId: functionId, report: Array(report))
             } else {
-                basics.handleEvent(featureIndex: featureIdx, functionId: functionId, report: Array(report))
+                basics.handleEvent(featureIndex: featureIdx, functionId: functionId,
+                                   softwareId: report[3] & 0x0F, report: Array(report))
             }
         }
 
