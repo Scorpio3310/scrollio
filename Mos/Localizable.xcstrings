@@ -3760,6 +3760,30 @@
         }
       }
     },
+    "list-add": {
+      "comment": "Accessibility label of the + button under a list in the Preferences window",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add"
+          }
+        }
+      }
+    },
+    "list-remove": {
+      "comment": "Accessibility label of the − button under a list in the Preferences window",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove"
+          }
+        }
+      }
+    },
     "general-launch-at-login": {
       "extractionState": "manual",
       "localizations": {

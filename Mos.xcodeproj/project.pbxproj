@@ -11,6 +11,10 @@
 		0A5E7AB00000000000000012 /* MosTests/StoryboardIntegrityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A5E7AB00000000000000011 /* MosTests/StoryboardIntegrityTests.swift */; };
 		9D5E7AB10000000000000102 /* MosTests/PreferencesFormTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D5E7AB10000000000000101 /* MosTests/PreferencesFormTests.swift */; };
 		6B1D0A5C0000000000000102 /* MosTests/PreferencesGroupedFormTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B1D0A5C0000000000000101 /* MosTests/PreferencesGroupedFormTests.swift */; };
+		7A5C0DE0000000000000A102 /* MosTests/PreferencesButtonsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5C0DE0000000000000A101 /* MosTests/PreferencesButtonsTests.swift */; };
+		7A5C0DE0000000000000A202 /* MosTests/PreferencesApplicationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5C0DE0000000000000A201 /* MosTests/PreferencesApplicationTests.swift */; };
+		7A5C0DE0000000000000A302 /* MosTests/PreferencesGeneralTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5C0DE0000000000000A301 /* MosTests/PreferencesGeneralTests.swift */; };
+		7A5C0DE0000000000000A402 /* MosTests/StatusMenuTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5C0DE0000000000000A401 /* MosTests/StatusMenuTests.swift */; };
 		5C0E5C2A0000000000000102 /* MosTests/PreferencesScrollingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0E5C2A0000000000000101 /* MosTests/PreferencesScrollingTests.swift */; };
 		5C0E5C2A0000000000000202 /* MosTests/ScrollSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0E5C2A0000000000000201 /* MosTests/ScrollSettingsTests.swift */; };
 		5C9EF1E70000000000000102 /* MosTests/ScrollPreviewMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C9EF1E70000000000000101 /* MosTests/ScrollPreviewMotionTests.swift */; };
@@ -118,6 +122,10 @@
 		0A5E7AB00000000000000011 /* MosTests/StoryboardIntegrityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/StoryboardIntegrityTests.swift; sourceTree = SOURCE_ROOT; };
 		9D5E7AB10000000000000101 /* MosTests/PreferencesFormTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/PreferencesFormTests.swift; sourceTree = SOURCE_ROOT; };
 		6B1D0A5C0000000000000101 /* MosTests/PreferencesGroupedFormTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/PreferencesGroupedFormTests.swift; sourceTree = SOURCE_ROOT; };
+		7A5C0DE0000000000000A101 /* MosTests/PreferencesButtonsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/PreferencesButtonsTests.swift; sourceTree = SOURCE_ROOT; };
+		7A5C0DE0000000000000A201 /* MosTests/PreferencesApplicationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/PreferencesApplicationTests.swift; sourceTree = SOURCE_ROOT; };
+		7A5C0DE0000000000000A301 /* MosTests/PreferencesGeneralTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/PreferencesGeneralTests.swift; sourceTree = SOURCE_ROOT; };
+		7A5C0DE0000000000000A401 /* MosTests/StatusMenuTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/StatusMenuTests.swift; sourceTree = SOURCE_ROOT; };
 		5C0E5C2A0000000000000101 /* MosTests/PreferencesScrollingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/PreferencesScrollingTests.swift; sourceTree = SOURCE_ROOT; };
 		5C0E5C2A0000000000000201 /* MosTests/ScrollSettingsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollSettingsTests.swift; sourceTree = SOURCE_ROOT; };
 		5C9EF1E70000000000000101 /* MosTests/ScrollPreviewMotionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollPreviewMotionTests.swift; sourceTree = SOURCE_ROOT; };
@@ -261,6 +269,10 @@
 				0A5E7AB00000000000000011 /* MosTests/StoryboardIntegrityTests.swift */,
 				9D5E7AB10000000000000101 /* MosTests/PreferencesFormTests.swift */,
 				6B1D0A5C0000000000000101 /* MosTests/PreferencesGroupedFormTests.swift */,
+				7A5C0DE0000000000000A101 /* MosTests/PreferencesButtonsTests.swift */,
+				7A5C0DE0000000000000A201 /* MosTests/PreferencesApplicationTests.swift */,
+				7A5C0DE0000000000000A301 /* MosTests/PreferencesGeneralTests.swift */,
+				7A5C0DE0000000000000A401 /* MosTests/StatusMenuTests.swift */,
 				5C0E5C2A0000000000000101 /* MosTests/PreferencesScrollingTests.swift */,
 				5C0E5C2A0000000000000201 /* MosTests/ScrollSettingsTests.swift */,
 				5C9EF1E70000000000000101 /* MosTests/ScrollPreviewMotionTests.swift */,
@@ -505,6 +517,10 @@
 				0A5E7AB00000000000000012 /* MosTests/StoryboardIntegrityTests.swift in Sources */,
 				9D5E7AB10000000000000102 /* MosTests/PreferencesFormTests.swift in Sources */,
 				6B1D0A5C0000000000000102 /* MosTests/PreferencesGroupedFormTests.swift in Sources */,
+				7A5C0DE0000000000000A102 /* MosTests/PreferencesButtonsTests.swift in Sources */,
+				7A5C0DE0000000000000A202 /* MosTests/PreferencesApplicationTests.swift in Sources */,
+				7A5C0DE0000000000000A302 /* MosTests/PreferencesGeneralTests.swift in Sources */,
+				7A5C0DE0000000000000A402 /* MosTests/StatusMenuTests.swift in Sources */,
 				5C0E5C2A0000000000000102 /* MosTests/PreferencesScrollingTests.swift in Sources */,
 				5C0E5C2A0000000000000202 /* MosTests/ScrollSettingsTests.swift in Sources */,
 				5C9EF1E70000000000000102 /* MosTests/ScrollPreviewMotionTests.swift in Sources */,

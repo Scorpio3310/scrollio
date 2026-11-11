@@ -4,8 +4,10 @@
 //
 //  The grouped-form kit (System Settings boxes): the numbers, how rows lay out their
 //  title, explanation and control, the hairlines between the rows that show, dimming a
-//  row, the accessibility names of its controls, and the spacing of boxes, section
-//  titles and the footer in a pane. Nothing is shown on screen.
+//  row, the accessibility names of its controls, the spacing of boxes, section titles,
+//  notes and the footer in a pane, and the list (PreferencesListBox): its rows, selection,
+//  mouse, keyboard, footer, empty row, hairlines and accessibility. Nothing is shown on
+//  screen.
 //
 
 import XCTest
@@ -713,6 +715,613 @@ final class PreferencesGroupedFormTests: XCTestCase {
         XCTAssertEqual(frame(of: button, in: root).maxX, paneWidth - Form.margin, accuracy: 1)
         XCTAssertEqual(button.bezelStyle, .push)
         XCTAssertEqual(button.controlSize, .regular)
+    }
+
+    func testANoteSitsCloseUnderTheBoxAndWrapsAtTheRowsInset() {
+        let box = PreferencesGroupSection(width: boxWidth, rows: [PreferencesSwitchRow(title: "One", target: nil, action: nil)])
+        let long = String(repeating: "Buttons and gestures still work everywhere. ", count: 3)
+        let note = Form.makeNote(long)
+        let second = Form.makeNote("Another line.")
+        let after = PreferencesGroupSection(width: boxWidth, rows: [PreferencesSwitchRow(title: "Two", target: nil, action: nil)])
+        let root = makePane([box, note, second, after])
+
+        XCTAssertEqual(note.text, long)
+        XCTAssertEqual(note.label.font, Form.explanationFont)
+        XCTAssertEqual(note.label.textColor, Form.explanationColor(enabled: true))
+        XCTAssertFalse(note.label.isSelectable)
+        XCTAssertEqual(note.contentWidth, boxWidth, "the content stack's width")
+        XCTAssertEqual(note.label.preferredMaxLayoutWidth, boxWidth - 2 * Form.rowHorizontalInset, accuracy: 0.5)
+
+        let boxFrame = frame(of: box, in: root)
+        let label = frame(of: note.label, in: root)
+        XCTAssertEqual(label.minX - boxFrame.minX, Form.rowHorizontalInset, accuracy: 0.5, "at the rows' inset")
+        XCTAssertLessThanOrEqual(label.maxX, boxFrame.maxX - Form.rowHorizontalInset + 0.5)
+        XCTAssertGreaterThan(label.height, 2 * explanationLineHeight() - 1, "it wraps")
+        XCTAssertEqual(boxFrame.minY - frame(of: note, in: root).maxY, Form.noteSpacing, accuracy: 0.5)
+        XCTAssertEqual(frame(of: note, in: root).minY - frame(of: second, in: root).maxY, Form.sectionTitleSpacing, accuracy: 0.5, "two notes sit close")
+        XCTAssertEqual(frame(of: second, in: root).minY - frame(of: after, in: root).maxY, Form.boxSpacing, accuracy: 0.5)
+
+        // Outside a content stack the note learns its width when it is laid out.
+        let loose = Form.makeNote(long)
+        loose.frame = NSRect(x: 0, y: 0, width: 300, height: 100)
+        loose.layout()
+        XCTAssertEqual(loose.label.preferredMaxLayoutWidth, 300 - 2 * Form.rowHorizontalInset, accuracy: 0.5)
+    }
+
+    // MARK: - List
+
+    /// A list of rows "a", "b", "c" (texts "Row a" …) in a pane, laid out.
+    private func makeList(
+        ids: [String] = ["a", "b", "c"],
+        explanation: String? = nil,
+        emptyExplanation: String? = "Click + to add one."
+    ) -> (list: PreferencesListBox, root: NSView) {
+        let list = PreferencesListBox(
+            width: boxWidth,
+            rows: ids.map { PreferencesListRow(id: $0, title: "Row \($0)", explanation: explanation) },
+            emptyTitle: "Nothing yet",
+            emptyExplanation: emptyExplanation
+        )
+        let root = makePane([list])
+        return (list, root)
+    }
+
+    /// Records what a list reports.
+    private final class ListRecorder {
+        var selected: [AnyHashable?] = []
+        var removed: [AnyHashable] = []
+        var opened: [AnyHashable] = []
+        var hovered: [AnyHashable?] = []
+        var added: [NSButton] = []
+
+        init(_ list: PreferencesListBox) {
+            list.onSelect = { [unowned self] in self.selected.append($0) }
+            list.onRemove = { [unowned self] in self.removed.append($0) }
+            list.onOpen = { [unowned self] in self.opened.append($0) }
+            list.onHover = { [unowned self] in self.hovered.append($0) }
+            list.onAdd = { [unowned self] in self.added.append($0) }
+        }
+    }
+
+    /// A window that says whether it is key as the test wants. Never shown.
+    private final class TestWindow: NSWindow {
+        var key = false
+        override var isKeyWindow: Bool { return key }
+    }
+
+    private func makeWindow(with root: NSView, key: Bool = false) -> TestWindow {
+        let window = TestWindow(contentRect: root.frame, styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.key = key
+        window.contentView = root
+        root.layoutSubtreeIfNeeded()
+        addTeardownBlock { window.close() }
+        return window
+    }
+
+    private func key(_ characters: String, keyCode: UInt16, modifiers: NSEvent.ModifierFlags = []) throws -> NSEvent {
+        return try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: 0, context: nil,
+            characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode
+        ))
+    }
+
+    private func arrow(_ key: Int) throws -> NSEvent {
+        let characters = String(Character(try XCTUnwrap(UnicodeScalar(key))))
+        return try self.key(characters, keyCode: key == NSUpArrowFunctionKey ? 126 : 125, modifiers: [.numericPad, .function])
+    }
+
+    private func mouse(_ type: NSEvent.EventType, at point: NSPoint, in window: NSWindow, clicks: Int = 1) throws -> NSEvent {
+        if type == .mouseEntered || type == .mouseExited {
+            return try XCTUnwrap(NSEvent.enterExitEvent(
+                with: type, location: point, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                context: nil, eventNumber: 0, trackingNumber: 0, userData: nil
+            ))
+        }
+        return try XCTUnwrap(NSEvent.mouseEvent(
+            with: type, location: point, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, eventNumber: 0, clickCount: clicks, pressure: 1
+        ))
+    }
+
+    /// Where a view's frame sits in `root` (buttons and image views: the frame, not the
+    /// alignment rectangle).
+    private func rawFrame(of view: NSView, in root: NSView) -> NSRect {
+        return root.convert(view.frame, from: view.superview)
+    }
+
+    /// The middle of `view`, in the coordinates of `row`'s superview (what hitTest takes).
+    private func point(of view: NSView, for row: NSView) -> NSPoint {
+        return view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: row.superview)
+    }
+
+    func testAListRowPutsItsIconBeforeItsTextsAndItsChevronAtTheEdge() throws {
+        let popUp = NSPopUpButton(frame: .zero, pullsDown: true)
+        popUp.addItem(withTitle: "Copy")
+        popUp.widthAnchor.constraint(equalToConstant: 240).isActive = true
+        let symbol = PreferencesListRow(id: 1, title: "Back button", explanation: "Choose what this button does.", icon: .symbol("computermouse"), accessory: popUp)
+        let app = PreferencesListRow(id: 2, title: "Calculator", explanation: "Own scrolling settings", icon: .image(NSImage(size: NSSize(width: 64, height: 64))), showsChevron: true)
+        let plain = PreferencesListRow(id: 3, title: "Plain")
+        let list = PreferencesListBox(width: boxWidth, rows: [symbol, app, plain], emptyTitle: "Nothing")
+        let root = makePane([list])
+        let box = frame(of: list, in: root)
+
+        // A symbol: 20 pt, the texts after it.
+        let symbolIcon = rawFrame(of: try XCTUnwrap(symbol.iconView), in: root)
+        XCTAssertEqual(symbolIcon.size, NSSize(width: 20, height: 20))
+        XCTAssertEqual(symbolIcon.minX - box.minX, Form.rowHorizontalInset, accuracy: 0.5)
+        XCTAssertEqual(frame(of: symbol.titleLabel, in: root).minX - symbolIcon.maxX, PreferencesListRow.iconSpacing, accuracy: 0.5)
+        XCTAssertEqual(frame(of: symbol.explanationLabel, in: root).minX, frame(of: symbol.titleLabel, in: root).minX, accuracy: 0.5)
+        XCTAssertEqual(symbolIcon.midY, frame(of: symbol, in: root).midY, accuracy: 0.5, "in the middle of the row")
+        XCTAssertEqual(symbol.iconView?.contentTintColor, .secondaryLabelColor)
+        XCTAssertEqual(box.maxX - frame(of: popUp, in: root).maxX, Form.rowHorizontalInset, accuracy: 0.5, "the control at the edge")
+        XCTAssertEqual(frame(of: popUp, in: root).midY, frame(of: symbol.titleLabel, in: root).midY, accuracy: 0.5)
+        XCTAssertNil(symbol.chevronView)
+
+        // An app's icon: 24 pt; the chevron at the right edge, in the tertiary colour.
+        let appIcon = rawFrame(of: try XCTUnwrap(app.iconView), in: root)
+        XCTAssertEqual(appIcon.size, NSSize(width: 24, height: 24))
+        XCTAssertEqual(frame(of: app.titleLabel, in: root).minX - appIcon.maxX, PreferencesListRow.iconSpacing, accuracy: 0.5)
+        let chevron = rawFrame(of: try XCTUnwrap(app.chevronView), in: root)
+        XCTAssertEqual(box.maxX - chevron.maxX, Form.rowHorizontalInset, accuracy: 0.5)
+        XCTAssertEqual(chevron.midY, frame(of: app, in: root).midY, accuracy: 0.5)
+        XCTAssertEqual(app.chevronView?.contentTintColor, .tertiaryLabelColor)
+        XCTAssertEqual(
+            app.titleColumnWidth,
+            boxWidth - 2 * Form.rowHorizontalInset - 24 - PreferencesListRow.iconSpacing - PreferencesListRow.chevronWidth - PreferencesListRow.chevronSpacing,
+            accuracy: 0.5
+        )
+
+        // Without an icon the texts start at the rows' inset, as in a box.
+        XCTAssertNil(plain.iconView)
+        XCTAssertEqual(frame(of: plain.titleLabel, in: root).minX - box.minX, Form.rowHorizontalInset, accuracy: 0.5)
+        XCTAssertEqual(plain.frame.height, 2 * Form.rowVerticalInset + titleLineHeight(), accuracy: 0.5)
+
+        // The box is as tall as its rows and the footer: nothing scrolls inside it.
+        let rowsHeight = [symbol, app, plain].map(\.frame.height).reduce(0, +)
+        XCTAssertEqual(list.frame.height, rowsHeight + PreferencesListBox.footerHeight, accuracy: 0.5)
+        XCTAssertTrue(list.isFlipped)
+        XCTAssertEqual(list.rows, [symbol, app, plain])
+        XCTAssertTrue(list.rows.allSatisfy { $0.contentWidth == boxWidth })
+    }
+
+    func testAListKeepsItsSelectionByIDAcrossNewRows() {
+        let (list, root) = makeList()
+        let recorder = ListRecorder(list)
+        XCTAssertNil(list.selectedID)
+        XCTAssertFalse(list.removeButton.isEnabled, "− is off while nothing is selected")
+        XCTAssertTrue(list.addButton.isEnabled)
+
+        list.select("b")
+        XCTAssertEqual(list.selectedID, "b")
+        XCTAssertTrue(list.selectedRow === list.rows[1])
+        XCTAssertEqual(list.rows.map(\.isSelected), [false, true, false])
+        XCTAssertTrue(list.removeButton.isEnabled)
+        XCTAssertEqual(recorder.selected, ["b"])
+        list.select("b")
+        XCTAssertEqual(recorder.selected, ["b"], "no change, no call")
+
+        // New row objects with the same ids: "b" stays selected, nothing is reported.
+        list.setRows(["c", "b", "a"].map { PreferencesListRow(id: $0, title: "New \($0)") })
+        root.layoutSubtreeIfNeeded()
+        XCTAssertEqual(list.selectedID, "b")
+        XCTAssertEqual(list.selectedRow?.title, "New b")
+        XCTAssertEqual(list.rows.map(\.isSelected), [false, true, false])
+        XCTAssertEqual(recorder.selected, ["b"])
+
+        // Without "b": nothing is selected, and the owner hears it.
+        list.setRows(["c", "a"].map { PreferencesListRow(id: $0, title: "Row \($0)") })
+        XCTAssertNil(list.selectedID)
+        XCTAssertEqual(recorder.selected, ["b", nil])
+        XCTAssertFalse(list.removeButton.isEnabled)
+        XCTAssertTrue(list.rows.allSatisfy { !$0.isSelected })
+
+        // An id the list does not have selects nothing; ids of any hashable type.
+        list.select("a")
+        list.select("zzz")
+        XCTAssertNil(list.selectedID)
+        XCTAssertEqual(recorder.selected, ["b", nil, "a", nil])
+        list.setRows([PreferencesListRow(id: 7, title: "Seven"), PreferencesListRow(id: URL(fileURLWithPath: "/Applications/Safari.app"), title: "Safari")])
+        list.select(URL(fileURLWithPath: "/Applications/Safari.app"))
+        XCTAssertEqual(list.selectedRow?.title, "Safari")
+        XCTAssertNil(list.row(withID: "7"), "7 the number, not the text")
+        XCTAssertNotNil(list.row(withID: 7))
+    }
+
+    func testAClickOnARowSelectsItAndADoubleClickOpensIt() throws {
+        let popUp = NSPopUpButton(frame: .zero, pullsDown: true)
+        popUp.addItem(withTitle: "Copy")
+        let info = NSButton(image: try XCTUnwrap(NSImage(systemSymbolName: "info.circle", accessibilityDescription: nil)), target: nil, action: nil)
+        info.isBordered = false
+        let accessory = NSStackView(views: [info, popUp])
+        let rows = [
+            PreferencesListRow(id: "a", title: "Row a", explanation: "First.", icon: .symbol("star"), accessory: accessory, centeredOn: popUp, controls: [popUp]),
+            PreferencesListRow(id: "b", title: "Row b", showsChevron: true),
+        ]
+        let list = PreferencesListBox(width: boxWidth, rows: rows, emptyTitle: "Nothing")
+        let root = makePane([list])
+        let window = makeWindow(with: root)
+        let recorder = ListRecorder(list)
+        let row = rows[0]
+
+        // The texts, the icon and the empty part of the accessory belong to the row; its
+        // controls keep their clicks.
+        XCTAssertTrue(row.hitTest(point(of: row.titleLabel, for: row)) === row)
+        XCTAssertTrue(row.hitTest(point(of: row.explanationLabel, for: row)) === row)
+        XCTAssertTrue(row.hitTest(point(of: try XCTUnwrap(row.iconView), for: row)) === row)
+        XCTAssertTrue(row.hitTest(point(of: popUp, for: row)) === popUp)
+        XCTAssertTrue(row.hitTest(point(of: info, for: row)) === info)
+        XCTAssertTrue(rows[1].hitTest(point(of: try XCTUnwrap(rows[1].chevronView), for: rows[1])) === rows[1])
+        popUp.isEnabled = false
+        XCTAssertTrue(row.hitTest(point(of: popUp, for: row)) === row, "a control that is off gives the click to the row")
+        popUp.isEnabled = true
+
+        // A click selects the row and puts the keyboard on the list.
+        let middle = row.convert(NSPoint(x: row.bounds.midX, y: row.bounds.midY), to: nil)
+        row.mouseDown(with: try mouse(.leftMouseDown, at: middle, in: window))
+        XCTAssertEqual(list.selectedID, "a")
+        XCTAssertTrue(window.firstResponder === list)
+        XCTAssertEqual(recorder.selected, ["a"])
+        XCTAssertEqual(recorder.opened, [])
+
+        // The second click of a double click opens it.
+        row.mouseDown(with: try mouse(.leftMouseDown, at: middle, in: window, clicks: 2))
+        XCTAssertEqual(recorder.opened, ["a"])
+        XCTAssertEqual(recorder.selected, ["a"])
+    }
+
+    func testTheKeyboardMovesRemovesAndOpens() throws {
+        let (list, _) = makeList()
+        let recorder = ListRecorder(list)
+        XCTAssertTrue(list.acceptsFirstResponder)
+        let down = try arrow(NSDownArrowFunctionKey)
+        let up = try arrow(NSUpArrowFunctionKey)
+
+        // From nothing: ↓ the first row, ↑ the last.
+        list.keyDown(with: down)
+        XCTAssertEqual(list.selectedID, "a")
+        list.select(nil)
+        list.keyDown(with: up)
+        XCTAssertEqual(list.selectedID, "c")
+        list.keyDown(with: down)
+        XCTAssertEqual(list.selectedID, "c", "stays at the end")
+        list.keyDown(with: up)
+        list.keyDown(with: up)
+        list.keyDown(with: up)
+        XCTAssertEqual(list.selectedID, "a", "stays at the top")
+        XCTAssertEqual(recorder.selected, ["a", nil, "c", "b", "a"])
+
+        // Delete and Forward Delete ask to remove the selected row; Return and Enter open it.
+        list.keyDown(with: try key("\u{7F}", keyCode: 51))
+        list.keyDown(with: try key(String(Character(try XCTUnwrap(UnicodeScalar(NSDeleteFunctionKey)))), keyCode: 117, modifiers: [.function]))
+        list.keyDown(with: try key("\u{7F}", keyCode: 51, modifiers: [.command]))
+        XCTAssertEqual(recorder.removed, ["a", "a", "a"])
+        list.keyDown(with: try key("\r", keyCode: 36))
+        list.keyDown(with: try key("\u{3}", keyCode: 76))
+        XCTAssertEqual(recorder.opened, ["a", "a"])
+        XCTAssertEqual(list.rows.count, 3, "the owner removes rows, not the list")
+
+        // With nothing selected Delete does nothing.
+        list.select(nil)
+        list.keyDown(with: try key("\u{7F}", keyCode: 51))
+        XCTAssertEqual(recorder.removed.count, 3)
+    }
+
+    func testTheFooterHasAddAndRemoveAndRoomOnTheRight() throws {
+        let (list, root) = makeList()
+        let recorder = ListRecorder(list)
+        let box = frame(of: list, in: root)
+        let footer = frame(of: list.footerView, in: root)
+        let add = rawFrame(of: list.addButton, in: root)
+        let remove = rawFrame(of: list.removeButton, in: root)
+
+        // Inside the box, at its bottom, 28 pt; + and − at its left, 24 × 22 each.
+        XCTAssertEqual(footer.height, PreferencesListBox.footerHeight, accuracy: 0.5)
+        XCTAssertEqual(footer.minY, box.minY, accuracy: 0.5)
+        XCTAssertEqual(footer.width, box.width, accuracy: 0.5)
+        XCTAssertEqual(add.size, PreferencesListBox.footerButtonSize)
+        XCTAssertEqual(remove.size, PreferencesListBox.footerButtonSize)
+        XCTAssertEqual(add.minX - box.minX, PreferencesListBox.footerButtonInset, accuracy: 0.5)
+        XCTAssertEqual(remove.minX - add.maxX, 1, accuracy: 0.5, "room for the hairline between them")
+        XCTAssertEqual(add.midY, footer.midY, accuracy: 0.5)
+        XCTAssertEqual(remove.midY, footer.midY, accuracy: 0.5)
+        for (button, symbol) in [(list.addButton, "plus"), (list.removeButton, "minus")] {
+            XCTAssertFalse(button.isBordered)
+            XCTAssertEqual(button.imagePosition, .imageOnly)
+            XCTAssertNotNil(button.image, symbol)
+            XCTAssertEqual(button.title, "")
+        }
+
+        // + reports itself (to anchor a menu on); − the selected row, and only then.
+        XCTAssertTrue(list.addButton.sendAction(list.addButton.action, to: list.addButton.target))
+        XCTAssertEqual(recorder.added.count, 1)
+        XCTAssertTrue(recorder.added.first === list.addButton)
+        XCTAssertFalse(list.removeButton.isEnabled)
+        list.select("c")
+        XCTAssertTrue(list.removeButton.isEnabled)
+        XCTAssertTrue(list.removeButton.sendAction(list.removeButton.action, to: list.removeButton.target))
+        XCTAssertEqual(recorder.removed, ["c"])
+
+        // A view on the right: at the rows' inset from the edge, centred in the bar.
+        let busy = NSTextField(labelWithString: "Checking…")
+        list.footerAccessory = busy
+        root.layoutSubtreeIfNeeded()
+        XCTAssertTrue(busy.superview === list.footerView)
+        XCTAssertEqual(frame(of: list, in: root).maxX - frame(of: busy, in: root).maxX, Form.rowHorizontalInset, accuracy: 0.5)
+        XCTAssertEqual(frame(of: busy, in: root).midY, frame(of: list.footerView, in: root).midY, accuracy: 0.5)
+        list.footerAccessory = nil
+        XCTAssertNil(busy.superview)
+    }
+
+    func testAListWithoutRowsShowsItsEmptyRow() throws {
+        let (list, root) = makeList(ids: [])
+        let recorder = ListRecorder(list)
+        let empty = list.emptyRow
+        XCTAssertTrue(empty.superview === list.rowsView)
+        XCTAssertEqual(list.rowsView.arrangedSubviews, [empty])
+        XCTAssertEqual(empty.title, "Nothing yet")
+        XCTAssertEqual(empty.explanation, "Click + to add one.")
+
+        // Centred and dimmed, with more room than a row.
+        let box = frame(of: list, in: root)
+        let title = frame(of: empty.titleLabel, in: root)
+        let explanation = frame(of: empty.explanationLabel, in: root)
+        XCTAssertEqual(title.midX, box.midX, accuracy: 1)
+        XCTAssertEqual(explanation.midX, box.midX, accuracy: 1)
+        XCTAssertEqual(empty.titleLabel.textColor, .tertiaryLabelColor)
+        XCTAssertEqual(empty.explanationLabel.textColor, .tertiaryLabelColor)
+        XCTAssertEqual(empty.titleLabel.font, Form.titleFont)
+        XCTAssertEqual(empty.explanationLabel.font, Form.explanationFont)
+        XCTAssertEqual(frame(of: empty, in: root).maxY - title.maxY, PreferencesListBox.emptyRowVerticalInset, accuracy: 0.5)
+        XCTAssertEqual(explanation.minY - frame(of: empty, in: root).minY, PreferencesListBox.emptyRowVerticalInset, accuracy: 0.5)
+
+        // It cannot be selected, by key or in code, and the pointer over it is over no row.
+        list.keyDown(with: try arrow(NSDownArrowFunctionKey))
+        list.select("a")
+        XCTAssertNil(list.selectedID)
+        XCTAssertEqual(recorder.selected, [])
+        XCTAssertFalse(list.removeButton.isEnabled)
+        XCTAssertNil(list.rowID(at: list.convert(NSPoint(x: empty.bounds.midX, y: empty.bounds.midY), from: empty)))
+        XCTAssertEqual(list.separatorRects, [])
+
+        // Rows replace it, and it comes back when they go.
+        list.setRows([PreferencesListRow(id: "a", title: "Row a")])
+        XCTAssertNil(empty.superview)
+        list.setRows([])
+        XCTAssertTrue(empty.superview === list.rowsView)
+        empty.explanation = nil
+        XCTAssertTrue(empty.explanationLabel.isHidden)
+        XCTAssertEqual(empty.accessibilityLabel(), "Nothing yet")
+    }
+
+    func testAListDrawsHairlinesBetweenItsRowsButNotNextToTheSelection() throws {
+        let (list, root) = makeList(explanation: "Explained.")
+        let rows = list.rows
+        func top(of row: NSView) -> CGFloat {
+            return list.convert(row.bounds, from: row).minY
+        }
+
+        var lines = list.separatorRects
+        XCTAssertEqual(lines.count, 2)
+        for (line, row) in zip(lines, rows.dropFirst()) {
+            XCTAssertEqual(line.minX, Form.rowHorizontalInset)
+            XCTAssertEqual(line.maxX, boxWidth - Form.rowHorizontalInset, accuracy: 0.01)
+            XCTAssertEqual(line.minY, top(of: row), accuracy: 0.5)
+            XCTAssertLessThanOrEqual(line.height, 1)
+        }
+        XCTAssertNil(list.selectionRect)
+
+        // The selection: inset in its row, rounded like the box; the lines next to it go.
+        list.select("b")
+        let selection = try XCTUnwrap(list.selectionRect)
+        let row = list.convert(rows[1].bounds, from: rows[1])
+        XCTAssertEqual(selection, row.insetBy(dx: PreferencesListBox.selectionInset, dy: PreferencesListBox.selectionInset))
+        XCTAssertEqual(PreferencesListBox.selectionCornerRadius, Form.boxCornerRadius - PreferencesListBox.selectionInset)
+        XCTAssertEqual(list.separatorRects, [])
+        list.select("a")
+        lines = list.separatorRects
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertEqual(lines[0].minY, top(of: rows[2]), accuracy: 0.5)
+        XCTAssertEqual(try XCTUnwrap(list.selectionRect).minY, PreferencesListBox.selectionInset, accuracy: 0.5, "the first row's selection is inset from the box's top")
+
+        // The footer's line runs across the whole box; a short one stands between + and −.
+        let footerLine = list.footerSeparatorRect
+        XCTAssertEqual(footerLine.minX, 0)
+        XCTAssertEqual(footerLine.width, boxWidth, accuracy: 0.01)
+        XCTAssertEqual(footerLine.minY, list.convert(list.footerView.bounds, from: list.footerView).minY, accuracy: 0.5)
+        let divider = list.footerDividerRect
+        XCTAssertEqual(divider.minX, list.convert(list.addButton.bounds, from: list.addButton).maxX, accuracy: 0.5)
+        XCTAssertEqual(divider.height, PreferencesListBox.footerDividerHeight)
+        XCTAssertLessThanOrEqual(divider.width, 1)
+        XCTAssertEqual(divider.midY, list.convert(list.footerView.bounds, from: list.footerView).midY, accuracy: 0.5)
+        _ = root
+    }
+
+    func testTheSelectionIsEmphasizedOnlyWhileTheWindowIsKey() throws {
+        let popUp = NSPopUpButton(frame: .zero, pullsDown: true)
+        popUp.addItem(withTitle: "Copy")
+        let rows = [
+            PreferencesListRow(id: "a", title: "Row a", explanation: "First.", icon: .symbol("star"), accessory: popUp, showsChevron: true),
+            PreferencesListRow(id: "b", title: "Row b", explanation: "Second."),
+        ]
+        let list = PreferencesListBox(width: boxWidth, rows: rows, emptyTitle: "Nothing")
+        let root = makePane([list])
+        let window = makeWindow(with: root, key: true)
+        root.appearance = NSAppearance(named: .aqua)
+        XCTAssertTrue(list.isSelectionEmphasized)
+        list.select("a")
+        let row = rows[0]
+
+        // On the accent colour: the texts, the symbol and the chevron turn white, the
+        // controls draw as on a dark box.
+        XCTAssertTrue(row.isHighlighted)
+        XCTAssertFalse(rows[1].isHighlighted)
+        let white = NSColor.alternateSelectedControlTextColor
+        XCTAssertEqual(resolve(try XCTUnwrap(row.titleLabel.textColor), in: .aqua).white, 1, accuracy: 0.001)
+        XCTAssertEqual(resolve(try XCTUnwrap(row.titleLabel.textColor), in: .aqua).alpha, 1, accuracy: 0.001)
+        XCTAssertEqual(resolve(try XCTUnwrap(row.explanationLabel.textColor), in: .aqua).white, 1, accuracy: 0.001)
+        XCTAssertEqual(resolve(try XCTUnwrap(row.explanationLabel.textColor), in: .aqua).alpha, 0.85, accuracy: 0.001)
+        XCTAssertEqual(row.iconView?.contentTintColor, white)
+        XCTAssertEqual(row.chevronView?.contentTintColor, white)
+        XCTAssertEqual(popUp.effectiveAppearance.name, .darkAqua)
+        XCTAssertEqual(rows[1].titleLabel.textColor, .labelColor)
+
+        // The window goes behind another: a grey selection, the usual colours.
+        window.key = false
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+        XCTAssertFalse(list.isSelectionEmphasized)
+        XCTAssertTrue(row.isSelected)
+        XCTAssertFalse(row.isHighlighted)
+        XCTAssertEqual(row.titleLabel.textColor, .labelColor)
+        XCTAssertEqual(row.explanationLabel.textColor, .secondaryLabelColor)
+        XCTAssertEqual(row.iconView?.contentTintColor, .secondaryLabelColor)
+        XCTAssertEqual(row.chevronView?.contentTintColor, .tertiaryLabelColor)
+        XCTAssertNil(popUp.appearance)
+        XCTAssertNotNil(list.selectionRect, "still selected")
+
+        // Back in front; a dimmed row stays dimmed, readable on the selection too.
+        window.key = true
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
+        XCTAssertTrue(row.isHighlighted)
+        row.isEnabled = false
+        XCTAssertEqual(resolve(try XCTUnwrap(row.titleLabel.textColor), in: .aqua).white, 1, accuracy: 0.001)
+        XCTAssertEqual(resolve(try XCTUnwrap(row.titleLabel.textColor), in: .aqua).alpha, 0.5, accuracy: 0.001)
+        XCTAssertFalse(popUp.isEnabled)
+        list.select("b")
+        XCTAssertEqual(row.titleLabel.textColor, .tertiaryLabelColor)
+        XCTAssertEqual(row.iconView?.contentTintColor, .tertiaryLabelColor)
+
+        // The rows draw in the plain appearance of the pane, not the vibrant one.
+        XCTAssertEqual(row.titleLabel.effectiveAppearance.name, .aqua)
+        XCTAssertEqual(PreferencesListBox.selectionColor.usingColorSpace(.sRGB)?.alphaComponent, 1)
+    }
+
+    func testTheListReportsTheRowUnderThePointer() throws {
+        let (list, root) = makeList()
+        let window = makeWindow(with: root)
+        let recorder = ListRecorder(list)
+        func middle(of view: NSView) -> NSPoint {
+            return view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
+        }
+        list.mouseEntered(with: try mouse(.mouseEntered, at: middle(of: list.rows[0]), in: window))
+        list.mouseMoved(with: try mouse(.mouseMoved, at: middle(of: list.rows[0]), in: window))
+        list.mouseMoved(with: try mouse(.mouseMoved, at: middle(of: list.rows[2]), in: window))
+        list.mouseMoved(with: try mouse(.mouseMoved, at: middle(of: list.footerView), in: window))
+        list.mouseMoved(with: try mouse(.mouseMoved, at: middle(of: list.rows[1]), in: window))
+        list.mouseExited(with: try mouse(.mouseExited, at: .zero, in: window))
+        XCTAssertEqual(recorder.hovered, ["a", "c", nil, "b", nil], "once per change")
+        XCTAssertNil(list.hoveredID)
+        XCTAssertEqual(recorder.selected, [], "hovering selects nothing")
+    }
+
+    func testAListSpeaksAsAListOfSelectableRows() throws {
+        let (list, _) = makeList(explanation: "Explained.")
+        let recorder = ListRecorder(list)
+        let rows = list.rows
+        let rowsView = list.rowsView
+        XCTAssertTrue(rowsView.isAccessibilityElement())
+        XCTAssertEqual(rowsView.accessibilityRole(), .list)
+        XCTAssertEqual((rowsView.accessibilityChildren() as? [PreferencesListRow]) ?? [], rows)
+        XCTAssertEqual((rowsView.accessibilityRows() as? [PreferencesListRow]) ?? [], rows)
+        XCTAssertEqual((rowsView.accessibilitySelectedRows() as? [PreferencesListRow]) ?? [], [])
+
+        // A row: named by its title and explanation; the texts are not read twice.
+        let row = rows[1]
+        XCTAssertTrue(row.isAccessibilityElement())
+        XCTAssertEqual(row.accessibilityRole(), .row)
+        XCTAssertEqual(row.accessibilityLabel(), "Row b, Explained.")
+        XCTAssertEqual(row.accessibilityIndex(), 1)
+        XCTAssertFalse(row.titleLabel.isAccessibilityElement())
+        XCTAssertFalse(row.explanationLabel.isAccessibilityElement())
+        row.explanation = nil
+        XCTAssertEqual(row.accessibilityLabel(), "Row b")
+
+        // VoiceOver selects through the row or through the list.
+        XCTAssertFalse(row.isAccessibilitySelected())
+        row.setAccessibilitySelected(true)
+        XCTAssertEqual(list.selectedID, "b")
+        XCTAssertTrue(row.isAccessibilitySelected())
+        XCTAssertEqual((rowsView.accessibilitySelectedRows() as? [PreferencesListRow]) ?? [], [row])
+        rowsView.setAccessibilitySelectedRows([rows[2]])
+        XCTAssertEqual(list.selectedID, "c")
+        row.setAccessibilitySelected(false)
+        XCTAssertEqual(list.selectedID, "c", "unselecting another row changes nothing")
+        XCTAssertTrue(rows[0].accessibilityPerformPress())
+        XCTAssertEqual(list.selectedID, "a")
+        XCTAssertEqual(recorder.selected, ["b", "c", "a"])
+        XCTAssertEqual(recorder.opened, [], "a row without a chevron only selects")
+
+        // A row that opens a page opens when pressed.
+        let drill = PreferencesListRow(id: "d", title: "Calculator", showsChevron: true)
+        list.setRows([drill])
+        XCTAssertTrue(drill.accessibilityPerformPress())
+        XCTAssertEqual(recorder.opened, ["d"])
+
+        // The footer's buttons and the list's title.
+        XCTAssertEqual(list.addButton.accessibilityLabel(), "Add")
+        XCTAssertEqual(list.removeButton.accessibilityLabel(), "Remove")
+        let section = PreferencesListSection(title: "Apps", list: list)
+        XCTAssertEqual(rowsView.accessibilityLabel(), "Apps")
+        XCTAssertEqual(section.titleLabel?.stringValue, "Apps")
+
+        // Empty: the list holds the empty row, which reads its texts.
+        list.setRows([])
+        XCTAssertEqual(rowsView.accessibilityChildren()?.count, 1)
+        XCTAssertTrue(rowsView.accessibilityChildren()?.first as? PreferencesListEmptyRow === list.emptyRow)
+        XCTAssertEqual(list.emptyRow.accessibilityRole(), .staticText)
+        XCTAssertEqual(list.emptyRow.accessibilityLabel(), "Nothing yet, Click + to add one.")
+        XCTAssertEqual((rowsView.accessibilityRows() as? [PreferencesListRow]) ?? [], [])
+    }
+
+    func testAListSectionSitsInThePaneLikeATitledBox() throws {
+        let first = PreferencesGroupSection(width: boxWidth, rows: [PreferencesSwitchRow(title: "Limit", target: nil, action: nil)])
+        let list = PreferencesListBox(width: boxWidth, rows: [PreferencesListRow(id: 1, title: "Calculator")], emptyTitle: "No apps yet")
+        let section = PreferencesListSection(title: "Apps", list: list)
+        let untitled = PreferencesListBox(width: boxWidth, emptyTitle: "No buttons yet")
+        let root = makePane([first, section, untitled])
+
+        let title = try XCTUnwrap(section.titleLabel)
+        XCTAssertEqual(title.font, Form.sectionTitleFont)
+        XCTAssertEqual(frame(of: first, in: root).minY - frame(of: section, in: root).maxY, Form.sectionSpacing, accuracy: 0.5)
+        XCTAssertEqual(frame(of: title, in: root).minX, Form.margin + Form.rowHorizontalInset, accuracy: 0.5)
+        XCTAssertEqual(frame(of: title, in: root).minY - frame(of: list, in: root).maxY, Form.sectionTitleSpacing, accuracy: 0.5)
+        XCTAssertEqual(frame(of: list, in: root).width, boxWidth, accuracy: 0.5)
+        XCTAssertEqual(frame(of: section, in: root).minY - frame(of: untitled, in: root).maxY, Form.boxSpacing, accuracy: 0.5, "an untitled list is spaced like a box")
+        XCTAssertNil(PreferencesListSection(list: PreferencesListBox(width: boxWidth, emptyTitle: "x")).titleLabel)
+    }
+
+    func testFlashingARowSelectsItAndBlinksItsSelection() {
+        let (list, _) = makeList()
+        list.flash("b")
+        XCTAssertEqual(list.selectedID, "b")
+        XCTAssertNotNil(list.selectionRect)
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        /// Runs the main queue for `seconds`.
+        func wait(_ seconds: TimeInterval) {
+            let done = expectation(description: "\(seconds) s")
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { done.fulfill() }
+            self.wait(for: [done], timeout: seconds + 2)
+        }
+
+        wait(0.18)
+        XCTAssertNil(list.selectionRect, "blinked off")
+        XCTAssertEqual(list.selectedRow?.isSelected, false)
+        XCTAssertEqual(list.selectedID, "b", "still the selection")
+        wait(0.6)
+        XCTAssertNotNil(list.selectionRect, "on again at the end")
+        XCTAssertEqual(list.selectedRow?.isSelected, true)
+
+        // Another selection during a blink shows at once and ends the blink.
+        list.flash("b")
+        wait(0.18)
+        XCTAssertNil(list.selectionRect)
+        list.select("c")
+        XCTAssertNotNil(list.selectionRect)
+        XCTAssertEqual(list.selectedRow?.isSelected, true)
+        wait(0.5)
+        XCTAssertEqual(list.selectedID, "c")
+        XCTAssertNotNil(list.selectionRect)
+        XCTAssertEqual(list.rows.map(\.isSelected), [false, false, true])
     }
 }
 
