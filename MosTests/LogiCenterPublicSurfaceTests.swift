@@ -24,6 +24,18 @@ final class LogiCenterPublicSurfaceTests: XCTestCase {
         XCTAssertNil(LogiControlRole(cid: 0x01A3), "another control of the MX Master 4 has no role")
     }
 
+    /// The code of the control of each role: the one its role is read from, so the two agree.
+    func testMosCodeForRole_isTheControlOfThatRole() {
+        let roles: [LogiControlRole] = [.middle, .back, .forward, .gesture, .modeShift, .thumbPanel]
+        XCTAssertEqual(roles.map { LogiCenter.shared.mosCode(for: $0) }, [1005, 1006, 1007, 1000, 1001, 2000 + 0x01A0])
+        for role in roles {
+            XCTAssertEqual(LogiCenter.shared.controlRole(forMosCode: LogiCenter.shared.mosCode(for: role)), role)
+        }
+        // The standard ones stand for the standard middle, back and forward buttons.
+        XCTAssertEqual([LogiControlRole.middle, .back, .forward].map { LogiCenter.shared.nativeMouseButton(forMosCode: LogiCenter.shared.mosCode(for: $0)) },
+                       [2, 3, 4])
+    }
+
     func testActiveSessionsSnapshot_returnsArray() {
         let snapshot = LogiCenter.shared.activeSessionsSnapshot()
         // No assumption about content; just that the call succeeds.

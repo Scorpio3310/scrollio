@@ -13,6 +13,7 @@
 //  - PreferencesListRow: a PreferencesGroupRow with an id, an optional icon before its
 //    texts and an optional chevron after its control (a row that opens a page of its own).
 //  - PreferencesListEmptyRow: what a list without rows shows.
+//  - PreferencesListGroupTitle: a small title inside the box above a group of its rows.
 //  - PreferencesListSection: a list with a small title above it.
 //
 
@@ -55,8 +56,8 @@ final class PreferencesListBox: NSView {
 
     /// + was clicked; the button, to anchor a menu or a popover on.
     var onAdd: ((NSButton) -> Void)?
-    /// − was clicked, or Delete pressed, with this row selected. The owner removes it and
-    /// calls `setRows`.
+    /// − was clicked, or Delete pressed, with this row selected (only a row that
+    /// `isRemovable`). The owner removes it and calls `setRows`.
     var onRemove: ((AnyHashable) -> Void)?
     /// A row was double-clicked, or Return pressed while it is selected.
     var onOpen: ((AnyHashable) -> Void)?
@@ -71,6 +72,8 @@ final class PreferencesListBox: NSView {
     let width: CGFloat
     /// The rows, top to bottom (`setRows`).
     private(set) var rows: [PreferencesListRow] = []
+    /// The titles inside the box, by the id of the row each stands above (`setRows`).
+    private(set) var groupTitles: [AnyHashable: PreferencesListGroupTitle] = [:]
     /// The accessibility list: the rows, or the empty row.
     let rowsView = PreferencesListRowsView()
     let emptyRow: PreferencesListEmptyRow
@@ -207,7 +210,9 @@ final class PreferencesListBox: NSView {
     /// Shows `newRows` (ids unique). The selected row stays selected when a row with its id
     /// is among them; otherwise nothing is selected and `onSelect(nil)` is called. Without
     /// rows the list shows its empty row.
-    func setRows(_ newRows: [PreferencesListRow]) {
+    /// - Parameter groupTitles: a small title inside the box above the row with that id
+    ///   ("Other buttons and keys"), for the rows from there on; not above the first row.
+    func setRows(_ newRows: [PreferencesListRow], groupTitles titles: [AnyHashable: String] = [:]) {
         for view in rowsView.arrangedSubviews {
             rowsView.removeArrangedSubview(view)
             view.removeFromSuperview()
@@ -216,7 +221,24 @@ final class PreferencesListBox: NSView {
             row.list = nil
         }
         rows = newRows
-        let shown: [NSView] = newRows.isEmpty ? [emptyRow] : newRows
+        var kept: [AnyHashable: PreferencesListGroupTitle] = [:]
+        for row in newRows.dropFirst() {
+            guard let title = titles[row.id] else { continue }
+            let view = groupTitles[row.id] ?? PreferencesListGroupTitle(title: title)
+            view.title = title
+            kept[row.id] = view
+        }
+        groupTitles = kept
+        var shown: [NSView] = []
+        for row in newRows {
+            if let title = kept[row.id] {
+                shown.append(title)
+            }
+            shown.append(row)
+        }
+        if shown.isEmpty {
+            shown = [emptyRow]
+        }
         for view in shown {
             rowsView.addArrangedSubview(view)
             view.widthAnchor.constraint(equalTo: rowsView.widthAnchor).isActive = true
@@ -283,8 +305,8 @@ final class PreferencesListBox: NSView {
     }
 
     /// Puts the selection and its emphasis into the rows, the − button and the drawing.
-    private func applySelection() {
-        removeButton.isEnabled = selectedID != nil
+    fileprivate func applySelection() {
+        removeButton.isEnabled = selectedRow?.isRemovable ?? false
         for row in rows {
             row.setSelection(selected: row.id == selectedID && !isFlashedOff, emphasized: isSelectionEmphasized)
         }
@@ -437,8 +459,9 @@ final class PreferencesListBox: NSView {
             return true
         case .delete?, .deleteForward?, .backspace?:
             guard modifiers.subtracting(.command).isEmpty, window?.firstResponder === self else { return false }
-            // With nothing selected the key does nothing (and does not beep).
-            if let selectedID {
+            // With nothing selected, or a row that cannot be removed, the key does nothing
+            // (and does not beep).
+            if let selectedID, selectedRow?.isRemovable == true {
                 onRemove?(selectedID)
             }
             return true
@@ -470,7 +493,7 @@ final class PreferencesListBox: NSView {
     }
 
     @objc private func removeClicked(_ sender: NSButton) {
-        guard let selectedID else { return }
+        guard let selectedID, selectedRow?.isRemovable == true else { return }
         onRemove?(selectedID)
     }
 
@@ -488,17 +511,26 @@ final class PreferencesListBox: NSView {
     }
 
     /// The hairlines between the rows: on top of every row that shows except the first,
-    /// inset like the rows' content, and none next to the selection.
+    /// inset like the rows' content, and none next to the selection. Above a group title
+    /// the hairline is on top of the title, and none is between the title and its row.
     var separatorRects: [NSRect] {
         let inset = PreferencesGroupedForm.rowHorizontalInset
         let thickness = hairlineThickness
         let visible = visibleRows
         let selected = selectionRect == nil ? nil : visible.firstIndex { $0.id == selectedID }
         return visible.indices.dropFirst().compactMap { index in
+            let row = visible[index]
+            if let title = groupTitles[row.id], title.superview != nil {
+                if let selected, index == selected + 1 {
+                    return nil
+                }
+                let top = convert(title.bounds, from: title).minY
+                return NSRect(x: inset, y: top, width: bounds.width - 2 * inset, height: thickness)
+            }
             if let selected, index == selected || index == selected + 1 {
                 return nil
             }
-            let top = convert(visible[index].bounds, from: visible[index]).minY
+            let top = convert(row.bounds, from: row).minY
             return NSRect(x: inset, y: top, width: bounds.width - 2 * inset, height: thickness)
         }
     }
@@ -589,9 +621,14 @@ final class PreferencesListRowsView: NSStackView {
         return .vertical
     }
 
+    /// The rows, with the group titles between them.
     override func accessibilityChildren() -> [Any]? {
         guard let list else { return [] }
-        return list.rows.isEmpty ? [list.emptyRow] : list.visibleRows
+        guard !list.rows.isEmpty else { return [list.emptyRow] }
+        return list.visibleRows.flatMap { row -> [Any] in
+            guard let title = list.groupTitles[row.id] else { return [row] }
+            return [title, row]
+        }
     }
 
     override func accessibilityRows() -> [Any]? {
@@ -652,6 +689,13 @@ class PreferencesListRow: PreferencesGroupRow {
     }
 
     private(set) var isSelected = false
+    /// − and Delete remove the row while it is selected. Off: − is off on it.
+    var isRemovable = true {
+        didSet {
+            guard isRemovable != oldValue else { return }
+            list?.applySelection()
+        }
+    }
     /// The list's window is key: the selection shows in the accent colour.
     private(set) var isSelectionEmphasized = false
     /// On the accent-coloured selection: the texts are white.
@@ -946,6 +990,65 @@ final class PreferencesListEmptyRow: NSView {
     override func accessibilityLabel() -> String? {
         guard let explanation, !explanation.isEmpty else { return title }
         return "\(title), \(explanation)"
+    }
+}
+
+// MARK: - Group title
+
+/// A small title inside a list's box, above a group of its rows ("Other buttons and
+/// keys"): secondary, semibold, at the rows' inset, more room above it than under it. It is
+/// not a row: it cannot be selected and the pointer over it points at no row.
+final class PreferencesListGroupTitle: NSView {
+
+    /// Above the title (under the hairline over it) and under it.
+    static let topInset: CGFloat = 12
+    static let bottomInset: CGFloat = 2
+
+    let titleLabel: NSTextField
+
+    var title: String {
+        get { return titleLabel.stringValue }
+        set { titleLabel.stringValue = newValue }
+    }
+
+    static var font: NSFont {
+        return NSFont.systemFont(ofSize: PreferencesForm.hintFontSize, weight: .semibold)
+    }
+
+    init(title: String) {
+        titleLabel = NSTextField(labelWithString: title)
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        titleLabel.font = Self.font
+        titleLabel.textColor = .secondaryLabelColor
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        titleLabel.setAccessibilityElement(false)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(titleLabel)
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: Self.topInset),
+            titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Self.bottomInset),
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -inset),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("PreferencesListGroupTitle is built in code")
+    }
+
+    override func isAccessibilityElement() -> Bool {
+        return true
+    }
+
+    override func accessibilityRole() -> NSAccessibility.Role? {
+        return .staticText
+    }
+
+    override func accessibilityLabel() -> String? {
+        return title
     }
 }
 

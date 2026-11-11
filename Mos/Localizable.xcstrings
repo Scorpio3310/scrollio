@@ -5655,6 +5655,90 @@
           }
         }
       }
+    },
+    "buttons-default": {
+      "comment": "Buttons pane: the action pull-down of a button of the connected mouse that has no action, and its menu item that clears the action; the card's line under such a button",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default"
+          }
+        }
+      }
+    },
+    "buttons-default-back": {
+      "comment": "Buttons pane: under the Back button of the connected mouse while it has no action (the button reaches the app as the standard Back button)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Goes back in apps that support it."
+          }
+        }
+      }
+    },
+    "buttons-default-forward": {
+      "comment": "Buttons pane: under the Forward button of the connected mouse while it has no action (the button reaches the app as the standard Forward button)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Goes forward in apps that support it."
+          }
+        }
+      }
+    },
+    "buttons-default-middle": {
+      "comment": "Buttons pane: under the middle button (pressing the wheel) of the connected mouse while it has no action",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Middle click."
+          }
+        }
+      }
+    },
+    "buttons-default-mode-shift": {
+      "comment": "Buttons pane: under the mode shift button behind the wheel of the connected mouse while it has no action (the mouse itself switches the wheel)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switches the wheel between ratchet and free-spin."
+          }
+        }
+      }
+    },
+    "buttons-default-own": {
+      "comment": "Buttons pane: under a button of the connected mouse without an action whose own behaviour is not known (the gesture button, the thumb panel)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Does what the mouse does on its own."
+          }
+        }
+      }
+    },
+    "buttons-list-other": {
+      "comment": "Buttons pane: small title inside the list, above the bindings that are not one of the connected mouse's buttons (with modifiers, keys, other buttons)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other buttons and keys"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

@@ -94,6 +94,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "appExposeApps", "categoryMissionControlAndSpaces",
         "key-recorder-waiting-combination", "key-recorder-waiting-adaptive", "buttons-recorder-waiting-gesture",
         "Press ESC to cancel recording", "button-recording-duplicate-hint",
+        "buttons-default", "buttons-default-back", "buttons-default-forward", "buttons-default-middle",
+        "buttons-default-mode-shift", "buttons-default-own", "buttons-list-other",
     ]
 
     /// Gestures pane and its gesture controls.
