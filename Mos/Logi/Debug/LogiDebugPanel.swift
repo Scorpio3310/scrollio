@@ -554,10 +554,16 @@ class LogiDebugPanel: NSObject {
     }
     #endif
 
-    private static func timestamp() -> String {
+    /// One formatter for every log line. `timestamp` runs for each HID++ report, and a
+    /// DateFormatter is expensive to create; reading from one is thread-safe.
+    private static let timestampFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss.SSS"
-        return f.string(from: Date())
+        return f
+    }()
+
+    static func timestamp(for date: Date = Date()) -> String {
+        return timestampFormatter.string(from: date)
     }
 
     #if DEBUG
