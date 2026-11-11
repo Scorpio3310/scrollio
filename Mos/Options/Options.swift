@@ -16,11 +16,6 @@ struct OptionItem {
         static let HideStatusItem = "hideStatusItem"
     }
 
-    struct Update {
-        static let CheckOnAppStart = "updateCheckOnAppStart"
-        static let IncludingBetaVersion = "updateIncludingBetaVersion"
-    }
-
     struct Scroll {
         static let Smooth = "smooth"
         static let Reverse = "reverse"
@@ -62,7 +57,7 @@ struct OptionItem {
 
 /// 配置分组: 变更通知与脏组写入的粒度
 enum OptionsGroup: CaseIterable {
-    case general, update, scroll, buttons, application, gesture, scrollTuning, logiWheel
+    case general, scroll, buttons, application, gesture, scrollTuning, logiWheel
 }
 
 class Options {
@@ -80,10 +75,6 @@ class Options {
     // 常规
     var general = OPTIONS_GENERAL_DEFAULT() {
         didSet { markChanged(.general) }
-    }
-    // 更新
-    var update = OPTIONS_UPDATE_DEFAULT() {
-        didSet { markChanged(.update) }
     }
     // 滚动
     var scroll = OPTIONS_SCROLL_DEFAULT() {
@@ -199,9 +190,6 @@ extension Options {
         // 常规
         general.autoLaunch = LoginServiceKit.isExistLoginItems(at: Bundle.main.bundlePath)
         general.hideStatusItem = UserDefaults.standard.bool(forKey: OptionItem.General.HideStatusItem)
-        // 更新
-        update.checkOnAppStart = UserDefaults.standard.bool(forKey: OptionItem.Update.CheckOnAppStart)
-        update.includingBetaVersion = UserDefaults.standard.bool(forKey: OptionItem.Update.IncludingBetaVersion)
         // 滚动
         scroll.smooth = UserDefaults.standard.bool(forKey: OptionItem.Scroll.Smooth)
         scroll.reverse = UserDefaults.standard.bool(forKey: OptionItem.Scroll.Reverse)
@@ -281,9 +269,6 @@ extension Options {
         switch group {
         case .general:
             UserDefaults.standard.set(general.hideStatusItem, forKey: OptionItem.General.HideStatusItem)
-        case .update:
-            UserDefaults.standard.set(update.checkOnAppStart, forKey: OptionItem.Update.CheckOnAppStart)
-            UserDefaults.standard.set(update.includingBetaVersion, forKey: OptionItem.Update.IncludingBetaVersion)
         case .scroll:
             UserDefaults.standard.set(scroll.smooth, forKey: OptionItem.Scroll.Smooth)
             UserDefaults.standard.set(scroll.reverse, forKey: OptionItem.Scroll.Reverse)

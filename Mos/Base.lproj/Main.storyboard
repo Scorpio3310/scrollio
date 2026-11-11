@@ -72,7 +72,6 @@
                         <tabViewItem identifier="scrolling" image="SF.circle.dotted.circle" id="P9R-tX-qfW"/>
                         <tabViewItem identifier="buttons" image="SF.button.horizontal.top.press" id="BTN-UI-123"/>
                         <tabViewItem identifier="application" image="SF.app.background.dotted" id="gfS-Ix-zI5"/>
-                        <tabViewItem identifier="updates" image="SF.arrow.triangle.capsulepath" id="1sm-Qq-6GS"/>
                         <tabViewItem identifier="about" image="SF.person.crop.circle.dashed" id="MrA-I8-n0Z"/>
                     </tabViewItems>
                     <viewControllerTransitionOptions key="transitionOptions"/>
@@ -90,7 +89,6 @@
                         <segue destination="iW5-CD-5OC" kind="relationship" relationship="tabItems" id="GA4-xY-65w"/>
                         <segue destination="BTN-VC-123" kind="relationship" relationship="tabItems" id="BTN-SG-123"/>
                         <segue destination="bga-wG-iim" kind="relationship" relationship="tabItems" id="QV9-il-C7g"/>
-                        <segue destination="EWu-DP-7Gj" kind="relationship" relationship="tabItems" id="gsT-c8-cJ3"/>
                         <segue destination="RfV-Ow-3mF" kind="relationship" relationship="tabItems" id="djr-7D-XVN"/>
                     </connections>
                 </tabViewController>
@@ -945,103 +943,6 @@
                 <customObject id="ZNV-FD-bQh" userLabel="First Responder" customClass="NSResponder" sceneMemberID="firstResponder"/>
             </objects>
             <point key="canvasLocation" x="1928" y="1653"/>
-        </scene>
-        <!--Updates-->
-        <scene sceneID="VTW-lQ-Mfk">
-            <objects>
-                <viewController title="Updates" storyboardIdentifier="updates" id="EWu-DP-7Gj" customClass="PreferencesUpdatesViewController" customModule="Mos" customModuleProvider="target" sceneMemberID="viewController">
-                    <visualEffectView key="view" blendingMode="behindWindow" material="toolTip" state="followsWindowActiveState" id="YxW-TX-zxt">
-                        <rect key="frame" x="0.0" y="0.0" width="450" height="120"/>
-                        <autoresizingMask key="autoresizingMask"/>
-                        <subviews>
-                            <textField wantsLayer="YES" focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="Gxs-4f-Jdz">
-                                <rect key="frame" x="18" y="85" width="140" height="16"/>
-                                <constraints>
-                                    <constraint firstAttribute="width" relation="greaterThanOrEqual" constant="136" id="S8E-6O-qj5"/>
-                                </constraints>
-                                <textFieldCell key="cell" sendsActionOnEndEditing="YES" alignment="right" title="Check for updates:" id="vdI-K4-SBh">
-                                    <font key="font" metaFont="system"/>
-                                    <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
-                                    <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
-                                </textFieldCell>
-                            </textField>
-                            <button wantsLayer="YES" springLoaded="YES" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="4kr-7i-Wm2">
-                                <rect key="frame" x="171" y="82" width="130" height="18"/>
-                                <buttonCell key="cell" type="roundRect" title="Check Now" bezelStyle="roundedRect" alignment="center" state="on" borderStyle="border" allowsMixedState="YES" imageScaling="proportionallyDown" inset="2" id="T9f-TL-GYj">
-                                    <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
-                                    <font key="font" metaFont="systemLight" size="12"/>
-                                </buttonCell>
-                                <constraints>
-                                    <constraint firstAttribute="height" constant="18" id="eCL-n5-Cbk"/>
-                                    <constraint firstAttribute="width" relation="greaterThanOrEqual" constant="130" id="hhf-HO-fRT"/>
-                                </constraints>
-                                <connections>
-                                    <action selector="checkButtonClick:" target="EWu-DP-7Gj" id="0pW-49-jYc"/>
-                                </connections>
-                            </button>
-                            <textField wantsLayer="YES" focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="114-aw-aH2">
-                                <rect key="frame" x="169" y="63" width="263" height="13"/>
-                                <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" alignment="left" title="Current Version" id="Aur-fR-tik">
-                                    <font key="font" metaFont="systemLight" size="10"/>
-                                    <color key="textColor" name="disabledControlTextColor" catalog="System" colorSpace="catalog"/>
-                                    <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
-                                </textFieldCell>
-                            </textField>
-                            <box hidden="YES" verticalHuggingPriority="750" boxType="separator" translatesAutoresizingMaskIntoConstraints="NO" id="Ay2-Qf-INN" userLabel="WidthHolder">
-                                <rect key="frame" x="0.0" y="-2" width="450" height="5"/>
-                                <constraints>
-                                    <constraint firstAttribute="width" constant="450" id="qe5-ty-af9"/>
-                                </constraints>
-                            </box>
-                            <button verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="XP2-Ag-gWP">
-                                <rect key="frame" x="171" y="41" width="118" height="14"/>
-                                <buttonCell key="cell" type="check" title="Check on app start" bezelStyle="regularSquare" imagePosition="left" controlSize="small" state="on" inset="2" id="Yj9-j0-202">
-                                    <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
-                                    <font key="font" metaFont="smallSystem"/>
-                                </buttonCell>
-                                <connections>
-                                    <action selector="checkOnAppStartClick:" target="EWu-DP-7Gj" id="JjF-bh-feo"/>
-                                </connections>
-                            </button>
-                            <button verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="Gcv-jH-T60">
-                                <rect key="frame" x="171" y="21" width="134" height="14"/>
-                                <buttonCell key="cell" type="check" title="Including beta version" bezelStyle="regularSquare" imagePosition="left" controlSize="small" state="on" inset="2" id="Qx7-hF-cCG">
-                                    <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
-                                    <font key="font" metaFont="smallSystem"/>
-                                    <connections>
-                                        <action selector="includingBetaVersionClick:" target="EWu-DP-7Gj" id="zNM-oQ-hg5"/>
-                                    </connections>
-                                </buttonCell>
-                            </button>
-                        </subviews>
-                        <constraints>
-                            <constraint firstItem="4kr-7i-Wm2" firstAttribute="leading" secondItem="Gxs-4f-Jdz" secondAttribute="trailing" constant="15" id="7gP-cK-NPN"/>
-                            <constraint firstItem="Ay2-Qf-INN" firstAttribute="leading" secondItem="YxW-TX-zxt" secondAttribute="leading" id="CZu-vr-hcb"/>
-                            <constraint firstItem="XP2-Ag-gWP" firstAttribute="top" secondItem="114-aw-aH2" secondAttribute="bottom" constant="8" id="EeH-Ko-BbA"/>
-                            <constraint firstItem="Gcv-jH-T60" firstAttribute="top" secondItem="XP2-Ag-gWP" secondAttribute="bottom" constant="6" id="IRm-9c-a6v"/>
-                            <constraint firstAttribute="bottom" secondItem="Ay2-Qf-INN" secondAttribute="bottom" id="Ipw-hT-pK6"/>
-                            <constraint firstItem="Gxs-4f-Jdz" firstAttribute="leading" secondItem="YxW-TX-zxt" secondAttribute="leading" constant="20" id="Lde-P8-Qxj"/>
-                            <constraint firstItem="Gcv-jH-T60" firstAttribute="leading" secondItem="4kr-7i-Wm2" secondAttribute="leading" id="MLs-zC-qRF"/>
-                            <constraint firstItem="XP2-Ag-gWP" firstAttribute="leading" secondItem="4kr-7i-Wm2" secondAttribute="leading" id="StJ-kz-rSZ"/>
-                            <constraint firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="4kr-7i-Wm2" secondAttribute="trailing" constant="149" id="XLg-y3-mIj"/>
-                            <constraint firstItem="Ay2-Qf-INN" firstAttribute="top" secondItem="Gcv-jH-T60" secondAttribute="bottom" constant="20" id="fII-Ii-J48"/>
-                            <constraint firstItem="4kr-7i-Wm2" firstAttribute="top" secondItem="YxW-TX-zxt" secondAttribute="top" constant="20" id="jEU-27-P8y"/>
-                            <constraint firstItem="114-aw-aH2" firstAttribute="leading" secondItem="4kr-7i-Wm2" secondAttribute="leading" id="kgV-mZ-xs5"/>
-                            <constraint firstAttribute="trailing" secondItem="Ay2-Qf-INN" secondAttribute="trailing" id="kq0-s5-5TS"/>
-                            <constraint firstAttribute="trailing" secondItem="114-aw-aH2" secondAttribute="trailing" constant="20" id="qU7-k7-1Us"/>
-                            <constraint firstItem="4kr-7i-Wm2" firstAttribute="top" secondItem="Gxs-4f-Jdz" secondAttribute="top" constant="1" id="svz-HX-9bc"/>
-                            <constraint firstItem="114-aw-aH2" firstAttribute="top" secondItem="4kr-7i-Wm2" secondAttribute="bottom" constant="6" id="x7Q-xV-7zj"/>
-                        </constraints>
-                    </visualEffectView>
-                    <connections>
-                        <outlet property="checkOnAppStartCheckbox" destination="XP2-Ag-gWP" id="t2y-Le-yH8"/>
-                        <outlet property="includingBetaVersionCheckbox" destination="Gcv-jH-T60" id="f2L-kE-XGH"/>
-                        <outlet property="versionLabel" destination="114-aw-aH2" id="JzV-OD-FI1"/>
-                    </connections>
-                </viewController>
-                <customObject id="Tfe-PH-zhM" userLabel="First Responder" customClass="NSResponder" sceneMemberID="firstResponder"/>
-            </objects>
-            <point key="canvasLocation" x="2432" y="1176"/>
         </scene>
         <!--Scrolling-->
         <scene sceneID="Fd7-iR-8pW">
@@ -3035,7 +2936,6 @@ Remove Mos from the list first, and then re-add Mos to authorize. (You can also 
         <image name="PaypalLogo" width="200" height="51"/>
         <image name="SF.app.background.dotted" width="135" height="135"/>
         <image name="SF.arrow.clockwise" width="135" height="135"/>
-        <image name="SF.arrow.triangle.capsulepath" width="135" height="135"/>
         <image name="SF.button.horizontal.top.press" width="135" height="135"/>
         <image name="SF.circle.dotted.circle" width="135" height="135"/>
         <image name="SF.gearshape" width="135" height="135"/>
