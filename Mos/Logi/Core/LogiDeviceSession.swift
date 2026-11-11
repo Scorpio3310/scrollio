@@ -123,8 +123,10 @@ class LogiDeviceSession {
     private static let reportBufferSize = 64
 
     // MARK: - Async Discovery
-    private var pendingDiscovery: [UInt16: (UInt8?) -> Void] = [:]
-    private var discoveryTimer: Timer?
+    /// getFeature requests waiting for their answer, oldest first (answers come in request
+    /// order and carry no feature id). Each has its own timeout in `discoveryTimers`.
+    private var pendingDiscovery = LogiFeatureDiscoveryQueue(softwareId: LogiDeviceSession.hidppSoftwareId)
+    private var discoveryTimers: [Int: Timer] = [:]
     private static let discoveryTimeout: TimeInterval = 5.0
     private var pendingCacheValidation: UInt8? = nil  // 等待 ping 响应验证缓存
 
@@ -1060,13 +1062,11 @@ class LogiDeviceSession {
         receiverTakeoverDebounce.removeAll()
         dropAllWheelControllers()
         dropAllMouseBasicsControllers()
-        discoveryTimer?.invalidate()
-        discoveryTimer = nil
+        dropAllPendingDiscoveries()
         controlInfoQueryTimer?.invalidate()
         controlInfoQueryTimer = nil
         reportingQueryTimer?.invalidate()
         reportingQueryTimer = nil
-        pendingDiscovery.removeAll()
         controlInfoRetryCounts.removeAll()
         cancelDivertReassertion()
         cancelBLEStandardUndivertGuard()
@@ -1223,17 +1223,30 @@ class LogiDeviceSession {
     private func discoverFeature(featureId: UInt16, completion: @escaping (UInt8?) -> Void) {
         let params: [UInt8] = [UInt8(featureId >> 8), UInt8(featureId & 0xFF)]
         sendRequest(featureIndex: 0x00, functionId: 0, params: params)
-        pendingDiscovery[featureId] = completion
+        let token = pendingDiscovery.append(deviceIndex: deviceIndex, featureId: featureId, completion: completion)
 
-        discoveryTimer?.invalidate()
-        discoveryTimer = Timer.scheduledTimer(withTimeInterval: Self.discoveryTimeout, repeats: false) { [weak self] _ in
+        // Its own timeout: a request that is never answered fails alone, the others wait on.
+        discoveryTimers[token] = Timer.scheduledTimer(withTimeInterval: Self.discoveryTimeout, repeats: false) { [weak self] _ in
             guard let self = self else { return }
-            self.discoveryTimer = nil  // 一次性 timer 已触发, 置 nil 以免 anyDiscoveryInFlight 误判为在飞
-            if let pending = self.pendingDiscovery.removeValue(forKey: featureId) {
-                LogiDebugPanel.log("[\(self.deviceInfo.name)] Feature discovery timed out for \(String(format: "0x%04X", featureId))")
-                pending(nil)
-            }
+            self.discoveryTimers[token] = nil
+            guard let entry = self.pendingDiscovery.remove(token: token) else { return }
+            LogiDebugPanel.log("[\(self.deviceInfo.name)] Feature discovery timed out for \(String(format: "0x%04X", entry.featureId))")
+            entry.completion(nil)
         }
+    }
+
+    /// Ends one getFeature request: stops its timeout, then hands the result on.
+    private func finishDiscovery(_ entry: LogiFeatureDiscoveryQueue.Entry, featureIndex: UInt8?) {
+        discoveryTimers.removeValue(forKey: entry.token)?.invalidate()
+        entry.completion(featureIndex)
+    }
+
+    /// Forgets every getFeature request without calling back (teardown, a new discovery):
+    /// a late answer then finds nobody waiting and is ignored.
+    private func dropAllPendingDiscoveries() {
+        discoveryTimers.values.forEach { $0.invalidate() }
+        discoveryTimers.removeAll()
+        pendingDiscovery.removeAll()
     }
 
     // MARK: - REPROG_CONTROLS_V4 Flow
@@ -1460,10 +1473,9 @@ class LogiDeviceSession {
     /// 只清 dict 不主动触发 callback(nil): 旧响应到达时找不到 callback 自然被忽略,
     /// 避免触发 markHandshakeComplete 造成 ready→init 的 UI 闪烁.
     private func cancelInflightDiscovery() {
-        discoveryTimer?.invalidate(); discoveryTimer = nil
+        dropAllPendingDiscoveries()
         controlInfoQueryTimer?.invalidate(); controlInfoQueryTimer = nil
         reportingQueryTimer?.invalidate(); reportingQueryTimer = nil
-        pendingDiscovery.removeAll()
         pendingCacheValidation = nil
         controlInfoRetryCounts.removeAll()
         cancelDivertReassertion()
@@ -1583,7 +1595,7 @@ class LogiDeviceSession {
         // 可选功能每个 slot 只探一次, 且仅在空闲时(避免每次切都重探; 本接收器 getFeature 可能
         // 超时, 重探会拖慢并让后续点击撞上在飞探测). 未探过 + 空闲才 reset+探.
         let idle = !receiverSweepActive && pendingDiscovery.isEmpty
-            && discoveryTimer == nil && controlInfoQueryTimer == nil && reportingQueryTimer == nil
+            && controlInfoQueryTimer == nil && reportingQueryTimer == nil
         if idle && !receiverOptionalProbedSlots.contains(slot) {
             receiverOptionalProbedSlots.insert(slot)
             resetOptionalProbeState()
@@ -1728,13 +1740,16 @@ class LogiDeviceSession {
             checkPingPhaseComplete()
         }
 
-        // 只处理来自当前目标设备的 feature discovery 错误
-        // (receiver 自身的 register 错误 devIdx=0xFF 不应影响设备的 feature discovery)
-        if devIdx == deviceIndex {
-            for (featureId, callback) in pendingDiscovery {
-                callback(nil)
-                pendingDiscovery.removeValue(forKey: featureId)
-            }
+        // A getFeature of this app refused for this slot (e.g. the device is out of range):
+        // only the oldest request to that slot fails. Errors for other requests (the slot
+        // pings, the receiver's own registers at 0xFF) leave the discoveries alone.
+        if report.count > 4,
+           let entry = pendingDiscovery.takeRefused(
+               deviceIndex: devIdx,
+               originalFeatureIndex: report[3],
+               originalFunctionByte: report[4]
+           ) {
+            finishDiscovery(entry, featureIndex: nil)
         }
     }
 
@@ -2132,8 +2147,8 @@ class LogiDeviceSession {
     /// (真机复现: mx4 重连时被 queued 后从未 discovery, 拇指键退回原生鼠标键).
     private func pumpPendingDivertQueue() {
         guard !receiverSweepActive, !pendingDivertSlots.isEmpty else { return }
-        // getFeature 在飞用 pendingDiscovery(权威集)判定, 不用 discoveryTimer != nil ——
-        // 后者曾因完成后漏置 nil 变成"已失效但非 nil"永远误判在飞, 把 pump 毒死(见 29f3bd1).
+        // getFeature 在飞用 pendingDiscovery(权威集)判定, 不用超时 timer ——
+        // 旧的共享 discoveryTimer 曾因完成后漏置 nil 变成"已失效但非 nil"永远误判在飞, 把 pump 毒死(见 29f3bd1).
         let anyDiscoveryInFlight = !pendingDiscovery.isEmpty
             || controlInfoQueryTimer != nil || reportingQueryTimer != nil
         guard !anyDiscoveryInFlight else { return }
@@ -2636,8 +2651,8 @@ class LogiDeviceSession {
     #endif
 
     /// 握手完成后探测一批可选 feature, 让 Debug 面板 FEATURES 表能列出它们.
-    /// 必须串行 (一次一个): IRoot getFeature 响应不带 featureId, handleDiscoveryResponse
-    /// 只能按 pendingDiscovery 唯一项匹配; 并发探测会把 index 张冠李戴.
+    /// 串行 (一次一个): IRoot getFeature 响应不带 featureId, 按请求顺序匹配 pendingDiscovery
+    /// (LogiFeatureDiscoveryQueue); 一次一个让丢失的响应只影响它自己那一项.
     private func probeOptionalFeatures() {
         guard !optionalProbeSent else { return }
         optionalProbeSent = true
@@ -3502,11 +3517,6 @@ class LogiDeviceSession {
         return (report[base + 3], report[base + 4] >> 4, report[base + 5])
     }
 
-    /// HID++ 2.0 错误只有在原请求是 IRoot (index 0x00, getFeature) 时才终止在飞的 feature discovery.
-    static func hidppErrorCancelsDiscovery(originalFeatureIndex: UInt8) -> Bool {
-        return originalFeatureIndex == 0x00
-    }
-
     private static func isGetControlReportingQueryResponse(_ report: UnsafeBufferPointer<UInt8>) -> Bool {
         guard report.count >= 9 else { return false }
         let functionId = report[3] >> 4
@@ -3939,13 +3949,17 @@ class LogiDeviceSession {
             let errorCode = fields?.errorCode ?? 0
             LogiDebugPanel.log("[\(deviceInfo.name)] HID++ Error: feat=\(String(format: "0x%02X", originalFeatureIdx)) func=\(originalFuncId) err=\(String(format: "0x%02X", errorCode))")
 
-            // Feature discovery pending callbacks: 只有 IRoot (index 0x00) 的错误才属于 getFeature.
-            // 其它 feature 的错误 (如滚轮 SetState 被拒) 不得把在飞的 discovery 误判为"不支持".
-            if Self.hidppErrorCancelsDiscovery(originalFeatureIndex: originalFeatureIdx) {
-                for (featureId, callback) in pendingDiscovery {
-                    callback(nil)
-                    pendingDiscovery.removeValue(forKey: featureId)
-                }
+            // Only an error for a getFeature of this app (IRoot fn0, own software id) fails a
+            // discovery, and only the oldest one waiting for this device: answers and errors
+            // come in request order. Errors for other features (a refused wheel SetState), a
+            // ping or another client's request leave the discoveries alone.
+            if report.count > 4,
+               let entry = pendingDiscovery.takeRefused(
+                   deviceIndex: report[1],
+                   originalFeatureIndex: originalFeatureIdx,
+                   originalFunctionByte: report[4]
+               ) {
+                finishDiscovery(entry, featureIndex: nil)
             }
 
             // 滚轮 feature (0x2110/0x2111) 的错误交给该 slot 的滚轮控制器
@@ -3986,8 +4000,11 @@ class LogiDeviceSession {
                 sendGetControlCount(featureIndex: reprogIdx)
                 return
             }
-            if !pendingDiscovery.isEmpty {
-                handleDiscoveryResponse(report)
+            // Only fn0 with this app's software id answers a getFeature (a late ping answer
+            // is fn1, another client's answer has its own id); see LogiFeatureDiscoveryQueue.
+            if let (entry, discoveredIndex) = pendingDiscovery.takeAnswer(report) {
+                LogiDebugPanel.log("[\(deviceInfo.name)] IRoot response: \(String(format: "0x%04X", entry.featureId)) at index \(discoveredIndex.map { String(format: "0x%02X", $0) } ?? "none")")
+                finishDiscovery(entry, featureIndex: discoveredIndex)
             }
             return
         }
@@ -4282,17 +4299,6 @@ class LogiDeviceSession {
                 LogiDebugPanel.log("[\(deviceInfo.name)] PointerSpeed: \(speedStr)")
                 return
             }
-        }
-    }
-
-    private func handleDiscoveryResponse(_ report: UnsafeBufferPointer<UInt8>) {
-        let discoveredIndex = report[4]
-        LogiDebugPanel.log("[\(deviceInfo.name)] IRoot response: discoveredIndex=\(String(format: "0x%02X", discoveredIndex))")
-        if let (featureId, callback) = pendingDiscovery.first {
-            discoveryTimer?.invalidate()
-            discoveryTimer = nil  // 置 nil: 否则 anyDiscoveryInFlight 会因已失效但非 nil 的 timer 永远误判在飞, 毒死 pump
-            pendingDiscovery.removeValue(forKey: featureId)
-            callback(discoveredIndex == 0 ? nil : discoveredIndex)
         }
     }
 

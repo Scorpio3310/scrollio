@@ -47,8 +47,8 @@ final class LogiWheelSessionFixesTests: XCTestCase {
     // MARK: - Error routing
 
     func testOnlyIRootErrorsCancelFeatureDiscovery() {
-        XCTAssertTrue(LogiDeviceSession.hidppErrorCancelsDiscovery(originalFeatureIndex: 0x00))
-        XCTAssertFalse(LogiDeviceSession.hidppErrorCancelsDiscovery(originalFeatureIndex: 0x0E),
+        XCTAssertTrue(LogiFeatureDiscoveryQueue.errorRefusesGetFeature(originalFeatureIndex: 0x00, originalFunctionByte: 0x01, softwareId: 0x01))
+        XCTAssertFalse(LogiFeatureDiscoveryQueue.errorRefusesGetFeature(originalFeatureIndex: 0x0E, originalFunctionByte: 0x21, softwareId: 0x01),
                        "a rejected wheel SetState must not abort an in-flight getFeature")
     }
 
