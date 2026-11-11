@@ -58,8 +58,9 @@ See [Attribution and licence](#attribution-and-licence).
   that have it.
 - A low-battery warning: one toast when a mouse reaches 10 % and one more at 5 %,
   again only after it was charged.
-- Logitech Diagnostics, a window with the HID++ details of connected mice (General >
-  Advanced).
+- Logitech Diagnostics, a window with the HID++ details of connected mice: hold Option
+  and open the menu-bar menu. In the release app it only reads; it sends nothing that
+  changes a mouse.
 
 **App**
 
