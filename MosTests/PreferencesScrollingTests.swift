@@ -803,6 +803,94 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertTrue(uiDefaults.bool(forKey: PreferencesScrollingViewController.advancedExpandedDefaultsKey))
     }
 
+    /// "Reset to Defaults" asks nothing: Edit › Undo ("Undo Reset Scrolling") brings back
+    /// every value it changed, the direction and the three keys too, and Redo resets again.
+    func testResetCanBeUndoneAndRedone() throws {
+        let controller = makeController(advanced: true)
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        controller.paneUndoManager = undo
+        let scroll = Options.shared.scroll
+        scroll.smooth = false
+        scroll.reversesWheel = false
+        scroll.speed = 2.0
+        scroll.duration = 4.9
+        scroll.step = 12
+        scroll.smoothSimTrackpad = true
+        scroll.dash = nil
+        scroll.toggle = ScrollHotkey(type: .keyboard, code: KeyCode.controlL)
+        scroll.block = nil
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let before = String(decoding: try encoder.encode(scroll), as: UTF8.self)
+        controller.syncViewWithOptions()
+        let titlesBefore = controller.keyBindButtons.map(\.title)
+
+        undo.beginUndoGrouping()
+        send(controller.resetToDefaultsButton)
+        undo.endUndoGrouping()
+        XCTAssertEqual(Options.shared.scroll, OPTIONS_SCROLL_DEFAULT())
+        XCTAssertTrue(undo.canUndo)
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Reset Scrolling")
+
+        undo.undo()
+        XCTAssertEqual(String(decoding: try encoder.encode(Options.shared.scroll), as: UTF8.self), before, "every value is back")
+        XCTAssertEqual(controller.smoothSwitch.state, .off, "and shown")
+        XCTAssertEqual(controller.reverseSwitch.state, .off)
+        XCTAssertEqual(controller.scrollSpeedSlider.doubleValue, 2.0, accuracy: 1e-9)
+        XCTAssertEqual(controller.glideTimeSlider.doubleValue, 4.9, accuracy: 1e-9)
+        XCTAssertEqual(controller.smallestStepSlider.doubleValue, 12, accuracy: 1e-9)
+        XCTAssertEqual(controller.trackpadEventsSwitch.state, .on)
+        XCTAssertEqual(controller.keyBindButtons.map(\.title), titlesBefore)
+        XCTAssertTrue(controller.resetToDefaultsButton.isEnabled)
+        XCTAssertTrue(undo.canRedo)
+        XCTAssertEqual(undo.redoMenuItemTitle, "Redo Reset Scrolling")
+
+        undo.redo()
+        XCTAssertEqual(Options.shared.scroll, OPTIONS_SCROLL_DEFAULT(), "reset again")
+        XCTAssertFalse(controller.resetToDefaultsButton.isEnabled)
+        XCTAssertTrue(undo.canUndo, "the chain goes on")
+        undo.undo()
+        XCTAssertEqual(String(decoding: try encoder.encode(Options.shared.scroll), as: UTF8.self), before)
+
+        // In the window, the window's undo manager takes it.
+        controller.paneUndoManager = nil
+        XCTAssertNil(controller.undoTarget, "no window, no Undo")
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 600), styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(controller.view)
+        XCTAssertTrue(controller.undoTarget === window.undoManager)
+        controller.view.removeFromSuperview()
+        window.close()
+    }
+
+    /// On an app's page the reset and its Undo touch that app's own options only, and the
+    /// Undo still works once the page (and its controller) is gone.
+    func testResetOnAnAppsPageCanBeUndoneAfterThePageIsGone() {
+        let application = makeApplication(inherit: false)
+        application.scroll.speed = 4.5
+        application.scroll.reversesWheel = false
+        application.scroll.dash = nil
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        autoreleasepool {
+            let controller = makeController(target: application, advanced: true)
+            controller.paneUndoManager = undo
+            undo.beginUndoGrouping()
+            send(controller.resetToDefaultsButton)
+            undo.endUndoGrouping()
+            XCTAssertEqual(application.scroll, OPTIONS_SCROLL_DEFAULT())
+        }
+
+        undo.undo()
+        XCTAssertEqual(application.scroll.speed, 4.5)
+        XCTAssertFalse(application.scroll.reverse)
+        XCTAssertNil(application.scroll.dash)
+        XCTAssertEqual(Options.shared.scroll, OPTIONS_SCROLL_DEFAULT(), "the Scrolling settings are not touched")
+        undo.redo()
+        XCTAssertEqual(application.scroll, OPTIONS_SCROLL_DEFAULT())
+    }
+
     // MARK: - Preview
 
     /// A refresh leaves only the knob the user is dragging alone; every other knob shows

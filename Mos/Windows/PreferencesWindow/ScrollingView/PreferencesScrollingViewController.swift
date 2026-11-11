@@ -10,7 +10,8 @@
 //  the speed and the direction. Under it "While you hold a key" with the three keys, which
 //  work from the first launch, so they always show. The last box starts with "Advanced"
 //  (closed by default), which opens the exact glide time, the smallest step and
-//  trackpad-style events in that box. "Reset to defaults" sits under the boxes.
+//  trackpad-style events in that box. "Reset to defaults" sits under the boxes; Edit › Undo
+//  takes a reset back.
 //  The tab only edits scroll options: Options.shared.scroll, or the target application's own.
 //
 //  Created by Caldis on 2017/1/26.
@@ -135,6 +136,9 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
 
     /// Keeps the state of "Advanced"; tests and screenshots give it a store of their own.
     var uiStateDefaults: UserDefaults = .standard
+
+    /// Takes Undo and Redo of "Reset to Defaults"; the window's when nil.
+    var paneUndoManager: UndoManager?
 
     private(set) var isAdvancedExpanded = false
 
@@ -491,14 +495,71 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
 
     /// Back to the scroll options of a new installation: the "Smooth" feel, the default
     /// speed and step, the three default keys, trackpad-style events off. "Advanced" stays
-    /// as it is.
+    /// as it is. One click, no question: Edit › Undo ("Undo Reset Scrolling") brings back
+    /// every value it changed.
     @objc func resetToDefaultClick(_ sender: NSButton) {
-        if let target = currentTargetApplication {
-            target.scroll = OPTIONS_SCROLL_DEFAULT()
-        } else {
-            Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+        Self.resetScrollOptions(of: currentTargetApplication, undoManager: undoTarget) { [weak self] in
+            self?.syncViewWithOptions()
         }
-        syncViewWithOptions()
+    }
+
+    // MARK: - Reset, with Undo
+
+    /// Where a reset registers its Undo: the window's undo manager while the tab (or the
+    /// app's page) is in the window. Undo and Redo stay with the manager the reset used.
+    var undoTarget: UndoManager? {
+        return paneUndoManager ?? view.window?.undoManager
+    }
+
+    /// Gives the app (nil: the Scrolling tab) new default scroll options; Undo gives back
+    /// the ones it had. The undo target is the settings, not this controller: an app's page
+    /// and its controller are gone once the list shows again, and its Undo still works.
+    private static func resetScrollOptions(
+        of application: Application?,
+        undoManager undo: UndoManager?,
+        didChange: @escaping () -> Void
+    ) {
+        let previous = replaceScrollOptions(of: application, with: OPTIONS_SCROLL_DEFAULT())
+        didChange()
+        guard let undo else { return }
+        undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+            Self.restoreScrollOptions(previous, of: application, undoManager: undo, didChange: didChange)
+        }
+        undo.setActionName(NSLocalizedString("scrolling-undo-reset", comment: ""))
+    }
+
+    /// Undo of a reset: the options from before it, every value as it was. Redo resets again.
+    private static func restoreScrollOptions(
+        _ options: OPTIONS_SCROLL_DEFAULT,
+        of application: Application?,
+        undoManager undo: UndoManager?,
+        didChange: @escaping () -> Void
+    ) {
+        replaceScrollOptions(of: application, with: options)
+        didChange()
+        guard let undo else { return }
+        undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+            Self.resetScrollOptions(of: application, undoManager: undo, didChange: didChange)
+        }
+        undo.setActionName(NSLocalizedString("scrolling-undo-reset", comment: ""))
+    }
+
+    /// Puts `options` in place of the app's (nil: the global) scroll options and returns the
+    /// ones it replaced. A reset only ever swaps the whole container, so the replaced one
+    /// keeps every value it had.
+    @discardableResult
+    private static func replaceScrollOptions(
+        of application: Application?,
+        with options: OPTIONS_SCROLL_DEFAULT
+    ) -> OPTIONS_SCROLL_DEFAULT {
+        if let application {
+            let previous = application.scroll
+            application.scroll = options
+            return previous
+        }
+        let previous = Options.shared.scroll
+        Options.shared.scroll = options
+        return previous
     }
 
     // MARK: - Rows

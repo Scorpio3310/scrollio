@@ -54,6 +54,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "scrolling-keys-header", "scrolling-key-faster", "scrolling-key-faster-hint",
         "scrolling-key-sideways", "scrolling-key-sideways-hint", "scrolling-key-pause", "scrolling-key-pause-hint",
         "scrolling-key-clear-for", "scrolling-key-none", "scrolling-reset",
+        "scrolling-undo-reset",
     ]
 
     /// Buttons pane: the card, the list and its rows, the action menu, "Which Button Is
