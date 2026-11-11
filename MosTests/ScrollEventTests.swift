@@ -766,6 +766,7 @@ final class ThumbWheelEngineTests: XCTestCase {
         private(set) var lines: [ScrollSystemLog.ThumbWheelRoll] = []
 
         init() {
+            engine.secondsPerTimestampUnit = 1e-9
             engine.clock = { [unowned self] in self.now }
             engine.schedule = { [unowned self] delay, work in
                 self.scheduledCount += 1
@@ -789,11 +790,23 @@ final class ThumbWheelEngineTests: XCTestCase {
             now = max(now, time)
         }
 
-        /// One sideways event at `time` (seconds after the rig's start).
+        /// The raw timestamp (ns) of a moment `time` seconds after the rig's start.
+        static func timestamp(_ time: Double) -> UInt64 {
+            return UInt64(((500 + time) * 1e9).rounded())
+        }
+
+        /// One sideways event that happened at `time` (seconds after the rig's start, its own
+        /// timestamp) and reaches the callback at `processedAt` (the same, unless the main
+        /// thread was busy: then the work due in between has not run either).
         @discardableResult
-        func turn(lines: Double, at time: Double, settings: ThumbWheelSettings, flipped: Bool = false, continuous: Bool = false) -> Int {
-            advance(to: 500 + time)
-            let event = ThumbWheelEvent(lineDelta: Int64(lines), fixedDelta: lines, pointDelta: (lines * 10).rounded(), isContinuous: continuous)
+        func turn(lines: Double, at time: Double, settings: ThumbWheelSettings, flipped: Bool = false,
+                  continuous: Bool = false, fixed: Double? = nil, processedAt: Double? = nil,
+                  timestampOffset: Double = 0) -> Int {
+            advance(to: 500 + (processedAt ?? time))
+            let event = ThumbWheelEvent(
+                lineDelta: Int64(lines), fixedDelta: fixed ?? lines, pointDelta: (lines * 10).rounded(),
+                isContinuous: continuous, timestamp: Rig.timestamp(time + timestampOffset)
+            )
             return engine.handle(event, settings: settings, flipped: flipped)
         }
     }
@@ -933,6 +946,8 @@ final class ThumbWheelEngineTests: XCTestCase {
         XCTAssertEqual(rig.turn(lines: -2, at: 0, settings: ThumbWheelSettings(function: .zoom)), 2)
         rig.engine.reset()
         XCTAssertEqual(rig.lines.count, 1, "the roll so far")
+        XCTAssertEqual(rig.lines.first?.stepsNext, 0, "decided, but none ran")
+        XCTAssertEqual(rig.lines.first.map(ScrollSystemLog.thumbWheelMessage)?.hasSuffix("zoom x1.00: 0 steps"), true)
         rig.advance(to: 510)
         XCTAssertEqual(rig.performed, [])
         XCTAssertEqual(rig.engine.stepper, ThumbWheelStepper())
@@ -967,13 +982,16 @@ final class ThumbWheelEngineTests: XCTestCase {
         XCTAssertEqual(roll.fixed, -5)
         XCTAssertEqual(roll.points, -50)
         XCTAssertEqual(roll.largestPoints, 10)
+        XCTAssertEqual(roll.largestFixed, 1)
         XCTAssertEqual(roll.continuousEvents, 1)
-        XCTAssertEqual(roll.steps, 2)
+        XCTAssertEqual(roll.stepsNext, 2, "the steps that ran")
+        XCTAssertEqual(roll.stepsPrevious, 0)
         XCTAssertEqual(roll.function, .tabs)
-        XCTAssertEqual(roll.lastEventAt - roll.startedAt, 0.2, accuracy: 1e-9)
+        XCTAssertEqual(roll.lastEventAt - roll.startedAt, 0.2, accuracy: 1e-6)
+        XCTAssertEqual(roll.longestGap, 0.05, accuracy: 1e-6)
         XCTAssertEqual(
             ScrollSystemLog.thumbWheelMessage(for: roll),
-            "thumb wheel: 5 events in 200 ms, lines -5 (fixed -5.00, points -50, largest 10), partly continuous (1 of 5), switch tabs x1.00: 2 steps"
+            "thumb wheel: 5 events in 200 ms (longest gap 50 ms), lines -5, fixed -5.00 (largest 1.00), points -50 (largest 10), 0 direction changes, partly continuous (1 of 5), switch tabs x1.00: 2 steps next"
         )
         XCTAssertFalse(rig.hasPendingWork, "no timer while the wheel is still")
         XCTAssertNil(rig.engine.roll)
@@ -997,7 +1015,7 @@ final class ThumbWheelEngineTests: XCTestCase {
         }
         rig.advance(to: 510)
         XCTAssertEqual(rig.lines.map(\.events), [20, 20, 10])
-        XCTAssertEqual(rig.lines.map(\.startedAt), [500, 502, 504])
+        XCTAssertEqual(rig.lines.map { ($0.startedAt * 10).rounded() / 10 }, [500, 502, 504])
         XCTAssertFalse(rig.hasPendingWork)
     }
 
@@ -1016,7 +1034,81 @@ final class ThumbWheelEngineTests: XCTestCase {
         rig.advance(to: 510)
         XCTAssertEqual(rig.lines.map(\.function), [.tabs, .zoom, .zoom])
         XCTAssertEqual(rig.lines.map(\.speed), [1, 1, 2])
+        XCTAssertEqual(rig.lines.first?.stepsNext, 1, "the tab that ran before its line was written")
         XCTAssertFalse(rig.hasPendingWork)
+    }
+
+    /// What the tuning is read from: the largest fixed-point delta (the cap applies to it),
+    /// the longest gap (the rests depend on it), how often the wheel turned back (the sums
+    /// cancel out then), and the steps that ran in each direction.
+    func testLog_gapsTurnsBackAndTheStepsOfEachDirection() throws {
+        let rig = Rig()
+        let zoom = ThumbWheelSettings(function: .zoom)
+        rig.turn(lines: -1, at: 0, settings: zoom, fixed: -1.25)
+        rig.turn(lines: -1, at: 0.03, settings: zoom)
+        rig.turn(lines: 1, at: 0.15, settings: zoom, fixed: 2.5)
+        rig.turn(lines: 1, at: 0.2, settings: zoom)
+        rig.turn(lines: -2, at: 0.25, settings: zoom)
+        rig.advance(to: 510)
+        let roll = try XCTUnwrap(rig.lines.first)
+        XCTAssertEqual(rig.lines.count, 1)
+        XCTAssertEqual(roll.directionChanges, 2)
+        XCTAssertEqual(roll.longestGap, 0.12, accuracy: 1e-6)
+        XCTAssertEqual(roll.largestFixed, 2.5)
+        XCTAssertEqual(roll.stepsNext, 4, "1.25, then 1 with the rest, later 2 toward next")
+        XCTAssertEqual(roll.stepsPrevious, 3, "2.5, then 1 with the rest toward previous")
+        XCTAssertEqual(rig.performed.map(\.action), [.zoomIn, .zoomIn, .zoomOut, .zoomOut, .zoomIn])
+        XCTAssertEqual(rig.performed.map(\.times), [1, 1, 2, 1, 2])
+        XCTAssertEqual(
+            ScrollSystemLog.thumbWheelMessage(for: roll),
+            "thumb wheel: 5 events in 250 ms (longest gap 120 ms), lines -2, fixed -0.75 (largest 2.50), points -20 (largest 20), 2 direction changes, not continuous, zoom x1.00: 4 steps next, 3 previous"
+        )
+    }
+
+    /// Rests are measured between the events' own times. After a stall of the main thread the
+    /// events of one roll arrive in a burst: the first must not look like a new roll, or one
+    /// roll runs Back (or a desktop switch) twice.
+    func testRests_useTheEventsOwnTime_notWhenTheCallbackRuns() {
+        let rig = Rig()
+        let back = ThumbWheelSettings(function: .backForward)
+        var steps = 0
+        for index in 0..<3 {
+            steps += rig.turn(lines: -1, at: Double(index) * 0.05, settings: back)
+        }
+        // The main thread stalls for 0.6 s: the next three events reach the callback together.
+        for index in 3..<6 {
+            steps += rig.turn(lines: -1, at: Double(index) * 0.05, settings: back, processedAt: 0.75)
+        }
+        XCTAssertEqual(steps, 1, "one roll, one step")
+        rig.advance(to: 510)
+        XCTAssertEqual(rig.performed, [Performed(action: .named("navigateForward"), times: 1)])
+    }
+
+    /// The events' times may have another base than the clock the look at the roll uses: the
+    /// line still comes once the wheel rested, and nothing stays scheduled.
+    func testLog_theLookUsesTheClockWhateverTheEventsTimes() {
+        for offset in [-400.0, 3_600] {
+            let rig = Rig()
+            for index in 0..<3 {
+                rig.turn(lines: -1, at: Double(index) * 0.05, settings: .default, timestampOffset: offset)
+            }
+            rig.advance(to: 500.1 + ThumbWheelTuning.rollRest)
+            XCTAssertEqual(rig.lines.map(\.events), [3], "offset \(offset)")
+            XCTAssertEqual((rig.lines.first?.lastEventAt ?? 0) - (rig.lines.first?.startedAt ?? 0), 0.1, accuracy: 1e-6, "the events' own times")
+            XCTAssertFalse(rig.hasPendingWork, "offset \(offset)")
+        }
+    }
+
+    /// The look at the roll may come late (a busy main thread): an event after the wheel
+    /// rested still starts a new roll, two rolls never merge in one line.
+    func testLog_twoRollsDoNotMergeWhenTheLookComesLate() {
+        let rig = Rig()
+        rig.turn(lines: -1, at: 0, settings: .default)
+        rig.turn(lines: -1, at: 0.05, settings: .default)
+        // Rested for a second by the events' clock; the look scheduled at 0.4 s has not run.
+        rig.turn(lines: 1, at: 1.05, settings: .default, processedAt: 0.06)
+        rig.advance(to: 510)
+        XCTAssertEqual(rig.lines.map(\.events), [2, 1])
     }
 }
 
@@ -1032,10 +1124,12 @@ final class ThumbWheelScrollTapTests: XCTestCase {
     private var savedReverse = true
     private var savedReverseHorizontal = true
     private var savedAllowlist = false
+    private var savedApplications: EnhanceArray<Application>!
     private var inputs: [ScrollPosterInput] = []
 
     override func setUp() {
         super.setUp()
+        savedApplications = Options.shared.application.applications
         savedEngine = ScrollCore.shared.thumbWheelEngine
         savedThumbWheel = Options.shared.thumbWheel
         savedSmooth = Options.shared.scroll.smooth
@@ -1052,6 +1146,10 @@ final class ThumbWheelScrollTapTests: XCTestCase {
         Options.shared.scroll.reverse = false
         Options.shared.scroll.reverseHorizontal = true
         Options.shared.application.allowlist = false
+        // No scroll key held, whatever the tests before left.
+        ScrollCore.shared.toggleScroll = false
+        ScrollCore.shared.blockSmooth = false
+        ScrollUtils.shared.treatAsRemoteForTests(sourcePID: nil)
     }
 
     override func tearDown() {
@@ -1059,6 +1157,10 @@ final class ThumbWheelScrollTapTests: XCTestCase {
         ScrollCore.shared.thumbWheelEngine = savedEngine
         ScrollCore.shared.handover = ScrollHandover()
         ScrollCore.shared.toggleScroll = false
+        ScrollCore.shared.blockSmooth = false
+        ScrollCore.shared.isActive = false
+        ScrollUtils.shared.treatAsRemoteForTests(sourcePID: nil)
+        Options.shared.application.applications = savedApplications
         Options.shared.thumbWheel = savedThumbWheel
         Options.shared.scroll.smooth = savedSmooth
         Options.shared.scroll.reverse = savedReverse
@@ -1068,10 +1170,12 @@ final class ThumbWheelScrollTapTests: XCTestCase {
         super.tearDown()
     }
 
-    /// A wheel event as a mouse sends it: no phase, not continuous, aimed at no app.
+    /// A wheel event as a mouse sends it: no phase, not continuous (unless asked), aimed at no
+    /// app (target pid 1) unless a target is given.
     private func wheelEvent(
         line2: Int64 = 0, fixed2: Double = 0, point2: Double = 0,
-        line1: Int64 = 0, point1: Double = 0, flags: CGEventFlags = []
+        line1: Int64 = 0, point1: Double = 0, flags: CGEventFlags = [],
+        continuous: Bool = false, sourcePID: Int64 = 0, targetPID: Int64 = 1
     ) throws -> CGEvent {
         let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: 0, wheel2: 0, wheel3: 0))
         event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: line1)
@@ -1080,14 +1184,17 @@ final class ThumbWheelScrollTapTests: XCTestCase {
         event.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: line2)
         event.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: point2)
         event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: fixed2)
-        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 0)
-        event.setIntegerValueField(.eventTargetUnixProcessID, value: 1)
+        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: continuous ? 1 : 0)
+        event.setIntegerValueField(.eventSourceUnixProcessID, value: sourcePID)
+        event.setIntegerValueField(.eventTargetUnixProcessID, value: targetPID)
         event.flags = flags
         return event
     }
 
-    private func sideways(_ lines: Int64, point: Double? = nil, flags: CGEventFlags = []) throws -> CGEvent {
-        return try wheelEvent(line2: lines, fixed2: Double(lines), point2: point ?? Double(lines * 10), flags: flags)
+    private func sideways(_ lines: Int64, point: Double? = nil, flags: CGEventFlags = [], continuous: Bool = false,
+                          sourcePID: Int64 = 0, targetPID: Int64 = 1) throws -> CGEvent {
+        return try wheelEvent(line2: lines, fixed2: Double(lines), point2: point ?? Double(lines * 10), flags: flags,
+                              continuous: continuous, sourcePID: sourcePID, targetPID: targetPID)
     }
 
     /// The tap's callback. Its result is an unretained reference: use it while `event` lives.
@@ -1239,25 +1346,28 @@ final class ThumbWheelScrollTapTests: XCTestCase {
 
     /// The function does not depend on "Smooth scrolling", the allowlist or the reverse rule's
     /// absence: every sideways event is swallowed. The direction follows the reverse rule.
-    func testAFunction_doesNotDependOnSmoothingOrTheAllowlist() throws {
+    func testAFunction_doesNotDependOnSmoothingTheAllowlistOrReverse() throws {
         Options.shared.thumbWheel = ThumbWheelSettings(function: .zoom)
+        // "Reverse wheel direction" on: it applies to an app Scrollio handles, not to one
+        // outside the allowlist; a function's direction must not change between them.
+        Options.shared.scroll.reverse = true
         Options.shared.scroll.smooth = false
-        XCTAssertFalse(goesOn(try sideways(-1)))
+        XCTAssertFalse(goesOn(try sideways(-1)), "smoothing off")
         Options.shared.application.allowlist = true
-        XCTAssertFalse(goesOn(try sideways(-1)))
+        XCTAssertFalse(goesOn(try sideways(-1)), "outside the allowlist: no reverse rule")
         Options.shared.application.allowlist = false
         Options.shared.scroll.smooth = true
-        Options.shared.scroll.reverse = true
-        XCTAssertFalse(goesOn(try sideways(-1)))
+        XCTAssertFalse(goesOn(try sideways(-1)), "smoothing on, the global reverse rule")
+        Options.shared.scroll.reverse = false
+        XCTAssertFalse(goesOn(try sideways(-1)), "no reverse rule")
         rig.advance(to: rig.now)
-        XCTAssertEqual(rig.performed.map(\.action), [
-            .zoomIn, .zoomIn, .zoomOut,
-        ])
+        XCTAssertEqual(rig.performed.map(\.action), [.zoomIn, .zoomIn, .zoomIn, .zoomIn])
         XCTAssertEqual(inputs.count, 0)
     }
 
-    /// The main wheel (vertical), an event with both deltas, the main wheel turned sideways
-    /// with a hold key, and the trackpad: none is a sideways event; they go as before.
+    /// The main wheel (vertical), an event with both deltas, a sideways event with Shift held
+    /// (macOS and drivers send the main wheel with Shift that way), and the trackpad: none is
+    /// a sideways event; they go as before.
     func testOtherEvents_areNotSidewaysEvents() throws {
         Options.shared.thumbWheel = ThumbWheelSettings(function: .tabs)
         Options.shared.scroll.smooth = false
@@ -1275,23 +1385,15 @@ final class ThumbWheelScrollTapTests: XCTestCase {
         for (label, event) in others {
             XCTAssertTrue(goesOn(event), label)
         }
-        let withHoldKey = try sideways(-3)
-        ScrollCore.shared.toggleScroll = true
-        let passedOn = goesOn(withHoldKey)
-        ScrollCore.shared.toggleScroll = false
-        XCTAssertTrue(passedOn, "Scrollio's hold key turns the main wheel sideways")
         rig.advance(to: rig.now + 10)
         XCTAssertEqual(rig.performed, [])
         XCTAssertEqual(rig.lines, [], "and none is in the thumb wheel's log")
     }
 
-    /// REVIEW PROOF (fails on purpose): with "Reverse wheel direction" on and "Only apps in
-    /// the list" on, an app outside the list gets no reverse rule. The direction of a function
-    /// then depends on the app under the pointer: the same physical turn of the thumb wheel
-    /// turns the volume up over one app and down over another (the same holds for an app with
-    /// its own reverse rule, and for desktops). Encodes the expectation that a system-wide
-    /// function follows the turn, not the app under the pointer.
-    func testReviewProof_volumeDirectionDoesNotDependOnTheAppUnderThePointer() throws {
+    /// With "Reverse wheel direction" on and the allowlist on, an app outside the list gets no
+    /// reverse rule. A function's direction must not follow that: the same turn of the thumb
+    /// wheel turns the volume the same way over any app. (Found by the review.)
+    func testAFunctionsDirection_doesNotDependOnTheAppUnderThePointer() throws {
         Options.shared.thumbWheel = ThumbWheelSettings(function: .volume)
         Options.shared.scroll.reverse = true
         Options.shared.scroll.reverseHorizontal = true
@@ -1305,18 +1407,162 @@ final class ThumbWheelScrollTapTests: XCTestCase {
                        "the same turn of the thumb wheel: \(rig.performed.map(\.action))")
     }
 
+    // MARK: What a broken engine would change
+
+    /// Scrollio's own "scroll sideways" key does not stop the thumb wheel's function: the main
+    /// wheel's events are vertical at the tap, the thumb wheel's stay sideways events.
+    func testScrollioHoldKey_leavesTheThumbWheelsFunctionAlone() throws {
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .tabs)
+        let event = try sideways(-3)
+        ScrollCore.shared.toggleScroll = true
+        let wentOn = goesOn(event)
+        ScrollCore.shared.toggleScroll = false
+        XCTAssertFalse(wentOn, "swallowed: it runs the function")
+        rig.advance(to: rig.now)
+        XCTAssertEqual(rig.performed.map(\.action), [.keys(ThumbWheelAction.nextTab)])
+    }
+
+    /// "Swap direction" turns a function around; "Reverse wheel direction" does not.
+    func testAFunction_swapTurnsItsDirectionAround() throws {
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .volume)
+        XCTAssertFalse(goesOn(try sideways(-1)))
+        Options.shared.thumbWheel.swapsDirection = true
+        XCTAssertFalse(goesOn(try sideways(-1)))
+        Options.shared.scroll.reverse = true
+        XCTAssertFalse(goesOn(try sideways(-1)))
+        rig.advance(to: rig.now)
+        XCTAssertEqual(rig.performed.map(\.action), [.volume(.up), .volume(.down), .volume(.down)])
+    }
+
+    /// Pause, sleep or lost access (`disable()`): steps decided before it do not run after
+    /// it, and the log line counts none.
+    func testStop_dropsTheStepsDecidedBeforeIt() throws {
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .zoom)
+        XCTAssertFalse(goesOn(try sideways(-2)))
+        ScrollCore.shared.isActive = true   // as after enable(); no event tap is created here
+        ScrollCore.shared.disable()
+        XCTAssertFalse(ScrollCore.shared.isActive)
+        rig.advance(to: rig.now + 10)
+        XCTAssertEqual(rig.performed, [])
+        XCTAssertEqual(rig.lines.map(\.stepsNext), [0])
+    }
+
+    /// An event with both deltas is not a sideways event: "Swap direction", the thumb wheel's
+    /// speed and its function leave it exactly as at the defaults, smoothed or let through.
+    func testADiagonalEvent_isExactlyAsAtTheDefaults() throws {
+        func diagonal() throws -> CGEvent {
+            return try wheelEvent(line2: -2, fixed2: -2, point2: -24, line1: -1, point1: -10)
+        }
+        let settings = [
+            ThumbWheelSettings(),
+            ThumbWheelSettings(swapsDirection: true),
+            ThumbWheelSettings(speed: 3),
+            ThumbWheelSettings(function: .tabs, speed: 3, swapsDirection: true),
+        ]
+        var smoothed: [ScrollPosterInput] = []
+        var letThrough: [[Double]] = []
+        for setting in settings {
+            Options.shared.thumbWheel = setting
+            Options.shared.scroll.smooth = true
+            inputs = []
+            let toSmooth = try diagonal()
+            tap(toSmooth)
+            smoothed.append(try XCTUnwrap(inputs.last, "\(setting)"))
+            Options.shared.scroll.smooth = false
+            let event = try diagonal()
+            XCTAssertTrue(goesOn(event), "\(setting)")
+            letThrough.append(xFields(event))
+        }
+        for index in 1..<settings.count {
+            let label = "\(settings[index])"
+            XCTAssertEqual(smoothed[index].x, smoothed[0].x, label)
+            XCTAssertEqual(smoothed[index].y, smoothed[0].y, label)
+            XCTAssertEqual(smoothed[index].notch, smoothed[0].notch, label)
+            XCTAssertEqual(letThrough[index], letThrough[0], label)
+        }
+        rig.advance(to: rig.now + 10)
+        XCTAssertEqual(rig.performed, [])
+    }
+
+    /// A remote desktop's smoothed sideways event goes on as before: no function runs, and it
+    /// takes a trackpad glide over like any wheel event.
+    func testARemoteSmoothedSidewaysEvent_runsNoFunction() throws {
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .zoom)
+        let remotePID: Int64 = 424_242
+        ScrollUtils.shared.treatAsRemoteForTests(sourcePID: pid_t(remotePID))
+        XCTAssertEqual(ScrollCore.shared.handover.trackpadEvent(scrollPhase: 0, momentumPhase: 1, hasDelta: true), .letThrough)
+        let event = try sideways(-2, continuous: true, sourcePID: remotePID)
+        XCTAssertTrue(ScrollUtils.shared.isRemoteSmoothedEvent(event))
+        XCTAssertTrue(goesOn(event))
+        XCTAssertEqual(ScrollCore.shared.handover.state, .wheelTookOver(dropped: 0))
+        rig.advance(to: rig.now + 10)
+        XCTAssertEqual(rig.performed, [])
+        XCTAssertEqual(rig.lines, [])
+    }
+
+    /// Whether an event is continuous reaches the roll as the event says it.
+    func testContinuity_reachesTheRollAsTheEventSaysIt() throws {
+        tap(try sideways(-1, continuous: false))
+        tap(try sideways(-1, continuous: true))
+        tap(try sideways(-1, continuous: true))
+        let roll = try XCTUnwrap(rig.engine.roll)
+        XCTAssertEqual(roll.events, 3)
+        XCTAssertEqual(roll.continuousEvents, 2)
+    }
+
+    /// With a function set, the main wheel's (vertical) event during a trackpad glide still
+    /// takes the glide over: only a sideways event that runs a function leaves it alone.
+    func testAVerticalEventDuringATrackpadGlide_takesItOver_withAFunctionSet() throws {
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .tabs)
+        Options.shared.scroll.smooth = false
+        XCTAssertEqual(ScrollCore.shared.handover.trackpadEvent(scrollPhase: 0, momentumPhase: 1, hasDelta: true), .letThrough)
+        XCTAssertTrue(goesOn(try wheelEvent(line1: -1, point1: -10)))
+        XCTAssertEqual(ScrollCore.shared.handover.state, .wheelTookOver(dropped: 0))
+    }
+
+    /// An app's own reverse rule, through the callback (the event aimed at this very app): it
+    /// turns the sideways scroll around and "Swap direction" turns it back; a function's
+    /// direction does not follow it.
+    func testAnAppsOwnReverseRule_turnsTheSidewaysScroll_notAFunction() throws {
+        let path = try XCTUnwrap(NSRunningApplication.current.bundleURL?.path)
+        let app = Application(path: path)
+        app.inherit = false
+        app.scroll.smooth = false
+        app.scroll.reverse = true
+        app.scroll.reverseHorizontal = true
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [app], matchKey: "path")
+        let ownPID = Int64(ProcessInfo.processInfo.processIdentifier)
+
+        let overTheApp = try sideways(-2, point: -23, targetPID: ownPID)
+        let before = xFields(overTheApp)
+        XCTAssertTrue(goesOn(overTheApp))
+        XCTAssertTrue(ScrollCore.shared.application === app, "the app's own rule is used")
+        XCTAssertEqual(xFields(overTheApp), before.map { -$0 }, "turned around by the app's rule")
+
+        Options.shared.thumbWheel.swapsDirection = true
+        let swapped = try sideways(-2, point: -23, targetPID: ownPID)
+        XCTAssertTrue(goesOn(swapped))
+        XCTAssertEqual(xFields(swapped), before, "and back by Swap direction")
+
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .volume)
+        XCTAssertFalse(goesOn(try sideways(-1, targetPID: ownPID)), "over the app")
+        XCTAssertFalse(goesOn(try sideways(-1)), "over no app")
+        rig.advance(to: rig.now)
+        XCTAssertEqual(rig.performed.map(\.action), [.volume(.up), .volume(.up)])
+    }
+
     // MARK: The decisions (pure)
 
-    func testSidewaysWheelEvent_horizontalOnly_notRemoteSmoothed_noHoldKey() {
-        func sideways(v: Bool, h: Bool, remote: Bool = false, hold: Bool = false) -> Bool {
-            return ScrollCore.isSidewaysWheelEvent(hasVerticalDelta: v, hasHorizontalDelta: h, remoteSmoothed: remote, holdKeyDown: hold)
+    func testSidewaysWheelEvent_horizontalOnly_notRemoteSmoothed_noShift() {
+        func sideways(v: Bool, h: Bool, remote: Bool = false, shift: Bool = false) -> Bool {
+            return ScrollCore.isSidewaysWheelEvent(hasVerticalDelta: v, hasHorizontalDelta: h, remoteSmoothed: remote, shiftDown: shift)
         }
         XCTAssertTrue(sideways(v: false, h: true))
         XCTAssertFalse(sideways(v: true, h: false), "the main wheel")
         XCTAssertFalse(sideways(v: true, h: true), "both: as before")
         XCTAssertFalse(sideways(v: false, h: false))
         XCTAssertFalse(sideways(v: false, h: true, remote: true))
-        XCTAssertFalse(sideways(v: false, h: true, hold: true))
+        XCTAssertFalse(sideways(v: false, h: true, shift: true))
     }
 
     func testFlipsHorizontal_swapTurnsAroundOnceMore() {

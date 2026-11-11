@@ -22,17 +22,23 @@ struct ThumbWheelEvent: Equatable {
     var pointDelta: Double
     /// `scrollWheelEventIsContinuous` is set (a wheel without notches, or a smoothing driver).
     var isContinuous: Bool
+    /// The event's own `CGEvent.timestamp` (0: it has none). Rests are measured with it, not
+    /// with the time the callback runs: after a stall of the main thread the queued events
+    /// arrive in a burst, and the first would otherwise look like the start of a new roll.
+    var timestamp: UInt64
 
-    init(lineDelta: Int64, fixedDelta: Double, pointDelta: Double, isContinuous: Bool) {
+    init(lineDelta: Int64, fixedDelta: Double, pointDelta: Double, isContinuous: Bool, timestamp: UInt64 = 0) {
         self.lineDelta = lineDelta
         self.fixedDelta = fixedDelta
         self.pointDelta = pointDelta
         self.isContinuous = isContinuous
+        self.timestamp = timestamp
     }
 
     /// From the X axis as `ScrollEvent` read it.
-    init(axis: axisData, isContinuous: Bool) {
-        self.init(lineDelta: axis.scrollFix, fixedDelta: axis.scrollFixPt, pointDelta: axis.scrollPt, isContinuous: isContinuous)
+    init(axis: axisData, isContinuous: Bool, timestamp: UInt64) {
+        self.init(lineDelta: axis.scrollFix, fixedDelta: axis.scrollFixPt, pointDelta: axis.scrollPt,
+                  isContinuous: isContinuous, timestamp: timestamp)
     }
 }
 
@@ -58,8 +64,8 @@ enum ThumbWheelAction: Equatable {
     static let nextTab = SystemShortcut.Shortcut("thumbWheelNextTab", 48, .control)
     static let previousTab = SystemShortcut.Shortcut("thumbWheelPreviousTab", 48, [.control, .shift])
 
-    /// What a step does. Toward "next" is the turn that would scroll to the right
-    /// (`ThumbWheelStepper`). Nil while the wheel scrolls.
+    /// What a step does. Toward "next" is a negative X delta of the raw event, turned around
+    /// only by "Swap direction" (`ThumbWheelStepper`). Nil while the wheel scrolls.
     static func action(for function: ThumbWheelFunction, towardNext: Bool) -> ThumbWheelAction? {
         switch function {
         case .scroll:
@@ -118,8 +124,10 @@ final class ThumbWheelEngine {
     typealias Roll = ScrollSystemLog.ThumbWheelRoll
 
     private(set) var stepper = ThumbWheelStepper()
-    /// The roll whose log line is not written yet.
+    /// The roll whose events still come.
     private(set) var roll: Roll?
+    /// A roll ended in the middle (a setting changed): written once its steps have run.
+    private(set) var ended: Roll?
     /// Runs a step's action this many times, on the main queue (tests replace it).
     var perform: (ThumbWheelAction, Int) -> Void = { action, times in
         ThumbWheelActionPerformer().perform(action, times: times)
@@ -128,13 +136,33 @@ final class ThumbWheelEngine {
     var schedule: (TimeInterval, @escaping () -> Void) -> Void = ThumbWheelEngine.scheduleOnMainQueue
     /// Writes a roll's log line.
     var writeLog: (Roll) -> Void = ScrollSystemLog.noteThumbWheelRoll
-    /// Seconds on a monotonic clock.
+    /// Seconds on a monotonic clock: when the callback saw an event (the look at the open roll
+    /// uses only these), and the time of an event without a timestamp.
     var clock: () -> TimeInterval = { CACurrentMediaTime() }
+    /// Seconds per unit of `CGEvent.timestamp`.
+    var secondsPerTimestampUnit = ThumbWheelEngine.appKitSecondsPerTimestampUnit
 
     /// A look at the open roll is scheduled: one at a time, and none once the wheel rested.
     private var checkScheduled = false
     /// Moves on with `reset()`: steps decided before it do not run.
     private var generation = 0
+    private var nextRollID = 0
+
+    /// The unit of `CGEvent.timestamp` as AppKit reads it, in seconds: nanoseconds, or mach
+    /// ticks on some Macs (`CGEvent.uptimeSeconds` reads it through AppKit for that reason).
+    /// Found once from one made-up event, so the tap callback converts without an NSEvent.
+    static let appKitSecondsPerTimestampUnit: Double = {
+        let nanoseconds = 1e-9
+        let probe: UInt64 = 1_000_000_000
+        guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 0, wheel2: 0, wheel3: 0) else {
+            return nanoseconds
+        }
+        event.timestamp = probe
+        guard let seconds = NSEvent(cgEvent: event)?.timestamp, seconds > 0, seconds.isFinite else {
+            return nanoseconds
+        }
+        return seconds / Double(probe)
+    }()
 
     static func scheduleOnMainQueue(after delay: TimeInterval, _ work: @escaping () -> Void) {
         if delay > 0 {
@@ -147,71 +175,105 @@ final class ThumbWheelEngine {
     /// One sideways wheel event, in the scroll tap's callback. A few sums per event; a closure
     /// is made only when a step runs, a roll begins or its line is due. Nothing is logged here.
     /// - Parameters:
-    ///   - flipped: X is turned around once ("Reverse wheel direction" or "Swap direction").
-    /// - Returns: the steps this event ran (positive toward "next").
+    ///   - flipped: X is turned around once. While the wheel runs a function: "Swap
+    ///     direction" only. While it scrolls: "Reverse wheel direction" or "Swap direction".
+    /// - Returns: the steps this event decided (positive toward "next").
     @discardableResult
     func handle(_ event: ThumbWheelEvent, settings: ThumbWheelSettings, flipped: Bool) -> Int {
-        let now = clock()
+        let seenAt = clock()
+        let time = event.timestamp == 0 ? seenAt : Double(event.timestamp) * secondsPerTimestampUnit
         var steps = 0
         if settings.function != .scroll {
             let travel = ThumbWheelStepper.travel(
                 lineDelta: event.lineDelta, fixedDelta: event.fixedDelta, pointDelta: event.pointDelta,
                 flipped: flipped, speed: settings.speed
             )
-            steps = stepper.feed(travel: travel, function: settings.function, at: now)
-            if steps != 0, let action = ThumbWheelAction.action(for: settings.function, towardNext: steps > 0) {
-                let times = abs(steps)
-                let generation = self.generation
-                schedule(0) { [weak self] in
-                    guard let self = self, self.generation == generation else { return }
-                    self.perform(action, times)
-                }
+            steps = stepper.feed(travel: travel, function: settings.function, at: time)
+        }
+        record(event, settings: settings, at: time, seenAt: seenAt)
+        if steps != 0, let action = ThumbWheelAction.action(for: settings.function, towardNext: steps > 0), roll != nil {
+            roll?.pendingSteps += abs(steps)
+            let rollID = roll?.id
+            let generation = self.generation
+            schedule(0) { [weak self] in
+                guard let self = self, self.generation == generation else { return }
+                self.perform(action, abs(steps))
+                self.stepsRan(steps, rollID: rollID)
             }
         }
-        record(event, settings: settings, steps: steps, at: now)
         return steps
     }
 
-    private func record(_ event: ThumbWheelEvent, settings: ThumbWheelSettings, steps: Int, at now: TimeInterval) {
-        if let open = roll, open.hasRested(at: now) || !open.matches(settings) {
+    private func record(_ event: ThumbWheelEvent, settings: ThumbWheelSettings, at time: TimeInterval, seenAt: TimeInterval) {
+        if let open = roll, open.hasRested(at: time) || !open.matches(settings) {
             // Its look has not come yet, or a setting changed in the middle of the roll: the
-            // roll ends here. Its line is written after the callback.
-            roll = nil
-            let writeLog = self.writeLog
-            schedule(0) { writeLog(open) }
+            // roll ends here. Its line is written after the callback, once its steps ran.
+            endOpenRoll()
         }
         if roll == nil {
-            roll = Roll(settings: settings, at: now)
+            nextRollID &+= 1
+            roll = Roll(id: nextRollID, settings: settings, at: time, seenAt: seenAt)
         }
-        roll?.add(event, steps: steps, at: now)
+        roll?.add(event, at: time, seenAt: seenAt)
         if !checkScheduled {
             checkScheduled = true
             schedule(ThumbWheelTuning.rollRest) { [weak self] in self?.checkRoll() }
         }
     }
 
+    private func endOpenRoll() {
+        guard let open = roll else { return }
+        roll = nil
+        if let previous = ended {
+            // Two settings changes before the main queue ran: rare; written as it stands.
+            writeLog(previous)
+        }
+        ended = open
+        // Queued after the steps of its events: they have run when it is written.
+        let id = open.id
+        schedule(0) { [weak self] in self?.writeEndedRoll(id: id) }
+    }
+
+    /// Writes the ended roll (only that one, when `id` is given).
+    private func writeEndedRoll(id: Int? = nil) {
+        guard let done = ended, id == nil || done.id == id else { return }
+        ended = nil
+        writeLog(done)
+    }
+
+    private func stepsRan(_ steps: Int, rollID: Int?) {
+        if roll?.id == rollID {
+            roll?.stepsRan(steps)
+        } else if ended?.id == rollID {
+            ended?.stepsRan(steps)
+        }
+    }
+
     /// Writes the open roll's line once the wheel rested (or the roll has gone on for
-    /// `logInterval`); until then it looks again when that could be. Runs only while a roll is
-    /// open: nothing keeps running while the wheel is still.
+    /// `logInterval`) and its steps ran; until then it looks again when that could be. Runs
+    /// only while a roll is open: nothing keeps running while the wheel is still.
     func checkRoll() {
         checkScheduled = false
         guard let open = roll else { return }
         let now = clock()
         let due = open.lineDueAt
-        if now >= due {
+        if now >= due && open.pendingSteps == 0 {
             roll = nil
             writeLog(open)
             return
         }
         checkScheduled = true
-        schedule(due - now) { [weak self] in self?.checkRoll() }
+        // Steps still queued run before a look scheduled now.
+        schedule(max(0, due - now)) { [weak self] in self?.checkRoll() }
     }
 
     /// Scrollio's scroll handling stopped (`ScrollCore.disable`): steps already decided do not
-    /// run, the next event starts a new roll, and the open roll's line is written now.
+    /// run, the next event starts a new roll, and the lines of the rolls so far are written now
+    /// with the steps that ran.
     func reset() {
         generation &+= 1
         stepper.reset()
+        writeEndedRoll()
         if let open = roll {
             roll = nil
             writeLog(open)
