@@ -105,6 +105,8 @@ enum ScrollPreset: String, CaseIterable {
         scroll.smooth = true
         scroll.smoothSimTrackpad = values.simulateTrackpad
         scroll.duration = values.duration
+        // A preset starts both states of "Trackpad-style events" afresh.
+        scroll.durationForOtherTrackpadState = nil
         scroll.step = values.step
         scroll.speed = values.speed
         let horizontalWheelAction = tuning.horizontalWheelAction

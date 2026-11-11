@@ -144,6 +144,11 @@ class OPTIONS_SCROLL_DEFAULT: Codable {
     var smoothSimTrackpad = false {
         didSet {Options.shared.markChanged(scrollContainer: self)}
     }
+    /// The Duration kept for the other state of "Trackpad-style events": each state has its
+    /// own (see `setTrackpadStyleEvents`). nil = that state has not been used yet.
+    var durationForOtherTrackpadState: Double? {
+        didSet {Options.shared.markChanged(scrollContainer: self)}
+    }
     var smoothVertical = true {
         didSet {Options.shared.markChanged(scrollContainer: self)}
     }
@@ -178,6 +183,43 @@ extension OPTIONS_SCROLL_DEFAULT: Equatable {
             l.smoothVertical == r.smoothVertical &&
             l.smoothHorizontal == r.smoothHorizontal
         )
+    }
+}
+
+// "Trackpad-style events" and Duration.
+enum ScrollTrackpadStyle {
+    /// The Duration the mode starts with: a soft scroll that flows on after the wheel stops
+    /// and lands in about 0.75 s. (The mode used to force 4.75, about 1.2 s, with no way to
+    /// shorten it.)
+    static let defaultDuration = 4.5
+}
+
+extension OPTIONS_SCROLL_DEFAULT {
+    /// Turns "Trackpad-style events" on or off. Each state keeps its own Duration, so the
+    /// switch changes the feel at once and the Duration slider tunes the state that is on.
+    /// The first time the mode is turned on it gets `ScrollTrackpadStyle.defaultDuration`
+    /// (never a shorter Duration than the current one would be), unless momentum already
+    /// provides the glide.
+    func setTrackpadStyleEvents(_ isOn: Bool, glideFromMomentum: Bool) {
+        guard isOn != smoothSimTrackpad else { return }
+        let leaving = duration
+        if let remembered = durationForOtherTrackpadState {
+            duration = remembered
+        } else if isOn && !glideFromMomentum {
+            duration = max(duration, ScrollTrackpadStyle.defaultDuration)
+        }
+        durationForOtherTrackpadState = leaving
+        smoothSimTrackpad = isOn
+    }
+
+    /// Settings saved by the one build that dropped the old Duration lock without giving the
+    /// mode a Duration of its own: trackpad-style on, no momentum, a short Duration and nothing
+    /// remembered. The mode gets its default, the short Duration is kept for the other state.
+    func adoptTrackpadStyleDurationIfMissing(glideFromMomentum: Bool) {
+        guard smoothSimTrackpad, !glideFromMomentum, durationForOtherTrackpadState == nil,
+              duration < ScrollTrackpadStyle.defaultDuration else { return }
+        durationForOtherTrackpadState = duration
+        duration = ScrollTrackpadStyle.defaultDuration
     }
 }
 

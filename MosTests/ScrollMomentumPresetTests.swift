@@ -229,46 +229,108 @@ final class ScrollMomentumPresetTests: XCTestCase {
         XCTAssertTrue(controller.hasSettingsToReset)
     }
 
-    // MARK: - Toggles leave Duration alone
+    // MARK: - Trackpad-style events have their own Duration
 
-    func testSimulateTrackpadToggle_neverChangesDuration() {
+    func testSimulateTrackpadToggle_givesTheModeAFlowingDurationAndGivesTheOldOneBack() {
         let toggle = NSButton(checkboxWithTitle: "", target: nil, action: nil)
         let popover = ScrollSmoothDetailSettingsPopoverViewController()
-        let momentumStates: [ScrollMomentumSettings?] = [.default, nil]
+        Options.shared.scrollTuning.momentum = nil
+        Options.shared.scroll.duration = 3.13
 
-        for momentum in momentumStates {
-            Options.shared.scrollTuning.momentum = momentum
-            Options.shared.scroll.duration = 1.5
-            toggle.state = .on
-            popover.simulateTrackpadToggle(toggle)
-            XCTAssertTrue(Options.shared.scroll.smoothSimTrackpad)
-            XCTAssertEqual(Options.shared.scroll.duration, 1.5, "on, momentum \(momentum != nil)")
-            toggle.state = .off
-            popover.simulateTrackpadToggle(toggle)
-            XCTAssertFalse(Options.shared.scroll.smoothSimTrackpad)
-            XCTAssertEqual(Options.shared.scroll.duration, 1.5, "off, momentum \(momentum != nil)")
-        }
+        toggle.state = .on
+        popover.simulateTrackpadToggle(toggle)
+        XCTAssertTrue(Options.shared.scroll.smoothSimTrackpad)
+        XCTAssertEqual(Options.shared.scroll.duration, ScrollTrackpadStyle.defaultDuration, "turning it on changes the feel at once")
+
+        // The slider stays free: a shorter Duration for the mode is kept...
+        Options.shared.scroll.duration = 4.2
+        toggle.state = .off
+        popover.simulateTrackpadToggle(toggle)
+        XCTAssertFalse(Options.shared.scroll.smoothSimTrackpad)
+        XCTAssertEqual(Options.shared.scroll.duration, 3.13, "off: the Duration from before")
+
+        // ...and comes back with the mode.
+        toggle.state = .on
+        popover.simulateTrackpadToggle(toggle)
+        XCTAssertEqual(Options.shared.scroll.duration, 4.2)
     }
 
-    func testSimulateTrackpadToggle_perAppNeverChangesDuration() {
+    func testSimulateTrackpadToggle_neverShortensALongDuration() {
+        let scroll = OPTIONS_SCROLL_DEFAULT()
+        scroll.duration = 4.9
+        scroll.setTrackpadStyleEvents(true, glideFromMomentum: false)
+        XCTAssertEqual(scroll.duration, 4.9)
+        scroll.setTrackpadStyleEvents(true, glideFromMomentum: false)
+        XCTAssertEqual(scroll.durationForOtherTrackpadState, 4.9, "the same state again changes nothing")
+    }
+
+    func testSimulateTrackpadToggle_withMomentumKeepsDuration() {
+        // The glide comes from momentum then: the mode needs no long Duration.
+        let scroll = OPTIONS_SCROLL_DEFAULT()
+        scroll.duration = 3.13
+        scroll.setTrackpadStyleEvents(true, glideFromMomentum: true)
+        XCTAssertTrue(scroll.smoothSimTrackpad)
+        XCTAssertEqual(scroll.duration, 3.13)
+        scroll.setTrackpadStyleEvents(false, glideFromMomentum: true)
+        XCTAssertEqual(scroll.duration, 3.13)
+    }
+
+    func testSimulateTrackpadToggle_perAppOnlyTouchesThatApp() {
         let toggle = NSButton(checkboxWithTitle: "", target: nil, action: nil)
         let popover = ScrollSmoothDetailSettingsPopoverViewController()
         let app = Application(path: "/Applications/TrackpadStyle.app")
         app.inherit = false
         app.scroll.duration = 2.0
         popover.currentTargetApplication = app
+        Options.shared.scrollTuning.momentum = nil
         Options.shared.scroll.duration = 1.5
 
         toggle.state = .on
         popover.simulateTrackpadToggle(toggle)
         XCTAssertTrue(app.scroll.smoothSimTrackpad)
-        XCTAssertEqual(app.scroll.duration, 2.0)
+        XCTAssertEqual(app.scroll.duration, ScrollTrackpadStyle.defaultDuration)
         toggle.state = .off
         popover.simulateTrackpadToggle(toggle)
         XCTAssertFalse(app.scroll.smoothSimTrackpad)
         XCTAssertEqual(app.scroll.duration, 2.0)
         XCTAssertFalse(Options.shared.scroll.smoothSimTrackpad, "the global settings are not touched")
         XCTAssertEqual(Options.shared.scroll.duration, 1.5)
+    }
+
+    func testPreset_startsBothTrackpadStatesAfresh() {
+        let scroll = OPTIONS_SCROLL_DEFAULT()
+        scroll.setTrackpadStyleEvents(true, glideFromMomentum: false)
+        XCTAssertNotNil(scroll.durationForOtherTrackpadState)
+        var tuning = ScrollTuningSettings.default
+        ScrollPreset.smooth.apply(to: scroll, tuning: &tuning)
+        XCTAssertNil(scroll.durationForOtherTrackpadState)
+        XCTAssertFalse(scroll.smoothSimTrackpad)
+        XCTAssertEqual(scroll.duration, 3.13)
+    }
+
+    /// The one build that dropped the old lock left "on, short Duration, nothing remembered".
+    func testSettingsWithoutATrackpadDuration_getTheDefaultOnLoad() {
+        let scroll = OPTIONS_SCROLL_DEFAULT()
+        scroll.smoothSimTrackpad = true
+        scroll.duration = 3.13
+        scroll.adoptTrackpadStyleDurationIfMissing(glideFromMomentum: false)
+        XCTAssertEqual(scroll.duration, ScrollTrackpadStyle.defaultDuration)
+        XCTAssertEqual(scroll.durationForOtherTrackpadState, 3.13)
+        // Once there is something remembered, a chosen Duration is left alone.
+        scroll.duration = 4.0
+        scroll.adoptTrackpadStyleDurationIfMissing(glideFromMomentum: false)
+        XCTAssertEqual(scroll.duration, 4.0)
+
+        let withMomentum = OPTIONS_SCROLL_DEFAULT()
+        withMomentum.smoothSimTrackpad = true
+        withMomentum.duration = 3.13
+        withMomentum.adoptTrackpadStyleDurationIfMissing(glideFromMomentum: true)
+        XCTAssertEqual(withMomentum.duration, 3.13, "Magic Mouse keeps its Duration")
+
+        let off = OPTIONS_SCROLL_DEFAULT()
+        off.duration = 3.13
+        off.adoptTrackpadStyleDurationIfMissing(glideFromMomentum: false)
+        XCTAssertEqual(off.duration, 3.13)
     }
 
     // MARK: - Popover

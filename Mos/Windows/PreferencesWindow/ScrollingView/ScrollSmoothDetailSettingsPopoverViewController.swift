@@ -36,9 +36,13 @@ class ScrollSmoothDetailSettingsPopoverViewController: AdaptivePopover, ScrollOp
         onOptionsChanged?()
     }
 
-    /// Duration is not part of this: it stays as it is either way.
+    /// Each state has its own Duration (OPTIONS_SCROLL_DEFAULT.setTrackpadStyleEvents); the
+    /// slider stays free in both.
     @IBAction func simulateTrackpadToggle(_ sender: NSButton) {
-        getTargetApplicationScrollOptions().smoothSimTrackpad = sender.state == .on
+        getTargetApplicationScrollOptions().setTrackpadStyleEvents(
+            sender.state == .on,
+            glideFromMomentum: Options.shared.scrollTuning.momentum != nil
+        )
         syncViewWithOptions()
         onOptionsChanged?()
     }
