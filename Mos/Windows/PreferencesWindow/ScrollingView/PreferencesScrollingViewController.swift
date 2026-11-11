@@ -681,7 +681,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         clear.isBordered = false
         clear.imageScaling = .scaleProportionallyDown
         clear.contentTintColor = .secondaryLabelColor
-        clear.setAccessibilityLabel(text("scrolling-key-clear"))
+        clear.setAccessibilityLabel(String(format: text("scrolling-key-clear-for"), text(key.labelKey)))
         clear.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             clear.widthAnchor.constraint(equalToConstant: Self.keyClearButtonSize),
@@ -746,11 +746,13 @@ extension PreferencesScrollingViewController {
             button.title = titles[key.rawValue]
             button.isEnabled = enabled
 
-            // The clear button only shows while there is a key to clear.
+            // The clear button only shows while there is a key to clear. Hidden by its alpha,
+            // so the recorder keeps its place; out of the accessibility tree while hidden.
             let canClear = hotkeys[key.rawValue] != nil && enabled
             let clear = keyClearButtons[key.rawValue]
             clear.alphaValue = canClear ? 1.0 : 0.0
             clear.isEnabled = canClear
+            clear.setAccessibilityElement(canClear)
         }
     }
 }

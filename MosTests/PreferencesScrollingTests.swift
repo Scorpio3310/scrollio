@@ -566,7 +566,12 @@ final class PreferencesScrollingTests: XCTestCase {
         let controller = makeController(advanced: true)
         XCTAssertEqual(controller.keyBindButtons.map(\.title), ["⌥", "⇧", "⌘"], "the default keys, named as the Buttons pane names them")
         XCTAssertTrue(controller.keyClearButtons.allSatisfy { $0.isEnabled && $0.alphaValue == 1 })
-        XCTAssertTrue(controller.keyClearButtons.allSatisfy { $0.accessibilityLabel() == "Clear key" })
+        XCTAssertEqual(
+            controller.keyClearButtons.map { $0.accessibilityLabel() },
+            ["Clear key for Scroll faster", "Clear key for Scroll sideways", "Clear key for Pause smoothing"],
+            "VoiceOver tells the three apart"
+        )
+        XCTAssertTrue(controller.keyClearButtons.allSatisfy { $0.isAccessibilityElement() })
 
         send(controller.keyClearButtons[ScrollHoldKey.sideways.rawValue])
 
@@ -577,11 +582,19 @@ final class PreferencesScrollingTests: XCTestCase {
         let cleared = controller.keyClearButtons[ScrollHoldKey.sideways.rawValue]
         XCTAssertFalse(cleared.isEnabled)
         XCTAssertEqual(cleared.alphaValue, 0, "nothing to clear")
+        XCTAssertFalse(cleared.isAccessibilityElement(), "a hidden button is not in the accessibility tree")
+        XCTAssertTrue(controller.keyClearButtons[ScrollHoldKey.faster.rawValue].isAccessibilityElement())
 
         send(controller.keyClearButtons[ScrollHoldKey.faster.rawValue])
         send(controller.keyClearButtons[ScrollHoldKey.pause.rawValue])
         XCTAssertNil(Options.shared.scroll.dash)
         XCTAssertNil(Options.shared.scroll.block)
+        XCTAssertFalse(controller.keyClearButtons.contains { $0.isAccessibilityElement() })
+
+        // A key again: the button is back in the tree.
+        Options.shared.scroll.dash = ScrollHotkey(type: .keyboard, code: KeyCode.optionL)
+        controller.syncViewWithOptions()
+        XCTAssertTrue(controller.keyClearButtons[ScrollHoldKey.faster.rawValue].isAccessibilityElement())
     }
 
     func testARecordedKeyGoesToTheRowThatRecorded() {

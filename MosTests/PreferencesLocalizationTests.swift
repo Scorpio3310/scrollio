@@ -52,7 +52,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "scrolling-trackpad-events", "scrolling-trackpad-events-hint",
         "scrolling-keys-header", "scrolling-key-faster", "scrolling-key-faster-hint",
         "scrolling-key-sideways", "scrolling-key-sideways-hint", "scrolling-key-pause", "scrolling-key-pause-hint",
-        "scrolling-key-clear", "scrolling-key-none", "scrolling-reset",
+        "scrolling-key-clear-for", "scrolling-key-none", "scrolling-reset",
     ]
 
     /// Buttons pane: the card, the list and its rows, the action menu, "Which Button Is

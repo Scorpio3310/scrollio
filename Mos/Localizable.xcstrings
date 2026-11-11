@@ -4255,17 +4255,6 @@
         }
       }
     },
-    "scrolling-key-clear": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Clear key"
-          }
-        }
-      }
-    },
     "scrolling-reset": {
       "extractionState": "manual",
       "localizations": {
@@ -5076,6 +5065,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "None"
+          }
+        }
+      }
+    },
+    "scrolling-key-clear-for": {
+      "comment": "Scrolling pane: accessibility name of the button that clears a hold key; %@ is the row title, e.g. Scroll faster",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear key for %@"
           }
         }
       }
