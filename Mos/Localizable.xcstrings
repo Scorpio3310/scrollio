@@ -709,7 +709,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Back"
+            "value": "Back Button"
           }
         }
       }
@@ -720,7 +720,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Forward"
+            "value": "Forward Button"
           }
         }
       }
@@ -896,7 +896,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tracking speed"
+            "value": "Swipe speed"
           }
         }
       }
@@ -995,7 +995,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Slower"
+            "value": "Slow"
           }
         }
       }
@@ -1006,7 +1006,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Faster"
+            "value": "Fast"
           }
         }
       }
@@ -1259,7 +1259,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pointer"
+            "value": "Sensor"
           }
         }
       }
@@ -1281,7 +1281,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Faster"
+            "value": "Fast"
           }
         }
       }
@@ -1303,7 +1303,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Slower"
+            "value": "Slow"
           }
         }
       }
@@ -4052,7 +4052,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shorter"
+            "value": "Slow"
           }
         }
       }
@@ -4063,7 +4063,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Farther"
+            "value": "Fast"
           }
         }
       }

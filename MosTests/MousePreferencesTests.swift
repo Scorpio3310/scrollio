@@ -1224,6 +1224,14 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertEqual(controller.trackingSpeedRow.explanation, text("mouse-macos-tracking-speed-hint"))
         XCTAssertEqual(controller.trackingSpeedRow.lowEndLabel?.stringValue, text("mouse-macos-tracking-speed-slow"))
         XCTAssertEqual(controller.trackingSpeedRow.highEndLabel?.stringValue, text("mouse-macos-tracking-speed-fast"))
+        // One name for one thing: the Logitech box is the sensor, not a second "Pointer";
+        // every speed slider ends in the words of System Settings.
+        XCTAssertEqual(controller.macSection.titleLabel?.stringValue, "Pointer (macOS)")
+        XCTAssertEqual(controller.pointerSection.titleLabel?.stringValue, "Sensor")
+        XCTAssertEqual(controller.trackingSpeedRow.lowEndLabel?.stringValue, "Slow")
+        XCTAssertEqual(controller.trackingSpeedRow.highEndLabel?.stringValue, "Fast")
+        XCTAssertEqual(controller.pointerSpeedRow.lowEndLabel?.stringValue, "Slow")
+        XCTAssertEqual(controller.pointerSpeedRow.highEndLabel?.stringValue, "Fast")
         XCTAssertEqual(controller.trackingSpeedRow.valueText, "", "macOS shows no number either")
         XCTAssertEqual(controller.pointerAccelerationRow.title, text("mouse-macos-acceleration"))
         XCTAssertEqual(controller.pointerAccelerationRow.explanation, text("mouse-macos-acceleration-hint"))

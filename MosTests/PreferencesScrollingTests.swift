@@ -193,8 +193,8 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(controller.feelRow.placement, .below)
         XCTAssertTrue(controller.feelRow.accessory === controller.feelControl)
         XCTAssertTrue(controller.feelRow.explanationLabel === controller.feelHintLabel)
-        XCTAssertEqual(controller.speedRow.lowEndLabel?.stringValue, "Shorter")
-        XCTAssertEqual(controller.speedRow.highEndLabel?.stringValue, "Farther")
+        XCTAssertEqual(controller.speedRow.lowEndLabel?.stringValue, "Slow")
+        XCTAssertEqual(controller.speedRow.highEndLabel?.stringValue, "Fast")
         XCTAssertNil(controller.glideTimeRow.lowEndLabel)
     }
 
@@ -205,7 +205,7 @@ final class PreferencesScrollingTests: XCTestCase {
 
         let shown = allSubviews(of: controller.view).compactMap { ($0 as? NSTextField)?.stringValue }
         let expected = [
-            "Smooth scrolling", "Feel", "Speed", "Shorter", "Farther", "Reverse wheel direction",
+            "Smooth scrolling", "Feel", "Speed", "Slow", "Fast", "Reverse wheel direction",
             "Glide time", "Smallest step", "Trackpad-style events", "While you hold a key",
             "Scroll faster", "Scroll sideways", "Pause smoothing",
             text("scrolling-smooth-hint"), text("scrolling-speed-hint"), text("scrolling-reverse-hint"),
