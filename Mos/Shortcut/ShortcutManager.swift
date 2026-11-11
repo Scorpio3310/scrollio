@@ -12,18 +12,7 @@ import Cocoa
 /// 职责: 构建分级快捷键菜单 (PopUpButton 使用)
 class ShortcutManager {
 
-    // MARK: - 版本检测
-
-    /// 检测当前系统是否支持 SF Symbols (macOS 11.0+)
-    private static var supportsSFSymbols: Bool {
-        if #available(macOS 11.0, *) {
-            return true
-        }
-        return false
-    }
-
-    /// 创建带图标的 NSImage (macOS 11.0+)
-    @available(macOS 11.0, *)
+    /// 创建带图标的 NSImage (SF Symbol)
     private static func createSymbolImage(_ symbolName: String) -> NSImage? {
         return NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
     }
@@ -75,12 +64,8 @@ class ShortcutManager {
             let categoryMenuItem = NSMenuItem(title: categoryName, action: nil, keyEquivalent: "")
 
             // 为分类添加图标 (macOS 11.0+)
-            if supportsSFSymbols {
-                if #available(macOS 11.0, *) {
-                    let symbolName = SystemShortcut.categorySymbolName(categoryIdentifier)
-                    categoryMenuItem.image = createSymbolImage(symbolName)
-                }
-            }
+            let symbolName = SystemShortcut.categorySymbolName(categoryIdentifier)
+            categoryMenuItem.image = createSymbolImage(symbolName)
 
             // 创建子菜单
             let subMenu = NSMenu(title: categoryName)
@@ -102,11 +87,7 @@ class ShortcutManager {
                 shortcutMenuItem.toolTip = shortcut.localizedName
 
                 // 为快捷键添加图标 (macOS 11.0+)
-                if supportsSFSymbols {
-                    if #available(macOS 11.0, *) {
-                        shortcutMenuItem.image = createSymbolImage(shortcut.symbolName)
-                    }
-                }
+                shortcutMenuItem.image = createSymbolImage(shortcut.symbolName)
 
                 subMenu.addItem(shortcutMenuItem)
                 totalShortcuts += 1
@@ -170,11 +151,7 @@ class ShortcutManager {
         gestureItem.target = target
         gestureItem.representedObject = gestureShortcut
         gestureItem.toolTip = NSLocalizedString("gesture-navigation-menu-tooltip", comment: "")
-        if supportsSFSymbols {
-            if #available(macOS 11.0, *) {
-                gestureItem.image = createSymbolImage(gestureShortcut.symbolName)
-            }
-        }
+        gestureItem.image = createSymbolImage(gestureShortcut.symbolName)
         menu.addItem(gestureItem)
         totalShortcuts += 1
 
@@ -186,11 +163,7 @@ class ShortcutManager {
         )
         openItem.target = target
         openItem.representedObject = "__open__" as NSString
-        if supportsSFSymbols {
-            if #available(macOS 11.0, *) {
-                openItem.image = createSymbolImage("arrow.up.forward.app")
-            }
-        }
+        openItem.image = createSymbolImage("arrow.up.forward.app")
         menu.addItem(openItem)
 
         // "自定义…" 菜单项 (representedObject 为字符串标记)
@@ -201,11 +174,7 @@ class ShortcutManager {
         )
         customItem.target = target
         customItem.representedObject = "__custom__" as NSString
-        if supportsSFSymbols {
-            if #available(macOS 11.0, *) {
-                customItem.image = createSymbolImage("keyboard")
-            }
-        }
+        customItem.image = createSymbolImage("keyboard")
         menu.addItem(customItem)
     }
 
@@ -223,11 +192,9 @@ class ShortcutManager {
 
         if let custom = customImage {
             categoryMenuItem.image = custom
-        } else if supportsSFSymbols {
-            if #available(macOS 11.0, *) {
-                let symbolName = SystemShortcut.categorySymbolName(category.category)
-                categoryMenuItem.image = createSymbolImage(symbolName)
-            }
+        } else {
+            let symbolName = SystemShortcut.categorySymbolName(category.category)
+            categoryMenuItem.image = createSymbolImage(symbolName)
         }
 
         let subMenu = NSMenu(title: categoryName)
@@ -249,11 +216,7 @@ class ShortcutManager {
                 shortcutMenuItem.isEnabled = false
             }
 
-            if supportsSFSymbols {
-                if #available(macOS 11.0, *) {
-                    shortcutMenuItem.image = createSymbolImage(shortcut.symbolName)
-                }
-            }
+            shortcutMenuItem.image = createSymbolImage(shortcut.symbolName)
 
             subMenu.addItem(shortcutMenuItem)
             totalShortcuts += 1

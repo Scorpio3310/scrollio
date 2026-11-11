@@ -96,7 +96,7 @@ class PreferencesTabViewController: NSTabViewController {
         tabView.leftAnchor.constraint(equalTo: view.leftAnchor, constant: 0).isActive = true
         // 额外叠加一层 NSVisualEffectView, 并固定于界面下方, 避免切换时窗口底部颜色不一致
         backgroundVisualEffectView.blendingMode = NSVisualEffectView.BlendingMode.behindWindow
-        if #available(OSX 10.14, *) { backgroundVisualEffectView.material = NSVisualEffectView.Material.toolTip }
+        backgroundVisualEffectView.material = NSVisualEffectView.Material.toolTip
         view.addSubview(backgroundVisualEffectView, positioned: NSWindow.OrderingMode.below, relativeTo: tabView)
         backgroundVisualEffectView.frame.size = NSSize(width: 1000, height: 1000) // 只要比预期内容大就行, 不会有额外占用
         backgroundVisualEffectView.leftAnchor.constraint(equalTo: view.leftAnchor, constant: 0).isActive = true

@@ -308,15 +308,10 @@ final class ButtonBindingTests: XCTestCase {
         let badgeHeight: CGFloat = 17
         let hPadding: CGFloat = 5
         let plusSpacing: CGFloat = 3
-        let iconWidth: CGFloat
-        if #available(macOS 11.0, *) {
-            let symbol = NSImage(systemSymbolName: "keyboard", accessibilityDescription: nil)
-            let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
-            let keyboardImage = symbol?.withSymbolConfiguration(config) ?? symbol
-            iconWidth = (keyboardImage?.size.width ?? 0) + 4
-        } else {
-            iconWidth = 0
-        }
+        let symbol = NSImage(systemSymbolName: "keyboard", accessibilityDescription: nil)
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
+        let keyboardImage = symbol?.withSymbolConfiguration(config) ?? symbol
+        let iconWidth = (keyboardImage?.size.width ?? 0) + 4
 
         var totalWidth = iconWidth
         for (index, component) in components.enumerated() {
@@ -790,14 +785,10 @@ final class ButtonBindingTests: XCTestCase {
     }
 
     func testActionDisplayRenderer_keyComboUsesPopupButtonAppearanceWhenRasterizing() {
-        guard #available(macOS 10.14, *),
-              let darkAppearance = NSAppearance(named: .darkAqua),
+        guard let darkAppearance = NSAppearance(named: .darkAqua),
               let lightAppearance = NSAppearance(named: .aqua) else {
             return
         }
-
-        let previousCurrentAppearance = NSAppearance.current
-        defer { NSAppearance.current = previousCurrentAppearance }
 
         let presentation = ActionPresentation(
             kind: .keyCombo,
@@ -809,13 +800,17 @@ final class ButtonBindingTests: XCTestCase {
 
         let darkPopupButton = makeActionPopupButton()
         darkPopupButton.appearance = darkAppearance
-        NSAppearance.current = lightAppearance
-        ActionDisplayRenderer().render(presentation, into: darkPopupButton)
+        // The drawing appearance around the call is the opposite one: the renderer must
+        // not pick it up.
+        lightAppearance.performAsCurrentDrawingAppearance {
+            ActionDisplayRenderer().render(presentation, into: darkPopupButton)
+        }
 
         let lightPopupButton = makeActionPopupButton()
         lightPopupButton.appearance = lightAppearance
-        NSAppearance.current = darkAppearance
-        ActionDisplayRenderer().render(presentation, into: lightPopupButton)
+        darkAppearance.performAsCurrentDrawingAppearance {
+            ActionDisplayRenderer().render(presentation, into: lightPopupButton)
+        }
 
         guard let darkImage = (darkPopupButton.cell as? NSPopUpButtonCell)?.menuItem?.image,
               let lightImage = (lightPopupButton.cell as? NSPopUpButtonCell)?.menuItem?.image,
@@ -827,13 +822,11 @@ final class ButtonBindingTests: XCTestCase {
         XCTAssertGreaterThan(
             darkLuminance,
             lightLuminance + 0.2,
-            "Expected keyCombo bitmap colors to follow the popup button appearance, not NSAppearance.current"
+            "Expected keyCombo bitmap colors to follow the popup button appearance, not the current drawing appearance"
         )
     }
 
     func testButtonTableCellView_refreshesKeyComboImageWhenAppearanceChanges() {
-        guard #available(macOS 10.14, *) else { return }
-
         let previousAppearance = NSApp.appearance
         defer { NSApp.appearance = previousAppearance }
 

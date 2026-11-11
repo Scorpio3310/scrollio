@@ -292,7 +292,7 @@ final class MousePreferencesViewController: NSViewController {
         if let icon = deviceIcon() {
             let imageView = NSImageView(image: icon)
             imageView.imageScaling = .scaleProportionallyUpOrDown
-            if #available(macOS 10.14, *) { imageView.contentTintColor = .secondaryLabelColor }
+            imageView.contentTintColor = .secondaryLabelColor
             imageView.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([
                 imageView.widthAnchor.constraint(equalToConstant: 18),
@@ -450,10 +450,7 @@ final class MousePreferencesViewController: NSViewController {
 
     /// Small mouse glyph for the device list.
     private static func deviceIcon() -> NSImage? {
-        if #available(macOS 11.0, *) {
-            return NSImage(systemSymbolName: "computermouse", accessibilityDescription: nil)
-        }
-        return nil
+        return NSImage(systemSymbolName: "computermouse", accessibilityDescription: nil)
     }
 
     /// Toolbar image, the size of the SF.* assets of the storyboard tabs.

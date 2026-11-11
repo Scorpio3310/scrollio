@@ -63,12 +63,8 @@ struct ActionDisplayRenderer {
         let renderBody = {
             renderResolved(presentation, placeholderItem: placeholderItem, popupButton: popupButton)
         }
-        if #available(macOS 10.14, *) {
-            let previousAppearance = NSAppearance.current
-            NSAppearance.current = popupButton.effectiveAppearance
-            defer { NSAppearance.current = previousAppearance }
-            renderBody()
-        } else {
+        // Dynamic colours resolve against the popup's appearance, not the app's.
+        popupButton.effectiveAppearance.performAsCurrentDrawingAppearance {
             renderBody()
         }
     }
@@ -190,7 +186,6 @@ struct ActionDisplayRenderer {
 
     private func createSymbolImage(named symbolName: String?) -> NSImage? {
         guard let symbolName else { return nil }
-        guard #available(macOS 11.0, *) else { return nil }
         return NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
     }
 
@@ -210,14 +205,9 @@ struct ActionDisplayRenderer {
         let iconSize: CGFloat = 11
         let iconTrailingGap: CGFloat = 4
         let trailingSafetyPadding: CGFloat = 2.5
-        let keyboardImage: NSImage?
-        if #available(macOS 11.0, *) {
-            let symbol = NSImage(systemSymbolName: "keyboard", accessibilityDescription: nil)
-            let config = NSImage.SymbolConfiguration(pointSize: iconSize, weight: .regular)
-            keyboardImage = symbol?.withSymbolConfiguration(config) ?? symbol
-        } else {
-            keyboardImage = nil
-        }
+        let symbol = NSImage(systemSymbolName: "keyboard", accessibilityDescription: nil)
+        let config = NSImage.SymbolConfiguration(pointSize: iconSize, weight: .regular)
+        let keyboardImage: NSImage? = symbol?.withSymbolConfiguration(config) ?? symbol
 
         struct BadgeMetrics {
             let text: String
@@ -303,16 +293,13 @@ struct ActionDisplayRenderer {
     }
 
     private static func isDarkModeForCurrentAppearance() -> Bool {
-        if #available(macOS 10.14, *) {
-            return NSAppearance.current.bestMatch(
-                from: [
-                    .darkAqua,
-                    .vibrantDark,
-                    .accessibilityHighContrastDarkAqua,
-                    .accessibilityHighContrastVibrantDark
-                ]
-            ) != nil
-        }
-        return Utils.isDarkMode(for: nil)
+        return NSAppearance.currentDrawing().bestMatch(
+            from: [
+                .darkAqua,
+                .vibrantDark,
+                .accessibilityHighContrastDarkAqua,
+                .accessibilityHighContrastVibrantDark
+            ]
+        ) != nil
     }
 }
