@@ -2544,8 +2544,6 @@ class LogiDeviceSession {
 
     // MARK: - ChangeHost
 
-    private var pendingHostCycle: UInt8? = nil  // feature index, 等待 getHostInfo 响应后循环
-
     /// 切换到指定主机 (0-based index)
     func executeChangeHost(hostIndex: UInt8) {
         let changeHostFeatureId: UInt16 = 0x1814
@@ -2563,28 +2561,17 @@ class LogiDeviceSession {
         }
     }
 
-    /// 循环切换主机
-    func executeHostCycle() {
-        let changeHostFeatureId: UInt16 = 0x1814
-        if let idx = featureIndex[changeHostFeatureId] {
-            // 先查询当前主机信息, 然后切换到下一个
-            sendRequest(featureIndex: idx, functionId: 0)
-            pendingHostCycle = idx
-        } else {
-            discoverFeature(featureId: changeHostFeatureId) { [weak self] idx in
-                guard let self = self, let idx = idx else {
-                    LogiDebugPanel.log("[\(self?.deviceInfo.name ?? "?")] ChangeHost feature not supported")
-                    return
-                }
-                self.featureIndex[changeHostFeatureId] = idx
-                self.sendRequest(featureIndex: idx, functionId: 0)
-                self.pendingHostCycle = idx
-            }
-        }
+    /// One system-log line for a write a Logitech button action makes. These actions write
+    /// whatever "Let Scrollio manage this mouse" says (the user pressed the button for it),
+    /// like the SmartShift Toggle, which the wheel controller logs.
+    private func noteActionWrite(_ what: String) {
+        let managed = LogiSessionManager.shared.mouseManaged ? "on" : "off"
+        LogiSystemLog.note("[\(deviceName(slot: deviceIndex)) slot \(String(format: "0x%02X", deviceIndex))] Button action: \(what) (manage switch \(managed))")
     }
 
     private func switchToHost(featureIndex: UInt8, hostIndex: UInt8) {
         LogiDebugPanel.log("[\(deviceInfo.name)] Switching to host \(hostIndex + 1)")
+        noteActionWrite("Easy-Switch to host \(hostIndex + 1)")
         // setHost: function 1, param = target host index (0-based)
         sendRequest(featureIndex: featureIndex, functionId: 1, params: [hostIndex])
         // 注意: 切换后设备会断开连接, session 会被清理
@@ -4323,21 +4310,11 @@ class LogiDeviceSession {
                 // setSensorDpi: function 3, params: sensorIdx(1) + dpi(2)
                 if let params = LogiPointerSpeedProtocol.setParams(dpi: Int(newDPI)) {
                     sendRequest(featureIndex: dpiInfo.featureIndex, functionId: LogiPointerSpeedProtocol.setFunction, params: params)
+                    noteActionWrite("DPI \(dpiInfo.direction == .up ? "up" : "down") \(curDPI) -> \(newDPI)")
                 }
             } else {
                 LogiDebugPanel.log("[\(deviceInfo.name)] DPI: \(curDPI) (already at limit)")
             }
-            return
-        }
-
-        // ChangeHost response (getHostInfo, function 0) - 用于 cycle
-        if let hostIdx = pendingHostCycle, featureIdx == hostIdx && functionId == 0 {
-            pendingHostCycle = nil
-            let hostCount = report[4]
-            let currentHost = report[5]
-            let nextHost = (currentHost + 1) % hostCount
-            LogiDebugPanel.log("[\(deviceInfo.name)] Host: \(currentHost + 1)/\(hostCount) -> \(nextHost + 1)")
-            switchToHost(featureIndex: hostIdx, hostIndex: nextHost)
             return
         }
 
@@ -4348,6 +4325,7 @@ class LogiDeviceSession {
                 guard let params = Self.hiResWheelModeParams(toggling: Self.hiResWheelResolutionBit, in: report) else { return }
                 sendRequest(featureIndex: hiresIdx, functionId: 2, params: params)  // setWheelMode (fn2)
                 LogiDebugPanel.log("[\(deviceInfo.name)] HiResScroll: \((params[0] & Self.hiResWheelResolutionBit) != 0 ? "ON" : "OFF")")
+                noteActionWrite("high-resolution scrolling \((params[0] & Self.hiResWheelResolutionBit) != 0 ? "on" : "off")")
                 return
             }
             if pendingScrollInvertToggle && functionId == 1 && isOwnResponse {  // getWheelMode (fn1) 响应
@@ -4355,6 +4333,7 @@ class LogiDeviceSession {
                 guard let params = Self.hiResWheelModeParams(toggling: Self.hiResWheelInvertBit, in: report) else { return }
                 sendRequest(featureIndex: hiresIdx, functionId: 2, params: params)  // setWheelMode (fn2)
                 LogiDebugPanel.log("[\(deviceInfo.name)] ScrollInvert: \((params[0] & Self.hiResWheelInvertBit) != 0 ? "ON" : "OFF")")
+                noteActionWrite("wheel direction \((params[0] & Self.hiResWheelInvertBit) != 0 ? "inverted" : "normal")")
                 return
             }
         }
@@ -4368,6 +4347,7 @@ class LogiDeviceSession {
                 sendRequest(featureIndex: thumbIdx, functionId: 2, params: [newByte1, byte2])  // setThumbwheelReporting (fn2)
                 pendingThumbWheelToggle = false
                 LogiDebugPanel.log("[\(deviceInfo.name)] ThumbWheel: \((newByte1 & 0x01) != 0 ? "DIVERT" : "NORMAL")")
+                noteActionWrite("thumb wheel \((newByte1 & 0x01) != 0 ? "diverted" : "normal")")
                 return
             }
         }
@@ -4393,6 +4373,7 @@ class LogiDeviceSession {
                 pendingPointerSpeedCycle = false
                 let speedStr = String(format: "%.1fx", Double(nextSpeed) / 256.0)
                 LogiDebugPanel.log("[\(deviceInfo.name)] PointerSpeed: \(speedStr)")
+                noteActionWrite("pointer speed \(String(format: "0x%04X", currentSpeed)) -> \(speedStr)")
                 return
             }
         }
