@@ -30,8 +30,6 @@ final class GesturesPreferencesViewController: NSViewController {
     static let popUpWidth: CGFloat = 240
     /// Room for the widest tracking speed ("2.75×"), a little more than the kit's default.
     static let trackingSpeedValueWidth: CGFloat = 40
-    /// Between the last box and the muted lines under it.
-    static let noteSpacing: CGFloat = 10
 
     /// Identifiers for the views of the tab (tests and accessibility tooling). The shared
     /// controls have theirs in `MouseGestureSettingsControls.Identifier`.
@@ -170,7 +168,7 @@ final class GesturesPreferencesViewController: NSViewController {
         // close under the boxes (only one of them shows: one needs the Logitech box, the
         // other its absence).
         content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: first)
-        content.setCustomSpacing(Self.noteSpacing, after: logitech)
+        content.setCustomSpacing(PreferencesGroupedForm.noteSpacing, after: logitech)
 
         view = root
         reload()
@@ -263,7 +261,7 @@ final class GesturesPreferencesViewController: NSViewController {
         logitechNeedsLabel.superview?.isHidden = rules.showsOptions
         // A titled box keeps the room above its title; a muted line sits close.
         contentStack.setCustomSpacing(
-            rules.showsOptions ? PreferencesGroupedForm.sectionSpacing : Self.noteSpacing,
+            rules.showsOptions ? PreferencesGroupedForm.sectionSpacing : PreferencesGroupedForm.noteSpacing,
             after: behaviourSection
         )
         deviceTrackingRow.isOn = gesture.deviceTracking

@@ -298,7 +298,7 @@ final class LogiGestureSectionTests: XCTestCase {
         let box = frame(controller.logitechSection)
         let note = frame(controller.hapticsOffNote)
         // The root view is not flipped: lower on screen means a smaller y.
-        XCTAssertEqual(box.minY - note.maxY, GesturesPreferencesViewController.noteSpacing, accuracy: 0.5)
+        XCTAssertEqual(box.minY - note.maxY, PreferencesGroupedForm.noteSpacing, accuracy: 0.5)
         XCTAssertEqual(frame(controller.hapticsOffLabel).minX, frame(controller.hapticsRow.titleLabel).minX, accuracy: 0.5)
         XCTAssertEqual(frame(controller.openMouseButton).maxX, frame(controller.hapticsSwitch).maxX, accuracy: 0.5)
         XCTAssertLessThan(frame(controller.hapticsOffLabel).maxX, frame(controller.openMouseButton).minX)

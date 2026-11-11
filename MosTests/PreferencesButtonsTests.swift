@@ -1317,8 +1317,6 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertNil(pane.pendingAction)
     }
 
-    /// "Set Up…" and a button that is in the list without an action: it gets Gesture
-    /// Navigation. One with an action keeps it and only flashes.
     /// Gesture Navigation is held while the mouse moves: a key cannot be the gesture button.
     /// Gestures › Set Up… refuses one, adds nothing and says why; a mouse button still works.
     func testSetUpRefusesAKeyAsTheGestureButton() {
@@ -1375,6 +1373,8 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(rows[2].pullDown.gestureNavigationItem).isHidden, false, "a key that has it already")
     }
 
+    /// "Set Up…" and a button that is in the list without an action: it gets Gesture
+    /// Navigation. One with an action keeps it and only flashes.
     func testSetUpGivesAListedButtonWithoutAnActionGestureNavigation() throws {
         let unbound = binding(3)
         let bound = binding(4, "copy")
