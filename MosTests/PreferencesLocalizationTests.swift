@@ -23,7 +23,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "mouse-battery-critical", "mouse-battery-not-charging", "mouse-battery-accessibility",
         "mouse-battery-accessibility-charging",
         "mouse-macos-header", "mouse-macos-tracking-speed", "mouse-macos-tracking-speed-hint",
-        "mouse-macos-tracking-speed-slow", "mouse-macos-tracking-speed-fast",
+        "mouse-macos-tracking-speed-slow", "mouse-macos-tracking-speed-fast", "mouse-macos-tracking-speed-value",
         "mouse-macos-acceleration", "mouse-macos-acceleration-hint",
         "mouse-wheel-managed", "mouse-wheel-managed-hint",
         "mouse-pointer-header", "mouse-pointer-speed", "mouse-pointer-speed-hint", "mouse-pointer-speed-slower",
@@ -178,6 +178,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "mouse-battery-accessibility": "@",
         "mouse-battery-accessibility-charging": "@",
         "mouse-pointer-speed-value": "d",
+        "mouse-macos-tracking-speed-value": "dd",
         "mouse-wheel-readback-one": "@",
         // Scrolling pane
         "scrolling-key-clear-for": "@",

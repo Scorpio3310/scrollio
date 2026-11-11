@@ -338,12 +338,16 @@ final class MousePreferencesViewController: NSViewController {
     }
 
     /// The "Pointer (macOS)" box. A knob the user is dragging stays where the pointer has it.
+    /// VoiceOver reads the stop the knob is on ("4 of 10"): the slider shows no value.
     private func applyMacPointer(_ mac: MacPointerPaneModel) {
         if let index = mac.trackingSpeedIndex {
             trackingSpeedRow.isHidden = false
             if !trackingSpeedRow.isTracking {
                 trackingSpeedSlider.doubleValue = Double(index)
             }
+            trackingSpeedSlider.setAccessibilityValueDescription(
+                MouseText.trackingSpeedStop(Int(trackingSpeedSlider.doubleValue.rounded()))
+            )
         } else {
             trackingSpeedRow.isHidden = true
         }

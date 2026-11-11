@@ -476,6 +476,13 @@ enum MouseText {
     /// Segment order of the wheel mode control.
     static let modes: [LogiWheelMode] = [.smartShift, .ratchet, .freeSpin]
 
+    /// The stop of the macOS tracking speed at `index` (0 = slowest) as VoiceOver reads it:
+    /// "4 of 10".
+    static func trackingSpeedStop(_ index: Int) -> String {
+        let count = MacPointerSettings.trackingSpeeds.count
+        return String(format: text("mouse-macos-tracking-speed-value"), min(max(index, 0), count - 1) + 1, count)
+    }
+
     static func modeName(_ mode: LogiWheelMode) -> String {
         switch mode {
         case .smartShift: return text("mouse-wheel-mode-smartshift")

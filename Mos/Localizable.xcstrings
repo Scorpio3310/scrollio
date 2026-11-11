@@ -5129,6 +5129,18 @@
           }
         }
       }
+    },
+    "mouse-macos-tracking-speed-value": {
+      "comment": "Mouse pane: what VoiceOver reads as the value of the macOS Tracking speed slider: the stop (1 = slowest) and the number of stops, e.g. 4 of 10",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d of %d"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

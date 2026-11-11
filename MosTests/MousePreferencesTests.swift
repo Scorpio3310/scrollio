@@ -1272,6 +1272,31 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertEqual(mac.writes, 0)
     }
 
+    /// VoiceOver reads the stop, not the slider's bare index: "4 of 10", and it follows the
+    /// knob (an arrow key, VoiceOver's increment, a value read from macOS). Reading the
+    /// description writes nothing.
+    func testVoiceOverReadsTheTrackingSpeedStop() throws {
+        let controller = makeController()
+        let slider = try XCTUnwrap(controller.trackingSpeedSlider as? PreferencesSlider)
+        XCTAssertEqual(MacPointerSettings.trackingSpeeds.count, 10)
+        XCTAssertEqual(slider.accessibilityValueDescription(), "4 of 10", "0.6875 is the fourth stop")
+        XCTAssertEqual(mac.writes, 0)
+
+        XCTAssertTrue(slider.accessibilityPerformIncrement())
+        XCTAssertEqual(mac.trackingSpeedWrites, [0.875])
+        XCTAssertEqual(slider.accessibilityValueDescription(), "5 of 10")
+
+        mac.trackingSpeed = 0
+        controller.reloadMacPointerSettings()
+        XCTAssertEqual(slider.accessibilityValueDescription(), "1 of 10")
+        mac.trackingSpeed = 3
+        controller.reloadMacPointerSettings()
+        XCTAssertEqual(slider.accessibilityValueDescription(), "10 of 10")
+        XCTAssertEqual(MouseText.trackingSpeedStop(-3), "1 of 10", "kept on the scale")
+        XCTAssertEqual(MouseText.trackingSpeedStop(42), "10 of 10")
+        XCTAssertEqual(mac.trackingSpeedWrites, [0.875])
+    }
+
     func testTrackingSpeedWritesTheValueOfTheStop() {
         let controller = makeController()
         let slider = controller.trackingSpeedSlider!
