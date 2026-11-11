@@ -2,9 +2,9 @@
 //  WelcomeGuideFeelStep.swift
 //  Mos
 //  Step 3 of the Welcome Guide: how scrolling feels. The five "Feel" presets of the
-//  Scrolling pane as cards, each with the path the page takes after three clicks (the scroll
-//  engine's own maths, ScrollPreviewMotion), its name and a word on how it stops; over them
-//  a real page to scroll: a scroll view in a drawn window, smoothed by Scrollio's engine
+//  Scrolling pane as cards, each with a small picture of how far the page glides on (a dot
+//  resting further from the wheel's stop, card by card), its name and a word on how it stops;
+//  over them a real page to scroll: a scroll view in a drawn window, smoothed by Scrollio's engine
 //  itself, as any other window is. A line under the cards shows only for a glide time of
 //  the user's own (none of the five is chosen).
 //
@@ -174,13 +174,13 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
 
 // MARK: - A choice
 
-/// One preset: the path of the page over time for three clicks, its name, and a word on how
+/// One preset: a small picture of how far the page glides on, its name, and a word on how
 /// it stops. A radio button: the five are one group (arrow keys move between them),
 /// VoiceOver reads the name and that word.
 ///
 /// The card tracks the mouse itself. AppKit's radio cell takes a click only on the title
 /// it would draw beside its circle, a strip 47 × 16 pt at the left of the card's middle
-/// that this card never shows: a click on the drawn name, the curve or an edge did nothing.
+/// that this card never shows: a click on the drawn name, the picture or an edge did nothing.
 /// Here the whole card takes the click, as a button does: pressed while the pointer is
 /// on it, chosen when the button is released on it, also the first click into a window
 /// that is not key, and never the start of a window drag (the guide's window moves by
@@ -190,18 +190,13 @@ final class WelcomeGuideFeelButton: NSButton {
     /// Five cards and four gaps are as wide as the picture (552 pt).
     static let size = NSSize(width: 104, height: 76)
     static let spacing: CGFloat = 8
-    static let curveSize = NSSize(width: 80, height: 22)
+    static let pictureSize = NSSize(width: 80, height: 22)
     static let cornerRadius: CGFloat = 10
-    /// The time the curve shows: the five differ most in the first second.
-    static let curveSpan = 1.0
 
     let feel: ScrollFeel
-    /// Points of the curve in its 80 × 28 box (top left origin).
-    let curve: [NSPoint]
 
     init(feel: ScrollFeel) {
         self.feel = feel
-        curve = Self.curvePoints(duration: feel.duration)
         super.init(frame: NSRect(origin: .zero, size: Self.size))
         setButtonType(.radio)
         isBordered = false
@@ -349,28 +344,20 @@ final class WelcomeGuideFeelButton: NSButton {
         target.choose()
     }
 
-    /// The curve's baseline and the height of the full distance, in its box (top-left origin).
-    static let curveBaseline: CGFloat = 19
-    static let curveRise: CGFloat = 15
+    /// The picture, in its 80 × 22 box (top-left origin): a mark where the wheel stops and a
+    /// dot where the page comes to rest, with a trail between them.
+    static let trailStart: CGFloat = 6
+    static let dotRadius: CGFloat = 4
+    private static let firstDot: CGFloat = 14
+    private static let dotStep: CGFloat = 15
 
-    /// Where the page is over the first second after three clicks 0.15 s apart, as the engine
-    /// moves it (ScrollPreviewMotion), from 0 (bottom of the box) to the three clicks'
-    /// distance (top).
-    static func curvePoints(duration: Double) -> [NSPoint] {
-        var scene = ScrollPreviewView.Scene()
-        scene.duration = duration
-        let clicks = [0.0, 0.15, 0.3].map { ScrollPreviewMotion.Click(time: $0, turn: 1) }
-        let motion = ScrollPreviewMotion(scene: scene, clicks: clicks, start: 0)
-        let end = max(0.001, motion.end - motion.start)
-        let samples = 48
-        return (0...samples).map { index in
-            let time = curveSpan * Double(index) / Double(samples)
-            let progress = (motion.value(at: time) - motion.start) / end
-            return NSPoint(
-                x: 4 + (curveSize.width - 8) * CGFloat(index) / CGFloat(samples),
-                y: curveBaseline - curveRise * CGFloat(min(1.05, max(0, progress)))
-            )
-        }
+    /// How far from the mark a feel's dot rests. A rank, not a measure: the presets are in
+    /// the order of their glide times, and each card's dot is one even step further than the
+    /// one before. Drawn to scale (as curves of the page over time, which the cards had) the
+    /// five were too alike to tell apart.
+    static func dotX(for feel: ScrollFeel) -> CGFloat {
+        let rank = ScrollFeel.allCases.firstIndex(of: feel) ?? 0
+        return firstDot + dotStep * CGFloat(rank)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -394,26 +381,46 @@ final class WelcomeGuideFeelButton: NSButton {
         }
         box.stroke()
 
-        // The curve, in a box 80 × 22 centred at the top.
-        let origin = NSPoint(x: ((bounds.width - Self.curveSize.width) / 2).rounded(), y: 8)
-        let axis = NSBezierPath()
-        axis.move(to: NSPoint(x: origin.x + 4, y: origin.y + Self.curveBaseline + 0.5))
-        axis.line(to: NSPoint(x: origin.x + Self.curveSize.width - 4, y: origin.y + Self.curveBaseline + 0.5))
-        axis.lineWidth = 1
-        WelcomeGuidePalette.hairline.setStroke()
-        axis.stroke()
-        if let first = curve.first {
-            let path = NSBezierPath()
-            path.move(to: NSPoint(x: origin.x + first.x, y: origin.y + first.y))
-            for point in curve.dropFirst() {
-                path.line(to: NSPoint(x: origin.x + point.x, y: origin.y + point.y))
-            }
-            path.lineWidth = 1.6
-            path.lineCapStyle = .round
-            path.lineJoinStyle = .round
-            (selected ? NSColor.controlAccentColor : NSColor.secondaryLabelColor).setStroke()
-            path.stroke()
-        }
+        // The picture, in a box 80 × 22 centred at the top.
+        let origin = NSPoint(x: ((bounds.width - Self.pictureSize.width) / 2).rounded(), y: 8)
+        let middle = origin.y + Self.pictureSize.height / 2
+        let start = origin.x + Self.trailStart
+        let dotCentre = NSPoint(x: origin.x + Self.dotX(for: feel), y: middle)
+        let dot = NSRect(
+            x: dotCentre.x - Self.dotRadius, y: dotCentre.y - Self.dotRadius,
+            width: Self.dotRadius * 2, height: Self.dotRadius * 2
+        )
+        let ink = selected ? NSColor.controlAccentColor : NSColor.secondaryLabelColor
+        let faint = selected ? NSColor.controlAccentColor.withAlphaComponent(0.45) : NSColor.tertiaryLabelColor
+
+        // Where the wheel stops.
+        let mark = NSBezierPath()
+        mark.move(to: NSPoint(x: start, y: middle - 6))
+        mark.line(to: NSPoint(x: start, y: middle + 6))
+        mark.lineWidth = 1.5
+        mark.lineCapStyle = .round
+        faint.setStroke()
+        mark.stroke()
+
+        // The trail widens from the mark to the dot; it stays out of the dot, whose ink is
+        // translucent and would show the trail through.
+        NSGraphicsContext.saveGraphicsState()
+        let outsideTheDot = NSBezierPath(rect: bounds)
+        outsideTheDot.appendOval(in: dot)
+        outsideTheDot.windingRule = .evenOdd
+        outsideTheDot.addClip()
+        let trail = NSBezierPath()
+        trail.move(to: NSPoint(x: start, y: middle))
+        trail.line(to: NSPoint(x: dotCentre.x, y: middle - 3))
+        trail.line(to: NSPoint(x: dotCentre.x, y: middle + 3))
+        trail.close()
+        faint.setFill()
+        trail.fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        // Where the page comes to rest.
+        ink.setFill()
+        NSBezierPath(ovalIn: dot).fill()
 
         // The name and the word under it, centred, cut short rather than overflowing.
         let line = NSMutableParagraphStyle()
