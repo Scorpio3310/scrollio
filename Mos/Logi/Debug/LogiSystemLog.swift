@@ -15,7 +15,7 @@ import os
 
 enum LogiSystemLog {
 
-    private static let logger = Logger(
+    private static let logger = os.Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "Scrollio",
         category: "logi"
     )
