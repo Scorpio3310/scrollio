@@ -5376,6 +5376,54 @@
           }
         }
       }
+    },
+    "key-recorder-waiting-combination": {
+      "comment": "Key recorder popover while it waits for a button (Buttons pane +): what to press",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press a mouse button,\nor a key with ⌘, ⌥, ⌃ or ⇧"
+          }
+        }
+      }
+    },
+    "key-recorder-waiting-single-key": {
+      "comment": "Key recorder popover while it waits for a hold key (Scrolling pane): what to press",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press a key or a mouse button"
+          }
+        }
+      }
+    },
+    "key-recorder-waiting-adaptive": {
+      "comment": "Key recorder popover while it waits for a Keyboard Shortcut… action: what to press",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press a shortcut, a key or a mouse button"
+          }
+        }
+      }
+    },
+    "buttons-recorder-waiting-gesture": {
+      "comment": "Key recorder popover while Gestures > Set Up… waits for the gesture button: what to press",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press a mouse button"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

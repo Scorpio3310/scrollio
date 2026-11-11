@@ -753,6 +753,39 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
+    /// The key recorder's popover while it waits, in each mode and for the gesture button
+    /// (`key-recorder-<case>-<appearance>.png`); then with ⌘ held, a refused key, and a
+    /// recorded button. Drawn without the popover's arrow.
+    func testRenderKeyRecorderPopover() throws {
+        let cases: [(name: String, hint: String, prepare: (KeyPopover) -> Void)] = [
+            ("combination", KeyRecordingMode.combination.waitingHint, { _ in }),
+            ("single-key", KeyRecordingMode.singleKey.waitingHint, { _ in }),
+            ("adaptive", KeyRecordingMode.adaptive.waitingHint, { _ in }),
+            ("gesture", NSLocalizedString("buttons-recorder-waiting-gesture", comment: ""), { _ in }),
+            ("combination-command-held", KeyRecordingMode.combination.waitingHint, { popover in
+                popover.keyPreview.updateForRecording(modifiers: .maskCommand)
+            }),
+            ("gesture-refused-key", NSLocalizedString("buttons-recorder-waiting-gesture", comment: ""), { popover in
+                popover.keyPreview.update(from: ["⌘", "C"], status: .duplicate)
+                popover.showRefusalHint(NSLocalizedString("buttons-gesture-needs-mouse-button", comment: ""))
+            }),
+            ("combination-recorded", KeyRecordingMode.combination.waitingHint, { popover in
+                popover.keyPreview.update(from: ["⌥", "Back button"], status: .recorded)
+            }),
+        ]
+        for item in cases {
+            let popover = KeyPopover()
+            popover.announce = { _ in }
+            popover.testingPrepareContent(waitingHint: item.hint)
+            item.prepare(popover)
+            let view = try XCTUnwrap(popover.testingContentView)
+            view.layoutSubtreeIfNeeded()
+            view.setFrameSize(view.fittingSize)
+            try renderInPopoverMaterial(view, name: "key-recorder-\(item.name)")
+            popover.hide()
+        }
+    }
+
     /// Apps with long names, and the page of one of them.
     func testRenderAppsLongNames() throws {
         let stored = Options.shared.application.applications
