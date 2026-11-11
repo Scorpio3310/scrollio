@@ -6,6 +6,7 @@
 //
 
 import XCTest
+import Carbon.HIToolbox
 @testable import Mos_Debug
 
 final class ScrollEventTests: XCTestCase {
@@ -805,10 +806,10 @@ final class ThumbWheelEngineTests: XCTestCase {
         }
         XCTAssertNil(action(.scroll, true))
         XCTAssertNil(action(.scroll, false))
-        XCTAssertEqual(action(.zoom, true), .keys(ThumbWheelAction.appZoomIn))
-        XCTAssertEqual(action(.zoom, false), .keys(ThumbWheelAction.appZoomOut))
-        XCTAssertEqual(action(.tabs, true), .named("switchTabRight"))
-        XCTAssertEqual(action(.tabs, false), .named("switchTabLeft"))
+        XCTAssertEqual(action(.zoom, true), .zoomIn)
+        XCTAssertEqual(action(.zoom, false), .zoomOut)
+        XCTAssertEqual(action(.tabs, true), .keys(ThumbWheelAction.nextTab))
+        XCTAssertEqual(action(.tabs, false), .keys(ThumbWheelAction.previousTab))
         XCTAssertEqual(action(.desktops, true), .named("moveSpaceRight"))
         XCTAssertEqual(action(.desktops, false), .named("moveSpaceLeft"))
         XCTAssertEqual(action(.backForward, true), .named("navigateForward"))
@@ -825,14 +826,18 @@ final class ThumbWheelEngineTests: XCTestCase {
         }
     }
 
-    /// App zoom: ⌘= and ⌘−, not the screen zoom of the Accessibility settings (⌘⌥= / ⌘⌥−).
-    func testZoom_isTheAppsZoomKeys() {
-        XCTAssertEqual(ThumbWheelAction.appZoomIn.code, 24)
-        XCTAssertEqual(ThumbWheelAction.appZoomIn.modifiers, .command)
-        XCTAssertEqual(ThumbWheelAction.appZoomOut.code, 27)
-        XCTAssertEqual(ThumbWheelAction.appZoomOut.modifiers, .command)
-        XCTAssertNil(SystemShortcut.getShortcut(named: ThumbWheelAction.appZoomIn.identifier), "not an action of the menu")
-        XCTAssertNil(SystemShortcut.getShortcut(named: ThumbWheelAction.appZoomOut.identifier))
+    /// Tabs: ⌃⇥ and ⌃⇧⇥ (Tab, key code 48, on every layout); keys of their own, the action
+    /// menu's tab actions stay as button bindings use them.
+    func testTabs_areControlTabAndControlShiftTab() {
+        XCTAssertEqual(ThumbWheelAction.nextTab.code, 48)
+        XCTAssertEqual(ThumbWheelAction.nextTab.modifiers, .control)
+        XCTAssertEqual(ThumbWheelAction.previousTab.code, 48)
+        XCTAssertEqual(ThumbWheelAction.previousTab.modifiers, [.control, .shift])
+        XCTAssertNil(SystemShortcut.getShortcut(named: ThumbWheelAction.nextTab.identifier), "not an action of the menu")
+        XCTAssertNil(SystemShortcut.getShortcut(named: ThumbWheelAction.previousTab.identifier))
+        XCTAssertEqual(SystemShortcut.switchTabRight.code, 124, "the menu's own actions are unchanged")
+        XCTAssertEqual(SystemShortcut.switchTabRight.modifiers, [.command, .option])
+        XCTAssertEqual(SystemShortcut.nextTab.modifiers, [.command, .shift])
     }
 
     private func resolved(_ shortcut: SystemShortcut.Shortcut) -> [UInt64] {
@@ -849,13 +854,21 @@ final class ThumbWheelEngineTests: XCTestCase {
             keys.append([UInt64(code), flags])
         }
         defer { ShortcutExecutor.shared.clearTestingKeyboardShortcutObserver() }
-        let performer = ThumbWheelActionPerformer(volumeKeys: SystemVolumeKeys(post: { _ in XCTFail("no volume key") }))
+        let command = UInt64(NSEvent.ModifierFlags.command.rawValue)
+        let control = UInt64(NSEvent.ModifierFlags.control.rawValue)
+        let shift = UInt64(NSEvent.ModifierFlags.shift.rawValue)
+        let performer = ThumbWheelActionPerformer(
+            volumeKeys: SystemVolumeKeys(post: { _ in XCTFail("no volume key") }),
+            zoomKeys: AppZoomKeys(layout: FakeKeyboardLayout.slovenian)
+        )
 
-        performer.perform(.named("switchTabRight"), times: 2)
-        XCTAssertEqual(keys, [resolved(SystemShortcut.switchTabRight), resolved(SystemShortcut.switchTabRight)])
+        performer.perform(ThumbWheelAction.action(for: .tabs, towardNext: true)!, times: 2)
+        performer.perform(ThumbWheelAction.action(for: .tabs, towardNext: false)!, times: 1)
+        XCTAssertEqual(keys, [[48, control], [48, control], [48, control | shift]])
         keys = []
-        performer.perform(.keys(ThumbWheelAction.appZoomOut), times: 1)
-        XCTAssertEqual(keys, [[27, UInt64(NSEvent.ModifierFlags.command.rawValue)]])
+        performer.perform(.zoomIn, times: 2)
+        performer.perform(.zoomOut, times: 1)
+        XCTAssertEqual(keys, [[24, command], [24, command], [44, command]], "the layout's \"+\" and \"-\" keys")
         keys = []
         for (function, next) in [(ThumbWheelFunction.desktops, false), (.backForward, true), (.backForward, false)] {
             performer.perform(ThumbWheelAction.action(for: function, towardNext: next)!, times: 1)
@@ -864,7 +877,7 @@ final class ThumbWheelEngineTests: XCTestCase {
             resolved(SystemShortcut.moveSpaceLeft), resolved(SystemShortcut.navigateForward), resolved(SystemShortcut.navigateBack),
         ])
         keys = []
-        performer.perform(.named("switchTabLeft"), times: 0)
+        performer.perform(.zoomOut, times: 0)
         XCTAssertEqual(keys, [])
     }
 
@@ -898,12 +911,12 @@ final class ThumbWheelEngineTests: XCTestCase {
         XCTAssertEqual(rig.turn(lines: -1, at: 0.02, settings: tabs), 1)
         XCTAssertEqual(rig.performed, [], "not inside the callback")
         rig.advance(to: 500.02)
-        XCTAssertEqual(rig.performed, [Performed(action: .named("switchTabRight"), times: 1)])
+        XCTAssertEqual(rig.performed, [Performed(action: .keys(ThumbWheelAction.nextTab), times: 1)])
 
         // Swapped (or reversed) the same turn is the previous tab.
         XCTAssertEqual(rig.turn(lines: -2, at: 1, settings: tabs, flipped: true), -1)
         rig.advance(to: 501)
-        XCTAssertEqual(rig.performed.last, Performed(action: .named("switchTabLeft"), times: 1))
+        XCTAssertEqual(rig.performed.last, Performed(action: .keys(ThumbWheelAction.previousTab), times: 1))
     }
 
     func testSeveralStepsOfOneEvent_runTogether() {
@@ -1221,7 +1234,7 @@ final class ThumbWheelScrollTapTests: XCTestCase {
         XCTAssertEqual(ScrollCore.shared.handover.state, .glide, "the trackpad's glide goes on")
         XCTAssertEqual(rig.performed, [], "nothing runs inside the callback")
         rig.advance(to: rig.now)
-        XCTAssertEqual(rig.performed, [ThumbWheelEngineTests.Performed(action: .named("switchTabRight"), times: 1)])
+        XCTAssertEqual(rig.performed, [ThumbWheelEngineTests.Performed(action: .keys(ThumbWheelAction.nextTab), times: 1)])
     }
 
     /// The function does not depend on "Smooth scrolling", the allowlist or the reverse rule's
@@ -1238,7 +1251,7 @@ final class ThumbWheelScrollTapTests: XCTestCase {
         XCTAssertFalse(goesOn(try sideways(-1)))
         rig.advance(to: rig.now)
         XCTAssertEqual(rig.performed.map(\.action), [
-            .keys(ThumbWheelAction.appZoomIn), .keys(ThumbWheelAction.appZoomIn), .keys(ThumbWheelAction.appZoomOut),
+            .zoomIn, .zoomIn, .zoomOut,
         ])
         XCTAssertEqual(inputs.count, 0)
     }
@@ -1308,6 +1321,120 @@ final class ThumbWheelScrollTapTests: XCTestCase {
                     }
                 }
             }
+        }
+    }
+}
+
+// MARK: - The zoom keys of the layout in use
+
+/// A keyboard layout for tests: its id and what its keys type with no modifier (the keys
+/// around the zoom keys and the keypad, as the real layouts have them).
+final class FakeKeyboardLayout: KeyboardLayoutSource {
+    var id: String?
+    var characters: [CGKeyCode: String]
+    /// How often the layout's keys were translated.
+    private(set) var translations = 0
+
+    init(id: String?, characters: [CGKeyCode: String]) {
+        self.id = id
+        self.characters = characters
+    }
+
+    func currentLayoutID() -> String? { return id }
+
+    func currentCharacters() -> [CGKeyCode: String] {
+        translations += 1
+        return characters
+    }
+
+    private static let keypad: [CGKeyCode: String] = [69: "+", 78: "-", 81: "="]
+
+    static var us: FakeKeyboardLayout {
+        return FakeKeyboardLayout(id: "com.apple.keylayout.US", characters: keypad.merging([0: "a", 24: "=", 27: "-", 30: "]", 44: "/"]) { $1 })
+    }
+    /// QWERTZ: "+" on the US "=" key, "/" on the US "-" key, "-" on the US "/" key.
+    static var slovenian: FakeKeyboardLayout {
+        return FakeKeyboardLayout(id: "com.apple.keylayout.Slovenian", characters: keypad.merging([0: "a", 24: "+", 27: "/", 30: "đ", 44: "-"]) { $1 })
+    }
+    /// QWERTZ: a dead "´" on the US "=" key, "ß" on the US "-" key, "+" on the US "]" key.
+    static var german: FakeKeyboardLayout {
+        return FakeKeyboardLayout(id: "com.apple.keylayout.German", characters: keypad.merging([0: "a", 24: "´", 27: "ß", 30: "+", 44: "-"]) { $1 })
+    }
+    /// AZERTY: "-" on the US "=" key, ")" on the US "-" key, "=" on the US "/" key, no "+".
+    static var french: FakeKeyboardLayout {
+        return FakeKeyboardLayout(id: "com.apple.keylayout.French", characters: keypad.merging([0: "q", 24: "-", 27: ")", 30: "$", 44: "="]) { $1 })
+    }
+}
+
+/// ⌘ with the keys that type "+" (else "=") and "-" on the layout in use: zoom works on any
+/// keyboard layout, not only the US one.
+final class AppZoomKeysTests: XCTestCase {
+
+    private func codes(_ layout: FakeKeyboardLayout) -> AppZoomKeys.Codes {
+        return AppZoomKeys(layout: layout).codes()
+    }
+
+    func testUSLayout_givesTheKeysOfBefore() {
+        XCTAssertEqual(AppZoomKeys.usCodes, AppZoomKeys.Codes(zoomIn: 24, zoomOut: 27))
+        XCTAssertEqual(codes(.us), AppZoomKeys.Codes(zoomIn: 24, zoomOut: 27), "\"=\" and \"-\", not the keypad's")
+    }
+
+    func testOtherLayouts_giveTheirOwnKeys() {
+        XCTAssertEqual(codes(.slovenian), AppZoomKeys.Codes(zoomIn: 24, zoomOut: 44))
+        XCTAssertEqual(codes(.german), AppZoomKeys.Codes(zoomIn: 30, zoomOut: 44))
+        XCTAssertEqual(codes(.french), AppZoomKeys.Codes(zoomIn: 44, zoomOut: 24), "no \"+\" without Shift: \"=\"")
+    }
+
+    func testALayoutWithoutTheCharacters_fallsBackToTheUSKeys() {
+        let letters = FakeKeyboardLayout(id: "letters", characters: [0: "a", 24: "ä", 27: "ö"])
+        XCTAssertEqual(codes(letters), AppZoomKeys.usCodes)
+        let onlyTheKeypad = FakeKeyboardLayout(id: "keypad", characters: [69: "+", 78: "-", 81: "="])
+        XCTAssertEqual(codes(onlyTheKeypad), AppZoomKeys.usCodes, "the keypad is left out")
+        let onlyMinus = FakeKeyboardLayout(id: "minus", characters: [44: "-"])
+        XCTAssertEqual(codes(onlyMinus), AppZoomKeys.Codes(zoomIn: 24, zoomOut: 44), "each key on its own")
+        XCTAssertEqual(codes(FakeKeyboardLayout(id: "empty", characters: [:])), AppZoomKeys.usCodes)
+        let none = FakeKeyboardLayout(id: nil, characters: FakeKeyboardLayout.slovenian.characters)
+        XCTAssertEqual(codes(none), AppZoomKeys.usCodes, "no layout in use")
+        XCTAssertEqual(none.translations, 0)
+    }
+
+    /// The 128 keys are translated once per layout, not at every step; a change of layout is
+    /// noticed by its id.
+    func testTheAnswerIsKeptPerLayout_andALayoutChangeIsNoticed() {
+        let layout = FakeKeyboardLayout.us
+        let keys = AppZoomKeys(layout: layout)
+        for _ in 0..<5 {
+            XCTAssertEqual(keys.codes(), AppZoomKeys.Codes(zoomIn: 24, zoomOut: 27))
+        }
+        XCTAssertEqual(layout.translations, 1)
+
+        layout.id = FakeKeyboardLayout.slovenian.id
+        layout.characters = FakeKeyboardLayout.slovenian.characters
+        XCTAssertEqual(keys.codes(), AppZoomKeys.Codes(zoomIn: 24, zoomOut: 44))
+        XCTAssertEqual(keys.codes(), AppZoomKeys.Codes(zoomIn: 24, zoomOut: 44))
+        XCTAssertEqual(layout.translations, 2)
+    }
+
+    /// The real translation (UCKeyTranslate) of installed layouts, picked by id: the layout
+    /// the Mac types with does not matter.
+    func testInstalledLayouts_translateAsTheFakesSay() throws {
+        func installed(_ id: String) throws -> TISInputSource {
+            let filter = [kTISPropertyInputSourceID as String: id] as CFDictionary
+            guard let list = TISCreateInputSourceList(filter, true)?.takeRetainedValue() as NSArray?,
+                  let first = list.firstObject else {
+                throw XCTSkip("\(id) is not installed")
+            }
+            return first as! TISInputSource
+        }
+        for fake in [FakeKeyboardLayout.us, .slovenian, .german, .french] {
+            let id = try XCTUnwrap(fake.id)
+            let source = try installed(id)
+            XCTAssertEqual(SystemKeyboardLayoutSource.id(of: source), id)
+            let characters = SystemKeyboardLayoutSource.characters(of: source)
+            for (code, character) in fake.characters {
+                XCTAssertEqual(characters[code], character, "\(id) key \(code)")
+            }
+            XCTAssertEqual(AppZoomKeys.codes(typing: characters), codes(fake), id)
         }
     }
 }

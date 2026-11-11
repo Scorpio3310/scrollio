@@ -43,15 +43,20 @@ enum ThumbWheelAction: Equatable {
     case named(String)
     /// A key combination that is not in the action menu (`ShortcutExecutor.execute(_:)`).
     case keys(SystemShortcut.Shortcut)
+    /// Zoom in or out in an app: ⌘ with the key that types "+" (else "=") or "-" on the
+    /// keyboard layout in use (`AppZoomKeys`), looked up when the step runs. Not
+    /// `SystemShortcut.zoomIn` / `zoomOut` (⌘⌥= / ⌘⌥−): that is the screen zoom of the
+    /// Accessibility settings, off unless the user turned its keyboard shortcuts on.
+    case zoomIn
+    case zoomOut
     /// A volume key of an Apple keyboard.
     case volume(SystemVolumeKey)
 
-    /// Zoom in an app: ⌘= (zoom in) and ⌘− (zoom out), as browsers, Preview and editors have
-    /// them. `SystemShortcut.zoomIn` / `zoomOut` are ⌘⌥= / ⌘⌥−, the screen zoom of the
-    /// Accessibility settings, which is off unless the user turned its keyboard shortcuts on.
-    /// Key codes of the US layout, as every key action of the executor.
-    static let appZoomIn = SystemShortcut.Shortcut("thumbWheelZoomIn", 24, .command)
-    static let appZoomOut = SystemShortcut.Shortcut("thumbWheelZoomOut", 27, .command)
+    /// The next and previous tab: ⌃⇥ and ⌃⇧⇥ (Tab is key code 48 on every layout), as
+    /// Safari, Chrome, Firefox, Terminal and Finder have them. Not the action menu's
+    /// `switchTabRight` / `nextTab` (⌘⌥→ / ⌘⇧→), which button bindings keep using.
+    static let nextTab = SystemShortcut.Shortcut("thumbWheelNextTab", 48, .control)
+    static let previousTab = SystemShortcut.Shortcut("thumbWheelPreviousTab", 48, [.control, .shift])
 
     /// What a step does. Toward "next" is the turn that would scroll to the right
     /// (`ThumbWheelStepper`). Nil while the wheel scrolls.
@@ -60,11 +65,9 @@ enum ThumbWheelAction: Equatable {
         case .scroll:
             return nil
         case .zoom:
-            return .keys(towardNext ? appZoomIn : appZoomOut)
+            return towardNext ? .zoomIn : .zoomOut
         case .tabs:
-            // ⌘⌥→ / ⌘⌥←: the next and previous tab in Chrome, Firefox, Edge and VS Code.
-            // (`nextTab` / `previousTab` are ⌘⇧→ / ⌘⇧←, which select text in a text field.)
-            return .named(towardNext ? SystemShortcut.switchTabRight.identifier : SystemShortcut.switchTabLeft.identifier)
+            return .keys(towardNext ? nextTab : previousTab)
         case .desktops:
             return .named(towardNext ? SystemShortcut.moveSpaceRight.identifier : SystemShortcut.moveSpaceLeft.identifier)
         case .backForward:
@@ -80,15 +83,28 @@ struct ThumbWheelActionPerformer {
     var executor: ShortcutExecutor = .shared
     /// The seam for the volume keys: tests replace its `post`.
     var volumeKeys = SystemVolumeKeys()
+    /// The zoom keys of the layout in use (tests pass one with a fake layout).
+    var zoomKeys: AppZoomKeys = .shared
 
     func perform(_ action: ThumbWheelAction, times: Int) {
         guard times > 0 else { return }
+        // Zoom: the layout is asked once per step's action, not per key press.
+        let zoomCode: CGKeyCode?
+        switch action {
+        case .zoomIn: zoomCode = zoomKeys.codes().zoomIn
+        case .zoomOut: zoomCode = zoomKeys.codes().zoomOut
+        default: zoomCode = nil
+        }
         for _ in 0..<times {
             switch action {
             case .named(let name):
                 executor.execute(named: name)
             case .keys(let shortcut):
                 executor.execute(shortcut)
+            case .zoomIn, .zoomOut:
+                if let code = zoomCode {
+                    executor.execute(code: code, flags: UInt64(NSEvent.ModifierFlags.command.rawValue))
+                }
             case .volume(let key):
                 volumeKeys.press(key)
             }
