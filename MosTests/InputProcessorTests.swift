@@ -1941,6 +1941,24 @@ final class InputProcessorTests: XCTestCase {
         )
     }
 
+    // MARK: - Where a synthesized click lands
+
+    /// Cocoa and CoreGraphics coordinates both hang on the primary display. The conversion
+    /// used the key window's screen (`NSScreen.main`): with that window on a display of
+    /// another height, every synthesized click landed off by the difference.
+    func testASynthesizedClickIsPlacedFromThePrimaryDisplay() {
+        // Primary display 1440 x 900 at the origin; a 1920 x 1080 display above it
+        // (Cocoa y 900...1980), which would have been NSScreen.main with a window there.
+        let onTheSecondDisplay = NSPoint(x: 300, y: 1500)
+        XCTAssertEqual(ShortcutExecutor.cgEventLocation(fromCocoa: onTheSecondDisplay, primaryScreenHeight: 900),
+                       CGPoint(x: 300, y: -600))
+        XCTAssertNotEqual(ShortcutExecutor.cgEventLocation(fromCocoa: onTheSecondDisplay, primaryScreenHeight: 1080),
+                          CGPoint(x: 300, y: -600), "measured from the other display it was 180 pt off")
+        // On the primary display: its top left is (0, 0) in CoreGraphics.
+        XCTAssertEqual(ShortcutExecutor.cgEventLocation(fromCocoa: NSPoint(x: 10, y: 890), primaryScreenHeight: 900),
+                       CGPoint(x: 10, y: 10))
+    }
+
     private func configureGestureBinding(type: EventType = .mouse, code: UInt16 = 3) {
         let trigger = RecordedEvent(
             type: type,

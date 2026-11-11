@@ -373,10 +373,7 @@ class ShortcutExecutor {
         inputModifiers: CGEventFlags?
     ) -> UUID? {
         guard let source = CGEventSource(stateID: .hidSystemState) else { return nil }
-        let location = NSEvent.mouseLocation
-        // 转换坐标: NSEvent 用左下角原点, CGEvent 用左上角原点
-        let screenHeight = NSScreen.main?.frame.height ?? 0
-        let point = CGPoint(x: location.x, y: screenHeight - location.y)
+        let point = currentMouseLocationForCGEvent()
         let spec = mouseEventSpec(for: kind, phase: phase)
         guard let event = CGEvent(
             mouseEventSource: source,
@@ -547,10 +544,22 @@ class ShortcutExecutor {
         }
     }
 
+    /// Where a synthesized click goes: the pointer, in CoreGraphics coordinates.
     private func currentMouseLocationForCGEvent() -> CGPoint {
-        let location = NSEvent.mouseLocation
-        let screenHeight = NSScreen.main?.frame.height ?? 0
-        return CGPoint(x: location.x, y: screenHeight - location.y)
+        return Self.cgEventLocation(
+            fromCocoa: NSEvent.mouseLocation,
+            primaryScreenHeight: NSScreen.screens.first?.frame.height ?? 0
+        )
+    }
+
+    /// A point in Cocoa screen coordinates (origin at the bottom left of the primary display,
+    /// y up) in CoreGraphics coordinates (origin at its top left, y down). Both spaces hang
+    /// on the primary display, the one with the menu bar (`NSScreen.screens.first`), whatever
+    /// display the point is on. `NSScreen.main` is the screen of the key window instead: with
+    /// that window on a display of another height every synthesized click landed off by the
+    /// difference.
+    static func cgEventLocation(fromCocoa location: NSPoint, primaryScreenHeight: CGFloat) -> CGPoint {
+        return CGPoint(x: location.x, y: primaryScreenHeight - location.y)
     }
 
     // MARK: - Logi HID++ Actions
