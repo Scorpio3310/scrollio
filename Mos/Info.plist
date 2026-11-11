@@ -18,16 +18,6 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleIdentifier</key>
-			<string></string>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-		</dict>
-		<dict/>
-	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
@@ -38,8 +28,6 @@
 	<false/>
 	<key>LSUIElement</key>
 	<true/>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>Scrollio needs to access accessibility to enhance your scrolling.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Nik Klemenc. Based on Mos by Caldis.</string>
 	<key>NSMainStoryboardFile</key>

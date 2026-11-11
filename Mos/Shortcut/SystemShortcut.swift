@@ -624,14 +624,19 @@ extension SystemShortcut {
 
     /// 从系统配置加载快捷键
     private static func loadSystemShortcuts() -> [String: (code: CGKeyCode, modifiers: UInt64)] {
-        var resolved: [String: (code: CGKeyCode, modifiers: UInt64)] = [:]
-
         // 读取系统快捷键配置
         guard let symbolicHotkeys = UserDefaults.standard.persistentDomain(forName: "com.apple.symbolichotkeys"),
               let hotkeys = symbolicHotkeys["AppleSymbolicHotKeys"] as? [String: Any] else {
             NSLog("SystemShortcut: Failed to read com.apple.symbolichotkeys")
-            return resolved
+            return [:]
         }
+        return resolvedShortcuts(fromSymbolicHotKeys: hotkeys)
+    }
+
+    /// The shortcuts of interest in `AppleSymbolicHotKeys` (the dictionary of
+    /// com.apple.symbolichotkeys). Pure: the values are another app's data and may be anything.
+    static func resolvedShortcuts(fromSymbolicHotKeys hotkeys: [String: Any]) -> [String: (code: CGKeyCode, modifiers: UInt64)] {
+        var resolved: [String: (code: CGKeyCode, modifiers: UInt64)] = [:]
 
         // 解析每个感兴趣的快捷键
         for (hotkeyID, shortcutName) in symbolicHotkeyMapping {
@@ -648,8 +653,10 @@ extension SystemShortcut {
             // parameters[0]: Unicode character (65535 for non-printable)
             // parameters[1]: Virtual key code
             // parameters[2]: Modifier flags
-            guard let keyCode = parameters[1] as? Int,
-                  let modifiers = parameters[2] as? Int else {
+            // These come from System Settings' preferences: a value that is no key code or
+            // no flag set (negative, too large) is skipped, not trapped on.
+            guard let keyCode = (parameters[1] as? Int).flatMap({ CGKeyCode(exactly: $0) }),
+                  let modifiers = (parameters[2] as? Int).flatMap({ UInt64(exactly: $0) }) else {
                 continue
             }
 
@@ -657,7 +664,7 @@ extension SystemShortcut {
             // Hotkey 79/81 是主快捷键, 80/82 是带额外修饰键的变体
             if hotkeyID == 79 || hotkeyID == 81 {
                 if resolved[shortcutName] == nil {
-                    resolved[shortcutName] = (CGKeyCode(keyCode), UInt64(modifiers))
+                    resolved[shortcutName] = (keyCode, modifiers)
                     NSLog("SystemShortcut: Loaded \(shortcutName) = keyCode:\(keyCode), modifiers:0x\(String(modifiers, radix: 16))")
                 }
             }

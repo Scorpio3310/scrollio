@@ -143,11 +143,12 @@ class MonitorViewController: NSViewController, ChartViewDelegate {
             CGEventMask(1 << CGEventType.leftMouseDragged.rawValue) |
             CGEventMask(1 << CGEventType.rightMouseDragged.rawValue) |
             CGEventMask(1 << CGEventType.otherMouseDragged.rawValue)
-        let keyboardEvents =
-            CGEventMask(1 << CGEventType.keyDown.rawValue) |
-            CGEventMask(1 << CGEventType.flagsChanged.rawValue)
+        // Modifier keys only. Ordinary keys are not asked for: with keyDown in the mask this
+        // window logged every key typed in any app while it was open (letters, so passwords
+        // too), and Export wrote them to a file.
+        let modifierEvents = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
         let moveEvents = CGEventMask(1 << CGEventType.mouseMoved.rawValue)
-        return buttonDownEvents | buttonUpEvents | dragEvents | keyboardEvents | moveEvents
+        return buttonDownEvents | buttonUpEvents | dragEvents | modifierEvents | moveEvents
     }
     let buttonEventCallBack: CGEventTapCallBack = { (proxy, type, event, refcon) in
         // 发送按钮事件通知

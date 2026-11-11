@@ -1836,6 +1836,28 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(store.exportText(for: .buttonEvent), "")
     }
 
+    /// The store keeps the newest lines only: it used to grow for as long as the window was open.
+    func testMonitorLogStore_dropsTheOldestLinesPastItsLimit() {
+        let store = MonitorLogStore(previewLineLimit: 2, lineLimit: 100)
+        for index in 0..<1_000 {
+            store.append("line \(index)", to: .buttonEvent)
+        }
+        XCTAssertLessThanOrEqual(store.lineCount(for: .buttonEvent), 110, "the limit and a tenth")
+        XCTAssertGreaterThanOrEqual(store.lineCount(for: .buttonEvent), 100)
+        XCTAssertEqual(store.previewText(for: .buttonEvent), "line 999\nline 998", "the newest are kept")
+        XCTAssertFalse(store.exportText(for: .buttonEvent).contains("line 0\n"), "the oldest are gone")
+    }
+
+    /// The Monitor window asks for mouse events and modifier changes, never for ordinary keys:
+    /// it must not be able to log what is typed.
+    func testMonitorTap_doesNotAskForOrdinaryKeys() {
+        let mask = MonitorViewController().buttonEventMask
+        XCTAssertEqual(mask & CGEventMask(1 << CGEventType.keyDown.rawValue), 0)
+        XCTAssertEqual(mask & CGEventMask(1 << CGEventType.keyUp.rawValue), 0)
+        XCTAssertNotEqual(mask & CGEventMask(1 << CGEventType.flagsChanged.rawValue), 0, "modifiers, to debug hold keys")
+        XCTAssertNotEqual(mask & CGEventMask(1 << CGEventType.otherMouseDown.rawValue), 0)
+    }
+
     func testMonitorButtonEventLogLine_includesMouseModifierFlags() {
         let controller = MonitorViewController()
 
@@ -2089,6 +2111,32 @@ final class InputProcessorTests: XCTestCase {
         ))
         XCTAssertFalse(SystemShortcut.reloadsSystemShortcuts(after: NSWorkspace.didDeactivateApplicationNotification))
         XCTAssertFalse(SystemShortcut.reloadsSystemShortcuts(after: NSApplication.didResignActiveNotification))
+    }
+
+    /// The Spaces shortcuts are read from System Settings' preferences, another app's data:
+    /// a value that is no key code or no flag set is skipped. It used to trap, at launch and
+    /// every time Scrollio became active.
+    func testSystemShortcuts_skipValuesThatAreNoKeyCode() {
+        func entry(_ parameters: [Any], enabled: Bool = true) -> [String: Any] {
+            return ["enabled": enabled, "value": ["parameters": parameters, "type": "standard"]]
+        }
+        let good = SystemShortcut.resolvedShortcuts(fromSymbolicHotKeys: [
+            "79": entry([65535, 123, 8650752]),
+            "81": entry([65535, 124, 8650752]),
+        ])
+        XCTAssertEqual(good["moveSpaceLeft"]?.code, 123)
+        XCTAssertEqual(good["moveSpaceLeft"]?.modifiers, 8650752)
+        XCTAssertEqual(good["moveSpaceRight"]?.code, 124)
+
+        let bad = SystemShortcut.resolvedShortcuts(fromSymbolicHotKeys: [
+            "79": entry([65535, -1, 8650752]),          // no key code
+            "81": entry([65535, 70_000, 8650752]),      // too large for one
+            "80": entry([65535, 123, -5]),              // no flag set (the variant is not used anyway)
+            "82": entry(["x", "y", "z"]),
+        ])
+        XCTAssertTrue(bad.isEmpty)
+        XCTAssertTrue(SystemShortcut.resolvedShortcuts(fromSymbolicHotKeys: ["79": entry([65535, 123, 8650752], enabled: false)]).isEmpty)
+        XCTAssertTrue(SystemShortcut.resolvedShortcuts(fromSymbolicHotKeys: ["79": "nonsense", "81": 4]).isEmpty)
     }
 
     // MARK: - The release of a native button that ran a trigger action

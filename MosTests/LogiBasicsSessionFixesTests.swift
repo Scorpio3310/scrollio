@@ -63,6 +63,39 @@ final class LogiBasicsSessionFixesTests: XCTestCase {
         }
     }
 
+    // MARK: - The panel in a Release build
+
+    /// A Release build's diagnostics panel reads and shows: it offers no request that changes
+    /// a device. ("SetReporting" with its default parameters diverts the left button; "Func 0"
+    /// on Device Reset reconfigures the mouse.)
+    func testWithoutDeviceWritesThePanelOffersOnlyReads() {
+        for (feature, actions) in HIDPPFeatureActions.knownActions {
+            let label = String(format: "0x%04X", feature)
+            let offered = HIDPPFeatureActions.actions(for: feature, offeringWrites: false)
+            XCTAssertTrue(offered.allSatisfy(\.isReadOnly), label)
+            XCTAssertFalse(offered.contains { $0.name.hasPrefix("Set") }, label)
+            XCTAssertEqual(offered.count, actions.filter(\.isReadOnly).count, "\(label): every read stays")
+            // With writes (a Debug build) the whole list is there.
+            XCTAssertEqual(HIDPPFeatureActions.actions(for: feature, offeringWrites: true).count, actions.count, label)
+        }
+        // The left-button divert in particular.
+        XCTAssertFalse(HIDPPFeatureActions.actions(for: 0x1B04, offeringWrites: false).contains { $0.name == "SetReporting" })
+        XCTAssertTrue(HIDPPFeatureActions.actions(for: 0x1B04, offeringWrites: true).contains { $0.name == "SetReporting" })
+        // A feature without a list (Device Reset, Persistent Remap, Onboard Profiles): no
+        // "Func N" buttons at all without writes, all sixteen with them.
+        for feature: UInt16 in [0x1802, 0x1C00, 0x8100] {
+            XCTAssertNil(HIDPPFeatureActions.knownActions[feature])
+            XCTAssertTrue(HIDPPFeatureActions.actions(for: feature, offeringWrites: false).isEmpty)
+            XCTAssertEqual(HIDPPFeatureActions.actions(for: feature, offeringWrites: true).count, 16)
+        }
+        // Every action is named so that the rule can tell reads from writes.
+        let names = Set(HIDPPFeatureActions.knownActions.values.flatMap { $0 }.map(\.name))
+        XCTAssertTrue(names.allSatisfy { $0.hasPrefix("Get") || $0.hasPrefix("Set") || $0 == "Ping" }, "\(names.sorted())")
+        #if DEBUG
+        XCTAssertTrue(HIDPPFeatureActions.offersDeviceWrites, "the tests run a Debug build")
+        #endif
+    }
+
     // MARK: - 0x2121 writes
 
     /// Regression: the hi-res / invert toggles sent only the mode byte, zeroing bytes 1-2.

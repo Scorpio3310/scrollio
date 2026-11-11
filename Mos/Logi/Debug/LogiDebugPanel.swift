@@ -180,9 +180,34 @@ struct HIDPPFeatureAction {
     enum ParamType { case none, index, hex }
     let paramType: ParamType
     let defaultParams: [UInt8]
+
+    /// A request that only reads from the device: the names say so ("Get…", "Ping").
+    var isReadOnly: Bool {
+        return name.hasPrefix("Get") || name == "Ping"
+    }
 }
 
 struct HIDPPFeatureActions {
+
+    /// Whether the panel offers requests that change a device: the "Set…" buttons, the
+    /// "Func 0…15" buttons of features it has no list for, "Divert" and the raw sender.
+    /// Debug builds only.
+    ///
+    /// The panel ships in Release builds too (General › Advanced, the status menu with
+    /// Option), and there these were one click from harm with no question asked:
+    /// "SetReporting" with its default parameters diverts the left button (clicks stop
+    /// reaching macOS until the mouse is switched off and on), "Func 0" on Device Reset
+    /// (0x1802), Persistent Remap (0x1C00) or Onboard Profiles (0x8100) can reconfigure a
+    /// mouse for good, and the raw sender takes any bytes, a receiver's registers included.
+    /// A Release build reads, shows and exports; it does not write from here.
+    static var offersDeviceWrites: Bool {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
+
     static let knownActions: [UInt16: [HIDPPFeatureAction]] = [
         0x0000: [
             HIDPPFeatureAction(name: "Ping", functionId: 0x01, paramType: .none, defaultParams: []),
@@ -251,8 +276,12 @@ struct HIDPPFeatureActions {
         ],
     ]
 
-    static func actions(for featureId: UInt16) -> [HIDPPFeatureAction] {
-        if let known = knownActions[featureId] { return known }
+    static func actions(for featureId: UInt16, offeringWrites: Bool = offersDeviceWrites) -> [HIDPPFeatureAction] {
+        if let known = knownActions[featureId] {
+            return offeringWrites ? known : known.filter { $0.isReadOnly }
+        }
+        // What a function of an unlisted feature does is unknown: none without writes.
+        guard offeringWrites else { return [] }
         return (0...15).map { funcId in
             HIDPPFeatureAction(name: "Func \(funcId)", functionId: UInt8(funcId), paramType: .hex, defaultParams: [])
         }
@@ -1096,10 +1125,15 @@ class LogiDebugPanel: NSObject {
         table.sizeLastColumnToFit()
         self.logTableView = table
 
+        // The raw sender: only where device writes are offered (HIDPPFeatureActions).
+        let offersRawSender = HIDPPFeatureActions.offersDeviceWrites
         let rawBar = NSView()
         rawBar.translatesAutoresizingMaskIntoConstraints = false
+        rawBar.isHidden = !offersRawSender
         parent.addSubview(rawBar)
-        buildRawInputBar(in: rawBar)
+        if offersRawSender {
+            buildRawInputBar(in: rawBar)
+        }
 
         NSLayoutConstraint.activate([
             bg.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
@@ -1120,7 +1154,7 @@ class LogiDebugPanel: NSObject {
             rawBar.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
             rawBar.trailingAnchor.constraint(equalTo: parent.trailingAnchor),
             rawBar.bottomAnchor.constraint(equalTo: parent.bottomAnchor),
-            rawBar.heightAnchor.constraint(equalToConstant: L.rawInputH),
+            rawBar.heightAnchor.constraint(equalToConstant: offersRawSender ? L.rawInputH : 0),
         ])
     }
 
@@ -1343,11 +1377,15 @@ class LogiDebugPanel: NSObject {
             by += L.btnH + L.btnGap
 
         } else if let cid = selectedControlCID {
-            let isDiverted = currentSession?.debugDivertedCIDs.contains(cid) ?? false
-            let divertBtn = makeActionBtn(title: isDiverted ? "Undivert" : "Divert", action: #selector(toggleDivertClicked))
-            divertBtn.frame = NSRect(x: L.pad, y: by, width: w, height: L.btnH)
-            container.addSubview(divertBtn)
-            by += L.btnH + L.btnGap
+            // Diverting a control takes it away from macOS (the left button, for one): only
+            // where device writes are offered.
+            if HIDPPFeatureActions.offersDeviceWrites {
+                let isDiverted = currentSession?.debugDivertedCIDs.contains(cid) ?? false
+                let divertBtn = makeActionBtn(title: isDiverted ? "Undivert" : "Divert", action: #selector(toggleDivertClicked))
+                divertBtn.frame = NSRect(x: L.pad, y: by, width: w, height: L.btnH)
+                container.addSubview(divertBtn)
+                by += L.btnH + L.btnGap
+            }
 
             let queryBtn = makeActionBtn(title: "Query Reporting", action: #selector(queryReportingClicked))
             queryBtn.frame = NSRect(x: L.pad, y: by, width: w, height: L.btnH)
@@ -1762,25 +1800,26 @@ class LogiDebugPanel: NSObject {
         let functionId = UInt8(sender.tag)
         var params = [UInt8](repeating: 0, count: 16)
 
+        // Only a function the panel offers for this feature is sent.
         let actions = HIDPPFeatureActions.actions(for: featureId)
-        if let action = actions.first(where: { $0.functionId == functionId }) {
-            switch action.paramType {
-            case .none: break
-            case .index:
-                params[0] = UInt8(indexParamValue)
-            case .hex:
-                if let hexStr = paramInputField?.stringValue, !hexStr.isEmpty {
-                    let bytes = hexStr.split(separator: " ").compactMap { UInt8($0, radix: 16) }
-                    for (i, b) in bytes.prefix(16).enumerated() { params[i] = b }
-                } else {
-                    for (i, b) in action.defaultParams.prefix(16).enumerated() { params[i] = b }
-                }
+        guard let action = actions.first(where: { $0.functionId == functionId }) else { return }
+        switch action.paramType {
+        case .none: break
+        case .index:
+            params[0] = UInt8(indexParamValue)
+        case .hex:
+            if let hexStr = paramInputField?.stringValue, !hexStr.isEmpty {
+                let bytes = hexStr.split(separator: " ").compactMap { UInt8($0, radix: 16) }
+                for (i, b) in bytes.prefix(16).enumerated() { params[i] = b }
+            } else {
+                for (i, b) in action.defaultParams.prefix(16).enumerated() { params[i] = b }
             }
         }
         sendDebugPacket(session: session, featureIndex: featureIdx, functionId: functionId, params: params)
     }
 
     @objc private func toggleDivertClicked() {
+        guard HIDPPFeatureActions.offersDeviceWrites else { return }
         guard let session = currentSession, let cid = selectedControlCID else { return }
         session.toggleDivert(cid: cid)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -1866,6 +1905,7 @@ class LogiDebugPanel: NSObject {
     }
 
     @objc private func sendRawClicked() {
+        guard HIDPPFeatureActions.offersDeviceWrites, rawInputField != nil, reportTypeControl != nil else { return }
         guard let session = currentSession else { return }
         guard session.debugDeviceOpened else {
             LogiDebugPanel.log(device: session.deviceInfo.name, type: .warning, message: "Device not opened")
