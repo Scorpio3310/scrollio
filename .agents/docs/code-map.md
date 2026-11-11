@@ -17,7 +17,7 @@ and the tests. Rules live in `AGENTS.md`.
 | `Options/` | Settings in UserDefaults, per-app rules, persistence models. |
 | `Managers/` | App-level singletons: windows, the status item, the main menu. |
 | `Components/` | Reusable UI, including Toast. |
-| `Windows/` | Introduction (the Welcome Guide, built in code), Preferences and the Monitor window. Panes built in code use `PreferencesForm` (the label-column grid of the storyboard panes) or `PreferencesGroupedForm` (rows in rounded boxes, as in System Settings; Scrolling uses it). |
+| `Windows/` | Introduction (the Welcome Guide, built in code), Preferences and the Monitor window. The Preferences window is a sidebar of panes, as in System Settings (`PreferencesSplitViewController`; `selectPane(withIdentifier:)` opens a pane); each pane sits in a 520 pt column (`PreferencesWindowLayout`), centred when narrower, and scrolls when taller than the window. Panes built in code use `PreferencesForm` (the label-column grid of the storyboard panes) or `PreferencesGroupedForm` (rows in rounded boxes, as in System Settings; Scrolling uses it). |
 | `Utils/` | Event tap wrapper (`Interceptor`), constants, the login item, the takeover from Mos, helpers. |
 | `Extension/` | Extensions of system types. |
 

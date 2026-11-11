@@ -344,41 +344,43 @@ final class MainMenuTests: XCTestCase {
     }
 }
 
-/// "About Scrollio" needs a way to open the Preferences on a given tab.
-final class PreferencesTabSelectionTests: XCTestCase {
+/// "About Scrollio" needs a way to open the Preferences on a given pane.
+final class PreferencesPaneSelectionTests: XCTestCase {
 
-    private func makeTabs() throws -> PreferencesTabViewController {
-        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesTabViewController.self))
+    private func makePreferences() throws -> PreferencesSplitViewController {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
         let windowController = try XCTUnwrap(
             storyboard.instantiateController(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController) as? NSWindowController
         )
-        let tabs = try XCTUnwrap(windowController.contentViewController as? PreferencesTabViewController)
-        _ = tabs.view
+        let preferences = try XCTUnwrap(windowController.contentViewController as? PreferencesSplitViewController)
+        _ = preferences.view
         addTeardownBlock { windowController.close() }
-        return tabs
+        return preferences
     }
 
-    func testSelectsATabByItsIdentifier() throws {
-        let tabs = try makeTabs()
-        XCTAssertEqual(tabs.selectedTabViewItemIndex, 0)
+    func testSelectsAPaneByItsIdentifier() throws {
+        let preferences = try makePreferences()
+        XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.scrolling)
 
-        XCTAssertTrue(tabs.selectTab(withIdentifier: AboutPreferencesViewController.tabIdentifier))
-        XCTAssertEqual(tabs.selectedTabViewItemIndex, tabs.tabViewItems.count - 1)
-        XCTAssertTrue(tabs.tabViewItems[tabs.selectedTabViewItemIndex].viewController is AboutPreferencesViewController)
-        XCTAssertEqual(tabs.view.window?.title, "About")
+        XCTAssertTrue(preferences.selectPane(withIdentifier: AboutPreferencesViewController.tabIdentifier))
+        XCTAssertEqual(preferences.selectedPaneIdentifier, AboutPreferencesViewController.tabIdentifier)
+        XCTAssertTrue(preferences.selectedController is AboutPreferencesViewController)
+        XCTAssertEqual(preferences.sidebar.selectedIdentifier, AboutPreferencesViewController.tabIdentifier)
+        XCTAssertEqual(preferences.view.window?.title, "About")
 
         // Already there: nothing changes.
-        XCTAssertTrue(tabs.selectTab(withIdentifier: AboutPreferencesViewController.tabIdentifier))
-        XCTAssertEqual(tabs.selectedTabViewItemIndex, tabs.tabViewItems.count - 1)
+        XCTAssertTrue(preferences.selectPane(withIdentifier: AboutPreferencesViewController.tabIdentifier))
+        XCTAssertEqual(preferences.selectedPaneIdentifier, AboutPreferencesViewController.tabIdentifier)
 
-        XCTAssertTrue(tabs.selectTab(withIdentifier: PANEL_IDENTIFIER.buttons))
-        XCTAssertEqual(tabs.view.window?.title, "Buttons")
+        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons))
+        XCTAssertEqual(preferences.view.window?.title, "Buttons")
     }
 
     func testAnUnknownIdentifierChangesNothing() throws {
-        let tabs = try makeTabs()
-        XCTAssertTrue(tabs.selectTab(withIdentifier: PANEL_IDENTIFIER.scrolling))
-        XCTAssertFalse(tabs.selectTab(withIdentifier: "no-such-tab"))
-        XCTAssertEqual(tabs.selectedTabViewItemIndex, 1)
+        let preferences = try makePreferences()
+        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons))
+        XCTAssertFalse(preferences.selectPane(withIdentifier: "no-such-pane"))
+        XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.buttons)
+        XCTAssertEqual(preferences.sidebar.selectedIdentifier, PANEL_IDENTIFIER.buttons)
     }
 }

@@ -2,8 +2,9 @@
 //  PreferencesWindowTests.swift
 //  MosTests
 //
-//  The Preferences window as a whole: which tabs it has and in which order, and the
-//  About pane that is built in code. Nothing is shown on screen.
+//  The Preferences window as a whole: the sidebar and its panes, how a pane is selected
+//  and hosted, the window's size, and the About pane that is built in code. Nothing is
+//  shown on screen.
 //
 
 import XCTest
@@ -13,152 +14,317 @@ private func allSubviews(of view: NSView) -> [NSView] {
     return view.subviews.flatMap { [$0] + allSubviews(of: $0) }
 }
 
-final class PreferencesTabsTests: XCTestCase {
+final class PreferencesSidebarTests: XCTestCase {
 
-    private func makeTabs() throws -> PreferencesTabViewController {
-        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesTabViewController.self))
-        let windowController = try XCTUnwrap(
-            storyboard.instantiateController(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController) as? NSWindowController
+    private let app = Bundle(for: PreferencesSplitViewController.self)
+
+    /// The Preferences window as the app makes it, with its content rebuilt around `defaults`
+    /// (nil remembers nothing); `prepare` runs before any pane's view loads. Never shown.
+    private func makeWindow(
+        defaults: UserDefaults? = nil,
+        prepare: (PreferencesSplitViewController) -> Void = { _ in }
+    ) throws -> (NSWindow, PreferencesSplitViewController) {
+        let storyboard = NSStoryboard(name: "Main", bundle: app)
+        let controller = try XCTUnwrap(
+            storyboard.instantiateController(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController) as? PreferencesWindowController
         )
-        let tabs = try XCTUnwrap(windowController.contentViewController as? PreferencesTabViewController)
-        _ = tabs.view
-        addTeardownBlock { windowController.close() }
-        return tabs
+        let window = try XCTUnwrap(controller.window)
+        let preferences = PreferencesSplitViewController(storyboard: storyboard, uiStateDefaults: defaults)
+        prepare(preferences)
+        controller.contentViewController = preferences
+        controller.configure(window, remembersFrame: false)
+        preferences.updateWindowTitle()
+        window.contentView?.layoutSubtreeIfNeeded()
+        addTeardownBlock { controller.close() }
+        return (window, preferences)
     }
 
-    func testTabsAreInOrderWithStableIdentifiers() throws {
-        let tabs = try makeTabs()
+    private func makeDefaults() -> UserDefaults {
+        let suite = "ScrollioTests.preferences-window.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        return defaults
+    }
+
+    private func titles(in sidebar: PreferencesSidebarViewController) -> [String?] {
+        return sidebar.rowIdentifiers.indices.map { row in
+            let cell = sidebar.tableView.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView
+            return cell?.textField?.stringValue
+        }
+    }
+
+    private func arrowKey(_ key: Int, in window: NSWindow) -> NSEvent {
+        let characters = String(Character(UnicodeScalar(key)!))
+        return NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [.function, .numericPad], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: characters,
+            charactersIgnoringModifiers: characters, isARepeat: false,
+            keyCode: key == NSDownArrowFunctionKey ? 125 : 126
+        )!
+    }
+
+    // MARK: - The sidebar
+
+    func testTheSidebarListsThePanesInThreeGroups() throws {
+        let (_, preferences) = try makeWindow()
+        let sidebar = preferences.sidebar
         XCTAssertEqual(
-            tabs.tabViewItems.map { $0.identifier as? String },
-            ["general", "scrolling", "buttons", "gestures", "mouse", "application", "about"]
+            sidebar.rowIdentifiers,
+            ["scrolling", "buttons", "gestures", "mouse", nil, "application", nil, "general", "about"]
         )
-    }
-
-    func testTabLabels() throws {
-        let tabs = try makeTabs()
         XCTAssertEqual(
-            tabs.tabViewItems.map(\.label),
-            ["General", "Scrolling", "Buttons", "Gestures", "Mouse", "Apps", "About"]
+            titles(in: sidebar),
+            ["Scrolling", "Buttons", "Gestures", "Mouse", nil, "Apps", nil, "General", "About"]
         )
+        let table = sidebar.tableView!
+        XCTAssertEqual(table.style, .sourceList)
+        XCTAssertNil(table.headerView)
+        for (row, identifier) in sidebar.rowIdentifiers.enumerated() {
+            let height = table.rect(ofRow: row).height
+            if identifier == nil {
+                XCTAssertEqual(height, PreferencesSidebarViewController.gapHeight)
+                XCTAssertNil(table.view(atColumn: 0, row: row, makeIfNecessary: true))
+            } else {
+                XCTAssertEqual(height, PreferencesSidebarViewController.rowHeight)
+                let cell = try XCTUnwrap(table.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView)
+                let tile = try XCTUnwrap(cell.imageView?.image, "\(identifier!) has no icon")
+                XCTAssertEqual(tile.size, NSSize(width: 20, height: 20))
+                XCTAssertFalse(tile.isTemplate, "the tile keeps its colour")
+            }
+        }
     }
 
-    func testWindowTitleFollowsTheSelectedPane() throws {
-        let tabs = try makeTabs()
-        let window = try XCTUnwrap(tabs.view.window)
+    func testEveryPaneHasItsOwnController() throws {
+        let (_, preferences) = try makeWindow()
+        XCTAssertTrue(preferences.controller(for: "scrolling") is PreferencesScrollingViewController)
+        XCTAssertTrue(preferences.controller(for: "buttons") is PreferencesButtonsViewController)
+        XCTAssertTrue(preferences.controller(for: "gestures") is GesturesPreferencesViewController)
+        XCTAssertTrue(preferences.controller(for: "mouse") is MousePreferencesViewController)
+        XCTAssertTrue(preferences.controller(for: "application") is PreferencesApplicationViewController)
+        XCTAssertTrue(preferences.controller(for: "general") is PreferencesGeneralViewController)
+        XCTAssertTrue(preferences.controller(for: "about") is AboutPreferencesViewController)
+        XCTAssertNil(preferences.controller(for: "no-such-pane"))
+    }
 
-        // What viewWillAppear does for the pane the window opens with.
-        tabs.updateWindowTitle()
+    func testSelectingARowShowsItsPaneAndNamesTheWindow() throws {
+        let (window, preferences) = try makeWindow()
+        let sidebar = preferences.sidebar
+        let host = preferences.host
+        XCTAssertEqual(preferences.selectedPaneIdentifier, "scrolling")
+        let scrolling = try XCTUnwrap(preferences.controller(for: "scrolling"))
+        XCTAssertTrue(scrolling.view.superview === host.documentView)
+        XCTAssertEqual(window.title, "Scrolling")
+
+        for (row, identifier) in sidebar.rowIdentifiers.enumerated() {
+            guard let identifier else { continue }
+            // What a click does: the table changes its selection and tells its delegate.
+            sidebar.tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            let controller = try XCTUnwrap(preferences.controller(for: identifier))
+            XCTAssertEqual(preferences.selectedPaneIdentifier, identifier)
+            XCTAssertTrue(host.currentController === controller)
+            XCTAssertTrue(controller.parent === host)
+            XCTAssertTrue(controller.view.superview === host.documentView, identifier)
+            XCTAssertEqual(host.documentView.subviews.count, 1, "only the selected pane is in the column")
+            XCTAssertEqual(window.title, controller.title)
+        }
+        XCTAssertNil(scrolling.view.superview)
+    }
+
+    func testTheArrowKeysMoveThroughThePanesAndStepOverTheGaps() throws {
+        let (window, preferences) = try makeWindow()
+        let sidebar = preferences.sidebar
+        XCTAssertTrue(preferences.selectPane(withIdentifier: "mouse"))
+
+        let down = arrowKey(NSDownArrowFunctionKey, in: window)
+        let up = arrowKey(NSUpArrowFunctionKey, in: window)
+        sidebar.tableView.keyDown(with: down)
+        XCTAssertEqual(sidebar.selectedIdentifier, "application")
+        XCTAssertEqual(preferences.selectedPaneIdentifier, "application")
+        sidebar.tableView.keyDown(with: down)
+        XCTAssertEqual(preferences.selectedPaneIdentifier, "general")
+        sidebar.tableView.keyDown(with: down)
+        sidebar.tableView.keyDown(with: down)
+        XCTAssertEqual(preferences.selectedPaneIdentifier, "about", "the last row stays selected")
+        sidebar.tableView.keyDown(with: up)
+        sidebar.tableView.keyDown(with: up)
+        XCTAssertEqual(preferences.selectedPaneIdentifier, "application")
+        sidebar.tableView.keyDown(with: up)
+        XCTAssertEqual(preferences.selectedPaneIdentifier, "mouse")
+        XCTAssertNotNil(sidebar.selectedIdentifier, "a gap is never selected")
+    }
+
+    // MARK: - Selecting and remembering
+
+    func testSelectsAPaneByIdentifier() throws {
+        let (window, preferences) = try makeWindow()
+        XCTAssertTrue(preferences.selectPane(withIdentifier: "about"))
+        XCTAssertEqual(preferences.sidebar.selectedIdentifier, "about")
+        XCTAssertTrue(preferences.host.currentController is AboutPreferencesViewController)
+        XCTAssertEqual(window.title, "About")
+        XCTAssertFalse(preferences.selectPane(withIdentifier: "toolbar"))
+        XCTAssertEqual(preferences.selectedPaneIdentifier, "about")
+    }
+
+    func testRemembersTheLastOpenPane() throws {
+        // Persisted names: they never change.
+        XCTAssertEqual(PreferencesSplitViewController.selectedPaneDefaultsKey, "preferencesSelectedPane")
+        XCTAssertEqual(PreferencesWindowLayout.frameAutosaveName, "PreferencesWindow")
+        let defaults = makeDefaults()
+        let (_, first) = try makeWindow(defaults: defaults)
+        XCTAssertEqual(first.selectedPaneIdentifier, PreferencesSplitViewController.defaultPaneIdentifier)
+        XCTAssertNil(defaults.string(forKey: PreferencesSplitViewController.selectedPaneDefaultsKey), "opening writes nothing")
+
+        first.sidebar.tableView.selectRowIndexes(
+            IndexSet(integer: try XCTUnwrap(first.sidebar.row(for: "mouse"))),
+            byExtendingSelection: false
+        )
+        XCTAssertEqual(defaults.string(forKey: PreferencesSplitViewController.selectedPaneDefaultsKey), "mouse")
+        XCTAssertTrue(first.selectPane(withIdentifier: "general"))
+        XCTAssertEqual(defaults.string(forKey: PreferencesSplitViewController.selectedPaneDefaultsKey), "general")
+
+        // The next window opens where the last one was left.
+        let (window, second) = try makeWindow(defaults: defaults)
+        XCTAssertEqual(second.selectedPaneIdentifier, "general")
+        XCTAssertEqual(second.sidebar.selectedIdentifier, "general")
         XCTAssertEqual(window.title, "General")
 
-        for (index, item) in tabs.tabViewItems.enumerated() {
-            tabs.selectedTabViewItemIndex = index
-            XCTAssertEqual(window.title, item.label)
+        // A pane that no longer exists: the default.
+        defaults.set("toolbar", forKey: PreferencesSplitViewController.selectedPaneDefaultsKey)
+        let (_, third) = try makeWindow(defaults: defaults)
+        XCTAssertEqual(third.selectedPaneIdentifier, "scrolling")
+    }
+
+    func testTheAppsWindowOpensOnScrollingWhenNothingIsRemembered() throws {
+        // Under XCTest the window the storyboard makes remembers nothing.
+        let storyboard = NSStoryboard(name: "Main", bundle: app)
+        let controller = try XCTUnwrap(
+            storyboard.instantiateController(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController) as? PreferencesWindowController
+        )
+        defer { controller.close() }
+        let preferences = try XCTUnwrap(controller.splitViewController)
+        XCTAssertNil(preferences.uiStateDefaults)
+        XCTAssertEqual(preferences.selectedPaneIdentifier, "scrolling")
+        XCTAssertEqual(controller.window?.title, "Scrolling")
+    }
+
+    // MARK: - The window
+
+    func testTheWindowHasAFixedWidthAndAResizableHeight() throws {
+        let (window, preferences) = try makeWindow()
+        let width = PreferencesWindowLayout.contentWidth(of: preferences.splitView)
+        XCTAssertEqual(width, PreferencesWindowLayout.sidebarWidth + PreferencesWindowLayout.contentWidth, accuracy: 1)
+        XCTAssertTrue(window.styleMask.contains(.resizable))
+        XCTAssertTrue(window.styleMask.contains(.fullSizeContentView), "the sidebar runs under the traffic lights")
+        XCTAssertTrue(window.titlebarAppearsTransparent)
+        XCTAssertEqual(window.titleVisibility, .visible)
+        XCTAssertEqual(window.contentMinSize.width, width)
+        XCTAssertEqual(window.contentMaxSize.width, width)
+        XCTAssertEqual(window.contentMinSize.height, PreferencesWindowLayout.minimumContentHeight)
+        XCTAssertGreaterThan(window.contentMaxSize.height, 10_000)
+        let content = window.contentRect(forFrameRect: window.frame).size
+        XCTAssertEqual(content, NSSize(width: width, height: PreferencesWindowLayout.defaultContentHeight))
+
+        // No tabs in the toolbar any more: only the separator that puts the title next to the sidebar.
+        let toolbar = try XCTUnwrap(window.toolbar)
+        XCTAssertEqual(toolbar.items.map(\.itemIdentifier), [.sidebarTrackingSeparator])
+        XCTAssertTrue(toolbar.items.first is NSTrackingSeparatorToolbarItem)
+
+        // Laid out as the window will be: the widths the window was given are the ones it keeps.
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        window.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertEqual(window.contentRect(forFrameRect: window.frame).width, width)
+        XCTAssertEqual(preferences.sidebar.view.frame.width, PreferencesWindowLayout.sidebarWidth)
+        XCTAssertEqual(preferences.host.view.frame.width, PreferencesWindowLayout.contentWidth)
+        XCTAssertTrue(preferences.splitViewItems.first?.behavior == .sidebar)
+        XCTAssertFalse(preferences.splitViewItems.first?.canCollapse ?? true)
+    }
+
+    func testEveryPaneSitsAtTheTopOfTheColumnCentred() throws {
+        let (window, preferences) = try makeWindow()
+        XCTAssertEqual(PreferencesScrollingViewController.paneWidth, PreferencesWindowLayout.contentWidth)
+        for pane in preferences.panes {
+            XCTAssertTrue(preferences.selectPane(withIdentifier: pane.identifier))
+            window.contentView?.layoutSubtreeIfNeeded()
+            let view = try XCTUnwrap(preferences.selectedController?.view)
+            let document = preferences.host.documentView!
+            XCTAssertLessThanOrEqual(view.frame.width, PreferencesWindowLayout.contentWidth, pane.identifier)
+            XCTAssertEqual(view.frame.midX, document.bounds.midX, accuracy: 0.5, pane.identifier)
+            XCTAssertEqual(view.frame.minY, 0, pane.identifier)
+            XCTAssertEqual(document.frame.width, preferences.host.scrollView.contentSize.width, pane.identifier)
+            XCTAssertGreaterThan(view.frame.height, 50, pane.identifier)
         }
-        XCTAssertEqual(window.title, "About")
+        // The panes of the old 450 pt grid sit in the middle of the 520 pt column.
+        XCTAssertTrue(preferences.selectPane(withIdentifier: "general"))
+        window.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertEqual(preferences.selectedController?.view.frame.minX, 35)
     }
 
-    func testEveryTabHasAnImageAndAController() throws {
-        let tabs = try makeTabs()
-        for item in tabs.tabViewItems {
-            XCTAssertNotNil(item.image, "\(item.label) has no toolbar image")
-            XCTAssertNotNil(item.viewController, "\(item.label) has no view controller")
+    func testATallPaneScrollsInsteadOfResizingTheWindow() throws {
+        let scrollingDefaults = makeDefaults()
+        scrollingDefaults.set(false, forKey: PreferencesScrollingViewController.advancedExpandedDefaultsKey)
+        let (window, preferences) = try makeWindow { preferences in
+            (preferences.controller(for: "scrolling") as? PreferencesScrollingViewController)?.uiStateDefaults = scrollingDefaults
         }
+        let scrolling = try XCTUnwrap(preferences.selectedController as? PreferencesScrollingViewController)
+        let host = preferences.host
+        let frame = window.frame
+        let visible = host.scrollView.contentSize.height
+        XCTAssertFalse(scrolling.isAdvancedExpanded)
+        XCTAssertLessThanOrEqual(scrolling.view.frame.height, visible, "the basic pane fits")
+        XCTAssertEqual(host.documentView.frame.height, visible)
+
+        scrolling.setAdvancedExpanded(true)
+        window.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertEqual(window.frame, frame, "the window keeps its size")
+        XCTAssertGreaterThan(scrolling.view.frame.height, 850)
+        XCTAssertEqual(host.documentView.frame.height, scrolling.view.frame.height)
+        XCTAssertGreaterThan(host.documentView.frame.height, visible, "the column scrolls")
+        XCTAssertEqual(scrolling.view.frame.minY, 0)
+
+        // Scrolled down: the line under the title bar shows, as in System Settings.
+        XCTAssertTrue(host.titlebarSeparator.isHidden)
+        host.documentView.scroll(NSPoint(x: 0, y: host.documentView.frame.height - visible))
+        XCTAssertTrue(host.scrollView.contentView.bounds.minY > 0)
+        XCTAssertFalse(host.titlebarSeparator.isHidden)
+
+        scrolling.setAdvancedExpanded(false)
+        window.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertEqual(window.frame, frame)
+        XCTAssertEqual(host.documentView.frame.height, visible, "and shrinks back")
+        XCTAssertEqual(host.scrollView.contentView.bounds.minY, 0)
+        XCTAssertTrue(host.titlebarSeparator.isHidden)
+
+        // A taller window shows more of the pane; the pane does not stretch.
+        let height = scrolling.view.frame.height
+        window.setContentSize(NSSize(width: window.contentRect(forFrameRect: window.frame).width, height: 900))
+        window.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertEqual(scrolling.view.frame.height, height)
+        XCTAssertEqual(host.documentView.frame.height, host.scrollView.contentSize.height)
+        XCTAssertGreaterThan(host.scrollView.contentSize.height, visible)
     }
 
-    func testWindowKeepsItsTopEdgeWhenAPaneChangesHeight() {
-        let chrome = TOOLBAR_HEIGHT + MACOS_TAHOE_COMPENSATE
+    func testASavedFrameKeepsTheWidthAndFitsTheScreen() {
         let screen = NSRect(x: 0, y: 80, width: 1512, height: 870)
-        let window = NSRect(x: 300, y: 500, width: 450, height: 300 + chrome)
-
-        // Taller: the bottom edge moves down.
-        let taller = PreferencesTabViewController.windowFrame(
-            forContentSize: NSSize(width: 450, height: 500), from: window, visibleFrame: screen
+        // Another width (an older version), too short: the width is fixed, the height grows down.
+        let old = PreferencesWindowLayout.normalizedFrame(
+            NSRect(x: 300, y: 600, width: 450, height: 200), width: 721, minimumHeight: 420, visibleFrame: screen
         )
-        XCTAssertEqual(taller.maxY, window.maxY)
-        XCTAssertEqual(taller.height, 500 + chrome)
-        XCTAssertEqual(taller.origin.x, 300)
-        XCTAssertEqual(taller.width, 450)
-
-        // Shorter: the bottom edge moves up.
-        let shorter = PreferencesTabViewController.windowFrame(
-            forContentSize: NSSize(width: 450, height: 200), from: window, visibleFrame: screen
+        XCTAssertEqual(old, NSRect(x: 300, y: 380, width: 721, height: 420))
+        // Taller than the screen: as tall as the screen, inside it.
+        let tall = PreferencesWindowLayout.normalizedFrame(
+            NSRect(x: 300, y: -200, width: 721, height: 1400), width: 721, minimumHeight: 420, visibleFrame: screen
         )
-        XCTAssertEqual(shorter.maxY, window.maxY)
-        XCTAssertEqual(shorter.height, 200 + chrome)
-
-        // Without a screen nothing else is done.
-        let offScreen = PreferencesTabViewController.windowFrame(
-            forContentSize: NSSize(width: 450, height: 2000), from: window, visibleFrame: nil
+        XCTAssertEqual(tall, NSRect(x: 300, y: 80, width: 721, height: 870))
+        // Off the right edge: moved back in.
+        let right = PreferencesWindowLayout.normalizedFrame(
+            NSRect(x: 1400, y: 200, width: 721, height: 640), width: 721, minimumHeight: 420, visibleFrame: screen
         )
-        XCTAssertEqual(offScreen.maxY, window.maxY)
-    }
-
-    func testWindowMovesUpWhenATallPaneWouldReachBelowTheScreen() {
-        let chrome = TOOLBAR_HEIGHT + MACOS_TAHOE_COMPENSATE
-        let screen = NSRect(x: 0, y: 80, width: 1512, height: 870)
-        let window = NSRect(x: 300, y: 500, width: 450, height: 300 + chrome)
-
-        // 780 pt of content would end below the Dock: the window moves up to stand on it.
-        let tall = PreferencesTabViewController.windowFrame(
-            forContentSize: NSSize(width: 450, height: 780), from: window, visibleFrame: screen
+        XCTAssertEqual(right, NSRect(x: 791, y: 200, width: 721, height: 640))
+        // Without a screen only the size is fixed.
+        let none = PreferencesWindowLayout.normalizedFrame(
+            NSRect(x: 10, y: 20, width: 500, height: 300), width: 721, minimumHeight: 420, visibleFrame: nil
         )
-        XCTAssertEqual(tall.height, 780 + chrome)
-        XCTAssertEqual(tall.minY, screen.minY)
-        XCTAssertLessThanOrEqual(tall.maxY, screen.maxY)
-
-        // Taller than the screen: the title bar stays reachable, the rest hangs below.
-        let huge = PreferencesTabViewController.windowFrame(
-            forContentSize: NSSize(width: 450, height: 1200), from: window, visibleFrame: screen
-        )
-        XCTAssertEqual(huge.maxY, screen.maxY)
-        XCTAssertLessThan(huge.minY, screen.minY)
-
-        // A window that already hangs below the screen is never moved down.
-        let low = NSRect(x: 300, y: 20, width: 450, height: 300 + chrome)
-        let same = PreferencesTabViewController.windowFrame(
-            forContentSize: NSSize(width: 450, height: 300), from: low, visibleFrame: screen
-        )
-        XCTAssertEqual(same.minY, screen.minY, "it only moves up to the visible edge")
-    }
-
-    func testTheWindowTakesTheWidthOfThePaneItShows() {
-        // Scrolling is wider than the other panes; the window widens while it shows and
-        // narrows again for the others, keeping its left and top edges.
-        XCTAssertEqual(PreferencesScrollingViewController.paneWidth, 520)
-        XCTAssertEqual(AboutPreferencesViewController().view.frame.width, PreferencesForm.contentWidth)
-        let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
-        gestures.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
-        gestures.bindingSummary = { MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false) }
-        XCTAssertEqual(gestures.view.frame.width, PreferencesForm.contentWidth)
-
-        let chrome = TOOLBAR_HEIGHT + MACOS_TAHOE_COMPENSATE
-        let screen = NSRect(x: 0, y: 0, width: 2560, height: 1415)
-        let general = NSRect(x: 300, y: 900, width: PreferencesForm.contentWidth, height: 105 + chrome)
-        let scrolling = PreferencesTabViewController.windowFrame(
-            forContentSize: NSSize(width: PreferencesScrollingViewController.paneWidth, height: 542),
-            from: general,
-            visibleFrame: screen
-        )
-        XCTAssertEqual(scrolling.width, PreferencesScrollingViewController.paneWidth)
-        XCTAssertEqual(scrolling.minX, general.minX)
-        XCTAssertEqual(scrolling.maxY, general.maxY)
-        let back = PreferencesTabViewController.windowFrame(
-            forContentSize: NSSize(width: PreferencesForm.contentWidth, height: 105),
-            from: scrolling,
-            visibleFrame: screen
-        )
-        XCTAssertEqual(back, general)
-    }
-
-    func testCodeBuiltTabsUseTheirOwnControllers() throws {
-        let tabs = try makeTabs()
-        let controllers = Dictionary(uniqueKeysWithValues: tabs.tabViewItems.compactMap { item -> (String, NSViewController)? in
-            guard let identifier = item.identifier as? String, let controller = item.viewController else { return nil }
-            return (identifier, controller)
-        })
-        XCTAssertTrue(controllers["gestures"] is GesturesPreferencesViewController)
-        XCTAssertTrue(controllers["mouse"] is MousePreferencesViewController)
-        XCTAssertTrue(controllers["about"] is AboutPreferencesViewController)
+        XCTAssertEqual(none, NSRect(x: 10, y: -100, width: 721, height: 420))
     }
 }
 
@@ -220,13 +386,12 @@ final class PreferencesAboutTests: XCTestCase {
     }
 
     func testTheStoryboardNoLongerHoldsTheOldScenes() {
-        // Instantiating a missing storyboard identifier raises, so the About tab is read
+        // Instantiating a missing storyboard identifier raises, so the About pane is read
         // from the window instead: it is the controller built in code.
-        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesTabViewController.self))
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
         let windowController = storyboard.instantiateController(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController) as? NSWindowController
-        let tabs = windowController?.contentViewController as? PreferencesTabViewController
-        let about = tabs?.tabViewItems.first { ($0.identifier as? String) == AboutPreferencesViewController.tabIdentifier }
-        XCTAssertTrue(about?.viewController is AboutPreferencesViewController)
+        let preferences = windowController?.contentViewController as? PreferencesSplitViewController
+        XCTAssertTrue(preferences?.controller(for: AboutPreferencesViewController.tabIdentifier) is AboutPreferencesViewController)
         windowController?.close()
         for name in ["AlipayQR", "WechatpayQR", "PaypalLogo", "BuyMeACoffee", "MEOW"] {
             XCTAssertNil(NSImage(named: name), "donation asset \(name) is still in the bundle")
@@ -251,7 +416,7 @@ final class PreferencesAboutTests: XCTestCase {
 /// stored in the settings or used as a key stays as it was.
 final class PreferencesNamingTests: XCTestCase {
 
-    private let app = Bundle(for: PreferencesTabViewController.self)
+    private let app = Bundle(for: PreferencesSplitViewController.self)
 
     private func texts(in view: NSView) -> [String] {
         let views = allSubviews(of: view)
@@ -349,7 +514,7 @@ final class PreferencesTextSizeTests: XCTestCase {
     }
 
     func testStoryboardPanesAndPopovers() throws {
-        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesTabViewController.self))
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
         let identifiers = [
             PANEL_IDENTIFIER.general, PANEL_IDENTIFIER.scrolling, PANEL_IDENTIFIER.buttons,
             PANEL_IDENTIFIER.application, PANEL_IDENTIFIER.scrollingWithApplication,
@@ -383,7 +548,7 @@ final class PreferencesTextSizeTests: XCTestCase {
         let about = AboutPreferencesViewController()
 
         // The Scrolling tab with "Advanced" open, so every row is looked at.
-        let scrolling = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesTabViewController.self))
+        let scrolling = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
             .instantiateController(withIdentifier: PANEL_IDENTIFIER.scrolling) as! PreferencesScrollingViewController
         let suite = "ScrollioTests.text-size.\(UUID().uuidString)"
         let uiDefaults = UserDefaults(suiteName: suite)!
@@ -399,7 +564,7 @@ final class PreferencesTextSizeTests: XCTestCase {
     }
 
     func testHintsOfTheStoryboardPanesMatchTheFormKit() throws {
-        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesTabViewController.self))
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
         let general = try XCTUnwrap(storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.general) as? NSViewController)
         let hint = try XCTUnwrap(allSubviews(of: general.view)
             .compactMap { $0 as? NSTextField }

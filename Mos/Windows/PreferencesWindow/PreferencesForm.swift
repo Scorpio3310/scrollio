@@ -101,19 +101,19 @@ enum PreferencesForm {
         }
     }
 
-    /// Keeps a pane's frame at its content size; when the pane is on screen the window follows.
+    /// Keeps a pane's frame at its content size. In the Preferences window the pane sizes
+    /// itself by its constraints: its column grows or shrinks with it and scrolls when
+    /// needed, the window keeps its size.
     static func fitToContent(_ controller: NSViewController) {
+        if let host = controller.parent as? PreferencesPaneHostViewController,
+           host.currentController === controller {
+            host.paneDidChangeSize(controller)
+            return
+        }
         let view = controller.view
-        if let window = view.window,
-           let tabs = controller.parent as? PreferencesTabViewController,
-           tabs.tabView.selectedTabViewItem?.viewController === controller {
-            window.contentView?.layoutSubtreeIfNeeded()
-            if view.frame.size != view.fittingSize {
-                view.setFrameSize(view.fittingSize)
-            }
-            tabs.updateWindowSize()
-        } else {
-            view.setFrameSize(view.fittingSize)
+        let size = view.fittingSize
+        if view.frame.size != size {
+            view.setFrameSize(size)
         }
     }
 

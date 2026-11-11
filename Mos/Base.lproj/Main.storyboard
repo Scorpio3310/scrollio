@@ -47,8 +47,8 @@
             <objects>
                 <windowController storyboardIdentifier="preferencesWindowController" showSeguePresentationStyle="single" id="7TR-R5-fGE" customClass="PreferencesWindowController" customModule="Mos" customModuleProvider="target" sceneMemberID="viewController">
                     <window key="window" title="Preferences" allowsToolTipsWhenApplicationIsInactive="NO" autorecalculatesKeyViewLoop="NO" visibleAtLaunch="NO" frameAutosaveName="" animationBehavior="default" titlebarAppearsTransparent="YES" id="cvF-hf-KVW">
-                        <windowStyleMask key="styleMask" titled="YES" closable="YES"/>
-                        <rect key="contentRect" x="13" y="0.0" width="450" height="315"/>
+                        <windowStyleMask key="styleMask" titled="YES" closable="YES" miniaturizable="YES" resizable="YES" fullSizeContentView="YES"/>
+                        <rect key="contentRect" x="13" y="0.0" width="720" height="640"/>
                         <rect key="screenRect" x="-412" y="1050" width="2560" height="1080"/>
                         <connections>
                             <outlet property="delegate" destination="7TR-R5-fGE" id="aq4-gh-Ch5"/>
@@ -56,43 +56,11 @@
                     </window>
                     <connections>
                         <outlet property="preferenceWindow" destination="cvF-hf-KVW" id="8z2-JT-6sK"/>
-                        <segue destination="0iY-5N-JBV" kind="relationship" relationship="window.shadowedContentViewController" id="sCL-N4-ofN"/>
                     </connections>
                 </windowController>
                 <customObject id="28S-c5-IKX" userLabel="First Responder" customClass="NSResponder" sceneMemberID="firstResponder"/>
             </objects>
             <point key="canvasLocation" x="1086" y="272"/>
-        </scene>
-        <!--Preferences Tab View Controller-->
-        <scene sceneID="fde-aU-5x8">
-            <objects>
-                <tabViewController showSeguePresentationStyle="single" selectedTabViewItemIndex="0" tabStyle="toolbar" id="0iY-5N-JBV" customClass="PreferencesTabViewController" customModule="Mos" customModuleProvider="target" sceneMemberID="viewController">
-                    <tabViewItems>
-                        <tabViewItem identifier="general" image="SF.gearshape" id="Qwc-OE-zHR"/>
-                        <tabViewItem identifier="scrolling" image="SF.circle.dotted.circle" id="P9R-tX-qfW"/>
-                        <tabViewItem identifier="buttons" image="SF.button.horizontal.top.press" id="BTN-UI-123"/>
-                        <tabViewItem identifier="application" image="SF.app.background.dotted" id="gfS-Ix-zI5"/>
-                    </tabViewItems>
-                    <viewControllerTransitionOptions key="transitionOptions"/>
-                    <tabView key="tabView" wantsLayer="YES" misplaced="YES" type="noTabsNoBorder" id="sxC-q7-Qs6">
-                        <rect key="frame" x="0.0" y="0.0" width="450" height="314"/>
-                        <autoresizingMask key="autoresizingMask" flexibleMinX="YES" flexibleMaxX="YES" flexibleMinY="YES" flexibleMaxY="YES"/>
-                        <font key="font" metaFont="system"/>
-                        <connections>
-                            <outlet property="delegate" destination="0iY-5N-JBV" id="VmR-wj-laa"/>
-                        </connections>
-                    </tabView>
-                    <connections>
-                        <outlet property="tabView" destination="sxC-q7-Qs6" id="CNF-oh-eK6"/>
-                        <segue destination="ITL-GD-CPd" kind="relationship" relationship="tabItems" id="z3c-tg-aDc"/>
-                        <segue destination="iW5-CD-5OC" kind="relationship" relationship="tabItems" id="GA4-xY-65w"/>
-                        <segue destination="BTN-VC-123" kind="relationship" relationship="tabItems" id="BTN-SG-123"/>
-                        <segue destination="bga-wG-iim" kind="relationship" relationship="tabItems" id="QV9-il-C7g"/>
-                    </connections>
-                </tabViewController>
-                <customObject id="Huf-MT-zgs" userLabel="First Responder" customClass="NSResponder" sceneMemberID="firstResponder"/>
-            </objects>
-            <point key="canvasLocation" x="1086" y="767"/>
         </scene>
         <!--General-->
         <scene sceneID="5zC-sP-JZj">
@@ -1546,11 +1514,8 @@ mouseEventWindowUnderMousePointerThatCanHandleThisEvent: 0.0</string>
         <image name="NSApplicationIcon" width="32" height="32"/>
         <image name="NSRemoveTemplate" width="18" height="5"/>
         <image name="NSTouchBarSearchTemplate" width="20" height="20"/>
-        <image name="SF.app.background.dotted" width="135" height="135"/>
         <image name="SF.arrow.clockwise" width="135" height="135"/>
-        <image name="SF.button.horizontal.top.press" width="135" height="135"/>
         <image name="SF.circle.dotted.circle" width="135" height="135"/>
-        <image name="SF.gearshape" width="135" height="135"/>
         <image name="SF.lasso.badge.sparkles" width="135" height="135"/>
         <image name="SF.scribble" width="100" height="86"/>
     </resources>

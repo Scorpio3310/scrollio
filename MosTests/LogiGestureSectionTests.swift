@@ -225,7 +225,7 @@ final class LogiGestureSectionTests: XCTestCase {
 
     func testEveryLocaleTranslatesTheGestureSection() {
         let missing = "\u{1}missing"
-        let app = Bundle(for: PreferencesTabViewController.self)
+        let app = Bundle(for: PreferencesSplitViewController.self)
         for locale in Self.locales {
             guard let path = app.path(forResource: locale, ofType: "lproj"), let bundle = Bundle(path: path) else {
                 XCTFail("\(locale).lproj is missing")
@@ -242,7 +242,7 @@ final class LogiGestureSectionTests: XCTestCase {
     }
 
     func testHapticHintsNameTheMouseThatHasThem() {
-        let app = Bundle(for: PreferencesTabViewController.self)
+        let app = Bundle(for: PreferencesSplitViewController.self)
         for locale in Self.locales {
             guard let path = app.path(forResource: locale, ofType: "lproj"), let bundle = Bundle(path: path) else { continue }
             for key in ["mouse-gesture-haptics-hint", "mouse-gesture-haptics-unavailable"] {

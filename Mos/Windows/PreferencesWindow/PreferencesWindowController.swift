@@ -8,19 +8,87 @@
 
 import Cocoa
 
-class PreferencesWindowController: NSWindowController, NSWindowDelegate {
-    
+class PreferencesWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate {
+
     @IBOutlet weak var preferenceWindow: NSWindow!
-    
+
+    /// The window's content: the sidebar and the selected pane.
+    var splitViewController: PreferencesSplitViewController? {
+        return contentViewController as? PreferencesSplitViewController
+    }
+
     override func windowDidLoad() {
         super.windowDidLoad()
-        // 插入分隔符
-        window?.toolbar?.insertItem(withItemIdentifier: NSToolbarItem.Identifier.flexibleSpace, at: 4)
-        window?.toolbar?.insertItem(withItemIdentifier: NSToolbarItem.Identifier.flexibleSpace, at: 3)
-        window?.toolbar?.insertItem(withItemIdentifier: NSToolbarItem.Identifier.flexibleSpace, at: 2)
-        window?.toolbar?.insertItem(withItemIdentifier: NSToolbarItem.Identifier.flexibleSpace, at: 1)
+        guard let window else { return }
+        contentViewController = PreferencesSplitViewController(
+            storyboard: storyboard ?? NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesWindowController.self))
+        )
+        configure(window, remembersFrame: !AppRuntime.isRunningXCTest)
+        splitViewController?.updateWindowTitle()
     }
-    
+
+    /// System Settings' window: a full-height sidebar under the traffic lights, the pane's
+    /// name in the title bar next to it, a fixed width and a height the user chooses.
+    func configure(_ window: NSWindow, remembersFrame: Bool) {
+        window.styleMask.insert([.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView])
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .visible
+        // The toolbar holds no items: it gives the title bar System Settings' height and
+        // puts the title next to the sidebar.
+        let toolbar = NSToolbar(identifier: "PreferencesToolbar")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
+        window.collectionBehavior.insert(.fullScreenNone)
+
+        let size = NSSize(
+            width: PreferencesWindowLayout.contentWidth(of: splitViewController?.splitView),
+            height: PreferencesWindowLayout.defaultContentHeight
+        )
+        window.contentMinSize = NSSize(width: size.width, height: PreferencesWindowLayout.minimumContentHeight)
+        window.contentMaxSize = NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude)
+        window.setContentSize(size)
+
+        guard remembersFrame else { return }
+        shouldCascadeWindows = false
+        if window.setFrameUsingName(PreferencesWindowLayout.frameAutosaveName) {
+            // A frame saved by another version may have another width.
+            let width = window.frameRect(forContentRect: NSRect(origin: .zero, size: size)).width
+            window.setFrame(
+                PreferencesWindowLayout.normalizedFrame(
+                    window.frame,
+                    width: width,
+                    minimumHeight: window.frameRect(forContentRect: NSRect(origin: .zero, size: window.contentMinSize)).height,
+                    visibleFrame: window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
+                ),
+                display: false
+            )
+        } else {
+            window.center()
+        }
+        _ = window.setFrameAutosaveName(PreferencesWindowLayout.frameAutosaveName)
+    }
+
+    // MARK: - NSToolbarDelegate
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        return [.sidebarTrackingSeparator]
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        return [.sidebarTrackingSeparator]
+    }
+
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        guard itemIdentifier == .sidebarTrackingSeparator, let splitView = splitViewController?.splitView else { return nil }
+        return NSTrackingSeparatorToolbarItem(identifier: itemIdentifier, splitView: splitView, dividerIndex: 0)
+    }
+
+    // MARK: - NSWindowDelegate
+
     func windowWillClose(_ notification: Notification) {
         WindowManager.shared.hideWindow(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController, destroy: true)
     }
