@@ -270,6 +270,33 @@ final class InputProcessorTests: XCTestCase {
         )
     }
 
+    /// Two overlapping holds: the second one starts the safety timeout over, so the pointer
+    /// is not released at the first hold's timeout while the second is still held, and is
+    /// still released at the second one's.
+    func testPointerLockSafetyTimeoutStartsOverForEachLock() {
+        let lock = MouseGesturePointerLock.shared
+        lock.setTestingSafetyTimeout(0.4)
+        lock.lock()
+        XCTAssertTrue(lock.isLocked)
+
+        let secondHold = expectation(description: "second hold begins")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            lock.lock()
+            secondHold.fulfill()
+        }
+        wait(for: [secondHold], timeout: 5)
+
+        let pastFirstTimeout = expectation(description: "the first timeout would have fired")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { pastFirstTimeout.fulfill() }
+        wait(for: [pastFirstTimeout], timeout: 5)
+        XCTAssertTrue(lock.isLocked, "0.5 s after the first lock, 0.25 s after the second")
+        XCTAssertEqual(pointerAssociations, [false], "the second lock did not detach again")
+
+        let released = expectation(for: NSPredicate { _, _ in !lock.isLocked }, evaluatedWith: nil)
+        wait(for: [released], timeout: 5)
+        XCTAssertEqual(pointerAssociations, [false, true])
+    }
+
     func testMouseGestureRecognizerKeepsVerticalGesturesOneShot() {
         var up = MouseGestureRecognizer()
         XCTAssertEqual(up.append(deltaX: 0, deltaY: -45), .up)
