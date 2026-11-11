@@ -35,8 +35,10 @@
 //  0x19B0 HAPTIC (MX Master 4)
 //    fn0 getCapabilities  -> payload [4 bytes, waveform mask u32 big-endian]: bit n = waveform n
 //    fn1 getState         -> payload [flags: bit0 enabled, bit1 power save; intensity 0...100]
-//    fn2 setState         <- the same two bytes. Intensity is global, so the gesture cues
-//                            never send it.
+//    fn2 setState         <- the same two bytes. Only sent to switch haptics on for a cue
+//                            the user asked for; the intensity is sent back unchanged.
+//                            Seen on an MX Master 4 that never ran Options+: getState
+//                            [0x00, 100], i.e. off at full intensity.
 //    fn4 play             <- params  [waveformId]
 //
 
@@ -129,9 +131,25 @@ enum LogiGestureProtocol {
 
     static let hapticCapabilitiesFunction: UInt8 = 0
     static let hapticGetStateFunction: UInt8 = 1
-    /// Never sent by the gesture cues: it would change the user's intensity and power saving.
+    /// Only ever sent to switch haptics on (see `hapticSwitchOnParams`).
     static let hapticSetStateFunction: UInt8 = 2
     static let hapticPlayFunction: UInt8 = 4
+
+    static let hapticEnabledFlag: UInt8 = 0x01
+    /// Intensity used when the mouse reports 0 (0 with "enabled" would still be silent).
+    static let hapticFallbackLevel: UInt8 = 60
+
+    /// The two state bytes (flags, intensity) of a getState answer.
+    static func hapticState(_ report: [UInt8]) -> (flags: UInt8, level: UInt8)? {
+        guard report.count >= 6 else { return nil }
+        return (report[4], report[5])
+    }
+
+    /// setState parameters that switch haptics on and change nothing else: the other flags
+    /// (power saving) and the intensity stay as the mouse reported them.
+    static func hapticSwitchOnParams(flags: UInt8, level: UInt8) -> [UInt8] {
+        return [flags | hapticEnabledFlag, level == 0 ? hapticFallbackLevel : min(level, 100)]
+    }
 
     /// Waveform ids as OpenLogi uses them: "Subtle Collision" at a gesture threshold and
     /// "Damp State Change" on commit.

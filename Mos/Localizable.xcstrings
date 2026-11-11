@@ -1374,7 +1374,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "MX Master 4: a pulse when a gesture locks in."
+            "value": "MX Master 4: a pulse when a gesture locks in. Switches the mouse's haptics on if they are off."
           }
         }
       }

@@ -17,8 +17,10 @@
 //  - Controls Mos never armed keep getting the exact bytes they always got (0x03 / 0x02).
 //  - The first movement sample of every hold is dropped (OpenLogi saw a large jump there).
 //
-//  Haptic rules: play only when the mouse has 0x19B0, says haptics are enabled and lists
-//  the waveform. Read-only otherwise: intensity and power saving are never written.
+//  Haptic rules: play only when the mouse has 0x19B0 and lists a usable waveform. A cue is
+//  only asked for while the user has "Haptic feedback" on, so when the mouse reports its
+//  haptics switched off (the state of an MX Master 4 that never ran Options+), they are
+//  switched on for it. Intensity and power saving are never changed.
 //
 //  Main thread only (HID++ callbacks run on the main run loop).
 //
@@ -279,6 +281,8 @@ final class LogiGestureController {
     private(set) var hapticFeatureIndex: UInt8?
     /// getState bit0; nil until read.
     private(set) var hapticsEnabled: Bool?
+    /// The state bytes of the last getState answer (flags, intensity).
+    private var hapticState: (flags: UInt8, level: UInt8)?
     /// getCapabilities waveform mask; nil until read.
     private(set) var hapticWaveformMask: UInt32?
 
@@ -297,6 +301,7 @@ final class LogiGestureController {
         guard index != hapticFeatureIndex else { return }
         hapticFeatureIndex = index
         hapticsEnabled = nil
+        hapticState = nil
         hapticWaveformMask = nil
         pendingCue = nil
         if let index = index {
@@ -338,6 +343,7 @@ final class LogiGestureController {
                 log("Haptics: switched \(enabled ? "on" : "off") on the mouse, state \(Self.hex(report))")
             }
             hapticsEnabled = enabled
+            hapticState = LogiGestureProtocol.hapticState(report)
         default:
             return  // play acknowledgement, or somebody else's setState
         }
@@ -378,13 +384,21 @@ final class LogiGestureController {
 
     @discardableResult
     private func send(_ cue: MouseGestureHapticCue, enabled: Bool, mask: UInt32) -> Bool {
-        guard enabled else {
-            log("Haptic cue \(cue) skipped: haptics are switched off on the mouse")
-            return false
-        }
         guard let waveform = LogiGestureProtocol.waveform(for: cue, mask: mask) else {
             log("Haptic cue \(cue) skipped: no usable waveform in mask \(String(format: "0x%08X", mask))")
             return false
+        }
+        if !enabled {
+            // The user asked for cues, the mouse has its haptics off: switch them on, with
+            // the intensity it reports. The mouse works through requests in order, so the
+            // pulse right behind this one already plays.
+            let state = hapticState ?? (flags: 0, level: 0)
+            let params = LogiGestureProtocol.hapticSwitchOnParams(flags: state.flags, level: state.level)
+            sendHaptic(LogiGestureProtocol.hapticSetStateFunction, params)
+            hapticsEnabled = true
+            hapticState = (params[0], params[1])
+            log("Haptics: were off on the mouse, switched on at intensity \(params[1])")
+            onChange()
         }
         sendHaptic(LogiGestureProtocol.hapticPlayFunction, [waveform])
         log("Haptic cue \(cue): waveform \(String(format: "0x%02X", waveform)) sent")
