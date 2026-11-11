@@ -34,8 +34,9 @@ enum PreferencesForm {
 
     // MARK: - Type
 
-    /// Size of the secondary text under a control. One constant for every pane built in code.
-    static let hintFontSize: CGFloat = NSFont.systemFontSize(for: .mini)
+    /// Size of the secondary text under a control: 11 pt, the small system font, like the
+    /// hints of the storyboard panes. One constant for every pane built in code.
+    static let hintFontSize: CGFloat = NSFont.smallSystemFontSize
 
     static var hintFont: NSFont {
         return NSFont.systemFont(ofSize: hintFontSize)

@@ -257,3 +257,73 @@ final class PreferencesNamingTests: XCTestCase {
         )
     }
 }
+
+/// No text of the Preferences window is smaller than 10 pt (hints were 9 pt).
+final class PreferencesTextSizeTests: XCTestCase {
+
+    private func smallTexts(in view: NSView) -> [String] {
+        var found: [String] = []
+        for subview in allSubviews(of: view) {
+            if let field = subview as? NSTextField, !field.stringValue.isEmpty,
+               let size = field.font?.pointSize, size < 10 {
+                found.append("\(size) pt: \(field.stringValue)")
+            } else if let button = subview as? NSButton, !button.title.isEmpty,
+                      let size = button.font?.pointSize, size < 10 {
+                found.append("\(size) pt: \(button.title)")
+            }
+        }
+        return found
+    }
+
+    func testStoryboardPanesAndPopovers() throws {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesTabViewController.self))
+        let identifiers = [
+            PANEL_IDENTIFIER.general, PANEL_IDENTIFIER.scrolling, PANEL_IDENTIFIER.buttons,
+            PANEL_IDENTIFIER.application, PANEL_IDENTIFIER.scrollingWithApplication,
+            "menuBarIconHint", "allowlistHint", "scrollSmoothDetail", "scrollReverseDetail",
+        ]
+        for identifier in identifiers {
+            let controller = try XCTUnwrap(storyboard.instantiateController(withIdentifier: identifier) as? NSViewController)
+            XCTAssertEqual(smallTexts(in: controller.view), [], identifier)
+        }
+    }
+
+    func testPanesBuiltInCode() {
+        let mouse = MousePreferencesViewController()
+        mouse.deviceSource = MouseWheelDeviceSource(
+            deviceStates: {
+                [LogiWheelDeviceState(
+                    id: "a", deviceName: "MX Master 4", supportsSmartShift: true, supportsScrollForce: true,
+                    mode: .smartShift, smartShiftSensitivity: 40, scrollForce: 65
+                )]
+            },
+            refresh: {},
+            showDiagnostics: {}
+        )
+        _ = mouse.view
+        mouse.reloadDevices()
+
+        let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+        gestures.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+        gestures.bindingSummary = { MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false) }
+
+        let about = AboutPreferencesViewController()
+
+        for controller in [mouse, gestures, about] as [NSViewController] {
+            XCTAssertEqual(smallTexts(in: controller.view), [], controller.title ?? "")
+        }
+    }
+
+    func testHintsOfTheStoryboardPanesMatchTheFormKit() throws {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesTabViewController.self))
+        let general = try XCTUnwrap(storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.general) as? NSViewController)
+        let hint = try XCTUnwrap(allSubviews(of: general.view)
+            .compactMap { $0 as? NSTextField }
+            .first { $0.stringValue == "Open Scrollio again to show the icon" })
+        XCTAssertEqual(hint.font?.pointSize, PreferencesForm.hintFontSize)
+
+        let scrolling = try XCTUnwrap(storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)
+        _ = scrolling.view
+        XCTAssertEqual(scrolling.scrollDurationDescriptionLabel?.font?.pointSize, PreferencesForm.hintFontSize)
+    }
+}

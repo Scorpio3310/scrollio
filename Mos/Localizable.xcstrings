@@ -966,7 +966,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Follow the hand is experimental: sideways movement slides between desktops with the mouse."
+            "value": "Follow the hand is experimental: moving sideways slides between desktops."
           }
         }
       }
@@ -1054,7 +1054,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hold a button set to Gesture Navigation and move the mouse. Click runs when you release it without moving."
+            "value": "Hold a Gesture Navigation button and move the mouse. Release without moving to run Click."
           }
         }
       }
@@ -1186,7 +1186,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Live log of the Logitech connection, for troubleshooting."
+            "value": "Live connection log, for troubleshooting."
           }
         }
       }
@@ -1208,7 +1208,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "How firmly the wheel clicks. MX Master 4 and newer."
+            "value": "Click firmness. MX Master 4 and newer."
           }
         }
       }
@@ -1329,7 +1329,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "SmartShift only. Higher values switch to free-spin sooner."
+            "value": "SmartShift only. Higher means free-spin sooner."
           }
         }
       }
@@ -1362,7 +1362,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Experimental. The mouse keeps the pointer still itself."
+            "value": "Experimental. The mouse holds the pointer still."
           }
         }
       }

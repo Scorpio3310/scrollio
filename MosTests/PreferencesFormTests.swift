@@ -27,7 +27,9 @@ final class PreferencesFormTests: XCTestCase {
         XCTAssertEqual(PreferencesForm.hintSpacing, 6)
     }
 
-    func testHintsUseOneFontSize() {
+    func testHintsUseOneFontSizeOfAtLeastTenPoints() {
+        XCTAssertGreaterThanOrEqual(PreferencesForm.hintFontSize, 10)
+        XCTAssertEqual(PreferencesForm.hintFontSize, NSFont.smallSystemFontSize)
         XCTAssertEqual(PreferencesForm.makeHint("Hint").font?.pointSize, PreferencesForm.hintFontSize)
     }
 
