@@ -16,10 +16,14 @@ final class PreferencesLocalizationTests: XCTestCase {
 
     /// Mouse pane.
     static let mouseKeys = [
-        "mouse-tab-title", "mouse-header-no-mouse", "mouse-header-connected", "mouse-header-connected-several",
+        "mouse-tab-title", "mouse-header-any-mouse", "mouse-header-any-mouse-detail",
+        "mouse-header-connected", "mouse-header-connected-several",
         "mouse-battery-about", "mouse-battery-full", "mouse-battery-good", "mouse-battery-low",
         "mouse-battery-critical", "mouse-battery-not-charging", "mouse-battery-accessibility",
-        "mouse-battery-accessibility-charging", "mouse-no-mouse", "mouse-no-mouse-hint",
+        "mouse-battery-accessibility-charging",
+        "mouse-macos-header", "mouse-macos-tracking-speed", "mouse-macos-tracking-speed-hint",
+        "mouse-macos-tracking-speed-slow", "mouse-macos-tracking-speed-fast",
+        "mouse-macos-acceleration", "mouse-macos-acceleration-hint",
         "mouse-wheel-managed", "mouse-wheel-managed-hint",
         "mouse-pointer-header", "mouse-pointer-speed", "mouse-pointer-speed-hint", "mouse-pointer-speed-slower",
         "mouse-pointer-speed-faster", "mouse-pointer-speed-value",

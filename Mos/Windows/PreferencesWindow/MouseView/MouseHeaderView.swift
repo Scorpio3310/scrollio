@@ -4,7 +4,9 @@
 //  The card at the top of the Mouse tab: on the left the mouse seen from above, on the
 //  right its name, that it is connected and its battery. The part of the mouse the setting
 //  under the pointer (or with the keyboard focus) is about lights up in the accent colour.
-//  The card has the look of the Scrolling tab's preview cards (ScrollPreviewPalette).
+//  Without a Logitech mouse the card shows a plain two-button mouse and says that the app
+//  works with any mouse. The card has the look of the Scrolling tab's preview cards
+//  (ScrollPreviewPalette).
 //
 
 import Cocoa
@@ -17,8 +19,8 @@ final class MouseHeaderView: NSView {
     static let artworkColumnWidth: CGFloat = 170
     /// Right of the text.
     static let textTrailingInset: CGFloat = 20
-    /// The mouse while none is connected.
-    static let dimmedAlpha: CGFloat = 0.4
+    /// The line under the name wraps; more than this many lines are cut off.
+    static let detailMaximumLines = 3
 
     static var nameFont: NSFont {
         return NSFont.systemFont(ofSize: 17, weight: .semibold)
@@ -47,7 +49,7 @@ final class MouseHeaderView: NSView {
 
     let artwork = MouseArtworkView()
     let nameLabel = NSTextField(labelWithString: "")
-    let statusLabel = NSTextField(labelWithString: "")
+    let statusLabel = NSTextField(wrappingLabelWithString: "")
     let batteryIcon = NSImageView()
     let batteryLabel = NSTextField(labelWithString: "")
     private let batteryLine = NSStackView()
@@ -72,7 +74,10 @@ final class MouseHeaderView: NSView {
         nameLabel.lineBreakMode = .byTruncatingTail
         statusLabel.font = Self.detailFont
         statusLabel.textColor = .secondaryLabelColor
-        statusLabel.lineBreakMode = .byTruncatingTail
+        statusLabel.isSelectable = false
+        statusLabel.maximumNumberOfLines = Self.detailMaximumLines
+        statusLabel.lineBreakMode = .byWordWrapping
+        statusLabel.cell?.truncatesLastVisibleLine = true
         batteryLabel.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         batteryLabel.textColor = .secondaryLabelColor
         for label in [nameLabel, statusLabel, batteryLabel] {
@@ -119,11 +124,21 @@ final class MouseHeaderView: NSView {
         return NSSize(width: NSView.noIntrinsicMetric, height: Self.preferredHeight)
     }
 
+    /// The text column ends `textTrailingInset` before the card's edge: the line under the
+    /// name wraps there.
+    override func layout() {
+        let width = max(0, bounds.width - Self.artworkColumnWidth - Self.textTrailingInset)
+        if statusLabel.preferredMaxLayoutWidth != width {
+            statusLabel.preferredMaxLayoutWidth = width
+        }
+        super.layout()
+    }
+
     private func applyContent() {
         nameLabel.stringValue = content.title
         statusLabel.stringValue = content.subtitle ?? ""
         statusLabel.isHidden = content.subtitle == nil
-        artwork.alphaValue = content.isConnected ? 1 : Self.dimmedAlpha
+        artwork.style = content.isConnected ? .mxMaster : .anyMouse
         if let battery = content.battery {
             batteryLine.isHidden = false
             batteryLabel.stringValue = battery.text
@@ -157,7 +172,26 @@ final class MouseHeaderView: NSView {
 /// A right-handed mouse in the shape of an MX Master, seen from above in line art: the wheel
 /// between the two buttons, a small button behind it and the thumb rest on the left. Each
 /// part that can light up has a layer of its own above the drawing, faded in and out.
+/// `anyMouse` draws a plain symmetric mouse instead (two buttons and a wheel), with nothing
+/// to light up.
 final class MouseArtworkView: NSView {
+
+    enum Style {
+        /// The connected Logitech mouse.
+        case mxMaster
+        /// Any mouse: shown while no Logitech mouse is connected.
+        case anyMouse
+    }
+
+    var style: Style = .mxMaster {
+        didSet {
+            guard style != oldValue else { return }
+            for highlight in highlights.values {
+                highlight.isHidden = style != .mxMaster
+            }
+            needsDisplay = true
+        }
+    }
 
     /// The drawing is laid out on this grid (top-left origin) and scaled to `bodySize`.
     static let designSize = NSSize(width: 78, height: 120)
@@ -276,6 +310,37 @@ final class MouseArtworkView: NSView {
         return path
     }
 
+    /// A plain mouse, the same size: symmetric, rounder at the back.
+    static func anyMouseBodyPath() -> NSBezierPath {
+        let p = point
+        let path = NSBezierPath()
+        path.move(to: p(39, 1))
+        path.curve(to: p(70, 34), controlPoint1: p(57, 1), controlPoint2: p(68, 14))
+        path.curve(to: p(73, 84), controlPoint1: p(72, 50), controlPoint2: p(74, 68))
+        path.curve(to: p(39, 119), controlPoint1: p(72, 106), controlPoint2: p(58, 119))
+        path.curve(to: p(5, 84), controlPoint1: p(20, 119), controlPoint2: p(6, 106))
+        path.curve(to: p(8, 34), controlPoint1: p(4, 68), controlPoint2: p(6, 50))
+        path.curve(to: p(39, 1), controlPoint1: p(10, 14), controlPoint2: p(21, 1))
+        path.close()
+        return path
+    }
+
+    /// The plain mouse's wheel, on its middle line.
+    static var anyMouseWheelRect: NSRect {
+        return rect(34, 11, 10, 24)
+    }
+
+    /// Where the plain mouse's two buttons end, and the split between them.
+    static func anyMouseSeamPath() -> NSBezierPath {
+        let p = point
+        let path = NSBezierPath()
+        path.move(to: p(4, 46))
+        path.curve(to: p(74, 46), controlPoint1: p(24, 56), controlPoint2: p(54, 56))
+        path.move(to: p(39, 0))
+        path.line(to: p(39, 51))
+        return path
+    }
+
     /// The thumb rest's panel: a rounded strip along the left edge.
     static func thumbPanelPath() -> NSBezierPath {
         let top = point(10.5, 71)
@@ -299,9 +364,15 @@ final class MouseArtworkView: NSView {
     // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        let outline = Self.bodyPath()
+        switch style {
+        case .mxMaster: drawMXMaster()
+        case .anyMouse: drawAnyMouse()
+        }
+    }
 
-        // A soft shadow under the mouse, cast by a copy that is moved down and then covered.
+    /// A soft shadow under the mouse, cast by a copy of `outline` that is moved down and
+    /// then covered by the body.
+    private func drawShadow(of outline: NSBezierPath) {
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
         shadow.shadowColor = ScrollPreviewPalette.mouseShadow
@@ -309,10 +380,46 @@ final class MouseArtworkView: NSView {
         shadow.shadowOffset = .zero
         shadow.set()
         ScrollPreviewPalette.mouseShadow.setFill()
-        let cast = Self.bodyPath()
+        let cast = outline.copy() as! NSBezierPath
         cast.transform(using: AffineTransform(translationByX: 0, byY: 2))
         cast.fill()
         NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private func drawAnyMouse() {
+        let outline = Self.anyMouseBodyPath()
+        drawShadow(of: outline)
+        ScrollPreviewPalette.mouseFill.setFill()
+        outline.fill()
+
+        NSGraphicsContext.saveGraphicsState()
+        outline.addClip()
+        let seams = Self.anyMouseSeamPath()
+        seams.lineWidth = 1
+        ScrollPreviewPalette.mouseSeam.setStroke()
+        seams.stroke()
+        NSGraphicsContext.restoreGraphicsState()
+
+        let well = Self.anyMouseWheelRect.insetBy(dx: -3, dy: -3)
+        let slot = NSBezierPath(roundedRect: well, xRadius: well.width / 2, yRadius: well.width / 2)
+        ScrollPreviewPalette.mouseFill.setFill()
+        slot.fill()
+        ScrollPreviewPalette.wheelWell.setFill()
+        slot.fill()
+        ScrollPreviewPalette.mouseSeam.setStroke()
+        slot.lineWidth = 1
+        slot.stroke()
+        MouseArtworkHighlight.drawWheel(in: Self.anyMouseWheelRect, fill: MouseArtworkPalette.wheel, ridges: MouseArtworkPalette.wheelRidge)
+
+        ScrollPreviewPalette.mouseLine.setStroke()
+        outline.lineWidth = 1.5
+        outline.stroke()
+    }
+
+    private func drawMXMaster() {
+        let outline = Self.bodyPath()
+
+        drawShadow(of: outline)
 
         ScrollPreviewPalette.mouseFill.setFill()
         outline.fill()
