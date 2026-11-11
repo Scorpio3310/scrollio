@@ -2,8 +2,8 @@ import XCTest
 @testable import Mos_Debug
 
 /// Strings of the reorganised preferences (Mouse tab, Presets & Fast Scrolling, Gesture
-/// Settings) and of the Introduction window must exist in every shipped locale, keep their
-/// format specifiers, and never fall back to the raw key. Several keys are built from variables in code, so a missing
+/// Settings), of the main menu and of the Introduction window must exist in every shipped
+/// locale, keep their format specifiers, and never fall back to the raw key. Several keys are built from variables in code, so a missing
 /// one would only show up as the key itself in the UI.
 final class PreferencesLocalizationTests: XCTestCase {
 
@@ -37,6 +37,13 @@ final class PreferencesLocalizationTests: XCTestCase {
         "gesture-mode-interactive-unavailable", "gesture-follow-horizontal-value",
         // About
         "about-tab-title", "about-app-name", "about-version", "about-credit", "about-welcome-guide",
+        // Main menu
+        "main-menu-application", "main-menu-about", "main-menu-settings", "main-menu-services",
+        "main-menu-hide", "main-menu-hide-others", "main-menu-show-all", "main-menu-quit",
+        "main-menu-edit", "main-menu-undo", "main-menu-redo", "main-menu-cut", "main-menu-copy",
+        "main-menu-paste", "main-menu-select-all", "main-menu-window", "main-menu-minimize",
+        "main-menu-zoom", "main-menu-close", "main-menu-bring-all-to-front", "main-menu-help",
+        "main-menu-welcome-guide",
         // Introduction window
         "intro-title", "intro-subtitle", "intro-access-heading", "intro-access-explanation",
         "intro-step-open-settings", "intro-step-open-settings-detail", "intro-step-turn-on",

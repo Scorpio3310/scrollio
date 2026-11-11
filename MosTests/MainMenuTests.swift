@@ -1,0 +1,322 @@
+//
+//  MainMenuTests.swift
+//  MosTests
+//
+//  The app's menu bar (MainMenuManager): which menus and items it has, their shortcuts,
+//  where each action goes, and that it is installed at launch. Menus are built and read,
+//  never opened; the actions that would open a window are replaced.
+//
+
+import XCTest
+@testable import Mos_Debug
+
+final class MainMenuTests: XCTestCase {
+
+    /// One row of a menu as the user reads it: title and shortcut, or a separator.
+    private struct Row: Equatable, CustomStringConvertible {
+        let title: String
+        let shortcut: String
+
+        static let separator = Row(title: "—", shortcut: "")
+
+        init(title: String, shortcut: String = "") {
+            self.title = title
+            self.shortcut = shortcut
+        }
+
+        init(_ item: NSMenuItem) {
+            if item.isSeparatorItem {
+                self = .separator
+                return
+            }
+            var shortcut = ""
+            if !item.keyEquivalent.isEmpty {
+                let flags = item.keyEquivalentModifierMask
+                if flags.contains(.control) { shortcut += "⌃" }
+                if flags.contains(.option) { shortcut += "⌥" }
+                if flags.contains(.shift) { shortcut += "⇧" }
+                if flags.contains(.command) { shortcut += "⌘" }
+                shortcut += item.keyEquivalent.uppercased()
+            }
+            self.init(title: item.title, shortcut: shortcut)
+        }
+
+        var description: String {
+            return shortcut.isEmpty ? title : "\(title) [\(shortcut)]"
+        }
+    }
+
+    private var manager: MainMenuManager!
+    private var menus: MainMenuManager.Menus!
+    private var openedPreferences: [String?] = []
+    private var openedWelcomeGuide = 0
+
+    override func setUp() {
+        super.setUp()
+        openedPreferences = []
+        openedWelcomeGuide = 0
+        // Its own manager: the items hold their target weakly, and nothing here may open a window.
+        manager = MainMenuManager()
+        manager.showPreferences = { [unowned self] tab in self.openedPreferences.append(tab) }
+        manager.showWelcomeGuide = { [unowned self] in self.openedWelcomeGuide += 1 }
+        menus = manager.makeMenus()
+    }
+
+    override func tearDown() {
+        menus = nil
+        manager = nil
+        super.tearDown()
+    }
+
+    private func submenu(_ identifier: NSUserInterfaceItemIdentifier) throws -> NSMenu {
+        return try XCTUnwrap(menus.main.items.compactMap(\.submenu).first { $0.identifier == identifier })
+    }
+
+    private func rows(_ menu: NSMenu) -> [Row] {
+        return menu.items.map(Row.init)
+    }
+
+    private func item(_ title: String, in menu: NSMenu) throws -> NSMenuItem {
+        return try XCTUnwrap(menu.items.first { $0.title == title }, "no item \"\(title)\"")
+    }
+
+    private func allItems(of menu: NSMenu) -> [NSMenuItem] {
+        return menu.items.flatMap { [$0] + ($0.submenu.map(allItems(of:)) ?? []) }
+    }
+
+    /// What a click on the item does.
+    private func choose(_ item: NSMenuItem) -> Bool {
+        guard let action = item.action else { return false }
+        return NSApp.sendAction(action, to: item.target, from: item)
+    }
+
+    // MARK: - Structure
+
+    func testMenuBarHasTheFourMenus() {
+        XCTAssertEqual(menus.main.items.map(\.title), ["Scrollio", "Edit", "Window", "Help"])
+        XCTAssertEqual(menus.main.items.compactMap(\.submenu).map(\.title), ["Scrollio", "Edit", "Window", "Help"])
+        XCTAssertEqual(
+            menus.main.items.map { $0.submenu?.identifier },
+            [
+                MainMenuManager.Identifier.applicationMenu,
+                MainMenuManager.Identifier.editMenu,
+                MainMenuManager.Identifier.windowMenu,
+                MainMenuManager.Identifier.helpMenu,
+            ]
+        )
+    }
+
+    func testApplicationMenu() throws {
+        let menu = try submenu(MainMenuManager.Identifier.applicationMenu)
+        XCTAssertEqual(rows(menu), [
+            Row(title: "About Scrollio"),
+            Row(title: "Settings…", shortcut: "⌘,"),
+            .separator,
+            Row(title: "Services"),
+            .separator,
+            Row(title: "Hide Scrollio", shortcut: "⌘H"),
+            Row(title: "Hide Others", shortcut: "⌥⌘H"),
+            Row(title: "Show All"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+        // The application menu is the first one: that is how AppKit recognises it.
+        XCTAssertTrue(menus.main.items.first?.submenu === menu)
+    }
+
+    func testServicesIsTheSubmenuAppKitFills() throws {
+        let menu = try submenu(MainMenuManager.Identifier.applicationMenu)
+        let services = try item("Services", in: menu)
+        XCTAssertTrue(services.submenu === menus.services)
+        XCTAssertTrue(menus.services.items.isEmpty, "macOS fills it")
+    }
+
+    func testEditMenu() throws {
+        let menu = try submenu(MainMenuManager.Identifier.editMenu)
+        XCTAssertEqual(rows(menu), [
+            Row(title: "Undo", shortcut: "⌘Z"),
+            Row(title: "Redo", shortcut: "⇧⌘Z"),
+            .separator,
+            Row(title: "Cut", shortcut: "⌘X"),
+            Row(title: "Copy", shortcut: "⌘C"),
+            Row(title: "Paste", shortcut: "⌘V"),
+            Row(title: "Select All", shortcut: "⌘A"),
+        ])
+    }
+
+    func testWindowMenu() throws {
+        let menu = try submenu(MainMenuManager.Identifier.windowMenu)
+        XCTAssertEqual(rows(menu), [
+            Row(title: "Minimize", shortcut: "⌘M"),
+            Row(title: "Zoom"),
+            Row(title: "Close", shortcut: "⌘W"),
+            .separator,
+            Row(title: "Bring All to Front"),
+        ])
+        XCTAssertTrue(menu === menus.window)
+    }
+
+    func testHelpMenu() throws {
+        let menu = try submenu(MainMenuManager.Identifier.helpMenu)
+        XCTAssertEqual(rows(menu), [Row(title: "Welcome Guide")])
+        XCTAssertTrue(menu === menus.help)
+    }
+
+    func testNoShortcutIsUsedTwice() {
+        let shortcuts = allItems(of: menus.main).map(Row.init).map(\.shortcut).filter { !$0.isEmpty }
+        XCTAssertEqual(shortcuts.count, Set(shortcuts).count, "\(shortcuts)")
+        // Every shortcut the menu bar claims while a Scrollio window is in front. A new one
+        // has to be checked against the key recorders of the Buttons and Scrolling tabs.
+        XCTAssertEqual(
+            Set(shortcuts),
+            ["⌘,", "⌘H", "⌥⌘H", "⌘Q", "⌘Z", "⇧⌘Z", "⌘X", "⌘C", "⌘V", "⌘A", "⌘M", "⌘W"]
+        )
+    }
+
+    func testEveryTitleIsLocalized() {
+        for item in allItems(of: menus.main) where !item.isSeparatorItem {
+            XCTAssertFalse(item.title.isEmpty)
+            XCTAssertFalse(item.title.hasPrefix("main-menu-"), "\(item.title) shows the raw key")
+        }
+    }
+
+    // MARK: - Actions
+
+    func testStandardItemsSendTheStandardActionsDownTheResponderChain() throws {
+        let application = try submenu(MainMenuManager.Identifier.applicationMenu)
+        let edit = try submenu(MainMenuManager.Identifier.editMenu)
+        let window = try submenu(MainMenuManager.Identifier.windowMenu)
+        let expected: [(menu: NSMenu, title: String, action: Selector, receiver: NSObject.Type)] = [
+            (application, "Hide Scrollio", #selector(NSApplication.hide(_:)), NSApplication.self),
+            (application, "Hide Others", #selector(NSApplication.hideOtherApplications(_:)), NSApplication.self),
+            (application, "Show All", #selector(NSApplication.unhideAllApplications(_:)), NSApplication.self),
+            (application, "Quit Scrollio", #selector(NSApplication.terminate(_:)), NSApplication.self),
+            (edit, "Undo", Selector(("undo:")), NSWindow.self),
+            (edit, "Redo", Selector(("redo:")), NSWindow.self),
+            (edit, "Cut", #selector(NSText.cut(_:)), NSTextView.self),
+            (edit, "Copy", #selector(NSText.copy(_:)), NSTextView.self),
+            (edit, "Paste", #selector(NSText.paste(_:)), NSTextView.self),
+            (edit, "Select All", #selector(NSText.selectAll(_:)), NSTextView.self),
+            (window, "Minimize", #selector(NSWindow.performMiniaturize(_:)), NSWindow.self),
+            (window, "Zoom", #selector(NSWindow.performZoom(_:)), NSWindow.self),
+            (window, "Close", #selector(NSWindow.performClose(_:)), NSWindow.self),
+            (window, "Bring All to Front", #selector(NSApplication.arrangeInFront(_:)), NSApplication.self),
+        ]
+        for (menu, title, action, receiver) in expected {
+            let item = try item(title, in: menu)
+            XCTAssertEqual(item.action, action, title)
+            XCTAssertNil(item.target, "\(title) goes to the first responder")
+            XCTAssertTrue(receiver.instancesRespond(to: action), "\(receiver) does not implement \(action)")
+        }
+    }
+
+    func testAboutOpensThePreferencesOnTheAboutTab() throws {
+        let about = try item("About Scrollio", in: try submenu(MainMenuManager.Identifier.applicationMenu))
+        XCTAssertEqual(about.identifier, MainMenuManager.Identifier.about)
+        XCTAssertTrue(about.target === manager)
+        XCTAssertTrue(choose(about))
+        XCTAssertEqual(openedPreferences, ["about"])
+        XCTAssertEqual(AboutPreferencesViewController.tabIdentifier, "about")
+        XCTAssertEqual(openedWelcomeGuide, 0)
+    }
+
+    func testSettingsOpensThePreferencesAsTheyAre() throws {
+        let settings = try item("Settings…", in: try submenu(MainMenuManager.Identifier.applicationMenu))
+        XCTAssertEqual(settings.identifier, MainMenuManager.Identifier.settings)
+        XCTAssertTrue(settings.target === manager)
+        XCTAssertTrue(choose(settings))
+        XCTAssertEqual(openedPreferences, [nil])
+    }
+
+    func testWelcomeGuideOpensTheIntroduction() throws {
+        let guide = try item("Welcome Guide", in: try submenu(MainMenuManager.Identifier.helpMenu))
+        XCTAssertEqual(guide.identifier, MainMenuManager.Identifier.welcomeGuide)
+        XCTAssertTrue(guide.target === manager)
+        XCTAssertTrue(choose(guide))
+        XCTAssertEqual(openedWelcomeGuide, 1)
+        XCTAssertEqual(openedPreferences, [])
+    }
+
+    func testItemsWithATargetAreEnabledByIt() {
+        // AppKit enables an item when its target implements the action.
+        // (An item with a submenu has AppKit's own target and action: opening the submenu.)
+        let targeted = allItems(of: menus.main).filter { $0.target != nil && !$0.hasSubmenu }
+        XCTAssertEqual(targeted.map(\.title), ["About Scrollio", "Settings…", "Welcome Guide"])
+        for item in targeted {
+            XCTAssertTrue(item.target === manager, item.title)
+            XCTAssertTrue(item.action.map { manager.responds(to: $0) } ?? false, item.title)
+        }
+    }
+
+    // MARK: - Installed at launch
+
+    func testTheAppDelegateInstalledTheMenu() throws {
+        let installed = try XCTUnwrap(NSApp.mainMenu)
+        XCTAssertEqual(
+            installed.items.map { $0.submenu?.identifier },
+            [
+                MainMenuManager.Identifier.applicationMenu,
+                MainMenuManager.Identifier.editMenu,
+                MainMenuManager.Identifier.windowMenu,
+                MainMenuManager.Identifier.helpMenu,
+            ]
+        )
+        XCTAssertEqual(NSApp.windowsMenu?.identifier, MainMenuManager.Identifier.windowMenu)
+        XCTAssertEqual(NSApp.helpMenu?.identifier, MainMenuManager.Identifier.helpMenu)
+        let application = try XCTUnwrap(installed.items.first?.submenu)
+        let services = try XCTUnwrap(application.items.first { $0.identifier == MainMenuManager.Identifier.servicesMenu })
+        XCTAssertTrue(NSApp.servicesMenu === services.submenu)
+        // Our own items point at the shared manager, which lives as long as the app.
+        for identifier in [MainMenuManager.Identifier.about, MainMenuManager.Identifier.settings] {
+            let item = try XCTUnwrap(application.items.first { $0.identifier == identifier })
+            XCTAssertTrue(item.target === MainMenuManager.shared)
+        }
+        XCTAssertFalse(NSWindow.allowsAutomaticWindowTabbing)
+    }
+
+    func testInstallSetsTheMenusOfTheApplication() {
+        // What install() assigns, read back from the menus it builds.
+        XCTAssertTrue(menus.main.items.contains { $0.submenu === menus.window })
+        XCTAssertTrue(menus.main.items.contains { $0.submenu === menus.help })
+        XCTAssertTrue(allItems(of: menus.main).contains { $0.submenu === menus.services })
+    }
+}
+
+/// "About Scrollio" needs a way to open the Preferences on a given tab.
+final class PreferencesTabSelectionTests: XCTestCase {
+
+    private func makeTabs() throws -> PreferencesTabViewController {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesTabViewController.self))
+        let windowController = try XCTUnwrap(
+            storyboard.instantiateController(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController) as? NSWindowController
+        )
+        let tabs = try XCTUnwrap(windowController.contentViewController as? PreferencesTabViewController)
+        _ = tabs.view
+        addTeardownBlock { windowController.close() }
+        return tabs
+    }
+
+    func testSelectsATabByItsIdentifier() throws {
+        let tabs = try makeTabs()
+        XCTAssertEqual(tabs.selectedTabViewItemIndex, 0)
+
+        XCTAssertTrue(tabs.selectTab(withIdentifier: AboutPreferencesViewController.tabIdentifier))
+        XCTAssertEqual(tabs.selectedTabViewItemIndex, tabs.tabViewItems.count - 1)
+        XCTAssertTrue(tabs.tabViewItems[tabs.selectedTabViewItemIndex].viewController is AboutPreferencesViewController)
+        XCTAssertEqual(tabs.view.window?.title, "About")
+
+        // Already there: nothing changes.
+        XCTAssertTrue(tabs.selectTab(withIdentifier: AboutPreferencesViewController.tabIdentifier))
+        XCTAssertEqual(tabs.selectedTabViewItemIndex, tabs.tabViewItems.count - 1)
+
+        XCTAssertTrue(tabs.selectTab(withIdentifier: PANEL_IDENTIFIER.buttons))
+        XCTAssertEqual(tabs.view.window?.title, "Buttons")
+    }
+
+    func testAnUnknownIdentifierChangesNothing() throws {
+        let tabs = try makeTabs()
+        XCTAssertTrue(tabs.selectTab(withIdentifier: PANEL_IDENTIFIER.scrolling))
+        XCTAssertFalse(tabs.selectTab(withIdentifier: "no-such-tab"))
+        XCTAssertEqual(tabs.selectedTabViewItemIndex, 1)
+    }
+}

@@ -57,6 +57,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 依赖, unsetenv 不影响自身, 只让之后启动的子进程拿到干净 env.
         ShortcutExecutor.sanitizeOwnLaunchEnvironment()
 
+        // The menu bar shown while one of the app's windows is in front. Building it has no
+        // effect outside the process, so the tests get it too.
+        MainMenuManager.shared.install()
+
         guard AppRuntime.shouldRunAppStartupSideEffects else {
             NSLog("Running under XCTest; skipping app startup side effects")
             return
