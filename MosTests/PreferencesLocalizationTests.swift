@@ -59,7 +59,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "scrolling-key-clear-for", "scrolling-key-none", "scrolling-reset",
         "scrolling-undo-reset",
         "scrolling-speed-value", "scrolling-glide-time-shorter", "scrolling-glide-time-longer",
-        "scrolling-step-smaller", "scrolling-step-larger",
+        "scrolling-step-smaller", "scrolling-step-larger", "key-recorder-waiting-single-key",
     ]
 
     /// Buttons pane: the card, the list and its rows, the action menu, "Which Button Is
@@ -92,6 +92,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "open-target-title", "open-target-empty-primary", "open-target-empty-secondary",
         "open-target-arguments-placeholder", "open-target-stale-warning", "open-target-cancel", "open-target-done",
         "appExposeApps", "categoryMissionControlAndSpaces",
+        "key-recorder-waiting-combination", "key-recorder-waiting-adaptive", "buttons-recorder-waiting-gesture",
+        "Press ESC to cancel recording", "button-recording-duplicate-hint",
     ]
 
     /// Gestures pane and its gesture controls.

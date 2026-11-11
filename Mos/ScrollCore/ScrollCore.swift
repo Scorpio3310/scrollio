@@ -114,7 +114,6 @@ class ScrollCore: ScrollActionPort {
                 hasDelta: hasVerticalDelta || hasHorizontalDelta
             ) {
             case .swallow:
-                ScrollHandoverTrace.note(event, takenForTrackpad: true, swallowed: true)
                 return nil
             case .letThroughEndingTakeover(let dropped):
                 ScrollSystemLog.noteWheelTookOverGlide(droppedMomentumEvents: dropped)
@@ -122,10 +121,8 @@ class ScrollCore: ScrollActionPort {
                 break
             }
             if hasVerticalDelta || hasHorizontalDelta { ScrollSystemLog.notePassthrough(.trackpad) }
-            ScrollHandoverTrace.note(event, takenForTrackpad: true)
             return Unmanaged.passUnretained(event)
         }
-        ScrollHandoverTrace.note(event, takenForTrackpad: false)
         // A wheel event takes over a trackpad glide that still runs, whether it is smoothed or
         // not: let through raw, it would still move the page against the glide.
         if hasVerticalDelta || hasHorizontalDelta {

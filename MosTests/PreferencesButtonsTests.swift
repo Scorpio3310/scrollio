@@ -1331,6 +1331,8 @@ final class PreferencesButtonsTests: XCTestCase {
             "The mouse button you will hold for gestures.\nPress Esc to cancel.",
             "no \"or a key\" while the gesture button is set up"
         )
+        recorder.delegate = pane
+        XCTAssertEqual(recorder.waitingHint(for: .combination), "Press a mouse button", "the popover asks for a mouse button only")
         XCTAssertFalse(pane.validateRecordedEvent(recorder, event: key), "refused")
         XCTAssertEqual(pane.refusalHint(recorder, event: key), "Gestures need a mouse button", "not \"Duplicate key\"")
         pane.onEventRecorded(recorder, didRecordEvent: key, isDuplicate: true)
@@ -1344,6 +1346,8 @@ final class PreferencesButtonsTests: XCTestCase {
         pane.beginAddingBinding()
         pane.onRecordingStarted(recorder)
         XCTAssertEqual(pane.headerView.content.subtitle, "Or a key with ⌘, ⌥, ⌃ or ⇧.\nPress Esc to cancel.")
+        XCTAssertNil(pane.waitingHint(recorder, mode: .combination))
+        XCTAssertEqual(recorder.waitingHint(for: .combination), "Press a mouse button,\nor a key with ⌘, ⌥, ⌃ or ⇧")
         XCTAssertTrue(pane.validateRecordedEvent(recorder, event: key))
         XCTAssertNil(pane.refusalHint(recorder, event: key))
         pane.onRecordingStopped(recorder, didRecord: false)
