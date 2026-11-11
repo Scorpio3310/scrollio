@@ -148,13 +148,17 @@ class ScrollCore: ScrollActionPort {
 
         // 快速滚动调校 (全局): 竖向滚轮按转速应用 free-spin / 加速度, 横向 (拇指滚轮) 只有冲刺倍率
         let tuning = Options.shared.scrollTuning
-        let simTrackpad = ScrollCore.isSimTrackpadEnabled(for: ScrollCore.shared.application)
+        // "模拟触控板" 只在 momentum 关闭时锁定时长 (开启时滑行由 momentum 提供)
+        let durationLocked = tuning.locksDuration(
+            simulateTrackpad: ScrollCore.isSimTrackpadEnabled(for: ScrollCore.shared.application)
+        )
         let amplification = ScrollCore.shared.dashAmplification
         let horizontalTuning = tuning.resolve(
             speed: speed, durationTransition: duration, spin: .idle,
-            simulateTrackpad: simTrackpad, amplification: amplification
+            simulateTrackpad: durationLocked, amplification: amplification
         )
         var verticalTuning = horizontalTuning
+        var verticalSpin = ScrollSpinState.idle
 
         if shouldSmoothVertical {
             let lines = scrollEvent.Y.lineDelta
@@ -162,9 +166,10 @@ class ScrollCore: ScrollActionPort {
                 lines: lines,
                 at: ScrollEventClock.seconds(fromTimestamp: event.timestamp)
             )
+            verticalSpin = spin
             verticalTuning = tuning.resolve(
                 speed: speed, durationTransition: duration, spin: spin,
-                simulateTrackpad: simTrackpad, amplification: amplification
+                simulateTrackpad: durationLocked, amplification: amplification
             )
             if scrollEvent.Y.usableValue.magnitude < step {
                 ScrollEvent.normalizeY(scrollEvent, step)
@@ -186,7 +191,14 @@ class ScrollCore: ScrollActionPort {
         if shouldSmoothAny {
             let input = ScrollCore.posterInput(
                 y: smoothedY, x: smoothedX, step: step,
-                vertical: verticalTuning, horizontal: horizontalTuning
+                vertical: verticalTuning, horizontal: horizontalTuning,
+                spin: verticalSpin,
+                momentum: tuning.momentum,
+                modifiersHeld: ScrollCore.blocksCoast(event.flags),
+                pageSwipe: ScrollCore.isPageSwipe(
+                    action: tuning.horizontalWheelAction, y: smoothedY, x: smoothedX,
+                    flags: event.flags, toggleScroll: ScrollCore.shared.toggleScroll
+                )
             )
             ScrollPoster.shared.update(event: event, input: input).tryStart()
         }
@@ -213,21 +225,55 @@ class ScrollCore: ScrollActionPort {
     }
     
     /// 由已解析的调校结果组装 ScrollPoster 输入。有竖向输入时使用竖向的平滑时长与 free-spin 状态。
+    /// - Parameters:
+    ///   - spin: 竖向滚轮状态 (转速用于 momentum 的 fling gain; free-spin 锁定时不滑行, 不带阶段)
+    ///   - momentum: momentum 设置, nil 为关闭
+    ///   - modifiersHeld: 按住 Cmd / Ctrl / Option (缩放等修饰键滚动, 不滑行)
+    ///   - pageSwipe: 把横向输入作为翻页手势发送 (见 isPageSwipe)
     static func posterInput(
         y: Double, x: Double, step: Double,
-        vertical: ScrollTuningResolution, horizontal: ScrollTuningResolution
+        vertical: ScrollTuningResolution, horizontal: ScrollTuningResolution,
+        spin: ScrollSpinState = .idle,
+        momentum: ScrollMomentumSettings? = nil,
+        modifiersHeld: Bool = false,
+        pageSwipe: Bool = false
     ) -> ScrollPosterInput {
         let leading = y != 0.0 ? vertical : horizontal
+        // 翻页手势要紧跟拇指滚轮, 不使用常规时长 (可能被 "模拟触控板" 锁定为很长的滑行)
+        let duration = pageSwipe ? pageSwipeTransition : leading.durationTransition
         return ScrollPosterInput(
             y: y * vertical.speed,
             x: x * horizontal.speed,
             notch: (y: step * vertical.speed, x: step * horizontal.speed),
-            duration: leading.durationTransition,
+            duration: duration,
             bypassFilter: ScrollMotion.shouldBypassFilter(
-                transition: leading.durationTransition,
+                transition: duration,
                 freeSpinBlend: leading.freeSpinBlend
-            )
+            ),
+            momentum: momentum,
+            lineRate: spin.lineRate,
+            isFreeSpin: spin.isFreeSpin,
+            modifiersHeld: modifiersHeld,
+            pageSwipe: pageSwipe
         )
+    }
+
+    /// 翻页手势使用的平滑系数 (时长 1.5, 时间常数约 27 ms, 不经滤波)
+    static let pageSwipeTransition = OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: 1.5)
+
+    /// Cmd / Ctrl / Option 按住时的滚动通常是缩放或其他修饰键操作, 不应带惯性滑行
+    static func blocksCoast(_ flags: CGEventFlags) -> Bool {
+        return !flags.intersection([.maskCommand, .maskControl, .maskAlternate]).isEmpty
+    }
+
+    /// 拇指滚轮是否作为 "在页面之间轻扫" 手势发送: 仅纯横向输入, 且不是 Shift / 转换键
+    /// 把竖向滚轮转成的横向滚动 (那是有意的横向滚动)。
+    static func isPageSwipe(
+        action: ScrollHorizontalWheelAction, y: Double, x: Double,
+        flags: CGEventFlags, toggleScroll: Bool
+    ) -> Bool {
+        return action == .pageSwipe && x != 0.0 && y == 0.0
+            && !toggleScroll && !flags.contains(.maskShift)
     }
 
     /// 与 ScrollPoster 的配置快照相同的规则: 例外应用 (不继承) 用自身设置, 否则用全局设置

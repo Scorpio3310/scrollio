@@ -3,8 +3,9 @@
 //  Mos
 //
 //  Scroll presets for the "Presets & Fast Scrolling" popover. A preset sets the global
-//  smooth-scroll step / speed / duration and the fast-scroll tuning (free-spin and
-//  acceleration) in one go. Presets only touch global settings, never per-app ones.
+//  smooth-scroll step / speed / duration and the fast-scroll tuning (free-spin,
+//  acceleration and momentum) in one go. Presets only touch global settings, never
+//  per-app ones, and leave the thumb wheel action alone.
 //
 
 import Foundation
@@ -15,10 +16,16 @@ struct ScrollPresetValues: Equatable {
     var speed: Double
     /// Same scale as the Duration slider (0...5).
     var duration: Double
-    /// Turn on "Simulate trackpad"; the duration is then locked to
-    /// `ScrollDurationLimits.simulateTrackpadDefault` and `duration` is kept for when it is turned off.
+    /// Turn on "Simulate trackpad". Without momentum the duration is then locked to
+    /// `ScrollDurationLimits.simulateTrackpadDefault` and `duration` is kept for when it is
+    /// turned off; with momentum (`tuning.momentum`) there is no lock and `duration` applies.
     var simulateTrackpad: Bool
     var tuning: ScrollTuningSettings
+
+    /// The Duration the Scrolling tab shows once the preset is applied.
+    var effectiveDuration: Double {
+        tuning.locksDuration(simulateTrackpad: simulateTrackpad) ? ScrollDurationLimits.simulateTrackpadDefault : duration
+    }
 }
 
 enum ScrollPreset: String, CaseIterable {
@@ -26,6 +33,7 @@ enum ScrollPreset: String, CaseIterable {
     case balanced
     case smooth
     case trackpadLike
+    case magicMouse
 
     // MARK: - Tuning table
 
@@ -53,6 +61,16 @@ enum ScrollPreset: String, CaseIterable {
                 step: 33.6, speed: 2.7, duration: 4.35, simulateTrackpad: false,
                 tuning: ScrollTuningSettings(freeSpinEnabled: true, freeSpinSmoothness: 2.5, freeSpinSpeed: 1.0, acceleration: 0.3)
             )
+        case .magicMouse:
+            // 60 px per notch, landing within about 170 ms; a flick glides on (momentum) and
+            // apps get trackpad phases, so they bounce at the edges. Estimates to tune on hardware.
+            return ScrollPresetValues(
+                step: 33.6, speed: 1.8, duration: 2.5, simulateTrackpad: true,
+                tuning: ScrollTuningSettings(
+                    freeSpinEnabled: true, freeSpinSmoothness: 1.0, freeSpinSpeed: 1.2, acceleration: 0,
+                    momentum: .default
+                )
+            )
         }
     }
 
@@ -64,6 +82,7 @@ enum ScrollPreset: String, CaseIterable {
         case .balanced: return NSLocalizedString("scroll-preset-balanced", comment: "")
         case .smooth: return NSLocalizedString("scroll-preset-smooth", comment: "")
         case .trackpadLike: return NSLocalizedString("scroll-preset-trackpad-like", comment: "")
+        case .magicMouse: return NSLocalizedString("scroll-preset-magic-mouse", comment: "")
         }
     }
 
@@ -74,6 +93,7 @@ enum ScrollPreset: String, CaseIterable {
         case .balanced: return NSLocalizedString("scroll-preset-balanced-description", comment: "")
         case .smooth: return NSLocalizedString("scroll-preset-smooth-description", comment: "")
         case .trackpadLike: return NSLocalizedString("scroll-preset-trackpad-like-description", comment: "")
+        case .magicMouse: return NSLocalizedString("scroll-preset-magic-mouse-description", comment: "")
         }
     }
 
@@ -84,21 +104,23 @@ enum ScrollPreset: String, CaseIterable {
     // MARK: - Apply
 
     /// Writes the preset to the given scroll options and tuning. Turns smooth scrolling on.
+    /// The thumb wheel action is not part of a preset and is kept.
     func apply(to scroll: OPTIONS_SCROLL_DEFAULT, tuning: inout ScrollTuningSettings) {
         let values = self.values
         scroll.smooth = true
-        if values.simulateTrackpad {
-            scroll.smoothSimTrackpad = true
+        scroll.smoothSimTrackpad = values.simulateTrackpad
+        if values.tuning.locksDuration(simulateTrackpad: values.simulateTrackpad) {
             scroll.durationBeforeSimTrackpadLock = values.duration
             scroll.duration = ScrollDurationLimits.simulateTrackpadDefault
         } else {
-            scroll.smoothSimTrackpad = false
             scroll.durationBeforeSimTrackpadLock = nil
             scroll.duration = values.duration
         }
         scroll.step = values.step
         scroll.speed = values.speed
+        let horizontalWheelAction = tuning.horizontalWheelAction
         tuning = values.tuning
+        tuning.horizontalWheelAction = horizontalWheelAction
     }
 
     /// Writes the preset to the global settings (`Options.shared.scroll` and `.scrollTuning`).
@@ -116,14 +138,14 @@ enum ScrollPreset: String, CaseIterable {
     /// True when applying this preset would not change anything that matters.
     func matches(scroll: OPTIONS_SCROLL_DEFAULT, tuning: ScrollTuningSettings) -> Bool {
         let values = self.values
-        let expectedDuration = values.simulateTrackpad ? ScrollDurationLimits.simulateTrackpadDefault : values.duration
         guard scroll.smooth,
               scroll.smoothSimTrackpad == values.simulateTrackpad,
               Self.isClose(scroll.step, values.step),
               Self.isClose(scroll.speed, values.speed),
-              Self.isClose(scroll.duration, expectedDuration),
+              Self.isClose(scroll.duration, values.effectiveDuration),
               Self.isClose(tuning.acceleration, values.tuning.acceleration),
-              tuning.freeSpinEnabled == values.tuning.freeSpinEnabled else {
+              tuning.freeSpinEnabled == values.tuning.freeSpinEnabled,
+              tuning.momentum == values.tuning.momentum else {
             return false
         }
         // Free-spin values only matter while free-spin has its own settings.
@@ -144,5 +166,27 @@ enum ScrollPreset: String, CaseIterable {
 
     private static func isClose(_ a: Double, _ b: Double) -> Bool {
         abs(a - b) <= matchTolerance + 1e-9
+    }
+}
+
+// MARK: - Momentum and the Duration lock
+
+extension ScrollTuningSettings {
+    /// Turns momentum on (`settings`) or off (nil) and hands the Duration lock over:
+    /// "Simulate trackpad" only locks Duration while momentum is off (`locksDuration`).
+    /// Unlocking gives back the Duration from before the lock; locking remembers the current one.
+    mutating func setMomentum(_ settings: ScrollMomentumSettings?, adjusting scroll: OPTIONS_SCROLL_DEFAULT) {
+        let wasLocked = locksDuration(simulateTrackpad: scroll.smoothSimTrackpad)
+        momentum = settings
+        let isLocked = locksDuration(simulateTrackpad: scroll.smoothSimTrackpad)
+        if wasLocked && !isLocked {
+            if let previous = scroll.durationBeforeSimTrackpadLock {
+                scroll.duration = previous
+            }
+            scroll.durationBeforeSimTrackpadLock = nil
+        } else if !wasLocked && isLocked {
+            scroll.durationBeforeSimTrackpadLock = scroll.duration
+            scroll.duration = ScrollDurationLimits.simulateTrackpadDefault
+        }
     }
 }

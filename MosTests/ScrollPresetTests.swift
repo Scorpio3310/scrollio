@@ -26,7 +26,8 @@ final class ScrollPresetTests: XCTestCase {
         assertValues(.smooth, step: 33.6, speed: 2.7, duration: 3.13, smoothness: 1.5, freeSpinSpeed: 0.7, acceleration: 0)
         assertValues(.trackpadLike, step: 33.6, speed: 2.7, duration: 4.35, smoothness: 2.5, freeSpinSpeed: 1.0, acceleration: 0.3)
         for preset in ScrollPreset.allCases {
-            XCTAssertFalse(preset.values.simulateTrackpad, "\(preset)")
+            // Only Magic Mouse turns on "Simulate trackpad" (see ScrollMomentumPresetTests).
+            XCTAssertEqual(preset.values.simulateTrackpad, preset == .magicMouse, "\(preset)")
             XCTAssertTrue(preset.values.tuning.freeSpinEnabled, "\(preset)")
         }
     }
@@ -77,7 +78,7 @@ final class ScrollPresetTests: XCTestCase {
 
             let values = preset.values
             XCTAssertTrue(scroll.smooth, "\(preset)")
-            XCTAssertFalse(scroll.smoothSimTrackpad, "\(preset)")
+            XCTAssertEqual(scroll.smoothSimTrackpad, values.simulateTrackpad, "\(preset)")
             XCTAssertNil(scroll.durationBeforeSimTrackpadLock, "\(preset)")
             XCTAssertEqual(scroll.step, values.step, "\(preset)")
             XCTAssertEqual(scroll.speed, values.speed, "\(preset)")

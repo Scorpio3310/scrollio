@@ -192,6 +192,20 @@ class ScrollPhase {
         }
     }
     
+    /// 惯性被打断时调用 (滑行中反向拨动一格): 对应上面的 "惯性滚动煞停" 序列。
+    /// MomentumEnd 之后补发 Hold + Leave (手指放下又离开), 应用据此停止自身的惯性 / 回弹动画。
+    /// 仍在跟随阶段时只需结束手势; 其余阶段无事可做。
+    func onMomentumCancelled() -> TransitionPlan {
+        switch phase {
+        case .MomentumBegin, .MomentumOngoing:
+            return plan(extra: [(Phase.MomentumEnd, Phase.Idle), (Phase.Hold, nil), (Phase.Leave, Phase.Idle)])
+        case .TrackingBegin, .TrackingOngoing:
+            return plan(extra: [(Phase.TrackingEnd, Phase.Idle)])
+        default:
+            return plan()
+        }
+    }
+
     /// 在滚动帧发送后调用, 处理自动阶段切换
     func didDeliverFrame() {
         if let nextPhase = pendingPhaseAfterDelivery {

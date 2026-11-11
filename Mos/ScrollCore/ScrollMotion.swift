@@ -6,6 +6,7 @@
 //  - frame-rate independent smoothing (the Duration factor is defined per 60 Hz frame);
 //  - when ScrollFilter is skipped;
 //  - how far the smoothed position may trail the wheel (lead cap and tail cut);
+//  - the glide after a flick (momentum) and the sub-pixel carry for posting whole pixels;
 //  - converting CGEvent timestamps to seconds.
 //
 
@@ -155,6 +156,133 @@ struct ScrollLeadLimiter {
     }
 }
 
+/// The glide after a flick: a velocity that decays along the system's momentum curve as
+/// modelled by WebKit (MomentumEventDispatcher): × `decayPer8ms` every 8 ms, blending to
+/// × `tailDecayPer8ms` below `tailSpeed`, ending under `stopDelta` px per 60 Hz frame.
+///
+/// The curve is a fixed function of the time since the seed (velocity is constant within each
+/// 8 ms step), and a frame covers the part of it that falls into its interval. Distance and
+/// duration are therefore the same at any refresh rate.
+///
+/// ScrollPoster runs it underneath the smoothing: each frame moves at least as far as the
+/// glide, so the page keeps its speed when the wheel is let go instead of settling at once.
+struct ScrollMomentum {
+
+    /// The curve's step (WebKit models the system curve at 125 Hz).
+    static let curveStep: TimeInterval = 0.008
+    /// Wheel pause that counts as letting go: twice the last interval between two wheel
+    /// events, within these bounds. A fast flick is released sooner than slow scrolling.
+    static let releaseGapRange: ClosedRange<TimeInterval> = 0.05...0.16
+
+    /// Signed glide velocity in px/s; 0 = no glide.
+    private(set) var velocity = 0.0
+    /// Time left in the current curve step; 0 = the next step starts (and decays) first.
+    private var stepRemainder: TimeInterval = 0
+
+    var isActive: Bool { return velocity != 0 }
+
+    /// 0 up to `minFlingRate` lines/s, 1 from `fullFlingRate`, a smoothstep in between.
+    static func flingGain(lineRate: Double, settings: ScrollMomentumSettings) -> Double {
+        guard lineRate.isFinite else { return 0 }
+        let span = settings.fullFlingRate - settings.minFlingRate
+        guard span > 0 else { return lineRate >= settings.fullFlingRate ? 1 : 0 }
+        return ScrollTuningSettings.smoothstep((lineRate - settings.minFlingRate) / span)
+    }
+
+    /// Speed (px/s) below which the glide ends: `stopDelta` px per 60 Hz frame.
+    static func stopSpeed(settings: ScrollMomentumSettings) -> Double {
+        return max(0, settings.stopDelta) * ScrollMotion.referenceFrameRate
+    }
+
+    /// Velocity factor of one 8 ms step at `speed` px/s.
+    static func decay(speed: Double, settings: ScrollMomentumSettings) -> Double {
+        guard settings.tailSpeed > 0 else { return settings.decayPer8ms }
+        let weak = max(0, (settings.tailSpeed - abs(speed)) / settings.tailSpeed)
+        return settings.decayPer8ms - (settings.decayPer8ms - settings.tailDecayPer8ms) * weak
+    }
+
+    /// See `releaseGapRange`. Without a previous event (a single notch) the longest gap applies.
+    static func releaseGap(lastInterval: TimeInterval?) -> TimeInterval {
+        guard let interval = lastInterval, interval.isFinite else { return releaseGapRange.upperBound }
+        return min(releaseGapRange.upperBound, max(releaseGapRange.lowerBound, 2 * interval))
+    }
+
+    /// Starts (or replaces) the glide from one wheel event.
+    /// - Parameters:
+    ///   - inputSpeed: how fast the wheel currently scrolls, px/s (`ScrollLeadLimiter.inputSpeed`)
+    ///   - direction: sign of the event's distance
+    ///   - lineRate: wheel speed in lines/s, for the fling gain
+    /// A wheel speed below the fling range (a single notch, slow scrolling) leaves no glide.
+    mutating func seed(inputSpeed: Double, direction: Double, lineRate: Double, settings: ScrollMomentumSettings) {
+        let gain = max(0, settings.coastGain) * Self.flingGain(lineRate: lineRate, settings: settings)
+        let speed = inputSpeed.isFinite ? max(0, inputSpeed) * gain : 0
+        guard direction != 0, speed >= Self.stopSpeed(settings: settings) else {
+            cancel()
+            return
+        }
+        velocity = direction > 0 ? speed : -speed
+        stepRemainder = 0
+    }
+
+    /// Distance (signed px) the glide covers in the next `interval` seconds; 0 once it has ended.
+    mutating func advance(interval: TimeInterval, settings: ScrollMomentumSettings) -> Double {
+        guard velocity != 0, interval.isFinite, interval > 0 else { return 0 }
+        let stopSpeed = Self.stopSpeed(settings: settings)
+        var remaining = interval
+        var distance = 0.0
+        while remaining > 1e-12 {
+            if stepRemainder <= 1e-12 {
+                velocity *= Self.decay(speed: velocity, settings: settings)
+                guard abs(velocity) >= stopSpeed else {
+                    cancel()
+                    break
+                }
+                stepRemainder = Self.curveStep
+            }
+            let slice = min(remaining, stepRemainder)
+            distance += velocity * slice
+            remaining -= slice
+            stepRemainder -= slice
+        }
+        return distance
+    }
+
+    mutating func cancel() {
+        velocity = 0
+        stepRemainder = 0
+    }
+}
+
+/// Turns fractional per-frame distances into whole numbers without losing the fractions:
+/// the part that is not sent is added to the next value. The sum of the returned values
+/// stays within half a unit of the sum of the inputs.
+///
+/// Scroll events carry whole pixels (CoreGraphics drops the fraction of a point delta), so
+/// without the carry every frame loses up to a pixel and slow frames scroll nothing at all.
+struct ScrollSubpixelCarry {
+
+    private(set) var remainder = 0.0
+
+    mutating func take(_ value: Double) -> Int64 {
+        guard value.isFinite else { return 0 }
+        let total = remainder + value
+        // Nearest whole number, with exactly one half staying behind: a value of 0 then
+        // never produces output (and never flips a waiting half back and forth).
+        let magnitude = (abs(total) - 0.5).rounded(.up)
+        let whole = total < 0 ? -magnitude : magnitude
+        guard abs(whole) < 1e15 else {
+            remainder = 0
+            return 0
+        }
+        remainder = total - whole
+        return Int64(whole)
+    }
+
+    mutating func reset() {
+        remainder = 0
+    }
+}
+
 /// Converts CGEvent timestamps to seconds on the CACurrentMediaTime clock.
 ///
 /// The CGEventTimestamp header says nanoseconds, but events from the HID system carry
@@ -200,5 +328,18 @@ enum ScrollEventClock {
     static func seconds(fromTimestamp timestamp: UInt64) -> TimeInterval {
         let now = mach_absolute_time()
         return seconds(fromTimestamp: timestamp, now: now) ?? Double(now) * secondsPerTick
+    }
+
+    /// The current time as a CGEvent timestamp in the unit `original` uses (mach ticks or
+    /// nanoseconds, told apart as in `seconds(fromTimestamp:now:)`), for events that are posted
+    /// later than the event they were copied from. Apps derive scroll velocity from event
+    /// timestamps, so every posted frame needs its own. 0 stays 0 (the system stamps it).
+    static func timestamp(now: UInt64, like original: UInt64) -> UInt64 {
+        guard original != 0 else { return 0 }
+        let nowSeconds = Double(now) * secondsPerTick
+        if Double(original) * secondsPerTick <= nowSeconds + futureTolerance {
+            return now
+        }
+        return UInt64(nowSeconds * 1_000_000_000)
     }
 }

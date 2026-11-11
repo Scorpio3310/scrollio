@@ -42,10 +42,13 @@ class ScrollSmoothDetailSettingsPopoverViewController: AdaptivePopover, ScrollOp
         let wasOn = scrollOptions.smoothSimTrackpad
         scrollOptions.smoothSimTrackpad = isOn
         if isOn {
-            if !wasOn {
-                scrollOptions.durationBeforeSimTrackpadLock = scrollOptions.duration
+            // momentum 开启时不锁定时长 (滑行由 momentum 提供), 时长保持不变
+            if Options.shared.scrollTuning.locksDuration(simulateTrackpad: true) {
+                if !wasOn {
+                    scrollOptions.durationBeforeSimTrackpadLock = scrollOptions.duration
+                }
+                scrollOptions.duration = ScrollDurationLimits.simulateTrackpadDefault
             }
-            scrollOptions.duration = ScrollDurationLimits.simulateTrackpadDefault
         } else {
             if wasOn, let previous = scrollOptions.durationBeforeSimTrackpadLock {
                 scrollOptions.duration = previous
