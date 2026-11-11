@@ -400,6 +400,21 @@ final class ScrollSettingsLoadTests: XCTestCase {
         XCTAssertEqual(loaded.scroll.step, 12)
     }
 
+    /// One per-app entry this version cannot read used to make the whole list be removed
+    /// from the settings at launch.
+    func testReadOptions_keepsTheAppsListWhenOneEntryCannotBeRead() throws {
+        let stored = Data(("[" + StoredDataCanaryTests.readableApp + "," + StoredDataCanaryTests.unreadableApp + "]").utf8)
+        store("optionsExist", forKey: OptionItem.General.OptionsExist)
+        store(stored, forKey: OptionItem.Application.Applications)
+
+        Options.shared.readOptions()
+
+        let apps = Options.shared.application.applications
+        XCTAssertEqual(apps.count, 1)
+        XCTAssertNotNil(apps.get(by: "/Applications/A.app"))
+        XCTAssertEqual(defaults.data(forKey: OptionItem.Application.Applications), stored, "nothing was removed")
+    }
+
     func testReadOptions_keepsSettingsThatAreInRange() {
         // Speed 6.3 with the "Smooth" feel: inside every range, so nothing moves.
         store("optionsExist", forKey: OptionItem.General.OptionsExist)

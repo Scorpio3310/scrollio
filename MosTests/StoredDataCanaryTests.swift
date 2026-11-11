@@ -95,6 +95,55 @@ final class StoredDataCanaryTests: XCTestCase {
         }
     }
 
+    // MARK: - A per-app list with an entry this version cannot read
+
+    /// A stored app with every scroll key, as this version writes it.
+    static let readableApp = #"{"displayName":"","inherit":false,"path":"\/Applications\/A.app","#
+        + #""scroll":{"block":{"code":55,"type":"keyboard"},"deadZone":1,"duration":3.69,"reverse":true,"#
+        + #""reverseHorizontal":true,"reverseVertical":true,"smooth":true,"smoothHorizontal":true,"#
+        + #""smoothSimTrackpad":false,"smoothVertical":true,"speed":2.5,"step":33.6,"#
+        + #""toggle":{"code":56,"type":"keyboard"}}}"#
+    /// One this version cannot read: its scroll options are of a shape it does not know.
+    static let unreadableApp = #"{"inherit":false,"path":"\/Applications\/B.app","scroll":{"glide":"later"},"future":[1,2]}"#
+
+    /// One entry this version could not read made the whole stored list be removed. Each
+    /// entry is read on its own now: the readable ones load, the others are kept as stored
+    /// and saved back after them. A list without such entries is written byte for byte as
+    /// before.
+    func testAnAppsListWithAnEntryThisVersionCannotReadKeepsEverything() throws {
+        let stored = Data(("[" + Self.readableApp + "," + Self.unreadableApp + "]").utf8)
+        XCTAssertThrowsError(try JSONDecoder().decode([Application].self, from: stored),
+                             "as a whole the list cannot be read")
+
+        let result = try XCTUnwrap(Options.decodeApplicationsWithUnknowns(from: stored))
+        XCTAssertEqual(result.applications.map(\.path), ["/Applications/A.app"])
+        XCTAssertEqual(result.applications.first?.inherit, false)
+        XCTAssertEqual(result.applications.first?.scroll.speed, 2.5)
+        XCTAssertEqual(result.applications.first?.scroll.dash, nil)
+        XCTAssertEqual(result.unknownElements.count, 1)
+        let unreadable = try JSONSerialization.jsonObject(with: Data(Self.unreadableApp.utf8)) as? NSDictionary
+        XCTAssertEqual(result.unknownElements.first as? NSDictionary, unreadable, "kept as stored")
+
+        // Saved: the readable app as this version writes it, then the kept entry.
+        let known = try JSONEncoder().encode(result.applications)
+        let saved = try XCTUnwrap(Options.applicationsDataForSaving(known: known, preservedUnknown: result.unknownElements))
+        let savedList = try XCTUnwrap(try JSONSerialization.jsonObject(with: saved) as? [NSDictionary])
+        let readable = try JSONSerialization.jsonObject(with: Data(Self.readableApp.utf8)) as? NSDictionary
+        XCTAssertEqual(savedList, [readable, unreadable].compactMap { $0 })
+        // Read again: the same app, the same kept entry.
+        let again = try XCTUnwrap(Options.decodeApplicationsWithUnknowns(from: saved))
+        XCTAssertEqual(again.applications.map(\.path), ["/Applications/A.app"])
+        XCTAssertEqual(again.unknownElements.first as? NSDictionary, unreadable)
+
+        // Without kept entries the bytes are those of the apps it knows, untouched.
+        XCTAssertEqual(Options.applicationsDataForSaving(known: known, preservedUnknown: []), known)
+        let readableOnly = Data(("[" + Self.readableApp + "]").utf8)
+        XCTAssertEqual(Options.applicationsDataForSaving(known: readableOnly, preservedUnknown: []), readableOnly)
+
+        // Not a list at all: nothing to keep (the list is reset, as before).
+        XCTAssertNil(Options.decodeApplicationsWithUnknowns(from: Data(#"{"path":"\/Applications\/A.app"}"#.utf8)))
+    }
+
     /// Undo of "Remove App" puts the very object back where it was (EnhanceArray.insert):
     /// the stored JSON is what it was before the removal, and lookups by path
     /// (what ScrollUtils uses) find every app again.

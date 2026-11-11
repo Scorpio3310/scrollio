@@ -110,6 +110,9 @@ class Options {
     /// 保留无法 decode 的 binding 原始 JSON 元素 (来自未来 Mos 版本).
     /// 在 save 时再合回去, 防止用户升级后再降级时丢失新版数据.
     fileprivate var preservedUnknownBindings: [Any] = []
+    /// Per-app entries this version cannot read (from a newer version, or damaged), as they
+    /// were stored. Saved back after the apps it knows, like `preservedUnknownBindings`.
+    fileprivate var preservedUnknownApplications: [Any] = []
 
     // 变更订阅 (append-only; 订阅者均为进程级单例, 无注销需求)
     fileprivate var observers: [(groups: Set<OptionsGroup>, handler: (OptionsGroup) -> Void)] = []
@@ -304,7 +307,10 @@ extension Options {
             saveButtonBindingsData()
         case .application:
             UserDefaults.standard.set(application.allowlist, forKey: OptionItem.Application.Allowlist)
-            if let applicationsData = application.applications.json() {
+            if let applicationsData = Self.applicationsDataForSaving(
+                known: application.applications.json(),
+                preservedUnknown: preservedUnknownApplications
+            ) {
                 UserDefaults.standard.set(applicationsData, forKey: OptionItem.Application.Applications)
             } else {
                 NSLog("Failed to serialize applications data, skipping save")
@@ -485,6 +491,7 @@ extension Options {
 
         // 检查 UserDefaults 中的值类型
         let rawValue = UserDefaults.standard.object(forKey: OptionItem.Application.Applications)
+        preservedUnknownApplications = []
         guard let data = rawValue as? Data else {
             if rawValue != nil {
                 NSLog("Applications data has wrong type: \(type(of: rawValue)), clearing corrupted data")
@@ -501,9 +508,67 @@ extension Options {
                 forObserver: { Options.shared.markChanged(.application) }
             )
         } catch {
-            NSLog("Failed to decode applications data: \(error), resetting to defaults")
-            UserDefaults.standard.removeObject(forKey: OptionItem.Application.Applications)
-            return defaultArray
+            // One entry this version cannot read used to make the whole list go. Each entry on
+            // its own: the readable ones load, the others are kept as stored.
+            guard let result = Self.decodeApplicationsWithUnknowns(from: data) else {
+                NSLog("Failed to decode applications data: \(error), resetting to defaults")
+                UserDefaults.standard.removeObject(forKey: OptionItem.Application.Applications)
+                return defaultArray
+            }
+            preservedUnknownApplications = result.unknownElements
+            return EnhanceArray<Application>(
+                withArray: result.applications,
+                matchKey: "path",
+                forObserver: { Options.shared.markChanged(.application) }
+            )
         }
+    }
+
+    /// The per-app list entry by entry, for a list that cannot be read as a whole.
+    ///
+    /// - Not a JSON array: nil (the list is lost, as before).
+    /// - An entry this version cannot read: kept in `unknownElements` as stored, never dropped.
+    /// The readable entries are decoded from the stored bytes themselves, exactly as a list
+    /// read as a whole.
+    static func decodeApplicationsWithUnknowns(
+        from data: Data
+    ) -> (applications: [Application], unknownElements: [Any])? {
+        guard let elements = try? JSONSerialization.jsonObject(with: data) as? [Any],
+              let decoded = try? JSONDecoder().decode([DecodedIfReadable<Application>].self, from: data),
+              decoded.count == elements.count else {
+            return nil
+        }
+        var applications: [Application] = []
+        var unknown: [Any] = []
+        for (element, entry) in zip(elements, decoded) {
+            if let application = entry.value {
+                applications.append(application)
+            } else {
+                unknown.append(element)
+            }
+        }
+        if !unknown.isEmpty {
+            NSLog("Preserved \(unknown.count) unreadable per-app entr\(unknown.count == 1 ? "y" : "ies") for round-trip")
+        }
+        return (applications: applications, unknownElements: unknown)
+    }
+
+    /// The per-app list as it is saved. Without entries kept from loading: exactly the bytes
+    /// of the apps it knows, as before. With them: those apps, then the kept entries.
+    static func applicationsDataForSaving(known: Data?, preservedUnknown: [Any]) -> Data? {
+        guard let known = known else { return nil }
+        guard !preservedUnknown.isEmpty else { return known }
+        guard var merged = (try? JSONSerialization.jsonObject(with: known)) as? [Any] else { return nil }
+        merged.append(contentsOf: preservedUnknown)
+        return try? JSONSerialization.data(withJSONObject: merged)
+    }
+}
+
+/// One element of a list that may not be readable: nil instead of failing the whole list.
+private struct DecodedIfReadable<Value: Decodable>: Decodable {
+    let value: Value?
+
+    init(from decoder: Decoder) throws {
+        value = try? Value(from: decoder)
     }
 }
