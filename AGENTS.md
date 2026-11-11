@@ -93,8 +93,11 @@ See `.agents/docs/code-map.md` for the map. The rules:
   `ScrollPoster` state is touched only under its lock, and only the main thread stops a
   session (`performRequestedStop`).
 - Diagnostics go to the system log (`ScrollSystemLog`, category `scroll`; `LogiSystemLog`,
-  category `logi`): state changes, decisions and one line per scroll, never a line per
-  event, and no string built per event. Reading it: `README.md`, "Diagnostics".
+  category `logi`; `AppSystemLog`, category `app`: the app's own health: starts and stops,
+  event taps that macOS turned off or that could not be created, recoveries): state
+  changes, decisions and one line per scroll, never a line per event, and no string built
+  per event. Use these, not `NSLog`: only they are in the subsystem the owner reads.
+  Reading it: `README.md`, "Diagnostics".
 - Nothing is written to a Logitech mouse unless "Let Scrollio manage this mouse"
   (`Options.shared.logiMouseManaged`) is on and the user set that value. Reading needs no
   switch.

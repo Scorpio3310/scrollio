@@ -19,7 +19,7 @@ and the tests. Rules live in `AGENTS.md`.
 | `Managers/` | App-level singletons: windows, the main menu, the status item (`StatusItemManager`; what its menu lists is the pure `StatusMenu`, rebuilt each time it opens: battery lines, Pause / Resume, Settings, the diagnostics with Option, Quit), `AppRunController` (the one path that starts and stops the event taps and the Logitech sessions: launch, sleep and wake, fast user switching, lost Accessibility access, "Pause Scrollio" (never stored), quit; taps first, Logitech only when every tap runs) and `BatteryWatcher` (one toast at low, one at critical, from what `LogiCenter` reports). |
 | `Components/` | Toast, and `BrandTag` (the "Logi" tag of Logitech buttons in the key preview and the scroll keys). |
 | `Windows/` | Introduction (the Welcome Guide, built in code), Preferences and the Monitor window. The Preferences window is a sidebar of panes, as in System Settings (`PreferencesSplitViewController` with `PreferencesSidebarViewController` and `PreferencesPaneHostViewController`; the pane list is `PreferencesPane.all`; `selectPane(withIdentifier:)` opens a pane); each pane sits in a 520 pt column (`PreferencesWindowLayout`), centred when narrower, and scrolls when taller than the window. Every pane is built in code (the storyboard scenes of General, Scrolling, Buttons and Apps are shells) on `PreferencesGroupedForm` (rows in rounded boxes with switch, slider and disclosure rows and slider tick marks, muted notes under the boxes, as in System Settings) and its `PreferencesListBox` (a box of selectable rows with + and − under them, as in Login Items); `PreferencesForm` keeps the window background, the column width and `fitToContent`. Buttons: a card with a drawing of the mouse (`ButtonsHeaderView`) over the list of bindings, each row with a small picture of where its button is (`ButtonsMouseMiniature`, from `ButtonTriggerPicture`: a part lit only where the place is certain, else the button's number), plain names from `ButtonTriggerNaming`, Undo for a removal. Apps: the list and a page per app (`ApplicationDetailViewController`, with the Scrolling pane embedded in per-app mode). General: a card with the app icon, name and version (`GeneralHeaderView`, in the look of the Mouse card; there is no About pane, "About Scrollio" opens General and a remembered "about" opens it too), "Scrollio is paused" with Resume (only while paused), open at login (with the approval row), show in menu bar, the Accessibility status, Advanced, then the Welcome Guide and the credit line the licence asks for. Scrolling and Gestures have an animated preview (`ScrollPreviewView`, `GesturePreviewView`: a display link that runs only while the pane is shown and Reduce Motion is off; the pictures are in the `*Artwork` files, the timelines in the pure `*Motion` files). The mouse drawings are in `MouseView/MouseArtwork.swift`: one per model (MX Master 4 with its three side buttons and the thumb panel, MX Master 3 / 3S, a generic mouse), chosen from the connected mouse's name by `MouseArtworkModel.model(forDeviceName:)` and shared by the Mouse, Buttons and Gestures panes. `PreferencesSlider` sends nothing for a press that does not move its knob, or while it is off. |
-| `Utils/` | Event tap wrapper (`Interceptor`), constants, the login item, the takeover from Mos, helpers. |
+| `Utils/` | Event tap wrapper (`Interceptor`: its keeper, the restart throttle, and which taps are off because their restarts are refused), `AppSystemLog` (category `app`), constants, the login item, the takeover from Mos and from an older copy of Scrollio itself (a new copy waits for the old one to quit before any tap starts), helpers. |
 | `Extension/` | Extensions of system types. |
 
 Tests are in `MosTests/`; Logitech test doubles in `MosTests/LogiTestDoubles/`.
@@ -47,9 +47,12 @@ Tests are in `MosTests/`; Logitech test doubles in `MosTests/LogiTestDoubles/`.
 ## Diagnostics
 
 The system log, subsystem `com.nikklemenc.Scrollio` (`.debug` for the debug build):
-category `scroll` (`ScrollSystemLog`) and category `logi` (`LogiSystemLog`). How to read
-it: `README.md`, "Diagnostics". Both are low volume by rule: state changes, decisions and
-one line per scroll, never a line per event.
+category `scroll` (`ScrollSystemLog`), category `logi` (`LogiSystemLog`, including writes
+to a mouse that took 5 ms or longer) and category `app` (`AppSystemLog` in `Utils/`: starts
+and stops with their reason, event taps macOS turned off or that could not be created,
+restarts and their throttle, a new copy replacing a running one). How to read it:
+`README.md`, "Diagnostics". All are low volume by rule: state changes, decisions and one
+line per scroll, never a line per event.
 
 ## Persistence and compatibility
 
