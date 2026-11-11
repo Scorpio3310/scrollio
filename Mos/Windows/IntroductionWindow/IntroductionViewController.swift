@@ -98,8 +98,13 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     var presentHelp: (NSPopover, NSView) -> Void = { popover, link in
         popover.show(relativeTo: link.bounds, of: link, preferredEdge: .maxY)
     }
-    /// The event a button of the bar is pressed with (a second click, a held key).
+    /// The event a button of the bar is pressed with (a held key).
     var currentEvent: () -> NSEvent? = { NSApp.currentEvent }
+    /// The clock the bar measures the time since the last step change with.
+    var uptime: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    /// How long after a step change the bar takes no press: the second click of a
+    /// double-click lands on the button that now means the next step.
+    static let pressSettleTime: TimeInterval = 0.4
 
     // MARK: - State
 
@@ -120,6 +125,8 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     private var didReportGrant = false
     /// `refreshAccessState` is running: reporting the grant comes back into it.
     private var isRefreshingAccess = false
+    /// When Continue or Back last changed the step, on `uptime`'s clock.
+    private var stepChangedAt = -TimeInterval.infinity
     /// Steps are changing: until the incoming text is in, presses do nothing.
     private(set) var isChangingStep = false {
         didSet {
@@ -340,6 +347,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         let target = index + offset
         guard steps.indices.contains(target) else { return }
         setHelpShown(false)
+        stepChangedAt = uptime()
         show(stepAt: target, direction: offset > 0 ? 1 : -1, animated: true)
     }
 
@@ -589,19 +597,22 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
 
     // MARK: - Actions
 
-    /// The second click of a double-click, or a key held down: not a press of its own.
+    /// A key held down repeats: not a press of its own.
+    ///
+    /// A click is never judged by its click count: macOS counts clicks by the user's
+    /// double-click speed, and with a slow one every deliberate click on Continue, step after
+    /// step in the same place, arrives as a second, third, fourth click.
     static func isRepeatedPress(_ event: NSEvent?) -> Bool {
-        guard let event else { return false }
-        switch event.type {
-        case .leftMouseDown, .leftMouseUp: return event.clickCount > 1
-        case .keyDown: return event.isARepeat
-        default: return false
-        }
+        guard let event, event.type == .keyDown else { return false }
+        return event.isARepeat
     }
 
-    /// Whether a press of the bar counts: not while the steps change, not a repeat.
+    /// Whether a press of the bar counts: not while the steps change or right after (the
+    /// second click of a double-click), not a held key.
     private var takesPress: Bool {
-        return !isChangingStep && !Self.isRepeatedPress(currentEvent())
+        return !isChangingStep
+            && uptime() - stepChangedAt >= Self.pressSettleTime
+            && !Self.isRepeatedPress(currentEvent())
     }
 
     @objc func primaryButtonClicked(_ sender: Any?) {

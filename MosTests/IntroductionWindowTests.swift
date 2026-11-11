@@ -41,6 +41,10 @@ private final class GuideWorld {
     let scroll = OPTIONS_SCROLL_DEFAULT()
     /// The event the bar is pressed with (`IntroductionViewController.currentEvent`).
     var currentEvent: NSEvent?
+    /// The bar's clock (`IntroductionViewController.uptime`): every reading is a second later,
+    /// so presses are never "right after a step change", unless a test holds the clock.
+    var uptime: TimeInterval = 1000
+    var isClockHeld = false
     /// What the guide did to the outside world, in order.
     var log: [String] = []
 
@@ -83,6 +87,10 @@ private final class GuideWorld {
         controller.announce = { self.announcements.append($0) }
         controller.presentHelp = { popover, _ in self.presentedHelp.append(popover) }
         controller.currentEvent = { self.currentEvent }
+        controller.uptime = {
+            if !self.isClockHeld { self.uptime += 1 }
+            return self.uptime
+        }
         if let flow {
             controller.begin(flow)
         }
@@ -834,11 +842,15 @@ final class IntroductionWindowTests: XCTestCase {
 
     // MARK: - One press per click, the lifecycle
 
-    /// The second click of a double-click and a held Return used to act on the step that had
-    /// just come in under the same button: Continue then Done, or Open Accessibility Settings.
-    func testADoubleClickOrAHeldKeyPressesTheBarOnce() throws {
+    /// A press right after a step change (the second click of a double-click) and a held
+    /// Return used to act on the step that had just come in under the same button: Continue
+    /// then Done, or Open Accessibility Settings. A later click counts whatever its click
+    /// count: with a slow double-click speed set in macOS, deliberate clicks on Continue, step
+    /// after step in the same place, arrive as a second and a third click.
+    func testAPressRightAfterAStepChangeOrAHeldKeyDoesNothing() throws {
         world.accessGranted = true
         world.run = .running
+        world.isClockHeld = true
         let controller = world.makeController(flow: .full)
         XCTAssertEqual(controller.steps, [.welcome, .feel, .finish])
         let window = makeWindow(for: controller)
@@ -861,17 +873,26 @@ final class IntroductionWindowTests: XCTestCase {
         click(controller.primaryButton)
         click(controller.backButton)
         XCTAssertEqual(controller.currentStep, .feel, "the second click of a double-click")
+        world.uptime += IntroductionViewController.pressSettleTime - 0.05
+        click(controller.primaryButton)
+        XCTAssertEqual(controller.currentStep, .feel, "still right after the change")
+
+        world.uptime += 0.1
         world.currentEvent = returnKey(repeated: true)
         click(controller.primaryButton)
         XCTAssertEqual(controller.currentStep, .feel, "a held Return")
-        world.currentEvent = returnKey(repeated: false)
-        click(controller.primaryButton)
-        XCTAssertEqual(controller.currentStep, .finish)
         world.currentEvent = mouseUp(clicks: 2)
         click(controller.primaryButton)
+        XCTAssertEqual(controller.currentStep, .finish, "a later click counts, whatever its click count")
+
+        world.currentEvent = mouseUp(clicks: 3)
+        click(controller.primaryButton)
         click(controller.secondaryButton)
-        XCTAssertFalse(world.progress.isFinished, "neither Done nor Open Settings")
+        XCTAssertFalse(world.progress.isFinished, "neither Done nor Open Settings right after the change")
         XCTAssertEqual(world.appSettingsOpened, 0)
+        world.uptime += IntroductionViewController.pressSettleTime + 0.01
+        click(controller.primaryButton)
+        XCTAssertTrue(world.progress.isFinished, "Done, as the third click in the same place")
     }
 
     /// A real double-click on Continue: one step.
