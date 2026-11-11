@@ -398,7 +398,11 @@ extension ScrollPoster {
         // 判断是否启用触控板模拟 (读 update 时主线程捕获的快照, 避免跨线程读)
         let enableSimTrackpad = config.simTrackpadEnabled
         let plan: ScrollPhase.TransitionPlan
-        if requestedPhase == Phase.MomentumEnd {
+        // In a momentum phase the momentum is finished whatever phase was asked for: the plan
+        // of onManualInputEnded is empty there, and a stop for TrackingEnd (tap timeout or
+        // restart) left a momentum "began" without its "ended".
+        let inMomentum = phases.phase == .MomentumBegin || phases.phase == .MomentumOngoing
+        if requestedPhase == Phase.MomentumEnd || inMomentum {
             plan = phases.onMomentumFinish()
         } else {
             plan = phases.onManualInputEnded()

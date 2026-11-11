@@ -154,6 +154,49 @@ final class ScrollPosterStopHandoffTests: XCTestCase {
         XCTAssertEqual(poster.motionStateForTests.current.y, 0)
     }
 
+    // MARK: - A stop for TrackingEnd (tap timeout, tap restart)
+
+    /// With trackpad-style events on, a stop for TrackingEnd in a momentum phase sent nothing
+    /// (the plan of onManualInputEnded is empty there): a momentum "began" without "ended".
+    func testAStopForTrackingEndDuringTheMomentumEndsTheMomentum() {
+        poster.setConfigForTests(simTrackpadEnabled: true)
+        wheel(200)
+        var framesRun = 0
+        while phases.phase != .MomentumBegin && phases.phase != .MomentumOngoing && framesRun < 120 {
+            now += frameInterval
+            _ = poster.displayLinkFrameForTests(frameInterval: frameInterval, now: now)
+            framesRun += 1
+        }
+        XCTAssertTrue(phases.phase == .MomentumBegin || phases.phase == .MomentumOngoing, "\(phases.phase)")
+        XCTAssertTrue(frames.contains { $0.momentumPhase == 1 }, "the momentum began")
+        let before = frames.count
+
+        poster.stop(.TrackingEnd)
+
+        let sent = frames[before...]
+        XCTAssertEqual(sent.map(\.momentumPhase), [3], "one frame: momentum ended")
+        XCTAssertEqual(sent.map(\.scrollPhase), [0])
+        XCTAssertEqual(sent.map(\.y), [0])
+        XCTAssertEqual(phases.phase, .Idle)
+    }
+
+    /// While the wheel is still being followed, a stop for TrackingEnd ends the tracking, as
+    /// before.
+    func testAStopForTrackingEndWhileTrackingEndsTheTracking() {
+        poster.setConfigForTests(simTrackpadEnabled: true)
+        wheel(40)
+        _ = runFrames(2)
+        XCTAssertTrue(phases.phase == .TrackingBegin || phases.phase == .TrackingOngoing, "\(phases.phase)")
+        let before = frames.count
+
+        poster.stop(.TrackingEnd)
+
+        let sent = frames[before...]
+        XCTAssertEqual(sent.map(\.scrollPhase), [4], "one frame: tracking ended")
+        XCTAssertEqual(sent.map(\.momentumPhase), [0])
+        XCTAssertEqual(phases.phase, .Idle)
+    }
+
     // MARK: - Threads
 
     /// The display link callback, run on a background thread like the real one, leaves the
