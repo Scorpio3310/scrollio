@@ -185,6 +185,20 @@ match the installed app's (a differently signed build would be asked for the Acc
 permission again), with no debugger entitlement and no coverage instrumentation.
 `scripts/install.sh --check` builds and checks without installing.
 
+To build the app for other people's Macs:
+
+```bash
+scripts/release.sh
+```
+
+It builds a universal Release app (Apple silicon and Intel) signed with the Developer ID
+certificate, has Apple notarize it, and writes `build/release/Scrollio-<version>.dmg`. It
+needs a Developer ID Application certificate in the keychain and notarization credentials
+stored as the keychain profile `scrollio-notary`
+(`xcrun notarytool store-credentials "scrollio-notary" --team-id <team id>`). It installs
+nothing and leaves the project's signing settings as they are.
+`scripts/release.sh --check` builds, signs and checks without notarizing.
+
 ## Tests
 
 ```bash

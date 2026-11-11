@@ -32,7 +32,8 @@ The single guidance file for coding agents in this repository. Tool-specific ent
   Logi cache keys, CID and feature constants, storyboard object ids, string catalog keys.
 - Deployment target: macOS 14.0 for every target. Do not write fallbacks for older
   systems. Gate only APIs newer than 14.0 (the existing `macOS 26` checks stay).
-- There is no updater, no release process and no remote of our own. The git remote
+- There is no updater. A release is made by hand with `scripts/release.sh` (see Commands)
+  and published by the owner. `origin` is the project's own repository; the git remote
   `upstream` is the original project: never push to it, never open issues or pull
   requests there.
 
@@ -47,9 +48,16 @@ xcodebuild -scheme Debug -configuration Release -destination 'platform=macOS' bu
 scripts/qa/lint-logi-boundary.sh
 scripts/install.sh --check     # release build + signature, entitlement and binary checks
 scripts/install.sh             # the same, then install to /Applications and start it
+scripts/release.sh --check     # universal build signed with Developer ID + checks; nothing is notarized
+scripts/release.sh             # the same, then notarized by Apple and packed into build/release/Scrollio-<version>.dmg
 ```
 
 - Always use the shared scheme `Debug`. Never build with `-target Mos`.
+- `scripts/release.sh` builds the app for other people's Macs. It passes the Developer ID
+  identity to that one build and leaves the project's signing settings alone. Without
+  `--check` it uploads the build to Apple's notary service: run it only when the owner
+  asked for a release. It never installs: its signature is not the development signature
+  of the copy in `/Applications`, so that copy would be asked for Accessibility again.
 - Install the release app with `scripts/install.sh`, not by copying a build by hand: it
   refuses a build whose signature differs from the installed app's (see the next point),
   one that carries `get-task-allow`, and one instrumented for code coverage (the test
