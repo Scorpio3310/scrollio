@@ -210,3 +210,99 @@ final class ScrollPosterStopHandoffTests: XCTestCase {
         XCTAssertEqual(state.buffer.y - state.current.y, 40, accuracy: 1.0)
     }
 }
+
+/// When a replaced display link runs. A recreated link used to be started always: from the
+/// screen-change observer (which runs while paused or asleep too) or the keeper it then ran
+/// at the display's rate until the next scroll ended, and that scroll's tryStart, finding it
+/// running, skipped following the display under the pointer.
+///
+/// These use real display links (no session, nothing posted); without a display to make
+/// or start one they are skipped.
+final class ScrollPosterDisplayLinkTests: XCTestCase {
+
+    private var poster: ScrollPoster!
+
+    override func setUp() {
+        super.setUp()
+        poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: ScrollDispatchContext())
+    }
+
+    override func tearDown() {
+        poster.stop()
+        poster.stopKeeper()
+        poster = nil
+        super.tearDown()
+    }
+
+    private func requireDisplayLink() throws {
+        guard poster.isAvailable else { throw XCTSkip("no display link can be made here") }
+    }
+
+    private func requireRunning() throws {
+        guard poster.isDisplayLinkRunningForTests else { throw XCTSkip("the display link cannot be started here") }
+    }
+
+    func testTheRule() {
+        XCTAssertFalse(ScrollPoster.startsRecreatedDisplayLink(replacedWasRunning: false, scrollWaiting: false))
+        XCTAssertTrue(ScrollPoster.startsRecreatedDisplayLink(replacedWasRunning: true, scrollWaiting: false))
+        XCTAssertTrue(ScrollPoster.startsRecreatedDisplayLink(replacedWasRunning: false, scrollWaiting: true))
+    }
+
+    /// A display change while nothing scrolls (or while paused): the new link waits.
+    func testAnIdleLinkThatIsReplacedStaysIdle() throws {
+        poster.create()
+        try requireDisplayLink()
+        XCTAssertFalse(poster.isDisplayLinkRunningForTests)
+        let replaced = poster.displayLinkForTests
+
+        XCTAssertTrue(poster.recreateDisplayLink())
+        XCTAssertTrue(poster.isAvailable)
+        XCTAssertTrue(poster.displayLinkForTests !== replaced, "a new link")
+        XCTAssertFalse(poster.isDisplayLinkRunningForTests, "nothing would stop it before the next scroll ends")
+
+        // The next wheel event starts it, as before.
+        poster.tryStart()
+        try requireRunning()
+    }
+
+    /// A display change during a glide: the glide goes on with the new link.
+    func testALinkReplacedDuringAGlideRuns() throws {
+        poster.create()
+        try requireDisplayLink()
+        poster.tryStart()
+        try requireRunning()
+        poster.clearRecreateCooldownForTests()
+        let replaced = poster.displayLinkForTests
+
+        XCTAssertTrue(poster.recreateDisplayLink())
+        XCTAssertTrue(poster.displayLinkForTests !== replaced)
+        XCTAssertTrue(poster.isDisplayLinkRunningForTests)
+        if let replaced = replaced {
+            XCTAssertFalse(CVDisplayLinkIsRunning(replaced), "the replaced link is stopped")
+        }
+
+        poster.stop()
+        XCTAssertFalse(poster.isDisplayLinkRunningForTests)
+    }
+
+    /// The keeper finds no link: it makes one and leaves it to the next scroll.
+    func testTheKeeperMakesAMissingLinkWithoutStartingIt() throws {
+        XCTAssertFalse(poster.isAvailable)
+        poster.healthCheckForTests()
+        try requireDisplayLink()
+        XCTAssertFalse(poster.isDisplayLinkRunningForTests)
+    }
+
+    /// A wheel event that finds no link at all: the new link starts at once.
+    func testAWheelEventWithoutALinkStartsTheNewOne() throws {
+        XCTAssertFalse(poster.isAvailable)
+        poster.tryStart()
+        try requireDisplayLink()
+        let startedByTheWheelEvent = poster.isDisplayLinkRunningForTests
+        if !startedByTheWheelEvent, let link = poster.displayLinkForTests,
+           CVDisplayLinkStart(link) != kCVReturnSuccess {
+            throw XCTSkip("the display link cannot be started here")
+        }
+        XCTAssertTrue(startedByTheWheelEvent)
+    }
+}

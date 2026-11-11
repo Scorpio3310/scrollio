@@ -292,6 +292,19 @@ extension ScrollPoster {
         defer { os_unfair_lock_unlock(&stateLock) }
         return displayLinkFrameLocked(frameInterval: frameInterval, now: now)
     }
+    /// The display link this poster owns (nil before `create()`).
+    var displayLinkForTests: CVDisplayLink? { return poster }
+    var isDisplayLinkRunningForTests: Bool {
+        return poster.map { CVDisplayLinkIsRunning($0) } ?? false
+    }
+    /// Lets the next `recreateDisplayLink` through at once.
+    func clearRecreateCooldownForTests() {
+        lastRecreateAttempt = 0
+    }
+    /// One look of the keeper, now.
+    func healthCheckForTests() {
+        healthCheck()
+    }
     /// The whole display link callback at `now`, including the hop to the main thread.
     func displayLinkCallbackForTests(frameInterval: Double, now: CFTimeInterval) {
         os_unfair_lock_lock(&stateLock)
@@ -353,7 +366,7 @@ extension ScrollPoster {
     // 启动事件发送器
     func tryStart() {
         guard let validPoster = poster else {
-            if !recreateDisplayLink() {
+            if !recreateDisplayLink(scrollWaiting: true) {
                 // cooldown 拒绝了重建; 清理陈旧 buffer 防止恢复后滚动跳变
                 reset()
             }
@@ -368,7 +381,7 @@ extension ScrollPoster {
                 lastCallbackTime = CFAbsoluteTimeGetCurrent()
                 os_unfair_lock_unlock(&stateLock)
             } else {
-                let _ = recreateDisplayLink()
+                let _ = recreateDisplayLink(scrollWaiting: true)
             }
         }
     }
@@ -442,14 +455,24 @@ extension ScrollPoster {
         stop(request.phase)
         return true
     }
-    // 重建 CVDisplayLink (带冷却期)
+    /// Replaces the display link (at most once per `recreateCooldown`).
+    ///
+    /// The new link runs only when the one it replaces was running (a glide goes on) or a
+    /// wheel event waits for it (`scrollWaiting`, from `tryStart`). An idle link stays idle:
+    /// started from the screen-change observer (which also runs while paused or asleep) or
+    /// from the keeper, nothing stopped it before the next scroll ended, so it fired 60 to
+    /// 120 times a second for nothing, and that scroll's `tryStart` found it running and
+    /// skipped `followDisplayUnderPointer`.
+    /// - Returns: false when the cooldown refused the recreation.
     @discardableResult
-    func recreateDisplayLink() -> Bool {
+    func recreateDisplayLink(scrollWaiting: Bool = false) -> Bool {
         let now = CFAbsoluteTimeGetCurrent()
         guard now - lastRecreateAttempt >= recreateCooldown else { return false }
         lastRecreateAttempt = now
+        let replacedWasRunning = poster.map { CVDisplayLinkIsRunning($0) } ?? false
         create()
-        if let validPoster = poster {
+        if Self.startsRecreatedDisplayLink(replacedWasRunning: replacedWasRunning, scrollWaiting: scrollWaiting),
+           let validPoster = poster {
             let result = CVDisplayLinkStart(validPoster)
             if result == kCVReturnSuccess {
                 os_unfair_lock_lock(&stateLock)
@@ -460,6 +483,10 @@ extension ScrollPoster {
             }
         }
         return true
+    }
+    /// Whether `recreateDisplayLink` starts the link it made (see there).
+    static func startsRecreatedDisplayLink(replacedWasRunning: Bool, scrollWaiting: Bool) -> Bool {
+        return replacedWasRunning || scrollWaiting
     }
     // 守护定时器 (与 Interceptor 的 keeper 模式一致)
     func startKeeper() {
@@ -477,6 +504,7 @@ extension ScrollPoster {
     }
     private func healthCheck() {
         guard let validPoster = poster else {
+            // Made, not started: the next wheel event's tryStart starts it.
             recreateDisplayLink()
             return
         }
