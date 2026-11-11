@@ -4202,6 +4202,50 @@
         }
       }
     },
+    "about-github": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio on GitHub"
+          }
+        }
+      }
+    },
+    "about-github-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source code and new versions."
+          }
+        }
+      }
+    },
+    "about-github-open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open"
+          }
+        }
+      }
+    },
+    "about-github-open-accessibility": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Scrollio on GitHub in your web browser"
+          }
+        }
+      }
+    },
     "general-show-in-menu-bar": {
       "extractionState": "manual",
       "localizations": {

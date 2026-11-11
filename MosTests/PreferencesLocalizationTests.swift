@@ -145,6 +145,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-accessibility-allowed", "general-accessibility-not-allowed", "general-accessibility-open-settings",
         "about-app-name", "about-tagline", "about-version", "about-credit", "about-welcome-guide",
         "about-welcome-guide-open", "about-welcome-guide-hint",
+        "about-github", "about-github-hint", "about-github-open", "about-github-open-accessibility",
         "about-version-commit", "about-version-commit-date",
     ]
 
