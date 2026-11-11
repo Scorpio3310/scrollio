@@ -52,22 +52,40 @@ enum ScrollMotion {
         return -referenceFrameInterval / log(1 - t)
     }
 
-    /// ScrollFilter's weight per 60 Hz frame for the smoothing factor `transition`.
+    /// Time constant of the classic filter (`filterWeight` per 60 Hz frame): ~64 ms.
+    static let classicFilterTimeConstant = -referenceFrameInterval / log(1 - filterWeight)
+    /// Two equal lags of time constant τ in a row (a critically damped response) have covered
+    /// 95% of the distance after this many τ.
+    static let landingTimeConstants = 4.744
+    /// How fast the filter opens up for free-spin and closes again, per 60 Hz frame
+    /// (a time constant of ~75 ms): the switch is a short blend, never a step in speed.
+    static let filterOpeningRate = 0.2
+
+    /// Time constant of each of the two lags behind smooth scrolling (the lerp toward the target
+    /// and ScrollFilter) for the Duration factor `transition`.
     ///
-    /// The filter's time constant follows the lerp's but is never longer than the classic one:
-    /// - long durations (factor ≤ 0.23, Duration from ~3.1 up) keep the classic filter;
-    /// - shorter durations get a filter as fast as their lerp. Two equal lags are a critically
-    ///   damped response: a notch starts without a jump and still lands quickly, so direct
-    ///   settings stay direct. A fixed 64 ms filter would dominate their latency instead, and
-    ///   no filter at all makes every notch a jump followed by a decay, which reads as
-    ///   stop-and-go when the wheel turns slowly.
-    static func filterWeight(forTransition transition: Double) -> Double {
-        guard transition.isFinite else { return filterWeight }
-        return min(1, max(filterWeight, transition))
+    /// Duration keeps its meaning, how long a scroll takes to land. Classic Mos gets there with
+    /// a lerp of time constant τ followed by a fixed 64 ms filter, about 3 τ + min(τ, 64 ms) for
+    /// 95% of the distance: the speed jumps up within the filter's 64 ms and then fades for
+    /// several τ. A long Duration is soft but floats on and on; a short one is a hop.
+    /// The same landing time is used here, split evenly over two equal lags. That is a
+    /// critically damped response: the speed rises as gently as it falls, so a scroll can be
+    /// soft without a long tail. (At Duration 4.35: 132 ms each instead of 187 ms + 64 ms.)
+    static func responseTimeConstant(forTransition transition: Double) -> Double {
+        guard transition.isFinite, transition < 1 else { return 0 }
+        let classic = timeConstant(forTransition: transition)
+        return (3 * classic + min(classic, classicFilterTimeConstant)) / landingTimeConstants
+    }
+
+    /// Per-frame factor of a lag with `timeConstant` for a frame of `interval` seconds
+    /// (1 = no lag at all).
+    static func factor(timeConstant: Double, frameInterval interval: Double) -> Double {
+        guard timeConstant.isFinite, timeConstant > 0 else { return 1 }
+        return 1 - exp(-clampedFrameInterval(interval) / timeConstant)
     }
 
     /// In free-spin the events arrive about once per frame; smoothing their start would only
-    /// add lag, so the filter is skipped.
+    /// add lag, so the filter opens up (see `filterOpeningRate`).
     static func shouldBypassFilter(freeSpinBlend: Double) -> Bool {
         return freeSpinBlend >= filterBypassFreeSpinBlend
     }

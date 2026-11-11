@@ -110,6 +110,8 @@ class ScrollPoster {
     private var shifting = false
     private var duration = Options.shared.scroll.durationTransition
     private var bypassFilter = false
+    // 滤波器 "打开" 的程度 (0 = 完全滤波, 1 = 不滤波), 逐帧向 bypassFilter 的目标值过渡, 切换时速度不突变
+    private var filterOpenness = 0.0
     // 领先量限制 (buffer - current), 滚轮停下后滑行尽快结束
     private var leadLimiterY = ScrollLeadLimiter()
     private var leadLimiterX = ScrollLeadLimiter()
@@ -300,7 +302,11 @@ extension ScrollPoster {
     private func applyInputLocked(_ input: ScrollPosterInput, at now: CFTimeInterval) {
         duration = input.duration
         bypassFilter = input.bypassFilter
-        let timeConstant = ScrollMotion.timeConstant(forTransition: input.duration)
+        // 从静止开始的运动直接采用目标状态 (没有速度可言, 也就没有突变)
+        if filter.isAtRest {
+            filterOpenness = bypassFilter ? 1.0 : 0.0
+        }
+        let timeConstant = ScrollMotion.responseTimeConstant(forTransition: input.duration)
         // 同向累加, 反向则重新开始
         if input.y*delta.y > 0 {
             buffer.y += input.y
@@ -472,6 +478,7 @@ extension ScrollPoster {
         buffer = ( y: 0.0, x: 0.0 )
         leadLimiterY.reset()
         leadLimiterX.reset()
+        filterOpenness = 0.0
         lastFrameHostTime = 0
         gesture = GestureMode()
         coast.cancel()
@@ -525,6 +532,7 @@ extension ScrollPoster {
             return
         }
         if !CVDisplayLinkIsRunning(validPoster) {
+            followDisplayUnderPointer(validPoster)
             let result = CVDisplayLinkStart(validPoster)
             if result == kCVReturnSuccess {
                 // 给 keeper 一个宽限期, 防止误判新启动的 poster 为僵尸
@@ -670,7 +678,10 @@ extension ScrollPoster {
         rateVerifyAttemptsLeft -= 1
         guard let current = poster else { rateVerifyTimer = nil; return }
         let nominal = linkNominalHz(current)
-        let maxHz = maxActiveDisplayHz()
+        // The link follows the display under the pointer (see followDisplayUnderPointer), so it
+        // is compared with that display's rate; a slower display is then not "too slow".
+        let followed = CGDisplayCopyDisplayMode(CVDisplayLinkGetCurrentCGDisplay(current))?.refreshRate ?? 0
+        let maxHz = followed > 1 ? followed : maxActiveDisplayHz()
         guard nominal > 1, maxHz > 1, nominal < maxHz * rateVerifyRatio else {
             // 已追平显示器刷新率, 结束复查
             rateVerifyTimer = nil
@@ -876,8 +887,10 @@ private extension ScrollPoster {
 
     /// 推进一帧: 插值 current -> buffer 并经滤波 (或跳过滤波) 得到本帧输出。调用方须持有 stateLock。
     func advanceMotionLocked(frameInterval: Double, now: CFTimeInterval) -> (y: Double, x: Double) {
-        // 按真实帧间隔换算插值系数 (以 60Hz 为参考, 不同刷新率下滚动时长一致)
-        let trans = ScrollMotion.transition(duration, frameInterval: frameInterval)
+        // 插值与滤波是两个时间常数相同的滞后 (临界阻尼, 见 ScrollMotion.responseTimeConstant):
+        // 起步与收尾同样柔和。按真实帧间隔换算, 不同刷新率下滚动时长一致
+        let timeConstant = ScrollMotion.responseTimeConstant(forTransition: duration)
+        let trans = ScrollMotion.factor(timeConstant: timeConstant, frameInterval: frameInterval)
         // 计算插值
         var frame = (
             y: Interpolator.lerp(src: current.y, dest: buffer.y, trans: trans),
@@ -900,15 +913,12 @@ private extension ScrollPoster {
         if glide != 0.0 && (buffer.y - current.y) * glide < 0.0 {
             buffer.y = current.y
         }
-        // 平滑滚动结果: 滤波的时间常数跟随插值 (见 ScrollMotion.filterWeight(forTransition:));
-        // free-spin 与翻页手势跳过滤波, 去掉其额外延迟
-        var output: (y: Double, x: Double)
-        if bypassFilter {
-            output = filter.passThrough(with: frame, catchUp: trans)
-        } else {
-            let weight = ScrollMotion.transition(ScrollMotion.filterWeight(forTransition: duration), frameInterval: frameInterval)
-            output = filter.fill(with: frame, weight: weight)
-        }
+        // 平滑滚动结果。free-spin 与翻页手势不需要滤波 (去掉其额外延迟): 滤波器在几帧内
+        // 逐渐打开 / 关闭, 其中尚未发送的距离按 trans 的比例补发, 速度不突变
+        let opening = ScrollMotion.transition(ScrollMotion.filterOpeningRate, frameInterval: frameInterval)
+        filterOpenness += ((bypassFilter ? 1.0 : 0.0) - filterOpenness) * opening
+        let weight = trans + (1.0 - trans) * filterOpenness
+        var output = filter.fill(with: frame, weight: weight, catchUp: trans)
         // 精确模式: 松手后速度降到落地速度时, 以该速度匀速走完剩余距离 (见 ScrollLanding)。
         // 原有模式不需要: 不足死区的帧本来就不发送, 运动在该速度处结束。
         if gesture.precise && !coast.isActive && !momentumActive
@@ -928,7 +938,7 @@ private extension ScrollPoster {
         ) {
             result.y = landed.output
             current.y = buffer.y - landed.remaining
-            filter.settleY(at: landed.output)
+            filter.resetY()
         }
         if let landed = ScrollLanding.step(
             output: output.x, remaining: (buffer.x - current.x) + filter.pending.x,
@@ -936,7 +946,7 @@ private extension ScrollPoster {
         ) {
             result.x = landed.output
             current.x = buffer.x - landed.remaining
-            filter.settleX(at: landed.output)
+            filter.resetX()
         }
         return result
     }
@@ -1027,6 +1037,20 @@ private extension ScrollPoster {
 
 // MARK: - 显示器刷新率查询 (刷新率自纠使用)
 private extension ScrollPoster {
+    /// Ties the display link to the display the pointer is on, before a scroll starts.
+    ///
+    /// A display link fires in step with one display. Two displays, even at the same rate,
+    /// refresh at different moments that drift against each other, so frames timed for the
+    /// main display reach a window on the other one now early, now late: every so often a
+    /// refresh shows no movement and the next one shows twice as much.
+    func followDisplayUnderPointer(_ link: CVDisplayLink) {
+        guard let location = CGEvent(source: nil)?.location else { return }
+        var display: CGDirectDisplayID = 0
+        var count: UInt32 = 0
+        guard CGGetDisplaysWithPoint(location, 1, &display, &count) == .success, count > 0,
+              display != CVDisplayLinkGetCurrentCGDisplay(link) else { return }
+        CVDisplayLinkSetCurrentCGDisplay(link, display)
+    }
     /// CVDisplayLink 当前绑定显示器的标称刷新率 (Hz); 无效返回 -1
     func linkNominalHz(_ link: CVDisplayLink) -> Double {
         let period = CVDisplayLinkGetNominalOutputVideoRefreshPeriod(link)

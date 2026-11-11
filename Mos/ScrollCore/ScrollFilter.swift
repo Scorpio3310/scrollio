@@ -19,40 +19,53 @@ class ScrollFilter {
     // 首帧权重 (60Hz 参考帧率下)
     static let defaultWeight = ScrollMotion.filterWeight
 
-    /// The smoothed per-frame distance: what the last `fill` or `passThrough` returned.
+    /// The smoothed per-frame distance (what `fill` returns, before any catch-up release).
     private(set) var smoothed = (y: 0.0, x: 0.0)
     // 已输入但尚未输出的距离 (sum(in) - sum(out)), 跳过滤波时补发, 不丢失也不突跳
     private(set) var pending = (y: 0.0, x: 0.0)
 
     // 填充值
-    // weight: 本帧权重, 按真实帧间隔换算 (ScrollMotion.transition), 60Hz 时等于 defaultWeight
-    public func fill(with nextValue: ( y: Double, x: Double ), weight: Double = ScrollFilter.defaultWeight) -> ( y: Double, x: Double ) {
+    // weight: 本帧权重, 按真实帧间隔换算; 1 = 不滤波
+    // catchUp: 每帧补发 "多余" 距离的比例 (见下), 0 = 不补发
+    //
+    // With a constant weight the filter hands out everything it took in by itself: what it
+    // still holds is (1 − w) / w × smoothed. When the weight changes on the way (free-spin
+    // opens the filter up, Duration changes with the wheel speed), what has gone in but not
+    // out (`pending`) no longer matches that. The difference is released at `catchUp` per
+    // frame, so no distance is lost and the speed never jumps. A release against the
+    // direction of the motion only slows it down, it never turns it around.
+    public func fill(with nextValue: ( y: Double, x: Double ), weight: Double = ScrollFilter.defaultWeight, catchUp: Double = 0.0) -> ( y: Double, x: Double ) {
         let w = weight.isFinite ? min(1.0, max(0.0, weight)) : 1.0
-        smoothed.y += w * (nextValue.y - smoothed.y)
-        smoothed.x += w * (nextValue.x - smoothed.x)
-        pending.y += nextValue.y - smoothed.y
-        pending.x += nextValue.x - smoothed.x
-        return smoothed
-    }
-    // 跳过滤波: 输出本帧输入, 并按 catchUp 比例补发滤波器中尚未输出的距离;
-    // 平滑值停在本次输出值, 之后重新启用滤波时速度连续
-    public func passThrough(with nextValue: ( y: Double, x: Double ), catchUp: Double) -> ( y: Double, x: Double ) {
         let k = catchUp.isFinite ? min(1.0, max(0.0, catchUp)) : 1.0
-        let output = (y: nextValue.y + pending.y * k, x: nextValue.x + pending.x * k)
-        pending = (y: pending.y * (1 - k), x: pending.x * (1 - k))
-        smoothed = output
+        return (
+            y: Self.step(input: nextValue.y, smoothed: &smoothed.y, pending: &pending.y, weight: w, catchUp: k),
+            x: Self.step(input: nextValue.x, smoothed: &smoothed.x, pending: &pending.x, weight: w, catchUp: k)
+        )
+    }
+    private static func step(input: Double, smoothed: inout Double, pending: inout Double, weight w: Double, catchUp k: Double) -> Double {
+        smoothed += w * (input - smoothed)
+        var output = smoothed
+        pending += input - output
+        guard k > 0.0 else { return output }
+        let held = w > 0.0 ? (1.0 - w) / w * smoothed : pending
+        var release = (pending - held) * k
+        if output > 0.0 {
+            release = max(release, -output)
+        } else if output < 0.0 {
+            release = min(release, -output)
+        }
+        output += release
+        pending -= release
         return output
     }
-    /// The caller sent `output` on this axis this frame and has taken over everything that was
-    /// still pending there (see `ScrollLanding`). Filtering continues from `output`, so the
-    /// speed stays continuous when the wheel moves again.
-    public func settleY(at output: Double) {
-        smoothed.y = output
-        pending.y = 0.0
+    // 跳过滤波: 输出本帧输入, 并按 catchUp 比例补发滤波器中尚未输出的距离;
+    // 平滑值停在本帧输入, 之后重新启用滤波时速度连续
+    public func passThrough(with nextValue: ( y: Double, x: Double ), catchUp: Double) -> ( y: Double, x: Double ) {
+        return fill(with: nextValue, weight: 1.0, catchUp: catchUp)
     }
-    public func settleX(at output: Double) {
-        smoothed.x = output
-        pending.x = 0.0
+    /// Nothing held and nothing moving: the next input starts a motion from standstill.
+    public var isAtRest: Bool {
+        return smoothed.y == 0.0 && smoothed.x == 0.0 && pending.y == 0.0 && pending.x == 0.0
     }
     // 获取值
     public func value() -> ( y: Double, x: Double ) {

@@ -135,24 +135,69 @@ final class ScrollFilterTests: XCTestCase {
         XCTAssertEqual(sut.pending.y, 0, accuracy: 1e-6)
     }
 
-    // MARK: - settle
+    // MARK: - A changing weight
 
-    func testSettle_dropsPendingAndContinuesFromTheGivenOutput_perAxis() {
-        for _ in 0..<3 {
-            _ = sut.fill(with: (y: 10, x: -6))
+    func testCatchUp_withAConstantWeightChangesNothing() {
+        let plain = ScrollFilter()
+        for value in [10.0, 10, 10, 4, 0, 0, -3] {
+            let a = sut.fill(with: (y: value, x: 0), weight: 0.3, catchUp: 0.3)
+            let b = plain.fill(with: (y: value, x: 0), weight: 0.3)
+            XCTAssertEqual(a.y, b.y, accuracy: 1e-9)
         }
-        let pendingX = sut.pending.x
-        let smoothedX = sut.value().x
-        XCTAssertNotEqual(sut.pending.y, 0)
-        sut.settleY(at: 1)
-        XCTAssertEqual(sut.pending.y, 0)
-        XCTAssertEqual(sut.value().y, 1)
-        XCTAssertEqual(sut.pending.x, pendingX, "the other axis is untouched")
-        XCTAssertEqual(sut.value().x, smoothedX)
-        sut.settleX(at: -1)
-        XCTAssertEqual(sut.pending.x, 0)
-        XCTAssertEqual(sut.value().x, -1)
-        XCTAssertEqual(sut.fill(with: (y: 1, x: -1)).y, 1, accuracy: 1e-12, "the same speed goes on unchanged")
+    }
+
+    func testCatchUp_releasesWhatAFasterWeightLeavesBehind_withoutAJump() {
+        var input = 0.0, output = 0.0
+        var last = 0.0
+        for _ in 0..<40 {
+            input += 10
+            last = sut.fill(with: (y: 10, x: 0), weight: 0.2, catchUp: 0.2).y
+            output += last
+        }
+        XCTAssertEqual(last, 10, accuracy: 0.01, "steady: output equals input")
+        // The weight doubles: the filter now holds less than it took in.
+        for _ in 0..<60 {
+            input += 10
+            let next = sut.fill(with: (y: 10, x: 0), weight: 0.4, catchUp: 0.2).y
+            XCTAssertLessThan(next, last * 1.6, "the surplus comes out over several frames")
+            output += next
+            last = next
+        }
+        for _ in 0..<300 {
+            output += sut.fill(with: (y: 0, x: 0), weight: 0.4, catchUp: 0.2).y
+        }
+        XCTAssertEqual(output, input, accuracy: 1e-3, "nothing lost")
+    }
+
+    func testCatchUp_neverTurnsTheMotionAround() {
+        for _ in 0..<40 {
+            _ = sut.fill(with: (y: 10, x: 0), weight: 0.5, catchUp: 0.3)
+        }
+        // The weight drops: the filter would hand out more than it took in.
+        var output: [Double] = []
+        for _ in 0..<200 {
+            output.append(sut.fill(with: (y: 0, x: 0), weight: 0.1, catchUp: 0.3).y)
+        }
+        XCTAssertTrue(output.allSatisfy { $0 >= 0 }, "slows down, never moves backwards")
+    }
+
+    func testPassThrough_isAnUnfilteredFillThatReleasesPending() {
+        for _ in 0..<3 {
+            _ = sut.fill(with: (y: 10, x: 0))
+        }
+        let pending = sut.pending.y
+        XCTAssertGreaterThan(pending, 0)
+        let out = sut.passThrough(with: (y: 10, x: 0), catchUp: 0.5)
+        XCTAssertEqual(out.y, 10 + pending * 0.5, accuracy: 1e-9)
+        XCTAssertEqual(sut.pending.y, pending * 0.5, accuracy: 1e-9)
+    }
+
+    func testIsAtRest() {
+        XCTAssertTrue(sut.isAtRest)
+        _ = sut.fill(with: (y: 1, x: 0))
+        XCTAssertFalse(sut.isAtRest)
+        sut.reset()
+        XCTAssertTrue(sut.isAtRest)
     }
 
     func testResetAxis_clearsOnlyThatAxis() {
