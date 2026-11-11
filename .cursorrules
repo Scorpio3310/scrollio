@@ -1,3 +1,0 @@
-Read AGENTS.md first.
-
-This Cursor entrypoint is intentionally thin so Cursor, Codex, Claude, Copilot, Windsurf, and other agents share one source of truth.
