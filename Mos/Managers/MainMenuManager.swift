@@ -45,6 +45,10 @@ final class MainMenuManager: NSObject {
 
     // MARK: - Install
 
+    /// The menus whose shortcuts fire once per key press (see `filterKeyDown`).
+    private var singleFireMenus: [NSMenu] = []
+    private var keyDownMonitor: Any?
+
     /// Makes the menu the app's main menu. Called once, at launch.
     func install(in application: NSApplication = NSApp) {
         // No window of this app has tabs: keep "Show Tab Bar" and its friends out of the menus.
@@ -54,19 +58,64 @@ final class MainMenuManager: NSObject {
         application.servicesMenu = menus.services
         application.windowsMenu = menus.window
         application.helpMenu = menus.help
+        if keyDownMonitor == nil {
+            keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                // (Not `self?.filterKeyDown(event) ?? event`: that would turn a dropped event back into the event.)
+                guard let self = self else { return event }
+                return self.filterKeyDown(event)
+            }
+        }
+    }
+
+    // MARK: - Held shortcuts
+
+    /// Drops the auto-repeats of the shortcuts of the Scrollio and Window menus, so a
+    /// held ⌘W, ⌘Q, ⌘H, ⌘M or ⌘, acts once.
+    ///
+    /// The key recorders of the Buttons and Scrolling tabs take the key-down events with
+    /// an event tap, but only until 0.7 to 1 s after a shortcut was recorded
+    /// (KeyRecorder.recordingFeedbackDelay). Whoever records ⌘Q and keeps the keys down a
+    /// moment longer sends the repeats to the app, and without this the menu would quit
+    /// Scrollio (or close, hide or minimize the window) right after the recording. The
+    /// Edit menu keeps its repeats (a held ⌘Z).
+    func filterKeyDown(_ event: NSEvent) -> NSEvent? {
+        guard event.type == .keyDown, event.isARepeat else { return event }
+        let ignored = Self.isSingleFireShortcut(
+            key: event.charactersIgnoringModifiers,
+            modifiers: event.modifierFlags,
+            in: singleFireMenus
+        )
+        return ignored ? nil : event
+    }
+
+    /// Whether `key` with `modifiers` is the shortcut of an item of `menus`.
+    static func isSingleFireShortcut(key: String?, modifiers: NSEvent.ModifierFlags, in menus: [NSMenu]) -> Bool {
+        guard let key = key?.lowercased(), !key.isEmpty else { return false }
+        let relevant: NSEvent.ModifierFlags = [.command, .option, .control, .shift]
+        let pressed = modifiers.intersection(relevant)
+        return menus.contains { menu in
+            menu.items.contains { item in
+                !item.keyEquivalent.isEmpty
+                    && item.keyEquivalent == key
+                    && item.keyEquivalentModifierMask.intersection(relevant) == pressed
+            }
+        }
     }
 
     // MARK: - Build
 
+    /// Builds the menus. The manager remembers the last ones it built, for `filterKeyDown`.
     func makeMenus() -> Menus {
         let main = NSMenu(title: "Main Menu")
         let services = NSMenu(title: text("main-menu-services"))
+        let application = makeApplicationMenu(services: services)
         let window = makeWindowMenu()
         let help = makeHelpMenu()
-        add(makeApplicationMenu(services: services), to: main)
+        add(application, to: main)
         add(makeEditMenu(), to: main)
         add(window, to: main)
         add(help, to: main)
+        singleFireMenus = [application, window]
         return Menus(main: main, services: services, window: window, help: help)
     }
 

@@ -248,6 +248,68 @@ final class MainMenuTests: XCTestCase {
         }
     }
 
+    // MARK: - Held shortcuts
+
+    /// A key-down as AppKit would hand it to the app. It is only built, never posted.
+    private func keyDown(_ key: String, _ modifiers: NSEvent.ModifierFlags, isRepeat: Bool) throws -> NSEvent {
+        return try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: modifiers,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: key,
+            charactersIgnoringModifiers: key,
+            isARepeat: isRepeat,
+            keyCode: 0
+        ))
+    }
+
+    func testAHeldShortcutOfTheScrollioAndWindowMenusActsOnce() throws {
+        // The recorders of the Buttons and Scrolling tabs let go of the keyboard 0.7 s after
+        // a shortcut was recorded: the repeats of a ⌘Q that is still held must not quit the app.
+        let once: [(String, NSEvent.ModifierFlags)] = [
+            (",", [.command]), ("h", [.command]), ("h", [.command, .option]),
+            ("q", [.command]), ("m", [.command]), ("w", [.command]),
+        ]
+        for (key, modifiers) in once {
+            let first = try keyDown(key, modifiers, isRepeat: false)
+            XCTAssertTrue(manager.filterKeyDown(first) === first, "the first ⌘\(key) reaches the menu")
+            let held = try keyDown(key, modifiers, isRepeat: true)
+            XCTAssertNil(manager.filterKeyDown(held), "a repeat of \(key) with \(modifiers.rawValue) still reaches the menu")
+        }
+        // Caps Lock and the like do not make it another shortcut; the character may come in upper case.
+        XCTAssertNil(manager.filterKeyDown(try keyDown("Q", [.command, .capsLock], isRepeat: true)))
+    }
+
+    func testOtherRepeatsPassThrough() throws {
+        let passing: [(String, NSEvent.ModifierFlags)] = [
+            // The Edit menu keeps its repeats: a held ⌘Z undoes step after step.
+            ("z", [.command]), ("z", [.command, .shift]), ("x", [.command]), ("c", [.command]),
+            ("v", [.command]), ("a", [.command]),
+            // Not shortcuts of the menu bar at all.
+            ("w", []), ("w", [.command, .shift]), ("q", [.control]), ("k", [.command]), ("h", [.option]),
+        ]
+        for (key, modifiers) in passing {
+            let held = try keyDown(key, modifiers, isRepeat: true)
+            XCTAssertTrue(manager.filterKeyDown(held) === held, "\(key) with \(modifiers.rawValue) was dropped")
+        }
+    }
+
+    func testSingleFireShortcutsAreThoseOfTheTwoMenus() throws {
+        let application = try submenu(MainMenuManager.Identifier.applicationMenu)
+        let window = try submenu(MainMenuManager.Identifier.windowMenu)
+        let edit = try submenu(MainMenuManager.Identifier.editMenu)
+        XCTAssertTrue(MainMenuManager.isSingleFireShortcut(key: "q", modifiers: [.command], in: [application, window]))
+        XCTAssertTrue(MainMenuManager.isSingleFireShortcut(key: "W", modifiers: [.command], in: [window]))
+        XCTAssertFalse(MainMenuManager.isSingleFireShortcut(key: "w", modifiers: [.command], in: [application]))
+        XCTAssertFalse(MainMenuManager.isSingleFireShortcut(key: "z", modifiers: [.command], in: [application, window]))
+        XCTAssertTrue(MainMenuManager.isSingleFireShortcut(key: "z", modifiers: [.command], in: [edit]))
+        XCTAssertFalse(MainMenuManager.isSingleFireShortcut(key: nil, modifiers: [.command], in: [application, window]))
+        XCTAssertFalse(MainMenuManager.isSingleFireShortcut(key: "", modifiers: [], in: [application, window]))
+    }
+
     // MARK: - Installed at launch
 
     func testTheAppDelegateInstalledTheMenu() throws {
