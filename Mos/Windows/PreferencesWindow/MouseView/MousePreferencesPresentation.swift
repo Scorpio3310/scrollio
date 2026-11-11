@@ -75,6 +75,8 @@ struct MousePaneModel: Equatable {
         let subtitle: String?
         let battery: Battery?
         let isConnected: Bool
+        /// The drawing: the connected mouse's, the plain one while none is connected.
+        let model: MouseArtworkModel
     }
 
     /// A slider row. Its slider runs over `range` with the tick marks of `scale`; the knob
@@ -332,13 +334,17 @@ struct MousePaneModel: Equatable {
                 title: MouseText.text("mouse-header-any-mouse"),
                 subtitle: MouseText.text("mouse-header-any-mouse-detail"),
                 battery: nil,
-                isConnected: false
+                isConnected: false,
+                model: .generic
             )
         }
         let subtitle = mice.count > 1
             ? String(format: MouseText.text("mouse-header-connected-several"), mice.count)
             : MouseText.text("mouse-header-connected")
-        return Header(title: mouse.deviceName, subtitle: subtitle, battery: battery(mouse.battery), isConnected: true)
+        return Header(
+            title: mouse.deviceName, subtitle: subtitle, battery: battery(mouse.battery), isConnected: true,
+            model: MouseArtworkModel.model(forDeviceName: mouse.deviceName)
+        )
     }
 
     static func battery(_ battery: LogiMouseDeviceState.Battery?) -> Battery? {

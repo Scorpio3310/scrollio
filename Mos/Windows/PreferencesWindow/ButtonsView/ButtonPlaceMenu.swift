@@ -3,9 +3,10 @@
 //  Mos
 //  "Which Button Is This?": a button the Mac knows only by its number ("Button 6") can be
 //  said to be a part of the drawing. The menu opens from the row's picture or its context
-//  menu; it lists the parts by name with their pictures, the one chosen ticked and the ones
-//  another row has marked, and "Not on This List" to take the answer back. The answer only
-//  changes what the pane shows (`RecordedEvent.mousePart`).
+//  menu; it lists the parts the shown mouse has by name with their pictures, the one chosen
+//  ticked and the ones another row has marked, and "Not on This List" to take the answer
+//  back. The answer only changes what the pane shows (`RecordedEvent.mousePart`); one the
+//  shown mouse does not have is kept and shows again on a mouse that has it.
 //
 
 import Cocoa
@@ -26,14 +27,17 @@ struct ButtonPlaceMenuModel: Equatable {
 
     /// The button's number ("Button 6").
     let number: Int
+    /// The mouse whose parts are offered, and whose drawing the pictures show.
+    let mouse: MouseArtworkModel
     let items: [Item]
 
     /// The menu for `trigger` among the triggers of the list (which may hold `trigger`
-    /// itself and other rows of its button); nil for a trigger whose place is known or is
-    /// no button.
+    /// itself and other rows of its button) on `mouse`; nil for a trigger whose place is
+    /// known or is no button.
     static func make(
         for trigger: RecordedEvent,
         among list: [RecordedEvent],
+        mouse: MouseArtworkModel,
         logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forMosCode: $0) }
     ) -> ButtonPlaceMenuModel? {
         guard let number = ButtonTriggerPicture.number(for: trigger) else { return nil }
@@ -53,10 +57,10 @@ struct ButtonPlaceMenuModel: Equatable {
             }
         }
         let chosen = trigger.placedPart
-        let items = PlacedMousePart.allCases.map { part in
+        let items = PlacedMousePart.allCases.filter { mouse.has($0.drawingPart.artworkPart) }.map { part in
             Item(part: part, title: menuTitle(of: part), isChosen: part == chosen, mark: marks[part])
         }
-        return ButtonPlaceMenuModel(number: number, items: items)
+        return ButtonPlaceMenuModel(number: number, mouse: mouse, items: items)
     }
 
     static func menuTitle(of part: PlacedMousePart) -> String {
@@ -102,7 +106,9 @@ enum ButtonPlaceMenu {
             let menuItem = NSMenuItem(title: item.title, action: action, keyEquivalent: "")
             menuItem.target = target
             menuItem.representedObject = ButtonPlaceChoice(bindingID: bindingID, part: item.part)
-            menuItem.image = ButtonsMouseMiniature.image(for: .mouse(part: item.part.drawingPart, number: nil), highlighted: false)
+            menuItem.image = ButtonsMouseMiniature.image(
+                for: .mouse(part: item.part.drawingPart, number: nil), mouse: model.mouse, highlighted: false
+            )
             menuItem.state = item.isChosen ? .on : .off
             if let mark = item.mark {
                 menuItem.badge = NSMenuItemBadge(string: mark)
@@ -113,7 +119,7 @@ enum ButtonPlaceMenu {
         let none = NSMenuItem(title: ButtonPlaceMenuModel.text("buttons-place-none"), action: action, keyEquivalent: "")
         none.target = target
         none.representedObject = ButtonPlaceChoice(bindingID: bindingID, part: nil)
-        none.image = ButtonsMouseMiniature.image(for: .mouse(part: nil, number: model.number), highlighted: false)
+        none.image = ButtonsMouseMiniature.image(for: .mouse(part: nil, number: model.number), mouse: model.mouse, highlighted: false)
         menu.addItem(none)
         return menu
     }

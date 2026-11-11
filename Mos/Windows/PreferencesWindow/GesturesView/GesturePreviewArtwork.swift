@@ -1,8 +1,8 @@
 //
 //  GesturePreviewArtwork.swift
 //  Mos
-//  The drawing of GesturePreviewView: on the left a mouse seen from above with its thumb
-//  (gesture) button, on the right a small desktop. Everything is drawn with paths, in the
+//  The drawing of GesturePreviewView: on the left the connected mouse seen from above with
+//  its gesture button, on the right a small desktop. Everything is drawn with paths, in the
 //  colours of the Scrolling preview (ScrollPreviewPalette), so the two panes look alike in
 //  light and in dark.
 //
@@ -35,9 +35,6 @@ enum GesturePreviewPalette {
     static let hudFill = ScrollPreviewPalette.adaptive(light: NSColor(white: 0.90, alpha: 0.95), dark: NSColor(white: 0.20, alpha: 0.92))
     static let hudEdge = ScrollPreviewPalette.adaptive(light: NSColor(white: 0, alpha: 0.12), dark: NSColor(white: 1, alpha: 0.12))
     static let hudSymbol = ScrollPreviewPalette.adaptive(light: NSColor(white: 0.15, alpha: 1), dark: NSColor(white: 0.92, alpha: 1))
-    /// The gesture button while it is up.
-    static let buttonIdle = ScrollPreviewPalette.adaptive(light: NSColor(white: 0.84, alpha: 1), dark: NSColor(white: 0.40, alpha: 1))
-    static let wheel = ScrollPreviewPalette.adaptive(light: NSColor(white: 0.62, alpha: 1), dark: NSColor(white: 0.55, alpha: 1))
     /// App icons, the photos in the second desktop's window and the dock.
     static let tiles: [NSColor] = [
         .systemBlue, .systemOrange, .systemGreen, .systemPink, .systemPurple,
@@ -110,6 +107,17 @@ final class GesturePreviewDeviceCard: GesturePreviewArtworkView {
         needsDisplay = true
     }
 
+    /// Which mouse is drawn; its body stays centred.
+    var model: MouseArtworkModel {
+        get { return mouse.model }
+        set {
+            guard newValue != mouse.model else { return }
+            mouse.model = newValue
+            placeMouse()
+            needsDisplay = true
+        }
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         placeMouse()
@@ -137,7 +145,7 @@ final class GesturePreviewDeviceCard: GesturePreviewArtworkView {
     /// it sits on whole pixels.
     private func placeMouse() {
         let scale = window?.backingScaleFactor ?? 2
-        let body = GesturePreviewMouse.bodyRect
+        let body = mouse.bodyRect
         var x = bounds.midX - body.midX + offset.x
         var y = bounds.midY - body.midY + offset.y
         if atRest {
@@ -154,7 +162,7 @@ final class GesturePreviewDeviceCard: GesturePreviewArtworkView {
     /// way it moves.
     var arrowSegment: (from: NSPoint, to: NSPoint)? {
         guard let direction else { return nil }
-        let outline = GesturePreviewMouse.outlineRect.offsetBy(dx: mouse.frame.minX, dy: mouse.frame.minY)
+        let outline = mouse.outlineRect.offsetBy(dx: mouse.frame.minX, dy: mouse.frame.minY)
         let gap = Self.arrowGap, length = Self.arrowLength
         switch direction {
         case .left:
@@ -204,33 +212,73 @@ final class GesturePreviewDeviceCard: GesturePreviewArtworkView {
     }
 }
 
-/// A right-handed mouse seen from above, in the line art of the Scrolling preview: two
-/// buttons and a wheel, and on the left a thumb rest with the gesture button, which takes
-/// the accent colour while it is held.
+/// The connected mouse seen from above, the drawing of the Mouse and Buttons panes
+/// (MouseArtwork.swift) a little smaller, with the button that runs Gesture Navigation where
+/// the model has it (MouseArtworkModel.gesturePreviewPart): it takes the accent colour while
+/// it is held.
 final class GesturePreviewMouse: GesturePreviewArtworkView {
 
-    static let bodySize = NSSize(width: 50, height: 80)
-    /// How far the thumb rest stands out on the left.
-    static let wingWidth: CGFloat = 11
+    /// The drawing's grid is drawn this many points per unit: the body 80 points tall.
+    static let unit: CGFloat = 80 / MouseArtworkShapes.grid.height
     /// Room around the drawing for its outline, its shadow and the ring of a press.
     static let margin: CGFloat = 10
-    static let size = NSSize(width: bodySize.width + wingWidth + 2 * margin, height: bodySize.height + 2 * margin)
+    static let size = NSSize(
+        width: (MouseArtworkShapes.grid.width * unit + 2 * margin).rounded(.up),
+        height: MouseArtworkShapes.grid.height * unit + 2 * margin
+    )
 
-    /// The body, in the mouse view.
-    static var bodyRect: NSRect {
-        return NSRect(x: margin + wingWidth, y: margin, width: bodySize.width, height: bodySize.height)
+    /// Which mouse is drawn.
+    var model: MouseArtworkModel = .generic {
+        didSet {
+            if model != oldValue { needsDisplay = true }
+        }
     }
 
-    /// Body and thumb rest together.
-    static var outlineRect: NSRect {
-        let body = bodyRect
-        return NSRect(x: body.minX - wingWidth, y: body.minY, width: body.width + wingWidth, height: body.height)
+    private var shapes: MouseArtworkShapes {
+        return MouseArtworkShapes(model: model)
     }
 
-    /// The gesture button on the thumb rest.
-    static var buttonRect: NSRect {
-        let body = bodyRect
-        return NSRect(x: body.minX - wingWidth + 3, y: body.minY + 45, width: 6, height: 16)
+    /// From the drawing's grid to the view: the grid centred across, `margin` from the top.
+    static var placement: AffineTransform {
+        var transform = AffineTransform(
+            translationByX: (size.width - MouseArtworkShapes.grid.width * unit) / 2, byY: margin
+        )
+        transform.scale(unit)
+        return transform
+    }
+
+    private func inView(_ rect: NSRect) -> NSRect {
+        let path = NSBezierPath(rect: rect)
+        path.transform(using: Self.placement)
+        return path.bounds
+    }
+
+    /// The body without the thumb wing, in the mouse view: centred in the card. Its middle
+    /// is on a half point, so the mouse at rest sits where the hand leaves it.
+    var bodyRect: NSRect {
+        let body = inView(shapes.mainBody)
+        let mid = NSPoint(x: (body.midX * 2).rounded() / 2, y: (body.midY * 2).rounded() / 2)
+        return NSRect(x: mid.x - body.width / 2, y: mid.y - body.height / 2, width: body.width, height: body.height)
+    }
+
+    /// The whole drawing (body, thumb wing, side buttons).
+    var outlineRect: NSRect {
+        let outline = shapes.outline()
+        for part in [MouseArtworkPart.thumbWheel, .gesture, .forward, .back] {
+            if let shape = shapes.shape(of: part) { outline.append(shape) }
+        }
+        return inView(outline.bounds)
+    }
+
+    /// The button that runs Gesture Navigation, in the mouse view.
+    var buttonRect: NSRect {
+        return buttonShape.bounds
+    }
+
+    private var buttonShape: NSBezierPath {
+        let path = shapes.shape(of: model.gesturePreviewPart) ?? NSBezierPath()
+        path.transform(using: Self.placement)
+        return path
     }
 
     private var buttonDepth = 0.0
@@ -243,116 +291,50 @@ final class GesturePreviewMouse: GesturePreviewArtworkView {
         needsDisplay = true
     }
 
-    private static func bodyPath(in r: NSRect) -> NSBezierPath {
-        let path = NSBezierPath()
-        let shoulder = r.minY + 30
-        let palm = r.maxY - 28
-        path.move(to: NSPoint(x: r.minX, y: shoulder))
-        path.curve(to: NSPoint(x: r.midX, y: r.minY), controlPoint1: NSPoint(x: r.minX, y: r.minY + 11), controlPoint2: NSPoint(x: r.minX + 10, y: r.minY))
-        path.curve(to: NSPoint(x: r.maxX, y: shoulder), controlPoint1: NSPoint(x: r.maxX - 10, y: r.minY), controlPoint2: NSPoint(x: r.maxX, y: r.minY + 11))
-        path.line(to: NSPoint(x: r.maxX, y: palm))
-        path.curve(to: NSPoint(x: r.midX, y: r.maxY), controlPoint1: NSPoint(x: r.maxX, y: r.maxY - 10), controlPoint2: NSPoint(x: r.maxX - 10, y: r.maxY))
-        path.curve(to: NSPoint(x: r.minX, y: palm), controlPoint1: NSPoint(x: r.minX + 10, y: r.maxY), controlPoint2: NSPoint(x: r.minX, y: r.maxY - 10))
-        path.close()
-        return path
-    }
-
-    /// The thumb rest: a shelf along the lower left side of the body.
-    private static func wingPath(body r: NSRect) -> NSBezierPath {
-        let w = wingWidth
-        let path = NSBezierPath()
-        path.move(to: NSPoint(x: r.minX + 6, y: r.minY + 32))
-        path.curve(to: NSPoint(x: r.minX - w, y: r.minY + 52), controlPoint1: NSPoint(x: r.minX - 3, y: r.minY + 33), controlPoint2: NSPoint(x: r.minX - w, y: r.minY + 40))
-        path.curve(to: NSPoint(x: r.minX + 8, y: r.maxY - 9), controlPoint1: NSPoint(x: r.minX - w, y: r.minY + 66), controlPoint2: NSPoint(x: r.minX - 4, y: r.maxY - 10))
-        path.close()
-        return path
-    }
-
     override func draw(_ dirtyRect: NSRect) {
-        let body = Self.bodyRect
-        let outline = Self.bodyPath(in: body)
-        let wing = Self.wingPath(body: body)
-
-        // A soft shadow under both parts (as the Scrolling preview's mouse casts it).
         NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = ScrollPreviewPalette.mouseShadow
-        shadow.shadowBlurRadius = 5
-        shadow.shadowOffset = .zero
-        shadow.set()
-        ScrollPreviewPalette.mouseShadow.setFill()
-        Self.bodyPath(in: body.insetBy(dx: 2, dy: 2).offsetBy(dx: 0, dy: 2)).fill()
-        let wingShadow = Self.wingPath(body: body)
-        wingShadow.transform(using: AffineTransform(translationByX: 1, byY: 2))
-        wingShadow.fill()
+        (Self.placement as NSAffineTransform).concat()
+        MouseArtworkPainter.draw(shapes, ink: .card, unit: Self.unit)
         NSGraphicsContext.restoreGraphicsState()
-
-        // The thumb rest, under the body.
-        ScrollPreviewPalette.mouseFill.setFill()
-        wing.fill()
-        ScrollPreviewPalette.mouseLine.setStroke()
-        wing.lineWidth = 1.5
-        wing.stroke()
-
-        ScrollPreviewPalette.mouseFill.setFill()
-        outline.fill()
-
-        // The seams between the two buttons, kept inside the outline.
-        NSGraphicsContext.saveGraphicsState()
-        outline.addClip()
-        let seams = NSBezierPath()
-        let seamY = body.minY + 43
-        seams.move(to: NSPoint(x: body.minX, y: seamY - 2))
-        seams.curve(to: NSPoint(x: body.maxX, y: seamY - 2), controlPoint1: NSPoint(x: body.minX + 15, y: seamY + 3), controlPoint2: NSPoint(x: body.maxX - 15, y: seamY + 3))
-        seams.move(to: NSPoint(x: body.midX, y: body.minY))
-        seams.line(to: NSPoint(x: body.midX, y: seamY + 1.5))
-        seams.lineWidth = 1
-        ScrollPreviewPalette.mouseSeam.setStroke()
-        seams.stroke()
-        NSGraphicsContext.restoreGraphicsState()
-
-        // The wheel: grey here, the gesture button is what this picture is about.
-        let wheelRect = NSRect(x: body.midX - 4.5, y: body.minY + 13, width: 9, height: 21)
-        let well = capsule(wheelRect.insetBy(dx: -2.5, dy: -2.5))
-        ScrollPreviewPalette.mouseFill.setFill()
-        well.fill()
-        ScrollPreviewPalette.wheelWell.setFill()
-        well.fill()
-        ScrollPreviewPalette.mouseSeam.setStroke()
-        well.lineWidth = 1
-        well.stroke()
-        GesturePreviewPalette.wheel.setFill()
-        capsule(wheelRect).fill()
-
-        ScrollPreviewPalette.mouseLine.setStroke()
-        outline.lineWidth = 1.5
-        outline.stroke()
-
         drawButton()
     }
 
-    /// The gesture button: grey while up, the accent colour while held, and a ring that
+    /// The gesture button: as drawn while up, the accent colour while held, and a ring that
     /// opens up and fades when it goes down.
     private func drawButton() {
-        let rect = Self.buttonRect
+        let button = buttonShape
         let accent = NSColor.controlAccentColor
         let depth = CGFloat(min(1, max(0, buttonDepth)))
         let ring = CGFloat(min(1, max(0, pressPulse)))
         if ring > 0 {
             let spread = 1.5 + (1 - ring) * 6
-            accent.withAlphaComponent(0.45 * ring).setFill()
-            capsule(rect.insetBy(dx: -spread, dy: -spread)).fill()
+            accent.withAlphaComponent(0.45 * ring).setStroke()
+            button.lineWidth = 2 * spread
+            button.lineJoinStyle = .round
+            button.stroke()
         }
         if depth > 0 {
-            accent.withAlphaComponent(0.25 * depth).setFill()
-            capsule(rect.insetBy(dx: -2, dy: -2)).fill()
+            // Held: lit with a glow, as the cards light a part.
+            NSGraphicsContext.saveGraphicsState()
+            let glow = NSShadow()
+            glow.shadowColor = accent.withAlphaComponent(0.65 * depth)
+            glow.shadowBlurRadius = 6
+            glow.shadowOffset = .zero
+            glow.set()
+            accent.withAlphaComponent(depth).setFill()
+            button.fill()
+            NSGraphicsContext.restoreGraphicsState()
+            accent.mixed(0.3, with: .black).withAlphaComponent(depth).setStroke()
+            button.lineWidth = 1
+            button.stroke()
+            // The MX Master 3's gesture button is in the thumb rest, under the side buttons.
+            if model == .mxMaster3 {
+                NSGraphicsContext.saveGraphicsState()
+                (Self.placement as NSAffineTransform).concat()
+                MouseArtworkPainter.drawSideButtons(on: shapes, ink: .card, unit: Self.unit)
+                NSGraphicsContext.restoreGraphicsState()
+            }
         }
-        let button = capsule(rect)
-        GesturePreviewPalette.buttonIdle.mixed(depth, with: accent).setFill()
-        button.fill()
-        ScrollPreviewPalette.mouseSeam.mixed(depth, with: accent.mixed(0.3, with: .black)).setStroke()
-        button.lineWidth = 1
-        button.stroke()
     }
 }
 

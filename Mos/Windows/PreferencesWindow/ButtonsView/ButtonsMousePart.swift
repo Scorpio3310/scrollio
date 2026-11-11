@@ -2,8 +2,9 @@
 //  ButtonsMousePart.swift
 //  Mos
 //  The parts of the mouse the Buttons pane's drawing can light up, which part a recorded
-//  trigger is, and the parts a numbered button can be said to be. Pure: the pane and its
-//  tests share the mapping.
+//  trigger is, and the parts a numbered button can be said to be. A part the shown mouse
+//  does not have (MouseArtworkModel) is shown as a button the drawing cannot show. Pure:
+//  the pane and its tests share the mapping.
 //
 
 import Foundation
@@ -15,11 +16,27 @@ enum ButtonsMousePart: Int, CaseIterable {
     case middle
     case back
     case forward
-    /// The thumb panel of a Logitech MX Master: the gesture button of the MX Master 3 and
-    /// 3S, the haptic sense panel of the MX Master 4.
+    /// The gesture button of a Logitech MX Master: on the MX Master 4 the front one of the
+    /// side buttons, on the MX Master 3 and 3S the pad in the thumb rest.
     case gesture
     /// The small button behind the wheel.
     case modeShift
+    /// The thumb rest of the MX Master 4, which clicks (its haptic sense panel).
+    case thumbPanel
+
+    /// Its shape in the drawing.
+    var artworkPart: MouseArtworkPart {
+        switch self {
+        case .left: return .left
+        case .right: return .right
+        case .middle: return .wheel
+        case .back: return .back
+        case .forward: return .forward
+        case .gesture: return .gesture
+        case .modeShift: return .modeShift
+        case .thumbPanel: return .thumbPanel
+        }
+    }
 
     /// The part a trigger presses, nil for a key or a button the drawing does not show.
     /// Modifiers do not matter: "⌥ Back button" is the Back button. A button the Mac knows
@@ -43,7 +60,8 @@ enum ButtonsMousePart: Int, CaseIterable {
             }
             guard let role = logitechRole(event.code) else { return nil }
             switch role {
-            case .gesture, .thumbPanel: return .gesture
+            case .gesture: return .gesture
+            case .thumbPanel: return .thumbPanel
             case .modeShift: return .modeShift
             case .middle: return .middle
             case .back: return .back
@@ -66,11 +84,11 @@ enum PlacedMousePart: String, Encodable, CaseIterable {
     case modeShiftButton
     case middleButton
 
-    /// The part of the drawing it lights: the gesture button and the thumb panel are the
-    /// same place, as for a Logitech control of either role.
+    /// The part of the drawing it lights, as a Logitech control of the same role does.
     var drawingPart: ButtonsMousePart {
         switch self {
-        case .gestureButton, .thumbPanel: return .gesture
+        case .gestureButton: return .gesture
+        case .thumbPanel: return .thumbPanel
         case .backButton: return .back
         case .forwardButton: return .forward
         case .modeShiftButton: return .modeShift
@@ -126,7 +144,9 @@ extension RecordedEvent {
 /// Logitech controls `LogiCenter` knows the role of. A button the Mac reports only by its
 /// number ("Button 5") could be any extra button of any mouse (the MX Master 4's gesture
 /// button or thumb panel, or another mouse's side button), so it lights nothing and shows
-/// its number instead.
+/// its number instead. So does a part the shown mouse does not have (a thumb panel on the
+/// MX Master 3, a gesture button on a plain mouse): it keeps its place and shows again on a
+/// mouse that has it.
 enum ButtonTriggerPicture: Equatable {
     /// A key of the keyboard.
     case key
@@ -134,14 +154,20 @@ enum ButtonTriggerPicture: Equatable {
     /// `number` when the Mac knows it only by its number.
     case mouse(part: ButtonsMousePart?, number: Int?)
 
+    /// - Parameter mouse: the drawing the picture is of.
     static func make(
         for event: RecordedEvent,
+        mouse: MouseArtworkModel,
         logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forMosCode: $0) }
     ) -> ButtonTriggerPicture {
         guard event.type == .mouse else { return .key }
+        let part = ButtonsMousePart.part(for: event, logitechRole: logitechRole)
+        if let part, !mouse.has(part.artworkPart) {
+            return .mouse(part: nil, number: number(for: event))
+        }
         // A numbered button the user placed lights its part like a known one, no number.
         let number = event.placedPart == nil ? number(for: event) : nil
-        return .mouse(part: ButtonsMousePart.part(for: event, logitechRole: logitechRole), number: number)
+        return .mouse(part: part, number: number)
     }
 
     /// The number of a button the Mac knows only by its number, as its row title says it

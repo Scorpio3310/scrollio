@@ -96,6 +96,8 @@ class PreferencesButtonsViewController: NSViewController {
     // MARK: - State
 
     private(set) var buttonBindings: [ButtonBinding] = []
+    /// The drawing of the connected mouse, on the card and in every row's picture.
+    private(set) var mouse: MouseArtworkModel = .generic
     /// "+" waits for a button: the card says "Press a button".
     private(set) var isRecording = false
     /// The recorder is open, from its start until it reports that it stopped (after a
@@ -177,6 +179,12 @@ class PreferencesButtonsViewController: NSViewController {
                 self?.updateHeader()
             })
         }
+        // Another mouse connected or the one there left: the drawings follow.
+        observers.append(center.addObserver(forName: LogiCenter.mouseStateChanged, object: nil, queue: .main) { [weak self] _ in
+            guard let self, self.connectedMouse() != self.mouse else { return }
+            self.reloadRows()
+            self.updateHeader()
+        })
         observers.append(center.addObserver(forName: LogiCenter.activityChanged, object: nil, queue: .main) { [weak self] _ in
             self?.syncBusy()
         })
@@ -255,12 +263,13 @@ class PreferencesButtonsViewController: NSViewController {
     /// rows themselves changed.
     func reloadRows() {
         guard let list else { return }
+        mouse = connectedMouse()
         let old = rows
         let titles = ButtonTriggerNaming.titles(for: buttonBindings.map(\.triggerEvent))
         rows = zip(buttonBindings, titles).map { binding, title in
             let note = note(for: binding)
             if let existing = old.first(where: { $0.id == AnyHashable(binding.id) }) {
-                existing.update(binding: binding, title: title, note: note)
+                existing.update(binding: binding, title: title, note: note, mouse: mouse)
                 return existing
             }
             return makeRow(for: binding, title: title, note: note)
@@ -300,7 +309,7 @@ class PreferencesButtonsViewController: NSViewController {
         pullDown.onGestureSettingsRequested = { [weak self] in
             self?.showGesturesPane()
         }
-        let row = ButtonBindingRow(binding: binding, title: title, note: note, pullDown: pullDown)
+        let row = ButtonBindingRow(binding: binding, title: title, note: note, mouse: mouse, pullDown: pullDown)
         row.infoButton.target = self
         row.infoButton.action = #selector(infoClicked(_:))
         row.onPlaceRequested = { [weak self] anchor in
@@ -374,7 +383,7 @@ class PreferencesButtonsViewController: NSViewController {
     /// "Which Button Is This?" for `id`'s row; nil when its button's place is known.
     func placeMenu(for id: UUID) -> NSMenu? {
         guard let binding = binding(for: id),
-              let model = ButtonPlaceMenuModel.make(for: binding.triggerEvent, among: buttonBindings.map(\.triggerEvent))
+              let model = ButtonPlaceMenuModel.make(for: binding.triggerEvent, among: buttonBindings.map(\.triggerEvent), mouse: mouse)
         else { return nil }
         return ButtonPlaceMenu.make(model, bindingID: id, target: self, action: #selector(placeChosen(_:)))
     }
@@ -631,6 +640,7 @@ class PreferencesButtonsViewController: NSViewController {
             focus = self.focus(for: binding)
         }
         let bound = buttonBindings.filter { CellActionState(binding: $0).hasBoundAction }.count
+        headerView.mouse = mouse
         headerView.content = ButtonsHeaderContent.make(
             deviceName: deviceSource.deviceName(),
             boundCount: bound,
@@ -645,7 +655,7 @@ class PreferencesButtonsViewController: NSViewController {
         return ButtonsHeaderContent.Focus(
             title: title(for: binding.triggerEvent),
             action: resolver.actionName(of: binding),
-            picture: ButtonTriggerPicture.make(for: binding.triggerEvent),
+            picture: ButtonTriggerPicture.make(for: binding.triggerEvent, mouse: mouse),
             reason: reason
         )
     }
@@ -667,6 +677,11 @@ class PreferencesButtonsViewController: NSViewController {
     /// What the list calls `trigger` (with the bindings it has).
     func title(for trigger: RecordedEvent) -> String {
         return ButtonTriggerNaming.title(for: trigger, among: buttonBindings.map(\.triggerEvent))
+    }
+
+    /// The drawing for the connected mouse, as the card names it.
+    private func connectedMouse() -> MouseArtworkModel {
+        return MouseArtworkModel.model(forDeviceName: deviceSource.deviceName())
     }
 
     // MARK: - "Checking buttons…"
@@ -765,7 +780,7 @@ extension PreferencesButtonsViewController: KeyRecorderDelegate {
         showRecorded(ButtonsHeaderContent.Focus(
             title: title(for: trigger),
             action: pendingAction.map(\.localizedName),
-            picture: ButtonTriggerPicture.make(for: trigger),
+            picture: ButtonTriggerPicture.make(for: trigger, mouse: mouse),
             reason: .recorded
         ))
     }

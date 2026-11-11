@@ -154,6 +154,8 @@ final class ButtonBindingRow: PreferencesListRow {
     private(set) var note: ButtonRowNote?
     /// What the picture before the title shows.
     private(set) var picture: ButtonTriggerPicture
+    /// The mouse the picture is drawn on.
+    private(set) var mouse: MouseArtworkModel
     let pullDown: ButtonActionPullDown
     /// The ⓘ before the pull-down, on the title line; it shows while the note is a problem
     /// or a hint. It is not part of the accessory: the note under the title runs on below
@@ -169,14 +171,15 @@ final class ButtonBindingRow: PreferencesListRow {
     var placeMenu: (() -> NSMenu?)?
     /// Keeps the title off the ⓘ while it shows.
     private var titleBeforeInfo: NSLayoutConstraint?
-    /// The picture the icon shows now, and whether drawn for the selection.
-    private var shownPicture: (picture: ButtonTriggerPicture, highlighted: Bool)?
+    /// The picture the icon shows now, on which mouse, and whether drawn for the selection.
+    private var shownPicture: (picture: ButtonTriggerPicture, mouse: MouseArtworkModel, highlighted: Bool)?
 
-    init(binding: ButtonBinding, title: String, note: ButtonRowNote?, pullDown: ButtonActionPullDown) {
+    init(binding: ButtonBinding, title: String, note: ButtonRowNote?, mouse: MouseArtworkModel, pullDown: ButtonActionPullDown) {
         self.binding = binding
         self.note = note
+        self.mouse = mouse
         self.pullDown = pullDown
-        let picture = ButtonTriggerPicture.make(for: binding.triggerEvent)
+        let picture = ButtonTriggerPicture.make(for: binding.triggerEvent, mouse: mouse)
         self.picture = picture
 
         let configuration = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
@@ -194,7 +197,7 @@ final class ButtonBindingRow: PreferencesListRow {
             id: binding.id,
             title: title,
             explanation: note?.text,
-            icon: .image(ButtonsMouseMiniature.image(for: picture, highlighted: false)),
+            icon: .image(ButtonsMouseMiniature.image(for: picture, mouse: mouse, highlighted: false)),
             accessory: pullDown,
             centeredOn: pullDown,
             controls: [pullDown]
@@ -229,12 +232,14 @@ final class ButtonBindingRow: PreferencesListRow {
         fatalError("ButtonBindingRow is built in code")
     }
 
-    /// Shows `binding` with `title` and `note`; the row and its pull-down stay the same views.
-    func update(binding: ButtonBinding, title: String, note: ButtonRowNote?) {
+    /// Shows `binding` with `title` and `note` on `mouse`; the row and its pull-down stay the
+    /// same views.
+    func update(binding: ButtonBinding, title: String, note: ButtonRowNote?, mouse: MouseArtworkModel) {
         self.binding = binding
         self.note = note
+        self.mouse = mouse
         // "Use Standard Button" gives the row another trigger.
-        picture = ButtonTriggerPicture.make(for: binding.triggerEvent)
+        picture = ButtonTriggerPicture.make(for: binding.triggerEvent, mouse: mouse)
         if self.title != title {
             self.title = title
         }
@@ -308,10 +313,10 @@ final class ButtonBindingRow: PreferencesListRow {
     /// The picture for the row's trigger, in white on the accent-coloured selection.
     private func applyPicture() {
         guard let iconView else { return }
-        let wanted = (picture: picture, highlighted: isHighlighted)
+        let wanted = (picture: picture, mouse: mouse, highlighted: isHighlighted)
         if let shownPicture, shownPicture == wanted { return }
         shownPicture = wanted
-        iconView.image = ButtonsMouseMiniature.image(for: wanted.picture, highlighted: wanted.highlighted)
+        iconView.image = ButtonsMouseMiniature.image(for: wanted.picture, mouse: wanted.mouse, highlighted: wanted.highlighted)
     }
 
     /// The note as text: the label holds the sign in front of it.

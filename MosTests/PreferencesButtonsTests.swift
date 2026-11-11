@@ -274,7 +274,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(part(1005), .middle)
         XCTAssertEqual(part(1006), .back)
         XCTAssertEqual(part(1007), .forward)
-        XCTAssertEqual(part(2000 + 0x01A0), .gesture, "the MX Master 4's thumb panel, where the 3S has its gesture button")
+        XCTAssertEqual(part(2000 + 0x01A0), .thumbPanel, "the MX Master 4's thumb panel, a part of its own")
         XCTAssertNil(part(2000 + 0x005B), "a tilt is not drawn")
         XCTAssertNil(part(40, type: .keyboard), "a key lights nothing")
         XCTAssertNil(part(3, type: .keyboard))
@@ -284,7 +284,7 @@ final class PreferencesButtonsTests: XCTestCase {
             return ButtonsMousePart.part(for: RecordedEvent(type: type, code: code, modifiers: option, deviceFilter: nil, mousePart: answer))
         }
         XCTAssertEqual(lit(6, .gestureButton), .gesture)
-        XCTAssertEqual(lit(5, .thumbPanel), .gesture, "the thumb panel is where the gesture button is drawn")
+        XCTAssertEqual(lit(5, .thumbPanel), .thumbPanel, "on the MX Master 4 not where its gesture button is")
         XCTAssertEqual(lit(7, .backButton), .back)
         XCTAssertEqual(lit(8, .forwardButton), .forward)
         XCTAssertEqual(lit(9, .modeShiftButton), .modeShift)
@@ -325,15 +325,27 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertNil(center.controlRole(forMosCode: 3), "a native button is not a Logitech control")
     }
 
-    /// The MX Master 4's thumb panel lights the thumb panel of the drawing.
+    /// The MX Master 4's thumb panel lights the thumb rest of the drawing, its gesture
+    /// button the front side button: two parts.
     func testTheThumbPanelLightsTheThumbPanelOfTheCard() {
         let panel = binding(2000 + 0x01A0, SystemShortcut.mouseGestureNavigation.identifier)
-        let pane = makePane([binding(3, "copy"), panel])
+        let gesture = binding(1000, "copy")
+        let pane = makePane([binding(3, "copy"), panel, gesture])
+        XCTAssertEqual(pane.headerView.artwork.model, .mxMaster4)
         pane.list.select(panel.id)
-        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "Thumb panel", subtitle: "Gesture Navigation", part: .gesture))
-        XCTAssertEqual(pane.headerView.artwork.emphasis, .gesture)
-        XCTAssertEqual(pane.headerView.artwork.highlights[.gesture]?.alphaValue, 1)
+        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "Thumb panel", subtitle: "Gesture Navigation", part: .thumbPanel))
+        XCTAssertEqual(pane.headerView.artwork.emphasis, .thumbPanel)
+        XCTAssertEqual(pane.headerView.artwork.highlights[.thumbPanel]?.alphaValue, 1)
+        XCTAssertEqual(pane.headerView.artwork.highlights[.gesture]?.alphaValue, 0)
         XCTAssertEqual(pane.headerView.artwork.highlights[.back]?.alphaValue, 0)
+        pane.list.select(gesture.id)
+        XCTAssertEqual(pane.headerView.artwork.highlights[.gesture]?.alphaValue, 1)
+        XCTAssertEqual(pane.headerView.artwork.highlights[.thumbPanel]?.alphaValue, 0)
+        let front = MouseArtworkView.shape(of: .gesture, model: .mxMaster4)?.bounds
+        let rest = MouseArtworkView.shape(of: .thumbPanel, model: .mxMaster4)?.bounds
+        XCTAssertNotNil(front)
+        XCTAssertNotNil(rest)
+        XCTAssertNotEqual(front, rest, "two shapes")
     }
 
     // MARK: - The card
@@ -386,7 +398,7 @@ final class PreferencesButtonsTests: XCTestCase {
     /// knows by its number shows its number, a key a keyboard.
     func testWhichPictureARowShows() {
         func picture(_ code: UInt16, type: EventType = .mouse) -> ButtonTriggerPicture {
-            return ButtonTriggerPicture.make(for: RecordedEvent(type: type, code: code, modifiers: 0, deviceFilter: nil))
+            return ButtonTriggerPicture.make(for: RecordedEvent(type: type, code: code, modifiers: 0, deviceFilter: nil), mouse: .mxMaster4)
         }
         XCTAssertEqual(picture(40, type: .keyboard), .key)
         XCTAssertEqual(picture(5, type: .keyboard), .key, "a key code is no button number")
@@ -397,7 +409,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(picture(6), .mouse(part: nil, number: 6))
         XCTAssertEqual(picture(1001), .mouse(part: .modeShift, number: nil), "the button behind the wheel, as a Logitech control")
         XCTAssertEqual(picture(1000), .mouse(part: .gesture, number: nil))
-        XCTAssertEqual(picture(2000 + 0x01A0), .mouse(part: .gesture, number: nil))
+        XCTAssertEqual(picture(2000 + 0x01A0), .mouse(part: .thumbPanel, number: nil))
         XCTAssertEqual(picture(2000 + 0x005B), .mouse(part: nil, number: nil), "a Logitech control with a name but no place in the drawing")
         XCTAssertTrue(picture(6).isUnplaced)
         XCTAssertTrue(picture(2000 + 0x005B).isUnplaced)
@@ -405,7 +417,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertFalse(picture(40, type: .keyboard).isUnplaced)
 
         // Placed, a numbered button shows its part as a known one does, without its number.
-        let answered = ButtonTriggerPicture.make(for: RecordedEvent(type: .mouse, code: 6, modifiers: 0, deviceFilter: nil, mousePart: .gestureButton))
+        let answered = ButtonTriggerPicture.make(for: RecordedEvent(type: .mouse, code: 6, modifiers: 0, deviceFilter: nil, mousePart: .gestureButton), mouse: .mxMaster4)
         XCTAssertEqual(answered, .mouse(part: .gesture, number: nil))
         XCTAssertFalse(answered.isUnplaced)
         XCTAssertEqual(ButtonTriggerPicture.number(for: RecordedEvent(type: .mouse, code: 6, modifiers: 0, deviceFilter: nil, mousePart: .gestureButton)), 6,
@@ -475,14 +487,17 @@ final class PreferencesButtonsTests: XCTestCase {
             let accent = try pixels(of: nil, appearance: appearance)(NSPoint(x: 12, y: 12))
             let unlit = try pixels(of: .mouse(part: nil, number: nil), appearance: appearance)
             for part in ButtonsMousePart.allCases {
-                let bounds = ButtonsMouseMiniature.shape(of: part, in: frame).bounds
-                let middle = NSPoint(x: bounds.midX, y: bounds.midY)
+                let bounds = try XCTUnwrap(ButtonsMouseMiniature.shape(of: part, mouse: .mxMaster4, in: frame)).bounds
+                // The thumb rest's middle is under a side button: a point of the rest's own.
+                let middle = part == .thumbPanel
+                    ? NSPoint(x: bounds.minX + bounds.width * 0.3, y: bounds.midY + bounds.height * 0.25)
+                    : NSPoint(x: bounds.midX, y: bounds.midY)
                 let lit = try pixels(of: .mouse(part: part, number: nil), appearance: appearance)
                 XCTAssertLessThan(distance(lit(middle), accent), 0.03, "\(part) lit in \(name.rawValue)")
                 if accent.saturationComponent > 0.3 {
                     XCTAssertGreaterThan(distance(unlit(middle), accent), 0.2, "\(part) not lit in \(name.rawValue)")
                 }
-                XCTAssertTrue(ButtonsMouseMiniature.bodyPath(in: frame).contains(middle) || part == .back || part == .forward,
+                XCTAssertTrue(ButtonsMouseMiniature.bodyPath(of: .mxMaster4, in: frame).contains(middle),
                               "\(part) is on the mouse")
             }
         }
@@ -505,7 +520,7 @@ final class PreferencesButtonsTests: XCTestCase {
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
         appearance.performAsCurrentDrawingAppearance {
             if let picture {
-                ButtonsMouseMiniature.image(for: picture, highlighted: false).draw(in: NSRect(origin: .zero, size: size))
+                ButtonsMouseMiniature.image(for: picture, mouse: .mxMaster4, highlighted: false).draw(in: NSRect(origin: .zero, size: size))
             } else {
                 NSColor.controlAccentColor.setFill()
                 NSRect(origin: .zero, size: size).fill()
@@ -599,6 +614,45 @@ final class PreferencesButtonsTests: XCTestCase {
         return RecordedEvent(type: .mouse, code: code, modifiers: modifiers, deviceFilter: nil, mousePart: part)
     }
 
+    /// The card, every row's picture and "Which Button Is This?" are the connected mouse's,
+    /// and follow another mouse connecting. A part the new mouse does not have shows as a
+    /// button the drawing cannot show; the stored answer stays.
+    func testTheDrawingsFollowTheConnectedMouse() throws {
+        let panelAnswer = ButtonBinding(
+            triggerEvent: placed(5, .thumbPanel), systemShortcutName: "copy", isEnabled: true
+        )
+        let pane = makePane([binding(2000 + 0x01A0, "copy"), panelAnswer, binding(6)])
+        let six = pane.rows[2].binding.id
+        XCTAssertEqual(pane.headerView.artwork.model, .mxMaster4)
+        XCTAssertEqual(pane.rows.map(\.mouse), [.mxMaster4, .mxMaster4, .mxMaster4])
+        XCTAssertEqual(pane.rows.map(\.picture), [
+            .mouse(part: .thumbPanel, number: nil), .mouse(part: .thumbPanel, number: nil), .mouse(part: nil, number: 6),
+        ])
+        XCTAssertEqual(try XCTUnwrap(pane.placeMenu(for: six)).items.compactMap { ($0.representedObject as? ButtonPlaceChoice)?.part },
+                       PlacedMousePart.allCases)
+
+        deviceName = "MX Master 3S"
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(pane.headerView.artwork.model, .mxMaster3)
+        XCTAssertEqual(pane.rows.map(\.mouse), [.mxMaster3, .mxMaster3, .mxMaster3])
+        XCTAssertEqual(pane.rows.map(\.picture), [
+            .mouse(part: nil, number: nil), .mouse(part: nil, number: 5), .mouse(part: nil, number: 6),
+        ])
+        XCTAssertEqual(try XCTUnwrap(pane.placeMenu(for: six)).items.compactMap { ($0.representedObject as? ButtonPlaceChoice)?.part },
+                       [.gestureButton, .backButton, .forwardButton, .modeShiftButton, .middleButton])
+        pane.list.select(pane.rows[1].id)
+        XCTAssertEqual(pane.headerView.content.number, 5)
+        XCTAssertNil(pane.headerView.artwork.emphasis)
+        XCTAssertEqual(Options.shared.buttons.binding[1].triggerEvent.mousePart, .thumbPanel, "the answer is kept")
+        XCTAssertEqual(pane.rows[1].title, "Thumb panel (button 5)")
+
+        deviceName = nil
+        NotificationCenter.default.post(name: LogiCenter.sessionChanged, object: nil)
+        XCTAssertEqual(pane.headerView.artwork.model, .generic)
+        XCTAssertEqual(try XCTUnwrap(pane.placeMenu(for: six)).items.compactMap { ($0.representedObject as? ButtonPlaceChoice)?.part },
+                       [.backButton, .forwardButton, .middleButton])
+    }
+
     /// The owner's MX Master 4 over Bluetooth: Gesture Navigation on Button 6, a shortcut on
     /// Button 5, a screenshot on the mode shift button.
     private func ownerBindings() -> [ButtonBinding] {
@@ -628,7 +682,7 @@ final class PreferencesButtonsTests: XCTestCase {
             placed(6, nil, modifiers: option),
             RecordedEvent(type: .keyboard, code: 40, modifiers: control, deviceFilter: nil),
         ]
-        let model = try XCTUnwrap(ButtonPlaceMenuModel.make(for: list[0], among: list))
+        let model = try XCTUnwrap(ButtonPlaceMenuModel.make(for: list[0], among: list, mouse: .mxMaster4))
         XCTAssertEqual(model.number, 6)
         XCTAssertEqual(model.items.map(\.part), PlacedMousePart.allCases)
         XCTAssertEqual(model.items.map(\.title), [
@@ -638,7 +692,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(model.items.map(\.mark), [nil, "Used by button 5", "Already in the list", nil, "Already in the list", nil])
 
         // From Button 5: its own answer is ticked, not marked.
-        let five = try XCTUnwrap(ButtonPlaceMenuModel.make(for: list[1], among: list))
+        let five = try XCTUnwrap(ButtonPlaceMenuModel.make(for: list[1], among: list, mouse: .mxMaster4))
         XCTAssertEqual(five.items.filter(\.isChosen).map(\.part), [.thumbPanel])
         XCTAssertEqual(five.items.map(\.mark), [nil, nil, "Already in the list", nil, "Already in the list", nil])
 
@@ -646,7 +700,7 @@ final class PreferencesButtonsTests: XCTestCase {
         let logitech = [placed(6, nil), RecordedEvent(type: .mouse, code: 1000, modifiers: 0, deviceFilter: nil),
                         RecordedEvent(type: .mouse, code: 2000 + 0x01A0, modifiers: 0, deviceFilter: nil),
                         RecordedEvent(type: .mouse, code: 2, modifiers: 0, deviceFilter: nil)]
-        XCTAssertEqual(try XCTUnwrap(ButtonPlaceMenuModel.make(for: logitech[0], among: logitech)).items.map(\.mark),
+        XCTAssertEqual(try XCTUnwrap(ButtonPlaceMenuModel.make(for: logitech[0], among: logitech, mouse: .mxMaster4)).items.map(\.mark),
                        ["Already in the list", "Already in the list", nil, nil, nil, "Already in the list"])
 
         // No menu where the place is known or there is no button.
@@ -657,7 +711,7 @@ final class PreferencesButtonsTests: XCTestCase {
             RecordedEvent(type: .mouse, code: 2000 + 0x005B, modifiers: 0, deviceFilter: nil),
             RecordedEvent(type: .keyboard, code: 6, modifiers: 0, deviceFilter: nil),
         ] {
-            XCTAssertNil(ButtonPlaceMenuModel.make(for: trigger, among: list), "\(trigger)")
+            XCTAssertNil(ButtonPlaceMenuModel.make(for: trigger, among: list, mouse: .mxMaster4), "\(trigger)")
         }
     }
 
@@ -747,7 +801,7 @@ final class PreferencesButtonsTests: XCTestCase {
 
         XCTAssertEqual(pane.rows.map(\.title), ["Gesture button (button 6)", "Thumb panel (button 5)", "Mode shift button"])
         XCTAssertEqual(pane.rows.map(\.picture), [
-            .mouse(part: .gesture, number: nil), .mouse(part: .gesture, number: nil), .mouse(part: .modeShift, number: nil),
+            .mouse(part: .gesture, number: nil), .mouse(part: .thumbPanel, number: nil), .mouse(part: .modeShift, number: nil),
         ])
         XCTAssertEqual(pane.rows.map(\.explanation), ["Hold and move the mouse. Set the directions under Gestures.", nil, nil],
                        "a placed button is no longer just an extra one")

@@ -23,8 +23,10 @@ final class GesturePreviewViewTests: XCTestCase {
     /// The width the preview has in the tab (520 pt pane, 20 pt margins).
     private let size = NSSize(width: 480, height: GesturePreviewView.preferredHeight)
 
-    private func makeView(reduceMotion: Bool = false, size: NSSize? = nil) -> GesturePreviewView {
+    private func makeView(reduceMotion: Bool = false, size: NSSize? = nil, mouse: MouseArtworkModel = .mxMaster4) -> GesturePreviewView {
         let view = GesturePreviewView(frame: NSRect(origin: .zero, size: size ?? self.size))
+        view.mouseSource = { mouse }
+        view.reloadMouse()
         view.prefersReducedMotion = { reduceMotion }
         view.reduceMotionDidChange()
         // The test windows are never shown, so none of them is ever really visible.
@@ -72,10 +74,10 @@ final class GesturePreviewViewTests: XCTestCase {
         // The mouse sits in the middle of its card, room to move on every side.
         let mouse = view.deviceCard.mouse
         XCTAssertTrue(view.deviceCard.bounds.contains(mouse.frame))
-        let body = GesturePreviewMouse.bodyRect.offsetBy(dx: mouse.frame.minX, dy: mouse.frame.minY)
+        let body = mouse.bodyRect.offsetBy(dx: mouse.frame.minX, dy: mouse.frame.minY)
         XCTAssertEqual(body.midX, view.deviceCard.bounds.midX, accuracy: 0.5)
         XCTAssertEqual(body.midY, view.deviceCard.bounds.midY, accuracy: 0.5)
-        let outline = GesturePreviewMouse.outlineRect.offsetBy(dx: mouse.frame.minX, dy: mouse.frame.minY)
+        let outline = mouse.outlineRect.offsetBy(dx: mouse.frame.minX, dy: mouse.frame.minY)
         let room = Loop.verticalReach + GesturePreviewDeviceCard.arrowGap + GesturePreviewDeviceCard.arrowLength
         XCTAssertGreaterThan(outline.minY, room, "up: the mouse and its arrow stay in the card")
         XCTAssertLessThan(outline.maxY, 150 - room)
@@ -98,7 +100,7 @@ final class GesturePreviewViewTests: XCTestCase {
         XCTAssertEqual(view.deviceCard.frame.width, 234)
         XCTAssertEqual(view.screenCard.frame.maxX, 480)
         let mouse = view.deviceCard.mouse
-        XCTAssertEqual(GesturePreviewMouse.bodyRect.midX + mouse.frame.minX, 117, accuracy: 0.5)
+        XCTAssertEqual(mouse.bodyRect.midX + mouse.frame.minX, 117, accuracy: 0.5)
     }
 
     // MARK: - The timer
@@ -286,9 +288,9 @@ final class GesturePreviewViewTests: XCTestCase {
 
     /// One picture of the view, rendered off screen.
     private func render(
-        _ scene: GesturePreviewScene, dark: Bool, time: TimeInterval?, size: NSSize? = nil
+        _ scene: GesturePreviewScene, dark: Bool, time: TimeInterval?, size: NSSize? = nil, mouse: MouseArtworkModel = .mxMaster4
     ) throws -> NSBitmapImageRep {
-        let view = makeView(reduceMotion: time == nil, size: size)
+        let view = makeView(reduceMotion: time == nil, size: size, mouse: mouse)
         view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         view.scene = scene
         if let time {
@@ -340,8 +342,9 @@ final class GesturePreviewViewTests: XCTestCase {
     func testTheButtonTakesTheAccentColourWhileHeld() throws {
         let up = try render(scene(focus: .click), dark: false, time: 0)
         let held = try render(scene(focus: .click), dark: false, time: Loop.pressTime + 0.3)
-        let mouseOrigin = makeView().deviceCard.mouse.frame.origin
-        let button = GesturePreviewMouse.buttonRect
+        let mouse = makeView().deviceCard.mouse
+        let mouseOrigin = mouse.frame.origin
+        let button = mouse.buttonRect
         let x = mouseOrigin.x + button.midX, y = mouseOrigin.y + button.midY
         let idle = try colour(in: up, x: x, y: y)
         let pressed = try colour(in: held, x: x, y: y)
@@ -351,6 +354,44 @@ final class GesturePreviewViewTests: XCTestCase {
         }
         XCTAssertLessThan(distance(pressed, accent), distance(idle, accent))
         XCTAssertLessThan(distance(pressed, accent), 0.3)
+    }
+
+    /// The mouse is the connected one's drawing and follows a mouse coming and going; the
+    /// button held is where the model has its gesture button (the plain mouse: Back).
+    func testTheMouseFollowsTheConnectedModel() throws {
+        var connected = MouseArtworkModel.mxMaster4
+        let view = makeView()
+        view.mouseSource = { connected }
+        view.reloadMouse()
+        let mouse = view.deviceCard.mouse
+        XCTAssertEqual(mouse.model, .mxMaster4)
+        let four = mouse.buttonRect
+        XCTAssertLessThan(four.maxX, mouse.bodyRect.minX + 6, "on the side of the body")
+        XCTAssertTrue(mouse.outlineRect.contains(four))
+
+        connected = .mxMaster3
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(mouse.model, .mxMaster3)
+        XCTAssertNotEqual(mouse.buttonRect, four)
+        XCTAssertLessThan(mouse.buttonRect.minX, four.minX, "in the thumb rest, below the side buttons")
+
+        connected = .generic
+        NotificationCenter.default.post(name: LogiCenter.sessionChanged, object: nil)
+        XCTAssertEqual(mouse.model, .generic)
+        let body = mouse.bodyRect.offsetBy(dx: mouse.frame.minX, dy: mouse.frame.minY)
+        XCTAssertEqual(body.midX, view.deviceCard.bounds.midX, accuracy: 0.5, "the body stays centred")
+        XCTAssertLessThan(mouse.buttonRect.maxX, mouse.bodyRect.minX + 6, "the Back button, on the left side")
+        // The held button takes the accent colour on every model.
+        for model in MouseArtworkModel.allCases {
+            let held = try render(scene(focus: .click), dark: true, time: Loop.pressTime + 0.3, mouse: model)
+            let preview = makeView(mouse: model).deviceCard.mouse
+            let button = preview.buttonRect
+            let point = preview.frame.origin
+            let colour = try self.colour(in: held, x: point.x + button.midX, y: point.y + button.midY)
+            let accent = try XCTUnwrap(NSColor.controlAccentColor.usingColorSpace(.deviceRGB))
+            XCTAssertLessThan(abs(colour.redComponent - accent.redComponent) + abs(colour.greenComponent - accent.greenComponent)
+                              + abs(colour.blueComponent - accent.blueComponent), 0.3, "\(model)")
+        }
     }
 
     func testThePictureChangesWithTheLoopAndComesBack() throws {
