@@ -242,8 +242,11 @@ public class Utils {
         return parseName(fromPath: validPath)
     }
     class func parseName(fromPath path: String) -> String {
-        let applicationRawName = FileManager().displayName(atPath: path).removingPercentEncoding!
-        return Utils.removingRegexMatches(target: applicationRawName, pattern: ".app")
+        let displayName = FileManager().displayName(atPath: path)
+        // removingPercentEncoding is nil for a name with a stray "%" ("50% Off.app").
+        let applicationRawName = displayName.removingPercentEncoding ?? displayName
+        // Only the extension: a bare ".app" pattern also matches inside names ("Snapper").
+        return Utils.removingRegexMatches(target: applicationRawName, pattern: "\\.app$")
     }
     
     static var runningApplicationThreshold = 60.0
