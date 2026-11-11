@@ -1197,6 +1197,16 @@ final class PreferencesScrollingRenderTests: XCTestCase {
             tab.syncViewWithOptions()
             try render(tab.view, name: "tab-\(state)-smooth-off", into: directory)
 
+            // Three kinds of hold key: a modifier, a mouse button, none.
+            if advanced {
+                Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+                Options.shared.scroll.dash = ScrollHotkey(type: .keyboard, code: KeyCode.optionL)
+                Options.shared.scroll.toggle = ScrollHotkey(type: .mouse, code: 3)
+                Options.shared.scroll.block = nil
+                tab.syncViewWithOptions()
+                try render(tab.view, name: "tab-advanced-keys", into: directory)
+            }
+
             // An app's page, with settings of its own and inheriting.
             Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
             for inherit in [false, true] {
