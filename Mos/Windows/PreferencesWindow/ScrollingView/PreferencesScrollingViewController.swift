@@ -298,13 +298,8 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
 
         for key in ScrollHoldKey.allCases {
             keyRows[key.rawValue].isEnabled = editable
-            updateHotkeyButton(
-                keyBindButtons[key.rawValue],
-                delButton: keyClearButtons[key.rawValue],
-                hotkey: key.hotkey(in: scroll),
-                enabled: editable
-            )
         }
+        updateKeyButtons(in: scroll, enabled: editable)
 
         resetToDefaultsButton.isEnabled = hasSettingsToReset
         updatePreviewScene()
@@ -660,7 +655,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// under its name. The row tells the preview when the pointer is over it.
     private func makeKeyRow(_ key: ScrollHoldKey) -> PreferencesGroupRow {
         let bind = ScrollKeyRecorderButton(
-            title: text("Disabled"),
+            title: text("scrolling-key-none"),
             target: self,
             action: #selector(keyBindClick(_:))
         )
@@ -668,7 +663,6 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         bind.tag = key.rawValue
         bind.bezelStyle = .push
         bind.alignment = .left
-        bind.imageScaling = .scaleProportionallyDown
         bind.lineBreakMode = .byTruncatingTail
         bind.translatesAutoresizingMaskIntoConstraints = false
         bind.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -723,81 +717,41 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
 
 extension PreferencesScrollingViewController {
 
-    /// 键盘按键的完整名称映射 (仅用于 ScrollingView 按钮显示)
-    private static let keyFullNames: [UInt16: String] = [
-        // 修饰键
-        KeyCode.commandL: "⌘ Command",
-        KeyCode.commandR: "⌘ Command",
-        KeyCode.optionL: "⌥ Option",
-        KeyCode.optionR: "⌥ Option",
-        KeyCode.shiftL: "⇧ Shift",
-        KeyCode.shiftR: "⇧ Shift",
-        KeyCode.controlL: "⌃ Control",
-        KeyCode.controlR: "⌃ Control",
-        KeyCode.fnL: "Fn",
-        KeyCode.fnR: "Fn",
-        // 特殊键
-        49: "⎵ Space",
-        51: "⌫ Delete",
-        53: "⎋ Escape",
-        36: "↩ Return",
-        76: "↩ Return",
-        48: "↹ Tab",
-    ]
-
-    /// 获取按键基础名称 (不含品牌前缀)
-    private func getBaseDisplayName(for hotkey: ScrollHotkey) -> String {
-        switch hotkey.type {
-        case .keyboard:
-            if let fullName = PreferencesScrollingViewController.keyFullNames[hotkey.code] {
-                return fullName
+    /// What the recorder buttons say, in the order of `hotkeys`: each key as the Buttons pane
+    /// names its triggers ("⌥", "K", "Back button", "Button 5", a Logitech control's name,
+    /// "Back button (Logitech)" next to a standard Back button), "None" for a row without a
+    /// key. Display only: the stored keys are not touched.
+    static func holdKeyTitles(
+        for hotkeys: [ScrollHotkey?],
+        logitech: ButtonTriggerNaming.Logitech = .live
+    ) -> [String] {
+        let events = hotkeys.compactMap { $0 }.map {
+            RecordedEvent(type: $0.type, code: $0.code, modifiers: 0, deviceFilter: nil)
+        }
+        var names = ButtonTriggerNaming.titles(for: events, logitech: logitech).makeIterator()
+        return hotkeys.map { hotkey in
+            guard hotkey != nil, let name = names.next() else {
+                return NSLocalizedString("scrolling-key-none", comment: "A hold key that is not set")
             }
-            return KeyCode.keyMap[hotkey.code] ?? "Key \(hotkey.code)"
-        case .mouse:
-            if LogiCenter.shared.isLogiCode(hotkey.code) {
-                return (LogiCenter.shared.name(forMosCode: hotkey.code) ?? "")
-            }
-            return KeyCode.mouseMap[hotkey.code] ?? "🖱\(hotkey.code)"
+            return name
         }
     }
 
-    /// 获取完整显示名称 (含品牌前缀, 用于纯文本场景)
-    private func getFullDisplayName(for hotkey: ScrollHotkey) -> String {
-        let baseName = getBaseDisplayName(for: hotkey)
-        if let brand = BrandTag.brandForCode(hotkey.code) {
-            return BrandTag.prefixedName(baseName, brand: brand)
+    /// The recorder buttons' titles and whether there is a key to clear.
+    private func updateKeyButtons(in scroll: OPTIONS_SCROLL_DEFAULT, enabled: Bool) {
+        let hotkeys = ScrollHoldKey.allCases.map { $0.hotkey(in: scroll) }
+        let titles = Self.holdKeyTitles(for: hotkeys)
+        for key in ScrollHoldKey.allCases {
+            let button = keyBindButtons[key.rawValue]
+            button.title = titles[key.rawValue]
+            button.isEnabled = enabled
+
+            // The clear button only shows while there is a key to clear.
+            let canClear = hotkeys[key.rawValue] != nil && enabled
+            let clear = keyClearButtons[key.rawValue]
+            clear.alphaValue = canClear ? 1.0 : 0.0
+            clear.isEnabled = canClear
         }
-        return baseName
-    }
-
-    /// 更新热键按钮的显示文本和删除按钮可见性
-    private func updateHotkeyButton(_ button: NSButton, delButton: NSButton, hotkey: ScrollHotkey?, enabled: Bool) {
-        let hasBound = hotkey != nil
-
-        // 设置按钮标题
-        if let hotkey = hotkey {
-            let baseName = getBaseDisplayName(for: hotkey)
-            if let brand = BrandTag.brandForCode(hotkey.code) {
-                // 品牌按键: image=tag, title=名称, 左图右文
-                button.image = BrandTag.createTagImage(brand: brand, fontSize: 7, height: 14, padH: 5, marginRight: 4)
-                button.imagePosition = .imageLeft
-                button.title = baseName
-            } else {
-                button.image = nil
-                button.imagePosition = .noImage
-                button.title = getFullDisplayName(for: hotkey)
-            }
-        } else {
-            button.image = nil
-            button.imagePosition = .noImage
-            button.title = NSLocalizedString("Disabled", comment: "Hotkey disabled state")
-        }
-
-        button.isEnabled = enabled
-
-        // 设置删除按钮可见性：仅在有绑定且启用时显示
-        delButton.alphaValue = (hasBound && enabled) ? 1.0 : 0.0
-        delButton.isEnabled = hasBound && enabled
     }
 }
 

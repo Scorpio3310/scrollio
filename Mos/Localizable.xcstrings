@@ -292,18 +292,6 @@
         }
       }
     },
-    "Disabled": {
-      "comment": "Hotkey disabled state",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Disabled"
-          }
-        }
-      }
-    },
     "doNotDisturb": {
       "extractionState": "manual",
       "localizations": {
@@ -5076,6 +5064,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Off moves the pointer exactly as far as the mouse, at any speed."
+          }
+        }
+      }
+    },
+    "scrolling-key-none": {
+      "comment": "Scrolling pane: the recorder button of a hold key that is not set",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "None"
           }
         }
       }

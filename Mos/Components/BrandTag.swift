@@ -70,31 +70,6 @@ private final class BrandTagBackgroundView: NSView {
 /// 标签渲染工具
 struct BrandTag {
 
-    // MARK: - 判断
-
-    /// 按键码是否属于某个品牌
-    static func isLogiCode(_ code: UInt16) -> Bool {
-        return LogiCenter.shared.isLogiCode(code)
-    }
-
-    /// 获取按键码对应的标签配置 (nil = 非标签按键)
-    static func tagForCode(_ code: UInt16) -> BrandTagConfig? {
-        if isLogiCode(code) { return .logi }
-        return nil
-    }
-
-    /// 获取按键码对应的品牌配置 (兼容旧调用, nil = 非品牌/标签按键)
-    static func brandForCode(_ code: UInt16) -> BrandTagConfig? {
-        return tagForCode(code)
-    }
-
-    // MARK: - 标签文字 (用于 NSButton.title 等纯文本场景)
-
-    /// 在名称前添加品牌前缀 (纯文本 fallback)
-    static func prefixedName(_ name: String, brand: BrandTagConfig) -> String {
-        return "[\(brand.name)] \(name)"
-    }
-
     // MARK: - 标签 NSView (用于 KeyPreview 等自定义 View 场景)
 
     /// 创建独立的品牌标签 View
@@ -117,30 +92,6 @@ struct BrandTag {
         ])
 
         return container
-    }
-
-    // MARK: - 标签 NSImage (用于 NSMenuItem / NSButton / NSPopUpButton 场景)
-
-    /// 创建品牌标签图片
-    static func createTagImage(brand: BrandTagConfig, fontSize: CGFloat = 7, height: CGFloat = 12, padH: CGFloat = 4, marginRight: CGFloat = 2) -> NSImage {
-        let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: brand.textColor]
-        let textSize = (brand.name as NSString).size(withAttributes: attrs)
-        let tagWidth = textSize.width + padH * 2
-        let imageSize = NSSize(width: tagWidth + marginRight, height: height)
-
-        let image = NSImage(size: imageSize)
-        image.lockFocus()
-        let bgRect = NSRect(x: 0, y: 0, width: tagWidth, height: height)
-        let bgPath = NSBezierPath(roundedRect: bgRect, xRadius: 3, yRadius: 3)
-        drawTagBackground(brand: brand, in: bgRect, clippingTo: bgPath)
-        drawTagStrokeIfNeeded(brand: brand, path: bgPath)
-        drawTagInnerHighlightIfNeeded(brand: brand, in: bgRect, cornerRadius: 3)
-        let textRect = NSRect(x: padH, y: (height - textSize.height) / 2, width: textSize.width, height: textSize.height)
-        (brand.name as NSString).draw(in: textRect, withAttributes: attrs)
-        image.unlockFocus()
-        image.isTemplate = false
-        return image
     }
 
     fileprivate static func drawTagBackground(brand: BrandTagConfig, in rect: NSRect, clippingTo path: NSBezierPath) {
