@@ -24,6 +24,10 @@ class PreferencesScrollingWithApplicationViewController: NSViewController {
     @IBOutlet weak var inheritGlobalSettingCheckBox: NSButton!
     
     override func viewDidLoad() {
+        // The app's name and "inherit" sit in a box like the settings' boxes under them.
+        if let header = view.subviews.compactMap({ $0 as? NSBox }).first {
+            PreferencesGroupedForm.styleAsGroupBox(header)
+        }
         // 初始化显示内容
         currentTargetApplicationIcon.image = currentTargetApplication?.getIcon()
         currentTargetApplicationIcon.toolTip = currentTargetApplication?.path

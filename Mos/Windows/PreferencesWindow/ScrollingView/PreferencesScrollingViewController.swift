@@ -3,13 +3,14 @@
 //  Mos
 //  "Scrolling" preferences tab. The same view is the content of the per-app scroll
 //  settings popover (PreferencesScrollingWithApplicationViewController gives it a target
-//  application). Built in code on the PreferencesForm grid; the storyboard scene is a shell.
+//  application). Built in code on PreferencesGroupedForm, in the boxes of System Settings;
+//  the storyboard scene is a shell.
 //
-//  On top a preview and what most people need: smooth scrolling, its feel, the speed and
-//  the direction, closed off by a line with "Advanced" and "Reset to defaults". "Advanced"
-//  (closed by default) opens the exact glide time, the smallest step, trackpad-style
-//  events and the three keys under that line. The tab only edits scroll options:
-//  Options.shared.scroll, or the target application's own.
+//  On top a preview, then a box with what most people need: smooth scrolling, its feel,
+//  the speed and the direction. A second box starts with "Advanced" (closed by default),
+//  which opens the exact glide time, the smallest step and trackpad-style events in that
+//  box and the three keys in a box of their own. "Reset to defaults" sits under the boxes.
+//  The tab only edits scroll options: Options.shared.scroll, or the target application's own.
 //
 //  Created by Caldis on 2017/1/26.
 //  Copyright © 2017年 Caldis. All rights reserved.
@@ -114,14 +115,13 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// Where "Advanced" remembers whether it is open. Plain UI state, not a scroll option.
     static let advancedExpandedDefaultsKey = "scrollingAdvancedExpanded"
 
-    /// Between two rows. Tighter than the form kit's 17 pt: with "Advanced" open the tab
-    /// has a dozen rows under the preview and has to stay on a laptop screen.
-    static let rowSpacing: CGFloat = 12
-    /// Between the rows of the three keys, and between their title and the first of them.
-    private static let keyRowSpacing: CGFloat = 8
-    /// Between a slider and the words under its ends.
-    private static let sliderEndsSpacing: CGFloat = 1
-    private static let keyButtonWidth: CGFloat = 120
+    /// Wider than the other panes (450 pt): the sliders and the key recorders sit on the
+    /// right of their rows, and the explanations next to them still take one line.
+    static let paneWidth: CGFloat = 520
+    static var boxWidth: CGFloat {
+        return PreferencesGroupedForm.boxWidth(paneWidth: paneWidth)
+    }
+    private static let keyButtonWidth: CGFloat = 150
     private static let keyClearButtonSize: CGFloat = 20
 
     // MARK: - State
@@ -152,31 +152,47 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     // MARK: - Views (read access for tests)
 
     private(set) var previewView: ScrollPreviewView!
-    private(set) var scrollSmoothCheckBox: NSButton!
+    private(set) var smoothSwitch: NSSwitch!
     private(set) var feelControl: NSSegmentedControl!
+    /// The explanation of the Feel row: it says how the chosen preset feels.
     private(set) var feelHintLabel: NSTextField!
     private(set) var scrollSpeedSlider: NSSlider!
     private(set) var scrollSpeedValueLabel: NSTextField!
-    private(set) var scrollReverseCheckBox: NSButton!
+    private(set) var reverseSwitch: NSSwitch!
     private(set) var advancedButton: NSButton!
     private(set) var glideTimeSlider: NSSlider!
     private(set) var glideTimeValueLabel: NSTextField!
     private(set) var smallestStepSlider: NSSlider!
     private(set) var smallestStepValueLabel: NSTextField!
-    private(set) var trackpadEventsCheckBox: NSButton!
+    private(set) var trackpadEventsSwitch: NSSwitch!
     /// One recorder button and one "clear" button per `ScrollHoldKey`, in `allCases` order.
     private(set) var keyBindButtons: [NSButton] = []
     private(set) var keyClearButtons: [NSButton] = []
     private(set) var resetToDefaultsButton: NSButton!
-    /// Everything "Advanced" shows and hides.
+
+    /// The rows of the first box: smooth scrolling, feel, speed, direction.
+    private(set) var smoothRow: PreferencesSwitchRow!
+    private(set) var feelRow: PreferencesGroupRow!
+    private(set) var speedRow: PreferencesSliderRow!
+    private(set) var reverseRow: PreferencesSwitchRow!
+    /// The second box: "Advanced" and what it opens in that box.
+    private(set) var advancedRow: PreferencesDisclosureRow!
+    private(set) var glideTimeRow: PreferencesSliderRow!
+    private(set) var smallestStepRow: PreferencesSliderRow!
+    private(set) var trackpadEventsRow: PreferencesSwitchRow!
+    /// "While you hold a key": its title and box, and the row of each key.
+    private(set) var keysSection: PreferencesGroupSection!
+    private(set) var keyRows: [PreferencesGroupRow] = []
+    /// The boxes (as sections), top to bottom.
+    private(set) var sections: [PreferencesGroupSection] = []
+    /// Everything "Advanced" shows and hides: three rows of its box and the keys' section.
     private(set) var advancedRows: [NSView] = []
 
     // MARK: - Lifecycle
 
     override func loadView() {
         let root = PreferencesForm.makeBackground()
-        let content = PreferencesForm.installContentStack(in: root)
-        content.spacing = Self.rowSpacing
+        let content = PreferencesGroupedForm.installContentStack(in: root, paneWidth: Self.paneWidth)
         // The pane wants to be exactly as tall as its rows, more strongly than a window or
         // popover wants to keep its size: what hosts it shrinks again when "Advanced" closes.
         content.setHuggingPriority(.defaultHigh, for: .vertical)
@@ -187,30 +203,33 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         preview.heightAnchor.constraint(equalToConstant: ScrollPreviewView.preferredHeight).isActive = true
         previewView = preview
 
-        let smoothRow = makeSmoothRow()
-        let feelRow = makeFeelRow()
-        let speedRow = makeSpeedRow()
-        let reverseRow = makeReverseRow()
-        let footerRow = makeFooterRow()
-        let glideTimeRow = makeGlideTimeRow()
-        let smallestStepRow = makeSmallestStepRow()
-        let trackpadEventsRow = makeTrackpadEventsRow()
-        let keysHeader = makeKeysHeader()
-        let keyRows = ScrollHoldKey.allCases.map { makeKeyRow($0) }
+        let width = Self.boxWidth
+        let basic = PreferencesGroupSection(width: width, rows: [
+            makeSmoothRow(), makeFeelRow(), makeSpeedRow(), makeReverseRow(),
+        ])
+        let advanced = PreferencesGroupSection(width: width, rows: [
+            makeAdvancedRow(), makeGlideTimeRow(), makeSmallestStepRow(), makeTrackpadEventsRow(),
+        ])
+        keyRows = ScrollHoldKey.allCases.map { makeKeyRow($0) }
+        let keys = PreferencesGroupSection(title: text("scrolling-keys-header"), width: width, rows: keyRows)
+        keysSection = keys
+        sections = [basic, advanced, keys]
 
-        advancedRows = [glideTimeRow, smallestStepRow, trackpadEventsRow, keysHeader] + keyRows
+        let reset = PreferencesGroupedForm.makePushButton(
+            title: text("scrolling-reset"),
+            target: self,
+            action: #selector(resetToDefaultClick(_:))
+        )
+        reset.identifier = Identifier.reset
+        resetToDefaultsButton = reset
 
-        var rows: [NSView] = [
-            preview, smoothRow, feelRow, speedRow, reverseRow,
-            PreferencesForm.makeSeparator(), footerRow,
-        ]
-        rows.append(contentsOf: advancedRows)
-        PreferencesForm.add(rows, to: content)
-        PreferencesForm.applySeparatorSpacing(in: content)
-        content.setCustomSpacing(Self.keyRowSpacing, after: keysHeader)
-        for row in keyRows.dropLast() {
-            content.setCustomSpacing(Self.keyRowSpacing, after: row)
-        }
+        advancedRows = [glideTimeRow, smallestStepRow, trackpadEventsRow, keys]
+        advancedRow.revealedViews = advancedRows
+
+        PreferencesGroupedForm.add(
+            [preview, basic, advanced, keys, PreferencesGroupFooter(trailing: [reset])],
+            to: content
+        )
 
         keyRecorder.delegate = self
         view = root
@@ -259,26 +278,27 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         // The preview belongs to the tab; the per-app popover stays small.
         previewView.isHidden = currentTargetApplication != nil
 
-        scrollSmoothCheckBox.state = scroll.smooth ? .on : .off
-        scrollSmoothCheckBox.isEnabled = editable
+        smoothRow.isOn = scroll.smooth
+        smoothRow.isEnabled = editable
 
         let feel = ScrollFeel.matching(duration: scroll.duration)
         feelControl.selectedSegment = feel?.rawValue ?? -1
-        feelControl.isEnabled = smoothEditable
-        feelHintLabel.stringValue = ScrollFeel.hint(for: feel)
+        feelRow.explanation = ScrollFeel.hint(for: feel)
+        feelRow.isEnabled = smoothEditable
 
-        sync(scrollSpeedSlider, scrollSpeedValueLabel, .speed, value: scroll.speed, enabled: smoothEditable, isTracking: isTracking)
+        sync(speedRow, .speed, value: scroll.speed, enabled: smoothEditable, isTracking: isTracking)
 
-        scrollReverseCheckBox.state = scroll.reversesWheel ? .on : .off
-        scrollReverseCheckBox.isEnabled = editable
+        reverseRow.isOn = scroll.reversesWheel
+        reverseRow.isEnabled = editable
 
-        sync(glideTimeSlider, glideTimeValueLabel, .glideTime, value: scroll.duration, enabled: smoothEditable, isTracking: isTracking)
-        sync(smallestStepSlider, smallestStepValueLabel, .smallestStep, value: scroll.step, enabled: smoothEditable, isTracking: isTracking)
+        sync(glideTimeRow, .glideTime, value: scroll.duration, enabled: smoothEditable, isTracking: isTracking)
+        sync(smallestStepRow, .smallestStep, value: scroll.step, enabled: smoothEditable, isTracking: isTracking)
 
-        trackpadEventsCheckBox.state = scroll.smoothSimTrackpad ? .on : .off
-        trackpadEventsCheckBox.isEnabled = smoothEditable
+        trackpadEventsRow.isOn = scroll.smoothSimTrackpad
+        trackpadEventsRow.isEnabled = smoothEditable
 
         for key in ScrollHoldKey.allCases {
+            keyRows[key.rawValue].isEnabled = editable
             updateHotkeyButton(
                 keyBindButtons[key.rawValue],
                 delButton: keyClearButtons[key.rawValue],
@@ -291,21 +311,19 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         updatePreviewScene()
     }
 
-    /// A slider and the value next to it. A refresh arriving mid-drag must not move the knob.
+    /// A slider row and its value. A refresh arriving mid-drag must not move the knob.
     private func sync(
-        _ slider: NSSlider,
-        _ valueLabel: NSTextField,
+        _ row: PreferencesSliderRow,
         _ setting: ScrollSliderSetting,
         value: Double,
         enabled: Bool,
         isTracking: Bool
     ) {
         if !isTracking {
-            slider.doubleValue = value
+            row.slider.doubleValue = value
         }
-        valueLabel.stringValue = setting.text(value)
-        slider.isEnabled = enabled
-        valueLabel.textColor = enabled ? .labelColor : .tertiaryLabelColor
+        row.valueText = setting.text(value)
+        row.isEnabled = enabled
     }
 
     /// True while the options differ from the defaults (an app that inherits has none of its own).
@@ -386,35 +404,11 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     }
 
     private func applyAdvancedExpanded() {
-        for row in advancedRows {
-            row.isHidden = !isAdvancedExpanded
-        }
-        advancedButton.image = Self.disclosureImage(expanded: isAdvancedExpanded)
-        advancedButton.setAccessibilityExpanded(isAdvancedExpanded)
+        advancedRow.isExpanded = isAdvancedExpanded
         if !isAdvancedExpanded {
             hoveredKey = nil
             focusedKey = nil
         }
-    }
-
-    /// The chevron of "Advanced". Both directions are drawn on one canvas, so the title
-    /// next to it does not move when the row opens.
-    private static func disclosureImage(expanded: Bool) -> NSImage? {
-        let configuration = NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
-        guard let symbol = NSImage(systemSymbolName: expanded ? "chevron.down" : "chevron.right", accessibilityDescription: nil)?
-            .withSymbolConfiguration(configuration) else { return nil }
-        let image = NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
-            let size = symbol.size
-            symbol.draw(in: NSRect(
-                x: rect.midX - size.width / 2,
-                y: rect.midY - size.height / 2,
-                width: size.width,
-                height: size.height
-            ))
-            return true
-        }
-        image.isTemplate = true
-        return image
     }
 
     private func contentHeightDidChange() {
@@ -427,7 +421,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
 
     // MARK: - Actions
 
-    @objc func scrollSmoothClick(_ sender: NSButton) {
+    @objc func scrollSmoothClick(_ sender: NSSwitch) {
         getTargetApplicationScrollOptions().smooth = sender.state == .on
         syncViewWithOptions()
     }
@@ -447,7 +441,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         syncViewWithOptions()
     }
 
-    @objc func scrollReverseClick(_ sender: NSButton) {
+    @objc func scrollReverseClick(_ sender: NSSwitch) {
         getTargetApplicationScrollOptions().reversesWheel = sender.state == .on
         syncViewWithOptions()
     }
@@ -479,7 +473,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     }
 
     /// A plain switch: it leaves Duration alone.
-    @objc func trackpadEventsClick(_ sender: NSButton) {
+    @objc func trackpadEventsClick(_ sender: NSSwitch) {
         getTargetApplicationScrollOptions().smoothSimTrackpad = sender.state == .on
         syncViewWithOptions()
     }
@@ -517,100 +511,22 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         return NSLocalizedString(key, comment: "")
     }
 
-    /// A checkbox with one line of plain explanation under it.
-    private func makeCheckboxRow(
-        labelKey: String,
-        titleKey: String,
-        hintKey: String,
-        identifier: NSUserInterfaceItemIdentifier,
-        action: Selector
-    ) -> (row: NSView, checkbox: NSButton) {
-        let checkbox = PreferencesForm.makeCheckbox(title: text(titleKey), target: self, action: action)
-        checkbox.identifier = identifier
-        let hint = PreferencesForm.makeHint(text(hintKey))
-        let (row, label) = PreferencesForm.makeRow(
-            title: text(labelKey),
-            column: PreferencesForm.makeColumn([checkbox, hint])
-        )
-        label.firstBaselineAnchor.constraint(equalTo: checkbox.firstBaselineAnchor).isActive = true
-        return (row, checkbox)
-    }
-
-    /// A slider with its value to the right and one line of plain explanation under it.
-    /// `endsKeys` puts a word under each end of the slider.
-    private func makeSliderRow(
-        labelKey: String,
-        hintKey: String,
-        setting: ScrollSliderSetting,
-        endsKeys: (low: String, high: String)? = nil,
-        identifier: NSUserInterfaceItemIdentifier,
-        action: Selector
-    ) -> (row: NSView, slider: NSSlider, valueLabel: NSTextField) {
-        let line = PreferencesForm.makeSliderLine(
-            range: setting.range,
-            widestValue: setting.text(setting.range.upperBound),
+    private func makeSmoothRow() -> PreferencesGroupRow {
+        let row = PreferencesSwitchRow(
+            title: text("scrolling-smooth"),
+            explanation: text("scrolling-smooth-hint"),
             target: self,
-            action: action,
-            accessibilityLabel: text(labelKey)
-        )
-        line.slider.identifier = identifier
-        let hint = PreferencesForm.makeHint(text(hintKey))
-
-        var views: [NSView] = [line.line]
-        var ends: NSView?
-        if let endsKeys {
-            let view = makeSliderEnds(low: text(endsKeys.low), high: text(endsKeys.high))
-            views.append(view)
-            ends = view
-        }
-        views.append(hint)
-        let column = PreferencesForm.makeColumn(views)
-        if ends != nil {
-            column.setCustomSpacing(Self.sliderEndsSpacing, after: line.line)
-        }
-
-        let (row, label) = PreferencesForm.makeRow(title: text(labelKey), column: column)
-        label.centerYAnchor.constraint(equalTo: line.slider.centerYAnchor).isActive = true
-        return (row, line.slider, line.valueLabel)
-    }
-
-    /// A word under each end of a slider, as in System Settings ("Slow" and "Fast").
-    private func makeSliderEnds(low: String, high: String) -> NSView {
-        let ends = NSView()
-        ends.translatesAutoresizingMaskIntoConstraints = false
-        let lowLabel = PreferencesForm.makeHint(low)
-        let highLabel = PreferencesForm.makeHint(high)
-        highLabel.alignment = .right
-        for label in [lowLabel, highLabel] {
-            label.translatesAutoresizingMaskIntoConstraints = false
-            ends.addSubview(label)
-        }
-        NSLayoutConstraint.activate([
-            ends.widthAnchor.constraint(equalToConstant: PreferencesForm.sliderWidth),
-            lowLabel.leadingAnchor.constraint(equalTo: ends.leadingAnchor),
-            lowLabel.topAnchor.constraint(equalTo: ends.topAnchor),
-            lowLabel.bottomAnchor.constraint(equalTo: ends.bottomAnchor),
-            highLabel.trailingAnchor.constraint(equalTo: ends.trailingAnchor),
-            highLabel.firstBaselineAnchor.constraint(equalTo: lowLabel.firstBaselineAnchor),
-            highLabel.leadingAnchor.constraint(greaterThanOrEqualTo: lowLabel.trailingAnchor, constant: 8),
-        ])
-        return ends
-    }
-
-    private func makeSmoothRow() -> NSView {
-        let made = makeCheckboxRow(
-            labelKey: "scrolling-wheel-label",
-            titleKey: "scrolling-smooth",
-            hintKey: "scrolling-smooth-hint",
-            identifier: Identifier.smooth,
             action: #selector(scrollSmoothClick(_:))
         )
-        scrollSmoothCheckBox = made.checkbox
-        return made.row
+        row.toggle.identifier = Identifier.smooth
+        smoothRow = row
+        smoothSwitch = row.toggle
+        return row
     }
 
-    /// The five presets in one control, and under it the line that says how the choice feels.
-    private func makeFeelRow() -> NSView {
+    /// The title and the line that says how the chosen preset feels, the five presets
+    /// under them across the box.
+    private func makeFeelRow() -> PreferencesGroupRow {
         let control = NSSegmentedControl(
             labels: ScrollFeel.allCases.map(\.localizedName),
             trackingMode: .selectOne,
@@ -618,137 +534,130 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
             action: #selector(feelChanged(_:))
         )
         control.identifier = Identifier.feel
-        control.controlSize = .small
-        control.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         control.segmentDistribution = .fillEqually
-        control.setAccessibilityLabel(text("scrolling-feel-label"))
-        control.translatesAutoresizingMaskIntoConstraints = false
-        control.widthAnchor.constraint(equalToConstant: PreferencesForm.controlWidth).isActive = true
         feelControl = control
 
-        let hint = PreferencesForm.makeHint("")
-        hint.identifier = Identifier.feelHint
-        // Room for the longest line, so picking another preset never changes the height.
-        let lines = ScrollFeel.allCases.map(\.localizedHint) + [ScrollFeel.customHint]
-        let tallest = lines.map { PreferencesForm.makeHint($0).fittingSize.height }.max() ?? 0
-        hint.heightAnchor.constraint(greaterThanOrEqualToConstant: tallest).isActive = true
-        feelHintLabel = hint
-
-        let (row, label) = PreferencesForm.makeRow(
+        let row = PreferencesGroupRow(
             title: text("scrolling-feel-label"),
-            column: PreferencesForm.makeColumn([control, hint])
+            explanation: ScrollFeel.smooth.localizedHint,
+            accessory: control,
+            placement: .below
         )
-        label.firstBaselineAnchor.constraint(equalTo: control.firstBaselineAnchor).isActive = true
+        // Room for the longest line, so picking another preset never changes the height.
+        row.reservedExplanations = ScrollFeel.allCases.map(\.localizedHint) + [ScrollFeel.customHint]
+        row.explanationLabel.identifier = Identifier.feelHint
+        feelRow = row
+        feelHintLabel = row.explanationLabel
         return row
     }
 
-    private func makeSpeedRow() -> NSView {
-        let made = makeSliderRow(
-            labelKey: "scrolling-speed-label",
+    private func makeSpeedRow() -> PreferencesGroupRow {
+        let row = makeSliderRow(
+            titleKey: "scrolling-speed-label",
             hintKey: "scrolling-speed-hint",
             setting: .speed,
-            endsKeys: (low: "scrolling-speed-shorter", high: "scrolling-speed-farther"),
+            ends: (low: text("scrolling-speed-shorter"), high: text("scrolling-speed-farther")),
             identifier: Identifier.speed,
             action: #selector(scrollSpeedSliderChange(_:))
         )
-        scrollSpeedSlider = made.slider
-        scrollSpeedValueLabel = made.valueLabel
-        return made.row
-    }
-
-    private func makeReverseRow() -> NSView {
-        let made = makeCheckboxRow(
-            labelKey: "scrolling-direction-label",
-            titleKey: "scrolling-reverse",
-            hintKey: "scrolling-reverse-hint",
-            identifier: Identifier.reverse,
-            action: #selector(scrollReverseClick(_:))
-        )
-        scrollReverseCheckBox = made.checkbox
-        return made.row
-    }
-
-    /// The line under the basic settings: "Advanced" with its chevron on the left, "Reset
-    /// to defaults" on the right. Both stay where they are when "Advanced" opens below.
-    private func makeFooterRow() -> NSView {
-        let advanced = NSButton(title: text("scrolling-advanced"), target: self, action: #selector(advancedClick(_:)))
-        advanced.identifier = Identifier.advanced
-        advanced.isBordered = false
-        advanced.setButtonType(.momentaryChange)
-        advanced.font = PreferencesForm.sectionHeaderFont
-        advanced.imagePosition = .imageLeading
-        advanced.imageHugsTitle = true
-        advanced.contentTintColor = .secondaryLabelColor
-        advancedButton = advanced
-
-        let reset = NSButton(title: text("scrolling-reset"), target: self, action: #selector(resetToDefaultClick(_:)))
-        reset.identifier = Identifier.reset
-        reset.bezelStyle = .rounded
-        reset.controlSize = .small
-        reset.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
-        resetToDefaultsButton = reset
-
-        let row = NSStackView()
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.translatesAutoresizingMaskIntoConstraints = false
-        row.addView(advanced, in: .leading)
-        row.addView(reset, in: .trailing)
+        speedRow = row
+        scrollSpeedSlider = row.slider
+        scrollSpeedValueLabel = row.valueLabel
         return row
     }
 
-    private func makeGlideTimeRow() -> NSView {
-        let made = makeSliderRow(
-            labelKey: "scrolling-glide-time-label",
+    private func makeReverseRow() -> PreferencesGroupRow {
+        let row = PreferencesSwitchRow(
+            title: text("scrolling-reverse"),
+            explanation: text("scrolling-reverse-hint"),
+            target: self,
+            action: #selector(scrollReverseClick(_:))
+        )
+        row.toggle.identifier = Identifier.reverse
+        reverseRow = row
+        reverseSwitch = row.toggle
+        return row
+    }
+
+    /// "Advanced": the first row of the second box; it opens the rest of that box and the keys.
+    private func makeAdvancedRow() -> PreferencesGroupRow {
+        let row = PreferencesDisclosureRow(
+            title: text("scrolling-advanced"),
+            target: self,
+            action: #selector(advancedClick(_:))
+        )
+        row.button.identifier = Identifier.advanced
+        advancedRow = row
+        advancedButton = row.button
+        return row
+    }
+
+    private func makeGlideTimeRow() -> PreferencesGroupRow {
+        let row = makeSliderRow(
+            titleKey: "scrolling-glide-time-label",
             hintKey: "scrolling-glide-time-hint",
             setting: .glideTime,
             identifier: Identifier.glideTime,
             action: #selector(glideTimeSliderChange(_:))
         )
-        glideTimeSlider = made.slider
-        glideTimeValueLabel = made.valueLabel
-        return made.row
+        glideTimeRow = row
+        glideTimeSlider = row.slider
+        glideTimeValueLabel = row.valueLabel
+        return row
     }
 
-    private func makeSmallestStepRow() -> NSView {
-        let made = makeSliderRow(
-            labelKey: "scrolling-step-label",
+    private func makeSmallestStepRow() -> PreferencesGroupRow {
+        let row = makeSliderRow(
+            titleKey: "scrolling-step-label",
             hintKey: "scrolling-step-hint",
             setting: .smallestStep,
             identifier: Identifier.smallestStep,
             action: #selector(smallestStepSliderChange(_:))
         )
-        smallestStepSlider = made.slider
-        smallestStepValueLabel = made.valueLabel
-        return made.row
-    }
-
-    private func makeTrackpadEventsRow() -> NSView {
-        let made = makeCheckboxRow(
-            labelKey: "scrolling-apps-label",
-            titleKey: "scrolling-trackpad-events",
-            hintKey: "scrolling-trackpad-events-hint",
-            identifier: Identifier.trackpadEvents,
-            action: #selector(trackpadEventsClick(_:))
-        )
-        trackpadEventsCheckBox = made.checkbox
-        return made.row
-    }
-
-    /// "While you hold a key": the title of the three rows under it, above their buttons.
-    private func makeKeysHeader() -> NSView {
-        let header = NSTextField(labelWithString: text("scrolling-keys-header"))
-        header.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold)
-        header.textColor = .labelColor
-        header.lineBreakMode = .byTruncatingTail
-        header.translatesAutoresizingMaskIntoConstraints = false
-        let (row, _) = PreferencesForm.makeRow(title: "", column: PreferencesForm.makeColumn([header]))
+        smallestStepRow = row
+        smallestStepSlider = row.slider
+        smallestStepValueLabel = row.valueLabel
         return row
     }
 
-    /// The recorder of one key with its "clear" button, and what the key does under them.
-    /// The row tells the preview when the pointer is over it.
-    private func makeKeyRow(_ key: ScrollHoldKey) -> NSView {
+    private func makeTrackpadEventsRow() -> PreferencesGroupRow {
+        let row = PreferencesSwitchRow(
+            title: text("scrolling-trackpad-events"),
+            explanation: text("scrolling-trackpad-events-hint"),
+            target: self,
+            action: #selector(trackpadEventsClick(_:))
+        )
+        row.toggle.identifier = Identifier.trackpadEvents
+        trackpadEventsRow = row
+        trackpadEventsSwitch = row.toggle
+        return row
+    }
+
+    /// A slider with its value on the right of its row. All of the tab's sliders have the
+    /// same width, so they line up.
+    private func makeSliderRow(
+        titleKey: String,
+        hintKey: String,
+        setting: ScrollSliderSetting,
+        ends: (low: String, high: String)? = nil,
+        identifier: NSUserInterfaceItemIdentifier,
+        action: Selector
+    ) -> PreferencesSliderRow {
+        let row = PreferencesSliderRow(
+            title: text(titleKey),
+            explanation: text(hintKey),
+            range: setting.range,
+            ends: ends,
+            target: self,
+            action: action
+        )
+        row.slider.identifier = identifier
+        return row
+    }
+
+    /// The recorder of one key with its "clear" button on the right, what the key does
+    /// under its name. The row tells the preview when the pointer is over it.
+    private func makeKeyRow(_ key: ScrollHoldKey) -> PreferencesGroupRow {
         let bind = ScrollKeyRecorderButton(
             title: text("Disabled"),
             target: self,
@@ -756,13 +665,13 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         )
         bind.identifier = Identifier.key(key)
         bind.tag = key.rawValue
-        bind.bezelStyle = .rounded
+        bind.bezelStyle = .push
         bind.alignment = .left
         bind.imageScaling = .scaleProportionallyDown
         bind.lineBreakMode = .byTruncatingTail
         bind.translatesAutoresizingMaskIntoConstraints = false
         bind.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        bind.widthAnchor.constraint(greaterThanOrEqualToConstant: Self.keyButtonWidth).isActive = true
+        bind.widthAnchor.constraint(equalToConstant: Self.keyButtonWidth).isActive = true
         bind.onFocusChange = { [weak self] focused in
             self?.keyFocusChanged(key, focused: focused)
         }
@@ -788,17 +697,14 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         line.orientation = .horizontal
         line.alignment = .centerY
         line.spacing = 4
-        line.translatesAutoresizingMaskIntoConstraints = false
-        line.widthAnchor.constraint(lessThanOrEqualToConstant: PreferencesForm.controlWidth).isActive = true
 
-        let hint = PreferencesForm.makeHint(text(key.hintKey))
-        let (row, label) = PreferencesForm.makeRow(
+        let row = PreferencesGroupRow(
             title: text(key.labelKey),
-            column: PreferencesForm.makeColumn([line, hint])
+            explanation: text(key.hintKey),
+            accessory: line,
+            centeredOn: bind,
+            controls: [bind]
         )
-        label.centerYAnchor.constraint(equalTo: bind.centerYAnchor).isActive = true
-        bind.setAccessibilityTitleUIElement(label)
-
         row.addTrackingArea(NSTrackingArea(
             rect: .zero,
             options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],

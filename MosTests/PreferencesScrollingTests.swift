@@ -4,8 +4,9 @@
 //
 //  The Scrolling tab: every control reads and writes the right scroll option, Feel and
 //  the glide time slider never disagree, "Advanced" opens, closes and is remembered, the
-//  preview follows the options, and the same view edits one app's own options in the
-//  per-app popover. Nothing is shown on screen and no key is recorded for real.
+//  preview follows the options, the rows sit in the boxes of the grouped form, and the
+//  same view edits one app's own options in the per-app popover. Nothing is shown on
+//  screen and no key is recorded for real.
 //
 
 import XCTest
@@ -62,9 +63,9 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertTrue(control.sendAction(control.action, to: control.target), file: file, line: line)
     }
 
-    private func set(_ checkbox: NSButton, _ on: Bool) {
-        checkbox.state = on ? .on : .off
-        send(checkbox)
+    private func set(_ toggle: NSSwitch, _ on: Bool) {
+        toggle.state = on ? .on : .off
+        send(toggle)
     }
 
     private func drag(_ slider: NSSlider, to value: Double) {
@@ -95,18 +96,18 @@ final class PreferencesScrollingTests: XCTestCase {
     func testPaneIsTheStoryboardSceneBuiltInCode() {
         let controller = makeController()
         XCTAssertEqual(controller.title, "Scrolling")
-        XCTAssertEqual(controller.view.frame.width, PreferencesForm.contentWidth)
+        XCTAssertEqual(controller.view.frame.width, PreferencesScrollingViewController.paneWidth)
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
         XCTAssertTrue(controller.view is NSVisualEffectView, "the background of every pane")
         XCTAssertEqual(controller.previewView.identifier, ID.preview)
-        XCTAssertEqual(controller.scrollSmoothCheckBox.identifier, ID.smooth)
+        XCTAssertEqual(controller.smoothSwitch.identifier, ID.smooth)
         XCTAssertEqual(controller.feelControl.identifier, ID.feel)
         XCTAssertEqual(controller.scrollSpeedSlider.identifier, ID.speed)
-        XCTAssertEqual(controller.scrollReverseCheckBox.identifier, ID.reverse)
+        XCTAssertEqual(controller.reverseSwitch.identifier, ID.reverse)
         XCTAssertEqual(controller.advancedButton.identifier, ID.advanced)
         XCTAssertEqual(controller.glideTimeSlider.identifier, ID.glideTime)
         XCTAssertEqual(controller.smallestStepSlider.identifier, ID.smallestStep)
-        XCTAssertEqual(controller.trackpadEventsCheckBox.identifier, ID.trackpadEvents)
+        XCTAssertEqual(controller.trackpadEventsSwitch.identifier, ID.trackpadEvents)
         XCTAssertEqual(controller.keyBindButtons.map(\.identifier), ScrollHoldKey.allCases.map(ID.key))
         XCTAssertEqual(controller.keyClearButtons.map(\.identifier), ScrollHoldKey.allCases.map(ID.keyClear))
         XCTAssertEqual(controller.resetToDefaultsButton.identifier, ID.reset)
@@ -116,50 +117,96 @@ final class PreferencesScrollingTests: XCTestCase {
         let controller = makeController(advanced: true)
         controller.view.layoutSubtreeIfNeeded()
         var order: [NSView] = [
-            controller.previewView, controller.scrollSmoothCheckBox, controller.feelControl,
-            controller.scrollSpeedSlider, controller.scrollReverseCheckBox, controller.advancedButton,
-            controller.glideTimeSlider, controller.smallestStepSlider, controller.trackpadEventsCheckBox,
+            controller.previewView, controller.smoothSwitch, controller.feelControl,
+            controller.scrollSpeedSlider, controller.reverseSwitch, controller.advancedButton,
+            controller.glideTimeSlider, controller.smallestStepSlider, controller.trackpadEventsSwitch,
         ]
         order.append(contentsOf: controller.keyBindButtons)
+        order.append(controller.resetToDefaultsButton)
         let tops: [CGFloat] = order.map { frame(of: $0, in: controller).maxY }
         XCTAssertEqual(tops, tops.sorted(by: >), "from the top of the pane down")
         XCTAssertEqual(Set(tops).count, tops.count)
 
-        // The preview is the first thing on the tab, full width.
+        // The preview is the first thing on the tab, as wide as the boxes.
+        let margin = PreferencesGroupedForm.margin
+        let width = PreferencesScrollingViewController.paneWidth
         let preview = frame(of: controller.previewView, in: controller)
-        XCTAssertEqual(controller.view.bounds.maxY - preview.maxY, PreferencesForm.margin, accuracy: 0.5)
-        XCTAssertEqual(preview.minX, PreferencesForm.margin, accuracy: 0.5)
-        XCTAssertEqual(preview.width, PreferencesForm.contentWidth - 2 * PreferencesForm.margin, accuracy: 0.5)
+        XCTAssertEqual(controller.view.bounds.maxY - preview.maxY, margin, accuracy: 0.5)
+        XCTAssertEqual(preview.minX, margin, accuracy: 0.5)
+        XCTAssertEqual(preview.width, width - 2 * margin, accuracy: 0.5)
         XCTAssertEqual(preview.height, ScrollPreviewView.preferredHeight, accuracy: 0.5)
-        // "Reset to defaults" shares the line of "Advanced", at the right edge, and stays
-        // there whether "Advanced" is open or not.
-        let advanced = frame(of: controller.advancedButton, in: controller)
-        let reset = frame(of: controller.resetToDefaultsButton, in: controller)
-        XCTAssertEqual(advanced.minX, PreferencesForm.margin, accuracy: 1)
-        XCTAssertEqual(reset.maxX, PreferencesForm.contentWidth - PreferencesForm.margin, accuracy: 1)
-        XCTAssertEqual(reset.midY, advanced.midY, accuracy: 1.5)
-        XCTAssertGreaterThan(reset.minX, advanced.maxX)
-        let fromTop = controller.view.bounds.maxY - reset.maxY
 
+        // "Reset to defaults" is the last thing on the tab, under the boxes at the right edge.
+        let reset = frame(of: controller.resetToDefaultsButton, in: controller)
+        XCTAssertEqual(reset.maxX, width - margin, accuracy: 1)
+        XCTAssertEqual(reset.minY, margin, accuracy: 1)
+        let keysBox = frame(of: controller.keysSection.box, in: controller)
+        XCTAssertEqual(keysBox.minY - reset.maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 1)
+
+        // Closed, it moves up under the box of "Advanced".
         send(controller.advancedButton)
+        controller.view.setFrameSize(controller.view.fittingSize)
         controller.view.layoutSubtreeIfNeeded()
         let closedReset = frame(of: controller.resetToDefaultsButton, in: controller)
-        XCTAssertEqual(controller.view.bounds.maxY - closedReset.maxY, fromTop, accuracy: 0.5)
-        // Closed, that line is the last one of the tab.
-        XCTAssertLessThanOrEqual(frame(of: controller.advancedButton, in: controller).minY, PreferencesForm.margin + 4)
+        let advancedBox = frame(of: controller.sections[1].box, in: controller)
+        XCTAssertEqual(advancedBox.minY - closedReset.maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 1)
+        XCTAssertEqual(closedReset.minY, margin, accuracy: 1)
+    }
+
+    func testRowsAreGroupedInThreeBoxes() {
+        let controller = makeController(advanced: true)
+        XCTAssertEqual(controller.sections.count, 3)
+        let boxes = controller.sections.map(\.box)
+        XCTAssertEqual(boxes[0].rows, [controller.smoothRow, controller.feelRow, controller.speedRow, controller.reverseRow])
+        XCTAssertEqual(boxes[1].rows, [
+            controller.advancedRow, controller.glideTimeRow, controller.smallestStepRow, controller.trackpadEventsRow,
+        ])
+        XCTAssertEqual(boxes[2].rows, controller.keyRows)
+        XCTAssertEqual(controller.keyRows.count, ScrollHoldKey.allCases.count)
+
+        // Only the keys' box has a title above it, the small title of System Settings.
+        XCTAssertNil(controller.sections[0].titleLabel)
+        XCTAssertNil(controller.sections[1].titleLabel)
+        XCTAssertEqual(controller.keysSection.titleLabel?.stringValue, "While you hold a key")
+        XCTAssertTrue(controller.sections[2] === controller.keysSection)
+
+        // Each row is one setting, named by its title; its control is named the same.
+        XCTAssertEqual(controller.smoothRow.title, "Smooth scrolling")
+        XCTAssertEqual(controller.feelRow.title, "Feel")
+        XCTAssertEqual(controller.speedRow.title, "Speed")
+        XCTAssertEqual(controller.reverseRow.title, "Reverse wheel direction")
+        XCTAssertEqual(controller.glideTimeRow.title, "Glide time")
+        XCTAssertEqual(controller.smallestStepRow.title, "Smallest step")
+        XCTAssertEqual(controller.trackpadEventsRow.title, "Trackpad-style events")
+        XCTAssertEqual(controller.keyRows.map(\.title), ["Scroll faster", "Scroll sideways", "Pause smoothing"])
+        XCTAssertEqual(controller.smoothSwitch.accessibilityLabel(), "Smooth scrolling")
+        XCTAssertEqual(controller.reverseSwitch.accessibilityLabel(), "Reverse wheel direction")
+        XCTAssertEqual(controller.trackpadEventsSwitch.accessibilityLabel(), "Trackpad-style events")
+        XCTAssertEqual(controller.glideTimeSlider.accessibilityLabel(), "Glide time")
+        XCTAssertEqual(controller.smoothSwitch.accessibilityHelp(), text("scrolling-smooth-hint"))
+        for (index, button) in controller.keyBindButtons.enumerated() {
+            XCTAssertTrue(button.accessibilityTitleUIElement() as? NSTextField === controller.keyRows[index].titleLabel)
+            XCTAssertEqual(button.accessibilityHelp(), text(ScrollHoldKey.allCases[index].hintKey))
+        }
+
+        // Feel puts its five presets under its text; the others keep the control on the right.
+        XCTAssertEqual(controller.feelRow.placement, .below)
+        XCTAssertTrue(controller.feelRow.accessory === controller.feelControl)
+        XCTAssertTrue(controller.feelRow.explanationLabel === controller.feelHintLabel)
+        XCTAssertEqual(controller.speedRow.lowEndLabel?.stringValue, "Shorter")
+        XCTAssertEqual(controller.speedRow.highEndLabel?.stringValue, "Farther")
+        XCTAssertNil(controller.glideTimeRow.lowEndLabel)
     }
 
     func testTextsOfTheTab() {
         let controller = makeController(advanced: true)
-        XCTAssertEqual(controller.scrollSmoothCheckBox.title, "Smooth scrolling")
-        XCTAssertEqual(controller.scrollReverseCheckBox.title, "Reverse wheel direction")
         XCTAssertEqual(controller.advancedButton.title, "Advanced")
-        XCTAssertEqual(controller.trackpadEventsCheckBox.title, "Trackpad-style events")
         XCTAssertEqual(controller.resetToDefaultsButton.title, "Reset to defaults")
 
         let shown = allSubviews(of: controller.view).compactMap { ($0 as? NSTextField)?.stringValue }
         let expected = [
-            "Feel", "Speed", "Shorter", "Farther", "Glide time", "Smallest step", "While you hold a key",
+            "Smooth scrolling", "Feel", "Speed", "Shorter", "Farther", "Reverse wheel direction",
+            "Glide time", "Smallest step", "Trackpad-style events", "While you hold a key",
             "Scroll faster", "Scroll sideways", "Pause smoothing",
             text("scrolling-smooth-hint"), text("scrolling-speed-hint"), text("scrolling-reverse-hint"),
             text("scrolling-glide-time-hint"), text("scrolling-step-hint"), text("scrolling-trackpad-events-hint"),
@@ -168,50 +215,77 @@ final class PreferencesScrollingTests: XCTestCase {
         for line in expected {
             XCTAssertTrue(shown.contains(line), "\"\(line)\" is not on the tab")
         }
-        // Nothing of the old tab is left.
-        for old in ["Step", "Duration", "Dash Key", "Toggle Key", "Block Key", "Presets & Fast Scrolling…", "Preset"] {
-            XCTAssertFalse(shown.contains(old), "\"\(old)\" is still on the tab")
+        // Nothing of the old tabs is left: no label column, no checkboxes.
+        let old = [
+            "Step", "Duration", "Dash Key", "Toggle Key", "Block Key", "Presets & Fast Scrolling…", "Preset",
+            "Mouse wheel", "Direction", "Apps",
+        ]
+        for line in old {
+            XCTAssertFalse(shown.contains(line), "\"\(line)\" is still on the tab")
         }
         XCTAssertFalse(allSubviews(of: controller.view).contains { $0 is NSStepper || $0 is NSPopUpButton })
+        // The checkboxes became switches: the only buttons left are these.
+        let buttons = Set(allSubviews(of: controller.view).compactMap { $0 as? NSButton }.map(ObjectIdentifier.init))
+        let expectedButtons = [controller.advancedButton!, controller.resetToDefaultsButton!]
+            + controller.keyBindButtons + controller.keyClearButtons
+        XCTAssertEqual(buttons, Set(expectedButtons.map(ObjectIdentifier.init)))
+        XCTAssertEqual(allSubviews(of: controller.view).compactMap { $0 as? NSSwitch }.count, 3)
     }
 
     // MARK: - Smooth scrolling
 
-    func testSmoothCheckboxWritesSmooth() {
+    func testSmoothSwitchWritesSmooth() {
         let controller = makeController()
-        XCTAssertEqual(controller.scrollSmoothCheckBox.state, .on, "on by default")
+        XCTAssertEqual(controller.smoothSwitch.state, .on, "on by default")
 
-        set(controller.scrollSmoothCheckBox, false)
+        set(controller.smoothSwitch, false)
         XCTAssertFalse(Options.shared.scroll.smooth)
-        set(controller.scrollSmoothCheckBox, true)
+        set(controller.smoothSwitch, true)
         XCTAssertTrue(Options.shared.scroll.smooth)
 
         Options.shared.scroll.smooth = false
         controller.syncViewWithOptions()
-        XCTAssertEqual(controller.scrollSmoothCheckBox.state, .off)
+        XCTAssertEqual(controller.smoothSwitch.state, .off)
     }
 
     func testWithoutSmoothingOnlyDirectionAndKeysStayEditable() {
         let controller = makeController(advanced: true)
         let smoothOnly: [NSControl] = [
             controller.feelControl, controller.scrollSpeedSlider, controller.glideTimeSlider,
-            controller.smallestStepSlider, controller.trackpadEventsCheckBox,
+            controller.smallestStepSlider, controller.trackpadEventsSwitch,
         ]
         XCTAssertTrue(smoothOnly.allSatisfy(\.isEnabled))
 
-        set(controller.scrollSmoothCheckBox, false)
+        set(controller.smoothSwitch, false)
 
         XCTAssertTrue(smoothOnly.allSatisfy { !$0.isEnabled })
-        XCTAssertTrue(controller.scrollSmoothCheckBox.isEnabled)
-        XCTAssertTrue(controller.scrollReverseCheckBox.isEnabled)
+        // The rows dim with them: title, explanation and the words around the slider.
+        let dimmed: [PreferencesGroupRow] = [
+            controller.feelRow, controller.speedRow, controller.glideTimeRow,
+            controller.smallestStepRow, controller.trackpadEventsRow,
+        ]
+        for row in dimmed {
+            XCTAssertFalse(row.isEnabled, row.title)
+            XCTAssertEqual(row.titleLabel.textColor, .tertiaryLabelColor, row.title)
+            XCTAssertEqual(row.explanationLabel.textColor, .tertiaryLabelColor, row.title)
+        }
+        XCTAssertEqual(controller.scrollSpeedValueLabel.textColor, .tertiaryLabelColor)
+        XCTAssertEqual(controller.speedRow.lowEndLabel?.textColor, .tertiaryLabelColor)
+        XCTAssertTrue(controller.smoothRow.isEnabled)
+        XCTAssertEqual(controller.reverseRow.titleLabel.textColor, .labelColor)
+        XCTAssertTrue(controller.smoothSwitch.isEnabled)
+        XCTAssertTrue(controller.reverseSwitch.isEnabled)
         XCTAssertTrue(controller.keyBindButtons.allSatisfy(\.isEnabled))
         XCTAssertTrue(controller.keyClearButtons.allSatisfy(\.isEnabled))
         XCTAssertTrue(controller.advancedButton.isEnabled)
         // What was chosen still shows.
         XCTAssertEqual(controller.feelControl.selectedSegment, ScrollFeel.smooth.rawValue)
 
-        set(controller.scrollSmoothCheckBox, true)
+        set(controller.smoothSwitch, true)
         XCTAssertTrue(smoothOnly.allSatisfy(\.isEnabled))
+        XCTAssertTrue(dimmed.allSatisfy(\.isEnabled))
+        XCTAssertEqual(controller.speedRow.titleLabel.textColor, .labelColor)
+        XCTAssertEqual(controller.scrollSpeedValueLabel.textColor, .labelColor)
     }
 
     // MARK: - Feel and glide time
@@ -335,44 +409,44 @@ final class PreferencesScrollingTests: XCTestCase {
 
     // MARK: - Direction
 
-    func testReverseCheckboxTurnsEverythingOnOrTheMainFlagOff() {
+    func testReverseSwitchTurnsEverythingOnOrTheMainFlagOff() {
         let scroll = Options.shared.scroll
         scroll.reverse = false
         scroll.reverseVertical = false
         scroll.reverseHorizontal = false
         let controller = makeController()
-        XCTAssertEqual(controller.scrollReverseCheckBox.state, .off)
+        XCTAssertEqual(controller.reverseSwitch.state, .off)
 
-        set(controller.scrollReverseCheckBox, true)
+        set(controller.reverseSwitch, true)
         XCTAssertTrue(scroll.reverse)
         XCTAssertTrue(scroll.reverseVertical)
         XCTAssertTrue(scroll.reverseHorizontal)
-        XCTAssertEqual(controller.scrollReverseCheckBox.state, .on)
+        XCTAssertEqual(controller.reverseSwitch.state, .on)
 
-        set(controller.scrollReverseCheckBox, false)
+        set(controller.reverseSwitch, false)
         XCTAssertFalse(scroll.reverse)
         XCTAssertTrue(scroll.reverseVertical, "off only clears the main flag")
         XCTAssertTrue(scroll.reverseHorizontal)
-        XCTAssertEqual(controller.scrollReverseCheckBox.state, .off)
+        XCTAssertEqual(controller.reverseSwitch.state, .off)
     }
 
     // MARK: - Trackpad-style events
 
     func testTrackpadStyleEventsIsAPlainSwitchThatLeavesDurationAlone() {
         let controller = makeController(advanced: true)
-        XCTAssertEqual(controller.trackpadEventsCheckBox.state, .off, "off by default")
+        XCTAssertEqual(controller.trackpadEventsSwitch.state, .off, "off by default")
 
         let durations: [Double] = ScrollFeel.allCases.map(\.duration) + [1.0, 2.6, 5.0]
         for duration in durations {
             Options.shared.scroll.duration = duration
             controller.syncViewWithOptions()
 
-            set(controller.trackpadEventsCheckBox, true)
+            set(controller.trackpadEventsSwitch, true)
             XCTAssertTrue(Options.shared.scroll.smoothSimTrackpad)
             XCTAssertEqual(Options.shared.scroll.duration, duration, "on at \(duration)")
             XCTAssertEqual(controller.glideTimeSlider.doubleValue, duration, accuracy: 1e-9)
 
-            set(controller.trackpadEventsCheckBox, false)
+            set(controller.trackpadEventsSwitch, false)
             XCTAssertFalse(Options.shared.scroll.smoothSimTrackpad)
             XCTAssertEqual(Options.shared.scroll.duration, duration, "off at \(duration)")
         }
@@ -450,13 +524,17 @@ final class PreferencesScrollingTests: XCTestCase {
         _ = controller.view
 
         XCTAssertFalse(controller.isAdvancedExpanded)
-        XCTAssertEqual(controller.advancedRows.count, 7, "two sliders, the checkbox, the keys' title and three keys")
+        XCTAssertEqual(controller.advancedRows.count, 4, "two sliders, the switch and the keys' box")
+        XCTAssertTrue(controller.advancedRows.last === controller.keysSection)
         XCTAssertTrue(controller.advancedRows.allSatisfy(\.isHidden))
+        // The box of "Advanced" shows only its header row, without hairlines.
+        XCTAssertEqual(controller.sections[1].box.visibleRows, [controller.advancedRow])
+        XCTAssertEqual(controller.sections[1].box.separatorRects, [])
         // What is always there.
         let alwaysThere: [NSView] = [
-            controller.previewView, controller.scrollSmoothCheckBox, controller.feelControl,
-            controller.scrollSpeedSlider, controller.scrollReverseCheckBox, controller.advancedButton,
-            controller.resetToDefaultsButton,
+            controller.previewView, controller.smoothSwitch, controller.feelControl,
+            controller.scrollSpeedSlider, controller.reverseSwitch, controller.advancedButton,
+            controller.resetToDefaultsButton, controller.sections[0], controller.sections[1],
         ]
         for view in alwaysThere {
             XCTAssertFalse(view.isHiddenOrHasHiddenAncestor)
@@ -473,6 +551,8 @@ final class PreferencesScrollingTests: XCTestCase {
 
         XCTAssertTrue(controller.isAdvancedExpanded)
         XCTAssertTrue(controller.advancedRows.allSatisfy { !$0.isHidden })
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(controller.sections[1].box.separatorRects.count, 3, "a hairline above each opened row")
         XCTAssertTrue(uiDefaults.bool(forKey: key))
         XCTAssertTrue(controller.advancedButton.isAccessibilityExpanded())
         let openHeight = controller.view.fittingSize.height
@@ -540,8 +620,8 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(controller.feelControl.selectedSegment, ScrollFeel.smooth.rawValue)
         XCTAssertEqual(controller.scrollSpeedSlider.doubleValue, 6.3, accuracy: 1e-9)
         XCTAssertEqual(controller.smallestStepSlider.doubleValue, 33.6, accuracy: 1e-9)
-        XCTAssertEqual(controller.trackpadEventsCheckBox.state, .off)
-        XCTAssertEqual(controller.scrollReverseCheckBox.state, .on)
+        XCTAssertEqual(controller.trackpadEventsSwitch.state, .off)
+        XCTAssertEqual(controller.reverseSwitch.state, .on)
         XCTAssertEqual(controller.keyBindButtons.map(\.title), ["⌥ Option", "⇧ Shift", "⌘ Command"])
         XCTAssertFalse(controller.resetToDefaultsButton.isEnabled)
         XCTAssertTrue(controller.isAdvancedExpanded, "reset closes nothing")
@@ -563,8 +643,8 @@ final class PreferencesScrollingTests: XCTestCase {
 
         choose(.float, in: controller)
         drag(controller.scrollSpeedSlider, to: 8.5)
-        set(controller.scrollReverseCheckBox, false)
-        set(controller.scrollSmoothCheckBox, false)
+        set(controller.reverseSwitch, false)
+        set(controller.smoothSwitch, false)
 
         expected.smoothing = false
         expected.duration = 4.6
@@ -632,8 +712,7 @@ final class PreferencesScrollingTests: XCTestCase {
 
     func testKeyRowsReportThePointerThroughTrackingAreas() {
         let controller = makeController(advanced: true)
-        let rows = controller.advancedRows.suffix(ScrollHoldKey.allCases.count)
-        for row in rows {
+        for row in controller.keyRows {
             XCTAssertEqual(row.trackingAreas.count, 1)
             let area = row.trackingAreas[0]
             XCTAssertTrue(area.owner === controller)
@@ -657,13 +736,13 @@ final class PreferencesScrollingTests: XCTestCase {
         let application = makeApplication(inherit: false)
         let controller = makeController(target: application, advanced: true)
 
-        set(controller.scrollSmoothCheckBox, false)
-        set(controller.scrollSmoothCheckBox, true)
+        set(controller.smoothSwitch, false)
+        set(controller.smoothSwitch, true)
         choose(.direct, in: controller)
         drag(controller.scrollSpeedSlider, to: 4.2)
-        set(controller.scrollReverseCheckBox, false)
+        set(controller.reverseSwitch, false)
         drag(controller.smallestStepSlider, to: 20)
-        set(controller.trackpadEventsCheckBox, true)
+        set(controller.trackpadEventsSwitch, true)
         send(controller.keyClearButtons[ScrollHoldKey.faster.rawValue])
 
         XCTAssertEqual(application.scroll.duration, 2.0)
@@ -691,11 +770,11 @@ final class PreferencesScrollingTests: XCTestCase {
 
         XCTAssertEqual(controller.scrollSpeedSlider.doubleValue, 8.5, accuracy: 1e-9)
         XCTAssertEqual(controller.feelControl.selectedSegment, ScrollFeel.glide.rawValue)
-        XCTAssertEqual(controller.trackpadEventsCheckBox.state, .on)
+        XCTAssertEqual(controller.trackpadEventsSwitch.state, .on)
         var controls: [NSControl] = [
-            controller.scrollSmoothCheckBox, controller.feelControl, controller.scrollSpeedSlider,
-            controller.scrollReverseCheckBox, controller.glideTimeSlider, controller.smallestStepSlider,
-            controller.trackpadEventsCheckBox, controller.resetToDefaultsButton,
+            controller.smoothSwitch, controller.feelControl, controller.scrollSpeedSlider,
+            controller.reverseSwitch, controller.glideTimeSlider, controller.smallestStepSlider,
+            controller.trackpadEventsSwitch, controller.resetToDefaultsButton,
         ]
         controls.append(contentsOf: controller.keyBindButtons)
         controls.append(contentsOf: controller.keyClearButtons)
@@ -708,7 +787,7 @@ final class PreferencesScrollingTests: XCTestCase {
         controller.syncViewWithOptions()
         XCTAssertEqual(controller.scrollSpeedSlider.doubleValue, 1.5, accuracy: 1e-9)
         XCTAssertEqual(controller.feelControl.selectedSegment, ScrollFeel.smooth.rawValue)
-        XCTAssertTrue(controller.scrollSmoothCheckBox.isEnabled)
+        XCTAssertTrue(controller.smoothSwitch.isEnabled)
         XCTAssertTrue(controller.scrollSpeedSlider.isEnabled)
         XCTAssertTrue(controller.keyBindButtons.allSatisfy(\.isEnabled))
         XCTAssertTrue(controller.hasSettingsToReset)
@@ -721,7 +800,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertTrue(perApp.previewView.isHidden)
         XCTAssertEqual(
             global.view.fittingSize.height - perApp.view.fittingSize.height,
-            ScrollPreviewView.preferredHeight + PreferencesScrollingViewController.rowSpacing,
+            ScrollPreviewView.preferredHeight + PreferencesGroupedForm.boxSpacing,
             accuracy: 0.5,
             "shorter by the preview and the space under it"
         )
@@ -741,18 +820,24 @@ final class PreferencesScrollingTests: XCTestCase {
         tab.uiStateDefaults = uiDefaults
 
         XCTAssertTrue(tab.currentTargetApplication === application)
-        XCTAssertEqual(container.preferredContentSize.width, PreferencesForm.contentWidth, "sized before it shows")
+        XCTAssertEqual(container.preferredContentSize.width, PreferencesScrollingViewController.paneWidth, "sized before it shows")
         XCTAssertEqual(container.preferredContentSize.height, tab.view.fittingSize.height + 58, accuracy: 0.5)
         XCTAssertEqual(tab.scrollSpeedSlider.doubleValue, 4.2, accuracy: 1e-9)
         XCTAssertTrue(tab.previewView.isHidden)
         XCTAssertEqual(container.inheritGlobalSettingCheckBox.state, .off)
+        // The app's header is a box like the settings' boxes.
+        let header = try XCTUnwrap(container.view.subviews.compactMap { $0 as? NSBox }.first)
+        XCTAssertEqual(header.boxType, .custom)
+        XCTAssertEqual(header.cornerRadius, PreferencesGroupedForm.boxCornerRadius)
+        XCTAssertEqual(header.borderWidth, 0)
+        XCTAssertTrue(header.fillColor === PreferencesGroupedForm.boxFillColor)
 
         // The popover is as tall as the app's header and the settings under it, and
         // follows when "Advanced" opens and closes.
         tab.setAdvancedExpanded(false)
         container.fitToContent()
         let closed = container.preferredContentSize
-        XCTAssertEqual(closed.width, PreferencesForm.contentWidth)
+        XCTAssertEqual(closed.width, PreferencesScrollingViewController.paneWidth)
         XCTAssertEqual(closed.height, tab.view.fittingSize.height + 58, accuracy: 0.5)
 
         tab.setAdvancedExpanded(true)
@@ -773,41 +858,63 @@ final class PreferencesScrollingTests: XCTestCase {
 
     // MARK: - Layout
 
-    func testRowsSitOnTheFormGrid() {
+    func testRowsSitInTheirBoxes() {
         let controller = makeController(advanced: true)
         controller.view.layoutSubtreeIfNeeded()
-        var controls: [NSView] = [
-            controller.scrollSmoothCheckBox, controller.feelControl, controller.scrollSpeedSlider,
-            controller.scrollReverseCheckBox, controller.glideTimeSlider, controller.smallestStepSlider,
-            controller.trackpadEventsCheckBox,
-        ]
-        controls.append(contentsOf: controller.keyBindButtons)
-        for control in controls {
-            let rect = frame(of: control, in: controller)
-            XCTAssertEqual(rect.minX, 171, accuracy: 1, "\(control.identifier?.rawValue ?? "")")
-            XCTAssertLessThanOrEqual(rect.maxX, 430.5, "\(control.identifier?.rawValue ?? "")")
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        let margin = PreferencesGroupedForm.margin
+        let boxRight = PreferencesScrollingViewController.paneWidth - margin
+
+        // The boxes span the pane between its margins.
+        for section in controller.sections {
+            let box = frame(of: section.box, in: controller)
+            XCTAssertEqual(box.minX, margin, accuracy: 0.5)
+            XCTAssertEqual(box.maxX, boxRight, accuracy: 0.5)
         }
-        // The five presets fill the control column, each wide enough for its name.
+        // Titles start at the box's inset; controls end at it.
+        let rows: [PreferencesGroupRow] = controller.sections.flatMap(\.box.rows).filter { !($0 is PreferencesDisclosureRow) }
+        for row in rows {
+            XCTAssertEqual(frame(of: row.titleLabel, in: controller).minX, margin + inset, accuracy: 0.5, row.title)
+        }
+        var rightEdges: [NSView] = [
+            controller.smoothSwitch, controller.reverseSwitch, controller.trackpadEventsSwitch,
+            controller.scrollSpeedValueLabel, controller.glideTimeValueLabel, controller.smallestStepValueLabel,
+            controller.feelControl,
+        ]
+        rightEdges.append(contentsOf: controller.keyClearButtons)
+        for view in rightEdges {
+            XCTAssertEqual(frame(of: view, in: controller).maxX, boxRight - inset, accuracy: 1, "\(view)")
+        }
+        // The sliders form one column, and so do the key recorders.
+        let sliders = [controller.scrollSpeedSlider!, controller.glideTimeSlider!, controller.smallestStepSlider!]
+        let sliderFrames = sliders.map { frame(of: $0, in: controller) }
+        XCTAssertEqual(Set(sliderFrames.map { $0.minX.rounded() }).count, 1)
+        XCTAssertEqual(Set(sliderFrames.map { $0.width.rounded() }).count, 1)
+        XCTAssertEqual(Set(controller.keyBindButtons.map { frame(of: $0, in: controller).minX.rounded() }).count, 1)
+
+        // Each control sits on the line of its title.
+        var lines: [(NSView, PreferencesGroupRow)] = []
+        lines.append((controller.smoothSwitch, controller.smoothRow))
+        lines.append((controller.scrollSpeedSlider, controller.speedRow))
+        lines.append((controller.reverseSwitch, controller.reverseRow))
+        lines.append((controller.glideTimeSlider, controller.glideTimeRow))
+        lines.append((controller.smallestStepSlider, controller.smallestStepRow))
+        lines.append((controller.trackpadEventsSwitch, controller.trackpadEventsRow))
+        for (button, row) in zip(controller.keyBindButtons, controller.keyRows) {
+            lines.append((button, row))
+        }
+        for (control, row) in lines {
+            XCTAssertEqual(frame(of: control, in: controller).midY, frame(of: row.titleLabel, in: controller).midY, accuracy: 1, row.title)
+        }
+
+        // The five presets fill the width of the box under the text of "Feel".
         let feel = frame(of: controller.feelControl, in: controller)
-        XCTAssertEqual(feel.width, PreferencesForm.controlWidth, accuracy: 1)
-        let font = controller.feelControl.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
-        let segmentWidth = PreferencesForm.controlWidth / CGFloat(controller.feelControl.segmentCount)
-        for segment in 0..<controller.feelControl.segmentCount {
-            let name = controller.feelControl.label(forSegment: segment) ?? ""
-            let needed = (name as NSString).size(withAttributes: [.font: font]).width
-            XCTAssertLessThan(needed + 8, segmentWidth, "\(name) fits its segment")
-        }
-        // Row titles end where the label column ends.
-        let rowTitles = [
-            "Mouse wheel", "Feel", "Speed", "Direction", "Glide time", "Smallest step", "Apps",
-            "Scroll faster", "Scroll sideways", "Pause smoothing",
-        ]
-        let fields: [NSTextField] = allSubviews(of: controller.view).compactMap { $0 as? NSTextField }
-        let titles = fields.filter { rowTitles.contains($0.stringValue) }
-        XCTAssertEqual(titles.count, rowTitles.count)
-        for title in titles {
-            XCTAssertEqual(frame(of: title, in: controller).maxX, 156, accuracy: 0.5, title.stringValue)
-            XCTAssertEqual(title.alignment, .right)
+        XCTAssertEqual(feel.minX, margin + inset, accuracy: 1)
+        XCTAssertLessThan(feel.maxY, frame(of: controller.feelHintLabel, in: controller).minY)
+
+        // The switches are the small ones of System Settings.
+        for toggle in [controller.smoothSwitch!, controller.reverseSwitch!, controller.trackpadEventsSwitch!] {
+            XCTAssertEqual(toggle.controlSize, PreferencesGroupedForm.switchControlSize)
         }
     }
 
@@ -830,7 +937,7 @@ final class PreferencesScrollingTests: XCTestCase {
         // The one explanation with a second sentence takes two lines.
         let trackpad = fields.first { $0.stringValue == text("scrolling-trackpad-events-hint") }
         XCTAssertEqual(trackpad?.frame.height ?? 0, 2 * oneLine, accuracy: 0.5)
-        // Every preset's line fits the room kept under the control, so the tab never jumps.
+        // Every preset's line fits the room kept for it, so the tab never jumps.
         let lines: [String] = ScrollFeel.allCases.map(\.localizedHint) + [ScrollFeel.customHint]
         for line in lines {
             controller.feelHintLabel.stringValue = line
@@ -852,7 +959,9 @@ final class PreferencesScrollingTests: XCTestCase {
 }
 
 /// Renders the tab off screen for a look at it: light and dark, "Advanced" closed and
-/// open, the tab and the per-app popover. Only runs when asked to:
+/// open, the defaults, a custom glide time and smoothing off, the tab and the per-app
+/// popover. Off screen the window's material draws a flat grey and vibrant text is not
+/// blended, so text looks a little dimmer than on screen. Only runs when asked to:
 /// `TEST_RUNNER_SCROLLIO_SHOTS_DIR=<folder> xcodebuild … test -only-testing:MosTests/PreferencesScrollingRenderTests`.
 final class PreferencesScrollingRenderTests: XCTestCase {
 
@@ -931,10 +1040,15 @@ final class PreferencesScrollingRenderTests: XCTestCase {
 
     /// Writes `<name>-light.png` and `<name>-dark.png`. The pane's own background is a
     /// behind-window material that draws nothing off screen, so the window colour stands in.
+    /// The appearance is set on a parent, as the window sets it: the pane's material then
+    /// gives its content the vibrant appearance it has on screen.
     private func render(_ view: NSView, name: String, into directory: URL) throws {
+        let host = NSView(frame: view.frame)
+        host.addSubview(view)
+        defer { view.removeFromSuperview() }
         for (suffix, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
-            view.appearance = appearance
+            host.appearance = appearance
             view.layoutSubtreeIfNeeded()
             view.display()
             let bounds = view.bounds
@@ -962,6 +1076,5 @@ final class PreferencesScrollingRenderTests: XCTestCase {
             let png = try XCTUnwrap(canvas.representation(using: .png, properties: [:]))
             try png.write(to: directory.appendingPathComponent("\(name)-\(suffix).png"))
         }
-        view.appearance = nil
     }
 }

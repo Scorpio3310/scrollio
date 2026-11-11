@@ -2979,17 +2979,6 @@
         }
       }
     },
-    "scrolling-wheel-label": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mouse wheel"
-          }
-        }
-      }
-    },
     "scrolling-smooth": {
       "extractionState": "manual",
       "localizations": {
@@ -3188,17 +3177,6 @@
         }
       }
     },
-    "scrolling-direction-label": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Direction"
-          }
-        }
-      }
-    },
     "scrolling-reverse": {
       "extractionState": "manual",
       "localizations": {
@@ -3272,17 +3250,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "The least the page moves for one slow click."
-          }
-        }
-      }
-    },
-    "scrolling-apps-label": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Apps"
           }
         }
       }

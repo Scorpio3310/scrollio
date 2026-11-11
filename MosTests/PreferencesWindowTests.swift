@@ -121,6 +121,35 @@ final class PreferencesTabsTests: XCTestCase {
         XCTAssertEqual(same.minY, screen.minY, "it only moves up to the visible edge")
     }
 
+    func testTheWindowTakesTheWidthOfThePaneItShows() {
+        // Scrolling is wider than the other panes; the window widens while it shows and
+        // narrows again for the others, keeping its left and top edges.
+        XCTAssertEqual(PreferencesScrollingViewController.paneWidth, 520)
+        XCTAssertEqual(AboutPreferencesViewController().view.frame.width, PreferencesForm.contentWidth)
+        let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+        gestures.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+        gestures.bindingSummary = { MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false) }
+        XCTAssertEqual(gestures.view.frame.width, PreferencesForm.contentWidth)
+
+        let chrome = TOOLBAR_HEIGHT + MACOS_TAHOE_COMPENSATE
+        let screen = NSRect(x: 0, y: 0, width: 2560, height: 1415)
+        let general = NSRect(x: 300, y: 900, width: PreferencesForm.contentWidth, height: 105 + chrome)
+        let scrolling = PreferencesTabViewController.windowFrame(
+            forContentSize: NSSize(width: PreferencesScrollingViewController.paneWidth, height: 542),
+            from: general,
+            visibleFrame: screen
+        )
+        XCTAssertEqual(scrolling.width, PreferencesScrollingViewController.paneWidth)
+        XCTAssertEqual(scrolling.minX, general.minX)
+        XCTAssertEqual(scrolling.maxY, general.maxY)
+        let back = PreferencesTabViewController.windowFrame(
+            forContentSize: NSSize(width: PreferencesForm.contentWidth, height: 105),
+            from: scrolling,
+            visibleFrame: screen
+        )
+        XCTAssertEqual(back, general)
+    }
+
     func testCodeBuiltTabsUseTheirOwnControllers() throws {
         let tabs = try makeTabs()
         let controllers = Dictionary(uniqueKeysWithValues: tabs.tabViewItems.compactMap { item -> (String, NSViewController)? in
@@ -264,7 +293,8 @@ final class PreferencesNamingTests: XCTestCase {
     func testTrackpadStyleEventsWording() throws {
         let scrolling = try XCTUnwrap(instantiate(PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)
         _ = scrolling.view
-        XCTAssertEqual(scrolling.trackpadEventsCheckBox.title, "Trackpad-style events")
+        XCTAssertEqual(scrolling.trackpadEventsRow.title, "Trackpad-style events")
+        XCTAssertEqual(scrolling.trackpadEventsSwitch.accessibilityLabel(), "Trackpad-style events")
     }
 
     func testAnUnboundButtonSaysNoActionEverywhere() {
