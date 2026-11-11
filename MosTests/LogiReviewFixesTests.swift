@@ -197,6 +197,65 @@ final class LogiReceiverSweepRebuildTests: XCTestCase {
     }
 }
 
+// MARK: - Feature index cache (F)
+
+final class LogiFeatureCacheInvalidationTests: XCTestCase {
+
+    private var suite: String!
+    private var defaults: UserDefaults!
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        suite = "LogiFeatureCacheInvalidationTests-\(UUID().uuidString)"
+        defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    }
+
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: suite)
+        defaults = nil
+        super.tearDown()
+    }
+
+    func testInvalidIndexOrFunctionOnACachedIndexDropsTheCache() {
+        let cached: Set<UInt8> = [0x08, 0x09, 0x0B, 0x0C, 0x14]
+        XCTAssertTrue(LogiDeviceSession.errorInvalidatesFeatureCache(errorCode: 0x06, originalFeatureIndex: 0x0B, cachedIndices: cached))
+        XCTAssertTrue(LogiDeviceSession.errorInvalidatesFeatureCache(errorCode: 0x07, originalFeatureIndex: 0x14, cachedIndices: cached))
+    }
+
+    func testOtherErrorsAndIndicesKeepIt() {
+        let cached: Set<UInt8> = [0x08, 0x09]
+        for code: UInt8 in [0x01, 0x02, 0x03, 0x04, 0x05, 0x08, 0x09] {
+            XCTAssertFalse(LogiDeviceSession.errorInvalidatesFeatureCache(errorCode: code, originalFeatureIndex: 0x08, cachedIndices: cached))
+        }
+        XCTAssertFalse(LogiDeviceSession.errorInvalidatesFeatureCache(errorCode: 0x06, originalFeatureIndex: 0x0E, cachedIndices: cached),
+                       "an index that was looked up on this connection, not cached")
+        XCTAssertFalse(LogiDeviceSession.errorInvalidatesFeatureCache(errorCode: 0x06, originalFeatureIndex: 0x00, cachedIndices: [0x00]),
+                       "IRoot is never cached")
+        XCTAssertFalse(LogiDeviceSession.errorInvalidatesFeatureCache(errorCode: 0x06, originalFeatureIndex: 0x08, cachedIndices: []),
+                       "a receiver session never uses the cache")
+    }
+
+    /// Dropping one product leaves the others and the stored format as they were.
+    func testRemovingOneProductKeepsTheOthersAndTheFormat() throws {
+        let mx4: [UInt16: UInt8] = [0x1B04: 0x08, 0x19B0: 0x0B, 0x1004: 0x09]
+        let other: [UInt16: UInt8] = [0x1B04: 0x05]
+        LogiDeviceSession.saveCachedFeatureIndexForTests(for: 0xB042, featureMap: mx4, defaults: defaults)
+        LogiDeviceSession.saveCachedFeatureIndexForTests(for: 0xB034, featureMap: other, defaults: defaults)
+
+        LogiDeviceSession.removeCachedFeatureIndexForTests(for: 0xB042, defaults: defaults)
+
+        XCTAssertNil(LogiDeviceSession.loadCachedFeatureIndexForTests(for: 0xB042, defaults: defaults))
+        XCTAssertEqual(LogiDeviceSession.loadCachedFeatureIndexForTests(for: 0xB034, defaults: defaults), other)
+        let data = try XCTUnwrap(defaults.data(forKey: LogiDeviceSession.featureCacheKeyForTests))
+        let stored = try JSONDecoder().decode([UInt16: [UInt16: UInt8]].self, from: data)
+        XCTAssertEqual(stored, [0xB034: other])
+
+        // Removing what is not there writes nothing new.
+        LogiDeviceSession.removeCachedFeatureIndexForTests(for: 0xB042, defaults: defaults)
+        XCTAssertEqual(defaults.data(forKey: LogiDeviceSession.featureCacheKeyForTests), data)
+    }
+}
+
 // MARK: - IOHIDManagerOpen (B)
 
 final class LogiSessionManagerOpenTests: XCTestCase {

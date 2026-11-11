@@ -296,24 +296,80 @@ class LogiDeviceSession {
 
     #if DEBUG
     internal static var featureCacheKeyForTests: String { return featureCacheKey }
+
+    internal static func loadCachedFeatureIndexForTests(for productId: UInt16, defaults: UserDefaults) -> [UInt16: UInt8]? {
+        return loadCachedFeatureIndex(for: productId, defaults: defaults)
+    }
+
+    internal static func saveCachedFeatureIndexForTests(for productId: UInt16, featureMap: [UInt16: UInt8], defaults: UserDefaults) {
+        saveCachedFeatureIndex(for: productId, featureMap: featureMap, defaults: defaults)
+    }
+
+    internal static func removeCachedFeatureIndexForTests(for productId: UInt16, defaults: UserDefaults) {
+        removeCachedFeatureIndex(for: productId, defaults: defaults)
+    }
     #endif
 
-    private static func loadCachedFeatureIndex(for productId: UInt16) -> [UInt16: UInt8]? {
-        guard let data = UserDefaults.standard.data(forKey: featureCacheKey),
+    private static func loadCachedFeatureIndex(for productId: UInt16, defaults: UserDefaults = .standard) -> [UInt16: UInt8]? {
+        guard let data = defaults.data(forKey: featureCacheKey),
               let cache = try? JSONDecoder().decode([UInt16: [UInt16: UInt8]].self, from: data) else { return nil }
         return cache[productId]
     }
 
-    private static func saveCachedFeatureIndex(for productId: UInt16, featureMap: [UInt16: UInt8]) {
+    private static func saveCachedFeatureIndex(for productId: UInt16, featureMap: [UInt16: UInt8], defaults: UserDefaults = .standard) {
         var cache: [UInt16: [UInt16: UInt8]] = [:]
-        if let data = UserDefaults.standard.data(forKey: featureCacheKey),
+        if let data = defaults.data(forKey: featureCacheKey),
            let existing = try? JSONDecoder().decode([UInt16: [UInt16: UInt8]].self, from: data) {
             cache = existing
         }
         cache[productId] = featureMap
         if let data = try? JSONEncoder().encode(cache) {
-            UserDefaults.standard.set(data, forKey: featureCacheKey)
+            defaults.set(data, forKey: featureCacheKey)
         }
+    }
+
+    /// Drops one product's entry; the other products and the stored format stay as they are.
+    private static func removeCachedFeatureIndex(for productId: UInt16, defaults: UserDefaults = .standard) {
+        guard let data = defaults.data(forKey: featureCacheKey),
+              var cache = try? JSONDecoder().decode([UInt16: [UInt16: UInt8]].self, from: data),
+              cache.removeValue(forKey: productId) != nil,
+              let encoded = try? JSONEncoder().encode(cache) else { return }
+        defaults.set(encoded, forKey: featureCacheKey)
+    }
+
+    /// HID++ 2.0 errors that say the request went to the wrong place: 0x06 invalid feature
+    /// index, 0x07 invalid function id.
+    private static let invalidFeatureIndexError: UInt8 = 0x06
+    private static let invalidFunctionError: UInt8 = 0x07
+
+    /// Whether an error means the cached feature indices are wrong (the firmware changed
+    /// them): 0x06 or 0x07 on an index that came from the cache on this connection.
+    static func errorInvalidatesFeatureCache(errorCode: UInt8, originalFeatureIndex: UInt8, cachedIndices: Set<UInt8>) -> Bool {
+        guard errorCode == invalidFeatureIndexError || errorCode == invalidFunctionError else { return false }
+        return originalFeatureIndex != 0x00 && cachedIndices.contains(originalFeatureIndex)
+    }
+
+    /// The feature indices this connection took from the cache (BLE direct only). An error
+    /// that invalidates them drops the product's cache entry (errorInvalidatesFeatureCache).
+    private var featureIndicesFromCache: Set<UInt8> = []
+    /// The cache entry was dropped on this connection: the indices in hand may be wrong, so
+    /// nothing is saved until a fresh discovery (the next connect, or Re-discover).
+    private var featureCacheDropped = false
+
+    /// Saves the feature indices of the current slot under the product id (as before), unless
+    /// the cache entry was dropped on this connection.
+    private func saveFeatureIndexCache() {
+        guard !featureCacheDropped else { return }
+        Self.saveCachedFeatureIndex(for: deviceInfo.productId, featureMap: featureIndex)
+    }
+
+    private func dropFeatureIndexCache(errorCode: UInt8, featureIndex index: UInt8) {
+        featureIndicesFromCache.removeAll()
+        featureCacheDropped = true
+        Self.removeCachedFeatureIndex(for: deviceInfo.productId)
+        let message = String(format: "Feature index cache dropped: error 0x%02X on cached index 0x%02X; the next connect looks the features up again", errorCode, index)
+        LogiDebugPanel.log("[\(deviceInfo.name)] \(message)")
+        LogiSystemLog.note("[\(deviceInfo.name)] \(message)")
     }
 
     // MARK: - HID++ Constants
@@ -1041,6 +1097,7 @@ class LogiDeviceSession {
            let reprogIdx = cached[Self.featureReprogV4] {
             LogiDebugPanel.log("\(tag) Using cached feature index: REPROG at 0x\(String(format: "%02X", reprogIdx))")
             self.featureIndex = cached.reduce(into: [UInt16: UInt8]()) { $0[$1.key] = $1.value }
+            featureIndicesFromCache = Set(cached.values)
             // 用 ping 验证缓存是否有效 (IRoot.GetProtocolVersion)
             sendRequest(featureIndex: 0x00, functionId: 1)
             pendingCacheValidation = reprogIdx
@@ -1178,7 +1235,7 @@ class LogiDeviceSession {
             self.featureIndex[Self.featureReprogV4] = index
             LogiDebugPanel.log("\(tag) REPROG_CONTROLS_V4 at index \(String(format: "0x%02X", index))")
             // 缓存 feature index
-            Self.saveCachedFeatureIndex(for: self.deviceInfo.productId, featureMap: self.featureIndex)
+            self.saveFeatureIndexCache()
             self.sendGetControlCount(featureIndex: index)
         }
     }
@@ -1455,6 +1512,8 @@ class LogiDeviceSession {
     func rediscoverFeatures() {
         cancelInflightDiscovery()
         featureIndex.removeAll()
+        featureIndicesFromCache.removeAll()
+        featureCacheDropped = false  // a fresh discovery: what it finds may be saved again
         resetOptionalProbeState()
         resetHapticDiscoveryState()
         resetScrollForceDiscoveryState()
@@ -2705,7 +2764,7 @@ class LogiDeviceSession {
                 guard let self = self else { return }
                 if let idx = idx {
                     self.featureIndex[fid] = idx
-                    Self.saveCachedFeatureIndex(for: self.deviceInfo.productId, featureMap: self.featureIndex)
+                    self.saveFeatureIndexCache()
                     LogiDebugPanel.log("[\(self.deviceInfo.name)] feature \(String(format: "0x%04X", fid)) at index \(String(format: "0x%02X", idx))")
                     self.postOptionalFeatureNotification(fid)
                     if fid == Self.featureDeviceNameType { self.requestDeviceTypeIfNeeded() }
@@ -2837,7 +2896,7 @@ class LogiDeviceSession {
                     return
                 }
                 self.featureIndex[Self.featureHaptic] = idx
-                Self.saveCachedFeatureIndex(for: self.deviceInfo.productId, featureMap: self.featureIndex)
+                self.saveFeatureIndexCache()
                 body(idx)
             }
         }
@@ -2926,7 +2985,7 @@ class LogiDeviceSession {
                     return
                 }
                 self.featureIndex[Self.featureSmartShiftEnhanced] = idx
-                Self.saveCachedFeatureIndex(for: self.deviceInfo.productId, featureMap: self.featureIndex)
+                self.saveFeatureIndexCache()
                 body(idx)
             }
         }
@@ -3064,7 +3123,7 @@ class LogiDeviceSession {
     private func recordWheelFeatureIndex(_ featureId: UInt16, index: UInt8, slot: UInt8) {
         slotStates[slot, default: PerSlotState()].featureIndex[featureId] = index
         if deviceIndex == slot {
-            Self.saveCachedFeatureIndex(for: deviceInfo.productId, featureMap: featureIndex)
+            saveFeatureIndexCache()
         }
     }
 
@@ -3524,7 +3583,7 @@ class LogiDeviceSession {
                     return
                 }
                 self.featureIndex[Self.featureForceSensing] = idx
-                Self.saveCachedFeatureIndex(for: self.deviceInfo.productId, featureMap: self.featureIndex)
+                self.saveFeatureIndexCache()
                 body(idx)
             }
         }
@@ -3974,6 +4033,16 @@ class LogiDeviceSession {
             let originalFuncId = fields?.functionId ?? 0
             let errorCode = fields?.errorCode ?? 0
             LogiDebugPanel.log("[\(deviceInfo.name)] HID++ Error: feat=\(String(format: "0x%02X", originalFeatureIdx)) func=\(originalFuncId) err=\(String(format: "0x%02X", errorCode))")
+
+            // A cached index the mouse does not know (firmware update): drop the product's
+            // cache entry so that the next connect looks the features up again.
+            if Self.errorInvalidatesFeatureCache(
+                errorCode: errorCode,
+                originalFeatureIndex: originalFeatureIdx,
+                cachedIndices: featureIndicesFromCache
+            ) {
+                dropFeatureIndexCache(errorCode: errorCode, featureIndex: originalFeatureIdx)
+            }
 
             // Only an error for a getFeature of this app (IRoot fn0, own software id) fails a
             // discovery, and only the oldest one waiting for this device: answers and errors
