@@ -258,7 +258,8 @@ final class LogiMouseBasicsControllerTests: XCTestCase {
         XCTAssertEqual(writes.count, 1, "no retry until the setting changes")
 
         let state = controller.deviceState(id: "x", deviceName: "MX", wheel: nil)
-        XCTAssertEqual(state.pointerSpeed?.dpi, LogiMouseDeviceState.Value(onMouse: 1600, setByYou: 1650))
+        XCTAssertEqual(state.pointerSpeed?.dpi, LogiMouseDeviceState.Value(onMouse: 1600, setByYou: 1650, mismatch: .notKept),
+                       "the mouse answered the write and reports its own value")
         XCTAssertEqual(state.pointerSpeed?.dpi.mouseMatches, false)
     }
 
@@ -536,6 +537,109 @@ final class LogiMouseBasicsControllerTests: XCTestCase {
         let count = sent.count
         scheduled.first?.work()  // the battery's timeout fires late
         XCTAssertEqual(sent.count, count)
+    }
+
+    // MARK: - Why a set value differs, and "Send Again"
+
+    private func dpiValue(_ controller: LogiMouseBasicsController) -> LogiMouseDeviceState.Value<Int>? {
+        return controller.deviceState(id: "x", deviceName: "MX", wheel: nil).pointerSpeed?.dpi
+    }
+
+    func testWhileTheValueIsDecidedOrWrittenItIsStillSending() {
+        let controller = makeController()
+        controller.start(desired: LogiMouseSettings(pointerDPI: 1600), managed: true)
+        XCTAssertEqual(dpiValue(controller)?.mismatch, .sending, "the read that decides it is queued")
+        while writes.isEmpty { XCTAssertTrue(answerNext(controller)) }
+        XCTAssertEqual(dpiValue(controller), LogiMouseDeviceState.Value(onMouse: 1000, setByYou: 1600, mismatch: .sending))
+        answerNext(controller)  // the write
+        XCTAssertEqual(dpiValue(controller)?.mismatch, .sending, "its read-back is on its way")
+        answerAll(controller)
+        XCTAssertEqual(dpiValue(controller), LogiMouseDeviceState.Value(onMouse: 1600, setByYou: 1600))
+    }
+
+    func testARefusedWriteSaysSo_andTheChangeOfReasonIsAnnounced() {
+        mouse.refused = [FakeMouse.key(Self.dpiIndex, 3)]
+        let controller = makeController()
+        controller.start(desired: LogiMouseSettings(pointerDPI: 1600), managed: true)
+        while writes.isEmpty { XCTAssertTrue(answerNext(controller)) }
+        answerNext(controller)  // the write: an HID++ error
+        let changesBefore = changes
+        answerNext(controller)  // the read-back: still 1000, nothing new but the reason
+        XCTAssertEqual(dpiValue(controller), LogiMouseDeviceState.Value(onMouse: 1000, setByYou: 1600, mismatch: .refused))
+        XCTAssertEqual(changes, changesBefore + 1)
+        answerAll(controller)
+        XCTAssertEqual(writes.count, 1, "no retry until the setting changes, the mouse reconnects or Send Again")
+    }
+
+    func testAWriteTheMouseNeverAnsweredSaysItDidNotAnswer() {
+        let controller = makeController()
+        controller.start(desired: LogiMouseSettings(pointerDPI: 1600), managed: true)
+        while writes.isEmpty { XCTAssertTrue(answerNext(controller)) }
+        answered += 1  // the mouse never answers the write
+        expireReplyTimeouts()
+        answerAll(controller)
+        XCTAssertEqual(mouse.dpi, 1000)
+        XCTAssertEqual(dpiValue(controller)?.mismatch, .noAnswer)
+    }
+
+    func testAReadTheMouseNeverAnsweredSaysItDidNotAnswer() {
+        let controller = makeController()
+        controller.start(desired: LogiMouseSettings(pointerDPI: 1600), managed: true)
+        answerNext(controller)  // battery
+        answerNext(controller)  // list; the current DPI is never answered
+        for _ in 0..<LogiMouseBasicsController.maxReadAttempts {
+            answered = sent.count
+            expireReplyTimeouts()
+        }
+        answered = sent.count
+        XCTAssertEqual(writes, [])
+        let dpi = dpiValue(controller)
+        XCTAssertNil(dpi?.onMouse)
+        XCTAssertEqual(dpi?.mismatch, .noAnswer)
+    }
+
+    /// The mouse had the user's value, then its DPI button (or another app) changed it: said
+    /// so, not fought. "Send Again" goes the way of a reconnect (`start`) and writes it again;
+    /// a value the user never set is not written by it.
+    func testAValueChangedOnTheMouseSaysSo_andSendAgainWritesOnlyWhatTheUserSet() {
+        let controller = started(LogiMouseSettings(pointerDPI: 1600), managed: true)
+        XCTAssertEqual(writes.count, 1)
+        XCTAssertNil(dpiValue(controller)?.mismatch)
+
+        mouse.dpi = 1000
+        mouse.hapticStrength = 40
+        controller.handleResponse(featureIndex: Self.dpiIndex, functionId: 3, report: report(Self.dpiIndex, 3, [0x00, 0x03, 0xE8]))
+        answerAll(controller)
+        XCTAssertEqual(dpiValue(controller), LogiMouseDeviceState.Value(onMouse: 1000, setByYou: 1600, mismatch: .changedElsewhere))
+        XCTAssertEqual(writes.count, 1, "not fought")
+
+        controller.start(desired: LogiMouseSettings(pointerDPI: 1600), managed: true)
+        XCTAssertEqual(dpiValue(controller)?.mismatch, .sending)
+        answerAll(controller)
+        XCTAssertEqual(writes.count, 2)
+        XCTAssertEqual(writes.last, Sent(index: Self.dpiIndex, functionId: 3, params: [0x00, 0x06, 0x40]))
+        XCTAssertEqual(mouse.dpi, 1600)
+        XCTAssertEqual(mouse.hapticStrength, 40, "never set by the user: left alone")
+        XCTAssertEqual(dpiValue(controller), LogiMouseDeviceState.Value(onMouse: 1600, setByYou: 1600))
+    }
+
+    func testUnmanagedThereIsNoReason_andStartingAgainWritesNothing() {
+        let desired = LogiMouseSettings(pointerDPI: 1600, hapticsOn: true, hapticStrength: 30, pressForce: 6000)
+        let controller = started(desired, managed: false)
+        controller.start(desired: desired, managed: false)
+        answerAll(controller)
+        XCTAssertEqual(writes, [])
+        let state = controller.deviceState(id: "x", deviceName: "MX", wheel: nil)
+        XCTAssertNil(state.pointerSpeed?.dpi.mismatch)
+        XCTAssertNil(state.haptics?.isOn.mismatch)
+        XCTAssertNil(state.haptics?.strength.mismatch)
+        XCTAssertNil(state.pressForce?.force.mismatch)
+    }
+
+    func testAMatchingValueHasNoReason() {
+        mouse.dpi = 1600
+        let controller = started(LogiMouseSettings(pointerDPI: 1600), managed: true)
+        XCTAssertEqual(dpiValue(controller), LogiMouseDeviceState.Value(onMouse: 1600, setByYou: 1600))
     }
 
     // MARK: - Battery

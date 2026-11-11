@@ -34,6 +34,10 @@
 //  - Every read result that changes and every write decision is one `log` line (the
 //    session sends them to LogiSystemLog); answers whose layout is an assumption are logged
 //    raw the first time they are seen.
+//  - Why a set value differs from the mouse (`LogiMouseDeviceState.Mismatch`) comes from the
+//    same bookkeeping: a write queued or waiting, how the mouse answered it, what the read
+//    after it showed. It is shown only; no write decision reads it, and a change of it is
+//    one `onChange`.
 //
 //  Main thread only (HID++ callbacks run on the main run loop).
 //
@@ -140,6 +144,29 @@ final class LogiMouseBasicsController {
     /// Raw answers already logged once.
     private var loggedRaw: Set<String> = []
 
+    // MARK: - Why a set value differs (display only: no write decision reads these)
+
+    private enum WriteAnswer {
+        case acknowledged
+        case refused
+        case unanswered
+    }
+
+    private enum Outcome {
+        /// The mouse took the user's value or had it already.
+        case taken
+        case refused
+        case unanswered
+        case notKept
+    }
+
+    /// How the mouse answered the last write of a basic, until its read-back arrives.
+    private var writeAnswers: [Basic: WriteAnswer] = [:]
+    /// What became of the user's value since the connect or since the user changed it.
+    private var outcomes: [Basic: Outcome] = [:]
+    /// The reasons last announced with `onChange`.
+    private var announcedMismatches: [Basic: LogiMouseDeviceState.Mismatch] = [:]
+
     // MARK: - Request queue
 
     private enum Kind: Equatable {
@@ -186,11 +213,14 @@ final class LogiMouseBasicsController {
         writtenDPI = nil
         writtenHaptics = nil
         writtenPressForce = nil
+        writeAnswers.removeAll()
+        outcomes.removeAll()
         log("Connected: \(describeFeatures()); \(managed ? "managed, \(Self.describe(desired))" : "not managed, reading only")")
         for basic in Basic.allCases {
             enqueueReads(basic, includingStatic: true)
         }
         pump()
+        announceMismatchChanges()
     }
 
     /// Reads the values again (the battery only when its last reading is old). Writes only
@@ -204,6 +234,7 @@ final class LogiMouseBasicsController {
             enqueueReads(basic, includingStatic: false)
         }
         pump()
+        announceMismatchChanges()
     }
 
     /// New settings or a new state of the switch. A value the user changed (or every set
@@ -223,6 +254,7 @@ final class LogiMouseBasicsController {
             }
             queue.removeAll { $0.kind == .write }
             if newDesired != old || wasManaged { onChange() }
+            announceMismatchChanges()
             return
         }
         var changed: [Basic] = []
@@ -234,6 +266,7 @@ final class LogiMouseBasicsController {
         for basic in changed {
             settled.remove(basic)
             freshlyRead.remove(basic)
+            outcomes.removeValue(forKey: basic)
             // A write decided from the old settings that has not gone out is not wanted any
             // more: the read queued behind it decides again from the new ones.
             if queue.contains(where: { $0.basic == basic && $0.kind == .write }) {
@@ -244,6 +277,7 @@ final class LogiMouseBasicsController {
         }
         if newDesired != old || turnedOn { onChange() }
         pump()
+        announceMismatchChanges()
     }
 
     /// Plays one pulse at the mouse's current strength, after the haptic writes waiting in
@@ -275,6 +309,7 @@ final class LogiMouseBasicsController {
         if let request = inFlight, request.basic == basic, request.functionId == functionId {
             answered = request
             inFlight = nil
+            if request.kind == .write { writeAnswers[basic] = .acknowledged }
         }
         switch basic {
         case .battery: handleBatteryAnswer(functionId: functionId, report: report, answered: answered)
@@ -283,6 +318,7 @@ final class LogiMouseBasicsController {
         case .pressForce: handlePressForceAnswer(functionId: functionId, report: report, answered: answered)
         }
         pump()
+        if basic != .battery { announceMismatchChanges() }
         return true
     }
 
@@ -319,11 +355,13 @@ final class LogiMouseBasicsController {
             onChange()
         case .write:
             log("\(Self.name(basic)): the mouse refused \(request.label) (error \(code)); reading back")
+            writeAnswers[basic] = .refused
         case .play:
             log("Haptics: the mouse refused the sample pulse (error \(code))")
         }
         if basic == .haptics { maybePlaySample() }
         pump()
+        announceMismatchChanges()
     }
 
     // MARK: - Snapshot
@@ -339,7 +377,8 @@ final class LogiMouseBasicsController {
             let choices = dpiList?.values ?? []
             pointer = LogiMouseDeviceState.PointerSpeed(
                 choices: choices,
-                dpi: LogiMouseDeviceState.Value(
+                dpi: value(
+                    .pointerSpeed,
                     onMouse: dpi,
                     setByYou: desired.pointerDPI.map { LogiPointerSpeedProtocol.snap($0, to: choices) ?? $0 }
                 ),
@@ -350,8 +389,9 @@ final class LogiMouseBasicsController {
         if supported.contains(.haptics) {
             let few = LogiHapticSettingsProtocol.hasFewLevels(levelsByte: hapticState?.levelsByte)
             haptics = LogiMouseDeviceState.Haptics(
-                isOn: LogiMouseDeviceState.Value(onMouse: hapticState?.isOn, setByYou: desired.hapticsOn),
-                strength: LogiMouseDeviceState.Value(
+                isOn: value(.haptics, onMouse: hapticState?.isOn, setByYou: desired.hapticsOn),
+                strength: value(
+                    .haptics,
                     onMouse: hapticState.map { Int($0.strength) },
                     setByYou: desired.hapticStrength.map {
                         LogiHapticSettingsProtocol.snapStrength($0, fewLevels: few ?? false)
@@ -365,7 +405,8 @@ final class LogiMouseBasicsController {
         if supported.contains(.pressForce) {
             let validInfo = pressForceInfo.flatMap { LogiPressForceProtocol.isValid($0) ? $0 : nil }
             press = LogiMouseDeviceState.PressForce(
-                force: LogiMouseDeviceState.Value(
+                force: value(
+                    .pressForce,
                     onMouse: pressForce.map(Int.init),
                     setByYou: desired.pressForce.map {
                         Int(LogiPressForceProtocol.clamp(UInt16(clamping: $0), info: validInfo))
@@ -387,6 +428,75 @@ final class LogiMouseBasicsController {
             pressForce: press,
             wheel: wheel
         )
+    }
+
+    /// One value of the snapshot, with why the mouse has another one than the user set.
+    private func value<T: Equatable>(_ basic: Basic, onMouse: T?, setByYou: T?) -> LogiMouseDeviceState.Value<T> {
+        let differs = setByYou != nil && setByYou != onMouse
+        return LogiMouseDeviceState.Value(onMouse: onMouse, setByYou: setByYou, mismatch: differs ? mismatch(basic) : nil)
+    }
+
+    // MARK: - Why a set value differs
+
+    /// Why the user's value of `basic` may not be on the mouse; nil while not managed, while
+    /// nothing is set, or when nothing is known. Shown only when the values differ.
+    private func mismatch(_ basic: Basic) -> LogiMouseDeviceState.Mismatch? {
+        guard managed, hasWish(basic), !unavailable.contains(basic) else { return nil }
+        if isSending(basic) { return .sending }
+        switch outcomes[basic] {
+        case .taken?: return .changedElsewhere
+        case .refused?: return .refused
+        case .unanswered?: return .noAnswer
+        case .notKept?: return .notKept
+        case nil: return nil
+        }
+    }
+
+    /// A write of `basic` is queued or on its way, or a read is that reads the write back or
+    /// decides it.
+    private func isSending(_ basic: Basic) -> Bool {
+        func pending(_ kind: Kind) -> Bool {
+            return (inFlight?.basic == basic && inFlight?.kind == kind)
+                || queue.contains { $0.basic == basic && $0.kind == kind }
+        }
+        if pending(.write) { return true }
+        return pending(.read) && (writeAnswers[basic] != nil || !settled.contains(basic))
+    }
+
+    /// The read-back of a write arrived: `kept` when the mouse reports what was written.
+    private func settleWrite(_ basic: Basic, kept: Bool) {
+        let answer = writeAnswers.removeValue(forKey: basic)
+        guard !kept else {
+            outcomes[basic] = .taken
+            return
+        }
+        switch answer {
+        case .refused?: outcomes[basic] = .refused
+        case .acknowledged?: outcomes[basic] = .notKept
+        case .unanswered?, nil: outcomes[basic] = .unanswered
+        }
+    }
+
+    /// A read went unanswered for good: the write it was to read back, or to decide, gets
+    /// the mouse's silence (or its earlier refusal) as the reason.
+    private func noteReadGivenUp(_ basic: Basic) {
+        if let answer = writeAnswers.removeValue(forKey: basic) {
+            outcomes[basic] = answer == .refused ? .refused : .unanswered
+        } else if managed, hasWish(basic), !settled.contains(basic) {
+            outcomes[basic] = .unanswered
+        }
+    }
+
+    /// One `onChange` when the reason of any value changed (the values themselves announce
+    /// their own changes).
+    private func announceMismatchChanges() {
+        var now: [Basic: LogiMouseDeviceState.Mismatch] = [:]
+        for basic in Basic.allCases {
+            if let reason = mismatch(basic) { now[basic] = reason }
+        }
+        guard now != announcedMismatches else { return }
+        announcedMismatches = now
+        onChange()
     }
 
     // MARK: - Battery
@@ -439,6 +549,7 @@ final class LogiMouseBasicsController {
             freshlyRead.insert(.pointerSpeed)
             if let written = writtenDPI {
                 writtenDPI = nil
+                settleWrite(.pointerSpeed, kept: written == parsed.current)
                 log(written == parsed.current
                     ? "Pointer speed: the mouse now reports \(written)"
                     : "Pointer speed: wrote \(written), the mouse reports \(parsed.current); keeping the mouse's value, no retry")
@@ -473,6 +584,7 @@ final class LogiMouseBasicsController {
             freshlyRead.insert(.haptics)
             if let written = writtenHaptics {
                 writtenHaptics = nil
+                settleWrite(.haptics, kept: written.flags == state.flags && written.strength == state.strength)
                 log(written.flags == state.flags && written.strength == state.strength
                     ? "Haptics: the mouse now reports \(LogiHapticSettingsProtocol.describe(state))"
                     : "Haptics: wrote \(String(format: "0x%02X", written.flags))/\(written.strength), the mouse reports \(LogiHapticSettingsProtocol.describe(state)); keeping the mouse's value, no retry")
@@ -544,6 +656,7 @@ final class LogiMouseBasicsController {
             freshlyRead.insert(.pressForce)
             if let written = writtenPressForce {
                 writtenPressForce = nil
+                settleWrite(.pressForce, kept: written == value)
                 log(written == value
                     ? "Press force: the mouse now reports \(value)"
                     : "Press force: wrote \(written), the mouse reports \(value); keeping the mouse's value, no retry")
@@ -565,6 +678,7 @@ final class LogiMouseBasicsController {
     // MARK: - Write decisions
 
     private func forgetWrite(_ basic: Basic) {
+        writeAnswers.removeValue(forKey: basic)
         switch basic {
         case .battery: break
         case .pointerSpeed: writtenDPI = nil
@@ -596,6 +710,7 @@ final class LogiMouseBasicsController {
     private func decidePointerWrite() {
         guard let wanted = desired.pointerDPI, let current = dpi else { return }
         settled.insert(.pointerSpeed)
+        outcomes.removeValue(forKey: .pointerSpeed)
         guard let list = dpiList,
               let target = LogiPointerSpeedProtocol.snap(wanted, to: list.values),
               let params = LogiPointerSpeedProtocol.setParams(dpi: target) else {
@@ -605,6 +720,7 @@ final class LogiMouseBasicsController {
         let snapped = target == wanted ? "" : " (nearest it accepts: \(target))"
         guard target != current else {
             log("Pointer speed: mouse \(current), wanted \(wanted)\(snapped); already set, no write")
+            outcomes[.pointerSpeed] = .taken
             return
         }
         log("Pointer speed: mouse \(current), wanted \(wanted)\(snapped); writing \(target)")
@@ -618,6 +734,7 @@ final class LogiMouseBasicsController {
     private func decideHapticWrite() {
         guard let state = hapticState else { return }
         settled.insert(.haptics)
+        outcomes.removeValue(forKey: .haptics)
         let few = LogiHapticSettingsProtocol.hasFewLevels(levelsByte: state.levelsByte) ?? false
         let strength = desired.hapticStrength.map { LogiHapticSettingsProtocol.snapStrength($0, fewLevels: few) }
         let params = LogiHapticSettingsProtocol.setStateParams(
@@ -629,6 +746,7 @@ final class LogiMouseBasicsController {
         let wanted = "wanted \(desired.hapticsOn.map { $0 ? "on" : "off" } ?? "on/off as is"), strength \(strength.map(String.init) ?? "as is")"
         guard LogiHapticSettingsProtocol.needsWrite(params, current: state) else {
             log("Haptics: mouse \(LogiHapticSettingsProtocol.describe(state)), \(wanted); already set, no write")
+            outcomes[.haptics] = .taken
             return
         }
         log("Haptics: mouse \(String(format: "0x%02X", state.flags))/\(state.strength), \(wanted); writing \(String(format: "0x%02X", params[0]))/\(params[1]) (other flags kept)")
@@ -642,6 +760,7 @@ final class LogiMouseBasicsController {
     private func decidePressForceWrite() {
         guard let wanted = desired.pressForce, let info = pressForceInfo, let current = pressForce else { return }
         settled.insert(.pressForce)
+        outcomes.removeValue(forKey: .pressForce)
         guard info.changeable else {
             log("Press force: wanted \(wanted); the mouse does not allow changing it, not writing")
             return
@@ -654,6 +773,7 @@ final class LogiMouseBasicsController {
         let clamped = Int(target) == wanted ? "" : " (clamped to \(target), range \(info.minValue)...\(info.maxValue))"
         guard target != current else {
             log("Press force: mouse \(current), wanted \(wanted)\(clamped); already set, no write")
+            outcomes[.pressForce] = .taken
             return
         }
         log("Press force: mouse \(current), wanted \(wanted)\(clamped); writing \(target)")
@@ -738,12 +858,17 @@ final class LogiMouseBasicsController {
         }
         inFlight = nil
         switch request.kind {
-        case .read: log("\(Self.name(request.basic)): no answer to \(request.label), giving up until the next refresh")
-        case .write: log("\(Self.name(request.basic)): no answer to the write of \(request.label), reading back")
+        case .read:
+            log("\(Self.name(request.basic)): no answer to \(request.label), giving up until the next refresh")
+            noteReadGivenUp(request.basic)
+        case .write:
+            log("\(Self.name(request.basic)): no answer to the write of \(request.label), reading back")
+            writeAnswers[request.basic] = .unanswered
         case .play: log("Haptics: no answer to the sample pulse")
         }
         if request.basic == .haptics { maybePlaySample() }
         pump()
+        announceMismatchChanges()
     }
 
     // MARK: - Logging

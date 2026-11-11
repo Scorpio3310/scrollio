@@ -11,7 +11,12 @@
 //  - "Let Scrollio manage this mouse" off: the rows show the mouse's own values, greyed out.
 //  - On: they show the user's values; a setting the user never set (basic or wheel) shows
 //    the mouse's.
-//  - "On the mouse: …" only where the user's value differs from what the mouse reports.
+//  - "On the mouse: …" only where the user's value differs from what the mouse reports,
+//    with why when the Logi layer knows it ("Still sending your value…", "The mouse
+//    refused 1600 DPI.", …).
+//  - A muted line under the switch: while it is off, why the rows are greyed; while it is
+//    on and a value is not on the mouse for a reason other than "still sending", that it is
+//    not, with "Send Again".
 //  - Turning the switch on changes no setting: nothing is taken over from a mouse.
 //
 
@@ -24,11 +29,15 @@ struct MouseDeviceSource {
     var refresh: () -> Void
     /// One pulse at the new strength, after the strength slider is let go.
     var playHapticSample: () -> Void = {}
+    /// "Send Again": the mice are read again and given what differs (LogiCenter writes only
+    /// values the user set, only while managed, only where the fresh read differs).
+    var sendAgain: () -> Void = {}
 
     static let live = MouseDeviceSource(
         deviceStates: { LogiCenter.shared.mouseDeviceStates() },
         refresh: { LogiCenter.shared.refreshMouseStates() },
-        playHapticSample: { LogiCenter.shared.playHapticSample() }
+        playHapticSample: { LogiCenter.shared.playHapticSample() },
+        sendAgain: { LogiCenter.shared.sendMouseSettingsAgain() }
     )
 }
 
@@ -102,9 +111,20 @@ struct MousePaneModel: Equatable {
         let readback: String?
     }
 
+    /// The muted line under "Let Scrollio manage this mouse".
+    enum ManagedNote: Equatable {
+        /// The switch is off: the rows below are greyed and show what the mouse reports.
+        case notManaged
+        /// The switch is on and a value the user set is not on the mouse, for a reason other
+        /// than "still sending": the line comes with "Send Again".
+        case notOnTheMouse
+    }
+
     let header: Header
     let hasMouse: Bool
     let managed: Bool
+    /// nil: no line.
+    let managedNote: ManagedNote?
     /// nil: the row is hidden.
     let pointerSpeed: Slider?
     /// The DPI values the pointer speed slider stops at, ascending: `pointerLadder` as the
@@ -150,10 +170,16 @@ struct MousePaneModel: Equatable {
         hasMouse = !mice.isEmpty
         header = Self.header(for: mice, managed: managed)
 
-        func readback<T: Equatable>(_ setting: MouseSetting, mine: T?, onMouse: T?, text: (T) -> String) -> String? {
+        /// A shown line whose value Scrollio is not (or no longer) sending: "Send Again" helps.
+        var notOnTheMouse = false
+        func readback<T: Equatable>(
+            _ setting: MouseSetting, mine: T?, onMouse: T?,
+            why: LogiMouseDeviceState.Mismatch?, text: (T) -> String
+        ) -> String? {
             guard managed, !heldReadbacks.contains(setting),
                   let mine, let onMouse, mine != onMouse else { return nil }
-            return MouseText.onTheMouse(text(onMouse))
+            if why != .sending { notOnTheMouse = true }
+            return MouseText.onTheMouse(text(onMouse), why: why, yours: text(mine))
         }
         /// The user's value while managed, the mouse's otherwise; each falls back on the other.
         func shown<T>(mine: T?, onMouse: T?, fallback: T) -> T {
@@ -178,7 +204,7 @@ struct MousePaneModel: Equatable {
                 position: Double(index),
                 valueText: MouseText.dpi(value),
                 isEnabled: managed,
-                readback: readback(.pointerSpeed, mine: mine, onMouse: pointer.dpi.onMouse, text: MouseText.dpi)
+                readback: readback(.pointerSpeed, mine: mine, onMouse: pointer.dpi.onMouse, why: pointer.dpi.mismatch, text: MouseText.dpi)
             )
         } else {
             pointerChoices = []
@@ -192,7 +218,9 @@ struct MousePaneModel: Equatable {
             wheelMode = Mode(
                 mode: mode,
                 isEnabled: managed,
-                readback: readback(.wheelMode, mine: wheel.mode, onMouse: state.mode.onMouse, text: MouseText.modeName)
+                readback: readback(
+                    .wheelMode, mine: wheel.mode, onMouse: state.mode.onMouse, why: state.mode.mismatch, text: MouseText.modeName
+                )
             )
             if mode == .smartShift {
                 let onMouse = state.smartShiftSensitivity.onMouse
@@ -201,7 +229,9 @@ struct MousePaneModel: Equatable {
                 var differs: String?
                 if state.mode.onMouse == .smartShift, let mine = wheel.smartShiftSensitivity, let onMouse,
                    abs(onMouse - mine) > Self.sensitivityTolerance {
-                    differs = readback(.sensitivity, mine: mine, onMouse: onMouse, text: MouseText.percent)
+                    differs = readback(
+                        .sensitivity, mine: mine, onMouse: onMouse, why: state.smartShiftSensitivity.mismatch, text: MouseText.percent
+                    )
                 }
                 sensitivity = Self.percentSlider(value, range: LogiWheelSettings.sensitivityRange, enabled: managed, readback: differs)
             } else {
@@ -216,7 +246,9 @@ struct MousePaneModel: Equatable {
             let value = shown(mine: wheel.scrollForce, onMouse: onMouse, fallback: Self.scrollForceFallback)
             firmness = Self.percentSlider(
                 value, range: LogiWheelSettings.scrollForceRange, enabled: managed,
-                readback: readback(.firmness, mine: wheel.scrollForce, onMouse: onMouse, text: MouseText.percent)
+                readback: readback(
+                    .firmness, mine: wheel.scrollForce, onMouse: onMouse, why: state.scrollForce.mismatch, text: MouseText.percent
+                )
             )
         } else {
             firmness = nil
@@ -228,7 +260,9 @@ struct MousePaneModel: Equatable {
             haptics = Toggle(
                 isOn: isOn,
                 isEnabled: managed,
-                readback: readback(.haptics, mine: settings.hapticsOn, onMouse: state.isOn.onMouse, text: MouseText.onOff)
+                readback: readback(
+                    .haptics, mine: settings.hapticsOn, onMouse: state.isOn.onMouse, why: state.isOn.mismatch, text: MouseText.onOff
+                )
             )
             let few = state.hasFewLevels == true && !state.fewLevelChoices.isEmpty ? state.fewLevelChoices : nil
             let mine = settings.hapticStrength.map { value in few.map { Self.nearest(value, in: $0) } ?? value }
@@ -236,7 +270,9 @@ struct MousePaneModel: Equatable {
             let value = Self.clamp(
                 shown(mine: mine, onMouse: state.strength.onMouse, fallback: range.upperBound), to: range
             )
-            let differs = readback(.strength, mine: mine, onMouse: state.strength.onMouse, text: MouseText.percent)
+            let differs = readback(
+                .strength, mine: mine, onMouse: state.strength.onMouse, why: state.strength.mismatch, text: MouseText.percent
+            )
             if let few {
                 let level = Self.nearest(value, in: few)
                 strength = Slider(
@@ -272,11 +308,20 @@ struct MousePaneModel: Equatable {
             pressForce = Self.slider(
                 value, over: Double(range.lowerBound)...Double(max(range.upperBound, range.lowerBound + 1)),
                 scale: Self.pressForceScale, text: share, enabled: managed,
-                readback: readback(.pressForce, mine: mine, onMouse: state.force.onMouse, text: share)
+                readback: readback(.pressForce, mine: mine, onMouse: state.force.onMouse, why: state.force.mismatch, text: share)
             )
         } else {
             pressForceRange = nil
             pressForce = nil
+        }
+
+        let hasSettings = pointerSpeed != nil || wheelMode != nil || firmness != nil || haptics != nil || pressForce != nil
+        if !hasMouse || !hasSettings {
+            managedNote = nil
+        } else if !managed {
+            managedNote = .notManaged
+        } else {
+            managedNote = notOnTheMouse ? .notOnTheMouse : nil
         }
     }
 
@@ -533,6 +578,27 @@ enum MouseText {
     /// "On the mouse: 40%".
     static func onTheMouse(_ value: String) -> String {
         return String(format: text("mouse-wheel-readback-one"), value)
+    }
+
+    /// "On the mouse: 1000 DPI", and why it is not `yours` when that is known:
+    /// "On the mouse: 1000 DPI. The mouse refused 1600 DPI."
+    static func onTheMouse(_ value: String, why: LogiMouseDeviceState.Mismatch?, yours: String) -> String {
+        switch why {
+        case nil: return onTheMouse(value)
+        case .sending?: return String(format: text("mouse-readback-sending"), value)
+        case .refused?: return String(format: text("mouse-readback-refused"), value, yours)
+        case .noAnswer?: return String(format: text("mouse-readback-no-answer"), value)
+        case .notKept?: return String(format: text("mouse-readback-not-kept"), value)
+        case .changedElsewhere?: return String(format: text("mouse-readback-changed"), value)
+        }
+    }
+
+    /// The muted line under "Let Scrollio manage this mouse".
+    static func managedNote(_ note: MousePaneModel.ManagedNote) -> String {
+        switch note {
+        case .notManaged: return text("mouse-managed-off-note")
+        case .notOnTheMouse: return text("mouse-not-on-mouse-note")
+        }
     }
 
     /// The explanation of a row with its "On the mouse" line under it.

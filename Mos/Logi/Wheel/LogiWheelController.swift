@@ -22,6 +22,11 @@
 //  - Every write decision is one `log` line (the session sends them to LogiSystemLog too):
 //    "already set, no write", "writing ...", "not set by the user, left alone". Status reads
 //    are logged only when they change.
+//  - Why a set value differs from the mouse (`LogiMouseDeviceState.Mismatch`) comes from the
+//    same bookkeeping: a value waiting for its decision or its read-back, the mouse's answer
+//    to the write (acknowledged or an error), what the read-back showed. It is shown only;
+//    no write decision reads it. Status reads have no timeout, so a lost answer shows as
+//    "still sending" until the next status answer (a refresh) settles it.
 //  - Main thread only (HID++ callbacks run on the main run loop).
 //
 
@@ -81,6 +86,34 @@ final class LogiWheelController {
     /// The last status written to the log; a read that brings nothing new is not logged.
     private var loggedStatus: LogiWheelStatus?
 
+    // MARK: Why a set value differs (display only: no write decision reads these)
+
+    private enum WriteAnswer {
+        case waiting
+        case acknowledged
+        case refused
+    }
+
+    private enum Outcome {
+        /// The mouse took the user's value or had it already.
+        case taken
+        case refused
+        case unanswered
+        case notKept
+    }
+
+    /// What became of each value the user set since the connect or since the user changed it.
+    private var outcomes: [Field: Outcome] = [:]
+    /// The user's values the last write carried, until its read-back arrives.
+    private var writtenFields: Set<Field> = []
+    private var writeAnswer = WriteAnswer.waiting
+    /// Status reads sent and not answered yet, and how many of them went out before that
+    /// write: their answers come before its read-back (see `statusAnswered`).
+    private var statusReadsInFlight = 0
+    private var statusReadsBeforeWrite = 0
+    /// The reasons last announced with `onChange`.
+    private var announcedMismatches: [Field: LogiMouseDeviceState.Mismatch] = [:]
+
     init(
         feature: LogiWheelFeature,
         featureIndex: UInt8,
@@ -131,6 +164,8 @@ final class LogiWheelController {
         pendingFields = desired.managedByMos ? Set(Field.allCases) : []
         forceWaitsForCapabilities = false
         loggedStatus = nil
+        outcomes.removeAll()
+        writtenFields.removeAll()
         log("Connected: \(String(format: "0x%04X", feature.featureId)) at index \(String(format: "0x%02X", featureIndex)); \(desired.managedByMos ? "managed, \(Self.describe(desired))" : "not managed, reading only")")
         refresh()
     }
@@ -139,6 +174,7 @@ final class LogiWheelController {
     func refresh() {
         requestCapabilitiesIfNeeded()
         requestStatus()
+        announceMismatchChanges()
     }
 
     /// New settings or a new state of the switch. A value the user changed (or every value,
@@ -154,6 +190,7 @@ final class LogiWheelController {
         guard settings.managedByMos else {
             pendingFields.removeAll()
             forceWaitsForCapabilities = false
+            announceMismatchChanges()
             return
         }
         let turnedOn = !old.managedByMos
@@ -164,7 +201,11 @@ final class LogiWheelController {
             changed.insert(.scrollForce)
             forceWaitsForCapabilities = false
         }
-        guard !changed.isEmpty else { return }
+        guard !changed.isEmpty else {
+            announceMismatchChanges()
+            return
+        }
+        for field in changed { outcomes.removeValue(forKey: field) }
         pendingFields.formUnion(changed)
         refresh()
     }
@@ -199,16 +240,20 @@ final class LogiWheelController {
                 if supportsScrollForce, managed, desired.scrollForce != nil {
                     pendingFields.insert(.scrollForce)
                     if !statusReadOutstanding { requestStatus() }
+                    announceMismatchChanges()
                     return true
                 }
             }
             if !statusReadOutstanding { flushPendingWork() }
+            announceMismatchChanges()
             return true
         }
         if functionId == feature.readStatusFunction {
             statusReadOutstanding = false
             guard let parsed = LogiWheelProtocol.parseStatus(report, feature: feature) else {
                 log("Status: short response")
+                statusAnswered(nil, refused: false)
+                announceMismatchChanges()
                 return true
             }
             if parsed != loggedStatus {
@@ -216,12 +261,16 @@ final class LogiWheelController {
                 log("Mouse: \(Self.describe(parsed))")
             }
             status = parsed
+            statusAnswered(parsed, refused: false)
             onChange()
             flushPendingWork()
+            announceMismatchChanges()
             return true
         }
         if functionId == feature.writeStatusFunction {
-            return true  // set ACK; the read-back that follows carries the state
+            // Set ACK; the read-back that follows carries the state.
+            if !writtenFields.isEmpty, writeAnswer == .waiting { writeAnswer = .acknowledged }
+            return true
         }
         return false
     }
@@ -239,12 +288,16 @@ final class LogiWheelController {
             if !pendingFields.isEmpty || pendingToggle {
                 log("Status read failed: nothing is written until the next connect or change")
             }
+            for field in pendingFields where isSet(field) { outcomes[field] = .refused }
+            statusAnswered(nil, refused: true)
             pendingFields.removeAll()
             pendingToggle = false
             onChange()
         } else if functionId == feature.writeStatusFunction {
+            if !writtenFields.isEmpty, writeAnswer == .waiting { writeAnswer = .refused }
             onChange()  // the read-back already queued resyncs the state
         }
+        announceMismatchChanges()
     }
 
     // MARK: - Private
@@ -283,10 +336,12 @@ final class LogiWheelController {
         capabilitiesTimedOut = true
         onChange()
         if !statusReadOutstanding { flushPendingWork() }
+        announceMismatchChanges()
     }
 
     private func requestStatus() {
         statusReadOutstanding = true
+        statusReadsInFlight += 1
         send(feature.readStatusFunction, [])
     }
 
@@ -321,12 +376,14 @@ final class LogiWheelController {
         // A new mode brings the user's sensitivity along: SmartShift needs a threshold.
         if fields.contains(.mode) { fields.insert(.sensitivity) }
 
+        for field in fields { outcomes.removeValue(forKey: field) }
         let mouseMode = LogiWheelProtocol.mode(for: status)
         var newMode: LogiWheelMode?
         if fields.contains(.mode) {
             if let wanted = desired.mode {
                 if wanted == mouseMode {
                     log("Mode: mouse \(Self.name(mouseMode)), wanted \(Self.name(wanted)); already set, no write")
+                    outcomes[.mode] = .taken
                 } else {
                     newMode = wanted
                     log("Mode: mouse \(Self.name(mouseMode)), wanted \(Self.name(wanted)); writing \(Self.name(wanted))")
@@ -348,6 +405,7 @@ final class LogiWheelController {
                     log("SmartShift sensitivity: wanted \(wanted) %; applies only in SmartShift and the wheel is in \(Self.name(resultingMode)), left alone")
                 } else if let current = mouseThreshold, LogiWheelProtocol.sensitivityMatches(wanted, threshold: current) {
                     log("SmartShift sensitivity: \(onMouse), wanted \(wanted) %; already set, no write")
+                    outcomes[.sensitivity] = .taken
                 } else {
                     threshold = target
                     log("SmartShift sensitivity: \(onMouse), wanted \(wanted) %; writing threshold \(target)")
@@ -369,12 +427,14 @@ final class LogiWheelController {
                 if supportsScrollForce {
                     if status.torque == target {
                         log("Scroll force: mouse \(target), wanted \(wanted); already set, no write")
+                        outcomes[.scrollForce] = .taken
                     } else {
                         torque = target
                         log("Scroll force: mouse \(status.torque.map(String.init) ?? "unknown"), wanted \(wanted); writing \(target)")
                     }
                 } else if feature == .smartShiftEnhanced, capabilitiesTimedOut {
                     forceWaitsForCapabilities = true
+                    outcomes[.scrollForce] = .unanswered
                     log("Scroll force: wanted \(wanted); the mouse has not said whether it can tune it, waiting for that")
                 } else {
                     log("Scroll force: wanted \(wanted); this mouse cannot tune it, not writing")
@@ -387,8 +447,20 @@ final class LogiWheelController {
         let params = LogiWheelProtocol.setParams(
             mode: newMode, threshold: threshold, torque: torque, current: status, feature: feature
         )
-        guard LogiWheelProtocol.needsWrite(params, current: status) else { return nil }
+        // The user's values this write carries (a factory threshold is not one of them).
+        var carried: Set<Field> = []
+        if newMode != nil { carried.insert(.mode) }
+        if threshold != nil, desired.smartShiftSensitivity != nil { carried.insert(.sensitivity) }
+        if torque != nil { carried.insert(.scrollForce) }
+        guard LogiWheelProtocol.needsWrite(params, current: status) else {
+            for field in carried { outcomes[field] = .taken }
+            return nil
+        }
         log("Writing \(params.map { String(format: "%02X", $0) }.joined(separator: " ")), then reading back")
+        // `write` sends the read-back next: the reads already on their way come before it.
+        writtenFields = carried
+        writeAnswer = .waiting
+        statusReadsBeforeWrite = statusReadsInFlight
         return params
     }
 
@@ -401,16 +473,102 @@ final class LogiWheelController {
             deviceName: deviceName,
             supportsSmartShift: true,
             supportsScrollForce: supportsScrollForce,
-            mode: .init(onMouse: mode, setByYou: desired.mode),
-            smartShiftSensitivity: .init(
+            mode: value(.mode, onMouse: mode, setByYou: desired.mode),
+            smartShiftSensitivity: value(
+                .sensitivity,
                 onMouse: smartShiftSensitivity,
                 setByYou: desired.smartShiftSensitivity.map(LogiWheelProtocol.sensitivityAsKept)
             ),
-            scrollForce: .init(
+            scrollForce: value(
+                .scrollForce,
                 onMouse: scrollForce,
                 setByYou: desired.scrollForce.map { Int(LogiWheelProtocol.clampedTorque($0)) }
             )
         )
+    }
+
+    private func value<T: Equatable>(_ field: Field, onMouse: T?, setByYou: T?) -> LogiMouseDeviceState.Value<T> {
+        let differs = setByYou != nil && setByYou != onMouse
+        return LogiMouseDeviceState.Value(onMouse: onMouse, setByYou: setByYou, mismatch: differs ? mismatch(field) : nil)
+    }
+
+    // MARK: - Why a set value differs
+
+    private func isSet(_ field: Field) -> Bool {
+        switch field {
+        case .mode: return desired.mode != nil
+        case .sensitivity: return desired.smartShiftSensitivity != nil
+        case .scrollForce: return desired.scrollForce != nil
+        }
+    }
+
+    /// Why the user's value of `field` may not be on the mouse; nil while not managed, while
+    /// it is not set, or when nothing is known. Shown only when the values differ.
+    private func mismatch(_ field: Field) -> LogiMouseDeviceState.Mismatch? {
+        guard managed, isSet(field) else { return nil }
+        // Waiting for the status read that decides it, or for the read-back of its write.
+        if pendingFields.contains(field) || (writtenFields.contains(field) && statusReadsInFlight > 0) {
+            return .sending
+        }
+        switch outcomes[field] {
+        case .taken?: return .changedElsewhere
+        case .refused?: return .refused
+        case .unanswered?: return .noAnswer
+        case .notKept?: return .notKept
+        case nil: return nil
+        }
+    }
+
+    /// A status read was answered (`status` nil: unreadable, or an error when `refused`).
+    /// The answer to the read sent right after a write is its read-back: it tells what
+    /// became of the values that write carried. Answers come in request order, so it is the
+    /// first status answer after the write's own answer; when that answer was lost, the
+    /// first one after the reads that went out before the write.
+    private func statusAnswered(_ status: LogiWheelStatus?, refused: Bool) {
+        statusReadsInFlight = max(0, statusReadsInFlight - 1)
+        guard !writtenFields.isEmpty else { return }
+        if writeAnswer == .waiting, statusReadsBeforeWrite > 0 {
+            statusReadsBeforeWrite -= 1
+            return
+        }
+        let fields = writtenFields
+        writtenFields.removeAll()
+        for field in fields {
+            if let status, mouseHasTheUserValue(field, status: status) {
+                outcomes[field] = .taken
+                continue
+            }
+            switch writeAnswer {
+            case .refused: outcomes[field] = .refused
+            case .acknowledged: outcomes[field] = status == nil ? (refused ? .refused : .unanswered) : .notKept
+            case .waiting: outcomes[field] = .unanswered
+            }
+        }
+    }
+
+    private func mouseHasTheUserValue(_ field: Field, status: LogiWheelStatus) -> Bool {
+        switch field {
+        case .mode:
+            return desired.mode == LogiWheelProtocol.mode(for: status)
+        case .sensitivity:
+            guard let wanted = desired.smartShiftSensitivity,
+                  let threshold = LogiWheelProtocol.threshold(status.autoDisengage) else { return false }
+            return LogiWheelProtocol.sensitivityMatches(wanted, threshold: threshold)
+        case .scrollForce:
+            guard let wanted = desired.scrollForce else { return false }
+            return status.torque == LogiWheelProtocol.clampedTorque(wanted)
+        }
+    }
+
+    /// One `onChange` when the reason of any value changed.
+    private func announceMismatchChanges() {
+        var now: [Field: LogiMouseDeviceState.Mismatch] = [:]
+        for field in Field.allCases {
+            if let reason = mismatch(field) { now[field] = reason }
+        }
+        guard now != announcedMismatches else { return }
+        announcedMismatches = now
+        onChange()
     }
 
     // MARK: - Log text

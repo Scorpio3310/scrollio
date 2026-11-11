@@ -6,7 +6,8 @@
 //  MX Master 3S, MX Master 3 and no Logitech mouse get, what is greyed out while Scrollio
 //  does not manage the mouse, the "On the mouse" lines, the sample pulse of the strength
 //  slider, the header lighting up the part of the hovered or focused row, the "Pointer
-//  (macOS)" box for any mouse, and the tab's place in the toolbar. The mice and the macOS
+//  (macOS)" box for any mouse, why a value is not on the mouse and "Send Again", and the
+//  tab's place in the toolbar. The mice and the macOS
 //  settings are fixtures: nothing is read from or written to a real mouse or the real macOS
 //  settings, and nothing is shown on screen.
 //
@@ -29,15 +30,19 @@ enum MouseDeviceFixtures {
         return LogiMouseDeviceState.Battery(percent: percent, level: level, charging: charging, isApproximate: approximate)
     }
 
+    /// Why a setting is not on the mouse, as the Logi layer reports it; none by default.
+    typealias Mismatches = [MouseSetting: LogiMouseDeviceState.Mismatch]
+
     static func wheel(
         id: String, name: String, scrollForceSupported: Bool,
-        mode: LogiWheelMode?, sensitivity: Int?, scrollForce: Int?
+        mode: LogiWheelMode?, sensitivity: Int?, scrollForce: Int?,
+        mismatches: Mismatches = [:]
     ) -> LogiWheelDeviceState {
         return LogiWheelDeviceState(
             id: id, deviceName: name, supportsSmartShift: true, supportsScrollForce: scrollForceSupported,
-            mode: .init(onMouse: mode, setByYou: nil),
-            smartShiftSensitivity: .init(onMouse: sensitivity, setByYou: nil),
-            scrollForce: .init(onMouse: scrollForce, setByYou: nil)
+            mode: .init(onMouse: mode, setByYou: nil, mismatch: mismatches[.wheelMode]),
+            smartShiftSensitivity: .init(onMouse: sensitivity, setByYou: nil, mismatch: mismatches[.sensitivity]),
+            scrollForce: .init(onMouse: scrollForce, setByYou: nil, mismatch: mismatches[.firmness])
         )
     }
 
@@ -55,7 +60,8 @@ enum MouseDeviceFixtures {
         pressChangeable: Bool = true,
         mode: LogiWheelMode? = .smartShift,
         sensitivity: Int? = 50,
-        scrollForce: Int? = 100
+        scrollForce: Int? = 100,
+        mismatches: Mismatches = [:]
     ) -> LogiMouseDeviceState {
         let name = "MX Master 4"
         return LogiMouseDeviceState(
@@ -64,20 +70,25 @@ enum MouseDeviceFixtures {
             supported: [.battery, .pointerSpeed, .haptics, .pressForce],
             managed: managed,
             battery: battery,
-            pointerSpeed: .init(choices: dpiChoices, dpi: .init(onMouse: dpi, setByYou: nil), defaultDPI: 1000),
+            pointerSpeed: .init(
+                choices: dpiChoices, dpi: .init(onMouse: dpi, setByYou: nil, mismatch: mismatches[.pointerSpeed]), defaultDPI: 1000
+            ),
             haptics: .init(
-                isOn: .init(onMouse: hapticsOn, setByYou: nil),
-                strength: .init(onMouse: strength, setByYou: nil),
+                isOn: .init(onMouse: hapticsOn, setByYou: nil, mismatch: mismatches[.haptics]),
+                strength: .init(onMouse: strength, setByYou: nil, mismatch: mismatches[.strength]),
                 hasFewLevels: fewLevels,
                 fewLevelChoices: [25, 50, 75, 100]
             ),
             pressForce: .init(
-                force: .init(onMouse: pressForce, setByYou: nil),
+                force: .init(onMouse: pressForce, setByYou: nil, mismatch: mismatches[.pressForce]),
                 range: pressRange,
                 defaultForce: 5167,
                 isChangeable: pressChangeable
             ),
-            wheel: wheel(id: id, name: name, scrollForceSupported: true, mode: mode, sensitivity: sensitivity, scrollForce: scrollForce)
+            wheel: wheel(
+                id: id, name: name, scrollForceSupported: true, mode: mode, sensitivity: sensitivity, scrollForce: scrollForce,
+                mismatches: mismatches
+            )
         )
     }
 
@@ -168,6 +179,7 @@ final class MousePreferencesViewControllerTests: XCTestCase {
     private var devices: [LogiMouseDeviceState] = []
     private var refreshCount = 0
     private var sampleCount = 0
+    private var sendAgainCount = 0
     private var mac = FakeMacPointer()
 
     override func setUp() {
@@ -179,6 +191,7 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         devices = []
         refreshCount = 0
         sampleCount = 0
+        sendAgainCount = 0
         mac = FakeMacPointer()
     }
 
@@ -196,7 +209,8 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         controller.deviceSource = MouseDeviceSource(
             deviceStates: { [weak self] in self?.devices ?? [] },
             refresh: { [weak self] in self?.refreshCount += 1 },
-            playHapticSample: { [weak self] in self?.sampleCount += 1 }
+            playHapticSample: { [weak self] in self?.sampleCount += 1 },
+            sendAgain: { [weak self] in self?.sendAgainCount += 1 }
         )
         controller.pointerSettings = mac.settings
         controller.readbackSettleTime = 0
@@ -849,6 +863,156 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         controller.readbackSettleTime = 0
         controller.syncControls()
         XCTAssertEqual(controller.pointerSpeedRow.explanation, text("mouse-pointer-speed-hint") + "\n" + onTheMouse("1000 DPI"))
+    }
+
+    // MARK: - Why, and "Send Again"
+
+    /// The reason the Logi layer gives stands after what the mouse reports, in plain words.
+    func testEachReasonIsSaidUnderItsRow() {
+        manage()
+        Options.shared.logiMouse.pointerDPI = 1600
+        let expected: [(LogiMouseDeviceState.Mismatch?, String)] = [
+            (nil, "On the mouse: 1000 DPI"),
+            (.sending, "On the mouse: 1000 DPI. Still sending your value…"),
+            (.refused, "On the mouse: 1000 DPI. The mouse refused 1600 DPI."),
+            (.noAnswer, "On the mouse: 1000 DPI. The mouse did not answer."),
+            (.notKept, "On the mouse: 1000 DPI. The mouse kept its own value."),
+            (.changedElsewhere, "On the mouse: 1000 DPI. It was changed on the mouse or by another app."),
+        ]
+        for (why, line) in expected {
+            let mismatches: Fixtures.Mismatches = why.map { [.pointerSpeed: $0] } ?? [:]
+            let controller = makeController([Fixtures.mxMaster4(mismatches: mismatches)])
+            XCTAssertEqual(controller.pointerSpeedRow.explanation, text("mouse-pointer-speed-hint") + "\n" + line, "\(String(describing: why))")
+            XCTAssertFalse(line.contains("HID"), "no protocol words")
+        }
+    }
+
+    func testEveryRowSaysWhy() {
+        manage(mode: .ratchet, sensitivity: 50, scrollForce: 80)
+        Options.shared.logiMouse = LogiMouseSettings(pointerDPI: 1600, hapticsOn: true, hapticStrength: 40, pressForce: 5503)
+        let controller = makeController([Fixtures.mxMaster4(mismatches: [
+            .pointerSpeed: .refused, .wheelMode: .changedElsewhere, .firmness: .notKept,
+            .haptics: .noAnswer, .strength: .sending, .pressForce: .refused,
+        ])])
+        let expected: [(PreferencesGroupRow, String, String)] = [
+            (controller.pointerSpeedRow, "mouse-pointer-speed-hint", "On the mouse: 1000 DPI. The mouse refused 1600 DPI."),
+            (controller.wheelModeRow, "mouse-wheel-mode-ratchet-hint",
+             "On the mouse: \(MouseText.modeName(.smartShift)). It was changed on the mouse or by another app."),
+            (controller.firmnessRow, "mouse-wheel-force-hint", "On the mouse: \(MouseText.percent(100)). The mouse kept its own value."),
+            (controller.hapticsRow, "mouse-haptics-hint", "On the mouse: \(MouseText.onOff(false)). The mouse did not answer."),
+            (controller.pressForceRow, "mouse-press-force-hint",
+             "On the mouse: \(MouseText.percent(0)). The mouse refused \(MouseText.percent(50))."),
+        ]
+        for (row, hint, line) in expected {
+            XCTAssertEqual(row.explanation, text(hint) + "\n" + line, row.title)
+        }
+    }
+
+    func testSendAgainShowsOnlyWhileAValueIsNotOnTheMouseForAnotherReasonThanSending() throws {
+        manage()
+        Options.shared.logiMouse.pointerDPI = 1600
+        for why in [nil, .refused, .noAnswer, .notKept, .changedElsewhere] as [LogiMouseDeviceState.Mismatch?] {
+            let mismatches: Fixtures.Mismatches = why.map { [.pointerSpeed: $0] } ?? [:]
+            let controller = makeController([Fixtures.mxMaster4(mismatches: mismatches)])
+            XCTAssertEqual(controller.model.managedNote, .notOnTheMouse, "\(String(describing: why))")
+            XCTAssertFalse(controller.notOnTheMouseNote.isHidden)
+            XCTAssertFalse(controller.sendAgainButton.isHidden)
+            XCTAssertTrue(controller.sendAgainButton.isEnabled)
+            XCTAssertTrue(controller.managedOffNote.isHidden)
+        }
+
+        // Still sending: nothing to send again.
+        let sending = makeController([Fixtures.mxMaster4(mismatches: [.pointerSpeed: .sending])])
+        XCTAssertNil(sending.model.managedNote)
+        XCTAssertTrue(sending.notOnTheMouseNote.isHidden)
+
+        // The mouse has every value the user set.
+        let matching = makeController([Fixtures.mxMaster4(dpi: 1600)])
+        XCTAssertNil(matching.model.managedNote)
+        XCTAssertTrue(matching.notOnTheMouseNote.isHidden)
+
+        // While the line waits after a change, so does the button.
+        let held = makeController([Fixtures.mxMaster4(mismatches: [.pointerSpeed: .refused])])
+        held.readbackSettleTime = 60
+        let index = try XCTUnwrap(Fixtures.dpiChoices.firstIndex(of: 2000))
+        drag(held.pointerSpeedSlider, to: Double(index))
+        XCTAssertTrue(held.notOnTheMouseNote.isHidden)
+    }
+
+    func testSendAgainAsksTheMiceOnceAndChangesNoSetting() {
+        manage(scrollForce: 80)
+        Options.shared.logiMouse.pointerDPI = 1600
+        let mouseBefore = Options.shared.logiMouse
+        let wheelBefore = Options.shared.logiWheel
+        let controller = makeController([Fixtures.mxMaster4(mismatches: [.pointerSpeed: .refused, .firmness: .changedElsewhere])])
+        XCTAssertEqual(sendAgainCount, 0)
+
+        send(controller.sendAgainButton)
+        XCTAssertEqual(sendAgainCount, 1)
+        XCTAssertEqual(refreshCount, 0)
+        XCTAssertEqual(Options.shared.logiMouse, mouseBefore)
+        XCTAssertEqual(Options.shared.logiWheel, wheelBefore)
+        XCTAssertEqual(mac.writes, 0)
+        XCTAssertEqual(controller.sendAgainButton.title, "Send Again")
+    }
+
+    /// The write rule: nothing is sent again when the pane loads, appears, or the mice report.
+    func testNothingIsSentAgainOnLoadAppearOrAReport() {
+        manage()
+        Options.shared.logiMouse.pointerDPI = 1600
+        let controller = makeController([Fixtures.mxMaster4(mismatches: [.pointerSpeed: .refused])])
+        controller.viewWillAppear()
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        controller.syncControls()
+        controller.viewDidDisappear()
+        XCTAssertEqual(sendAgainCount, 0)
+    }
+
+    func testNotManagedTheLineSaysWhyTheRowsAreGreyed_andNothingCanBeSentAgain() {
+        manage(false)
+        Options.shared.logiMouse.pointerDPI = 1600
+        let controller = makeController([Fixtures.mxMaster4(mismatches: [.pointerSpeed: .refused])])
+        XCTAssertEqual(controller.model.managedNote, .notManaged)
+        XCTAssertFalse(controller.managedOffNote.isHidden)
+        XCTAssertTrue(controller.notOnTheMouseNote.isHidden)
+        let label = allSubviews(of: controller.managedOffNote).compactMap { $0 as? NSTextField }.first
+        XCTAssertEqual(label?.stringValue, "Turn this on to change the settings below. Until then they show what the mouse reports.")
+        for row in settingRows(controller).dropFirst() where !row.isHidden {
+            XCTAssertFalse(row.isEnabled, row.title)
+        }
+        controller.sendAgainClicked(controller.sendAgainButton)
+        XCTAssertEqual(sendAgainCount, 0, "not managed: nothing to send")
+
+        // On: the line goes.
+        set(controller.managedSwitch, true)
+        XCTAssertTrue(controller.managedOffNote.isHidden)
+    }
+
+    func testWithoutALogitechMouseThereIsNoLine() {
+        let controller = makeController([])
+        XCTAssertNil(controller.model.managedNote)
+        XCTAssertTrue(controller.managedOffNote.isHidden)
+        XCTAssertTrue(controller.notOnTheMouseNote.isHidden)
+    }
+
+    /// The line sits close under the switch's box, at the rows' inset; "Send Again" ends where
+    /// the switch does. The pane stays as tall as what shows.
+    func testTheLineSitsUnderTheSwitch() {
+        manage()
+        Options.shared.logiMouse.pointerDPI = 1600
+        let controller = makeController([Fixtures.mxMaster4(mismatches: [.pointerSpeed: .refused])])
+        controller.view.layoutSubtreeIfNeeded()
+        let margin = PreferencesGroupedForm.margin
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        let box = frame(of: controller.managedSection.box, in: controller)
+        let note = frame(of: controller.notOnTheMouseNote, in: controller)
+        XCTAssertEqual(box.minY - note.maxY, PreferencesGroupedForm.noteSpacing, accuracy: 0.5)
+        let label = allSubviews(of: controller.notOnTheMouseNote).compactMap { $0 as? NSTextField }.first!
+        XCTAssertEqual(frame(of: label, in: controller).minX, margin + inset, accuracy: 0.5)
+        XCTAssertEqual(frame(of: controller.sendAgainButton, in: controller).maxX,
+                       frame(of: controller.managedSwitch, in: controller).maxX, accuracy: 1)
+        XCTAssertGreaterThan(note.minY, frame(of: controller.pointerSection.box, in: controller).maxY)
+        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
     }
 
     // MARK: - Turning management on
@@ -1802,6 +1966,11 @@ final class MousePreferencesRenderTests: XCTestCase {
         Options.shared.logiMouse = LogiMouseSettings(pointerDPI: 1600, hapticsOn: true, hapticStrength: 60, pressForce: 5167)
         Options.shared.logiWheel.scrollForce = 70
         try render(tab([master4]).view, name: "mx-master-4-differs", into: directory)
+        // The same, with why each is not on the mouse, and "Send Again".
+        let reasons = MouseDeviceFixtures.mxMaster4(mismatches: [
+            .pointerSpeed: .refused, .firmness: .changedElsewhere, .haptics: .noAnswer, .strength: .notKept, .pressForce: .sending,
+        ])
+        try render(tab([reasons]).view, name: "mx-master-4-reasons", into: directory)
 
         Options.shared.logiMouse = .default
         Options.shared.logiWheel = .default

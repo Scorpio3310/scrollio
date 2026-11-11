@@ -91,6 +91,11 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try renderMouse([master4], name: "mouse-mx-master-4-managed")
         Options.shared.logiMouse = LogiMouseSettings(pointerDPI: 1600, hapticsOn: true, hapticStrength: 60, pressForce: 5167)
         try renderMouse([master4], name: "mouse-mx-master-4-managed-haptics-on")
+        // Why a value is not on the mouse: refused, with "Send Again" under the switch; then
+        // still being sent, without it.
+        Options.shared.logiMouse = LogiMouseSettings(pointerDPI: 1600)
+        try renderMouse([MouseDeviceFixtures.mxMaster4(mismatches: [.pointerSpeed: .refused])], name: "mouse-mx-master-4-refused")
+        try renderMouse([MouseDeviceFixtures.mxMaster4(mismatches: [.pointerSpeed: .sending])], name: "mouse-mx-master-4-sending")
         Options.shared.logiMouse = .default
         Options.shared.logiWheel = .default
         try renderMouse([master4], name: "mouse-mx-master-4-not-managed")

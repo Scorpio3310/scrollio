@@ -173,6 +173,17 @@ final class LogiCenter {
         manager.applyMouseSettings(settings, managed: managed)
     }
 
+    /// "Send Again" in the Mouse tab: every connected mouse is read again and then given the
+    /// values the user set that it reports differently, the way a reconnect does it. Nothing
+    /// is written unless "Let Scrollio manage this mouse" is on, and a value the user never
+    /// set is never written. Posts `mouseStateChanged`. Main thread only.
+    func sendMouseSettingsAgain() {
+        #if DEBUG
+        precondition(Thread.isMainThread, "LogiCenter is main-thread-only")
+        #endif
+        manager.sendMouseSettingsAgain()
+    }
+
     /// Plays one pulse at the current strength on every connected mouse whose haptics are
     /// on (the "feel it" pulse after the strength slider is let go). It waits briefly for
     /// the settings push of that slider, so it is felt at the new strength. Main thread only.

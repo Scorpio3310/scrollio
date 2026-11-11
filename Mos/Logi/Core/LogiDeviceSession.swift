@@ -3565,6 +3565,19 @@ class LogiDeviceSession {
         }
     }
 
+    /// "Send Again" (LogiCenter.sendMouseSettingsAgain): every slot's basics and wheel start
+    /// over the way a reconnect starts a kept controller (`resolveMouseBasicsController`,
+    /// `resolveWheelController`): everything is read again, then a value is written only
+    /// where the mouse is managed, the user set it and the fresh read differs.
+    func startMouseSettingsAgain(mouse: LogiMouseSettings, managed: Bool, wheel: LogiWheelSettings) {
+        for slot in basicsControllers.keys.sorted() {
+            basicsControllers[slot]?.start(desired: mouse, managed: managed)
+        }
+        for slot in wheelControllers.keys.sorted() {
+            wheelControllers[slot]?.start(desired: wheel)
+        }
+    }
+
     /// Re-reads the basics of every slot. Returns whether any slot has them.
     @discardableResult
     func refreshMouseBasics() -> Bool {
