@@ -183,14 +183,15 @@ final class ThumbWheelEngine {
         let seenAt = clock()
         let time = event.timestamp == 0 ? seenAt : Double(event.timestamp) * secondsPerTimestampUnit
         var steps = 0
+        var travel = 0.0
         if settings.function != .scroll {
-            let travel = ThumbWheelStepper.travel(
+            travel = ThumbWheelStepper.travel(
                 lineDelta: event.lineDelta, fixedDelta: event.fixedDelta, pointDelta: event.pointDelta,
-                flipped: flipped, speed: settings.speed
+                flipped: flipped, speed: settings.speed, function: settings.function
             )
             steps = stepper.feed(travel: travel, function: settings.function, at: time)
         }
-        record(event, settings: settings, at: time, seenAt: seenAt)
+        record(event, settings: settings, travel: travel, at: time, seenAt: seenAt)
         if steps != 0, let action = ThumbWheelAction.action(for: settings.function, towardNext: steps > 0), roll != nil {
             roll?.pendingSteps += abs(steps)
             let rollID = roll?.id
@@ -204,7 +205,7 @@ final class ThumbWheelEngine {
         return steps
     }
 
-    private func record(_ event: ThumbWheelEvent, settings: ThumbWheelSettings, at time: TimeInterval, seenAt: TimeInterval) {
+    private func record(_ event: ThumbWheelEvent, settings: ThumbWheelSettings, travel: Double, at time: TimeInterval, seenAt: TimeInterval) {
         if let open = roll, open.hasRested(at: time) || !open.matches(settings) {
             // Its look has not come yet, or a setting changed in the middle of the roll: the
             // roll ends here. Its line is written after the callback, once its steps ran.
@@ -214,10 +215,10 @@ final class ThumbWheelEngine {
             nextRollID &+= 1
             roll = Roll(id: nextRollID, settings: settings, at: time, seenAt: seenAt)
         }
-        roll?.add(event, at: time, seenAt: seenAt)
+        roll?.add(event, travel: travel, at: time, seenAt: seenAt)
         if !checkScheduled {
             checkScheduled = true
-            schedule(ThumbWheelTuning.rollRest) { [weak self] in self?.checkRoll() }
+            schedule(ThumbWheelTuning.logRollRest) { [weak self] in self?.checkRoll() }
         }
     }
 
