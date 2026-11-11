@@ -1225,6 +1225,52 @@ final class PreferencesButtonsTests: XCTestCase {
 
     /// "Set Up…" and a button that is in the list without an action: it gets Gesture
     /// Navigation. One with an action keeps it and only flashes.
+    /// Gesture Navigation is held while the mouse moves: a key cannot be the gesture button.
+    /// Gestures › Set Up… refuses one, adds nothing and says why; a mouse button still works.
+    func testSetUpRefusesAKeyAsTheGestureButton() {
+        let pane = makePane()
+        let recorder = KeyRecorder()
+        let key = InputEvent(type: .keyboard, code: 40, modifiers: .maskCommand, phase: .down, source: .hidPP, device: nil)
+
+        pane.beginAddingBinding(action: SystemShortcut.mouseGestureNavigation)
+        pane.onRecordingStarted(recorder)
+        XCTAssertEqual(
+            pane.headerView.content.subtitle,
+            "The mouse button you will hold for gestures.\nPress Esc to cancel.",
+            "no \"or a key\" while the gesture button is set up"
+        )
+        XCTAssertFalse(pane.validateRecordedEvent(recorder, event: key), "refused, as a duplicate is")
+        pane.onEventRecorded(recorder, didRecordEvent: key, isDuplicate: true)
+        XCTAssertEqual(pane.headerView.content.title, "Gestures need a mouse button")
+        XCTAssertEqual(pane.headerView.content.subtitle, "A key cannot be held while the mouse moves.")
+        pane.onRecordingStopped(recorder, didRecord: true)
+        flush()
+        XCTAssertTrue(Options.shared.buttons.binding.isEmpty, "nothing was added")
+
+        // "+" on its own still takes a key, and says so.
+        pane.beginAddingBinding()
+        pane.onRecordingStarted(recorder)
+        XCTAssertEqual(pane.headerView.content.subtitle, "Or a key with ⌘, ⌥, ⌃ or ⇧.\nPress Esc to cancel.")
+        XCTAssertTrue(pane.validateRecordedEvent(recorder, event: key))
+        pane.onRecordingStopped(recorder, didRecord: false)
+    }
+
+    /// A key is not offered Gesture Navigation in its menu; a mouse button is. A key that
+    /// has it from before keeps the item, so the menu shows what is set.
+    func testAKeyIsNotOfferedGestureNavigation() throws {
+        let gesture = SystemShortcut.mouseGestureNavigation.identifier
+        let pane = makePane([
+            binding(3, "copy"),
+            binding(40, "copy", modifiers: UInt(CGEventFlags.maskCommand.rawValue), type: .keyboard),
+            binding(41, gesture, modifiers: UInt(CGEventFlags.maskCommand.rawValue), type: .keyboard),
+        ])
+        let rows = pane.rows
+        XCTAssertEqual(rows.count, 3)
+        XCTAssertEqual(try XCTUnwrap(rows[0].pullDown.gestureNavigationItem).isHidden, false, "a mouse button")
+        XCTAssertEqual(try XCTUnwrap(rows[1].pullDown.gestureNavigationItem).isHidden, true, "a key")
+        XCTAssertEqual(try XCTUnwrap(rows[2].pullDown.gestureNavigationItem).isHidden, false, "a key that has it already")
+    }
+
     func testSetUpGivesAListedButtonWithoutAnActionGestureNavigation() throws {
         let unbound = binding(3)
         let bound = binding(4, "copy")

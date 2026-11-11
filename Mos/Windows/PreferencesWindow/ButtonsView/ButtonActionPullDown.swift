@@ -74,6 +74,10 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
             buildMenu()
         }
         gestureSettingsItem?.isHidden = !isGestureNavigationBound
+        // Gesture Navigation is held while the mouse moves: a key cannot run it (the input
+        // side passes such a binding through), so a key is not offered it. A key that
+        // already has it keeps the item, so the menu still shows what is set.
+        gestureNavigationItem?.isHidden = binding.triggerEvent.type == .keyboard && !isGestureNavigationBound
         refreshActionDisplay()
     }
 
@@ -95,6 +99,13 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         // must never pick an item of a closed menu.
         disableKeyEquivalents(in: menu)
         self.menu = menu
+    }
+
+    /// The "Gesture Navigation" item of the menu.
+    var gestureNavigationItem: NSMenuItem? {
+        return menu?.items.first {
+            ($0.representedObject as? SystemShortcut.Shortcut)?.identifier == SystemShortcut.mouseGestureNavigation.identifier
+        }
     }
 
     /// "Show Gesture Settings", shown while Gesture Navigation is the action.

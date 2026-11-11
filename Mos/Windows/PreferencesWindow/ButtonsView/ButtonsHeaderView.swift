@@ -51,13 +51,21 @@ struct ButtonsHeaderContent: Equatable {
     ///   - deviceName: the connected Logitech mouse, nil without one.
     ///   - boundCount: buttons that have an action.
     ///   - isRecording: "+" waits for a button.
+    ///   - mouseButtonOnly: it waits for the gesture button (Gestures › Set Up…): a key
+    ///     will not do.
     ///   - focus: the row pointed at (it wins), else the selected row or the one just
     ///     recorded; nil: none.
-    static func make(deviceName: String?, boundCount: Int, isRecording: Bool, focus: Focus?) -> ButtonsHeaderContent {
+    static func make(
+        deviceName: String?,
+        boundCount: Int,
+        isRecording: Bool,
+        mouseButtonOnly: Bool = false,
+        focus: Focus?
+    ) -> ButtonsHeaderContent {
         if isRecording {
             return ButtonsHeaderContent(
                 title: text("buttons-header-recording"),
-                subtitle: text("buttons-header-recording-hint"),
+                subtitle: text(mouseButtonOnly ? "buttons-header-recording-hint-gesture" : "buttons-header-recording-hint"),
                 part: nil
             )
         }

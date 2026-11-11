@@ -37,7 +37,9 @@ struct ButtonsDeviceSource {
             guard LogiCenter.shared.isLogiCode(code) else { return .normal }
             return ButtonCapturePresentationStatus.from(LogiCenter.shared.buttonCaptureDiagnosis(forMosCode: code))
         },
-        deviceName: { LogiCenter.shared.mouseDeviceStates().first?.deviceName },
+        // The mouse the Mouse pane's card is about (the one with the most settings), so
+        // the two cards never name different mice.
+        deviceName: { MousePaneModel.ordered(LogiCenter.shared.mouseDeviceStates()).first?.deviceName },
         isBusy: { LogiCenter.shared.isBusy },
         refresh: { LogiCenter.shared.refreshReportingStates() },
         warnBluetoothButton: { LogiCenter.shared.showBLEHIDPPUnstableToast(forMosCode: $0) }
@@ -510,6 +512,8 @@ class PreferencesButtonsViewController: NSViewController {
         pendingAction = action
         pendingRecorded = nil
         let anchor = list.addButton
+        // With a long list "+" is below the visible part: the recorder's popover hangs on it.
+        anchor.scrollToVisible(anchor.bounds)
         if let startRecording {
             startRecording(anchor)
         } else {
@@ -645,8 +649,14 @@ class PreferencesButtonsViewController: NSViewController {
             deviceName: deviceSource.deviceName(),
             boundCount: bound,
             isRecording: isRecording,
+            mouseButtonOnly: Self.needsMouseButton(pendingAction),
             focus: focus
         )
+    }
+
+    /// Gesture Navigation is held while the mouse moves: only a mouse button can have it.
+    static func needsMouseButton(_ action: SystemShortcut.Shortcut?) -> Bool {
+        return action?.identifier == SystemShortcut.mouseGestureNavigation.identifier
     }
 
     /// What the card says about `binding`'s row, pointed at or selected, or (`.answer`)
@@ -759,6 +769,8 @@ extension PreferencesButtonsViewController: KeyRecorderDelegate {
     /// unless it has no action and gets the one waiting (Gestures › Set Up…).
     func validateRecordedEvent(_ recorder: KeyRecorder, event: InputEvent) -> Bool {
         let trigger = normalizedTrigger(for: event)
+        // A key cannot be the gesture button (Gestures › Set Up…): refused like a duplicate.
+        if Self.needsMouseButton(pendingAction), trigger.type == .keyboard { return false }
         guard let existing = existingBinding(for: trigger) else { return true }
         return takesPendingAction(existing, action: pendingAction)
     }
@@ -770,6 +782,17 @@ extension PreferencesButtonsViewController: KeyRecorderDelegate {
     func onEventRecorded(_ recorder: KeyRecorder, didRecordEvent event: InputEvent, isDuplicate: Bool) {
         let trigger = normalizedTrigger(for: event)
         isRecording = false
+        if Self.needsMouseButton(pendingAction), trigger.type == .keyboard {
+            // Nothing is added: the card says why.
+            pendingRecorded = nil
+            showRecorded(ButtonsHeaderContent.Focus(
+                title: NSLocalizedString("buttons-gesture-needs-mouse-button", comment: ""),
+                action: NSLocalizedString("buttons-gesture-needs-mouse-button-detail", comment: ""),
+                picture: ButtonTriggerPicture.make(for: trigger, mouse: mouse),
+                reason: .recorded
+            ))
+            return
+        }
         if let existing = existingBinding(for: trigger), !takesPendingAction(existing, action: pendingAction) {
             pendingRecorded = nil
             list.flash(existing.id)

@@ -736,11 +736,17 @@ final class MousePreferencesViewControllerTests: XCTestCase {
     func testSeveralMiceShareOneSetOfChoices() {
         let model = MousePaneModel(
             devices: [Fixtures.mxMaster3S(), Fixtures.mxMaster4()],
-            settings: .default, wheel: .default
+            settings: .default, wheel: LogiWheelSettings(managedByMos: true)
         )
         // The mouse with the most settings is the one in the header.
         XCTAssertEqual(model.header.title, "MX Master 4")
         XCTAssertEqual(model.header.subtitle, String(format: text("mouse-header-connected-several"), 2))
+        // Not managed: nothing goes to any mouse, and the card does not say it does.
+        let unmanaged = MousePaneModel(
+            devices: [Fixtures.mxMaster3S(), Fixtures.mxMaster4()],
+            settings: .default, wheel: LogiWheelSettings(managedByMos: false)
+        )
+        XCTAssertEqual(unmanaged.header.subtitle, text("mouse-header-connected"))
         XCTAssertNotNil(model.haptics)
         XCTAssertNotNil(model.firmness)
     }

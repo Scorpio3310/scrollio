@@ -150,7 +150,7 @@ struct MousePaneModel: Equatable {
         self.managed = managed
         let mice = Self.ordered(devices)
         hasMouse = !mice.isEmpty
-        header = Self.header(for: mice)
+        header = Self.header(for: mice, managed: managed)
 
         func readback<T: Equatable>(_ setting: MouseSetting, mine: T?, onMouse: T?, text: (T) -> String) -> String? {
             guard managed, !heldReadbacks.contains(setting),
@@ -328,7 +328,9 @@ struct MousePaneModel: Equatable {
         return [first] + result
     }
 
-    private static func header(for mice: [LogiMouseDeviceState]) -> Header {
+    /// - Parameter managed: "Let Scrollio manage this mouse" is on. Only then do the choices
+    ///   go to the mice, so only then does the card say they go to all of them.
+    private static func header(for mice: [LogiMouseDeviceState], managed: Bool) -> Header {
         guard let mouse = mice.first else {
             return Header(
                 title: MouseText.text("mouse-header-any-mouse"),
@@ -338,7 +340,7 @@ struct MousePaneModel: Equatable {
                 model: .generic
             )
         }
-        let subtitle = mice.count > 1
+        let subtitle = mice.count > 1 && managed
             ? String(format: MouseText.text("mouse-header-connected-several"), mice.count)
             : MouseText.text("mouse-header-connected")
         return Header(

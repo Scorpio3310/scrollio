@@ -5079,6 +5079,42 @@
           }
         }
       }
+    },
+    "buttons-header-recording-hint-gesture": {
+      "comment": "Buttons pane card while Gestures > Set Up… waits for the gesture button",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The mouse button you will hold for gestures.\nPress Esc to cancel."
+          }
+        }
+      }
+    },
+    "buttons-gesture-needs-mouse-button": {
+      "comment": "Buttons pane card after a key was pressed while setting up the gesture button: title",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gestures need a mouse button"
+          }
+        }
+      }
+    },
+    "buttons-gesture-needs-mouse-button-detail": {
+      "comment": "Buttons pane card after a key was pressed while setting up the gesture button: second line",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A key cannot be held while the mouse moves."
+          }
+        }
+      }
     }
   },
   "version": "1.1"
