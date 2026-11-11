@@ -31,7 +31,7 @@ final class StoryboardIntegrityTests: XCTestCase {
     /// the popovers that segues open.
     private let viewIdentifiers = PANEL_IDENTIFIER.list + [
         PANEL_IDENTIFIER.scrollingWithApplication,
-        "menuBarIconHint", "allowlistHint",
+        "allowlistHint",
     ]
 
     /// Identifiers in the compiled storyboard, read from its Info.plist: instantiating a
@@ -89,9 +89,10 @@ final class StoryboardIntegrityTests: XCTestCase {
         let general = try XCTUnwrap(
             storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.general) as? PreferencesGeneralViewController
         )
+        // Built in code: the scene is a shell and has no outlets of its own.
         _ = general.view
-        XCTAssertNotNil(general.launchOnLoginCheckBox)
-        XCTAssertNotNil(general.hideStatusBarIconCheckBox)
+        XCTAssertNotNil(general.launchOnLoginSwitch)
+        XCTAssertNotNil(general.hideStatusBarIconSwitch)
 
         let monitor = try XCTUnwrap(
             storyboard.instantiateController(withIdentifier: WINDOW_IDENTIFIER.monitorWindowController) as? MonitorWindowController

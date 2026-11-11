@@ -92,11 +92,6 @@ enum PreferencesGroupedForm {
     /// The line between two rows of a box.
     static let hairlineColor = plain(name: "PreferencesGroupHairline") { .separatorColor }
 
-    /// The appearances `plain` resolves colours in.
-    private static let plainAppearances: [NSAppearance.Name] = [
-        .aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
-    ]
-
     /// A system colour as it is outside vibrancy. The panes stand on an NSVisualEffectView,
     /// which gives everything in it a vibrant appearance; there the system fills are opaque
     /// greys that only look right when the system blends them (a near-black box otherwise).
@@ -104,9 +99,8 @@ enum PreferencesGroupedForm {
     /// appearance: still dynamic, light and dark and high contrast follow the system.
     static func plain(name: String, _ color: @escaping () -> NSColor) -> NSColor {
         return NSColor(name: NSColor.Name(name)) { appearance in
-            let match = appearance.bestMatch(from: plainAppearances) ?? .aqua
             var resolved = color()
-            NSAppearance(named: match)?.performAsCurrentDrawingAppearance {
+            PreferencesBackgroundView.plainAppearance(matching: appearance)?.performAsCurrentDrawingAppearance {
                 resolved = color().usingColorSpace(.extendedSRGB) ?? resolved
             }
             return resolved

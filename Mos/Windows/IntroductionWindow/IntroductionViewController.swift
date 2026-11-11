@@ -103,7 +103,8 @@ final class IntroductionViewController: NSViewController {
     // MARK: - Lifecycle
 
     override func loadView() {
-        let root = PreferencesForm.makeBackground()
+        // The Welcome Guide keeps the vibrant look it was designed in.
+        let root = PreferencesForm.makeBackground(plainContent: false)
 
         let icon = NSImageView()
         icon.image = NSImage(named: NSImage.applicationIconName)

@@ -652,29 +652,4 @@ final class MousePreferencesViewController: NSViewController {
         row.slider.identifier = identifier
         return row
     }
-
-    // MARK: - Icons
-
-    /// Toolbar image, the size of the SF.* assets of the storyboard tabs.
-    static func tabImage() -> NSImage {
-        return PreferencesForm.toolbarImage(
-            symbolName: "computermouse",
-            accessibilityDescription: MouseText.text("mouse-tab-title")
-        ) { _ in
-            // macOS 10.13-10.15: outline of a mouse with a button split.
-            let body = NSBezierPath(
-                roundedRect: NSRect(x: 45, y: 27, width: 45, height: 81),
-                xRadius: 22.5,
-                yRadius: 24
-            )
-            body.lineWidth = 7
-            body.stroke()
-            let split = NSBezierPath()
-            split.move(to: NSPoint(x: 67.5, y: 101))
-            split.line(to: NSPoint(x: 67.5, y: 84))
-            split.lineWidth = 7
-            split.lineCapStyle = .round
-            split.stroke()
-        }
-    }
 }

@@ -1031,7 +1031,8 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         let lines: [(PreferencesGroupRow, Int)] = [
             (controller.managedRow, 2), (controller.pointerSpeedRow, 1), (controller.wheelModeRow, 1),
             (controller.sensitivityRow, 1), (controller.firmnessRow, 1), (controller.hapticsRow, 1),
-            (controller.strengthRow, 1), (controller.pressForceRow, 2),
+            // One line each at 520 pt: no word left alone on a second line.
+            (controller.strengthRow, 1), (controller.pressForceRow, 1),
         ]
         for (row, count) in lines {
             XCTAssertEqual(row.explanationLabel.font?.pointSize, PreferencesForm.hintFontSize, row.title)

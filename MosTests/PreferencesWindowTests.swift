@@ -253,10 +253,44 @@ final class PreferencesSidebarTests: XCTestCase {
             XCTAssertEqual(document.frame.width, preferences.host.scrollView.contentSize.width, pane.identifier)
             XCTAssertGreaterThan(view.frame.height, 50, pane.identifier)
         }
-        // The panes of the old 450 pt grid sit in the middle of the 520 pt column.
-        XCTAssertTrue(preferences.selectPane(withIdentifier: "general"))
-        window.contentView?.layoutSubtreeIfNeeded()
-        XCTAssertEqual(preferences.selectedController?.view.frame.minX, 35)
+        // Every pane fills the 520 pt column, so their boxes and tables share its margins.
+        for pane in preferences.panes {
+            XCTAssertTrue(preferences.selectPane(withIdentifier: pane.identifier))
+            window.contentView?.layoutSubtreeIfNeeded()
+            XCTAssertEqual(preferences.selectedController?.view.frame.width, PreferencesWindowLayout.contentWidth, pane.identifier)
+            XCTAssertEqual(preferences.selectedController?.view.frame.minX, 0, pane.identifier)
+        }
+    }
+
+    /// Every text of every pane draws in the plain light or dark appearance, as in System
+    /// Settings. In the vibrant appearance of the window's material the dimmed texts were
+    /// opaque greys that nothing blended: almost invisible on the boxes.
+    func testNoPaneDrawsItsTextsInAVibrantAppearance() throws {
+        for (appearance, plain) in [(NSAppearance.Name.aqua, NSAppearance.Name.aqua), (.darkAqua, .darkAqua)] {
+            let (window, preferences) = try makeWindow()
+            window.appearance = NSAppearance(named: appearance)
+            for pane in preferences.panes {
+                XCTAssertTrue(preferences.selectPane(withIdentifier: pane.identifier))
+                window.contentView?.layoutSubtreeIfNeeded()
+                let view = try XCTUnwrap(preferences.selectedController?.view)
+                let texts = allSubviews(of: view).compactMap { $0 as? NSTextField }.filter { !$0.stringValue.isEmpty }
+                XCTAssertFalse(texts.isEmpty, pane.identifier)
+                for text in texts {
+                    XCTAssertEqual(text.effectiveAppearance.name, plain, "\(pane.identifier): \(text.stringValue)")
+                }
+            }
+        }
+
+        // The per-app popover too.
+        let container = try XCTUnwrap(NSStoryboard(name: "Main", bundle: app)
+            .instantiateController(withIdentifier: PANEL_IDENTIFIER.scrollingWithApplication) as? PreferencesScrollingWithApplicationViewController)
+        container.updateTargetApplication(with: Application(path: "/System/Applications/Calculator.app"))
+        let host = NSView()
+        host.appearance = NSAppearance(named: .darkAqua)
+        host.addSubview(container.view)
+        for text in allSubviews(of: container.view).compactMap({ $0 as? NSTextField }) where !text.stringValue.isEmpty {
+            XCTAssertEqual(text.effectiveAppearance.name, .darkAqua, text.stringValue)
+        }
     }
 
     func testATallPaneScrollsInsteadOfResizingTheWindow() throws {
@@ -353,7 +387,7 @@ final class PreferencesAboutTests: XCTestCase {
         XCTAssertEqual(AboutPreferencesViewController.versionText(), "Version \(version)")
     }
 
-    func testTheOnlyButtonIsTheWelcomeGuideLink() {
+    func testTheOnlyButtonOpensTheWelcomeGuide() {
         var opened = 0
         let controller = makeController()
         controller.showWelcomeGuide = { opened += 1 }
@@ -361,8 +395,11 @@ final class PreferencesAboutTests: XCTestCase {
         let buttons = allSubviews(of: controller.view).compactMap { $0 as? NSButton }
         XCTAssertEqual(buttons.count, 1)
         XCTAssertTrue(buttons.first === controller.welcomeGuideButton)
-        XCTAssertEqual(controller.welcomeGuideButton.title, "Welcome Guide")
-        XCTAssertFalse(controller.welcomeGuideButton.isBordered, "a link, not a push button")
+        // A push button in a row of the grouped kit, named by the row.
+        XCTAssertEqual(controller.welcomeGuideRow.title, "Welcome Guide")
+        XCTAssertEqual(controller.welcomeGuideButton.title, "Open")
+        XCTAssertEqual(controller.welcomeGuideButton.bezelStyle, .push)
+        XCTAssertTrue(controller.welcomeGuideRow.controls.contains { $0 === controller.welcomeGuideButton })
 
         XCTAssertTrue(controller.welcomeGuideButton.sendAction(
             controller.welcomeGuideButton.action,
@@ -400,15 +437,20 @@ final class PreferencesAboutTests: XCTestCase {
 
     func testPaneHasThePreferencesWidthAndFitsItsContent() {
         let controller = makeController()
-        XCTAssertEqual(controller.view.frame.width, PreferencesForm.contentWidth)
+        XCTAssertEqual(controller.view.frame.width, PreferencesWindowLayout.contentWidth)
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
         controller.view.layoutSubtreeIfNeeded()
+        let root = controller.view
+        func frame(_ view: NSView) -> NSRect { root.convert(view.frame, from: view.superview) }
         for label in [controller.nameLabel!, controller.versionLabel!, controller.creditLabel!] {
-            XCTAssertEqual(label.frame.midX, controller.view.bounds.midX, accuracy: 0.5)
-            XCTAssertGreaterThanOrEqual(label.frame.minX, 0)
+            XCTAssertEqual(frame(label).midX, root.bounds.midX, accuracy: 0.5)
+            XCTAssertGreaterThanOrEqual(frame(label).minX, PreferencesGroupedForm.margin - 2)
         }
         XCTAssertEqual(controller.iconView.frame.size, NSSize(width: 64, height: 64))
-        XCTAssertEqual(controller.iconView.frame.midX, controller.view.bounds.midX, accuracy: 0.5)
+        XCTAssertEqual(frame(controller.iconView).midX, root.bounds.midX, accuracy: 0.5)
+        // The Welcome Guide sits in a box on the kit's margins.
+        XCTAssertEqual(frame(controller.welcomeGuideRow).minX, PreferencesGroupedForm.margin, accuracy: 0.5)
+        XCTAssertEqual(frame(controller.welcomeGuideRow).width, PreferencesGroupedForm.boxWidth(paneWidth: root.frame.width), accuracy: 0.5)
     }
 }
 
@@ -439,10 +481,10 @@ final class PreferencesNamingTests: XCTestCase {
             XCTAssertFalse(shown.contains(old), "\(old) is still in the Scrolling tab")
         }
 
-        // Button actions (code): the names of the actions a button can be given.
-        XCTAssertEqual(SystemShortcut.mosScrollDash.localizedName, "Fast Scroll")
-        XCTAssertEqual(SystemShortcut.mosScrollToggle.localizedName, "Horizontal Scroll")
-        XCTAssertEqual(SystemShortcut.mosScrollBlock.localizedName, "Pause Smoothing")
+        // Button actions (code): the same three names as the Scrolling tab.
+        XCTAssertEqual(SystemShortcut.mosScrollDash.localizedName, "Scroll faster")
+        XCTAssertEqual(SystemShortcut.mosScrollToggle.localizedName, "Scroll sideways")
+        XCTAssertEqual(SystemShortcut.mosScrollBlock.localizedName, "Pause smoothing")
     }
 
     func testScrollKeyIdentifiersAreUnchanged() {
@@ -478,21 +520,17 @@ final class PreferencesNamingTests: XCTestCase {
     func testGeneralTabSaysMenuBar() throws {
         let general = try XCTUnwrap(instantiate(PANEL_IDENTIFIER.general) as? PreferencesGeneralViewController)
         _ = general.view
-        XCTAssertEqual(general.hideStatusBarIconCheckBox.title, "Hide Menu Bar Icon")
+        XCTAssertEqual(general.hideStatusBarIconRow.title, "Hide menu bar icon")
+        XCTAssertEqual(general.hideStatusBarIconSwitch.accessibilityLabel(), "Hide menu bar icon")
+        XCTAssertEqual(general.launchOnLoginRow.title, "Open at login")
         let shown = texts(in: general.view)
-        XCTAssertTrue(shown.contains("Menu Bar Icon"))
-        XCTAssertTrue(shown.contains("Open Scrollio again to show the icon"))
+        // What the "?" popover said is the row's explanation now.
+        XCTAssertTrue(shown.contains("While the icon is hidden, open Scrollio again to reach its settings."))
         for text in shown {
             XCTAssertFalse(text.localizedCaseInsensitiveContains("status bar"), text)
             XCTAssertFalse(text.localizedCaseInsensitiveContains("re-run"), text)
         }
-
-        // The "?" popover next to the checkbox.
-        let hint = try XCTUnwrap(instantiate("menuBarIconHint"))
-        XCTAssertEqual(
-            texts(in: hint.view),
-            ["While the icon is hidden, open Scrollio again to reach its settings."]
-        )
+        XCTAssertFalse(allSubviews(of: general.view).contains { ($0 as? NSButton)?.bezelStyle == .helpButton })
     }
 }
 
@@ -518,7 +556,7 @@ final class PreferencesTextSizeTests: XCTestCase {
         let identifiers = [
             PANEL_IDENTIFIER.general, PANEL_IDENTIFIER.scrolling, PANEL_IDENTIFIER.buttons,
             PANEL_IDENTIFIER.application, PANEL_IDENTIFIER.scrollingWithApplication,
-            "menuBarIconHint", "allowlistHint",
+            "allowlistHint",
         ]
         for identifier in identifiers {
             let controller = try XCTUnwrap(storyboard.instantiateController(withIdentifier: identifier) as? NSViewController)
@@ -560,11 +598,9 @@ final class PreferencesTextSizeTests: XCTestCase {
 
     func testHintsOfTheStoryboardPanesMatchTheFormKit() throws {
         let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
-        let general = try XCTUnwrap(storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.general) as? NSViewController)
-        let hint = try XCTUnwrap(allSubviews(of: general.view)
-            .compactMap { $0 as? NSTextField }
-            .first { $0.stringValue == "Open Scrollio again to show the icon" })
-        XCTAssertEqual(hint.font?.pointSize, PreferencesForm.hintFontSize)
+        let general = try XCTUnwrap(storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.general) as? PreferencesGeneralViewController)
+        _ = general.view
+        XCTAssertEqual(general.hideStatusBarIconRow.explanationLabel.font?.pointSize, PreferencesForm.hintFontSize)
 
         let scrolling = try XCTUnwrap(storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)
         _ = scrolling.view

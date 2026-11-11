@@ -201,7 +201,7 @@ final class PreferencesScrollingTests: XCTestCase {
     func testTextsOfTheTab() {
         let controller = makeController(advanced: true)
         XCTAssertEqual(controller.advancedButton.title, "Advanced")
-        XCTAssertEqual(controller.resetToDefaultsButton.title, "Reset to defaults")
+        XCTAssertEqual(controller.resetToDefaultsButton.title, "Reset to Defaults")
 
         let shown = allSubviews(of: controller.view).compactMap { ($0 as? NSTextField)?.stringValue }
         let expected = [
@@ -932,7 +932,10 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(container.preferredContentSize.height, tab.view.fittingSize.height + 58, accuracy: 0.5)
         XCTAssertEqual(tab.scrollSpeedSlider.doubleValue, 4.2, accuracy: 1e-9)
         XCTAssertTrue(tab.previewView.isHidden)
-        XCTAssertEqual(container.inheritGlobalSettingCheckBox.state, .off)
+        XCTAssertEqual(container.inheritGlobalSettingSwitch.state, .off)
+        // "Use global settings" is a switch with its title, as in the boxes under it.
+        XCTAssertEqual(container.inheritGlobalSettingSwitch.controlSize, PreferencesGroupedForm.switchControlSize)
+        XCTAssertTrue(allSubviews(of: container.view).contains { ($0 as? NSTextField)?.stringValue == "Use global settings" })
         // The app's header is a box like the settings' boxes.
         let header = try XCTUnwrap(container.view.subviews.compactMap { $0 as? NSBox }.first)
         XCTAssertEqual(header.boxType, .custom)
@@ -956,9 +959,9 @@ final class PreferencesScrollingTests: XCTestCase {
         tab.setAdvancedExpanded(false)
         XCTAssertEqual(container.preferredContentSize, closed)
 
-        // "Inherit" greys the settings out.
-        container.inheritGlobalSettingCheckBox.state = .on
-        container.inheritGlobalSettingClick(container.inheritGlobalSettingCheckBox)
+        // "Use global settings" greys the settings out.
+        container.inheritGlobalSettingSwitch.state = .on
+        container.inheritGlobalSettingClick(container.inheritGlobalSettingSwitch)
         XCTAssertTrue(application.inherit)
         XCTAssertFalse(tab.scrollSpeedSlider.isEnabled)
         XCTAssertEqual(tab.scrollSpeedSlider.doubleValue, 6.3, accuracy: 1e-9, "the global value")

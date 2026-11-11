@@ -208,18 +208,18 @@ final class LoginItemTests: XCTestCase {
         Options.shared.general.autoLaunch = false
         let fake = install(.notRegistered)
         let pane = try makeGeneralPane()
-        XCTAssertEqual(pane.launchOnLoginCheckBox.state, .off)
+        XCTAssertEqual(pane.launchOnLoginSwitch.state, .off)
 
         // Switched on in System Settings while the app runs.
         fake.status = .enabled
         pane.viewWillAppear()
-        XCTAssertEqual(pane.launchOnLoginCheckBox.state, .on)
+        XCTAssertEqual(pane.launchOnLoginSwitch.state, .on)
         XCTAssertTrue(Options.shared.general.autoLaunch)
 
         // Switched off there again (it now waits for approval).
         fake.status = .requiresApproval
         pane.viewWillAppear()
-        XCTAssertEqual(pane.launchOnLoginCheckBox.state, .off)
+        XCTAssertEqual(pane.launchOnLoginSwitch.state, .off)
         XCTAssertFalse(Options.shared.general.autoLaunch)
 
         // Reading never changes the system.
@@ -229,11 +229,11 @@ final class LoginItemTests: XCTestCase {
         XCTAssertEqual(fake.status, .requiresApproval)
     }
 
-    // MARK: - The checkbox shows the real state
+    // MARK: - The switch shows the real state
 
     private func click(_ pane: PreferencesGeneralViewController, to state: NSControl.StateValue) {
-        pane.launchOnLoginCheckBox.state = state
-        pane.launchOnLoginClick(pane.launchOnLoginCheckBox)
+        pane.launchOnLoginSwitch.state = state
+        pane.launchOnLoginClick(pane.launchOnLoginSwitch)
     }
 
     func testCheckingAnItemThatNeedsApprovalLeavesTheBoxUnchecked() throws {
@@ -247,7 +247,7 @@ final class LoginItemTests: XCTestCase {
 
         XCTAssertEqual(fake.registerCalls, 1)
         XCTAssertEqual(fake.openSettingsCalls, 1, "System Settings opens where it can be approved")
-        XCTAssertEqual(pane.launchOnLoginCheckBox.state, .off, "it does not launch at login yet")
+        XCTAssertEqual(pane.launchOnLoginSwitch.state, .off, "it does not launch at login yet")
         XCTAssertFalse(Options.shared.general.autoLaunch)
     }
 
@@ -258,13 +258,13 @@ final class LoginItemTests: XCTestCase {
             let fake = install(status)
             let pane = try makeGeneralPane()
             // The box may still show an earlier state (switched off in System Settings since).
-            pane.launchOnLoginCheckBox.state = .on
+            pane.launchOnLoginSwitch.state = .on
 
             click(pane, to: .off)
 
             XCTAssertEqual(fake.unregisterCalls, 1, "\(status)")
             XCTAssertEqual(fake.status, .notRegistered, "\(status)")
-            XCTAssertEqual(pane.launchOnLoginCheckBox.state, .off, "\(status)")
+            XCTAssertEqual(pane.launchOnLoginSwitch.state, .off, "\(status)")
             XCTAssertEqual(fake.openSettingsCalls, 0, "\(status)")
         }
     }
@@ -287,7 +287,7 @@ final class LoginItemTests: XCTestCase {
 
         XCTAssertEqual(fake.registerCalls, 1)
         XCTAssertEqual(fake.status, .enabled)
-        XCTAssertEqual(pane.launchOnLoginCheckBox.state, .on)
+        XCTAssertEqual(pane.launchOnLoginSwitch.state, .on)
         XCTAssertTrue(Options.shared.general.autoLaunch)
     }
 
@@ -303,12 +303,12 @@ final class LoginItemTests: XCTestCase {
         window.isReleasedWhenClosed = false
         window.contentViewController = pane
         defer { window.contentViewController = nil }
-        XCTAssertEqual(pane.launchOnLoginCheckBox.state, .off)
+        XCTAssertEqual(pane.launchOnLoginSwitch.state, .off)
 
         // Approved in System Settings; the user comes back to the window.
         fake.status = .enabled
         NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
-        let shown = expectation(for: NSPredicate { _, _ in pane.launchOnLoginCheckBox.state == .on }, evaluatedWith: nil)
+        let shown = expectation(for: NSPredicate { _, _ in pane.launchOnLoginSwitch.state == .on }, evaluatedWith: nil)
         wait(for: [shown], timeout: 5)
         XCTAssertEqual(fake.registerCalls, 0)
     }

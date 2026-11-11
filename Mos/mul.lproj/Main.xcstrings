@@ -1,26 +1,14 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "1LK-nr-g7N.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"⌥ Option\"; ObjectID = \"1LK-nr-g7N\";",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "⌥ Option"
-          }
-        }
-      }
-    },
     "2hV-f7-8yO.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Customize mouse buttons to enhance your experience\"; ObjectID = \"2hV-f7-8yO\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"Give a mouse button an action of its own\"; ObjectID = \"2hV-f7-8yO\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Customize mouse buttons to enhance your experience"
+            "value" : "Give a mouse button an action of its own"
           }
         }
       }
@@ -37,38 +25,14 @@
         }
       }
     },
-    "8GX-j2-4nN.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"⌃ Control\"; ObjectID = \"8GX-j2-4nN\";",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "⌃ Control"
-          }
-        }
-      }
-    },
-    "18C-IE-EKk.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"⌘ Command\"; ObjectID = \"18C-IE-EKk\";",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "⌘ Command"
-          }
-        }
-      }
-    },
     "89F-B4-NIY.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Application\"; ObjectID = \"89F-B4-NIY\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"App\"; ObjectID = \"89F-B4-NIY\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Application"
+            "value" : "App"
           }
         }
       }
@@ -97,18 +61,6 @@
         }
       }
     },
-    "AGU-43-8RD.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Menu Bar Icon\"; ObjectID = \"AGU-43-8RD\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Menu Bar Icon"
-          }
-        }
-      }
-    },
     "AYu-sK-qS6.title" : {
       "comment" : "Class = \"NSMenu\"; title = \"Main Menu\"; ObjectID = \"AYu-sK-qS6\";",
       "extractionState" : "extracted_with_value",
@@ -117,18 +69,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Main Menu"
-          }
-        }
-      }
-    },
-    "bB5-2R-9Da.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Open Scrollio again to show the icon\"; ObjectID = \"bB5-2R-9Da\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Open Scrollio again to show the icon"
           }
         }
       }
@@ -157,42 +97,6 @@
         }
       }
     },
-    "c62-LZ-JNT.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"⌘ Command\"; ObjectID = \"c62-LZ-JNT\";",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "⌘ Command"
-          }
-        }
-      }
-    },
-    "cIk-j1-vYt.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"While the icon is hidden, open Scrollio again to reach its settings.\"; ObjectID = \"cIk-j1-vYt\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "While the icon is hidden, open Scrollio again to reach its settings."
-          }
-        }
-      }
-    },
-    "cTe-aL-0GQ.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"Disabled\"; ObjectID = \"cTe-aL-0GQ\";",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Disabled"
-          }
-        }
-      }
-    },
     "cvF-hf-KVW.title" : {
       "comment" : "Class = \"NSWindow\"; title = \"Preferences\"; ObjectID = \"cvF-hf-KVW\";",
       "extractionState" : "extracted_with_value",
@@ -206,49 +110,25 @@
       }
     },
     "dhF-95-kUJ.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"Manually Select From Finder\"; ObjectID = \"dhF-95-kUJ\";",
+      "comment" : "Class = \"NSMenuItem\"; title = \"Choose in Finder…\"; ObjectID = \"dhF-95-kUJ\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Manually Select From Finder"
-          }
-        }
-      }
-    },
-    "dN3-Eq-Xi1.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"⌃ Control\"; ObjectID = \"dN3-Eq-Xi1\";",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "⌃ Control"
+            "value" : "Choose in Finder…"
           }
         }
       }
     },
     "DS8-og-1pp.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Create a custom configuration for specific apps\"; ObjectID = \"DS8-og-1pp\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"Pick a running app or one in Finder\"; ObjectID = \"DS8-og-1pp\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Create a custom configuration for specific apps"
-          }
-        }
-      }
-    },
-    "E82-7w-YCr.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Startup\"; ObjectID = \"E82-7w-YCr\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Startup"
+            "value" : "Pick a running app or one in Finder"
           }
         }
       }
@@ -266,13 +146,13 @@
       }
     },
     "fXu-uF-M3Q.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Assign a button to a specific action\"; ObjectID = \"fXu-uF-M3Q\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"Press the mouse button you want to set up\"; ObjectID = \"fXu-uF-M3Q\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Assign a button to a specific action"
+            "value" : "Press the mouse button you want to set up"
           }
         }
       }
@@ -290,25 +170,13 @@
       }
     },
     "Gmk-Ru-er7.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Add Application\"; ObjectID = \"Gmk-Ru-er7\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"Add App\"; ObjectID = \"Gmk-Ru-er7\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Add Application"
-          }
-        }
-      }
-    },
-    "hGj-vV-zcY.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Hide Menu Bar Icon\"; ObjectID = \"hGj-vV-zcY\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Hide Menu Bar Icon"
+            "value" : "Add App"
           }
         }
       }
@@ -321,18 +189,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Select an action"
-          }
-        }
-      }
-    },
-    "HrY-s6-CCB.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"⌃ Control\"; ObjectID = \"HrY-s6-CCB\";",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "⌃ Control"
           }
         }
       }
@@ -362,13 +218,13 @@
       }
     },
     "jaq-Cb-dKM.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Customize individual settings for each app\"; ObjectID = \"jaq-Cb-dKM\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"Add an app to give it its own scrolling settings\"; ObjectID = \"jaq-Cb-dKM\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Customize individual settings for each app"
+            "value" : "Add an app to give it its own scrolling settings"
           }
         }
       }
@@ -386,12 +242,12 @@
       }
     },
     "Ksp-g1-48g.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Allow list Mode\"; ObjectID = \"Ksp-g1-48g\";",
+      "comment" : "Class = \"NSButtonCell\"; title = \"Only in listed apps\"; ObjectID = \"Ksp-g1-48g\";",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Allowlist Mode"
+            "value" : "Only in listed apps"
           }
         }
       }
@@ -420,30 +276,6 @@
         }
       }
     },
-    "mmw-45-VYt.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"⌥ Option\"; ObjectID = \"mmw-45-VYt\";",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "⌥ Option"
-          }
-        }
-      }
-    },
-    "PIa-ES-2Sf.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"⇧ Shift\"; ObjectID = \"PIa-ES-2Sf\";",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "⇧ Shift"
-          }
-        }
-      }
-    },
     "qQe-2B-2rE.title" : {
       "comment" : "Class = \"NSButtonCell\"; title = \"Export Log\"; ObjectID = \"qQe-2B-2rE\";",
       "extractionState" : "extracted_with_value",
@@ -457,24 +289,13 @@
       }
     },
     "R0d-21-g6W.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"Running Applications\"; ObjectID = \"R0d-21-g6W\";",
+      "comment" : "Class = \"NSMenuItem\"; title = \"Running Apps\"; ObjectID = \"R0d-21-g6W\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Running Applications"
-          }
-        }
-      }
-    },
-    "Rgq-87-vjY.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Temporarily disable smooth scrolling to improve scrolling accuracy.\"; ObjectID = \"Rgq-87-vjY\";",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Temporarily disable smooth scrolling to improve scrolling accuracy"
+            "value" : "Running Apps"
           }
         }
       }
@@ -487,30 +308,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Action"
-          }
-        }
-      }
-    },
-    "Sfx-Rp-8QA.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"⇧ Shift\"; ObjectID = \"Sfx-Rp-8QA\";",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "⇧ Shift"
-          }
-        }
-      }
-    },
-    "Sma-iA-YxQ.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"⇧ Shift\"; ObjectID = \"Sma-iA-YxQ\";",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "⇧ Shift"
           }
         }
       }
@@ -551,85 +348,25 @@
         }
       }
     },
-    "tXQ-GJ-k5M.title" : {
-      "comment" : "Class = \"NSMenu\"; title = \"Running Applications\"; ObjectID = \"tXQ-GJ-k5M\";",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Running Applications"
-          }
-        }
-      }
-    },
-    "UJ4-y2-HO8.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"⌥ Option\"; ObjectID = \"UJ4-y2-HO8\";",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "⌥ Option"
-          }
-        }
-      }
-    },
     "v26-RK-BtL.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"The allow list mode will make Scrollio only apply to apps within the application list.\"; ObjectID = \"v26-RK-BtL\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"Scrollio applies only to the apps in this list.\"; ObjectID = \"v26-RK-BtL\";",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The allowlist mode will make Scrollio only apply to apps within the application list."
-          }
-        }
-      }
-    },
-    "vFk-37-HRU.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"Disabled\"; ObjectID = \"vFk-37-HRU\";",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Disabled"
-          }
-        }
-      }
-    },
-    "Vhz-Rn-lcU.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"Disabled\"; ObjectID = \"Vhz-Rn-lcU\";",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Disabled"
-          }
-        }
-      }
-    },
-    "Wls-5g-cNZ.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Inherit Global Settings\"; ObjectID = \"Wls-5g-cNZ\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Inherit Global Settings"
+            "value" : "Scrollio applies only to the apps in this list."
           }
         }
       }
     },
     "xfG-Cd-oIk.headerCell.title" : {
-      "comment" : "Class = \"NSTableColumn\"; headerCell.title = \" Application\"; ObjectID = \"xfG-Cd-oIk\";",
+      "comment" : "Class = \"NSTableColumn\"; headerCell.title = \"App\"; ObjectID = \"xfG-Cd-oIk\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : " Application"
+            "value" : "App"
           }
         }
       }
@@ -646,25 +383,14 @@
         }
       }
     },
-    "xoR-7p-3qj.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Launch Scrollio at Login\"; ObjectID = \"xoR-7p-3qj\";",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Launch on Login"
-          }
-        }
-      }
-    },
-    "ZqO-Rs-CpS.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"⌘ Command\"; ObjectID = \"ZqO-Rs-CpS\";",
-      "extractionState" : "stale",
+    "INH-lb-002.title" : {
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"Use global settings\"; ObjectID = \"INH-lb-002\";",
+      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "⌘ Command"
+            "value" : "Use global settings"
           }
         }
       }

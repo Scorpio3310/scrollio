@@ -21,7 +21,8 @@ class PreferencesScrollingWithApplicationViewController: NSViewController {
     // UI Elements
     @IBOutlet weak var currentTargetApplicationIcon: NSImageView!
     @IBOutlet weak var currentTargetApplicationName: NSTextField!
-    @IBOutlet weak var inheritGlobalSettingCheckBox: NSButton!
+    /// On: the app uses the global scroll settings ("Use global settings").
+    @IBOutlet weak var inheritGlobalSettingSwitch: NSSwitch!
     
     override func viewDidLoad() {
         // The app's name and "inherit" sit in a box like the settings' boxes under them.
@@ -97,7 +98,7 @@ class PreferencesScrollingWithApplicationViewController: NSViewController {
     
     // 继承
     // Logi divert 用量同步由 LogiUsageBootstrap 的 Options 订阅自动完成 (inherit didSet → .application)
-    @IBAction func inheritGlobalSettingClick(_ sender: NSButton) {
+    @IBAction func inheritGlobalSettingClick(_ sender: NSSwitch) {
         if let vaildContentViewController = currentContentViewController, let validTargetApplication = currentTargetApplication {
             validTargetApplication.inherit = sender.state.rawValue==0 ? false : true
             vaildContentViewController.syncViewWithOptions()
@@ -112,6 +113,6 @@ extension PreferencesScrollingWithApplicationViewController {
     // 同步界面与设置
     func syncViewWithOptions() {
         // 继承
-        inheritGlobalSettingCheckBox.state = NSControl.StateValue(rawValue: (currentTargetApplication?.inherit ?? false) ? 1 : 0)
+        inheritGlobalSettingSwitch.state = (currentTargetApplication?.inherit ?? false) ? .on : .off
     }
 }

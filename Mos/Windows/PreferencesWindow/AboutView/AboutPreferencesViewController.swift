@@ -1,9 +1,9 @@
 //
 //  AboutPreferencesViewController.swift
 //  Mos
-//  "About" preferences tab, built in code: the app icon, its name and version, one
-//  credit line for the project Scrollio is based on, and a link that opens the
-//  Welcome Guide again.
+//  "About" preferences pane, built in code on the grouped kit: the app icon, its name and
+//  version, a box with a button that opens the Welcome Guide again, and one credit line
+//  for the project Scrollio is based on.
 //
 
 import Cocoa
@@ -12,19 +12,20 @@ final class AboutPreferencesViewController: NSViewController {
 
     static let tabIdentifier = "about"
 
+    /// The column of the Preferences window.
+    static let paneWidth: CGFloat = PreferencesWindowLayout.contentWidth
+
     // MARK: - Layout
 
     private static let iconSize: CGFloat = 64
-    /// The link sits in the top-left corner, above the centred column.
-    private static let linkTop: CGFloat = 16
-    private static let iconTop: CGFloat = 28
     private static let nameSpacing: CGFloat = 10
     private static let versionSpacing: CGFloat = 2
-    private static let creditSpacing: CGFloat = 14
-    private static let bottomMargin: CGFloat = 24
+    /// Between the box and the credit line under it, as close as the muted lines of Gestures.
+    private static let creditSpacing: CGFloat = 10
 
     // MARK: - Views (read access for tests)
 
+    private(set) var welcomeGuideRow: PreferencesGroupRow!
     private(set) var welcomeGuideButton: NSButton!
     private(set) var iconView: NSImageView!
     private(set) var nameLabel: NSTextField!
@@ -46,20 +47,17 @@ final class AboutPreferencesViewController: NSViewController {
         title = NSLocalizedString("about-tab-title", comment: "")
     }
 
+    /// The app on top, centred: icon, name and version. Under it a box with the Welcome
+    /// Guide, then one muted line with the credit, as the other panes of the grouped kit.
     override func loadView() {
         let root = PreferencesForm.makeBackground()
-
-        let link = PreferencesForm.makeLinkButton(
-            title: NSLocalizedString("about-welcome-guide", comment: ""),
-            target: self,
-            action: #selector(welcomeGuideClicked(_:))
-        )
-        welcomeGuideButton = link
+        let content = PreferencesGroupedForm.installContentStack(in: root, paneWidth: Self.paneWidth)
+        content.setHuggingPriority(.defaultHigh, for: .vertical)
+        let boxWidth = PreferencesGroupedForm.boxWidth(paneWidth: Self.paneWidth)
 
         let icon = NSImageView()
         icon.image = NSImage(named: NSImage.applicationIconName)
         icon.imageScaling = .scaleProportionallyUpOrDown
-        icon.translatesAutoresizingMaskIntoConstraints = false
         // Decoration: the name right under it says the same.
         icon.setAccessibilityElement(false)
         iconView = icon
@@ -76,43 +74,50 @@ final class AboutPreferencesViewController: NSViewController {
         version.isSelectable = true
         versionLabel = version
 
-        let credit = NSTextField(wrappingLabelWithString: NSLocalizedString("about-credit", comment: ""))
-        credit.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
-        credit.textColor = .secondaryLabelColor
-        credit.alignment = .center
-        credit.isSelectable = false
-        credit.preferredMaxLayoutWidth = PreferencesForm.contentWidth - 2 * PreferencesForm.margin
-        creditLabel = credit
-
-        for view in [link, icon, name, version, credit] {
+        let header = NSView()
+        header.translatesAutoresizingMaskIntoConstraints = false
+        for view in [icon, name, version] {
             view.translatesAutoresizingMaskIntoConstraints = false
-            root.addSubview(view)
+            header.addSubview(view)
         }
-        let margin = PreferencesForm.margin
         NSLayoutConstraint.activate([
-            root.widthAnchor.constraint(equalToConstant: PreferencesForm.contentWidth),
-
-            // A borderless button draws its title 2 pt inside its frame.
-            link.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: margin - 2),
-            link.topAnchor.constraint(equalTo: root.topAnchor, constant: Self.linkTop),
-
-            icon.centerXAnchor.constraint(equalTo: root.centerXAnchor),
-            icon.topAnchor.constraint(equalTo: root.topAnchor, constant: Self.iconTop),
+            icon.topAnchor.constraint(equalTo: header.topAnchor),
+            icon.centerXAnchor.constraint(equalTo: header.centerXAnchor),
             icon.widthAnchor.constraint(equalToConstant: Self.iconSize),
             icon.heightAnchor.constraint(equalToConstant: Self.iconSize),
-
-            name.centerXAnchor.constraint(equalTo: root.centerXAnchor),
             name.topAnchor.constraint(equalTo: icon.bottomAnchor, constant: Self.nameSpacing),
-
-            version.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            name.centerXAnchor.constraint(equalTo: header.centerXAnchor),
             version.topAnchor.constraint(equalTo: name.bottomAnchor, constant: Self.versionSpacing),
-
-            credit.centerXAnchor.constraint(equalTo: root.centerXAnchor),
-            credit.topAnchor.constraint(equalTo: version.bottomAnchor, constant: Self.creditSpacing),
-            credit.leadingAnchor.constraint(greaterThanOrEqualTo: root.leadingAnchor, constant: margin),
-            credit.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor, constant: -margin),
-            credit.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -Self.bottomMargin),
+            version.centerXAnchor.constraint(equalTo: header.centerXAnchor),
+            version.bottomAnchor.constraint(equalTo: header.bottomAnchor),
         ])
+
+        let open = PreferencesGroupedForm.makePushButton(
+            title: NSLocalizedString("about-welcome-guide-open", comment: ""),
+            target: self,
+            action: #selector(welcomeGuideClicked(_:))
+        )
+        welcomeGuideButton = open
+        let row = PreferencesGroupRow(
+            title: NSLocalizedString("about-welcome-guide", comment: ""),
+            explanation: NSLocalizedString("about-welcome-guide-hint", comment: ""),
+            accessory: open
+        )
+        welcomeGuideRow = row
+        let box = PreferencesGroupSection(width: boxWidth, rows: [row])
+
+        let credit = NSTextField(wrappingLabelWithString: NSLocalizedString("about-credit", comment: ""))
+        credit.font = PreferencesGroupedForm.explanationFont
+        credit.textColor = PreferencesGroupedForm.explanationColor(enabled: true)
+        credit.alignment = .center
+        credit.isSelectable = false
+        credit.preferredMaxLayoutWidth = boxWidth
+        credit.translatesAutoresizingMaskIntoConstraints = false
+        creditLabel = credit
+
+        PreferencesGroupedForm.add([header, box, credit], to: content)
+        content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: header)
+        content.setCustomSpacing(Self.creditSpacing, after: box)
 
         view = root
         root.setFrameSize(root.fittingSize)
@@ -130,14 +135,5 @@ final class AboutPreferencesViewController: NSViewController {
 
     @objc func welcomeGuideClicked(_ sender: NSButton) {
         showWelcomeGuide()
-    }
-
-    // MARK: - Toolbar
-
-    /// The image the storyboard tab used.
-    static func tabImage() -> NSImage? {
-        let image = NSImage(named: "SF.person.crop.circle.dashed")
-        image?.accessibilityDescription = NSLocalizedString("about-tab-title", comment: "")
-        return image
     }
 }

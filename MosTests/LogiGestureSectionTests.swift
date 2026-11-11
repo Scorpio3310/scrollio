@@ -131,7 +131,7 @@ final class LogiGestureSectionTests: XCTestCase {
         XCTAssertTrue(controller.hapticsSwitch.isEnabled)
         XCTAssertEqual(controller.deviceTrackingRow.explanation, text("mouse-gesture-device-tracking-hint"))
         XCTAssertEqual(controller.hapticsRow.explanation, text("mouse-gesture-haptics-hint"))
-        XCTAssertEqual(controller.deviceTrackingRow.explanation, "The mouse itself holds the pointer still and reports the movement. Experimental.")
+        XCTAssertEqual(controller.deviceTrackingRow.explanation, "Experimental: the mouse holds the pointer still and reports the movement.")
         XCTAssertEqual(controller.hapticsRow.explanation, "A short pulse when a gesture locks in (MX Master 4).")
         XCTAssertEqual(controller.deviceTrackingSwitch.state, .off, "off by default")
         XCTAssertEqual(controller.hapticsSwitch.state, .on, "on by default")

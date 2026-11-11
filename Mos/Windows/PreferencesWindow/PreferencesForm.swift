@@ -53,9 +53,12 @@ enum PreferencesForm {
 
     // MARK: - Pane
 
-    /// Same background as the storyboard panes.
-    static func makeBackground() -> NSVisualEffectView {
-        let root = NSVisualEffectView()
+    /// Same background as the storyboard panes. With `plainContent` (the panes of the
+    /// Preferences window) what stands on it draws in the plain light or dark appearance,
+    /// as in System Settings, not in the vibrant one of the material
+    /// (`PreferencesBackgroundView`).
+    static func makeBackground(plainContent: Bool = true) -> NSVisualEffectView {
+        let root = plainContent ? PreferencesBackgroundView() : NSVisualEffectView()
         root.blendingMode = .behindWindow
         root.material = .toolTip
         root.state = .followsWindowActiveState
@@ -273,47 +276,54 @@ enum PreferencesForm {
         let tidy = (rounded * 1_000_000).rounded() / 1_000_000
         return min(range.upperBound, max(range.lowerBound, tidy))
     }
+}
 
-    // MARK: - Toolbar
+/// The material behind a pane, whose content draws in the plain light or dark appearance.
+///
+/// An NSVisualEffectView gives everything in it a vibrant appearance. There the label and
+/// fill colours are opaque greys meant to be blended by the window server, and a text or
+/// control that is not blended draws them as they are: a dimmed row's tertiary text came
+/// out a dark grey on a dark box, almost invisible, and the light tick marks almost
+/// vanished on a light one. System Settings draws its panes without vibrancy. This view
+/// keeps each of its direct subviews in the plain appearance that matches its own (light,
+/// dark, or their high-contrast forms) and follows it when the system switches.
+final class PreferencesBackgroundView: NSVisualEffectView {
 
-    /// Toolbar image of a pane built in code: an SF Symbol drawn on the same 135 pt canvas
-    /// as the SF.* assets of the storyboard panes, so the glyph comes out at the same size.
-    /// `fallback` draws the image where the symbol does not exist. `glyphHeight` is the
-    /// share of the canvas the glyph fills; symbols with a lot of air of their own take more.
-    static func toolbarImage(
-        symbolName: String,
-        accessibilityDescription: String,
-        glyphHeight: CGFloat = 0.6,
-        fallback: @escaping (NSRect) -> Void
-    ) -> NSImage {
-        let canvas = NSSize(width: 135, height: 135)
-        let image: NSImage
-        if let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 64, weight: .regular)) {
-            image = NSImage(size: canvas, flipped: false) { rect in
-                // A wide glyph is held to 80% of the canvas width instead.
-                let aspect = symbol.size.width / max(symbol.size.height, 1)
-                let height = min(rect.height * glyphHeight, rect.width * 0.8 / max(aspect, 0.01))
-                let width = height * aspect
-                symbol.draw(in: NSRect(
-                    x: rect.midX - width / 2,
-                    y: rect.midY - height / 2,
-                    width: width,
-                    height: height
-                ))
-                return true
-            }
-        } else {
-            image = NSImage(size: canvas, flipped: false) { rect in
-                NSColor.black.setStroke()
-                NSColor.black.setFill()
-                fallback(rect)
-                return true
-            }
+    /// The plain appearance that matches `appearance` (vibrant or not). `bestMatch` alone
+    /// drops high contrast (it matches the high-contrast vibrant dark to plain dark), so
+    /// that is read from the name.
+    static func plainAppearance(matching appearance: NSAppearance) -> NSAppearance? {
+        let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let highContrast = appearance.name.rawValue.contains("Accessibility")
+        let name: NSAppearance.Name
+        switch (dark, highContrast) {
+        case (false, false): name = .aqua
+        case (true, false): name = .darkAqua
+        case (false, true): name = .accessibilityHighContrastAqua
+        case (true, true): name = .accessibilityHighContrastDarkAqua
         }
-        image.isTemplate = true
-        image.accessibilityDescription = accessibilityDescription
-        return image
+        return NSAppearance(named: name)
+    }
+
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        applyPlainAppearance(to: subview)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        subviews.forEach(applyPlainAppearance)
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        subviews.forEach(applyPlainAppearance)
+    }
+
+    private func applyPlainAppearance(to subview: NSView) {
+        guard let plain = Self.plainAppearance(matching: effectiveAppearance),
+              subview.appearance?.name != plain.name else { return }
+        subview.appearance = plain
     }
 }
 

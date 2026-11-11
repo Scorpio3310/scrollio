@@ -74,9 +74,10 @@ final class PreferencesGroupedFormTests: XCTestCase {
     }
 
     func testBoxColoursAreTheSystemsOutsideVibrancy() {
-        // The panes stand on an NSVisualEffectView: their content draws in a vibrant
-        // appearance, where the system fill is an opaque grey meant for blending.
-        let root = PreferencesForm.makeBackground()
+        // Inside an NSVisualEffectView content draws in a vibrant appearance, where the
+        // system fill is an opaque grey meant for blending. The box never takes it, even
+        // where a pane would leave its content vibrant.
+        let root = PreferencesForm.makeBackground(plainContent: false)
         let content = NSView()
         root.addSubview(content)
         let host = NSView()
@@ -101,6 +102,60 @@ final class PreferencesGroupedFormTests: XCTestCase {
         // Dark: a lighter box; light: a darker one.
         XCTAssertEqual(resolve(Form.boxFillColor, in: .darkAqua).white, 1, accuracy: 0.001)
         XCTAssertEqual(resolve(Form.boxFillColor, in: .aqua).white, 0, accuracy: 0.001)
+    }
+
+    /// The panes draw their content in the plain appearance, as System Settings does. In
+    /// the vibrant one of the material a dimmed row's text was an opaque dark grey that
+    /// nothing blended: on a dark box it almost disappeared.
+    func testAPaneDrawsItsContentInThePlainAppearance() {
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: paneWidth, height: 200))
+        let root = PreferencesForm.makeBackground()
+        host.addSubview(root)
+        let content = Form.installContentStack(in: root, paneWidth: paneWidth)
+        let row = PreferencesSwitchRow(title: "Strength", explanation: "Off while haptics are off.", target: nil, action: nil)
+        row.isEnabled = false
+        Form.add([PreferencesGroupSection(width: boxWidth, rows: [row])], to: content)
+
+        for (window, plain) in [(NSAppearance.Name.aqua, NSAppearance.Name.aqua), (.darkAqua, .darkAqua), (.vibrantDark, .darkAqua)] {
+            host.appearance = NSAppearance(named: window)
+            host.layoutSubtreeIfNeeded()
+            XCTAssertEqual(row.titleLabel.effectiveAppearance.name, plain, "in \(window.rawValue)")
+            XCTAssertEqual(row.toggle.effectiveAppearance.name, plain, "in \(window.rawValue)")
+            // Dimmed: the tertiary label colour of that appearance, a tint of the text colour
+            // over the box (the vibrant one is an opaque grey, alpha 1).
+            let title = resolve(row.titleLabel.textColor!, in: row.titleLabel.effectiveAppearance.name)
+            let tertiary = resolve(.tertiaryLabelColor, in: plain)
+            XCTAssertEqual(title.white, tertiary.white, accuracy: 0.001)
+            XCTAssertEqual(title.alpha, tertiary.alpha, accuracy: 0.001)
+            XCTAssertLessThan(title.alpha, 0.5)
+        }
+
+        // A pane that is not in the Preferences window keeps the material's vibrancy.
+        let vibrant = PreferencesForm.makeBackground(plainContent: false)
+        let label = NSTextField(labelWithString: "Welcome")
+        vibrant.addSubview(label)
+        host.addSubview(vibrant)
+        host.appearance = NSAppearance(named: .darkAqua)
+        XCTAssertEqual(label.effectiveAppearance.name, .vibrantDark)
+    }
+
+    /// Light stays light and dark stays dark; high contrast stays high contrast. (An
+    /// appearance only reports high contrast while the system's setting is on, so here it
+    /// may come back as the plain one.)
+    func testThePlainAppearanceMatchesLightDarkAndHighContrast() throws {
+        for (window, plain, highContrast) in [
+            (NSAppearance.Name.vibrantLight, NSAppearance.Name.aqua, NSAppearance.Name.accessibilityHighContrastAqua),
+            (.vibrantDark, .darkAqua, .accessibilityHighContrastDarkAqua),
+            (.aqua, .aqua, .accessibilityHighContrastAqua),
+            (.darkAqua, .darkAqua, .accessibilityHighContrastDarkAqua),
+            (.accessibilityHighContrastVibrantDark, .darkAqua, .accessibilityHighContrastDarkAqua),
+            (.accessibilityHighContrastAqua, .aqua, .accessibilityHighContrastAqua),
+        ] {
+            let appearance = try XCTUnwrap(NSAppearance(named: window))
+            let reportsHighContrast = appearance.name.rawValue.contains("Accessibility")
+            let expected = reportsHighContrast ? highContrast : plain
+            XCTAssertEqual(PreferencesBackgroundView.plainAppearance(matching: appearance)?.name, expected, window.rawValue)
+        }
     }
 
     func testAStoryboardBoxCanTakeTheLookOfTheKit() {
