@@ -769,10 +769,18 @@ extension PreferencesButtonsViewController: KeyRecorderDelegate {
     /// unless it has no action and gets the one waiting (Gestures › Set Up…).
     func validateRecordedEvent(_ recorder: KeyRecorder, event: InputEvent) -> Bool {
         let trigger = normalizedTrigger(for: event)
-        // A key cannot be the gesture button (Gestures › Set Up…): refused like a duplicate.
+        // A key cannot be the gesture button (Gestures › Set Up…): refused, and the
+        // recorder says why (`refusalHint`).
         if Self.needsMouseButton(pendingAction), trigger.type == .keyboard { return false }
         guard let existing = existingBinding(for: trigger) else { return true }
         return takesPendingAction(existing, action: pendingAction)
+    }
+
+    /// The recorder's hint for a refused event: a key while the gesture button is set up
+    /// ("Gestures need a mouse button"); nil (a duplicate) otherwise.
+    func refusalHint(_ recorder: KeyRecorder, event: InputEvent) -> String? {
+        guard Self.needsMouseButton(pendingAction), normalizedTrigger(for: event).type == .keyboard else { return nil }
+        return NSLocalizedString("buttons-gesture-needs-mouse-button", comment: "")
     }
 
     /// The card shows the button at once; a listed one's row flashes while the recorder

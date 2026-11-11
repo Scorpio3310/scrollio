@@ -1277,7 +1277,8 @@ final class PreferencesButtonsTests: XCTestCase {
             "The mouse button you will hold for gestures.\nPress Esc to cancel.",
             "no \"or a key\" while the gesture button is set up"
         )
-        XCTAssertFalse(pane.validateRecordedEvent(recorder, event: key), "refused, as a duplicate is")
+        XCTAssertFalse(pane.validateRecordedEvent(recorder, event: key), "refused")
+        XCTAssertEqual(pane.refusalHint(recorder, event: key), "Gestures need a mouse button", "not \"Duplicate key\"")
         pane.onEventRecorded(recorder, didRecordEvent: key, isDuplicate: true)
         XCTAssertEqual(pane.headerView.content.title, "Gestures need a mouse button")
         XCTAssertEqual(pane.headerView.content.subtitle, "A key cannot be held while the mouse moves.")
@@ -1290,7 +1291,16 @@ final class PreferencesButtonsTests: XCTestCase {
         pane.onRecordingStarted(recorder)
         XCTAssertEqual(pane.headerView.content.subtitle, "Or a key with ⌘, ⌥, ⌃ or ⇧.\nPress Esc to cancel.")
         XCTAssertTrue(pane.validateRecordedEvent(recorder, event: key))
+        XCTAssertNil(pane.refusalHint(recorder, event: key))
         pane.onRecordingStopped(recorder, didRecord: false)
+
+        // A listed button refused while the gesture button is set up is a duplicate.
+        let listed = makePane([binding(4, "copy")])
+        listed.beginAddingBinding(action: SystemShortcut.mouseGestureNavigation)
+        listed.onRecordingStarted(recorder)
+        XCTAssertFalse(listed.validateRecordedEvent(recorder, event: mouseEvent(4)))
+        XCTAssertNil(listed.refusalHint(recorder, event: mouseEvent(4)), "\"Duplicate key\"")
+        listed.onRecordingStopped(recorder, didRecord: false)
     }
 
     /// A key is not offered Gesture Navigation in its menu; a mouse button is. A key that

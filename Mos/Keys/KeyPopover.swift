@@ -12,6 +12,8 @@ class KeyPopover: NSObject {
     private enum RecordingHint {
         case escape
         case duplicate
+        /// Refused for another reason, as the recorder's delegate says it.
+        case refused(String)
 
         var localizedText: String {
             switch self {
@@ -19,6 +21,8 @@ class KeyPopover: NSObject {
                 return NSLocalizedString("Press ESC to cancel recording", comment: "ESC hint in key recording popover")
             case .duplicate:
                 return NSLocalizedString("button-recording-duplicate-hint", comment: "Duplicate key hint in key recording popover")
+            case .refused(let reason):
+                return reason
             }
         }
     }
@@ -60,6 +64,11 @@ class KeyPopover: NSObject {
     /// 显示重复录制提示
     func showDuplicateHint() {
         showHint(.duplicate)
+    }
+
+    /// A refused event: `reason` (already localized), or "Duplicate key" when nil.
+    func showRefusalHint(_ reason: String?) {
+        showHint(reason.map { .refused($0) } ?? .duplicate)
     }
 
     private func showHint(_ hint: RecordingHint) {

@@ -1039,6 +1039,23 @@ final class ButtonBindingTests: XCTestCase {
         popover.hide()
     }
 
+    /// A refusal the delegate gives a reason for shows that reason in the hint's place;
+    /// without one it is "Duplicate key", as before.
+    func testKeyPopoverRefusalHintSaysWhyOrDuplicate() {
+        let reasoned = KeyPopover()
+        reasoned.testingPrepareContent()
+        reasoned.showRefusalHint("Gestures need a mouse button")
+        XCTAssertEqual(reasoned.testingHintText, "Gestures need a mouse button")
+        XCTAssertEqual(reasoned.testingHintFontPointSize, 10)
+        reasoned.hide()
+
+        let duplicate = KeyPopover()
+        duplicate.testingPrepareContent()
+        duplicate.showRefusalHint(nil)
+        XCTAssertEqual(duplicate.testingHintText, NSLocalizedString("button-recording-duplicate-hint", comment: ""))
+        duplicate.hide()
+    }
+
     func testKeyRecorderDuplicateFeedbackDelayIsLongerThanRecordedFeedback() {
         XCTAssertEqual(KeyRecorder.recordingFeedbackDelay(isDuplicate: false), 0.7)
         XCTAssertEqual(KeyRecorder.recordingFeedbackDelay(isDuplicate: true), 1.0)

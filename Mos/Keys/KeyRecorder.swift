@@ -31,6 +31,10 @@ protocol KeyRecorderDelegate: AnyObject {
 
     /// 验证录制的事件是否为重复
     func validateRecordedEvent(_ recorder: KeyRecorder, event: InputEvent) -> Bool
+
+    /// Why `validateRecordedEvent` refused `event`, as the recorder's hint shows it; nil:
+    /// a duplicate ("Duplicate key").
+    func refusalHint(_ recorder: KeyRecorder, event: InputEvent) -> String?
 }
 
 /// 默认实现 (替代 @objc optional 语义)
@@ -41,6 +45,10 @@ extension KeyRecorderDelegate {
 
     func validateRecordedEvent(_ recorder: KeyRecorder, event: InputEvent) -> Bool {
         return true
+    }
+
+    func refusalHint(_ recorder: KeyRecorder, event: InputEvent) -> String? {
+        return nil
     }
 }
 
@@ -506,7 +514,7 @@ class KeyRecorder: NSObject {
         keyPopover?.keyPreview
             .update(from: mosEvent.displayComponents, status: status)
         if isDuplicate {
-            keyPopover?.showDuplicateHint()
+            keyPopover?.showRefusalHint(self.delegate?.refusalHint(self, event: mosEvent))
         }
         self.delegate?.onEventRecorded(self, didRecordEvent: mosEvent, isDuplicate: isDuplicate)
 
