@@ -115,7 +115,17 @@ class ScrollPoster {
     private let manualSeparationThreshold: CFTimeInterval = 0.45
     private let trackingEndAdvance: CFTimeInterval = 0.04
     private let momentumEndDelay: CFTimeInterval = 0.13
-    // "Trackpad-style events": how a wheel scroll looks as a trackpad gesture.
+    // "Trackpad-style events": how a wheel scroll looks as a trackpad gesture. Two forms, by what
+    // the app under the pointer does with the events of a glide ("momentum"):
+    //
+    // - AppKit and UIKit scroll views (Finder, Settings, Notes, most apps) follow the touch only.
+    //   When it ends they compute a glide of their own from its speed and ignore what the
+    //   momentum events say (measured in the owner's recording of a Finder list: 7,225 px posted,
+    //   mostly as momentum, moved the list by ~250 pt along AppKit's own decay). For them the
+    //   touch lasts as long as the wheel turns (until it has been still for
+    //   `manualContinuationThreshold`), and only the tail goes out as momentum.
+    // - The Chromium engine (Chrome, Dia, Arc, Electron apps) scrolls by the momentum events
+    //   too. For it the scroll is a flick (`config.flick`), as described below.
     //
     // A real flick is a short touch (3 or 4 events, ~50 ms) and then a long glide (momentum).
     // At a page edge apps treat the two very differently: the touch drags the page past the edge
@@ -151,10 +161,15 @@ class ScrollPoster {
     private let dispatchContext: ScrollDispatchContext
     // 滚动配置快照: 主线程在 update 时捕获, CVDisplayLink 线程只读, 避免热路径跨线程读 Options/ScrollCore
     private struct ConfigSnapshot {
+        /// "Trackpad-style events": the frames carry trackpad phases.
         var simTrackpadEnabled: Bool
+        /// Trackpad-style for an app that scrolls by the events of a glide (`ScrollUtils
+        /// .followsGlideEvents`): a short touch and its glide. Without it the touch lasts as long
+        /// as the wheel turns, as it always did.
+        var flick: Bool
         var deadZone: Double
     }
-    private var config = ConfigSnapshot(simTrackpadEnabled: false, deadZone: 1.0)
+    private var config = ConfigSnapshot(simTrackpadEnabled: false, flick: false, deadZone: 1.0)
 #if DEBUG
     /// Tests: receives every frame instead of posting it.
     var frameRecorderForTests: ((ScrollOutgoingFrame) -> Void)?
@@ -205,11 +220,13 @@ extension ScrollPoster {
         guard dispatchContext.capture(event: event) else {
             return self
         }
+        // 捕获本次手势的配置快照 (主线程读 Options/ScrollCore, CVDisplayLink 线程只读)
+        // Read before the lock: the first time an app is seen this looks into its bundle.
+        let snapshot = configSnapshot(for: event)
         os_unfair_lock_lock(&stateLock)
         defer { os_unfair_lock_unlock(&stateLock) }
-        // 捕获本次手势的配置快照 (主线程读 Options/ScrollCore, CVDisplayLink 线程只读)
-        captureConfigSnapshotLocked()
-        let place = config.simTrackpadEnabled
+        applyConfigLocked(snapshot)
+        let place = config.flick
             ? ScrollInputPlace(pid: pid_t(event.getIntegerValueField(.eventTargetUnixProcessID)), pointer: event.location)
             : nil
         handleInputLocked(input, at: CFAbsoluteTimeGetCurrent(), place: place)
@@ -225,10 +242,11 @@ extension ScrollPoster {
         sessionLog.inputDistance += abs(input.y) + abs(input.x)
         sessionLog.lastInputAt = now
         sessionLog.trackpadStyle = config.simTrackpadEnabled
+        sessionLog.flick = config.flick
         inputSequence &+= 1
-        if !config.simTrackpadEnabled {
-            // The switch can differ per app: a turn asked for with it on is not carried into a
-            // scroll with it off.
+        if !config.flick {
+            // The form can differ per app: a turn asked for in a flick is not carried into a
+            // scroll that is not one.
             touchWaitsForTurn = false
         }
         lastInputPlace = place
@@ -241,7 +259,7 @@ extension ScrollPoster {
         // motion has turned, its frames still go toward the edge and stay part of the glide.
         // Only where the touch began (`staysAtTouchPlaceLocked`): over another pane or app the tick
         // begins a touch of its own, as it did before.
-        let inGlide = config.simTrackpadEnabled
+        let inGlide = config.flick
             && (phases.phase == .MomentumBegin || phases.phase == .MomentumOngoing)
             && staysAtTouchPlaceLocked(place)
         let addsToGlide = inGlide && continuesGlideLocked(input)
@@ -257,7 +275,7 @@ extension ScrollPoster {
             trackingEndScheduledTime = nil
             return
         }
-        if config.simTrackpadEnabled {
+        if config.flick {
             phases.dropWaitingMomentumBegan()
         }
         let phase = phases.phase
@@ -415,10 +433,11 @@ extension ScrollPoster {
         defer { os_unfair_lock_unlock(&stateLock) }
         return sessionLog
     }
-    /// Sets the config snapshot directly (an event would read it from Options).
-    func setConfigForTests(simTrackpadEnabled: Bool, deadZone: Double = 1.0) {
+    /// Sets the config snapshot directly (an event would read it from Options). `flick`: the app
+    /// under the pointer scrolls by the events of a glide (it only counts with trackpad-style on).
+    func setConfigForTests(simTrackpadEnabled: Bool, deadZone: Double = 1.0, flick: Bool = true) {
         os_unfair_lock_lock(&stateLock)
-        config = ConfigSnapshot(simTrackpadEnabled: simTrackpadEnabled, deadZone: deadZone)
+        applyConfigLocked(ConfigSnapshot(simTrackpadEnabled: simTrackpadEnabled, flick: simTrackpadEnabled && flick, deadZone: deadZone))
         os_unfair_lock_unlock(&stateLock)
     }
     /// One wheel event through the whole input path (buffer, lead cap, phases, session log),
@@ -801,7 +820,7 @@ private extension ScrollPoster {
     /// dead zone) lasts until its last frame has gone out: a frame posted after "ended" and
     /// before "momentum began" would carry "ended" again, with a distance. Caller holds stateLock.
     func fingerLiftedLocked(now: CFTimeInterval, glideFollows: Bool, outputSettled: Bool) -> Bool {
-        if config.simTrackpadEnabled {
+        if config.flick {
             return now - touchBeganTime >= trackpadStyleTouchTime && (glideFollows || outputSettled)
         }
         return now - lastManualEventTime > manualContinuationThreshold
@@ -930,16 +949,30 @@ private extension ScrollPoster {
 
     /// 主线程读取当前 (全局 / 例外应用) 配置存入快照。调用方须持有 stateLock。
     func captureConfigSnapshotLocked() {
+        applyConfigLocked(configSnapshot(for: nil))
+    }
+
+    /// The settings of a scroll: the global ones or the app's own, and whether the app the event
+    /// goes to gets a flick. Main thread (Options, ScrollCore, ScrollUtils); needs no lock.
+    private func configSnapshot(for event: CGEvent?) -> ConfigSnapshot {
         let simTrackpad: Bool
         if let application = ScrollCore.shared.application, !application.inherit {
             simTrackpad = application.scroll.smoothSimTrackpad
         } else {
             simTrackpad = Options.shared.scroll.smoothSimTrackpad
         }
-        config = ConfigSnapshot(
+        let flick = simTrackpad && event.map { ScrollUtils.shared.followsGlideEvents($0) } == true
+        return ConfigSnapshot(
             simTrackpadEnabled: simTrackpad,
+            flick: flick,
             deadZone: OPTIONS_SCROLL_DEFAULT.usableDeadZone(Options.shared.scroll.deadZone)
         )
+    }
+
+    /// Caller holds stateLock.
+    private func applyConfigLocked(_ snapshot: ConfigSnapshot) {
+        config = snapshot
+        phases.holdsWaitingMomentumBegan = snapshot.flick
     }
 
     func eventTimestamp() -> UInt64 {
@@ -967,7 +1000,7 @@ private extension ScrollPoster {
             phaseValues = self.phaseValues(for: phases.phase)
         }
         var frame = ScrollOutgoingFrame(y: v.y, x: v.x, scrollPhase: phaseValues?.scroll, momentumPhase: phaseValues?.momentum)
-        if config.simTrackpadEnabled {
+        if config.flick {
             // The time of this frame, so that an app finds the glide's real speed when it bounces.
             frame.timestamp = eventTimestamp()
         }
