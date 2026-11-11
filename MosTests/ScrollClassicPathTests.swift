@@ -26,7 +26,8 @@ final class ScrollClassicRig {
 
     let poster: ScrollPoster
     let phases = ScrollPhase()
-    /// The default Step and Speed.
+    /// The default Step, and Speed 2.7 (not the default 6.3): the expected values below
+    /// depend on it.
     let step = 33.6
     let speed = 2.7
     let duration: Double
@@ -57,7 +58,7 @@ final class ScrollClassicRig {
         poster.setConfigForTests(simTrackpadEnabled: trackpadStyle, deadZone: deadZone)
     }
 
-    /// One notch at the default Step and Speed (px).
+    /// One notch at the default Step and Speed 2.7 (px).
     var notch: Double { return step * speed }
 
     var transition: Double {

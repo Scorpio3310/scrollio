@@ -41,6 +41,10 @@ class ButtonCore {
         // Tap 被系统禁用时, 清理活跃绑定状态并直接放行
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             InputProcessor.shared.clearActiveBindings()
+            if type == .tapDisabledByTimeout {
+                // On again now: until the keeper's next look every button went by unhandled.
+                ButtonCore.shared.dispatchInterceptor?.restartUnlessThrottled()
+            }
             return Unmanaged.passUnretained(event)
         }
         // 跳过 Mos 合成事件, 避免 executeCustom 发出的事件被重复处理
@@ -102,10 +106,5 @@ class ButtonCore {
             InputProcessor.shared.clearActiveBindings()
             isActive = false
         }
-    }
-    
-    // 切换状态
-    func toggle() {
-        isActive ? disable() : enable()
     }
 }

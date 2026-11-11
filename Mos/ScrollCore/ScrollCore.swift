@@ -65,6 +65,11 @@ class ScrollCore: ScrollActionPort {
         // Tap 被系统禁用或重启边界时，强制清理 poster 上下文并失效历史异步帧
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             ScrollPoster.shared.stop(.TrackingEnd)
+            if type == .tapDisabledByTimeout {
+                // On again now: until the keeper's next look the wheel went by raw (and the
+                // other way round with "reverse" on).
+                ScrollCore.shared.scrollEventInterceptor?.restartUnlessThrottled()
+            }
             return Unmanaged.passUnretained(event)
         }
         if type != .scrollWheel {
@@ -472,5 +477,24 @@ class ScrollCore: ScrollActionPort {
         scrollEventInterceptor = nil
         hotkeyEventInterceptor = nil
         mouseEventInterceptor = nil
+        releaseHeldScrollKeys()
+    }
+
+    /// Forgets every scroll key held down (the keyboard and mouse keys of the Scrolling tab,
+    /// and those that arrive over HID++). Without the taps their release is never seen: sleep,
+    /// Pause or lost Accessibility access while such a key was down left fast scrolling on,
+    /// or smoothing paused, until that key was pressed again. Held Scrollio scroll actions of
+    /// button bindings are counted apart and released by ButtonCore.
+    private func releaseHeldScrollKeys() {
+        dashKeyHeld = false
+        toggleKeyHeld = false
+        blockKeyHeld = false
+        hidDashHeldCode = nil
+        hidToggleHeldCode = nil
+        hidBlockHeldCode = nil
+        currentApplication = nil
+        refreshDashState()
+        refreshToggleState()
+        refreshBlockState()
     }
 }

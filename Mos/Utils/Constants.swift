@@ -122,7 +122,7 @@ class OPTIONS_SCROLL_DEFAULT: Codable {
     var durationTransition: Double {
         OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: duration)
     }
-    var deadZone = 1.00 {
+    var deadZone = OPTIONS_SCROLL_DEFAULT.defaultDeadZone {
         didSet {Options.shared.markChanged(scrollContainer: self)}
     }
     var smoothSimTrackpad = false {
@@ -141,7 +141,27 @@ class OPTIONS_SCROLL_DEFAULT: Codable {
         // 生成数据 (https://www.wolframalpha.com/input/?i=1+-+(sqrt+x%2F5)+%3D+y)
         let val = 1-(duration/upperLimit).squareRoot()
         // 三位小数
-        return Double(round(1000 * val)/1000)
+        let transition = Double(round(1000 * val)/1000)
+        // A stored Duration the slider cannot give (5.2 or more, negative, not a number) made
+        // this 0 or less, or NaN: nothing moved and the display link never stopped. It glides
+        // like the slider's longest Duration instead; the stored value stays as it is.
+        guard transition.isFinite, transition >= minimumDurationTransition else {
+            return minimumDurationTransition
+        }
+        return transition
+    }
+    /// The factor of the glide time slider's longest Duration (5.0): the least any Duration
+    /// gets. Every Duration on the slider (1.0...5.0) gets its own factor unchanged.
+    static let minimumDurationTransition = 0.019
+
+    /// The dead zone of new settings.
+    static let defaultDeadZone = 1.0
+    /// The dead zone ScrollPoster works with for a stored one. A dead zone that is not
+    /// positive (or not a number) kept the display link running forever: the distance left
+    /// never got below it. The default is used instead; the stored value stays as it is.
+    static func usableDeadZone(_ stored: Double) -> Double {
+        guard stored.isFinite, stored > 0 else { return defaultDeadZone }
+        return stored
     }
 }
 extension OPTIONS_SCROLL_DEFAULT: Equatable {

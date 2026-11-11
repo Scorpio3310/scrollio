@@ -155,18 +155,32 @@ class ShortcutExecutor {
         }
 
         // 发送按键按下事件
-        if let keyDown = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true) {
-            keyDown.flags = CGEventFlags(rawValue: flags)
+        if let keyDown = Self.shortcutKeyEvent(code: code, flags: flags, keyDown: true,
+                                               preserveFlagsOnKeyUp: preserveFlagsOnKeyUp, source: source) {
             keyDown.post(tap: .cghidEventTap)
         }
 
         // 发送按键抬起事件
-        if let keyUp = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false) {
-            if preserveFlagsOnKeyUp {
-                keyUp.flags = CGEventFlags(rawValue: flags)
-            }
+        if let keyUp = Self.shortcutKeyEvent(code: code, flags: flags, keyDown: false,
+                                             preserveFlagsOnKeyUp: preserveFlagsOnKeyUp, source: source) {
             keyUp.post(tap: .cghidEventTap)
         }
+    }
+
+    /// The key down or key up of a shortcut, marked as Scrollio's own (`MosEventMarker`) like
+    /// every other key and click it posts. Unmarked they came back through the app's own
+    /// taps: a keyboard trigger bound to the shortcut it is itself ran again in a loop, and
+    /// the button tap added held virtual modifiers to them.
+    static func shortcutKeyEvent(code: CGKeyCode, flags: UInt64, keyDown: Bool,
+                                 preserveFlagsOnKeyUp: Bool, source: CGEventSource?) -> CGEvent? {
+        guard let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: keyDown) else {
+            return nil
+        }
+        if keyDown || preserveFlagsOnKeyUp {
+            event.flags = CGEventFlags(rawValue: flags)
+        }
+        event.setIntegerValueField(.eventSourceUserData, value: MosEventMarker.syntheticCustom)
+        return event
     }
 
     /// 执行系统快捷键 (从SystemShortcut.Shortcut对象)
@@ -373,10 +387,7 @@ class ShortcutExecutor {
         inputModifiers: CGEventFlags?
     ) -> UUID? {
         guard let source = CGEventSource(stateID: .hidSystemState) else { return nil }
-        let location = NSEvent.mouseLocation
-        // 转换坐标: NSEvent 用左下角原点, CGEvent 用左上角原点
-        let screenHeight = NSScreen.main?.frame.height ?? 0
-        let point = CGPoint(x: location.x, y: screenHeight - location.y)
+        let point = currentMouseLocationForCGEvent()
         let spec = mouseEventSpec(for: kind, phase: phase)
         guard let event = CGEvent(
             mouseEventSource: source,
@@ -547,10 +558,22 @@ class ShortcutExecutor {
         }
     }
 
+    /// Where a synthesized click goes: the pointer, in CoreGraphics coordinates.
     private func currentMouseLocationForCGEvent() -> CGPoint {
-        let location = NSEvent.mouseLocation
-        let screenHeight = NSScreen.main?.frame.height ?? 0
-        return CGPoint(x: location.x, y: screenHeight - location.y)
+        return Self.cgEventLocation(
+            fromCocoa: NSEvent.mouseLocation,
+            primaryScreenHeight: NSScreen.screens.first?.frame.height ?? 0
+        )
+    }
+
+    /// A point in Cocoa screen coordinates (origin at the bottom left of the primary display,
+    /// y up) in CoreGraphics coordinates (origin at its top left, y down). Both spaces hang
+    /// on the primary display, the one with the menu bar (`NSScreen.screens.first`), whatever
+    /// display the point is on. `NSScreen.main` is the screen of the key window instead: with
+    /// that window on a display of another height every synthesized click landed off by the
+    /// difference.
+    static func cgEventLocation(fromCocoa location: NSPoint, primaryScreenHeight: CGFloat) -> CGPoint {
+        return CGPoint(x: location.x, y: primaryScreenHeight - location.y)
     }
 
     // MARK: - Logi HID++ Actions

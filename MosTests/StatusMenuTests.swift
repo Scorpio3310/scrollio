@@ -509,6 +509,56 @@ final class AppRunControllerTests: XCTestCase {
         XCTAssertTrue(controller.coresActive)
     }
 
+    /// Without the access every wake opened the Welcome Guide again. It opens at launch (and
+    /// when the app is reopened); a wake only arms the timer again.
+    func testWithoutAccessAWakeOnlyArmsTheTimerAgain() {
+        let world = World()
+        world.access = false
+        let controller = make(world)
+        controller.start()      // launch
+        XCTAssertEqual(world.log, ["guide"])
+
+        controller.stop()       // willSleep
+        XCTAssertFalse(controller.isWaitingForAccess)
+        XCTAssertEqual(changes(of: controller) { controller.wake() }, 1)
+        XCTAssertEqual(world.log.filter { $0 == "guide" }.count, 1, "no second Welcome Guide: \(world.log)")
+        XCTAssertTrue(controller.isWaitingForAccess, "the timer waits for the access again")
+        XCTAssertEqual(controller.recoveryTimer?.timeInterval, AppRunController.launchRecoveryInterval)
+
+        world.access = true
+        controller.accessibilityPermissionWasGranted()
+        XCTAssertTrue(controller.coresActive)
+        XCTAssertEqual(world.log.last, "start")
+    }
+
+    /// With the access a wake starts the cores, as before; while paused it does nothing.
+    func testAWakeWithAccessStartsTheCores() {
+        let world = World()
+        let controller = make(world)
+        controller.start()
+        controller.stop()
+        controller.wake()
+        XCTAssertEqual(world.log, ["start", "stop", "start"])
+        XCTAssertTrue(controller.coresActive)
+
+        controller.setPaused(true)
+        controller.stop()
+        controller.wake()
+        XCTAssertFalse(controller.coresActive, "still paused")
+    }
+
+    /// Switching back to this user is a wake too: no Welcome Guide, the timer waits.
+    func testWithoutAccessASwitchBackToThisUserOnlyArmsTheTimer() {
+        let world = World()
+        world.access = false
+        let controller = make(world)
+        controller.start()
+        controller.sessionDidResign()
+        controller.sessionDidBecomeActive()
+        XCTAssertEqual(world.log.filter { $0 == "guide" }.count, 1, "\(world.log)")
+        XCTAssertTrue(controller.isWaitingForAccess)
+    }
+
     /// A start that fails half-way (an event tap could not be created) stops whatever did
     /// start, so no tap stays installed while the cores count as stopped, and tries again.
     func testAStartThatFailsHalfWayStopsEverythingAndTriesAgain() {

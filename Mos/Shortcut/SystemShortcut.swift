@@ -348,29 +348,9 @@ struct SystemShortcut {
         "logiPointerSpeedCycle": logiPointerSpeedCycle,
     ]
 
-    /// 根据修饰键和按键代码查找快捷键名称
-    static func findShortcut(modifiers: NSEvent.ModifierFlags, keyCode: UInt16) -> String? {
-        for (name, shortcut) in allShortcuts {
-            if shortcut.modifiers == modifiers && shortcut.code == keyCode {
-                return name
-            }
-        }
-        return nil
-    }
-
     /// 根据名称获取快捷键
     static func getShortcut(named: String) -> Shortcut? {
         return allShortcuts[named]
-    }
-
-    /// 检查给定的快捷键是否与系统快捷键冲突
-    static func isSystemShortcut(modifiers: NSEvent.ModifierFlags, keyCode: UInt16) -> Bool {
-        return findShortcut(modifiers: modifiers, keyCode: keyCode) != nil
-    }
-
-    /// 获取所有快捷键名称列表
-    static var allShortcutNames: [String] {
-        return Array(allShortcuts.keys).sorted()
     }
 
     /// 按类别分组的快捷键 (有序数组,顺序即菜单显示顺序)
@@ -622,6 +602,24 @@ extension SystemShortcut {
     static func reloadSystemShortcuts() {
         resolvedCache = loadSystemShortcuts()
         NSLog("SystemShortcut: Reloaded system config, \(resolvedCache.count) shortcuts resolved")
+    }
+
+    /// System Settings, where the user changes these shortcuts.
+    static let systemSettingsBundleIdentifier = "com.apple.systempreferences"
+
+    /// Whether the cache is read again after this notification (AppDelegate): Scrollio became
+    /// active (its settings opened), or System Settings went to the background, where a
+    /// shortcut may just have been changed. The cache used to be read once, so a change was
+    /// ignored until the next launch. Never read from an event tap callback.
+    static func reloadsSystemShortcuts(after name: Notification.Name, deactivatedBundleIdentifier: String? = nil) -> Bool {
+        switch name {
+        case NSApplication.didBecomeActiveNotification:
+            return true
+        case NSWorkspace.didDeactivateApplicationNotification:
+            return deactivatedBundleIdentifier == systemSettingsBundleIdentifier
+        default:
+            return false
+        }
     }
 
     /// 从系统配置加载快捷键

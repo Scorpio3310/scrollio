@@ -67,6 +67,9 @@ struct InputEvent {
     /// but never runs what only a real release runs: no click action, no tap replay, no
     /// committed swipe. Always false for a button-down.
     let isSyntheticRelease: Bool
+    /// True for a keyDown the system repeats while the key is held (`keyboardEventAutorepeat`).
+    /// False for the first keyDown, every other event and everything from HID++.
+    let isAutoRepeat: Bool
 
     /// 从 CGEvent 构造
     /// 注意: .flagsChanged 事件也属于键盘域 (修饰键按下/抬起), 必须和 keyDown/keyUp 同类处理
@@ -85,6 +88,8 @@ struct InputEvent {
         self.device = nil
         self.tracksMovementOnDevice = false
         self.isSyntheticRelease = false
+        self.isAutoRepeat = event.type == .keyDown
+            && event.getIntegerValueField(.keyboardEventAutorepeat) != 0
     }
 
     /// 从 HID++ 数据构造
@@ -99,6 +104,7 @@ struct InputEvent {
         self.device = device
         self.tracksMovementOnDevice = tracksMovementOnDevice
         self.isSyntheticRelease = isSyntheticRelease && phase == .up
+        self.isAutoRepeat = false
     }
 
     // MARK: - Display

@@ -400,6 +400,46 @@ final class ScrollSettingsLoadTests: XCTestCase {
         XCTAssertEqual(loaded.scroll.step, 12)
     }
 
+    /// One per-app entry this version cannot read used to make the whole list be removed
+    /// from the settings at launch.
+    func testReadOptions_keepsTheAppsListWhenOneEntryCannotBeRead() throws {
+        let stored = Data(("[" + StoredDataCanaryTests.readableApp + "," + StoredDataCanaryTests.unreadableApp + "]").utf8)
+        store("optionsExist", forKey: OptionItem.General.OptionsExist)
+        store(stored, forKey: OptionItem.Application.Applications)
+
+        Options.shared.readOptions()
+
+        let apps = Options.shared.application.applications
+        XCTAssertEqual(apps.count, 1)
+        XCTAssertNotNil(apps.get(by: "/Applications/A.app"))
+        XCTAssertEqual(defaults.data(forKey: OptionItem.Application.Applications), stored, "nothing was removed")
+    }
+
+    /// A scroll key stored by an older version as a number that is no key code trapped in
+    /// UInt16(_:): the app crashed at every launch. The default is used, nothing is written.
+    func testReadOptions_usesTheDefaultForALegacyScrollKeyOutOfRange() {
+        store("optionsExist", forKey: OptionItem.General.OptionsExist)
+        store(70_000, forKey: OptionItem.Scroll.Dash)
+        store(-1, forKey: OptionItem.Scroll.Toggle)
+        store(58, forKey: OptionItem.Scroll.Block)
+
+        Options.shared.readOptions()
+
+        XCTAssertEqual(Options.shared.scroll.dash, OPTIONS_SCROLL_DEFAULT().dash)
+        XCTAssertEqual(Options.shared.scroll.toggle, OPTIONS_SCROLL_DEFAULT().toggle)
+        XCTAssertEqual(Options.shared.scroll.block, ScrollHotkey(type: .keyboard, code: 58), "a key code still migrates")
+        XCTAssertEqual(defaults.object(forKey: OptionItem.Scroll.Dash) as? Int, 70_000, "the stored value is not rewritten")
+    }
+
+    func testLegacyScrollKeyCodes() {
+        XCTAssertEqual(Options.legacyScrollHotkey(keyCode: 58), ScrollHotkey(type: .keyboard, code: 58))
+        XCTAssertEqual(Options.legacyScrollHotkey(keyCode: 0), ScrollHotkey(type: .keyboard, code: 0))
+        XCTAssertEqual(Options.legacyScrollHotkey(keyCode: 65_535), ScrollHotkey(type: .keyboard, code: 65_535))
+        XCTAssertNil(Options.legacyScrollHotkey(keyCode: 65_536))
+        XCTAssertNil(Options.legacyScrollHotkey(keyCode: -1))
+        XCTAssertNil(Options.legacyScrollHotkey(keyCode: Int.max))
+    }
+
     func testReadOptions_keepsSettingsThatAreInRange() {
         // Speed 6.3 with the "Smooth" feel: inside every range, so nothing moves.
         store("optionsExist", forKey: OptionItem.General.OptionsExist)
@@ -413,5 +453,72 @@ final class ScrollSettingsLoadTests: XCTestCase {
         XCTAssertEqual(Options.shared.scroll.duration, 3.69)
         XCTAssertEqual(Options.shared.scroll.step, 33.6)
         XCTAssertEqual(ScrollFeel.matching(duration: Options.shared.scroll.duration), .smooth)
+    }
+}
+
+/// Stored values the sliders cannot give, guarded where the engine uses them; what is stored
+/// is never rewritten. A Duration of 5.2 or more (or not a number) gave a factor of 0 or
+/// less: nothing moved and the display link never stopped. A dead zone that is not positive
+/// kept the display link running forever.
+final class ScrollSettingsUsableValuesTests: XCTestCase {
+
+    private func transition(_ duration: Double) -> Double {
+        return OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: duration)
+    }
+
+    /// The formula as it was, for every Duration the slider can give.
+    private func unguarded(_ duration: Double) -> Double {
+        return Double(round(1000 * (1 - (duration / 5.2).squareRoot())) / 1000)
+    }
+
+    func testEveryDurationOnTheSliderKeepsItsFactor() {
+        let range = ScrollSliderSetting.glideTime.range
+        for duration in stride(from: range.lowerBound, through: range.upperBound, by: 0.01) {
+            XCTAssertEqual(transition(duration), unguarded(duration), "\(duration)")
+        }
+        for feel in ScrollFeel.allCases {
+            XCTAssertEqual(transition(feel.duration), unguarded(feel.duration), "\(feel)")
+        }
+        XCTAssertEqual(OPTIONS_SCROLL_DEFAULT.minimumDurationTransition, unguarded(range.upperBound),
+                       "the floor is the factor of the slider's longest Duration")
+    }
+
+    func testADurationBeyondTheSliderGlidesLikeTheLongest() {
+        for stored in [5.05, 5.2, 6.0, 100, -1, .nan, .infinity] {
+            XCTAssertEqual(transition(stored), OPTIONS_SCROLL_DEFAULT.minimumDurationTransition, "\(stored)")
+        }
+        let scroll = OPTIONS_SCROLL_DEFAULT()
+        scroll.duration = 6.0
+        XCTAssertEqual(scroll.durationTransition, OPTIONS_SCROLL_DEFAULT.minimumDurationTransition)
+        XCTAssertEqual(scroll.duration, 6.0, "the stored value stays")
+    }
+
+    /// With the factor of a stored Duration 6 a scroll moves and ends.
+    func testAScrollWithADurationBeyondTheSliderEnds() {
+        let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: ScrollDispatchContext())
+        var moved = 0.0
+        poster.frameRecorderForTests = { moved += $0.y }
+        poster.setConfigForTests(simTrackpadEnabled: false)
+        var now = 100.0
+        poster.inputForTests(ScrollPosterInput(y: 100, x: 0, notch: 100, duration: transition(6.0)), at: now)
+
+        var request: ScrollStopRequest?
+        for _ in 0..<(60 * 60) {
+            now += 1.0 / 60.0
+            request = poster.displayLinkFrameForTests(frameInterval: 1.0 / 60.0, now: now)
+            if request != nil { break }
+        }
+        XCTAssertNotNil(request, "the display link is asked to stop")
+        XCTAssertGreaterThan(moved, 0, "the page moves")
+    }
+
+    func testADeadZoneThatIsNotPositiveGivesTheDefault() {
+        XCTAssertEqual(OPTIONS_SCROLL_DEFAULT().deadZone, OPTIONS_SCROLL_DEFAULT.defaultDeadZone)
+        for stored in [0.0, -1.0, -.infinity, .nan, .infinity] {
+            XCTAssertEqual(OPTIONS_SCROLL_DEFAULT.usableDeadZone(stored), 1.0, "\(stored)")
+        }
+        for stored in [0.25, 1.0, 2.0, 7.0] {
+            XCTAssertEqual(OPTIONS_SCROLL_DEFAULT.usableDeadZone(stored), stored)
+        }
     }
 }

@@ -127,6 +127,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: .mosAccessibilityPermissionLost,
             object: nil
         )
+        // The user's System Settings shortcuts (Spaces): read again when they may have changed
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(reloadSystemShortcutsIfNeeded),
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(reloadSystemShortcutsIfNeeded),
+            name: NSWorkspace.didDeactivateApplicationNotification,
+            object: nil
+        )
     }
     // 运行后启动滚动处理
     func applicationDidFinishLaunching(_ aNotification: Notification) {
@@ -187,7 +200,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AppRunController.shared.stop()
     }
     @objc func didWake(notification: NSNotification) {
-        AppRunController.shared.start()
+        AppRunController.shared.wake()
+    }
+    @objc func reloadSystemShortcutsIfNeeded(notification: NSNotification) {
+        let deactivated = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+        guard SystemShortcut.reloadsSystemShortcuts(
+            after: notification.name,
+            deactivatedBundleIdentifier: deactivated?.bundleIdentifier
+        ) else { return }
+        SystemShortcut.reloadSystemShortcuts()
     }
     // 辅助功能权限在运行时被撤销 (可能由多个 Interceptor 同时触发, 此方法必须幂等)
     @objc func handleAccessibilityPermissionLost() {

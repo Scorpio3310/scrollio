@@ -45,6 +45,29 @@ final class InterceptorAutoRestartTests: XCTestCase {
         XCTAssertFalse(Interceptor.isAutoRestartThrottled(history: history, now: later))
     }
 
+    // MARK: - Counting a restart (the keeper's and the one after a tap timeout)
+
+    /// A tap the system turned off for a slow callback is restarted from the callback now,
+    /// not at the keeper's next look; both count against the same limit, so a main thread
+    /// that keeps timing out cannot freeze input again and again.
+    func testRestartsAreAdmittedUpToTheLimitThenRefusedUntilTheWindowPasses() {
+        var history: [Date] = []
+        for second in 0..<Interceptor.autoRestartLimit {
+            XCTAssertTrue(Interceptor.admitAutoRestart(history: &history, now: now.addingTimeInterval(Double(second))))
+        }
+        XCTAssertEqual(history.count, Interceptor.autoRestartLimit)
+
+        let refusedAt = now.addingTimeInterval(10)
+        XCTAssertFalse(Interceptor.admitAutoRestart(history: &history, now: refusedAt))
+        XCTAssertEqual(history.count, Interceptor.autoRestartLimit, "a refused restart is not counted")
+
+        // Once the first ones left the window, a restart is admitted and the old ones are gone.
+        let later = now.addingTimeInterval(Interceptor.autoRestartWindow + 0.5)
+        XCTAssertTrue(Interceptor.admitAutoRestart(history: &history, now: later))
+        XCTAssertEqual(history, [now.addingTimeInterval(1), now.addingTimeInterval(2), later],
+                       "the entry at 0 s left the window; those at 1 s and 2 s are still in it")
+    }
+
     // MARK: - Keeper replacement
 
     /// start() and restart() install a new keeper timer. The one it replaces must be

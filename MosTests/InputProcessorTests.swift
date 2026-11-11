@@ -1941,6 +1941,206 @@ final class InputProcessorTests: XCTestCase {
         )
     }
 
+    // MARK: - Where a synthesized click lands
+
+    /// Cocoa and CoreGraphics coordinates both hang on the primary display. The conversion
+    /// used the key window's screen (`NSScreen.main`): with that window on a display of
+    /// another height, every synthesized click landed off by the difference.
+    func testASynthesizedClickIsPlacedFromThePrimaryDisplay() {
+        // Primary display 1440 x 900 at the origin; a 1920 x 1080 display above it
+        // (Cocoa y 900...1980), which would have been NSScreen.main with a window there.
+        let onTheSecondDisplay = NSPoint(x: 300, y: 1500)
+        XCTAssertEqual(ShortcutExecutor.cgEventLocation(fromCocoa: onTheSecondDisplay, primaryScreenHeight: 900),
+                       CGPoint(x: 300, y: -600))
+        XCTAssertNotEqual(ShortcutExecutor.cgEventLocation(fromCocoa: onTheSecondDisplay, primaryScreenHeight: 1080),
+                          CGPoint(x: 300, y: -600), "measured from the other display it was 180 pt off")
+        // On the primary display: its top left is (0, 0) in CoreGraphics.
+        XCTAssertEqual(ShortcutExecutor.cgEventLocation(fromCocoa: NSPoint(x: 10, y: 890), primaryScreenHeight: 900),
+                       CGPoint(x: 10, y: 10))
+    }
+
+    // MARK: - A held keyboard trigger (auto-repeat)
+
+    private func keyEvent(_ code: CGKeyCode, down: Bool, flags: CGEventFlags, repeating: Bool = false) -> InputEvent {
+        let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)!
+        event.flags = flags
+        if repeating {
+            event.setIntegerValueField(.keyboardEventAutorepeat, value: 1)
+        }
+        return InputEvent(fromCGEvent: event)
+    }
+
+    private func bindKey(_ code: UInt16, flags: CGEventFlags, to action: String) {
+        let trigger = RecordedEvent(type: .keyboard, code: code, modifiers: UInt(flags.rawValue),
+                                    displayComponents: ["⌃ ⌥", "F"], deviceFilter: nil)
+        Options.shared.buttons.binding = [ButtonBinding(triggerEvent: trigger, systemShortcutName: action, isEnabled: true)]
+        ButtonUtils.shared.invalidateCache()
+    }
+
+    func testAnInputEventKnowsAnAutoRepeat() {
+        XCTAssertFalse(keyEvent(3, down: true, flags: []).isAutoRepeat)
+        XCTAssertTrue(keyEvent(3, down: true, flags: [], repeating: true).isAutoRepeat)
+        XCTAssertFalse(keyEvent(3, down: false, flags: [], repeating: true).isAutoRepeat, "only a keyDown repeats")
+        XCTAssertFalse(InputEvent(type: .keyboard, code: 3, modifiers: [], phase: .down, source: .hidPP, device: nil).isAutoRepeat)
+    }
+
+    /// A held keyboard trigger repeats its keyDown, and a trigger action ran again for every
+    /// repeat (a key bound to the shortcut it is itself ran in a loop).
+    func testAHeldKeyboardTriggerRunsItsActionOncePerPress() {
+        let flags: CGEventFlags = [.maskControl, .maskAlternate]
+        bindKey(3, flags: flags, to: SystemShortcut.copy.identifier)
+        let executed = recordKeyboardShortcuts()
+
+        XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: true, flags: flags)), .consumed)
+        for _ in 0..<5 {
+            XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: true, flags: flags, repeating: true)), .consumed,
+                           "the repeat is swallowed")
+        }
+        XCTAssertEqual(executed().count, 1)
+        _ = InputProcessor.shared.process(keyEvent(3, down: false, flags: flags))
+
+        XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: true, flags: flags)), .consumed)
+        XCTAssertEqual(executed().count, 2, "the next press runs it again")
+    }
+
+    /// A key bound to a click: holding it holds the button (a drag), instead of releasing and
+    /// pressing it again on every repeat.
+    func testAHeldKeyboardTriggerHoldsItsMouseButton() {
+        let flags: CGEventFlags = [.maskControl, .maskAlternate]
+        bindKey(3, flags: flags, to: "mouseLeftClick")
+        var observedTypes: [CGEventType] = []
+        ShortcutExecutor.shared.setTestingMouseEventObserver { observedTypes.append($0.type) }
+
+        XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: true, flags: flags)), .consumed)
+        for _ in 0..<3 {
+            XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: true, flags: flags, repeating: true)), .consumed)
+        }
+        XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: false, flags: flags)), .consumed)
+
+        XCTAssertEqual(observedTypes, [.leftMouseDown, .leftMouseUp])
+    }
+
+    /// A key without a binding repeats for the app in front, as always.
+    func testTheRepeatOfAnUnboundKeyPassesThrough() {
+        XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: true, flags: [])), .passthrough)
+        XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: true, flags: [], repeating: true)), .passthrough)
+    }
+
+    /// Only a plain key as the action keeps repeating with its trigger (as before): a mouse
+    /// button, a modifier or a Scrollio scroll action stays held.
+    func testOnlyAPlainKeyActionRepeatsWithItsTrigger() {
+        XCTAssertTrue(InputProcessor.repeatsWhileHeld(.customKey(code: 125, modifiers: 0)))
+        XCTAssertTrue(InputProcessor.repeatsWhileHeld(.customKey(code: 8, modifiers: CGEventFlags.maskCommand.rawValue)))
+        XCTAssertFalse(InputProcessor.repeatsWhileHeld(.customKey(code: KeyCode.shiftL, modifiers: 0)))
+        XCTAssertFalse(InputProcessor.repeatsWhileHeld(.mouseButton(kind: .left)))
+        XCTAssertFalse(InputProcessor.repeatsWhileHeld(.customMouseButton(buttonNumber: 5, modifiers: 0)))
+        XCTAssertFalse(InputProcessor.repeatsWhileHeld(.mosScroll(role: .dash)))
+    }
+
+    // MARK: - Shortcuts Scrollio posts are marked as its own
+
+    func testShortcutKeyEventsAreMarkedAsScrolliosOwn() throws {
+        let command = CGEventFlags.maskCommand.rawValue
+        let down = try XCTUnwrap(ShortcutExecutor.shortcutKeyEvent(code: 8, flags: command, keyDown: true,
+                                                                   preserveFlagsOnKeyUp: false, source: nil))
+        let up = try XCTUnwrap(ShortcutExecutor.shortcutKeyEvent(code: 8, flags: command, keyDown: false,
+                                                                 preserveFlagsOnKeyUp: false, source: nil))
+        XCTAssertEqual(down.type, .keyDown)
+        XCTAssertEqual(up.type, .keyUp)
+        XCTAssertEqual(down.keyCode, 8)
+        XCTAssertEqual(up.keyCode, 8)
+        XCTAssertEqual(down.getIntegerValueField(.eventSourceUserData), MosEventMarker.syntheticCustom)
+        XCTAssertEqual(up.getIntegerValueField(.eventSourceUserData), MosEventMarker.syntheticCustom)
+        XCTAssertTrue(down.flags.contains(.maskCommand))
+        XCTAssertFalse(up.flags.contains(.maskCommand), "the key up carries the flags only when asked to")
+        let keptUp = try XCTUnwrap(ShortcutExecutor.shortcutKeyEvent(code: 48, flags: command, keyDown: false,
+                                                                     preserveFlagsOnKeyUp: true, source: nil))
+        XCTAssertTrue(keptUp.flags.contains(.maskCommand))
+        XCTAssertEqual(keptUp.getIntegerValueField(.eventSourceUserData), MosEventMarker.syntheticCustom)
+    }
+
+    /// What the mark is for: the button tap lets a posted shortcut through untouched. Before,
+    /// a keyboard trigger bound to the shortcut it is itself ran again for its own output.
+    func testTheButtonTapLetsAPostedShortcutThroughWithoutRunningABinding() throws {
+        bindKey(8, flags: .maskCommand, to: SystemShortcut.copy.identifier)
+        let executed = recordKeyboardShortcuts()
+        let posted = try XCTUnwrap(ShortcutExecutor.shortcutKeyEvent(code: 8, flags: CGEventFlags.maskCommand.rawValue,
+                                                                     keyDown: true, preserveFlagsOnKeyUp: false, source: nil))
+
+        let proxy = CGEventTapProxy(bitPattern: 1)!
+        XCTAssertNotNil(ButtonCore.shared.buttonEventCallBack(proxy, .keyDown, posted, nil))
+        XCTAssertEqual(executed().count, 0)
+    }
+
+    // MARK: - The user's System Settings shortcuts are read again
+
+    /// They were read once, so a shortcut changed in System Settings (Move left a space)
+    /// was ignored until the next launch.
+    func testTheSystemShortcutsAreReadAgainWhenTheyMayHaveChanged() {
+        XCTAssertTrue(SystemShortcut.reloadsSystemShortcuts(after: NSApplication.didBecomeActiveNotification),
+                      "Scrollio became active: its settings opened")
+        XCTAssertTrue(SystemShortcut.reloadsSystemShortcuts(
+            after: NSWorkspace.didDeactivateApplicationNotification,
+            deactivatedBundleIdentifier: "com.apple.systempreferences"
+        ), "System Settings went to the background")
+        XCTAssertFalse(SystemShortcut.reloadsSystemShortcuts(
+            after: NSWorkspace.didDeactivateApplicationNotification,
+            deactivatedBundleIdentifier: "com.apple.Safari"
+        ))
+        XCTAssertFalse(SystemShortcut.reloadsSystemShortcuts(after: NSWorkspace.didDeactivateApplicationNotification))
+        XCTAssertFalse(SystemShortcut.reloadsSystemShortcuts(after: NSApplication.didResignActiveNotification))
+    }
+
+    // MARK: - The release of a native button that ran a trigger action
+
+    private func bindNativeButton3(to action: String) {
+        let trigger = RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil)
+        Options.shared.buttons.binding = [ButtonBinding(triggerEvent: trigger, systemShortcutName: action, isEnabled: true)]
+        ButtonUtils.shared.invalidateCache()
+    }
+
+    private func nativeButton3(_ type: CGEventType) -> InputEvent {
+        return InputEvent(fromCGEvent: makeOtherMouseEvent(type))
+    }
+
+    /// The press was swallowed but the release went on to the app under the pointer: a
+    /// mouse-up without a mouse-down.
+    func testTheReleaseOfANativeButtonThatRanATriggerActionIsSwallowed() {
+        bindNativeButton3(to: SystemShortcut.missionControl.identifier)
+        let executed = recordKeyboardShortcuts()
+
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseDown)), .consumed)
+        XCTAssertEqual(executed().count, 1)
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseUp)), .consumed)
+        XCTAssertEqual(executed().count, 1, "the release runs nothing")
+        // Only that one release: the next is the app's again.
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseUp)), .passthrough)
+    }
+
+    /// Pause, sleep or a tap restart while the button is down: no entry stays behind.
+    func testClearingForgetsASwallowedTriggerPress() {
+        bindNativeButton3(to: SystemShortcut.missionControl.identifier)
+        _ = recordKeyboardShortcuts()
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseDown)), .consumed)
+
+        InputProcessor.shared.clearActiveBindings()
+
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseUp)), .passthrough)
+    }
+
+    /// A release that never came is forgotten at the button's next press, whatever that press
+    /// does, so it cannot swallow a release that belongs to the app.
+    func testANewPressForgetsATriggerPressWhoseReleaseWasLost() {
+        bindNativeButton3(to: SystemShortcut.missionControl.identifier)
+        _ = recordKeyboardShortcuts()
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseDown)), .consumed)
+
+        Options.shared.buttons.binding = []
+        ButtonUtils.shared.invalidateCache()
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseDown)), .passthrough)
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseUp)), .passthrough)
+    }
+
     private func configureGestureBinding(type: EventType = .mouse, code: UInt16 = 3) {
         let trigger = RecordedEvent(
             type: type,
