@@ -281,14 +281,12 @@ final class PreferencesSidebarTests: XCTestCase {
             }
         }
 
-        // The per-app popover too.
-        let container = try XCTUnwrap(NSStoryboard(name: "Main", bundle: app)
-            .instantiateController(withIdentifier: PANEL_IDENTIFIER.scrollingWithApplication) as? PreferencesScrollingWithApplicationViewController)
-        container.updateTargetApplication(with: Application(path: "/System/Applications/Calculator.app"))
+        // An app's page under Apps too.
+        let page = ApplicationDetailViewController(application: Application(path: "/System/Applications/Calculator.app"))
         let host = NSView()
         host.appearance = NSAppearance(named: .darkAqua)
-        host.addSubview(container.view)
-        for text in allSubviews(of: container.view).compactMap({ $0 as? NSTextField }) where !text.stringValue.isEmpty {
+        host.addSubview(page.view)
+        for text in allSubviews(of: page.view).compactMap({ $0 as? NSTextField }) where !text.stringValue.isEmpty {
             XCTAssertEqual(text.effectiveAppearance.name, .darkAqua, text.stringValue)
         }
     }
@@ -555,13 +553,15 @@ final class PreferencesTextSizeTests: XCTestCase {
         let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
         let identifiers = [
             PANEL_IDENTIFIER.general, PANEL_IDENTIFIER.scrolling, PANEL_IDENTIFIER.buttons,
-            PANEL_IDENTIFIER.application, PANEL_IDENTIFIER.scrollingWithApplication,
-            "allowlistHint",
+            PANEL_IDENTIFIER.application,
         ]
         for identifier in identifiers {
             let controller = try XCTUnwrap(storyboard.instantiateController(withIdentifier: identifier) as? NSViewController)
             XCTAssertEqual(smallTexts(in: controller.view), [], identifier)
         }
+        // An app's page, which replaced the per-app popover.
+        let page = ApplicationDetailViewController(application: Application(path: "/System/Applications/Calculator.app"))
+        XCTAssertEqual(smallTexts(in: page.view), [], "app page")
     }
 
     func testPanesBuiltInCode() {

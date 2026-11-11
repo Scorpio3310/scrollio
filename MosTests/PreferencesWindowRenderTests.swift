@@ -4,7 +4,7 @@
 //
 //  Renders the panes of the Preferences window off screen, the way the window shows them:
 //  every pane in its 520 pt column of the real window, in its main states, light and dark,
-//  the per-app scrolling popover, and the kit's list (PreferencesListBox) in a key and a
+//  an app's page under Apps, and the kit's list (PreferencesListBox) in a key and a
 //  non-key window. The appearance is set on the window, so every pane
 //  gets it through the window's materials, as on screen (the parent, not the pane: a pane
 //  given its appearance directly misses the vibrancy of the material above it). The window
@@ -151,17 +151,50 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try renderPane(PANEL_IDENTIFIER.buttons, name: "buttons-bindings", afterLoad: appear)
     }
 
+    /// The empty list, and a list with apps (one with settings of its own, selected) and the
+    /// switch on, in a key and a non-key window.
     func testRenderApps() throws {
-        let appear: (NSViewController) -> Void = { $0.viewWillAppear() }
+        let stored = Options.shared.application.applications
+        addTeardownBlock { Options.shared.application.applications = stored }
+        Options.shared.application.applications = EnhanceArray<Application>(matchKey: "path")
         Options.shared.application.allowlist = false
-        try renderPane(PANEL_IDENTIFIER.application, name: "apps", afterLoad: appear)
-        for path in ["/System/Applications/Calculator.app", "/System/Applications/TextEdit.app"]
-            where Options.shared.application.applications.get(by: path) == nil {
-            let application = Application(path: path)
-            Options.shared.application.applications.append(application)
-            addedApplications.append(path)
+        try renderPane(PANEL_IDENTIFIER.application, name: "apps-empty")
+
+        let calculator = Application(path: "/System/Applications/Calculator.app")
+        calculator.inherit = false
+        let textEdit = Application(path: "/System/Applications/TextEdit.app/Contents/MacOS/TextEdit")
+        let safari = Application(path: "/Applications/Safari.app")
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [calculator, textEdit, safari], matchKey: "path")
+        Options.shared.application.allowlist = true
+        let selectCalculator: (NSViewController) -> Void = { controller in
+            (controller as? PreferencesApplicationViewController)?.list.select(calculator.path)
         }
-        try renderPane(PANEL_IDENTIFIER.application, name: "apps-with-apps", afterLoad: appear)
+        try renderPane(PANEL_IDENTIFIER.application, name: "apps-with-apps", afterLoad: selectCalculator)
+        try renderPane(PANEL_IDENTIFIER.application, name: "apps-with-apps-not-key", key: false, afterLoad: selectCalculator)
+    }
+
+    /// An app's page: with settings of its own and using the Scrolling settings, "Advanced"
+    /// closed and open, as the pane shows it in place of the list.
+    func testRenderAppPage() throws {
+        let stored = Options.shared.application.applications
+        addTeardownBlock { Options.shared.application.applications = stored }
+        for advanced in [false, true] {
+            for inherit in [false, true] {
+                let calculator = Application(path: "/System/Applications/Calculator.app")
+                calculator.inherit = inherit
+                calculator.scroll.duration = ScrollFeel.direct.duration
+                calculator.scroll.speed = 4.5
+                Options.shared.application.applications = EnhanceArray<Application>(withArray: [calculator], matchKey: "path")
+                let defaults = uiDefaults(advanced: advanced)
+                let name = "app-page-\(inherit ? "inherit" : "own")-\(advanced ? "advanced" : "closed")"
+                try renderPane(PANEL_IDENTIFIER.application, name: name, prepare: { preferences in
+                    (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                        .uiStateDefaults = defaults
+                }, afterLoad: { controller in
+                    (controller as? PreferencesApplicationViewController)?.openApplication(withID: calculator.path)
+                })
+            }
+        }
     }
 
     // MARK: - Kit
@@ -179,29 +212,6 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try renderPane(PANEL_IDENTIFIER.general, name: "list-empty", replacement: {
             ListRenderController(empty: true)
         })
-    }
-
-    /// The per-app popover, in the popover's material.
-    func testRenderPerAppPopover() throws {
-        let storyboard = NSStoryboard(name: "Main", bundle: app)
-        for advanced in [false, true] {
-            for inherit in [false, true] {
-                let application = Application(path: "/System/Applications/Calculator.app")
-                application.inherit = inherit
-                application.scroll.duration = ScrollFeel.direct.duration
-                let container = try XCTUnwrap(storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.scrollingWithApplication)
-                    as? PreferencesScrollingWithApplicationViewController)
-                container.updateTargetApplication(with: application)
-                _ = container.view
-                let scrolling = container.children.first as? PreferencesScrollingViewController
-                scrolling?.uiStateDefaults = uiDefaults(advanced: false)
-                scrolling?.setAdvancedExpanded(advanced)
-                container.fitToContent()
-                container.view.setFrameSize(container.preferredContentSize)
-                let name = "per-app-\(advanced ? "advanced" : "closed")\(inherit ? "-inherit" : "")"
-                try renderInPopoverMaterial(container.view, name: name)
-            }
-        }
     }
 
     // MARK: - Probes

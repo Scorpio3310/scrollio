@@ -1,10 +1,10 @@
 //
 //  PreferencesScrollingViewController.swift
 //  Mos
-//  "Scrolling" preferences tab. The same view is the content of the per-app scroll
-//  settings popover (PreferencesScrollingWithApplicationViewController gives it a target
-//  application). Built in code on PreferencesGroupedForm, in the boxes of System Settings;
-//  the storyboard scene is a shell.
+//  "Scrolling" preferences tab. The same view edits one app's own scroll settings on that
+//  app's page under Apps (a PreferencesScrollingContainer gives it a target application).
+//  Built in code on PreferencesGroupedForm, in the boxes of System Settings; the storyboard
+//  scene is a shell.
 //
 //  On top a preview, then a box with what most people need: smooth scrolling, its feel,
 //  the speed and the direction. A second box starts with "Advanced" (closed by default),
@@ -126,7 +126,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
 
     // MARK: - State
 
-    /// Set while the view sits in the per-app settings popover.
+    /// Set while the view sits on an app's page under Apps.
     var currentTargetApplication: Application? {
         didSet { syncViewWithOptions() }
     }
@@ -241,8 +241,8 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        // In the per-app popover: the popover takes its size from these settings.
-        (parent as? PreferencesScrollingWithApplicationViewController)?.fitToContent()
+        // On an app's page: the page takes its size from these settings.
+        (parent as? PreferencesScrollingContainer)?.fitToContent()
     }
 
     override func viewWillAppear() {
@@ -274,7 +274,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         // What only applies while the wheel is smoothed.
         let smoothEditable = editable && scroll.smooth
 
-        // The preview belongs to the tab; the per-app popover stays small.
+        // The preview belongs to the tab; an app's page stays short.
         previewView.isHidden = currentTargetApplication != nil
 
         smoothRow.isOn = scroll.smooth
@@ -412,7 +412,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     }
 
     private func contentHeightDidChange() {
-        if let container = parent as? PreferencesScrollingWithApplicationViewController {
+        if let container = parent as? PreferencesScrollingContainer {
             container.fitToContent()
         } else {
             PreferencesForm.fitToContent(self)

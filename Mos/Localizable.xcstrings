@@ -3174,6 +3174,186 @@
     "Wrap Width": {
       "comment": "Toast debug wrap width label"
     },
+    "apps-limit": {
+      "comment": "Apps pane: switch that limits smooth scrolling and reversing to the listed apps (the allowlist)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limit scrolling to these apps"
+          }
+        }
+      }
+    },
+    "apps-limit-hint": {
+      "comment": "Apps pane: explanation of the allowlist switch",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps not in the list scroll the way macOS does. Buttons and gestures still work everywhere."
+          }
+        }
+      }
+    },
+    "apps-list-header": {
+      "comment": "Apps pane: title above the list of apps",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps"
+          }
+        }
+      }
+    },
+    "apps-row-inherit": {
+      "comment": "Apps pane: list row of an app that follows the Scrolling pane",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uses your scrolling settings"
+          }
+        }
+      }
+    },
+    "apps-row-own": {
+      "comment": "Apps pane: list row of an app with scrolling settings of its own",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Own scrolling settings"
+          }
+        }
+      }
+    },
+    "apps-empty-title": {
+      "comment": "Apps pane: the empty list",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No apps yet"
+          }
+        }
+      }
+    },
+    "apps-empty-hint": {
+      "comment": "Apps pane: under the title of the empty list",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click + to give an app its own scrolling settings."
+          }
+        }
+      }
+    },
+    "apps-choose-in-finder": {
+      "comment": "Apps pane: last item of the + menu, opens a panel to choose apps",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose in Finder…"
+          }
+        }
+      }
+    },
+    "apps-open-panel-prompt": {
+      "comment": "Apps pane: the button of the panel that chooses apps in Finder",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add"
+          }
+        }
+      }
+    },
+    "apps-undo-remove": {
+      "comment": "Apps pane: undo action name after removing an app (Edit › Undo Remove App)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove App"
+          }
+        }
+      }
+    },
+    "apps-back": {
+      "comment": "App page: borderless button at the top left that goes back to the list",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps"
+          }
+        }
+      }
+    },
+    "apps-back-accessibility": {
+      "comment": "App page: accessibility label and tooltip of the back button",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to Apps"
+          }
+        }
+      }
+    },
+    "apps-detail-inherit": {
+      "comment": "App page: switch; on, the app uses the settings of the Scrolling pane",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use settings from Scrolling"
+          }
+        }
+      }
+    },
+    "apps-detail-inherit-on": {
+      "comment": "App page: explanation while the switch is on; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes under Scrolling apply to %@ too."
+          }
+        }
+      }
+    },
+    "apps-detail-inherit-off": {
+      "comment": "App page: explanation while the switch is off; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ keeps its own settings below."
+          }
+        }
+      }
+    },
     "Wrap/truncate preview": {
       "comment": "Toast debug quick test subtitle"
     },

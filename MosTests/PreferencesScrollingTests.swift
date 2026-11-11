@@ -5,8 +5,8 @@
 //  The Scrolling tab: every control reads and writes the right scroll option, Feel and
 //  the glide time slider never disagree, "Advanced" opens, closes and is remembered, the
 //  preview follows the options, the rows sit in the boxes of the grouped form, and the
-//  same view edits one app's own options in the per-app popover. Nothing is shown on
-//  screen and no key is recorded for real.
+//  same view edits one app's own options on that app's page under Apps. Nothing is shown
+//  on screen and no key is recorded for real.
 //
 
 import XCTest
@@ -451,7 +451,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(controller.smallestStepSlider.doubleValue, 33.6, accuracy: 1e-9)
         XCTAssertEqual(controller.smallestStepValueLabel.stringValue, "33.6")
 
-        // The same in the per-app popover, for an app with values of its own.
+        // The same for an app with values of its own.
         let application = makeApplication(inherit: false)
         application.scroll.speed = 6.31
         application.scroll.duration = 3.687
@@ -879,7 +879,7 @@ final class PreferencesScrollingTests: XCTestCase {
         send(controller.keyClearButtons[ScrollHoldKey.faster.rawValue])
 
         XCTAssertEqual(application.scroll.duration, 2.0)
-        XCTAssertEqual(application.scroll.speed, 4.5, "the popover's slider has the tab's steps")
+        XCTAssertEqual(application.scroll.speed, 4.5, "the app's slider has the tab's steps")
         XCTAssertFalse(application.scroll.reverse)
         XCTAssertEqual(application.scroll.step, 20)
         XCTAssertTrue(application.scroll.smoothSimTrackpad)
@@ -915,7 +915,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertTrue(controller.advancedButton.isEnabled, "looking is always allowed")
         XCTAssertFalse(controller.hasSettingsToReset)
 
-        // The popover's "inherit" switch turns the app's own values on.
+        // The page's "Use settings from Scrolling" switch turns the app's own values on.
         application.inherit = false
         controller.syncViewWithOptions()
         XCTAssertEqual(controller.scrollSpeedSlider.doubleValue, 1.5, accuracy: 1e-9)
@@ -939,54 +939,48 @@ final class PreferencesScrollingTests: XCTestCase {
         )
     }
 
-    func testThePerAppPopoverEmbedsTheTabWithItsApplication() throws {
+    func testAnAppsPageEmbedsTheTabWithItsApplication() throws {
         let application = makeApplication(inherit: false)
         application.scroll.speed = 4.2
-        let container = try XCTUnwrap(
-            storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.scrollingWithApplication)
-                as? PreferencesScrollingWithApplicationViewController
-        )
-        container.updateTargetApplication(with: application)
-        _ = container.view
-        let tab = try XCTUnwrap(container.children.first as? PreferencesScrollingViewController)
-        XCTAssertTrue(tab.isViewLoaded, "the settings load with the popover")
-        tab.uiStateDefaults = uiDefaults
+        let page = ApplicationDetailViewController(application: application, uiStateDefaults: uiDefaults)
+        var heightChanges = 0
+        page.onHeightChange = { heightChanges += 1 }
+        _ = page.view
+        let tab = try XCTUnwrap(page.scrollingController)
+        XCTAssertTrue(page.children.first === tab)
+        XCTAssertTrue(tab.isViewLoaded, "the settings load with the page")
+        XCTAssertTrue(tab.view.isDescendant(of: page.view))
 
         XCTAssertTrue(tab.currentTargetApplication === application)
-        XCTAssertEqual(container.preferredContentSize.width, PreferencesScrollingViewController.paneWidth, "sized before it shows")
-        XCTAssertEqual(container.preferredContentSize.height, tab.view.fittingSize.height + 58, accuracy: 0.5)
+        XCTAssertEqual(page.view.fittingSize.width, PreferencesScrollingViewController.paneWidth)
         XCTAssertEqual(tab.scrollSpeedSlider.doubleValue, 4.2, accuracy: 1e-9)
         XCTAssertTrue(tab.previewView.isHidden)
-        XCTAssertEqual(container.inheritGlobalSettingSwitch.state, .off)
-        // "Use global settings" is a switch with its title, as in the boxes under it.
-        XCTAssertEqual(container.inheritGlobalSettingSwitch.controlSize, PreferencesGroupedForm.switchControlSize)
-        XCTAssertTrue(allSubviews(of: container.view).contains { ($0 as? NSTextField)?.stringValue == "Use global settings" })
-        // The app's header is a box like the settings' boxes.
-        let header = try XCTUnwrap(container.view.subviews.compactMap { $0 as? NSBox }.first)
-        XCTAssertEqual(header.boxType, .custom)
-        XCTAssertEqual(header.cornerRadius, PreferencesGroupedForm.boxCornerRadius)
-        XCTAssertEqual(header.borderWidth, 0)
-        XCTAssertTrue(header.fillColor === PreferencesGroupedForm.boxFillColor)
+        XCTAssertEqual(page.inheritSwitch.state, .off)
+        // "Use settings from Scrolling" is a switch row in the app's box, as in the boxes under it.
+        XCTAssertEqual(page.inheritSwitch.controlSize, PreferencesGroupedForm.switchControlSize)
+        XCTAssertEqual(page.inheritRow.title, "Use settings from Scrolling")
+        XCTAssertEqual(page.headerSection.box.rows.count, 2)
+        XCTAssertTrue(page.headerSection.box.rows.first === page.headerRow)
 
-        // The popover is as tall as the app's header and the settings under it, and
-        // follows when "Advanced" opens and closes.
+        // The page is as tall as the app's box and the settings under it, and follows
+        // when "Advanced" opens and closes.
+        page.view.layoutSubtreeIfNeeded()
+        let header = page.view.fittingSize.height - tab.view.fittingSize.height
+        XCTAssertGreaterThan(header, 100)
         tab.setAdvancedExpanded(false)
-        container.fitToContent()
-        let closed = container.preferredContentSize
-        XCTAssertEqual(closed.width, PreferencesScrollingViewController.paneWidth)
-        XCTAssertEqual(closed.height, tab.view.fittingSize.height + 58, accuracy: 0.5)
-
+        let closed = page.view.fittingSize.height
+        let changes = heightChanges
         tab.setAdvancedExpanded(true)
-        let open = container.preferredContentSize
-        XCTAssertEqual(open.height, tab.view.fittingSize.height + 58, accuracy: 0.5)
-        XCTAssertGreaterThan(open.height, closed.height + 200)
-
+        XCTAssertEqual(heightChanges, changes + 1, "the page hears of it")
+        let open = page.view.fittingSize.height
+        XCTAssertEqual(open, tab.view.fittingSize.height + header, accuracy: 0.5)
+        XCTAssertGreaterThan(open, closed + 200)
         tab.setAdvancedExpanded(false)
-        XCTAssertEqual(container.preferredContentSize, closed)
+        XCTAssertEqual(page.view.fittingSize.height, closed, accuracy: 0.5)
 
-        // "Use global settings" greys the settings out.
-        container.inheritGlobalSettingSwitch.state = .on
-        container.inheritGlobalSettingClick(container.inheritGlobalSettingSwitch)
+        // "Use settings from Scrolling" greys the settings out.
+        page.inheritSwitch.state = .on
+        page.inheritClick(page.inheritSwitch)
         XCTAssertTrue(application.inherit)
         XCTAssertFalse(tab.scrollSpeedSlider.isEnabled)
         XCTAssertEqual(tab.scrollSpeedSlider.doubleValue, 6.3, accuracy: 1e-9, "the global value")
@@ -1095,8 +1089,8 @@ final class PreferencesScrollingTests: XCTestCase {
 }
 
 /// Renders the tab off screen for a look at it: light and dark, "Advanced" closed and
-/// open, the defaults, a custom glide time and smoothing off, the tab and the per-app
-/// popover. Off screen the window's material draws a flat grey and vibrant text is not
+/// open, the defaults, a custom glide time and smoothing off, the tab and an app's page
+/// under Apps. Off screen the window's material draws a flat grey and vibrant text is not
 /// blended, so text looks a little dimmer than on screen. Only runs when asked to:
 /// `TEST_RUNNER_SCROLLIO_SHOTS_DIR=<folder> xcodebuild … test -only-testing:MosTests/PreferencesScrollingRenderTests`.
 final class PreferencesScrollingRenderTests: XCTestCase {
@@ -1149,21 +1143,24 @@ final class PreferencesScrollingRenderTests: XCTestCase {
             tab.syncViewWithOptions()
             try render(tab.view, name: "tab-\(state)-smooth-off", into: directory)
 
-            // The per-app popover, with settings of its own and inheriting.
+            // An app's page, with settings of its own and inheriting.
             Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
             for inherit in [false, true] {
                 let application = Application(path: "/System/Applications/Calculator.app")
                 application.inherit = inherit
                 application.scroll.duration = ScrollFeel.direct.duration
-                let container = storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.scrollingWithApplication)
-                    as! PreferencesScrollingWithApplicationViewController
-                container.updateTargetApplication(with: application)
-                _ = container.view
-                (container.children.first as? PreferencesScrollingViewController)?.uiStateDefaults = uiDefaults
-                (container.children.first as? PreferencesScrollingViewController)?.setAdvancedExpanded(advanced)
-                container.fitToContent()
-                container.view.setFrameSize(container.preferredContentSize)
-                try render(container.view, name: "per-app-\(state)\(inherit ? "-inherit" : "")", into: directory)
+                let page = ApplicationDetailViewController(application: application, uiStateDefaults: uiDefaults)
+                // On the pane's background, as the Apps pane shows it.
+                let pane = PreferencesForm.makeBackground()
+                pane.addSubview(page.view)
+                NSLayoutConstraint.activate([
+                    page.view.topAnchor.constraint(equalTo: pane.topAnchor),
+                    page.view.bottomAnchor.constraint(equalTo: pane.bottomAnchor),
+                    page.view.leadingAnchor.constraint(equalTo: pane.leadingAnchor),
+                    page.view.trailingAnchor.constraint(equalTo: pane.trailingAnchor),
+                ])
+                pane.setFrameSize(pane.fittingSize)
+                try render(pane, name: "per-app-\(state)\(inherit ? "-inherit" : "")", into: directory)
             }
         }
 

@@ -65,6 +65,10 @@ extension EnhanceArray {
     public func append(_ item: T) {
         array.append(item)
     }
+    /// Puts `item` at `index` (clamped to the array), e.g. to undo a removal.
+    public func insert(_ item: T, at index: Int) {
+        array.insert(item, at: min(max(0, index), array.count))
+    }
     // 删除值
     public func remove(from key: String) {
         if let index = dictionary[key] {

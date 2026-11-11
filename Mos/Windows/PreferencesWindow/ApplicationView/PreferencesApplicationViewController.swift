@@ -1,253 +1,512 @@
 //
 //  PreferencesApplicationViewController.swift
 //  Mos
-//  分应用设置界面
+//  "Apps" preferences pane: apps with scrolling settings of their own. Built in code on
+//  PreferencesGroupedForm and its PreferencesListBox, in the boxes of System Settings;
+//  the storyboard scene is a shell.
+//
+//  On top "Limit scrolling to these apps" (the allowlist: it only gates smoothing and
+//  reversing, so it says so; buttons and gestures work everywhere). Under it the list of
+//  apps, each with its icon, its name and whether it has settings of its own. "+" offers
+//  the running apps and "Choose in Finder…", "−" and Delete remove (Edit › Undo brings the
+//  app back with its settings). Double-click, Return or the chevron open the app's page
+//  (ApplicationDetailViewController) in place of the list; "‹ Apps", Esc and ⌘[ come back,
+//  and leaving the pane always comes back to the list.
+//
+//  The pane edits Options.shared.application: the allowlist switch and the list of apps.
+//  What is stored and how is unchanged: running apps are stored by their program's path,
+//  apps chosen in Finder by their bundle's, as before.
+//
 //  Created by Caldis on 2017/1/29.
 //  Copyright © 2017年 Caldis. All rights reserved.
 //
 
 import Cocoa
+import UniformTypeIdentifiers
+
+/// A running app that "+" offers.
+struct ApplicationCandidate {
+    /// What is stored for it when it is added: the program's path, as running apps always were.
+    let path: String
+    /// Every path under which the list may hold it already (the bundle's and the program's).
+    let knownPaths: [String]
+    let name: String
+    let icon: NSImage?
+
+    /// The running apps with a Dock icon, Scrollio itself left out, by name.
+    static func running() -> [ApplicationCandidate] {
+        let ownProcess = ProcessInfo.processInfo.processIdentifier
+        var seen = Set<String>()
+        var candidates: [ApplicationCandidate] = []
+        for app in NSWorkspace.shared.runningApplications {
+            guard app.activationPolicy == .regular, app.processIdentifier != ownProcess,
+                  let program = app.executableURL?.path, seen.insert(program).inserted else { continue }
+            let bundle = app.bundleURL?.path
+            candidates.append(ApplicationCandidate(
+                path: program,
+                knownPaths: [bundle, program].compactMap { $0 },
+                name: app.localizedName ?? Utils.getApplicationName(fromPath: program),
+                icon: app.icon ?? Utils.getApplicationIcon(fromPath: bundle ?? program)
+            ))
+        }
+        return candidates.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+}
 
 class PreferencesApplicationViewController: NSViewController {
-    
-    // MARK: - UI Elements
-    // 白名单
-    @IBOutlet weak var allowlistModeCheckBox: NSButton!
-    // 表格
-    @IBOutlet weak var tableHead: NSVisualEffectView!
-    @IBOutlet weak var tableView: NSTableView!
-    @IBOutlet weak var tableFoot: NSView!
-    @IBOutlet weak var tableEmpty: NSView!
-    // 按钮
-    @IBOutlet weak var createButton: PrimaryButton!
-    @IBOutlet weak var addButton: NSButton!
-    @IBOutlet weak var delButton: NSButton!
-    // 选项菜单
-    @IBOutlet var applicationSourceMenuControl: NSMenu!
-    @IBOutlet weak var runningAndInstalledManuItem: NSMenuItem!
-    private var runningAndInstalledMenuChildrenContainer: NSMenu!
-    @IBOutlet weak var manuallySelectFromFinderMenuItem: NSMenuItem!
 
-    override func viewDidLoad() {
-        // 为 "Running Applications" 菜单项动态创建 submenu (避免 Storyboard 中的 menu 父子关系警告)
-        runningAndInstalledMenuChildrenContainer = NSMenu(title: "")
-        runningAndInstalledManuItem.submenu = runningAndInstalledMenuChildrenContainer
-        // 设置图标
-        Utils.attachImage(to: runningAndInstalledManuItem, withImage: #imageLiteral(resourceName: "SF.wand.and.rays.inverse"))
-        Utils.attachImage(to: manuallySelectFromFinderMenuItem, withImage: #imageLiteral(resourceName: "SF.tray"))
-        // 设置表格代理
-        tableView.delegate = self
-        // 读取设置
-        syncViewWithOptions()
-        // 初始化按钮状态
-        updateDelButtonState()
+    /// The column of the Preferences window.
+    static let paneWidth: CGFloat = PreferencesWindowLayout.contentWidth
+    static var boxWidth: CGFloat {
+        return PreferencesGroupedForm.boxWidth(paneWidth: paneWidth)
     }
+    /// The app icons in the "+" menu.
+    static let menuIconSize: CGFloat = 16
+
+    /// Identifiers for the controls (tests and accessibility tooling).
+    enum Identifier {
+        static let allowlist = NSUserInterfaceItemIdentifier("apps-limit")
+        static let list = NSUserInterfaceItemIdentifier("apps-list")
+        static let chooseInFinder = NSUserInterfaceItemIdentifier("apps-choose-in-finder")
+    }
+
+    // MARK: - Seams
+
+    /// The running apps "+" offers; tests give fixed ones.
+    var runningApplications: () -> [ApplicationCandidate] = { ApplicationCandidate.running() }
+
+    /// Shows the "+" menu under the + button; tests take the menu instead.
+    var presentMenu: (NSMenu, NSButton) -> Void = { menu, button in
+        let below = button.isFlipped ? button.bounds.maxY + 4 : button.bounds.minY - 4
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: below), in: button)
+    }
+
+    /// Asks for apps in Finder and hands over the chosen ones (none when cancelled); tests
+    /// answer themselves.
+    var chooseApplications: (NSWindow?, @escaping ([URL]) -> Void) -> Void = { window, completion in
+        let panel = PreferencesApplicationViewController.makeOpenPanel()
+        let finish: (NSApplication.ModalResponse) -> Void = { response in
+            completion(response == .OK ? panel.urls : [])
+        }
+        if let window {
+            panel.beginSheetModal(for: window, completionHandler: finish)
+        } else {
+            panel.begin(completionHandler: finish)
+        }
+    }
+
+    /// Where "Advanced" of an app's Scrolling settings is remembered (shared with the
+    /// Scrolling pane); tests and screenshots give a store of their own.
+    var uiStateDefaults: UserDefaults = .standard
+
+    // MARK: - Views (read access for tests)
+
+    private(set) var allowlistRow: PreferencesSwitchRow!
+    private(set) var listSection: PreferencesListSection!
+    /// The list and the switch above it.
+    private(set) var listPage: NSView!
+    /// The page of the app that is open; nil while the list shows.
+    private(set) var detailController: ApplicationDetailViewController?
+    /// The app of each row, by the row's id: the app's stored path. An app stored twice
+    /// under one path (earlier builds let Finder add it again) gets "#2" after the path.
+    private(set) var rowApplications: [String: Application] = [:]
+    /// What the pane shows: `listPage` or the open app's page.
+    private(set) var currentPage: NSView?
+
+    var list: PreferencesListBox { return listSection.list }
+    var allowlistSwitch: NSSwitch { return allowlistRow.toggle }
+
+    // MARK: - Lifecycle
+
+    override func loadView() {
+        let root = PreferencesForm.makeBackground()
+
+        let page = NSView()
+        let content = PreferencesGroupedForm.installContentStack(in: page, paneWidth: Self.paneWidth)
+        // As tall as its rows: the column shrinks again when an app is removed.
+        content.setHuggingPriority(.defaultHigh, for: .vertical)
+
+        let allowlist = PreferencesSwitchRow(
+            title: text("apps-limit"),
+            explanation: text("apps-limit-hint"),
+            target: self,
+            action: #selector(allowlistClick(_:))
+        )
+        allowlist.toggle.identifier = Identifier.allowlist
+        allowlistRow = allowlist
+        let allowlistSection = PreferencesGroupSection(width: Self.boxWidth, rows: [allowlist])
+
+        let list = PreferencesListBox(
+            width: Self.boxWidth,
+            emptyTitle: text("apps-empty-title"),
+            emptyExplanation: text("apps-empty-hint")
+        )
+        list.identifier = Identifier.list
+        list.onAdd = { [weak self] button in self?.showAddMenu(from: button) }
+        list.onRemove = { [weak self] id in
+            guard let id = id as? String else { return }
+            self?.removeApplication(withID: id)
+        }
+        list.onOpen = { [weak self] id in
+            guard let id = id as? String else { return }
+            self?.openApplication(withID: id)
+        }
+        listSection = PreferencesListSection(title: text("apps-list-header"), list: list)
+
+        PreferencesGroupedForm.add([allowlistSection, listSection], to: content)
+        listPage = page
+
+        view = root
+        show(page: page)
+        reloadRows()
+        syncViewWithOptions()
+        root.setFrameSize(root.fittingSize)
+    }
+
     override func viewWillAppear() {
-        // 检查表格数据
-        toggleNoDataHint()
-        // 设置添加按钮回调
-        setupAddButtonCallback()
-    }
-    
-    // 主添加按钮
-    private func setupAddButtonCallback() {
-        createButton.onMouseDown = { [weak self] _ in
-            guard let self = self else { return }
-            guard let sender = self.createButton else { return }
-            let position = NSPoint(x: sender.frame.origin.x - 40, y: sender.frame.origin.y - 44)
-            self.openRunningApplicationPanel(sender, position)
-            self.tableView.reloadData()
-        }
-    }
-    
-    // 白名单模式
-    @IBAction func allowListModeClick(_ sender: NSButton) {
-        Options.shared.application.allowlist = sender.state.rawValue==0 ? false : true
+        super.viewWillAppear()
+        // The options may have changed while the pane was not showing.
         syncViewWithOptions()
+        reloadRows()
     }
-    
-    // 列表底部按钮
-    @IBAction func addItemClick(_ sender: NSButton) {
-        // 添加
-        let position = NSPoint(x: sender.frame.origin.x - 3, y: sender.frame.origin.y + 10)
-        openRunningApplicationPanel(sender, position)
-        // 重新加载
-        tableView.reloadData()
-    }
-    @IBAction func addItemFromFinderClick(_ sender: NSMenuItem) {
-        // 添加
-        openFileSelectionPanel()
-        // 重新加载
-        tableView.reloadData()
-    }
-    @IBAction func removeItemClick(_ sender: NSButton) {
-        // 确保选择了行
-        guard tableView.selectedRow != -1 else { return }
-        // 删除 (appScroll 用量清理由 LogiUsageBootstrap 的 Options 订阅自动完成)
-        Options.shared.application.applications.remove(at: tableView.selectedRow)
-        // 重新加载
-        tableView.reloadData()
-        // 立即更新空状态显示
-        toggleNoDataHint()
-        // 更新删除按钮状态
-        updateDelButtonState()
-    }
-}
 
-/**
- * 数据持久化
- **/
-extension PreferencesApplicationViewController {
-    // 同步界面与设置参数
-    func syncViewWithOptions() {
-        // 白名单
-        allowlistModeCheckBox.state = NSControl.StateValue(rawValue: Options.shared.application.allowlist ? 1 : 0)
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        // Coming back to the pane always shows the list.
+        showList(focusList: false)
     }
-    
-    // 更新删除按钮状态
-    func updateDelButtonState() {
-        delButton.isEnabled = tableView.selectedRow != -1
-    }
-}
 
-/**
- * 表格区域渲染及操作
- **/
-extension PreferencesApplicationViewController: NSTableViewDelegate, NSTableViewDataSource {
-    // 每一列在 Storybroad 中的 identifier
-    fileprivate enum CellIdentifiers {
-        static let applicationCell = "applicationCell"
-        static let scrollingCell = "scrollingCell"
+    // MARK: - Data
+
+    /// The apps, in their stored order.
+    var applications: [Application] {
+        let stored = Options.shared.application.applications
+        return (0..<stored.count).compactMap { stored.get(by: $0) }
     }
-    // 切换无数据显示
-    func toggleNoDataHint() {
-        let hasData = Options.shared.application.applications.count != 0
-        updateViewVisibility(view: createButton, visible: !hasData)
-        updateViewVisibility(view: tableEmpty, visible: !hasData)
-        updateViewVisibility(view: tableHead, visible: hasData)
-        updateViewVisibility(view: tableFoot, visible: hasData)
+
+    private func index(of application: Application) -> Int? {
+        return applications.firstIndex { $0 === application }
     }
-    private func updateViewVisibility(view: NSView, visible: Bool) {
-        view.isHidden = !visible
-        view.animator().alphaValue = visible ? 1 : 0
+
+    /// The app of the row `id`.
+    func application(forRowID id: String) -> Application? {
+        return rowApplications[id]
     }
-    // 点击设置
-    @objc func settingScrollingButtonClick(_ sender: NSButton!) {
-        // 行号
-        let row = sender.tag
-        // 从 SB 构建内容
-        let scrollingWithApplicationViewController = Utils.instantiateControllerFromStoryboard(withIdentifier: PANEL_IDENTIFIER.scrollingWithApplication) as PreferencesScrollingWithApplicationViewController
-        // 更新目标数据
-        scrollingWithApplicationViewController.updateTargetApplication(with: Options.shared.application.applications.get(by: row))
-        scrollingWithApplicationViewController.updateParentData(with: tableView, for: row)
-        // 展示到指定位置
-        present(scrollingWithApplicationViewController, asPopoverRelativeTo: sender.bounds, of: sender, preferredEdge: NSRectEdge.maxX, behavior: NSPopover.Behavior.transient)
+
+    /// The id of the row that shows `application`.
+    func rowID(for application: Application) -> String? {
+        return rowApplications.first { $0.value === application }?.key
     }
-    // 构建表格数据 (循环生成行)
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard let tableColumnIdentifier = tableColumn?.identifier,
-              let cell = tableView.makeView(withIdentifier: tableColumnIdentifier, owner: self) as? NSTableCellView,
-              let application = Options.shared.application.applications.get(by: row) else {
-            return nil
-        }
-        // 生成每行的 Cell
-        switch tableColumnIdentifier.rawValue {
-            // 应用
-            case CellIdentifiers.applicationCell:
-                cell.imageView?.image = application.getIcon()
-                cell.imageView?.toolTip = application.path
-                cell.textField?.stringValue = application.getName()
-                return cell
-            // 设定: 滚动
-            case CellIdentifiers.scrollingCell:
-                let button = cell.subviews[0] as! NSButton
-                button.tag = row
-                button.target = self
-                button.action = #selector(settingScrollingButtonClick)
-                return cell
-            default: break
+
+    /// The app the list holds under one of `paths`, if any.
+    func existingApplication(forPaths paths: [String]) -> Application? {
+        let stored = Options.shared.application.applications
+        for path in paths {
+            if let application = stored.get(by: path) {
+                return application
+            }
         }
         return nil
     }
-    // 行高
-    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        return 30
+
+    // MARK: - Refresh
+
+    func syncViewWithOptions() {
+        guard isViewLoaded else { return }
+        allowlistRow.isOn = Options.shared.application.allowlist
+        detailController?.syncViewWithOptions()
     }
-    // 行数
-    func numberOfRows(in tableView: NSTableView) -> Int {
-        return Options.shared.application.applications.count
+
+    /// Shows the stored apps in the list (the selection stays on the same app).
+    func reloadRows() {
+        guard isViewLoaded else { return }
+        var occurrences: [String: Int] = [:]
+        var targets: [String: Application] = [:]
+        var rows: [PreferencesListRow] = []
+        for application in applications {
+            let count = occurrences[application.path, default: 0] + 1
+            occurrences[application.path] = count
+            let id = count == 1 ? application.path : "\(application.path)#\(count)"
+            targets[id] = application
+            rows.append(makeRow(application, id: id))
+        }
+        rowApplications = targets
+        list.setRows(rows)
+        // The open app is no longer on the list (a removal was redone): back to the list.
+        if let detail = detailController, index(of: detail.application) == nil {
+            showList(focusList: true)
+        }
     }
-    
-    // 选择变化
-    func tableViewSelectionDidChange(_ notification: Notification) {
-        updateDelButtonState()
+
+    /// What a row of the list says about an app.
+    static func explanation(for application: Application) -> String {
+        return NSLocalizedString(application.inherit ? "apps-row-inherit" : "apps-row-own", comment: "")
+    }
+
+    private func makeRow(_ application: Application, id: String) -> PreferencesListRow {
+        let path = application.path
+        let row = ApplicationListRow(
+            id: id,
+            title: application.getName(),
+            explanation: Self.explanation(for: application),
+            icon: .image(application.getIcon()),
+            showsChevron: true
+        )
+        row.toolTip = path
+        row.onChevronClick = { [weak self] in self?.openApplication(withID: id) }
+        return row
+    }
+
+    // MARK: - Allowlist
+
+    @objc func allowlistClick(_ sender: NSSwitch) {
+        let limit = sender.state == .on
+        if Options.shared.application.allowlist != limit {
+            Options.shared.application.allowlist = limit
+        }
+        syncViewWithOptions()
+    }
+
+    // MARK: - Adding
+
+    func showAddMenu(from button: NSButton) {
+        presentMenu(makeAddMenu(), button)
+    }
+
+    /// The running apps with their icons (those on the list already off, with a checkmark),
+    /// then "Choose in Finder…".
+    func makeAddMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for candidate in runningApplications() {
+            let item = NSMenuItem(title: candidate.name, action: #selector(addRunningApplication(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = candidate
+            if let icon = candidate.icon?.copy() as? NSImage {
+                icon.size = NSSize(width: Self.menuIconSize, height: Self.menuIconSize)
+                item.image = icon
+            }
+            if existingApplication(forPaths: candidate.knownPaths + [candidate.path]) != nil {
+                item.isEnabled = false
+                item.state = .on
+            }
+            menu.addItem(item)
+        }
+        if !menu.items.isEmpty {
+            menu.addItem(.separator())
+        }
+        let finder = NSMenuItem(title: text("apps-choose-in-finder"), action: #selector(chooseInFinderClick(_:)), keyEquivalent: "")
+        finder.target = self
+        finder.identifier = Identifier.chooseInFinder
+        menu.addItem(finder)
+        return menu
+    }
+
+    @objc func addRunningApplication(_ sender: NSMenuItem) {
+        guard let candidate = sender.representedObject as? ApplicationCandidate else { return }
+        addApplication(path: candidate.path, knownPaths: candidate.knownPaths)
+    }
+
+    @objc func chooseInFinderClick(_ sender: Any?) {
+        chooseApplications(view.window) { [weak self] urls in
+            self?.addApplications(at: urls)
+        }
+    }
+
+    /// Choosing apps in Finder: only apps, from /Applications, several at once.
+    static func makeOpenPanel() -> NSOpenPanel {
+        let panel = NSOpenPanel()
+        panel.directoryURL = FileManager.default.urls(for: .applicationDirectory, in: .localDomainMask).first
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.application]
+        panel.prompt = NSLocalizedString("apps-open-panel-prompt", comment: "")
+        return panel
+    }
+
+    /// Adds the apps chosen in Finder (by their bundle's path) and selects the last new one;
+    /// when every one was on the list already, the first of them blinks.
+    func addApplications(at urls: [URL]) {
+        var added: Application?
+        var existing: Application?
+        for url in urls {
+            let bundle = url.path
+            let program = Bundle(url: url)?.executablePath
+            let (application, isNew) = insertApplication(path: bundle, knownPaths: [bundle, program].compactMap { $0 })
+            if isNew {
+                added = application
+            } else if existing == nil {
+                existing = application
+            }
+        }
+        reloadRows()
+        if let id = added.flatMap(rowID(for:)) {
+            list.select(id)
+        } else if let id = existing.flatMap(rowID(for:)) {
+            list.flash(id)
+        }
+        focusList()
+    }
+
+    /// Adds the app stored as `path` and selects it; an app the list holds already (under
+    /// any of `knownPaths`) is selected and blinks instead.
+    @discardableResult
+    func addApplication(path: String, knownPaths: [String]) -> Application {
+        let (application, isNew) = insertApplication(path: path, knownPaths: knownPaths)
+        reloadRows()
+        if let id = rowID(for: application) {
+            if isNew {
+                list.select(id)
+            } else {
+                list.flash(id)
+            }
+        }
+        focusList()
+        return application
+    }
+
+    private func insertApplication(path: String, knownPaths: [String]) -> (Application, isNew: Bool) {
+        if let existing = existingApplication(forPaths: knownPaths + [path]) {
+            return (existing, false)
+        }
+        let application = Application(path: path)
+        Options.shared.application.applications.append(application)
+        return (application, true)
+    }
+
+    // MARK: - Removing
+
+    /// Removes the app of the row `id` with its settings; Undo puts it back where it was.
+    func removeApplication(withID id: String) {
+        guard let application = application(forRowID: id) else { return }
+        remove(application)
+    }
+
+    private func remove(_ application: Application) {
+        guard let position = index(of: application) else { return }
+        Options.shared.application.applications.remove(at: position)
+        reloadRows()
+        undoManager?.registerUndo(withTarget: self) { controller in
+            controller.restoreApplication(application, at: position)
+        }
+        undoManager?.setActionName(text("apps-undo-remove"))
+    }
+
+    /// Undo of a removal: the same app, with all its settings, in its old place. Redo
+    /// removes it again.
+    func restoreApplication(_ application: Application, at position: Int) {
+        if index(of: application) == nil {
+            Options.shared.application.applications.insert(application, at: position)
+        }
+        reloadRows()
+        list.select(rowID(for: application))
+        undoManager?.registerUndo(withTarget: self) { controller in
+            controller.remove(application)
+        }
+        undoManager?.setActionName(text("apps-undo-remove"))
+    }
+
+    // MARK: - App page
+
+    /// Opens the page of the app of the row `id` in place of the list.
+    func openApplication(withID id: String) {
+        guard isViewLoaded, let application = application(forRowID: id) else { return }
+        list.select(id)
+        if let detail = detailController {
+            guard detail.application !== application else { return }
+            closeDetail(detail)
+        }
+        let detail = ApplicationDetailViewController(application: application, uiStateDefaults: uiStateDefaults)
+        detail.onBack = { [weak self] in self?.showList(focusList: true) }
+        detail.onInheritChange = { [weak self] in self?.reloadRows() }
+        detail.onHeightChange = { [weak self] in self?.contentHeightDidChange() }
+        addChild(detail)
+        detailController = detail
+        show(page: detail.view)
+        contentHeightDidChange()
+        scrollToTop()
+        view.window?.makeFirstResponder(detail.view)
+    }
+
+    /// Back from an app's page to the list, with that app selected.
+    func showList(focusList shouldFocus: Bool) {
+        guard isViewLoaded, let detail = detailController else { return }
+        let application = detail.application
+        closeDetail(detail)
+        show(page: listPage)
+        reloadRows()
+        list.select(rowID(for: application))
+        contentHeightDidChange()
+        if shouldFocus {
+            focusList()
+        }
+    }
+
+    private func closeDetail(_ detail: ApplicationDetailViewController) {
+        detail.view.removeFromSuperview()
+        detail.removeFromParent()
+        detailController = nil
+    }
+
+    /// Puts `page` (the list, or an app's page) in the pane instead of the other.
+    private func show(page: NSView) {
+        guard page !== currentPage else { return }
+        currentPage?.removeFromSuperview()
+        currentPage = page
+        page.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(page)
+        NSLayoutConstraint.activate([
+            page.topAnchor.constraint(equalTo: view.topAnchor),
+            page.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            page.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            page.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+    }
+
+    private func contentHeightDidChange() {
+        PreferencesForm.fitToContent(self)
+    }
+
+    private func scrollToTop() {
+        guard let scrollView = view.enclosingScrollView else { return }
+        scrollView.contentView.scroll(to: .zero)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
+    private func focusList() {
+        guard let window = view.window, list.window === window else { return }
+        window.makeFirstResponder(list)
+    }
+
+    private func text(_ key: String) -> String {
+        return NSLocalizedString(key, comment: "")
     }
 }
 
+// MARK: - List row
 
+/// A row of the apps list: a click on its chevron opens the app's page, as a double click
+/// on the row does.
+final class ApplicationListRow: PreferencesListRow {
 
-/**
- * 应用添加/删除控制
- */
-extension PreferencesApplicationViewController: NSMenuDelegate {
+    var onChevronClick: (() -> Void)?
 
-    // 打开文件选择窗口
-    func openFileSelectionPanel() {
-        let openPanel = NSOpenPanel()
-        // 默认打开的目录 (/Application)
-        openPanel.directoryURL = FileManager.default.urls(for: .applicationDirectory, in: .localDomainMask).first!
-        // 禁止选择文件夹
-        openPanel.canChooseDirectories = false
-        // 允许选择文件
-        openPanel.canChooseFiles = true
-        // 不允许复数选择
-        openPanel.allowsMultipleSelection = false
-        // 允许的文件类型
-        // openPanel.allowedFileTypes = ["app", "App", "APP"]
-        // 打开文件选择窗口并读取文件添加到 Applications 列表中
-        openPanel.beginSheetModal(for: view.window!, completionHandler: { result in
-            if result.rawValue == NSApplication.ModalResponse.OK.rawValue && result == NSApplication.ModalResponse.OK {
-                // 根据路径获取 application 信息并保存到 Applications 列表中
-                if let bundlePath = openPanel.url?.path {
-                    self.appendApplicationWith(path: bundlePath)
-                }
-            }
-        })
-    }
+    /// Around the chevron, where a click counts as a click on it.
+    static let chevronHitOutset: CGFloat = 8
 
-    // 初始化菜单
-    func openRunningApplicationPanel(_ targetView: NSView, _ targetPosition: NSPoint) {
-        // 清除已有
-        runningAndInstalledMenuChildrenContainer.removeAllItems()
-        // 初始化 Running 应用
-        for runningApplication in NSWorkspace.shared.runningApplications {
-            guard runningApplication.activationPolicy == .regular else { continue }
-            let icon = Utils.getApplicationIcon(fromPath: runningApplication.bundleURL?.path)
-            let name = Utils.getApplicationName(fromPath: runningApplication.executableURL?.path)
-            let isExist = ScrollUtils.shared.getTargetApplication(from: runningApplication) !== nil
-            Utils.addMenuItem(
-                to: runningAndInstalledMenuChildrenContainer,
-                title: name,
-                icon: icon,
-                action: #selector(appendApplicationWithRunningApplication),
-                target: isExist ? nil : self,
-                represent: runningApplication
-            )
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        guard event.clickCount == 1 else { return }
+        if isChevronHit(at: convert(event.locationInWindow, from: nil)) {
+            onChevronClick?()
         }
-        // 显示菜单
-        applicationSourceMenuControl.popUp(positioning: nil, at: targetPosition, in: targetView)
     }
-    
-    // 添加应用
-    func appendApplicationWith(path: String) {
-        let application = Application(path: path)
-        Options.shared.application.applications.append(application)
-        tableView.reloadData()
-        toggleNoDataHint()
-    }
-    @objc func appendApplicationWithRunningApplication(_ sender: NSMenuItem!) {
-        guard let runningApplication = sender.representedObject as? NSRunningApplication else { return }
-        guard let executablePath = runningApplication.executableURL?.path else { return }
-        appendApplicationWith(path: executablePath)
+
+    /// `point` in the row's coordinates is on (or close around) the chevron.
+    func isChevronHit(at point: NSPoint) -> Bool {
+        guard let chevronView else { return false }
+        let outset = Self.chevronHitOutset
+        return chevronView.frame.insetBy(dx: -outset, dy: -outset).contains(point)
     }
 }
