@@ -651,6 +651,98 @@ final class LogiWheelControllerTests: XCTestCase {
         XCTAssertEqual(statusLines(), 2)
     }
 
+    // MARK: - Why a set value differs
+
+    private func forceValue(_ wheel: LogiWheelController) -> LogiMouseDeviceState.Value<Int> {
+        return wheel.deviceState(id: "mx4", deviceName: "MX Master 4").scrollForce
+    }
+
+    private func status(_ wheel: LogiWheelController, _ payload: [UInt8]) {
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: payload))
+    }
+
+    private func acknowledge(_ wheel: LogiWheelController) {
+        wheel.handleResponse(functionId: 2, report: report(functionId: 2, payload: writes.last?.params ?? []))
+    }
+
+    func testUntilTheReadBackArrivesTheValueIsStillSending() {
+        let wheel = makeController(.smartShiftEnhanced)
+        wheel.start(desired: settings(force: 70))
+        XCTAssertEqual(forceValue(wheel).mismatch, .sending, "waiting for the read that decides it")
+        wheel.handleResponse(functionId: 0, report: report(functionId: 0, payload: [0x01, 0x10, 0x32]))
+        status(wheel, [0x02, 0x10, 50])
+        XCTAssertEqual(writes.count, 1)
+        XCTAssertEqual(forceValue(wheel), .init(onMouse: 50, setByYou: 70, mismatch: .sending))
+        acknowledge(wheel)
+        XCTAssertEqual(forceValue(wheel).mismatch, .sending)
+        status(wheel, [0x02, 0x10, 70])
+        XCTAssertEqual(forceValue(wheel), .init(onMouse: 70, setByYou: 70))
+    }
+
+    func testARefusedWriteSaysSo() {
+        let wheel = connectedEnhanced(settings(force: 70), status: [0x02, 0x10, 50])
+        wheel.handleError(functionId: 2, errorCode: 0x02)
+        status(wheel, [0x02, 0x10, 50])
+        XCTAssertEqual(forceValue(wheel), .init(onMouse: 50, setByYou: 70, mismatch: .refused))
+        XCTAssertEqual(writes.count, 1, "no retry")
+    }
+
+    func testAWriteWithoutAnAnswerSaysTheMouseDidNotAnswer() {
+        let wheel = connectedEnhanced(settings(force: 70), status: [0x02, 0x10, 50])
+        status(wheel, [0x02, 0x10, 50])  // the read-back; the write itself was never answered
+        XCTAssertEqual(forceValue(wheel).mismatch, .noAnswer)
+    }
+
+    func testAnAnsweredWriteTheMouseDidNotKeepSaysSo() {
+        let wheel = connectedEnhanced(settings(force: 70), status: [0x02, 0x10, 50])
+        acknowledge(wheel)
+        status(wheel, [0x02, 0x10, 50])
+        XCTAssertEqual(forceValue(wheel).mismatch, .notKept)
+    }
+
+    /// A status read that went out before the write (a refresh as the tab appears) is
+    /// answered before the write: it is not taken for the read-back.
+    func testAReadSentBeforeTheWriteIsNotItsReadBack() {
+        let wheel = makeController(.smartShiftEnhanced)
+        wheel.start(desired: settings(force: 70))
+        wheel.refresh()
+        wheel.handleResponse(functionId: 0, report: report(functionId: 0, payload: [0x01, 0x10, 0x32]))
+        status(wheel, [0x02, 0x10, 50])
+        XCTAssertEqual(writes.count, 1)
+        status(wheel, [0x02, 0x10, 50])  // the refresh's answer
+        XCTAssertEqual(forceValue(wheel).mismatch, .sending, "the read-back is still to come")
+        acknowledge(wheel)
+        status(wheel, [0x02, 0x10, 70])
+        XCTAssertEqual(forceValue(wheel), .init(onMouse: 70, setByYou: 70))
+        XCTAssertEqual(writes.count, 1)
+    }
+
+    /// The mouse had the user's mode; its own button (or Logi Options+) changed it: said so,
+    /// not fought. Starting again ("Send Again", as a reconnect) writes the mode back.
+    func testAValueChangedLaterSaysSo_andStartingAgainWritesItBack() {
+        let desired = settings(.ratchet, force: 70)
+        let wheel = connectedEnhanced(desired, status: [0x02, 0xFF, 70])
+        XCTAssertTrue(writes.isEmpty)
+        status(wheel, [0x01, 0xFF, 70])
+        XCTAssertEqual(wheel.deviceState(id: "mx4", deviceName: "MX Master 4").mode,
+                       .init(onMouse: .freeSpin, setByYou: .ratchet, mismatch: .changedElsewhere))
+        XCTAssertTrue(writes.isEmpty, "not fought")
+
+        wheel.start(desired: desired)
+        XCTAssertEqual(wheel.deviceState(id: "mx4", deviceName: "MX Master 4").mode.mismatch, .sending)
+        status(wheel, [0x01, 0xFF, 70])
+        XCTAssertEqual(writes.count, 1)
+        XCTAssertNil(forceValue(wheel).mismatch, "the force was on the mouse all along")
+    }
+
+    func testUnmanagedThereIsNoReason() {
+        let wheel = connectedEnhanced(settings(.ratchet, force: 70, managed: false), status: [0x02, 0x10, 50])
+        let state = wheel.deviceState(id: "mx4", deviceName: "MX Master 4")
+        XCTAssertNil(state.mode.mismatch)
+        XCTAssertNil(state.scrollForce.mismatch)
+        XCTAssertTrue(writes.isEmpty)
+    }
+
     func testDeviceStateHasTheShapeOfTheBasics() {
         let wheel = connectedEnhanced(settings(.ratchet, sensitivity: 51, force: 150), status: [0x02, 0x10, 100])
         wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0x10, 100]))

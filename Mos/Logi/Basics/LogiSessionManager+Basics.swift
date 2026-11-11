@@ -49,6 +49,24 @@ extension LogiSessionManager {
         if !anyBasics { notifyMouseStateChanged() }
     }
 
+    /// "Send Again": every connected mouse starts over as on a reconnect (its controllers'
+    /// `start`), with the settings stored here: read again, then written only where the
+    /// switch is on, the user set the value and the fresh read differs. Without the switch
+    /// it is a plain refresh: nothing is written. Posts `mouseStateChanged` right away, so the
+    /// tab shows "still sending" while the mice answer.
+    func sendMouseSettingsAgain() {
+        guard mouseManaged || wheelSettings.managedByMos else {
+            LogiSystemLog.note("Send Again: not managed, reading only")
+            refreshMouseStates()
+            return
+        }
+        LogiSystemLog.note("Send Again: reading every mouse again, then writing what the user set and it reports differently")
+        for session in activeSessions where session.isHIDPPCandidate {
+            session.startMouseSettingsAgain(mouse: mouseSettings, managed: mouseManaged, wheel: wheelSettings)
+        }
+        notifyMouseStateChanged()
+    }
+
     func mouseDeviceStates() -> [LogiMouseDeviceState] {
         let states = activeSessions
             .filter { $0.isHIDPPCandidate }

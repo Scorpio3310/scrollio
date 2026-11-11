@@ -103,12 +103,40 @@ struct LogiMouseDeviceState: Equatable {
         case user
     }
 
+    /// Why the mouse reports another value than the user set, as far as Scrollio knows it.
+    /// Display only: worked out from the controllers' own bookkeeping while running, never
+    /// stored, and no write decision reads it.
+    enum Mismatch: Equatable {
+        /// Scrollio is still sending the user's value: a write (or the read that decides it)
+        /// is queued or waits for the mouse's answer.
+        case sending
+        /// The mouse answered with an error (HID++) when Scrollio sent it, or read it to send it.
+        case refused
+        /// The mouse did not answer the write, or the read before it.
+        case noAnswer
+        /// The mouse answered the write but reported another value right after (firmware
+        /// rounding, or it ignored it).
+        case notKept
+        /// The mouse had the user's value (took it, or had it already) and reported another
+        /// one later: changed on the mouse itself or by another app.
+        case changedElsewhere
+    }
+
     /// One setting: what the mouse reports and what the user set.
     struct Value<T: Equatable>: Equatable {
         /// Last value read from the mouse; nil until read.
         let onMouse: T?
         /// The user's choice as this mouse would take it (snapped or clamped); nil = never set.
         let setByYou: T?
+        /// Why `onMouse` is not `setByYou`. nil while they match, while nothing is set, while
+        /// the mouse is not managed (Scrollio sends nothing), or when the reason is not known.
+        let mismatch: Mismatch?
+
+        init(onMouse: T?, setByYou: T?, mismatch: Mismatch? = nil) {
+            self.onMouse = onMouse
+            self.setByYou = setByYou
+            self.mismatch = mismatch
+        }
 
         var source: Source { setByYou == nil ? .mouse : .user }
         /// The mouse has the user's choice, or there is none to have.
@@ -186,4 +214,5 @@ extension LogiCenter {
     //   func refreshMouseStates()
     //   func applyMouseSettings(_ settings: LogiMouseSettings, managed: Bool)
     //   func playHapticSample()
+    //   func sendMouseSettingsAgain()
 }

@@ -79,6 +79,30 @@ final class LogiMouseBasicsManagerTests: XCTestCase {
         XCTAssertTrue(manager.gestureCuesMayEnableHaptics)
     }
 
+    // MARK: - Send Again
+
+    func testSendAgainWithoutMicePostsOnce() {
+        let manager = LogiSessionManager()
+        manager.applyMouseSettings(LogiMouseSettings(pointerDPI: 1600), managed: true)
+        manager.applyWheelSettings(LogiWheelSettings(managedByMos: true, scrollForce: 70))
+        let posted = expectation(forNotification: LogiCenter.mouseStateChanged, object: nil)
+        manager.sendMouseSettingsAgain()
+        wait(for: [posted], timeout: 2)
+        XCTAssertEqual(manager.mouseSettings, LogiMouseSettings(pointerDPI: 1600), "nothing stored changes")
+    }
+
+    func testSendAgainGoesThroughLogiCenter_unmanagedItOnlyReads() {
+        let manager = LogiSessionManager()
+        let center = LogiCenter(manager: manager, registry: UsageRegistry(sessionProvider: { [] }))
+        let posted = expectation(forNotification: LogiCenter.mouseStateChanged, object: nil) { _ in
+            Thread.isMainThread
+        }
+        center.sendMouseSettingsAgain()
+        wait(for: [posted], timeout: 2)
+        XCTAssertFalse(manager.mouseManaged)
+        XCTAssertFalse(manager.wheelSettings.managedByMos)
+    }
+
     func testLogiCenterExposesTheSurface() {
         XCTAssertEqual(LogiCenter.mouseStateChanged.rawValue, "LogiMouseStateChanged")
         XCTAssertNotNil(LogiCenter.shared.mouseDeviceStates())
