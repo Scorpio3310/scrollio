@@ -1283,4 +1283,50 @@ final class ScrollSystemLogTests: XCTestCase {
         let next = ScrollSystemLog.notePassthrough(.smoothingOff, now: 100 + ScrollSystemLog.passthroughInterval, detail: detail)
         XCTAssertEqual(next, "wheel events let through unsmoothed (51): smoothing is off for this event (x)")
     }
+
+    /// The thumb wheel's line, one per roll: the tuning of its functions is read from it on the
+    /// owner's machine, so its wording is part of the contract.
+    func testThumbWheelLine_saysWhatTheWheelSentAndWhatRan() {
+        var roll = ScrollSystemLog.ThumbWheelRoll(id: 1, settings: ThumbWheelSettings(function: .tabs), at: 10)
+        roll.events = 14
+        roll.lastEventAt = 10.62
+        roll.longestGap = 0.085
+        roll.lines = -9
+        roll.fixed = -9.4
+        roll.largestFixed = 1.25
+        roll.points = -212
+        roll.largestPoints = 31
+        roll.directionChanges = 1
+        roll.stepsNext = 3
+        roll.stepsPrevious = 1
+        XCTAssertEqual(
+            ScrollSystemLog.thumbWheelMessage(for: roll),
+            "thumb wheel: 14 events in 620 ms (longest gap 85 ms), lines -9, fixed -9.40 (largest 1.25), points -212 (largest 31), 1 direction change, not continuous, switch tabs x1.00: 3 steps next, 1 previous"
+        )
+
+        var one = ScrollSystemLog.ThumbWheelRoll(id: 2, settings: .default, at: 5)
+        one.add(ThumbWheelEvent(lineDelta: 1, fixedDelta: 1, pointDelta: 10, isContinuous: true), at: 5)
+        XCTAssertEqual(
+            ScrollSystemLog.thumbWheelMessage(for: one),
+            "thumb wheel: 1 event in 0 ms (longest gap 0 ms), lines 1, fixed 1.00 (largest 1.00), points 10 (largest 10), 0 direction changes, continuous, scroll sideways x1.00: 0 steps"
+        )
+
+        var swapped = ScrollSystemLog.ThumbWheelRoll(id: 3, settings: ThumbWheelSettings(function: .volume, speed: 1.5, swapsDirection: true), at: 0)
+        swapped.add(ThumbWheelEvent(lineDelta: 2, fixedDelta: 2.25, pointDelta: 24, isContinuous: false), at: 0)
+        swapped.add(ThumbWheelEvent(lineDelta: -1, fixedDelta: -0.5, pointDelta: -31, isContinuous: true), at: 0.05)
+        swapped.add(ThumbWheelEvent(lineDelta: -1, fixedDelta: -0.5, pointDelta: -9, isContinuous: false), at: 0.08)
+        swapped.pendingSteps = 2
+        swapped.stepsRan(-1)
+        XCTAssertEqual(swapped.pendingSteps, 1, "one still to run: not counted")
+        XCTAssertEqual(
+            ScrollSystemLog.thumbWheelMessage(for: swapped),
+            "thumb wheel: 3 events in 80 ms (longest gap 50 ms), lines 0, fixed 1.25 (largest 2.25), points -16 (largest 31), 1 direction change, partly continuous (1 of 3), volume x1.50 swapped: 1 step previous"
+        )
+        swapped.stepsRan(2)
+        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: swapped).hasSuffix(": 2 steps next, 1 previous"))
+        XCTAssertEqual(
+            ThumbWheelFunction.allCases.map(\.logName),
+            ["scroll sideways", "zoom", "switch tabs", "switch desktops", "back and forward", "volume"]
+        )
+    }
 }

@@ -3,10 +3,15 @@
 //  Mos
 //  Which rows the Buttons pane shows, top to bottom. With an MX Master connected: one row
 //  per button of that mouse, in the order they sit on it, each with the binding of that
-//  button without modifiers, or none ("Default"); then every other binding, as stored,
-//  under "Other buttons and keys". With any other mouse: the bindings as stored, as
-//  before. Also the trigger a "Default" row stores once it gets an action, and what it says
-//  until then. Pure: the pane and its tests share it, and nothing is stored by it.
+//  button without modifiers, or none ("Default"), and the thumb wheel's row after the mode
+//  shift button; then every other binding, as stored, under "Other buttons and keys". With
+//  any other mouse: the bindings as stored, as before. Also the trigger a "Default" row
+//  stores once it gets an action, and what it says until then. Pure: the pane and its tests
+//  share it, and nothing is stored by it.
+//
+//  The thumb wheel's row is a row of its own kind: it is no button and has no binding. It
+//  shows what the sideways wheel does (Options.shared.thumbWheel, as under Scrolling), and
+//  the bindings are laid out exactly as without it.
 //
 
 import Foundation
@@ -86,13 +91,35 @@ struct ButtonsListLayout: Equatable {
         let binding: ButtonBinding?
     }
 
+    /// One row of the list.
+    enum Row: Equatable {
+        /// A button of the shown mouse.
+        case part(PartRow)
+        /// The thumb wheel of the shown mouse: what it does, not a binding.
+        case thumbWheel
+        /// Any other binding, under "Other buttons and keys".
+        case other(ButtonBinding)
+    }
+
+    /// The id of the thumb wheel's row in the list. A part of the drawing, so it is never
+    /// the id of another row (a button of the mouse, or a binding's id).
+    static let thumbWheelRowID = AnyHashable(MouseArtworkPart.thumbWheel)
+
     /// The buttons of the shown mouse, in the order they sit on it; none for a mouse
     /// without a drawing of its own.
     let partRows: [PartRow]
+    /// The shown mouse has a thumb wheel: it gets a row after the mode shift button.
+    let hasThumbWheel: Bool
     /// Every other binding, in the stored order: with modifiers, keys, numbered buttons not
     /// placed on a part, controls the shown mouse does not have, and a second binding of a
     /// button that has its row.
     let others: [ButtonBinding]
+
+    init(partRows: [PartRow], hasThumbWheel: Bool = false, others: [ButtonBinding]) {
+        self.partRows = partRows
+        self.hasThumbWheel = hasThumbWheel
+        self.others = others
+    }
 
     /// - Parameters:
     ///   - bindings: as stored.
@@ -116,7 +143,29 @@ struct ButtonsListLayout: Equatable {
             }
             return PartRow(part: part, binding: chosen)
         }
-        return ButtonsListLayout(partRows: partRows, others: bindings.filter { !taken.contains($0.id) })
+        return ButtonsListLayout(
+            partRows: partRows,
+            hasThumbWheel: showsThumbWheel(on: mouse),
+            others: bindings.filter { !taken.contains($0.id) }
+        )
+    }
+
+    /// The thumb wheel has a row on a mouse whose drawing has one (the MX Master 4, 3 and
+    /// 3S). Any other mouse's sideways wheel is set up under Scrolling only.
+    static func showsThumbWheel(on mouse: MouseArtworkModel) -> Bool {
+        return mouse.has(.thumbWheel) && !ButtonsMousePart.listed(on: mouse).isEmpty
+    }
+
+    /// Every row, top to bottom: the buttons of the mouse with the thumb wheel right after
+    /// the mode shift button (after the last button if the mouse had none), then the other
+    /// bindings.
+    var rows: [Row] {
+        var result = partRows.map(Row.part)
+        if hasThumbWheel {
+            let after = partRows.firstIndex { $0.part == .modeShift }.map { $0 + 1 } ?? partRows.count
+            result.insert(.thumbWheel, at: after)
+        }
+        return result + others.map(Row.other)
     }
 
     /// The part `event` presses when it has no modifiers; nil for a key, a trigger with

@@ -365,12 +365,18 @@ final class PreferencesSidebarTests: XCTestCase {
         }
         let scrolling = try XCTUnwrap(preferences.selectedController as? PreferencesScrollingViewController)
         let host = preferences.host
-        // The keys always show, so the pane with "Advanced" closed is taller than the
-        // default window: a window that fits it, and not the open pane.
-        window.setContentSize(NSSize(width: window.contentRect(forFrameRect: window.frame).width, height: 820))
+        // The keys and the thumb wheel always show, so the pane with "Advanced" closed is
+        // taller than the default window. Its budget: at most 1000 pt. A fixed window whose
+        // column (under the title bar) holds the budget fits it, and not the open pane.
+        let budget: CGFloat = 1000
+        let closedHeight = scrolling.view.fittingSize.height
+        XCTAssertLessThanOrEqual(closedHeight, budget, "the tab with Advanced closed stays within its budget")
+        let width = window.contentRect(forFrameRect: window.frame).width
+        window.setContentSize(NSSize(width: width, height: 1060))
         window.contentView?.layoutSubtreeIfNeeded()
         let frame = window.frame
         let visible = host.scrollView.contentSize.height
+        XCTAssertGreaterThanOrEqual(visible, budget, "the column holds the budget")
         XCTAssertFalse(scrolling.isAdvancedExpanded)
         XCTAssertLessThanOrEqual(scrolling.view.frame.height, visible, "the pane fits")
         XCTAssertEqual(host.documentView.frame.height, visible)
@@ -378,7 +384,7 @@ final class PreferencesSidebarTests: XCTestCase {
         scrolling.setAdvancedExpanded(true)
         window.contentView?.layoutSubtreeIfNeeded()
         XCTAssertEqual(window.frame, frame, "the window keeps its size")
-        XCTAssertGreaterThan(scrolling.view.frame.height, 850)
+        XCTAssertGreaterThan(scrolling.view.frame.height, closedHeight)
         XCTAssertEqual(host.documentView.frame.height, scrolling.view.frame.height)
         XCTAssertGreaterThan(host.documentView.frame.height, visible, "the column scrolls")
         XCTAssertEqual(scrolling.view.frame.minY, 0)
@@ -398,7 +404,7 @@ final class PreferencesSidebarTests: XCTestCase {
 
         // A taller window shows more of the pane; the pane does not stretch.
         let height = scrolling.view.frame.height
-        window.setContentSize(NSSize(width: window.contentRect(forFrameRect: window.frame).width, height: 960))
+        window.setContentSize(NSSize(width: width, height: 1200))
         window.contentView?.layoutSubtreeIfNeeded()
         XCTAssertEqual(scrolling.view.frame.height, height)
         XCTAssertEqual(host.documentView.frame.height, host.scrollView.contentSize.height)

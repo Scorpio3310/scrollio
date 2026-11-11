@@ -3,8 +3,9 @@
 //  Mos
 //  The small picture in front of each row of the Buttons pane: the card's mouse (the
 //  connected model's drawing, MouseArtwork.swift) about 20 pt tall with the row's button
-//  filled in the accent colour, a keyboard for a key, and for a button the drawing cannot
-//  show the mouse with nothing lit and the button's number on a badge. The outline, the
+//  (or the thumb wheel, for its row) filled in the accent colour, a keyboard for a key, and
+//  for a button the drawing cannot show the mouse with nothing lit and the button's number
+//  on a badge. The outline, the
 //  seams and the two buttons are the card's; the side buttons, the thumb wheel, the wheel
 //  and the button behind it are the schematic variant's, larger and further apart than on
 //  the card, so the front, middle and rear side buttons can be told apart at this size.
@@ -36,12 +37,23 @@ enum ButtonsMouseMiniature {
         return image
     }
 
+    /// The mouse with `part` of the drawing lit, for a row that is about a part that is no
+    /// button (the thumb wheel). Drawn like `image(for:mouse:highlighted:)`.
+    static func image(lighting part: MouseArtworkPart, mouse: MouseArtworkModel, highlighted: Bool) -> NSImage {
+        let image = NSImage(size: size, flipped: true) { rect in
+            drawMouse(mouse, in: rect, lit: part, highlighted: highlighted)
+            return true
+        }
+        image.cacheMode = .never
+        return image
+    }
+
     static func draw(_ picture: ButtonTriggerPicture, mouse: MouseArtworkModel, in rect: NSRect, highlighted: Bool) {
         switch picture {
         case .key:
             drawKeyboard(in: rect, highlighted: highlighted)
         case .mouse(let part, let number, _):
-            drawMouse(mouse, in: rect, lit: part, highlighted: highlighted)
+            drawMouse(mouse, in: rect, lit: part?.artworkPart, highlighted: highlighted)
             if let number {
                 let fill = highlighted ? NSColor.white : MiniaturePalette.badge
                 let text = highlighted ? NSColor.controlAccentColor : MiniaturePalette.badgeText
@@ -91,13 +103,13 @@ enum ButtonsMouseMiniature {
 
     // MARK: - Drawing
 
-    private static func drawMouse(_ mouse: MouseArtworkModel, in rect: NSRect, lit: ButtonsMousePart?, highlighted: Bool) {
+    private static func drawMouse(_ mouse: MouseArtworkModel, in rect: NSRect, lit: MouseArtworkPart?, highlighted: Bool) {
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
         (transform(in: rect) as NSAffineTransform).concat()
         MouseArtworkPainter.draw(
             MouseArtworkShapes(model: mouse, schematic: true),
-            ink: ink(highlighted: highlighted), lit: lit?.artworkPart, unit: unit
+            ink: ink(highlighted: highlighted), lit: lit, unit: unit
         )
     }
 

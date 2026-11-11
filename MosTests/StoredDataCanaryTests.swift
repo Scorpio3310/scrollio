@@ -29,6 +29,7 @@ final class StoredDataCanaryTests: XCTestCase {
         XCTAssertEqual(OptionItem.Gesture.Settings, "mouseGestureSettings")
         XCTAssertEqual(OptionItem.MouseWheel.Settings, "logiWheelSettings")
         XCTAssertEqual(OptionItem.MouseBasics.Settings, "logiMouseSettings")
+        XCTAssertEqual(OptionItem.ThumbWheel.Settings, "thumbWheelSettings")
         XCTAssertEqual(OptionItem.Application.Allowlist, "allowlist")
         XCTAssertEqual(OptionItem.Application.Applications, "applications")
         // Window state only, not settings.

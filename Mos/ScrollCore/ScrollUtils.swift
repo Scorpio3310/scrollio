@@ -187,6 +187,15 @@ class ScrollUtils {
         return lastSourceIsRemoteControl
     }
 
+#if DEBUG
+    /// Tests: events from this source process count as a remote desktop's (until another
+    /// source is seen, or `nil` forgets it).
+    func treatAsRemoteForTests(sourcePID: pid_t?) {
+        lastSourcePID = sourcePID ?? 0
+        lastSourceIsRemoteControl = sourcePID != nil
+    }
+#endif
+
     /// 检测事件是否来自已被平滑的远程源
     /// 返回 true 表示应跳过平滑处理
     func isRemoteSmoothedEvent(_ event: CGEvent) -> Bool {

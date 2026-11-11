@@ -29,6 +29,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
     private var savedMouse = LogiMouseSettings.default
     private var savedWheel = LogiWheelSettings.default
     private var savedGesture = MouseGestureSettings.default
+    private var savedThumbWheel = ThumbWheelSettings.default
     private var savedBindings: [ButtonBinding] = []
     private var savedAllowlist = false
     private var addedApplications: [String] = []
@@ -45,9 +46,11 @@ final class PreferencesWindowRenderTests: XCTestCase {
         savedMouse = Options.shared.logiMouse
         savedWheel = Options.shared.logiWheel
         savedGesture = Options.shared.gesture
+        savedThumbWheel = Options.shared.thumbWheel
         savedBindings = Options.shared.buttons.binding
         savedAllowlist = Options.shared.application.allowlist
         Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+        Options.shared.thumbWheel = .default
     }
 
     override func tearDown() {
@@ -57,6 +60,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
         Options.shared.logiMouse = savedMouse
         Options.shared.logiWheel = savedWheel
         Options.shared.gesture = savedGesture
+        Options.shared.thumbWheel = savedThumbWheel
         Options.shared.buttons.binding = savedBindings
         Options.shared.application.allowlist = savedAllowlist
         for key in addedApplications where Options.shared.application.applications.get(by: key) != nil {
@@ -82,6 +86,60 @@ final class PreferencesWindowRenderTests: XCTestCase {
                     .uiStateDefaults = self.uiDefaults(advanced: advanced)
             })
         }
+    }
+
+    /// The thumb wheel (`thumb-wheel-<case>-<appearance>.png`). Scrolling: the defaults, also
+    /// in the 640 pt window of a first opening; "Switch Tabs" at 1.5× with the direction
+    /// swapped; "Back and Forward" (its symbol); scrolling sideways with smoothing off (the speed's line says where it
+    /// applies). Buttons, an MX Master 4: its row at the defaults ("Default"),
+    /// "Switch Tabs" with the row selected (the card lights the thumb wheel), the row pointed
+    /// at; "Back and Forward"; an MX Master 3S.
+    func testRenderThumbWheel() throws {
+        func scrolling(_ name: String) throws {
+            try renderPane(PANEL_IDENTIFIER.scrolling, name: name, prepare: { preferences in
+                (preferences.controller(for: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)?
+                    .uiStateDefaults = self.uiDefaults(advanced: false)
+            })
+        }
+        Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+        Options.shared.thumbWheel = .default
+        try scrolling("thumb-wheel-scrolling-default")
+        // In the window of a first opening (640 pt): where the group sits without scrolling.
+        try renderPane(PANEL_IDENTIFIER.scrolling, name: "thumb-wheel-scrolling-default-window",
+                       windowHeight: PreferencesWindowLayout.defaultContentHeight, prepare: { preferences in
+            (preferences.controller(for: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)?
+                .uiStateDefaults = self.uiDefaults(advanced: false)
+        })
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .tabs, speed: 1.5, swapsDirection: true)
+        try scrolling("thumb-wheel-scrolling-tabs")
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .backForward)
+        try scrolling("thumb-wheel-scrolling-back-forward")
+        Options.shared.thumbWheel = .default
+        Options.shared.scroll.smooth = false
+        try scrolling("thumb-wheel-scrolling-smoothing-off")
+        Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+
+        func source(_ name: String?) -> ButtonsDeviceSource {
+            return ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { name }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+        }
+        Options.shared.buttons.binding = [
+            binding(1001, SystemShortcut.screenshotSelection.identifier),
+            binding(5, SystemShortcut.copy.identifier, modifiers: UInt(CGEventFlags.maskAlternate.rawValue)),
+        ]
+        try renderButtons(name: "thumb-wheel-buttons-mx4-default", source: source("MX Master 4"))
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .tabs, speed: 1.5, swapsDirection: true)
+        try renderButtons(name: "thumb-wheel-buttons-mx4-tabs-selected", source: source("MX Master 4")) { buttons in
+            buttons.list.select(ButtonsListLayout.thumbWheelRowID)
+        }
+        try renderButtons(name: "thumb-wheel-buttons-mx4-tabs-hovered", source: source("MX Master 4")) { buttons in
+            if let row = buttons.thumbWheelRow {
+                self.hover(buttons, row: row)
+            }
+        }
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .backForward)
+        try renderButtons(name: "thumb-wheel-buttons-mx4-back-forward", source: source("MX Master 4"))
+        Options.shared.thumbWheel = .default
+        try renderButtons(name: "thumb-wheel-buttons-mx3s", source: source("MX Master 3S"))
     }
 
     func testRenderMouse() throws {
@@ -631,7 +689,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
     }
 
     /// Points at a row: a mouse-moved event handed to the list, never posted.
-    private func hover(_ buttons: PreferencesButtonsViewController, row: ButtonBindingRow) {
+    private func hover(_ buttons: PreferencesButtonsViewController, row: PreferencesListRow) {
         guard let window = buttons.view.window else { return }
         window.contentView?.layoutSubtreeIfNeeded()
         let point = row.convert(NSPoint(x: row.bounds.midX, y: row.bounds.midY), to: nil)
