@@ -2228,7 +2228,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This can happen after an update. In the Accessibility list, select Scrollio and remove it with the minus (–) button. Then add it again: drag Scrollio from Finder into the list and turn it on."
+            "value": "This can happen after an update. In the Accessibility list, select Scrollio and remove it with the minus (−) button. Then add it again: drag Scrollio from Finder into the list and turn it on."
           }
         }
       }
@@ -2646,7 +2646,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Click to choose a different one"
+            "value": "Click to choose a different one."
           }
         }
       }
@@ -3686,13 +3686,13 @@
       }
     },
     "buttons-note-scroll-key": {
-      "comment": "Buttons pane: problem note, the button is also a scroll key",
+      "comment": "Buttons pane: problem note, the button is also a scroll key. Non-breaking spaces keep the place in Scrolling on one line.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Also set under Scrolling › While you hold a key."
+            "value": "Also set under Scrolling › While you hold a key."
           }
         }
       }

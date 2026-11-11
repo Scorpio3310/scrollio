@@ -317,7 +317,7 @@ final class PreferencesButtonsTests: XCTestCase {
             "Logi Options+ keeps taking this button over.",
             "May stop working while Logi Options+ runs.",
             "Can use the standard Back button instead.",
-            "Also set under Scrolling › While you hold a key.",
+            "Also set under Scrolling\u{A0}›\u{A0}While\u{A0}you\u{A0}hold\u{A0}a\u{A0}key.",
             nil,
         ])
         XCTAssertEqual(pane.rows.map { $0.note?.tone }, [.problem, .problem, .problem, .hint, .problem, nil])
