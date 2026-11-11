@@ -161,9 +161,11 @@ extension OPTIONS_SCROLL_DEFAULT {
 /// Duration and Step are left as stored: any value is valid ("Custom" feel).
 enum ScrollSettingsCleanup {
 
-    /// UserDefaults keys of scroll settings that no longer exist: the Duration that older
-    /// builds kept for the other state of "Trackpad-style events".
-    static let retiredDefaultsKeys = ["durationForOtherTrackpadState"]
+    /// UserDefaults keys of scroll settings that no longer exist:
+    /// - the Duration that older builds kept for the other state of "Trackpad-style events";
+    /// - the fast-scroll tuning (free-spin, acceleration, momentum, what the thumb wheel did),
+    ///   which the one-path scroll engine does not have.
+    static let retiredDefaultsKeys = ["durationForOtherTrackpadState", "scrollTuning"]
 
     /// The whole clean-up: the global scroll options, each app's own, and the retired keys
     /// (`defaults` nil leaves the stored keys alone).

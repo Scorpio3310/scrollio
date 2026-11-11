@@ -280,18 +280,30 @@ final class ScrollSettingsTests: XCTestCase {
         XCTAssertTrue(inheriting.inherit)
     }
 
-    func testRun_removesTheRetiredTrackpadDurationKey() throws {
-        XCTAssertEqual(ScrollSettingsCleanup.retiredDefaultsKeys, ["durationForOtherTrackpadState"])
+    func testRun_removesTheRetiredKeys() throws {
+        // Canary: the stored names of retired settings (never reuse them for something else).
+        XCTAssertEqual(ScrollSettingsCleanup.retiredDefaultsKeys, ["durationForOtherTrackpadState", "scrollTuning"])
         let suite = "ScrollioTests.cleanup.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(4.5, forKey: "durationForOtherTrackpadState")
+        // The fast-scroll tuning as the last build that had it stored it.
+        let tuning = #"{"freeSpinEnabled":true,"freeSpinSmoothness":1.5,"freeSpinSpeed":1,"acceleration":0}"#
+        defaults.set(Data(tuning.utf8), forKey: "scrollTuning")
         defaults.set(3.69, forKey: OptionItem.Scroll.Duration)
+        defaults.set(6.3, forKey: OptionItem.Scroll.Speed)
+        defaults.set(Data(#"{"managedByMos":true}"#.utf8), forKey: OptionItem.MouseWheel.Settings)
 
         ScrollSettingsCleanup.run(global: OPTIONS_SCROLL_DEFAULT(), applications: [], defaults: defaults)
 
         XCTAssertNil(defaults.object(forKey: "durationForOtherTrackpadState"))
+        XCTAssertNil(defaults.object(forKey: "scrollTuning"))
         XCTAssertEqual(defaults.double(forKey: OptionItem.Scroll.Duration), 3.69, "the settings in use stay")
+        XCTAssertEqual(defaults.double(forKey: OptionItem.Scroll.Speed), 6.3)
+        XCTAssertNotNil(defaults.data(forKey: OptionItem.MouseWheel.Settings))
+
+        ScrollSettingsCleanup.run(global: OPTIONS_SCROLL_DEFAULT(), applications: [], defaults: defaults)
+        XCTAssertEqual(defaults.double(forKey: OptionItem.Scroll.Duration), 3.69, "a second run changes nothing")
     }
 
     /// An app's own options stored by the build that kept a Duration per state of
