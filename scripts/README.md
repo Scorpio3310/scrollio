@@ -1,10 +1,9 @@
 # Scripts
 
-Repository automation lives here.
+Repeatable automation.
 
-- `qa/`: repeatable quality gates that can be run locally or from tests.
-- `release/`: release preparation helpers used by the `release-preparation`
-  agent skill.
+- `qa/lint-logi-boundary.sh`: enforces the boundary around `Mos/Logi/` and
+  `Mos/Integration/`. Run it by hand after changes there; `LogiBoundaryEnforcementTests`
+  runs it as part of the test suite.
 
-Developer diagnostics that are not stable automation entrypoints live in
-`tools/`.
+Hand-run diagnostics that are not stable entry points live in `tools/`.

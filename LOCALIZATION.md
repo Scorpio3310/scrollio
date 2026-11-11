@@ -1,152 +1,70 @@
-# Localization Guide for Mos
+# Localization
 
-This guide describes how Mos handles localisation, how to extend it, and how to
-keep every language in sync with app features such as the Buttons panel,
-per-application settings, Logi actions, and the shortcut catalog.
+Scrollio ships in English only. The localization mechanism of the original project is
+kept, so a language can be added again without touching the code.
 
----
+## The two string catalogs
 
-## 1. String Catalog Layout
+They must stay separate.
 
-Mos ships Xcode’s string catalogs instead of legacy `.strings` files. There are **two catalogs** and they must remain separate:
+| File | Scope | Keys |
+| --- | --- | --- |
+| `Mos/Localizable.xcstrings` | Strings used from Swift with `NSLocalizedString` | Readable phrases (`"Auth"`) or identifiers that mirror code constants (`appExpose`, `categoryFunctionKeys`, the identifiers of `SystemShortcut.Shortcut`, `mouse-*`, `scroll-*`, `gesture-*`) |
+| `Mos/mul.lproj/Main.xcstrings` | The storyboard | Interface Builder object ids (`2AK-Pu-mot.title`) |
 
-| File | Scope | Notes |
-|------|-------|-------|
-| `Mos/Localizable.xcstrings` | Strings referenced from Swift (`NSLocalizedString`) | Keys are either human-readable phrases (`"Auth"`, `"Current Version"`) **or** camelCase identifiers that mirror code constants (e.g. `appExpose`, `categoryFunctionKeys`, shortcut identifiers in `SystemShortcut.Shortcut`). Do not rename identifiers; Swift enums and persistence depend on them. |
-| `Mos/mul.lproj/Main.xcstrings` | Interface Builder (storyboards / XIBs) | Keys are Interface Builder Object IDs (`2AK-Pu-mot.title`). Xcode regenerates them on build. Never hand-edit Object IDs. |
+Rules:
 
-`mul.lproj` is the canonical bundle for storyboard strings because we support many locales. Xcode fans out per-language nibs at build time, so do **not** split `Main.xcstrings` into multiple folders manually.
+- Never rename a key that code, saved settings or Interface Builder uses, and never edit
+  an object id by hand.
+- In Swift use `NSLocalizedString(_:comment:)`, not `String(localized:)`.
+- English values in `Main.xcstrings` override the storyboard text, so a storyboard title
+  is changed in both places.
+- When a `SystemShortcut.Shortcut` is added, its `identifier` becomes a key in
+  `Localizable.xcstrings`: menus and the Buttons pane show `NSLocalizedString(identifier, …)`.
+- Keep modifier symbols as they are: "⌘ Command", "⌥ Option", "⌃ Control", "⇧ Shift".
+- Product and feature names stay as they are: Scrollio, SmartShift, Logi Options+,
+  MX Master, HID++, Mission Control.
+- Edits made by a script must keep the catalog formatting byte-stable:
+  `json.dumps(obj, ensure_ascii=False, indent=2, separators=(",", ": ")) + "\n"`.
 
-The project targets macOS 14.0. Keep using `NSLocalizedString(_:comment:)` in Swift rather than `String(localized:)`: the existing code and the localization test rely on it.
+## Adding a string
 
----
+In code: add `NSLocalizedString("key", comment: "…")`, then add the key with its English
+value to `Mos/Localizable.xcstrings` (building in Xcode extracts new keys).
 
-## 2. Current Language Coverage
+In the storyboard: change `Mos/Base.lproj/Main.storyboard`, build, and fill in the new
+object ids in `Mos/mul.lproj/Main.xcstrings`. When a UI element is deleted, remove its
+stale entries.
 
-Both catalogs expose the same set of locales:
+Strings of the preferences panels (Mouse tab, Presets & Fast Scrolling, Gesture Settings)
+are also listed in `MosTests/PreferencesLocalizationTests.swift`. Add new keys of these
+panels to that list: several keys are built from variables in code, and a missing one
+would only show up as the raw key in the UI.
 
-`cs`, `de`, `el`, `en`, `fr`, `ja`, `ko`, `ru`, `th`, `tr`, `uk`, `zh-Hans`, `zh-Hant`, `zh-Hant-HK`, `zh-Hant-TW`
+## The test
 
-To verify coverage and catch untranslated rows:
+`PreferencesLocalizationTests` checks, for every locale in its `locales` list (now
+`["en"]`), that each listed key exists, is not empty, is not shown as the raw key, and
+has the same format specifiers as the English value.
 
-```bash
-python3 - <<'PY'
-import json, pathlib
-catalog = json.loads(pathlib.Path("Mos/Localizable.xcstrings").read_text())
-dupes = [(k, lang) for k, row in catalog["strings"].items()
-         for lang, unit in row["localizations"].items()
-         if lang != "en" and unit["stringUnit"]["value"] == row["localizations"]["en"]["stringUnit"]["value"]]
-print(f"{len(dupes)} duplicate values (same as English). Sample:", dupes[:10])
-PY
-```
+## Adding a language
 
-Run the same script against `Mos/mul.lproj/Main.xcstrings` if you suspect orphaned storyboard strings. A “duplicate” is acceptable when the official term matches English (e.g. “Launchpad”), but treat the report as a to-do list for translators.
+1. Add the language to the project (`knownRegions` in `Mos.xcodeproj/project.pbxproj`, or
+   Project > Info > Localizations in Xcode) for both catalogs.
+2. Translate every key in both catalogs. Use the terms Apple uses in System Settings for
+   system features.
+3. Add the locale code to `PreferencesLocalizationTests.locales`.
+4. Switch macOS to the language and walk through the Introduction window, every
+   Preferences pane, the button recorder and the action menus, looking for clipped text.
 
-Feature work often adds strings across the Buttons panel, shortcut catalog,
-onboarding, per-app settings, Monitor window, and Preferences UI. Make sure
-every locale is updated before tagging a new build.
-
----
-
-## 3. Terminology Rules
-
-### macOS Official Terms
-
-Use the terminology Apple ships in System Preferences / System Settings. Never
-swap in colloquial variants.
-
-| English | 简体中文 | 繁體中文 | 日本語 | Notes |
-|---------|---------|---------|--------|-------|
-| Preferences | 偏好设置 | 偏好設定 | 環境設定 | NOT “设置” or “Settings” |
-| Accessibility | 辅助功能 | 輔助使用 | アクセシビリティ | System feature name |
-| Mission Control | 任务控制 | Mission Control | ミッションコントロール | Use Apple’s official translation even if it matches English |
-| Trackpad | 触控板 | 觸控式軌跡板 | トラックパッド | Hardware name |
-
-### Modifier Keys
-
-Keep modifier symbols intact and append translated names only if the locale expects it:
-
-```
-✓  "⌘ Command"  "⌥ Option"  "⌃ Control"  "⇧ Shift"
-✗  "Command"    "Option键"   "Ctrl"
-```
-
-### Proper Nouns
-
-- App name “Mos”, brand names (GitHub, macOS) and contributor credits remain unchanged.
-- System features (Mission Control, Spotlight) use Apple’s official localisation.
-
-### Numbers & Symbols
-
-- Leave numbers, mathematical operators, and special characters untouched.
-- Pay attention to locale-specific punctuation (e.g. Japanese full-width brackets) only when Apple’s UI uses them.
-
----
-
-## 4. Adding Strings
-
-### 4.1 Code (`Localizable.xcstrings`)
-
-```swift
-// Step 1 – Add the string in code
-button.title = NSLocalizedString("Auth", comment: "Authorization button title")
-
-// Step 2 – Build once (⌘B) so Xcode refreshes the catalog
-// Step 3 – Open Localizable.xcstrings and fill every locale column
-// Step 4 – Keep the key identical; do not rename identifiers already used in code
-```
-
-**Shortcut catalog:** When adding a new `SystemShortcut.Shortcut`, make sure its `identifier` property becomes a key in `Localizable.xcstrings`. The Buttons panel and popup menus rely on `NSLocalizedString(identifier, …)` to show the translated shortcut name.
-
-### 4.2 Storyboards (`Main.xcstrings`)
-
-1. Modify the base storyboard/XIB under `Base.lproj`.
-2. Build (⌘B); Xcode extracts new Object IDs into `mul.lproj/Main.xcstrings`.
-3. Translate the generated rows in Xcode’s catalog editor.
-4. Do **not** change Object IDs. If you delete a UI element, search for its Object ID and remove the stale entry manually.
-
----
-
-## 5. Maintenance Checklist
-
-- [ ] macOS terms match Apple’s official localisation.
-- [ ] Modifier symbols (⌘⌥⌃⇧) are preserved in every language.
-- [ ] Keys in `Localizable.xcstrings` match the Swift constants (`SystemShortcut` identifiers, category names, etc.).
-- [ ] No empty strings or placeholder text in any locale column.
-- [ ] Duplicate values (translation == English) are intentional and documented with translators.
-- [ ] Chinese variants respect locale: 简体 (`zh-Hans`), 台湾 (`zh-Hant-TW`), 香港 (`zh-Hant-HK`).
-- [ ] Japanese strings use polite です／ます form unless Apple’s UI uses dictionary form.
-- [ ] Buttons panel recorder, Application tab, Welcome flow, and Monitor window were sanity-checked in the new/edited locale.
-
----
-
-## 6. Adding a New Language
-
-1. In Xcode, Project ▸ Info ▸ Localizations → add the language.
-2. Ensure Xcode offers to localise both catalogs; tick every checkbox.
-3. Translate *all* keys in `Localizable.xcstrings` and `Main.xcstrings`.
-4. Update external documentation if the language is publicly visible. README
-   variants live at the repo root, and their screenshots live in `assets/readme/`.
-   Non-Chinese README variants currently use English screenshots.
-5. Switch macOS to the new language (System Preferences ▸ Language & Region) and run through:
-   - Welcome / Introduction windows
-   - Preferences tabs (General, Scrolling, Buttons, Mouse, Application, Updates, About)
-   - Buttons recorder, shortcut pop-ups, simulated trackpad switches
-6. Capture screenshots or notes for strings that require layout tweaks (long text, truncation).
-
----
-
-## 7. Handy QA Commands
+## Checks
 
 ```bash
-# Pretty-print a catalog for manual diffing
-jq '.' Mos/Localizable.xcstrings | less
-
-# Validate catalog JSON
+# The catalogs are valid JSON
 python3 -m json.tool Mos/Localizable.xcstrings >/dev/null
 python3 -m json.tool Mos/mul.lproj/Main.xcstrings >/dev/null
 
-# Compare locale coverage between the two catalogs
+# Locales present in each catalog
 python3 - <<'PY'
 import json, pathlib
 for path in ("Mos/Localizable.xcstrings", "Mos/mul.lproj/Main.xcstrings"):
@@ -155,33 +73,4 @@ for path in ("Mos/Localizable.xcstrings", "Mos/mul.lproj/Main.xcstrings"):
                      for lang in row.get("localizations", {})})
     print(path, ", ".join(locales))
 PY
-
-# Export catalogs for external translators (creates XLIFF)
-xcodebuild -exportLocalizations -project Mos.xcodeproj -localizationPath build/localizations
-
-# Reimport translated XLIFF back into the project
-xcodebuild -importLocalizations -project Mos.xcodeproj -localizationPath build/localizations
 ```
-
----
-
-## 8. Module Reference
-
-- **Shortcuts:** `Shortcut/SystemShortcut.swift` defines identifiers used in menus and the Buttons panel.
-- **Buttons panel:** Strings originate from `Windows/PreferencesWindow/ButtonsView/`, especially `ButtonTableCellView.swift` and `PreferencesButtonsViewController.swift`.
-- **Welcome & Introduction:** See `Windows/WelcomeWindow` and `Windows/IntroductionWindow` for onboarding copy.
-- **Monitor window:** Mixing scroll/button logs relies on keys such as `buttonsLog`, `eventMonitor`, etc. in `Localizable.xcstrings`.
-- **Scrolling tab, Presets & Fast Scrolling popover:** `Windows/PreferencesWindow/ScrollingView/` (`scroll-preset-*`, `scroll-tuning-*`; the slider titles are chosen in code from `scroll-tuning-free-spin-smoothness`, `scroll-tuning-free-spin-speed` and `scroll-tuning-acceleration`).
-- **Mouse tab (Logitech wheel settings):** `Windows/PreferencesWindow/MouseView/` (`mouse-*`). Keep SmartShift, Logi Options+, MX Master and HID++ untranslated.
-- **Gesture Settings popover:** `Windows/PreferencesWindow/ButtonsView/MouseGestureSettingsPopover.swift` (`gesture-*`).
-- `MosTests/PreferencesLocalizationTests.swift` checks that these keys exist in every shipped locale; add new keys of these panels to its list.
-
-When new modules land (e.g. gesture editor, theme manager), append them here so translators know where to look.
-
----
-
-Keeping localisation healthy is part of every feature cycle. Touch the catalog
-as soon as you add UI copy, run the duplicate check before merging, and leave
-notes for community translators whenever the wording carries product context.
-That habit keeps all supported locales launch-ready the moment we ship a new
-build.
