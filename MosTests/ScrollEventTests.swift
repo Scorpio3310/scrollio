@@ -578,171 +578,243 @@ final class ScrollHandoverTests: XCTestCase {
 
 // MARK: - The sideways wheel (thumb wheel)
 
-/// The stepper of the thumb wheel's functions: how the travel of wheel events becomes steps.
+/// The stepper of the thumb wheel's functions: it counts events, not lines (the owner's log of
+/// 2026-11-11: macOS accelerates one event of his MX Master 4 from 0.1 to 12 lines).
 final class ThumbWheelStepperTests: XCTestCase {
 
     private func lines(_ line: Int64, _ fixed: Double, _ point: Double) -> Double {
         return ThumbWheelStepper.lines(lineDelta: line, fixedDelta: fixed, pointDelta: point)
     }
 
-    /// Travel toward "next" of an event with these line deltas (fixed-point = integer).
-    private func travel(_ lines: Double, flipped: Bool = false, speed: Double = 1) -> Double {
-        return ThumbWheelStepper.travel(lineDelta: Int64(lines), fixedDelta: lines, pointDelta: lines * 10, flipped: flipped, speed: speed)
+    /// Travel toward "next" of an event of `lines` (fixed-point = these, integer rounded).
+    private func travel(_ lines: Double, _ function: ThumbWheelFunction, flipped: Bool = false, speed: Double = 1) -> Double {
+        return ThumbWheelStepper.travel(
+            lineDelta: Int64(lines.rounded()), fixedDelta: lines, pointDelta: (lines * 10).rounded(),
+            flipped: flipped, speed: speed, function: function
+        )
+    }
+
+    /// Feeds one event per element (its lines; negative = toward "next"), `gaps[i]` seconds
+    /// before event i (the first at 0; a single gap repeats). Returns the steps of each event.
+    private func run(_ stepper: inout ThumbWheelStepper, _ events: [Double], _ function: ThumbWheelFunction,
+                     gaps: [Double] = [0.05], speed: Double = 1, start: Double = 0) -> [Int] {
+        var time = start
+        var steps: [Int] = []
+        for (index, lines) in events.enumerated() {
+            if index > 0 { time += gaps.count == 1 ? gaps[0] : gaps[index - 1] }
+            steps.append(stepper.feed(travel: travel(lines, function, speed: speed), function: function, at: time))
+        }
+        return steps
+    }
+
+    private func total(_ steps: [Int]) -> Int { return steps.reduce(0, +) }
+
+    /// Where the steps came: the 1-based numbers of the events that stepped.
+    private func stepAt(_ steps: [Int]) -> [Int] {
+        return steps.enumerated().filter { $0.element != 0 }.map { $0.offset + 1 }
+    }
+
+    // MARK: The numbers
+
+    func testNumbers_fromTheOwnersLog() {
+        XCTAssertEqual(ThumbWheelFunction.volume.stepping, ThumbWheelStepping(first: 2, next: 3, accelerates: true, rest: 0.6))
+        XCTAssertEqual(ThumbWheelFunction.zoom.stepping, ThumbWheelStepping(first: 3, next: 5, accelerates: true, rest: 0.6))
+        XCTAssertEqual(ThumbWheelFunction.tabs.stepping, ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.6))
+        XCTAssertEqual(ThumbWheelFunction.desktops.stepping, ThumbWheelStepping(first: 3, next: 12, accelerates: false, rest: 0.3))
+        XCTAssertEqual(ThumbWheelFunction.backForward.stepping, ThumbWheelStepping(first: 3, next: 12, accelerates: false, rest: 0.3))
+        XCTAssertNil(ThumbWheelFunction.scroll.stepping)
+        XCTAssertEqual(ThumbWheelTuning.maxStepsPerEvent, 2)
+        XCTAssertEqual(ThumbWheelTuning.logRollRest, 0.6)
+        XCTAssertEqual(ThumbWheelTuning.pointsPerLine, 10)
     }
 
     // MARK: Travel of one event
 
-    func testLines_fixedPointFirst_thenTheLineDelta_thenPointsOverTen() {
+    func testLines_fixedPointFirst_thenTheLineDelta_thenPointsOverTen_withoutACap() {
         XCTAssertEqual(lines(2, 1.25, 30), 1.25)
         XCTAssertEqual(lines(-2, 0, -30), -2)
         XCTAssertEqual(lines(0, 0, -7), -0.7, accuracy: 1e-12)
         XCTAssertEqual(lines(0, 0, 0), 0)
-        XCTAssertEqual(ThumbWheelTuning.pointsPerLine, 10)
-    }
-
-    func testLines_oneEventCountsForAtMostThreeLines() {
-        XCTAssertEqual(ThumbWheelTuning.maxLinesPerEvent, 3)
-        XCTAssertEqual(lines(12, 12.4, 140), 3)
-        XCTAssertEqual(lines(-9, -9, -95), -3)
-        XCTAssertEqual(lines(0, 0, 400), 3)
+        XCTAssertEqual(lines(12, 12.3, 124), 12.3, "a flick: no cap any more")
         XCTAssertEqual(lines(0, .infinity, 0), 0, "not a number: no travel")
     }
 
-    /// A negative X delta shows what lies to the right: that is "next". The direction rules
-    /// turn it around (once), and the speed multiplies the capped travel.
-    func testTravel_aNegativeXDeltaIsNext_flippedTurnsItAround_speedAfterTheCap() {
-        XCTAssertEqual(travel(-1), 1)
-        XCTAssertEqual(travel(1), -1)
-        XCTAssertEqual(travel(-1, flipped: true), -1)
-        XCTAssertEqual(travel(1, flipped: true), 1)
-        XCTAssertEqual(travel(-10, speed: 2), 6, "3 lines at most, then × 2")
-        XCTAssertEqual(travel(-1, speed: 0.25), 0.25)
-        XCTAssertEqual(travel(-1, speed: 50), 3, "the speed stays inside its range")
+    /// 1 unit up to 2 lines, 1.5 at 6, 2 from 10 lines on; only for a function that accelerates.
+    func testUnits_theAccelerationCurve() {
+        for (lines, expected) in [(0.1, 1.0), (2, 1), (6, 1.5), (10, 2), (12, 2), (-6, 1.5), (4, 1.25)] {
+            XCTAssertEqual(ThumbWheelStepper.units(lines: lines, accelerates: true), expected, accuracy: 1e-12, "\(lines) lines")
+            XCTAssertEqual(ThumbWheelStepper.units(lines: lines, accelerates: false), 1, "\(lines) lines, not accelerating")
+        }
+        XCTAssertEqual(ThumbWheelStepper.units(lines: 0, accelerates: true), 0, "no lines, no travel")
     }
 
-    // MARK: Functions that repeat
+    /// One unit per event, whatever its lines (two at most when the function accelerates);
+    /// a negative X delta is "next", "Swap direction" turns it around; × the speed.
+    func testTravel_unitsPerEvent_direction_speed() {
+        XCTAssertEqual(travel(-0.1, .tabs), 1)
+        XCTAssertEqual(travel(-12, .tabs), 1, "tabs do not accelerate")
+        XCTAssertEqual(travel(-12, .desktops), 1)
+        XCTAssertEqual(travel(-12, .backForward), 1)
+        XCTAssertEqual(travel(-12, .volume), 2)
+        XCTAssertEqual(travel(-6, .zoom), 1.5)
+        XCTAssertEqual(travel(1, .volume), -1, "previous")
+        XCTAssertEqual(travel(1, .volume, flipped: true), 1)
+        XCTAssertEqual(travel(-1, .tabs, speed: 0.25), 0.25)
+        XCTAssertEqual(travel(-1, .tabs, speed: 3), 3)
+        XCTAssertEqual(travel(-12, .volume, speed: 3), 6)
+        XCTAssertEqual(travel(-12, .volume, speed: 50), 6, "the speed stays inside its range")
+        XCTAssertEqual(travel(-3, .scroll), 0, "no steps while the wheel scrolls")
+    }
 
-    func testThresholds_zoomAndVolumeOneLine_tabsTwoLines() {
-        XCTAssertEqual(ThumbWheelFunction.zoom.stepping, .repeating(linesPerStep: 1))
-        XCTAssertEqual(ThumbWheelFunction.volume.stepping, .repeating(linesPerStep: 1))
-        XCTAssertEqual(ThumbWheelFunction.tabs.stepping, .repeating(linesPerStep: 2))
-        XCTAssertEqual(ThumbWheelFunction.desktops.stepping, .oncePerRoll(lines: 1.5))
-        XCTAssertEqual(ThumbWheelFunction.backForward.stepping, .oncePerRoll(lines: 1.5))
-        XCTAssertEqual(ThumbWheelFunction.scroll.stepping, .none)
+    // MARK: First and next
 
-        for function in [ThumbWheelFunction.zoom, .volume] {
-            var stepper = ThumbWheelStepper()
-            XCTAssertEqual(stepper.feed(travel: 1, function: function, at: 0), 1, "\(function)")
-            XCTAssertEqual(stepper.feed(travel: 0.5, function: function, at: 0.05), 0, "\(function)")
-            XCTAssertEqual(stepper.feed(travel: 0.5, function: function, at: 0.1), 1, "\(function)")
-        }
+    func testFirstThenNext() {
         var tabs = ThumbWheelStepper()
-        XCTAssertEqual(tabs.feed(travel: 1, function: .tabs, at: 0), 0)
-        XCTAssertEqual(tabs.feed(travel: 1, function: .tabs, at: 0.05), 1)
-        XCTAssertEqual(tabs.feed(travel: -1, function: .tabs, at: 0.1), 0)
-        XCTAssertEqual(tabs.feed(travel: -1, function: .tabs, at: 0.15), -1, "previous")
+        XCTAssertEqual(stepAt(run(&tabs, Array(repeating: -1, count: 13), .tabs)), [3, 8, 13], "first 3, then every 5")
+        var volume = ThumbWheelStepper()
+        XCTAssertEqual(stepAt(run(&volume, Array(repeating: -1, count: 8), .volume)), [2, 5, 8], "first 2, then every 3")
+        var desktops = ThumbWheelStepper()
+        XCTAssertEqual(stepAt(run(&desktops, Array(repeating: -1, count: 27), .desktops)), [3, 15, 27], "first 3, then every 12")
+        var previous = ThumbWheelStepper()
+        XCTAssertEqual(run(&previous, [1, 1, 1], .tabs), [0, 0, -1], "toward previous")
     }
 
-    func testCarry_theRestGoesTowardTheNextStep() {
+    /// A step uses up its threshold; what is left goes toward the next one.
+    func testAStepUsesUpItsThreshold_theRemainderIsCarried() {
         var stepper = ThumbWheelStepper()
-        XCTAssertEqual(stepper.feed(travel: 0.4, function: .zoom, at: 0), 0)
-        XCTAssertEqual(stepper.feed(travel: 0.4, function: .zoom, at: 0.05), 0)
-        XCTAssertEqual(stepper.feed(travel: 0.4, function: .zoom, at: 0.1), 1)
-        XCTAssertEqual(stepper.carried, 0.2, accuracy: 1e-9)
-        XCTAssertEqual(stepper.feed(travel: 0.8, function: .zoom, at: 0.15), 1)
-        XCTAssertEqual(stepper.carried, 0, accuracy: 1e-9)
+        XCTAssertEqual(stepper.feed(travel: 2.5, function: .volume, at: 0), 1)
+        XCTAssertEqual(stepper.carried, 0.5, accuracy: 1e-12)
+        XCTAssertEqual(stepper.feed(travel: 2.5, function: .volume, at: 0.05), 1, "0.5 + 2.5 reaches the next 3")
+        XCTAssertEqual(stepper.carried, 0, accuracy: 1e-12)
+        XCTAssertEqual(stepper.feed(travel: 1.75, function: .volume, at: 0.1), 0)
+        XCTAssertEqual(stepper.feed(travel: 1.75, function: .volume, at: 0.15), 1)
+        XCTAssertEqual(stepper.carried, 0.5, accuracy: 1e-12)
     }
 
-    /// Tenths of a line do not add up to exactly one in binary: ten of them still make a step.
-    func testCarry_tenthsOfALineAddUpToAStep() {
-        var stepper = ThumbWheelStepper()
-        var steps = 0
-        for index in 0..<10 {
-            steps += stepper.feed(travel: 0.1, function: .zoom, at: Double(index) * 0.01)
-        }
-        XCTAssertEqual(steps, 1)
-        XCTAssertEqual(stepper.carried, 0)
-    }
+    // MARK: Rest
 
-    func testDirectionChange_dropsTheCarriedTravel() {
-        var stepper = ThumbWheelStepper()
-        XCTAssertEqual(stepper.feed(travel: 0.8, function: .zoom, at: 0), 0)
-        // Without the drop: 0.8 − 0.5 − 0.5 = −0.2, no step.
-        XCTAssertEqual(stepper.feed(travel: -0.5, function: .zoom, at: 0.05), 0)
-        XCTAssertEqual(stepper.carried, -0.5, accuracy: 1e-12)
-        XCTAssertEqual(stepper.feed(travel: -0.5, function: .zoom, at: 0.1), -1)
-    }
-
-    func testRest_dropsTheCarriedTravel() {
-        XCTAssertEqual(ThumbWheelTuning.carryRest, 0.3)
-        var stepper = ThumbWheelStepper()
-        XCTAssertEqual(stepper.feed(travel: 0.8, function: .zoom, at: 0), 0)
-        XCTAssertEqual(stepper.feed(travel: 0.5, function: .zoom, at: 0.31), 0, "after a rest it starts from 0")
-        XCTAssertEqual(stepper.feed(travel: 0.4, function: .zoom, at: 0.5), 0)
-        XCTAssertEqual(stepper.feed(travel: 0.2, function: .zoom, at: 0.79), 1, "a shorter pause keeps it: 0.5 + 0.4 + 0.2")
-    }
-
-    /// macOS accelerates a fast turn: one event counts for three lines at most, so one flick
-    /// runs three zoom steps, nine at the highest speed.
-    func testCapPerEvent_oneEventRunsAtMostThreeStepsTimesTheSpeed() {
-        let flick = ThumbWheelStepper.travel(lineDelta: -12, fixedDelta: -12.5, pointDelta: -140, flipped: false, speed: 1)
-        var stepper = ThumbWheelStepper()
-        XCTAssertEqual(stepper.feed(travel: flick, function: .zoom, at: 0), 3)
-        let fastest = ThumbWheelStepper.travel(lineDelta: -12, fixedDelta: -12.5, pointDelta: -140, flipped: false, speed: ThumbWheelSettings.speedRange.upperBound)
-        stepper = ThumbWheelStepper()
-        XCTAssertEqual(stepper.feed(travel: fastest, function: .zoom, at: 0), 9)
-        stepper = ThumbWheelStepper()
-        XCTAssertEqual(stepper.feed(travel: flick, function: .tabs, at: 0), 1)
-        XCTAssertEqual(stepper.carried, 1, accuracy: 1e-12)
-    }
-
-    /// A higher speed takes less of a turn per step.
-    func testSpeed_scalesTheTravel() {
+    func testRest_dropsTheCarry_andMakesTheNextStepAFirstOne() {
         var tabs = ThumbWheelStepper()
-        XCTAssertEqual(tabs.feed(travel: travel(-1, speed: 2), function: .tabs, at: 0), 1, "one line at × 2 is a tab")
-        XCTAssertEqual(tabs.feed(travel: travel(-1, speed: 2), function: .tabs, at: 0.05), 1)
-        var zoom = ThumbWheelStepper()
-        XCTAssertEqual(zoom.feed(travel: travel(-1, speed: 0.5), function: .zoom, at: 0), 0, "one line at × 0.5 is half a step")
-        XCTAssertEqual(zoom.feed(travel: travel(-1, speed: 0.5), function: .zoom, at: 0.05), 1)
+        XCTAssertEqual(run(&tabs, [-1, -1], .tabs), [0, 0])
+        XCTAssertEqual(tabs.feed(travel: 1, function: .tabs, at: 0.05 + 0.61), 0, "the two before were dropped")
+        XCTAssertEqual(tabs.carried, 1)
+
+        var kept = ThumbWheelStepper()
+        XCTAssertEqual(run(&kept, [-1, -1, -1], .tabs, gaps: [0.59]), [0, 0, 1], "a shorter pause keeps the carry")
+
+        var again = ThumbWheelStepper()
+        XCTAssertEqual(stepAt(run(&again, [-1, -1, -1, -1, -1, -1], .tabs, gaps: [0.05, 0.05, 0.7, 0.05, 0.05])), [3, 6],
+                       "after a rest the next step needs 3 again, not 5")
     }
 
-    // MARK: Functions that step once per roll
-
-    func testOncePerRoll_oneStepThenNothingUntilTheWheelRested() {
-        XCTAssertEqual(ThumbWheelTuning.oncePerRollLines, 1.5)
-        XCTAssertEqual(ThumbWheelTuning.rollRest, 0.4)
-        for function in [ThumbWheelFunction.desktops, .backForward] {
-            var stepper = ThumbWheelStepper()
-            XCTAssertEqual(stepper.feed(travel: 1, function: function, at: 0), 0, "\(function)")
-            XCTAssertEqual(stepper.feed(travel: 1, function: function, at: 0.05), 1, "\(function)")
-            XCTAssertEqual(stepper.feed(travel: 3, function: function, at: 0.1), 0, "\(function): the roll goes on")
-            XCTAssertEqual(stepper.feed(travel: -3, function: function, at: 0.2), 0, "\(function): turned back in the same roll")
-            XCTAssertEqual(stepper.feed(travel: 3, function: function, at: 0.55), 0, "\(function): a pause shorter than a rest")
-            XCTAssertEqual(stepper.feed(travel: -1, function: function, at: 0.96), 0, "\(function): rested, a new roll")
-            XCTAssertEqual(stepper.feed(travel: -1, function: function, at: 1.0), -1, "\(function)")
-        }
+    /// Each function has its own rest: 0.3 s for desktops and back / forward (two quick strokes
+    /// are two steps), 0.6 s for the others (a slow roll's gaps reach 0.4 s).
+    func testRest_isPerFunction() {
+        var desktops = ThumbWheelStepper()
+        XCTAssertEqual(run(&desktops, [-1, -1, -1], .desktops, gaps: [0.05, 0.35]), [0, 0, 0], "0.35 s is a rest for desktops")
+        var tabs = ThumbWheelStepper()
+        XCTAssertEqual(run(&tabs, [-1, -1, -1], .tabs, gaps: [0.05, 0.35]), [0, 0, 1], "but not for tabs")
+        var strokes = ThumbWheelStepper()
+        XCTAssertEqual(stepAt(run(&strokes, Array(repeating: -1, count: 6), .backForward, gaps: [0.05, 0.05, 0.31, 0.05, 0.05])), [3, 6],
+                       "a second quick stroke steps again after 3 events")
     }
 
-    // MARK: Changes in the middle of a roll
+    // MARK: Direction
+
+    /// A change of direction drops the carry and makes the next step a first one; the event
+    /// that turned counts its own travel toward the new direction.
+    func testDirectionChange_dropsTheCarry_firstAgain_theTurningEventCounts() {
+        var tabs = ThumbWheelStepper()
+        XCTAssertEqual(run(&tabs, [-1, -1, 1, 1, 1], .tabs), [0, 0, 0, 0, -1])
+        var afterAStep = ThumbWheelStepper()
+        XCTAssertEqual(run(&afterAStep, [-1, -1, -1, -1, 1, 1, 1], .tabs), [0, 0, 1, 0, 0, 0, -1],
+                       "back the other way needs the first 3, not the next 5")
+        XCTAssertEqual(afterAStep.direction, -1)
+    }
+
+    // MARK: Limit per event
+
+    func testAtMostTwoStepsPerEvent_theTravelOfFurtherStepsIsDropped() {
+        var stepper = ThumbWheelStepper()
+        XCTAssertEqual(stepper.feed(travel: 20, function: .volume, at: 0), 2)
+        XCTAssertEqual(stepper.carried, 0, accuracy: 1e-12, "20 − 2 − 3 = 15: five more steps' worth, dropped")
+        XCTAssertEqual(stepper.feed(travel: 1, function: .volume, at: 0.05), 0, "no burst afterwards")
+        XCTAssertEqual(stepper.feed(travel: -13, function: .volume, at: 0.1), -2)
+        XCTAssertEqual(stepper.carried, -2, accuracy: 1e-12, "13 − 2 − 3 = 8: two more steps dropped, 2 carried")
+
+        // The fastest flick at speed 3: never more than 2 steps from one event.
+        var fast = ThumbWheelStepper()
+        let steps = run(&fast, Array(repeating: -12, count: 10), .volume, gaps: [0.015], speed: 3)
+        XCTAssertTrue(steps.allSatisfy { $0 <= 2 }, "\(steps)")
+    }
+
+    // MARK: Speed
+
+    func testSpeed_quarterOneAndThree() {
+        var quarter = ThumbWheelStepper()
+        XCTAssertEqual(stepAt(run(&quarter, Array(repeating: -1, count: 12), .tabs, speed: 0.25)), [12])
+        var one = ThumbWheelStepper()
+        XCTAssertEqual(stepAt(run(&one, Array(repeating: -1, count: 12), .tabs, speed: 1)), [3, 8])
+        var three = ThumbWheelStepper()
+        XCTAssertEqual(stepAt(run(&three, Array(repeating: -1, count: 6), .tabs, speed: 3)), [1, 3, 5, 6],
+                       "3, then 6 − 5, 1 + 3 + 3 − 5, ...")
+    }
+
+    // MARK: Function change
 
     func testAnotherFunction_startsAfresh() {
         var stepper = ThumbWheelStepper()
-        XCTAssertEqual(stepper.feed(travel: 1, function: .tabs, at: 0), 0)
-        // Without the reset the tab's line carried would make this a zoom step.
-        XCTAssertEqual(stepper.feed(travel: 0.5, function: .zoom, at: 0.05), 0)
-        XCTAssertEqual(stepper.function, .zoom)
-
-        stepper = ThumbWheelStepper()
-        XCTAssertEqual(stepper.feed(travel: 2, function: .desktops, at: 0), 1)
-        XCTAssertEqual(stepper.feed(travel: 2, function: .backForward, at: 0.05), 1, "a new function has not stepped in this roll")
+        XCTAssertEqual(run(&stepper, [-1, -1], .tabs), [0, 0])
+        XCTAssertEqual(stepper.feed(travel: 1, function: .desktops, at: 0.1), 0, "the two tabs' units do not count")
+        XCTAssertEqual(stepper.function, .desktops)
+        XCTAssertEqual(stepper.carried, 1)
+        XCTAssertEqual(stepper.feed(travel: 3, function: .scroll, at: 0.15), 0, "scrolling makes no steps")
     }
 
     func testReset_forgetsEverything() {
         var stepper = ThumbWheelStepper()
-        _ = stepper.feed(travel: 2, function: .desktops, at: 0)
-        _ = stepper.feed(travel: 1, function: .desktops, at: 0.05)
+        _ = run(&stepper, [-1, -1, -1, -1], .tabs)
         stepper.reset()
         XCTAssertEqual(stepper, ThumbWheelStepper())
+    }
+
+    // MARK: What the numbers were chosen to give (rolls as in the owner's log)
+
+    func testVolume_slowRoll_flick_longRolling() {
+        var slow = ThumbWheelStepper()
+        let slowRoll = run(&slow, [-0.1, -0.3, -0.5, -1, -0.8, -0.2, -0.6, -1, -0.4], .volume,
+                           gaps: [0.1, 0.2, 0.35, 0.3, 0.15, 0.25, 0.3, 0.2])
+        XCTAssertEqual(total(slowRoll), 3, "a slow roll of 9 events")
+
+        var flick = ThumbWheelStepper()
+        XCTAssertEqual(total(run(&flick, [-8, -9, -10, -11, -12, -12, -11, -10, -9, -8], .volume, gaps: [0.015])), 6,
+                       "a flick of 10 events, not the whole range (16)")
+
+        var long = ThumbWheelStepper()
+        let pattern: [Double] = [-0.5, -2, -5, -9, -3]
+        let rolling = run(&long, (0..<7).flatMap { _ in pattern }, .volume, gaps: [0.05])
+        XCTAssertTrue((11...16).contains(total(rolling)), "35 events of long rolling: \(total(rolling))")
+        XCTAssertTrue(rolling.allSatisfy { abs($0) <= 1 }, "no jumps: one step per event at speed 1")
+    }
+
+    func testTabs_slowRoll_flick() {
+        var five = ThumbWheelStepper()
+        XCTAssertEqual(total(run(&five, Array(repeating: -0.5, count: 5), .tabs, gaps: [0.2])), 1)
+        var nine = ThumbWheelStepper()
+        XCTAssertEqual(total(run(&nine, Array(repeating: -0.5, count: 9), .tabs, gaps: [0.15])), 2)
+        var flick = ThumbWheelStepper()
+        XCTAssertEqual(total(run(&flick, Array(repeating: -12, count: 10), .tabs, gaps: [0.015])), 2)
+    }
+
+    func testDesktops_oneStrokeOneDesktop_fifteenEventsTwo() {
+        for count in [3, 8, 14] {
+            var stroke = ThumbWheelStepper()
+            XCTAssertEqual(total(run(&stroke, Array(repeating: -10, count: count), .desktops, gaps: [0.02])), 1, "\(count) events")
+        }
+        var fifteen = ThumbWheelStepper()
+        XCTAssertEqual(total(run(&fifteen, Array(repeating: -10, count: 15), .desktops, gaps: [0.02])), 2)
+        var two = ThumbWheelStepper()
+        XCTAssertEqual(total(run(&two, Array(repeating: -0.5, count: 2), .desktops)), 0, "less than a stroke")
     }
 }
 
@@ -921,33 +993,36 @@ final class ThumbWheelEngineTests: XCTestCase {
         let rig = Rig()
         let tabs = ThumbWheelSettings(function: .tabs)
         XCTAssertEqual(rig.turn(lines: -1, at: 0, settings: tabs), 0)
-        XCTAssertEqual(rig.turn(lines: -1, at: 0.02, settings: tabs), 1)
+        XCTAssertEqual(rig.turn(lines: -1, at: 0.02, settings: tabs), 0)
+        XCTAssertEqual(rig.turn(lines: -1, at: 0.04, settings: tabs), 1)
         XCTAssertEqual(rig.performed, [], "not inside the callback")
-        rig.advance(to: 500.02)
+        rig.advance(to: 500.04)
         XCTAssertEqual(rig.performed, [Performed(action: .keys(ThumbWheelAction.nextTab), times: 1)])
 
-        // Swapped (or reversed) the same turn is the previous tab.
-        XCTAssertEqual(rig.turn(lines: -2, at: 1, settings: tabs, flipped: true), -1)
-        rig.advance(to: 501)
+        // Swapped the same turn is the previous tab.
+        XCTAssertEqual(rig.turn(lines: -2, at: 1, settings: tabs, flipped: true), 0)
+        XCTAssertEqual(rig.turn(lines: -2, at: 1.02, settings: tabs, flipped: true), 0)
+        XCTAssertEqual(rig.turn(lines: -2, at: 1.04, settings: tabs, flipped: true), -1)
+        rig.advance(to: 501.04)
         XCTAssertEqual(rig.performed.last, Performed(action: .keys(ThumbWheelAction.previousTab), times: 1))
     }
 
     func testSeveralStepsOfOneEvent_runTogether() {
         let rig = Rig()
-        XCTAssertEqual(rig.turn(lines: -3, at: 0, settings: ThumbWheelSettings(function: .volume, speed: 2)), 6)
+        XCTAssertEqual(rig.turn(lines: -12, at: 0, settings: ThumbWheelSettings(function: .volume, speed: 3)), 2)
         rig.advance(to: 500)
-        XCTAssertEqual(rig.performed, [Performed(action: .volume(.up), times: 6)])
+        XCTAssertEqual(rig.performed, [Performed(action: .volume(.up), times: 2)])
     }
 
     /// Scrollio's scroll handling stopped (Pause, sleep, lost access): steps already decided
     /// do not run afterwards.
     func testReset_dropsStepsNotYetRun_andWritesTheOpenRollsLine() {
         let rig = Rig()
-        XCTAssertEqual(rig.turn(lines: -2, at: 0, settings: ThumbWheelSettings(function: .zoom)), 2)
+        XCTAssertEqual(rig.turn(lines: -12, at: 0, settings: ThumbWheelSettings(function: .volume)), 1)
         rig.engine.reset()
         XCTAssertEqual(rig.lines.count, 1, "the roll so far")
         XCTAssertEqual(rig.lines.first?.stepsNext, 0, "decided, but none ran")
-        XCTAssertEqual(rig.lines.first.map(ScrollSystemLog.thumbWheelMessage)?.hasSuffix("zoom x1.00: 0 steps"), true)
+        XCTAssertEqual(rig.lines.first.map(ScrollSystemLog.thumbWheelMessage)?.hasSuffix("volume x1.00, travel 2.0: 0 steps"), true)
         rig.advance(to: 510)
         XCTAssertEqual(rig.performed, [])
         XCTAssertEqual(rig.engine.stepper, ThumbWheelStepper())
@@ -972,9 +1047,9 @@ final class ThumbWheelEngineTests: XCTestCase {
         for index in 0..<5 {
             rig.turn(lines: -1, at: Double(index) * 0.05, settings: tabs, continuous: index == 0)
         }
-        rig.advance(to: 500.2 + ThumbWheelTuning.rollRest - 0.01)
+        rig.advance(to: 500.2 + ThumbWheelTuning.logRollRest - 0.01)
         XCTAssertEqual(rig.lines.count, 0, "not before the wheel rested")
-        rig.advance(to: 500.2 + ThumbWheelTuning.rollRest)
+        rig.advance(to: 500.2 + ThumbWheelTuning.logRollRest)
         let roll = try XCTUnwrap(rig.lines.first)
         XCTAssertEqual(rig.lines.count, 1)
         XCTAssertEqual(roll.events, 5)
@@ -984,14 +1059,14 @@ final class ThumbWheelEngineTests: XCTestCase {
         XCTAssertEqual(roll.largestPoints, 10)
         XCTAssertEqual(roll.largestFixed, 1)
         XCTAssertEqual(roll.continuousEvents, 1)
-        XCTAssertEqual(roll.stepsNext, 2, "the steps that ran")
+        XCTAssertEqual(roll.stepsNext, 1, "the step that ran: the third event")
         XCTAssertEqual(roll.stepsPrevious, 0)
         XCTAssertEqual(roll.function, .tabs)
         XCTAssertEqual(roll.lastEventAt - roll.startedAt, 0.2, accuracy: 1e-6)
         XCTAssertEqual(roll.longestGap, 0.05, accuracy: 1e-6)
         XCTAssertEqual(
             ScrollSystemLog.thumbWheelMessage(for: roll),
-            "thumb wheel: 5 events in 200 ms (longest gap 50 ms), lines -5, fixed -5.00 (largest 1.00), points -50 (largest 10), 0 direction changes, partly continuous (1 of 5), switch tabs x1.00: 2 steps next"
+            "thumb wheel: 5 events in 200 ms (longest gap 50 ms), lines -5, fixed -5.00 (largest 1.00), points -50 (largest 10), 0 direction changes, partly continuous (1 of 5), switch tabs x1.00, travel 5.0: 1 step next"
         )
         XCTAssertFalse(rig.hasPendingWork, "no timer while the wheel is still")
         XCTAssertNil(rig.engine.roll)
@@ -1025,12 +1100,13 @@ final class ThumbWheelEngineTests: XCTestCase {
         let rig = Rig()
         rig.turn(lines: -1, at: 0, settings: ThumbWheelSettings(function: .tabs))
         rig.turn(lines: -1, at: 0.05, settings: ThumbWheelSettings(function: .tabs))
-        rig.turn(lines: -1, at: 0.1, settings: ThumbWheelSettings(function: .zoom))
+        rig.turn(lines: -1, at: 0.1, settings: ThumbWheelSettings(function: .tabs))
+        rig.turn(lines: -1, at: 0.15, settings: ThumbWheelSettings(function: .zoom))
         XCTAssertEqual(rig.lines.count, 0, "nothing written inside the callback")
-        rig.advance(to: 500.1)
+        rig.advance(to: 500.15)
         XCTAssertEqual(rig.lines.map(\.function), [.tabs])
-        XCTAssertEqual(rig.lines.first?.events, 2)
-        rig.turn(lines: -1, at: 0.15, settings: ThumbWheelSettings(function: .zoom, speed: 2))
+        XCTAssertEqual(rig.lines.first?.events, 3)
+        rig.turn(lines: -1, at: 0.2, settings: ThumbWheelSettings(function: .zoom, speed: 2))
         rig.advance(to: 510)
         XCTAssertEqual(rig.lines.map(\.function), [.tabs, .zoom, .zoom])
         XCTAssertEqual(rig.lines.map(\.speed), [1, 1, 2])
@@ -1038,30 +1114,30 @@ final class ThumbWheelEngineTests: XCTestCase {
         XCTAssertFalse(rig.hasPendingWork)
     }
 
-    /// What the tuning is read from: the largest fixed-point delta (the cap applies to it),
-    /// the longest gap (the rests depend on it), how often the wheel turned back (the sums
-    /// cancel out then), and the steps that ran in each direction.
-    func testLog_gapsTurnsBackAndTheStepsOfEachDirection() throws {
+    /// What the tuning is read from: the largest fixed-point delta (the acceleration depends on
+    /// it), the longest gap (the rests depend on it), how often the wheel turned back (the sums
+    /// cancel out then), the travel in units, and the steps that ran in each direction.
+    func testLog_gapsTurnsBackTravelAndTheStepsOfEachDirection() throws {
         let rig = Rig()
-        let zoom = ThumbWheelSettings(function: .zoom)
-        rig.turn(lines: -1, at: 0, settings: zoom, fixed: -1.25)
-        rig.turn(lines: -1, at: 0.03, settings: zoom)
-        rig.turn(lines: 1, at: 0.15, settings: zoom, fixed: 2.5)
-        rig.turn(lines: 1, at: 0.2, settings: zoom)
-        rig.turn(lines: -2, at: 0.25, settings: zoom)
+        let volume = ThumbWheelSettings(function: .volume)
+        rig.turn(lines: -1, at: 0, settings: volume, fixed: -1.25)
+        rig.turn(lines: -1, at: 0.03, settings: volume)
+        rig.turn(lines: 1, at: 0.15, settings: volume, fixed: 2.5)
+        rig.turn(lines: 1, at: 0.2, settings: volume)
+        rig.turn(lines: -2, at: 0.25, settings: volume)
         rig.advance(to: 510)
         let roll = try XCTUnwrap(rig.lines.first)
         XCTAssertEqual(rig.lines.count, 1)
         XCTAssertEqual(roll.directionChanges, 2)
         XCTAssertEqual(roll.longestGap, 0.12, accuracy: 1e-6)
         XCTAssertEqual(roll.largestFixed, 2.5)
-        XCTAssertEqual(roll.stepsNext, 4, "1.25, then 1 with the rest, later 2 toward next")
-        XCTAssertEqual(roll.stepsPrevious, 3, "2.5, then 1 with the rest toward previous")
-        XCTAssertEqual(rig.performed.map(\.action), [.zoomIn, .zoomIn, .zoomOut, .zoomOut, .zoomIn])
-        XCTAssertEqual(rig.performed.map(\.times), [1, 1, 2, 1, 2])
+        XCTAssertEqual(roll.travel, 5.0625, accuracy: 1e-9, "1 + 1 + 1.0625 (2.5 lines) + 1 + 1")
+        XCTAssertEqual(roll.stepsNext, 1, "two units toward next")
+        XCTAssertEqual(roll.stepsPrevious, 1, "turned: two more units toward previous; the last turn is one unit")
+        XCTAssertEqual(rig.performed.map(\.action), [.volume(.up), .volume(.down)])
         XCTAssertEqual(
             ScrollSystemLog.thumbWheelMessage(for: roll),
-            "thumb wheel: 5 events in 250 ms (longest gap 120 ms), lines -2, fixed -0.75 (largest 2.50), points -20 (largest 20), 2 direction changes, not continuous, zoom x1.00: 4 steps next, 3 previous"
+            "thumb wheel: 5 events in 250 ms (longest gap 120 ms), lines -2, fixed -0.75 (largest 2.50), points -20 (largest 20), 2 direction changes, not continuous, volume x1.00, travel 5.1: 1 step next, 1 previous"
         )
     }
 
@@ -1092,7 +1168,7 @@ final class ThumbWheelEngineTests: XCTestCase {
             for index in 0..<3 {
                 rig.turn(lines: -1, at: Double(index) * 0.05, settings: .default, timestampOffset: offset)
             }
-            rig.advance(to: 500.1 + ThumbWheelTuning.rollRest)
+            rig.advance(to: 500.1 + ThumbWheelTuning.logRollRest)
             XCTAssertEqual(rig.lines.map(\.events), [3], "offset \(offset)")
             XCTAssertEqual((rig.lines.first?.lastEventAt ?? 0) - (rig.lines.first?.startedAt ?? 0), 0.1, accuracy: 1e-6, "the events' own times")
             XCTAssertFalse(rig.hasPendingWork, "offset \(offset)")
@@ -1201,6 +1277,11 @@ final class ThumbWheelScrollTapTests: XCTestCase {
     @discardableResult
     private func tap(_ event: CGEvent) -> Unmanaged<CGEvent>? {
         return ScrollCore.shared.scrollEventCallBack(CGEventTapProxy(bitPattern: 1)!, .scrollWheel, event, nil)
+    }
+
+    /// The wheel rests (longer than any function's rest): the next turn starts afresh.
+    private func rest() {
+        rig.advance(to: rig.now + 1)
     }
 
     /// Whether the tap lets the event go on (false: swallowed).
@@ -1336,6 +1417,7 @@ final class ThumbWheelScrollTapTests: XCTestCase {
 
         XCTAssertFalse(goesOn(try sideways(-1)))
         XCTAssertFalse(goesOn(try sideways(-1)))
+        XCTAssertFalse(goesOn(try sideways(-1)))
 
         XCTAssertEqual(inputs.count, 0, "no glide starts or changes")
         XCTAssertEqual(ScrollCore.shared.handover.state, .glide, "the trackpad's glide goes on")
@@ -1347,21 +1429,25 @@ final class ThumbWheelScrollTapTests: XCTestCase {
     /// The function does not depend on "Smooth scrolling", the allowlist or the reverse rule's
     /// absence: every sideways event is swallowed. The direction follows the reverse rule.
     func testAFunction_doesNotDependOnSmoothingTheAllowlistOrReverse() throws {
-        Options.shared.thumbWheel = ThumbWheelSettings(function: .zoom)
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .volume)
         // "Reverse wheel direction" on: it applies to an app Scrollio handles, not to one
         // outside the allowlist; a function's direction must not change between them.
+        // Each turn is one flick (two units: the volume's first step), after a rest.
         Options.shared.scroll.reverse = true
         Options.shared.scroll.smooth = false
-        XCTAssertFalse(goesOn(try sideways(-1)), "smoothing off")
+        XCTAssertFalse(goesOn(try sideways(-12)), "smoothing off")
+        rest()
         Options.shared.application.allowlist = true
-        XCTAssertFalse(goesOn(try sideways(-1)), "outside the allowlist: no reverse rule")
+        XCTAssertFalse(goesOn(try sideways(-12)), "outside the allowlist: no reverse rule")
+        rest()
         Options.shared.application.allowlist = false
         Options.shared.scroll.smooth = true
-        XCTAssertFalse(goesOn(try sideways(-1)), "smoothing on, the global reverse rule")
+        XCTAssertFalse(goesOn(try sideways(-12)), "smoothing on, the global reverse rule")
+        rest()
         Options.shared.scroll.reverse = false
-        XCTAssertFalse(goesOn(try sideways(-1)), "no reverse rule")
+        XCTAssertFalse(goesOn(try sideways(-12)), "no reverse rule")
         rig.advance(to: rig.now)
-        XCTAssertEqual(rig.performed.map(\.action), [.zoomIn, .zoomIn, .zoomIn, .zoomIn])
+        XCTAssertEqual(rig.performed.map(\.action), [.volume(.up), .volume(.up), .volume(.up), .volume(.up)])
         XCTAssertEqual(inputs.count, 0)
     }
 
@@ -1398,9 +1484,10 @@ final class ThumbWheelScrollTapTests: XCTestCase {
         Options.shared.scroll.reverse = true
         Options.shared.scroll.reverseHorizontal = true
         Options.shared.application.allowlist = false
-        XCTAssertFalse(goesOn(try sideways(-1)), "an app Scrollio handles")
+        XCTAssertFalse(goesOn(try sideways(-12)), "an app Scrollio handles")
+        rest()
         Options.shared.application.allowlist = true
-        XCTAssertFalse(goesOn(try sideways(-1)), "the same turn over an app outside the allowlist")
+        XCTAssertFalse(goesOn(try sideways(-12)), "the same turn over an app outside the allowlist")
         rig.advance(to: rig.now)
         XCTAssertEqual(rig.performed.count, 2)
         XCTAssertEqual(rig.performed.first?.action, rig.performed.last?.action,
@@ -1412,24 +1499,26 @@ final class ThumbWheelScrollTapTests: XCTestCase {
     /// Scrollio's own "scroll sideways" key does not stop the thumb wheel's function: the main
     /// wheel's events are vertical at the tap, the thumb wheel's stay sideways events.
     func testScrollioHoldKey_leavesTheThumbWheelsFunctionAlone() throws {
-        Options.shared.thumbWheel = ThumbWheelSettings(function: .tabs)
-        let event = try sideways(-3)
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .volume)
+        let event = try sideways(-12)
         ScrollCore.shared.toggleScroll = true
         let wentOn = goesOn(event)
         ScrollCore.shared.toggleScroll = false
         XCTAssertFalse(wentOn, "swallowed: it runs the function")
         rig.advance(to: rig.now)
-        XCTAssertEqual(rig.performed.map(\.action), [.keys(ThumbWheelAction.nextTab)])
+        XCTAssertEqual(rig.performed.map(\.action), [.volume(.up)])
     }
 
     /// "Swap direction" turns a function around; "Reverse wheel direction" does not.
     func testAFunction_swapTurnsItsDirectionAround() throws {
         Options.shared.thumbWheel = ThumbWheelSettings(function: .volume)
-        XCTAssertFalse(goesOn(try sideways(-1)))
+        XCTAssertFalse(goesOn(try sideways(-12)))
+        rest()
         Options.shared.thumbWheel.swapsDirection = true
-        XCTAssertFalse(goesOn(try sideways(-1)))
+        XCTAssertFalse(goesOn(try sideways(-12)))
+        rest()
         Options.shared.scroll.reverse = true
-        XCTAssertFalse(goesOn(try sideways(-1)))
+        XCTAssertFalse(goesOn(try sideways(-12)))
         rig.advance(to: rig.now)
         XCTAssertEqual(rig.performed.map(\.action), [.volume(.up), .volume(.down), .volume(.down)])
     }
@@ -1437,8 +1526,8 @@ final class ThumbWheelScrollTapTests: XCTestCase {
     /// Pause, sleep or lost access (`disable()`): steps decided before it do not run after
     /// it, and the log line counts none.
     func testStop_dropsTheStepsDecidedBeforeIt() throws {
-        Options.shared.thumbWheel = ThumbWheelSettings(function: .zoom)
-        XCTAssertFalse(goesOn(try sideways(-2)))
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .volume)
+        XCTAssertFalse(goesOn(try sideways(-12)))
         ScrollCore.shared.isActive = true   // as after enable(); no event tap is created here
         ScrollCore.shared.disable()
         XCTAssertFalse(ScrollCore.shared.isActive)
@@ -1545,8 +1634,9 @@ final class ThumbWheelScrollTapTests: XCTestCase {
         XCTAssertEqual(xFields(swapped), before, "and back by Swap direction")
 
         Options.shared.thumbWheel = ThumbWheelSettings(function: .volume)
-        XCTAssertFalse(goesOn(try sideways(-1, targetPID: ownPID)), "over the app")
-        XCTAssertFalse(goesOn(try sideways(-1)), "over no app")
+        XCTAssertFalse(goesOn(try sideways(-12, targetPID: ownPID)), "over the app")
+        rest()
+        XCTAssertFalse(goesOn(try sideways(-12)), "over no app")
         rig.advance(to: rig.now)
         XCTAssertEqual(rig.performed.map(\.action), [.volume(.up), .volume(.up)])
     }

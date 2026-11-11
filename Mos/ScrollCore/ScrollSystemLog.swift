@@ -178,7 +178,7 @@ enum ScrollSystemLog {
     // MARK: - The sideways wheel (ThumbWheelEngine)
 
     /// What one roll of the sideways wheel (the thumb wheel) added up to: from its first event
-    /// until the wheel rested (`ThumbWheelTuning.rollRest`), or `ThumbWheelTuning.logInterval`
+    /// until the wheel rested (`ThumbWheelTuning.logRollRest`), or `ThumbWheelTuning.logInterval`
     /// of a longer roll. Times are the events' own. The deltas are those the events arrived
     /// with, before "Reverse wheel direction" and "Swap direction": the log is how we learn
     /// what a wheel sends, and what the tuning numbers are read from.
@@ -207,6 +207,9 @@ enum ScrollSystemLog {
         var largestPoints = 0.0
         /// The longest time between two events of the roll (s).
         var longestGap: TimeInterval = 0
+        /// The stepper's travel, in units after acceleration and speed, either direction
+        /// (0 while the wheel scrolls).
+        var travel = 0.0
         /// How often the wheel turned the other way (the sums cancel out then).
         var directionChanges = 0
         /// The sign of the last event that moved (−1, 0 before any, +1).
@@ -230,10 +233,12 @@ enum ScrollSystemLog {
         }
 
         /// - Parameters:
-        ///   - time: the event's own time; `seenAt`: the clock when the callback saw it.
-        mutating func add(_ event: ThumbWheelEvent, at time: TimeInterval, seenAt: TimeInterval? = nil) {
+        ///   - travel: the event's travel in units (signed or not); `time`: its own time;
+        ///     `seenAt`: the clock when the callback saw it.
+        mutating func add(_ event: ThumbWheelEvent, travel: Double = 0, at time: TimeInterval, seenAt: TimeInterval? = nil) {
             if events > 0 { longestGap = max(longestGap, time - lastEventAt) }
             events += 1
+            if travel.isFinite { self.travel += travel.magnitude }
             if event.isContinuous { continuousEvents += 1 }
             lines = lines &+ event.lineDelta
             if event.fixedDelta.isFinite {
@@ -262,13 +267,13 @@ enum ScrollSystemLog {
 
         /// The wheel has rested before an event at `time` (its own time): the roll is over.
         func hasRested(at time: TimeInterval) -> Bool {
-            return time >= lastEventAt + ThumbWheelTuning.rollRest
+            return time >= lastEventAt + ThumbWheelTuning.logRollRest
         }
 
         /// When its line is due, on the engine's clock: once no event came for a rest, or once
         /// the roll has gone on for `logInterval`, whichever comes first.
         var lineDueAt: TimeInterval {
-            return min(lastSeenAt + ThumbWheelTuning.rollRest, firstSeenAt + ThumbWheelTuning.logInterval)
+            return min(lastSeenAt + ThumbWheelTuning.logRollRest, firstSeenAt + ThumbWheelTuning.logInterval)
         }
 
         func matches(_ settings: ThumbWheelSettings) -> Bool {
@@ -277,7 +282,7 @@ enum ScrollSystemLog {
     }
 
     /// One line per roll, for example
-    /// `thumb wheel: 14 events in 620 ms (longest gap 85 ms), lines -9, fixed -9.40 (largest 1.25), points -212 (largest 31), 1 direction change, not continuous, switch tabs x1.00: 3 steps next, 1 previous`.
+    /// `thumb wheel: 14 events in 620 ms (longest gap 85 ms), lines -9, fixed -9.40 (largest 1.25), points -212 (largest 31), 1 direction change, not continuous, switch tabs x1.00, travel 14.0: 3 steps next, 1 previous`.
     static func thumbWheelMessage(for roll: ThumbWheelRoll) -> String {
         let continuity: String
         if roll.continuousEvents == 0 {
@@ -299,7 +304,7 @@ enum ScrollSystemLog {
             steps = "\(next) \(next == 1 ? "step" : "steps") next, \(previous) previous"
         }
         return String(
-            format: "thumb wheel: %ld %@ in %.0f ms (longest gap %.0f ms), lines %lld, fixed %.2f (largest %.2f), points %.0f (largest %.0f), %ld %@, %@, %@ x%.2f%@: %@",
+            format: "thumb wheel: %ld %@ in %.0f ms (longest gap %.0f ms), lines %lld, fixed %.2f (largest %.2f), points %.0f (largest %.0f), %ld %@, %@, %@ x%.2f%@, travel %.1f: %@",
             roll.events, roll.events == 1 ? "event" : "events",
             max(0, roll.lastEventAt - roll.startedAt) * 1000,
             max(0, roll.longestGap) * 1000,
@@ -307,6 +312,7 @@ enum ScrollSystemLog {
             roll.directionChanges, roll.directionChanges == 1 ? "direction change" : "direction changes",
             continuity,
             roll.function.logName, roll.speed, roll.swapsDirection ? " swapped" : "",
+            roll.travel,
             steps
         )
     }
