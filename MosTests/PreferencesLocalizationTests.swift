@@ -61,6 +61,10 @@ final class PreferencesLocalizationTests: XCTestCase {
         "mouse-gesture-haptics", "mouse-gesture-haptics-hint", "mouse-gesture-haptics-unavailable",
         // About
         "about-tab-title", "about-app-name", "about-version", "about-credit", "about-welcome-guide",
+        "about-welcome-guide-open", "about-welcome-guide-hint",
+        // General pane
+        "general-launch-at-login", "general-launch-at-login-hint",
+        "general-hide-menu-bar-icon", "general-hide-menu-bar-icon-hint",
         // Window
         "preferences-sidebar",
         // Main menu

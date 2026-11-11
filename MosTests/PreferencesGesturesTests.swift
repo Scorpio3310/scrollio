@@ -91,7 +91,6 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(GesturesPreferencesViewController.paneWidth, PreferencesScrollingViewController.paneWidth)
         XCTAssertEqual(controller.view.frame.width, 520)
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
-        XCTAssertTrue(GesturesPreferencesViewController.tabImage().isTemplate)
     }
 
     func testThePaneIsAPreviewAndBoxesTopToBottom() {

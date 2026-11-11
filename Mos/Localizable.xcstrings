@@ -79,17 +79,6 @@
         }
       }
     },
-    "categoryAppSwitching": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "App Switching"
-          }
-        }
-      }
-    },
     "categoryDocumentEditing": {
       "extractionState": "manual",
       "localizations": {
@@ -196,28 +185,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "System"
-          }
-        }
-      }
-    },
-    "categorySystemFunctions": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "System Functions"
-          }
-        }
-      }
-    },
-    "categoryWindowManagement": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Window Management"
           }
         }
       }
@@ -393,17 +360,6 @@
     },
     "Error style": {
       "comment": "Toast debug quick test message"
-    },
-    "Event Monitor": {
-      "extractionState": "stale",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": " Event Monitor"
-          }
-        }
-      }
     },
     "Exceed max, test eviction": {
       "comment": "Toast debug quick test subtitle"
@@ -1055,7 +1011,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Moving left counts as moving right, and the other way round."
+            "value": "Moving left counts as moving right, and the other way around."
           }
         }
       }
@@ -1154,7 +1110,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Behaviour"
+            "value": "Behavior"
           }
         }
       }
@@ -1506,7 +1462,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "How hard you press the thumb panel before it clicks."
+            "value": "How hard you press the thumb panel to click."
           }
         }
       }
@@ -1781,7 +1737,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The mouse itself holds the pointer still and reports the movement. Experimental."
+            "value": "Experimental: the mouse holds the pointer still and reports the movement."
           }
         }
       }
@@ -2452,7 +2408,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pause Smoothing"
+            "value": "Pause smoothing"
           }
         }
       }
@@ -2463,7 +2419,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Fast Scroll"
+            "value": "Scroll faster"
           }
         }
       }
@@ -2474,7 +2430,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Horizontal Scroll"
+            "value": "Scroll sideways"
           }
         }
       }
@@ -2926,18 +2882,6 @@
     "Rapid same message": {
       "comment": "Toast debug quick test subtitle"
     },
-    "Record Custom Key...": {
-      "comment": "Menu item to record a custom hotkey",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Record Custom Key..."
-          }
-        }
-      }
-    },
     "redo": {
       "extractionState": "manual",
       "localizations": {
@@ -3001,17 +2945,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Select All"
-          }
-        }
-      }
-    },
-    "selectAnAction": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Select an action"
           }
         }
       }
@@ -3822,7 +3755,73 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reset to defaults"
+            "value": "Reset to Defaults"
+          }
+        }
+      }
+    },
+    "general-launch-at-login": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open at login"
+          }
+        }
+      }
+    },
+    "general-launch-at-login-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio starts when you log in to your Mac."
+          }
+        }
+      }
+    },
+    "general-hide-menu-bar-icon": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide menu bar icon"
+          }
+        }
+      }
+    },
+    "general-hide-menu-bar-icon-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "While the icon is hidden, open Scrollio again to reach its settings."
+          }
+        }
+      }
+    },
+    "about-welcome-guide-open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open"
+          }
+        }
+      }
+    },
+    "about-welcome-guide-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The introduction from the first launch, with the Accessibility setup."
           }
         }
       }

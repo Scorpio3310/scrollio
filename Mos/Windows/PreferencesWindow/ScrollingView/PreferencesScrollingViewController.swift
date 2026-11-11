@@ -273,7 +273,6 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         let scroll = getTargetApplicationScrollOptions()
         // What only applies while the wheel is smoothed.
         let smoothEditable = editable && scroll.smooth
-        let isTracking = PreferencesForm.isTrackingMouse
 
         // The preview belongs to the tab; the per-app popover stays small.
         previewView.isHidden = currentTargetApplication != nil
@@ -286,13 +285,13 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         feelRow.explanation = ScrollFeel.hint(for: feel)
         feelRow.isEnabled = smoothEditable
 
-        sync(speedRow, .speed, value: scroll.speed, enabled: smoothEditable, isTracking: isTracking)
+        sync(speedRow, .speed, value: scroll.speed, enabled: smoothEditable)
 
         reverseRow.isOn = scroll.reversesWheel
         reverseRow.isEnabled = editable
 
-        sync(glideTimeRow, .glideTime, value: scroll.duration, enabled: smoothEditable, isTracking: isTracking)
-        sync(smallestStepRow, .smallestStep, value: scroll.step, enabled: smoothEditable, isTracking: isTracking)
+        sync(glideTimeRow, .glideTime, value: scroll.duration, enabled: smoothEditable)
+        sync(smallestStepRow, .smallestStep, value: scroll.step, enabled: smoothEditable)
 
         trackpadEventsRow.isOn = scroll.smoothSimTrackpad
         trackpadEventsRow.isEnabled = smoothEditable
@@ -311,16 +310,16 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         updatePreviewScene()
     }
 
-    /// A slider row and its value. A refresh arriving mid-drag must not move the knob. A
-    /// stored value off the slider's grid is shown as it is, not snapped.
+    /// A slider row and its value. A refresh arriving while the user drags this knob must
+    /// not move it; every other knob follows. A stored value off the slider's grid is shown
+    /// as it is, not snapped.
     private func sync(
         _ row: PreferencesSliderRow,
         _ setting: ScrollSliderSetting,
         value: Double,
-        enabled: Bool,
-        isTracking: Bool
+        enabled: Bool
     ) {
-        if !isTracking {
+        if !row.isTracking {
             row.showValue(value)
         }
         row.valueText = setting.text(value)

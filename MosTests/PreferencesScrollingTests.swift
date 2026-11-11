@@ -201,7 +201,7 @@ final class PreferencesScrollingTests: XCTestCase {
     func testTextsOfTheTab() {
         let controller = makeController(advanced: true)
         XCTAssertEqual(controller.advancedButton.title, "Advanced")
-        XCTAssertEqual(controller.resetToDefaultsButton.title, "Reset to defaults")
+        XCTAssertEqual(controller.resetToDefaultsButton.title, "Reset to Defaults")
 
         let shown = allSubviews(of: controller.view).compactMap { ($0 as? NSTextField)?.stringValue }
         let expected = [
@@ -738,6 +738,31 @@ final class PreferencesScrollingTests: XCTestCase {
 
     // MARK: - Preview
 
+    /// A refresh leaves only the knob the user is dragging alone; every other knob shows
+    /// its stored value at once, and the dragged one too once it is let go.
+    func testARefreshLeavesOnlyTheDraggedKnobAlone() {
+        let controller = makeController(advanced: true)
+        let speed = controller.scrollSpeedSlider as! PreferencesSlider
+        speed.beginTracking()
+        drag(speed, to: 8)
+        XCTAssertEqual(Options.shared.scroll.speed, 8)
+
+        Options.shared.scroll.speed = 3
+        Options.shared.scroll.duration = 1.5
+        controller.syncViewWithOptions()
+        XCTAssertEqual(speed.doubleValue, 8, accuracy: 1e-9, "under the pointer")
+        XCTAssertEqual(controller.glideTimeSlider.doubleValue, 1.5, accuracy: 1e-9, "not being dragged")
+
+        // Let go: the slider's last action stores where it was left, and the knob shows it.
+        speed.endTracking()
+        XCTAssertFalse(speed.isTracking)
+        XCTAssertEqual(Options.shared.scroll.speed, 8)
+        XCTAssertEqual(speed.doubleValue, 8, accuracy: 1e-9)
+        Options.shared.scroll.speed = 3
+        controller.syncViewWithOptions()
+        XCTAssertEqual(speed.doubleValue, 3, accuracy: 1e-9)
+    }
+
     func testPreviewFollowsTheOptions() {
         let controller = makeController()
         var expected = ScrollPreviewView.Scene()
@@ -932,7 +957,10 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(container.preferredContentSize.height, tab.view.fittingSize.height + 58, accuracy: 0.5)
         XCTAssertEqual(tab.scrollSpeedSlider.doubleValue, 4.2, accuracy: 1e-9)
         XCTAssertTrue(tab.previewView.isHidden)
-        XCTAssertEqual(container.inheritGlobalSettingCheckBox.state, .off)
+        XCTAssertEqual(container.inheritGlobalSettingSwitch.state, .off)
+        // "Use global settings" is a switch with its title, as in the boxes under it.
+        XCTAssertEqual(container.inheritGlobalSettingSwitch.controlSize, PreferencesGroupedForm.switchControlSize)
+        XCTAssertTrue(allSubviews(of: container.view).contains { ($0 as? NSTextField)?.stringValue == "Use global settings" })
         // The app's header is a box like the settings' boxes.
         let header = try XCTUnwrap(container.view.subviews.compactMap { $0 as? NSBox }.first)
         XCTAssertEqual(header.boxType, .custom)
@@ -956,9 +984,9 @@ final class PreferencesScrollingTests: XCTestCase {
         tab.setAdvancedExpanded(false)
         XCTAssertEqual(container.preferredContentSize, closed)
 
-        // "Inherit" greys the settings out.
-        container.inheritGlobalSettingCheckBox.state = .on
-        container.inheritGlobalSettingClick(container.inheritGlobalSettingCheckBox)
+        // "Use global settings" greys the settings out.
+        container.inheritGlobalSettingSwitch.state = .on
+        container.inheritGlobalSettingClick(container.inheritGlobalSettingSwitch)
         XCTAssertTrue(application.inherit)
         XCTAssertFalse(tab.scrollSpeedSlider.isEnabled)
         XCTAssertEqual(tab.scrollSpeedSlider.doubleValue, 6.3, accuracy: 1e-9, "the global value")

@@ -127,7 +127,6 @@ final class MousePreferencesViewControllerTests: XCTestCase {
     private var savedMouse = LogiMouseSettings.default
     private var savedWheel = LogiWheelSettings.default
     private var devices: [LogiMouseDeviceState] = []
-    private var tracking = false
     private var refreshCount = 0
     private var diagnosticsCount = 0
     private var sampleCount = 0
@@ -139,7 +138,6 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         Options.shared.logiMouse = .default
         Options.shared.logiWheel = .default
         devices = []
-        tracking = false
         refreshCount = 0
         diagnosticsCount = 0
         sampleCount = 0
@@ -162,7 +160,6 @@ final class MousePreferencesViewControllerTests: XCTestCase {
             showDiagnostics: { [weak self] in self?.diagnosticsCount += 1 },
             playHapticSample: { [weak self] in self?.sampleCount += 1 }
         )
-        controller.isTrackingMouse = { [weak self] in self?.tracking ?? false }
         controller.readbackSettleTime = 0
         _ = controller.view
         controller.reloadDevices()
@@ -796,48 +793,59 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         manage()
         Options.shared.logiMouse.hapticsOn = true
         let controller = makeController([Fixtures.mxMaster4(hapticsOn: true)])
+        let strength = controller.strengthSlider as! PreferencesSlider
 
-        tracking = true
-        drag(controller.strengthSlider, to: 60)
-        drag(controller.strengthSlider, to: 75)
+        strength.beginTracking()
+        drag(strength, to: 60)
+        drag(strength, to: 75)
         XCTAssertEqual(sampleCount, 0, "not while it is dragged")
         XCTAssertEqual(Options.shared.logiMouse.hapticStrength, 80, "stored as it moves, tick by tick")
 
-        tracking = false
-        drag(controller.strengthSlider, to: 40)
+        // Let go: one pulse at the strength it was left at.
+        strength.endTracking()
         XCTAssertEqual(sampleCount, 1)
+        XCTAssertEqual(Options.shared.logiMouse.hapticStrength, 80)
+
+        // A move outside a drag (VoiceOver, a click handled at once) is let go at once.
+        drag(strength, to: 40)
+        XCTAssertEqual(sampleCount, 2)
         XCTAssertEqual(Options.shared.logiMouse.hapticStrength, 40)
 
         // An arrow key is a move that is let go at once: one pulse each.
-        let strength = controller.strengthSlider as! PreferencesSlider
         XCTAssertTrue(strength.moveKnob(by: 1))
         XCTAssertEqual(Options.shared.logiMouse.hapticStrength, 60)
-        XCTAssertEqual(sampleCount, 2)
+        XCTAssertEqual(sampleCount, 3)
 
-        // Other sliders play nothing.
-        drag(controller.pressForceSlider, to: 5000)
+        // Other sliders play nothing, dragged or not.
+        let force = controller.pressForceSlider as! PreferencesSlider
+        force.beginTracking()
+        drag(force, to: 5000)
+        force.endTracking()
         drag(controller.firmnessSlider, to: 40)
-        XCTAssertEqual(sampleCount, 2)
+        XCTAssertEqual(sampleCount, 3)
     }
 
     func testAMouseUpdateDuringADragLeavesTheKnobAlone() {
         manage()
         let controller = makeController([Fixtures.mxMaster4()])
+        let sensitivity = controller.sensitivitySlider as! PreferencesSlider
 
-        tracking = true
-        drag(controller.sensitivitySlider, to: 80)
+        // Only the knob under the pointer is left alone; every other one follows the mouse
+        // at once (a refresh used to skip all of them while any mouse button was down).
+        sensitivity.beginTracking()
+        drag(sensitivity, to: 80)
         controller.pressForceSlider.doubleValue = 6187.5
         devices = [Fixtures.mxMaster4(dpi: 1200, pressForce: 4500, sensitivity: 40)]
         NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
-        XCTAssertEqual(controller.sensitivitySlider.doubleValue, 80)
-        XCTAssertEqual(controller.pressForceSlider.doubleValue, 6187.5)
-
-        tracking = false
-        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
-        XCTAssertEqual(controller.sensitivitySlider.doubleValue, 80, "your value")
+        XCTAssertEqual(sensitivity.doubleValue, 80)
         XCTAssertEqual(controller.pressForceSlider.doubleValue, 4818.5, "the tick nearest the mouse's 4500: you never set one")
         XCTAssertEqual(controller.pressForceRow.valueText, MouseText.percent(MousePaneModel.share(of: 4500, in: 4134...6872)))
         XCTAssertEqual(controller.pointerSpeedRow.valueText, "1200 DPI")
+
+        sensitivity.endTracking()
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(sensitivity.doubleValue, 80, "your value")
+        XCTAssertEqual(controller.sensitivityRow.valueText, MouseText.percent(80))
     }
 
     // MARK: - The header lights up the part
@@ -917,12 +925,64 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         defer { window.close() }
         window.contentView = controller.view
         controller.viewWillAppear()
+        controller.viewDidAppear()
 
         XCTAssertTrue(window.makeFirstResponder(controller.firmnessSlider))
         XCTAssertEqual(controller.focusedPart, .wheel)
         XCTAssertTrue(window.makeFirstResponder(nil))
         XCTAssertNil(controller.focusedPart)
         controller.viewDidDisappear()
+    }
+
+    /// Opened from the sidebar the pane is put into the window by the pane host: it has no
+    /// window yet when it is about to appear, only once it has appeared. The focus is
+    /// followed from then on (it used to be set up in viewWillAppear, through no window).
+    func testTheFocusIsFollowedWhenTheSidebarOpensThePane() throws {
+        manage()
+        let controller = makeController([Fixtures.mxMaster4()])
+        let host = PreferencesPaneHostViewController()
+        // A window that is never ordered in: nothing shows and nothing takes the focus.
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: PreferencesWindowLayout.contentWidth, height: 600),
+            styleMask: [.titled], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentViewController = host
+
+        // The order AppKit keeps on screen.
+        controller.viewWillAppear()
+        XCTAssertNil(controller.view.window, "not in the window yet")
+        host.show(controller)
+        XCTAssertTrue(controller.view.window === window)
+        controller.viewDidAppear()
+
+        XCTAssertTrue(window.makeFirstResponder(controller.firmnessSlider))
+        XCTAssertEqual(controller.focusedPart, .wheel)
+        XCTAssertEqual(controller.headerView.emphasis, .wheel)
+        XCTAssertTrue(window.makeFirstResponder(controller.hapticsSwitch))
+        XCTAssertEqual(controller.focusedPart, .thumbPanel)
+
+        // Gone from the screen: no longer followed.
+        controller.viewDidDisappear()
+        XCTAssertTrue(window.makeFirstResponder(controller.pointerSpeedSlider))
+        XCTAssertNil(controller.focusedPart)
+    }
+
+    /// A refresh never leaves a slider empty: not on the first show (the sidebar switches
+    /// panes on a mouse-down, and a refresh used to skip every slider while any button was
+    /// down), and not for a slider other than the one being dragged.
+    func testTheFirstShowFillsEverySlider() {
+        manage()
+        let controller = makeController([Fixtures.mxMaster4()])
+        for row in [controller.pointerSpeedRow!, controller.sensitivityRow!, controller.firmnessRow!, controller.pressForceRow!] {
+            XCTAssertFalse(row.isHidden, row.title)
+            XCTAssertFalse(row.valueText.isEmpty, row.title)
+            XCTAssertFalse(row.isTracking, row.title)
+        }
+        XCTAssertEqual(controller.pointerSpeedRow.valueText, "1000 DPI")
+        // The pointer speed moves through the mouse's DPI steps, not the 0…100 it is made with.
+        XCTAssertNotEqual(controller.pointerSpeedSlider.maxValue, MousePaneModel.percentSliderRange.upperBound)
     }
 
     // MARK: - Header
@@ -1031,7 +1091,8 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         let lines: [(PreferencesGroupRow, Int)] = [
             (controller.managedRow, 2), (controller.pointerSpeedRow, 1), (controller.wheelModeRow, 1),
             (controller.sensitivityRow, 1), (controller.firmnessRow, 1), (controller.hapticsRow, 1),
-            (controller.strengthRow, 1), (controller.pressForceRow, 2),
+            // One line each at 520 pt: no word left alone on a second line.
+            (controller.strengthRow, 1), (controller.pressForceRow, 1),
         ]
         for (row, count) in lines {
             XCTAssertEqual(row.explanationLabel.font?.pointSize, PreferencesForm.hintFontSize, row.title)
@@ -1141,7 +1202,6 @@ final class MousePreferencesRenderTests: XCTestCase {
         func tab(_ devices: [LogiMouseDeviceState]) -> MousePreferencesViewController {
             let controller = MousePreferencesViewController()
             controller.deviceSource = MouseDeviceSource(deviceStates: { devices }, refresh: {}, showDiagnostics: {})
-            controller.isTrackingMouse = { false }
             controller.readbackSettleTime = 0
             _ = controller.view
             controller.reloadDevices()

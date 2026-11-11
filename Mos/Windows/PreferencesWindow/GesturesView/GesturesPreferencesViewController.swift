@@ -229,9 +229,10 @@ final class GesturesPreferencesViewController: NSViewController {
             directionRows[slot.rawValue].isEnabled = presentation.areHorizontalActionsEditable
         }
 
-        // A refresh arriving mid-drag must not snap the knob back. A stored speed between two
-        // ticks shows on the nearer one and stays as stored until the slider is moved.
-        if !PreferencesForm.isTrackingMouse {
+        // A refresh arriving while the user drags the knob must not snap it back. A stored
+        // speed between two ticks shows on the nearer one and stays as stored until the
+        // slider is moved.
+        if !trackingSpeedRow.isTracking {
             trackingSpeedRow.showValue(gesture.trackingSpeed)
         }
         trackingSpeedRow.valueText = MouseGestureTrackingSpeed.text(gesture.trackingSpeed)
@@ -523,32 +524,5 @@ final class GesturesPreferencesViewController: NSViewController {
             label.trailingAnchor.constraint(lessThanOrEqualTo: holder.trailingAnchor, constant: -inset),
         ])
         return holder
-    }
-
-    // MARK: - Toolbar
-
-    /// Toolbar image, the size of the SF.* assets of the storyboard tabs.
-    static func tabImage() -> NSImage {
-        return PreferencesForm.toolbarImage(
-            symbolName: "hand.draw",
-            accessibilityDescription: NSLocalizedString("gestures-tab-title", comment: ""),
-            glyphHeight: 0.72
-        ) { _ in
-            // macOS 10.13-10.15: a swipe, drawn as an arc that ends in an arrowhead.
-            let arc = NSBezierPath()
-            arc.move(to: NSPoint(x: 30, y: 50))
-            arc.curve(to: NSPoint(x: 100, y: 70), controlPoint1: NSPoint(x: 50, y: 95), controlPoint2: NSPoint(x: 80, y: 95))
-            arc.lineWidth = 7
-            arc.lineCapStyle = .round
-            arc.stroke()
-            let head = NSBezierPath()
-            head.move(to: NSPoint(x: 84, y: 62))
-            head.line(to: NSPoint(x: 101, y: 69))
-            head.line(to: NSPoint(x: 104, y: 88))
-            head.lineWidth = 7
-            head.lineCapStyle = .round
-            head.lineJoinStyle = .round
-            head.stroke()
-        }
     }
 }

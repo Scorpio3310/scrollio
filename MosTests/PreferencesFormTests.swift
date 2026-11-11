@@ -108,11 +108,4 @@ final class PreferencesFormTests: XCTestCase {
         // No step: only clamped.
         XCTAssertEqual(PreferencesForm.snapped(0.123, to: 0...1, step: 0), 0.123)
     }
-
-    func testToolbarImageIsATemplateOnTheSharedCanvas() {
-        let image = PreferencesForm.toolbarImage(symbolName: "computermouse", accessibilityDescription: "Mouse") { _ in }
-        XCTAssertEqual(image.size, NSSize(width: 135, height: 135))
-        XCTAssertTrue(image.isTemplate)
-        XCTAssertEqual(image.accessibilityDescription, "Mouse")
-    }
 }
