@@ -1224,9 +1224,13 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         mac.trackingSpeed = 1.2
         let controller = makeController()
         XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 5, "1.2 is nearest the 1.0 stop")
+        mac.trackingSpeed = 5
+        controller.reloadMacPointerSettings()
+        XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 9, "above the scale: the fast end")
+        // A negative value is no speed (`-1` switched acceleration off): the row hides.
         mac.trackingSpeed = -1
         controller.reloadMacPointerSettings()
-        XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 0, "below the scale: the slow end")
+        XCTAssertTrue(controller.trackingSpeedRow.isHidden)
         controller.syncControls()
         XCTAssertEqual(mac.writes, 0, "showing a value never writes it")
     }
@@ -1319,6 +1323,27 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         slider.endTracking()
         XCTAssertEqual(slider.doubleValue, 3, "let go: back where macOS is")
         XCTAssertEqual(mac.trackingSpeed, 0.6875)
+    }
+
+    /// `com.apple.mouse.scaling = -1` (acceleration off, the old way) or a speed that is not
+    /// finite: the speed row hides (no move can write a positive speed and turn acceleration
+    /// back on), acceleration shows off for -1. Nothing is written, also when the pane is
+    /// shown again.
+    func testANegativeTrackingSpeedHidesItsRowAndShowsAccelerationOff() {
+        mac.trackingSpeed = -1
+        mac.pointerAcceleration = true
+        let controller = makeController([Fixtures.mxMaster4()])
+        XCTAssertTrue(controller.trackingSpeedRow.isHidden)
+        XCTAssertFalse(controller.pointerAccelerationRow.isHidden)
+        XCTAssertFalse(controller.pointerAccelerationRow.isOn)
+        controller.reloadMacPointerSettings()
+        controller.viewWillAppear()
+        XCTAssertEqual(mac.writes, 0)
+        mac.trackingSpeed = .nan
+        controller.reloadMacPointerSettings()
+        XCTAssertTrue(controller.trackingSpeedRow.isHidden)
+        XCTAssertTrue(controller.pointerAccelerationRow.isOn)
+        XCTAssertEqual(mac.writes, 0)
     }
 
     /// A value macOS does not give hides its row, and the box once both are hidden; the
@@ -1602,6 +1627,24 @@ final class MacPointerSettingsTests: XCTestCase {
         XCTAssertNil(read(nil, NSNumber(value: true)), "a Boolean is no speed")
         XCTAssertNil(read(nil, "fast"))
         XCTAssertNil(read(nil, nil))
+    }
+
+    /// `com.apple.mouse.scaling = -1` (the old way to switch acceleration off) is no stop of
+    /// the slider: the speed counts as unreadable and acceleration as off; a speed that is
+    /// not finite is unreadable.
+    func testANegativeOrNonFiniteSpeedIsUnreadableAndANegativeOneTurnsAccelerationOff() {
+        typealias State = MacPointerState
+        XCTAssertEqual(State(readSpeed: -1, readAcceleration: true), State(trackingSpeed: nil, pointerAcceleration: false))
+        XCTAssertEqual(State(readSpeed: -1, readAcceleration: nil), State(trackingSpeed: nil, pointerAcceleration: false))
+        XCTAssertEqual(State(readSpeed: -0.5, readAcceleration: true), State(trackingSpeed: nil, pointerAcceleration: false))
+        XCTAssertEqual(State(readSpeed: .nan, readAcceleration: true), State(trackingSpeed: nil, pointerAcceleration: true))
+        XCTAssertEqual(State(readSpeed: .infinity, readAcceleration: false), State(trackingSpeed: nil, pointerAcceleration: false))
+        XCTAssertEqual(State(readSpeed: -.infinity, readAcceleration: true), State(trackingSpeed: nil, pointerAcceleration: false))
+        XCTAssertEqual(State(readSpeed: 0, readAcceleration: true), State(trackingSpeed: 0, pointerAcceleration: true), "0 is the slowest stop")
+        XCTAssertEqual(State(readSpeed: 1.5, readAcceleration: false), State(trackingSpeed: 1.5, pointerAcceleration: false))
+        XCTAssertEqual(State(readSpeed: nil, readAcceleration: nil), State())
+        // In effect as -1.0 in 16.16 fixed point, as macOS applies the stored -1.
+        XCTAssertEqual(MacPointerSystem.trackingSpeed(property: NSNumber(value: -65536), preference: nil), -1)
     }
 
     /// On unless linear tracking is set; on is also the macOS default.
