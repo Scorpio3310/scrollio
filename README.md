@@ -115,6 +115,8 @@ The debug build logs under `com.nikklemenc.Scrollio.debug`. Nothing is logged pe
   page edge bounces as after a trackpad flick, for apps that scroll by the glide's events (the
   Chromium engine: Chrome, Dia, Arc, Electron apps); it says how many touches ("began") the
   app got and how many wheel events went on with a glide instead of beginning a touch.
+  `on (flick, new events: …)`: the same for Safari, whose engine follows the events only when
+  they do not carry the record of the wheel's hardware event.
 - Category `scroll`, at most one line per reason every 3 seconds while wheel events are
   let through unsmoothed, with how many: taken for trackpad events, remote desktop
   (already smoothed), smoothing off for this event (with the switch, scroll key, app
