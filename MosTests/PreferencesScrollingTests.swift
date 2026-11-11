@@ -1051,7 +1051,9 @@ final class PreferencesScrollingTests: XCTestCase {
     func testExplanationsAreShortLinesInTheHintStyle() {
         let controller = makeController(advanced: true)
         controller.view.layoutSubtreeIfNeeded()
-        let oneLine = PreferencesForm.makeHint("X").fittingSize.height
+        let measure = NSTextField(wrappingLabelWithString: "X")
+        measure.font = PreferencesForm.hintFont
+        let oneLine = measure.fittingSize.height
         let keys = [
             "scrolling-smooth-hint", "scrolling-speed-hint", "scrolling-reverse-hint",
             "scrolling-glide-time-hint", "scrolling-step-hint",

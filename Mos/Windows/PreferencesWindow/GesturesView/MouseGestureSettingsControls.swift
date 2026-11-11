@@ -387,21 +387,6 @@ final class MouseGestureSettingsControls: NSObject {
         return NSLocalizedString("gesture-follow-horizontal-value", comment: "")
     }
 
-    /// Width a popup needs for its current title, or for `title` (without an icon).
-    static func fittingWidth(of popup: NSPopUpButton, title: String? = nil) -> CGFloat {
-        guard let title, let titleItem = popup.menu?.items.first else {
-            return popup.cell?.cellSize.width ?? popup.fittingSize.width
-        }
-        let current = (title: titleItem.title, image: titleItem.image)
-        titleItem.title = title
-        titleItem.image = nil
-        defer {
-            titleItem.title = current.title
-            titleItem.image = current.image
-        }
-        return popup.cell?.cellSize.width ?? popup.fittingSize.width
-    }
-
     private func updateTitle(of popup: NSPopUpButton, identifier: String) {
         guard let titleItem = popup.menu?.items.first else { return }
         if let shortcut = SystemShortcut.getShortcut(named: identifier) {

@@ -1169,7 +1169,9 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         manage()
         let controller = makeController([Fixtures.mxMaster4()])
         controller.view.layoutSubtreeIfNeeded()
-        let oneLine = PreferencesForm.makeHint("X").fittingSize.height
+        let measure = NSTextField(wrappingLabelWithString: "X")
+        measure.font = PreferencesForm.hintFont
+        let oneLine = measure.fittingSize.height
         let lines: [(PreferencesGroupRow, Int)] = [
             (controller.managedRow, 2), (controller.pointerSpeedRow, 1), (controller.wheelModeRow, 1),
             (controller.sensitivityRow, 1), (controller.firmnessRow, 1), (controller.hapticsRow, 1),

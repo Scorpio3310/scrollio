@@ -1,50 +1,32 @@
 //
 //  PreferencesForm.swift
 //  Mos
-//  Layout kit for the preference panes that are built in code. It repeats the grid of
-//  the storyboard panes (450 pt wide, 20 pt margins, a right-aligned label column and a
-//  control column that starts at x = 171), so every pane lines up with the others.
+//  What the panes built in code share besides the grouped kit (PreferencesGroupedForm):
+//  the window background, fitting a pane to its content, the hint type, and the column,
+//  separators and headers of the Welcome Guide.
 //
 
 import Cocoa
 
 enum PreferencesForm {
 
-    // MARK: - Grid
+    // MARK: - Metrics
 
-    /// Width of every preferences pane.
+    /// Width of the Welcome Guide's content.
     static let contentWidth: CGFloat = 450
-    /// Between the pane's edges and its content.
-    static let margin: CGFloat = 20
-    /// Right-aligned row titles on the left, controls to their right.
-    static let labelWidth: CGFloat = 136
-    static let columnSpacing: CGFloat = 15
-    /// 259 pt: the control column runs from x = 171 to the right margin.
-    static let controlWidth = contentWidth - 2 * margin - labelWidth - columnSpacing
-    /// Between two rows.
+    /// Between two blocks of the Welcome Guide.
     static let rowSpacing: CGFloat = 17
-    /// Above and below a separator.
-    static let separatorSpacing: CGFloat = 18
-    /// Between a control and the hint under it.
+    /// Between a line and the smaller text under it.
     static let hintSpacing: CGFloat = 6
-    /// Between two options (checkbox + hint) of one row.
-    static let optionSpacing: CGFloat = 12
-    static let sliderWidth: CGFloat = 180
-    static let valueLabelWidth: CGFloat = 44
 
     // MARK: - Type
 
-    /// Size of the secondary text under a control: 11 pt, the small system font, like the
-    /// hints of the storyboard panes. One constant for every pane built in code.
+    /// Size of the secondary text under a control: 11 pt, the small system font. One
+    /// constant for every pane built in code.
     static let hintFontSize: CGFloat = NSFont.smallSystemFontSize
 
     static var hintFont: NSFont {
         return NSFont.systemFont(ofSize: hintFontSize)
-    }
-
-    /// Row titles in the label column.
-    static var labelFont: NSFont {
-        return NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
     }
 
     static var sectionHeaderFont: NSFont {
@@ -65,45 +47,6 @@ enum PreferencesForm {
         return root
     }
 
-    /// The vertical stack that holds a pane's rows, pinned inside `root` with the margins.
-    /// Its width fixes the pane at `contentWidth`.
-    static func installContentStack(in root: NSView) -> NSStackView {
-        let content = NSStackView()
-        content.orientation = .vertical
-        content.alignment = .leading
-        content.spacing = rowSpacing
-        content.detachesHiddenViews = true
-        content.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(content)
-        NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: root.topAnchor, constant: margin),
-            content.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: margin),
-            content.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -margin),
-            content.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -margin),
-            content.widthAnchor.constraint(equalToConstant: contentWidth - 2 * margin),
-        ])
-        return content
-    }
-
-    /// Adds rows, separators and section headers to the content stack, each as wide as the stack.
-    static func add(_ rows: [NSView], to content: NSStackView) {
-        for row in rows {
-            content.addArrangedSubview(row)
-            row.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
-        }
-    }
-
-    /// Gives every separator of the content stack its spacing, above and below.
-    static func applySeparatorSpacing(in content: NSStackView) {
-        let rows = content.arrangedSubviews
-        for (index, row) in rows.enumerated() where (row as? NSBox)?.boxType == .separator {
-            content.setCustomSpacing(separatorSpacing, after: row)
-            if index > 0 {
-                content.setCustomSpacing(separatorSpacing, after: rows[index - 1])
-            }
-        }
-    }
-
     /// Keeps a pane's frame at its content size. In the Preferences window the pane sizes
     /// itself by its constraints: its column grows or shrinks with it and scrolls when
     /// needed, the window keeps its size.
@@ -120,37 +63,9 @@ enum PreferencesForm {
         }
     }
 
-    // MARK: - Rows
+    // MARK: - Pieces
 
-    /// A form row: right-aligned title in the label column, `column` in the control
-    /// column. The caller aligns the title with the column's first control.
-    static func makeRow(title: String, column: NSView) -> (row: NSView, label: NSTextField) {
-        let row = NSView()
-        row.translatesAutoresizingMaskIntoConstraints = false
-
-        let label = NSTextField(labelWithString: title)
-        label.font = labelFont
-        label.textColor = .secondaryLabelColor
-        label.alignment = .right
-        label.lineBreakMode = .byTruncatingTail
-        label.translatesAutoresizingMaskIntoConstraints = false
-
-        row.addSubview(label)
-        row.addSubview(column)
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: row.leadingAnchor),
-            label.widthAnchor.constraint(equalToConstant: labelWidth),
-            label.topAnchor.constraint(greaterThanOrEqualTo: row.topAnchor),
-            label.bottomAnchor.constraint(lessThanOrEqualTo: row.bottomAnchor),
-            column.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: columnSpacing),
-            column.trailingAnchor.constraint(equalTo: row.trailingAnchor),
-            column.topAnchor.constraint(equalTo: row.topAnchor),
-            column.bottomAnchor.constraint(equalTo: row.bottomAnchor),
-        ])
-        return (row, label)
-    }
-
-    /// The control column of a row: controls and hints stacked from the top.
+    /// Lines stacked from the top, `hintSpacing` apart.
     static func makeColumn(_ views: [NSView]) -> NSStackView {
         let column = NSStackView(views: views)
         column.orientation = .vertical
@@ -168,7 +83,7 @@ enum PreferencesForm {
         return box
     }
 
-    /// Title of a group of rows. It starts at the left margin, under a separator.
+    /// Title of a group of lines.
     static func makeSectionHeader(_ title: String) -> NSTextField {
         let label = NSTextField(labelWithString: title)
         label.font = sectionHeaderFont
@@ -180,71 +95,6 @@ enum PreferencesForm {
     }
 
     // MARK: - Controls
-
-    /// Small secondary text under a control, like the descriptions in the storyboard panes.
-    static func makeHint(_ text: String) -> NSTextField {
-        let label = NSTextField(wrappingLabelWithString: text)
-        label.font = hintFont
-        label.textColor = .secondaryLabelColor
-        label.preferredMaxLayoutWidth = controlWidth
-        label.isSelectable = false
-        return label
-    }
-
-    /// Shows `text` in a hint, or hides the hint when there is nothing to say.
-    static func setHint(_ label: NSTextField, _ text: String?) {
-        label.stringValue = text ?? ""
-        label.isHidden = text == nil
-    }
-
-    /// A checkbox whose long title wraps instead of widening the pane.
-    static func makeCheckbox(title: String, target: AnyObject?, action: Selector?) -> NSButton {
-        let checkbox = NSButton(checkboxWithTitle: title, target: target, action: action)
-        fitInControlColumn(checkbox)
-        return checkbox
-    }
-
-    /// Lets a checkbox made elsewhere wrap its title at the width of the control column.
-    static func fitInControlColumn(_ checkbox: NSButton) {
-        checkbox.lineBreakMode = .byWordWrapping
-        checkbox.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        checkbox.translatesAutoresizingMaskIntoConstraints = false
-        checkbox.widthAnchor.constraint(lessThanOrEqualToConstant: controlWidth).isActive = true
-    }
-
-    /// A small continuous slider with its value written to the right of it.
-    /// `widestValue` reserves the room of the value label.
-    static func makeSliderLine(
-        range: ClosedRange<Double>,
-        widestValue: String,
-        target: AnyObject?,
-        action: Selector?,
-        accessibilityLabel: String
-    ) -> (slider: NSSlider, valueLabel: NSTextField, line: NSView) {
-        let slider = NSSlider(
-            value: range.lowerBound,
-            minValue: range.lowerBound,
-            maxValue: range.upperBound,
-            target: target,
-            action: action
-        )
-        slider.controlSize = .small
-        slider.isContinuous = true
-        slider.setAccessibilityLabel(accessibilityLabel)
-        slider.translatesAutoresizingMaskIntoConstraints = false
-        slider.widthAnchor.constraint(equalToConstant: sliderWidth).isActive = true
-
-        let valueLabel = NSTextField(labelWithString: widestValue)
-        valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
-        valueLabel.translatesAutoresizingMaskIntoConstraints = false
-        valueLabel.widthAnchor.constraint(equalToConstant: valueLabelWidth).isActive = true
-
-        let line = NSStackView(views: [slider, valueLabel])
-        line.orientation = .horizontal
-        line.alignment = .centerY
-        line.spacing = 8
-        return (slider, valueLabel, line)
-    }
 
     /// A borderless button that reads as a link: link-coloured text and a pointing hand.
     static func makeLinkButton(title: String, target: AnyObject?, action: Selector?) -> NSButton {

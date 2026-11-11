@@ -248,15 +248,6 @@ enum PreferencesGroupedForm {
         return toggle
     }
 
-    /// Gives a box made elsewhere (a storyboard NSBox) the look of the kit's boxes.
-    static func styleAsGroupBox(_ box: NSBox) {
-        box.boxType = .custom
-        box.titlePosition = .noTitle
-        box.borderWidth = 0
-        box.cornerRadius = boxCornerRadius
-        box.fillColor = boxFillColor
-    }
-
     /// A push button for the footer, such as "Reset to defaults".
     static func makePushButton(title: String, target: AnyObject?, action: Selector?) -> NSButton {
         let button = NSButton(title: title, target: target, action: action)

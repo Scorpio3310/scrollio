@@ -185,15 +185,6 @@ final class PreferencesGroupedFormTests: XCTestCase {
         }
     }
 
-    func testAStoryboardBoxCanTakeTheLookOfTheKit() {
-        let box = NSBox()
-        Form.styleAsGroupBox(box)
-        XCTAssertEqual(box.boxType, .custom)
-        XCTAssertEqual(box.cornerRadius, Form.boxCornerRadius)
-        XCTAssertEqual(box.borderWidth, 0)
-        XCTAssertTrue(box.fillColor === Form.boxFillColor)
-    }
-
     // MARK: - Rows
 
     func testASwitchRowPutsTheSwitchOnTheTitleLineAtTheRightEdge() {
