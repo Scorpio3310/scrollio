@@ -192,11 +192,11 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(controller.reverseRow.title, "Reverse wheel direction")
         XCTAssertEqual(controller.glideTimeRow.title, "Glide time")
         XCTAssertEqual(controller.smallestStepRow.title, "Smallest step")
-        XCTAssertEqual(controller.trackpadEventsRow.title, "Trackpad-style events")
+        XCTAssertEqual(controller.trackpadEventsRow.title, "Trackpad-style events (Beta)")
         XCTAssertEqual(controller.keyRows.map(\.title), ["Scroll faster", "Scroll sideways", "Pause smoothing"])
         XCTAssertEqual(controller.smoothSwitch.accessibilityLabel(), "Smooth scrolling")
         XCTAssertEqual(controller.reverseSwitch.accessibilityLabel(), "Reverse wheel direction")
-        XCTAssertEqual(controller.trackpadEventsSwitch.accessibilityLabel(), "Trackpad-style events")
+        XCTAssertEqual(controller.trackpadEventsSwitch.accessibilityLabel(), "Trackpad-style events (Beta)")
         XCTAssertEqual(controller.glideTimeSlider.accessibilityLabel(), "Glide time")
         XCTAssertEqual(controller.smoothSwitch.accessibilityHelp(), text("scrolling-smooth-hint"))
         for (index, button) in controller.keyBindButtons.enumerated() {
@@ -225,7 +225,7 @@ final class PreferencesScrollingTests: XCTestCase {
         let expected = [
             "Smooth scrolling", "Feel", "Speed", "Slow", "Fast", "Reverse wheel direction",
             "Glide time", "Shorter", "Longer", "Smallest step", "Smaller", "Larger",
-            "Trackpad-style events", "While you hold a key",
+            "Trackpad-style events (Beta)", "While you hold a key",
             "Scroll faster", "Scroll sideways", "Pause smoothing",
             text("scrolling-smooth-hint"), text("scrolling-speed-hint"), text("scrolling-reverse-hint"),
             text("scrolling-glide-time-hint"), text("scrolling-step-hint"), text("scrolling-trackpad-events-hint"),

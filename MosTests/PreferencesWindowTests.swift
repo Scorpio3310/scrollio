@@ -477,8 +477,8 @@ final class PreferencesNamingTests: XCTestCase {
     func testTrackpadStyleEventsWording() throws {
         let scrolling = try XCTUnwrap(instantiate(PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)
         _ = scrolling.view
-        XCTAssertEqual(scrolling.trackpadEventsRow.title, "Trackpad-style events")
-        XCTAssertEqual(scrolling.trackpadEventsSwitch.accessibilityLabel(), "Trackpad-style events")
+        XCTAssertEqual(scrolling.trackpadEventsRow.title, "Trackpad-style events (Beta)")
+        XCTAssertEqual(scrolling.trackpadEventsSwitch.accessibilityLabel(), "Trackpad-style events (Beta)")
     }
 
     func testAnUnboundButtonSaysNoActionEverywhere() {

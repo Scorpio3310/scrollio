@@ -4030,7 +4030,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Trackpad-style events"
+            "value": "Trackpad-style events (Beta)"
           }
         }
       }
