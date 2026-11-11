@@ -1122,7 +1122,7 @@ final class ButtonBindingTests: XCTestCase {
         XCTAssertEqual(cell.actionPopUpButton.menu?.items.first?.title, SystemShortcut.copy.localizedName)
     }
 
-    func testBuildShortcutMenu_includesEscapeAndGestureNavigationInFunctionKeysCategory() {
+    func testBuildShortcutMenu_functionKeysHoldEscapeButNotGestureNavigation() {
         let menu = NSMenu()
         let target = ShortcutMenuTestTarget()
 
@@ -1142,7 +1142,78 @@ final class ButtonBindingTests: XCTestCase {
         } ?? []
 
         XCTAssertTrue(functionItems.contains("escapeKey"))
-        XCTAssertTrue(functionItems.contains("mouseGestureNavigation"))
+        XCTAssertFalse(functionItems.contains("mouseGestureNavigation"))
+    }
+
+    func testBuildShortcutMenu_listsGestureNavigationAtTopLevelNextToOpen() throws {
+        let menu = NSMenu()
+        let target = ShortcutMenuTestTarget()
+
+        ShortcutManager.buildShortcutMenu(
+            into: menu,
+            target: target,
+            action: #selector(ShortcutMenuTestTarget.noop(_:)),
+            showLogiActions: true
+        )
+
+        let gestureIdentifier = SystemShortcut.mouseGestureNavigation.identifier
+        let gestureIndex = try XCTUnwrap(menu.items.firstIndex {
+            ($0.representedObject as? SystemShortcut.Shortcut)?.identifier == gestureIdentifier
+        })
+        let openIndex = try XCTUnwrap(menu.items.firstIndex { ($0.representedObject as? String) == "__open__" })
+        let customIndex = try XCTUnwrap(menu.items.firstIndex { ($0.representedObject as? String) == "__custom__" })
+
+        // One group after the last separator: Gesture Navigation, Open…, Custom….
+        XCTAssertTrue(menu.items[gestureIndex - 1].isSeparatorItem)
+        XCTAssertEqual(openIndex, gestureIndex + 1)
+        XCTAssertEqual(customIndex, gestureIndex + 2)
+        XCTAssertEqual(customIndex, menu.items.count - 1)
+
+        let gestureItem = menu.items[gestureIndex]
+        XCTAssertEqual(gestureItem.title, SystemShortcut.mouseGestureNavigation.localizedName)
+        XCTAssertNil(gestureItem.submenu)
+        XCTAssertTrue(gestureItem.isEnabled)
+        XCTAssertTrue(gestureItem.target === target)
+        XCTAssertEqual(gestureItem.action, #selector(ShortcutMenuTestTarget.noop(_:)))
+        XCTAssertEqual(gestureItem.keyEquivalent, "")
+
+        // It is offered once: no category repeats it.
+        let inSubmenus = menu.items.compactMap(\.submenu).flatMap(\.items).filter {
+            ($0.representedObject as? SystemShortcut.Shortcut)?.identifier == gestureIdentifier
+        }
+        XCTAssertTrue(inSubmenus.isEmpty)
+        XCTAssertFalse(SystemShortcut.shortcutsByCategory.flatMap(\.shortcuts).contains { $0.identifier == gestureIdentifier })
+    }
+
+    func testGestureNavigationKeepsItsIdentifierAndLookup() {
+        XCTAssertEqual(SystemShortcut.mouseGestureNavigation.identifier, "mouseGestureNavigation")
+        XCTAssertEqual(
+            SystemShortcut.getShortcut(named: "mouseGestureNavigation")?.identifier,
+            SystemShortcut.mouseGestureNavigation.identifier
+        )
+    }
+
+    func testSelectingTheTopLevelGestureItem_bindsGestureNavigation() throws {
+        var selected: [String?] = []
+        let cell = makeButtonCell(binding: makeBinding(SystemShortcut.copy))
+        cell.configure(
+            with: makeBinding(SystemShortcut.copy),
+            onShortcutSelected: { selected.append($0?.identifier) },
+            onCustomShortcutRecorded: { _ in },
+            onOpenTargetSelectionRequested: {},
+            onDeleteRequested: {},
+            onGestureSettingsRequested: {}
+        )
+        let menu = try XCTUnwrap(cell.actionPopUpButton.menu)
+        let item = try XCTUnwrap(menu.items.first {
+            ($0.representedObject as? SystemShortcut.Shortcut)?.identifier == SystemShortcut.mouseGestureNavigation.identifier
+        })
+
+        cell.shortcutSelected(item)
+        flushMainQueue()
+
+        XCTAssertEqual(selected, [SystemShortcut.mouseGestureNavigation.identifier])
+        XCTAssertEqual(menu.items.first?.title, SystemShortcut.mouseGestureNavigation.localizedName)
     }
 
     func testPredefinedModifierShortcut_localizedNamesAreSemanticLabels() {

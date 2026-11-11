@@ -5,6 +5,7 @@
 //
 
 import Cocoa
+import UniformTypeIdentifiers
 
 final class OpenTargetConfigPopover: NSObject {
 
@@ -635,12 +636,13 @@ final class FileSlotView: NSView {
     }
 
     private static func placeholderImage() -> NSImage? {
-        if #available(macOS 11.0, *),
-           let symbol = NSImage(systemSymbolName: "arrow.up.forward.app", accessibilityDescription: nil) {
+        // SF Symbols and content-type icons both start with macOS 11.
+        guard #available(macOS 11.0, *) else { return nil }
+        if let symbol = NSImage(systemSymbolName: "arrow.up.forward.app", accessibilityDescription: nil) {
             symbol.isTemplate = true
             return symbol
         }
-        let icon = NSWorkspace.shared.icon(forFileType: "app")
+        let icon = NSWorkspace.shared.icon(for: .applicationBundle)
         icon.size = NSSize(width: 24, height: 24)
         return icon
     }
@@ -770,10 +772,7 @@ final class FileSlotView: NSView {
     }
 
     private var accentColor: NSColor {
-        if #available(macOS 10.14, *) {
-            return NSColor.controlAccentColor
-        }
-        return NSColor.alternateSelectedControlColor
+        return NSColor.controlAccentColor
     }
 
     private func animateScale(to scale: CGFloat) {

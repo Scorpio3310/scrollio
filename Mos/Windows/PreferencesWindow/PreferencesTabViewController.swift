@@ -30,26 +30,52 @@ class PreferencesTabViewController: NSTabViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        insertMouseTab()
+        insertCodeBuiltTabs()
     }
 
-    /// The Mouse tab (Logitech hardware settings) is built in code, so Main.storyboard
-    /// stays as it is. It goes right after Buttons; the storyboard tabs keep their order.
-    private func insertMouseTab() {
-        let identifier = MousePreferencesViewController.tabIdentifier
+    /// Main.storyboard holds General, Scrolling, Buttons and Apps, in that order. The tabs
+    /// built in code are added around them: Gestures and Mouse after Buttons, About last.
+    private func insertCodeBuiltTabs() {
+        let gestures = GesturesPreferencesViewController()
+        insertTab(
+            gestures,
+            identifier: GesturesPreferencesViewController.tabIdentifier,
+            image: GesturesPreferencesViewController.tabImage(),
+            after: PANEL_IDENTIFIER.buttons
+        )
+        let mouse = MousePreferencesViewController()
+        insertTab(
+            mouse,
+            identifier: MousePreferencesViewController.tabIdentifier,
+            image: MousePreferencesViewController.tabImage(),
+            after: GesturesPreferencesViewController.tabIdentifier
+        )
+        let about = AboutPreferencesViewController()
+        insertTab(
+            about,
+            identifier: AboutPreferencesViewController.tabIdentifier,
+            image: AboutPreferencesViewController.tabImage(),
+            after: nil
+        )
+    }
+
+    /// Adds a tab for `controller` after the tab `anchor`, or at the end.
+    private func insertTab(_ controller: NSViewController, identifier: String, image: NSImage?, after anchor: String?) {
         guard !tabViewItems.contains(where: { ($0.identifier as? String) == identifier }) else { return }
-        let controller = MousePreferencesViewController()
         let item = NSTabViewItem(viewController: controller)
         item.identifier = identifier
         item.label = controller.title ?? ""
-        item.image = MousePreferencesViewController.tabImage()
-        let buttonsIndex = tabViewItems.firstIndex { ($0.identifier as? String) == PANEL_IDENTIFIER.buttons }
-        insertTabViewItem(item, at: buttonsIndex.map { $0 + 1 } ?? tabViewItems.count)
+        item.image = image
+        let anchorIndex = anchor.flatMap { anchor in
+            tabViewItems.firstIndex { ($0.identifier as? String) == anchor }
+        }
+        insertTabViewItem(item, at: anchorIndex.map { $0 + 1 } ?? tabViewItems.count)
     }
 
     override func viewWillAppear() {
         super.viewWillAppear()
         removeToolbarFlexibleSpaces()
+        updateWindowTitle()
     }
 
     /// PreferencesWindowController spreads the tabs with flexible spaces. With the Mouse tab
@@ -78,8 +104,19 @@ class PreferencesTabViewController: NSTabViewController {
     }
 
     override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
+        updateWindowTitle()
         // Tab 切换后同步窗口尺寸
         updateWindowSize()
+    }
+
+    /// The window is named after the pane it shows, as in System Settings.
+    func updateWindowTitle() {
+        guard let window = view.window,
+              tabViewItems.indices.contains(selectedTabViewItemIndex) else { return }
+        let label = tabViewItems[selectedTabViewItemIndex].label
+        if !label.isEmpty {
+            window.title = label
+        }
     }
 
     // 更新窗口尺寸以适应当前内容

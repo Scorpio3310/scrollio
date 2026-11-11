@@ -374,10 +374,11 @@ struct SystemShortcut {
     }
 
     /// 按类别分组的快捷键 (有序数组,顺序即菜单显示顺序)
+    /// Gesture Navigation is not a key: the action menu lists it on its own, next to "Open…".
     static let shortcutsByCategory: [(category: String, shortcuts: [Shortcut])] = [
         ("categoryFunctionKeys", [
             missionControl, appExpose, spotlightSys, dictation, doNotDisturb, showDesktop, escapeKey,
-            moveSpaceLeft, moveSpaceRight, mouseGestureNavigation
+            moveSpaceLeft, moveSpaceRight
         ]),
         ("categoryAppsAndWindows", [
             switchApp, switchAppReverse,

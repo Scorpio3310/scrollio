@@ -368,13 +368,13 @@ final class MousePreferencesTabPlacementTests: XCTestCase {
         return (windowController, tabs)
     }
 
-    func testMouseTabSitsRightAfterButtons() {
+    func testMouseTabSitsAfterGestures() {
         let (windowController, tabs) = loadPreferencesWindow()
         defer { windowController.close() }
 
         let identifiers = tabs.tabViewItems.compactMap { $0.identifier as? String }
-        XCTAssertEqual(identifiers, ["general", "scrolling", "buttons", "mouse", "application", "about"])
-        let mouseItem = tabs.tabViewItems[3]
+        XCTAssertEqual(identifiers, ["general", "scrolling", "buttons", "gestures", "mouse", "application", "about"])
+        let mouseItem = tabs.tabViewItems[4]
         XCTAssertTrue(mouseItem.viewController is MousePreferencesViewController)
         XCTAssertNotNil(mouseItem.image)
         XCTAssertFalse(mouseItem.label.isEmpty)
@@ -389,6 +389,6 @@ final class MousePreferencesTabPlacementTests: XCTestCase {
         tabs.removeToolbarFlexibleSpaces()
 
         let toolbarIdentifiers = windowController.window?.toolbar?.items.map { $0.itemIdentifier.rawValue } ?? []
-        XCTAssertEqual(toolbarIdentifiers, ["general", "scrolling", "buttons", "mouse", "application", "about"])
+        XCTAssertEqual(toolbarIdentifiers, ["general", "scrolling", "buttons", "gestures", "mouse", "application", "about"])
     }
 }

@@ -39,6 +39,18 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     private var scrollTuningButtonHeightConstraint: NSLayoutConstraint?
     private var scrollTuningPopover: ScrollTuningSettingsPopover?
     private static let scrollTuningButtonHeight: CGFloat = 24
+    // Preset row: the first row of the global tab, built in code above "Smooth Scrolling"
+    private(set) var presetPicker: ScrollPresetPicker?
+    private(set) var presetDescriptionLabel: NSTextField?
+    private var presetRowViews: [NSView] = []
+    private var presetRowConstraints: [NSLayoutConstraint] = []
+    private var topConstraintWithoutPresetRow: NSLayoutConstraint?
+
+    /// Identifiers for the controls built in code (tests and accessibility tooling).
+    enum Identifier {
+        static let preset = NSUserInterfaceItemIdentifier("scrolling-preset")
+        static let presetDescription = NSUserInterfaceItemIdentifier("scrolling-preset-description")
+    }
     // Constants
     let DefaultConfigForCompare = OPTIONS_SCROLL_DEFAULT()
     private var scrollDurationDescriptionDefaultText: String?
@@ -63,6 +75,8 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         keyRecorder.delegate = self
         // 快速滚动入口
         installScrollTuningButton()
+        // 预设行
+        installPresetRow()
         // 读取设置
         syncViewWithOptions()
     }
@@ -99,6 +113,83 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         ])
         scrollTuningButton = button
         scrollTuningButtonHeightConstraint = height
+    }
+
+    /// Puts the preset popup with its one-line description above "Smooth Scrolling", closed
+    /// off by a separator like the other groups of the tab. The storyboard pins the first row
+    /// to the top; that constraint is swapped for the row's own while the row is shown.
+    private func installPresetRow() {
+        guard let firstControl = scrollSmoothCheckBox,
+              let container = firstControl.superview,
+              let top = container.constraints.first(where: {
+                  ($0.firstItem as? NSView) === firstControl && $0.firstAttribute == .top
+                      && ($0.secondItem as? NSView) === container && $0.secondAttribute == .top
+              }) else { return }
+
+        let title = NSLocalizedString("scroll-tuning-preset-label", comment: "")
+        let picker = ScrollPresetPicker(identifier: Identifier.preset)
+        picker.onChoice = { [weak self] _ in
+            self?.syncViewWithOptions()
+        }
+        let popUp = picker.popUp
+        popUp.setAccessibilityLabel(title)
+
+        let label = NSTextField(labelWithString: title)
+        label.font = PreferencesForm.labelFont
+        label.textColor = .secondaryLabelColor
+        label.alignment = .right
+
+        let description = PreferencesForm.makeHint("")
+        description.identifier = Identifier.presetDescription
+
+        let separator = PreferencesForm.makeSeparator()
+
+        let views: [NSView] = [label, popUp, description, separator]
+        for view in views {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(view)
+        }
+        let margin = PreferencesForm.margin
+        presetRowConstraints = [
+            popUp.topAnchor.constraint(equalTo: container.topAnchor, constant: top.constant),
+            popUp.leadingAnchor.constraint(equalTo: firstControl.leadingAnchor),
+            popUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 150),
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
+            label.trailingAnchor.constraint(equalTo: popUp.leadingAnchor, constant: -PreferencesForm.columnSpacing),
+            label.firstBaselineAnchor.constraint(equalTo: popUp.firstBaselineAnchor),
+            description.topAnchor.constraint(equalTo: popUp.bottomAnchor, constant: PreferencesForm.hintSpacing),
+            description.leadingAnchor.constraint(equalTo: popUp.leadingAnchor),
+            description.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -margin),
+            separator.topAnchor.constraint(equalTo: description.bottomAnchor, constant: PreferencesForm.separatorSpacing),
+            separator.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
+            separator.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -margin),
+            firstControl.topAnchor.constraint(equalTo: separator.bottomAnchor, constant: PreferencesForm.separatorSpacing),
+        ]
+        presetRowViews = views
+        topConstraintWithoutPresetRow = top
+        presetPicker = picker
+        presetDescriptionLabel = description
+        // Shown by the first sync, in the global settings only.
+        views.forEach { $0.isHidden = true }
+    }
+
+    /// Presets write the global settings, so the row is hidden in per-app scroll settings.
+    private func updatePresetRow() {
+        guard let picker = presetPicker, let top = topConstraintWithoutPresetRow else { return }
+        let visible = currentTargetApplication == nil
+        if visible == (presetRowViews.first?.isHidden ?? true) {
+            if visible {
+                top.isActive = false
+                NSLayoutConstraint.activate(presetRowConstraints)
+            } else {
+                NSLayoutConstraint.deactivate(presetRowConstraints)
+                top.isActive = true
+            }
+            presetRowViews.forEach { $0.isHidden = !visible }
+        }
+        if visible {
+            presetDescriptionLabel?.stringValue = picker.sync()
+        }
     }
 
     @objc private func scrollTuningClick(_ sender: NSButton) {
@@ -305,6 +396,8 @@ extension PreferencesScrollingViewController {
         }
         // 快速滚动入口仅在全局配置中显示
         updateScrollTuningButtonVisibility()
+        // 预设行同样仅在全局配置中显示, 并跟随当前数值
+        updatePresetRow()
         // 更新重置按钮状态
         updateResetButtonState()
     }

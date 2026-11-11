@@ -828,6 +828,17 @@
         }
       }
     },
+    "gesture-navigation-menu-tooltip": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold the button and move the mouse up, down, left or right, or just click."
+          }
+        }
+      }
+    },
     "gesture-direction-up": {
       "extractionState": "manual",
       "localizations": {
@@ -955,7 +966,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Follow the hand is experimental: sideways movement slides between desktops with the mouse."
+            "value": "Follow the hand is experimental: moving sideways slides between desktops."
           }
         }
       }
@@ -978,6 +989,105 @@
           "stringUnit": {
             "state": "translated",
             "value": "Desktop follows the hand"
+          }
+        }
+      }
+    },
+    "gesture-mode-label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mode"
+          }
+        }
+      }
+    },
+    "gesture-tracking-speed-label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tracking Speed"
+          }
+        }
+      }
+    },
+    "gesture-tracking-speed-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Follow the hand only. Higher is faster."
+          }
+        }
+      }
+    },
+    "gesture-options-label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Options"
+          }
+        }
+      }
+    },
+    "gestures-tab-title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gestures"
+          }
+        }
+      }
+    },
+    "gestures-actions-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold a Gesture Navigation button and move the mouse. Release without moving to run Click."
+          }
+        }
+      }
+    },
+    "gestures-actions-hint-unbound": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No button is set to Gesture Navigation yet. Choose it as an action in Buttons."
+          }
+        }
+      }
+    },
+    "gestures-logitech-header": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logitech"
+          }
+        }
+      }
+    },
+    "gestures-logitech-row-label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mouse"
           }
         }
       }
@@ -1076,7 +1186,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Live log of the Logitech connection, for troubleshooting."
+            "value": "Live connection log, for troubleshooting."
           }
         }
       }
@@ -1098,7 +1208,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "How firmly the wheel clicks. MX Master 4 and newer."
+            "value": "Click firmness. MX Master 4 and newer."
           }
         }
       }
@@ -1219,7 +1329,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "SmartShift only. Higher values switch to free-spin sooner."
+            "value": "SmartShift only. Higher means free-spin sooner."
           }
         }
       }
@@ -1231,17 +1341,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sensitivity"
-          }
-        }
-      }
-    },
-    "mouse-gesture-label": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gestures"
           }
         }
       }
@@ -1263,7 +1362,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Experimental. The mouse keeps the pointer still itself."
+            "value": "Experimental. The mouse holds the pointer still."
           }
         }
       }
@@ -1308,6 +1407,61 @@
           "stringUnit": {
             "state": "translated",
             "value": "No connected mouse has haptics (MX Master 4)."
+          }
+        }
+      }
+    },
+    "about-tab-title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "About"
+          }
+        }
+      }
+    },
+    "about-app-name": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio"
+          }
+        }
+      }
+    },
+    "about-version": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version %@"
+          }
+        }
+      }
+    },
+    "about-credit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Based on Mos by Caldis · CC BY-NC 4.0 · modified"
+          }
+        }
+      }
+    },
+    "about-welcome-guide": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Welcome Guide"
           }
         }
       }
@@ -1417,7 +1571,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Trackpad-like"
+            "value": "Glide"
           }
         }
       }
@@ -1714,7 +1868,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Disable Key"
+            "value": "Pause Smoothing"
           }
         }
       }
@@ -1725,7 +1879,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Acceleration Key"
+            "value": "Fast Scroll"
           }
         }
       }
@@ -1736,7 +1890,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Conversion Key"
+            "value": "Horizontal Scroll"
           }
         }
       }
@@ -2250,7 +2404,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Simulate Trackpad locks duration"
+            "value": "Trackpad-style events lock the duration"
           }
         }
       }
@@ -2425,7 +2579,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Unbound"
+            "value": "No Action"
           }
         }
       }
