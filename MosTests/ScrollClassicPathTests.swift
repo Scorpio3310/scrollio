@@ -394,3 +394,77 @@ final class ScrollClassicPathTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(NSEvent(cgEvent: phased)).phase, .changed)
     }
 }
+
+// MARK: - The system log
+
+/// The diagnostics the owner reads with `log show` (README, "Diagnostics"): they have to say
+/// what really happened, and cost nothing per event.
+final class ScrollSystemLogTests: XCTestCase {
+
+    override func tearDown() {
+        ScrollSystemLog.passthroughObserverForTests = nil
+        ScrollSystemLog.resetPassthroughForTests()
+        super.tearDown()
+    }
+
+    /// An app with its own Duration: the line used to give the global Duration instead.
+    func testSessionLine_givesTheDurationTheWheelEventsUsed() throws {
+        XCTAssertEqual(Options.shared.scroll.duration, OPTIONS_SCROLL_DEFAULT().duration, "the global Duration is the default")
+        for duration in [2.0, 4.6] {
+            let rig = ScrollClassicRig(duration: duration)
+            rig.wheel(10, at: 0)
+            rig.run(until: 3)
+            let session = try XCTUnwrap(rig.sessions.first)
+            XCTAssertEqual(session.duration, duration, accuracy: 0.005)
+            let line = ScrollSystemLog.message(for: session, endedWith: "MomentumEnd")
+            XCTAssertTrue(line.contains(String(format: "Duration %.2f", duration)), line)
+        }
+    }
+
+    func testDurationForTransition_invertsTheSliderMapping() {
+        for duration in stride(from: 1.0, through: 5.0, by: 0.05) {
+            let transition = OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: duration)
+            XCTAssertEqual(ScrollSystemLog.duration(forTransition: transition), duration, accuracy: 0.005, "\(duration)")
+        }
+    }
+
+    /// Smoothing switched off: the reason used to read "one axis not smoothed", and the
+    /// branch meant for this case could never run.
+    func testWheelEventWithSmoothingOff_isLoggedAsSmoothingOff() throws {
+        let saved = Options.shared.scroll.smooth
+        defer { Options.shared.scroll.smooth = saved }
+        Options.shared.scroll.smooth = false
+        var reasons: [ScrollSystemLog.PassthroughReason] = []
+        ScrollSystemLog.passthroughObserverForTests = { reasons.append($0) }
+        let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 1, wheel2: 0, wheel3: 0))
+        ScrollEvent.isTrackpadCallCount = ScrollEvent.isTrackpadCallSamplingRate - 1
+
+        let result = ScrollCore.shared.scrollEventCallBack(CGEventTapProxy(bitPattern: 1)!, .scrollWheel, event, nil)
+
+        XCTAssertNotNil(result, "the event goes on unchanged")
+        XCTAssertEqual(reasons, [.smoothingOff])
+    }
+
+    func testPassthroughReason_saysWhetherSmoothingWasOnAtAll() {
+        XCTAssertEqual(ScrollCore.passthroughReason(smoothingEnabled: false), .smoothingOff)
+        XCTAssertEqual(ScrollCore.passthroughReason(smoothingEnabled: true), .axisNotSmoothed)
+    }
+
+    /// One line per reason every few seconds, with the count of the events it stands for;
+    /// the detail is only built for a line that is written.
+    func testPassthrough_isRateLimitedPerReasonAndBuildsNothingWhileQuiet() {
+        ScrollSystemLog.resetPassthroughForTests()
+        var built = 0
+        let detail = { () -> String in built += 1; return "x" }
+
+        let first = ScrollSystemLog.notePassthrough(.smoothingOff, now: 100, detail: detail)
+        XCTAssertEqual(first, "wheel events let through unsmoothed (1): smoothing is off for this event (x)")
+        for step in 1...50 {
+            XCTAssertNil(ScrollSystemLog.notePassthrough(.smoothingOff, now: 100 + Double(step) * 0.05, detail: detail))
+        }
+        XCTAssertEqual(built, 1, "no detail string per event")
+        XCTAssertNotNil(ScrollSystemLog.notePassthrough(.trackpad, now: 101), "another reason has its own limit")
+        let next = ScrollSystemLog.notePassthrough(.smoothingOff, now: 100 + ScrollSystemLog.passthroughInterval, detail: detail)
+        XCTAssertEqual(next, "wheel events let through unsmoothed (51): smoothing is off for this event (x)")
+    }
+}
