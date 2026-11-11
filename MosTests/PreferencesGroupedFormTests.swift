@@ -1458,7 +1458,7 @@ final class PreferencesGroupedFormTests: XCTestCase {
         XCTAssertEqual(title.titleLabel.font, PreferencesListGroupTitle.font)
         XCTAssertEqual(title.titleLabel.textColor, .secondaryLabelColor)
         func box(_ view: NSView) -> NSRect {
-            return list.convert(view.bounds, from: view)
+            return list.convert(view.alignmentRect(forFrame: view.frame), from: view.superview)
         }
         XCTAssertEqual(box(title.titleLabel).minX, Form.rowHorizontalInset, accuracy: 0.5)
         XCTAssertEqual(box(title.titleLabel).minY - box(title).minY, PreferencesListGroupTitle.topInset, accuracy: 0.5)

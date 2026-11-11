@@ -215,10 +215,10 @@ final class PreferencesWindowRenderTests: XCTestCase {
         Options.shared.buttons.binding = bindings
         try renderButtons(name: "buttons-bindings", source: plain)
         try renderButtons(name: "buttons-hovered", source: plain) { buttons in
-            self.hover(buttons, rowAt: 0)
+            self.hover(buttons, binding: 0)
         }
         try renderButtons(name: "buttons-selected", source: plain) { buttons in
-            buttons.list.select(buttons.rows[2].id)
+            buttons.list.select(self.rowID(buttons, binding: 2))
         }
         try renderButtons(name: "buttons-recording", source: plain) { buttons in
             buttons.onRecordingStarted(KeyRecorder())
@@ -243,7 +243,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
             deviceName: { "MX Master 4" }, isBusy: { true }, refresh: {}, warnBluetoothButton: { _ in }
         )
         try renderButtons(name: "buttons-problems", source: troubled, scrollKeys: [ScrollHotkey(type: .mouse, code: 5)]) { buttons in
-            buttons.list.select(buttons.rows[1].id)
+            buttons.list.select(self.rowID(buttons, binding: 1))
         }
 
         // A Logitech Back button next to the standard one, and the MX Master 4's thumb
@@ -254,7 +254,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
             binding(2000 + 0x01A0, SystemShortcut.missionControl.identifier),
         ]
         try renderButtons(name: "buttons-twins-thumb-panel", source: plain) { buttons in
-            buttons.list.select(buttons.rows[2].id)
+            buttons.list.select(self.rowID(buttons, binding: 2))
         }
         try renderMouseParts()
         try renderRowPictures()
@@ -274,10 +274,10 @@ final class PreferencesWindowRenderTests: XCTestCase {
         ]
         try renderButtons(name: "buttons-owner", source: plain)
         try renderButtons(name: "buttons-owner-hovered-button-6", source: plain) { buttons in
-            self.hover(buttons, rowAt: 0)
+            self.hover(buttons, binding: 0)
         }
         try renderButtons(name: "buttons-owner-selected-button-5", source: plain) { buttons in
-            buttons.list.select(buttons.rows[1].id)
+            buttons.list.select(self.rowID(buttons, binding: 1))
         }
         try renderButtons(name: "buttons-owner-thats-button-6", source: plain) { buttons in
             self.answer(buttons, code: 6)
@@ -302,7 +302,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
             ),
         ]
         try renderButtons(name: "buttons-every-part", source: plain) { buttons in
-            buttons.list.select(buttons.rows[3].id)
+            buttons.list.select(self.rowID(buttons, binding: 3))
         }
 
         Options.shared.buttons.binding = [
@@ -313,7 +313,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
             binding(2000 + 0x005B, SystemShortcut.navigateBack.identifier),
         ]
         try renderButtons(name: "buttons-numbered-hovered", source: plain) { buttons in
-            self.hover(buttons, rowAt: 3)
+            self.hover(buttons, binding: 3)
         }
     }
 
@@ -334,14 +334,14 @@ final class PreferencesWindowRenderTests: XCTestCase {
         Options.shared.buttons.binding = before
         try renderButtons(name: "button-place-before", source: plain)
         try renderButtons(name: "button-place-before-hovered-button-6", source: plain) { buttons in
-            self.hover(buttons, rowAt: 0)
+            self.hover(buttons, binding: 0)
         }
         try renderButtons(name: "button-place-before-picture-pointed", source: plain) { buttons in
-            buttons.list.select(buttons.rows[1].id)
-            buttons.rows[1].placeButton.isPointerInside = true
-            buttons.rows[0].placeButton.isPointerInside = true
+            buttons.list.select(self.rowID(buttons, binding: 1))
+            self.row(buttons, binding: 1)?.placeButton.isPointerInside = true
+            self.row(buttons, binding: 0)?.placeButton.isPointerInside = true
         }
-        try renderPlaceMenu(name: "button-place-menu-before", rowAt: 0)
+        try renderPlaceMenu(name: "button-place-menu-before", binding: 0)
 
         let after = before.enumerated().map { index, binding -> ButtonBinding in
             let part: PlacedMousePart? = [0: .gestureButton, 1: .thumbPanel][index]
@@ -350,15 +350,15 @@ final class PreferencesWindowRenderTests: XCTestCase {
         Options.shared.buttons.binding = after
         try renderButtons(name: "button-place-after", source: plain)
         try renderButtons(name: "button-place-after-selected-button-6", source: plain) { buttons in
-            buttons.list.select(buttons.rows[0].id)
+            buttons.list.select(self.rowID(buttons, binding: 0))
         }
         try renderButtons(name: "button-place-after-hovered-button-5", source: plain) { buttons in
-            self.hover(buttons, rowAt: 1)
+            self.hover(buttons, binding: 1)
         }
         try renderButtons(name: "button-place-after-thats-button-6", source: plain) { buttons in
             self.answer(buttons, code: 6)
         }
-        try renderPlaceMenu(name: "button-place-menu-after", rowAt: 0)
+        try renderPlaceMenu(name: "button-place-menu-after", binding: 0)
         var gesture = MouseGestureSettings.default
         gesture.mode = .discrete
         Options.shared.gesture = gesture
@@ -374,16 +374,52 @@ final class PreferencesWindowRenderTests: XCTestCase {
         })
     }
 
+    /// Every button of the connected mouse (`buttons-all-<case>-<appearance>.png`): an MX
+    /// Master 4 with nothing set up (every row "Default"), and one pointed at; an MX Master
+    /// 4 with three of its buttons set up and, below, a key and a numbered button, also with
+    /// a "Default" row selected; an MX Master 3S with the same bindings (its thumb panel
+    /// binding is below); no Logitech mouse (the list as it always was).
+    func testRenderButtonsAll() throws {
+        func source(_ name: String?) -> ButtonsDeviceSource {
+            return ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { name }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+        }
+        Options.shared.buttons.binding = []
+        try renderButtons(name: "buttons-all-mx4-default", source: source("MX Master 4"))
+        try renderButtons(name: "buttons-all-mx4-default-hovered", source: source("MX Master 4")) { buttons in
+            if let row = buttons.row(for: ButtonsMousePart.gesture) {
+                self.hover(buttons, row: row)
+            }
+        }
+
+        let controlOption = UInt(CGEventFlags.maskControl.rawValue | CGEventFlags.maskAlternate.rawValue)
+        Options.shared.buttons.binding = [
+            binding(3, SystemShortcut.missionControl.identifier),
+            binding(1000, SystemShortcut.mouseGestureNavigation.identifier),
+            binding(2000 + 0x01A0, SystemShortcut.copy.identifier),
+            ButtonBinding(
+                triggerEvent: RecordedEvent(type: .keyboard, code: 40, modifiers: controlOption, deviceFilter: nil),
+                systemShortcutName: SystemShortcut.screenshotSelection.identifier
+            ),
+            binding(7, SystemShortcut.paste.identifier),
+        ]
+        try renderButtons(name: "buttons-all-mx4-bound", source: source("MX Master 4"))
+        try renderButtons(name: "buttons-all-mx4-bound-default-selected", source: source("MX Master 4")) { buttons in
+            buttons.list.select(ButtonsMousePart.forward)
+        }
+        try renderButtons(name: "buttons-all-mx3s", source: source("MX Master 3S"))
+        try renderButtons(name: "buttons-all-plain", source: source(nil))
+    }
+
     /// The items of "Which Button Is This?" for the row at `index` of the stored bindings,
     /// as the pane builds the menu: drawn by this test in the menu's order (the section
     /// title, a tick, each picture, the title, the mark at the end, the separator), on the
     /// window colour. AppKit's menu itself cannot be drawn off screen.
-    private func renderPlaceMenu(name: String, rowAt index: Int, deviceName: String? = "MX Master 4") throws {
+    private func renderPlaceMenu(name: String, binding index: Int, deviceName: String? = "MX Master 4") throws {
         let buttons = PreferencesButtonsViewController()
         buttons.deviceSource = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { deviceName }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
         buttons.presentPlaceMenu = { _, _ in }
         _ = buttons.view
-        let menu = try XCTUnwrap(buttons.placeMenu(for: buttons.rows[index].binding.id))
+        let menu = try XCTUnwrap(buttons.placeMenu(for: Options.shared.buttons.binding[index].id))
         let width: CGFloat = 300
         let heights = menu.items.map { item -> CGFloat in
             if item.isSeparatorItem { return 11 }
@@ -578,11 +614,26 @@ final class PreferencesWindowRenderTests: XCTestCase {
         })
     }
 
+    /// The row that shows the stored binding at `index` (on an MX Master, a binding of one
+    /// of its buttons is that button's row), and its id.
+    private func row(_ buttons: PreferencesButtonsViewController, binding index: Int) -> ButtonBindingRow? {
+        return buttons.row(for: buttons.rowID(forBinding: Options.shared.buttons.binding[index].id))
+    }
+
+    private func rowID(_ buttons: PreferencesButtonsViewController, binding index: Int) -> AnyHashable {
+        return buttons.rowID(forBinding: Options.shared.buttons.binding[index].id)
+    }
+
+    /// Points at the row of the stored binding at `index`.
+    private func hover(_ buttons: PreferencesButtonsViewController, binding index: Int) {
+        guard let row = row(buttons, binding: index) else { return }
+        hover(buttons, row: row)
+    }
+
     /// Points at a row: a mouse-moved event handed to the list, never posted.
-    private func hover(_ buttons: PreferencesButtonsViewController, rowAt index: Int) {
+    private func hover(_ buttons: PreferencesButtonsViewController, row: ButtonBindingRow) {
         guard let window = buttons.view.window else { return }
         window.contentView?.layoutSubtreeIfNeeded()
-        let row = buttons.rows[index]
         let point = row.convert(NSPoint(x: row.bounds.midX, y: row.bounds.midY), to: nil)
         guard let event = NSEvent.mouseEvent(
             with: .mouseMoved, location: point, modifierFlags: [], timestamp: 0,
@@ -717,7 +768,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
         )
         try renderButtons(name: "buttons-long-names", source: source, scrollKeys: [ScrollHotkey(type: .mouse, code: 4)])
         try renderButtons(name: "buttons-long-names-selected", source: source, scrollKeys: [ScrollHotkey(type: .mouse, code: 4)]) { buttons in
-            buttons.list.select(buttons.rows[0].id)
+            buttons.list.select(self.rowID(buttons, binding: 0))
         }
         Options.shared.buttons.binding = [
             binding(3, SystemShortcut.mouseGestureNavigation.identifier),
@@ -726,7 +777,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
         ]
         let plain = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
         try renderButtons(name: "buttons-selected-not-key", source: plain, key: false) { buttons in
-            buttons.list.select(buttons.rows[1].id)
+            buttons.list.select(self.rowID(buttons, binding: 1))
         }
     }
 
@@ -903,15 +954,15 @@ final class PreferencesWindowRenderTests: XCTestCase {
             let name = mouse.device?.deviceName
             let source = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { name }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
             try renderButtons(name: "pane-buttons-\(mouse.name)", source: source) { buttons in
-                buttons.list.select(buttons.rows[2].id)
+                buttons.list.select(self.rowID(buttons, binding: 2))
             }
             try renderButtons(name: "pane-buttons-\(mouse.name)-thumb-panel", source: source) { buttons in
-                buttons.list.select(buttons.rows[6].id)
+                buttons.list.select(self.rowID(buttons, binding: 6))
             }
             try renderButtons(name: "pane-buttons-\(mouse.name)-thats-gesture-button", source: source) { buttons in
                 self.answer(buttons, code: 1000)
             }
-            try renderPlaceMenu(name: "menu-place-\(mouse.name)", rowAt: 5, deviceName: name)
+            try renderPlaceMenu(name: "menu-place-\(mouse.name)", binding: 5, deviceName: name)
 
             var gesture = MouseGestureSettings.default
             gesture.mode = .discrete
