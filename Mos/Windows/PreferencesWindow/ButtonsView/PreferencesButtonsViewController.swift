@@ -1,579 +1,635 @@
 //
 //  PreferencesButtonsViewController.swift
 //  Mos
-//  按钮绑定配置界面
+//  "Buttons" preferences pane, built in code on the grouped kit like Scrolling, Gestures and
+//  Mouse; the storyboard scene is a shell. On top a card with the mouse whose button the
+//  pane is about lit up, then the list of buttons (PreferencesListBox): each row names the
+//  button, says what its action needs or what is wrong with it, and has the action
+//  pull-down. "+" records a button (or a key with a modifier), "−" removes one, and the
+//  window's Undo puts it back. Only Options.shared.buttons.binding is edited, in the format
+//  it always had.
 //  Created by Claude on 2025/8/10.
 //  Copyright © 2025年 Caldis. All rights reserved.
 //
 
 import Cocoa
 
+/// What the Buttons pane reads from the mice. `live` uses LogiCenter; tests and
+/// screenshots pass fixtures, so no HID device is touched.
+struct ButtonsDeviceSource {
+    /// What the Logitech mouse says about a trigger code (`.normal` for other buttons).
+    var captureStatus: (UInt16) -> ButtonCapturePresentationStatus
+    /// The connected Logitech mouse's name, nil without one.
+    var deviceName: () -> String?
+    /// The mice are being asked about their buttons ("Checking buttons…").
+    var isBusy: () -> Bool
+    /// Asks the mice again about their buttons; answers arrive as notifications.
+    var refresh: () -> Void
+    /// Warns once that a newly added Logitech button may stop working over Bluetooth.
+    var warnBluetoothButton: (UInt16) -> Void
+
+    static let live = ButtonsDeviceSource(
+        captureStatus: { code in
+            guard LogiCenter.shared.isLogiCode(code) else { return .normal }
+            return ButtonCapturePresentationStatus.from(LogiCenter.shared.buttonCaptureDiagnosis(forMosCode: code))
+        },
+        deviceName: { LogiCenter.shared.mouseDeviceStates().first?.deviceName },
+        isBusy: { LogiCenter.shared.isBusy },
+        refresh: { LogiCenter.shared.refreshReportingStates() },
+        warnBluetoothButton: { LogiCenter.shared.showBLEHIDPPUnstableToast(forMosCode: $0) }
+    )
+}
+
 class PreferencesButtonsViewController: NSViewController {
 
-    // MARK: - Recorder
-    private var recorder = KeyRecorder()
+    /// The column of the Preferences window.
+    static let paneWidth: CGFloat = PreferencesWindowLayout.contentWidth
+    static var boxWidth: CGFloat {
+        return PreferencesGroupedForm.boxWidth(paneWidth: paneWidth)
+    }
+    /// A button just recorded stays lit this long, whatever the pointer is over.
+    static let recordedPartDuration: TimeInterval = 1.5
+    /// "Checking buttons…" stays at least this long, so it never only flickers.
+    static let busyMinimumDuration: TimeInterval = 0.5
 
-    // MARK: - Data
-    private var buttonBindings: [ButtonBinding] = []
+    enum Identifier {
+        static let header = NSUserInterfaceItemIdentifier("buttons-header")
+        static let list = NSUserInterfaceItemIdentifier("buttons-list")
+        static let busy = NSUserInterfaceItemIdentifier("buttons-busy")
+    }
+
+    // MARK: - Seams (tests and screenshots replace them)
+
+    var deviceSource: ButtonsDeviceSource = .live
+    /// The keys of Scrolling › While you hold a key.
+    var scrollHoldKeys: () -> [ScrollHotkey] = {
+        let scroll = Options.shared.scroll
+        return [scroll.dash, scroll.toggle, scroll.block].compactMap { $0 }
+    }
+    /// Starts recording a button at "+". nil: the real recorder, which taps the system's
+    /// events; tests never use it.
+    var startRecording: ((NSView) -> Void)?
+    /// Opens a row's action menu. The menu runs until it closes, so tests replace it.
+    var openActionMenu: (NSPopUpButton) -> Void = { $0.performClick(nil) }
+    /// Shows another pane of the window (the Gestures pane).
+    var showPane: ((String) -> Void)?
+    /// Takes Undo and Redo of a removal; the window's when nil.
+    var paneUndoManager: UndoManager?
+
+    // MARK: - State
+
+    private(set) var buttonBindings: [ButtonBinding] = []
+    /// "+" waits for a button.
+    private(set) var isRecording = false
+    /// The button just recorded: the card shows it for a moment.
+    private(set) var recordedFocus: ButtonsHeaderContent.Focus?
+    /// The action a binding added next gets (Gestures › Set Up…), nil: none.
+    private(set) var pendingAction: SystemShortcut.Shortcut?
+    /// What the recorder caught, kept until it closes.
+    private var pendingRecorded: RecordedEvent?
+    private var recordedFocusWork: DispatchWorkItem?
+    /// Ends the recording state if the recorder never reports back (it could not start).
+    private var recordingWatchdog: DispatchWorkItem?
+    private var busyShownAt: Date?
+    private var busyStopWork: DispatchWorkItem?
+    private var observers: [NSObjectProtocol] = []
+
+    private let recorder = KeyRecorder()
+    private let resolver = ActionDisplayResolver()
+
+    // MARK: - Views (read access for tests)
+
+    private(set) var headerView: ButtonsHeaderView!
+    private(set) var list: PreferencesListBox!
+    private(set) var busyView: NSStackView!
+    private(set) var busySpinner: NSProgressIndicator!
+    private(set) var rows: [ButtonBindingRow] = []
+    private(set) var problemPopover: NSPopover?
     private var currentOpenTargetPopover: OpenTargetConfigPopover?
-    private var currentGestureSettingsPopover: MouseGestureSettingsPopover?
 
-    // MARK: - UI Elements
-    // 表格
-    @IBOutlet weak var tableHead: NSVisualEffectView!
-    @IBOutlet weak var tableView: NSTableView!
-    @IBOutlet weak var tableEmpty: NSView!
-    @IBOutlet weak var tableFoot: NSView!
-    // 按钮
-    @IBOutlet weak var createButton: PrimaryButton!
-    @IBOutlet weak var addButton: NSButton!
-    @IBOutlet weak var delButton: NSButton!
-    // Logi HID 活动指示器 (底部右下角 spinner, 仅与 UI 呈现相关, 不参与业务逻辑判定)
-    @IBOutlet weak var activityIndicator: NSProgressIndicator!
+    // MARK: - Lifecycle
 
-    // MARK: - Activity Indicator State (UI-only)
-    /// 最短可见时长 (秒): 防止快速结束的查询让 spinner 只闪一下造成困惑.
-    private static let activityIndicatorMinVisibleDuration: TimeInterval = 0.5
-    /// popover 可见时的轮询间隔 (秒); 只在 popover show 期间开启, 关闭即停.
-    private static let activityPopoverPollInterval: TimeInterval = 0.25
-    /// 热区 overlay 尺寸 (pt). spinner 本身只有 12pt, 直接作为 hover 热区太小;
-    /// 和冲突图标 ButtonTableCellView.conflictHitSize=28 取齐, hover 体验一致.
-    private static let activityHitSize: CGFloat = 28
-    /// 透明热区容器, 覆盖在 spinner 中心位置, 承担 tracking area — spinner 本身不做事件.
-    private var activityHitOverlay: NSView?
-    /// spinner 开始动画的时间戳 (主线程读写).
-    private var activityIndicatorShownAt: Date?
-    /// busy 翻回 false 但未满最短时长时的延迟停止任务; 若中途再次 busy=true 则取消.
-    private var pendingActivityStopWorkItem: DispatchWorkItem?
-    /// hover popover 与其 content VC (懒创建, 仅在首次 hover 时产生).
-    /// content VC 复用 AdaptivePopover, 自动算尺寸 — 本 VC 只管文案更新.
-    private var activityPopover: NSPopover?
-    private var activityPopoverContent: ActivityPopoverViewController?
-    /// popover 展示期间的轮询 timer; 关闭时必须 invalidate.
-    private var activityPopoverPollTimer: Timer?
-    /// spinner 上的 tracking area, bounds 变化时需重建.
-    private var activityTrackingArea: NSTrackingArea?
+    override func loadView() {
+        let root = PreferencesForm.makeBackground()
+        let content = PreferencesGroupedForm.installContentStack(in: root, paneWidth: Self.paneWidth)
+        content.setHuggingPriority(.defaultHigh, for: .vertical)
+
+        let header = ButtonsHeaderView()
+        header.identifier = Identifier.header
+        headerView = header
+
+        let list = PreferencesListBox(
+            width: Self.boxWidth,
+            emptyTitle: text("buttons-empty-title"),
+            emptyExplanation: text("buttons-empty-hint")
+        )
+        list.identifier = Identifier.list
+        list.rowsView.setAccessibilityLabel(text("buttons-list-label"))
+        list.onAdd = { [weak self] _ in self?.beginAddingBinding() }
+        list.onRemove = { [weak self] id in
+            guard let id = id as? UUID else { return }
+            self?.removeBinding(id: id)
+        }
+        list.onOpen = { [weak self] id in
+            guard let self, let row = self.row(for: id) else { return }
+            self.openActionMenu(row.pullDown)
+        }
+        list.onHover = { [weak self] _ in self?.updateHeader() }
+        list.onSelect = { [weak self] _ in self?.updateHeader() }
+        list.footerAccessory = makeBusyView()
+        self.list = list
+
+        PreferencesGroupedForm.add([header, list], to: content)
+        view = root
+        recorder.delegate = self
+        reload()
+        root.setFrameSize(root.fittingSize)
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        // 设置代理
-        recorder.delegate = self
-        tableView.delegate = self
-        tableView.dataSource = self
-        // 读取设置
-        loadOptionsToView()
-        // 指示器: tooltip + 订阅 Manager 活动状态变化通知
-        setupActivityIndicator()
+        let center = NotificationCenter.default
+        // What the mice say about their buttons changed: the notes follow.
+        for name in [LogiCenter.sessionChanged, LogiCenter.reportingDidComplete, LogiCenter.conflictChanged] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.reloadRows()
+                self?.updateHeader()
+            })
+        }
+        observers.append(center.addObserver(forName: LogiCenter.activityChanged, object: nil, queue: .main) { [weak self] _ in
+            self?.syncBusy()
+        })
     }
 
     override func viewWillAppear() {
-        // 检查表格数据
-        toggleNoDataHint()
-        // 设置录制按钮回调
-        setupRecordButtonCallback()
-        // 触发一次冲突状态刷新 (30s 内最多跑一次,异步)
-        LogiCenter.shared.refreshReportingStates()
-        // 面板出现时同步一次当前 busy 状态, 避免错过此前发出的通知
-        syncActivityIndicatorWithManager()
+        super.viewWillAppear()
+        // Bindings may have changed elsewhere (Gestures › Set Up…); then ask the mice again.
+        reload()
+        deviceSource.refresh()
+        syncBusy()
     }
 
     override func viewWillDisappear() {
-        // 切 tab / 关窗时彻底收敛 popover + 轮询, 避免后台空转.
-        closeActivityPopoverIfNeeded()
-        currentGestureSettingsPopover?.hide()
+        super.viewWillDisappear()
+        problemPopover?.close()
+        problemPopover = nil
     }
 
     deinit {
-        NotificationCenter.default.removeObserver(self)
-        pendingActivityStopWorkItem?.cancel()
-        activityPopoverPollTimer?.invalidate()
-        activityPopover?.performClose(nil)
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        recordedFocusWork?.cancel()
+        recordingWatchdog?.cancel()
+        busyStopWork?.cancel()
     }
 
-    // 添加
-    @IBAction func addItemClick(_ sender: NSButton) {
-        recorder.startRecording(from: sender)
-    }
-    // 删除
-    @IBAction func removeItemClick(_ sender: NSButton) {
-        // 确保选择了行
-        guard tableView.selectedRow != -1 else { return }
-        // 统一通过 removeButtonBinding 处理删除逻辑
-        let binding = buttonBindings[tableView.selectedRow]
-        removeButtonBinding(id: binding.id)
-        // 更新删除按钮状态
-        updateDelButtonState()
-    }
-}
+    // MARK: - Data
 
-/**
- * 数据持久化
- **/
-extension PreferencesButtonsViewController {
-    // 从 Options 加载到界面
-    func loadOptionsToView() {
+    /// Reads the bindings and shows them.
+    func reload() {
+        guard isViewLoaded, list != nil else { return }
         buttonBindings = Options.shared.buttons.binding
-        tableView.reloadData()
-        toggleNoDataHint()
+        reloadRows()
+        updateHeader()
     }
 
-    // 保存界面到 Options
-    // 缓存失效与 HID++ divert 用量同步由 Options 订阅自动完成 (ButtonUtils / LogiUsageBootstrap)
-    func syncViewWithOptions() {
+    /// Writes the bindings. ButtonUtils and the Logitech divert follow the stored value.
+    private func save() {
         Options.shared.buttons.binding = buttonBindings
     }
 
-    // 更新删除按钮状态
-    func updateDelButtonState() {
-        delButton.isEnabled = tableView.selectedRow != -1
+    func binding(for id: UUID) -> ButtonBinding? {
+        return buttonBindings.first { $0.id == id }
     }
 
-    // 设置录制按钮回调
-    private func setupRecordButtonCallback() {
-        createButton.onMouseDown = { [weak self] target in
-            self?.recorder.startRecording(from: target)
-        }
+    func row(for id: AnyHashable) -> ButtonBindingRow? {
+        return rows.first { $0.id == id }
     }
-    
-    private func addRecordedEvent(_ event: InputEvent, isDuplicate: Bool) {
-        let recordedEvent = normalizedRecordedEventForButtonBinding(from: event)
-        let normalizedDuplicate = buttonBindings.contains(where: { $0.triggerEvent == recordedEvent })
 
-        if normalizedDuplicate {
-            if let existing = buttonBindings.first(where: { $0.triggerEvent == recordedEvent }) {
-                highlightExistingRow(with: existing.id)
+    /// Puts every binding into its row: the rows of bindings still there are updated (a
+    /// pull-down keeps the keyboard focus), new ones made, and the list told only when the
+    /// rows themselves changed.
+    func reloadRows() {
+        guard let list else { return }
+        let old = rows
+        rows = buttonBindings.map { binding in
+            let title = ButtonTriggerNaming.title(for: binding.triggerEvent)
+            let note = note(for: binding)
+            if let existing = old.first(where: { $0.id == AnyHashable(binding.id) }) {
+                existing.update(binding: binding, title: title, note: note)
+                return existing
             }
-            return
+            return makeRow(for: binding, title: title, note: note)
         }
-
-        let binding = ButtonBinding(triggerEvent: recordedEvent, systemShortcutName: "", isEnabled: false)
-        buttonBindings.append(binding)
-        tableView.reloadData()
-        toggleNoDataHint()
-        notifyBLEHIDPPUnstableIfNeeded(for: recordedEvent)
-        syncViewWithOptions()
+        if rows.count != old.count || zip(rows, old).contains(where: { $0 !== $1 }) {
+            list.setRows(rows)
+        }
+        PreferencesForm.fitToContent(self)
     }
 
-    private func notifyBLEHIDPPUnstableIfNeeded(for event: RecordedEvent) {
-        guard event.type == .mouse,
-              LogiCenter.shared.isLogiCode(event.code) else { return }
-        let status = ButtonCapturePresentationStatus.from(
-            LogiCenter.shared.buttonCaptureDiagnosis(forMosCode: event.code)
+    func note(for binding: ButtonBinding) -> ButtonRowNote? {
+        let trigger = binding.triggerEvent
+        let status = trigger.type == .mouse ? deviceSource.captureStatus(trigger.code) : .normal
+        let standard = binding.standardMouseAliasBindingIfAvailable().map {
+            ButtonTriggerNaming.buttonName(code: $0.triggerEvent.code)
+        }
+        return ButtonRowNote.make(
+            for: binding,
+            captureStatus: status,
+            scrollHoldKeys: scrollHoldKeys(),
+            standardButtonName: standard
         )
-        guard status == .bleHIDPPUnstable else { return }
-        LogiCenter.shared.showBLEHIDPPUnstableToast(forMosCode: event.code)
     }
 
-    // 高亮已存在的行 (用于重复录制的视觉反馈)
-    private func highlightExistingRow(with id: UUID) {
-        guard let row = buttonBindings.firstIndex(where: { $0.id == id }) else { return }
-        tableView.deselectAll(nil)
-        tableView.scrollRowToVisible(row)
-        if let cellView = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? ButtonTableCellView {
-            cellView.highlight()
+    private func makeRow(for binding: ButtonBinding, title: String, note: ButtonRowNote?) -> ButtonBindingRow {
+        let id = binding.id
+        let pullDown = ButtonActionPullDown(binding: binding)
+        pullDown.onShortcutSelected = { [weak self] shortcut in
+            self?.setAction(of: id, to: shortcut)
         }
+        pullDown.onCustomShortcutRecorded = { [weak self] name in
+            self?.setAction(of: id, toShortcutNamed: name)
+        }
+        pullDown.onOpenTargetSelectionRequested = { [weak self] in
+            self?.presentOpenTargetPopover(forBindingID: id)
+        }
+        pullDown.onGestureSettingsRequested = { [weak self] in
+            self?.showGesturesPane()
+        }
+        let row = ButtonBindingRow(binding: binding, title: title, note: note, pullDown: pullDown)
+        row.infoButton.target = self
+        row.infoButton.action = #selector(infoClicked(_:))
+        return row
     }
 
-    // 删除按钮绑定
-    func removeButtonBinding(id: UUID) {
-        buttonBindings.removeAll(where: { $0.id == id })
-        tableView.reloadData()
-        toggleNoDataHint()
-        syncViewWithOptions()
-    }
+    // MARK: - Changing actions
 
-    /// 更新按钮绑定
-    /// - Parameters:
-    ///   - id: 绑定记录的唯一标识
-    ///   - shortcut: 系统快捷键对象,nil 表示清除绑定
-    func updateButtonBinding(id: UUID, with shortcut: SystemShortcut.Shortcut?) {
-        guard let index = buttonBindings.firstIndex(where: { $0.id == id }) else { return }
-
-        let oldBinding = buttonBindings[index]
-
-        let updatedBinding: ButtonBinding
-        if let shortcut = shortcut {
-            // 绑定快捷键:直接使用快捷键的 identifier
-            updatedBinding = ButtonBinding(
-                id: oldBinding.id,
-                triggerEvent: oldBinding.triggerEvent,
-                systemShortcutName: shortcut.identifier,
-                isEnabled: true
-            )
-        } else {
-            // 清除绑定:保持触发事件,清空快捷键名称并禁用
-            updatedBinding = ButtonBinding(
-                id: oldBinding.id,
-                triggerEvent: oldBinding.triggerEvent,
-                systemShortcutName: "",
-                isEnabled: false
+    func setAction(of id: UUID, to shortcut: SystemShortcut.Shortcut?) {
+        update(id) { old in
+            ButtonBinding(
+                id: old.id,
+                triggerEvent: old.triggerEvent,
+                systemShortcutName: shortcut?.identifier ?? "",
+                isEnabled: shortcut != nil,
+                createdAt: old.createdAt
             )
         }
-
-        buttonBindings[index] = updatedBinding
-        syncViewWithOptions()
     }
 
-    /// 更新按钮绑定 (自定义快捷键)
-    func updateButtonBinding(id: UUID, withCustomName name: String) {
+    func setAction(of id: UUID, toShortcutNamed name: String) {
+        update(id) { old in
+            ButtonBinding(id: old.id, triggerEvent: old.triggerEvent, systemShortcutName: name, isEnabled: true, createdAt: old.createdAt)
+        }
+    }
+
+    func setAction(of id: UUID, toOpen payload: OpenTargetPayload) {
+        update(id) { old in
+            ButtonBinding(id: old.id, triggerEvent: old.triggerEvent, openTarget: payload, isEnabled: true, createdAt: old.createdAt)
+        }
+    }
+
+    private func update(_ id: UUID, _ transform: (ButtonBinding) -> ButtonBinding) {
         guard let index = buttonBindings.firstIndex(where: { $0.id == id }) else { return }
-        let old = buttonBindings[index]
-        buttonBindings[index] = ButtonBinding(
-            id: old.id,
-            triggerEvent: old.triggerEvent,
-            systemShortcutName: name,
-            isEnabled: true,
-            createdAt: old.createdAt
-        )
-        syncViewWithOptions()
+        buttonBindings[index] = transform(buttonBindings[index])
+        save()
+        reloadRows()
+        updateHeader()
     }
 
-    /// 更新按钮绑定 ("打开应用" 动作)
-    func updateButtonBinding(id: UUID, withOpenTarget payload: OpenTargetPayload) {
-        guard let index = buttonBindings.firstIndex(where: { $0.id == id }) else { return }
-        let old = buttonBindings[index]
-        buttonBindings[index] = ButtonBinding(
-            id: old.id,
-            triggerEvent: old.triggerEvent,
-            openTarget: payload,
-            isEnabled: true,
-            createdAt: old.createdAt
-        )
-        syncViewWithOptions()
-        tableView.reloadData()
-    }
-
-    func replaceButtonBinding(_ binding: ButtonBinding) {
+    /// Replaces a binding (its trigger may change: "Use Standard Button"); a binding of the
+    /// same trigger merges into it.
+    func replaceBinding(_ binding: ButtonBinding) {
         guard buttonBindings.contains(where: { $0.id == binding.id }) else { return }
         buttonBindings = ButtonBindingReplacement.replacing(binding, in: buttonBindings)
-        tableView.reloadData()
-        toggleNoDataHint()
-        syncViewWithOptions()
+        save()
+        reloadRows()
+        updateHeader()
     }
 
-    private func presentOpenTargetPopover(forBindingID id: UUID) {
+    /// "Use Standard Button": the Logitech button becomes the standard button it stands for.
+    func useStandardButton(for id: UUID) {
+        guard let updated = binding(for: id)?.standardMouseAliasBindingIfAvailable() else { return }
+        LogiCenter.shared.logButtonCaptureDiagnostic(
+            "[StandardMouseAlias] converted binding id=\(updated.id) nativeButton=\(updated.triggerEvent.code)"
+        )
+        problemPopover?.close()
+        problemPopover = nil
+        replaceBinding(updated)
+    }
+
+    // MARK: - Removing, with Undo
+
+    var undoTarget: UndoManager? {
+        return paneUndoManager ?? view.window?.undoManager
+    }
+
+    /// Removes the binding; the window's Undo ("Undo Remove Button") puts it back.
+    func removeBinding(id: UUID) {
         guard let index = buttonBindings.firstIndex(where: { $0.id == id }) else { return }
-        guard let row = tableView.row(forBinding: id, in: buttonBindings) else { return }
-        guard let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? ButtonTableCellView else { return }
+        let removed = buttonBindings.remove(at: index)
+        save()
+        reloadRows()
+        updateHeader()
+        if let undo = undoTarget {
+            undo.registerUndo(withTarget: self) { controller in
+                controller.restoreBinding(removed, at: index)
+            }
+            undo.setActionName(text("buttons-undo-remove"))
+        }
+    }
 
-        let existing = buttonBindings[index].openTarget
+    /// Puts a removed binding back where it was and selects it (Undo). Redo removes it again.
+    func restoreBinding(_ binding: ButtonBinding, at index: Int) {
+        if let existing = buttonBindings.first(where: { $0.triggerEvent == binding.triggerEvent }) {
+            // Recorded again meanwhile: the new one stays.
+            list.select(existing.id)
+            return
+        }
+        buttonBindings.insert(binding, at: min(max(0, index), buttonBindings.count))
+        save()
+        reloadRows()
+        list.select(binding.id)
+        updateHeader()
+        if let undo = undoTarget {
+            undo.registerUndo(withTarget: self) { controller in
+                controller.removeBinding(id: binding.id)
+            }
+            undo.setActionName(text("buttons-undo-remove"))
+        }
+    }
 
+    // MARK: - Adding
+
+    /// "+": records a button, or a key with a modifier. A new one is added without an
+    /// action, selected, and its menu opens; with `action` (Gestures › Set Up…) it gets
+    /// that action instead.
+    func beginAddingBinding(action: SystemShortcut.Shortcut? = nil) {
+        _ = view
+        guard !isRecording else { return }
+        pendingAction = action
+        pendingRecorded = nil
+        let anchor = list.addButton
+        if let startRecording {
+            startRecording(anchor)
+        } else {
+            recorder.startRecording(from: anchor, mode: .combination)
+        }
+        // The recorder stops itself after its timeout; one that never started says nothing.
+        recordingWatchdog?.cancel()
+        let watchdog = DispatchWorkItem { [weak self] in
+            guard let self, self.isRecording else { return }
+            self.isRecording = false
+            self.pendingAction = nil
+            self.updateHeader()
+        }
+        recordingWatchdog = watchdog
+        DispatchQueue.main.asyncAfter(deadline: .now() + KeyRecorder.TIMEOUT + 1, execute: watchdog)
+    }
+
+    private func normalizedTrigger(for event: InputEvent) -> RecordedEvent {
+        let recorded = RecordedEvent(from: event)
+        let diagnosis = LogiCenter.shared.buttonCaptureDiagnosis(forMosCode: event.code)
+        return recorded.normalizedForButtonBinding(diagnosis: diagnosis)
+    }
+
+    /// Adds `trigger` (or selects and flashes the binding it already has) and returns the id.
+    @discardableResult
+    func addBinding(for trigger: RecordedEvent, action: SystemShortcut.Shortcut?) -> UUID {
+        if let existing = buttonBindings.first(where: { $0.triggerEvent == trigger }) {
+            list.flash(existing.id)
+            return existing.id
+        }
+        let binding = ButtonBinding(
+            triggerEvent: trigger,
+            systemShortcutName: action?.identifier ?? "",
+            isEnabled: action != nil
+        )
+        buttonBindings.append(binding)
+        save()
+        reloadRows()
+        list.select(binding.id)
+        if trigger.type == .mouse, deviceSource.captureStatus(trigger.code) == .bleHIDPPUnstable {
+            deviceSource.warnBluetoothButton(trigger.code)
+        }
+        return binding.id
+    }
+
+    // MARK: - Open App or File
+
+    private func presentOpenTargetPopover(forBindingID id: UUID) {
+        guard let binding = binding(for: id), let row = row(for: id) else { return }
         let popover = OpenTargetConfigPopover()
         currentOpenTargetPopover = popover
         popover.onCommit = { [weak self] payload in
-            self?.updateButtonBinding(id: id, withOpenTarget: payload)
+            self?.setAction(of: id, toOpen: payload)
             self?.currentOpenTargetPopover = nil
         }
         popover.onCancel = { [weak self] in
             self?.currentOpenTargetPopover = nil
         }
-        popover.show(at: cell.actionPopUpButton, existing: existing)
+        popover.show(at: row.pullDown, existing: binding.openTarget)
     }
 
-    private func presentGestureSettingsPopover(forBindingID id: UUID) {
-        guard let index = buttonBindings.firstIndex(where: { $0.id == id }) else { return }
-        guard let row = tableView.row(forBinding: id, in: buttonBindings) else { return }
-        guard let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? ButtonTableCellView else { return }
+    // MARK: - Gestures
 
-        let trigger = buttonBindings[index].triggerEvent
-        let isLogiTrigger = trigger.type == .mouse && LogiCenter.shared.isLogiCode(trigger.code)
-
-        let popover = MouseGestureSettingsPopover()
-        currentGestureSettingsPopover = popover
-        popover.onClose = { [weak self, weak popover] in
-            guard let self, self.currentGestureSettingsPopover === popover else { return }
-            self.currentGestureSettingsPopover = nil
+    /// "Show Gesture Settings": the Gestures pane.
+    func showGesturesPane() {
+        let identifier = GesturesPreferencesViewController.tabIdentifier
+        if let showPane {
+            showPane(identifier)
+            return
         }
-        popover.show(at: cell.actionPopUpButton, showLogiActions: isLogiTrigger)
+        Self.splitViewController(of: self)?.selectPane(withIdentifier: identifier)
     }
-}
 
-/**
- * 表格区域渲染及操作
- **/
-extension PreferencesButtonsViewController: NSTableViewDelegate, NSTableViewDataSource {
-    // 无数据
-    func toggleNoDataHint() {
-        let hasData = buttonBindings.count != 0
-        updateViewVisibility(view: createButton, visible: !hasData)
-        updateViewVisibility(view: tableEmpty, visible: !hasData)
-        updateViewVisibility(view: tableHead, visible: hasData)
-        updateViewVisibility(view: tableFoot, visible: hasData)
-    }
-    private func updateViewVisibility(view: NSView, visible: Bool) {
-        view.isHidden = !visible
-        view.animator().alphaValue = visible ? 1 : 0
-    }
-    
-    // 表格数据源
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard let tableColumnIdentifier = tableColumn?.identifier else { return nil }
-
-        // 创建 Cell
-        if let cell = tableView.makeView(withIdentifier: tableColumnIdentifier, owner: self) as? ButtonTableCellView {
-            let binding = buttonBindings[row]
-
-            cell.configure(
-                with: binding,
-                onShortcutSelected: { [weak self] shortcut in
-                    self?.updateButtonBinding(id: binding.id, with: shortcut)
-                },
-                onCustomShortcutRecorded: { [weak self] customName in
-                    self?.updateButtonBinding(id: binding.id, withCustomName: customName)
-                },
-                onOpenTargetSelectionRequested: { [weak self] in
-                    self?.presentOpenTargetPopover(forBindingID: binding.id)
-                },
-                onDeleteRequested: { [weak self] in
-                    self?.removeButtonBinding(id: binding.id)
-                },
-                onBindingUpdated: { [weak self] updated in
-                    self?.replaceButtonBinding(updated)
-                },
-                onGestureSettingsRequested: { [weak self] in
-                    self?.presentGestureSettingsPopover(forBindingID: binding.id)
-                }
-            )
-            return cell
+    static func splitViewController(of controller: NSViewController) -> PreferencesSplitViewController? {
+        var current: NSViewController? = controller.parent
+        while let candidate = current {
+            if let split = candidate as? PreferencesSplitViewController { return split }
+            current = candidate.parent
         }
-
         return nil
     }
-    
-    // 行高
-    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        return 44
-    }
-    
-    // 行数
-    func numberOfRows(in tableView: NSTableView) -> Int {
-        return buttonBindings.count
+
+    // MARK: - The ⓘ of a row
+
+    @objc private func infoClicked(_ sender: NSButton) {
+        guard let row = rows.first(where: { $0.infoButton === sender }) else { return }
+        showProblem(of: row, relativeTo: sender)
     }
 
-    // 选择变化
-    func tableViewSelectionDidChange(_ notification: Notification) {
-        updateDelButtonState()
-    }
-
-    // Type Selection 支持
-    func tableView(_ tableView: NSTableView, typeSelectStringFor tableColumn: NSTableColumn?, row: Int) -> String? {
-        guard row < buttonBindings.count else { return nil }
-        let components = buttonBindings[row].triggerEvent.displayComponents
-        // 去掉第一项（修饰键），只保留实际按键用于匹配
-        let keyOnly = components.count > 1 ? Array(components.dropFirst()) : components
-        return keyOnly.joined(separator: " ")
-    }
-}
-
-// MARK: - Logi Activity Indicator
-extension PreferencesButtonsViewController {
-    /// 一次性配置: tooltip + tracking area + 订阅 Manager 的活动状态通知.
-    /// 通知回调 (main-thread post) 直接驱动 NSProgressIndicator, 不做任何 HID 查询,
-    /// 保证视图层与检测逻辑彻底解耦.
-    fileprivate func setupActivityIndicator() {
-        // 不设 toolTip: 自定义 NSPopover 信息更丰富 (phase / 设备 / 进度),
-        // 两者并存会在 hover 时同时弹出系统黄色 tooltip + popover, 视觉冲突.
-        activityIndicator.isDisplayedWhenStopped = false
-        // 程序化加一个 28pt 透明热区 overlay 覆盖 spinner 中心 (对齐 ButtonTableCellView 的 conflictHitSize=28).
-        // spinner 改 mini (12pt) 后热区需独立外扩, 否则 hover 很难命中.
-        setupActivityHitOverlay()
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleActivityStateChanged(_:)),
-            name: LogiCenter.activityChanged,
-            object: nil
-        )
-    }
-
-    /// 在 spinner 中心覆盖一个不绘制内容的 NSView 做热区载体, tracking area 挂它上面.
-    /// overlay 一次性加入 root view, 约束跟随 spinner center, 生命周期与 VC 一致, 无需 layout 回调重建.
-    private func setupActivityHitOverlay() {
-        let overlay = NSView()
-        overlay.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(overlay)
-        NSLayoutConstraint.activate([
-            overlay.centerXAnchor.constraint(equalTo: activityIndicator.centerXAnchor),
-            overlay.centerYAnchor.constraint(equalTo: activityIndicator.centerYAnchor),
-            overlay.widthAnchor.constraint(equalToConstant: Self.activityHitSize),
-            overlay.heightAnchor.constraint(equalToConstant: Self.activityHitSize)
-        ])
-        activityHitOverlay = overlay
-
-        let area = NSTrackingArea(
-            rect: .zero,  // .inVisibleRect 模式下忽略 rect, 自动用 overlay 可见区域
-            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        overlay.addTrackingArea(area)
-        activityTrackingArea = area
-    }
-
-    @objc private func handleActivityStateChanged(_ note: Notification) {
-        syncActivityIndicatorWithManager()
-    }
-
-    /// 把当前 Manager.isBusy 映射到 spinner 的可见性, 带 500ms 最短显示;
-    /// 同时把 busy=false 同步到 popover (若正在展示, 立即关闭).
-    fileprivate func syncActivityIndicatorWithManager() {
-        let busy = LogiCenter.shared.isBusy
-        if busy {
-            pendingActivityStopWorkItem?.cancel()
-            pendingActivityStopWorkItem = nil
-            if activityIndicatorShownAt == nil {
-                activityIndicatorShownAt = Date()
-                activityIndicator.startAnimation(nil)
-            }
-        } else {
-            // 用户要求: loading 结束时 popover 同步回收 (即使还在 hover).
-            closeActivityPopoverIfNeeded()
-            scheduleActivityIndicatorStop()
-        }
-    }
-
-    private func scheduleActivityIndicatorStop() {
-        guard let shownAt = activityIndicatorShownAt else { return }
-        let elapsed = Date().timeIntervalSince(shownAt)
-        let minDuration = Self.activityIndicatorMinVisibleDuration
-        if elapsed >= minDuration {
-            stopActivityIndicatorNow()
-            return
-        }
-        pendingActivityStopWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            self?.stopActivityIndicatorNow()
-        }
-        pendingActivityStopWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + (minDuration - elapsed), execute: work)
-    }
-
-    private func stopActivityIndicatorNow() {
-        pendingActivityStopWorkItem = nil
-        activityIndicatorShownAt = nil
-        activityIndicator.stopAnimation(nil)
-    }
-
-    // MARK: - Hover Popover
-
-    override func mouseEntered(with event: NSEvent) {
-        // 只对 spinner 的 tracking area 响应; 其他未来可能加的 tracking 不干扰.
-        guard event.trackingArea === activityTrackingArea else {
-            super.mouseEntered(with: event)
-            return
-        }
-        // 不忙时不弹 (即便 tracking area 理论上已 hidden 了也兜一层)
-        guard LogiCenter.shared.isBusy else { return }
-        showActivityPopover()
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        guard event.trackingArea === activityTrackingArea else {
-            super.mouseExited(with: event)
-            return
-        }
-        closeActivityPopoverIfNeeded()
-    }
-
-    /// 参考 `ButtonTableCellView.showConflictPopover` 的极简模式:
-    /// - 每次 hover 进入新建一个 NSPopover, 不复用;
-    /// - 用 `conflictPopover == nil` 作为互斥守卫;
-    /// - hide 时同步 `close() + popover = nil`, 不依赖 delegate 回调.
-    /// 这样避免 `performClose` 关闭动画或 `.transient` 自动行为引入的中间态,
-    /// 用户 mouseExit 后立即重入时 guard 放行, popover 能即刻出现.
-    private func showActivityPopover() {
-        guard activityPopover == nil else { return }
-        let popover = makeActivityPopover()
-        activityPopover = popover
-        refreshActivityPopoverContent()
-        popover.show(relativeTo: activityIndicator.bounds,
-                     of: activityIndicator,
-                     preferredEdge: .maxY)
-        // 打开轮询 (main RunLoop .common, menu tracking 期间也保持节奏);
-        // 关闭由 closeActivityPopoverIfNeeded 统一收口, 不依赖 popoverDidClose.
-        let timer = Timer(timeInterval: Self.activityPopoverPollInterval, repeats: true) { [weak self] _ in
-            self?.refreshActivityPopoverContent()
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        activityPopoverPollTimer = timer
-    }
-
-    private func closeActivityPopoverIfNeeded() {
-        activityPopoverPollTimer?.invalidate()
-        activityPopoverPollTimer = nil
-        activityPopover?.close()
-        activityPopover = nil
-        activityPopoverContent = nil
-    }
-
-    /// 从 Manager 拉快照并渲染. 没有活跃 session 时展示兜底文案 (过渡态).
-    /// 尺寸自适应完全由 AdaptivePopover (content VC 的父类) 负责, 本方法只推文案.
-    private func refreshActivityPopoverContent() {
-        guard let content = activityPopoverContent else { return }
-        let summary = LogiCenter.shared.currentActivitySummary
-        content.setMessage(Self.formatActivitySummary(summary))
-    }
-
-    /// 聚合多个 session 成一行或多行简短文字.
-    /// 单设备: "正在刷新冲突状态 · MX Master 3S · 5/12"
-    /// 多设备: 每个设备一行
-    private static func formatActivitySummary(_ summary: [SessionActivityStatus]) -> String {
-        guard !summary.isEmpty else {
-            return NSLocalizedString("button_activity_popover_fallback",
-                                     comment: "Shown when busy state ends while popover is closing")
-        }
-        return summary.map { status -> String in
-            let phaseLabel: String
-            switch status.phase {
-            case .discovery:
-                phaseLabel = NSLocalizedString("button_activity_phase_discovery",
-                                               comment: "Phase: initial handshake / feature discovery")
-            case .reportingQuery:
-                phaseLabel = NSLocalizedString("button_activity_phase_reporting",
-                                               comment: "Phase: refreshing per-button conflict state")
-            }
-            var line = "\(phaseLabel) · \(status.deviceName)"
-            if let progress = status.progress {
-                line += " · \(progress.current)/\(progress.total)"
-            }
-            return line
-        }.joined(separator: "\n")
-    }
-
-    private func makeActivityPopover() -> NSPopover {
+    /// The popover that explains the row's note, next to `anchor`.
+    @discardableResult
+    func showProblem(of row: ButtonBindingRow, relativeTo anchor: NSView) -> ButtonProblemPopoverController? {
+        guard let note = row.note, note.hasDetails else { return nil }
+        problemPopover?.close()
+        let content = ButtonProblemPopoverController(note: note)
+        let id = row.binding.id
+        content.onUseStandardButton = { [weak self] in self?.useStandardButton(for: id) }
         let popover = NSPopover()
-        // .applicationDefined: 开合完全由 mouseEnter/Exit 控制, 无点击外部自动关闭的副作用,
-        // 和 ButtonTableCellView 冲突图标 popover 行为对齐.
-        popover.behavior = .applicationDefined
+        popover.behavior = .transient
         popover.animates = true
-        let content = ActivityPopoverViewController()
         popover.contentViewController = content
-        activityPopoverContent = content
-        return popover
-    }
-}
-
-private extension NSTableView {
-    func row(forBinding id: UUID, in bindings: [ButtonBinding]) -> Int? {
-        return bindings.firstIndex(where: { $0.id == id })
-    }
-}
-
-// MARK: - EventRecorderDelegate
-extension PreferencesButtonsViewController: KeyRecorderDelegate {
-    func validateRecordedEvent(_ recorder: KeyRecorder, event: InputEvent) -> Bool {
-        let recordedEvent = normalizedRecordedEventForButtonBinding(from: event)
-        return !buttonBindings.contains(where: { $0.triggerEvent == recordedEvent })
-    }
-
-    func onEventRecorded(_ recorder: KeyRecorder, didRecordEvent event: InputEvent, isDuplicate: Bool) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + KeyRecorder.recordingFeedbackDelay(isDuplicate: isDuplicate)) { [weak self] in
-            self?.addRecordedEvent(event, isDuplicate: isDuplicate)
+        problemPopover = popover
+        if anchor.window != nil {
+            popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
         }
+        return content
     }
 
-    private func normalizedRecordedEventForButtonBinding(from event: InputEvent) -> RecordedEvent {
-        let recordedEvent = RecordedEvent(from: event)
-        let diagnosis = LogiCenter.shared.buttonCaptureDiagnosis(forMosCode: event.code)
-        return recordedEvent.normalizedForButtonBinding(diagnosis: diagnosis)
+    // MARK: - The card
+
+    /// The card's texts and lit part: recording, the button just recorded, the row pointed
+    /// at, the selected row, or the mouse and how many buttons have actions.
+    func updateHeader() {
+        guard let headerView else { return }
+        var focus: ButtonsHeaderContent.Focus? = recordedFocus
+        if focus == nil, let id = (list.hoveredID ?? list.selectedID) as? UUID, let binding = binding(for: id) {
+            focus = self.focus(for: binding)
+        }
+        let bound = buttonBindings.filter { CellActionState(binding: $0).hasBoundAction }.count
+        headerView.content = ButtonsHeaderContent.make(
+            deviceName: deviceSource.deviceName(),
+            boundCount: bound,
+            isRecording: isRecording,
+            focus: focus
+        )
+    }
+
+    func focus(for binding: ButtonBinding) -> ButtonsHeaderContent.Focus {
+        return ButtonsHeaderContent.Focus(
+            title: ButtonTriggerNaming.title(for: binding.triggerEvent),
+            action: resolver.actionName(of: binding),
+            part: ButtonsMousePart.part(for: binding.triggerEvent)
+        )
+    }
+
+    /// Shows `focus` on the card for `recordedPartDuration`.
+    private func showRecorded(_ focus: ButtonsHeaderContent.Focus) {
+        recordedFocusWork?.cancel()
+        recordedFocus = focus
+        updateHeader()
+        let work = DispatchWorkItem { [weak self] in
+            self?.recordedFocus = nil
+            self?.recordedFocusWork = nil
+            self?.updateHeader()
+        }
+        recordedFocusWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.recordedPartDuration, execute: work)
+    }
+
+    // MARK: - "Checking buttons…"
+
+    private func makeBusyView() -> NSView {
+        let spinner = NSProgressIndicator()
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isIndeterminate = true
+        spinner.isDisplayedWhenStopped = false
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            spinner.widthAnchor.constraint(equalToConstant: 12),
+            spinner.heightAnchor.constraint(equalToConstant: 12),
+        ])
+        let label = NSTextField(labelWithString: text("buttons-checking"))
+        label.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        label.textColor = .secondaryLabelColor
+        let busy = NSStackView(views: [spinner, label])
+        busy.orientation = .horizontal
+        busy.alignment = .centerY
+        busy.spacing = 6
+        busy.identifier = Identifier.busy
+        busy.isHidden = true
+        busyView = busy
+        busySpinner = spinner
+        return busy
+    }
+
+    /// Shows "Checking buttons…" while the mice are asked, at least `busyMinimumDuration`.
+    func syncBusy() {
+        guard let busyView else { return }
+        if deviceSource.isBusy() {
+            busyStopWork?.cancel()
+            busyStopWork = nil
+            if busyShownAt == nil {
+                busyShownAt = Date()
+                busyView.isHidden = false
+                busySpinner.startAnimation(nil)
+            }
+            return
+        }
+        guard let shownAt = busyShownAt else { return }
+        let remaining = Self.busyMinimumDuration - Date().timeIntervalSince(shownAt)
+        guard remaining > 0 else { return hideBusy() }
+        busyStopWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.hideBusy() }
+        busyStopWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + remaining, execute: work)
+    }
+
+    private func hideBusy() {
+        busyStopWork = nil
+        busyShownAt = nil
+        busySpinner.stopAnimation(nil)
+        busyView.isHidden = true
+    }
+
+    private func text(_ key: String) -> String {
+        return NSLocalizedString(key, comment: "")
+    }
+}
+
+// MARK: - Recording a new button
+
+extension PreferencesButtonsViewController: KeyRecorderDelegate {
+
+    func onRecordingStarted(_ recorder: KeyRecorder) {
+        isRecording = true
+        updateHeader()
+    }
+
+    /// A trigger that is already in the list counts as a duplicate: the recorder says so.
+    func validateRecordedEvent(_ recorder: KeyRecorder, event: InputEvent) -> Bool {
+        let trigger = normalizedTrigger(for: event)
+        return !buttonBindings.contains { $0.triggerEvent == trigger }
+    }
+
+    /// The card shows the button at once; a duplicate's row flashes while the recorder
+    /// says "Duplicate key". A new one is added when the recorder closes.
+    func onEventRecorded(_ recorder: KeyRecorder, didRecordEvent event: InputEvent, isDuplicate: Bool) {
+        let trigger = normalizedTrigger(for: event)
+        isRecording = false
+        if let existing = buttonBindings.first(where: { $0.triggerEvent == trigger }) {
+            pendingRecorded = nil
+            list.flash(existing.id)
+            showRecorded(focus(for: existing))
+            return
+        }
+        pendingRecorded = trigger
+        showRecorded(ButtonsHeaderContent.Focus(
+            title: ButtonTriggerNaming.title(for: trigger),
+            action: pendingAction.map(\.localizedName),
+            part: ButtonsMousePart.part(for: trigger)
+        ))
+    }
+
+    func onRecordingStopped(_ recorder: KeyRecorder, didRecord: Bool) {
+        recordingWatchdog?.cancel()
+        recordingWatchdog = nil
+        isRecording = false
+        let action = pendingAction
+        pendingAction = nil
+        defer { updateHeader() }
+        guard didRecord, let trigger = pendingRecorded else { return }
+        pendingRecorded = nil
+        let id = addBinding(for: trigger, action: action)
+        updateHeader()
+        guard action == nil else { return }
+        // The recorder's popover is gone: the new button's menu opens by itself.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let row = self.row(for: id), self.list.selectedID == AnyHashable(id) else { return }
+            self.openActionMenu(row.pullDown)
+        }
     }
 }

@@ -69,13 +69,20 @@ struct MouseGestureBindingSummary: Equatable {
     var hasGestureButton: Bool
     /// One of those buttons is a Logitech control: Logi actions make sense as gesture actions.
     var hasLogitechGestureButton: Bool
+    /// The names of those buttons, as the Buttons pane titles them ("Back button").
+    var buttonTitles: [String]
 
-    init(hasGestureButton: Bool, hasLogitechGestureButton: Bool) {
+    init(hasGestureButton: Bool, hasLogitechGestureButton: Bool, buttonTitles: [String] = []) {
         self.hasGestureButton = hasGestureButton
         self.hasLogitechGestureButton = hasLogitechGestureButton
+        self.buttonTitles = buttonTitles
     }
 
-    init(bindings: [ButtonBinding], isLogitechCode: (UInt16) -> Bool) {
+    init(
+        bindings: [ButtonBinding],
+        isLogitechCode: (UInt16) -> Bool,
+        title: (RecordedEvent) -> String = { ButtonTriggerNaming.title(for: $0) }
+    ) {
         let gestureBindings = bindings.filter {
             $0.isEnabled && $0.systemShortcutName == SystemShortcut.mouseGestureNavigation.identifier
         }
@@ -83,6 +90,23 @@ struct MouseGestureBindingSummary: Equatable {
         hasLogitechGestureButton = gestureBindings.contains {
             $0.triggerEvent.type == .mouse && isLogitechCode($0.triggerEvent.code)
         }
+        var titles: [String] = []
+        for binding in gestureBindings {
+            let name = title(binding.triggerEvent)
+            if !titles.contains(name) {
+                titles.append(name)
+            }
+        }
+        buttonTitles = titles
+    }
+
+    /// The explanation of the Gestures pane's "Gesture button" row: the buttons, joined as
+    /// a list ("Back button and Gesture button"), or that there is none yet.
+    var gestureButtonExplanation: String {
+        guard hasGestureButton else {
+            return NSLocalizedString("gestures-gesture-button-none", comment: "")
+        }
+        return ListFormatter.localizedString(byJoining: buttonTitles)
     }
 
     /// The summary of the stored bindings, global and per app.
@@ -94,6 +118,6 @@ struct MouseGestureBindingSummary: Equatable {
                 bindings.append(contentsOf: perApp)
             }
         }
-        return MouseGestureBindingSummary(bindings: bindings) { LogiCenter.shared.isLogiCode($0) }
+        return MouseGestureBindingSummary(bindings: bindings, isLogitechCode: { LogiCenter.shared.isLogiCode($0) })
     }
 }

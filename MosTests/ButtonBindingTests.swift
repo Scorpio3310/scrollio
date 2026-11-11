@@ -19,36 +19,25 @@ final class ButtonBindingTests: XCTestCase {
         )
     }
 
-    private func makeButtonCell(
+    /// A button's action pull-down, as the Buttons pane makes it. Nothing is recorded:
+    /// tests call the recorder's delegate methods themselves.
+    private func makePullDown(
         binding: ButtonBinding,
+        onShortcutSelected: @escaping (SystemShortcut.Shortcut?) -> Void = { _ in },
         onOpenTargetSelectionRequested: @escaping () -> Void = {},
         onGestureSettingsRequested: @escaping () -> Void = {}
-    ) -> ButtonTableCellView {
-        let cell = ButtonTableCellView(frame: NSRect(x: 0, y: 0, width: 420, height: 44))
-        let keyContainer = NSView(frame: NSRect(x: 0, y: 0, width: 140, height: 44))
-        let actionButton = NSPopUpButton(frame: NSRect(x: 180, y: 8, width: 180, height: 28), pullsDown: false)
-
-        cell.keyDisplayContainerView = keyContainer
-        cell.actionPopUpButton = actionButton
-        cell.addSubview(keyContainer)
-        cell.addSubview(actionButton)
-
-        cell.configure(
-            with: binding,
-            onShortcutSelected: { _ in },
-            onCustomShortcutRecorded: { _ in },
-            onOpenTargetSelectionRequested: onOpenTargetSelectionRequested,
-            onDeleteRequested: {},
-            onGestureSettingsRequested: onGestureSettingsRequested
-        )
-
-        return cell
+    ) -> ButtonActionPullDown {
+        let pullDown = ButtonActionPullDown(binding: binding)
+        pullDown.onShortcutSelected = onShortcutSelected
+        pullDown.onOpenTargetSelectionRequested = onOpenTargetSelectionRequested
+        pullDown.onGestureSettingsRequested = onGestureSettingsRequested
+        pullDown.startShortcutRecorder = { _ in }
+        return pullDown
     }
 
-    private func gestureSettingsMenuItem(in cell: ButtonTableCellView) -> NSMenuItem? {
-        return cell.actionPopUpButton.menu?.items.first {
-            $0.representedObject as? String == ButtonTableCellView.gestureSettingsMenuMarker
-        }
+    /// The title a pull-down shows: its first item.
+    private func shownTitle(_ pullDown: NSPopUpButton) -> String? {
+        return pullDown.menu?.items.first?.title
     }
 
     private func makeBinding(_ shortcut: SystemShortcut.Shortcut) -> ButtonBinding {
@@ -58,67 +47,63 @@ final class ButtonBindingTests: XCTestCase {
         )
     }
 
-    // MARK: - Gesture Navigation settings entry
+    // MARK: - Gesture Navigation in the action menu
 
-    func testGestureSettingsMenuItem_visibleOnlyForGestureNavigationBinding() throws {
-        let gestureCell = makeButtonCell(binding: makeBinding(SystemShortcut.mouseGestureNavigation))
-        let gestureMenu = try XCTUnwrap(gestureCell.actionPopUpButton.menu)
-        gestureCell.menuWillOpen(gestureMenu)
-        let gestureItem = try XCTUnwrap(gestureSettingsMenuItem(in: gestureCell))
-        XCTAssertFalse(gestureItem.isHidden)
-        XCTAssertEqual(gestureMenu.index(of: gestureItem), 3)
+    func testShowGestureSettings_onlyWhileGestureNavigationIsTheAction() throws {
+        let gesture = makePullDown(binding: makeBinding(SystemShortcut.mouseGestureNavigation))
+        let menu = try XCTUnwrap(gesture.menu)
+        let item = try XCTUnwrap(gesture.gestureSettingsItem)
+        XCTAssertFalse(item.isHidden)
+        XCTAssertEqual(item.title, "Show Gesture Settings")
+        // Right under Gesture Navigation.
+        let gestureIndex = try XCTUnwrap(menu.items.firstIndex {
+            ($0.representedObject as? SystemShortcut.Shortcut)?.identifier == SystemShortcut.mouseGestureNavigation.identifier
+        })
+        XCTAssertEqual(menu.index(of: item), gestureIndex + 1)
 
-        let copyCell = makeButtonCell(binding: makeBinding(SystemShortcut.copy))
-        let copyMenu = try XCTUnwrap(copyCell.actionPopUpButton.menu)
-        copyCell.menuWillOpen(copyMenu)
-        XCTAssertEqual(gestureSettingsMenuItem(in: copyCell)?.isHidden, true)
+        let copy = makePullDown(binding: makeBinding(SystemShortcut.copy))
+        XCTAssertEqual(copy.gestureSettingsItem?.isHidden, true)
     }
 
-    func testGestureSettingsMenuItem_requestsSettingsWithoutChangingBinding() throws {
+    func testShowGestureSettings_asksForTheGesturesPaneWithoutChangingTheBinding() throws {
         var requests = 0
-        let cell = makeButtonCell(
+        var selected = 0
+        let pullDown = makePullDown(
             binding: makeBinding(SystemShortcut.mouseGestureNavigation),
+            onShortcutSelected: { _ in selected += 1 },
             onGestureSettingsRequested: { requests += 1 }
         )
-        let item = try XCTUnwrap(gestureSettingsMenuItem(in: cell))
+        let item = try XCTUnwrap(pullDown.gestureSettingsItem)
 
-        cell.shortcutSelected(item)
-        flushMainQueue()
+        pullDown.shortcutSelected(item)
 
         XCTAssertEqual(requests, 1)
-        XCTAssertEqual(
-            cell.actionPopUpButton.menu?.items.first?.title,
-            SystemShortcut.mouseGestureNavigation.localizedName
-        )
+        XCTAssertEqual(selected, 0)
+        XCTAssertEqual(shownTitle(pullDown), SystemShortcut.mouseGestureNavigation.localizedName)
     }
 
-    func testSelectingGestureNavigation_opensSettings() {
+    func testSelectingGestureNavigation_bindsItAndOffersItsSettings() throws {
         var requests = 0
         var selected: [String?] = []
-        let cell = makeButtonCell(
+        let pullDown = makePullDown(
             binding: makeBinding(SystemShortcut.copy),
-            onGestureSettingsRequested: { requests += 1 }
-        )
-        cell.configure(
-            with: makeBinding(SystemShortcut.copy),
             onShortcutSelected: { selected.append($0?.identifier) },
-            onCustomShortcutRecorded: { _ in },
-            onOpenTargetSelectionRequested: {},
-            onDeleteRequested: {},
             onGestureSettingsRequested: { requests += 1 }
         )
+        let menu = try XCTUnwrap(pullDown.menu)
         let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         item.representedObject = SystemShortcut.mouseGestureNavigation
 
-        cell.shortcutSelected(item)
-        flushMainQueue()
+        pullDown.shortcutSelected(item)
 
         XCTAssertEqual(selected, [SystemShortcut.mouseGestureNavigation.identifier])
-        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(requests, 0, "no popover any more: the menu offers the Gestures pane")
+        XCTAssertTrue(pullDown.menu === menu, "choosing an item never replaces the menu it came from")
+        XCTAssertEqual(pullDown.gestureSettingsItem?.isHidden, false)
     }
 
-    func testGestureSettingsActionCategories_offerOneShotActionsOnly() {
-        let identifiers = MouseGestureSettingsPopover.actionCategories(showLogiActions: false)
+    func testGestureActionCategories_offerOneShotActionsOnly() {
+        let identifiers = MouseGestureSettingsControls.actionCategories(showLogiActions: false)
             .flatMap { $0.shortcuts.map(\.identifier) }
 
         XCTAssertTrue(identifiers.contains(SystemShortcut.moveSpaceLeft.identifier))
@@ -129,7 +114,7 @@ final class ButtonBindingTests: XCTestCase {
         XCTAssertFalse(identifiers.contains(SystemShortcut.mosScrollDash.identifier))
         XCTAssertFalse(identifiers.contains(SystemShortcut.logiSmartShiftToggle.identifier))
 
-        let withLogi = MouseGestureSettingsPopover.actionCategories(showLogiActions: true)
+        let withLogi = MouseGestureSettingsControls.actionCategories(showLogiActions: true)
             .flatMap { $0.shortcuts.map(\.identifier) }
         XCTAssertTrue(withLogi.contains(SystemShortcut.logiSmartShiftToggle.identifier))
     }
@@ -140,189 +125,6 @@ final class ButtonBindingTests: XCTestCase {
 
     private func advanceMainRunLoop(by interval: TimeInterval) {
         RunLoop.main.run(until: Date().addingTimeInterval(interval))
-    }
-
-    private func makeActionPopupButton() -> NSPopUpButton {
-        let actionButton = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 180, height: 28), pullsDown: false)
-        let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "", action: nil, keyEquivalent: ""))
-        actionButton.menu = menu
-        return actionButton
-    }
-
-    func testHoverIntentPopoverControllerHandlesCloseCallback() {
-        let controller = HoverIntentPopoverController()
-
-        XCTAssertTrue(controller.responds(to: #selector(NSPopoverDelegate.popoverDidClose(_:))))
-    }
-
-    func testHoverIntentPopoverCloseCallbackClearsStoredPopoverReference() {
-        let controller = HoverIntentPopoverController()
-        let popover = NSPopover()
-
-        controller.testingInstallPopover(popover)
-        XCTAssertTrue((popover.delegate as AnyObject?) === controller)
-        XCTAssertTrue(controller.testingHasPopover)
-
-        controller.popoverDidClose(Notification(name: NSPopover.didCloseNotification, object: popover))
-
-        XCTAssertFalse(controller.testingHasPopover)
-    }
-
-    func testHoverIntentGeometryKeepsPointerInsideVerticalCorridor() {
-        let source = NSRect(x: 100, y: 100, width: 28, height: 28)
-        let popover = NSRect(x: 60, y: 170, width: 140, height: 90)
-
-        XCTAssertTrue(HoverIntentPopoverGeometry.shouldKeepOpen(
-            pointer: NSPoint(x: 116, y: 150),
-            sourceFrame: source,
-            popoverFrame: popover,
-            corridorPadding: 10
-        ))
-    }
-
-    func testHoverIntentGeometryClosesWhenPointerLeavesCorridor() {
-        let source = NSRect(x: 100, y: 100, width: 28, height: 28)
-        let popover = NSRect(x: 60, y: 170, width: 140, height: 90)
-
-        XCTAssertFalse(HoverIntentPopoverGeometry.shouldKeepOpen(
-            pointer: NSPoint(x: 225, y: 150),
-            sourceFrame: source,
-            popoverFrame: popover,
-            corridorPadding: 10
-        ))
-    }
-
-    func testHoverIntentGeometryKeepsPointerInsidePopoverFrame() {
-        let source = NSRect(x: 100, y: 100, width: 28, height: 28)
-        let popover = NSRect(x: 60, y: 170, width: 140, height: 90)
-
-        XCTAssertTrue(HoverIntentPopoverGeometry.shouldKeepOpen(
-            pointer: NSPoint(x: 120, y: 210),
-            sourceFrame: source,
-            popoverFrame: popover,
-            corridorPadding: 10
-        ))
-    }
-
-    private func opaqueBounds(in image: NSImage) -> NSRect? {
-        guard let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              image.size.width > 0,
-              image.size.height > 0 else {
-            return nil
-        }
-
-        var minX = rep.pixelsWide
-        var minY = rep.pixelsHigh
-        var maxX = -1
-        var maxY = -1
-
-        for y in 0..<rep.pixelsHigh {
-            for x in 0..<rep.pixelsWide {
-                guard let color = rep.colorAt(x: x, y: y),
-                      color.alphaComponent > 0.05 else {
-                    continue
-                }
-                minX = min(minX, x)
-                minY = min(minY, y)
-                maxX = max(maxX, x)
-                maxY = max(maxY, y)
-            }
-        }
-
-        guard maxX >= minX, maxY >= minY else { return nil }
-
-        let scaleX = CGFloat(rep.pixelsWide) / image.size.width
-        let scaleY = CGFloat(rep.pixelsHigh) / image.size.height
-        return NSRect(
-            x: CGFloat(minX) / scaleX,
-            y: CGFloat(minY) / scaleY,
-            width: CGFloat(maxX - minX + 1) / scaleX,
-            height: CGFloat(maxY - minY + 1) / scaleY
-        )
-    }
-
-    private func assertUsesDefaultAlignmentRect(_ image: NSImage, file: StaticString = #filePath, line: UInt = #line) {
-        XCTAssertTrue(
-            NSEqualRects(image.alignmentRect, NSRect(origin: .zero, size: image.size)),
-            "Expected default alignmentRect, got \(image.alignmentRect) for image size \(image.size)",
-            file: file,
-            line: line
-        )
-    }
-
-    private func assertHasTrailingVisiblePadding(
-        _ image: NSImage,
-        minimumPadding: CGFloat,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        guard let bounds = opaqueBounds(in: image) else {
-            return XCTFail("Expected image to contain visible pixels", file: file, line: line)
-        }
-
-        let trailingPadding = image.size.width - bounds.maxX
-        XCTAssertGreaterThanOrEqual(
-            trailingPadding,
-            minimumPadding,
-            "Expected at least \(minimumPadding)pt trailing padding after visible content, got \(trailingPadding)pt for image size \(image.size) and bounds \(bounds)",
-            file: file,
-            line: line
-        )
-    }
-
-    private func averageVisibleLuminance(in image: NSImage) -> CGFloat? {
-        guard let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff) else {
-            return nil
-        }
-
-        var weightedTotal: CGFloat = 0
-        var totalWeight: CGFloat = 0
-
-        for y in 0..<rep.pixelsHigh {
-            for x in 0..<rep.pixelsWide {
-                guard let sourceColor = rep.colorAt(x: x, y: y),
-                      sourceColor.alphaComponent > 0.05,
-                      let color = sourceColor.usingColorSpace(.deviceRGB) else {
-                    continue
-                }
-
-                let alpha = color.alphaComponent
-                let luminance = 0.2126 * color.redComponent
-                    + 0.7152 * color.greenComponent
-                    + 0.0722 * color.blueComponent
-                weightedTotal += luminance * alpha
-                totalWeight += alpha
-            }
-        }
-
-        guard totalWeight > 0 else { return nil }
-        return weightedTotal / totalWeight
-    }
-
-    private func keyComboBadgeWidthWithoutTrailingSafetyPadding(components: [String]) -> CGFloat {
-        let font = NSFont.systemFont(ofSize: 9, weight: .medium)
-        let plusFont = NSFont.systemFont(ofSize: 9)
-        let badgeHeight: CGFloat = 17
-        let hPadding: CGFloat = 5
-        let plusSpacing: CGFloat = 3
-        let symbol = NSImage(systemSymbolName: "keyboard", accessibilityDescription: nil)
-        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
-        let keyboardImage = symbol?.withSymbolConfiguration(config) ?? symbol
-        let iconWidth = (keyboardImage?.size.width ?? 0) + 4
-
-        var totalWidth = iconWidth
-        for (index, component) in components.enumerated() {
-            let textSize = (component as NSString).size(withAttributes: [.font: font])
-            totalWidth += max(textSize.width + hPadding * 2, badgeHeight)
-            if index > 0 {
-                let plusSize = ("+" as NSString).size(withAttributes: [.font: plusFont])
-                totalWidth += plusSpacing * 2 + plusSize.width
-            }
-        }
-        return ceil(totalWidth)
     }
 
     func testPrepareCustomCache_regularKey() {
@@ -514,8 +316,8 @@ final class ButtonBindingTests: XCTestCase {
 
         XCTAssertEqual(presentation.kind, .recordingPrompt)
         XCTAssertEqual(presentation.title, NSLocalizedString("custom-recording-prompt", comment: ""))
-        XCTAssertTrue(presentation.badgeComponents.isEmpty)
-        XCTAssertNil(presentation.brand)
+        XCTAssertNil(presentation.symbolName)
+        XCTAssertNil(presentation.image)
     }
 
     func testActionDisplayResolver_upgradesRecognizedCustomBindingToNamedAction() {
@@ -524,7 +326,7 @@ final class ButtonBindingTests: XCTestCase {
 
         XCTAssertEqual(presentation.kind, .namedAction)
         XCTAssertEqual(presentation.title, SystemShortcut.screenshotSelection.localizedName)
-        XCTAssertEqual(presentation.brand?.name, nil)
+        XCTAssertEqual(presentation.symbolName, SystemShortcut.screenshotSelection.symbolName)
     }
 
     func testActionDisplayResolver_upgradesTypedMouseBackCustomBindingToNamedAction() {
@@ -534,11 +336,23 @@ final class ButtonBindingTests: XCTestCase {
         XCTAssertEqual(presentation.title, SystemShortcut.mouseBackClick.localizedName)
     }
 
-    func testActionDisplayResolver_rendersTypedMouseCustomBindingAsMouseBadge() {
+    func testActionDisplayResolver_showsTypedMouseCustomBindingAsText() {
         let presentation = makeResolvedPresentation(customBindingName: "custom::mouse:5:0")
 
         XCTAssertEqual(presentation.kind, .keyCombo)
-        XCTAssertEqual(presentation.badgeComponents, ["🖱5"])
+        XCTAssertEqual(presentation.title, "Button 5")
+        XCTAssertEqual(presentation.symbolName, "computermouse")
+    }
+
+    func testActionDisplayResolver_showsAKeyboardShortcutAsTextInMenuOrder() {
+        // ⌘⇧ and 4, stored in any order of flags, reads as macOS menus write it. Code 21 is
+        // the 4 key; the combination is not a listed action once ⌥ is added.
+        let modifiers = UInt64(NSEvent.ModifierFlags.command.union(.shift).union(.option).rawValue)
+        let presentation = makeResolvedPresentation(customBindingName: "custom::21:\(modifiers)")
+
+        XCTAssertEqual(presentation.kind, .keyCombo)
+        XCTAssertEqual(presentation.title, "⌥⇧⌘4")
+        XCTAssertEqual(presentation.symbolName, "keyboard")
     }
 
     func testInputEventUsesSemanticNamesForStandardMouseBackAndForwardButtons() {
@@ -617,13 +431,12 @@ final class ButtonBindingTests: XCTestCase {
         XCTAssertEqual(object["code"] as? Int, 3)
     }
 
-    func testActionDisplayResolver_upgradesSingleLogiCustomBindingToBrandedNamedAction() {
+    func testActionDisplayResolver_namesASingleLogitechButtonShortcutLikeARow() {
+        // Code 1007 is the Logitech Forward control: it reads as the row of that button would.
         let presentation = makeResolvedPresentation(customBindingName: "custom::1007:0")
 
-        XCTAssertEqual(presentation.kind, .namedAction)
-        XCTAssertEqual(presentation.title, "Forward")
-        XCTAssertTrue(presentation.badgeComponents.isEmpty)
-        XCTAssertEqual(presentation.brand?.name, BrandTagConfig.logi.name)
+        XCTAssertEqual(presentation.kind, .keyCombo)
+        XCTAssertEqual(presentation.title, "Forward button")
     }
 
     func testActionTagConfig_mosUsesNeonLogoPalette() {
@@ -650,25 +463,25 @@ final class ButtonBindingTests: XCTestCase {
         XCTAssertGreaterThan(gradientColors?.last?.redComponent ?? 0, 0.35)
     }
 
-    func testActionDisplayResolver_mosScrollShortcutUsesReusableMosTag() {
+    func testActionDisplayResolver_scrollActionsHaveASymbolAndNoBrandTag() {
         let presentation = makeResolvedPresentation(shortcut: SystemShortcut.mosScrollDash)
 
         XCTAssertEqual(presentation.kind, .namedAction)
-        XCTAssertEqual(presentation.title, SystemShortcut.mosScrollDash.localizedName)
-        XCTAssertEqual(presentation.tag?.name, BrandTagConfig.mos.name)
-        XCTAssertEqual(presentation.brand?.name, BrandTagConfig.mos.name)
+        XCTAssertEqual(presentation.title, "Scroll Faster")
+        XCTAssertEqual(presentation.symbolName, "speedometer")
+        XCTAssertNil(presentation.image)
     }
 
-    func testConfiguredButtonCell_showsBrandedNamedDisplayForSingleLogiCustomBinding() {
+    func testPullDown_showsASingleLogitechButtonShortcutWithASymbol() {
         let binding = ButtonBinding(
             triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil),
             systemShortcutName: "custom::1007:0"
         )
 
-        let cell = makeButtonCell(binding: binding)
+        let pullDown = makePullDown(binding: binding)
 
-        XCTAssertEqual(cell.actionPopUpButton.menu?.items.first?.title, "Forward")
-        XCTAssertNotNil(cell.actionPopUpButton.menu?.items.first?.image)
+        XCTAssertEqual(shownTitle(pullDown), "Forward button")
+        XCTAssertNotNil(pullDown.menu?.items.first?.image)
     }
 
     func testActionDisplayResolver_returnsUnboundWhenNoActionExists() {
@@ -678,193 +491,37 @@ final class ButtonBindingTests: XCTestCase {
         XCTAssertEqual(presentation.title, NSLocalizedString("unbound", comment: ""))
     }
 
-    func testActionDisplayRenderer_rendersRecordingPromptWithoutResidualImage() {
-        let popupButton = makeActionPopupButton()
-        let presentation = ActionPresentation(
-            kind: .recordingPrompt,
-            title: NSLocalizedString("custom-recording-prompt", comment: ""),
-            symbolName: nil,
-            badgeComponents: [],
-            brand: nil
-        )
+    func testPullDown_recordingPromptHasNoPicture() {
+        let pullDown = makePullDown(binding: makeBinding(SystemShortcut.copy))
+        XCTAssertNotNil(pullDown.menu?.items.first?.image)
 
-        ActionDisplayRenderer().render(presentation, into: popupButton)
+        pullDown.beginCustomShortcutSelection(startRecorder: false)
 
-        XCTAssertEqual(popupButton.menu?.items.first?.title, presentation.title)
-        XCTAssertNil(popupButton.menu?.items.first?.image)
+        XCTAssertEqual(shownTitle(pullDown), NSLocalizedString("custom-recording-prompt", comment: ""))
+        XCTAssertNil(pullDown.menu?.items.first?.image)
     }
 
-    func testActionDisplayRenderer_prefixesBrandTagForNamedActionSymbol() {
-        let brandedPopup = makeActionPopupButton()
-        let plainPopup = makeActionPopupButton()
-        let branded = ActionPresentation(
-            kind: .namedAction,
-            title: "Forward",
-            symbolName: "chevron.forward",
-            badgeComponents: [],
-            brand: .logi
-        )
-        let plain = ActionPresentation(
-            kind: .namedAction,
-            title: "Forward",
-            symbolName: "chevron.forward",
-            badgeComponents: [],
-            brand: nil
-        )
-
-        let renderer = ActionDisplayRenderer()
-        renderer.render(branded, into: brandedPopup)
-        renderer.render(plain, into: plainPopup)
-
-        guard let brandedImage = brandedPopup.menu?.items.first?.image,
-              let plainImage = plainPopup.menu?.items.first?.image else {
-            return XCTFail("Expected both render paths to create placeholder images")
-        }
-
-        XCTAssertGreaterThan(brandedImage.size.width, plainImage.size.width)
+    func testPullDown_isAPullDownAsWideAsTheGesturesPullDowns() {
+        let pullDown = makePullDown(binding: makeBinding(SystemShortcut.mosScrollDash))
+        XCTAssertTrue(pullDown.pullsDown)
+        XCTAssertEqual(ButtonActionPullDown.width, GesturesPreferencesViewController.popUpWidth)
+        XCTAssertEqual(shownTitle(pullDown), "Scroll Faster")
+        // The symbol alone: no brand tag drawn in front of it.
+        let image = pullDown.menu?.items.first?.image
+        let symbol = NSImage(systemSymbolName: "speedometer", accessibilityDescription: nil)
+        XCTAssertEqual(image?.size, symbol?.size)
     }
 
-    func testActionDisplayRenderer_rendersKeyComboAsBadgeImage() {
-        let popupButton = makeActionPopupButton()
-        let presentation = ActionPresentation(
-            kind: .keyCombo,
-            title: "",
-            symbolName: nil,
-            badgeComponents: ["⇧ ⌘", "4"],
-            brand: nil
-        )
-
-        ActionDisplayRenderer().render(presentation, into: popupButton)
-
-        XCTAssertEqual(popupButton.menu?.items.first?.title, "")
-        XCTAssertNotNil(popupButton.menu?.items.first?.image)
-    }
-
-    func testActionDisplayRenderer_keyComboButtonFaceKeepsMenuImageScale() {
-        for badgeComponents in [
-            ["⌃", "⌥", "⇧", "⌘"],
-            ["⌥", "M"],
-            ["⌃", "I"]
-        ] {
-            let popupButton = makeActionPopupButton()
-            let presentation = ActionPresentation(
-                kind: .keyCombo,
-                title: "",
-                symbolName: nil,
-                badgeComponents: badgeComponents,
-                brand: nil
-            )
-
-            ActionDisplayRenderer().render(presentation, into: popupButton)
-
-            guard let placeholderImage = popupButton.menu?.items.first?.image,
-                  let cell = popupButton.cell as? NSPopUpButtonCell,
-                  let buttonFaceImage = cell.menuItem?.image else {
-                return XCTFail("Expected key combo render path to create both menu and button-face images")
-            }
-
-            XCTAssertEqual(popupButton.menu?.items.first?.title, "")
-            XCTAssertEqual(cell.menuItem?.title, "")
-            assertUsesDefaultAlignmentRect(placeholderImage)
-            assertUsesDefaultAlignmentRect(buttonFaceImage)
-            XCTAssertEqual(buttonFaceImage.size.width, placeholderImage.size.width, accuracy: 0.01)
-            XCTAssertEqual(buttonFaceImage.size.height, placeholderImage.size.height, accuracy: 0.01)
-            let unpaddedWidth = keyComboBadgeWidthWithoutTrailingSafetyPadding(components: badgeComponents)
-            XCTAssertGreaterThanOrEqual(buttonFaceImage.size.width - unpaddedWidth, 2)
-            XCTAssertLessThanOrEqual(buttonFaceImage.size.width - unpaddedWidth, 4)
-            assertHasTrailingVisiblePadding(placeholderImage, minimumPadding: 1.5)
-            assertHasTrailingVisiblePadding(buttonFaceImage, minimumPadding: 1.5)
-
-            guard let menuBounds = opaqueBounds(in: placeholderImage),
-                  let buttonFaceBounds = opaqueBounds(in: buttonFaceImage) else {
-                return XCTFail("Expected both menu and button-face images to contain visible pixels")
-            }
-            XCTAssertEqual(buttonFaceBounds.width, menuBounds.width, accuracy: 0.75)
-            XCTAssertEqual(buttonFaceBounds.height, menuBounds.height, accuracy: 0.75)
-        }
-    }
-
-    func testActionDisplayRenderer_keyComboUsesPopupButtonAppearanceWhenRasterizing() {
-        guard let darkAppearance = NSAppearance(named: .darkAqua),
-              let lightAppearance = NSAppearance(named: .aqua) else {
-            return
-        }
-
-        let presentation = ActionPresentation(
-            kind: .keyCombo,
-            title: "",
-            symbolName: nil,
-            badgeComponents: ["⌃", "K"],
-            brand: nil
-        )
-
-        let darkPopupButton = makeActionPopupButton()
-        darkPopupButton.appearance = darkAppearance
-        // The drawing appearance around the call is the opposite one: the renderer must
-        // not pick it up.
-        lightAppearance.performAsCurrentDrawingAppearance {
-            ActionDisplayRenderer().render(presentation, into: darkPopupButton)
-        }
-
-        let lightPopupButton = makeActionPopupButton()
-        lightPopupButton.appearance = lightAppearance
-        darkAppearance.performAsCurrentDrawingAppearance {
-            ActionDisplayRenderer().render(presentation, into: lightPopupButton)
-        }
-
-        guard let darkImage = (darkPopupButton.cell as? NSPopUpButtonCell)?.menuItem?.image,
-              let lightImage = (lightPopupButton.cell as? NSPopUpButtonCell)?.menuItem?.image,
-              let darkLuminance = averageVisibleLuminance(in: darkImage),
-              let lightLuminance = averageVisibleLuminance(in: lightImage) else {
-            return XCTFail("Expected keyCombo images with visible pixels")
-        }
-
-        XCTAssertGreaterThan(
-            darkLuminance,
-            lightLuminance + 0.2,
-            "Expected keyCombo bitmap colors to follow the popup button appearance, not the current drawing appearance"
-        )
-    }
-
-    func testButtonTableCellView_refreshesKeyComboImageWhenAppearanceChanges() {
-        let previousAppearance = NSApp.appearance
-        defer { NSApp.appearance = previousAppearance }
-
-        guard let darkAppearance = NSAppearance(named: .darkAqua),
-              let lightAppearance = NSAppearance(named: .aqua) else {
-            return
-        }
-
-        NSApp.appearance = darkAppearance
+    func testPullDown_showsAKeyboardShortcutAsText() {
+        let modifiers = UInt64(NSEvent.ModifierFlags.control.rawValue)
         let binding = ButtonBinding(
             triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil),
-            systemShortcutName: "custom::40:1048576",
-            isEnabled: true
+            systemShortcutName: "custom::40:\(modifiers)"
         )
-        let cell = makeButtonCell(binding: binding)
-        cell.actionPopUpButton.appearance = darkAppearance
-        cell.refreshActionDisplay()
 
-        guard let darkImageData = (cell.actionPopUpButton.cell as? NSPopUpButtonCell)?
-            .menuItem?
-            .image?
-            .tiffRepresentation else {
-            return XCTFail("Expected keyCombo button face image before appearance change")
-        }
+        let pullDown = makePullDown(binding: binding)
 
-        NSApp.appearance = lightAppearance
-        cell.actionPopUpButton.appearance = lightAppearance
-        cell.viewDidChangeEffectiveAppearance()
-        advanceMainRunLoop(by: 0.15)
-
-        guard let lightImageData = (cell.actionPopUpButton.cell as? NSPopUpButtonCell)?
-            .menuItem?
-            .image?
-            .tiffRepresentation else {
-            return XCTFail("Expected keyCombo button face image after appearance change")
-        }
-
-        XCTAssertNotEqual(darkImageData, lightImageData)
+        XCTAssertEqual(shownTitle(pullDown), "⌃K")
     }
 
     // MARK: - ActionPresentation openTarget
@@ -908,22 +565,19 @@ final class ButtonBindingTests: XCTestCase {
         )
     }
 
-    func testActionDisplayRenderer_rendersOpenTargetWithImage() {
-        let popupButton = makeActionPopupButton()
-        let stubImage = NSImage(size: NSSize(width: 16, height: 16))
-        let presentation = ActionPresentation(
-            kind: .openTarget,
-            title: "Safari",
-            symbolName: nil,
-            image: stubImage,
-            badgeComponents: [],
-            brand: nil
+    func testPullDown_showsAnAppWithItsIcon() {
+        let payload = OpenTargetPayload(
+            path: "/System/Applications/Calculator.app",
+            bundleID: "com.apple.calculator",
+            arguments: "",
+            kind: .application
         )
+        let trigger = RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil)
+        let pullDown = makePullDown(binding: ButtonBinding(triggerEvent: trigger, openTarget: payload))
 
-        ActionDisplayRenderer().render(presentation, into: popupButton)
-
-        XCTAssertEqual(popupButton.menu?.items.first?.title, "Safari")
-        XCTAssertNotNil(popupButton.menu?.items.first?.image)
+        XCTAssertFalse(shownTitle(pullDown)?.isEmpty ?? true)
+        let image = try? XCTUnwrap(pullDown.menu?.items.first?.image)
+        XCTAssertEqual(image?.size, NSSize(width: ButtonActionPullDown.imageSize, height: ButtonActionPullDown.imageSize))
     }
 
     func testBuildShortcutMenu_includesModifierCategoryWithSingleModifierShortcuts() {
@@ -1082,8 +736,7 @@ final class ButtonBindingTests: XCTestCase {
             return XCTFail("Expected custom shortcut item")
         }
 
-        XCTAssertFalse(customItem.title.contains("Key"))
-        XCTAssertFalse(customItem.title.contains("按键"))
+        XCTAssertEqual(customItem.title, "Keyboard Shortcut…")
     }
 
     func testShortcutSelected_openSentinel_invokesOpenSelectionCallback() {
@@ -1091,28 +744,28 @@ final class ButtonBindingTests: XCTestCase {
         let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "")
 
         var openSelectionInvoked = false
-        let cell = makeButtonCell(binding: binding, onOpenTargetSelectionRequested: {
+        let pullDown = makePullDown(binding: binding, onOpenTargetSelectionRequested: {
             openSelectionInvoked = true
         })
 
-        let openItem = NSMenuItem(title: "Open Application…", action: nil, keyEquivalent: "")
-        openItem.representedObject = "__open__" as NSString
-        cell.shortcutSelected(openItem)
+        let openItem = NSMenuItem(title: "Open App or File…", action: nil, keyEquivalent: "")
+        openItem.representedObject = ShortcutManager.MenuMarker.openTarget as NSString
+        pullDown.shortcutSelected(openItem)
 
-        XCTAssertTrue(openSelectionInvoked, "Selecting the __open__ menu item should trigger onOpenTargetSelectionRequested")
+        XCTAssertTrue(openSelectionInvoked, "Open App or File… asks the pane for the app or file")
     }
 
     func testShortcutSelected_openSentinelRestoresCurrentActionDisplay() {
         let trigger = RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil)
         let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "copy")
-        let cell = makeButtonCell(binding: binding)
-        cell.actionPopUpButton.menu?.items.first?.title = NSLocalizedString("open-target-action", comment: "")
+        let pullDown = makePullDown(binding: binding)
+        pullDown.menu?.items.first?.title = NSLocalizedString("open-target-action", comment: "")
 
-        let openItem = NSMenuItem(title: "Open Application…", action: nil, keyEquivalent: "")
-        openItem.representedObject = "__open__" as NSString
-        cell.shortcutSelected(openItem)
+        let openItem = NSMenuItem(title: "Open App or File…", action: nil, keyEquivalent: "")
+        openItem.representedObject = ShortcutManager.MenuMarker.openTarget as NSString
+        pullDown.shortcutSelected(openItem)
 
-        XCTAssertEqual(cell.actionPopUpButton.menu?.items.first?.title, SystemShortcut.copy.localizedName)
+        XCTAssertEqual(shownTitle(pullDown), SystemShortcut.copy.localizedName)
     }
 
     func testBuildShortcutMenu_functionKeysHoldEscapeButNotGestureNavigation() {
@@ -1188,25 +841,17 @@ final class ButtonBindingTests: XCTestCase {
 
     func testSelectingTheTopLevelGestureItem_bindsGestureNavigation() throws {
         var selected: [String?] = []
-        let cell = makeButtonCell(binding: makeBinding(SystemShortcut.copy))
-        cell.configure(
-            with: makeBinding(SystemShortcut.copy),
-            onShortcutSelected: { selected.append($0?.identifier) },
-            onCustomShortcutRecorded: { _ in },
-            onOpenTargetSelectionRequested: {},
-            onDeleteRequested: {},
-            onGestureSettingsRequested: {}
-        )
-        let menu = try XCTUnwrap(cell.actionPopUpButton.menu)
+        let pullDown = makePullDown(binding: makeBinding(SystemShortcut.copy), onShortcutSelected: { selected.append($0?.identifier) })
+        let menu = try XCTUnwrap(pullDown.menu)
         let item = try XCTUnwrap(menu.items.first {
             ($0.representedObject as? SystemShortcut.Shortcut)?.identifier == SystemShortcut.mouseGestureNavigation.identifier
         })
 
-        cell.shortcutSelected(item)
-        flushMainQueue()
+        pullDown.shortcutSelected(item)
 
         XCTAssertEqual(selected, [SystemShortcut.mouseGestureNavigation.identifier])
         XCTAssertEqual(menu.items.first?.title, SystemShortcut.mouseGestureNavigation.localizedName)
+        XCTAssertEqual(pullDown.binding.systemShortcutName, SystemShortcut.mouseGestureNavigation.identifier)
     }
 
     func testPredefinedModifierShortcut_localizedNamesAreSemanticLabels() {
@@ -1236,28 +881,27 @@ final class ButtonBindingTests: XCTestCase {
         XCTAssertNotEqual(shortcut.localizedName, "escapeKey")
     }
 
-    func testConfiguredButtonCell_showsNamedShortcutForEquivalentCustomBinding() {
+    func testPullDown_showsNamedShortcutForEquivalentCustomBinding() {
         let modifiers = UInt64(NSEvent.ModifierFlags.command.union(.shift).rawValue)
         let binding = ButtonBinding(
             triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil),
             systemShortcutName: "custom::21:\(modifiers)"
         )
 
-        let cell = makeButtonCell(binding: binding)
+        let pullDown = makePullDown(binding: binding)
 
-        XCTAssertEqual(cell.actionPopUpButton.menu?.items.first?.title, SystemShortcut.screenshotSelection.localizedName)
-        XCTAssertEqual(cell.actionPopUpButton.titleOfSelectedItem, SystemShortcut.screenshotSelection.localizedName)
+        XCTAssertEqual(pullDown.menu?.items.first?.title, SystemShortcut.screenshotSelection.localizedName)
     }
 
-    func testConfiguredButtonCell_preservesDirectNamedShortcutForEquivalentConflictingCombo() {
+    func testPullDown_preservesDirectNamedShortcutForEquivalentConflictingCombo() {
         let binding = ButtonBinding(
             triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil),
             systemShortcutName: "getInfo"
         )
 
-        let cell = makeButtonCell(binding: binding)
+        let pullDown = makePullDown(binding: binding)
 
-        XCTAssertEqual(cell.actionPopUpButton.menu?.items.first?.title, SystemShortcut.getInfo.localizedName)
+        XCTAssertEqual(pullDown.menu?.items.first?.title, SystemShortcut.getInfo.localizedName)
     }
 
     func testBeginCustomShortcutSelection_showsRecordingPromptWhileAwaitingRecording() {
@@ -1266,13 +910,13 @@ final class ButtonBindingTests: XCTestCase {
             systemShortcutName: "",
             isEnabled: false
         )
-        let cell = makeButtonCell(binding: binding)
+        let pullDown = makePullDown(binding: binding)
 
-        cell.beginCustomShortcutSelection(startRecorder: false)
+        pullDown.beginCustomShortcutSelection(startRecorder: false)
         flushMainQueue()
 
         XCTAssertEqual(
-            cell.actionPopUpButton.menu?.items.first?.title,
+            pullDown.menu?.items.first?.title,
             NSLocalizedString("custom-recording-prompt", comment: "")
         )
     }
@@ -1283,14 +927,14 @@ final class ButtonBindingTests: XCTestCase {
             systemShortcutName: "",
             isEnabled: false
         )
-        let cell = makeButtonCell(binding: binding)
+        let pullDown = makePullDown(binding: binding)
 
-        cell.beginCustomShortcutSelection(startRecorder: false)
+        pullDown.beginCustomShortcutSelection(startRecorder: false)
         flushMainQueue()
-        cell.onRecordingStopped(KeyRecorder(), didRecord: false)
+        pullDown.onRecordingStopped(KeyRecorder(), didRecord: false)
         flushMainQueue()
 
-        XCTAssertEqual(cell.actionPopUpButton.menu?.items.first?.title, NSLocalizedString("unbound", comment: ""))
+        XCTAssertEqual(pullDown.menu?.items.first?.title, NSLocalizedString("unbound", comment: ""))
     }
 
     func testCustomRecordingDidStop_restoresExistingDisplayWhenNoKeyRecorded() {
@@ -1299,14 +943,14 @@ final class ButtonBindingTests: XCTestCase {
             triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil),
             systemShortcutName: "custom::21:\(modifiers)"
         )
-        let cell = makeButtonCell(binding: binding)
+        let pullDown = makePullDown(binding: binding)
 
-        cell.beginCustomShortcutSelection(startRecorder: false)
+        pullDown.beginCustomShortcutSelection(startRecorder: false)
         flushMainQueue()
-        cell.onRecordingStopped(KeyRecorder(), didRecord: false)
+        pullDown.onRecordingStopped(KeyRecorder(), didRecord: false)
         flushMainQueue()
 
-        XCTAssertEqual(cell.actionPopUpButton.menu?.items.first?.title, SystemShortcut.screenshotSelection.localizedName)
+        XCTAssertEqual(pullDown.menu?.items.first?.title, SystemShortcut.screenshotSelection.localizedName)
     }
 
     func testRecordedEquivalentCustomShortcut_updatesSelectedActionDisplayToNamedShortcut() {
@@ -1315,7 +959,7 @@ final class ButtonBindingTests: XCTestCase {
             systemShortcutName: "",
             isEnabled: false
         )
-        let cell = makeButtonCell(binding: binding)
+        let pullDown = makePullDown(binding: binding)
         let event = InputEvent(
             type: .keyboard,
             code: 21,
@@ -1325,11 +969,10 @@ final class ButtonBindingTests: XCTestCase {
             device: nil
         )
 
-        cell.onEventRecorded(KeyRecorder(), didRecordEvent: event, isDuplicate: false)
+        pullDown.onEventRecorded(KeyRecorder(), didRecordEvent: event, isDuplicate: false)
         advanceMainRunLoop(by: 0.75)
 
-        XCTAssertEqual(cell.actionPopUpButton.menu?.items.first?.title, SystemShortcut.screenshotSelection.localizedName)
-        XCTAssertEqual(cell.actionPopUpButton.titleOfSelectedItem, SystemShortcut.screenshotSelection.localizedName)
+        XCTAssertEqual(pullDown.menu?.items.first?.title, SystemShortcut.screenshotSelection.localizedName)
     }
 
     func testRecordedEquivalentCustomShortcut_withIrrelevantFlagsStillDisplaysNamedShortcut() {
@@ -1338,7 +981,7 @@ final class ButtonBindingTests: XCTestCase {
             systemShortcutName: "",
             isEnabled: false
         )
-        let cell = makeButtonCell(binding: binding)
+        let pullDown = makePullDown(binding: binding)
         let event = InputEvent(
             type: .keyboard,
             code: 21,
@@ -1348,11 +991,10 @@ final class ButtonBindingTests: XCTestCase {
             device: nil
         )
 
-        cell.onEventRecorded(KeyRecorder(), didRecordEvent: event, isDuplicate: false)
+        pullDown.onEventRecorded(KeyRecorder(), didRecordEvent: event, isDuplicate: false)
         advanceMainRunLoop(by: 0.75)
 
-        XCTAssertEqual(cell.actionPopUpButton.menu?.items.first?.title, SystemShortcut.screenshotSelection.localizedName)
-        XCTAssertEqual(cell.actionPopUpButton.titleOfSelectedItem, SystemShortcut.screenshotSelection.localizedName)
+        XCTAssertEqual(pullDown.menu?.items.first?.title, SystemShortcut.screenshotSelection.localizedName)
     }
 
     func testRecordedMouseCustomShortcut_updatesSelectedActionDisplayToNamedMouseAction() {
@@ -1361,7 +1003,7 @@ final class ButtonBindingTests: XCTestCase {
             systemShortcutName: "",
             isEnabled: false
         )
-        let cell = makeButtonCell(binding: binding)
+        let pullDown = makePullDown(binding: binding)
         let event = InputEvent(
             type: .mouse,
             code: 3,
@@ -1371,11 +1013,10 @@ final class ButtonBindingTests: XCTestCase {
             device: nil
         )
 
-        cell.onEventRecorded(KeyRecorder(), didRecordEvent: event, isDuplicate: false)
+        pullDown.onEventRecorded(KeyRecorder(), didRecordEvent: event, isDuplicate: false)
         advanceMainRunLoop(by: 0.75)
 
-        XCTAssertEqual(cell.actionPopUpButton.menu?.items.first?.title, SystemShortcut.mouseBackClick.localizedName)
-        XCTAssertEqual(cell.actionPopUpButton.titleOfSelectedItem, SystemShortcut.mouseBackClick.localizedName)
+        XCTAssertEqual(pullDown.menu?.items.first?.title, SystemShortcut.mouseBackClick.localizedName)
     }
 
     func testPrimaryMouseButtonsRecordabilityInAdaptiveMode() {
@@ -1433,7 +1074,7 @@ final class ButtonBindingTests: XCTestCase {
             systemShortcutName: "",
             isEnabled: false
         )
-        let cell = makeButtonCell(binding: binding)
+        let pullDown = makePullDown(binding: binding)
         let event = InputEvent(
             type: .mouse,
             code: 3,
@@ -1443,7 +1084,7 @@ final class ButtonBindingTests: XCTestCase {
             device: nil
         )
 
-        XCTAssertFalse(cell.validateRecordedEvent(KeyRecorder(), event: event))
+        XCTAssertFalse(pullDown.validateRecordedEvent(KeyRecorder(), event: event))
     }
 
     func testDuplicateCustomRecordingRestoresPreviousActionDisplay() {
@@ -1452,7 +1093,7 @@ final class ButtonBindingTests: XCTestCase {
             systemShortcutName: "",
             isEnabled: false
         )
-        let cell = makeButtonCell(binding: binding)
+        let pullDown = makePullDown(binding: binding)
         let event = InputEvent(
             type: .mouse,
             code: 3,
@@ -1462,13 +1103,13 @@ final class ButtonBindingTests: XCTestCase {
             device: nil
         )
 
-        cell.beginCustomShortcutSelection(startRecorder: false)
+        pullDown.beginCustomShortcutSelection(startRecorder: false)
         flushMainQueue()
-        cell.onEventRecorded(KeyRecorder(), didRecordEvent: event, isDuplicate: true)
-        cell.onRecordingStopped(KeyRecorder(), didRecord: true)
+        pullDown.onEventRecorded(KeyRecorder(), didRecordEvent: event, isDuplicate: true)
+        pullDown.onRecordingStopped(KeyRecorder(), didRecord: true)
         advanceMainRunLoop(by: KeyRecorder.recordingFeedbackDelay(isDuplicate: true) + 0.05)
 
-        XCTAssertEqual(cell.actionPopUpButton.menu?.items.first?.title, NSLocalizedString("unbound", comment: ""))
+        XCTAssertEqual(pullDown.menu?.items.first?.title, NSLocalizedString("unbound", comment: ""))
     }
 
     func testDuplicateCustomRecordingKeepsPromptUntilDuplicateFeedbackEnds() {
@@ -1477,7 +1118,7 @@ final class ButtonBindingTests: XCTestCase {
             systemShortcutName: "",
             isEnabled: false
         )
-        let cell = makeButtonCell(binding: binding)
+        let pullDown = makePullDown(binding: binding)
         let event = InputEvent(
             type: .mouse,
             code: 3,
@@ -1487,15 +1128,15 @@ final class ButtonBindingTests: XCTestCase {
             device: nil
         )
 
-        cell.beginCustomShortcutSelection(startRecorder: false)
+        pullDown.beginCustomShortcutSelection(startRecorder: false)
         flushMainQueue()
-        cell.onEventRecorded(KeyRecorder(), didRecordEvent: event, isDuplicate: true)
+        pullDown.onEventRecorded(KeyRecorder(), didRecordEvent: event, isDuplicate: true)
 
         advanceMainRunLoop(by: KeyRecorder.recordingFeedbackDelay(isDuplicate: false) + 0.05)
-        XCTAssertEqual(cell.actionPopUpButton.menu?.items.first?.title, NSLocalizedString("custom-recording-prompt", comment: ""))
+        XCTAssertEqual(pullDown.menu?.items.first?.title, NSLocalizedString("custom-recording-prompt", comment: ""))
 
         advanceMainRunLoop(by: KeyRecorder.recordingFeedbackDelay(isDuplicate: true))
-        XCTAssertEqual(cell.actionPopUpButton.menu?.items.first?.title, NSLocalizedString("unbound", comment: ""))
+        XCTAssertEqual(pullDown.menu?.items.first?.title, NSLocalizedString("unbound", comment: ""))
     }
 
     // MARK: - OpenTarget extension

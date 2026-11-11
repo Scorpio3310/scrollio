@@ -12,6 +12,16 @@ import Cocoa
 /// 职责: 构建分级快捷键菜单 (PopUpButton 使用)
 class ShortcutManager {
 
+    /// `representedObject` of the items that do more than bind a listed action.
+    enum MenuMarker {
+        /// "Open App or File…": the caller asks which app or file.
+        static let openTarget = "__open__"
+        /// "Keyboard Shortcut…": the caller records a key.
+        static let keyboardShortcut = "__custom__"
+        /// "Show Gesture Settings": the caller shows the Gestures pane.
+        static let gestureSettings = "__gestureSettings__"
+    }
+
     /// 创建带图标的 NSImage (SF Symbol)
     private static func createSymbolImage(_ symbolName: String) -> NSImage? {
         return NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
@@ -22,17 +32,28 @@ class ShortcutManager {
     ///
     /// 菜单结构设计:
     /// - 索引0: 占位符 PopUpButton 显示此项,动态更新标题和图标
-    /// - 索引1: 分割线 #1 - 根据绑定状态动态隐藏/显示
-    /// - 索引2: "未绑定"/"取消绑定" - 可选菜单项,representedObject 为 nil
+    /// - 索引1: 分割线 #1 (a pull-down never shows it: its item 0 is the title)
+    /// - 索引2: "No Action" - representedObject 为 nil
     /// - 索引3: 分割线 #2 - 分隔操作区和分类菜单
-    /// - 索引4+: 分类子菜单 (功能键,应用与窗口等)
-    /// - last group, after a separator: "Gesture Navigation", "Open…" and "Custom…",
+    /// - 索引4+: 分类子菜单 (功能键,应用与窗口等), then Modifier Keys, Mouse Buttons,
+    ///   Scrolling and, for a Logitech button, Logitech Mouse; every category with a symbol
+    /// - last group, after a separator: "Gesture Navigation" (and "Show Gesture Settings"
+    ///   while it is the button's action), "Open App or File…" and "Keyboard Shortcut…",
     ///   the actions that are configured rather than picked from a list
     ///
     /// - Parameter menu: 目标菜单对象
     /// - Parameter target: 菜单项点击事件的目标对象
     /// - Parameter action: 菜单项点击事件的选择器
-    static func buildShortcutMenu(into menu: NSMenu, target: AnyObject, action: Selector, showLogiActions: Bool = false) {
+    /// - Parameter showLogiActions: the trigger is a Logitech button: offer its actions.
+    /// - Parameter showsGestureSettings: Gesture Navigation is the button's action: offer
+    ///   "Show Gesture Settings" under it.
+    static func buildShortcutMenu(
+        into menu: NSMenu,
+        target: AnyObject,
+        action: Selector,
+        showLogiActions: Bool = false,
+        showsGestureSettings: Bool = false
+    ) {
         // 清空现有菜单项
         menu.removeAllItems()
         menu.autoenablesItems = false
@@ -118,25 +139,23 @@ class ShortcutManager {
             totalShortcuts: &totalShortcuts
         )
 
-        // Mos 鼠标滚动分类 (始终显示, 使用 Mos tag 样式)
+        // Scrolling: the hold actions of the Scrolling pane
         addCategoryToMenu(
             menu: menu,
             category: SystemShortcut.mosMouseScrollCategory,
             target: target,
             action: action,
-            totalShortcuts: &totalShortcuts,
-            customImage: BrandTag.createTagImage(brand: .mos, fontSize: 7, height: 14)
+            totalShortcuts: &totalShortcuts
         )
 
-        // Logi 专有动作分类 (仅当触发键为 Logi 按键时显示, 使用 Logitech 品牌 tag 样式)
+        // Logitech Mouse: only for a Logitech button
         if showLogiActions {
             addCategoryToMenu(
                 menu: menu,
                 category: SystemShortcut.logiActionsCategory,
                 target: target,
                 action: action,
-                totalShortcuts: &totalShortcuts,
-                customImage: BrandTag.createTagImage(brand: .logi, fontSize: 7, height: 14)
+                totalShortcuts: &totalShortcuts
             )
         }
 
@@ -155,25 +174,37 @@ class ShortcutManager {
         menu.addItem(gestureItem)
         totalShortcuts += 1
 
-        // "打开应用…" 菜单项 (representedObject 为字符串标记 __open__)
+        if showsGestureSettings {
+            let settingsItem = NSMenuItem(
+                title: NSLocalizedString("buttons-show-gesture-settings", comment: ""),
+                action: action,
+                keyEquivalent: ""
+            )
+            settingsItem.target = target
+            settingsItem.representedObject = MenuMarker.gestureSettings as NSString
+            settingsItem.image = createSymbolImage("slider.horizontal.3")
+            menu.addItem(settingsItem)
+        }
+
+        // "Open App or File…"
         let openItem = NSMenuItem(
             title: NSLocalizedString("open-target-action", comment: ""),
             action: action,
             keyEquivalent: ""
         )
         openItem.target = target
-        openItem.representedObject = "__open__" as NSString
+        openItem.representedObject = MenuMarker.openTarget as NSString
         openItem.image = createSymbolImage("arrow.up.forward.app")
         menu.addItem(openItem)
 
-        // "自定义…" 菜单项 (representedObject 为字符串标记)
+        // "Keyboard Shortcut…"
         let customItem = NSMenuItem(
             title: NSLocalizedString("custom-shortcut", comment: ""),
             action: action,
             keyEquivalent: ""
         )
         customItem.target = target
-        customItem.representedObject = "__custom__" as NSString
+        customItem.representedObject = MenuMarker.keyboardShortcut as NSString
         customItem.image = createSymbolImage("keyboard")
         menu.addItem(customItem)
     }
@@ -184,18 +215,12 @@ class ShortcutManager {
         category: (category: String, shortcuts: [SystemShortcut.Shortcut]),
         target: AnyObject,
         action: Selector,
-        totalShortcuts: inout Int,
-        customImage: NSImage? = nil
+        totalShortcuts: inout Int
     ) {
         let categoryName = SystemShortcut.localizedCategoryName(category.category)
         let categoryMenuItem = NSMenuItem(title: categoryName, action: nil, keyEquivalent: "")
 
-        if let custom = customImage {
-            categoryMenuItem.image = custom
-        } else {
-            let symbolName = SystemShortcut.categorySymbolName(category.category)
-            categoryMenuItem.image = createSymbolImage(symbolName)
-        }
+        categoryMenuItem.image = createSymbolImage(SystemShortcut.categorySymbolName(category.category))
 
         let subMenu = NSMenu(title: categoryName)
         subMenu.autoenablesItems = false

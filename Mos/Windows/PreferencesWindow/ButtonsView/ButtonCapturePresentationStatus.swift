@@ -32,6 +32,23 @@ enum ButtonCapturePresentationStatus: Equatable {
         }
     }
 
+    /// The orange (or, for the standard button, blue) line under the row's title.
+    var noteKey: String {
+        switch self {
+        case .normal:
+            return ""
+        case .conflict:
+            return "buttons-note-conflict"
+        case .contended:
+            return "buttons-note-contended"
+        case .standardMouseAliasAvailable:
+            return "buttons-note-standard-button"
+        case .bleHIDPPUnstable:
+            return "buttons-note-bluetooth"
+        }
+    }
+
+    /// The popover's title.
     var titleKey: String {
         switch self {
         case .normal:
@@ -47,6 +64,7 @@ enum ButtonCapturePresentationStatus: Equatable {
         }
     }
 
+    /// The popover's text.
     var detailKey: String {
         switch self {
         case .normal:

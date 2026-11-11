@@ -4,8 +4,8 @@
 //
 //  Gestures tab: its rows in the boxes of System Settings, every control writes its own
 //  field of Options.shared.gesture and follows the mode rules, the tracking speed, the
-//  line about the gesture button, the controls it shares with the Gesture Settings
-//  popover, and the preview following the settings and the row pointed at. The Logitech
+//  "Gesture button" row and its way to the Buttons pane, and the preview following the
+//  settings and the row pointed at. The Logitech
 //  box has its own tests (LogiGestureSectionTests). Nothing is shown on screen and no HID
 //  device is touched.
 //
@@ -461,22 +461,108 @@ final class PreferencesGesturesTests: XCTestCase {
 
     // MARK: - The gesture button
 
-    func testWithoutAGestureButtonTheFirstBoxSaysSo() {
+    func testTheGestureButtonRowNamesTheButtonsOrSaysThereIsNone() {
         summary = MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false)
         let controller = makeController()
-        XCTAssertFalse(controller.unboundRow.isHidden)
-        XCTAssertEqual(controller.unboundRow.title, text("gestures-unbound-title"))
-        XCTAssertEqual(controller.unboundRow.explanation, text("gestures-unbound-hint"))
-        XCTAssertTrue(controller.buttonsNoteLabel.isHidden, "said once, in the first box")
+        let row = controller.gestureButtonRow!
+        XCTAssertEqual(row.title, "Gesture button")
+        XCTAssertEqual(row.explanation, "No button has the action Gesture Navigation yet.")
+        XCTAssertTrue(row.accessory === controller.gestureButtonButton)
+        XCTAssertEqual(controller.gestureButtonButton.title, "Set Up…")
+        XCTAssertEqual(controller.gestureButtonButton.bezelStyle, .push)
+        XCTAssertEqual(controller.gestureButtonButton.identifier, GesturesPreferencesViewController.Identifier.gestureButton)
+        XCTAssertTrue(controller.gestureButtonButton.accessibilityTitleUIElement() as? NSTextField === row.titleLabel, "named by the row")
         controller.view.layoutSubtreeIfNeeded()
-        XCTAssertGreaterThan(frame(of: controller.unboundRow, in: controller).minY, frame(of: controller.modeRow, in: controller).maxY - 0.5, "above the mode")
+        XCTAssertGreaterThan(frame(of: row, in: controller).minY, frame(of: controller.modeRow, in: controller).maxY - 0.5, "first, above the mode")
+        XCTAssertTrue(row.superview === controller.modeRow.superview, "in the first box")
 
-        summary = MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false)
+        summary = MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: true, buttonTitles: ["Back button", "Gesture button"])
         controller.reload()
-        XCTAssertTrue(controller.unboundRow.isHidden)
-        XCTAssertFalse(controller.buttonsNoteLabel.isHidden)
-        XCTAssertEqual(controller.buttonsNoteLabel.stringValue, "Choose the gesture button under Buttons.")
+        XCTAssertFalse(row.isHidden, "always shown")
+        XCTAssertEqual(row.explanation, "Back button and Gesture button")
+        XCTAssertEqual(controller.gestureButtonButton.title, "Change…")
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+        // The old line under the boxes is gone.
+        let texts = controller.view.allSubviewsForTests.compactMap { ($0 as? NSTextField)?.stringValue }
+        XCTAssertFalse(texts.contains("Choose the gesture button under Buttons."))
+    }
+
+    func testTheGestureButtonSummaryNamesEachButtonOnce() {
+        func binding(_ code: UInt16, modifiers: UInt = 0) -> ButtonBinding {
+            return ButtonBinding(
+                triggerEvent: RecordedEvent(type: .mouse, code: code, modifiers: modifiers, deviceFilter: nil),
+                systemShortcutName: SystemShortcut.mouseGestureNavigation.identifier
+            )
+        }
+        let option = UInt(CGEventFlags.maskAlternate.rawValue)
+        let summary = MouseGestureBindingSummary(
+            bindings: [binding(3), binding(4, modifiers: option), binding(3)],
+            isLogitechCode: { $0 >= 1000 }
+        )
+        XCTAssertEqual(summary.buttonTitles, ["Back button", "⌥ Forward button"])
+        XCTAssertEqual(summary.gestureButtonExplanation, "Back button and ⌥ Forward button")
+        XCTAssertEqual(MouseGestureBindingSummary(bindings: [], isLogitechCode: { _ in false }).gestureButtonExplanation,
+                       "No button has the action Gesture Navigation yet.")
+    }
+
+    func testSetUpAndChangeLeadToTheButtonsPane() {
+        var requests: [Bool] = []
+        summary = MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false)
+        let controller = makeController()
+        controller.openButtonsPane = { requests.append($0) }
+        controller.gestureButtonButton.performClick(nil)
+        XCTAssertEqual(requests, [true], "Set Up… records a new gesture button")
+
+        summary = MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"])
+        controller.reload()
+        controller.gestureButtonButton.performClick(nil)
+        XCTAssertEqual(requests, [true, false], "Change… only shows the list")
+    }
+
+    func testSetUpInTheWindowSelectsButtonsAndTheRecordedButtonGetsGestureNavigation() throws {
+        let savedBindings = Options.shared.buttons.binding
+        defer { Options.shared.buttons.binding = savedBindings }
+        Options.shared.buttons.binding = []
+
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        let windowController = try XCTUnwrap(
+            storyboard.instantiateController(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController) as? NSWindowController
+        )
+        defer { windowController.close() }
+        let preferences = try XCTUnwrap(windowController.contentViewController as? PreferencesSplitViewController)
+        _ = preferences.view
+        let gestures = try XCTUnwrap(preferences.controller(for: GesturesPreferencesViewController.tabIdentifier) as? GesturesPreferencesViewController)
+        gestures.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+        gestures.bindingSummary = { MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false) }
+        let buttons = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController)
+        buttons.deviceSource = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+        var recorderAnchors: [NSView] = []
+        buttons.startRecording = { recorderAnchors.append($0) }
+        var openedMenus = 0
+        buttons.openActionMenu = { _ in openedMenus += 1 }
+        XCTAssertTrue(preferences.selectPane(withIdentifier: GesturesPreferencesViewController.tabIdentifier))
+
+        gestures.gestureButtonButton.performClick(nil)
+
+        XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.buttons)
+        XCTAssertEqual(recorderAnchors.count, 1)
+        XCTAssertTrue(recorderAnchors.first === buttons.list.addButton, "recorded at +")
+        XCTAssertEqual(buttons.pendingAction?.identifier, SystemShortcut.mouseGestureNavigation.identifier)
+
+        // The user presses the Back button.
+        let recorder = KeyRecorder()
+        buttons.onRecordingStarted(recorder)
+        buttons.onEventRecorded(recorder, didRecordEvent: InputEvent(type: .mouse, code: 3, modifiers: [], phase: .down, source: .hidPP, device: nil), isDuplicate: false)
+        buttons.onRecordingStopped(recorder, didRecord: true)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+
+        let added = try XCTUnwrap(Options.shared.buttons.binding.first)
+        XCTAssertEqual(Options.shared.buttons.binding.count, 1)
+        XCTAssertEqual(added.systemShortcutName, SystemShortcut.mouseGestureNavigation.identifier)
+        XCTAssertTrue(added.isEnabled)
+        XCTAssertNil(added.triggerEvent.deviceFilter, "no device limit")
+        XCTAssertEqual(buttons.list.selectedID, AnyHashable(added.id))
+        XCTAssertEqual(openedMenus, 0, "the action is set: no menu to choose from")
     }
 
     func testLogiActionsAreOfferedOnceALogitechButtonRunsGestures() {
@@ -510,13 +596,13 @@ final class PreferencesGesturesTests: XCTestCase {
             bindings: [binding(SystemShortcut.mouseGestureNavigation, code: 3), binding(SystemShortcut.copy, code: 1000)],
             isLogitechCode: isLogitech
         )
-        XCTAssertEqual(plain, MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false))
+        XCTAssertEqual(plain, MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"]))
 
         let logitech = MouseGestureBindingSummary(
             bindings: [binding(SystemShortcut.mouseGestureNavigation, code: 1000)],
             isLogitechCode: isLogitech
         )
-        XCTAssertEqual(logitech, MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: true))
+        XCTAssertEqual(logitech, MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: true, buttonTitles: ["Gesture button"]))
 
         let disabled = MouseGestureBindingSummary(
             bindings: [binding(SystemShortcut.mouseGestureNavigation, code: 1000, enabled: false)],
@@ -610,45 +696,6 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertNil(controller.previewView.scene.focus)
     }
 
-    // MARK: - Shared with the popover
-
-    func testThePopoverShowsTheSameControlsAndStillWorks() throws {
-        let popover = MouseGestureSettingsPopover(isInteractiveAvailable: { true })
-        let view = popover.makeContentViewController().view
-
-        func find(_ id: NSUserInterfaceItemIdentifier, in view: NSView) -> NSView? {
-            if view.identifier == id { return view }
-            for subview in view.subviews {
-                if let match = find(id, in: subview) { return match }
-            }
-            return nil
-        }
-        typealias ID = MouseGestureSettingsControls.Identifier
-        let mode = try XCTUnwrap(find(ID.mode, in: view) as? NSSegmentedControl)
-        let freeze = try XCTUnwrap(find(ID.freezePointer, in: view) as? NSButton, "the popover keeps its checkboxes")
-        for slot in Slot.allCases {
-            XCTAssertNotNil(find(ID.action(slot.name), in: view) as? NSPopUpButton, slot.name)
-        }
-        let invert = try XCTUnwrap(find(ID.invertHorizontal, in: view) as? NSButton)
-        XCTAssertEqual(invert.title, "Invert left and right")
-        XCTAssertEqual(freeze.title, "Freeze pointer during a gesture")
-        XCTAssertEqual((find(ID.modeNote, in: view) as? NSTextField)?.stringValue, text("gesture-mode-interactive-note"))
-        // The popover is the short version: tracking speed is in the tab only.
-        XCTAssertNil(find(GesturesPreferencesViewController.Identifier.trackingSpeed, in: view))
-
-        mode.selectedSegment = 1
-        send(mode)
-        freeze.state = .off
-        send(freeze)
-        XCTAssertEqual(Options.shared.gesture.mode, .interactive)
-        XCTAssertFalse(Options.shared.gesture.freezePointer)
-
-        // The tab shows what the popover changed.
-        let controller = makeController()
-        XCTAssertEqual(controller.controls.modeControl.selectedSegment, 1)
-        XCTAssertFalse(MouseGestureSettingsControls.isOn(controller.controls.freezeToggle))
-    }
-
     // MARK: - Strings
 
     func testEveryLocaleTranslatesTheGesturesTab() {
@@ -660,9 +707,10 @@ final class PreferencesGesturesTests: XCTestCase {
             "gesture-tracking-speed-label", "gesture-tracking-speed-hint", "gesture-tracking-speed-hint-discrete",
             "gesture-tracking-speed-slower", "gesture-tracking-speed-faster",
             "gesture-invert-horizontal-hint", "gesture-freeze-pointer-hint",
-            "gestures-unbound-title", "gestures-unbound-hint",
+            "gestures-gesture-button", "gestures-gesture-button-none",
+            "gestures-gesture-button-set-up", "gestures-gesture-button-change",
             "gestures-directions-header", "gestures-directions-hint", "gestures-behaviour-header",
-            "gestures-logitech-needs", "gestures-buttons-note",
+            "gestures-logitech-needs",
         ]
         for locale in PreferencesLocalizationTests.locales {
             guard let path = app.path(forResource: locale, ofType: "lproj"), let bundle = Bundle(path: path) else {
@@ -725,7 +773,11 @@ final class PreferencesGesturesRenderTests: XCTestCase {
             let controller = GesturesPreferencesViewController(isInteractiveAvailable: { item.available })
             controller.deviceSource = MouseGestureDeviceSource(support: { item.support }, refresh: {})
             controller.bindingSummary = {
-                MouseGestureBindingSummary(hasGestureButton: item.bound, hasLogitechGestureButton: item.support.deviceTracking)
+                MouseGestureBindingSummary(
+                    hasGestureButton: item.bound,
+                    hasLogitechGestureButton: item.support.deviceTracking,
+                    buttonTitles: item.bound ? ["Gesture button"] : []
+                )
             }
             _ = controller.view
             // The preview still: the desktops half-way, or the action fully shown.
@@ -770,5 +822,12 @@ final class PreferencesGesturesRenderTests: XCTestCase {
             let png = try XCTUnwrap(canvas.representation(using: .png, properties: [:]))
             try png.write(to: directory.appendingPathComponent("\(name)-\(suffix).png"))
         }
+    }
+}
+
+private extension NSView {
+    /// Every view under this one.
+    var allSubviewsForTests: [NSView] {
+        return subviews + subviews.flatMap(\.allSubviewsForTests)
     }
 }

@@ -1,18 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "2hV-f7-8yO.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Give a mouse button an action of its own\"; ObjectID = \"2hV-f7-8yO\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Give a mouse button an action of its own"
-          }
-        }
-      }
-    },
     "8By-V1-U9w.headerCell.title" : {
       "comment" : "Class = \"NSTableColumn\"; headerCell.title = \"Scrolling\"; ObjectID = \"8By-V1-U9w\";",
       "extractionState" : "extracted_with_value",
@@ -45,18 +33,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Application Name"
-          }
-        }
-      }
-    },
-    "AbN-7n-hF7.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Button\"; ObjectID = \"AbN-7n-hF7\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Button"
           }
         }
       }
@@ -129,42 +105,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Pick a running app or one in Finder"
-          }
-        }
-      }
-    },
-    "epU-lS-atX.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"No Action\"; ObjectID = \"epU-lS-atX\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "No Action"
-          }
-        }
-      }
-    },
-    "fXu-uF-M3Q.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Press the mouse button you want to set up\"; ObjectID = \"fXu-uF-M3Q\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Press the mouse button you want to set up"
-          }
-        }
-      }
-    },
-    "gd2-WO-uk9.headerCell.title" : {
-      "comment" : "Class = \"NSTableColumn\"; headerCell.title = \"Hotkey\"; ObjectID = \"gd2-WO-uk9\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Hotkey"
           }
         }
       }
@@ -252,18 +192,6 @@
         }
       }
     },
-    "l7O-So-nw1.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Record Button\"; ObjectID = \"l7O-So-nw1\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Record Button"
-          }
-        }
-      }
-    },
     "Luy-Tf-2zi.title" : {
       "comment" : "Class = \"NSTextFieldCell\"; title = \"*\"; ObjectID = \"Luy-Tf-2zi\";",
       "extractionState" : "extracted_with_value",
@@ -300,18 +228,6 @@
         }
       }
     },
-    "sdr-Ih-rCr.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Action\"; ObjectID = \"sdr-Ih-rCr\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Action"
-          }
-        }
-      }
-    },
     "ThS-Rm-st2.title" : {
       "comment" : "Class = \"NSTextFieldCell\"; title = \"No application is Special\"; ObjectID = \"ThS-Rm-st2\";",
       "extractionState" : "extracted_with_value",
@@ -332,18 +248,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Rendering this chart will affect scrolling performance. Close the window when not in use."
-          }
-        }
-      }
-    },
-    "tum-Lo-TC6.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"No buttons are set up yet\"; ObjectID = \"tum-Lo-TC6\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "No buttons are set up yet"
           }
         }
       }

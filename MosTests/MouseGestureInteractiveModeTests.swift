@@ -2,7 +2,7 @@ import XCTest
 @testable import Mos_Debug
 
 /// "Follow the hand" end to end inside Mos: settings, the InputProcessor wiring with a
-/// recording dock swipe driver, and the Gesture Settings popover. No event is ever posted.
+/// recording dock swipe driver, and the mode rules of the gesture controls. No event is ever posted.
 final class MouseGestureInteractiveModeTests: XCTestCase {
 
     private enum SwipeCall: Equatable {
@@ -21,6 +21,8 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
 
     private var pointerAssociations: [Bool] = []
     private var pointerWarps: [CGPoint] = []
+    /// The gesture controls under test; their controls' targets are weak.
+    private var retainedControls: [MouseGestureSettingsControls] = []
     private let pointerAnchor = CGPoint(x: 100, y: 100)
 
     override func setUp() {
@@ -491,7 +493,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertFalse(MouseInteractionSessionController.shared.isMotionTapRunning)
     }
 
-    // MARK: - Popover rules
+    // MARK: - Mode rules of the gesture controls
 
     func testModePresentationRules() {
         typealias Presentation = MouseGestureModePresentation
@@ -503,7 +505,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
             Presentation.make(storedMode: .interactive, isInteractiveAvailable: true),
             Presentation(selectedMode: .interactive, isInteractiveSelectable: true, areHorizontalActionsEditable: false, noteKey: "gesture-mode-interactive-note")
         )
-        // Unavailable: Mos runs discrete whatever is stored, and the popover says so.
+        // Unavailable: Mos runs discrete whatever is stored, and the controls say so.
         XCTAssertEqual(
             Presentation.make(storedMode: .interactive, isInteractiveAvailable: false),
             Presentation(selectedMode: .discrete, isInteractiveSelectable: false, areHorizontalActionsEditable: true, noteKey: "gesture-mode-interactive-unavailable")
@@ -514,9 +516,8 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         )
     }
 
-    func testPopoverFollowModeDisablesOnlyLeftAndRight() {
-        let popover = MouseGestureSettingsPopover(isInteractiveAvailable: { true })
-        let view = popover.makeContentViewController().view
+    func testControlsFollowModeDisablesOnlyLeftAndRight() {
+        let view = makeControlsView(isInteractiveAvailable: { true })
         let mode = modeControl(in: view)
 
         XCTAssertEqual(mode.selectedSegment, 0)
@@ -547,7 +548,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(Options.shared.gesture.rightAction, SystemShortcut.moveSpaceRight.identifier)
 
         // "Invert left and right" keeps working in follow mode.
-        let invert = find(MouseGestureSettingsPopover.Identifier.invertHorizontal, in: view) as! NSButton
+        let invert = find(MouseGestureSettingsControls.Identifier.invertHorizontal, in: view) as! NSButton
         XCTAssertTrue(invert.isEnabled)
         invert.performClick(nil)
         XCTAssertTrue(Options.shared.gesture.invertHorizontal)
@@ -562,10 +563,9 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(popUpTitle("right", in: view), SystemShortcut.moveSpaceRight.localizedName)
     }
 
-    func testPopoverOpensInFollowModeWhenStored() {
+    func testControlsOpenInFollowModeWhenStored() {
         Options.shared.gesture.mode = .interactive
-        let popover = MouseGestureSettingsPopover(isInteractiveAvailable: { true })
-        let view = popover.makeContentViewController().view
+        let view = makeControlsView(isInteractiveAvailable: { true })
 
         XCTAssertEqual(modeControl(in: view).selectedSegment, 1)
         XCTAssertFalse(actionPopUp("left", in: view).isEnabled)
@@ -573,10 +573,9 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertTrue(actionPopUp("click", in: view).isEnabled)
     }
 
-    func testPopoverDisablesFollowWithAHintWhenUnavailable() {
+    func testControlsDisableFollowWithAHintWhenUnavailable() {
         Options.shared.gesture.mode = .interactive
-        let popover = MouseGestureSettingsPopover(isInteractiveAvailable: { false })
-        let view = popover.makeContentViewController().view
+        let view = makeControlsView(isInteractiveAvailable: { false })
         let mode = modeControl(in: view)
 
         XCTAssertEqual(mode.selectedSegment, 0, "Mos runs discrete, so discrete is shown")
@@ -597,13 +596,13 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(mode.selectedSegment, 0)
     }
 
-    func testPopoverUsesTheSynthesizerAvailabilityByDefault() {
+    func testControlsUseTheSynthesizerAvailabilityByDefault() {
         isSynthesizerAvailable = false
-        var view = MouseGestureSettingsPopover().makeContentViewController().view
+        var view = makeControlsView()
         XCTAssertFalse(modeControl(in: view).isEnabled(forSegment: 1))
 
         isSynthesizerAvailable = true
-        view = MouseGestureSettingsPopover().makeContentViewController().view
+        view = makeControlsView()
         XCTAssertTrue(modeControl(in: view).isEnabled(forSegment: 1))
     }
 
@@ -701,6 +700,19 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         wait(for: [queuedWorkFinished], timeout: 1)
     }
 
+    /// The gesture controls with checkboxes, in a view of their own.
+    private func makeControlsView(isInteractiveAvailable: (() -> Bool)? = nil) -> NSView {
+        let controls = isInteractiveAvailable.map {
+            MouseGestureSettingsControls(showLogiActions: false, toggleStyle: .checkboxes, isInteractiveAvailable: $0)
+        } ?? MouseGestureSettingsControls(showLogiActions: false, toggleStyle: .checkboxes)
+        retainedControls.append(controls)
+        let view = NSView()
+        for control in [controls.modeControl, controls.modeNote, controls.invertToggle, controls.freezeToggle] + controls.actionPopUps {
+            view.addSubview(control)
+        }
+        return view
+    }
+
     private func find(_ id: NSUserInterfaceItemIdentifier, in view: NSView) -> NSView? {
         if view.identifier == id { return view }
         for subview in view.subviews {
@@ -710,15 +722,15 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
     }
 
     private func modeControl(in view: NSView) -> NSSegmentedControl {
-        find(MouseGestureSettingsPopover.Identifier.mode, in: view) as! NSSegmentedControl
+        find(MouseGestureSettingsControls.Identifier.mode, in: view) as! NSSegmentedControl
     }
 
     private func note(in view: NSView) -> NSTextField {
-        find(MouseGestureSettingsPopover.Identifier.modeNote, in: view) as! NSTextField
+        find(MouseGestureSettingsControls.Identifier.modeNote, in: view) as! NSTextField
     }
 
     private func actionPopUp(_ direction: String, in view: NSView) -> NSPopUpButton {
-        find(MouseGestureSettingsPopover.Identifier.action(direction), in: view) as! NSPopUpButton
+        find(MouseGestureSettingsControls.Identifier.action(direction), in: view) as! NSPopUpButton
     }
 
     /// A pull-down shows its first menu item as the title.

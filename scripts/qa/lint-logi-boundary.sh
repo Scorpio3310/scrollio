@@ -40,6 +40,7 @@ ZONE_A_ALLOW=(
     LogiWheelDeviceState
     LogiMouseSettings
     LogiMouseDeviceState
+    LogiControlRole
 )
 
 ZONE_B_ADDITIONAL=(

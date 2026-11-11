@@ -1,6 +1,8 @@
 //
 //  ActionDisplayResolver.swift
 //  Mos
+//  What the action pull-down of a button shows for a binding: a symbol and a name, as the
+//  pull-downs of the Gestures pane, an app's icon and name, or a keyboard shortcut as text.
 //
 
 import Cocoa
@@ -16,34 +18,21 @@ enum ActionPresentationKind: Equatable {
 struct ActionPresentation {
     let kind: ActionPresentationKind
     let title: String
+    /// An SF Symbol shown before the title.
     let symbolName: String?
+    /// A picture shown before the title instead of a symbol (an app's icon).
     let image: NSImage?
-    let badgeComponents: [String]
-    let tag: BrandTagConfig?
-    var brand: BrandTagConfig? { tag }
 
-    init(
-        kind: ActionPresentationKind,
-        title: String,
-        symbolName: String? = nil,
-        image: NSImage? = nil,
-        badgeComponents: [String] = [],
-        tag: BrandTagConfig? = nil,
-        brand: BrandTagConfig? = nil
-    ) {
+    init(kind: ActionPresentationKind, title: String, symbolName: String? = nil, image: NSImage? = nil) {
         self.kind = kind
         self.title = title
         self.symbolName = symbolName
         self.image = image
-        self.badgeComponents = badgeComponents
-        self.tag = tag ?? brand
     }
 }
 
-/// Cell 当前展示的动作态 (互斥).
-///
-/// 加新动作类型 = 加一个 case, switch 站点会在编译期被强制覆盖, 不再依赖人工同步分散的字段.
-/// `.recordingPrompt` 是 UI 临时态 (录制进行中), 其它都对应一种持久化绑定形式.
+/// What a row's pull-down shows (mutually exclusive). `.recordingPrompt` is the moment
+/// "Keyboard Shortcut…" waits for a key; the others are a stored binding.
 enum CellActionState: Equatable {
     case unbound
     case recordingPrompt
@@ -51,7 +40,6 @@ enum CellActionState: Equatable {
     case customBinding(name: String)
     case openTarget(OpenTargetPayload)
 
-    /// 是否处于"已绑定"状态 (用于菜单 placeholder 显隐判定).
     var hasBoundAction: Bool {
         switch self {
         case .unbound, .recordingPrompt:
@@ -61,8 +49,8 @@ enum CellActionState: Equatable {
         }
     }
 
-    /// 从 ButtonBinding 推断对应的展示态 (不含临时态 .recordingPrompt).
-    /// 优先级: openTarget > 预定义 systemShortcut > customBinding > unbound.
+    /// The state of a stored binding. Order: open target, a named action, a keyboard
+    /// shortcut, nothing.
     init(binding: ButtonBinding) {
         if let openTarget = binding.openTarget {
             self = .openTarget(openTarget)
@@ -82,40 +70,29 @@ enum CellActionState: Equatable {
 
 struct ActionDisplayResolver {
 
-    /// 主入口: 接收单一态枚举, 内部 switch 全 case 强制覆盖.
     func resolve(state: CellActionState) -> ActionPresentation {
         switch state {
         case .unbound:
-            return ActionPresentation(
-                kind: .unbound,
-                title: NSLocalizedString("unbound", comment: "")
-            )
+            return ActionPresentation(kind: .unbound, title: NSLocalizedString("unbound", comment: ""))
         case .recordingPrompt:
-            return ActionPresentation(
-                kind: .recordingPrompt,
-                title: NSLocalizedString("custom-recording-prompt", comment: "")
-            )
+            return ActionPresentation(kind: .recordingPrompt, title: NSLocalizedString("custom-recording-prompt", comment: ""))
         case .namedShortcut(let shortcut):
             return namedActionPresentation(for: shortcut)
         case .openTarget(let payload):
             return openTargetPresentation(for: payload)
         case .customBinding(let name):
-            // 自定义绑定有可能"升级"成已知 named action (键码与 mouseLeftClick 等系统快捷键
-            // 等价时), 否则按 keyCombo 渲染.
+            // A recorded shortcut that equals a named action shows as that action.
             if let shortcut = SystemShortcut.displayShortcut(matchingBindingName: name) {
                 return namedActionPresentation(for: shortcut)
             }
             if let custom = customBindingPresentation(for: name) {
                 return custom
             }
-            return ActionPresentation(
-                kind: .unbound,
-                title: NSLocalizedString("unbound", comment: "")
-            )
+            return ActionPresentation(kind: .unbound, title: NSLocalizedString("unbound", comment: ""))
         }
     }
 
-    /// 旧入口: 把分散参数转 enum 后转发. 保留为兼容已有测试; 新代码请用 resolve(state:).
+    /// The same, from the separate pieces.
     func resolve(
         shortcut: SystemShortcut.Shortcut?,
         customBindingName: String?,
@@ -132,13 +109,14 @@ struct ActionDisplayResolver {
         return resolve(state: state)
     }
 
+    /// The name of the action, for texts ("No action" is the caller's).
+    func actionName(of binding: ButtonBinding) -> String? {
+        let presentation = resolve(state: CellActionState(binding: binding))
+        return presentation.kind == .unbound ? nil : presentation.title
+    }
+
     private func namedActionPresentation(for shortcut: SystemShortcut.Shortcut) -> ActionPresentation {
-        ActionPresentation(
-            kind: .namedAction,
-            title: shortcut.localizedName,
-            symbolName: shortcut.symbolName,
-            tag: BrandTag.tagForAction(shortcut.identifier)
-        )
+        ActionPresentation(kind: .namedAction, title: shortcut.localizedName, symbolName: shortcut.symbolName)
     }
 
     private func openTargetPresentation(for payload: OpenTargetPayload) -> ActionPresentation {
@@ -152,70 +130,34 @@ struct ActionDisplayResolver {
             return FileManager.default.fileExists(atPath: url.path) ? url : nil
         }()
 
-        let title: String
-        let icon: NSImage?
-        if let url = resolvedURL {
-            if payload.kind == .application, let bundle = Bundle(url: url) {
-                title = bundle.localizedDisplayName
-                    ?? bundle.infoDictionary?["CFBundleDisplayName"] as? String
-                    ?? bundle.infoDictionary?["CFBundleName"] as? String
-                    ?? url.deletingPathExtension().lastPathComponent
-            } else {
-                title = url.lastPathComponent
-            }
-            icon = workspace.icon(forFile: url.path)
-        } else {
-            // Stale path: show filename + unavailable marker
+        guard let url = resolvedURL else {
+            // Gone: the file's name and a marker.
             let basename = (payload.path as NSString).lastPathComponent
             let staleTag = NSLocalizedString("open-target-placeholder-stale", comment: "")
-            title = basename.isEmpty ? staleTag : "\(basename) \(staleTag)"
-            icon = nil
+            let title = basename.isEmpty ? staleTag : "\(basename) \(staleTag)"
+            return ActionPresentation(kind: .openTarget, title: title, symbolName: "exclamationmark.triangle")
         }
-
-        return ActionPresentation(
-            kind: .openTarget,
-            title: title,
-            symbolName: nil,
-            image: icon
-        )
+        let title: String
+        if payload.kind == .application, let bundle = Bundle(url: url) {
+            title = bundle.localizedDisplayName
+                ?? bundle.infoDictionary?["CFBundleDisplayName"] as? String
+                ?? bundle.infoDictionary?["CFBundleName"] as? String
+                ?? url.deletingPathExtension().lastPathComponent
+        } else {
+            title = url.lastPathComponent
+        }
+        return ActionPresentation(kind: .openTarget, title: title, image: workspace.icon(forFile: url.path))
     }
 
     private func customBindingPresentation(for customBindingName: String) -> ActionPresentation? {
         guard let payload = ButtonBinding.normalizedCustomBindingDescriptor(from: customBindingName) else {
             return nil
         }
-        let type = payload.type
-        let code = payload.code
-        let modifiers = payload.modifiers
-
-        let tag = BrandTag.tagForCode(code)
-        if type == .mouse, let tag, modifiers == 0, LogiCenter.shared.isLogiCode(code) {
-            return ActionPresentation(
-                kind: .namedAction,
-                title: (LogiCenter.shared.name(forMosCode: code) ?? ""),
-                tag: tag
-            )
-        }
-
-        let event = InputEvent(
-            type: type,
-            code: code,
-            modifiers: CGEventFlags(rawValue: modifiers),
-            phase: .down,
-            source: .hidPP,
-            device: nil
-        )
-        let marker = tag.map { "[\($0.name)]" }
-        let badgeComponents = event.displayComponents.filter { component in
-            guard let marker else { return true }
-            return component != marker
-        }
-
+        let text = ButtonTriggerNaming.shortcutText(type: payload.type, code: payload.code, modifiers: payload.modifiers)
         return ActionPresentation(
             kind: .keyCombo,
-            title: "",
-            badgeComponents: badgeComponents,
-            tag: tag
+            title: text,
+            symbolName: payload.type == .mouse ? "computermouse" : "keyboard"
         )
     }
 }
