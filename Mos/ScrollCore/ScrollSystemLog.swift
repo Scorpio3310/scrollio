@@ -36,8 +36,11 @@ enum ScrollSystemLog {
         /// or an app's own. The last event's wins.
         var transition = 0.0
         var trackpadStyle = false
-        /// Trackpad-style: how many touches ("began") the scroll was sent as, and how many of its
-        /// wheel events went on with a glide instead of beginning a touch.
+        /// Trackpad-style as a flick (a short touch and its glide, for apps that scroll by the
+        /// glide's events) instead of one touch for as long as the wheel turns.
+        var flick = false
+        /// How many touches ("began") the scroll was sent as, and how many of its wheel events
+        /// went on with a glide instead of beginning a touch (a flick only).
         var touches = 0
         var glideInputs = 0
 
@@ -57,9 +60,14 @@ enum ScrollSystemLog {
 
     static func message(for session: Session, endedWith phase: String) -> String {
         let tau = ScrollMotion.timeConstant(forTransition: session.transition)
-        let trackpadStyle = session.trackpadStyle
-            ? "on (\(session.touches) touches, \(session.glideInputs) wheel events into a glide)"
-            : "off"
+        let trackpadStyle: String
+        if !session.trackpadStyle {
+            trackpadStyle = "off"
+        } else if session.flick {
+            trackpadStyle = "on (flick: \(session.touches) touches, \(session.glideInputs) wheel events into a glide)"
+        } else {
+            trackpadStyle = "on (long touch: \(session.touches) touches)"
+        }
         return String(
             format: "scroll: %d wheel events %.0f px in -> %d frames %.0f px out (largest %.1f), wheel %.0f ms, glide after the last event %.0f ms, Duration %.2f (tau %.0f ms), trackpad-style %@, ended %@",
             session.inputs, session.inputDistance, session.frames, session.postedDistance, session.largestFrame,

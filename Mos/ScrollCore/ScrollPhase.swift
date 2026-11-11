@@ -104,6 +104,11 @@ class ScrollPhase {
     
     // 下一帧发送完毕后自动切换到的阶段
     private var pendingPhaseAfterDelivery: Phase? = nil
+
+    /// A flick (ScrollPoster, `config.flick`): "momentum began" waits for the frame that carries
+    /// it, and a glide of which nothing went out is not ended. Off, the phases run as they
+    /// always did (a glide's first frame that posts nothing loses its "momentum began").
+    var holdsWaitingMomentumBegan = false
     
     // 记录在开始新的 Tracking 前是否需要补发额外阶段 (比如在惯性中断时时补发 MomentumEnd)
     struct TransitionPlan {
@@ -204,7 +209,7 @@ class ScrollPhase {
     /// stays: moved on here, no frame carried it, and an app that got "momentum changed" without
     /// "momentum began" takes the glide for a finger that still drags the page.
     private func afterMomentumBegin() -> TransitionPlan {
-        if pendingPhaseAfterDelivery != nil {
+        if holdsWaitingMomentumBegan && pendingPhaseAfterDelivery != nil {
             return plan()
         }
         return plan(target: (.MomentumOngoing, nil))
@@ -216,7 +221,7 @@ class ScrollPhase {
         case .MomentumBegin, .MomentumOngoing:
             // A glide whose "momentum began" never went out (no frame of it was posted) has
             // nothing to end: the app got the touch and its "ended", and that is all.
-            if momentumBeganIsWaiting {
+            if holdsWaitingMomentumBegan && momentumBeganIsWaiting {
                 return plan()
             }
             return plan(target: (.MomentumEnd, .Idle))

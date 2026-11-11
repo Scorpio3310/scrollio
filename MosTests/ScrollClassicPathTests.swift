@@ -45,7 +45,9 @@ final class ScrollClassicRig {
     /// What the system log line of each finished scroll said.
     private(set) var sessions: [ScrollSystemLog.Session] = []
 
-    init(duration: Double = 4.35, rate: Double = 60, trackpadStyle: Bool = false, deadZone: Double = 1) {
+    /// `flick`: the app under the pointer scrolls by the events of a glide (Chromium), so
+    /// trackpad-style events go out as a short touch and its glide; false: as one long touch.
+    init(duration: Double = 4.35, rate: Double = 60, trackpadStyle: Bool = false, deadZone: Double = 1, flick: Bool = true) {
         self.duration = duration
         self.deadZone = deadZone
         frameInterval = 1 / rate
@@ -57,7 +59,7 @@ final class ScrollClassicRig {
         }
         // Frame timestamps on the simulated clock, in nanoseconds.
         poster.eventClockForTests = { [unowned self] in UInt64((self.now * 1e9).rounded()) }
-        poster.setConfigForTests(simTrackpadEnabled: trackpadStyle, deadZone: deadZone)
+        poster.setConfigForTests(simTrackpadEnabled: trackpadStyle, deadZone: deadZone, flick: flick)
     }
 
     /// One notch at the default Step and Speed 2.7 (px).
@@ -667,6 +669,61 @@ final class ScrollClassicPathTests: XCTestCase {
         XCTAssertTrue(failures.isEmpty, "\(failures.count) broken:\n" + failures.prefix(40).joined(separator: "\n"))
     }
 
+    // MARK: Trackpad-style, as one long touch
+    //
+    // AppKit and UIKit scroll views (Finder, Settings, most apps) follow the touch only. When it
+    // ends they compute a glide of their own from its speed and ignore what the momentum events
+    // say: in the owner's recording a Finder list moved ~250 pt for 7,225 px posted as a flick.
+    // Only an app that scrolls by a glide's events (Chromium) gets the flick; for every other app
+    // the touch lasts as long as the wheel turns, the stream trackpad-style events always had.
+
+    /// The touch ends when the wheel has been still for 0.18 s; a tick after that begins a new
+    /// one at once. Every frame keeps the wheel event's own time.
+    func testTrackpadStyleLongTouch_touchLastsWhileTheWheelTurns() {
+        let rig = ScrollClassicRig(duration: 4.35, trackpadStyle: true, flick: false)
+        for index in 0..<3 { rig.wheel(10, at: Double(index) * 0.05) }
+        // A second scroll while the first still glides.
+        rig.wheel(10, at: 0.7)
+        rig.run(until: 4)
+
+        XCTAssertEqual(rig.phaseSequence, [
+            "began", "changed", "ended", "momentumBegan", "momentumChanged", "momentumEnded",
+            "began", "changed", "ended", "momentumBegan", "momentumChanged", "momentumEnded",
+        ])
+        let ended = rig.recorded.filter { $0.frame.scrollPhase == 4 }.map { $0.time - rig.start }
+        XCTAssertEqual(ended.count, 2)
+        XCTAssertEqual(ended.first ?? 0, 0.1 + 0.18, accuracy: 1.5 / 60.0)
+        XCTAssertEqual(ended.last ?? 0, 0.7 + 0.18, accuracy: 1.5 / 60.0)
+        let secondBegan = rig.recorded.last { $0.frame.scrollPhase == 1 }
+        XCTAssertEqual((secondBegan?.time ?? 0) - rig.start, 0.7, accuracy: 1e-6, "with the tick itself")
+        XCTAssertTrue(rig.recorded.allSatisfy { $0.frame.scrollPhase != nil }, "every frame carries its phase")
+        XCTAssertTrue(rig.recorded.allSatisfy { $0.frame.timestamp == nil }, "and the wheel event's own time")
+        XCTAssertEqual(rig.stops.count, 1)
+    }
+
+    /// What an AppKit list follows is the touch. As a long touch nearly all of a scroll is touch;
+    /// as a flick almost none of it is, which is why such a list stopped short.
+    func testTrackpadStyleLongTouch_carriesTheScrollInTheTouch() {
+        let scenarios: [(String, [(Double, Double)], Double)] = [
+            ("click", [(211.68, 0)], 0.65),
+            ("spin", Self.spin, 0.85),
+        ]
+        for (name, inputs, share) in scenarios {
+            let longTouch = ScrollClassicRig(duration: 3.69, trackpadStyle: true, flick: false)
+            let flick = ScrollClassicRig(duration: 3.69, trackpadStyle: true, flick: true)
+            for rig in [longTouch, flick] {
+                for (pixels, time) in inputs { rig.input(pixels, notch: 211.68, at: time) }
+                rig.run(until: 4)
+            }
+            func touchShare(_ rig: ScrollClassicRig) -> Double {
+                return rig.recorded.filter { $0.frame.scrollPhase == 2 }.reduce(0) { $0 + $1.frame.y } / rig.postedY
+            }
+            XCTAssertGreaterThan(touchShare(longTouch), share, name)
+            XCTAssertLessThan(touchShare(flick), 0.15, name)
+            XCTAssertEqual(longTouch.moving.map { $0.frame.y }, flick.moving.map { $0.frame.y }, "\(name): the motion is the same")
+        }
+    }
+
     /// A click after the glide has ended is a new flick.
     func testTrackpadStyle_clickAfterTheGlide_isANewFlick() {
         let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
@@ -963,6 +1020,63 @@ final class ScrollTrackpadStyleScrollViewTests: XCTestCase {
     }
 }
 
+// MARK: - Which apps get a flick
+
+/// "Trackpad-style events" go out as a flick only for an app that scrolls by a glide's events:
+/// the Chromium engine, found by the resources it carries in one of the app's frameworks.
+final class ScrollGlideFollowerTests: XCTestCase {
+
+    private var root: URL!
+
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("scrollio-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    /// An app bundle with the given (empty) files.
+    private func app(_ name: String, files: [String]) throws -> URL {
+        let bundle = root.appendingPathComponent(name, isDirectory: true)
+        try FileManager.default.createDirectory(at: bundle.appendingPathComponent("Contents"), withIntermediateDirectories: true)
+        for file in files {
+            let url = bundle.appendingPathComponent(file)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data().write(to: url)
+        }
+        return bundle
+    }
+
+    func testChromiumBasedApps_areFoundByTheEnginesResources() throws {
+        // Electron and CEF apps, Dia and Arc: the framework's Resources.
+        let electron = try app("Editor.app", files: ["Contents/Frameworks/Electron Framework.framework/Resources/resources.pak"])
+        // Chrome keeps them under a version folder that "Current" points to.
+        let chrome = try app("Browser.app", files: ["Contents/Frameworks/Browser Framework.framework/Versions/141.0.1/Resources/resources.pak"])
+        try FileManager.default.createSymbolicLink(
+            atPath: chrome.appendingPathComponent("Contents/Frameworks/Browser Framework.framework/Versions/Current").path,
+            withDestinationPath: "141.0.1"
+        )
+        XCTAssertTrue(ScrollUtils.isChromiumBased(bundleURL: electron))
+        XCTAssertTrue(ScrollUtils.isChromiumBased(bundleURL: chrome))
+    }
+
+    func testOtherApps_areNotTakenForChromium() throws {
+        let plain = try app("Plain.app", files: ["Contents/MacOS/Plain"])
+        let native = try app("Native.app", files: [
+            "Contents/Frameworks/Sparkle.framework/Resources/Info.plist",
+            "Contents/Frameworks/libswiftCore.dylib",
+            "Contents/Resources/resources.pak",
+        ])
+        XCTAssertFalse(ScrollUtils.isChromiumBased(bundleURL: plain))
+        XCTAssertFalse(ScrollUtils.isChromiumBased(bundleURL: native))
+        XCTAssertFalse(ScrollUtils.isChromiumBased(bundleURL: root.appendingPathComponent("Missing.app")))
+        // The Finder is AppKit: its lists follow the touch only.
+        XCTAssertFalse(ScrollUtils.isChromiumBased(bundleURL: URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")))
+    }
+}
+
 // MARK: - The system log
 
 /// The diagnostics the owner reads with `log show` (README, "Diagnostics"): they have to say
@@ -1007,6 +1121,19 @@ final class ScrollSystemLogTests: XCTestCase {
             let line = ScrollSystemLog.message(for: session, endedWith: "MomentumEnd")
             XCTAssertTrue(line.contains(String(format: "Duration %.2f", duration)), line)
         }
+    }
+
+    func testSessionLine_saysWhichFormOfTrackpadStyleWentOut() {
+        var session = ScrollSystemLog.Session()
+        session.inputs = 6
+        session.touches = 1
+        session.glideInputs = 4
+        XCTAssertTrue(ScrollSystemLog.message(for: session, endedWith: "MomentumEnd").contains("trackpad-style off, ended"))
+        session.trackpadStyle = true
+        XCTAssertTrue(ScrollSystemLog.message(for: session, endedWith: "MomentumEnd").contains("trackpad-style on (long touch: 1 touches), ended"))
+        session.flick = true
+        XCTAssertTrue(ScrollSystemLog.message(for: session, endedWith: "MomentumEnd")
+            .contains("trackpad-style on (flick: 1 touches, 4 wheel events into a glide), ended"))
     }
 
     func testDurationForTransition_invertsTheSliderMapping() {
