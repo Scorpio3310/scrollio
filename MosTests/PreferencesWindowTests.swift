@@ -191,6 +191,28 @@ final class PreferencesSidebarTests: XCTestCase {
         XCTAssertTrue(window.firstResponder === other)
     }
 
+    func testSelectingThePaneOnShowScrollsItToTheTop() throws {
+        let scrollingDefaults = makeDefaults()
+        scrollingDefaults.set(true, forKey: PreferencesScrollingViewController.advancedExpandedDefaultsKey)
+        let (window, preferences) = try makeWindow { preferences in
+            (preferences.controller(for: "scrolling") as? PreferencesScrollingViewController)?.uiStateDefaults = scrollingDefaults
+        }
+        window.contentView?.layoutSubtreeIfNeeded()
+        let host = preferences.host
+        XCTAssertEqual(preferences.selectedPaneIdentifier, "scrolling")
+        let visible = host.scrollView.contentSize.height
+        XCTAssertGreaterThan(host.documentView.frame.height, visible, "the open pane is taller than the window")
+        host.documentView.scroll(NSPoint(x: 0, y: host.documentView.frame.height - visible))
+        XCTAssertGreaterThan(host.scrollView.contentView.bounds.minY, 0)
+        XCTAssertFalse(host.titlebarSeparator.isHidden)
+
+        // "About Scrollio" while General is open, or any other way to the pane on show.
+        XCTAssertTrue(preferences.selectPane(withIdentifier: "scrolling"))
+
+        XCTAssertEqual(host.scrollView.contentView.bounds.minY, 0)
+        XCTAssertTrue(host.titlebarSeparator.isHidden)
+    }
+
     func testRemembersTheLastOpenPane() throws {
         // Persisted names: they never change.
         XCTAssertEqual(PreferencesSplitViewController.selectedPaneDefaultsKey, "preferencesSelectedPane")

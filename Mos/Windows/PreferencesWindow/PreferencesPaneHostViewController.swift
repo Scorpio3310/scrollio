@@ -122,6 +122,12 @@ final class PreferencesPaneHostViewController: NSViewController {
         ]
         NSLayoutConstraint.activate(paneConstraints)
         view.layoutSubtreeIfNeeded()
+        scrollToTop()
+    }
+
+    /// Shows the top of the pane.
+    func scrollToTop() {
+        _ = view
         scrollView.contentView.scroll(to: .zero)
         scrollView.reflectScrolledClipView(scrollView.contentView)
         updateSeparator()

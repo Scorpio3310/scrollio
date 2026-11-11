@@ -211,6 +211,10 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
             host.show(controller)
             updateWindowTitle()
             keepKeyboardFocus()
+        } else {
+            // Asked for the pane on show ("About Scrollio" while General is open): its top,
+            // as when it is shown anew.
+            host.scrollToTop()
         }
         sidebar.select(identifier)
         if remember {
