@@ -85,13 +85,24 @@ class IntroductionWindowController: NSWindowController, NSWindowDelegate {
         return progress.isPending || !hasAccess
     }
 
+    /// The run an open guide starts again when it is asked for once more; nil: it stays as it
+    /// is. By hand, the Accessibility step alone becomes the whole guide. By the app (the
+    /// access is missing), a run without the Accessibility step starts again with it.
+    static func restart(_ open: IntroductionViewController, for request: Request) -> WelcomeGuideFlow? {
+        switch request {
+        case .byHand:
+            return open.flow == .accessOnly ? .full : nil
+        case .automatic:
+            guard !open.steps.contains(.access), !open.refreshAccessState().isReady else { return nil }
+            return open.flow ?? .full
+        }
+    }
+
     private static func show(_ request: Request) {
         let identifier = WINDOW_IDENTIFIER.introductionWindowController
         if let open = WindowManager.shared.refs[identifier]?.contentViewController as? IntroductionViewController {
-            // Already open: a guide the app opened stays what it is; by hand, the
-            // Accessibility step alone becomes the whole guide.
-            if request == .byHand && open.flow == .accessOnly {
-                open.begin(.full)
+            if let flow = restart(open, for: request) {
+                open.begin(flow)
             }
         } else {
             let controller: NSWindowController = Utils.instantiateControllerFromStoryboard(withIdentifier: identifier)

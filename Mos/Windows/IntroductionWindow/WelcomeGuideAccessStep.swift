@@ -25,6 +25,7 @@ final class WelcomeGuideAccessStep: WelcomeGuideStepView {
     private(set) var helpButton: NSButton!
 
     private(set) var state: WelcomeGuideAccessState = .missing
+    private var isShown = false
 
     init(target: AnyObject, helpAction: Selector) {
         let card = WelcomeGuideCardView(frame: NSRect(origin: .zero, size: WelcomeGuideLayout.pictureSize))
@@ -54,14 +55,18 @@ final class WelcomeGuideAccessStep: WelcomeGuideStepView {
         show(.missing, menuBarIconHidden: false)
     }
 
+    /// The pointer loop plays only while the access is missing: once it is allowed the picture
+    /// stands still with the switch on, and no display link ticks for it.
     func setShown(_ shown: Bool) {
-        artwork.setAnimating(shown)
+        isShown = shown
+        artwork.setAnimating(shown && !state.isGranted)
         statusBox.setAnimating(shown)
     }
 
     func show(_ state: WelcomeGuideAccessState, menuBarIconHidden: Bool) {
         self.state = state
         artwork.isAllowed = state.isGranted
+        artwork.setAnimating(isShown && !state.isGranted)
         helpButton.isHidden = state.isGranted
         statusBox.show(state, menuBarIconHidden: menuBarIconHidden)
     }
@@ -282,7 +287,8 @@ final class WelcomeGuideAccessPicture: WelcomeGuideAnimatedView {
         return nil
     }
 
-    /// The moment `time` seconds into the loop (the mock's timings).
+    /// The moment `time` seconds into the loop: the pointer glides in from 0.5 s, clicks at
+    /// 1.3 s, the switch turns on at 1.4 s, everything fades at 3.4-3.95 s.
     static func frame(at time: TimeInterval) -> Frame {
         var loop = time.isFinite ? time.truncatingRemainder(dividingBy: loopLength) : 0
         if loop < 0 { loop += loopLength }

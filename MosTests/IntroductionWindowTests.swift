@@ -39,6 +39,10 @@ private final class GuideWorld {
     var mouse: MouseArtworkModel = .generic
     var tryArea: WelcomeGuideTryArea = .smoothed
     let scroll = OPTIONS_SCROLL_DEFAULT()
+    /// The event the bar is pressed with (`IntroductionViewController.currentEvent`).
+    var currentEvent: NSEvent?
+    /// What the guide did to the outside world, in order.
+    var log: [String] = []
 
     var requests = 0
     var settingsOpened = 0
@@ -66,7 +70,10 @@ private final class GuideWorld {
             if let next = self.runAfterGrant { self.run = next }
         }
         controller.isMenuBarIconHidden = { self.menuBarIconHidden }
-        controller.openAppSettings = { self.appSettingsOpened += 1 }
+        controller.openAppSettings = {
+            self.appSettingsOpened += 1
+            self.log.append("Preferences")
+        }
         controller.prefersReducedMotion = { self.reduceMotion }
         controller.progress = progress
         controller.mouseSource = { self.mouse }
@@ -75,6 +82,7 @@ private final class GuideWorld {
         controller.bringToFront = { _ in self.broughtToFront += 1 }
         controller.announce = { self.announcements.append($0) }
         controller.presentHelp = { popover, _ in self.presentedHelp.append(popover) }
+        controller.currentEvent = { self.currentEvent }
         if let flow {
             controller.begin(flow)
         }
@@ -93,6 +101,8 @@ private final class FakeLoginItem: LoginItemService {
     var status: LoginItemStatus
     /// What registering leaves; nil: nothing changes (it failed, or waits for approval).
     var afterRegister: LoginItemStatus? = .enabled
+    /// Called when System Settings › Login Items opens.
+    var onOpenSystemSettings: (() -> Void)?
     private(set) var registerCalls = 0
     private(set) var unregisterCalls = 0
     private(set) var openSettingsCalls = 0
@@ -113,6 +123,7 @@ private final class FakeLoginItem: LoginItemService {
 
     func openSystemSettings() {
         openSettingsCalls += 1
+        onOpenSystemSettings?()
     }
 
     var calls: Int {
@@ -273,7 +284,8 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertFalse(isShown(controller.backButton), "nothing to go back to")
         XCTAssertFalse(isShown(controller.secondaryButton))
         XCTAssertEqual(controller.dots.accessibilityLabel(), "Step 1 of 4")
-        XCTAssertEqual(controller.backButton.keyEquivalent, "\u{1b}", "Esc goes back")
+        XCTAssertEqual(controller.backButton.keyEquivalent, "[", "⌘[ goes back, as in Finder and System Settings")
+        XCTAssertEqual(controller.backButton.keyEquivalentModifierMask, .command)
         XCTAssertEqual(controller.backButton.title, "Back")
 
         // Nothing was asked for by merely opening the window.
@@ -464,6 +476,29 @@ final class IntroductionWindowTests: XCTestCase {
         world.accessGranted = true
         controller.accessibilityPermissionsChecker(nil)
         XCTAssertEqual(world.grantsReported, 2)
+    }
+
+    /// Reporting the grant starts the event taps, and AppRunController posts its change
+    /// synchronously: that post comes back into the guide before it has taken the new state.
+    /// When the start fails (and AppRunController arms its next try) the guide used to report
+    /// the grant again from inside the report, and again: a recursion that only ends when a
+    /// start succeeds, or with the stack.
+    func testAGrantWhoseFirstStartFailsIsReportedOnce() {
+        let controller = makeAccessController()
+        var reports = 0
+        controller.accessWasGranted = { [unowned controller] in
+            reports += 1
+            guard reports <= 5 else { return XCTFail("the grant is reported from inside its own report") }
+            self.world.run = .retrying
+            controller.runStateDidChange(nil)
+        }
+        world.accessGranted = true
+        controller.accessibilityPermissionsChecker(nil)
+        XCTAssertEqual(reports, 1)
+        XCTAssertEqual(controller.accessState, .couldNotStart)
+        XCTAssertEqual(world.announcements, ["Accessibility access is allowed"])
+        controller.accessibilityPermissionsChecker(nil)
+        XCTAssertEqual(reports, 1, "a later tick reports nothing")
     }
 
     func testReportingAGrantStartsNothingWhenTheAppIsNotWaitingForOne() throws {
@@ -673,16 +708,341 @@ final class IntroductionWindowTests: XCTestCase {
         scrollView.scrollWheel(with: try scrollEvent(phase: 1, synthetic: false))
         XCTAssertTrue(picture.sawTrackpad)
         XCTAssertEqual(picture.pillText, "That was a trackpad or Magic Mouse. Scrollio leaves those as macOS makes them.")
+
+        // The next wheel scroll takes the line away; another trackpad scroll brings it back
+        // for a while (4 s), then it goes by itself.
+        scrollView.scrollWheel(with: try scrollEvent(phase: 0, synthetic: false))
+        XCTAssertFalse(picture.sawTrackpad)
+        XCTAssertNil(picture.pillText)
+        scrollView.scrollWheel(with: try scrollEvent(phase: 2, synthetic: false))
+        XCTAssertEqual(picture.pillText, "That was a trackpad or Magic Mouse. Scrollio leaves those as macOS makes them.")
+        XCTAssertEqual(WelcomeGuideFeelPicture.trackpadNoteDuration, 4)
+        let timer = try XCTUnwrap(picture.trackpadNoteTimer)
+        timer.fire()
+        XCTAssertNil(picture.pillText)
+        XCTAssertTrue(picture.sawTrackpad, "still a trackpad: the line does not come back with every event")
+        scrollView.scrollWheel(with: try scrollEvent(phase: 2, synthetic: false))
+        XCTAssertNil(picture.pillText)
     }
 
     func testTheDemoNeverRunsOffScreenAndStopsWithReduceMotion() {
         let controller = makeFeelController()
+        _ = makeWindow(for: controller)
         let picture = controller.feelStep.artwork
         XCTAssertFalse(picture.isClockRunning, "the window is not on screen")
         // The demo moves the real page (and only along it).
         picture.show(time: 1.0)
         XCTAssertGreaterThan(picture.scrollView.contentView.bounds.minY, 5)
         XCTAssertEqual(picture.scrollView.contentView.bounds.minX, 0)
+
+        // On screen it runs; with Reduce Motion it does not.
+        picture.isWindowVisible = { _ in true }
+        picture.updateClock()
+        XCTAssertTrue(picture.isClockRunning)
+        world.reduceMotion = true
+        picture.updateClock()
+        XCTAssertFalse(picture.isClockRunning)
+    }
+
+    /// Every picture's loop: only while its step shows in a window that can be seen, never
+    /// with Reduce Motion (the system says so through a notification, which calls `updateClock`).
+    func testEveryPictureStandsStillWithReduceMotion() {
+        world.runAfterGrant = .running
+        let controller = world.makeController(flow: .full)
+        _ = makeWindow(for: controller)
+        for step in [WelcomeGuideStep.welcome, .access, .feel, .finish] {
+            controller.go(by: controller.steps.firstIndex(of: step)! - controller.index)
+            let picture = pictureClock(of: step, in: controller)
+            picture.isWindowVisible = { _ in true }
+            world.reduceMotion = false
+            controller.stepView(for: step).setShown(true)
+            XCTAssertTrue(picture.isClockRunning, "\(step)")
+            world.reduceMotion = true
+            picture.updateClock()
+            XCTAssertFalse(picture.isClockRunning, "\(step) moves with Reduce Motion")
+            world.reduceMotion = false
+            picture.updateClock()
+            XCTAssertTrue(picture.isClockRunning, "\(step)")
+        }
+    }
+
+    private func pictureClock(of step: WelcomeGuideStep, in controller: IntroductionViewController) -> WelcomeGuideAnimatedView {
+        switch step {
+        case .welcome: return controller.welcomeStep.artwork
+        case .access: return controller.accessStep.artwork
+        case .feel: return controller.feelStep.artwork
+        case .finish: return controller.finishStep.artwork
+        }
+    }
+
+    /// The demo waits while the pointer is on the page. A step taken out of the window hears
+    /// no mouse-exit: when it comes back, the demo plays again.
+    func testTheDemoPlaysAgainAfterTheStepWasLeftWithThePointerOnThePage() {
+        let controller = makeFeelController()
+        _ = makeWindow(for: controller)
+        let picture = controller.feelStep.artwork
+        picture.isWindowVisible = { _ in true }
+        picture.updateClock()
+        XCTAssertTrue(picture.isClockRunning)
+        picture.scrollView.onHover?(true)
+        XCTAssertTrue(picture.isDemoPaused)
+        XCTAssertFalse(picture.isClockRunning, "nothing animates while the pointer is on the page")
+        controller.go(by: 1)
+        controller.go(by: -1)
+        XCTAssertEqual(controller.currentStep, .feel)
+        XCTAssertFalse(picture.isDemoPaused)
+        XCTAssertTrue(picture.isClockRunning, "the demo plays again")
+    }
+
+    // MARK: - One press per click, the lifecycle
+
+    /// The second click of a double-click and a held Return used to act on the step that had
+    /// just come in under the same button: Continue then Done, or Open Accessibility Settings.
+    func testADoubleClickOrAHeldKeyPressesTheBarOnce() throws {
+        world.accessGranted = true
+        world.run = .running
+        let controller = world.makeController(flow: .full)
+        XCTAssertEqual(controller.steps, [.welcome, .feel, .finish])
+        let window = makeWindow(for: controller)
+        func mouseUp(clicks: Int) -> NSEvent? {
+            return NSEvent.mouseEvent(
+                with: .leftMouseUp, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                context: nil, eventNumber: 0, clickCount: clicks, pressure: 0
+            )
+        }
+        func returnKey(repeated: Bool) -> NSEvent? {
+            return NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: repeated, keyCode: 36
+            )
+        }
+        world.currentEvent = mouseUp(clicks: 1)
+        click(controller.primaryButton)
+        XCTAssertEqual(controller.currentStep, .feel)
+        world.currentEvent = mouseUp(clicks: 2)
+        click(controller.primaryButton)
+        click(controller.backButton)
+        XCTAssertEqual(controller.currentStep, .feel, "the second click of a double-click")
+        world.currentEvent = returnKey(repeated: true)
+        click(controller.primaryButton)
+        XCTAssertEqual(controller.currentStep, .feel, "a held Return")
+        world.currentEvent = returnKey(repeated: false)
+        click(controller.primaryButton)
+        XCTAssertEqual(controller.currentStep, .finish)
+        world.currentEvent = mouseUp(clicks: 2)
+        click(controller.primaryButton)
+        click(controller.secondaryButton)
+        XCTAssertFalse(world.progress.isFinished, "neither Done nor Open Settings")
+        XCTAssertEqual(world.appSettingsOpened, 0)
+    }
+
+    /// A real double-click on Continue: one step.
+    func testADoubleClickOnContinueTakesOneStep() {
+        world.accessGranted = true
+        world.run = .running
+        let controller = world.makeController(flow: .full)
+        _ = makeEventWindow(for: controller)
+        let primary = controller.primaryButton!
+        realClick(primary, at: middle(of: primary))
+        realClick(primary, at: middle(of: primary), clickCount: 2)
+        settle(0.6)
+        XCTAssertEqual(controller.currentStep, .feel)
+        XCTAssertEqual(world.scroll.duration, OPTIONS_SCROLL_DEFAULT().duration)
+    }
+
+    /// While the steps change, the incoming step's controls are in place but cannot be seen,
+    /// and the main button already means the next step: presses do nothing until the text is in.
+    func testAPressWhileTheStepsChangeDoesNothing() {
+        world.accessGranted = true
+        world.run = .running
+        let controller = world.makeController(flow: .full)
+        _ = makeEventWindow(for: controller)
+        let primary = controller.primaryButton!
+        realClick(primary, at: middle(of: primary))
+        XCTAssertEqual(controller.currentStep, .feel)
+        XCTAssertTrue(controller.isChangingStep)
+        let float = controller.feelStep.feelButtons[ScrollFeel.float.rawValue]
+        realClick(float, at: NSPoint(x: float.bounds.midX, y: float.bounds.midY))
+        realClick(primary, at: middle(of: primary))
+        XCTAssertEqual(controller.currentStep, .feel, "Continue again, unseen")
+        XCTAssertEqual(world.scroll.duration, ScrollFeel.smooth.duration, "a card that could not be seen yet")
+
+        settle(0.7)
+        XCTAssertFalse(controller.isChangingStep)
+        realClick(float, at: NSPoint(x: float.bounds.midX, y: float.bounds.midY))
+        XCTAssertEqual(world.scroll.duration, ScrollFeel.float.duration)
+        realClick(primary, at: middle(of: primary))
+        XCTAssertEqual(controller.currentStep, .finish)
+    }
+
+    /// The poll runs while the window shows; AppRunController's change is heard only then.
+    func testThePollAndTheRunStateFollowTheWindow() {
+        world.accessGranted = true
+        world.run = .retrying
+        let controller = world.makeController(flow: .full)
+        XCTAssertEqual(controller.accessState, .couldNotStart)
+        XCTAssertNil(controller.accessibilityPermissionsCheckerTimer)
+        world.run = .running
+        NotificationCenter.default.post(name: AppRunController.didChangeNotification, object: nil)
+        XCTAssertEqual(controller.accessState, .couldNotStart, "not listening before the window appears")
+
+        controller.viewWillAppear()
+        XCTAssertNotNil(controller.accessibilityPermissionsCheckerTimer)
+        XCTAssertTrue(controller.accessibilityPermissionsCheckerTimer?.isValid ?? false)
+        XCTAssertEqual(controller.accessState, .running, "read when it appears")
+        world.run = .paused
+        NotificationCenter.default.post(name: AppRunController.didChangeNotification, object: nil)
+        XCTAssertEqual(controller.accessState, .paused)
+
+        controller.viewWillDisappear()
+        XCTAssertNil(controller.accessibilityPermissionsCheckerTimer)
+        world.run = .running
+        NotificationCenter.default.post(name: AppRunController.didChangeNotification, object: nil)
+        XCTAssertEqual(controller.accessState, .paused, "not listening once it is gone")
+
+        controller.viewWillAppear()
+        XCTAssertNotNil(controller.accessibilityPermissionsCheckerTimer)
+        controller.windowWillClose()
+        XCTAssertNil(controller.accessibilityPermissionsCheckerTimer)
+        controller.viewWillDisappear()
+    }
+
+    /// Only the picture of the step on screen plays, and none once the window closes.
+    func testOnlyTheShownStepsPictureMovesAndNoneAfterTheWindowCloses() {
+        let controller = world.makeController(flow: .full)
+        _ = makeWindow(for: controller)
+        XCTAssertEqual(controller.steps, WelcomeGuideStep.allCases)
+        for step in WelcomeGuideStep.allCases {
+            pictureClock(of: step, in: controller).isWindowVisible = { _ in true }
+        }
+        controller.viewWillAppear()
+        for step in WelcomeGuideStep.allCases {
+            controller.go(by: controller.steps.firstIndex(of: step)! - controller.index)
+            for other in WelcomeGuideStep.allCases {
+                XCTAssertEqual(pictureClock(of: other, in: controller).isClockRunning, other == step, "on \(step): \(other)")
+            }
+        }
+        controller.windowWillClose()
+        for step in WelcomeGuideStep.allCases {
+            XCTAssertFalse(pictureClock(of: step, in: controller).isClockRunning, "\(step) after close")
+        }
+        controller.viewWillDisappear()
+    }
+
+    /// Allowed while the guide was closed, the event taps not started yet: the run starts them
+    /// at once instead of waiting for the app's next try (up to 10 s of "Starting Scrollio…").
+    func testARunThatBeginsWithTheAccessButNoEventTapsStartsThemAtOnce() {
+        world.accessGranted = true
+        world.run = .stopped
+        world.runAfterGrant = .running
+        let controller = world.makeController(flow: .full)
+        XCTAssertEqual(controller.steps, [.welcome, .access, .feel, .finish])
+        XCTAssertEqual(controller.accessState, .starting)
+        controller.accessibilityPermissionsChecker(nil)
+        XCTAssertEqual(world.grantsReported, 1)
+        XCTAssertEqual(controller.accessState, .running)
+        XCTAssertTrue(world.announcements.isEmpty, "nothing new to announce")
+        controller.accessibilityPermissionsChecker(nil)
+        XCTAssertEqual(world.grantsReported, 1)
+    }
+
+    /// "Allow Accessibility Access…" while a guide without the Accessibility step is open (it
+    /// began with the access, which went since): the guide starts again with the step.
+    func testAnOpenGuideAsksForTheAccessAgainWhenItWent() {
+        world.accessGranted = true
+        world.run = .running
+        let controller = world.makeController(flow: .full)
+        XCTAssertEqual(controller.steps, [.welcome, .feel, .finish])
+        controller.go(by: 1)
+        XCTAssertNil(IntroductionWindowController.restart(controller, for: .automatic), "the access is still there")
+        XCTAssertNil(IntroductionWindowController.restart(controller, for: .byHand))
+        world.accessGranted = false
+        world.run = .stopped
+        XCTAssertEqual(IntroductionWindowController.restart(controller, for: .automatic), .full)
+        controller.begin(.full)
+        XCTAssertEqual(controller.steps, [.welcome, .access, .feel, .finish])
+        XCTAssertNil(IntroductionWindowController.restart(controller, for: .automatic), "it has the step now")
+        // By hand the Accessibility step alone becomes the whole guide; the app leaves it alone.
+        controller.begin(.accessOnly)
+        XCTAssertEqual(IntroductionWindowController.restart(controller, for: .byHand), .full)
+        XCTAssertNil(IntroductionWindowController.restart(controller, for: .automatic))
+    }
+
+    func testTheAccessPictureStopsOnceTheAccessIsAllowed() {
+        world.runAfterGrant = .running
+        let controller = makeAccessController()
+        _ = makeWindow(for: controller)
+        let picture = controller.accessStep.artwork
+        picture.isWindowVisible = { _ in true }
+        controller.accessStep.setShown(true)
+        XCTAssertTrue(picture.isClockRunning)
+        world.accessGranted = true
+        controller.accessibilityPermissionsChecker(nil)
+        XCTAssertFalse(picture.isClockRunning, "no display link for a picture that stands still")
+        XCTAssertEqual(picture.shownFrame.switchOn, 1)
+        world.accessGranted = false
+        world.run = .stopped
+        controller.accessibilityPermissionsChecker(nil)
+        XCTAssertTrue(picture.isClockRunning, "the loop is back with the request")
+    }
+
+    /// "Open at login" may open Login Items for an approval: it comes after the Preferences,
+    /// so it is the window in front.
+    func testOpenSettingsLeavesLoginItemsInFront() {
+        let fake = install(.requiresApproval)
+        fake.afterRegister = nil
+        fake.onOpenSystemSettings = { self.world.log.append("Login Items") }
+        let controller = makeFinishController(finished: true)
+        let row = controller.finishStep.loginRow!
+        row.toggle.state = .on
+        XCTAssertTrue(row.toggle.sendAction(row.toggle.action, to: row.toggle.target))
+        click(controller.secondaryButton)
+        XCTAssertEqual(world.log, ["Preferences", "Login Items"])
+    }
+
+    /// The switch shows what will be set: closing the window on the last step applies it as
+    /// Done does, once.
+    func testClosingTheWindowOnTheLastStepAppliesOpenAtLoginOnce() {
+        let fake = install(.notRegistered)
+        let controller = makeFinishController()
+        XCTAssertTrue(controller.finishStep.loginRow.isOn, "a new user's switch is on")
+        controller.windowWillClose()
+        XCTAssertEqual(fake.registerCalls, 1)
+        XCTAssertTrue(Options.shared.general.autoLaunch)
+        controller.windowWillClose()
+        XCTAssertEqual(fake.registerCalls, 1, "once")
+
+        // Done, then the close that follows it: once.
+        let other = install(.notRegistered)
+        let second = makeFinishController()
+        let window = makeWindow(for: second)
+        let closed = expectation(forNotification: NSWindow.willCloseNotification, object: window)
+        click(second.primaryButton)
+        wait(for: [closed], timeout: 1)
+        second.windowWillClose()
+        XCTAssertEqual(other.registerCalls, 1)
+        XCTAssertEqual(other.unregisterCalls, 0)
+    }
+
+    /// Back is ⌘[ (as in Finder and System Settings); Esc neither goes back nor closes.
+    func testBackIsCommandBracketAndEscDoesNothing() {
+        world.accessGranted = true
+        world.run = .running
+        let controller = world.makeController(flow: .full)
+        let window = makeWindow(for: controller)
+        controller.go(by: 1)
+        XCTAssertEqual(controller.currentStep, .feel)
+        var closes = 0
+        let observer = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: nil
+        ) { _ in closes += 1 }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        press("\u{1b}", keyCode: 53, in: window)
+        controller.cancelOperation(nil)
+        XCTAssertEqual(controller.currentStep, .feel)
+        XCTAssertEqual(closes, 0)
+        press("[", keyCode: 33, modifiers: .command, in: window)
+        XCTAssertEqual(controller.currentStep, .welcome)
     }
 
     // MARK: - Real clicks and keys
@@ -693,6 +1053,8 @@ final class IntroductionWindowTests: XCTestCase {
     private func makeEventWindow(for controller: IntroductionViewController) -> NSWindow {
         let window = GuideEventWindow.make(size: WelcomeGuideLayout.windowSize)
         IntroductionWindowController.style(window)
+        // Pressed with the events that come out of the application's queue.
+        controller.currentEvent = { NSApp.currentEvent }
         window.contentViewController = controller
         window.putOutOfSight()
         addTeardownBlock {
@@ -745,7 +1107,7 @@ final class IntroductionWindowTests: XCTestCase {
     /// the queue itself. With `whilePressed` the rest comes a moment after the down, from a
     /// timer that also runs inside such a loop, and `whilePressed` runs while the button is held.
     private func realClick(
-        _ view: NSView, path: [NSPoint], whilePressed: (() -> Void)? = nil,
+        _ view: NSView, path: [NSPoint], clickCount: Int = 1, whilePressed: (() -> Void)? = nil,
         file: StaticString = #filePath, line: UInt = #line
     ) {
         guard let window = view.window, let first = path.first, let last = path.last else {
@@ -755,7 +1117,7 @@ final class IntroductionWindowTests: XCTestCase {
             return NSEvent.mouseEvent(
                 with: type, location: view.convert(point, to: nil), modifierFlags: [],
                 timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
-                eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1
+                eventNumber: 0, clickCount: clickCount, pressure: type == .leftMouseUp ? 0 : 1
             )!
         }
         let mask: NSEvent.EventTypeMask = [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
@@ -800,19 +1162,25 @@ final class IntroductionWindowTests: XCTestCase {
     /// A click at `point` with the pointer moving `move` points toward the middle between
     /// down and up (a hand is never quite still).
     private func realClick(
-        _ view: NSView, at point: NSPoint, move: CGFloat = 0, whilePressed: (() -> Void)? = nil,
+        _ view: NSView, at point: NSPoint, move: CGFloat = 0, clickCount: Int = 1, whilePressed: (() -> Void)? = nil,
         file: StaticString = #filePath, line: UInt = #line
     ) {
         let towardX: CGFloat = point.x <= view.bounds.midX ? 1 : -1
         let towardY: CGFloat = point.y <= view.bounds.midY ? 1 : -1
         let path = move == 0 ? [point] : [point, NSPoint(x: point.x + move * towardX, y: point.y + move * towardY)]
-        realClick(view, path: path, whilePressed: whilePressed, file: file, line: line)
+        realClick(view, path: path, clickCount: clickCount, whilePressed: whilePressed, file: file, line: line)
     }
 
-    private func press(_ characters: String, keyCode: UInt16, in window: NSWindow) {
+    /// The middle of a push button's bezel.
+    private func middle(of button: NSButton) -> NSPoint {
+        let rect = bezel(of: button)
+        return NSPoint(x: rect.midX, y: rect.midY)
+    }
+
+    private func press(_ characters: String, keyCode: UInt16, modifiers: NSEvent.ModifierFlags = [], in window: NSWindow) {
         let arrow = characters.unicodeScalars.first.map { $0.value >= 0xF700 } ?? false
         let event = NSEvent.keyEvent(
-            with: .keyDown, location: .zero, modifierFlags: arrow ? [.numericPad, .function] : [],
+            with: .keyDown, location: .zero, modifierFlags: arrow ? [.numericPad, .function] : modifiers,
             timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
             characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode
         )!
@@ -850,9 +1218,10 @@ final class IntroductionWindowTests: XCTestCase {
         controller.accessibilityPermissionsChecker(nil)
     }
 
-    /// Lets a change of step finish (its crossfade, with Reduce Motion: nothing moves).
-    private func settle() {
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
+    /// Lets a change of step finish: 0.2 s with Reduce Motion (a crossfade, nothing moves),
+    /// 0.48 s without.
+    private func settle(_ seconds: TimeInterval = 0.3) {
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: seconds))
     }
 
     private func chosenFeels(_ step: WelcomeGuideFeelStep) -> [ScrollFeel] {
@@ -1228,11 +1597,12 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertTrue(row.isOn, "on for a new user")
         XCTAssertEqual(fake.calls, 0, "showing the step registers nothing")
 
-        // Back and again, and a window closed without Done: still nothing.
+        // Back and again: still nothing; the window closed on another step: nothing.
         click(controller.backButton)
+        controller.windowWillClose()
+        XCTAssertEqual(fake.calls, 0)
         click(controller.primaryButton)
         XCTAssertTrue(controller.finishStep.loginRow.isOn)
-        controller.windowWillClose()
         XCTAssertEqual(fake.calls, 0)
 
         let closed = expectation(forNotification: NSWindow.willCloseNotification, object: window)
@@ -1583,11 +1953,10 @@ final class IntroductionWindowTests: XCTestCase {
         let windowController = try XCTUnwrap(
             storyboard.instantiateController(withIdentifier: WINDOW_IDENTIFIER.introductionWindowController) as? IntroductionWindowController
         )
+        // Loading the storyboard builds the view with the live seams: under XCTest the stored
+        // progress is never read (`WelcomeGuideProgress.live` has no store), so the guide counts
+        // as finished and the app's own run is the Accessibility step alone.
         let controller = try XCTUnwrap(windowController.contentViewController as? IntroductionViewController)
-        controller.progress = world.progress
-        controller.isAccessGranted = { false }
-        controller.runState = { .stopped }
-        world.defaults.set(1, forKey: WelcomeGuideProgress.key)
         let window = try XCTUnwrap(windowController.window)
         addTeardownBlock { windowController.close() }
 
@@ -1600,10 +1969,13 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertTrue(window.delegate === windowController)
         XCTAssertFalse(windowController.shouldCascadeWindows)
         XCTAssertTrue(window.autorecalculatesKeyViewLoop, "Tab reaches every control")
+        XCTAssertTrue(window.isMovableByWindowBackground, "it moves by its background; the controls say they do not")
         XCTAssertEqual(window.contentRect(forFrameRect: window.frame).size, WelcomeGuideLayout.windowSize)
         XCTAssertFalse(window.isVisible)
         XCTAssertNil(controller.accessibilityPermissionsCheckerTimer)
-        XCTAssertEqual(controller.flow, .accessOnly, "opened by the app for someone who finished the guide")
+        XCTAssertTrue(WelcomeGuideProgress.live.isFinished)
+        XCTAssertEqual(controller.flow, IntroductionWindowController.flow(for: .automatic, progress: .live))
+        XCTAssertEqual(controller.flow, .accessOnly)
     }
 
     func testNothingOfTheOldWindowIsLeft() {

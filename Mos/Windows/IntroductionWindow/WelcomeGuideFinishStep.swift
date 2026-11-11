@@ -136,7 +136,8 @@ final class WelcomeGuideFinishPicture: WelcomeGuideAnimatedView {
         return nil
     }
 
-    /// The mock's timings: two rings out of the icon, then the menu drops in and stays.
+    /// Two rings out of the icon (from 0.3 s and 0.9 s, 1.2 s each), then the menu drops in at
+    /// 1.5 s and stays until 7.0 s of the 7.4 s loop.
     static func frame(at time: TimeInterval) -> Frame {
         var loop = time.isFinite ? time.truncatingRemainder(dividingBy: loopLength) : 0
         if loop < 0 { loop += loopLength }

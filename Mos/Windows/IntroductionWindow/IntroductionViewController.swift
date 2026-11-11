@@ -19,10 +19,13 @@
 //    user comes back from System Settings without the access.
 //
 //  Done (or Open Settings) marks the guide finished, and so does closing the window once
-//  the access is allowed (WelcomeGuideProgress). Done and Open Settings on the last step
-//  also apply its "Open at login" switch, through General's code (LoginItem); nothing is
-//  registered before. Return presses the main button, Esc goes back; with Reduce Motion
-//  the steps change by a short crossfade.
+//  the access is allowed (WelcomeGuideProgress). Leaving the last step (Done, Open Settings,
+//  or closing the window there) also applies its "Open at login" switch as it shows, through
+//  General's code (LoginItem); nothing is registered before. Return presses the main button,
+//  ⌘[ goes back, Esc does nothing (it does not close the guide either); with Reduce Motion
+//  the steps change by a short crossfade. The bar takes one press per click: the second
+//  click of a double-click, a held key and a press while the steps change do nothing, so
+//  no step is skipped unseen.
 //
 //  Created by Caldis on 15/11/2019.
 //  Copyright © 2019 Caldis. All rights reserved.
@@ -95,6 +98,8 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     var presentHelp: (NSPopover, NSView) -> Void = { popover, link in
         popover.show(relativeTo: link.bounds, of: link, preferredEdge: .maxY)
     }
+    /// The event a button of the bar is pressed with (a second click, a held key).
+    var currentEvent: () -> NSEvent? = { NSApp.currentEvent }
 
     // MARK: - State
 
@@ -111,6 +116,17 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     private var didOfferHelp = false
     private var helpPopover: NSPopover?
     private var transitionGeneration = 0
+    /// The grant was reported to the app in this run (`accessWasGranted`).
+    private var didReportGrant = false
+    /// `refreshAccessState` is running: reporting the grant comes back into it.
+    private var isRefreshingAccess = false
+    /// Steps are changing: until the incoming text is in, presses do nothing.
+    private(set) var isChangingStep = false {
+        didSet {
+            pictureHost?.takesClicks = !isChangingStep
+            contentHost?.takesClicks = !isChangingStep
+        }
+    }
     /// "Open at login" of the last step: what the user leaves with, and what the system
     /// said when the run began (an untouched switch changes nothing in the system).
     private(set) var openAtLoginChoice = false
@@ -125,8 +141,8 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
 
     // MARK: - Views (read access for tests)
 
-    private(set) var pictureHost: NSView!
-    private(set) var contentHost: NSView!
+    private(set) var pictureHost: WelcomeGuideStepHost!
+    private(set) var contentHost: WelcomeGuideStepHost!
     private(set) var backButton: NSButton!
     private(set) var primaryButton: NSButton!
     /// "Open Settings", next to Done on the last step.
@@ -146,6 +162,10 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         step.show(accessState, menuBarIconHidden: isMenuBarIconHidden())
         return step
     }()
+
+    private func showAccessState() {
+        accessStep.show(accessState, menuBarIconHidden: isMenuBarIconHidden())
+    }
 
     private(set) lazy var feelStep: WelcomeGuideFeelStep = {
         let step = WelcomeGuideFeelStep(
@@ -203,8 +223,8 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         canvas.wantsLayer = true
         root.addSubview(canvas)
 
-        let pictures = WelcomeGuideFlippedView(frame: WelcomeGuideLayout.pictureFrame)
-        let contents = WelcomeGuideFlippedView(frame: WelcomeGuideLayout.contentFrame)
+        let pictures = WelcomeGuideStepHost(frame: WelcomeGuideLayout.pictureFrame)
+        let contents = WelcomeGuideStepHost(frame: WelcomeGuideLayout.contentFrame)
         contents.clipsToBounds = false
         pictures.clipsToBounds = false
         // The Welcome step's icon lies on the picture's edge: the text area on top.
@@ -213,15 +233,17 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         pictureHost = pictures
         contentHost = contents
 
-        let back = NSButton(title: text("intro-back-button"), target: self, action: #selector(backButtonClicked(_:)))
+        let back = NSButton(title: WelcomeGuideText.localized("intro-back-button"), target: self, action: #selector(backButtonClicked(_:)))
         back.bezelStyle = .push
         back.controlSize = .large
-        back.keyEquivalent = "\u{1b}"
-        let primary = NSButton(title: text("intro-continue-button"), target: self, action: #selector(primaryButtonClicked(_:)))
+        // ⌘[ as Back in Finder, Safari and System Settings; Esc means cancel on the Mac.
+        back.keyEquivalent = "["
+        back.keyEquivalentModifierMask = .command
+        let primary = NSButton(title: WelcomeGuideText.localized("intro-continue-button"), target: self, action: #selector(primaryButtonClicked(_:)))
         primary.bezelStyle = .push
         primary.controlSize = .large
         primary.keyEquivalent = "\r"
-        let secondary = NSButton(title: text("intro-open-app-settings-button"), target: self, action: #selector(secondaryButtonClicked(_:)))
+        let secondary = NSButton(title: WelcomeGuideText.localized("intro-open-app-settings-button"), target: self, action: #selector(secondaryButtonClicked(_:)))
         secondary.bezelStyle = .push
         secondary.controlSize = .large
         let dots = WelcomeGuideStepDots(frame: .zero)
@@ -283,10 +305,6 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         shownStepView?.setShown(false)
     }
 
-    private func text(_ key: String) -> String {
-        return NSLocalizedString(key, comment: "")
-    }
-
     // MARK: - The run
 
     /// Starts a run at its first step. The whole guide skips the Accessibility step when
@@ -299,6 +317,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         prepareOpenAtLogin()
         didOpenSettings = false
         didOfferHelp = false
+        didReportGrant = false
         setHelpShown(false)
         if isViewLoaded {
             show(stepAt: 0, direction: -1, animated: true)
@@ -325,6 +344,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         shownStepView = next
         transitionGeneration += 1
         let generation = transitionGeneration
+        isChangingStep = false
 
         // What an unfinished change left behind goes now.
         for host in [pictureHost!, contentHost!] {
@@ -343,7 +363,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         if next.picture.superview !== pictureHost { pictureHost.addSubview(next.picture) }
         if next.content.superview !== contentHost { contentHost.addSubview(next.content) }
         if next === accessStep {
-            accessStep.show(accessState, menuBarIconHidden: isMenuBarIconHidden())
+            showAccessState()
         }
         // Loops start only in a window that shows; the step's content is brought up to date.
         next.setShown(true)
@@ -369,6 +389,13 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
             removeContent()
             return
         }
+        // Until the incoming text is in, a press goes nowhere: a second click on the button
+        // that now means something else, or a control that cannot be seen yet.
+        isChangingStep = true
+        let arrived = { [weak self] in
+            guard let self, generation == self.transitionGeneration else { return }
+            self.isChangingStep = false
+        }
         if prefersReducedMotion() {
             next.picture.alphaValue = 0
             next.content.alphaValue = 0
@@ -381,6 +408,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
             }, completionHandler: {
                 removePicture()
                 removeContent()
+                arrived()
             })
             return
         }
@@ -403,12 +431,12 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         }, completionHandler: { [weak self] in
             guard let self, generation == self.transitionGeneration else { return }
             removeContent()
-            NSAnimationContext.runAnimationGroup { context in
+            NSAnimationContext.runAnimationGroup({ context in
                 context.duration = 0.3
                 context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1)
                 next.content.animator().alphaValue = 1
                 next.content.animator().setFrameOrigin(.zero)
-            }
+            }, completionHandler: arrived)
         })
     }
 
@@ -421,18 +449,18 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         secondaryButton.isHidden = step != .finish
         switch step {
         case .welcome, .feel:
-            primaryButton.title = text("intro-continue-button")
+            primaryButton.title = WelcomeGuideText.localized("intro-continue-button")
             primaryButton.isEnabled = true
         case .access:
             if accessState == .missing {
-                primaryButton.title = text("intro-open-settings-button")
+                primaryButton.title = WelcomeGuideText.localized("intro-open-settings-button")
                 primaryButton.isEnabled = true
             } else {
-                primaryButton.title = text(isLastStep ? "intro-done-button" : "intro-continue-button")
+                primaryButton.title = WelcomeGuideText.localized(isLastStep ? "intro-done-button" : "intro-continue-button")
                 primaryButton.isEnabled = accessState.isReady
             }
         case .finish:
-            primaryButton.title = text("intro-done-button")
+            primaryButton.title = WelcomeGuideText.localized("intro-done-button")
             primaryButton.isEnabled = true
         }
     }
@@ -442,10 +470,20 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     /// Reads the permission and the event taps and shows them. Returns the state it found.
     @discardableResult
     func refreshAccessState() -> WelcomeGuideAccessState {
+        // Reporting the grant starts the event taps, and AppRunController posts its change
+        // synchronously: that post comes back here before `accessState` is updated. Answered
+        // with the state as it stands, it cannot report the grant again (a start that keeps
+        // failing would otherwise recurse until the stack runs out).
+        guard !isRefreshingAccess else { return accessState }
+        isRefreshingAccess = true
+        defer { isRefreshingAccess = false }
         let granted = isAccessGranted()
         let arrived = granted && !accessState.isGranted
-        if arrived {
-            // The recovery timer's next look, now: the event taps start before the state is read.
+        // The recovery timer's next look, now: the event taps start before the state is read.
+        // Also once per run when the access was there before the guide but the taps have not
+        // started yet (allowed while the guide was closed): no waiting for the timer.
+        if arrived || (granted && !didReportGrant && runState() == .stopped) {
+            didReportGrant = true
             accessWasGranted()
         }
         let found = WelcomeGuideAccessState(granted: granted, run: runState())
@@ -455,12 +493,14 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
             setHelpShown(false)
         }
         if isViewLoaded {
-            accessStep.show(found, menuBarIconHidden: isMenuBarIconHidden())
-            feelStep.refreshTryArea()
+            showAccessState()
+            if steps.contains(.feel) {
+                feelStep.refreshTryArea()
+            }
             updateBar()
         }
         if arrived {
-            announce(text("intro-status-granted"))
+            announce(WelcomeGuideText.localized("intro-status-granted"))
             bringToFront(view.window)
         }
         return found
@@ -538,8 +578,23 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
 
     // MARK: - Actions
 
+    /// The second click of a double-click, or a key held down: not a press of its own.
+    static func isRepeatedPress(_ event: NSEvent?) -> Bool {
+        guard let event else { return false }
+        switch event.type {
+        case .leftMouseDown, .leftMouseUp: return event.clickCount > 1
+        case .keyDown: return event.isARepeat
+        default: return false
+        }
+    }
+
+    /// Whether a press of the bar counts: not while the steps change, not a repeat.
+    private var takesPress: Bool {
+        return !isChangingStep && !Self.isRepeatedPress(currentEvent())
+    }
+
     @objc func primaryButtonClicked(_ sender: Any?) {
-        guard let step = currentStep else { return }
+        guard takesPress, let step = currentStep else { return }
         switch step {
         case .access where accessState == .missing:
             didOpenSettings = true
@@ -561,11 +616,13 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     }
 
     /// "Open Settings": the Preferences on Scrolling, then the guide closes (the app keeps
-    /// its Dock icon).
+    /// its Dock icon). The Preferences come first: "Open at login" may open Login Items for an
+    /// approval, which must stay in front.
     @objc func secondaryButtonClicked(_ sender: Any?) {
+        guard takesPress else { return }
         progress.markFinished()
-        applyOpenAtLogin()
         openAppSettings()
+        applyOpenAtLogin()
         view.window?.close()
     }
 
@@ -577,24 +634,29 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     private func prepareOpenAtLogin() {
         openAtLoginAtStart = LoginItem.isEnabled
         openAtLoginChoice = progress.isPending ? true : openAtLoginAtStart
-        if isViewLoaded {
+        if isViewLoaded && steps.contains(.finish) {
             finishStep.refresh()
         }
     }
 
-    /// Leaving the last step with Done or Open Settings: the switch is applied as General
-    /// applies its own (`chooseOpenAtLogin`: on registers, and opens Login Items when macOS
-    /// wants an approval; off removes the registration). Only a choice that differs from
-    /// what the system said at the start; when registering fails the guide still finishes,
-    /// and General shows what the system says.
+    /// Leaving the last step (Done, Open Settings, or the window closed there): the switch
+    /// is applied as it shows, as General applies its own (`chooseOpenAtLogin`: on registers,
+    /// and opens Login Items when macOS wants an approval; off removes the registration).
+    /// Only a choice that differs from what the system said at the start, and only once;
+    /// when registering fails the guide still finishes, and General shows what the system says.
     private func applyOpenAtLogin() {
         guard currentStep == .finish, openAtLoginChoice != openAtLoginAtStart else { return }
         PreferencesGeneralViewController.chooseOpenAtLogin(openAtLoginChoice)
+        openAtLoginAtStart = openAtLoginChoice
     }
 
     @objc func backButtonClicked(_ sender: Any?) {
+        guard takesPress else { return }
         go(by: -1)
     }
+
+    /// Esc: the guide has nothing to cancel, and it is not closed by a key.
+    override func cancelOperation(_ sender: Any?) {}
 
     @objc func helpButtonClicked(_ sender: Any?) {
         didOfferHelp = true
@@ -608,8 +670,10 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     }
 
     /// The window closes (its close button, Done, Open Settings): with the access allowed
-    /// the guide counts as finished, so it does not come back by itself.
+    /// the guide counts as finished, so it does not come back by itself. Closed on the last
+    /// step, its "Open at login" switch counts as the user left it.
     func windowWillClose() {
+        applyOpenAtLogin()
         if isAccessGranted() {
             progress.markFinished()
         }

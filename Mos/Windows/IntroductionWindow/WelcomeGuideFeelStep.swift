@@ -127,11 +127,15 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
     }
 
     /// The page is smoothed or not (the access, the per-app list, the switch): the text and
-    /// the line in the window follow. Cheap; the container calls it with its poll.
+    /// the line in the window follow. Cheap; the container calls it with its poll, and the
+    /// text is set only when it changes (no relayout, nothing for VoiceOver to read again).
     func refreshTryArea() {
         let state = tryAreaState()
         tryArea = state
-        textLabel.stringValue = WelcomeGuideText.localized(state == .smoothed ? "intro-feel-text" : "intro-feel-text-watch")
+        let text = WelcomeGuideText.localized(state == .smoothed ? "intro-feel-text" : "intro-feel-text-watch")
+        if textLabel.stringValue != text {
+            textLabel.stringValue = text
+        }
         artwork.tryArea = state
     }
 
@@ -440,6 +444,8 @@ final class WelcomeGuideFeelPicture: WelcomeGuideAnimatedView {
 
     /// The user's wheel turned on the page (called for every event: keep it cheap).
     var onUserScroll: (() -> Void)?
+    /// The line about a trackpad shows this long after it appeared.
+    static let trackpadNoteDuration: TimeInterval = 4
 
     private(set) var loop = ScrollPreviewLoop(scene: ScrollPreviewView.Scene())
     /// Where the demo's leg starts on the page.
@@ -447,7 +453,11 @@ final class WelcomeGuideFeelPicture: WelcomeGuideAnimatedView {
     /// The pointer is on the page, or just left it: the demo waits.
     private(set) var isDemoPaused = false
     private(set) var hasUserScrolled = false
+    /// The last scroll on the page came from a trackpad or a Magic Mouse.
     private(set) var sawTrackpad = false
+    /// The line that says so shows (for `trackpadNoteDuration`, from the first such scroll).
+    private(set) var showsTrackpadNote = false
+    private(set) var trackpadNoteTimer: Timer?
     private var isShown = false
     private var resumeTimer: Timer?
 
@@ -480,10 +490,7 @@ final class WelcomeGuideFeelPicture: WelcomeGuideAnimatedView {
             guard let self else { return }
             self.userDidScroll()
             self.onUserScroll?()
-            if trackpad && !self.sawTrackpad {
-                self.sawTrackpad = true
-                self.updatePill()
-            }
+            self.wheelCame(fromTrackpad: trackpad)
         }
         // The cards are pictures; the page is what VoiceOver finds.
         setAccessibilityElement(false)
@@ -496,6 +503,25 @@ final class WelcomeGuideFeelPicture: WelcomeGuideAnimatedView {
 
     deinit {
         resumeTimer?.invalidate()
+        trackpadNoteTimer?.invalidate()
+    }
+
+    /// A trackpad's scroll shows the line for a while; the next wheel scroll takes it away.
+    private func wheelCame(fromTrackpad trackpad: Bool) {
+        guard trackpad != sawTrackpad else { return }
+        sawTrackpad = trackpad
+        trackpadNoteTimer?.invalidate()
+        trackpadNoteTimer = nil
+        showsTrackpadNote = trackpad
+        if trackpad {
+            trackpadNoteTimer = Timer.scheduledTimer(withTimeInterval: Self.trackpadNoteDuration, repeats: false) { [weak self] _ in
+                guard let self else { return }
+                self.trackpadNoteTimer = nil
+                self.showsTrackpadNote = false
+                self.updatePill()
+            }
+        }
+        updatePill()
     }
 
     func setScene(duration: Double, speed: Double) {
@@ -517,6 +543,9 @@ final class WelcomeGuideFeelPicture: WelcomeGuideAnimatedView {
         if !on {
             resumeTimer?.invalidate()
             resumeTimer = nil
+            // A view taken out of the window hears no mouse-exit: a pointer still on the page
+            // pauses the demo again with the next mouse-entered.
+            isDemoPaused = false
         }
         anchor = demoAnchor()
         setClockRunning(on && !isDemoPaused)
@@ -595,7 +624,7 @@ final class WelcomeGuideFeelPicture: WelcomeGuideAnimatedView {
         case .notInAppList: return WelcomeGuideText.localized("intro-feel-not-in-list")
         case .smoothingOff: return WelcomeGuideText.localized("intro-feel-smoothing-off")
         case .smoothed:
-            if sawTrackpad { return WelcomeGuideText.localized("intro-feel-trackpad") }
+            if showsTrackpadNote { return WelcomeGuideText.localized("intro-feel-trackpad") }
             return hasUserScrolled ? nil : WelcomeGuideText.localized("intro-feel-try")
         }
     }
@@ -722,16 +751,15 @@ final class WelcomeGuideFeelDesktopCard: WelcomeGuideFlippedView {
 }
 
 /// The page to scroll: a real scroll view. It tells when the pointer comes and goes and
-/// when the wheel turns on it, and whether that was a trackpad (a scroll phase that is not
-/// one of Scrollio's own smoothed frames). A press on it never drags the window (which
-/// moves by its background): its clip view and its page say so.
+/// when the wheel turns on it, and whether that was a trackpad (as the scroll engine tells
+/// them apart, `ScrollEvent.isTrackpad`; Scrollio's own smoothed frames are a wheel's even
+/// with a phase). A press on it never drags the window (which moves by its background):
+/// its clip view and its page say so.
 final class WelcomeGuideTryScrollView: NSScrollView {
 
     var onHover: ((Bool) -> Void)?
     /// Every scroll event on the page; true: from a trackpad or Magic Mouse.
     var onWheel: ((Bool) -> Void)?
-    /// Once a trackpad was seen the events are no longer looked at.
-    private var trackpadSeen = false
     private var tracking: NSTrackingArea?
 
     /// The clip view of the page: where the page does not reach (a bounce at either end),
@@ -778,15 +806,9 @@ final class WelcomeGuideTryScrollView: NSScrollView {
     }
 
     override func scrollWheel(with event: NSEvent) {
-        var trackpad = false
-        if !trackpadSeen, !event.phase.isEmpty || !event.momentumPhase.isEmpty {
-            // Scrollio's own frames may carry phases too ("Trackpad-style events").
-            let synthetic = event.cgEvent.map { ScrollUtils.shared.isSyntheticSmoothEvent($0) } ?? false
-            if !synthetic {
-                trackpad = true
-                trackpadSeen = true
-            }
-        }
+        let trackpad = event.cgEvent.map {
+            ScrollEvent.isTrackpad(with: $0) && !ScrollUtils.shared.isSyntheticSmoothEvent($0)
+        } ?? false
         onWheel?(trackpad)
         super.scrollWheel(with: event)
     }

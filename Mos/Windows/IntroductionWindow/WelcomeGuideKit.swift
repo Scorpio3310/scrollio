@@ -117,6 +117,16 @@ class WelcomeGuideFlippedView: NSView {
     override var isFlipped: Bool { return true }
 }
 
+/// The area a step's picture or text sits in. While the steps change it takes no clicks:
+/// the incoming step's controls are in place before they can be seen.
+final class WelcomeGuideStepHost: WelcomeGuideFlippedView {
+    var takesClicks = true
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        return takesClicks ? super.hitTest(point) : nil
+    }
+}
+
 /// Colours of the drawings that the Scrolling preview's palette does not have: the drawn
 /// System Settings window and the menu. Their own, so they read right on every macOS.
 enum WelcomeGuidePalette {
@@ -354,7 +364,7 @@ class WelcomeGuideAnimatedView: WelcomeGuideFlippedView {
     /// The picture without motion.
     func showStill() {}
 
-    // MARK: - Easing (the curves of the mock)
+    // MARK: - Easing (cubic: out for arrivals, in-out for moves there and back)
 
     static func clamp01(_ value: Double) -> Double {
         return min(1, max(0, value))
