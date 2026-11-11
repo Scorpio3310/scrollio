@@ -109,6 +109,11 @@ class ScrollPhase {
     struct TransitionPlan {
         let queue: [(Phase, Phase?)]
         let target: (Phase, Phase?)?
+
+        /// Whether the plan starts a touch: a "began" goes out now or with the next frame.
+        var beginsTouch: Bool {
+            return target?.0 == .TrackingBegin || queue.contains { $0.0 == .TrackingBegin }
+        }
     }
     
     // MARK: - 工具方法

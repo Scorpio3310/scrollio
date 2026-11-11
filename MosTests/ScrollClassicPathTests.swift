@@ -55,6 +55,8 @@ final class ScrollClassicRig {
         poster.frameRecorderForTests = { [unowned self] frame in
             self.recorded.append(Recorded(time: self.now, frame: frame))
         }
+        // Frame timestamps on the simulated clock, in nanoseconds.
+        poster.eventClockForTests = { [unowned self] in UInt64((self.now * 1e9).rounded()) }
         poster.setConfigForTests(simTrackpadEnabled: trackpadStyle, deadZone: deadZone)
     }
 
@@ -124,6 +126,31 @@ final class ScrollClassicRig {
             if names.last != name { names.append(name) }
         }
         return names
+    }
+
+    /// Every frame as "phase delta", e.g. "began 0", "changed 7", "momentumEnded 0".
+    var stream: [String] {
+        return recorded.map { item in
+            let name = Self.phaseName(scroll: item.frame.scrollPhase ?? -1, momentum: item.frame.momentumPhase ?? -1)
+            return "\(name) \(Int(item.frame.y))"
+        }
+    }
+
+    /// The phases of all frames, each with the number of frames in a row that carry it.
+    var phaseRuns: [String] {
+        var runs: [(String, Int)] = []
+        for item in recorded {
+            let name = Self.phaseName(scroll: item.frame.scrollPhase ?? -1, momentum: item.frame.momentumPhase ?? -1)
+            if runs.last?.0 == name { runs[runs.count - 1].1 += 1 } else { runs.append((name, 1)) }
+        }
+        return runs.map { "\($0.0) ×\($0.1)" }
+    }
+
+    /// Time (after `start`) of the first frame with the given phase name.
+    func firstTime(of name: String) -> Double? {
+        return recorded.first {
+            Self.phaseName(scroll: $0.frame.scrollPhase ?? -1, momentum: $0.frame.momentumPhase ?? -1) == name
+        }.map { $0.time - start }
     }
 
     static func phaseName(scroll: Double, momentum: Double) -> String {
@@ -396,24 +423,165 @@ final class ScrollClassicPathTests: XCTestCase {
 
     // MARK: Phases
 
+    // "Trackpad-style events": a wheel scroll goes out as a trackpad flick, a short touch and then
+    // its glide. A real flick from the owner's trackpad: began, three "changed" over ~50 ms,
+    // ended, then momentum events every frame. Apps treat the two parts differently at a page
+    // edge: a touch drags the page past the edge for as long as it lasts, a glide that reaches
+    // the edge bounces at once, sized by its speed, and the rest of it is ignored. The touch used
+    // to last until the wheel had been still for 0.18 s: a fast scroll into an edge dragged the
+    // page most of a screen past it (measured in the owner's recording: up to ~1,400 pt, held
+    // while the wheel turned) instead of a bounce of 30 to 170 pt.
+
+    /// One click at the owner's settings (Step 33.6 × Speed 6.3, Duration 3.69), frame by frame.
+    /// Before: began, ten "changed" frames (145 of the 205 px), ended at 183 ms, then the glide.
+    func testTrackpadStyle_oneClick_isAShortTouchAndThenItsGlide() {
+        let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
+        rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0)
+        rig.run(until: 2)
+
+        XCTAssertEqual(rig.stream, [
+            "began 0", "changed 7", "changed 13", "ended 0",
+            "momentumBegan 15", "momentumChanged 16", "momentumChanged 16", "momentumChanged 16",
+            "momentumChanged 15", "momentumChanged 14", "momentumChanged 12", "momentumChanged 11",
+            "momentumChanged 10", "momentumChanged 9", "momentumChanged 8", "momentumChanged 7",
+            "momentumChanged 6", "momentumChanged 5", "momentumChanged 5", "momentumChanged 4",
+            "momentumChanged 3", "momentumChanged 3", "momentumChanged 2", "momentumChanged 2",
+            "momentumChanged 2", "momentumChanged 2", "momentumChanged 1", "momentumChanged 1",
+            "momentumEnded 0",
+        ])
+        // The touch lifts 50 ms after it began, the glide's first frame comes with it.
+        XCTAssertEqual(rig.firstTime(of: "ended") ?? -1, 0.05, accuracy: 1e-6)
+        XCTAssertEqual(rig.firstTime(of: "momentumBegan") ?? -1, 0.05, accuracy: 1e-6)
+        XCTAssertEqual(rig.stops.map(\.phase), [.MomentumEnd])
+    }
+
+    /// The owner's quick turn (the system's deltas of 1, 12, 54 and 78 pt within 60 ms): the same
+    /// short touch; the ticks after it add to the glide instead of touching again.
+    func testTrackpadStyle_quickBurst_isOneTouchAndOneGlide() {
+        let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
+        for (points, time) in [(1.0, 0.0), (12, 0.024), (54, 0.038), (78, 0.060)] {
+            rig.input(max(33.6, points) * 6.3, notch: 33.6 * 6.3, at: time)
+        }
+        rig.run(until: 3)
+
+        XCTAssertEqual(rig.phaseRuns, [
+            "began ×1", "changed ×2", "ended ×1", "momentumBegan ×1", "momentumChanged ×36", "momentumEnded ×1",
+        ])
+        XCTAssertEqual(Array(rig.stream.prefix(5)), ["began 0", "changed 7", "changed 20", "ended 0", "momentumBegan 40"])
+    }
+
+    /// A long spin (27 ticks in 400 ms, up to 690 px a frame): the touch is over after 50 ms and
+    /// everything after it, while the wheel still turns, is glide. At an edge it bounces once.
+    func testTrackpadStyle_longSpin_isGlideAfterTheFirstFiftyMilliseconds() {
+        let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
+        for (pixels, time) in Self.spin { rig.input(pixels, notch: 33.6 * 6.3, at: time) }
+        rig.run(until: 4)
+
+        XCTAssertEqual(rig.phaseRuns, [
+            "began ×1", "changed ×2", "ended ×1", "momentumBegan ×1", "momentumChanged ×64", "momentumEnded ×1",
+        ])
+        XCTAssertGreaterThan(rig.moving.map { $0.frame.y }.max() ?? 0, 600, "the fast part of the spin is glide")
+    }
+
+    /// The wheel keeps turning (a click every 120 ms for 1.3 s), as against an edge: one touch,
+    /// then one glide that the clicks keep going. No second "began" reaches a page that bounces.
+    func testTrackpadStyle_wheelKeepsTurning_staysOneGlide() {
+        let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
+        for index in 0..<12 { rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: Double(index) * 0.12) }
+        rig.run(until: 4)
+
+        XCTAssertEqual(rig.phaseRuns, [
+            "began ×1", "changed ×2", "ended ×1", "momentumBegan ×1", "momentumChanged ×104", "momentumEnded ×1",
+        ])
+        XCTAssertEqual(rig.stops.count, 1)
+    }
+
+    /// Turning back during the glide starts a new touch, but only with the first frame that moves
+    /// the new way: the frames before it still go the old way (toward the edge, the filter turns the
+    /// speed around over a few frames) and stay glide, which a bouncing page ignores.
+    func testTrackpadStyle_turnBack_startsTheNewTouchWhenTheMotionTurns() {
+        let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
+        for (points, time) in [(1.0, 0.0), (12, 0.024), (54, 0.038), (78, 0.060)] {
+            rig.input(max(33.6, points) * 6.3, notch: 33.6 * 6.3, at: time)
+        }
+        rig.input(-33.6 * 6.3, notch: 33.6 * 6.3, at: 0.3)
+        rig.run(until: 3)
+
+        XCTAssertEqual(rig.phaseRuns, [
+            "began ×1", "changed ×2", "ended ×1", "momentumBegan ×1", "momentumChanged ×17", "momentumEnded ×1",
+            "began ×1", "changed ×3", "ended ×1", "momentumBegan ×1", "momentumChanged ×20", "momentumEnded ×1",
+        ])
+        let secondTouch = rig.recorded.lastIndex { $0.frame.scrollPhase == 1 } ?? 0
+        let before = rig.recorded[..<secondTouch].filter { $0.frame.y != 0 }
+        let after = rig.recorded[secondTouch...].filter { $0.frame.y != 0 }
+        XCTAssertTrue(before.allSatisfy { $0.frame.y > 0 }, "the old way until the new touch")
+        XCTAssertTrue(after.allSatisfy { $0.frame.y < 0 }, "the new touch and its glide go the new way")
+        XCTAssertGreaterThan(rig.recorded[secondTouch].time - rig.start, 0.3 + 1e-6,
+                             "the new touch begins after the tick, when the motion has turned")
+    }
+
+    /// A click after the glide has ended is a new flick.
+    func testTrackpadStyle_clickAfterTheGlide_isANewFlick() {
+        let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
+        rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0)
+        rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 1.2)
+        rig.run(until: 3)
+
+        let flick = ["began ×1", "changed ×2", "ended ×1", "momentumBegan ×1", "momentumChanged ×23", "momentumEnded ×1"]
+        XCTAssertEqual(rig.phaseRuns, flick + flick)
+        XCTAssertEqual(rig.stops.count, 2)
+    }
+
+    /// Several clicks while the glide runs (the second batch 0.7 s later) keep one glide going.
     func testTrackpadStyle_postsTheTrackpadPhaseSequence() {
         let rig = ScrollClassicRig(duration: 4.35, trackpadStyle: true)
         for index in 0..<3 { rig.wheel(10, at: Double(index) * 0.05) }
-        // A second scroll while the first still glides.
         rig.wheel(10, at: 0.7)
         rig.run(until: 4)
 
-        XCTAssertEqual(rig.phaseSequence, [
-            "began", "changed", "ended", "momentumBegan", "momentumChanged", "momentumEnded",
-            "began", "changed", "ended", "momentumBegan", "momentumChanged", "momentumEnded",
-        ])
-        // The gesture ends 180 ms after the last tick of each scroll.
-        let ended = rig.recorded.filter { $0.frame.scrollPhase == 4 }.map { $0.time - rig.start }
-        XCTAssertEqual(ended.count, 2)
-        XCTAssertEqual(ended.first ?? 0, 0.1 + 0.18, accuracy: 1.5 / 60.0)
-        XCTAssertEqual(ended.last ?? 0, 0.7 + 0.18, accuracy: 1.5 / 60.0)
+        XCTAssertEqual(rig.phaseSequence, ["began", "changed", "ended", "momentumBegan", "momentumChanged", "momentumEnded"])
+        XCTAssertEqual(rig.firstTime(of: "ended") ?? -1, 0.05, accuracy: 1e-6)
         XCTAssertTrue(rig.recorded.allSatisfy { $0.frame.scrollPhase != nil }, "every frame carries its phase")
         XCTAssertEqual(rig.stops.count, 1)
+    }
+
+    /// Every frame carries its own time. Apps take a glide's speed from the time between its
+    /// events and size the bounce with it; every frame of a wheel tick used to carry that tick's
+    /// time, so the glide had no speed (or a wild one when the next tick's time came in).
+    func testTrackpadStyle_framesCarryTheirOwnTime() throws {
+        let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
+        for (points, time) in [(1.0, 0.0), (12, 0.024), (54, 0.038), (78, 0.060)] {
+            rig.input(max(33.6, points) * 6.3, notch: 33.6 * 6.3, at: time)
+        }
+        rig.run(until: 3)
+
+        for item in rig.recorded {
+            let timestamp = try XCTUnwrap(item.frame.timestamp)
+            XCTAssertEqual(Double(timestamp) / 1e9, item.time, accuracy: 1e-6)
+        }
+        let glide = rig.moving.filter { $0.frame.momentumPhase == 2 }.compactMap { $0.frame.timestamp }
+        for (later, earlier) in zip(glide.dropFirst(), glide) {
+            XCTAssertEqual(Double(later - earlier) / 1e9, 1.0 / 60.0, accuracy: 1e-6)
+        }
+
+        let plain = ScrollClassicRig(duration: 3.69, trackpadStyle: false)
+        plain.input(33.6 * 6.3, at: 0)
+        plain.run(until: 2)
+        XCTAssertTrue(plain.recorded.allSatisfy { $0.frame.timestamp == nil }, "off: the wheel event's own timestamp stays")
+    }
+
+    /// A finger on the trackpad stops the wheel's glide (ScrollHandover): the glide ends with
+    /// "momentum ended" and nothing follows it.
+    func testTrackpadStyle_fingerTakesOver_endsTheGlide() {
+        let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
+        rig.input(33.6 * 6.3 * 3, notch: 33.6 * 6.3, at: 0)
+        rig.run(until: 0.2)
+        XCTAssertEqual(rig.phases.phase, .MomentumOngoing)
+        XCTAssertTrue(ScrollCore.stopWheelGlide(forTrackpadScrollPhase: 1, poster: rig.poster))
+        let atTheTouch = rig.recorded.count
+        XCTAssertEqual(rig.stream.last, "momentumEnded 0")
+        rig.run(until: 2)
+        XCTAssertEqual(rig.recorded.count, atTheTouch, "nothing more is posted")
     }
 
     func testWithoutTrackpadStyle_noFrameCarriesPhases() {
@@ -439,6 +607,50 @@ final class ScrollClassicPathTests: XCTestCase {
         XCTAssertEqual(plain.stops.first?.time, phased.stops.first?.time)
     }
 
+    /// A free spin of the owner's wheel: 27 events in 400 ms, the system's delta growing from 10 to
+    /// 110 pt, at Step 33.6 × Speed 6.3 (px, seconds).
+    static let spin: [(Double, Double)] = {
+        var inputs: [(Double, Double)] = []
+        for index in 0..<27 {
+            let points = Double(min(110, 10 + index * 8))
+            inputs.append((max(33.6, points) * 6.3, Double(index) * 0.015))
+        }
+        return inputs
+    }()
+    /// A click every 120 ms for 1.3 s.
+    static let keepsTurning: [(Double, Double)] = {
+        var inputs: [(Double, Double)] = []
+        for index in 0..<12 { inputs.append((211.68, Double(index) * 0.12)) }
+        return inputs
+    }()
+
+    /// The touch-and-glide split changes the phases only: in every scenario each frame that moves
+    /// the page goes out at the same time with the same delta as without trackpad-style events.
+    func testTrackpadStyle_keepsEveryFrameOfTheMotion() {
+        let scenarios: [(String, [(Double, Double)])] = [
+            ("click", [(211.68, 0)]),
+            ("burst", [(211.68, 0), (211.68, 0.024), (340.2, 0.038), (491.4, 0.060)]),
+            ("spin", Self.spin),
+            ("turn back", [(211.68, 0), (211.68, 0.024), (340.2, 0.038), (-211.68, 0.3)]),
+            ("keeps turning", Self.keepsTurning),
+            ("two flicks", [(211.68, 0), (211.68, 1.2)]),
+        ]
+        for (name, inputs) in scenarios {
+            for rate in [60.0, 120.0] {
+                let plain = ScrollClassicRig(duration: 3.69, rate: rate, trackpadStyle: false)
+                let phased = ScrollClassicRig(duration: 3.69, rate: rate, trackpadStyle: true)
+                for rig in [plain, phased] {
+                    for (pixels, time) in inputs { rig.input(pixels, notch: 211.68, at: time) }
+                    rig.run(until: 4)
+                }
+                let label = "\(name) at \(Int(rate)) Hz"
+                XCTAssertEqual(plain.moving.map { $0.time }, phased.moving.map { $0.time }, label)
+                XCTAssertEqual(plain.moving.map { $0.frame.y }, phased.moving.map { $0.frame.y }, label)
+                XCTAssertEqual(plain.stops.map(\.time), phased.stops.map(\.time), label)
+            }
+        }
+    }
+
     // MARK: Posting
 
     func testFrame_isWrittenAsAPointDeltaOfTheCopiedEvent() throws {
@@ -460,6 +672,138 @@ final class ScrollClassicPathTests: XCTestCase {
         XCTAssertEqual(phased.getIntegerValueField(.scrollWheelEventPointDeltaAxis2), 2)
         XCTAssertEqual(phased.getDoubleValueField(.scrollWheelEventScrollPhase), 2)
         XCTAssertEqual(try XCTUnwrap(NSEvent(cgEvent: phased)).phase, .changed)
+        XCTAssertEqual(phased.timestamp, 1_234)
+
+        // A frame's own time: nanoseconds, which AppKit gives as seconds of uptime.
+        let timed = try XCTUnwrap(template.copy())
+        let now = ScrollEventClock.uptimeNanoseconds()
+        ScrollOutgoingFrame(y: 4, x: 0, scrollPhase: 0, momentumPhase: 2, timestamp: now).write(to: timed)
+        XCTAssertEqual(timed.timestamp, now)
+        let nsEvent = try XCTUnwrap(NSEvent(cgEvent: timed))
+        XCTAssertEqual(nsEvent.timestamp, Double(now) / 1e9, accuracy: 1e-6)
+        XCTAssertEqual(nsEvent.timestamp, ProcessInfo.processInfo.systemUptime, accuracy: 1.0)
+        XCTAssertEqual(nsEvent.momentumPhase, .changed)
+    }
+}
+
+// MARK: - An AppKit scroll view at its top edge
+
+/// The posted frames fed to a real `NSScrollView` at the top of its page, in a window that is
+/// never shown, and where its page sits at each moment.
+///
+/// What this can and cannot show: AppKit's concurrent ("responsive") scrolling needs a visible
+/// window, so the page view opts out of it. On the classic path a touch ("began", "changed",
+/// "ended") stretches the page past the edge and lets it spring back exactly as an app does, but
+/// momentum events are not animated in a window that is not on screen: the glide's bounce is not
+/// seen here. So this checks the part that went wrong for a fast scroll: how far the touch drags
+/// the page past the edge.
+final class ScrollTrackpadStyleScrollViewTests: XCTestCase {
+
+    private final class Page: NSView {
+        override var isFlipped: Bool { true }
+        override class var isCompatibleWithResponsiveScrolling: Bool { false }
+    }
+
+    private struct Fed {
+        let time: Double
+        let y: Double
+        let scrollPhase: Double
+        let momentumPhase: Double
+    }
+
+    /// Feeds the events at their times (seconds after the start) and returns the top of the visible
+    /// rect every few milliseconds (negative: stretched past the top) until `total`.
+    private func positions(feeding events: [Fed], total: Double) throws -> [Double] {
+        // Inside the main screen's frame, so that the scroll view has a screen, but never ordered in.
+        let screen = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1000, height: 1000)
+        let window = NSWindow(contentRect: NSRect(x: screen.minX + 10, y: screen.minY + 10, width: 400, height: 600),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 600))
+        scrollView.verticalScrollElasticity = .allowed
+        scrollView.documentView = Page(frame: NSRect(x: 0, y: 0, width: 400, height: 6000))
+        window.contentView = scrollView
+        XCTAssertFalse(window.isVisible)
+
+        let start = ScrollEventClock.uptimeNanoseconds()
+        var nsEvents: [NSEvent] = []
+        for event in events {
+            let cgEvent = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: 0, wheel2: 0, wheel3: 0))
+            ScrollOutgoingFrame(y: event.y, x: 0, scrollPhase: event.scrollPhase, momentumPhase: event.momentumPhase,
+                                timestamp: start + UInt64(event.time * 1e9)).write(to: cgEvent)
+            nsEvents.append(try XCTUnwrap(NSEvent(cgEvent: cgEvent)))
+        }
+        var samples: [Double] = []
+        var next = 0
+        let begin = CACurrentMediaTime()
+        let feeder = Timer(timeInterval: 0.002, repeats: true) { _ in
+            let now = CACurrentMediaTime() - begin
+            while next < nsEvents.count && events[next].time <= now {
+                scrollView.scrollWheel(with: nsEvents[next])
+                next += 1
+            }
+            samples.append(scrollView.contentView.bounds.origin.y)
+        }
+        RunLoop.main.add(feeder, forMode: .common)
+        while CACurrentMediaTime() - begin < total {
+            RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
+        }
+        feeder.invalidate()
+        XCTAssertEqual(next, events.count, "every event was fed")
+        return samples
+    }
+
+    private func fed(_ rig: ScrollClassicRig) -> [Fed] {
+        return rig.recorded.map {
+            Fed(time: $0.time - rig.start, y: $0.frame.y, scrollPhase: $0.frame.scrollPhase ?? 0, momentumPhase: $0.frame.momentumPhase ?? 0)
+        }
+    }
+
+    /// A fast spin of the wheel with the page at its top. As one touch for as long as the wheel
+    /// turned (what was posted before), it drags the page more than half the view past the edge
+    /// (measured 356 px of 600); as a short touch and a glide it stretches it a few pixels, and the
+    /// page comes back to the edge without a jump.
+    func testFastSpinAtTheTop_stretchesThePageLittleAndItComesBackSmoothly() throws {
+        let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
+        for (pixels, time) in ScrollClassicPathTests.spin { rig.input(pixels, notch: 33.6 * 6.3, at: time) }
+        rig.run(until: 2)
+        let flick = fed(rig)
+        // The same frames as one long touch, as before: "began", then every moving frame "changed"
+        // until 0.18 s after the last tick, then "ended" (the glide's tail as momentum).
+        let lastTick = ScrollClassicPathTests.spin.last?.1 ?? 0
+        var longTouch: [Fed] = []
+        var ended = false
+        for item in flick where !(item.y == 0 && item.scrollPhase == 4) {
+            if item.scrollPhase == 1 { longTouch.append(item); continue }
+            if item.time <= lastTick + 0.18 && item.momentumPhase != 3 {
+                longTouch.append(Fed(time: item.time, y: item.y, scrollPhase: 2, momentumPhase: 0))
+            } else {
+                if !ended {
+                    longTouch.append(Fed(time: item.time, y: 0, scrollPhase: 4, momentumPhase: 0))
+                    longTouch.append(Fed(time: item.time, y: item.y, scrollPhase: 0, momentumPhase: 1))
+                    ended = true
+                    continue
+                }
+                longTouch.append(item)
+            }
+        }
+
+        let before = try positions(feeding: longTouch, total: 1.6)
+        let after = try positions(feeding: flick, total: 1.6)
+
+        let stretchBefore = -(before.min() ?? 0)
+        let stretchAfter = -(after.min() ?? 0)
+        XCTAssertGreaterThan(stretchBefore, 150, "one long touch drags the page far past the edge")
+        XCTAssertLessThan(stretchAfter, 20, "the short touch stretches it a little")
+        XCTAssertGreaterThan(stretchAfter, 0, "and it does stretch")
+        // Back at the edge, monotonically from the deepest point, in small steps.
+        let deepest = after.firstIndex(of: -stretchAfter) ?? 0
+        for index in (deepest + 1)..<after.count {
+            XCTAssertGreaterThanOrEqual(after[index], after[index - 1] - 0.5, "sample \(index): only back toward the edge")
+            XCTAssertLessThanOrEqual(after[index] - after[index - 1], 10, "sample \(index): no jump")
+        }
+        XCTAssertEqual(after.last ?? -1, 0, accuracy: 0.5, "at rest at the edge")
     }
 }
 
