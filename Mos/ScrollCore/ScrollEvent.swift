@@ -24,16 +24,6 @@ struct axisData {
     var valid = false
     // 可用的滚动数据
     var usableValue = 0.0
-
-    /// Lines (wheel detents) in this event, signed as received (before reverse).
-    /// Line-mode wheels report an integer line count in DeltaAxis1 (several lines per event
-    /// when Bluetooth coalesces a fast spin); macOS acceleration goes into FixedPt/Point.
-    /// Without DeltaAxis1 the fixed-point lines are used, else points / 10 (10 px per line).
-    var lineDelta: Double {
-        if scrollFix != 0 { return Double(scrollFix) }
-        if scrollFixPt != 0.0 { return scrollFixPt }
-        return scrollPt / 10.0
-    }
 }
 
 class ScrollEvent {

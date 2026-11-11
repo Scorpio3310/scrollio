@@ -2,7 +2,7 @@
 //  ScrollMotionTests.swift
 //  MosTests
 //
-//  Frame-rate independent smoothing, the filter, lead cap, landing and event clock.
+//  Frame-rate independent smoothing, the filter, lead cap, the tail and the event clock.
 //
 
 import XCTest
@@ -15,25 +15,21 @@ final class ScrollMotionTests: XCTestCase {
         return OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: duration)
     }
 
-    private func input(_ y: Double, notch: Double = 90.72, duration: Double, bypass: Bool? = nil) -> ScrollPosterInput {
-        let trans = transition(duration)
-        return ScrollPosterInput(
-            y: y, x: 0, notch: (y: notch, x: 0), duration: trans,
-            bypassFilter: bypass ?? ScrollMotion.shouldBypassFilter(freeSpinBlend: 0)
-        )
+    private func input(_ y: Double, notch: Double = 90.72, duration: Double) -> ScrollPosterInput {
+        return ScrollPosterInput(y: y, x: 0, notch: notch, duration: transition(duration))
     }
 
     /// Time until less than 1 px of a 500 px move is left to emit, at `rate` Hz.
-    private func settleTime(rate: Double, duration: Double, bypass: Bool) -> (time: Double, emitted: Double) {
+    private func settleTime(rate: Double, duration: Double) -> (time: Double, emitted: Double) {
         let poster = ScrollPoster()
-        poster.applyInputForTests(input(500, duration: duration, bypass: bypass), at: 0)
+        poster.applyInputForTests(input(500, duration: duration), at: 0)
         let dt = 1 / rate
         var time = 0.0
         var emitted = 0.0
         var settledAt: Double?
         while time < 10 {
             time += dt
-            emitted += poster.advanceForTests(frameInterval: dt, now: 0).y
+            emitted += poster.advanceForTests(frameInterval: dt).y
             if settledAt == nil && 500 - emitted < 1 { settledAt = time }
         }
         return (settledAt ?? .infinity, emitted)
@@ -69,29 +65,20 @@ final class ScrollMotionTests: XCTestCase {
     }
 
     func testSettleTime_isTheSameAt60And120And144Hz() {
-        for duration in [0.5, 1.5, 3.13, 4.35] {
-            for bypass in [false, true] {
-                let at60 = settleTime(rate: 60, duration: duration, bypass: bypass)
-                let at120 = settleTime(rate: 120, duration: duration, bypass: bypass)
-                let at144 = settleTime(rate: 144, duration: duration, bypass: bypass)
-                // One 60 Hz frame of sampling, a little more with the filter's own sampling.
-                let tolerance = (bypass ? 1.0 : 1.5) / 60.0
-                XCTAssertEqual(at120.time, at60.time, accuracy: tolerance, "duration \(duration) bypass \(bypass)")
-                XCTAssertEqual(at144.time, at60.time, accuracy: tolerance, "duration \(duration) bypass \(bypass)")
-                XCTAssertEqual(at60.emitted, 500, accuracy: 1e-6, "no distance lost")
-                XCTAssertEqual(at120.emitted, 500, accuracy: 1e-6, "no distance lost")
-            }
+        for duration in [0.5, 1.5, 3.13, 4.35, 4.5] {
+            let at60 = settleTime(rate: 60, duration: duration)
+            let at120 = settleTime(rate: 120, duration: duration)
+            let at144 = settleTime(rate: 144, duration: duration)
+            // One 60 Hz frame of sampling, a little more with the filter's own sampling.
+            let tolerance = 1.5 / 60.0
+            XCTAssertEqual(at120.time, at60.time, accuracy: tolerance, "duration \(duration)")
+            XCTAssertEqual(at144.time, at60.time, accuracy: tolerance, "duration \(duration)")
+            XCTAssertEqual(at60.emitted, 500, accuracy: 1e-6, "no distance lost")
+            XCTAssertEqual(at120.emitted, 500, accuracy: 1e-6, "no distance lost")
         }
     }
 
     // MARK: - Filter
-
-    func testFilterBypass_onlyInFreeSpin() {
-        XCTAssertFalse(ScrollMotion.shouldBypassFilter(freeSpinBlend: 0))
-        XCTAssertFalse(ScrollMotion.shouldBypassFilter(freeSpinBlend: 0.49))
-        XCTAssertTrue(ScrollMotion.shouldBypassFilter(freeSpinBlend: 0.5), "free-spin")
-        XCTAssertTrue(ScrollMotion.shouldBypassFilter(freeSpinBlend: 1))
-    }
 
     func testFilterWeight_followsTheSmoothingButNeverSlowerThanClassic() {
         XCTAssertEqual(ScrollMotion.filterWeight(forTransition: transition(4.35)), 0.23, "default keeps the classic filter")
@@ -110,24 +97,22 @@ final class ScrollMotionTests: XCTestCase {
             poster.applyInputForTests(input(100, duration: duration), at: 0)
             var frames: [Double] = []
             for _ in 0..<240 {
-                frames.append(poster.advanceForTests(frameInterval: 1.0 / 120.0, now: 0).y)
+                frames.append(poster.advanceForTests(frameInterval: 1.0 / 120.0).y)
             }
             let peakTime = Double((frames.firstIndex(of: frames.max() ?? 0) ?? 0) + 1) / 120.0
             XCTAssertLessThan(peakTime, 0.14, "duration \(duration)")
         }
     }
 
-    /// Direct settings used to skip the filter: every notch then started with its largest
-    /// frame (a jump) and only slowed down. Now the first frame is softened, without a frame of delay.
+    /// Every notch is softened on its first frame (no jump), without a frame of delay.
     func testNotch_startsWithoutAJumpAndWithoutDelay() {
         for duration in [1.0, 2.0, 3.13, 4.35] {
             let trans = transition(duration)
             let poster = ScrollPoster()
             poster.applyInputForTests(input(90.72, duration: duration), at: 0)
-            XCTAssertFalse(poster.motionStateForTests.bypassFilter, "duration \(duration)")
             var frames: [Double] = []
             for _ in 0..<12 {
-                frames.append(poster.advanceForTests(frameInterval: 1.0 / 60.0, now: 0).y)
+                frames.append(poster.advanceForTests(frameInterval: 1.0 / 60.0).y)
             }
             let first = frames[0]
             XCTAssertGreaterThan(first, 0, "moves on the first frame (duration \(duration))")
@@ -137,45 +122,6 @@ final class ScrollMotionTests: XCTestCase {
                 XCTAssertGreaterThan(frames[1], first, "still speeding up on the second frame (duration \(duration))")
             }
         }
-
-        let unfiltered = ScrollPoster()
-        unfiltered.applyInputForTests(input(90.72, duration: 1.0, bypass: true), at: 0)
-        XCTAssertEqual(unfiltered.advanceForTests(frameInterval: 1.0 / 60.0, now: 0).y, 90.72 * transition(1.0), accuracy: 1e-9,
-                       "from standstill an unfiltered motion is unfiltered at once")
-    }
-
-    /// Free-spin opens the filter up while the page is moving. That used to be a switch: what
-    /// the filter held came out in a burst and the speed jumped. Now it is a short blend.
-    func testFilterOpening_whileMovingNeverJumps() {
-        let poster = ScrollPoster()
-        var now = 100.0
-        var frames: [Double] = []
-        var total = 0.0
-        // Steady scrolling, one notch per frame, filtered...
-        for index in 0..<60 {
-            let bypass = index >= 30   // ...then the wheel is taken for free-spinning
-            poster.applyInputForTests(input(30, duration: 3.13, bypass: bypass), at: now)
-            total += 30
-            now += 1.0 / 60.0
-            frames.append(poster.advanceForTests(frameInterval: 1.0 / 60.0, now: now).y)
-        }
-        for index in 31..<60 {
-            XCTAssertLessThan(frames[index], frames[index - 1] * 1.12 + 0.5, "frame \(index): no burst when the filter opens")
-        }
-        // ...and back to filtered while still moving.
-        for _ in 0..<30 {
-            poster.applyInputForTests(input(30, duration: 3.13, bypass: false), at: now)
-            total += 30
-            now += 1.0 / 60.0
-            let frame = poster.advanceForTests(frameInterval: 1.0 / 60.0, now: now).y
-            XCTAssertGreaterThan(frame, (frames.last ?? 0) * 0.88 - 0.5, "no dip when the filter closes")
-            frames.append(frame)
-        }
-        for _ in 0..<600 {
-            now += 1.0 / 60.0
-            frames.append(poster.advanceForTests(frameInterval: 1.0 / 60.0, now: now).y)
-        }
-        XCTAssertEqual(frames.reduce(0, +), total, accuracy: 0.5, "no distance lost or added by the blend")
     }
 
     func testFilterWeight_at60HzIsUnchanged() {
@@ -205,31 +151,26 @@ final class ScrollMotionTests: XCTestCase {
         XCTAssertEqual(timeTo90Percent(rate: 120), timeTo90Percent(rate: 60), accuracy: 1.0 / 60.0)
     }
 
-    func testFilterPassThrough_releasesPendingWithoutLoss() {
-        let filter = ScrollFilter()
-        var input = 0.0, output = 0.0
-        for _ in 0..<4 {
-            input += 10
-            output += filter.fill(with: (y: 10, x: 0)).y
+    /// Real frame intervals jitter, so the filter's weight changes from frame to frame. The
+    /// catch-up release keeps the distance within a fraction of a pixel anyway (without it,
+    /// this run ends about 150 px off). What is left is a little too much, never too little:
+    /// the release never turns the motion around to take it back.
+    func testJitteryFrames_loseNoDistance() {
+        let poster = ScrollPoster()
+        let intervals = [1.0 / 60.0, 1.0 / 45.0, 1.0 / 90.0, 1.0 / 60.0, 1.0 / 120.0, 1.0 / 30.0]
+        var time = 0.0
+        var emitted = 0.0
+        for index in 0..<600 {
+            if index < 40 && index % 4 == 0 {
+                poster.applyInputForTests(input(90.72, duration: 4.35), at: time)
+            }
+            let dt = intervals[index % intervals.count]
+            time += dt
+            emitted += poster.advanceForTests(frameInterval: dt).y
         }
-        XCTAssertEqual(filter.pending.y, input - output, accuracy: 1e-9)
-        XCTAssertGreaterThan(filter.pending.y, 0)
-        for _ in 0..<40 {
-            input += 10
-            output += filter.passThrough(with: (y: 10, x: 0), catchUp: 0.3).y
-        }
-        XCTAssertEqual(output, input, accuracy: 1e-3)
-    }
-
-    func testFilterPassThrough_withNothingPendingIsIdentityAndResumesSmoothly() {
-        let filter = ScrollFilter()
-        let out = filter.passThrough(with: (y: 12, x: -3), catchUp: 0.5)
-        XCTAssertEqual(out.y, 12)
-        XCTAssertEqual(out.x, -3)
-        // Re-enabling the filter continues from the last output instead of restarting at 0.
-        XCTAssertEqual(filter.fill(with: (y: 12, x: -3)).y, 12, accuracy: 1e-12)
-        filter.reset()
-        XCTAssertEqual(filter.pending.y, 0)
+        let target = poster.motionStateForTests.buffer.y
+        XCTAssertGreaterThan(target, 9 * 90.72)
+        XCTAssertEqual(emitted, target, accuracy: 0.1)
     }
 
     // MARK: - Lead cap
@@ -272,7 +213,7 @@ final class ScrollMotionTests: XCTestCase {
                 var time = 0.0
                 while time < 2 {
                     while nextFrame <= time {
-                        _ = poster.advanceForTests(frameInterval: frame, now: nextFrame)
+                        _ = poster.advanceForTests(frameInterval: frame)
                         nextFrame += frame
                     }
                     poster.applyInputForTests(input(notch, notch: notch, duration: duration), at: time)
@@ -294,7 +235,7 @@ final class ScrollMotionTests: XCTestCase {
         var time = 0.0
         func advance(to t: Double) {
             while nextFrame <= t {
-                _ = poster.advanceForTests(frameInterval: frame, now: nextFrame)
+                _ = poster.advanceForTests(frameInterval: frame)
                 nextFrame += frame
             }
         }
@@ -327,8 +268,8 @@ final class ScrollMotionTests: XCTestCase {
     func testDirectionReversal_restartsFromTheNewEvent() {
         let poster = ScrollPoster()
         poster.applyInputForTests(input(300, duration: 3.13), at: 0)
-        _ = poster.advanceForTests(frameInterval: 1.0 / 60.0, now: 0.016)
-        _ = poster.advanceForTests(frameInterval: 1.0 / 60.0, now: 0.033)
+        _ = poster.advanceForTests(frameInterval: 1.0 / 60.0)
+        _ = poster.advanceForTests(frameInterval: 1.0 / 60.0)
         poster.applyInputForTests(input(-90, duration: 3.13), at: 0.04)
         let state = poster.motionStateForTests
         XCTAssertEqual(state.buffer.y, -90)
@@ -349,7 +290,7 @@ final class ScrollMotionTests: XCTestCase {
             var frames: [Double] = []
             while now - start < 3 {
                 now += 1.0 / 60.0
-                frames.append(poster.advanceForTests(frameInterval: 1.0 / 60.0, now: now).y)
+                frames.append(poster.advanceForTests(frameInterval: 1.0 / 60.0).y)
             }
             let peak = frames.firstIndex(of: frames.max() ?? 0) ?? 0
             for index in (peak + 1)..<frames.count {
@@ -359,65 +300,9 @@ final class ScrollMotionTests: XCTestCase {
         }
     }
 
-    // MARK: - Landing
-
-    func testLanding_leavesFastMotionAlone() {
-        XCTAssertNil(ScrollLanding.step(output: 5, remaining: 40, direction: 1, interval: 1.0 / 60.0))
-        XCTAssertNil(ScrollLanding.step(output: 1, remaining: 40, direction: 1, interval: 1.0 / 60.0), "exactly the landing speed")
-        XCTAssertNil(ScrollLanding.step(output: 0, remaining: 0, direction: 1, interval: 1.0 / 60.0), "already at rest")
-        XCTAssertNil(ScrollLanding.step(output: 0, remaining: 0, direction: 0, interval: 1.0 / 60.0), "already at rest")
-    }
-
-    func testLanding_holdsOnePixelPer60HzFrameAndEndsOnTarget() {
-        var remaining = 3.6
-        var output = 0.4
-        var sent: [Double] = []
-        while let step = ScrollLanding.step(output: output, remaining: remaining, direction: 1, interval: 1.0 / 60.0) {
-            sent.append(step.output)
-            remaining = step.remaining
-            output = 0
-        }
-        XCTAssertEqual(sent.count, 4)
-        XCTAssertEqual(sent[0], 1, accuracy: 1e-12)
-        XCTAssertEqual(sent[1], 1, accuracy: 1e-12)
-        XCTAssertEqual(sent[2], 1, accuracy: 1e-12)
-        XCTAssertEqual(sent[3], 1, accuracy: 1e-9)
-        XCTAssertEqual(sent.reduce(0, +), 4.0, accuracy: 1e-9, "everything that was left, nothing more")
-        XCTAssertEqual(remaining, 0, accuracy: 1e-9)
-    }
-
-    func testLanding_onTargetTheLeftoverOutputIsNotSent() {
-        // The filter still eases out although everything has been sent: no overshoot.
-        let done = ScrollLanding.step(output: 0.3, remaining: -0.3, direction: 1, interval: 1.0 / 60.0)
-        XCTAssertEqual(done?.output, 0)
-        XCTAssertEqual(done?.remaining, 0)
-    }
-
-    func testLanding_neverMovesAgainstTheDirectionOfTravel() {
-        // More was sent than came in (rounding, a change of settings mid-motion): stop, do not go back.
-        let overshot = ScrollLanding.step(output: 0, remaining: -2, direction: 1, interval: 1.0 / 60.0)
-        XCTAssertEqual(overshot?.output, 0)
-        XCTAssertEqual(overshot?.remaining, 0)
-        let stillEasing = ScrollLanding.step(output: 0.4, remaining: -2, direction: 1, interval: 1.0 / 60.0)
-        XCTAssertEqual(stillEasing?.output, 0)
-        // The last input was on the other axis: what this axis still holds is dropped.
-        let otherAxis = ScrollLanding.step(output: 0.4, remaining: 1.2, direction: 0, interval: 1.0 / 60.0)
-        XCTAssertEqual(otherAxis?.output, 0)
-        XCTAssertEqual(otherAxis?.remaining, 0)
-    }
-
-    func testLanding_keepsTheDirectionAndTheSpeedAtAnyFrameRate() {
-        let down = ScrollLanding.step(output: -0.2, remaining: -7, direction: -1, interval: 1.0 / 60.0)
-        XCTAssertEqual(down?.output ?? 0, -1, accuracy: 1e-12)
-        XCTAssertEqual(down?.remaining ?? 0, -6.2, accuracy: 1e-12)
-        let fast = ScrollLanding.step(output: 0.2, remaining: 7, direction: 1, interval: 1.0 / 120.0)
-        XCTAssertEqual(fast?.output ?? 0, 0.5, accuracy: 1e-12, "60 px/s at 120 Hz")
-        XCTAssertNil(ScrollLanding.step(output: 0.6, remaining: 7, direction: 1, interval: 1.0 / 120.0), "faster than 60 px/s at 120 Hz")
-    }
-
-    func testLanding_classicGesturesNeverLand() {
-        // Momentum off: frames under the dead zone are not posted at all, so the motion keeps
-        // the plain exponential ending.
+    /// The motion keeps its plain exponential ending: it runs on below one pixel per frame
+    /// (ScrollPoster does not post those frames, see the dead zone), nothing hurries it home.
+    func testTail_runsOnBelowOnePixelPerFrame() {
         let poster = ScrollPoster()
         let start = 100.0
         poster.applyInputForTests(input(90.72, duration: 4.35), at: start)
@@ -425,7 +310,7 @@ final class ScrollMotionTests: XCTestCase {
         var frames: [Double] = []
         while now - start < 3 {
             now += 1.0 / 60.0
-            frames.append(poster.advanceForTests(frameInterval: 1.0 / 60.0, now: now).y)
+            frames.append(poster.advanceForTests(frameInterval: 1.0 / 60.0).y)
         }
         let slow = frames.filter { $0 > 0 && $0 < 0.99 }
         XCTAssertGreaterThan(slow.count, 20, "the exponential tail runs on below one pixel per frame")

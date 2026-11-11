@@ -15,16 +15,16 @@ See [Attribution and licence](#attribution-and-licence).
 
 **Scrolling**
 
-- Smooth scrolling with adjustable step, speed and duration, and presets.
-- Smoothing and reversing per axis (vertical and horizontal separately).
-- Fast-scroll tuning: acceleration, separate behaviour while a Logitech wheel spins
-  freely, and an optional glide after a flick.
-- Trackpad-style scroll events (gesture phases) for apps that expect them.
-- The thumb wheel can scroll sideways or run the back/forward page swipe.
-- Scroll keys: hold a key or button to scroll faster, scroll horizontally, or pause
-  smoothing.
+- Smooth scrolling: every click of the wheel becomes an even movement that glides out,
+  the way a trackpad scrolls. Two things shape it: how long the page keeps gliding after
+  the wheel stops, and how far one click moves it.
+- Reverse the wheel direction.
+- Trackpad-style scroll events (gesture phases), so apps bounce at the top and bottom.
+- Scroll keys: hold a key or button to scroll faster, scroll sideways, or pause
+  smoothing (for exact steps, for example when zooming with ⌘ and the wheel).
 - Per-app settings: an app can inherit the global settings or override them, and an
   allowlist can limit Scrollio to chosen apps.
+- With several displays, the motion is timed to the display the pointer is on.
 
 **Buttons**
 
@@ -54,11 +54,30 @@ See [Attribution and licence](#attribution-and-licence).
 - Lives in the menu bar; can launch at login.
 - It quits a running Mos at launch and, on the first launch, copies its settings.
 
+## Diagnostics
+
+Scrollio writes what it really did to the system log, so behaviour can be checked on the
+machine it runs on instead of guessed at:
+
+```bash
+log show --last 10m --predicate 'subsystem == "com.nikklemenc.Scrollio"'
+```
+
+- category `scroll`: one line per finished scroll (wheel events and distance in, frames
+  and distance out, how long it glided, the settings in effect) and a line whenever wheel
+  events are let through unsmoothed, with the reason;
+- category `logi`: what a Logitech mouse reported and what was sent to it (for example
+  haptic pulses).
+
+Nothing in these lines identifies a person or an app's content, and nothing leaves the Mac.
+
 ## Requirements
 
 - A Mac with macOS 14.0 or later and a recent Xcode.
-- An Apple Development signing identity for the team set in the project. Do not turn
-  signing off: the Accessibility permission is tied to the code signature.
+- An Apple Development signing identity. The project is set to the author's team: to
+  build it yourself, change `DEVELOPMENT_TEAM` to your own in the target's Signing
+  settings. Do not turn signing off: the Accessibility permission is tied to the code
+  signature.
 - At run time: the Accessibility permission (System Settings > Privacy & Security >
   Accessibility). Scrollio asks for it on first launch. Without it no event is read
   or changed.
@@ -128,10 +147,12 @@ at <https://creativecommons.org/licenses/by-nc/4.0/legalcode>.
 
 **This work has been modified.** Scrollio is not the original Mos. Among the changes:
 a new name, icon and bundle identifier; gesture navigation including the "follow the
-hand" mode; scroll presets, fast-scroll tuning and momentum; Logitech wheel settings,
-device-tracked gestures and haptics; the Mouse preferences tab; English as the only
-language; removal of the Sparkle updater, the website and the release tooling; a
-minimum system version of macOS 14.
+hand" mode; a reworked smooth-scroll engine (frame-rate independent, timed to the
+pointer's display, with a per-scroll diagnostic log) and simpler scroll settings;
+Logitech wheel settings, device-tracked gestures and haptics; the Gestures and Mouse
+preferences tabs, a main menu bar and a new welcome window; English as the only language;
+removal of the Sparkle updater, the website and the release tooling; a minimum system
+version of macOS 14.
 
 **Non-commercial use only.** Neither Scrollio nor anything derived from it may be used
 for commercial purposes, and it must not be distributed through the App Store.

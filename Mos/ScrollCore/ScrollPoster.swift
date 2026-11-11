@@ -9,71 +9,37 @@
 import Cocoa
 import os
 
-/// One wheel event for ScrollPoster, already resolved by ScrollCore (speed, tuning, dash).
+/// One wheel event for ScrollPoster, as ScrollCore resolved it.
 struct ScrollPosterInput {
-    /// Signed distance to add per axis (px).
+    /// Signed distance to add per axis (px): max(step, |point delta|) × speed × dash.
     var y: Double
     var x: Double
-    /// Distance of one notch per axis at the current speed and multipliers (px), for the lead cap floor.
-    var notch: (y: Double, x: Double)
-    /// Per-frame interpolation factor at 60 Hz.
+    /// One notch, step × speed × dash (px): the lead cap never goes below two of them.
+    var notch: Double
+    /// Duration as the per-frame interpolation factor at 60 Hz.
     var duration: Double
-    /// Skip ScrollFilter (see ScrollMotion.shouldBypassFilter).
-    var bypassFilter: Bool
-    /// Glide after a flick; nil = off (scrolling and posting exactly as without momentum).
-    var momentum: ScrollMomentumSettings? = nil
-    /// Vertical wheel speed in lines per second (ScrollSpinTracker), for the fling gain.
-    var lineRate = 0.0
-    /// The vertical wheel spins freely (latched): it has its own inertia.
-    var isFreeSpin = false
-    /// Cmd, Ctrl or Option is held (zooming and other modified scrolling).
-    var modifiersHeld = false
-    /// Post the horizontal input as a phased gesture (began / changed / ended, no momentum),
-    /// so apps run their interactive back/forward swipe.
-    var pageSwipe = false
 }
 
 /// One scroll event as ScrollPoster sends it.
 struct ScrollOutgoingFrame: Equatable {
-    /// Pixel deltas; whole numbers when `precise`.
+    /// Pixel deltas.
     var y: Double
     var x: Double
-    /// Line deltas (`precise` only).
-    var linesY: Int64 = 0
-    var linesX: Int64 = 0
     /// Phase field values; nil leaves the phase fields of the copied wheel event alone.
     var scrollPhase: Double? = nil
     var momentumPhase: Double? = nil
-    /// Whole pixels with matching line and fixed-point deltas and a fresh timestamp.
-    /// false = the classic posting: only the point delta is written (CoreGraphics drops its
-    /// fraction), and line delta and timestamp stay those of the copied wheel event.
-    var precise = false
 
-    /// Pixels per line of the fixed-point and line deltas.
-    static let pixelsPerLine = 10.0
-
-    func write(to event: CGEvent, now: UInt64 = mach_absolute_time()) {
+    /// Only the point delta is written (CoreGraphics drops its fraction); the line delta and
+    /// the timestamp stay those of the copied wheel event.
+    func write(to event: CGEvent) {
         if let scrollPhase = scrollPhase, let momentumPhase = momentumPhase {
             event.setDoubleValueField(.scrollWheelEventScrollPhase, value: scrollPhase)
             event.setDoubleValueField(.scrollWheelEventMomentumPhase, value: momentumPhase)
         }
-        guard precise else {
-            event.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: y)
-            event.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: x)
-            // 是否连续滚动: 始终为 1.0
-            event.setDoubleValueField(.scrollWheelEventIsContinuous, value: 1.0)
-            return
-        }
-        // The order matters: writing a line delta makes CoreGraphics derive the fixed-point
-        // and point deltas from it, so the line deltas go first.
-        event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: linesY)
-        event.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: linesX)
-        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: y / Self.pixelsPerLine)
-        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: x / Self.pixelsPerLine)
-        event.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: Int64(y))
-        event.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: Int64(x))
+        event.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: y)
+        event.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: x)
+        // 是否连续滚动: 始终为 1.0
         event.setDoubleValueField(.scrollWheelEventIsContinuous, value: 1.0)
-        event.timestamp = ScrollEventClock.timestamp(now: now, like: event.timestamp)
     }
 }
 
@@ -85,6 +51,10 @@ struct ScrollStopRequest: Equatable {
     let inputSequence: UInt64
 }
 
+/// Smooth scrolling. Each wheel event adds its distance to a target (`buffer`); on every
+/// display frame the position (`current`) moves a share of the remaining way, set by
+/// Duration and the real frame interval, ScrollFilter rounds off the start, and the frame is
+/// posted when it is larger than the dead zone. Optional trackpad-style phases.
 class ScrollPoster {
 
     // 单例
@@ -109,23 +79,11 @@ class ScrollPoster {
     // 滚动配置
     private var shifting = false
     private var duration = Options.shared.scroll.durationTransition
-    private var bypassFilter = false
-    // 滤波器 "打开" 的程度 (0 = 完全滤波, 1 = 不滤波), 逐帧向 bypassFilter 的目标值过渡, 切换时速度不突变
-    private var filterOpenness = 0.0
     // 本次滚动的统计, 结束时写入系统日志 (ScrollSystemLog)
     private var sessionLog = ScrollSystemLog.Session()
     // 领先量限制 (buffer - current), 滚轮停下后滑行尽快结束
     private var leadLimiterY = ScrollLeadLimiter()
     private var leadLimiterX = ScrollLeadLimiter()
-    // 当前手势的发送方式, 每次滚轮输入时确定; 默认 (momentum 关闭) 即原有行为
-    private var gesture = GestureMode()
-    // 惯性滑行 (仅竖向滚轮), 在插值之下运行: 每帧位移不小于滑行位移
-    private var coast = ScrollMomentum()
-    // 松手判定间隔 (见 ScrollMomentum.releaseGap), 精确模式下取代 manualContinuationThreshold
-    private var releaseGap = ScrollMomentum.releaseGapRange.upperBound
-    // 亚像素 / 亚行余量 (按输出轴), 精确模式下发送整数像素
-    private var pixelCarry = (y: ScrollSubpixelCarry(), x: ScrollSubpixelCarry())
-    private var lineCarry = (y: ScrollSubpixelCarry(), x: ScrollSubpixelCarry())
     // 上一帧的显示时间 (mach host time), 用于按真实帧间隔换算插值系数; 0 表示新会话
     private var lastFrameHostTime: UInt64 = 0
     // 输入节奏追踪
@@ -154,19 +112,6 @@ class ScrollPoster {
         var deadZone: Double
     }
     private var config = ConfigSnapshot(simTrackpadEnabled: false, deadZone: 1.0)
-    /// How the current gesture is sent. The default is the classic behaviour.
-    private struct GestureMode {
-        /// Momentum settings of this gesture; nil = momentum off.
-        var momentum: ScrollMomentumSettings? = nil
-        /// Thumb wheel posted as a back/forward swipe gesture.
-        var pageSwipe = false
-        /// Phase fields are written (precise gestures only; classic gestures follow `config.simTrackpadEnabled`).
-        var writesPhases = false
-        /// Wheel events of this gesture may start a glide.
-        var coastAllowed = false
-        /// Whole-pixel posting, release by `releaseGap`, momentum phases from the coast only.
-        var precise: Bool { return momentum != nil || pageSwipe }
-    }
 #if DEBUG
     /// Tests: receives every frame instead of posting it.
     var frameRecorderForTests: ((ScrollOutgoingFrame) -> Void)?
@@ -191,16 +136,6 @@ class ScrollPoster {
 
 // MARK: - 滚动数据更新控制
 extension ScrollPoster {
-    func update(event: CGEvent, duration: Double, y: Double, x: Double, speed: Double, amplification: Double = 1) -> Self {
-        let gain = speed * amplification
-        return update(event: event, input: ScrollPosterInput(
-            y: y * gain,
-            x: x * gain,
-            notch: (y: abs(y * gain), x: abs(x * gain)),
-            duration: duration,
-            bypassFilter: ScrollMotion.shouldBypassFilter(freeSpinBlend: 0)
-        ))
-    }
     func update(event: CGEvent, input: ScrollPosterInput) -> Self {
         guard dispatchContext.capture(event: event) else {
             return self
@@ -209,7 +144,11 @@ extension ScrollPoster {
         defer { os_unfair_lock_unlock(&stateLock) }
         // 捕获本次手势的配置快照 (主线程读 Options/ScrollCore, CVDisplayLink 线程只读)
         captureConfigSnapshotLocked()
-        let now = CFAbsoluteTimeGetCurrent()
+        handleInputLocked(input, at: CFAbsoluteTimeGetCurrent())
+        return self
+    }
+    /// 处理一次滚轮输入: 缓冲与阶段 (调用方须持有 stateLock)
+    private func handleInputLocked(_ input: ScrollPosterInput, at now: CFTimeInterval) {
         if sessionLog.isEmpty {
             sessionLog.startedAt = now
             sessionLog.duration = Options.shared.scroll.duration
@@ -218,107 +157,22 @@ extension ScrollPoster {
         sessionLog.inputDistance += abs(input.y) + abs(input.x)
         sessionLog.lastInputAt = now
         sessionLog.trackpadStyle = config.simTrackpadEnabled
-        if input.isFreeSpin { sessionLog.freeSpinInputs += 1 }
-        handleInputLocked(input, at: now)
-        sessionLog.precise = gesture.precise
-        return self
-    }
-    /// 处理一次滚轮输入: 手势方式, 缓冲, 滑行与阶段 (调用方须持有 stateLock)
-    private func handleInputLocked(_ input: ScrollPosterInput, at now: CFTimeInterval) {
         inputSequence &+= 1
-        let next = gestureMode(for: input)
-        if gesture.precise {
-            // 滑行中反向拨动一格: 停止滑行, 这一格本身不滚动
-            if isReverseTickDuringMomentum(input, next: next) {
-                cancelMomentumLocked()
-                return
-            }
-            // 接下来的事件不带阶段 (进入 free-spin / 换到横向): 先结束进行中的手势
-            if gesture.writesPhases && !next.writesPhases {
-                closePhaseSequenceLocked()
-            }
-        }
-        gesture = next
-        let interval = lastManualEventTime > 0.0 ? now - lastManualEventTime : nil
-        releaseGap = ScrollMomentum.releaseGap(lastInterval: interval)
+        let separatedByTime = lastManualEventTime <= 0.0 || now - lastManualEventTime >= manualSeparationThreshold
         applyInputLocked(input, at: now)
-        // 精确模式下不带阶段的手势不驱动状态机 (原有模式始终驱动)
-        if !gesture.precise || gesture.writesPhases {
-            let separatedByTime = interval == nil ? true : interval! >= manualSeparationThreshold
-            let phase = phases.phase
-            let separatedPhase = (phase == .Idle || phase == .Leave || phase == .MomentumEnd || phase == .TrackingEnd)
-            let separated = manualInputEnded || separatedByTime || separatedPhase
-            let plan = phases.onManualInputDetected(isSeparated: separated)
-            perform(plan, emitTargetImmediately: false)
-        }
+        let phase = phases.phase
+        let separatedPhase = (phase == .Idle || phase == .Leave || phase == .MomentumEnd || phase == .TrackingEnd)
+        let separated = manualInputEnded || separatedByTime || separatedPhase
+        perform(phases.onManualInputDetected(isSeparated: separated), emitTargetImmediately: false)
         lastManualEventTime = now
         manualInputEnded = false
         momentumActive = false
         momentumEndScheduledTime = nil
         trackingEndScheduledTime = nil
     }
-    /// How the gesture this input belongs to is sent.
-    private func gestureMode(for input: ScrollPosterInput) -> GestureMode {
-        if input.pageSwipe && input.x != 0.0 && input.y == 0.0 {
-            return GestureMode(momentum: nil, pageSwipe: true, writesPhases: true, coastAllowed: false)
-        }
-        guard let momentum = input.momentum else {
-            return GestureMode()
-        }
-        // 输出为横向: 拇指滚轮, 或按住转换键的竖向滚轮
-        let horizontal = input.x != 0.0 || shifting
-        let writesPhases = config.simTrackpadEnabled
-            && (!horizontal || momentum.phasesOnHorizontal)
-            && (!input.isFreeSpin || momentum.phasesInFreeSpin)
-        // 只有竖向滚轮会滑行
-        let coastAllowed = input.y != 0.0 && input.x == 0.0
-            && (!input.isFreeSpin || momentum.coastInFreeSpin)
-            && !(input.modifiersHeld && momentum.noCoastWithModifiers)
-        return GestureMode(momentum: momentum, pageSwipe: false, writesPhases: writesPhases, coastAllowed: coastAllowed)
-    }
-    private func isReverseTickDuringMomentum(_ input: ScrollPosterInput, next: GestureMode) -> Bool {
-        guard let momentum = gesture.momentum, momentum.stopOnReverseTick, next.momentum != nil else {
-            return false
-        }
-        return manualInputEnded && momentumActive && coast.isActive
-            && input.y != 0.0 && input.y * coast.velocity < 0.0
-    }
-    /// 停止滑行并丢弃剩余距离, 向应用补发收尾阶段; 下一帧因静止而结束会话
-    private func cancelMomentumLocked() {
-        coast.cancel()
-        buffer = current
-        filter.reset()
-        resetCarriesLocked()
-        if gesture.writesPhases {
-            perform(phases.onMomentumCancelled(), emitTargetImmediately: true)
-        }
-        manualInputEnded = true
-        momentumActive = false
-    }
-    /// 结束进行中的带阶段手势 (之后的事件不再带阶段)
-    private func closePhaseSequenceLocked() {
-        switch phases.phase {
-        case .TrackingBegin, .TrackingOngoing:
-            emitPhase((Phase.TrackingEnd, Phase.Idle), delta: (0.0, 0.0))
-        case .MomentumBegin, .MomentumOngoing:
-            emitPhase((Phase.MomentumEnd, Phase.Idle), delta: (0.0, 0.0))
-        default:
-            break
-        }
-        phases.reset()
-    }
-    private func resetCarriesLocked() {
-        pixelCarry = (y: ScrollSubpixelCarry(), x: ScrollSubpixelCarry())
-        lineCarry = (y: ScrollSubpixelCarry(), x: ScrollSubpixelCarry())
-    }
     /// 更新滚动配置与缓冲 (调用方须持有 stateLock)
     private func applyInputLocked(_ input: ScrollPosterInput, at now: CFTimeInterval) {
         duration = input.duration
-        bypassFilter = input.bypassFilter
-        // 从静止开始的运动直接采用目标状态 (没有速度可言, 也就没有突变)
-        if filter.isAtRest {
-            filterOpenness = bypassFilter ? 1.0 : 0.0
-        }
         let timeConstant = ScrollMotion.timeConstant(forTransition: input.duration)
         // 同向累加, 反向则重新开始
         if input.y*delta.y > 0 {
@@ -327,7 +181,6 @@ extension ScrollPoster {
             buffer.y = input.y
             current.y = 0.0
             leadLimiterY.reset()
-            coast.cancel()
         }
         if input.x*delta.x > 0 {
             buffer.x += input.x
@@ -336,31 +189,15 @@ extension ScrollPoster {
             current.x = 0.0
             leadLimiterX.reset()
         }
-        // 真正换向时 (而非该轴本次无输入) 丢弃亚像素余量, 反向的第一格不带上一方向的零头
-        if input.y*delta.y < 0 || input.x*delta.x < 0 {
-            resetCarriesLocked()
-        }
-        // 精确模式下换向即停: 滤波器中上一方向尚未发送的距离一并丢弃, 反向的每一格都是完整的一格。
-        // 原有模式保留滤波器状态, 速度平滑地掉头 (与之前一致)。
-        if gesture.precise {
-            if input.y*delta.y < 0 { filter.resetY() }
-            if input.x*delta.x < 0 { filter.resetX() }
-        }
         // 限制领先量: 滚轮减速或停下时, 不再继续释放之前积累的距离
         if input.y != 0.0 {
             let inputSpeed = leadLimiterY.register(distance: input.y, at: now, timeConstant: timeConstant)
-            let cap = ScrollLeadLimiter.cap(notch: input.notch.y, distance: input.y, inputSpeed: inputSpeed, timeConstant: timeConstant)
+            let cap = ScrollLeadLimiter.cap(notch: input.notch, distance: input.y, inputSpeed: inputSpeed, timeConstant: timeConstant)
             buffer.y = ScrollLeadLimiter.limit(buffer: buffer.y, current: current.y, cap: cap)
-            // 滑行速度取自当前的输入速度: 单格与慢速滚动 (fling gain 为 0) 不留滑行
-            if let momentum = gesture.momentum, gesture.coastAllowed {
-                coast.seed(inputSpeed: inputSpeed, direction: input.y, lineRate: input.lineRate, settings: momentum)
-            } else {
-                coast.cancel()
-            }
         }
         if input.x != 0.0 {
             let inputSpeed = leadLimiterX.register(distance: input.x, at: now, timeConstant: timeConstant)
-            let cap = ScrollLeadLimiter.cap(notch: input.notch.x, distance: input.x, inputSpeed: inputSpeed, timeConstant: timeConstant)
+            let cap = ScrollLeadLimiter.cap(notch: input.notch, distance: input.x, inputSpeed: inputSpeed, timeConstant: timeConstant)
             buffer.x = ScrollLeadLimiter.limit(buffer: buffer.x, current: current.x, cap: cap)
         }
         delta = (y: input.y, x: input.x)
@@ -383,16 +220,6 @@ extension ScrollPoster {
         } else {
             return (y: nextValue.y, x: nextValue.x)
         }
-    }
-    func brake() {
-        os_unfair_lock_lock(&stateLock)
-        buffer = current
-        coast.cancel()
-        perform(phases.onMomentumFinish(), emitTargetImmediately: true)
-        manualInputEnded = true
-        momentumActive = false
-        momentumEndScheduledTime = nil
-        os_unfair_lock_unlock(&stateLock)
     }
     func reset() {
         dispatchContext.invalidateAll()
@@ -429,15 +256,21 @@ extension ScrollPoster {
         os_unfair_lock_unlock(&stateLock)
     }
     /// Advances the motion by one frame without posting; returns the frame's output.
-    func advanceForTests(frameInterval: Double, now: CFTimeInterval) -> (y: Double, x: Double) {
+    func advanceForTests(frameInterval: Double) -> (y: Double, x: Double) {
         os_unfair_lock_lock(&stateLock)
         defer { os_unfair_lock_unlock(&stateLock) }
-        return advanceMotionLocked(frameInterval: frameInterval, now: now)
+        return advanceMotionLocked(frameInterval: frameInterval)
     }
-    var motionStateForTests: (current: (y: Double, x: Double), buffer: (y: Double, x: Double), duration: Double, bypassFilter: Bool) {
+    var motionStateForTests: (current: (y: Double, x: Double), buffer: (y: Double, x: Double), duration: Double) {
         os_unfair_lock_lock(&stateLock)
         defer { os_unfair_lock_unlock(&stateLock) }
-        return (current, buffer, duration, bypassFilter)
+        return (current, buffer, duration)
+    }
+    /// What the system log line of the current scroll would say so far.
+    var sessionLogForTests: ScrollSystemLog.Session {
+        os_unfair_lock_lock(&stateLock)
+        defer { os_unfair_lock_unlock(&stateLock) }
+        return sessionLog
     }
     /// Sets the config snapshot directly (an event would read it from Options).
     func setConfigForTests(simTrackpadEnabled: Bool, deadZone: Double = 1.0) {
@@ -445,8 +278,8 @@ extension ScrollPoster {
         config = ConfigSnapshot(simTrackpadEnabled: simTrackpadEnabled, deadZone: deadZone)
         os_unfair_lock_unlock(&stateLock)
     }
-    /// One wheel event through the whole input path (gesture mode, coast, phases), without
-    /// an event to copy. Frames go to `frameRecorderForTests`.
+    /// One wheel event through the whole input path (buffer, lead cap, phases, session log),
+    /// without an event to copy. Frames go to `frameRecorderForTests`.
     func inputForTests(_ input: ScrollPosterInput, at time: CFTimeInterval) {
         os_unfair_lock_lock(&stateLock)
         handleInputLocked(input, at: time)
@@ -475,12 +308,6 @@ extension ScrollPoster {
             scheduleStop(request)
         }
     }
-    /// Signed glide velocity in px/s (0 = no glide).
-    var coastVelocityForTests: Double {
-        os_unfair_lock_lock(&stateLock)
-        defer { os_unfair_lock_unlock(&stateLock) }
-        return coast.velocity
-    }
 #endif
 
     private func resetUnlocked() {
@@ -491,12 +318,7 @@ extension ScrollPoster {
         buffer = ( y: 0.0, x: 0.0 )
         leadLimiterY.reset()
         leadLimiterX.reset()
-        filterOpenness = 0.0
         lastFrameHostTime = 0
-        gesture = GestureMode()
-        coast.cancel()
-        releaseGap = ScrollMomentum.releaseGapRange.upperBound
-        resetCarriesLocked()
         // 重置插值器
         filter.reset()
         phases.reset()
@@ -568,7 +390,7 @@ extension ScrollPoster {
         os_unfair_lock_lock(&stateLock)
 
         // 判断是否启用触控板模拟 (读 update 时主线程捕获的快照, 避免跨线程读)
-        let enableSimTrackpad = resolveSimTrackpadEnabled()
+        let enableSimTrackpad = config.simTrackpadEnabled
         let plan: ScrollPhase.TransitionPlan
         if requestedPhase == Phase.MomentumEnd {
             plan = phases.onMomentumFinish()
@@ -722,27 +544,29 @@ extension ScrollPoster {
 
 // MARK: - 数据处理及发送
 private extension ScrollPoster {
-    func perform(_ plan: ScrollPhase.TransitionPlan, emitTargetImmediately: Bool, delta: (y: Double, x: Double) = (0.0, 0.0)) {
+    func perform(_ plan: ScrollPhase.TransitionPlan, emitTargetImmediately: Bool) {
         if plan.queue.isEmpty && plan.target == nil {
             return
         }
         for item in plan.queue {
-            emitPhase(item, delta: delta)
+            emitPhase(item)
         }
         if let target = plan.target {
             if emitTargetImmediately {
-                emitPhase(target, delta: delta)
+                emitPhase(target)
             } else {
                 phases.apply(phase: target.0, autoAdvance: target.1)
             }
         }
     }
 
-    func emitPhase(_ item: (Phase, Phase?), delta: (y: Double, x: Double)) {
+    /// Moves the phase machine on and sends a frame without distance that carries the phase
+    /// ("Trackpad-style events" on) or no phase fields (off).
+    func emitPhase(_ item: (Phase, Phase?)) {
         phases.apply(phase: item.0, autoAdvance: item.1)
-        let phaseOverride = resolveSimTrackpadEnabled() ? phaseValues(for: item.0) : nil
-        // 无可用事件 (或精确模式下不带阶段的手势) 时不发送, 状态机照常推进
-        if !post(delta, phaseOverride: phaseOverride, fallbackToCurrentPhase: false) {
+        let phaseOverride = config.simTrackpadEnabled ? phaseValues(for: item.0) : nil
+        // 无可用事件时不发送, 状态机照常推进
+        if !post((y: 0.0, x: 0.0), phaseOverride: phaseOverride, fallbackToCurrentPhase: false) {
             phases.didDeliverFrame()
         }
     }
@@ -771,8 +595,8 @@ private extension ScrollPoster {
     ///   tick that arrived in that gap was wiped by the reset although its event had already
     ///   been swallowed.
     ///
-    /// At most one request is made per wheel input: in precise mode every frame of a finished
-    /// motion asks for the stop again until the main thread has carried it out.
+    /// At most one request is made per wheel input, however many frames run before the main
+    /// thread has carried it out.
     func displayLinkFrameLocked(frameInterval: Double, now: CFTimeInterval) -> ScrollStopRequest? {
         guard let phase = processFrameLocked(frameInterval: frameInterval, now: now) else { return nil }
         guard requestedStopSequence != inputSequence else { return nil }
@@ -788,17 +612,9 @@ private extension ScrollPoster {
 
     /// 处理一帧, 返回需要以哪个阶段结束会话 (nil 表示继续)。调用方须持有 stateLock。
     func processFrameLocked(frameInterval: Double, now: CFTimeInterval) -> Phase? {
-        if gesture.precise {
-            return processPreciseFrameLocked(frameInterval: frameInterval, now: now)
-        }
-        return processClassicFrameLocked(frameInterval: frameInterval, now: now)
-    }
-
-    /// 原有的逐帧处理 (momentum 关闭时)。
-    func processClassicFrameLocked(frameInterval: Double, now: CFTimeInterval) -> Phase? {
         var pendingStopPhase: Phase?
         // 插值并平滑 (按真实帧间隔)
-        let filledValue = advanceMotionLocked(frameInterval: frameInterval, now: now)
+        let filledValue = advanceMotionLocked(frameInterval: frameInterval)
         // 变换滚动结果，将滤波后的插值映射到当前姿态（考虑灵敏度、方向等因素）
         let shiftedValue = shift(with: filledValue)
         // 检测是否已经超过手动输入的持续时间阈值，准备结束手动阶段
@@ -838,8 +654,12 @@ private extension ScrollPoster {
         }
         // 发送滚动结果 - 只有当输出值超过死区阈值时才发送
         let outputMagnitude = max(abs(shiftedValue.y), abs(shiftedValue.x))
-        if outputMagnitude > deadZone {
-            _ = post(shiftedValue)
+        if outputMagnitude > deadZone && post(shiftedValue) {
+            let moved = abs(shiftedValue.y) + abs(shiftedValue.x)
+            sessionLog.frames += 1
+            sessionLog.postedDistance += moved.rounded(.towardZero)
+            sessionLog.largestFrame = max(sessionLog.largestFrame, moved)
+            sessionLog.lastFrameAt = now
         }
 
         if let scheduled = momentumEndScheduledTime, momentumActive {
@@ -862,108 +682,24 @@ private extension ScrollPoster {
         return pendingStopPhase
     }
 
-    /// 精确模式的逐帧处理 (momentum 开启, 或拇指滚轮翻页手势)。
-    ///
-    /// 与原有模式的区别:
-    /// - 滚轮停顿超过 releaseGap 视为松手。此时若有滑行, 手势结束并进入惯性阶段, 惯性阶段只由
-    ///   滑行产生; 没有滑行 (单格 / 慢速 / free-spin) 则保持跟随阶段直到位移走完再结束, 没有惯性阶段。
-    /// - 每帧都发送, 亚像素余量累积成整数像素, 不设死区。
-    func processPreciseFrameLocked(frameInterval: Double, now: CFTimeInterval) -> Phase? {
-        let filledValue = advanceMotionLocked(frameInterval: frameInterval, now: now)
-        let shiftedValue = shift(with: filledValue)
-        let stopDelta = gesture.momentum?.stopDelta ?? ScrollMomentumSettings.default.stopDelta
-        let residualMagnitude = max(abs(buffer.y - current.y), abs(buffer.x - current.x))
-        let pendingMagnitude = max(abs(filter.pending.y), abs(filter.pending.x))
-        let outputMagnitude = max(abs(shiftedValue.y), abs(shiftedValue.x))
-        let coasting = coast.isActive
-        let atRest = !coasting && residualMagnitude <= stopDelta && pendingMagnitude <= stopDelta && outputMagnitude <= stopDelta
-
-        if !manualInputEnded && lastManualEventTime > 0.0 && now - lastManualEventTime > releaseGap {
-            if coasting {
-                // 带速度松手: 结束手势, 本帧起为惯性阶段
-                manualInputEnded = true
-                momentumActive = true
-                if gesture.writesPhases {
-                    perform(phases.onManualInputEnded(), emitTargetImmediately: true)
-                    perform(phases.onMomentumStart(), emitTargetImmediately: false)
-                }
-            } else if atRest {
-                manualInputEnded = true
-            }
-        }
-        _ = post(shiftedValue)
-
-        guard manualInputEnded && atRest else { return nil }
-        if momentumActive {
-            momentumActive = false
-            return .MomentumEnd
-        }
-        return .TrackingEnd
-    }
-
-    /// 推进一帧: 插值 current -> buffer 并经滤波 (或跳过滤波) 得到本帧输出。调用方须持有 stateLock。
-    func advanceMotionLocked(frameInterval: Double, now: CFTimeInterval) -> (y: Double, x: Double) {
+    /// 推进一帧: 插值 current -> buffer 并经滤波得到本帧输出。调用方须持有 stateLock。
+    func advanceMotionLocked(frameInterval: Double) -> (y: Double, x: Double) {
         // 按真实帧间隔换算插值系数 (以 60Hz 为参考, 不同刷新率下滚动时长一致)
         let trans = ScrollMotion.transition(duration, frameInterval: frameInterval)
         // 计算插值
-        var frame = (
+        let frame = (
             y: Interpolator.lerp(src: current.y, dest: buffer.y, trans: trans),
             x: Interpolator.lerp(src: current.x, dest: buffer.x, trans: trans)
         )
-        // 惯性滑行: 本帧位移不小于滑行位移 (松手后页面保持速度并沿系统惯性曲线减速)
-        var glide = 0.0
-        if coast.isActive, let momentum = gesture.momentum {
-            glide = coast.advance(interval: ScrollMotion.clampedFrameInterval(frameInterval), settings: momentum)
-            if glide != 0.0 && (frame.y * glide <= 0.0 || abs(glide) > abs(frame.y)) {
-                frame.y = glide
-            }
-        }
         // 更新滚动位置
         current = (
             y: current.y + frame.y,
             x: current.x + frame.x
         )
-        // 滑行越过目标时目标随之前移, 之后的滚轮输入从实际位置继续累加
-        if glide != 0.0 && (buffer.y - current.y) * glide < 0.0 {
-            buffer.y = current.y
-        }
-        // 平滑滚动结果。free-spin 与翻页手势不需要滤波 (去掉其额外延迟): 滤波器在几帧内
-        // 逐渐打开 / 关闭, 其中尚未发送的距离按 trans 的比例补发, 速度不突变
-        let opening = ScrollMotion.transition(ScrollMotion.filterOpeningRate, frameInterval: frameInterval)
-        filterOpenness += ((bypassFilter ? 1.0 : 0.0) - filterOpenness) * opening
-        let filtered = ScrollMotion.transition(ScrollMotion.filterWeight(forTransition: duration), frameInterval: frameInterval)
-        let weight = filtered + (1.0 - filtered) * filterOpenness
-        var output = filter.fill(with: frame, weight: weight, catchUp: trans)
-        // 精确模式: 松手后速度降到落地速度时, 以该速度匀速走完剩余距离 (见 ScrollLanding)。
-        // 原有模式不需要: 不足死区的帧本来就不发送, 运动在该速度处结束。
-        if gesture.precise && !coast.isActive && !momentumActive
-            && lastManualEventTime > 0.0 && now - lastManualEventTime > releaseGap {
-            output = landLocked(output, frameInterval: frameInterval)
-        }
-        return output
-    }
-
-    /// 精确模式的收尾 (见 ScrollLanding): 每个轴各自接管其尚未发送的全部距离
-    /// (领先量加滤波器中未发送的部分)。调用方须持有 stateLock。
-    func landLocked(_ output: (y: Double, x: Double), frameInterval: Double) -> (y: Double, x: Double) {
-        var result = output
-        if let landed = ScrollLanding.step(
-            output: output.y, remaining: (buffer.y - current.y) + filter.pending.y,
-            direction: delta.y, interval: frameInterval
-        ) {
-            result.y = landed.output
-            current.y = buffer.y - landed.remaining
-            filter.resetY()
-        }
-        if let landed = ScrollLanding.step(
-            output: output.x, remaining: (buffer.x - current.x) + filter.pending.x,
-            direction: delta.x, interval: frameInterval
-        ) {
-            result.x = landed.output
-            current.x = buffer.x - landed.remaining
-            filter.resetX()
-        }
-        return result
+        // 平滑起步 (见 ScrollFilter)。权重随帧间隔与 Duration 而变, 滤波器因此多存或少存的距离
+        // 按 trans 的比例补发, 不丢失也不突跳
+        let weight = ScrollMotion.transition(ScrollMotion.filterWeight(forTransition: duration), frameInterval: frameInterval)
+        return filter.fill(with: frame, weight: weight, catchUp: trans)
     }
 
     /// 本帧与上一帧显示时间的间隔 (秒); 新会话的第一帧使用显示器标称帧间隔。调用方须持有 stateLock。
@@ -994,12 +730,6 @@ private extension ScrollPoster {
         )
     }
 
-    /// 当前手势是否写入阶段字段: 原有模式取决于 "模拟触控板", 精确模式由手势决定
-    /// (free-spin 与横向不带阶段, 拇指滚轮翻页手势始终带阶段)
-    func resolveSimTrackpadEnabled() -> Bool {
-        return gesture.precise ? gesture.writesPhases : config.simTrackpadEnabled
-    }
-
     func phaseValues(for phase: Phase) -> (scroll: Double, momentum: Double)? {
         guard let scrollValue = PhaseValueMapping[phase]?[.Scroll],
               let momentumValue = PhaseValueMapping[phase]?[.Momentum] else {
@@ -1008,27 +738,14 @@ private extension ScrollPoster {
         return (scroll: scrollValue, momentum: momentumValue)
     }
 
-    /// 组装并发送一帧。没有可用事件, 或精确模式下本帧不足一个像素且不是阶段切换帧时返回 false (未发送)。
+    /// 组装并发送一帧。没有可用事件时返回 false (未发送)。
     @discardableResult
     func post(_ v: (y: Double, x: Double), phaseOverride: (scroll: Double, momentum: Double)? = nil, fallbackToCurrentPhase: Bool = true, using preparedSnapshot: ScrollDispatchContext.PostingSnapshot? = nil) -> Bool {
         var phaseValues = phaseOverride
-        if phaseValues == nil && fallbackToCurrentPhase && resolveSimTrackpadEnabled() {
+        if phaseValues == nil && fallbackToCurrentPhase && config.simTrackpadEnabled {
             phaseValues = self.phaseValues(for: phases.phase)
         }
-        var frame = ScrollOutgoingFrame(y: v.y, x: v.x, scrollPhase: phaseValues?.scroll, momentumPhase: phaseValues?.momentum)
-        if gesture.precise {
-            // 整数像素 (余量累积到后续帧), 行数与像素一致 (10 像素一行)
-            let pixels = (y: pixelCarry.y.take(v.y), x: pixelCarry.x.take(v.x))
-            frame.precise = true
-            frame.y = Double(pixels.y)
-            frame.x = Double(pixels.x)
-            frame.linesY = lineCarry.y.take(frame.y / ScrollOutgoingFrame.pixelsPerLine)
-            frame.linesX = lineCarry.x.take(frame.x / ScrollOutgoingFrame.pixelsPerLine)
-            // 不足一个像素的普通帧不发送 (阶段切换帧始终发送); 待发的阶段留给下一帧
-            if phaseOverride == nil && pixels.y == 0 && pixels.x == 0 {
-                return false
-            }
-        }
+        let frame = ScrollOutgoingFrame(y: v.y, x: v.x, scrollPhase: phaseValues?.scroll, momentumPhase: phaseValues?.momentum)
 #if DEBUG
         if let recorder = frameRecorderForTests {
             recorder(frame)
@@ -1041,13 +758,6 @@ private extension ScrollPoster {
         }
         frame.write(to: snapshot.event)
         ScrollUtils.shared.markSyntheticSmoothEvent(snapshot.event)
-        let moved = abs(frame.y) + abs(frame.x)
-        if moved > 0 {
-            sessionLog.frames += 1
-            sessionLog.postedDistance += frame.precise ? moved : moved.rounded(.towardZero)
-            sessionLog.largestFrame = max(sessionLog.largestFrame, moved)
-            sessionLog.lastFrameAt = CFAbsoluteTimeGetCurrent()
-        }
         // 通过 CGEventPostToPid 直投目标进程:
         // 不依赖 proxy (消除崩溃), 不经过 tap 链重新路由 (动量不跟随光标)
         // ref: @shichangone MR: https://github.com/Caldis/Mos/pull/523, issue #868
