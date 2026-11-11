@@ -19,8 +19,10 @@
 //    user comes back from System Settings without the access.
 //
 //  Done (or Open Settings) marks the guide finished, and so does closing the window once
-//  the access is allowed (WelcomeGuideProgress). Return presses the main button, Esc goes
-//  back; with Reduce Motion the steps change by a short crossfade.
+//  the access is allowed (WelcomeGuideProgress). Done and Open Settings on the last step
+//  also apply its "Open at login" switch, through General's code (LoginItem); nothing is
+//  registered before. Return presses the main button, Esc goes back; with Reduce Motion
+//  the steps change by a short crossfade.
 //
 //  Created by Caldis on 15/11/2019.
 //  Copyright © 2019 Caldis. All rights reserved.
@@ -109,6 +111,10 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     private var didOfferHelp = false
     private var helpPopover: NSPopover?
     private var transitionGeneration = 0
+    /// "Open at login" of the last step: what the user leaves with, and what the system
+    /// said when the run began (an untouched switch changes nothing in the system).
+    private(set) var openAtLoginChoice = false
+    private(set) var openAtLoginAtStart = false
 
     /// Polls the permission while the window is open.
     private(set) var accessibilityPermissionsCheckerTimer: Timer?
@@ -152,7 +158,12 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     }()
 
     private(set) lazy var finishStep: WelcomeGuideFinishStep = {
-        let step = WelcomeGuideFinishStep(isMenuBarIconHidden: { [weak self] in self?.isMenuBarIconHidden() ?? false })
+        let step = WelcomeGuideFinishStep(
+            isMenuBarIconHidden: { [weak self] in self?.isMenuBarIconHidden() ?? false },
+            opensAtLogin: { [weak self] in self?.openAtLoginChoice ?? false },
+            loginItemWaitsForApproval: { LoginItem.service.status == .requiresApproval },
+            target: self, loginAction: #selector(openAtLoginClicked(_:))
+        )
         step.artwork.prefersReducedMotion = reducedMotion
         return step
     }()
@@ -244,6 +255,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
             flow = WelcomeGuideFlow.automatic(guideFinished: progress.isFinished)
             steps = flow!.steps(accessReady: accessState.isReady)
             index = 0
+            prepareOpenAtLogin()
         }
         show(stepAt: index, direction: 1, animated: false)
     }
@@ -284,6 +296,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         accessState = WelcomeGuideAccessState(granted: isAccessGranted(), run: runState())
         steps = flow.steps(accessReady: accessState.isReady)
         index = 0
+        prepareOpenAtLogin()
         didOpenSettings = false
         didOfferHelp = false
         setHelpShown(false)
@@ -551,8 +564,32 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     /// its Dock icon).
     @objc func secondaryButtonClicked(_ sender: Any?) {
         progress.markFinished()
+        applyOpenAtLogin()
         openAppSettings()
         view.window?.close()
+    }
+
+    @objc func openAtLoginClicked(_ sender: NSSwitch) {
+        openAtLoginChoice = sender.state == .on
+    }
+
+    /// A new user's switch starts on; run by hand it shows what the system says.
+    private func prepareOpenAtLogin() {
+        openAtLoginAtStart = LoginItem.isEnabled
+        openAtLoginChoice = progress.isPending ? true : openAtLoginAtStart
+        if isViewLoaded {
+            finishStep.refresh()
+        }
+    }
+
+    /// Leaving the last step with Done or Open Settings: the switch is applied as General
+    /// applies its own (`chooseOpenAtLogin`: on registers, and opens Login Items when macOS
+    /// wants an approval; off removes the registration). Only a choice that differs from
+    /// what the system said at the start; when registering fails the guide still finishes,
+    /// and General shows what the system says.
+    private func applyOpenAtLogin() {
+        guard currentStep == .finish, openAtLoginChoice != openAtLoginAtStart else { return }
+        PreferencesGeneralViewController.chooseOpenAtLogin(openAtLoginChoice)
     }
 
     @objc func backButtonClicked(_ sender: Any?) {
@@ -566,6 +603,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
 
     private func finish() {
         progress.markFinished()
+        applyOpenAtLogin()
         view.window?.close()
     }
 

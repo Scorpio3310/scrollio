@@ -379,16 +379,26 @@ class PreferencesGeneralViewController: NSViewController {
 
     // 自启
     @objc func launchOnLoginClick(_ sender: NSSwitch) {
-        let wanted = sender.state == .on
-        if !wanted {
-            // Switching it off always removes the registration, also one that only waits
-            // for approval in System Settings.
-            LoginItem.removeRegistration()
-        }
-        Options.shared.general.autoLaunch = wanted
+        Self.chooseOpenAtLogin(sender.state == .on)
         // Shows what the system did: an item that needs approval in System Settings is not
         // on yet, so the switch stays off and the row says it waits for the approval.
         refreshLaunchAtLoginState()
+    }
+
+    /// "Open at login" as the user chose it: this pane's switch, and the last step of the
+    /// Welcome Guide. On registers the app (`LoginItem.setEnabled`; when macOS wants an
+    /// approval, System Settings opens on Login Items); off removes the registration, also
+    /// one that only waits for approval in System Settings. The option then says what the
+    /// system did.
+    static func chooseOpenAtLogin(_ wanted: Bool) {
+        if !wanted {
+            LoginItem.removeRegistration()
+        }
+        Options.shared.general.autoLaunch = wanted
+        let enabled = LoginItem.isEnabled
+        if Options.shared.general.autoLaunch != enabled {
+            Options.shared.general.autoLaunch = enabled
+        }
     }
 
     @objc func openLoginItemsClicked(_ sender: NSButton) {

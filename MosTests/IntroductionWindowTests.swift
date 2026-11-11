@@ -85,19 +85,67 @@ private final class GuideWorld {
     }
 }
 
+/// A login item whose state the test sets (General's tests use the same seam,
+/// `LoginItem.service`).
+private final class FakeLoginItem: LoginItemService {
+    var status: LoginItemStatus
+    /// What registering leaves; nil: nothing changes (it failed, or waits for approval).
+    var afterRegister: LoginItemStatus? = .enabled
+    private(set) var registerCalls = 0
+    private(set) var unregisterCalls = 0
+    private(set) var openSettingsCalls = 0
+
+    init(status: LoginItemStatus) {
+        self.status = status
+    }
+
+    func register() throws {
+        registerCalls += 1
+        if let afterRegister { status = afterRegister }
+    }
+
+    func unregister() throws {
+        unregisterCalls += 1
+        status = .notRegistered
+    }
+
+    func openSystemSettings() {
+        openSettingsCalls += 1
+    }
+
+    var calls: Int {
+        return registerCalls + unregisterCalls + openSettingsCalls
+    }
+}
+
 final class IntroductionWindowTests: XCTestCase {
 
     private var world: GuideWorld!
+    private var savedAutoLaunch = false
+    private var savedScroll: OPTIONS_SCROLL_DEFAULT!
 
     override func setUp() {
         super.setUp()
         world = GuideWorld()
+        savedAutoLaunch = Options.shared.general.autoLaunch
+        savedScroll = Options.shared.scroll
     }
 
     override func tearDown() {
         world.tearDown()
         world = nil
+        LoginItem.service = InertLoginItemService()
+        Options.shared.general.autoLaunch = savedAutoLaunch
+        LoginItem.service = LoginItem.defaultService
+        Options.shared.scroll = savedScroll
         super.tearDown()
+    }
+
+    @discardableResult
+    private func install(_ status: LoginItemStatus) -> FakeLoginItem {
+        let fake = FakeLoginItem(status: status)
+        LoginItem.service = fake
+        return fake
     }
 
     /// A window that holds the controller's view and is never shown.
@@ -635,6 +683,191 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(picture.scrollView.contentView.bounds.minX, 0)
     }
 
+    // MARK: - The wheel direction
+
+    func testTheFeelStepShowsAndFlipsTheWheelDirectionAsTheScrollingPaneDoes() throws {
+        let controller = makeFeelController()
+        let step = controller.feelStep
+        let row = try XCTUnwrap(step.reverseRow)
+        XCTAssertEqual(row.title, "Reverse wheel direction")
+        XCTAssertEqual(row.explanation, "Flips the wheel's direction, not the trackpad's.")
+        XCTAssertEqual(row.toggle.accessibilityLabel(), "Reverse wheel direction", "VoiceOver names the switch")
+        XCTAssertEqual(row.toggle.accessibilityHelp(), "Flips the wheel's direction, not the trackpad's.")
+        XCTAssertTrue(row.isOn, "the stored value: the default reverses")
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        func stored() throws -> NSDictionary {
+            let all = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(world.scroll)) as? [String: Any])
+            return all.filter { !$0.key.hasPrefix("reverse") } as NSDictionary
+        }
+        let others = try stored()
+
+        // Off clears the main flag only (the pane's `reversesWheel`).
+        row.toggle.state = .off
+        XCTAssertTrue(row.toggle.sendAction(row.toggle.action, to: row.toggle.target))
+        XCTAssertFalse(world.scroll.reverse)
+        XCTAssertTrue(world.scroll.reverseVertical)
+        XCTAssertTrue(world.scroll.reverseHorizontal)
+        XCTAssertFalse(row.isOn)
+
+        // Either axis reversed counts as on; on turns everything on.
+        world.scroll.reverse = true
+        world.scroll.reverseVertical = false
+        step.refresh()
+        XCTAssertTrue(row.isOn, "the horizontal axis is still reversed")
+        world.scroll.reverseHorizontal = false
+        step.refresh()
+        XCTAssertFalse(row.isOn)
+        row.toggle.state = .on
+        XCTAssertTrue(row.toggle.sendAction(row.toggle.action, to: row.toggle.target))
+        XCTAssertTrue(world.scroll.reverse && world.scroll.reverseVertical && world.scroll.reverseHorizontal)
+        XCTAssertEqual(try stored(), others, "nothing but the direction changed")
+    }
+
+    /// The engine reads `Options.shared.scroll` at every wheel event: the switch writes there,
+    /// through the live seam, and reads it again each time (nothing is kept aside).
+    func testTheDirectionGoesToTheOptionsTheEngineReads() {
+        Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+        world.accessGranted = true
+        world.run = .running
+        let controller = world.makeController(flow: .full)
+        controller.scrollOptions = { Options.shared.scroll }
+        controller.go(by: 1)
+        let step = controller.feelStep
+        step.setReversesWheel(false)
+        XCTAssertFalse(Options.shared.scroll.reverse)
+        let replaced = OPTIONS_SCROLL_DEFAULT()
+        Options.shared.scroll = replaced
+        step.refresh()
+        XCTAssertTrue(step.reverseRow.isOn, "the options as they are now")
+        step.setReversesWheel(false)
+        XCTAssertFalse(replaced.reverse)
+    }
+
+    // MARK: - Open at login
+
+    /// Walks a new user (the guide still to do, Scrollio running) to the last step.
+    private func makeFinishController(finished: Bool = false) -> IntroductionViewController {
+        world.accessGranted = true
+        world.run = .running
+        let controller = world.makeController(flow: .full, finished: finished)
+        controller.go(by: 2)
+        XCTAssertEqual(controller.currentStep, .finish)
+        return controller
+    }
+
+    func testANewUserLeavesWithOpenAtLoginOnAndNothingIsRegisteredBefore() throws {
+        let fake = install(.notRegistered)
+        let controller = makeFinishController()
+        let window = makeWindow(for: controller)
+        let row = try XCTUnwrap(controller.finishStep.loginRow)
+        XCTAssertEqual(row.title, "Open at login")
+        XCTAssertEqual(row.explanation, "Scrollio starts when you log in to your Mac.")
+        XCTAssertEqual(row.toggle.accessibilityLabel(), "Open at login", "VoiceOver names the switch")
+        XCTAssertTrue(row.isOn, "on for a new user")
+        XCTAssertEqual(fake.calls, 0, "showing the step registers nothing")
+
+        // Back and again, and a window closed without Done: still nothing.
+        click(controller.backButton)
+        click(controller.primaryButton)
+        XCTAssertTrue(controller.finishStep.loginRow.isOn)
+        controller.windowWillClose()
+        XCTAssertEqual(fake.calls, 0)
+
+        let closed = expectation(forNotification: NSWindow.willCloseNotification, object: window)
+        click(controller.primaryButton)
+        wait(for: [closed], timeout: 1)
+        XCTAssertEqual(fake.registerCalls, 1, "Done registers")
+        XCTAssertTrue(Options.shared.general.autoLaunch)
+        XCTAssertTrue(world.progress.isFinished)
+    }
+
+    func testANewUserCanLeaveItOff() {
+        let fake = install(.notRegistered)
+        let controller = makeFinishController()
+        let row = controller.finishStep.loginRow!
+        row.toggle.state = .off
+        XCTAssertTrue(row.toggle.sendAction(row.toggle.action, to: row.toggle.target))
+        XCTAssertEqual(fake.calls, 0, "the switch alone changes nothing")
+        click(controller.primaryButton)
+        XCTAssertEqual(fake.calls, 0, "off and not registered: nothing to do")
+    }
+
+    func testByHandItShowsTheSystemAndAnUntouchedSwitchChangesNothing() {
+        let enabled = install(.enabled)
+        var controller = makeFinishController(finished: true)
+        XCTAssertTrue(controller.finishStep.loginRow.isOn)
+        click(controller.primaryButton)
+        XCTAssertEqual(enabled.calls, 0)
+
+        let off = install(.notRegistered)
+        controller = makeFinishController(finished: true)
+        XCTAssertFalse(controller.finishStep.loginRow.isOn)
+        click(controller.secondaryButton)
+        XCTAssertEqual(off.calls, 0)
+        XCTAssertEqual(world.appSettingsOpened, 1)
+    }
+
+    func testTurningItOffRemovesTheRegistrationWhenLeavingWithOpenSettings() {
+        let fake = install(.enabled)
+        let controller = makeFinishController(finished: true)
+        let row = controller.finishStep.loginRow!
+        row.toggle.state = .off
+        XCTAssertTrue(row.toggle.sendAction(row.toggle.action, to: row.toggle.target))
+        XCTAssertEqual(fake.calls, 0)
+        click(controller.secondaryButton)
+        XCTAssertEqual(fake.unregisterCalls, 1)
+        XCTAssertEqual(fake.registerCalls, 0)
+        XCTAssertFalse(Options.shared.general.autoLaunch)
+        XCTAssertEqual(world.appSettingsOpened, 1)
+    }
+
+    /// As General: an item waiting for approval reads as off and says so; left alone it is
+    /// kept; turned on, registering cannot enable it and Login Items opens.
+    func testWaitingForApprovalIsGeneralsFlow() {
+        let fake = install(.requiresApproval)
+        fake.afterRegister = nil
+        let controller = makeFinishController(finished: true)
+        let row = controller.finishStep.loginRow!
+        XCTAssertFalse(row.isOn)
+        XCTAssertEqual(row.explanation, "Waiting for your approval in System Settings.")
+        click(controller.primaryButton)
+        XCTAssertEqual(fake.calls, 0, "an untouched switch keeps the waiting registration")
+
+        controller.begin(.full)
+        controller.go(by: 2)
+        row.toggle.state = .on
+        XCTAssertTrue(row.toggle.sendAction(row.toggle.action, to: row.toggle.target))
+        click(controller.primaryButton)
+        XCTAssertEqual(fake.registerCalls, 1)
+        XCTAssertEqual(fake.openSettingsCalls, 1, "System Settings opens on Login Items")
+        XCTAssertFalse(Options.shared.general.autoLaunch, "not on until approved")
+    }
+
+    func testAFailedRegistrationStillFinishesTheGuideAndTheOptionTellsTheTruth() {
+        let fake = install(.notRegistered)
+        fake.afterRegister = nil
+        let controller = makeFinishController()
+        let window = makeWindow(for: controller)
+        let closed = expectation(forNotification: NSWindow.willCloseNotification, object: window)
+        click(controller.primaryButton)
+        wait(for: [closed], timeout: 1)
+        XCTAssertEqual(fake.registerCalls, 1)
+        XCTAssertTrue(world.progress.isFinished)
+        XCTAssertFalse(Options.shared.general.autoLaunch, "General's switch shows it off")
+    }
+
+    func testTheAccessStepAloneLeavesTheLoginItemAlone() {
+        let fake = install(.notRegistered)
+        world.runAfterGrant = .running
+        let controller = world.makeController(flow: .accessOnly, finished: false)
+        world.accessGranted = true
+        controller.accessibilityPermissionsChecker(nil)
+        click(controller.primaryButton)
+        XCTAssertEqual(fake.calls, 0)
+    }
+
     // MARK: - The last step
 
     func testDoneMarksTheGuideFinishedAndCloses() {
@@ -1081,6 +1314,14 @@ final class WelcomeGuideRenderTests: XCTestCase {
                 XCTAssertEqual(world.scroll.duration, feel.duration)
             }
         }
+        try render("guide-3-feel-reversed-off", configure: {
+            $0.accessGranted = true
+            $0.run = .running
+            $0.scroll.reverse = false
+        }) { controller, _ in
+            self.toStep(.feel, in: controller)
+            controller.feelStep.artwork.show(time: 0.75)
+        }
         try render("guide-3-feel-not-in-list", configure: {
             $0.accessGranted = true
             $0.run = .running
@@ -1107,6 +1348,17 @@ final class WelcomeGuideRenderTests: XCTestCase {
         try render("guide-4-finish-pulse", configure: { $0.accessGranted = true; $0.run = .running }) { controller, _ in
             self.toStep(.finish, in: controller)
             controller.finishStep.artwork.show(time: 0.75)
+        }
+        try render("guide-4-finish-login-on", configure: { $0.accessGranted = true; $0.run = .running }) { controller, _ in
+            self.toStep(.finish, in: controller)
+            controller.finishStep.artwork.showStill()
+            XCTAssertTrue(controller.finishStep.loginRow.isOn)
+        }
+        try render("guide-4-finish-login-off", configure: { $0.accessGranted = true; $0.run = .running },
+                   finished: true) { controller, _ in
+            self.toStep(.finish, in: controller)
+            controller.finishStep.artwork.showStill()
+            XCTAssertFalse(controller.finishStep.loginRow.isOn)
         }
         try render("guide-4-finish-hidden-icon", configure: {
             $0.accessGranted = true

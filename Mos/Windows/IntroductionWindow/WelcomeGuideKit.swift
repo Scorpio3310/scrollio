@@ -27,6 +27,8 @@ enum WelcomeGuideLayout {
     /// The control under the text.
     static let textToControl: CGFloat = 18
     static let textWidth: CGFloat = 452
+    /// A box of settings rows under the text (the status line is as wide).
+    static let rowBoxWidth: CGFloat = 440
     static let barHeight: CGFloat = 28
     static let barBottom: CGFloat = 20
     static let pictureCornerRadius: CGFloat = 12

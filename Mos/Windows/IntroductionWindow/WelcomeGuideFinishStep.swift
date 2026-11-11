@@ -3,8 +3,10 @@
 //  Mos
 //  The last step of the Welcome Guide: where Scrollio lives now. A drawn menu bar whose
 //  Scrollio icon pulses twice and then opens its menu (the real items of the status-bar
-//  menu); with Reduce Motion the menu is simply open. Open Settings and Done are the
-//  container's buttons.
+//  menu); with Reduce Motion the menu is simply open. Under the text, General's "Open at
+//  login" switch: on for a new user, the system's state when the guide runs by hand. The
+//  choice is the container's, applied when the user leaves with Done or Open Settings
+//  (IntroductionViewController.applyOpenAtLogin).
 //
 
 import Cocoa
@@ -18,27 +20,55 @@ final class WelcomeGuideFinishStep: WelcomeGuideStepView {
     let artwork: WelcomeGuideFinishPicture
     private(set) var titleLabel: NSTextField!
     private(set) var textLabel: NSTextField!
+    /// "Open at login", General's row, in a box of its own.
+    private(set) var loginRow: PreferencesSwitchRow!
+    private(set) var loginBox: PreferencesGroupBox!
 
     /// Whether the menu bar icon is hidden (General › Show in menu bar is off).
     var isMenuBarIconHidden: () -> Bool
+    /// What the switch shows: the choice the user leaves with.
+    var opensAtLogin: () -> Bool
+    /// macOS waits for the login item to be approved in System Settings.
+    var loginItemWaitsForApproval: () -> Bool
 
-    init(isMenuBarIconHidden: @escaping () -> Bool) {
+    init(
+        isMenuBarIconHidden: @escaping () -> Bool,
+        opensAtLogin: @escaping () -> Bool,
+        loginItemWaitsForApproval: @escaping () -> Bool,
+        target: AnyObject, loginAction: Selector
+    ) {
         self.isMenuBarIconHidden = isMenuBarIconHidden
+        self.opensAtLogin = opensAtLogin
+        self.loginItemWaitsForApproval = loginItemWaitsForApproval
         artwork = WelcomeGuideFinishPicture(frame: NSRect(origin: .zero, size: WelcomeGuideLayout.pictureSize))
         picture = artwork
         let title = WelcomeGuideText.makeTitle(WelcomeGuideText.localized("intro-finish-title"))
         let text = WelcomeGuideText.makeText("")
-        let (view, stack) = WelcomeGuideText.makeContent([title, text])
+        let login = PreferencesSwitchRow(
+            title: WelcomeGuideText.localized("general-launch-at-login"),
+            explanation: WelcomeGuideText.localized("general-launch-at-login-hint"),
+            target: target, action: loginAction
+        )
+        let box = PreferencesGroupBox(width: WelcomeGuideLayout.rowBoxWidth, rows: [login])
+        let (view, stack) = WelcomeGuideText.makeContent([title, text, box])
         stack.setCustomSpacing(WelcomeGuideLayout.titleToText, after: title)
+        stack.setCustomSpacing(WelcomeGuideLayout.textToControl, after: text)
         content = view
         titleLabel = title
         textLabel = text
+        loginRow = login
+        loginBox = box
         refresh()
     }
 
     func refresh() {
         textLabel.stringValue = WelcomeGuideText.localized(
             isMenuBarIconHidden() ? "intro-status-granted-detail-hidden-icon" : "intro-finish-text"
+        )
+        loginRow.isOn = opensAtLogin()
+        // As General says it: an item that waits for approval is not on yet.
+        loginRow.explanation = WelcomeGuideText.localized(
+            loginItemWaitsForApproval() ? "general-launch-at-login-waiting" : "general-launch-at-login-hint"
         )
     }
 

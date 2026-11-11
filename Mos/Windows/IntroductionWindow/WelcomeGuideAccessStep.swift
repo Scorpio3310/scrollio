@@ -89,7 +89,7 @@ final class WelcomeGuideAccessStep: WelcomeGuideStepView {
 /// The status under the text: an icon, a line and the small print under it.
 final class WelcomeGuideStatusBox: WelcomeGuideFlippedView {
 
-    static let width: CGFloat = 440
+    static let width = WelcomeGuideLayout.rowBoxWidth
     static let padding = NSEdgeInsets(top: 11, left: 14, bottom: 11, right: 14)
     static let iconSize: CGFloat = 20
 

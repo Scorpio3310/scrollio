@@ -7,7 +7,10 @@
 //  view in a drawn window, smoothed by Scrollio's engine itself, as any other window is.
 //
 //  A pick applies at once and stores only the preset's glide time (`ScrollFeel.apply`, as
-//  the Scrolling pane's Feel control). While the pointer is away from the page a short
+//  the Scrolling pane's Feel control). Under the cards, the Scrolling pane's "Reverse wheel
+//  direction" switch (`reversesWheel`, the pane's own path): the page is right above it, so
+//  a wrong direction is felt and flipped; the engine reads it at the next scroll. These two
+//  values are all the step stores. While the pointer is away from the page a short
 //  demo plays the chosen feel on it (three clicks there and back); while the pointer is on
 //  the page nothing animates: the scroll tap runs on the main thread too. When the page
 //  cannot be smoothed (Scrollio not running, "Limit scrolling to these apps" without
@@ -29,6 +32,9 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
     private(set) var hintLabel: NSTextField!
     private(set) var noteLabel: NSTextField!
     private(set) var feelButtons: [WelcomeGuideFeelButton] = []
+    /// "Reverse wheel direction", the row of the Scrolling pane, in a box of its own.
+    private(set) var reverseRow: PreferencesSwitchRow!
+    private(set) var reverseBox: PreferencesGroupBox!
 
     /// The scroll options the pick goes to (the Scrolling pane's).
     var scrollOptions: () -> OPTIONS_SCROLL_DEFAULT
@@ -69,11 +75,18 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
         let note = WelcomeGuideText.makeText(
             WelcomeGuideText.localized("intro-feel-note"), font: PreferencesForm.hintFont, color: .tertiaryLabelColor
         )
-        let (view, stack) = WelcomeGuideText.makeContent([title, text, row, hint, note])
+        let reverse = PreferencesSwitchRow(
+            title: WelcomeGuideText.localized("scrolling-reverse"),
+            explanation: WelcomeGuideText.localized("scrolling-reverse-hint"),
+            target: nil, action: nil
+        )
+        let box = PreferencesGroupBox(width: WelcomeGuideLayout.rowBoxWidth, rows: [reverse])
+        let (view, stack) = WelcomeGuideText.makeContent([title, text, row, hint, box, note])
         stack.setCustomSpacing(WelcomeGuideLayout.titleToText, after: title)
         stack.setCustomSpacing(WelcomeGuideLayout.textToControl, after: text)
-        stack.setCustomSpacing(10, after: row)
-        stack.setCustomSpacing(6, after: hint)
+        stack.setCustomSpacing(8, after: row)
+        stack.setCustomSpacing(10, after: hint)
+        stack.setCustomSpacing(8, after: box)
         // The hint changes with the pick: its height stays that of one line.
         hint.heightAnchor.constraint(equalToConstant: 16).isActive = true
         content = view
@@ -84,10 +97,14 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
         hintLabel = hint
         noteLabel = note
         feelButtons = buttons
+        reverseRow = reverse
+        reverseBox = box
         for button in buttons {
             button.target = self
             button.action = #selector(feelClicked(_:))
         }
+        reverse.toggle.target = self
+        reverse.toggle.action = #selector(reverseClicked(_:))
         refresh()
     }
 
@@ -103,6 +120,7 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
             button.state = button.feel == feel ? .on : .off
         }
         hintLabel.stringValue = ScrollFeel.hint(for: feel)
+        reverseRow.isOn = scrollOptions().reversesWheel
         artwork.model = mouseSource()
         artwork.setScene(duration: scrollOptions().duration, speed: scrollOptions().speed)
         refreshTryArea()
@@ -127,6 +145,17 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
         refresh()
         artwork.restartDemo()
     }
+
+    /// The Scrolling pane's switch: on reverses both axes, off clears the main flag. The
+    /// engine reads the options at every wheel event, so the next scroll on the page has it.
+    @objc func reverseClicked(_ sender: NSSwitch) {
+        setReversesWheel(sender.state == .on)
+    }
+
+    func setReversesWheel(_ on: Bool) {
+        scrollOptions().reversesWheel = on
+        refresh()
+    }
 }
 
 // MARK: - A choice
@@ -136,7 +165,7 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
 /// name and the line that says how it feels.
 final class WelcomeGuideFeelButton: NSButton {
 
-    static let size = NSSize(width: 100, height: 72)
+    static let size = NSSize(width: 100, height: 64)
     static let spacing: CGFloat = 8
     static let curveSize = NSSize(width: 80, height: 28)
     static let cornerRadius: CGFloat = 10
@@ -218,7 +247,7 @@ final class WelcomeGuideFeelButton: NSButton {
         box.stroke()
 
         // The curve, in a box 80 × 28 centred at the top.
-        let origin = NSPoint(x: ((bounds.width - Self.curveSize.width) / 2).rounded(), y: 12)
+        let origin = NSPoint(x: ((bounds.width - Self.curveSize.width) / 2).rounded(), y: 8)
         let axis = NSBezierPath()
         axis.move(to: NSPoint(x: origin.x + 4, y: origin.y + 25.5))
         axis.line(to: NSPoint(x: origin.x + Self.curveSize.width - 4, y: origin.y + 25.5))
@@ -243,7 +272,7 @@ final class WelcomeGuideFeelButton: NSButton {
             .foregroundColor: NSColor.labelColor,
         ])
         let size = name.size()
-        name.draw(at: NSPoint(x: (bounds.width - size.width) / 2, y: bounds.height - 9 - size.height))
+        name.draw(at: NSPoint(x: (bounds.width - size.width) / 2, y: bounds.height - 8 - size.height))
     }
 
     override var focusRingMaskBounds: NSRect {
