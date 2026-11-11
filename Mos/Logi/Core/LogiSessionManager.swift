@@ -37,6 +37,16 @@ internal class LogiSessionManager {
     /// wheelStateChanged 合并发送标志 (同一 runloop 内多次变化只 post 一次)
     var wheelStateNotificationScheduled = false
 
+    /// Basic mouse settings (battery, pointer speed, haptics, press force), pushed by the
+    /// Integration layer; see Basics/LogiSessionManager+Basics.swift. Written to a mouse only
+    /// while `mouseManaged` ("Let Scrollio manage this mouse", the wheel's managedByMos).
+    var mouseSettings = LogiMouseSettings.default
+    var mouseManaged = false
+    var mouseStateNotificationScheduled = false
+    /// A sample pulse asked for by the UI, waiting for the settings push that usually follows.
+    var hapticSamplePending = false
+    var hapticSampleToken = 0
+
     /// Gesture Navigation (见 Gesture/LogiSessionManager+Gesture.swift).
     /// Mos codes of the Logitech buttons the mouse should track itself (raw XY). Pushed by
     /// the Integration layer; empty while "let the mouse track the gesture" is off.

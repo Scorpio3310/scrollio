@@ -20,7 +20,9 @@
 //  Haptic rules: play only when the mouse has 0x19B0 and lists a usable waveform. A cue is
 //  only asked for while the user has "Haptic feedback" on, so when the mouse reports its
 //  haptics switched off (the state of an MX Master 4 that never ran Options+), they are
-//  switched on for it. Intensity and power saving are never changed.
+//  switched on for it, unless the user switched the mouse's haptics off in Scrollio's
+//  mouse settings (`mayEnableHaptics` false): then the cue is skipped. Intensity and power
+//  saving are never changed.
 //
 //  Main thread only (HID++ callbacks run on the main run loop).
 //
@@ -48,6 +50,9 @@ final class LogiGestureController {
     private let schedule: Schedule
     private let onChange: () -> Void
     private let log: (String) -> Void
+    /// False once the user switched haptics off in the mouse settings: a cue may then not
+    /// switch the mouse's haptics on. Asked at the moment a cue finds them off.
+    private let mayEnableHaptics: () -> Bool
 
     init(
         sendReporting: @escaping SendReporting,
@@ -55,7 +60,8 @@ final class LogiGestureController {
         deliverMovement: @escaping DeliverMovement,
         schedule: @escaping Schedule,
         onChange: @escaping () -> Void = {},
-        log: @escaping (String) -> Void = { _ in }
+        log: @escaping (String) -> Void = { _ in },
+        mayEnableHaptics: @escaping () -> Bool = { true }
     ) {
         self.sendReporting = sendReporting
         self.sendHaptic = sendHaptic
@@ -63,6 +69,7 @@ final class LogiGestureController {
         self.schedule = schedule
         self.onChange = onChange
         self.log = log
+        self.mayEnableHaptics = mayEnableHaptics
     }
 
     // MARK: - Raw XY state
@@ -389,6 +396,10 @@ final class LogiGestureController {
             return false
         }
         if !enabled {
+            guard mayEnableHaptics() else {
+                log("Haptic cue \(cue) skipped: haptics are off on the mouse and switched off in Scrollio's mouse settings")
+                return false
+            }
             // The user asked for cues, the mouse has its haptics off: switch them on, with
             // the intensity it reports. The mouse works through requests in order, so the
             // pulse right behind this one already plays.

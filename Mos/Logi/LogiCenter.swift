@@ -132,6 +132,49 @@ final class LogiCenter {
         manager.applyWheelSettings(settings)
     }
 
+    // MARK: - Basic mouse settings (contract: Mos/Logi/Basics/LogiMouseBasicsTypes.swift)
+
+    /// One entry per connected Logitech mouse with battery, pointer speed, haptics, press
+    /// force or a wheel: what each reports (last read) and what the user set, the wheel state
+    /// inside. Main thread only.
+    func mouseDeviceStates() -> [LogiMouseDeviceState] {
+        #if DEBUG
+        precondition(Thread.isMainThread, "LogiCenter is main-thread-only")
+        #endif
+        return manager.mouseDeviceStates()
+    }
+
+    /// Re-reads every connected mouse (the battery at most every few minutes; it also
+    /// follows the mouse's own battery events). Posts `mouseStateChanged` when answers
+    /// arrive, or right away when there is nothing to read. Main thread only.
+    func refreshMouseStates() {
+        #if DEBUG
+        precondition(Thread.isMainThread, "LogiCenter is main-thread-only")
+        #endif
+        manager.refreshMouseStates()
+    }
+
+    /// Remembers `settings` for mice that connect later and hands them to every connected
+    /// mouse. Nothing is written unless `managed` ("Let Scrollio manage this mouse") is on;
+    /// then a value is written only when the user set it and the mouse reports something
+    /// else. Reading never needs `managed`. Main thread only.
+    func applyMouseSettings(_ settings: LogiMouseSettings, managed: Bool) {
+        #if DEBUG
+        precondition(Thread.isMainThread, "LogiCenter is main-thread-only")
+        #endif
+        manager.applyMouseSettings(settings, managed: managed)
+    }
+
+    /// Plays one pulse at the current strength on every connected mouse whose haptics are
+    /// on (the "feel it" pulse after the strength slider is let go). It waits briefly for
+    /// the settings push of that slider, so it is felt at the new strength. Main thread only.
+    func playHapticSample() {
+        #if DEBUG
+        precondition(Thread.isMainThread, "LogiCenter is main-thread-only")
+        #endif
+        manager.playHapticSample()
+    }
+
     // MARK: - Gesture Navigation hardware support (contract: Mos/Logi/Gesture/LogiGestureTypes.swift)
 
     /// Mos codes of the Logitech buttons whose holds the mouse should track itself (raw XY

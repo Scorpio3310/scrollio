@@ -328,6 +328,11 @@ class LogiDeviceSession {
     /// DeviceNameType (0x0005): fn2 getDeviceType 返回权威设备类型枚举. 用于接收器 slot 显示类型
     /// (register 0xB5 在部分接收器失败时的替代). 注: 0x0005 的类型枚举与 register 0xB5 不同.
     static let featureDeviceNameType: UInt16 = 0x0005
+    /// Battery: Unified Battery (MX Master 4 / 3S / 3 for Business), Battery Status (original
+    /// MX Master 3), Adjustable DPI (pointer speed). See Mos/Logi/Basics.
+    static let featureUnifiedBattery: UInt16 = LogiBatteryFeature.unifiedFeatureId
+    static let featureBatteryStatus: UInt16 = LogiBatteryFeature.legacyFeatureId
+    static let featureAdjustableDPI: UInt16 = LogiPointerSpeedProtocol.featureId
     private static let hidppShortReportId: UInt8 = 0x10
     private static let hidppLongReportId: UInt8 = 0x11
     private static let hidppErrorFeatureIdx: UInt8 = 0xFF
@@ -1054,6 +1059,7 @@ class LogiDeviceSession {
         receiverTakeoverDebounce.values.forEach { $0.cancel() }
         receiverTakeoverDebounce.removeAll()
         dropAllWheelControllers()
+        dropAllMouseBasicsControllers()
         discoveryTimer?.invalidate()
         discoveryTimer = nil
         controlInfoQueryTimer?.invalidate()
@@ -1850,6 +1856,7 @@ class LogiDeviceSession {
         featureIndex.removeAll()
         dropWheelController(slot: slot)
         dropGestureController(slot: slot)
+        dropMouseBasicsController(slot: slot)
         discoveredControls.removeAll()
         reprogInitComplete = false
         reprogControlCount = 0
@@ -1933,9 +1940,12 @@ class LogiDeviceSession {
             // 热插拔重连: 探测链不会再跑 (once 守卫), 但该 slot 的 featureIndex 已被清空.
             // 按需补发现滚轮 feature, 让托管设置在重连后重放.
             // 同理补发现 haptic feature (手势触觉提示), 排在滚轮之后保持 getFeature 串行.
+            // Then the basic settings (battery, DPI, press force), still one getFeature at a time.
             let slot = deviceIndex
             discoverWheelFeatureIfNeeded(slot: slot) { [weak self] in
-                self?.discoverGestureHapticFeatureIfNeeded(slot: slot)
+                self?.discoverGestureHapticFeatureIfNeeded(slot: slot) { [weak self] in
+                    self?.discoverMouseBasicsFeaturesIfNeeded(slot: slot)
+                }
             }
         }
         LogiDebugPanel.log("[\(deviceInfo.name)] Takeover sweep complete: managed=\(receiverManagedSlots.sorted()) cursor=\(deviceIndex)\(mouseSlot != nil ? " (mouse)" : "")")
@@ -2102,6 +2112,7 @@ class LogiDeviceSession {
         deviceIndex = saved
         dropWheelController(slot: slot)
         dropGestureController(slot: slot)
+        dropMouseBasicsController(slot: slot)
         LogiDebugPanel.log("[\(deviceInfo.name)] Slot \(slot) disconnected; released takeover state (managed=\(receiverManagedSlots.sorted()))")
     }
 
@@ -2373,9 +2384,7 @@ class LogiDeviceSession {
 
     private var pendingDPICycle: (featureIndex: UInt8, direction: Direction)? = nil
     private var pendingDPIListQuery: (featureIndex: UInt8, direction: Direction)? = nil
-    private var currentDPI: UInt16 = 0
-    private var dpiSteps: [UInt16] = []  // 从设备查询, 不硬编码
-    private var dpiStepSize: UInt16 = 0  // 设备报告的 DPI 步进值
+    private var dpiSteps: [UInt16] = []  // 从设备查询, 不硬编码 (LogiPointerSpeedProtocol.parseDPIList)
     private var pendingHiResScrollToggle = false
     private var pendingScrollInvertToggle = false
     private var pendingThumbWheelToggle = false
@@ -2401,8 +2410,7 @@ class LogiDeviceSession {
 
     /// DPI 循环
     func executeDPICycle(direction: Direction) {
-        // AdjustableDPI feature ID = 0x2201
-        let dpiFeatureId: UInt16 = 0x2201
+        let dpiFeatureId = Self.featureAdjustableDPI
         if let idx = featureIndex[dpiFeatureId] {
             cycleDPI(featureIndex: idx, direction: direction)
         } else {
@@ -2483,6 +2491,21 @@ class LogiDeviceSession {
     }
 
     // MARK: - HiResWheel / ScrollInvert / ThumbWheel / PointerSpeed Actions
+
+    /// 0x2121 getWheelMode byte 0: bit1 high resolution, bit2 inverted (bit0 target, bit3
+    /// analytics are kept as read).
+    static let hiResWheelResolutionBit: UInt8 = 0x02
+    static let hiResWheelInvertBit: UInt8 = 0x04
+
+    /// setWheelMode (0x2121 fn2) parameters from a getWheelMode answer: `bit` of the mode
+    /// byte flipped, every other bit and bytes 1-2 ("priority", "rate" in OpenLogi) sent back
+    /// as read. Sending only the mode byte used to zero bytes 1-2. nil for a short answer.
+    static func hiResWheelModeParams<Bytes: RandomAccessCollection>(toggling bit: UInt8, in report: Bytes) -> [UInt8]?
+    where Bytes.Element == UInt8, Bytes.Index == Int {
+        guard report.count >= 7 else { return nil }
+        let base = report.startIndex
+        return [report[base + 4] ^ bit, report[base + 5], report[base + 6]]
+    }
 
     /// Hi-Res 滚轮模式切换
     private func executeHiResScrollToggle() {
@@ -2570,6 +2593,8 @@ class LogiDeviceSession {
 
     /// 最近一次 GetState (fn1) 解析结果; 未查询过为 nil
     private(set) var hapticState: HapticState? = nil
+    /// The same answer with the whole flags byte, so the diagnostics slider can write from it.
+    private var hapticRawState: LogiHapticSettingsProtocol.State? = nil
     /// GetCapabilities (fn0) 返回的波形支持位掩码 (bit n = waveform ID n); 未查询过为 nil
     private(set) var hapticWaveformMask: UInt32? = nil
 
@@ -2587,6 +2612,9 @@ class LogiDeviceSession {
         featureSmartShift,         // 0x2110 (MX Master 3S 等无 0x2111 的滚轮)
         featureHiResWheel,         // 0x2121 (ratchetSwitch 事件: 模式切换键)
         featureForceSensing,       // 0x19C0
+        featureUnifiedBattery,     // 0x1004 (battery for the Mouse tab)
+        featureBatteryStatus,      // 0x1000 (original MX Master 3; skipped when 0x1004 exists)
+        featureAdjustableDPI,      // 0x2201 (pointer speed for the Mouse tab)
         0x8060, 0x8061,            // Report Rate / Extended Report Rate
         0x2202,                    // Extended Adjustable DPI
         0x2001,                    // Left/Right Swap
@@ -2621,6 +2649,11 @@ class LogiDeviceSession {
         while optionalProbeIndex < Self.optionalProbeFeatures.count {
             let fid = Self.optionalProbeFeatures[optionalProbeIndex]
             optionalProbeIndex += 1
+            // One battery feature is enough: 0x1000 is only looked for without 0x1004.
+            if fid == Self.featureBatteryStatus, featureIndex[Self.featureUnifiedBattery] != nil,
+               featureIndex[fid] == nil {
+                continue
+            }
             if featureIndex[fid] != nil {
                 // 缓存已含: 无需探测, 直接发对应通知让 UI 补行/建 context, 继续下一个
                 postOptionalFeatureNotification(fid)
@@ -2644,6 +2677,7 @@ class LogiDeviceSession {
         // 放在链尾而非发现 0x2111 时: 避免滚轮读写与后续 getFeature 交错.
         resolveWheelController(slot: deviceIndex)
         resolveGestureHaptics(slot: deviceIndex)
+        resolveMouseBasicsController(slot: deviceIndex)
         // 排空热插拔期间入队的 slot.
         // 探测链较长(~18 个 feature, 含超时), 期间设备重连很常见, 必须在此排空避免搁置.
         pumpPendingDivertQueue()
@@ -2696,10 +2730,18 @@ class LogiDeviceSession {
         }
     }
 
-    /// 设置全局强度 (fn2, 设备级状态, 非单次播放参数).
-    /// level=0 按 Solaar 约定写 [disable, 50]; 写后回读 GetState 校准 UI.
+    /// Diagnostics strength slider (fn2 setState, the mouse's global state; 0 = off). Built
+    /// from the last state read: only the on bit changes, so power saving and unknown flags
+    /// survive, and 0 switches off without touching the strength. (It used to send Solaar's
+    /// [0x01, level] / [0x00, 0x32], which cleared power saving and reset the strength.)
+    /// Without a state read nothing is written: the state is read instead. Read back after.
     func hapticSetLevel(_ level: UInt8) {
-        let params = Self.hapticSetLevelParams(level)
+        guard let current = hapticRawState else {
+            LogiDebugPanel.log("[\(deviceInfo.name)] HAPTIC: state unknown, reading it before any write")
+            hapticRefreshInfo()
+            return
+        }
+        let params = Self.hapticSetLevelParams(level, current: current)
         withHapticFeature { [weak self] idx in
             guard let self = self else { return }
             self.sendRequest(featureIndex: idx, functionId: 2, params: params)
@@ -2714,26 +2756,33 @@ class LogiDeviceSession {
              | (UInt32(report[10]) << 8) | UInt32(report[11])
     }
 
-    /// fn1 GetState 响应: byte[4] bit0 = 开关, byte[5] = 强度 0-100, byte[6] bit0 = 四档设备
+    /// fn1 GetState 响应 (LogiHapticSettingsProtocol): byte[4] bit0 = 开关, byte[5] = 强度 0-100,
+    /// byte[6] = levels (bit0 = 四档设备, an assumption from Solaar)
     private static func parseHapticState(_ report: UnsafeBufferPointer<UInt8>) -> HapticState? {
-        guard report.count >= 7 else { return nil }
+        guard report.count >= 7, let state = LogiHapticSettingsProtocol.parseState(Array(report)) else { return nil }
         return HapticState(
-            enabled: report[4] & 0x01 != 0,
-            level: report[5],
-            fourLevelsOnly: report[6] & 0x01 != 0
+            enabled: state.isOn,
+            level: state.strength,
+            fourLevelsOnly: LogiHapticSettingsProtocol.hasFewLevels(levelsByte: state.levelsByte) ?? false
         )
     }
 
-    /// fn2 SetState 参数编码: level=0 → [disable, 50%] (Solaar 约定), 其余 clamp 到 100
-    private static func hapticSetLevelParams(_ level: UInt8) -> [UInt8] {
-        let clamped = min(level, 100)
-        return clamped == 0 ? [0x00, 0x32] : [0x01, clamped]
+    /// fn2 SetState parameters of the diagnostics slider: level 0 switches off and keeps the
+    /// strength, any other level switches on at that strength; other flags stay as read.
+    static func hapticSetLevelParams(_ level: UInt8, current: LogiHapticSettingsProtocol.State) -> [UInt8] {
+        return LogiHapticSettingsProtocol.setStateParams(
+            readFlags: current.flags,
+            readStrength: current.strength,
+            on: level > 0,
+            strength: level > 0 ? Int(level) : nil
+        )
     }
 
     /// rediscover / 切 slot 会清空 featureIndex, haptic 的探测守卫与缓存状态必须一并复位,
     /// 否则 Haptic 行永久消失 (probe 不再发) 或跨设备读到脏 state.
     private func resetHapticDiscoveryState() {
         hapticState = nil
+        hapticRawState = nil
         hapticWaveformMask = nil
     }
 
@@ -2995,23 +3044,25 @@ class LogiDeviceSession {
     }
 
     func wheelDeviceStates() -> [LogiWheelDeviceState] {
-        return wheelControllers.keys.sorted().compactMap { slot in
-            guard let wheel = wheelControllers[slot] else { return nil }
-            return LogiWheelDeviceState(
-                id: wheelDeviceId(slot: slot),
-                deviceName: wheelDeviceName(slot: slot),
-                supportsSmartShift: true,
-                supportsScrollForce: wheel.supportsScrollForce,
-                mode: wheel.mode,
-                smartShiftSensitivity: wheel.smartShiftSensitivity,
-                scrollForce: wheel.scrollForce
-            )
-        }
+        return wheelControllers.keys.sorted().compactMap { wheelDeviceState(slot: $0) }
+    }
+
+    private func wheelDeviceState(slot: UInt8) -> LogiWheelDeviceState? {
+        guard let wheel = wheelControllers[slot] else { return nil }
+        return LogiWheelDeviceState(
+            id: deviceId(slot: slot),
+            deviceName: deviceName(slot: slot),
+            supportsSmartShift: true,
+            supportsScrollForce: wheel.supportsScrollForce,
+            mode: wheel.mode,
+            smartShiftSensitivity: wheel.smartShiftSensitivity,
+            scrollForce: wheel.scrollForce
+        )
     }
 
     /// 稳定 id: BLE = VID:PID; receiver = VID:receiverPID:slot:wirelessPID. 跨重连不变,
-    /// 同型号重复时由 LogiSessionManager 追加序号.
-    private func wheelDeviceId(slot: UInt8) -> String {
+    /// 同型号重复时由 LogiSessionManager 追加序号. Wheel and mouse states share it.
+    private func deviceId(slot: UInt8) -> String {
         if connectionMode == .receiver {
             let wpid = receiverPairedDevices.first(where: { $0.slot == slot })?.wirelessPID ?? 0
             return String(format: "%04X:%04X:%d:%04X", deviceInfo.vendorId, deviceInfo.productId, Int(slot), wpid)
@@ -3019,7 +3070,7 @@ class LogiDeviceSession {
         return String(format: "%04X:%04X", deviceInfo.vendorId, deviceInfo.productId)
     }
 
-    private func wheelDeviceName(slot: UInt8) -> String {
+    private func deviceName(slot: UInt8) -> String {
         if connectionMode == .receiver,
            let paired = receiverPairedDevices.first(where: { $0.slot == slot }), !paired.name.isEmpty {
             return paired.name
@@ -3062,6 +3113,11 @@ class LogiDeviceSession {
             log: { message in
                 LogiDebugPanel.log(device: name, type: .info, message: "[Gesture slot \(String(format: "0x%02X", slot))] \(message)")
                 LogiSystemLog.note("[\(name) slot \(String(format: "0x%02X", slot))] \(message)")
+            },
+            // Once the user switched haptics off in the Mouse settings, a cue never switches
+            // them back on; while that setting was never touched, cues switch them on as before.
+            mayEnableHaptics: {
+                LogiSessionManager.shared.gestureCuesMayEnableHaptics
             }
         )
         gestureControllers[slot] = controller
@@ -3142,20 +3198,23 @@ class LogiDeviceSession {
 
     /// A slot that reconnected lost its feature indices and the optional probe does not run
     /// twice: look the haptic feature up on demand. Skipped while another getFeature is in
-    /// flight (IRoot answers carry no feature id).
-    private func discoverGestureHapticFeatureIfNeeded(slot: UInt8) {
-        guard deviceIndex == slot else { return }
+    /// flight (IRoot answers carry no feature id). `completion` runs in every case, after
+    /// the lookup when there is one.
+    private func discoverGestureHapticFeatureIfNeeded(slot: UInt8, completion: @escaping () -> Void = {}) {
+        guard deviceIndex == slot else { completion(); return }
         if featureIndex[Self.featureHaptic] != nil {
             resolveGestureHaptics(slot: slot)
+            completion()
             return
         }
-        guard pendingDiscovery.isEmpty else { return }
+        guard pendingDiscovery.isEmpty else { completion(); return }
         discoverFeature(featureId: Self.featureHaptic) { [weak self] idx in
             guard let self = self else { return }
             if let idx = idx {
                 self.slotStates[slot, default: PerSlotState()].featureIndex[Self.featureHaptic] = idx
             }
             self.resolveGestureHaptics(slot: slot)
+            completion()
             self.pumpPendingDivertQueue()
         }
     }
@@ -3197,6 +3256,161 @@ class LogiDeviceSession {
         return controller.play(cue)
     }
 
+    // MARK: - Basic mouse settings (battery 0x1004 / 0x1000, DPI 0x2201, haptics 0x19B0, press force 0x19C0)
+    //
+    // One LogiMouseBasicsController per slot (BLE direct slot = 0xFF), built like the wheel
+    // controllers: at the end of the optional probe chain (cache hits included) and after a
+    // receiver slot reconnected. It reads on connect and writes only what the user set while
+    // LogiSessionManager.mouseManaged is on. Byte layouts and rules: Mos/Logi/Basics/*.
+
+    private var basicsControllers: [UInt8: LogiMouseBasicsController] = [:]
+
+    /// The basics a slot has, from its feature indices. 0x1004 wins over 0x1000.
+    static func mouseBasicsFeatures(from indices: [UInt16: UInt8]) -> LogiMouseBasicsController.Features {
+        var features = LogiMouseBasicsController.Features()
+        if let index = indices[featureUnifiedBattery] {
+            features.battery = .init(feature: .unified, index: index)
+        } else if let index = indices[featureBatteryStatus] {
+            features.battery = .init(feature: .legacy, index: index)
+        }
+        features.pointerSpeed = indices[featureAdjustableDPI]
+        features.haptics = indices[featureHaptic]
+        features.pressForce = indices[featureForceSensing]
+        return features
+    }
+
+    private func resolveMouseBasicsController(slot: UInt8) {
+        let features = Self.mouseBasicsFeatures(from: slotStates[slot]?.featureIndex ?? [:])
+        guard !features.isEmpty else {
+            dropMouseBasicsController(slot: slot)
+            return
+        }
+        let manager = LogiSessionManager.shared
+        if let existing = basicsControllers[slot], existing.features == features {
+            existing.start(desired: manager.mouseSettings, managed: manager.mouseManaged)
+            return
+        }
+        let name = deviceName(slot: slot)
+        let slotText = String(format: "0x%02X", slot)
+        let controller = LogiMouseBasicsController(
+            features: features,
+            send: { [weak self] index, functionId, params in
+                self?.sendMouseBasicsRequest(slot: slot, featureIndex: index, functionId: functionId, params: params)
+            },
+            schedule: { delay, work in
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+            },
+            onChange: {
+                LogiSessionManager.shared.notifyMouseStateChanged()
+            },
+            log: { message in
+                LogiDebugPanel.log(device: name, type: .info, message: "[Basics slot \(slotText)] \(message)")
+                LogiSystemLog.note("[\(name) slot \(slotText)] \(message)")
+            }
+        )
+        basicsControllers[slot] = controller
+        manager.notifyMouseStateChanged()
+        controller.start(desired: manager.mouseSettings, managed: manager.mouseManaged)
+    }
+
+    private func dropMouseBasicsController(slot: UInt8) {
+        guard basicsControllers.removeValue(forKey: slot) != nil else { return }
+        LogiSessionManager.shared.notifyMouseStateChanged()
+    }
+
+    private func dropAllMouseBasicsControllers() {
+        guard !basicsControllers.isEmpty else { return }
+        basicsControllers.removeAll()
+        LogiSessionManager.shared.notifyMouseStateChanged()
+    }
+
+    /// Requests always go to the controller's own slot; the receiver cursor may point elsewhere.
+    private func sendMouseBasicsRequest(slot: UInt8, featureIndex: UInt8, functionId: UInt8, params: [UInt8]) {
+        let saved = deviceIndex
+        deviceIndex = slot
+        defer { deviceIndex = saved }
+        guard currentReceiverTargetIsConnected else { return }
+        sendRequest(featureIndex: featureIndex, functionId: functionId, params: params)
+    }
+
+    /// A reconnected receiver slot lost its feature indices and the optional probe does not
+    /// run twice: look the basics up on demand, one getFeature at a time (0x19B0 was looked
+    /// up just before, for the gesture cues). Skipped while another getFeature is in flight.
+    private func discoverMouseBasicsFeaturesIfNeeded(slot: UInt8) {
+        guard deviceIndex == slot else { return }
+        var missing = [Self.featureUnifiedBattery, Self.featureBatteryStatus, Self.featureAdjustableDPI, Self.featureForceSensing]
+            .filter { featureIndex[$0] == nil }
+        if featureIndex[Self.featureUnifiedBattery] != nil {
+            missing.removeAll { $0 == Self.featureBatteryStatus }
+        }
+        guard !missing.isEmpty, pendingDiscovery.isEmpty else {
+            resolveMouseBasicsController(slot: slot)
+            return
+        }
+        discoverNextMouseBasicsFeature(missing, slot: slot)
+    }
+
+    private func discoverNextMouseBasicsFeature(_ remaining: [UInt16], slot: UInt8) {
+        guard let featureId = remaining.first else {
+            resolveMouseBasicsController(slot: slot)
+            pumpPendingDivertQueue()
+            return
+        }
+        var rest = Array(remaining.dropFirst())
+        discoverFeature(featureId: featureId) { [weak self] idx in
+            guard let self = self else { return }
+            if let idx = idx {
+                self.slotStates[slot, default: PerSlotState()].featureIndex[featureId] = idx
+                if featureId == Self.featureUnifiedBattery {
+                    rest.removeAll { $0 == Self.featureBatteryStatus }
+                }
+            }
+            self.discoverNextMouseBasicsFeature(rest, slot: slot)
+        }
+    }
+
+    // MARK: Basics API (LogiSessionManager -> LogiCenter)
+
+    func applyMouseSettings(_ settings: LogiMouseSettings, managed: Bool) {
+        for slot in basicsControllers.keys.sorted() {
+            basicsControllers[slot]?.apply(desired: settings, managed: managed)
+        }
+    }
+
+    /// Re-reads the basics of every slot. Returns whether any slot has them.
+    @discardableResult
+    func refreshMouseBasics() -> Bool {
+        for slot in basicsControllers.keys.sorted() {
+            basicsControllers[slot]?.refresh()
+        }
+        return !basicsControllers.isEmpty
+    }
+
+    /// Plays the sample pulse on every slot with a haptic motor.
+    func playHapticSample() {
+        for slot in basicsControllers.keys.sorted() where basicsControllers[slot]?.features.haptics != nil {
+            basicsControllers[slot]?.playSample()
+        }
+    }
+
+    /// One entry per slot that has basics or a wheel, the wheel state inside.
+    func mouseDeviceStates() -> [LogiMouseDeviceState] {
+        let slots = Set(basicsControllers.keys).union(wheelControllers.keys).sorted()
+        let managed = LogiSessionManager.shared.mouseManaged
+        return slots.map { slot in
+            let id = deviceId(slot: slot)
+            let name = deviceName(slot: slot)
+            let wheel = wheelDeviceState(slot: slot)
+            if let basics = basicsControllers[slot] {
+                return basics.deviceState(id: id, deviceName: name, wheel: wheel)
+            }
+            return LogiMouseDeviceState(
+                id: id, deviceName: name, supported: [], managed: managed,
+                battery: nil, pointerSpeed: nil, haptics: nil, pressForce: nil, wheel: wheel
+            )
+        }
+    }
+
     // MARK: - Force Sensing Button (0x19C0)
 
     /// Force sensing info / current 响应抵达或缓存更新时发出. object = 本 session.
@@ -3207,12 +3421,8 @@ class LogiDeviceSession {
     /// 只操作第 0 号压感按钮 (MX Master 4 仅一颗).
     private static let forceSensingButtonNumber: UInt8 = 0
 
-    struct ForceSensingInfo: Equatable {
-        let changeable: Bool      // 固件是否允许改这颗按钮的力度
-        let minValue: UInt16
-        let maxValue: UInt16
-        let defaultValue: UInt16
-    }
+    /// fn1 GetButtonInfo 解析结果 (Mos/Logi/Basics/LogiPressForceProtocol.swift).
+    typealias ForceSensingInfo = LogiPressForceInfo
 
     /// fn1 GetButtonInfo 解析结果; 未查询过为 nil
     private(set) var forceSensingInfo: ForceSensingInfo? = nil
@@ -3241,37 +3451,30 @@ class LogiDeviceSession {
         }
     }
 
-    /// fn1 GetButtonInfo 响应: payload 为 4 个 BE UInt16 [changeable, default, max, min]
-    /// (对齐 Solaar struct "!HHHH"). changeable 取首个 UInt16 的 bit0.
+    // Byte layouts: LogiPressForceProtocol (shared with the Mouse settings controller).
+
     private static func parseForceSensingInfo(_ report: UnsafeBufferPointer<UInt8>) -> ForceSensingInfo? {
-        guard report.count >= 12 else { return nil }
-        let changeable = (((UInt16(report[4]) << 8) | UInt16(report[5])) & 0x01) != 0
-        let defaultValue = (UInt16(report[6]) << 8) | UInt16(report[7])
-        let maxValue = (UInt16(report[8]) << 8) | UInt16(report[9])
-        let minValue = (UInt16(report[10]) << 8) | UInt16(report[11])
-        return ForceSensingInfo(changeable: changeable, minValue: minValue, maxValue: maxValue, defaultValue: defaultValue)
+        return LogiPressForceProtocol.parseInfo(Array(report))
     }
 
-    /// fn2 GetButtonCurrent 响应: payload[0:2] = 当前力度 (BE UInt16)
     private static func parseForceSensingCurrent(_ report: UnsafeBufferPointer<UInt8>) -> UInt16? {
-        guard report.count >= 6 else { return nil }
-        return (UInt16(report[4]) << 8) | UInt16(report[5])
+        return LogiPressForceProtocol.parseCurrent(Array(report))
     }
 
-    /// fn3 SetButtonConfig 参数: [buttonNumber, currentHi, currentLo] (对齐 Solaar struct "!BH")
     private static func forceSensingSetCurrentParams(number: UInt8, current: UInt16) -> [UInt8] {
-        return [number, UInt8(current >> 8), UInt8(current & 0xFF)]
+        return LogiPressForceProtocol.setParams(button: number, value: current)
     }
 
-    /// 将目标力度约束到设备上报的 [min, max]; info 未知时原样返回
     private static func forceSensingClamp(_ value: UInt16, info: ForceSensingInfo?) -> UInt16 {
-        guard let info = info, info.maxValue >= info.minValue else { return value }
-        return min(max(value, info.minValue), info.maxValue)
+        return LogiPressForceProtocol.clamp(value, info: info)
     }
 
     private func resetForceSensingState() {
         forceSensingInfo = nil
         forceSensingCurrent = nil
+        // The slot's feature indices are cleared or probed anew: its basics controller goes
+        // with them and is built again at the end of the probe chain.
+        dropMouseBasicsController(slot: deviceIndex)
     }
 
     private func withForceSensingFeature(_ body: @escaping (UInt8) -> Void) {
@@ -3291,6 +3494,17 @@ class LogiDeviceSession {
     }
 
     // MARK: - Report Parsing
+
+    /// HID++ 2.0 error report [0x11, devIdx, 0xFF, origFeatureIdx, origFn<<4 | swid, errorCode, ...]:
+    /// the feature index and function of the refused request and the error code. The code is
+    /// byte 5 (OpenLogi protocol/v20.rs, Solaar); it used to be read from byte 6, so every
+    /// logged code was wrong. nil for a report too short to hold them.
+    static func hidpp20ErrorFields<Bytes: RandomAccessCollection>(_ report: Bytes) -> (featureIndex: UInt8, functionId: UInt8, errorCode: UInt8)?
+    where Bytes.Element == UInt8, Bytes.Index == Int {
+        guard report.count >= 6 else { return nil }
+        let base = report.startIndex
+        return (report[base + 3], report[base + 4] >> 4, report[base + 5])
+    }
 
     /// HID++ 2.0 错误只有在原请求是 IRoot (index 0x00, getFeature) 时才终止在飞的 feature discovery.
     static func hidppErrorCancelsDiscovery(originalFeatureIndex: UInt8) -> Bool {
@@ -3536,9 +3750,6 @@ class LogiDeviceSession {
         }
     }
 
-    internal static func hapticSetLevelParamsForTests(_ level: UInt8) -> [UInt8] {
-        return hapticSetLevelParams(level)
-    }
 
     internal static func parseScrollForceTunableTorqueForTests(_ bytes: [UInt8]) -> Bool? {
         return bytes.withUnsafeBufferPointer { report in
@@ -3726,9 +3937,10 @@ class LogiDeviceSession {
 
         // HID++ 2.0 Error report
         if featureIdx == Self.hidppErrorFeatureIdx {
-            let originalFeatureIdx = report.count > 3 ? report[3] : 0
-            let originalFuncId: UInt8 = report.count > 4 ? (report[4] >> 4) : 0
-            let errorCode = report.count > 6 ? report[6] : 0
+            let fields = Self.hidpp20ErrorFields(report)
+            let originalFeatureIdx = fields?.featureIndex ?? 0
+            let originalFuncId = fields?.functionId ?? 0
+            let errorCode = fields?.errorCode ?? 0
             LogiDebugPanel.log("[\(deviceInfo.name)] HID++ Error: feat=\(String(format: "0x%02X", originalFeatureIdx)) func=\(originalFuncId) err=\(String(format: "0x%02X", errorCode))")
 
             // Feature discovery pending callbacks: 只有 IRoot (index 0x00) 的错误才属于 getFeature.
@@ -3743,6 +3955,11 @@ class LogiDeviceSession {
             // 滚轮 feature (0x2110/0x2111) 的错误交给该 slot 的滚轮控制器
             if let wheel = wheelControllers[deviceIndex], originalFeatureIdx == wheel.featureIndex {
                 wheel.handleError(functionId: originalFuncId, errorCode: errorCode)
+            }
+
+            // Battery / DPI / haptics / press force: the slot's basics controller
+            if let basics = basicsControllers[deviceIndex], basics.owns(featureIndex: originalFeatureIdx) {
+                basics.handleError(featureIndex: originalFeatureIdx, functionId: originalFuncId, errorCode: errorCode)
             }
 
             // REPROG_V4 query 错误: 跳过该 CID 继续下一个, 防止 Bolt receiver 上 query 链路卡死
@@ -3859,6 +4076,18 @@ class LogiDeviceSession {
             return
         }
 
+        // Basic mouse settings: the slot's controller gets its answers on the battery, DPI,
+        // haptic and press force features, and the battery events. No return: haptic and
+        // force sensing answers go on to the blocks below (gesture cues, debug panel), DPI
+        // answers to the DPI cycle action.
+        if let basics = basicsControllers[deviceIndex], basics.owns(featureIndex: featureIdx) {
+            if isOwnResponse {
+                basics.handleResponse(featureIndex: featureIdx, functionId: functionId, report: Array(report))
+            } else {
+                basics.handleEvent(featureIndex: featureIdx, functionId: functionId, report: Array(report))
+            }
+        }
+
         // Haptic (0x19B0) responses: fn0=GetCapabilities, fn1=GetState; fn2/fn4 仅为 ACK
         if let hapticIdx = featureIndex[Self.featureHaptic], featureIdx == hapticIdx {
             // Gesture cues keep their own per-slot copy of "enabled" and the waveform mask.
@@ -3877,6 +4106,7 @@ class LogiDeviceSession {
             case 1:
                 guard let state = Self.parseHapticState(report) else { break }
                 hapticState = state
+                hapticRawState = LogiHapticSettingsProtocol.parseState(Array(report))
                 LogiDebugPanel.log("[\(deviceInfo.name)] HAPTIC state: \(state.enabled ? "on" : "off"), level=\(state.level)\(state.fourLevelsOnly ? " (4-level device)" : "")")
                 NotificationCenter.default.post(name: Self.hapticStateDidChangeNotification, object: self)
             default:
@@ -3943,42 +4173,15 @@ class LogiDeviceSession {
         // DPI list response (getSensorDpiList, function 1)
         if let listQuery = pendingDPIListQuery, featureIdx == listQuery.featureIndex && functionId == 1 {
             pendingDPIListQuery = nil
-            dpiSteps.removeAll()
-            dpiStepSize = 0
-
-            // 从 byte[5] 开始读取 UInt16 值序列 (byte[4]=sensorIdx)
-            // Solaar 规则: 值 > 0xE000 是步进标记 (step = value - 0xE000)
-            // 格式: [minDPI, 0xE000+step, maxDPI, 0x0000(end)]
-            // 或: [dpi1, dpi2, dpi3, ..., 0x0000] (离散列表)
-            var values: [UInt16] = []
-            var step: UInt16 = 0
-            var offset = 5
-            while offset + 1 < report.count {
-                let val = (UInt16(report[offset]) << 8) | UInt16(report[offset + 1])
-                if val == 0 { break }
-                if val > 0xE000 {
-                    step = val - 0xE000
-                } else {
-                    values.append(val)
-                }
-                offset += 2
-            }
-
-            if step > 0 && values.count >= 2 {
-                // 范围模式: values[0]=min, values[1]=max
-                let dpiMin = values[0]
-                let dpiMax = values[1]
-                dpiStepSize = step
-                var dpi = dpiMin
-                while dpi <= dpiMax {
-                    dpiSteps.append(dpi)
-                    dpi += step
-                }
-                LogiDebugPanel.log("[\(deviceInfo.name)] DPI range: \(dpiMin)-\(dpiMax) step \(step) (\(dpiSteps.count) levels)")
+            // Same parser as the pointer speed setting: ranges with a step, plain lists and a
+            // mix of both (the inline parser here handled only one range or one plain list).
+            if let list = LogiPointerSpeedProtocol.parseDPIList(Array(report)) {
+                dpiSteps = list.values.compactMap { UInt16(exactly: $0) }
+                LogiDebugPanel.log("[\(deviceInfo.name)] DPI list: \(LogiPointerSpeedProtocol.describe(list))")
             } else {
-                // 离散列表模式
-                dpiSteps = values
-                LogiDebugPanel.log("[\(deviceInfo.name)] DPI list: \(dpiSteps)")
+                dpiSteps.removeAll()
+                LogiDebugPanel.log("[\(deviceInfo.name)] DPI list unreadable; DPI cycle skipped")
+                return
             }
 
             // 继续: 查询当前 DPI 并执行切换
@@ -3990,9 +4193,12 @@ class LogiDeviceSession {
         // DPI response (pending cycle)
         if let dpiInfo = pendingDPICycle, featureIdx == dpiInfo.featureIndex && functionId == 2 {
             pendingDPICycle = nil
-            // byte[4]=sensorIdx, byte[5-6]=currentDPI (big-endian)
-            let curDPI = (UInt16(report[5]) << 8) | UInt16(report[6])
-            currentDPI = curDPI
+            // byte[4]=sensorIdx, byte[5-6]=currentDPI, byte[7-8]=default (big-endian; 0 = default)
+            guard let parsed = LogiPointerSpeedProtocol.parseCurrent(Array(report)),
+                  let curDPI = UInt16(exactly: parsed.current) else {
+                LogiDebugPanel.log("[\(deviceInfo.name)] DPI unreadable; DPI cycle skipped")
+                return
+            }
 
             // Find next/prev DPI step
             let sortedSteps = dpiSteps.sorted()
@@ -4006,7 +4212,9 @@ class LogiDeviceSession {
             if newDPI != curDPI {
                 LogiDebugPanel.log("[\(deviceInfo.name)] DPI: \(curDPI) -> \(newDPI)")
                 // setSensorDpi: function 3, params: sensorIdx(1) + dpi(2)
-                sendRequest(featureIndex: dpiInfo.featureIndex, functionId: 3, params: [0x00, UInt8(newDPI >> 8), UInt8(newDPI & 0xFF)])
+                if let params = LogiPointerSpeedProtocol.setParams(dpi: Int(newDPI)) {
+                    sendRequest(featureIndex: dpiInfo.featureIndex, functionId: LogiPointerSpeedProtocol.setFunction, params: params)
+                }
             } else {
                 LogiDebugPanel.log("[\(deviceInfo.name)] DPI: \(curDPI) (already at limit)")
             }
@@ -4027,19 +4235,17 @@ class LogiDeviceSession {
         // HiResWheel response (pending HiRes toggle or ScrollInvert toggle)
         if let hiresIdx = featureIndex[Self.featureHiResWheel], featureIdx == hiresIdx {
             if pendingHiResScrollToggle && functionId == 1 && isOwnResponse {  // getWheelMode (fn1) 响应
-                let currentMode = report[4]
-                let newMode = currentMode ^ 0x02  // Toggle bit 1 (resolution)
-                sendRequest(featureIndex: hiresIdx, functionId: 2, params: [newMode])  // setWheelMode (fn2)
                 pendingHiResScrollToggle = false
-                LogiDebugPanel.log("[\(deviceInfo.name)] HiResScroll: \((newMode & 0x02) != 0 ? "ON" : "OFF")")
+                guard let params = Self.hiResWheelModeParams(toggling: Self.hiResWheelResolutionBit, in: report) else { return }
+                sendRequest(featureIndex: hiresIdx, functionId: 2, params: params)  // setWheelMode (fn2)
+                LogiDebugPanel.log("[\(deviceInfo.name)] HiResScroll: \((params[0] & Self.hiResWheelResolutionBit) != 0 ? "ON" : "OFF")")
                 return
             }
             if pendingScrollInvertToggle && functionId == 1 && isOwnResponse {  // getWheelMode (fn1) 响应
-                let currentMode = report[4]
-                let newMode = currentMode ^ 0x04  // Toggle bit 2 (invert)
-                sendRequest(featureIndex: hiresIdx, functionId: 2, params: [newMode])  // setWheelMode (fn2)
                 pendingScrollInvertToggle = false
-                LogiDebugPanel.log("[\(deviceInfo.name)] ScrollInvert: \((newMode & 0x04) != 0 ? "ON" : "OFF")")
+                guard let params = Self.hiResWheelModeParams(toggling: Self.hiResWheelInvertBit, in: report) else { return }
+                sendRequest(featureIndex: hiresIdx, functionId: 2, params: params)  // setWheelMode (fn2)
+                LogiDebugPanel.log("[\(deviceInfo.name)] ScrollInvert: \((params[0] & Self.hiResWheelInvertBit) != 0 ? "ON" : "OFF")")
                 return
             }
         }

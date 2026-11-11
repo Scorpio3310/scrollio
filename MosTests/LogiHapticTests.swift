@@ -60,19 +60,25 @@ final class LogiHapticTests: XCTestCase {
         XCTAssertNil(LogiDeviceSession.parseHapticStateForTests([0x11, 0xFF, 0x21]))
     }
 
-    // MARK: - SetState (fn2) 参数编码
+    // MARK: - SetState (fn2) 参数编码 (diagnostics slider)
 
-    func testSetLevelParams_zeroMapsToDisableAtHalfPower() {
-        // Solaar 约定: 关闭时写 [disable, 50%], 保留合理的重开默认值
-        XCTAssertEqual(LogiDeviceSession.hapticSetLevelParamsForTests(0), [0x00, 0x32])
+    private func readState(flags: UInt8, strength: UInt8) -> LogiHapticSettingsProtocol.State {
+        return LogiHapticSettingsProtocol.State(flags: flags, strength: strength, levelsByte: 0)
     }
 
-    func testSetLevelParams_normalLevelEnables() {
-        XCTAssertEqual(LogiDeviceSession.hapticSetLevelParamsForTests(80), [0x01, 80])
+    /// Regression: level 0 used to send Solaar's [0x00, 0x32], which cleared power saving
+    /// and reset the strength to 50.
+    func testSetLevelZero_switchesOffKeepingStrengthAndPowerSave() {
+        XCTAssertEqual(LogiDeviceSession.hapticSetLevelParams(0, current: readState(flags: 0x03, strength: 80)), [0x02, 80, 0])
     }
 
-    func testSetLevelParams_clampsAboveHundred() {
-        XCTAssertEqual(LogiDeviceSession.hapticSetLevelParamsForTests(255), [0x01, 100])
+    /// Regression: a level used to send [0x01, level], which cleared power saving.
+    func testSetLevel_switchesOnAtThatStrengthKeepingPowerSave() {
+        XCTAssertEqual(LogiDeviceSession.hapticSetLevelParams(80, current: readState(flags: 0x02, strength: 30)), [0x03, 80, 0])
+    }
+
+    func testSetLevel_clampsAboveHundred() {
+        XCTAssertEqual(LogiDeviceSession.hapticSetLevelParams(255, current: readState(flags: 0x01, strength: 30)), [0x01, 100, 0])
     }
 
     // MARK: - 波形字典完整性

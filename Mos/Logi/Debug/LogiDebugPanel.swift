@@ -204,8 +204,10 @@ struct HIDPPFeatureActions {
         0x1000: [
             HIDPPFeatureAction(name: "GetLevel", functionId: 0x00, paramType: .none, defaultParams: []),
         ],
+        // Unified Battery (0x1004): fn0 is getCapabilities, fn1 getStatus (it used to send fn0 as "GetStatus").
         0x1004: [
-            HIDPPFeatureAction(name: "GetStatus", functionId: 0x00, paramType: .none, defaultParams: []),
+            HIDPPFeatureAction(name: "GetCapabilities", functionId: 0x00, paramType: .none, defaultParams: []),
+            HIDPPFeatureAction(name: "GetStatus", functionId: 0x01, paramType: .none, defaultParams: []),
         ],
         0x1B04: [
             HIDPPFeatureAction(name: "GetCount", functionId: 0x00, paramType: .none, defaultParams: []),
@@ -222,11 +224,13 @@ struct HIDPPFeatureActions {
             HIDPPFeatureAction(name: "GetMode", functionId: 0x01, paramType: .none, defaultParams: []),
             HIDPPFeatureAction(name: "SetMode", functionId: 0x02, paramType: .hex, defaultParams: [0x00]),
         ],
+        // Adjustable DPI (0x2201): fn1 list, fn2 get, fn3 set. The old labels were shifted, so
+        // "GetDPIList" sent fn3 with the sensor index alone: setSensorDpi(sensor 0, DPI 0).
         0x2201: [
             HIDPPFeatureAction(name: "GetSensorCount", functionId: 0x00, paramType: .none, defaultParams: []),
-            HIDPPFeatureAction(name: "GetDPI", functionId: 0x01, paramType: .index, defaultParams: []),
-            HIDPPFeatureAction(name: "SetDPI", functionId: 0x02, paramType: .hex, defaultParams: [0x00, 0x00, 0x03, 0x20]),
-            HIDPPFeatureAction(name: "GetDPIList", functionId: 0x03, paramType: .index, defaultParams: []),
+            HIDPPFeatureAction(name: "GetDPIList", functionId: 0x01, paramType: .index, defaultParams: []),
+            HIDPPFeatureAction(name: "GetDPI", functionId: 0x02, paramType: .index, defaultParams: []),
+            HIDPPFeatureAction(name: "SetDPI", functionId: 0x03, paramType: .hex, defaultParams: [0x00, 0x03, 0xE8]),
         ],
         // Report Rate (0x8060): fn0 档位位图, fn1 读当前, fn2 写 (值=ms 1-8)
         0x8060: [

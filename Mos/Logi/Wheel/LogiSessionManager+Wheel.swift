@@ -60,6 +60,8 @@ extension LogiSessionManager {
     /// Coalesced `LogiCenter.wheelStateChanged`: many responses in one run-loop turn
     /// produce one post, always on the main thread.
     func notifyWheelStateChanged() {
+        // The mouse states carry the wheel state too.
+        notifyMouseStateChanged()
         guard !wheelStateNotificationScheduled else { return }
         wheelStateNotificationScheduled = true
         DispatchQueue.main.async { [weak self] in

@@ -51,7 +51,10 @@ final class LogiGestureControllerTests: XCTestCase {
         diverted = []
     }
 
-    private func makeController(capable: Set<UInt16> = [gesture, modeShift, back]) -> LogiGestureController {
+    private func makeController(
+        capable: Set<UInt16> = [gesture, modeShift, back],
+        mayEnableHaptics: @escaping () -> Bool = { true }
+    ) -> LogiGestureController {
         let controller = LogiGestureController(
             sendReporting: { [unowned self] cid, flags in self.writes.append(Write(cid: cid, flags: flags)) },
             sendHaptic: { [unowned self] functionId, params in
@@ -61,7 +64,8 @@ final class LogiGestureControllerTests: XCTestCase {
                 self.movements.append(Movement(cid: cid, deltaX: deltaX, deltaY: deltaY))
             },
             schedule: { [unowned self] delay, work in self.timers.append((delay, work)) },
-            onChange: { [unowned self] in self.changes += 1 }
+            onChange: { [unowned self] in self.changes += 1 },
+            mayEnableHaptics: mayEnableHaptics
         )
         controller.setRawXYCapableControls(capable)
         return controller
@@ -549,9 +553,10 @@ final class LogiGestureControllerTests: XCTestCase {
 
     private func hapticController(
         enabledFlags: UInt8 = 0x01,
-        waveforms: [UInt8] = allWaveforms
+        waveforms: [UInt8] = allWaveforms,
+        mayEnableHaptics: @escaping () -> Bool = { true }
     ) -> LogiGestureController {
-        let controller = makeController()
+        let controller = makeController(mayEnableHaptics: mayEnableHaptics)
         controller.setHapticFeature(index: 0x21)
         controller.handleHapticResponse(functionId: 0, report: hapticReport(functionId: 0, payload: waveforms))
         controller.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [enabledFlags, 60]))
@@ -605,7 +610,7 @@ final class LogiGestureControllerTests: XCTestCase {
 
         XCTAssertTrue(controller.play(.lockIn))
         XCTAssertEqual(haptics, [
-            Haptic(functionId: 2, params: [0x01, 60]),
+            Haptic(functionId: 2, params: [0x01, 60, 0]),
             Haptic(functionId: 4, params: [0x04]),
         ], "switched on with the reported intensity, then the pulse")
         XCTAssertEqual(controller.hapticsEnabled, true)
@@ -616,10 +621,48 @@ final class LogiGestureControllerTests: XCTestCase {
     }
 
     func testSwitchingOnKeepsPowerSavingAndNeverSendsIntensityZero() {
-        XCTAssertEqual(LogiGestureProtocol.hapticSwitchOnParams(flags: 0x00, level: 100), [0x01, 100])
-        XCTAssertEqual(LogiGestureProtocol.hapticSwitchOnParams(flags: 0x02, level: 40), [0x03, 40], "power saving stays")
-        XCTAssertEqual(LogiGestureProtocol.hapticSwitchOnParams(flags: 0x00, level: 0), [0x01, 60], "intensity 0 would stay silent")
-        XCTAssertEqual(LogiGestureProtocol.hapticSwitchOnParams(flags: 0x01, level: 200), [0x01, 100])
+        // [flags, intensity, 0]: the third byte is what the zero padding of the request sent before.
+        XCTAssertEqual(LogiGestureProtocol.hapticSwitchOnParams(flags: 0x00, level: 100), [0x01, 100, 0])
+        XCTAssertEqual(LogiGestureProtocol.hapticSwitchOnParams(flags: 0x02, level: 40), [0x03, 40, 0], "power saving stays")
+        XCTAssertEqual(LogiGestureProtocol.hapticSwitchOnParams(flags: 0x00, level: 0), [0x01, 60, 0], "intensity 0 would stay silent")
+        XCTAssertEqual(LogiGestureProtocol.hapticSwitchOnParams(flags: 0x01, level: 200), [0x01, 100, 0])
+    }
+
+    /// Once the user switched haptics off in the Mouse settings, a cue never switches them
+    /// back on: it is skipped instead.
+    func testACueNeverSwitchesHapticsOnOnceTheUserSwitchedThemOff() {
+        let controller = hapticController(enabledFlags: 0x00, mayEnableHaptics: { false })
+        XCTAssertFalse(controller.play(.lockIn))
+        XCTAssertFalse(controller.play(.commit))
+        XCTAssertEqual(haptics, [], "no setState, no pulse into a switched-off motor")
+        XCTAssertEqual(controller.hapticsEnabled, false)
+    }
+
+    func testAWaitingCueAlsoRespectsTheUsersOff() {
+        let controller = makeController(mayEnableHaptics: { false })
+        controller.setHapticFeature(index: 0x21)
+        controller.handleHapticResponse(functionId: 0, report: hapticReport(functionId: 0, payload: Self.allWaveforms))
+        XCTAssertFalse(controller.play(.lockIn))
+        haptics = []
+        controller.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [0x00, 100]))
+        XCTAssertEqual(haptics, [])
+    }
+
+    func testWithHapticsOnACuePlaysWhateverTheSetting() {
+        // The mouse has them on (Options+, or Scrollio not managing the mouse): only the
+        // switch-on is held back, the cue itself plays.
+        let controller = hapticController(enabledFlags: 0x01, mayEnableHaptics: { false })
+        XCTAssertTrue(controller.play(.lockIn))
+        XCTAssertEqual(haptics, [Haptic(functionId: 4, params: [0x04])])
+    }
+
+    func testThePolicyIsAskedWhenTheCueFindsHapticsOff() {
+        var allowed = false
+        let controller = hapticController(enabledFlags: 0x00, mayEnableHaptics: { allowed })
+        XCTAssertFalse(controller.play(.lockIn))
+        allowed = true  // the user cleared the choice: today's behaviour again
+        XCTAssertTrue(controller.play(.lockIn))
+        XCTAssertEqual(haptics.first, Haptic(functionId: 2, params: [0x01, 60, 0]))
     }
 
     func testNothingIsSwitchedOnWithoutACue() {
@@ -690,7 +733,7 @@ final class LogiGestureControllerTests: XCTestCase {
         XCTAssertFalse(controller.play(.lockIn))
         haptics = []
         controller.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [0x00, 100]))
-        XCTAssertEqual(haptics, [Haptic(functionId: 2, params: [0x01, 100]), Haptic(functionId: 4, params: [0x04])])
+        XCTAssertEqual(haptics, [Haptic(functionId: 2, params: [0x01, 100, 0]), Haptic(functionId: 4, params: [0x04])])
     }
 
     func testStateFollowsWhatTheMouseReportsLater() {
@@ -710,7 +753,7 @@ final class LogiGestureControllerTests: XCTestCase {
 
         XCTAssertFalse(haptics.isEmpty)
         for request in haptics where request.functionId == LogiGestureProtocol.hapticSetStateFunction {
-            XCTAssertEqual(request.params, [0x03, 60], "only the on bit changes")
+            XCTAssertEqual(request.params, [0x03, 60, 0], "only the on bit changes")
         }
         for request in haptics {
             XCTAssertTrue([0, 1, 2, 4].contains(request.functionId), "function \(request.functionId)")

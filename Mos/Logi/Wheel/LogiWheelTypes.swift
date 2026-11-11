@@ -25,7 +25,10 @@ enum LogiWheelMode: String, Codable, CaseIterable, Equatable {
 /// User preference, stored in Options (group `.logiWheel`) and applied to every
 /// connected Logitech mouse that supports it, but only while `managedByMos` is true.
 struct LogiWheelSettings: Codable, Equatable {
-    /// Off by default: Mos never writes wheel settings to a device unless the user opts in.
+    /// "Let Scrollio manage this mouse": the one switch for everything Scrollio writes to a
+    /// Logitech mouse, the wheel settings here and the basic settings of LogiMouseSettings
+    /// (pointer speed, haptics, press force). Off by default: nothing is written to a device
+    /// unless the user opts in. The JSON key keeps its old name.
     var managedByMos: Bool
     var mode: LogiWheelMode
     /// 1...100 %, like Logi Options+ "Sensitivity": higher switches to free-spin sooner.
