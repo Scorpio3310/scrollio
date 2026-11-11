@@ -55,18 +55,25 @@ struct MouseGestureModePresentation: Equatable {
     }
 }
 
-/// Tracking speed slider: steps, clamping and the value label. Pure.
+/// Tracking speed slider: its tick marks, steps, clamping and the value label. Pure.
 enum MouseGestureTrackingSpeed {
-    static let step = 0.1
+    /// A tick every 0.25 from 0.5 to 3; the knob stops only on them.
+    static let scale = PreferencesSliderScale.ticksOnly(11)
 
-    /// Clamps into `MouseGestureSettings.trackingSpeedRange` and rounds to a tenth.
-    static func snapped(_ value: Double) -> Double {
-        return PreferencesForm.snapped(value, to: MouseGestureSettings.trackingSpeedRange, step: step)
+    static var step: Double {
+        return scale.step(in: MouseGestureSettings.trackingSpeedRange)
     }
 
-    /// 1.5 -> "1.5×"
+    /// Clamps into `MouseGestureSettings.trackingSpeedRange` and rounds to the nearest tick.
+    static func snapped(_ value: Double) -> Double {
+        return scale.snapped(value, in: MouseGestureSettings.trackingSpeedRange)
+    }
+
+    /// 1.5 -> "1.5×", 1.25 -> "1.25×": one decimal, two where a quarter needs them.
     static func text(_ value: Double) -> String {
-        return String(format: "%.1f×", value)
+        let tenths = (value * 10).rounded()
+        let digits = abs(tenths - value * 10) < 1e-6 ? 1 : 2
+        return String(format: "%.\(digits)f×", value)
     }
 }
 

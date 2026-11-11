@@ -14,6 +14,8 @@
 //  - PreferencesGroupRow: a row with any control on the right, or below the title (stacked).
 //    PreferencesSwitchRow, PreferencesSliderRow and PreferencesDisclosureRow are the
 //    common kinds.
+//  - PreferencesSliderScale: the tick marks under a slider (System Settings' little dots)
+//    and the steps its value moves in; PreferencesSlider draws them and steps by them.
 //
 //  The numbers are measured on System Settings › Trackpad (macOS 26, 2x screenshot).
 //
@@ -612,21 +614,208 @@ final class PreferencesSwitchRow: PreferencesGroupRow {
     }
 }
 
+// MARK: - Slider scale
+
+/// The tick marks under a slider and the values it moves through, as on the sliders of
+/// System Settings › Trackpad. Pure: the panes and their tests share the arithmetic.
+///
+/// Two kinds:
+/// - `ticksOnly`: the knob stops only on the tick marks ("Click": light, medium, firm).
+/// - `step`: the tick marks are a scale to read by and the value moves in finer steps,
+///   whole multiples of the step ("Speed": a tick at every whole number, values in halves).
+///
+/// A stored value off the grid is shown, never changed: `knobPosition` says where the knob
+/// shows it, and only a move by the user writes a value of the grid.
+struct PreferencesSliderScale: Equatable {
+
+    enum Stepping: Equatable {
+        /// The knob stops only on the tick marks.
+        case ticksOnly
+        /// Values are whole multiples of this step (inside the range); the ticks only guide the eye.
+        case step(Double)
+    }
+
+    /// Tick marks under the track, evenly spaced from one end to the other.
+    let tickCount: Int
+    let stepping: Stepping
+
+    /// The knob stops only on `count` tick marks.
+    static func ticksOnly(_ count: Int) -> PreferencesSliderScale {
+        return PreferencesSliderScale(tickCount: count, stepping: .ticksOnly)
+    }
+
+    /// `count` tick marks to read by; the value moves in steps of `step`.
+    static func ticks(_ count: Int, step: Double) -> PreferencesSliderScale {
+        return PreferencesSliderScale(tickCount: count, stepping: .step(step))
+    }
+
+    var stopsOnTicksOnly: Bool {
+        return stepping == .ticksOnly
+    }
+
+    /// The values the tick marks stand for over `range`, from the lower end.
+    func tickValues(in range: ClosedRange<Double>) -> [Double] {
+        guard tickCount > 1 else { return tickCount == 1 ? [range.lowerBound] : [] }
+        let spacing = (range.upperBound - range.lowerBound) / Double(tickCount - 1)
+        return (0..<tickCount).map { Self.tidy(range.lowerBound + Double($0) * spacing) }
+    }
+
+    /// Between two neighbouring values the slider takes; 0 when it takes any value.
+    func step(in range: ClosedRange<Double>) -> Double {
+        switch stepping {
+        case .ticksOnly:
+            return tickCount > 1 ? (range.upperBound - range.lowerBound) / Double(tickCount - 1) : 0
+        case .step(let step):
+            return max(0, step)
+        }
+    }
+
+    /// The nearest value the slider takes, inside `range`. Not a number: the lower bound.
+    func snapped(_ value: Double, in range: ClosedRange<Double>) -> Double {
+        guard value.isFinite else { return range.lowerBound }
+        let clamped = Self.clamp(value, to: range)
+        let step = step(in: range)
+        guard step > 0 else { return clamped }
+        let origin = origin(in: range)
+        return Self.clamp(Self.tidy(origin + ((clamped - origin) / step).rounded() * step), to: range)
+    }
+
+    /// `steps` values further up (positive) or down from `value`: what the arrow keys do.
+    /// A value between two values of the grid moves to the neighbouring one first.
+    func stepped(from value: Double, by steps: Int, in range: ClosedRange<Double>) -> Double {
+        let step = step(in: range)
+        guard step > 0, steps != 0 else { return snapped(value, in: range) }
+        let origin = origin(in: range)
+        let position = (Self.clamp(value.isFinite ? value : range.lowerBound, to: range) - origin) / step
+        // A position a hair off the grid counts as on it (floating point).
+        let slack = 1e-6
+        let index = steps > 0
+            ? (position + slack).rounded(.down) + Double(steps)
+            : (position - slack).rounded(.up) + Double(steps)
+        return Self.clamp(Self.tidy(origin + index * step), to: range)
+    }
+
+    /// Where the knob shows a stored `value`: on the nearest tick mark when it stops only
+    /// there, otherwise at the value itself. The value is not changed.
+    func knobPosition(for value: Double, in range: ClosedRange<Double>) -> Double {
+        guard value.isFinite else { return range.lowerBound }
+        return stopsOnTicksOnly ? snapped(value, in: range) : Self.clamp(value, to: range)
+    }
+
+    /// The grid starts at the first tick mark, or at zero for a step (whole multiples).
+    private func origin(in range: ClosedRange<Double>) -> Double {
+        return stopsOnTicksOnly ? range.lowerBound : 0
+    }
+
+    private static func clamp(_ value: Double, to range: ClosedRange<Double>) -> Double {
+        return min(range.upperBound, max(range.lowerBound, value))
+    }
+
+    /// Drops floating-point noise so stored values stay tidy (0.75, not 0.7500000000000001).
+    private static func tidy(_ value: Double) -> Double {
+        return (value * 1_000_000).rounded() / 1_000_000
+    }
+}
+
+// MARK: - Slider
+
+/// The slider of a PreferencesSliderRow. With a scale it has the scale's tick marks under
+/// its track, its knob moves through the scale's values while it is dragged, and an arrow
+/// key (or VoiceOver's increment) moves it by one value and sends the action as a drag does.
+final class PreferencesSlider: NSSlider {
+
+    var scale: PreferencesSliderScale? {
+        didSet { applyScale() }
+    }
+
+    /// The slider's range as set.
+    var range: ClosedRange<Double> {
+        return minValue...max(minValue, maxValue)
+    }
+
+    /// Puts the knob where a stored `value` shows (`PreferencesSliderScale.knobPosition`).
+    /// Sends nothing.
+    func showValue(_ value: Double) {
+        doubleValue = scale?.knobPosition(for: value, in: range) ?? value
+    }
+
+    /// Moves the knob by `steps` values of the scale and sends the action. False when there
+    /// is no scale, the slider is off, or the knob is already at that end.
+    @discardableResult
+    func moveKnob(by steps: Int) -> Bool {
+        guard let scale, isEnabled else { return false }
+        let next = scale.stepped(from: doubleValue, by: steps, in: range)
+        guard next != doubleValue else { return false }
+        doubleValue = next
+        sendAction(action, to: target)
+        return true
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard scale != nil else { return super.keyDown(with: event) }
+        switch event.specialKey {
+        case .rightArrow?, .upArrow?:
+            moveKnob(by: 1)
+        case .leftArrow?, .downArrow?:
+            moveKnob(by: -1)
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
+    override func accessibilityPerformIncrement() -> Bool {
+        guard scale != nil else { return super.accessibilityPerformIncrement() }
+        moveKnob(by: 1)
+        return true
+    }
+
+    override func accessibilityPerformDecrement() -> Bool {
+        guard scale != nil else { return super.accessibilityPerformDecrement() }
+        moveKnob(by: -1)
+        return true
+    }
+
+    /// A drag moves the knob through the scale's values, not in between: the action gets a
+    /// value of the grid.
+    override func sendAction(_ action: Selector?, to target: Any?) -> Bool {
+        if let scale {
+            let snapped = scale.snapped(doubleValue, in: range)
+            if snapped != doubleValue {
+                doubleValue = snapped
+            }
+        }
+        return super.sendAction(action, to: target)
+    }
+
+    private func applyScale() {
+        numberOfTickMarks = scale?.tickCount ?? 0
+        tickMarkPosition = .below
+        allowsTickMarkValuesOnly = scale?.stopsOnTicksOnly ?? false
+    }
+}
+
 // MARK: - Slider row
 
-/// A row with a slider on the right: optionally a word under each end of the slider
-/// ("Slow" and "Fast") and the value next to it.
+/// A row with a slider on the right: optionally tick marks under the track (`scale`), a
+/// word under each end of the slider ("Slow" and "Fast") and the value next to it.
 final class PreferencesSliderRow: PreferencesGroupRow {
 
-    let slider: NSSlider
+    let slider: PreferencesSlider
     let valueLabel: NSTextField?
     let lowEndLabel: NSTextField?
     let highEndLabel: NSTextField?
+
+    /// The tick marks and the values the slider moves through; nil: any value, no marks.
+    var scale: PreferencesSliderScale? {
+        get { return slider.scale }
+        set { slider.scale = newValue }
+    }
 
     init(
         title: String,
         explanation: String? = nil,
         range: ClosedRange<Double>,
+        scale: PreferencesSliderScale? = nil,
         sliderWidth: CGFloat = PreferencesGroupedForm.sliderWidth,
         ends: (low: String, high: String)? = nil,
         showsValue: Bool = true,
@@ -634,10 +823,11 @@ final class PreferencesSliderRow: PreferencesGroupRow {
         target: AnyObject?,
         action: Selector?
     ) {
-        let slider = NSSlider(value: range.lowerBound, minValue: range.lowerBound, maxValue: range.upperBound, target: target, action: action)
+        let slider = PreferencesSlider(value: range.lowerBound, minValue: range.lowerBound, maxValue: range.upperBound, target: target, action: action)
         slider.controlSize = .regular
         slider.isContinuous = true
         slider.translatesAutoresizingMaskIntoConstraints = false
+        slider.scale = scale
         self.slider = slider
 
         let accessory = NSView()
@@ -704,6 +894,12 @@ final class PreferencesSliderRow: PreferencesGroupRow {
 
     required init?(coder: NSCoder) {
         fatalError("PreferencesSliderRow is built in code")
+    }
+
+    /// Puts the knob where a stored `value` shows: on the nearest tick mark of a slider that
+    /// stops only there. The value itself is left alone.
+    func showValue(_ value: Double) {
+        slider.showValue(value)
     }
 
     /// The value written next to the slider.

@@ -247,6 +247,193 @@ final class PreferencesGroupedFormTests: XCTestCase {
         )
     }
 
+    // MARK: - Tick marks and steps
+
+    /// Counts the actions a control sends and remembers the value of the last one.
+    private final class ActionRecorder: NSObject {
+        var values: [Double] = []
+        @objc func changed(_ sender: NSSlider) {
+            values.append(sender.doubleValue)
+        }
+    }
+
+    private func arrowKey(_ key: NSEvent.SpecialKey, keyCode: UInt16) throws -> NSEvent {
+        let characters = String(Character(try XCTUnwrap(UnicodeScalar(key.rawValue))))
+        return try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [.numericPad, .function], timestamp: 0,
+            windowNumber: 0, context: nil, characters: characters, charactersIgnoringModifiers: characters,
+            isARepeat: false, keyCode: keyCode
+        ))
+    }
+
+    func testAScaleThatStopsOnlyOnItsTicks() {
+        let scale = PreferencesSliderScale.ticksOnly(11)
+        let range: ClosedRange<Double> = 0.5...3
+        XCTAssertTrue(scale.stopsOnTicksOnly)
+        XCTAssertEqual(scale.tickValues(in: range), [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3])
+        XCTAssertEqual(scale.step(in: range), 0.25)
+        XCTAssertEqual(scale.snapped(1.3, in: range), 1.25)
+        XCTAssertEqual(scale.snapped(1.38, in: range), 1.5)
+        XCTAssertEqual(scale.snapped(-4, in: range), 0.5)
+        XCTAssertEqual(scale.snapped(.nan, in: range), 0.5)
+        // The knob shows a value between two ticks on the nearer one.
+        XCTAssertEqual(scale.knobPosition(for: 1.3, in: range), 1.25)
+        // One arrow key: the next tick, from a tick or from between two.
+        XCTAssertEqual(scale.stepped(from: 1.25, by: 1, in: range), 1.5)
+        XCTAssertEqual(scale.stepped(from: 1.25, by: -1, in: range), 1)
+        XCTAssertEqual(scale.stepped(from: 1.3, by: 1, in: range), 1.5)
+        XCTAssertEqual(scale.stepped(from: 1.3, by: -1, in: range), 1.25)
+        XCTAssertEqual(scale.stepped(from: 3, by: 1, in: range), 3, "stays at the end")
+        XCTAssertEqual(scale.stepped(from: 0.5, by: -1, in: range), 0.5)
+        // A slider over indexes (the pointer speed's rungs).
+        XCTAssertEqual(PreferencesSliderScale.ticksOnly(12).tickValues(in: 0...11), (0...11).map(Double.init))
+    }
+
+    func testAScaleWhoseValueMovesInFinerSteps() {
+        let scale = PreferencesSliderScale.ticks(10, step: 0.5)
+        let range: ClosedRange<Double> = 1...10
+        XCTAssertFalse(scale.stopsOnTicksOnly)
+        XCTAssertEqual(scale.tickValues(in: range), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+        XCTAssertEqual(scale.step(in: range), 0.5)
+        XCTAssertEqual(scale.snapped(6.31, in: range), 6.5)
+        XCTAssertEqual(scale.snapped(6.2, in: range), 6)
+        XCTAssertEqual(scale.snapped(0, in: range), 1)
+        // A stored value off the grid shows where it is.
+        XCTAssertEqual(scale.knobPosition(for: 6.31, in: range), 6.31)
+        XCTAssertEqual(scale.knobPosition(for: 42, in: range), 10)
+        XCTAssertEqual(scale.stepped(from: 6.31, by: 1, in: range), 6.5)
+        XCTAssertEqual(scale.stepped(from: 6.31, by: -1, in: range), 6)
+        XCTAssertEqual(scale.stepped(from: 6.5, by: 1, in: range), 7)
+        XCTAssertEqual(scale.stepped(from: 6.5, by: -2, in: range), 5.5)
+        // Whole multiples of the step, so a range that starts off the grid still gets them.
+        let step = PreferencesSliderScale.ticks(11, step: 1)
+        XCTAssertEqual(step.snapped(12.34, in: 0.01...100), 12)
+        XCTAssertEqual(step.snapped(0.2, in: 0.01...100), 0.01)
+        XCTAssertEqual(step.stepped(from: 0.01, by: 1, in: 0.01...100), 1)
+        XCTAssertEqual(step.stepped(from: 1, by: -1, in: 0.01...100), 0.01)
+        // Tidy values, not floating-point noise.
+        XCTAssertEqual(PreferencesSliderScale.ticks(9, step: 0.05).snapped(3.687, in: 1...5), 3.7)
+        XCTAssertEqual(PreferencesSliderScale.ticks(9, step: 0.05).stepped(from: 3.7, by: -1, in: 1...5), 3.65)
+    }
+
+    func testASliderRowGetsTickMarksUnderItsTrack() {
+        let fine = PreferencesSliderRow(title: "Speed", range: 1...10, scale: .ticks(10, step: 0.5), ends: (low: "Slow", high: "Fast"), target: nil, action: nil)
+        XCTAssertEqual(fine.slider.numberOfTickMarks, 10)
+        XCTAssertEqual(fine.slider.tickMarkPosition, .below)
+        XCTAssertFalse(fine.slider.allowsTickMarkValuesOnly)
+        XCTAssertEqual(fine.scale, .ticks(10, step: 0.5))
+
+        let stops = PreferencesSliderRow(title: "Click", range: 0...100, scale: .ticksOnly(11), target: nil, action: nil)
+        XCTAssertEqual(stops.slider.numberOfTickMarks, 11)
+        XCTAssertEqual(stops.slider.tickMarkPosition, .below)
+        XCTAssertTrue(stops.slider.allowsTickMarkValuesOnly)
+
+        // A scale can change later (the Mouse tab learns the mouse's range), or go.
+        stops.scale = .ticksOnly(5)
+        XCTAssertEqual(stops.slider.numberOfTickMarks, 5)
+        stops.scale = nil
+        XCTAssertEqual(stops.slider.numberOfTickMarks, 0)
+        XCTAssertFalse(stops.slider.allowsTickMarkValuesOnly)
+        XCTAssertNil(PreferencesSliderRow(title: "Plain", range: 0...1, target: nil, action: nil).scale)
+    }
+
+    func testTickMarksLeaveTheRowAsItWas() throws {
+        func makeRow(_ scale: PreferencesSliderScale?) -> PreferencesSliderRow {
+            let row = PreferencesSliderRow(
+                title: "Tracking speed", explanation: "How fast the pointer moves.", range: 1...10,
+                scale: scale, ends: (low: "Slow", high: "Fast"), target: nil, action: nil
+            )
+            row.valueText = "6.3"
+            return row
+        }
+        let plain = makeRow(nil)
+        let ticked = makeRow(.ticks(10, step: 0.5))
+        let switchRow = PreferencesSwitchRow(title: "Tap to click", explanation: "Tap with one finger.", target: nil, action: nil)
+        let root = makePane([PreferencesGroupBox(width: boxWidth, rows: [plain, ticked, switchRow])])
+
+        let plainRow = frame(of: plain, in: root)
+        let tickedRow = frame(of: ticked, in: root)
+        XCTAssertEqual(tickedRow.height, plainRow.height, accuracy: 0.5, "the ticks take no extra height")
+        XCTAssertEqual(tickedRow.height, frame(of: switchRow, in: root).height, accuracy: 0.5, "as tall as a row with one line of explanation")
+
+        let slider = frame(of: ticked.slider, in: root)
+        let low = frame(of: try XCTUnwrap(ticked.lowEndLabel), in: root)
+        let high = frame(of: try XCTUnwrap(ticked.highEndLabel), in: root)
+        let value = frame(of: try XCTUnwrap(ticked.valueLabel), in: root)
+        XCTAssertEqual(slider.midY, frame(of: ticked.titleLabel, in: root).midY, accuracy: 0.5, "the track on the title line")
+        // The ticks are drawn inside the slider's frame, under the track; the words sit below it.
+        XCTAssertEqual(slider.minY - low.maxY, Form.sliderEndsSpacing, accuracy: 0.5)
+        XCTAssertEqual(high.minY, low.minY, accuracy: 0.5)
+        XCTAssertEqual(low.minX, slider.minX, accuracy: 0.5)
+        XCTAssertEqual(high.maxX, slider.maxX, accuracy: 0.5)
+        XCTAssertEqual(value.midY, slider.midY, accuracy: 1)
+        XCTAssertEqual(tickedRow.maxX - value.maxX, Form.rowHorizontalInset, accuracy: 1)
+        XCTAssertEqual(frame(of: plain.valueLabel!, in: root).minX, value.minX, accuracy: 0.5, "the values line up")
+    }
+
+    func testArrowKeysMoveTheKnobOneStepAndSendTheAction() throws {
+        let recorder = ActionRecorder()
+        let row = PreferencesSliderRow(
+            title: "Speed", range: 1...10, scale: .ticks(10, step: 0.5),
+            target: recorder, action: #selector(ActionRecorder.changed(_:))
+        )
+        let slider = row.slider
+        row.showValue(6.31)
+        XCTAssertEqual(slider.doubleValue, 6.31, accuracy: 1e-9, "shown where it is")
+        XCTAssertEqual(recorder.values, [], "showing sends nothing")
+
+        slider.keyDown(with: try arrowKey(.rightArrow, keyCode: 124))
+        XCTAssertEqual(recorder.values, [6.5])
+        slider.keyDown(with: try arrowKey(.upArrow, keyCode: 126))
+        XCTAssertEqual(recorder.values, [6.5, 7])
+        slider.keyDown(with: try arrowKey(.leftArrow, keyCode: 123))
+        slider.keyDown(with: try arrowKey(.downArrow, keyCode: 125))
+        XCTAssertEqual(recorder.values, [6.5, 7, 6.5, 6])
+        XCTAssertTrue(slider.accessibilityPerformIncrement())
+        XCTAssertTrue(slider.accessibilityPerformDecrement())
+        XCTAssertEqual(recorder.values, [6.5, 7, 6.5, 6, 6.5, 6])
+
+        // At an end nothing more is sent; a slider that is off does not move.
+        slider.doubleValue = 10
+        slider.keyDown(with: try arrowKey(.rightArrow, keyCode: 124))
+        XCTAssertEqual(recorder.values.count, 6)
+        row.isEnabled = false
+        slider.doubleValue = 5
+        slider.keyDown(with: try arrowKey(.rightArrow, keyCode: 124))
+        XCTAssertEqual(recorder.values.count, 6)
+        XCTAssertEqual(slider.doubleValue, 5)
+
+        // A slider that stops on its ticks moves from tick to tick.
+        let stops = PreferencesSliderRow(
+            title: "Click", range: 0...100, scale: .ticksOnly(11),
+            target: recorder, action: #selector(ActionRecorder.changed(_:))
+        )
+        stops.showValue(72)
+        XCTAssertEqual(stops.slider.doubleValue, 70, "between two ticks: on the nearer")
+        stops.slider.keyDown(with: try arrowKey(.rightArrow, keyCode: 124))
+        XCTAssertEqual(recorder.values.last, 80)
+    }
+
+    func testADragDeliversValuesOfTheScale() {
+        let recorder = ActionRecorder()
+        let row = PreferencesSliderRow(
+            title: "Speed", range: 1...10, scale: .ticks(10, step: 0.5),
+            target: recorder, action: #selector(ActionRecorder.changed(_:))
+        )
+        for (dragged, delivered) in [(6.31, 6.5), (6.74, 6.5), (6.76, 7), (1.2, 1), (9.9, 10)] {
+            row.slider.doubleValue = dragged
+            XCTAssertTrue(row.slider.sendAction(row.slider.action, to: row.slider.target))
+            XCTAssertEqual(recorder.values.last, delivered, "\(dragged)")
+            XCTAssertEqual(row.slider.doubleValue, delivered, "the knob jumps with it")
+        }
+
+        // Without a scale the slider is as before: any value.
+        let plain = PreferencesSliderRow(title: "Plain", range: 0...1, target: recorder, action: #selector(ActionRecorder.changed(_:)))
+        plain.slider.doubleValue = 0.123
+        XCTAssertTrue(plain.slider.sendAction(plain.slider.action, to: plain.slider.target))
+        XCTAssertEqual(recorder.values.last, 0.123)
+    }
+
     func testAStackedRowPutsItsControlUnderTheTextAcrossTheBox() {
         let control = NSSegmentedControl(labels: ["One", "Two", "Three"], trackingMode: .selectOne, target: nil, action: nil)
         let row = PreferencesGroupRow(title: "Feel", explanation: "Short.", accessory: control, placement: .below)

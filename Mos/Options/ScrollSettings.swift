@@ -31,8 +31,10 @@ enum ScrollFeel: Int, CaseIterable {
     /// The feel of new settings and of "Reset to defaults": `OPTIONS_SCROLL_DEFAULT().duration`.
     static let `default` = ScrollFeel.smooth
 
-    /// A stored Duration this close to a preset's counts as that preset.
-    static let matchTolerance = 0.005
+    /// A Duration this close to a preset's counts as that preset: the glide time slider moves
+    /// in steps of 0.05, so the stop next to a preset (3.15 for 3.13) selects it, and so does
+    /// a Duration tuned by feel just beside one (3.687 is Smooth).
+    static let matchTolerance = 0.03
 
     /// The preset whose Duration is the given one, or nil for a custom Duration.
     static func matching(duration: Double) -> ScrollFeel? {
@@ -71,37 +73,61 @@ enum ScrollFeel: Int, CaseIterable {
 
 // MARK: - Sliders
 
-/// A slider of the Scrolling tab: its range, the grid its values snap to and how a value
-/// is written next to it. Pure.
+/// A slider of the Scrolling tab: its range, its tick marks and the grid its values snap to,
+/// and how a value is written next to it. Pure.
+///
+/// A stored value off the grid (a Speed of 6.31 tuned by feel, the default Step of 33.6) is
+/// shown as it is and only replaced when the slider is moved.
 struct ScrollSliderSetting: Equatable {
     let range: ClosedRange<Double>
-    /// Values snap to multiples of this.
-    let step: Double
+    /// The tick marks under the slider and the steps its value moves in.
+    let scale: PreferencesSliderScale
     /// Decimals of the value label.
     let decimals: Int
+    /// Decimals a value off the grid may keep in the label, so it is not shown as another.
+    let maxDecimals: Int
 
-    /// `scroll.speed`: how far one click of the wheel moves the page.
-    static let speed = ScrollSliderSetting(range: 1...10, step: 0.1, decimals: 1)
-    /// `scroll.duration`: the exact value behind the Feel presets.
-    static let glideTime = ScrollSliderSetting(range: 1...5, step: 0.01, decimals: 2)
-    /// `scroll.step`: the least one click moves the page.
-    static let smallestStep = ScrollSliderSetting(range: 0.01...100, step: 0.1, decimals: 1)
+    init(range: ClosedRange<Double>, scale: PreferencesSliderScale, decimals: Int, maxDecimals: Int? = nil) {
+        self.range = range
+        self.scale = scale
+        self.decimals = decimals
+        self.maxDecimals = max(decimals, maxDecimals ?? decimals)
+    }
+
+    /// `scroll.speed`: how far one click of the wheel moves the page. A tick at every whole
+    /// number, values in halves.
+    static let speed = ScrollSliderSetting(range: 1...10, scale: .ticks(10, step: 0.5), decimals: 1)
+    /// `scroll.duration`: the exact value behind the Feel presets. A tick every 0.5, values
+    /// in steps of 0.05; the presets keep their own Durations.
+    static let glideTime = ScrollSliderSetting(range: 1...5, scale: .ticks(9, step: 0.05), decimals: 2)
+    /// `scroll.step`: the least one click moves the page. A tick every 10 (the lowest is the
+    /// range's 0.01), values in whole numbers.
+    static let smallestStep = ScrollSliderSetting(range: 0.01...100, scale: .ticks(11, step: 1), decimals: 0, maxDecimals: 2)
+
+    /// Values snap to multiples of this.
+    var step: Double {
+        return scale.step(in: range)
+    }
 
     /// Rounds `value` to the grid and keeps it inside the range. Anything that is not a
     /// number becomes the lower bound.
     func snapped(_ value: Double) -> Double {
-        guard value.isFinite else { return range.lowerBound }
-        let rounded = step > 0 ? (value / step).rounded() * step : value
-        // Drop floating-point noise so stored values stay tidy (33.6, not 33.600000000000001).
-        let tidy = (rounded * 1_000_000).rounded() / 1_000_000
-        return min(range.upperBound, max(range.lowerBound, tidy))
+        return scale.snapped(value, in: range)
     }
 
-    /// 6.5 -> "6.5". A value below what the decimals can show keeps one more digit.
+    /// 6.5 -> "6.5". A value the decimals cannot show (33.6 on the whole-number Step) keeps
+    /// up to `maxDecimals`.
     func text(_ value: Double) -> String {
-        let smallest = pow(10, -Double(decimals))
-        let digits = value > 0 && value < smallest ? decimals + 1 : decimals
+        var digits = decimals
+        while digits < maxDecimals, !Self.shows(value, withDecimals: digits) {
+            digits += 1
+        }
         return String(format: "%.\(digits)f", value)
+    }
+
+    private static func shows(_ value: Double, withDecimals digits: Int) -> Bool {
+        let scale = pow(10, Double(digits))
+        return abs((value * scale).rounded() - value * scale) < 1e-6
     }
 }
 

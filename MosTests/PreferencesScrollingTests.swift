@@ -342,7 +342,7 @@ final class PreferencesScrollingTests: XCTestCase {
 
         drag(slider, to: 3.904)
 
-        XCTAssertEqual(Options.shared.scroll.duration, 3.9, "rounded to hundredths")
+        XCTAssertEqual(Options.shared.scroll.duration, 3.9, "rounded to the 0.05 grid")
         XCTAssertEqual(controller.feelControl.selectedSegment, -1)
         XCTAssertEqual(controller.feelHintLabel.stringValue, ScrollFeel.customHint)
         XCTAssertEqual(controller.glideTimeValueLabel.stringValue, "3.90")
@@ -379,10 +379,17 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(slider.doubleValue, 6.3, accuracy: 1e-9)
         XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, "6.3")
         XCTAssertEqual(slider.accessibilityLabel(), "Speed")
+        // A tick at every whole number; the value moves in halves between them.
+        XCTAssertEqual(slider.numberOfTickMarks, 10)
+        XCTAssertEqual(slider.tickMarkPosition, .below)
+        XCTAssertFalse(slider.allowsTickMarkValuesOnly)
 
         drag(slider, to: 3.14)
-        XCTAssertEqual(Options.shared.scroll.speed, 3.1, "rounded to tenths")
-        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, "3.1")
+        XCTAssertEqual(Options.shared.scroll.speed, 3, "rounded to halves")
+        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, "3.0")
+        drag(slider, to: 3.3)
+        XCTAssertEqual(Options.shared.scroll.speed, 3.5)
+        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, "3.5")
 
         drag(slider, to: 10)
         XCTAssertEqual(Options.shared.scroll.speed, 10)
@@ -399,12 +406,113 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(slider.doubleValue, 33.6, accuracy: 1e-9)
         XCTAssertEqual(controller.smallestStepValueLabel.stringValue, "33.6")
         XCTAssertEqual(slider.accessibilityLabel(), "Smallest step")
+        XCTAssertEqual(slider.numberOfTickMarks, 11, "a tick every 10")
+        XCTAssertFalse(slider.allowsTickMarkValuesOnly)
 
         drag(slider, to: 12.34)
-        XCTAssertEqual(Options.shared.scroll.step, 12.3)
-        XCTAssertEqual(controller.smallestStepValueLabel.stringValue, "12.3")
+        XCTAssertEqual(Options.shared.scroll.step, 12, "whole numbers")
+        XCTAssertEqual(controller.smallestStepValueLabel.stringValue, "12")
+        drag(slider, to: 0.3)
+        XCTAssertEqual(Options.shared.scroll.step, 0.01, "the far left keeps the range's lowest value")
+        XCTAssertEqual(controller.smallestStepValueLabel.stringValue, "0.01")
+        drag(slider, to: 12)
         XCTAssertEqual(Options.shared.scroll.duration, 3.69, "nothing else moves")
         XCTAssertEqual(Options.shared.scroll.speed, 6.3)
+    }
+
+    // MARK: - Values off the grid
+
+    /// The owner tuned Speed and Duration by feel; the new steps must not move them.
+    func testStoredValuesOffTheGridAreShownAndNeverRewritten() throws {
+        let scroll = Options.shared.scroll
+        scroll.speed = 6.31
+        scroll.duration = 3.687
+        scroll.step = 33.6
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let before = try encoder.encode(scroll)
+
+        let controller = makeController(advanced: true)
+        controller.viewWillAppear()
+        controller.setAdvancedExpanded(false)
+        controller.setAdvancedExpanded(true)
+        controller.syncViewWithOptions()
+
+        XCTAssertEqual(
+            String(decoding: try encoder.encode(Options.shared.scroll), as: UTF8.self),
+            String(decoding: before, as: UTF8.self),
+            "loading and showing writes nothing"
+        )
+        XCTAssertEqual(controller.scrollSpeedSlider.doubleValue, 6.31, accuracy: 1e-9, "the knob shows the value itself")
+        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, "6.3")
+        XCTAssertEqual(controller.glideTimeSlider.doubleValue, 3.687, accuracy: 1e-9)
+        XCTAssertEqual(controller.glideTimeValueLabel.stringValue, "3.69")
+        XCTAssertEqual(controller.feelControl.selectedSegment, ScrollFeel.smooth.rawValue, "3.687 reads as Smooth")
+        XCTAssertEqual(controller.smallestStepSlider.doubleValue, 33.6, accuracy: 1e-9)
+        XCTAssertEqual(controller.smallestStepValueLabel.stringValue, "33.6")
+
+        // The same in the per-app popover, for an app with values of its own.
+        let application = makeApplication(inherit: false)
+        application.scroll.speed = 6.31
+        application.scroll.duration = 3.687
+        let perApp = makeController(target: application, advanced: true)
+        perApp.syncViewWithOptions()
+        XCTAssertEqual(application.scroll.speed, 6.31)
+        XCTAssertEqual(application.scroll.duration, 3.687)
+        XCTAssertEqual(perApp.scrollSpeedSlider.numberOfTickMarks, 10)
+        XCTAssertEqual(perApp.glideTimeSlider.numberOfTickMarks, 9)
+        XCTAssertEqual(perApp.smallestStepSlider.numberOfTickMarks, 11)
+
+        // Only a move of the slider writes a value of the grid.
+        let speed = try XCTUnwrap(controller.scrollSpeedSlider as? PreferencesSlider)
+        XCTAssertTrue(speed.moveKnob(by: 1))
+        XCTAssertEqual(Options.shared.scroll.speed, 6.5, "an arrow key goes to the next half")
+        XCTAssertEqual(Options.shared.scroll.duration, 3.687, "the other sliders keep their values")
+        XCTAssertEqual(Options.shared.scroll.step, 33.6)
+        XCTAssertTrue(speed.moveKnob(by: 1))
+        XCTAssertEqual(Options.shared.scroll.speed, 7)
+    }
+
+    func testEachSliderWritesValuesOfItsGrid() throws {
+        let controller = makeController(advanced: true)
+        let sliders: [(NSSlider, ScrollSliderSetting, () -> Double)] = [
+            (controller.scrollSpeedSlider, .speed, { Options.shared.scroll.speed }),
+            (controller.glideTimeSlider, .glideTime, { Options.shared.scroll.duration }),
+            (controller.smallestStepSlider, .smallestStep, { Options.shared.scroll.step }),
+        ]
+        for (slider, setting, stored) in sliders {
+            for fraction in stride(from: 0.0, through: 1.0, by: 0.037) {
+                drag(slider, to: setting.range.lowerBound + fraction * (setting.range.upperBound - setting.range.lowerBound))
+                let value = stored()
+                XCTAssertEqual(setting.snapped(value), value, "\(setting.range) \(fraction)")
+                XCTAssertEqual(slider.doubleValue, value, accuracy: 1e-9, "the knob sits on the value it wrote")
+            }
+        }
+
+        // A stop of the glide time slider next to a preset selects that preset.
+        drag(controller.glideTimeSlider, to: 3.16)
+        XCTAssertEqual(Options.shared.scroll.duration, 3.15)
+        XCTAssertEqual(controller.feelControl.selectedSegment, ScrollFeel.quick.rawValue)
+        drag(controller.glideTimeSlider, to: 3.7)
+        XCTAssertEqual(controller.feelControl.selectedSegment, ScrollFeel.smooth.rawValue)
+        drag(controller.glideTimeSlider, to: 3.65)
+        XCTAssertEqual(controller.feelControl.selectedSegment, -1, "two steps from Smooth is custom")
+        // Picking a preset still writes its own Duration, off the slider's grid.
+        choose(.quick, in: controller)
+        XCTAssertEqual(Options.shared.scroll.duration, 3.13)
+        XCTAssertEqual(controller.glideTimeSlider.doubleValue, 3.13, accuracy: 1e-9)
+
+        // Arrow keys: one step of each slider's grid.
+        let glide = try XCTUnwrap(controller.glideTimeSlider as? PreferencesSlider)
+        XCTAssertTrue(glide.moveKnob(by: 1))
+        XCTAssertEqual(Options.shared.scroll.duration, 3.15)
+        XCTAssertTrue(glide.moveKnob(by: -1))
+        XCTAssertEqual(Options.shared.scroll.duration, 3.1)
+        Options.shared.scroll.step = OPTIONS_SCROLL_DEFAULT().step
+        controller.syncViewWithOptions()
+        let step = try XCTUnwrap(controller.smallestStepSlider as? PreferencesSlider)
+        XCTAssertTrue(step.moveKnob(by: -1))
+        XCTAssertEqual(Options.shared.scroll.step, 33, "from the default 33.6 down to the next whole number")
     }
 
     // MARK: - Direction
@@ -739,14 +847,14 @@ final class PreferencesScrollingTests: XCTestCase {
         set(controller.smoothSwitch, false)
         set(controller.smoothSwitch, true)
         choose(.direct, in: controller)
-        drag(controller.scrollSpeedSlider, to: 4.2)
+        drag(controller.scrollSpeedSlider, to: 4.4)
         set(controller.reverseSwitch, false)
         drag(controller.smallestStepSlider, to: 20)
         set(controller.trackpadEventsSwitch, true)
         send(controller.keyClearButtons[ScrollHoldKey.faster.rawValue])
 
         XCTAssertEqual(application.scroll.duration, 2.0)
-        XCTAssertEqual(application.scroll.speed, 4.2)
+        XCTAssertEqual(application.scroll.speed, 4.5, "the popover's slider has the tab's steps")
         XCTAssertFalse(application.scroll.reverse)
         XCTAssertEqual(application.scroll.step, 20)
         XCTAssertTrue(application.scroll.smoothSimTrackpad)
