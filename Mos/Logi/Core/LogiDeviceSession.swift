@@ -105,6 +105,10 @@ class LogiDeviceSession {
     /// 非周期轮询, 不违红线(§2). 按 slot 各自去抖.
     private var receiverTakeoverDebounce: [UInt8: DispatchWorkItem] = [:]
     private static let receiverTakeoverDebounceDelay: TimeInterval = 0.4
+    /// Slots the running takeover sweep rediscovered (their controllers were dropped). At the
+    /// end of the sweep only these may have their wheel / haptic / basic features looked up
+    /// and their controllers built again (receiverSweepRebuildSlot).
+    private var receiverSweptSlots: Set<UInt8> = []
     /// 已探测过可选功能的 slot: 面板巡检切换时每 slot 只探一次, 避免每次切都重探(拖慢/撞在飞探测).
     /// slot 重新发现(sweep / setTargetSlot)时清除, 以便重探.
     private var receiverOptionalProbedSlots: Set<UInt8> = []
@@ -1062,6 +1066,7 @@ class LogiDeviceSession {
         receiverManagedSlots.removeAll()
         pendingDivertSlots.removeAll()
         receiverInspectionSlot = nil
+        receiverSweptSlots.removeAll()
         receiverOptionalProbedSlots.removeAll()
         receiverTakeoverDebounce.values.forEach { $0.cancel() }
         receiverTakeoverDebounce.removeAll()
@@ -1870,6 +1875,7 @@ class LogiDeviceSession {
         }
         let slot = pendingDivertSlots.removeFirst()
         deviceIndex = slot
+        receiverSweptSlots.insert(slot)
         receiverOptionalProbedSlots.remove(slot)  // 全新发现 -> 可选功能允许重探
         // 全新发现: 清该 slot 的 per-slot 发现状态(startup 本为默认, 显式清以支持 Phase 4 重扫).
         featureIndex.removeAll()
@@ -1944,6 +1950,17 @@ class LogiDeviceSession {
         return cids.contains(0x0050) && cids.contains(0x0051)  // Left + Right click
     }
 
+    /// After a takeover sweep: the slot whose wheel, haptic and basic features are looked up
+    /// again and whose controllers are built anew. That is the cursor slot, and only when
+    /// this sweep rediscovered it (which dropped its controllers). A sweep of another slot
+    /// (a keyboard waking on the same receiver) leaves the cursor's controllers alone:
+    /// starting them again would read and write its wheel and basic values again. nil while
+    /// the optional probe has not run yet (it builds them at the end of its chain).
+    static func receiverSweepRebuildSlot(cursor: UInt8, sweptSlots: Set<UInt8>, probeAlreadyRan: Bool) -> UInt8? {
+        guard probeAlreadyRan, sweptSlots.contains(cursor) else { return nil }
+        return cursor
+    }
+
     private func finishReceiverSweep() {
         receiverSweepActive = false
         // 巡检游标: 优先落到真正的鼠标(据发现的控件判定, 键盘无 Left/Right); 无鼠标回退预选 slot.
@@ -1954,13 +1971,18 @@ class LogiDeviceSession {
         // 才能只探测巡检的鼠标而非 sweep 最后一个 slot. probeOptionalFeatures 自带 once 守卫.
         receiverOptionalProbedSlots.insert(deviceIndex)  // 巡检游标那台已探, inspectSlot 不重探
         let probeAlreadyRan = optionalProbeSent
+        let sweptSlots = receiverSweptSlots
+        receiverSweptSlots.removeAll()
         probeOptionalFeatures()
-        if probeAlreadyRan {
+        if let slot = Self.receiverSweepRebuildSlot(
+            cursor: deviceIndex, sweptSlots: sweptSlots, probeAlreadyRan: probeAlreadyRan
+        ) {
             // 热插拔重连: 探测链不会再跑 (once 守卫), 但该 slot 的 featureIndex 已被清空.
             // 按需补发现滚轮 feature, 让托管设置在重连后重放.
             // 同理补发现 haptic feature (手势触觉提示), 排在滚轮之后保持 getFeature 串行.
             // Then the basic settings (battery, DPI, press force), still one getFeature at a time.
-            let slot = deviceIndex
+            // Only for the cursor slot when this sweep rediscovered it: a keyboard waking on
+            // the same receiver must not make the mouse's values be read and written again.
             discoverWheelFeatureIfNeeded(slot: slot) { [weak self] in
                 self?.discoverGestureHapticFeatureIfNeeded(slot: slot) { [weak self] in
                     self?.discoverMouseBasicsFeaturesIfNeeded(slot: slot)

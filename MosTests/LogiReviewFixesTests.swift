@@ -177,6 +177,26 @@ final class LogiFeatureDiscoveryQueueTests: XCTestCase {
     }
 }
 
+// MARK: - Controllers after a receiver sweep (D)
+
+final class LogiReceiverSweepRebuildTests: XCTestCase {
+
+    /// Regression: a keyboard waking on the mouse's receiver made the mouse's (the cursor
+    /// slot's) wheel and basic controllers start again: its values were read and written again.
+    func testASweepOfAnotherSlotLeavesTheCursorAlone() {
+        XCTAssertNil(LogiDeviceSession.receiverSweepRebuildSlot(cursor: 2, sweptSlots: [1], probeAlreadyRan: true))
+    }
+
+    func testTheReconnectedCursorSlotIsRebuilt() {
+        XCTAssertEqual(LogiDeviceSession.receiverSweepRebuildSlot(cursor: 2, sweptSlots: [2], probeAlreadyRan: true), 2)
+        XCTAssertEqual(LogiDeviceSession.receiverSweepRebuildSlot(cursor: 2, sweptSlots: [1, 2], probeAlreadyRan: true), 2)
+    }
+
+    func testAtLaunchTheProbeChainBuildsThem() {
+        XCTAssertNil(LogiDeviceSession.receiverSweepRebuildSlot(cursor: 2, sweptSlots: [2], probeAlreadyRan: false))
+    }
+}
+
 // MARK: - IOHIDManagerOpen (B)
 
 final class LogiSessionManagerOpenTests: XCTestCase {
