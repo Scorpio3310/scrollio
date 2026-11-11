@@ -40,6 +40,7 @@ class ButtonCore {
     let buttonEventCallBack: CGEventTapCallBack = { (proxy, type, event, refcon) in
         // Tap 被系统禁用时, 清理活跃绑定状态并直接放行
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            EventTapDisableLog.note(.buttonsAndKeys, type)
             InputProcessor.shared.clearActiveBindings()
             if type == .tapDisabledByTimeout {
                 // On again now: until the keeper's next look every button went by unhandled.
@@ -92,7 +93,7 @@ class ButtonCore {
             } catch {
                 dispatchInterceptor?.stop()
                 dispatchInterceptor = nil
-                NSLog("ButtonCore: Failed to create interceptor: \(error)")
+                AppSystemLog.problem("ButtonCore: could not start its event tap: \(error)")
             }
         }
     }

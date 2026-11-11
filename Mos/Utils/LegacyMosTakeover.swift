@@ -66,7 +66,7 @@ enum LegacyMosTakeover {
             legacyToastDomain: legacyDefaultsDomain + toastSuiteSuffix,
             toast: UserDefaults(suiteName: ownDomain + toastSuiteSuffix)
         )
-        NSLog("Legacy Mos settings: \(result)")
+        AppSystemLog.note("Settings of the old Mos app: \(result)")
     }
 
     // MARK: - Quit the old app
@@ -97,14 +97,14 @@ enum LegacyMosTakeover {
             }
         guard !targets.isEmpty else { return }
         for app in targets {
-            NSLog("Terminate: legacy Mos instance \(app.processIdentifier)")
+            AppSystemLog.note("The old Mos app is running (pid \(app.processIdentifier)): asking it to quit")
             app.terminate()
         }
         waitForExit(of: targets.map { $0.processIdentifier }, timeout: timeout)
         let survivors = targets.filter { isProcessAlive($0.processIdentifier) }
         guard !survivors.isEmpty else { return }
         for app in survivors {
-            NSLog("Terminate: legacy Mos instance \(app.processIdentifier) did not quit, forcing")
+            AppSystemLog.problem("The old Mos app (pid \(app.processIdentifier)) did not quit within \(Int(timeout)) s: forcing it to quit")
             app.forceTerminate()
         }
         waitForExit(of: survivors.map { $0.processIdentifier }, timeout: 1.0)
@@ -173,11 +173,11 @@ enum LegacyMosTakeover {
                 processIdentifier: app.processIdentifier,
                 ownProcessIdentifier: ownProcessIdentifier
               ) else { return false }
-        NSLog("Terminate: legacy Mos instance \(app.processIdentifier) launched while Scrollio runs")
+        AppSystemLog.note("The old Mos app started while Scrollio runs (pid \(app.processIdentifier)): asking it to quit")
         app.terminate()
         DispatchQueue.main.asyncAfter(deadline: .now() + forceQuitDelay) {
             guard !app.isTerminated else { return }
-            NSLog("Terminate: legacy Mos instance \(app.processIdentifier) did not quit, forcing")
+            AppSystemLog.problem("The old Mos app (pid \(app.processIdentifier)) did not quit within \(Int(forceQuitDelay)) s: forcing it to quit")
             app.forceTerminate()
         }
         return true

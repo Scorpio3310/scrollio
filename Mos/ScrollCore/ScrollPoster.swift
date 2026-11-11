@@ -378,7 +378,7 @@ extension ScrollPoster {
             if !isVerifying { scheduleRateVerify() }
         } else {
             poster = nil
-            NSLog("ScrollPoster: CVDisplayLink creation failed (%d)", result)
+            AppSystemLog.problem("ScrollPoster: CVDisplayLink creation failed (\(result))")
         }
     }
     // 启动事件发送器
@@ -507,7 +507,7 @@ extension ScrollPoster {
                 lastCallbackTime = CFAbsoluteTimeGetCurrent()
                 os_unfair_lock_unlock(&stateLock)
             } else {
-                NSLog("ScrollPoster: CVDisplayLink start failed after recreate (%d)", result)
+                AppSystemLog.problem("ScrollPoster: CVDisplayLink start failed after recreate (\(result))")
             }
         }
         return true
@@ -542,7 +542,7 @@ extension ScrollPoster {
             os_unfair_lock_unlock(&stateLock)
             // lastTime > 0 避免首次回调前误判
             if lastTime > 0 && CFAbsoluteTimeGetCurrent() - lastTime > 2.0 {
-                NSLog("ScrollPoster: zombie CVDisplayLink detected, recreating")
+                AppSystemLog.problem("ScrollPoster: the keeper found the display link stuck (no frame for over 2 s while running), recreating it")
                 recreateDisplayLink()
             }
         }
@@ -577,7 +577,7 @@ extension ScrollPoster {
             rateVerifyAttemptsLeft = 0
             return
         }
-        NSLog("ScrollPoster: display link rate %.0fHz below display %.0fHz, recreating", nominal, maxHz)
+        AppSystemLog.note(String(format: "ScrollPoster: display link rate %.0f Hz below the display's %.0f Hz, recreating it", nominal, maxHz))
         // 保持原运行状态: 若正在滚动 (running) 则重建后重新启动
         let wasRunning = CVDisplayLinkIsRunning(current)
         isVerifying = true

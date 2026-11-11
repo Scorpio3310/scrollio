@@ -64,6 +64,7 @@ class ScrollCore: ScrollActionPort {
         _ = refcon
         // Tap 被系统禁用或重启边界时，强制清理 poster 上下文并失效历史异步帧
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            EventTapDisableLog.note(.scroll, type)
             // After a timeout the tap goes on again now: until the keeper's next look the wheel
             // went by raw (and the other way round with "reverse" on). The restart ends the
             // scroll session itself (onRestart), so it is not ended here as well: two stops in
@@ -456,7 +457,7 @@ class ScrollCore: ScrollActionPort {
             ScrollPoster.shared.create()
             ScrollPoster.shared.startKeeper()
         } catch {
-            NSLog("[ScrollCore] Create Interceptor failure: \(error)")
+            AppSystemLog.problem("ScrollCore: could not start its event taps: \(error)")
             // Roll back: without its taps the core must not count as active, or every later
             // enable() returns early and scrolling stays unhandled until the app restarts.
             // A tap that was already created is stopped and released here as well.

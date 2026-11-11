@@ -587,7 +587,7 @@ class InputProcessor: ModifierFlagsProviding {
     private func mouseGestureWatchdogFired(_ session: ActiveMouseGestureSession, key: TriggerKey) {
         // Only for the hold the watchdog was armed for, not a later press of the same button.
         guard activeMouseGestures[key] === session, !session.isAbandoned else { return }
-        NSLog("InputProcessor: gesture hold watchdog, abandoning the hold")
+        AppSystemLog.problem("InputProcessor: gesture hold watchdog fired (the button-up never came), abandoning the hold")
         abandonMouseGesture(session, key: key)
     }
 
