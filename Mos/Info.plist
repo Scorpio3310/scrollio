@@ -28,6 +28,10 @@
 	<false/>
 	<key>LSUIElement</key>
 	<true/>
+	<key>ScrollioBuildCommit</key>
+	<string>$(SCROLLIO_BUILD_COMMIT)</string>
+	<key>ScrollioBuildDate</key>
+	<string>$(SCROLLIO_BUILD_DATE)</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Nik Klemenc. Based on Mos by Caldis.</string>
 	<key>NSMainStoryboardFile</key>

@@ -45,9 +45,15 @@ xcodebuild -scheme Debug -destination 'platform=macOS' test -only-testing:MosTes
 xcodebuild -scheme Debug -destination 'platform=macOS' test -only-testing:MosTests/<TestClassName>/<testMethodName>
 xcodebuild -scheme Debug -configuration Release -destination 'platform=macOS' build
 scripts/qa/lint-logi-boundary.sh
+scripts/install.sh --check     # release build + signature, entitlement and binary checks
+scripts/install.sh             # the same, then install to /Applications and start it
 ```
 
 - Always use the shared scheme `Debug`. Never build with `-target Mos`.
+- Install the release app with `scripts/install.sh`, not by copying a build by hand: it
+  refuses a build whose signature differs from the installed app's (see the next point),
+  one that carries `get-task-allow`, and one instrumented for code coverage (the test
+  plans keep `codeCoverage` off for that reason).
 - **Never pass `CODE_SIGNING_ALLOWED=NO`.** It re-signs `Scrollio Debug.app` ad hoc.
   The changed signature makes macOS ask for the Accessibility permission again, and if an
   instance with its global event tap is running, that modal prompt blocks the main thread

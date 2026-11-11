@@ -151,6 +151,18 @@ xcodebuild -scheme Debug -configuration Release -destination 'platform=macOS' bu
 Or open `Mos.xcodeproj` in Xcode and run the `Debug` scheme. The project, the targets
 and the Swift modules keep the name Mos (`Mos`, `Mos_Debug`, `MosTests`).
 
+To build the release app and put it in `/Applications`:
+
+```bash
+scripts/install.sh
+```
+
+It builds into `build/install`, stamps the build with its commit (shown under General in
+Settings), and installs only a build that macOS will keep trusting: the signature must
+match the installed app's (a differently signed build would be asked for the Accessibility
+permission again), with no debugger entitlement and no coverage instrumentation.
+`scripts/install.sh --check` builds and checks without installing.
+
 ## Tests
 
 ```bash
