@@ -5111,6 +5111,18 @@
           }
         }
       }
+    },
+    "appExposeApps": {
+      "comment": "Action menus: the F4 key's action on macOS 26 and later, where Apps replaced Launchpad",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

@@ -61,7 +61,19 @@ struct SystemShortcut {
 
         /// 获取本地化显示名称
         var localizedName: String {
-            return NSLocalizedString(identifier, comment: "")
+            let majorVersion = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+            return NSLocalizedString(Self.nameKey(of: identifier, onMacOS: majorVersion), comment: "")
+        }
+
+        /// The catalog key of an action's name on macOS `majorVersion`: its identifier, except
+        /// for the F4 key (`appExpose`), which opens Launchpad before macOS 26 and Apps, which
+        /// replaced Launchpad, from macOS 26 on. Display only: the identifier, what the action
+        /// sends and stored bindings stay the same.
+        static func nameKey(of identifier: String, onMacOS majorVersion: Int) -> String {
+            if identifier == "appExpose", majorVersion >= 26 {
+                return "appExposeApps"
+            }
+            return identifier
         }
 
         /// 获取 SF Symbol 图标名称 (macOS 11.0+)
