@@ -2,7 +2,7 @@ import XCTest
 @testable import Mos_Debug
 
 /// Strings of the reorganised preferences (Mouse tab, Scrolling tab, Gesture
-/// Settings), of the main menu and of the Introduction window must exist in every shipped
+/// Settings, Gestures tab), of the main menu and of the Introduction window must exist in every shipped
 /// locale, keep their format specifiers, and never fall back to the raw key. Several keys are built from variables in code, so a missing
 /// one would only show up as the key itself in the UI.
 final class PreferencesLocalizationTests: XCTestCase {
@@ -50,6 +50,15 @@ final class PreferencesLocalizationTests: XCTestCase {
         "gesture-invert-horizontal", "gesture-freeze-pointer", "gesture-settings-footnote",
         "gesture-mode-discrete", "gesture-mode-interactive", "gesture-mode-interactive-note",
         "gesture-mode-interactive-unavailable", "gesture-follow-horizontal-value",
+        // Gestures tab
+        "gestures-tab-title", "gesture-mode-label", "gesture-mode-discrete-description",
+        "gesture-mode-interactive-description", "gesture-invert-horizontal-hint", "gesture-freeze-pointer-hint",
+        "gesture-tracking-speed-label", "gesture-tracking-speed-hint", "gesture-tracking-speed-hint-discrete",
+        "gesture-tracking-speed-slower", "gesture-tracking-speed-faster",
+        "gestures-unbound-title", "gestures-unbound-hint", "gestures-directions-header", "gestures-directions-hint",
+        "gestures-behaviour-header", "gestures-logitech-header", "gestures-logitech-needs", "gestures-buttons-note",
+        "mouse-gesture-device-tracking", "mouse-gesture-device-tracking-hint", "mouse-gesture-device-tracking-unavailable",
+        "mouse-gesture-haptics", "mouse-gesture-haptics-hint", "mouse-gesture-haptics-unavailable",
         // About
         "about-tab-title", "about-app-name", "about-version", "about-credit", "about-welcome-guide",
         // Main menu

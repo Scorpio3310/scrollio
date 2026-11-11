@@ -2,10 +2,12 @@
 //  PreferencesGesturesTests.swift
 //  MosTests
 //
-//  Gestures tab: its controls write Options.shared.gesture and follow the mode rules,
-//  the tracking speed slider, the hint about bound buttons, and the controls it shares
-//  with the Gesture Settings popover. The Logitech section has its own tests
-//  (LogiGestureSectionTests). Nothing is shown on screen and no HID device is touched.
+//  Gestures tab: its rows in the boxes of System Settings, every control writes its own
+//  field of Options.shared.gesture and follows the mode rules, the tracking speed, the
+//  line about the gesture button, the controls it shares with the Gesture Settings
+//  popover, and the preview following the settings and the row pointed at. The Logitech
+//  box has its own tests (LogiGestureSectionTests). Nothing is shown on screen and no HID
+//  device is touched.
 //
 
 import XCTest
@@ -48,6 +50,11 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertTrue(control.sendAction(control.action, to: control.target))
     }
 
+    private func toggle(_ control: NSControl, on: Bool) {
+        MouseGestureSettingsControls.setOn(on, control)
+        send(control)
+    }
+
     private func text(_ key: String) -> String {
         return NSLocalizedString(key, comment: "")
     }
@@ -71,50 +78,108 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertTrue(NSApp.sendAction(action, to: item.target, from: item), file: file, line: line)
     }
 
+    private func frame(of view: NSView, in controller: NSViewController) -> NSRect {
+        return controller.view.convert(view.bounds, from: view)
+    }
+
     // MARK: - Pane
 
-    func testPaneIsTitledGesturesAndFitsThePreferencesWidth() {
+    func testPaneIsTitledGesturesAndAsWideAsScrolling() {
         let controller = makeController()
         XCTAssertEqual(controller.title, "Gestures")
         XCTAssertEqual(GesturesPreferencesViewController.tabIdentifier, "gestures")
-        XCTAssertEqual(controller.view.frame.width, PreferencesForm.contentWidth)
+        XCTAssertEqual(GesturesPreferencesViewController.paneWidth, PreferencesScrollingViewController.paneWidth)
+        XCTAssertEqual(controller.view.frame.width, 520)
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
         XCTAssertTrue(GesturesPreferencesViewController.tabImage().isTemplate)
     }
 
-    func testControlsSitOnTheFormGrid() {
+    func testThePaneIsAPreviewAndBoxesTopToBottom() {
+        let controller = makeController()
+        controller.view.layoutSubtreeIfNeeded()
+        let shown = controller.sections.filter { !$0.isHidden }
+        XCTAssertTrue(shown.first === controller.previewView)
+        XCTAssertEqual(controller.previewView.frame.height, GesturePreviewView.preferredHeight)
+        // The root view is not flipped: lower on screen is a smaller y.
+        let tops = shown.map { frame(of: $0, in: controller).maxY }
+        XCTAssertEqual(tops, tops.sorted(by: >))
+        for view in shown {
+            XCTAssertEqual(frame(of: view, in: controller).minX, 20, accuracy: 0.5)
+            XCTAssertEqual(frame(of: view, in: controller).width, 480, accuracy: 0.5)
+        }
+
+        // Mode first, then Up, Down, Left, Right, Click, then the switches and the slider.
+        let order: [NSView] = [controller.modeRow] + controller.directionRows
+            + [controller.invertRow, controller.freezeRow, controller.trackingSpeedRow]
+        let rowTops = order.map { frame(of: $0, in: controller).maxY }
+        XCTAssertEqual(rowTops, rowTops.sorted(by: >))
+        XCTAssertEqual(controller.directionRows.map(\.title), ["Up", "Down", "Left", "Right", "Click"])
+        XCTAssertEqual(controller.directionsHintLabel.stringValue, text("gestures-directions-hint"))
+    }
+
+    func testRowsUseTheGroupedKit() {
         let controller = makeController()
         controller.view.layoutSubtreeIfNeeded()
         let controls = controller.controls!
-        let views: [NSView] = [controls.modeControl] + controls.actionPopUps
-        for view in views {
-            let frame = controller.view.convert(view.alignmentRect(forFrame: view.frame), from: view.superview)
-            XCTAssertEqual(frame.minX, 171, accuracy: 0.5, "\(view.identifier?.rawValue ?? "")")
-            XCTAssertEqual(frame.maxX, 430, accuracy: 0.5, "\(view.identifier?.rawValue ?? "")")
+        // The two modes across the box, under the title and its line.
+        XCTAssertTrue(controller.modeRow.accessory === controls.modeControl)
+        XCTAssertEqual(controller.modeRow.placement, .below)
+        let mode = controls.modeControl
+        XCTAssertEqual(controller.view.convert(mode.alignmentRect(forFrame: mode.frame), from: mode.superview).width, 480 - 20, accuracy: 0.5)
+        // Every pop-up on the right edge of its box, all as wide.
+        for slot in Slot.allCases {
+            let popup = controls.actionPopUp(for: slot)
+            XCTAssertTrue(controller.directionRows[slot.rawValue].accessory === popup)
+            let rect = controller.view.convert(popup.alignmentRect(forFrame: popup.frame), from: popup.superview)
+            XCTAssertEqual(rect.maxX, 520 - 20 - PreferencesGroupedForm.rowHorizontalInset, accuracy: 0.5, slot.name)
+            XCTAssertEqual(rect.width, GesturesPreferencesViewController.popUpWidth, accuracy: 0.5, slot.name)
         }
-        XCTAssertEqual(controls.actionPopUps.count, 5)
-        // Up, Down, Left, Right, Click from top to bottom (the root view is not flipped).
-        let tops = controls.actionPopUps.map { controller.view.convert($0.bounds, from: $0).maxY }
-        XCTAssertEqual(tops, tops.sorted(by: >))
+        // Invert and freeze are switches now.
+        XCTAssertTrue(controls.invertToggle is NSSwitch)
+        XCTAssertTrue(controls.freezeToggle is NSSwitch)
+        XCTAssertTrue(controller.invertRow.accessory === controls.invertToggle)
+        XCTAssertTrue(controller.freezeRow.accessory === controls.freezeToggle)
+        XCTAssertEqual(controller.invertRow.title, "Invert left and right")
+        XCTAssertEqual(controller.freezeRow.title, "Freeze pointer during a gesture")
+        XCTAssertEqual(controls.invertToggle.accessibilityLabel(), "Invert left and right")
+        XCTAssertEqual(controller.trackingSpeedRow.lowEndLabel?.stringValue, "Slower")
+        XCTAssertEqual(controller.trackingSpeedRow.highEndLabel?.stringValue, "Faster")
+    }
+
+    func testEveryExplanationIsOnePlainSentence() {
+        Options.shared.gesture.mode = .interactive
+        let controller = makeController()
+        let rows: [PreferencesGroupRow] = [controller.modeRow, controller.invertRow, controller.freezeRow, controller.trackingSpeedRow]
+        for row in rows {
+            let explanation = row.explanation ?? ""
+            XCTAssertFalse(explanation.isEmpty, row.title)
+            XCTAssertTrue(explanation.hasSuffix("."), row.title)
+            XCTAssertLessThanOrEqual(explanation.count, 80, row.title)
+        }
     }
 
     // MARK: - Controls write Options.shared.gesture
 
-    func testModeControlWritesTheMode() {
+    func testModeControlWritesTheModeAndSaysWhatItDoes() {
         let controller = makeController()
         let mode = controller.controls.modeControl
         XCTAssertEqual(mode.segmentCount, 2)
         XCTAssertEqual(mode.label(forSegment: 0), "One action per hold")
         XCTAssertEqual(mode.label(forSegment: 1), "Follow the hand")
         XCTAssertEqual(mode.selectedSegment, 0)
+        XCTAssertEqual(controller.modeRow.explanation, text("gesture-mode-discrete-description"))
+        let height = controller.view.frame.height
 
         mode.selectedSegment = 1
         send(mode)
         XCTAssertEqual(Options.shared.gesture.mode, .interactive)
+        XCTAssertEqual(controller.modeRow.explanation, text("gesture-mode-interactive-description"))
+        XCTAssertEqual(controller.view.frame.height, height, "the other line takes no more room")
 
         mode.selectedSegment = 0
         send(mode)
         XCTAssertEqual(Options.shared.gesture.mode, .discrete)
+        XCTAssertEqual(controller.modeRow.explanation, text("gesture-mode-discrete-description"))
     }
 
     func testEachActionPopupWritesItsOwnSetting() {
@@ -153,21 +218,25 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(title(of: up), "No Action")
     }
 
-    func testCheckboxesWriteInvertAndFreeze() {
+    func testSwitchesWriteInvertAndFreeze() {
         let controller = makeController()
         let controls = controller.controls!
-        XCTAssertEqual(controls.invertCheckbox.title, "Invert left and right")
-        XCTAssertEqual(controls.freezeCheckbox.title, "Freeze pointer during gesture")
-        XCTAssertEqual(controls.invertCheckbox.state, .off)
-        XCTAssertEqual(controls.freezeCheckbox.state, .on)
+        XCTAssertFalse(MouseGestureSettingsControls.isOn(controls.invertToggle))
+        XCTAssertTrue(MouseGestureSettingsControls.isOn(controls.freezeToggle))
 
-        controls.invertCheckbox.state = .on
-        send(controls.invertCheckbox)
-        controls.freezeCheckbox.state = .off
-        send(controls.freezeCheckbox)
-
+        toggle(controls.invertToggle, on: true)
         XCTAssertTrue(Options.shared.gesture.invertHorizontal)
+        toggle(controls.freezeToggle, on: false)
         XCTAssertFalse(Options.shared.gesture.freezePointer)
+
+        var expected = MouseGestureSettings.default
+        expected.invertHorizontal = true
+        expected.freezePointer = false
+        XCTAssertEqual(Options.shared.gesture, expected, "nothing else moved")
+
+        toggle(controls.invertToggle, on: false)
+        toggle(controls.freezeToggle, on: true)
+        XCTAssertEqual(Options.shared.gesture, .default)
     }
 
     func testControlsShowStoredSettings() {
@@ -185,10 +254,10 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(controls.modeControl.selectedSegment, 1)
         XCTAssertEqual(title(of: controls.actionPopUp(for: .up)), SystemShortcut.copy.localizedName)
         XCTAssertEqual(title(of: controls.actionPopUp(for: .click)), "No Action")
-        XCTAssertEqual(controls.invertCheckbox.state, .on)
-        XCTAssertEqual(controls.freezeCheckbox.state, .off)
-        XCTAssertEqual(controls.trackingSpeedSlider.doubleValue, 2.2, accuracy: 1e-9)
-        XCTAssertEqual(controls.trackingSpeedValueLabel.stringValue, "2.2×")
+        XCTAssertTrue(MouseGestureSettingsControls.isOn(controls.invertToggle))
+        XCTAssertFalse(MouseGestureSettingsControls.isOn(controls.freezeToggle))
+        XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 2.2, accuracy: 1e-9)
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, "2.2×")
     }
 
     func testReloadPicksUpChangesMadeElsewhere() {
@@ -197,44 +266,50 @@ final class PreferencesGesturesTests: XCTestCase {
         Options.shared.gesture.mode = .interactive
         Options.shared.gesture.downAction = SystemShortcut.copy.identifier
         Options.shared.gesture.freezePointer = false
+        Options.shared.gesture.trackingSpeed = 1.8
 
         controller.viewWillAppear()
 
         let controls = controller.controls!
         XCTAssertEqual(controls.modeControl.selectedSegment, 1)
         XCTAssertEqual(title(of: controls.actionPopUp(for: .down)), SystemShortcut.copy.localizedName)
-        XCTAssertEqual(controls.freezeCheckbox.state, .off)
-        XCTAssertTrue(controls.trackingSpeedSlider.isEnabled)
+        XCTAssertFalse(MouseGestureSettingsControls.isOn(controls.freezeToggle))
+        XCTAssertTrue(controller.trackingSpeedSlider.isEnabled)
+        XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 1.8, accuracy: 1e-9)
+        XCTAssertEqual(controller.previewView.scene.gesture.mode, .interactive)
+        XCTAssertEqual(controller.previewView.scene.gesture.trackingSpeed, 1.8)
     }
 
     // MARK: - Tracking speed
 
     func testTrackingSpeedSliderCoversTheStoredRange() {
         let controller = makeController()
-        let slider = controller.controls.trackingSpeedSlider
+        let slider = controller.trackingSpeedSlider
         XCTAssertEqual(slider.minValue, MouseGestureSettings.trackingSpeedRange.lowerBound)
         XCTAssertEqual(slider.maxValue, MouseGestureSettings.trackingSpeedRange.upperBound)
         XCTAssertEqual(slider.minValue, 0.5)
         XCTAssertEqual(slider.maxValue, 3)
         XCTAssertEqual(slider.doubleValue, 1, accuracy: 1e-9)
-        XCTAssertEqual(controller.controls.trackingSpeedValueLabel.stringValue, "1.0×")
-        XCTAssertEqual(slider.accessibilityLabel(), "Tracking Speed")
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, "1.0×")
+        XCTAssertEqual(slider.accessibilityLabel(), "Tracking speed")
+        XCTAssertEqual(slider.identifier, GesturesPreferencesViewController.Identifier.trackingSpeed)
     }
 
     func testTrackingSpeedSliderWritesRoundedMultiplier() {
         Options.shared.gesture.mode = .interactive
         let controller = makeController()
-        let controls = controller.controls!
+        let slider = controller.trackingSpeedSlider
 
-        controls.trackingSpeedSlider.doubleValue = 1.74
-        send(controls.trackingSpeedSlider)
+        slider.doubleValue = 1.74
+        send(slider)
         XCTAssertEqual(Options.shared.gesture.trackingSpeed, 1.7, accuracy: 1e-9)
-        XCTAssertEqual(controls.trackingSpeedValueLabel.stringValue, "1.7×")
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, "1.7×")
+        XCTAssertEqual(controller.previewView.scene.gesture.trackingSpeed, 1.7, accuracy: 1e-9)
 
-        controls.trackingSpeedSlider.doubleValue = 3
-        send(controls.trackingSpeedSlider)
+        slider.doubleValue = 3
+        send(slider)
         XCTAssertEqual(Options.shared.gesture.trackingSpeed, 3, accuracy: 1e-9)
-        XCTAssertEqual(controls.trackingSpeedValueLabel.stringValue, "3.0×")
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, "3.0×")
 
         // Nothing else moved.
         var expected = MouseGestureSettings.default
@@ -258,15 +333,22 @@ final class PreferencesGesturesTests: XCTestCase {
     func testTrackingSpeedIsEditableOnlyInFollowMode() {
         let controller = makeController()
         let controls = controller.controls!
-        XCTAssertFalse(controls.trackingSpeedSlider.isEnabled, "one action per hold")
+        let row = controller.trackingSpeedRow!
+        XCTAssertFalse(row.isEnabled, "one action per hold")
+        XCTAssertFalse(controller.trackingSpeedSlider.isEnabled)
+        XCTAssertEqual(row.explanation, text("gesture-tracking-speed-hint-discrete"))
+        let height = controller.view.frame.height
 
         controls.modeControl.selectedSegment = 1
         send(controls.modeControl)
-        XCTAssertTrue(controls.trackingSpeedSlider.isEnabled)
+        XCTAssertTrue(row.isEnabled)
+        XCTAssertTrue(controller.trackingSpeedSlider.isEnabled)
+        XCTAssertEqual(row.explanation, text("gesture-tracking-speed-hint"))
+        XCTAssertEqual(controller.view.frame.height, height)
 
         controls.modeControl.selectedSegment = 0
         send(controls.modeControl)
-        XCTAssertFalse(controls.trackingSpeedSlider.isEnabled)
+        XCTAssertFalse(controller.trackingSpeedSlider.isEnabled)
         // The stored speed is kept while it does not apply.
         XCTAssertEqual(Options.shared.gesture.trackingSpeed, MouseGestureSettings.defaultTrackingSpeed)
     }
@@ -279,13 +361,15 @@ final class PreferencesGesturesTests: XCTestCase {
 
         for slot in [Slot.left, .right] {
             XCTAssertFalse(controls.actionPopUp(for: slot).isEnabled, slot.name)
+            XCTAssertFalse(controller.directionRows[slot.rawValue].isEnabled, slot.name)
             XCTAssertEqual(title(of: controls.actionPopUp(for: slot)), "Desktop follows the hand", slot.name)
         }
         for slot in [Slot.up, .down, .click] {
             XCTAssertTrue(controls.actionPopUp(for: slot).isEnabled, slot.name)
+            XCTAssertTrue(controller.directionRows[slot.rawValue].isEnabled, slot.name)
         }
-        XCTAssertTrue(controls.invertCheckbox.isEnabled)
-        XCTAssertTrue(controls.freezeCheckbox.isEnabled)
+        XCTAssertTrue(controls.invertToggle.isEnabled)
+        XCTAssertTrue(controls.freezeToggle.isEnabled)
         // The stored actions survive for the other mode.
         XCTAssertEqual(Options.shared.gesture.leftAction, SystemShortcut.moveSpaceLeft.identifier)
         XCTAssertEqual(Options.shared.gesture.rightAction, SystemShortcut.moveSpaceRight.identifier)
@@ -293,6 +377,7 @@ final class PreferencesGesturesTests: XCTestCase {
         controls.modeControl.selectedSegment = 0
         send(controls.modeControl)
         XCTAssertTrue(controls.actionPopUp(for: .left).isEnabled)
+        XCTAssertTrue(controller.directionRows[Slot.left.rawValue].isEnabled)
         XCTAssertEqual(title(of: controls.actionPopUp(for: .left)), SystemShortcut.moveSpaceLeft.localizedName)
     }
 
@@ -304,10 +389,11 @@ final class PreferencesGesturesTests: XCTestCase {
 
         XCTAssertEqual(controls.modeControl.selectedSegment, 0, "discrete is what runs, so it is shown")
         XCTAssertFalse(controls.modeControl.isEnabled(forSegment: 1))
-        XCTAssertEqual(controls.modeNote.stringValue, text("gesture-mode-interactive-unavailable"))
+        XCTAssertEqual(controller.modeRow.explanation, text("gesture-mode-interactive-unavailable"))
         XCTAssertTrue(controls.actionPopUp(for: .left).isEnabled)
-        XCTAssertFalse(controls.trackingSpeedSlider.isEnabled)
+        XCTAssertFalse(controller.trackingSpeedSlider.isEnabled)
         XCTAssertEqual(Options.shared.gesture.mode, .interactive, "the stored choice is kept")
+        XCTAssertEqual(controller.previewView.scene.gesture.mode, .discrete, "the preview shows what runs")
 
         Options.shared.gesture.mode = .discrete
         controls.modeControl.selectedSegment = 1
@@ -316,23 +402,36 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(controls.modeControl.selectedSegment, 0)
     }
 
-    func testModePresentationSaysWhenTrackingSpeedApplies() {
+    func testModePresentationSaysWhenTrackingSpeedAppliesAndWhatTheModeDoes() {
         typealias Presentation = MouseGestureModePresentation
         XCTAssertFalse(Presentation.make(storedMode: .discrete, isInteractiveAvailable: true).isTrackingSpeedEditable)
         XCTAssertTrue(Presentation.make(storedMode: .interactive, isInteractiveAvailable: true).isTrackingSpeedEditable)
         XCTAssertFalse(Presentation.make(storedMode: .interactive, isInteractiveAvailable: false).isTrackingSpeedEditable)
+
+        XCTAssertEqual(Presentation.make(storedMode: .discrete, isInteractiveAvailable: true).descriptionKey, "gesture-mode-discrete-description")
+        XCTAssertEqual(Presentation.make(storedMode: .interactive, isInteractiveAvailable: true).descriptionKey, "gesture-mode-interactive-description")
+        XCTAssertEqual(Presentation.make(storedMode: .interactive, isInteractiveAvailable: false).descriptionKey, "gesture-mode-interactive-unavailable")
+        XCTAssertEqual(Presentation.make(storedMode: .discrete, isInteractiveAvailable: false).descriptionKey, "gesture-mode-interactive-unavailable")
+        XCTAssertEqual(Set(Presentation.descriptionKeys).count, 3)
     }
 
-    // MARK: - Bound buttons
+    // MARK: - The gesture button
 
-    func testHintSaysHowToGestureOrThatNoButtonIsSetUp() {
+    func testWithoutAGestureButtonTheFirstBoxSaysSo() {
         summary = MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false)
         let controller = makeController()
-        XCTAssertEqual(controller.actionsHintLabel.stringValue, text("gestures-actions-hint-unbound"))
+        XCTAssertFalse(controller.unboundRow.isHidden)
+        XCTAssertEqual(controller.unboundRow.title, text("gestures-unbound-title"))
+        XCTAssertEqual(controller.unboundRow.explanation, text("gestures-unbound-hint"))
+        XCTAssertTrue(controller.buttonsNoteLabel.isHidden, "said once, in the first box")
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertGreaterThan(frame(of: controller.unboundRow, in: controller).minY, frame(of: controller.modeRow, in: controller).maxY - 0.5, "above the mode")
 
         summary = MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false)
         controller.reload()
-        XCTAssertEqual(controller.actionsHintLabel.stringValue, text("gestures-actions-hint"))
+        XCTAssertTrue(controller.unboundRow.isHidden)
+        XCTAssertFalse(controller.buttonsNoteLabel.isHidden)
+        XCTAssertEqual(controller.buttonsNoteLabel.stringValue, "Choose the gesture button under Buttons.")
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
     }
 
@@ -362,14 +461,12 @@ final class PreferencesGesturesTests: XCTestCase {
 
         let none = MouseGestureBindingSummary(bindings: [binding(SystemShortcut.copy, code: 3)], isLogitechCode: isLogitech)
         XCTAssertEqual(none, MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false))
-        XCTAssertEqual(none.actionsHintKey, "gestures-actions-hint-unbound")
 
         let plain = MouseGestureBindingSummary(
             bindings: [binding(SystemShortcut.mouseGestureNavigation, code: 3), binding(SystemShortcut.copy, code: 1000)],
             isLogitechCode: isLogitech
         )
         XCTAssertEqual(plain, MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false))
-        XCTAssertEqual(plain.actionsHintKey, "gestures-actions-hint")
 
         let logitech = MouseGestureBindingSummary(
             bindings: [binding(SystemShortcut.mouseGestureNavigation, code: 1000)],
@@ -382,6 +479,91 @@ final class PreferencesGesturesTests: XCTestCase {
             isLogitechCode: isLogitech
         )
         XCTAssertEqual(disabled, MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false))
+    }
+
+    // MARK: - The preview
+
+    func testThePreviewShowsTheSettingsInEffect() {
+        let controller = makeController()
+        let preview = controller.previewView!
+        XCTAssertEqual(preview.identifier, GesturesPreferencesViewController.Identifier.preview)
+        XCTAssertEqual(preview.scene, GesturePreviewScene(gesture: .default, focus: nil))
+        XCTAssertFalse(preview.isTimerRunning, "not shown, not running")
+
+        // Every control that writes a setting changes the scene, and so restarts the demo.
+        let controls = controller.controls!
+        controls.modeControl.selectedSegment = 1
+        send(controls.modeControl)
+        XCTAssertEqual(preview.scene.gesture.mode, .interactive)
+        XCTAssertEqual(preview.loop.legs.first?.kind, .follow)
+
+        toggle(controls.invertToggle, on: true)
+        XCTAssertTrue(preview.scene.gesture.invertHorizontal)
+        XCTAssertEqual(preview.loop.legs.first?.shift, -1, "inverted, the slide goes the other way")
+
+        toggle(controls.freezeToggle, on: false)
+        XCTAssertFalse(preview.scene.gesture.freezePointer)
+
+        choose(SystemShortcut.copy.identifier, in: controls.actionPopUp(for: .up))
+        XCTAssertEqual(preview.scene.gesture.upAction, SystemShortcut.copy.identifier)
+
+        XCTAssertEqual(preview.scene.gesture, Options.shared.gesture)
+    }
+
+    func testThePreviewFollowsTheRowPointedAt() {
+        let controller = makeController()
+        let preview = controller.previewView!
+        XCTAssertNil(preview.scene.focus)
+
+        controller.slotHoverChanged(.up, inside: true)
+        XCTAssertEqual(preview.scene.focus, .up)
+        XCTAssertEqual(preview.loop.legs, [.move(.up, effect: .missionControl)])
+        XCTAssertEqual(preview.loopTime, 0)
+
+        // Moving to the next row: the old row's exit may come after the new row's enter.
+        controller.slotHoverChanged(.down, inside: true)
+        controller.slotHoverChanged(.up, inside: false)
+        XCTAssertEqual(preview.scene.focus, .down)
+
+        controller.slotHoverChanged(.down, inside: false)
+        XCTAssertNil(preview.scene.focus, "nothing pointed at: left and right in turn")
+
+        // The keyboard focus counts too; the pointer wins.
+        controller.slotFocusChanged(.click, focused: true)
+        XCTAssertEqual(preview.scene.focus, .click)
+        controller.slotHoverChanged(.right, inside: true)
+        XCTAssertEqual(preview.scene.focus, .right)
+        controller.slotHoverChanged(.right, inside: false)
+        XCTAssertEqual(preview.scene.focus, .click)
+        controller.slotFocusChanged(.click, focused: false)
+        XCTAssertNil(preview.scene.focus)
+
+        // Leaving the tab forgets both.
+        controller.slotHoverChanged(.up, inside: true)
+        controller.slotFocusChanged(.down, focused: true)
+        controller.viewDidDisappear()
+        XCTAssertNil(controller.hoveredSlot)
+        XCTAssertNil(controller.focusedSlot)
+        XCTAssertNil(preview.scene.focus)
+    }
+
+    func testDirectionRowsReportThePointerAndThePopUpsTheFocus() throws {
+        let controller = makeController()
+        for slot in Slot.allCases {
+            let row = controller.directionRows[slot.rawValue]
+            let area = try XCTUnwrap(row.trackingAreas.first, slot.name)
+            XCTAssertTrue(area.owner === controller)
+            XCTAssertEqual(area.userInfo?["gestureSlot"] as? Int, slot.rawValue)
+            XCTAssertTrue(area.options.contains(.mouseEnteredAndExited))
+            XCTAssertTrue(controller.controls.actionPopUp(for: slot) is MouseGestureActionPopUpButton)
+        }
+
+        // A focus change of a pop-up reaches the tab.
+        let popup = try XCTUnwrap(controller.controls.actionPopUp(for: .down) as? MouseGestureActionPopUpButton)
+        popup.onFocusChange?(true)
+        XCTAssertEqual(controller.previewView.scene.focus, .down)
+        popup.onFocusChange?(false)
+        XCTAssertNil(controller.previewView.scene.focus)
     }
 
     // MARK: - Shared with the popover
@@ -399,13 +581,16 @@ final class PreferencesGesturesTests: XCTestCase {
         }
         typealias ID = MouseGestureSettingsControls.Identifier
         let mode = try XCTUnwrap(find(ID.mode, in: view) as? NSSegmentedControl)
-        let freeze = try XCTUnwrap(find(ID.freezePointer, in: view) as? NSButton)
+        let freeze = try XCTUnwrap(find(ID.freezePointer, in: view) as? NSButton, "the popover keeps its checkboxes")
         for slot in Slot.allCases {
             XCTAssertNotNil(find(ID.action(slot.name), in: view) as? NSPopUpButton, slot.name)
         }
-        XCTAssertNotNil(find(ID.invertHorizontal, in: view) as? NSButton)
+        let invert = try XCTUnwrap(find(ID.invertHorizontal, in: view) as? NSButton)
+        XCTAssertEqual(invert.title, "Invert left and right")
+        XCTAssertEqual(freeze.title, "Freeze pointer during a gesture")
+        XCTAssertEqual((find(ID.modeNote, in: view) as? NSTextField)?.stringValue, text("gesture-mode-interactive-note"))
         // The popover is the short version: tracking speed is in the tab only.
-        XCTAssertNil(find(ID.trackingSpeed, in: view))
+        XCTAssertNil(find(GesturesPreferencesViewController.Identifier.trackingSpeed, in: view))
 
         mode.selectedSegment = 1
         send(mode)
@@ -417,7 +602,7 @@ final class PreferencesGesturesTests: XCTestCase {
         // The tab shows what the popover changed.
         let controller = makeController()
         XCTAssertEqual(controller.controls.modeControl.selectedSegment, 1)
-        XCTAssertEqual(controller.controls.freezeCheckbox.state, .off)
+        XCTAssertFalse(MouseGestureSettingsControls.isOn(controller.controls.freezeToggle))
     }
 
     // MARK: - Strings
@@ -426,9 +611,14 @@ final class PreferencesGesturesTests: XCTestCase {
         let missing = "\u{1}missing"
         let app = Bundle(for: PreferencesTabViewController.self)
         let keys = [
-            "gestures-tab-title", "gesture-mode-label", "gesture-options-label",
-            "gesture-tracking-speed-label", "gesture-tracking-speed-hint",
-            "gestures-actions-hint", "gestures-actions-hint-unbound",
+            "gestures-tab-title", "gesture-mode-label",
+            "gesture-mode-discrete-description", "gesture-mode-interactive-description",
+            "gesture-tracking-speed-label", "gesture-tracking-speed-hint", "gesture-tracking-speed-hint-discrete",
+            "gesture-tracking-speed-slower", "gesture-tracking-speed-faster",
+            "gesture-invert-horizontal-hint", "gesture-freeze-pointer-hint",
+            "gestures-unbound-title", "gestures-unbound-hint",
+            "gestures-directions-header", "gestures-directions-hint", "gestures-behaviour-header",
+            "gestures-logitech-needs", "gestures-buttons-note",
         ]
         for locale in PreferencesLocalizationTests.locales {
             guard let path = app.path(forResource: locale, ofType: "lproj"), let bundle = Bundle(path: path) else {
@@ -440,7 +630,101 @@ final class PreferencesGesturesTests: XCTestCase {
                 XCTAssertNotEqual(value, missing, "\(locale): \(key) missing")
                 XCTAssertNotEqual(value, key, "\(locale): \(key) shows the raw key")
                 XCTAssertFalse(value.isEmpty, "\(locale): \(key) empty")
+                XCTAssertFalse(value.contains("%"), "\(locale): \(key) takes no arguments")
             }
+        }
+    }
+}
+
+/// Renders the tab off screen for a look at it: both modes, with and without a mouse that
+/// supports the Logitech options, without a gesture button, light and dark. Off screen the
+/// window's material draws a flat grey and vibrant text is not blended, so text looks a
+/// little dimmer than on screen. Only runs when asked to:
+/// `TEST_RUNNER_GESTURES_SHOTS_DIR=<folder> xcodebuild … test -only-testing:MosTests/PreferencesGesturesRenderTests`.
+final class PreferencesGesturesRenderTests: XCTestCase {
+
+    private var savedGesture = MouseGestureSettings.default
+
+    override func setUp() {
+        super.setUp()
+        savedGesture = Options.shared.gesture
+    }
+
+    override func tearDown() {
+        Options.shared.gesture = savedGesture
+        super.tearDown()
+    }
+
+    func testRenderTheTab() throws {
+        guard let folder = ProcessInfo.processInfo.environment["GESTURES_SHOTS_DIR"], !folder.isEmpty else {
+            throw XCTSkip("set TEST_RUNNER_GESTURES_SHOTS_DIR to render the Gestures tab")
+        }
+        let directory = URL(fileURLWithPath: folder, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let master4 = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
+        let master3 = MouseGestureDeviceSupport(deviceTracking: true, haptics: false)
+        let cases: [(name: String, mode: MouseGestureMode, support: MouseGestureDeviceSupport, bound: Bool, available: Bool)] = [
+            ("discrete-no-logitech", .discrete, .none, true, true),
+            ("discrete-mx-master-4", .discrete, master4, true, true),
+            ("follow-no-logitech", .interactive, .none, true, true),
+            ("follow-mx-master-4", .interactive, master4, true, true),
+            ("follow-mx-master-3", .interactive, master3, true, true),
+            ("unbound-no-logitech", .discrete, .none, false, true),
+            ("follow-unavailable", .interactive, .none, true, false),
+        ]
+        for item in cases {
+            var gesture = MouseGestureSettings.default
+            gesture.mode = item.mode
+            gesture.deviceTracking = item.support.deviceTracking
+            Options.shared.gesture = gesture
+            let controller = GesturesPreferencesViewController(isInteractiveAvailable: { item.available })
+            controller.deviceSource = MouseGestureDeviceSource(support: { item.support }, refresh: {})
+            controller.bindingSummary = {
+                MouseGestureBindingSummary(hasGestureButton: item.bound, hasLogitechGestureButton: item.support.deviceTracking)
+            }
+            _ = controller.view
+            // The preview still: the desktops half-way, or the action fully shown.
+            controller.previewView.prefersReducedMotion = { true }
+            controller.previewView.reduceMotionDidChange()
+            try render(controller.view, name: "tab-\(item.name)", into: directory)
+        }
+    }
+
+    /// Writes `<name>-light.png` and `<name>-dark.png`, as the Scrolling render does.
+    private func render(_ view: NSView, name: String, into directory: URL) throws {
+        let host = NSView(frame: view.frame)
+        host.addSubview(view)
+        defer { view.removeFromSuperview() }
+        for (suffix, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            host.appearance = appearance
+            view.layoutSubtreeIfNeeded()
+            view.display()
+            let bounds = view.bounds
+            let rep = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: bounds))
+            view.cacheDisplay(in: bounds, to: rep)
+
+            let image = NSImage(size: bounds.size)
+            image.addRepresentation(try XCTUnwrap(NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: Int(bounds.width * 2), pixelsHigh: Int(bounds.height * 2),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+            )))
+            let canvas = try XCTUnwrap(image.representations.first as? NSBitmapImageRep)
+            canvas.size = bounds.size
+            let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: canvas))
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            appearance.performAsCurrentDrawingAppearance {
+                NSColor.windowBackgroundColor.setFill()
+                bounds.fill()
+            }
+            rep.draw(in: bounds)
+            NSGraphicsContext.restoreGraphicsState()
+
+            let png = try XCTUnwrap(canvas.representation(using: .png, properties: [:]))
+            try png.write(to: directory.appendingPathComponent("\(name)-\(suffix).png"))
         }
     }
 }

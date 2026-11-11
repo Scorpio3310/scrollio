@@ -901,7 +901,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Freeze pointer during gesture"
+            "value": "Freeze pointer during a gesture"
           }
         }
       }
@@ -989,7 +989,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tracking Speed"
+            "value": "Tracking speed"
           }
         }
       }
@@ -1000,18 +1000,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Follow the hand only. Higher is faster."
-          }
-        }
-      }
-    },
-    "gesture-options-label": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Options"
+            "value": "How far the desktops move with your hand."
           }
         }
       }
@@ -1027,46 +1016,167 @@
         }
       }
     },
-    "gestures-actions-hint": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hold a Gesture Navigation button and move the mouse. Release without moving to run Click."
-          }
-        }
-      }
-    },
-    "gestures-actions-hint-unbound": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No button is set to Gesture Navigation yet. Choose it as an action in Buttons."
-          }
-        }
-      }
-    },
     "gestures-logitech-header": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Logitech"
+            "value": "Logitech mouse"
           }
         }
       }
     },
-    "gestures-logitech-row-label": {
+    "gesture-mode-discrete-description": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mouse"
+            "value": "Each direction runs its action once per hold."
+          }
+        }
+      }
+    },
+    "gesture-mode-interactive-description": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moving sideways slides the desktops with your hand, like a trackpad swipe."
+          }
+        }
+      }
+    },
+    "gesture-invert-horizontal-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moving left counts as moving right, and the other way round."
+          }
+        }
+      }
+    },
+    "gesture-freeze-pointer-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The pointer stays where it is while you hold the button."
+          }
+        }
+      }
+    },
+    "gesture-tracking-speed-hint-discrete": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only used when the desktops follow the hand."
+          }
+        }
+      }
+    },
+    "gesture-tracking-speed-slower": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Slower"
+          }
+        }
+      }
+    },
+    "gesture-tracking-speed-faster": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Faster"
+          }
+        }
+      }
+    },
+    "gestures-unbound-title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No gesture button yet"
+          }
+        }
+      }
+    },
+    "gestures-unbound-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Under Buttons, set a mouse button to Gesture Navigation."
+          }
+        }
+      }
+    },
+    "gestures-directions-header": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Directions"
+          }
+        }
+      }
+    },
+    "gestures-directions-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold the gesture button and move the mouse. Let go without moving to run Click."
+          }
+        }
+      }
+    },
+    "gestures-behaviour-header": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Behaviour"
+          }
+        }
+      }
+    },
+    "gestures-logitech-needs": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect a Logitech MX Master to let the mouse track gestures, with haptic feedback on the MX Master 4."
+          }
+        }
+      }
+    },
+    "gestures-buttons-note": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose the gesture button under Buttons."
           }
         }
       }
@@ -1671,7 +1781,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Experimental. The mouse holds the pointer still."
+            "value": "The mouse itself holds the pointer still and reports the movement. Experimental."
           }
         }
       }
@@ -1704,7 +1814,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "MX Master 4: a pulse when a gesture locks in. Switches the mouse's haptics on if they are off."
+            "value": "A short pulse when a gesture locks in (MX Master 4)."
           }
         }
       }

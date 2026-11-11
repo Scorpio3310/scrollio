@@ -2,9 +2,10 @@
 //  MouseGestureSettingsControls.swift
 //  Mos
 //  The controls that edit Options.shared.gesture: mode, one action per direction and
-//  click, invert left/right, freeze pointer and tracking speed. The Gestures tab and the
-//  Gesture Settings popover lay out the same controls, so their rules live here once.
-//  Changes apply immediately.
+//  click, invert left/right and freeze pointer. The Gestures tab and the Gesture Settings
+//  popover lay out the same controls, so their rules live here once: the popover with
+//  checkboxes, the tab with switches. Changes apply immediately. (The tracking speed is
+//  in the tab only; the tab edits it itself.)
 //
 
 import Cocoa
@@ -24,6 +25,20 @@ struct MouseGestureModePresentation: Equatable {
     var isTrackingSpeedEditable: Bool {
         return selectedMode == .interactive
     }
+
+    /// Localization key of the one line the tab shows under "Mode": what the selected mode
+    /// does, or why "Follow the hand" cannot be picked.
+    var descriptionKey: String {
+        guard isInteractiveSelectable else { return "gesture-mode-interactive-unavailable" }
+        return selectedMode == .interactive ? "gesture-mode-interactive-description" : "gesture-mode-discrete-description"
+    }
+
+    /// Every line `descriptionKey` can be, so the row can keep room for the longest.
+    static let descriptionKeys = [
+        "gesture-mode-discrete-description",
+        "gesture-mode-interactive-description",
+        "gesture-mode-interactive-unavailable",
+    ]
 
     /// Without the swipe synthesizer Mos runs discrete whatever is stored, so the control
     /// shows discrete. The stored mode is left alone and applies again once it is available.
@@ -55,7 +70,32 @@ enum MouseGestureTrackingSpeed {
     }
 }
 
+/// An action pop-up that tells when it gains or loses the keyboard focus (the tab's
+/// preview shows the gesture of the focused row).
+final class MouseGestureActionPopUpButton: NSPopUpButton {
+    var onFocusChange: ((Bool) -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { onFocusChange?(true) }
+        return became
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { onFocusChange?(false) }
+        return resigned
+    }
+}
+
 final class MouseGestureSettingsControls: NSObject {
+
+    /// How invert and freeze look: checkboxes with their titles (the popover), or switches
+    /// that sit in rows titled by the layout (the tab).
+    enum ToggleStyle {
+        case checkboxes
+        case switches
+    }
 
     /// Identifiers for the controls (tests and accessibility tooling).
     enum Identifier {
@@ -63,7 +103,6 @@ final class MouseGestureSettingsControls: NSObject {
         static let modeNote = NSUserInterfaceItemIdentifier("gesture-mode-note")
         static let invertHorizontal = NSUserInterfaceItemIdentifier("gesture-invert-horizontal")
         static let freezePointer = NSUserInterfaceItemIdentifier("gesture-freeze-pointer")
-        static let trackingSpeed = NSUserInterfaceItemIdentifier("gesture-tracking-speed")
 
         static func action(_ direction: String) -> NSUserInterfaceItemIdentifier {
             return NSUserInterfaceItemIdentifier("gesture-action-\(direction)")
@@ -141,12 +180,16 @@ final class MouseGestureSettingsControls: NSObject {
     let modeNote: NSTextField
     /// One pull-down per `Slot`, in `Slot.allCases` order.
     private(set) var actionPopUps: [NSPopUpButton] = []
-    let invertCheckbox: NSButton
-    let freezeCheckbox: NSButton
-    let trackingSpeedSlider: NSSlider
-    let trackingSpeedValueLabel: NSTextField
-    /// The slider with its value label to the right.
-    let trackingSpeedLine: NSView
+    /// "Invert left and right" and "Freeze pointer": an NSButton checkbox or an NSSwitch,
+    /// as `toggleStyle` says.
+    let invertToggle: NSControl
+    let freezeToggle: NSControl
+    let toggleStyle: ToggleStyle
+
+    /// Called after a control has written a setting (and the controls show it).
+    var onChange: (() -> Void)?
+    /// Called when the pop-up of a slot gains (true) or loses the keyboard focus.
+    var onFocusChange: ((Slot, Bool) -> Void)?
 
     /// Also offer Logi actions in the action popups. Changing it rebuilds their menus.
     var showLogiActions: Bool {
@@ -165,9 +208,11 @@ final class MouseGestureSettingsControls: NSObject {
     /// - Parameter showLogiActions: also offer Logi actions in the action popups.
     init(
         showLogiActions: Bool,
+        toggleStyle: ToggleStyle = .checkboxes,
         isInteractiveAvailable: @escaping () -> Bool = { DockSwipeSynthesizer.shared.isAvailable }
     ) {
         self.showLogiActions = showLogiActions
+        self.toggleStyle = toggleStyle
         self.isInteractiveAvailable = isInteractiveAvailable
 
         modeControl = NSSegmentedControl(
@@ -188,44 +233,49 @@ final class MouseGestureSettingsControls: NSObject {
         modeNote.textColor = NSColor.secondaryLabelColor
         modeNote.isSelectable = false
 
-        invertCheckbox = NSButton(
-            checkboxWithTitle: NSLocalizedString("gesture-invert-horizontal", comment: ""),
-            target: nil,
-            action: nil
-        )
-        invertCheckbox.identifier = Identifier.invertHorizontal
-
-        freezeCheckbox = NSButton(
-            checkboxWithTitle: NSLocalizedString("gesture-freeze-pointer", comment: ""),
-            target: nil,
-            action: nil
-        )
-        freezeCheckbox.identifier = Identifier.freezePointer
-
-        let speed = PreferencesForm.makeSliderLine(
-            range: MouseGestureSettings.trackingSpeedRange,
-            widestValue: MouseGestureTrackingSpeed.text(MouseGestureSettings.trackingSpeedRange.upperBound),
-            target: nil,
-            action: nil,
-            accessibilityLabel: NSLocalizedString("gesture-tracking-speed-label", comment: "")
-        )
-        trackingSpeedSlider = speed.slider
-        trackingSpeedSlider.identifier = Identifier.trackingSpeed
-        trackingSpeedValueLabel = speed.valueLabel
-        trackingSpeedLine = speed.line
+        invertToggle = Self.makeToggle(toggleStyle, titleKey: "gesture-invert-horizontal")
+        invertToggle.identifier = Identifier.invertHorizontal
+        freezeToggle = Self.makeToggle(toggleStyle, titleKey: "gesture-freeze-pointer")
+        freezeToggle.identifier = Identifier.freezePointer
 
         super.init()
 
         modeControl.target = self
         modeControl.action = #selector(modeChanged(_:))
-        invertCheckbox.target = self
-        invertCheckbox.action = #selector(invertToggled(_:))
-        freezeCheckbox.target = self
-        freezeCheckbox.action = #selector(freezeToggled(_:))
-        trackingSpeedSlider.target = self
-        trackingSpeedSlider.action = #selector(trackingSpeedChanged(_:))
+        invertToggle.target = self
+        invertToggle.action = #selector(invertToggled(_:))
+        freezeToggle.target = self
+        freezeToggle.action = #selector(freezeToggled(_:))
         actionPopUps = Slot.allCases.map { makeActionPopUp(for: $0) }
         sync()
+    }
+
+    private static func makeToggle(_ style: ToggleStyle, titleKey: String) -> NSControl {
+        switch style {
+        case .checkboxes:
+            return NSButton(checkboxWithTitle: NSLocalizedString(titleKey, comment: ""), target: nil, action: nil)
+        case .switches:
+            // Named by the row it sits in.
+            return PreferencesGroupedForm.makeSwitch(target: nil, action: nil)
+        }
+    }
+
+    /// On or off, for a checkbox or a switch.
+    static func isOn(_ toggle: NSControl) -> Bool {
+        switch toggle {
+        case let button as NSButton: return button.state == .on
+        case let toggle as NSSwitch: return toggle.state == .on
+        default: return false
+        }
+    }
+
+    static func setOn(_ on: Bool, _ toggle: NSControl) {
+        let state: NSControl.StateValue = on ? .on : .off
+        switch toggle {
+        case let button as NSButton: button.state = state
+        case let toggle as NSSwitch: toggle.state = state
+        default: break
+        }
     }
 
     /// The popup that edits `slot`.
@@ -238,25 +288,20 @@ final class MouseGestureSettingsControls: NSObject {
     /// Puts the stored settings and the mode rules into every control.
     func sync() {
         let settings = Options.shared.gesture
-        invertCheckbox.state = settings.invertHorizontal ? .on : .off
-        freezeCheckbox.state = settings.freezePointer ? .on : .off
-        // A refresh arriving mid-drag must not snap the knob back.
-        if !PreferencesForm.isTrackingMouse {
-            trackingSpeedSlider.doubleValue = settings.trackingSpeed
-        }
-        trackingSpeedValueLabel.stringValue = MouseGestureTrackingSpeed.text(settings.trackingSpeed)
+        Self.setOn(settings.invertHorizontal, invertToggle)
+        Self.setOn(settings.freezePointer, freezeToggle)
         applyModePresentation()
     }
 
-    private var modePresentation: MouseGestureModePresentation {
+    /// What the mode control and the action rows show now.
+    var modePresentation: MouseGestureModePresentation {
         return MouseGestureModePresentation.make(
             storedMode: Options.shared.gesture.mode,
             isInteractiveAvailable: isInteractiveAvailable()
         )
     }
 
-    /// Brings the mode control, its note, the Left / Right rows and the tracking speed in
-    /// line with the mode.
+    /// Brings the mode control, its note and the Left / Right rows in line with the mode.
     private func applyModePresentation() {
         let presentation = modePresentation
         if let interactiveSegment = Self.modes.firstIndex(of: .interactive) {
@@ -281,15 +326,15 @@ final class MouseGestureSettingsControls: NSObject {
                 titleItem.image = nil
             }
         }
-
-        trackingSpeedSlider.isEnabled = presentation.isTrackingSpeedEditable
-        trackingSpeedValueLabel.textColor = presentation.isTrackingSpeedEditable ? .labelColor : .tertiaryLabelColor
     }
 
     // MARK: - Action popups
 
     private func makeActionPopUp(for slot: Slot) -> NSPopUpButton {
-        let popup = NSPopUpButton(frame: .zero, pullsDown: true)
+        let popup = MouseGestureActionPopUpButton(frame: .zero, pullsDown: true)
+        popup.onFocusChange = { [weak self] focused in
+            self?.onFocusChange?(slot, focused)
+        }
         popup.tag = slot.rawValue
         popup.identifier = Identifier.action(slot.name)
         popup.setAccessibilityLabel(NSLocalizedString(slot.labelKey, comment: ""))
@@ -405,6 +450,7 @@ final class MouseGestureSettingsControls: NSObject {
         slot.store(identifier, in: &settings)
         Options.shared.gesture = settings
         updateTitle(of: actionPopUp(for: slot), identifier: identifier)
+        onChange?()
     }
 
     @objc private func modeChanged(_ sender: NSSegmentedControl) {
@@ -417,21 +463,16 @@ final class MouseGestureSettingsControls: NSObject {
         }
         Options.shared.gesture.mode = mode
         applyModePresentation()
+        onChange?()
     }
 
-    @objc private func invertToggled(_ sender: NSButton) {
-        Options.shared.gesture.invertHorizontal = sender.state == .on
+    @objc private func invertToggled(_ sender: NSControl) {
+        Options.shared.gesture.invertHorizontal = Self.isOn(sender)
+        onChange?()
     }
 
-    @objc private func freezeToggled(_ sender: NSButton) {
-        Options.shared.gesture.freezePointer = sender.state == .on
-    }
-
-    @objc private func trackingSpeedChanged(_ sender: NSSlider) {
-        let value = MouseGestureTrackingSpeed.snapped(sender.doubleValue)
-        trackingSpeedValueLabel.stringValue = MouseGestureTrackingSpeed.text(value)
-        if Options.shared.gesture.trackingSpeed != value {
-            Options.shared.gesture.trackingSpeed = value
-        }
+    @objc private func freezeToggled(_ sender: NSControl) {
+        Options.shared.gesture.freezePointer = Self.isOn(sender)
+        onChange?()
     }
 }
