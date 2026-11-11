@@ -138,7 +138,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
-    /// Access allowed and not, the login item waiting for approval, paused. The login item
+    /// Access allowed and not, the login item waiting for approval, paused, and a build
+    /// stamped by scripts/install.sh (the longest line: a commit with "+"). The login item
     /// and the permission are fixed, nothing is asked of the system.
     func testRenderGeneral() throws {
         final class FixedLoginItem: LoginItemService {
@@ -154,11 +155,18 @@ final class PreferencesWindowRenderTests: XCTestCase {
             Options.shared.general.autoLaunch = savedAutoLaunch
             LoginItem.service = LoginItem.defaultService
         }
-        let cases: [(name: String, access: Bool, login: LoginItemStatus, paused: Bool)] = [
-            ("general", true, .enabled, false),
-            ("general-no-access", false, .notRegistered, false),
-            ("general-login-approval", true, .requiresApproval, false),
-            ("general-paused", true, .enabled, true),
+        let stamp: [String: Any] = [
+            "CFBundleShortVersionString": "1.0", "CFBundleVersion": "1456",
+            PreferencesGeneralViewController.buildCommitKey: "e904756+",
+            PreferencesGeneralViewController.buildDateKey: "2026-11-11",
+        ]
+        let plain: [String: Any] = ["CFBundleShortVersionString": "1.0", "CFBundleVersion": "1"]
+        let cases: [(name: String, access: Bool, login: LoginItemStatus, paused: Bool, info: [String: Any])] = [
+            ("general", true, .enabled, false, plain),
+            ("general-no-access", false, .notRegistered, false, plain),
+            ("general-login-approval", true, .requiresApproval, false, plain),
+            ("general-paused", true, .enabled, true, plain),
+            ("general-build-stamp", true, .enabled, false, stamp),
         ]
         for item in cases {
             LoginItem.service = FixedLoginItem(item.login)
@@ -169,6 +177,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 general.isPaused = { item.paused }
                 general.resume = {}
                 general.isMenuBarIconHidden = { false }
+                general.bundleInfo = { item.info }
             }, afterLoad: { controller in
                 // The window calls viewWillAppear, which reads the login item.
                 controller.viewWillAppear()

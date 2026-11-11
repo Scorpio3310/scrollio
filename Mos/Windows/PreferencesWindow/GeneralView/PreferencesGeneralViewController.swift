@@ -3,8 +3,9 @@
 //  Mos
 //  "General" preferences pane, built in code on the grouped kit (PreferencesGroupedForm);
 //  the storyboard scene is a shell. On top a card with the app icon, its name, version and
-//  build (GeneralHeaderView; the About pane that showed them is gone, "About Scrollio" in
-//  the app menu opens this pane). Under it, only while Scrollio is paused, "Scrollio is
+//  build, and for a build installed by scripts/install.sh its commit and date
+//  (GeneralHeaderView; the About pane that showed them is gone, "About Scrollio" in the app
+//  menu opens this pane). Under it, only while Scrollio is paused, "Scrollio is
 //  paused" with "Resume" (with the menu bar icon hidden there is no other way back). Then
 //  two boxes:
 //  - "Open at login" (with a row to approve it in System Settings while macOS waits for
@@ -46,6 +47,9 @@ class PreferencesGeneralViewController: NSViewController {
     var resume: () -> Void = { AppRunController.shared.setPaused(false) }
     /// Opens the Welcome Guide.
     var showWelcomeGuide: () -> Void = IntroductionWindowController.showWelcomeGuide
+    /// The app's Info.plist, for the version line; tests and renders give one with or
+    /// without a build stamp.
+    var bundleInfo: () -> [String: Any] = { Bundle.main.infoDictionary ?? [:] }
 
     // MARK: - Views (read access for tests)
 
@@ -95,7 +99,7 @@ class PreferencesGeneralViewController: NSViewController {
         content.setHuggingPriority(.defaultHigh, for: .vertical)
         let width = PreferencesGroupedForm.boxWidth(paneWidth: Self.paneWidth)
 
-        let header = GeneralHeaderView(name: text("about-app-name"), version: Self.versionText())
+        let header = GeneralHeaderView(name: text("about-app-name"), version: Self.versionText(info: bundleInfo()))
         header.identifier = NSUserInterfaceItemIdentifier("general-header")
         headerView = header
         let paused = PreferencesGroupSection(width: width, rows: [makePausedRow()])
@@ -252,11 +256,51 @@ class PreferencesGeneralViewController: NSViewController {
 
     // MARK: - Content
 
+    /// The Info.plist keys scripts/install.sh fills (empty in every other build): the short
+    /// commit, with "+" when it was built with uncommitted changes, and the day, "2026-11-11".
+    static let buildCommitKey = "ScrollioBuildCommit"
+    static let buildDateKey = "ScrollioBuildDate"
+
     /// "Version 1.0 (1)": the version and the build number the bundle was built with.
     static func versionText(bundle: Bundle = .main) -> String {
-        let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-        let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
-        return String(format: NSLocalizedString("about-version", comment: ""), version, build)
+        return versionText(info: bundle.infoDictionary ?? [:])
+    }
+
+    /// The version line from an Info.plist. Pure. Without a build stamp "Version 1.0 (1)";
+    /// with one, the commit (as it is, "+" included) and the day in `locale`'s format:
+    /// "Version 1.0 (1456) · e904756 · 11 Nov 2026".
+    static func versionText(info: [String: Any], locale: Locale = .current) -> String {
+        func value(_ key: String) -> String {
+            return (info[key] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let version = value("CFBundleShortVersionString")
+        let build = value("CFBundleVersion")
+        let commit = value(buildCommitKey)
+        guard !commit.isEmpty else {
+            return String(format: NSLocalizedString("about-version", comment: ""), version, build)
+        }
+        let day = buildDayText(value(buildDateKey), locale: locale)
+        guard !day.isEmpty else {
+            return String(format: NSLocalizedString("about-version-commit", comment: ""), version, build, commit)
+        }
+        return String(format: NSLocalizedString("about-version-commit-date", comment: ""), version, build, commit, day)
+    }
+
+    /// "2026-11-11" as `locale` writes a date ("11 Nov 2026", "Nov 11, 2026"); anything
+    /// else as it is. The day is read and written in one time zone, so it never moves.
+    static func buildDayText(_ iso: String, locale: Locale) -> String {
+        guard let utc = TimeZone(identifier: "UTC") else { return iso }
+        let reader = DateFormatter()
+        reader.locale = Locale(identifier: "en_US_POSIX")
+        reader.timeZone = utc
+        reader.dateFormat = "yyyy-MM-dd"
+        guard let date = reader.date(from: iso) else { return iso }
+        let writer = DateFormatter()
+        writer.locale = locale
+        writer.timeZone = utc
+        writer.dateStyle = .medium
+        writer.timeStyle = .none
+        return writer.string(from: date)
     }
 
     // MARK: - Lifecycle

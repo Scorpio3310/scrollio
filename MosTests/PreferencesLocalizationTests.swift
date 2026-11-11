@@ -124,6 +124,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-accessibility-allowed", "general-accessibility-not-allowed", "general-accessibility-open-settings",
         "about-app-name", "about-version", "about-credit", "about-welcome-guide",
         "about-welcome-guide-open", "about-welcome-guide-hint",
+        "about-version-commit", "about-version-commit-date",
     ]
 
     /// The window and the kit: the sidebar, the + and − under a list.
@@ -197,6 +198,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-detail-inherit-off": "@",
         // General pane
         "about-version": "@@",
+        "about-version-commit": "@@@",
+        "about-version-commit-date": "@@@@",
         // Welcome Guide
         "intro-step-accessibility": "d@",
         // Status-bar menu and toasts

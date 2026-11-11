@@ -141,6 +141,64 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertEqual(pane.title, "General")
     }
 
+    /// A build installed by scripts/install.sh says which commit it is and when it was
+    /// built; any other build shows the line as before. Read through one pure function.
+    func testTheVersionLineShowsTheBuildStampWhenThereIsOne() throws {
+        let plain: [String: Any] = ["CFBundleShortVersionString": "1.0", "CFBundleVersion": "1"]
+        let gb = Locale(identifier: "en_GB")
+        let us = Locale(identifier: "en_US")
+        typealias Pane = PreferencesGeneralViewController
+        XCTAssertEqual(Pane.buildCommitKey, "ScrollioBuildCommit")
+        XCTAssertEqual(Pane.buildDateKey, "ScrollioBuildDate")
+
+        // Without the keys, or with them empty (every build but an installed one).
+        XCTAssertEqual(Pane.versionText(info: plain, locale: gb), "Version 1.0 (1)")
+        var empty = plain
+        empty[Pane.buildCommitKey] = ""
+        empty[Pane.buildDateKey] = ""
+        XCTAssertEqual(Pane.versionText(info: empty, locale: gb), "Version 1.0 (1)")
+
+        // Stamped: the commit and the day in the user's format.
+        let stamped: [String: Any] = [
+            "CFBundleShortVersionString": "1.0", "CFBundleVersion": "1456",
+            Pane.buildCommitKey: "e904756", Pane.buildDateKey: "2026-11-11",
+        ]
+        XCTAssertEqual(Pane.versionText(info: stamped, locale: gb), "Version 1.0 (1456) · e904756 · 11 Nov 2026")
+        XCTAssertEqual(Pane.versionText(info: stamped, locale: us), "Version 1.0 (1456) · e904756 · Nov 11, 2026")
+        // Built with uncommitted changes: the "+" stays.
+        var dirty = stamped
+        dirty[Pane.buildCommitKey] = "e904756+"
+        XCTAssertEqual(Pane.versionText(info: dirty, locale: gb), "Version 1.0 (1456) · e904756+ · 11 Nov 2026")
+        // The first of a month stays that day in any time zone; a day that is no date is
+        // shown as it is; without one, the commit alone.
+        var newYear = stamped
+        newYear[Pane.buildDateKey] = "2026-01-01"
+        XCTAssertEqual(Pane.versionText(info: newYear, locale: us), "Version 1.0 (1456) · e904756 · Jan 1, 2026")
+        var odd = stamped
+        odd[Pane.buildDateKey] = "yesterday"
+        XCTAssertEqual(Pane.versionText(info: odd, locale: gb), "Version 1.0 (1456) · e904756 · yesterday")
+        var noDay = stamped
+        noDay[Pane.buildDateKey] = nil
+        XCTAssertEqual(Pane.versionText(info: noDay, locale: gb), "Version 1.0 (1456) · e904756")
+
+        // The card shows what the bundle says, and still fits on one line.
+        install(.notRegistered)
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesGeneralViewController.self))
+        let pane = try XCTUnwrap(
+            storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.general) as? PreferencesGeneralViewController
+        )
+        pane.isAccessGranted = { true }
+        pane.isPaused = { false }
+        pane.isMenuBarIconHidden = { false }
+        pane.bundleInfo = { dirty }
+        pane.view.layoutSubtreeIfNeeded()
+        let label = pane.headerView.versionLabel
+        XCTAssertEqual(label.stringValue, Pane.versionText(info: dirty))
+        XCTAssertGreaterThanOrEqual(label.frame.width, label.intrinsicContentSize.width - 0.5, "not cut off")
+        // This test build has no stamp: the line as before.
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: Pane.buildCommitKey) as? String ?? "", "")
+    }
+
     /// The card has the size and the look of the Mouse pane's card.
     func testTheCardHasTheLookOfTheMouseCard() throws {
         install(.notRegistered)

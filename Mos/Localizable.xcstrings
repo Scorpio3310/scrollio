@@ -5076,6 +5076,30 @@
           }
         }
       }
+    },
+    "about-version-commit": {
+      "comment": "General pane card: the version, the build number and the commit of a build installed by scripts/install.sh (a commit ending in + was built with uncommitted changes), when its date is not known",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version %1$@ (%2$@) · %3$@"
+          }
+        }
+      }
+    },
+    "about-version-commit-date": {
+      "comment": "General pane card: the version, the build number, the commit (a commit ending in + was built with uncommitted changes) and the day of a build installed by scripts/install.sh, the day in the user's date format",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version %1$@ (%2$@) · %3$@ · %4$@"
+          }
+        }
+      }
     }
   },
   "version": "1.1"
