@@ -2,8 +2,8 @@
 //  MouseGesturePresentation.swift
 //  Mos
 //  Pure helpers for the Gestures tab: what the connected mice can do for Gesture
-//  Navigation, which Logitech options are enabled and what the stored button bindings
-//  mean for the tab. Kept free of views so the rules can be unit tested.
+//  Navigation, which Logitech options are shown and enabled and what the stored button
+//  bindings mean for the tab. Kept free of views so the rules can be unit tested.
 //
 
 import Foundation
@@ -55,6 +55,12 @@ struct MouseGestureControlRules: Equatable {
             ? "mouse-gesture-haptics-hint"
             : "mouse-gesture-haptics-unavailable"
     }
+
+    /// The tab shows the Logitech options only when a connected mouse supports at least one
+    /// of them; otherwise a line says what they need.
+    var showsOptions: Bool {
+        return deviceTrackingEnabled || hapticsEnabled
+    }
 }
 
 /// What the stored button bindings mean for the Gestures tab.
@@ -63,11 +69,6 @@ struct MouseGestureBindingSummary: Equatable {
     var hasGestureButton: Bool
     /// One of those buttons is a Logitech control: Logi actions make sense as gesture actions.
     var hasLogitechGestureButton: Bool
-
-    /// Localization key of the hint under the action rows.
-    var actionsHintKey: String {
-        return hasGestureButton ? "gestures-actions-hint" : "gestures-actions-hint-unbound"
-    }
 
     init(hasGestureButton: Bool, hasLogitechGestureButton: Bool) {
         self.hasGestureButton = hasGestureButton

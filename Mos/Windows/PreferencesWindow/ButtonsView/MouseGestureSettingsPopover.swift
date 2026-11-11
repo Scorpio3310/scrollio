@@ -97,8 +97,8 @@ final class MouseGestureSettingsPopover: NSObject, NSPopoverDelegate {
         let separator = NSBox()
         separator.boxType = .separator
 
-        let invert = controls.invertCheckbox
-        let freeze = controls.freezeCheckbox
+        let invert = controls.invertToggle
+        let freeze = controls.freezeToggle
 
         let footnote = NSTextField(wrappingLabelWithString: NSLocalizedString("gesture-settings-footnote", comment: ""))
         footnote.font = NSFont.systemFont(ofSize: 11)

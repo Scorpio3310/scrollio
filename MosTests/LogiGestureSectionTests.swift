@@ -1,10 +1,11 @@
 import XCTest
 @testable import Mos_Debug
 
-/// The "Logitech" section of the Gestures tab: two checkboxes bound to the shared gesture
-/// settings, enabled only when a connected mouse can do what they offer, with a hint that
-/// says why not otherwise. Capabilities come from fixtures; no HID device is touched.
-/// (The section lived in the Mouse tab before.)
+/// The "Logitech mouse" box of the Gestures tab: two switches bound to the shared gesture
+/// settings. The box shows when a connected mouse can do at least one of them (a switch
+/// it cannot do is disabled and says why); without such a mouse a muted line says what
+/// is needed. Capabilities come from fixtures; no HID device is touched. (The section
+/// lived in the Mouse tab before.)
 final class LogiGestureSectionTests: XCTestCase {
 
     private var savedGesture = MouseGestureSettings.default
@@ -40,6 +41,11 @@ final class LogiGestureSectionTests: XCTestCase {
         XCTAssertTrue(control.sendAction(control.action, to: control.target))
     }
 
+    private func set(_ toggle: NSSwitch, on: Bool) {
+        toggle.state = on ? .on : .off
+        send(toggle)
+    }
+
     private func text(_ key: String) -> String {
         return NSLocalizedString(key, comment: "")
     }
@@ -65,6 +71,12 @@ final class LogiGestureSectionTests: XCTestCase {
         XCTAssertTrue(master4.deviceTrackingEnabled)
         XCTAssertTrue(master4.hapticsEnabled)
         XCTAssertEqual(master4.hapticsHintKey, "mouse-gesture-haptics-hint")
+
+        // The box shows for a mouse that can do at least one of the two.
+        XCTAssertFalse(none.showsOptions)
+        XCTAssertTrue(master3.showsOptions)
+        XCTAssertTrue(master4.showsOptions)
+        XCTAssertTrue(MouseGestureControlRules(support: MouseGestureDeviceSupport(deviceTracking: false, haptics: true)).showsOptions)
     }
 
     func testOpeningTheTabAsksTheMiceAgain() {
@@ -90,17 +102,22 @@ final class LogiGestureSectionTests: XCTestCase {
 
     // MARK: - Controls
 
-    func testBothOptionsAreDisabledWithAReasonWhenNoMouseSupportsThem() {
+    func testWithoutASupportingMouseALineSaysWhatIsNeeded() {
         Options.shared.gesture.deviceTracking = true
         let controller = makeController()
 
-        XCTAssertFalse(controller.deviceTrackingCheckbox.isEnabled)
-        XCTAssertFalse(controller.hapticsCheckbox.isEnabled)
-        XCTAssertEqual(controller.deviceTrackingHintLabel.stringValue, text("mouse-gesture-device-tracking-unavailable"))
-        XCTAssertEqual(controller.hapticsHintLabel.stringValue, text("mouse-gesture-haptics-unavailable"))
-        // The stored choices stay visible and untouched for when a mouse connects.
-        XCTAssertEqual(controller.deviceTrackingCheckbox.state, .on)
-        XCTAssertEqual(controller.hapticsCheckbox.state, .on)
+        XCTAssertTrue(controller.logitechSection.isHidden)
+        XCTAssertFalse(controller.logitechNeedsLabel.superview?.isHidden ?? true)
+        XCTAssertEqual(controller.logitechNeedsLabel.stringValue, text("gestures-logitech-needs"))
+        XCTAssertTrue(controller.logitechNeedsLabel.stringValue.contains("MX Master"))
+        // The rules still apply to the hidden switches, and the stored choices stay
+        // untouched for when a mouse connects.
+        XCTAssertFalse(controller.deviceTrackingSwitch.isEnabled)
+        XCTAssertFalse(controller.hapticsSwitch.isEnabled)
+        XCTAssertEqual(controller.deviceTrackingRow.explanation, text("mouse-gesture-device-tracking-unavailable"))
+        XCTAssertEqual(controller.hapticsRow.explanation, text("mouse-gesture-haptics-unavailable"))
+        XCTAssertEqual(controller.deviceTrackingSwitch.state, .on)
+        XCTAssertEqual(controller.hapticsSwitch.state, .on)
         XCTAssertTrue(Options.shared.gesture.deviceTracking)
     }
 
@@ -108,38 +125,43 @@ final class LogiGestureSectionTests: XCTestCase {
         support = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
         let controller = makeController()
 
-        XCTAssertTrue(controller.deviceTrackingCheckbox.isEnabled)
-        XCTAssertTrue(controller.hapticsCheckbox.isEnabled)
-        XCTAssertEqual(controller.deviceTrackingHintLabel.stringValue, text("mouse-gesture-device-tracking-hint"))
-        XCTAssertEqual(controller.hapticsHintLabel.stringValue, text("mouse-gesture-haptics-hint"))
-        XCTAssertEqual(controller.deviceTrackingCheckbox.state, .off, "off by default")
-        XCTAssertEqual(controller.hapticsCheckbox.state, .on, "on by default")
-        XCTAssertEqual(controller.deviceTrackingCheckbox.title, text("mouse-gesture-device-tracking"))
-        XCTAssertEqual(controller.hapticsCheckbox.title, text("mouse-gesture-haptics"))
+        XCTAssertFalse(controller.logitechSection.isHidden)
+        XCTAssertTrue(controller.logitechNeedsLabel.superview?.isHidden ?? false)
+        XCTAssertTrue(controller.deviceTrackingSwitch.isEnabled)
+        XCTAssertTrue(controller.hapticsSwitch.isEnabled)
+        XCTAssertEqual(controller.deviceTrackingRow.explanation, text("mouse-gesture-device-tracking-hint"))
+        XCTAssertEqual(controller.hapticsRow.explanation, text("mouse-gesture-haptics-hint"))
+        XCTAssertEqual(controller.deviceTrackingRow.explanation, "The mouse itself holds the pointer still and reports the movement. Experimental.")
+        XCTAssertEqual(controller.hapticsRow.explanation, "A short pulse when a gesture locks in (MX Master 4).")
+        XCTAssertEqual(controller.deviceTrackingSwitch.state, .off, "off by default")
+        XCTAssertEqual(controller.hapticsSwitch.state, .on, "on by default")
+        XCTAssertEqual(controller.deviceTrackingRow.title, text("mouse-gesture-device-tracking"))
+        XCTAssertEqual(controller.hapticsRow.title, text("mouse-gesture-haptics"))
+        XCTAssertEqual(controller.deviceTrackingSwitch.accessibilityLabel(), text("mouse-gesture-device-tracking"))
     }
 
     func testHapticsStayDisabledForAMouseWithoutAMotor() {
         support = MouseGestureDeviceSupport(deviceTracking: true, haptics: false)
         let controller = makeController()
 
-        XCTAssertTrue(controller.deviceTrackingCheckbox.isEnabled)
-        XCTAssertFalse(controller.hapticsCheckbox.isEnabled)
-        XCTAssertEqual(controller.hapticsHintLabel.stringValue, text("mouse-gesture-haptics-unavailable"))
+        XCTAssertFalse(controller.logitechSection.isHidden)
+        XCTAssertTrue(controller.deviceTrackingSwitch.isEnabled)
+        XCTAssertFalse(controller.hapticsSwitch.isEnabled)
+        XCTAssertFalse(controller.hapticsRow.isEnabled)
+        XCTAssertEqual(controller.hapticsRow.explanation, text("mouse-gesture-haptics-unavailable"))
     }
 
-    func testCheckboxesWriteTheGestureSettingsAndNothingElse() {
+    func testSwitchesWriteTheGestureSettingsAndNothingElse() {
         support = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
         Options.shared.gesture.mode = .interactive
         Options.shared.gesture.trackingSpeed = 2
         Options.shared.gesture.clickAction = SystemShortcut.copy.identifier
         let controller = makeController()
 
-        controller.deviceTrackingCheckbox.state = .on
-        send(controller.deviceTrackingCheckbox)
+        set(controller.deviceTrackingSwitch, on: true)
         XCTAssertTrue(Options.shared.gesture.deviceTracking)
 
-        controller.hapticsCheckbox.state = .off
-        send(controller.hapticsCheckbox)
+        set(controller.hapticsSwitch, on: false)
         XCTAssertFalse(Options.shared.gesture.hapticFeedback)
 
         var expected = MouseGestureSettings.default
@@ -150,10 +172,8 @@ final class LogiGestureSectionTests: XCTestCase {
         expected.hapticFeedback = false
         XCTAssertEqual(Options.shared.gesture, expected)
 
-        controller.deviceTrackingCheckbox.state = .off
-        send(controller.deviceTrackingCheckbox)
-        controller.hapticsCheckbox.state = .on
-        send(controller.hapticsCheckbox)
+        set(controller.deviceTrackingSwitch, on: false)
+        set(controller.hapticsSwitch, on: true)
         XCTAssertFalse(Options.shared.gesture.deviceTracking)
         XCTAssertTrue(Options.shared.gesture.hapticFeedback)
     }
@@ -164,52 +184,61 @@ final class LogiGestureSectionTests: XCTestCase {
         Options.shared.gesture.hapticFeedback = false
         let controller = makeController()
 
-        XCTAssertEqual(controller.deviceTrackingCheckbox.state, .on)
-        XCTAssertEqual(controller.hapticsCheckbox.state, .off)
+        XCTAssertEqual(controller.deviceTrackingSwitch.state, .on)
+        XCTAssertEqual(controller.hapticsSwitch.state, .off)
     }
 
     func testGestureStateNotificationUpdatesTheEnablingRules() {
         let controller = makeController()
-        XCTAssertFalse(controller.deviceTrackingCheckbox.isEnabled)
+        XCTAssertFalse(controller.deviceTrackingSwitch.isEnabled)
+        XCTAssertTrue(controller.logitechSection.isHidden)
+        let without = controller.view.frame.height
 
-        // An MX Master 4 connects.
+        // An MX Master 4 connects: the box appears and the tab grows.
         support = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
         NotificationCenter.default.post(name: LogiCenter.gestureStateChanged, object: nil)
-        XCTAssertTrue(controller.deviceTrackingCheckbox.isEnabled)
-        XCTAssertTrue(controller.hapticsCheckbox.isEnabled)
+        XCTAssertFalse(controller.logitechSection.isHidden)
+        XCTAssertTrue(controller.deviceTrackingSwitch.isEnabled)
+        XCTAssertTrue(controller.hapticsSwitch.isEnabled)
         XCTAssertEqual(controller.gestureSupport, support)
-        XCTAssertEqual(controller.hapticsHintLabel.stringValue, text("mouse-gesture-haptics-hint"))
+        XCTAssertEqual(controller.hapticsRow.explanation, text("mouse-gesture-haptics-hint"))
+        XCTAssertGreaterThan(controller.view.frame.height, without)
+        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
 
         // It leaves again.
         support = .none
         NotificationCenter.default.post(name: LogiCenter.gestureStateChanged, object: nil)
-        XCTAssertFalse(controller.deviceTrackingCheckbox.isEnabled)
-        XCTAssertFalse(controller.hapticsCheckbox.isEnabled)
-        XCTAssertEqual(controller.deviceTrackingHintLabel.stringValue, text("mouse-gesture-device-tracking-unavailable"))
+        XCTAssertTrue(controller.logitechSection.isHidden)
+        XCTAssertFalse(controller.deviceTrackingSwitch.isEnabled)
+        XCTAssertFalse(controller.hapticsSwitch.isEnabled)
+        XCTAssertEqual(controller.deviceTrackingRow.explanation, text("mouse-gesture-device-tracking-unavailable"))
+        XCTAssertEqual(controller.view.frame.height, without)
     }
 
     func testTheSectionFitsTheTabWidthInBothStates() {
         let controller = makeController()
-        XCTAssertEqual(controller.view.frame.width, PreferencesForm.contentWidth)
+        XCTAssertEqual(controller.view.frame.width, GesturesPreferencesViewController.paneWidth)
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
 
         support = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
         controller.reload()
-        XCTAssertEqual(controller.view.frame.width, PreferencesForm.contentWidth)
+        XCTAssertEqual(controller.view.frame.width, GesturesPreferencesViewController.paneWidth)
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
     }
 
-    func testTheSectionSitsUnderALogitechHeader() {
+    func testTheBoxIsTitledLogitechMouseAndComesLast() throws {
+        support = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
         let controller = makeController()
         controller.view.layoutSubtreeIfNeeded()
-        XCTAssertEqual(controller.logitechHeaderLabel.stringValue, "Logitech")
-        let header = controller.logitechHeaderLabel.convert(controller.logitechHeaderLabel.bounds, to: controller.view)
-        let tracking = controller.deviceTrackingCheckbox.convert(controller.deviceTrackingCheckbox.bounds, to: controller.view)
-        let haptics = controller.hapticsCheckbox.convert(controller.hapticsCheckbox.bounds, to: controller.view)
+        let title = try XCTUnwrap(controller.logitechSection.titleLabel)
+        XCTAssertEqual(title.stringValue, "Logitech mouse")
+        func frame(_ view: NSView) -> NSRect { view.convert(view.bounds, to: controller.view) }
         // The root view is not flipped: lower on screen means a smaller y.
-        XCTAssertGreaterThan(header.minY, tracking.maxY)
-        XCTAssertGreaterThan(tracking.minY, haptics.maxY)
-        XCTAssertEqual(tracking.minX, 171, accuracy: 0.5)
+        XCTAssertGreaterThan(frame(title).minY, frame(controller.deviceTrackingRow).maxY)
+        XCTAssertGreaterThan(frame(controller.deviceTrackingRow).minY, frame(controller.hapticsRow).maxY - 0.5)
+        XCTAssertGreaterThan(frame(controller.trackingSpeedRow).minY, frame(title).maxY, "under the other boxes")
+        XCTAssertEqual(frame(controller.deviceTrackingRow).minX, 20, accuracy: 0.5)
+        XCTAssertEqual(controller.logitechSection.box.rows.map(\.title), [text("mouse-gesture-device-tracking"), text("mouse-gesture-haptics")])
     }
 
     // MARK: - Strings
@@ -217,7 +246,7 @@ final class LogiGestureSectionTests: XCTestCase {
     private static let locales = PreferencesLocalizationTests.locales
 
     private static let keys = [
-        "gestures-logitech-header", "gestures-logitech-row-label",
+        "gestures-logitech-header", "gestures-logitech-needs",
         "mouse-gesture-device-tracking", "mouse-gesture-device-tracking-hint",
         "mouse-gesture-device-tracking-unavailable",
         "mouse-gesture-haptics", "mouse-gesture-haptics-hint", "mouse-gesture-haptics-unavailable",

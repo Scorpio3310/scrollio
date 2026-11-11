@@ -122,14 +122,14 @@ final class PreferencesTabsTests: XCTestCase {
     }
 
     func testTheWindowTakesTheWidthOfThePaneItShows() {
-        // Scrolling is wider than the other panes; the window widens while it shows and
-        // narrows again for the others, keeping its left and top edges.
+        // Scrolling and Gestures are wider than the other panes; the window widens while
+        // they show and narrows again for the others, keeping its left and top edges.
         XCTAssertEqual(PreferencesScrollingViewController.paneWidth, 520)
         XCTAssertEqual(AboutPreferencesViewController().view.frame.width, PreferencesForm.contentWidth)
         let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
         gestures.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
         gestures.bindingSummary = { MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false) }
-        XCTAssertEqual(gestures.view.frame.width, PreferencesForm.contentWidth)
+        XCTAssertEqual(gestures.view.frame.width, GesturesPreferencesViewController.paneWidth)
 
         let chrome = TOOLBAR_HEIGHT + MACOS_TAHOE_COMPENSATE
         let screen = NSRect(x: 0, y: 0, width: 2560, height: 1415)
