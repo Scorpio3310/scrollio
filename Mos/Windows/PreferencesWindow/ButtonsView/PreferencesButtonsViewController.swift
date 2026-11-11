@@ -136,6 +136,8 @@ class PreferencesButtonsViewController: NSViewController {
     private var busyShownAt: Date?
     private var busyStopWork: DispatchWorkItem?
     private var observers: [NSObjectProtocol] = []
+    /// Hears of every change of the thumb wheel settings (Scrolling edits them too).
+    private var thumbWheelObserver: NSObjectProtocol?
 
     private let recorder = KeyRecorder()
     private let resolver = ActionDisplayResolver()
@@ -221,9 +223,9 @@ class PreferencesButtonsViewController: NSViewController {
             self?.syncBusy()
         })
         // What the thumb wheel does may change under Scrolling while this pane exists.
-        observers.append(ThumbWheelSettingsChange.addObserver { [weak self] in
+        thumbWheelObserver = ThumbWheelSettingsChange.addObserver { [weak self] in
             self?.syncThumbWheel()
-        })
+        }
     }
 
     override func viewWillAppear() {
@@ -266,6 +268,9 @@ class PreferencesButtonsViewController: NSViewController {
     deinit {
         for observer in observers {
             NotificationCenter.default.removeObserver(observer)
+        }
+        if let thumbWheelObserver {
+            ThumbWheelSettingsChange.removeObserver(thumbWheelObserver)
         }
         recordedFocusWork?.cancel()
         busyStopWork?.cancel()

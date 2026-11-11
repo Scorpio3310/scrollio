@@ -88,11 +88,12 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
-    /// The thumb wheel (`thumb-wheel-<case>-<appearance>.png`). Scrolling: the defaults;
-    /// "Switch tabs" at 1.5× with the direction swapped; scrolling sideways with smoothing
-    /// off (the speed dimmed). Buttons, an MX Master 4: its row at the defaults ("Default"),
-    /// "Switch tabs" with the row selected (the card lights the thumb wheel), the row pointed
-    /// at; an MX Master 3S.
+    /// The thumb wheel (`thumb-wheel-<case>-<appearance>.png`). Scrolling: the defaults, also
+    /// in the 640 pt window of a first opening; "Switch Tabs" at 1.5× with the direction
+    /// swapped; "Back and Forward" (its symbol); scrolling sideways with smoothing off (the speed's line says where it
+    /// applies). Buttons, an MX Master 4: its row at the defaults ("Default"),
+    /// "Switch Tabs" with the row selected (the card lights the thumb wheel), the row pointed
+    /// at; "Back and Forward"; an MX Master 3S.
     func testRenderThumbWheel() throws {
         func scrolling(_ name: String) throws {
             try renderPane(PANEL_IDENTIFIER.scrolling, name: name, prepare: { preferences in
@@ -103,8 +104,16 @@ final class PreferencesWindowRenderTests: XCTestCase {
         Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
         Options.shared.thumbWheel = .default
         try scrolling("thumb-wheel-scrolling-default")
+        // In the window of a first opening (640 pt): where the group sits without scrolling.
+        try renderPane(PANEL_IDENTIFIER.scrolling, name: "thumb-wheel-scrolling-default-window",
+                       windowHeight: PreferencesWindowLayout.defaultContentHeight, prepare: { preferences in
+            (preferences.controller(for: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)?
+                .uiStateDefaults = self.uiDefaults(advanced: false)
+        })
         Options.shared.thumbWheel = ThumbWheelSettings(function: .tabs, speed: 1.5, swapsDirection: true)
         try scrolling("thumb-wheel-scrolling-tabs")
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .backForward)
+        try scrolling("thumb-wheel-scrolling-back-forward")
         Options.shared.thumbWheel = .default
         Options.shared.scroll.smooth = false
         try scrolling("thumb-wheel-scrolling-smoothing-off")
@@ -127,6 +136,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 self.hover(buttons, row: row)
             }
         }
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .backForward)
+        try renderButtons(name: "thumb-wheel-buttons-mx4-back-forward", source: source("MX Master 4"))
         Options.shared.thumbWheel = .default
         try renderButtons(name: "thumb-wheel-buttons-mx3s", source: source("MX Master 3S"))
     }

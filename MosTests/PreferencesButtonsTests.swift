@@ -364,11 +364,21 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(row.pullDown.identifier, ButtonsThumbWheelRow.identifier)
         XCTAssertFalse(row.isRemovable)
         XCTAssertNotNil(row.iconView?.image)
-        XCTAssertEqual(row.pullDown.frame.width, pane.rows[0].pullDown.frame.width, "the pull-downs line up")
+        // The pull-down stands where the buttons' pull-downs stand, in the list's own
+        // coordinates.
+        _ = makeWindow(for: pane)
+        pane.view.layoutSubtreeIfNeeded()
+        let thumbWheelPullDown = pane.list.convert(row.pullDown.bounds, from: row.pullDown)
+        for buttonRow in pane.rows {
+            let other = pane.list.convert(buttonRow.pullDown.bounds, from: buttonRow.pullDown)
+            XCTAssertEqual(thumbWheelPullDown.minX, other.minX, accuracy: 0.5, buttonRow.title)
+            XCTAssertEqual(thumbWheelPullDown.maxX, other.maxX, accuracy: 0.5, buttonRow.title)
+        }
+        XCTAssertGreaterThan(thumbWheelPullDown.width, 200)
         XCTAssertFalse(row.subviews.contains { $0 is ButtonPlacePictureButton }, "no picture menu")
 
         let items = row.pullDown.functionItems
-        XCTAssertEqual(items.map(\.title), ["Default", "Zoom", "Switch tabs", "Switch desktops", "Back and forward", "Volume"])
+        XCTAssertEqual(items.map(\.title), ["Default", "Zoom", "Switch Tabs", "Switch Desktops", "Back and Forward", "Volume"])
         XCTAssertEqual(items.compactMap(ThumbWheelPresentation.function(of:)), ThumbWheelFunction.allCases)
         XCTAssertNil(items[0].image)
         XCTAssertTrue(items.dropFirst().allSatisfy { $0.image?.isTemplate == true }, "the others with their symbols")
@@ -409,7 +419,7 @@ final class PreferencesButtonsTests: XCTestCase {
         defer { Options.shared.onFlushForTests = nil }
         var changes = 0
         let observer = ThumbWheelSettingsChange.addObserver { changes += 1 }
-        defer { NotificationCenter.default.removeObserver(observer) }
+        defer { ThumbWheelSettingsChange.removeObserver(observer) }
         Options.shared.thumbWheel = ThumbWheelSettings(function: .scroll, speed: 1.5, swapsDirection: true)
         changes = 0
 
@@ -417,7 +427,7 @@ final class PreferencesButtonsTests: XCTestCase {
         row.pullDown.functionChosen(tabs)
         XCTAssertEqual(Options.shared.thumbWheel, ThumbWheelSettings(function: .tabs, speed: 1.5, swapsDirection: true))
         XCTAssertEqual(changes, 1)
-        XCTAssertEqual(shown(row.pullDown), "Switch tabs")
+        XCTAssertEqual(shown(row.pullDown), "Switch Tabs")
         XCTAssertNotNil(row.pullDown.menu?.items.first?.image, "with its symbol")
         XCTAssertEqual(row.explanation, "Switches between tabs.")
         XCTAssertEqual(row.pullDown.functionItems.map(\.state), [.off, .off, .on, .off, .off, .off])
@@ -425,7 +435,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(changes, 1, "the function it has is not written again")
 
         pane.list.select(ButtonsListLayout.thumbWheelRowID)
-        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "Thumb wheel", subtitle: "Switch tabs", part: nil, lightsThumbWheel: true))
+        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "Thumb wheel", subtitle: "Switch Tabs", part: nil, lightsThumbWheel: true))
 
         let defaultItem = try XCTUnwrap(row.pullDown.functionItems.first)
         row.pullDown.functionChosen(defaultItem)
@@ -484,13 +494,133 @@ final class PreferencesButtonsTests: XCTestCase {
         pane.list.keyDown(with: try key("\r", keyCode: 36))
         XCTAssertEqual(openedMenus.count, 1)
         XCTAssertTrue(openedMenus.first === row.pullDown)
+        // Delete and "−" ask for nothing: the row cannot be removed.
+        var removals: [AnyHashable] = []
+        let remove = pane.list.onRemove
+        pane.list.onRemove = { removals.append($0); remove?($0) }
+        XCTAssertFalse(row.isRemovable)
+        XCTAssertFalse(pane.list.removeButton.isEnabled)
+        let listed = pane.list.rows
         pane.list.keyDown(with: try key("\u{7F}", keyCode: 51))
+        pane.list.removeButton.performClick(nil)
+        XCTAssertEqual(removals, [], "no removal was asked for")
         XCTAssertTrue(pane.thumbWheelRow === row)
+        XCTAssertTrue(pane.list.rows.elementsEqual(listed, by: ===), "the list is as it was")
         XCTAssertEqual(pane.list.selectedID, ButtonsListLayout.thumbWheelRowID)
         pane.list.keyDown(with: try key(String(Character(try XCTUnwrap(UnicodeScalar(NSDownArrowFunctionKey)))), keyCode: 125))
         XCTAssertEqual(pane.list.selectedID, AnyHashable(ButtonsMousePart.gesture))
         XCTAssertTrue(Options.shared.buttons.binding.isEmpty)
         XCTAssertEqual(Options.shared.thumbWheel, .default)
+    }
+
+    /// `image` drawn at 2x in the light appearance, as PNG bytes: two pictures are the same
+    /// drawing when these are equal.
+    private func pictureBytes(_ image: NSImage?) throws -> Data {
+        let image = try XCTUnwrap(image)
+        let rep = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: Int(image.size.width * 2), pixelsHigh: Int(image.size.height * 2),
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        rep.size = image.size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        try XCTUnwrap(NSAppearance(named: .aqua)).performAsCurrentDrawingAppearance {
+            image.draw(in: NSRect(origin: .zero, size: image.size))
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        return try XCTUnwrap(rep.representation(using: .png, properties: [:]))
+    }
+
+    private func thumbWheelPicture(_ mouse: MouseArtworkModel, highlighted: Bool) throws -> Data {
+        return try pictureBytes(ButtonsMouseMiniature.image(lighting: .thumbWheel, mouse: mouse, highlighted: highlighted))
+    }
+
+    /// Another MX Master connects in place of the MX Master 4: the same row now shows the
+    /// thumb wheel on the MX Master 3S's drawing.
+    func testTheThumbWheelRowRedrawsItsPictureForAnotherMouse() throws {
+        let pane = makePane()
+        let row = try XCTUnwrap(pane.thumbWheelRow)
+        XCTAssertEqual(try pictureBytes(row.iconView?.image), try thumbWheelPicture(.mxMaster4, highlighted: false))
+        XCTAssertNotEqual(try thumbWheelPicture(.mxMaster4, highlighted: false), try thumbWheelPicture(.mxMaster3, highlighted: false))
+
+        deviceName = "MX Master 3S"
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertTrue(pane.thumbWheelRow === row, "the same row")
+        XCTAssertEqual(row.mouse, .mxMaster3)
+        XCTAssertEqual(try pictureBytes(row.iconView?.image), try thumbWheelPicture(.mxMaster3, highlighted: false), "redrawn for the 3S")
+
+        deviceName = "MX Master 4"
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(try pictureBytes(row.iconView?.image), try thumbWheelPicture(.mxMaster4, highlighted: false))
+    }
+
+    /// A window that counts as key, so the list's selection is drawn in the accent colour.
+    private final class KeyWindow: NSWindow {
+        override var isKeyWindow: Bool { return true }
+    }
+
+    /// Selected in a key window the row's picture is drawn for the accent-coloured selection
+    /// (in white), and as before once the selection goes.
+    func testTheThumbWheelRowDrawsItsPictureForTheSelection() throws {
+        let pane = makePane()
+        let window = KeyWindow(
+            contentRect: NSRect(x: 0, y: 0, width: PreferencesWindowLayout.contentWidth, height: 600),
+            styleMask: [.titled], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: PreferencesWindowLayout.contentWidth, height: 600))
+        window.contentView?.addSubview(pane.view)
+        addTeardownBlock { window.close() }
+        XCTAssertTrue(pane.list.isSelectionEmphasized)
+        let row = try XCTUnwrap(pane.thumbWheelRow)
+        let plain = try thumbWheelPicture(.mxMaster4, highlighted: false)
+        let selected = try thumbWheelPicture(.mxMaster4, highlighted: true)
+        XCTAssertNotEqual(plain, selected)
+        XCTAssertEqual(try pictureBytes(row.iconView?.image), plain)
+
+        pane.list.select(ButtonsListLayout.thumbWheelRowID)
+        XCTAssertTrue(row.isHighlighted)
+        XCTAssertEqual(try pictureBytes(row.iconView?.image), selected, "white on the selection")
+        pane.list.select(ButtonsMousePart.back)
+        XCTAssertFalse(row.isHighlighted)
+        XCTAssertEqual(try pictureBytes(row.iconView?.image), plain)
+    }
+
+    /// A speed off the slider's grid (stored by hand, or by an older build) is shown as it
+    /// is: opening the Buttons pane or the Scrolling tab writes nothing.
+    func testOpeningEitherPaneWithAnOffGridSpeedWritesNothing() throws {
+        let stored = ThumbWheelSettings(function: .tabs, speed: 1.234, swapsDirection: true)
+        Options.shared.thumbWheel = stored
+        Options.shared.flushPendingSaves()
+        var flushed: [Set<OptionsGroup>] = []
+        Options.shared.onFlushForTests = { flushed.append($0) }
+        defer { Options.shared.onFlushForTests = nil }
+        var changes = 0
+        let observer = ThumbWheelSettingsChange.addObserver { changes += 1 }
+        defer { ThumbWheelSettingsChange.removeObserver(observer) }
+
+        let buttons = PreferencesButtonsViewController()
+        buttons.deviceSource = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { "MX Master 4" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+        buttons.scrollHoldKeys = { [] }
+        _ = buttons.view
+        buttons.viewWillAppear()
+        XCTAssertEqual(shown(try XCTUnwrap(buttons.thumbWheelRow).pullDown), "Switch Tabs")
+
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesScrollingViewController.self))
+        let scrolling = try XCTUnwrap(storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)
+        let suite = "ScrollioTests.buttons-off-grid.\(UUID().uuidString)"
+        let uiDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { uiDefaults.removePersistentDomain(forName: suite) }
+        scrolling.uiStateDefaults = uiDefaults
+        _ = scrolling.view
+        scrolling.viewWillAppear()
+        XCTAssertEqual(scrolling.thumbWheelSpeedSlider.doubleValue, 1.234, accuracy: 1e-9, "shown as it is")
+
+        XCTAssertEqual(changes, 0, "nothing written")
+        XCTAssertEqual(Options.shared.thumbWheel, stored)
+        Options.shared.flushPendingSaves()
+        XCTAssertEqual(flushed, [], "nothing saved")
     }
 
     /// The Buttons pane and Scrolling › Thumb wheel show one stored value: a change on
@@ -508,31 +638,31 @@ final class PreferencesButtonsTests: XCTestCase {
         _ = scrolling.view
         var changes = 0
         let observer = ThumbWheelSettingsChange.addObserver { changes += 1 }
-        defer { NotificationCenter.default.removeObserver(observer) }
+        defer { ThumbWheelSettingsChange.removeObserver(observer) }
 
         // Buttons → Scrolling.
         let zoom = try XCTUnwrap(row.pullDown.functionItems.first { ThumbWheelPresentation.function(of: $0) == .zoom })
         row.pullDown.functionChosen(zoom)
         XCTAssertEqual(changes, 1)
         XCTAssertEqual(scrolling.thumbWheelFunctionPopUp.titleOfSelectedItem, "Zoom")
-        XCTAssertEqual(scrolling.thumbWheelFunctionRow.explanation, "Zooms in and out.")
-        XCTAssertEqual(scrolling.thumbWheelSpeedRow.explanation, "How little of a turn it takes.")
+        XCTAssertEqual(scrolling.thumbWheelFunctionRow.explanation, "Zooms the page in and out.")
+        XCTAssertEqual(scrolling.thumbWheelSpeedRow.explanation, "How little of a turn each step needs.")
 
         // Scrolling → Buttons.
         let popUp = try XCTUnwrap(scrolling.thumbWheelFunctionPopUp)
         popUp.selectItem(at: try XCTUnwrap(ThumbWheelFunction.allCases.firstIndex(of: .backForward)))
         XCTAssertTrue(popUp.sendAction(popUp.action, to: popUp.target))
         XCTAssertEqual(changes, 2)
-        XCTAssertEqual(shown(row.pullDown), "Back and forward")
+        XCTAssertEqual(shown(row.pullDown), "Back and Forward")
         XCTAssertEqual(row.explanation, "Goes back and forward.")
         buttons.list.select(ButtonsListLayout.thumbWheelRowID)
-        XCTAssertEqual(buttons.headerView.content.subtitle, "Back and forward")
+        XCTAssertEqual(buttons.headerView.content.subtitle, "Back and Forward")
 
         // The speed and the direction are the Scrolling pane's; the row keeps its function.
         scrolling.thumbWheelSwapSwitch.state = .on
         XCTAssertTrue(scrolling.thumbWheelSwapSwitch.sendAction(scrolling.thumbWheelSwapSwitch.action, to: scrolling.thumbWheelSwapSwitch.target))
         XCTAssertEqual(changes, 3)
-        XCTAssertEqual(shown(row.pullDown), "Back and forward")
+        XCTAssertEqual(shown(row.pullDown), "Back and Forward")
 
         // Reset under Scrolling: the row reads "Default" again.
         scrolling.paneUndoManager = UndoManager()

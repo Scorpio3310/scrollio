@@ -7,10 +7,11 @@
 //  scene is a shell.
 //
 //  On top a preview, then a box with what most people need: smooth scrolling, its feel,
-//  the speed and the direction. Under it "While you hold a key" with the three keys, which
-//  work from the first launch, so they always show. Then "Thumb wheel": what the sideways
-//  wheel of a mouse does, its speed and its direction, with a line under the box on which
-//  wheel that is; global only, so not on an app's page. The last box starts with "Advanced"
+//  the speed and the direction. Under it "Thumb wheel": what the sideways wheel of a mouse
+//  does, its speed and its direction, with a line under the box on which wheel that is;
+//  global only, so not on an app's page (VoiceOver hears it as a group of that name, so its
+//  "Speed" is not taken for the main wheel's). Then "While you hold a key" with the three
+//  keys, which work from the first launch, so they always show. The last box starts with "Advanced"
 //  (closed by default), which opens the exact glide time, the smallest step and
 //  trackpad-style events in that box. "Reset to defaults" sits under the boxes; Edit › Undo
 //  takes a reset back.
@@ -262,13 +263,11 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     private(set) var thumbWheelSpeedSlider: NSSlider!
     private(set) var thumbWheelSwapRow: PreferencesSwitchRow!
     private(set) var thumbWheelSwapSwitch: NSSwitch!
-    /// The boxes (as sections), top to bottom: the main box, the keys, the thumb wheel,
+    /// The boxes (as sections), top to bottom: the main box, the thumb wheel, the keys,
     /// "Advanced".
     private(set) var sections: [PreferencesGroupSection] = []
     /// What "Advanced" shows and hides: the three rows of its box under it.
     private(set) var advancedRows: [NSView] = []
-    /// The pane's column of boxes.
-    private var contentStack: NSStackView!
     /// Hears of every change of the thumb wheel settings (the Buttons pane edits them too).
     private var thumbWheelObserver: NSObjectProtocol?
 
@@ -302,8 +301,16 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
             makeThumbWheelFunctionRow(), makeThumbWheelSpeedRow(), makeThumbWheelSwapRow(),
         ])
         thumbWheelSection = thumbWheel
-        let thumbWheelNote = makeThumbWheelNote()
-        sections = [basic, keys, thumbWheel, advanced]
+        let thumbWheelNoteHolder = makeThumbWheelNote()
+        // For VoiceOver one group named "Thumb wheel": its "Speed" is not the main wheel's,
+        // its "Action" is the thumb wheel's. The title is the group's name, not a text of its
+        // own; the line under the box is the group's help.
+        thumbWheel.setAccessibilityElement(true)
+        thumbWheel.setAccessibilityRole(.group)
+        thumbWheel.setAccessibilityLabel(ThumbWheelPresentation.title)
+        thumbWheel.setAccessibilityHelp(thumbWheelNote.stringValue)
+        thumbWheel.titleLabel?.setAccessibilityElement(false)
+        sections = [basic, thumbWheel, keys, advanced]
 
         let reset = PreferencesGroupedForm.makePushButton(
             title: text("scrolling-reset"),
@@ -316,14 +323,15 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         advancedRows = [glideTimeRow, smallestStepRow, trackpadEventsRow]
         advancedRow.revealedViews = advancedRows
 
+        // The thumb wheel above the keys, so the default window shows it. Hidden (an app's
+        // page) it takes no room, and the keys keep the gap above their title.
         PreferencesGroupedForm.add(
-            [preview, basic, keys, thumbWheel, thumbWheelNote, advanced, PreferencesGroupFooter(trailing: [reset])],
+            [preview, basic, thumbWheel, thumbWheelNoteHolder, keys, advanced, PreferencesGroupFooter(trailing: [reset])],
             to: content
         )
         // The line about the thumb wheel sits close under its box, as the muted lines of the
         // other panes do.
         content.setCustomSpacing(PreferencesGroupedForm.noteSpacing, after: thumbWheel)
-        contentStack = content
 
         keyRecorder.delegate = self
         view = root
@@ -345,7 +353,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
 
     deinit {
         if let thumbWheelObserver {
-            NotificationCenter.default.removeObserver(thumbWheelObserver)
+            ThumbWheelSettingsChange.removeObserver(thumbWheelObserver)
         }
     }
 
@@ -411,19 +419,13 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     }
 
     /// The thumb wheel group: on the tab only. It shows Options.shared.thumbWheel and writes
-    /// nothing. The speed has no effect while the wheel scrolls sideways without smoothing:
-    /// its row is then dimmed, as the rows that need "Smooth scrolling" are.
+    /// nothing. The speed slider is always on: with "Smooth scrolling" off an app with its
+    /// own settings may still smooth the wheel at this speed, and the line says so.
     private func syncThumbWheel() {
         let shown = currentTargetApplication == nil
         thumbWheelSection.isHidden = !shown
         // The line's holder is what the column of boxes holds.
         thumbWheelNote.superview?.isHidden = !shown
-        // A titled box keeps the wider gap above it; without it "Advanced" follows the keys
-        // at the gap between two boxes.
-        contentStack.setCustomSpacing(
-            shown ? PreferencesGroupedForm.sectionSpacing : PreferencesGroupedForm.boxSpacing,
-            after: keysSection
-        )
         guard shown else { return }
 
         let settings = Options.shared.thumbWheel
@@ -441,11 +443,10 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
             speedRow.showValue(settings.speed)
         }
         speedRow.valueText = ThumbWheelPresentation.speedText(settings.speed)
-        let speedHint = text(ThumbWheelPresentation.speedHintKey(for: function))
+        let speedHint = text(ThumbWheelPresentation.speedHintKey(for: function, smoothing: Options.shared.scroll.smooth))
         if speedRow.explanation != speedHint {
             speedRow.explanation = speedHint
         }
-        speedRow.isEnabled = ThumbWheelPresentation.speedHasEffect(function: function, smoothing: Options.shared.scroll.smooth)
 
         thumbWheelSwapRow.isOn = settings.swapsDirection
     }
@@ -921,7 +922,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         let setting = ThumbWheelPresentation.speedSetting
         let row = PreferencesSliderRow(
             title: text("scrolling-thumb-wheel-speed"),
-            explanation: text(ThumbWheelPresentation.speedHintKey(for: .scroll)),
+            explanation: text(ThumbWheelPresentation.speedHintKey(for: .scroll, smoothing: true)),
             range: setting.range,
             scale: setting.scale,
             ends: (low: text("scrolling-speed-shorter"), high: text("scrolling-speed-farther")),

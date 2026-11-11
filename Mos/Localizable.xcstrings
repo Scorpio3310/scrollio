@@ -5753,13 +5753,13 @@
       }
     },
     "thumb-wheel-function-scroll": {
-      "comment": "Thumb wheel: the function that scrolls left and right (the default), in the Scrolling pane's pop-up",
+      "comment": "Thumb wheel: the function that scrolls left and right (the default), in the Scrolling pane's pop-up (Title Case, as menu items)",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scroll sideways"
+            "value": "Scroll Sideways"
           }
         }
       }
@@ -5777,37 +5777,37 @@
       }
     },
     "thumb-wheel-function-tabs": {
-      "comment": "Thumb wheel: the function that goes to the next or previous tab",
+      "comment": "Thumb wheel: the function that goes to the next or previous tab (Title Case, as menu items)",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Switch tabs"
+            "value": "Switch Tabs"
           }
         }
       }
     },
     "thumb-wheel-function-desktops": {
-      "comment": "Thumb wheel: the function that goes to the desktop (Space) on the right or left",
+      "comment": "Thumb wheel: the function that goes to the desktop (Space) on the right or left (Title Case, as menu items)",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Switch desktops"
+            "value": "Switch Desktops"
           }
         }
       }
     },
     "thumb-wheel-function-back-forward": {
-      "comment": "Thumb wheel: the function that goes back or forward in apps that support it",
+      "comment": "Thumb wheel: the function that goes back or forward in apps that support it (Title Case, as menu items)",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Back and forward"
+            "value": "Back and Forward"
           }
         }
       }
@@ -5843,7 +5843,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Zooms in and out."
+            "value": "Zooms the page in and out."
           }
         }
       }
@@ -5939,7 +5939,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "How little of a turn it takes."
+            "value": "How little of a turn each step needs."
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-speed-hint-smoothing-off": {
+      "comment": "Scrolling pane, Thumb wheel group: under Speed while the thumb wheel scrolls and Smooth scrolling is off (apps with their own settings may still smooth it)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Applies where Smooth scrolling is on."
           }
         }
       }
@@ -5963,7 +5975,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Turns the thumb wheel around."
+            "value": "Turns the thumb wheel the other way."
           }
         }
       }

@@ -135,12 +135,14 @@ final class PreferencesScrollingTests: XCTestCase {
             controller.previewView, controller.smoothSwitch, controller.feelControl,
             controller.scrollSpeedSlider, controller.reverseSwitch,
         ]
-        // The keys under the main box, then the thumb wheel and the line under its box,
+        // The thumb wheel and the line under its box under the main box, then the keys,
         // "Advanced" last.
-        order.append(contentsOf: controller.keyBindButtons)
         order.append(contentsOf: [
             controller.thumbWheelFunctionPopUp, controller.thumbWheelSpeedSlider, controller.thumbWheelSwapSwitch,
             controller.thumbWheelNote,
+        ] as [NSView])
+        order.append(contentsOf: controller.keyBindButtons)
+        order.append(contentsOf: [
             controller.advancedButton, controller.glideTimeSlider, controller.smallestStepSlider,
             controller.trackpadEventsSwitch,
         ] as [NSView])
@@ -164,21 +166,23 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(reset.minY, margin, accuracy: 1)
         let advancedBox = frame(of: controller.advancedSection.box, in: controller)
         XCTAssertEqual(advancedBox.minY - reset.maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 1)
-        // "Thumb wheel" under the keys, spaced like the keys' title under the main box; its
-        // line close under its box; "Advanced" a box's gap under the line.
+        // "Thumb wheel" under the main box and "While you hold a key" under its line, both
+        // titles a section's gap under what is above them; the line close under its box;
+        // "Advanced" a box's gap under the keys.
+        let basicBox = frame(of: controller.sections[0].box, in: controller)
         let keysBox = frame(of: controller.keysSection.box, in: controller)
+        let keysTitle = frame(of: try XCTUnwrap(controller.keysSection.titleLabel), in: controller)
         let thumbWheelTitle = frame(of: try XCTUnwrap(controller.thumbWheelSection.titleLabel), in: controller)
         let thumbWheelBox = frame(of: controller.thumbWheelSection.box, in: controller)
         let note = frame(of: try XCTUnwrap(controller.thumbWheelNote.superview), in: controller)
-        XCTAssertEqual(keysBox.minY - thumbWheelTitle.maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 1)
+        XCTAssertEqual(basicBox.minY - thumbWheelTitle.maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 1)
         XCTAssertEqual(thumbWheelTitle.minY - thumbWheelBox.maxY, PreferencesGroupedForm.sectionTitleSpacing, accuracy: 1)
         XCTAssertEqual(thumbWheelBox.minY - note.maxY, PreferencesGroupedForm.noteSpacing, accuracy: 1)
-        XCTAssertEqual(note.minY - advancedBox.maxY, PreferencesGroupedForm.boxSpacing, accuracy: 1)
-        let keysTitle = frame(of: try XCTUnwrap(controller.keysSection.titleLabel), in: controller)
-        let basicBox = frame(of: controller.sections[0].box, in: controller)
-        XCTAssertEqual(basicBox.minY - keysTitle.maxY, keysBox.minY - thumbWheelTitle.maxY, accuracy: 0.5, "the same gap above both titles")
+        XCTAssertEqual(note.minY - keysTitle.maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 1)
+        XCTAssertEqual(keysTitle.minY - keysBox.maxY, PreferencesGroupedForm.sectionTitleSpacing, accuracy: 1)
+        XCTAssertEqual(keysBox.minY - advancedBox.maxY, PreferencesGroupedForm.boxSpacing, accuracy: 1)
 
-        // Closed, it moves up under the box of "Advanced", which stays under the thumb wheel.
+        // Closed, it moves up under the box of "Advanced", which stays under the keys.
         send(controller.advancedButton)
         controller.view.setFrameSize(controller.view.fittingSize)
         controller.view.layoutSubtreeIfNeeded()
@@ -186,8 +190,8 @@ final class PreferencesScrollingTests: XCTestCase {
         let closedAdvancedBox = frame(of: controller.advancedSection.box, in: controller)
         XCTAssertEqual(closedAdvancedBox.minY - closedReset.maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 1)
         XCTAssertEqual(closedReset.minY, margin, accuracy: 1)
-        let closedNote = frame(of: try XCTUnwrap(controller.thumbWheelNote.superview), in: controller)
-        XCTAssertEqual(closedNote.minY - closedAdvancedBox.maxY, PreferencesGroupedForm.boxSpacing, accuracy: 1)
+        let closedKeysBox = frame(of: controller.keysSection.box, in: controller)
+        XCTAssertEqual(closedKeysBox.minY - closedAdvancedBox.maxY, PreferencesGroupedForm.boxSpacing, accuracy: 1)
     }
 
     func testRowsAreGroupedInFourBoxes() {
@@ -195,8 +199,8 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(controller.sections.count, 4)
         let boxes = controller.sections.map(\.box)
         XCTAssertEqual(boxes[0].rows, [controller.smoothRow, controller.feelRow, controller.speedRow, controller.reverseRow])
-        XCTAssertEqual(boxes[1].rows, controller.keyRows)
-        XCTAssertEqual(boxes[2].rows, [controller.thumbWheelFunctionRow, controller.thumbWheelSpeedRow, controller.thumbWheelSwapRow])
+        XCTAssertEqual(boxes[1].rows, [controller.thumbWheelFunctionRow, controller.thumbWheelSpeedRow, controller.thumbWheelSwapRow])
+        XCTAssertEqual(boxes[2].rows, controller.keyRows)
         XCTAssertEqual(boxes[3].rows, [
             controller.advancedRow, controller.glideTimeRow, controller.smallestStepRow, controller.trackpadEventsRow,
         ])
@@ -208,8 +212,8 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertNil(controller.advancedSection.titleLabel)
         XCTAssertEqual(controller.keysSection.titleLabel?.stringValue, "While you hold a key")
         XCTAssertEqual(controller.thumbWheelSection.titleLabel?.stringValue, "Thumb wheel")
-        XCTAssertTrue(controller.sections[1] === controller.keysSection)
-        XCTAssertTrue(controller.sections[2] === controller.thumbWheelSection)
+        XCTAssertTrue(controller.sections[1] === controller.thumbWheelSection)
+        XCTAssertTrue(controller.sections[2] === controller.keysSection)
         XCTAssertTrue(controller.sections[3] === controller.advancedSection)
         XCTAssertEqual(controller.thumbWheelFunctionRow.title, "Action")
         XCTAssertEqual(controller.thumbWheelSpeedRow.title, "Speed")
@@ -218,7 +222,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(controller.thumbWheelFunctionPopUp.accessibilityHelp(), "Scrolls sideways.")
         XCTAssertEqual(controller.thumbWheelSpeedSlider.accessibilityLabel(), "Speed")
         XCTAssertEqual(controller.thumbWheelSwapSwitch.accessibilityLabel(), "Swap direction")
-        XCTAssertEqual(controller.thumbWheelSwapSwitch.accessibilityHelp(), "Turns the thumb wheel around.")
+        XCTAssertEqual(controller.thumbWheelSwapSwitch.accessibilityHelp(), "Turns the thumb wheel the other way.")
         XCTAssertEqual(controller.thumbWheelSpeedRow.lowEndLabel?.stringValue, "Slow")
         XCTAssertEqual(controller.thumbWheelSpeedRow.highEndLabel?.stringValue, "Fast")
         XCTAssertEqual(controller.thumbWheelSwapSwitch.controlSize, PreferencesGroupedForm.switchControlSize)
@@ -269,7 +273,7 @@ final class PreferencesScrollingTests: XCTestCase {
             text("scrolling-glide-time-hint"), text("scrolling-step-hint"), text("scrolling-trackpad-events-hint"),
             text("scrolling-key-faster-hint"), text("scrolling-key-sideways-hint"), text("scrolling-key-pause-hint"),
             "Thumb wheel", "Action", "Scrolls sideways.", "How far a turn scrolls sideways.",
-            "Swap direction", "Turns the thumb wheel around.",
+            "Swap direction", "Turns the thumb wheel the other way.",
             "For the sideways wheel: an MX Master's thumb wheel, or a wheel that tilts.",
         ]
         for line in expected {
@@ -340,10 +344,10 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertTrue(controller.keyBindButtons.allSatisfy(\.isEnabled))
         XCTAssertTrue(controller.keyClearButtons.allSatisfy(\.isEnabled))
         XCTAssertTrue(controller.advancedButton.isEnabled)
-        // The thumb wheel scrolls sideways unsmoothed: its speed dims, the rest stays.
-        XCTAssertFalse(controller.thumbWheelSpeedRow.isEnabled)
-        XCTAssertFalse(controller.thumbWheelSpeedSlider.isEnabled)
-        XCTAssertEqual(controller.thumbWheelSpeedRow.titleLabel.textColor, .tertiaryLabelColor)
+        // The thumb wheel stays editable: an app with its own settings may still smooth it.
+        XCTAssertTrue(controller.thumbWheelSpeedRow.isEnabled)
+        XCTAssertTrue(controller.thumbWheelSpeedSlider.isEnabled)
+        XCTAssertEqual(controller.thumbWheelSpeedRow.explanation, "Applies where Smooth scrolling is on.")
         XCTAssertTrue(controller.thumbWheelFunctionPopUp.isEnabled)
         XCTAssertTrue(controller.thumbWheelSwapSwitch.isEnabled)
         // What was chosen still shows.
@@ -353,6 +357,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertTrue(smoothOnly.allSatisfy(\.isEnabled))
         XCTAssertTrue(dimmed.allSatisfy(\.isEnabled))
         XCTAssertTrue(controller.thumbWheelSpeedSlider.isEnabled)
+        XCTAssertEqual(controller.thumbWheelSpeedRow.explanation, "How far a turn scrolls sideways.")
         XCTAssertEqual(controller.speedRow.titleLabel.textColor, .labelColor)
         XCTAssertEqual(controller.scrollSpeedValueLabel.textColor, .labelColor)
     }
@@ -789,7 +794,7 @@ final class PreferencesScrollingTests: XCTestCase {
     private func countThumbWheelChanges() -> () -> Int {
         var count = 0
         let observer = ThumbWheelSettingsChange.addObserver { count += 1 }
-        addTeardownBlock { NotificationCenter.default.removeObserver(observer) }
+        addTeardownBlock { ThumbWheelSettingsChange.removeObserver(observer) }
         return { count }
     }
 
@@ -803,7 +808,7 @@ final class PreferencesScrollingTests: XCTestCase {
         let controller = makeController()
         let popUp = controller.thumbWheelFunctionPopUp!
         XCTAssertFalse(popUp.pullsDown)
-        XCTAssertEqual(popUp.itemTitles, ["Scroll sideways", "Zoom", "Switch tabs", "Switch desktops", "Back and forward", "Volume"])
+        XCTAssertEqual(popUp.itemTitles, ["Scroll Sideways", "Zoom", "Switch Tabs", "Switch Desktops", "Back and Forward", "Volume"])
         XCTAssertEqual(popUp.itemArray.compactMap(ThumbWheelPresentation.function(of:)), ThumbWheelFunction.allCases)
         XCTAssertTrue(popUp.itemArray.allSatisfy { $0.image?.isTemplate == true }, "a symbol each, in the text's colour")
         if #available(macOS 27.0, *) {
@@ -813,7 +818,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(controller.thumbWheelFunctionRow.explanation, "Scrolls sideways.")
 
         let lines: [ThumbWheelFunction: String] = [
-            .scroll: "Scrolls sideways.", .zoom: "Zooms in and out.", .tabs: "Switches between tabs.",
+            .scroll: "Scrolls sideways.", .zoom: "Zooms the page in and out.", .tabs: "Switches between tabs.",
             .desktops: "Switches between desktops.", .backForward: "Goes back and forward.",
             .volume: "Turns the volume up and down.",
         ]
@@ -905,47 +910,49 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(ThumbWheelPresentation.speedSetting.range, ThumbWheelSettings.speedRange)
     }
 
-    /// The line under Speed follows the function; while the wheel scrolls without
-    /// smoothing the speed changes nothing and its row dims, as the rows that need
-    /// "Smooth scrolling" do. The other functions use it either way.
-    func testThumbWheelSpeedLineFollowsTheFunctionAndDimsWhenItHasNoEffect() {
+    /// The line under Speed follows the function, and while the wheel scrolls with "Smooth
+    /// scrolling" off it says where the speed still applies; every line takes one line, so
+    /// the row is as tall as the main Speed row and never jumps. The slider is never off.
+    func testThumbWheelSpeedLineFollowsTheFunctionAndSmoothing() {
         let controller = makeController()
         let row = controller.thumbWheelSpeedRow!
         controller.view.layoutSubtreeIfNeeded()
         let height = controller.view.fittingSize.height
         let rowHeight = row.frame.height
-        // Both lines take one line: the row is as tall as the main Speed row, whatever the
-        // function.
         let measure = NSTextField(wrappingLabelWithString: "X")
         measure.font = PreferencesForm.hintFont
         let oneLine = measure.fittingSize.height
         XCTAssertEqual(rowHeight, controller.speedRow.frame.height, accuracy: 0.5)
         XCTAssertEqual(row.explanation, "How far a turn scrolls sideways.")
         XCTAssertEqual(row.explanationLabel.frame.height, oneLine, accuracy: 0.5)
-        choose(.tabs, in: controller)
-        controller.view.layoutSubtreeIfNeeded()
-        XCTAssertEqual(row.explanation, "How little of a turn it takes.")
-        XCTAssertEqual(row.explanationLabel.frame.height, oneLine, accuracy: 0.5)
-        XCTAssertEqual(controller.thumbWheelSpeedSlider.accessibilityHelp(), "How little of a turn it takes.")
-        XCTAssertEqual(controller.view.fittingSize.height, height, "the tab never jumps")
-        XCTAssertEqual(row.frame.height, rowHeight, accuracy: 0.5)
-        XCTAssertTrue(row.isEnabled)
 
+        func check(_ line: String, _ label: String) {
+            controller.view.layoutSubtreeIfNeeded()
+            XCTAssertEqual(row.explanation, line, label)
+            XCTAssertEqual(controller.thumbWheelSpeedSlider.accessibilityHelp(), line, "\(label): VoiceOver reads the line")
+            XCTAssertEqual(row.explanationLabel.frame.height, oneLine, accuracy: 0.5, "\(label): one line")
+            XCTAssertEqual(row.frame.height, rowHeight, accuracy: 0.5, "\(label): the row keeps its height")
+            XCTAssertEqual(controller.view.fittingSize.height, height, "\(label): the tab never jumps")
+            XCTAssertTrue(row.isEnabled, label)
+            XCTAssertTrue(controller.thumbWheelSpeedSlider.isEnabled, label)
+            XCTAssertEqual(row.titleLabel.textColor, .labelColor, label)
+        }
+        choose(.tabs, in: controller)
+        check("How little of a turn each step needs.", "tabs")
         set(controller.smoothSwitch, false)
-        XCTAssertTrue(row.isEnabled, "switching tabs does not need smoothing")
+        check("How little of a turn each step needs.", "tabs without smoothing")
         choose(.scroll, in: controller)
-        XCTAssertFalse(row.isEnabled)
-        XCTAssertFalse(controller.thumbWheelSpeedSlider.isEnabled)
-        XCTAssertEqual(row.titleLabel.textColor, .tertiaryLabelColor)
-        XCTAssertEqual(row.valueLabel?.textColor, .tertiaryLabelColor)
+        check("Applies where Smooth scrolling is on.", "scroll without smoothing")
         XCTAssertEqual(row.valueText, ThumbWheelPresentation.speedText(1.0), "the value still shows")
         set(controller.smoothSwitch, true)
-        XCTAssertTrue(row.isEnabled)
+        check("How far a turn scrolls sideways.", "scroll")
 
-        XCTAssertTrue(ThumbWheelPresentation.speedHasEffect(function: .scroll, smoothing: true))
-        XCTAssertFalse(ThumbWheelPresentation.speedHasEffect(function: .scroll, smoothing: false))
+        XCTAssertEqual(ThumbWheelPresentation.speedHintKey(for: .scroll, smoothing: true), "scrolling-thumb-wheel-speed-hint-scroll")
+        XCTAssertEqual(ThumbWheelPresentation.speedHintKey(for: .scroll, smoothing: false), "scrolling-thumb-wheel-speed-hint-smoothing-off")
         for function in ThumbWheelFunction.allCases where function != .scroll {
-            XCTAssertTrue(ThumbWheelPresentation.speedHasEffect(function: function, smoothing: false), "\(function)")
+            for smoothing in [true, false] {
+                XCTAssertEqual(ThumbWheelPresentation.speedHintKey(for: function, smoothing: smoothing), "scrolling-thumb-wheel-speed-hint-steps")
+            }
         }
     }
 
@@ -1004,7 +1011,7 @@ final class PreferencesScrollingTests: XCTestCase {
 
         undo.undo()
         XCTAssertEqual(Options.shared.thumbWheel, changed)
-        XCTAssertEqual(controller.thumbWheelFunctionPopUp.titleOfSelectedItem, "Switch tabs")
+        XCTAssertEqual(controller.thumbWheelFunctionPopUp.titleOfSelectedItem, "Switch Tabs")
         XCTAssertEqual(controller.thumbWheelSpeedSlider.doubleValue, 1.5, accuracy: 1e-9)
         XCTAssertEqual(controller.thumbWheelSwapSwitch.state, .on)
         XCTAssertTrue(controller.resetToDefaultsButton.isEnabled)
@@ -1056,26 +1063,104 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertTrue(controller.thumbWheelSection.isHidden)
     }
 
-    // MARK: - Thumb wheel: review findings (these fail on purpose until fixed)
-
-    /// QA proof: VoiceOver names the thumb wheel's speed slider exactly as the main wheel's
-    /// ("Speed"), and the section title above it is not part of either name, so the two
-    /// sliders of the tab cannot be told apart by name (Tab with Full Keyboard Access reads
-    /// "Speed, 1.00×, slider" for both). The tab already gives look-alike controls names of
-    /// their own (the three clear buttons: "Clear Scroll faster", …).
-    func testQAThumbWheelSpeedHasANameOfItsOwnForVoiceOver() {
+    /// A reset with the thumb wheel at its defaults writes the scroll options only: the
+    /// thumb wheel is neither changed nor saved, and neither is it by the Undo.
+    func testResetLeavesTheThumbWheelUnwrittenWhenItIsAtItsDefaults() {
         let controller = makeController()
-        let main = controller.scrollSpeedSlider.accessibilityLabel()
-        let thumbWheel = controller.thumbWheelSpeedSlider.accessibilityLabel()
-        XCTAssertNotEqual(thumbWheel, main, "two sliders on one tab both named \"\(main ?? "")\"")
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        controller.paneUndoManager = undo
+        Options.shared.scroll.speed = 2.0
+        controller.syncViewWithOptions()
+        Options.shared.flushPendingSaves()
+        var flushed: [Set<OptionsGroup>] = []
+        Options.shared.onFlushForTests = { flushed.append($0) }
+        defer { Options.shared.onFlushForTests = nil }
+        let changes = countThumbWheelChanges()
+
+        undo.beginUndoGrouping()
+        send(controller.resetToDefaultsButton)
+        undo.endUndoGrouping()
+        XCTAssertEqual(Options.shared.scroll, OPTIONS_SCROLL_DEFAULT())
+        XCTAssertEqual(changes(), 0, "the thumb wheel is not written")
+        Options.shared.flushPendingSaves()
+        XCTAssertEqual(flushed, [[.scroll]], "only the scroll options are saved")
+
+        undo.undo()
+        XCTAssertEqual(Options.shared.scroll.speed, 2.0)
+        XCTAssertEqual(changes(), 0, "nor by the Undo")
+        XCTAssertEqual(Options.shared.thumbWheel, .default)
     }
 
-    /// QA proof: the speed slider is dimmed and cannot be moved while "Smooth scrolling" is
-    /// off, although an app with its own settings and smoothing on still smooths the thumb
-    /// wheel at this speed (ScrollCore: the app's own `isSmooth`, then `posterInput(...,
-    /// sidewaysSpeed: thumbWheel.speed)`). The thumb wheel has no per-app speed, so this
-    /// slider is the only place to set the speed used in that app.
-    func testQAThumbWheelSpeedStaysAdjustableWhileAnAppSmoothsWithItsOwnSettings() {
+    /// Every Scrolling tab and app page listens for thumb wheel changes while it exists and
+    /// stops when it goes: opening and closing pages leaves no listener behind.
+    func testScrollingTabsAndAppPagesLeaveNoThumbWheelObserverBehind() {
+        let before = ThumbWheelSettingsChange.observerCount
+        weak var lastTab: PreferencesScrollingViewController?
+        weak var lastPage: ApplicationDetailViewController?
+        autoreleasepool {
+            var pages: [ApplicationDetailViewController] = []
+            for _ in 0..<3 {
+                let page = ApplicationDetailViewController(application: makeApplication(inherit: false), uiStateDefaults: uiDefaults)
+                _ = page.view
+                pages.append(page)
+            }
+            let tab = makeController()
+            XCTAssertEqual(ThumbWheelSettingsChange.observerCount, before + 4, "one per tab while it exists")
+            lastTab = tab
+            lastPage = pages.last
+            Options.shared.thumbWheel.function = .zoom
+            XCTAssertEqual(tab.thumbWheelFunctionPopUp.titleOfSelectedItem, "Zoom")
+        }
+        XCTAssertNil(lastTab, "the tab is gone")
+        XCTAssertNil(lastPage, "the pages are gone")
+        XCTAssertEqual(ThumbWheelSettingsChange.observerCount, before, "and so are their observers")
+        Options.shared.thumbWheel = .default
+    }
+
+    /// The accessibility group that names `view` (its nearest ancestor that is an
+    /// accessibility group), nil when none does.
+    private func accessibilityGroup(of view: NSView) -> NSView? {
+        var current = view.superview
+        while let candidate = current {
+            if candidate.isAccessibilityElement(), candidate.accessibilityRole() == .group {
+                return candidate
+            }
+            current = candidate.superview
+        }
+        return nil
+    }
+
+    /// VoiceOver tells the two "Speed" sliders apart: the thumb wheel's controls are in a
+    /// group named "Thumb wheel" (with the line under its box as help), the main wheel's are
+    /// not. The name is the group's, so setting a row's line (which names its controls again)
+    /// cannot take it away.
+    func testTheThumbWheelControlsAreInAGroupNamedThumbWheel() {
+        let controller = makeController()
+        let section = controller.thumbWheelSection!
+        XCTAssertTrue(section.isAccessibilityElement())
+        XCTAssertEqual(section.accessibilityRole(), .group)
+        XCTAssertEqual(section.accessibilityLabel(), "Thumb wheel")
+        XCTAssertEqual(section.accessibilityHelp(), controller.thumbWheelNote.stringValue)
+        XCTAssertEqual(section.titleLabel?.isAccessibilityElement(), false, "the title is the group's name, not read twice")
+        for control in [controller.thumbWheelFunctionPopUp!, controller.thumbWheelSpeedSlider!, controller.thumbWheelSwapSwitch!] as [NSControl] {
+            XCTAssertTrue(accessibilityGroup(of: control) === section, "\(control)")
+        }
+        XCTAssertNil(accessibilityGroup(of: controller.scrollSpeedSlider), "the main wheel's Speed is in no such group")
+        XCTAssertEqual(controller.thumbWheelSpeedSlider.accessibilityLabel(), "Speed")
+
+        // Choosing a function relabels the row's controls; the group keeps its name.
+        choose(.zoom, in: controller)
+        Options.shared.scroll.smooth = false
+        controller.syncViewWithOptions()
+        XCTAssertEqual(section.accessibilityLabel(), "Thumb wheel")
+        XCTAssertTrue(accessibilityGroup(of: controller.thumbWheelSpeedSlider) === section)
+    }
+
+    /// With "Smooth scrolling" off an app with settings of its own may still smooth the thumb
+    /// wheel, at this speed (it has no per-app speed): the slider stays on, and while the
+    /// wheel scrolls its line says where the speed applies.
+    func testTheThumbWheelSpeedStaysOnWhileSmoothingIsOff() {
         let saved = Options.shared.application.applications
         addTeardownBlock { Options.shared.application.applications = saved }
         let application = makeApplication(inherit: false)
@@ -1087,6 +1172,10 @@ final class PreferencesScrollingTests: XCTestCase {
         let controller = makeController()
         XCTAssertEqual(Options.shared.thumbWheel.function, .scroll)
         XCTAssertTrue(controller.thumbWheelSpeedSlider.isEnabled, "the speed still applies in the app with smoothing on")
+        XCTAssertTrue(controller.thumbWheelSpeedRow.isEnabled)
+        XCTAssertEqual(controller.thumbWheelSpeedRow.explanation, "Applies where Smooth scrolling is on.")
+        drag(controller.thumbWheelSpeedSlider, to: 1.5)
+        XCTAssertEqual(Options.shared.thumbWheel.speed, 1.5, accuracy: 1e-9, "and it can be set")
     }
 
     // MARK: - Advanced
@@ -1537,9 +1626,14 @@ final class PreferencesScrollingTests: XCTestCase {
             accuracy: 0.5,
             "shorter by the preview, the thumb wheel and their spaces"
         )
+        // On the page the keys' title sits a section's gap under the main box and "Advanced"
+        // a box's gap under the keys, as before the thumb wheel existed.
         perApp.view.layoutSubtreeIfNeeded()
+        let basic = perApp.view.convert(perApp.sections[0].box.frame, from: perApp.sections[0])
+        let keysTitle = perApp.view.convert(perApp.keysSection.titleLabel!.frame, from: perApp.keysSection)
         let keys = perApp.view.convert(perApp.keysSection.box.frame, from: perApp.keysSection)
         let advanced = perApp.view.convert(perApp.advancedSection.box.frame, from: perApp.advancedSection)
+        XCTAssertEqual(basic.minY - keysTitle.maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 0.5)
         XCTAssertEqual(keys.minY - advanced.maxY, PreferencesGroupedForm.boxSpacing, accuracy: 0.5)
     }
 

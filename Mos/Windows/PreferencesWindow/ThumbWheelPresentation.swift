@@ -27,12 +27,12 @@ extension ThumbWheelFunction {
         }
     }
 
-    /// "Scroll sideways", "Zoom", "Switch tabs", …
+    /// "Scroll Sideways", "Zoom", "Switch Tabs", … (the Title Case of menu items)
     var localizedName: String {
         return NSLocalizedString("thumb-wheel-function-\(identifierName)", comment: "")
     }
 
-    /// What a turn does, one line: "Scrolls sideways.", "Zooms in and out.", …
+    /// What a turn does, one line: "Scrolls sideways.", "Zooms the page in and out.", …
     var localizedHint: String {
         return NSLocalizedString("thumb-wheel-function-\(identifierName)-hint", comment: "")
     }
@@ -44,7 +44,7 @@ extension ThumbWheelFunction {
         case .zoom: return "plus.magnifyingglass"
         case .tabs: return "rectangle.on.rectangle"
         case .desktops: return "rectangle.split.3x1"
-        case .backForward: return "chevron.left.chevron.right"
+        case .backForward: return "arrowshape.left.arrowshape.right"
         case .volume: return "speaker.wave.2"
         }
     }
@@ -121,19 +121,20 @@ enum ThumbWheelPresentation {
     }
 
     /// What the speed means for `function`: how far a sideways scroll goes, or how little of
-    /// a turn a step takes.
-    static func speedHintKey(for function: ThumbWheelFunction) -> String {
-        return function == .scroll ? "scrolling-thumb-wheel-speed-hint-scroll" : "scrolling-thumb-wheel-speed-hint-steps"
+    /// a turn each step needs. While the wheel scrolls and "Smooth scrolling" is off the
+    /// speed still applies in an app that smooths with settings of its own (the scroll engine
+    /// uses it for every smoothed sideways scroll), so the slider stays on and the line says
+    /// where it applies.
+    static func speedHintKey(for function: ThumbWheelFunction, smoothing: Bool) -> String {
+        guard function == .scroll else { return "scrolling-thumb-wheel-speed-hint-steps" }
+        return smoothing ? "scrolling-thumb-wheel-speed-hint-scroll" : "scrolling-thumb-wheel-speed-hint-smoothing-off"
     }
 
-    static let speedHintKeys = ["scrolling-thumb-wheel-speed-hint-scroll", "scrolling-thumb-wheel-speed-hint-steps"]
-
-    /// The speed changes nothing while the wheel scrolls sideways unsmoothed: the scroll
-    /// engine applies it only to a smoothed sideways scroll ("Smooth scrolling" off: let
-    /// through as it comes). The other functions use it always.
-    static func speedHasEffect(function: ThumbWheelFunction, smoothing: Bool) -> Bool {
-        return function != .scroll || smoothing
-    }
+    /// Every line the speed row can show, so it keeps room for the tallest.
+    static let speedHintKeys = [
+        "scrolling-thumb-wheel-speed-hint-scroll", "scrolling-thumb-wheel-speed-hint-steps",
+        "scrolling-thumb-wheel-speed-hint-smoothing-off",
+    ]
 }
 
 // MARK: - Changes
@@ -149,14 +150,24 @@ enum ThumbWheelSettingsChange {
 
     private static var isRelaying = false
 
+    /// How many panes listen now (`addObserver` without `removeObserver`). Panes that are
+    /// gone must not leave one behind; the tests count them.
+    private(set) static var observerCount = 0
+
     /// `handler` runs after every change of `Options.shared.thumbWheel`, on the main thread,
-    /// before the change returns; until the returned observer is removed from the default
-    /// notification center.
+    /// before the change returns; until the returned observer is given to `removeObserver`.
     static func addObserver(_ handler: @escaping () -> Void) -> NSObjectProtocol {
         startRelaying()
+        observerCount += 1
         return NotificationCenter.default.addObserver(forName: notification, object: nil, queue: nil) { _ in
             handler()
         }
+    }
+
+    /// Stops `observer` (from `addObserver`): the pane that made it is going.
+    static func removeObserver(_ observer: NSObjectProtocol) {
+        NotificationCenter.default.removeObserver(observer)
+        observerCount -= 1
     }
 
     private static func startRelaying() {
