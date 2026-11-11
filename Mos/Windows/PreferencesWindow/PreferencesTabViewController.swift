@@ -30,21 +30,39 @@ class PreferencesTabViewController: NSTabViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        insertMouseTab()
+        insertCodeBuiltTabs()
     }
 
-    /// The Mouse tab (Logitech hardware settings) is built in code, so Main.storyboard
-    /// stays as it is. It goes right after Buttons; the storyboard tabs keep their order.
-    private func insertMouseTab() {
-        let identifier = MousePreferencesViewController.tabIdentifier
+    /// Main.storyboard holds General, Scrolling, Buttons and Apps, in that order. The tabs
+    /// built in code are added around them: Mouse right after Buttons, About last.
+    private func insertCodeBuiltTabs() {
+        let mouse = MousePreferencesViewController()
+        insertTab(
+            mouse,
+            identifier: MousePreferencesViewController.tabIdentifier,
+            image: MousePreferencesViewController.tabImage(),
+            after: PANEL_IDENTIFIER.buttons
+        )
+        let about = AboutPreferencesViewController()
+        insertTab(
+            about,
+            identifier: AboutPreferencesViewController.tabIdentifier,
+            image: AboutPreferencesViewController.tabImage(),
+            after: nil
+        )
+    }
+
+    /// Adds a tab for `controller` after the tab `anchor`, or at the end.
+    private func insertTab(_ controller: NSViewController, identifier: String, image: NSImage?, after anchor: String?) {
         guard !tabViewItems.contains(where: { ($0.identifier as? String) == identifier }) else { return }
-        let controller = MousePreferencesViewController()
         let item = NSTabViewItem(viewController: controller)
         item.identifier = identifier
         item.label = controller.title ?? ""
-        item.image = MousePreferencesViewController.tabImage()
-        let buttonsIndex = tabViewItems.firstIndex { ($0.identifier as? String) == PANEL_IDENTIFIER.buttons }
-        insertTabViewItem(item, at: buttonsIndex.map { $0 + 1 } ?? tabViewItems.count)
+        item.image = image
+        let anchorIndex = anchor.flatMap { anchor in
+            tabViewItems.firstIndex { ($0.identifier as? String) == anchor }
+        }
+        insertTabViewItem(item, at: anchorIndex.map { $0 + 1 } ?? tabViewItems.count)
     }
 
     override func viewWillAppear() {

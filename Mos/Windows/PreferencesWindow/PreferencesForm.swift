@@ -210,6 +210,20 @@ enum PreferencesForm {
         return (slider, valueLabel, line)
     }
 
+    /// A borderless button that reads as a link: link-coloured text and a pointing hand.
+    static func makeLinkButton(title: String, target: AnyObject?, action: Selector?) -> NSButton {
+        let button = PreferencesLinkButton(title: title, target: target, action: action)
+        button.isBordered = false
+        button.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        button.attributedTitle = NSAttributedString(string: title, attributes: [
+            .foregroundColor: NSColor.linkColor,
+            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+        ])
+        button.setButtonType(.momentaryChange)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }
+
     /// True while a slider is being dragged (continuous actions arrive in between).
     static var isTrackingMouse: Bool {
         guard let type = NSApp?.currentEvent?.type else { return false }
@@ -255,5 +269,12 @@ enum PreferencesForm {
         image.isTemplate = true
         image.accessibilityDescription = accessibilityDescription
         return image
+    }
+}
+
+/// The button behind `PreferencesForm.makeLinkButton`: shows the pointing hand over itself.
+final class PreferencesLinkButton: NSButton {
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
     }
 }

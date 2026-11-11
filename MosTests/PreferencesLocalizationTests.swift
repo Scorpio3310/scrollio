@@ -34,6 +34,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "gesture-invert-horizontal", "gesture-freeze-pointer", "gesture-settings-footnote",
         "gesture-mode-discrete", "gesture-mode-interactive", "gesture-mode-interactive-note",
         "gesture-mode-interactive-unavailable", "gesture-follow-horizontal-value",
+        // About
+        "about-tab-title", "about-app-name", "about-version", "about-credit", "about-welcome-guide",
     ]
 
     private static let missing = "\u{1}missing"

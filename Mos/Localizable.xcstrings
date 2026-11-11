@@ -1312,6 +1312,61 @@
         }
       }
     },
+    "about-tab-title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "About"
+          }
+        }
+      }
+    },
+    "about-app-name": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio"
+          }
+        }
+      }
+    },
+    "about-version": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version %@"
+          }
+        }
+      }
+    },
+    "about-credit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Based on Mos by Caldis · CC BY-NC 4.0 · modified"
+          }
+        }
+      }
+    },
+    "about-welcome-guide": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Welcome Guide"
+          }
+        }
+      }
+    },
     "scroll-preset-balanced": {
       "extractionState": "manual",
       "localizations": {
