@@ -113,7 +113,7 @@ extension Interceptor {
                 let now = Date()
                 self.autoRestartHistory.removeAll { now.timeIntervalSince($0) >= Self.autoRestartWindow }
                 guard !Self.isAutoRestartThrottled(history: self.autoRestartHistory, now: now) else {
-                    NSLog("Mos: event tap auto-restart throttled (%d restarts within %.0fs), cooling down",
+                    NSLog("Scrollio: event tap auto-restart throttled (%d restarts within %.0fs), cooling down",
                           Self.autoRestartLimit, Self.autoRestartWindow)
                     return
                 }

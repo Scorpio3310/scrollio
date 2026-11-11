@@ -28,7 +28,7 @@ final class ScrollDispatchContext {
 
     private var state = SnapshotState()
     private var lock = os_unfair_lock_s()
-    private let postQueue = DispatchQueue(label: "me.caldis.mos.scrollposter.post", qos: .userInteractive)
+    private let postQueue = DispatchQueue(label: "com.nikklemenc.Scrollio.scrollposter.post", qos: .userInteractive)
     // TTL 仅作为 enqueue 投递时的兜底安全网, 不用于快照创建门控
     // 需覆盖最长惯性减速阶段 (通常 1-3s, 极端 ~5s)
 #if DEBUG

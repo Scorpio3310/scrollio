@@ -420,7 +420,7 @@ class LogiDebugPanel: NSObject {
     // MARK: - Logging API
 
     #if DEBUG
-    private static let autoLogQueue = DispatchQueue(label: "me.caldis.Mos.LogiDebugPanel.autoLog")
+    private static let autoLogQueue = DispatchQueue(label: "com.nikklemenc.Scrollio.LogiDebugPanel.autoLog")
     private static let autoLogLatestFileName = "hidpp-debug-latest.log"
     private static var autoLogInitialized = false
     private static var autoLogSessionURL: URL?

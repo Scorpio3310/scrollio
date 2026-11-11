@@ -574,7 +574,7 @@ class ShortcutExecutor {
     /// 专用串行后台队列, 用于把 OpenTarget 实际执行 (NSWorkspace/Process/FileManager)
     /// 调离 CGEvent tap 回调链.
     private static let openTargetQueue = DispatchQueue(
-        label: "com.caldis.Mos.openTarget",
+        label: "com.nikklemenc.Scrollio.openTarget",
         qos: .userInitiated
     )
 
