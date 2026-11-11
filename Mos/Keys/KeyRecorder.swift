@@ -208,8 +208,10 @@ class KeyRecorder: NSObject {
     /// The recording tap's callback: hands what it sees to the main thread, swallows it.
     private static let recordingCallback: CGEventTapCallBack = { (proxy, type, event, refcon) in
         // 跳过 Mos 合成事件, 避免 executeCustom 的合成事件干扰录制
+        // Skipped means let through: not recorded, and not swallowed either (a key or click
+        // Scrollio posts while the recorder is open still reaches the app).
         if event.getIntegerValueField(.eventSourceUserData) == MosEventMarker.syntheticCustom {
-            return nil
+            return Unmanaged.passUnretained(event)
         }
         let recordedEvent = event
         switch type {

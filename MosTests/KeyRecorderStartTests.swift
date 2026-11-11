@@ -41,4 +41,29 @@ final class KeyRecorderStartTests: XCTestCase {
         XCTAssertEqual(attempts, 2)
         XCTAssertEqual(delegate.log, ["stopped false", "stopped false"])
     }
+
+    /// The recording tap skips Scrollio's own events (a key or click it posts while the
+    /// recorder is open). It swallowed them, although the comment said "skip".
+    func testTheRecordingTapLetsScrolliosOwnEventsThrough() throws {
+        let recorder = KeyRecorder()
+        var callback: CGEventTapCallBack?
+        recorder.makeEventTap = { _, tapCallback in
+            callback = tapCallback
+            throw Interceptor.InterceptorError.eventTapCreationFailed
+        }
+        recorder.startRecording(from: NSView(frame: NSRect(x: 0, y: 0, width: 24, height: 22)), mode: .combination)
+        let recordingCallback = try XCTUnwrap(callback)
+        let proxy = CGEventTapProxy(bitPattern: 1)!
+
+        let own = try XCTUnwrap(CGEvent(keyboardEventSource: nil, virtualKey: 8, keyDown: true))
+        own.setIntegerValueField(.eventSourceUserData, value: MosEventMarker.syntheticCustom)
+        let passed = recordingCallback(proxy, .keyDown, own, nil)
+        XCTAssertTrue(passed?.takeUnretainedValue() === own, "let through unchanged")
+
+        // The user's own key is still taken by the recording (handed on, swallowed). The
+        // hand-off goes nowhere: no recording runs.
+        let users = try XCTUnwrap(CGEvent(keyboardEventSource: nil, virtualKey: 8, keyDown: true))
+        XCTAssertNil(recordingCallback(proxy, .keyDown, users, nil))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
 }
