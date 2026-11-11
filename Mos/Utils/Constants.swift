@@ -24,7 +24,6 @@ struct WINDOW_IDENTIFIER {
 struct PANEL_IDENTIFIER {
     static let general = "general"
     static let scrolling = "scrolling"
-    static let scrollingWithApplication = "scrollingWithApplication"
     static let buttons = "buttons"
     static let application = "application"
     static let list = [general, scrolling, buttons, application]

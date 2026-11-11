@@ -27,12 +27,8 @@ final class StoryboardIntegrityTests: XCTestCase {
         WINDOW_IDENTIFIER.introductionWindowController,
     ]
 
-    /// View controllers the app (or the preferences tests) instantiate by identifier, and
-    /// the popovers that segues open.
-    private let viewIdentifiers = PANEL_IDENTIFIER.list + [
-        PANEL_IDENTIFIER.scrollingWithApplication,
-        "allowlistHint",
-    ]
+    /// View controllers the app (or the preferences tests) instantiate by identifier.
+    private let viewIdentifiers = PANEL_IDENTIFIER.list
 
     /// Identifiers in the compiled storyboard, read from its Info.plist: instantiating a
     /// missing identifier raises an Objective-C exception that would end the whole run.
@@ -112,5 +108,20 @@ final class StoryboardIntegrityTests: XCTestCase {
         XCTAssertNotNil(introContent.primaryButton)
         XCTAssertNotNil(introContent.helpButton)
         XCTAssertNotNil(introduction.introductionWindow)
+    }
+
+    /// The Apps pane is built in code: its scene is a shell, and the per-app popover and the
+    /// allowlist hint are gone (an app's settings open as a page inside the pane).
+    func testTheAppsSceneIsAShellAndItsPopoversAreGone() throws {
+        let compiled = try compiledIdentifiers()
+        XCTAssertFalse(compiled.contains("scrollingWithApplication"))
+        XCTAssertFalse(compiled.contains("allowlistHint"))
+        let apps = try XCTUnwrap(
+            storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController
+        )
+        XCTAssertEqual(apps.title, "Apps")
+        _ = apps.view
+        XCTAssertNotNil(apps.allowlistSwitch)
+        XCTAssertNotNil(apps.list)
     }
 }

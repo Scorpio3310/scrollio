@@ -13,42 +13,6 @@
         }
       }
     },
-    "8By-V1-U9w.headerCell.title" : {
-      "comment" : "Class = \"NSTableColumn\"; headerCell.title = \"Scrolling\"; ObjectID = \"8By-V1-U9w\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Scrolling"
-          }
-        }
-      }
-    },
-    "89F-B4-NIY.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"App\"; ObjectID = \"89F-B4-NIY\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "App"
-          }
-        }
-      }
-    },
-    "a3I-0T-N5a.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Application Name\"; ObjectID = \"a3I-0T-N5a\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Application Name"
-          }
-        }
-      }
-    },
     "AbN-7n-hF7.title" : {
       "comment" : "Class = \"NSTextFieldCell\"; title = \"Button\"; ObjectID = \"AbN-7n-hF7\";",
       "extractionState" : "extracted_with_value",
@@ -109,30 +73,6 @@
         }
       }
     },
-    "dhF-95-kUJ.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"Choose in Finder…\"; ObjectID = \"dhF-95-kUJ\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Choose in Finder…"
-          }
-        }
-      }
-    },
-    "DS8-og-1pp.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Pick a running app or one in Finder\"; ObjectID = \"DS8-og-1pp\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Pick a running app or one in Finder"
-          }
-        }
-      }
-    },
     "epU-lS-atX.title" : {
       "comment" : "Class = \"NSMenuItem\"; title = \"No Action\"; ObjectID = \"epU-lS-atX\";",
       "extractionState" : "extracted_with_value",
@@ -165,18 +105,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Hotkey"
-          }
-        }
-      }
-    },
-    "Gmk-Ru-er7.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Add App\"; ObjectID = \"Gmk-Ru-er7\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Add App"
           }
         }
       }
@@ -217,41 +145,6 @@
         }
       }
     },
-    "jaq-Cb-dKM.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Add an app to give it its own scrolling settings\"; ObjectID = \"jaq-Cb-dKM\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Add an app to give it its own scrolling settings"
-          }
-        }
-      }
-    },
-    "JQK-PN-VMN.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Scrolling\"; ObjectID = \"JQK-PN-VMN\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Scrolling"
-          }
-        }
-      }
-    },
-    "Ksp-g1-48g.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Only in listed apps\"; ObjectID = \"Ksp-g1-48g\";",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Only in listed apps"
-          }
-        }
-      }
-    },
     "l7O-So-nw1.title" : {
       "comment" : "Class = \"NSTextFieldCell\"; title = \"Record Button\"; ObjectID = \"l7O-So-nw1\";",
       "extractionState" : "extracted_with_value",
@@ -288,18 +181,6 @@
         }
       }
     },
-    "R0d-21-g6W.title" : {
-      "comment" : "Class = \"NSMenuItem\"; title = \"Running Apps\"; ObjectID = \"R0d-21-g6W\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Running Apps"
-          }
-        }
-      }
-    },
     "sdr-Ih-rCr.title" : {
       "comment" : "Class = \"NSTextFieldCell\"; title = \"Action\"; ObjectID = \"sdr-Ih-rCr\";",
       "extractionState" : "extracted_with_value",
@@ -308,18 +189,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Action"
-          }
-        }
-      }
-    },
-    "ThS-Rm-st2.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"No application is Special\"; ObjectID = \"ThS-Rm-st2\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "No apps added yet"
           }
         }
       }
@@ -344,53 +213,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "No buttons are set up yet"
-          }
-        }
-      }
-    },
-    "v26-RK-BtL.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Scrollio applies only to the apps in this list.\"; ObjectID = \"v26-RK-BtL\";",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scrollio applies only to the apps in this list."
-          }
-        }
-      }
-    },
-    "xfG-Cd-oIk.headerCell.title" : {
-      "comment" : "Class = \"NSTableColumn\"; headerCell.title = \"App\"; ObjectID = \"xfG-Cd-oIk\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "App"
-          }
-        }
-      }
-    },
-    "XjY-7g-GLL.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Application Name\"; ObjectID = \"XjY-7g-GLL\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Application Name"
-          }
-        }
-      }
-    },
-    "INH-lb-002.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Use global settings\"; ObjectID = \"INH-lb-002\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Use global settings"
           }
         }
       }
