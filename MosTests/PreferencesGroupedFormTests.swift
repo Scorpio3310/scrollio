@@ -515,6 +515,92 @@ final class PreferencesGroupedFormTests: XCTestCase {
         XCTAssertEqual(target.trackingStates.last, false)
     }
 
+    /// A press that does not move the knob changes nothing: no action goes out, so a stored
+    /// value that is not on the scale is not rewritten (and nothing is passed on to a mouse).
+    func testAPressThatDoesNotMoveTheKnobSendsNothing() {
+        let target = ActionCounter()
+        let row = PreferencesSliderRow(title: "Speed", range: 1...10, scale: .ticks(10, step: 0.5), target: target, action: #selector(ActionCounter.act(_:)))
+        let slider = row.slider
+        row.showValue(6.3)
+        XCTAssertEqual(slider.doubleValue, 6.3, accuracy: 1e-9)
+
+        // AppKit sends on the press and again when the button goes up, the knob where it was.
+        slider.beginTracking()
+        XCTAssertFalse(slider.sendAction(slider.action, to: slider.target))
+        slider.endTracking()
+        XCTAssertTrue(target.values.isEmpty, "nothing went out")
+        XCTAssertEqual(slider.doubleValue, 6.3, accuracy: 1e-12, "not moved onto 6.5")
+        XCTAssertFalse(slider.isTracking)
+
+        // A knob that stops only on its marks shows 1.4 on the mark at 1: a press leaves 1.4 stored.
+        let stops = PreferencesSliderRow(title: "Level", range: 0...4, scale: .ticksOnly(5), target: target, action: #selector(ActionCounter.act(_:)))
+        stops.showValue(1.4)
+        stops.slider.beginTracking()
+        XCTAssertFalse(stops.slider.sendAction(stops.slider.action, to: stops.slider.target))
+        stops.slider.endTracking()
+        XCTAssertTrue(target.values.isEmpty)
+
+        // Moved away and brought back in one drag: every move went out, the last one too.
+        slider.beginTracking()
+        slider.doubleValue = 7.2
+        XCTAssertTrue(slider.sendAction(slider.action, to: slider.target))
+        slider.doubleValue = 6.3
+        XCTAssertTrue(slider.sendAction(slider.action, to: slider.target))
+        slider.endTracking()
+        XCTAssertEqual(target.values, [7, 6.5, 6.5])
+        XCTAssertEqual(target.trackingStates, [true, true, false])
+    }
+
+    /// AppKit works the value out again from the knob's position when it is pressed: less
+    /// than a point of travel is not a move.
+    func testAPressMayShiftTheValueByLessThanAPointOfTravel() {
+        XCTAssertEqual(PreferencesSlider.pressTolerance(span: 9, width: 200), 9.0 / 180 * 0.75, accuracy: 1e-12)
+        XCTAssertEqual(PreferencesSlider.pressTolerance(span: 9, width: 0), 9e-9, accuracy: 1e-15, "no size yet: float noise only")
+        XCTAssertEqual(PreferencesSlider.pressTolerance(span: 0, width: 200), 0)
+
+        let target = ActionCounter()
+        let row = PreferencesSliderRow(title: "Speed", range: 1...10, scale: .ticks(10, step: 0.5), target: target, action: #selector(ActionCounter.act(_:)))
+        let slider = row.slider
+        slider.frame = NSRect(x: 0, y: 0, width: 200, height: 24)
+        row.showValue(6.3)
+        slider.beginTracking()
+        slider.doubleValue = 6.3 + 0.02   // under a point of travel (0.05 per point here)
+        XCTAssertFalse(slider.sendAction(slider.action, to: slider.target))
+        slider.endTracking()
+        XCTAssertTrue(target.values.isEmpty)
+        XCTAssertEqual(slider.doubleValue, 6.3, accuracy: 1e-12, "back exactly where it was")
+
+        slider.beginTracking()
+        slider.doubleValue = 6.3 + 0.06   // more than a point: a move
+        XCTAssertTrue(slider.sendAction(slider.action, to: slider.target))
+        slider.endTracking()
+        XCTAssertEqual(target.values, [6.5, 6.5])
+    }
+
+    /// A slider that is off sends nothing, whatever happens to its knob.
+    func testASliderThatIsOffSendsNothingWhenLetGo() {
+        let target = ActionCounter()
+        let row = PreferencesSliderRow(title: "Speed", range: 1...10, scale: .ticks(10, step: 0.5), target: target, action: #selector(ActionCounter.act(_:)))
+        let slider = row.slider
+        row.showValue(6.3)
+        slider.beginTracking()
+        slider.isEnabled = false
+        slider.doubleValue = 8
+        slider.endTracking()
+        XCTAssertTrue(target.values.isEmpty)
+        XCTAssertEqual(slider.doubleValue, 6.3, accuracy: 1e-12)
+        XCTAssertFalse(slider.moveKnob(by: 1), "nor by an arrow key")
+    }
+
+    /// VoiceOver reads the value as it is written next to the slider.
+    func testTheSliderSpeaksTheWrittenValue() {
+        let row = PreferencesSliderRow(title: "Pointer speed", range: 0...11, scale: .ticksOnly(12), target: nil, action: nil)
+        row.valueText = "1000 DPI"
+        XCTAssertEqual(row.slider.accessibilityValueDescription(), "1000 DPI")
+        row.valueText = ""
+        XCTAssertNil(row.slider.accessibilityValueDescription())
+    }
+
     func testADragDeliversValuesOfTheScale() {
         let recorder = ActionRecorder()
         let row = PreferencesSliderRow(

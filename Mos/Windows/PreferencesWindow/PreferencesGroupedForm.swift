@@ -837,6 +837,10 @@ struct PreferencesSliderScale: Equatable {
 /// button happens to be down. When the user lets go it sends its action once more, no
 /// longer tracking: the pane then shows the stored value and does what belongs to a
 /// finished move (the Mouse pane's sample pulse).
+///
+/// A press that does not move the knob changes nothing: no action goes out, so a stored
+/// value that is not on the scale stays as it is and nothing is sent on to a mouse. A
+/// slider that is off sends nothing at all.
 final class PreferencesSlider: NSSlider {
 
     var scale: PreferencesSliderScale? {
@@ -846,24 +850,59 @@ final class PreferencesSlider: NSSlider {
     /// True between the user pressing on the slider and letting go.
     private(set) var isTracking = false
 
+    /// Where the knob was when the user pressed on the slider; nil outside a press.
+    private var valueAtPress: Double?
+    /// Whether this press has moved the knob (an action went out).
+    private var movedSincePress = false
+
     /// The user pressed on the slider. `mouseDown` calls it; tests call it to stand in
     /// for a drag.
     func beginTracking() {
         isTracking = true
+        valueAtPress = doubleValue
+        movedSincePress = false
     }
 
-    /// The user let go: the action goes out once more, with `isTracking` false.
+    /// The user let go: the action goes out once more, with `isTracking` false. Not after
+    /// a press that never moved the knob: the knob goes back to exactly where it was.
     func endTracking() {
         guard isTracking else { return }
         isTracking = false
+        let moved = movedSincePress || !knobIsWherePressed
+        let pressed = valueAtPress
+        valueAtPress = nil
+        movedSincePress = false
+        guard moved, isEnabled else {
+            if let pressed, doubleValue != pressed {
+                doubleValue = pressed
+            }
+            return
+        }
         sendAction(action, to: target)
     }
 
-    /// NSSlider tracks the mouse in here until the button goes up.
+    /// NSSlider tracks the mouse in here until the button goes up. A slider that is off
+    /// tracks nothing and sends nothing.
     override func mouseDown(with event: NSEvent) {
+        guard isEnabled else { return super.mouseDown(with: event) }
         beginTracking()
         super.mouseDown(with: event)
         endTracking()
+    }
+
+    /// The knob has not left the place where it was pressed. AppKit works the value out
+    /// again from the knob's position when it is pressed, so "the same" allows for less
+    /// than a point of travel (float noise only while the slider has no size yet).
+    private var knobIsWherePressed: Bool {
+        guard let valueAtPress else { return false }
+        return abs(doubleValue - valueAtPress) <= Self.pressTolerance(span: maxValue - minValue, width: Double(bounds.width))
+    }
+
+    /// How far the value may be from the one at the press and still count as not moved.
+    static func pressTolerance(span: Double, width: Double) -> Double {
+        guard span > 0 else { return 0 }
+        let travel = width - 20   // the knob's own width does not count as travel
+        return travel >= 20 ? span / travel * 0.75 : span * 1e-9
     }
 
     /// The slider's range as set.
@@ -914,8 +953,13 @@ final class PreferencesSlider: NSSlider {
     }
 
     /// A drag moves the knob through the scale's values, not in between: the action gets a
-    /// value of the grid.
+    /// value of the grid. While a press has not moved the knob nothing goes out (AppKit also
+    /// sends on the press itself and when the button goes up).
     override func sendAction(_ action: Selector?, to target: Any?) -> Bool {
+        if isTracking, !movedSincePress {
+            guard !knobIsWherePressed else { return false }
+            movedSincePress = true
+        }
         if let scale {
             let snapped = scale.snapped(doubleValue, in: range)
             if snapped != doubleValue {
@@ -1045,10 +1089,14 @@ final class PreferencesSliderRow: PreferencesGroupRow {
         return slider.isTracking
     }
 
-    /// The value written next to the slider.
+    /// The value written next to the slider. VoiceOver reads it as the slider's value
+    /// ("1000 DPI", "50%"), not the raw number the slider holds.
     var valueText: String {
         get { return valueLabel?.stringValue ?? "" }
-        set { valueLabel?.stringValue = newValue }
+        set {
+            valueLabel?.stringValue = newValue
+            slider.setAccessibilityValueDescription(newValue.isEmpty ? nil : newValue)
+        }
     }
 
     override func applyEnabled() {
