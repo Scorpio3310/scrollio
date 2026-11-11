@@ -98,6 +98,8 @@ final class MouseGesturePointerLock {
     private static let warpTolerance: CGFloat = 0.5
 
     private var testDriver: MouseGesturePointerDriver?
+    /// Tests shorten the safety timeout to see it fire for real.
+    private var safetyTimeoutOverride: TimeInterval?
     private var driver: MouseGesturePointerDriver {
         if let testDriver { return testDriver }
         return AppRuntime.isRunningXCTest ? .inert : .system
@@ -109,20 +111,28 @@ final class MouseGesturePointerLock {
 
     var isLocked: Bool { anchor != nil }
 
-    /// Freezes the pointer at its current position. Safe to call while already locked.
+    /// Freezes the pointer at its current position. Safe to call while already locked: the
+    /// anchor stays, and the safety timeout starts over, so a hold that began later is not
+    /// released at the first hold's timeout.
     func lock() {
-        guard anchor == nil else { return }
-        guard let location = driver.currentLocation() else { return }
-        anchor = location
-        warpCompensator.reset()
-        driver.setAssociated(false)
+        if anchor == nil {
+            guard let location = driver.currentLocation() else { return }
+            anchor = location
+            warpCompensator.reset()
+            driver.setAssociated(false)
+        }
+        armSafetyTimeout()
+    }
 
+    private func armSafetyTimeout() {
+        safetyWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             NSLog("MouseGesturePointerLock: safety timeout, releasing pointer")
             self?.unlock()
         }
         safetyWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.safetyTimeout, execute: workItem)
+        let timeout = safetyTimeoutOverride ?? Self.safetyTimeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: workItem)
     }
 
     /// Releases the pointer. Safe to call when not locked.
@@ -173,6 +183,12 @@ final class MouseGesturePointerLock {
     func clearTestingDriver() {
         forceRelease()
         testDriver = nil
+        safetyTimeoutOverride = nil
+    }
+
+    /// nil restores the real timeout.
+    func setTestingSafetyTimeout(_ timeout: TimeInterval?) {
+        safetyTimeoutOverride = timeout
     }
     #endif
 }

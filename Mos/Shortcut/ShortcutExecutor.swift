@@ -574,7 +574,7 @@ class ShortcutExecutor {
     /// 专用串行后台队列, 用于把 OpenTarget 实际执行 (NSWorkspace/Process/FileManager)
     /// 调离 CGEvent tap 回调链.
     private static let openTargetQueue = DispatchQueue(
-        label: "com.caldis.Mos.openTarget",
+        label: "com.nikklemenc.Scrollio.openTarget",
         qos: .userInitiated
     )
 
@@ -646,38 +646,16 @@ class ShortcutExecutor {
         let appArguments = ArgumentSplitter.split(payload.arguments)
         let appName = resolvedURL.deletingPathExtension().lastPathComponent
 
-        if #available(macOS 10.15, *) {
-            let configuration = NSWorkspace.OpenConfiguration()
-            configuration.activates = true   // 已运行则置前 (不重启)
-            configuration.arguments = appArguments
-            workspace.openApplication(at: resolvedURL, configuration: configuration) { _, error in
-                if let error = error {
-                    Toast.show(
-                        String(format: NSLocalizedString("openTargetAppLaunchFailed", comment: ""), appName),
-                        style: .error
-                    )
-                    NSLog("OpenTarget: NSWorkspace.openApplication failed: \(error.localizedDescription)")
-                }
-            }
-        } else {
-            // macOS 10.13 / 10.14 fallback: legacy launchApplication. 同样走 LaunchServices,
-            // 同样隔离 env. Deprecated 但在现代 macOS 上仍然工作.
-            var configuration: [NSWorkspace.LaunchConfigurationKey: Any] = [:]
-            if !appArguments.isEmpty {
-                configuration[.arguments] = appArguments
-            }
-            do {
-                _ = try workspace.launchApplication(
-                    at: resolvedURL,
-                    options: [.default],
-                    configuration: configuration
-                )
-            } catch {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true   // 已运行则置前 (不重启)
+        configuration.arguments = appArguments
+        workspace.openApplication(at: resolvedURL, configuration: configuration) { _, error in
+            if let error = error {
                 Toast.show(
                     String(format: NSLocalizedString("openTargetAppLaunchFailed", comment: ""), appName),
                     style: .error
                 )
-                NSLog("OpenTarget: launchApplication (legacy) failed: \(error.localizedDescription)")
+                NSLog("OpenTarget: NSWorkspace.openApplication failed: \(error.localizedDescription)")
             }
         }
     }

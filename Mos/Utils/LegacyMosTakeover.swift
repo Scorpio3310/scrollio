@@ -4,9 +4,11 @@
 //
 //  Scrollio replaces the original Mos on this Mac. At launch it
 //
-//  1. quits a running Mos (two apps smoothing the same wheel fight each other), and
+//  1. quits a running Mos (two apps smoothing the same wheel fight each other),
 //  2. once only, copies Mos's settings into Scrollio's own defaults domain, so the first
-//     launch behaves like the app it replaces.
+//     launch behaves like the app it replaces, and
+//  3. while it runs, quits Mos again whenever it starts (its old login item still launches
+//     it at login, after Scrollio). Login items are never changed here.
 //
 //  Runs from AppDelegate before Options.readOptions (which seeds default values) and
 //  never under XCTest: tests must not quit other apps or read the real Mos settings.
@@ -14,6 +16,17 @@
 //
 
 import Cocoa
+
+/// A running app as the takeover sees it: NSRunningApplication in the app, fakes in tests.
+protocol LegacyAppHandle: AnyObject {
+    var bundleIdentifier: String? { get }
+    var processIdentifier: pid_t { get }
+    var isTerminated: Bool { get }
+    @discardableResult func terminate() -> Bool
+    @discardableResult func forceTerminate() -> Bool
+}
+
+extension NSRunningApplication: LegacyAppHandle {}
 
 enum LegacyMosTakeover {
 
@@ -107,6 +120,67 @@ enum LegacyMosTakeover {
         while Date() < deadline, processIdentifiers.contains(where: isProcessAlive) {
             Thread.sleep(forTimeInterval: 0.05)
         }
+    }
+
+    // MARK: - Quit the old app when it starts later
+
+    private static var launchObserver: NSObjectProtocol?
+    private static var launchObserverCenter: NotificationCenter?
+
+    static var isWatchingLaunches: Bool {
+        return launchObserver != nil
+    }
+
+    /// Quits the old app each time it launches while this app runs. Never under XCTest
+    /// (`isAllowed`); tests pass their own notification center.
+    static func startWatchingLaunches(
+        center: NotificationCenter = NSWorkspace.shared.notificationCenter,
+        isAllowed: Bool = isAllowedToRun
+    ) {
+        guard isAllowed, launchObserver == nil else { return }
+        launchObserverCenter = center
+        launchObserver = center.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { notification in
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? LegacyAppHandle else { return }
+            handleLaunch(of: app, isAllowed: isAllowed)
+        }
+    }
+
+    static func stopWatchingLaunches() {
+        if let launchObserver, let launchObserverCenter {
+            launchObserverCenter.removeObserver(launchObserver)
+        }
+        launchObserver = nil
+        launchObserverCenter = nil
+    }
+
+    /// Asks `app` to quit when it is a copy of the old app, never this process. One that
+    /// ignores the request is force-quit after `forceQuitDelay`; nothing here waits.
+    /// - Returns: true when `app` was asked to quit.
+    @discardableResult
+    static func handleLaunch(
+        of app: LegacyAppHandle,
+        isAllowed: Bool = isAllowedToRun,
+        ownProcessIdentifier: pid_t = ProcessInfo.processInfo.processIdentifier,
+        forceQuitDelay: TimeInterval = 3.0
+    ) -> Bool {
+        guard isAllowed,
+              isLegacyInstance(
+                bundleIdentifier: app.bundleIdentifier,
+                processIdentifier: app.processIdentifier,
+                ownProcessIdentifier: ownProcessIdentifier
+              ) else { return false }
+        NSLog("Terminate: legacy Mos instance \(app.processIdentifier) launched while Scrollio runs")
+        app.terminate()
+        DispatchQueue.main.asyncAfter(deadline: .now() + forceQuitDelay) {
+            guard !app.isTerminated else { return }
+            NSLog("Terminate: legacy Mos instance \(app.processIdentifier) did not quit, forcing")
+            app.forceTerminate()
+        }
+        return true
     }
 
     // MARK: - Copy the settings

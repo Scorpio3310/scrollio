@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0D5E7AB00000000000000003 /* MosTests/MousePreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D5E7AB00000000000000002 /* MosTests/MousePreferencesTests.swift */; };
+		0A5E7AB00000000000000012 /* MosTests/StoryboardIntegrityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A5E7AB00000000000000011 /* MosTests/StoryboardIntegrityTests.swift */; };
 		9D5E7AB10000000000000102 /* MosTests/PreferencesFormTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D5E7AB10000000000000101 /* MosTests/PreferencesFormTests.swift */; };
 		9D5E7AB10000000000000202 /* MosTests/PreferencesWindowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D5E7AB10000000000000201 /* MosTests/PreferencesWindowTests.swift */; };
 		9D5E7AB10000000000000302 /* MosTests/PreferencesGesturesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D5E7AB10000000000000301 /* MosTests/PreferencesGesturesTests.swift */; };
@@ -46,7 +47,7 @@
 		5C7E5E7A0000000000000102 /* MosTests/ScrollPresetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C7E5E7A0000000000000101 /* MosTests/ScrollPresetTests.swift */; };
 		5C7E5E7A0000000000000202 /* MosTests/ScrollPresetPopoverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C7E5E7A0000000000000201 /* MosTests/ScrollPresetPopoverTests.swift */; };
 		D1A2B3C4E5F6A7B8C9D01000 /* MosTests/LogiDivertPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01001 /* MosTests/LogiDivertPlannerTests.swift */; };
-		A7E1C0DF0000000000000007 /* MosTests/LogiGestureMouseTabTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0DF0000000000000008 /* MosTests/LogiGestureMouseTabTests.swift */; };
+		A7E1C0DF0000000000000007 /* MosTests/LogiGestureSectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0DF0000000000000008 /* MosTests/LogiGestureSectionTests.swift */; };
 		A7E1C0DF0000000000000005 /* MosTests/LogiGestureRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0DF0000000000000006 /* MosTests/LogiGestureRoutingTests.swift */; };
 		A7E1C0DF0000000000000003 /* MosTests/LogiGestureControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0DF0000000000000004 /* MosTests/LogiGestureControllerTests.swift */; };
 		A7E1C0DF0000000000000001 /* MosTests/LogiGestureProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0DF0000000000000002 /* MosTests/LogiGestureProtocolTests.swift */; };
@@ -101,6 +102,7 @@
 
 /* Begin PBXFileReference section */
 		0D5E7AB00000000000000002 /* MosTests/MousePreferencesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/MousePreferencesTests.swift; sourceTree = SOURCE_ROOT; };
+		0A5E7AB00000000000000011 /* MosTests/StoryboardIntegrityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/StoryboardIntegrityTests.swift; sourceTree = SOURCE_ROOT; };
 		9D5E7AB10000000000000101 /* MosTests/PreferencesFormTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/PreferencesFormTests.swift; sourceTree = SOURCE_ROOT; };
 		9D5E7AB10000000000000201 /* MosTests/PreferencesWindowTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/PreferencesWindowTests.swift; sourceTree = SOURCE_ROOT; };
 		9D5E7AB10000000000000301 /* MosTests/PreferencesGesturesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/PreferencesGesturesTests.swift; sourceTree = SOURCE_ROOT; };
@@ -136,7 +138,7 @@
 		5C7E5E7A0000000000000101 /* MosTests/ScrollPresetTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollPresetTests.swift; sourceTree = SOURCE_ROOT; };
 		5C7E5E7A0000000000000201 /* MosTests/ScrollPresetPopoverTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollPresetPopoverTests.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01001 /* MosTests/LogiDivertPlannerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiDivertPlannerTests.swift; sourceTree = SOURCE_ROOT; };
-		A7E1C0DF0000000000000008 /* MosTests/LogiGestureMouseTabTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiGestureMouseTabTests.swift; sourceTree = SOURCE_ROOT; };
+		A7E1C0DF0000000000000008 /* MosTests/LogiGestureSectionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiGestureSectionTests.swift; sourceTree = SOURCE_ROOT; };
 		A7E1C0DF0000000000000006 /* MosTests/LogiGestureRoutingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiGestureRoutingTests.swift; sourceTree = SOURCE_ROOT; };
 		A7E1C0DF0000000000000004 /* MosTests/LogiGestureControllerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiGestureControllerTests.swift; sourceTree = SOURCE_ROOT; };
 		A7E1C0DF0000000000000002 /* MosTests/LogiGestureProtocolTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiGestureProtocolTests.swift; sourceTree = SOURCE_ROOT; };
@@ -189,6 +191,7 @@
 		0BB750CD2E5F6D8C007C402A /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Components/Toast/README.md,
 				Info.plist,
 			);
 			target = 22142D9F1E25344E00E4BFBF /* Mos */;
@@ -229,6 +232,7 @@
 				AA1011FA00000000000000B1 /* MosTests/ScrollTargetApplicationRulesTests.swift */,
 				A1B2C3D4E5F6A7B8C9D0E1F3 /* MosTests/ButtonBindingTests.swift */,
 				0D5E7AB00000000000000002 /* MosTests/MousePreferencesTests.swift */,
+				0A5E7AB00000000000000011 /* MosTests/StoryboardIntegrityTests.swift */,
 				9D5E7AB10000000000000101 /* MosTests/PreferencesFormTests.swift */,
 				9D5E7AB10000000000000201 /* MosTests/PreferencesWindowTests.swift */,
 				9D5E7AB10000000000000301 /* MosTests/PreferencesGesturesTests.swift */,
@@ -247,7 +251,7 @@
 				C4E5F6A7B8C9D0E1F3020201 /* MosTests/ButtonCapturePresentationStatusTests.swift */,
 				C3D4E5F6A7B8C9D0E1F30201 /* MosTests/InputProcessorTests.swift */,
 				D1A2B3C4E5F6A7B8C9D01001 /* MosTests/LogiDivertPlannerTests.swift */,
-				A7E1C0DF0000000000000008 /* MosTests/LogiGestureMouseTabTests.swift */,
+				A7E1C0DF0000000000000008 /* MosTests/LogiGestureSectionTests.swift */,
 				A7E1C0DF0000000000000006 /* MosTests/LogiGestureRoutingTests.swift */,
 				A7E1C0DF0000000000000004 /* MosTests/LogiGestureControllerTests.swift */,
 				A7E1C0DF0000000000000002 /* MosTests/LogiGestureProtocolTests.swift */,
@@ -459,6 +463,7 @@
 				FECC8D1CC04A0A99B1E1A8EB /* MosTests/InterpolatorTests.swift in Sources */,
 				A1B2C3D4E5F6A7B8C9D0E1F2 /* MosTests/ButtonBindingTests.swift in Sources */,
 				0D5E7AB00000000000000003 /* MosTests/MousePreferencesTests.swift in Sources */,
+				0A5E7AB00000000000000012 /* MosTests/StoryboardIntegrityTests.swift in Sources */,
 				9D5E7AB10000000000000102 /* MosTests/PreferencesFormTests.swift in Sources */,
 				9D5E7AB10000000000000202 /* MosTests/PreferencesWindowTests.swift in Sources */,
 				9D5E7AB10000000000000302 /* MosTests/PreferencesGesturesTests.swift in Sources */,
@@ -476,7 +481,7 @@
 				B2C3D4E5F6A7B8C9D0E1F200 /* MosTests/ButtonUtilsCacheTests.swift in Sources */,
 				C3D4E5F6A7B8C9D0E1F30200 /* MosTests/InputProcessorTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D01000 /* MosTests/LogiDivertPlannerTests.swift in Sources */,
-				A7E1C0DF0000000000000007 /* MosTests/LogiGestureMouseTabTests.swift in Sources */,
+				A7E1C0DF0000000000000007 /* MosTests/LogiGestureSectionTests.swift in Sources */,
 				A7E1C0DF0000000000000005 /* MosTests/LogiGestureRoutingTests.swift in Sources */,
 				A7E1C0DF0000000000000003 /* MosTests/LogiGestureControllerTests.swift in Sources */,
 				A7E1C0DF0000000000000001 /* MosTests/LogiGestureProtocolTests.swift in Sources */,

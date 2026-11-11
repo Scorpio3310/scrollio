@@ -122,4 +122,19 @@ enum LoginItem {
         }
         return result == .enabled
     }
+
+    /// Unregisters the app whatever the system says, also an item that waits for approval.
+    /// Only for an explicit choice of the user (unchecking the box): the launch path uses
+    /// `setEnabled(false)`, which must leave such an item alone.
+    /// - Returns: true when nothing is registered afterwards.
+    @discardableResult
+    static func removeRegistration() -> Bool {
+        guard service.status != .notRegistered else { return true }
+        do {
+            try service.unregister()
+        } catch {
+            NSLog("LoginItem: unregister failed: \(error)")
+        }
+        return service.status == .notRegistered
+    }
 }

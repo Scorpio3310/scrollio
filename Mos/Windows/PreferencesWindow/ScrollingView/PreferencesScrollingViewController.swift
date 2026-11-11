@@ -97,10 +97,8 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         )
         button.bezelStyle = .rounded
         button.translatesAutoresizingMaskIntoConstraints = false
-        if #available(macOS 11.0, *) {
-            button.image = NSImage(systemSymbolName: "speedometer", accessibilityDescription: nil)
-            button.imagePosition = .imageLeading
-        }
+        button.image = NSImage(systemSymbolName: "speedometer", accessibilityDescription: nil)
+        button.imagePosition = .imageLeading
         container.addSubview(button)
 
         let height = button.heightAnchor.constraint(equalToConstant: Self.scrollTuningButtonHeight)

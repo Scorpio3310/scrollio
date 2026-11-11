@@ -240,6 +240,63 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(pointerWarps.count, 1)
     }
 
+    /// "Freeze pointer" in the discrete mode when the detach is not honoured (macOS 27): the
+    /// event back on the anchor reports "hand + jump back". Without the compensation two
+    /// 15 pt steps would count as 15 + 0 + 15 + 0 = 30 pt, below the gesture distance.
+    func testDiscreteModeCountsThePhysicalMovementWhenThePointerIsWarpedBack() {
+        configureGestureBinding()
+        let executed = recordKeyboardShortcuts()
+        XCTAssertEqual(
+            InputProcessor.shared.process(InputEvent(fromCGEvent: makeOtherMouseEvent(.otherMouseDown))),
+            .consumed
+        )
+        XCTAssertTrue(MouseGesturePointerLock.shared.isLocked)
+
+        for _ in 0..<2 {
+            let drifted = makeMouseMoveEvent(deltaX: -15, deltaY: 0, location: CGPoint(x: 85, y: 100))
+            _ = MouseInteractionSessionController.shared.handleMotionTapEventForTests(drifted)
+            let snappedBack = makeMouseMoveEvent(deltaX: 0, deltaY: 0, location: pointerAnchor)
+            _ = MouseInteractionSessionController.shared.handleMotionTapEventForTests(snappedBack)
+        }
+        waitForMainQueue()
+
+        let expected = resolvedShortcut(SystemShortcut.moveSpaceLeft)
+        XCTAssertEqual(executed().count, 1, "60 pt of hand movement is a gesture")
+        XCTAssertEqual(executed().first?.0, expected.code)
+        XCTAssertEqual(pointerWarps.count, 2)
+        XCTAssertEqual(
+            InputProcessor.shared.process(InputEvent(fromCGEvent: makeOtherMouseEvent(.otherMouseUp))),
+            .consumed
+        )
+    }
+
+    /// Two overlapping holds: the second one starts the safety timeout over, so the pointer
+    /// is not released at the first hold's timeout while the second is still held, and is
+    /// still released at the second one's.
+    func testPointerLockSafetyTimeoutStartsOverForEachLock() {
+        let lock = MouseGesturePointerLock.shared
+        lock.setTestingSafetyTimeout(0.4)
+        lock.lock()
+        XCTAssertTrue(lock.isLocked)
+
+        let secondHold = expectation(description: "second hold begins")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            lock.lock()
+            secondHold.fulfill()
+        }
+        wait(for: [secondHold], timeout: 5)
+
+        let pastFirstTimeout = expectation(description: "the first timeout would have fired")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { pastFirstTimeout.fulfill() }
+        wait(for: [pastFirstTimeout], timeout: 5)
+        XCTAssertTrue(lock.isLocked, "0.5 s after the first lock, 0.25 s after the second")
+        XCTAssertEqual(pointerAssociations, [false], "the second lock did not detach again")
+
+        let released = expectation(for: NSPredicate { _, _ in !lock.isLocked }, evaluatedWith: nil)
+        wait(for: [released], timeout: 5)
+        XCTAssertEqual(pointerAssociations, [false, true])
+    }
+
     func testMouseGestureRecognizerKeepsVerticalGesturesOneShot() {
         var up = MouseGestureRecognizer()
         XCTAssertEqual(up.append(deltaX: 0, deltaY: -45), .up)
@@ -663,6 +720,66 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up, code: 1000)), .consumed)
         waitForMainQueue()
         XCTAssertEqual(executed().count, 1)
+    }
+
+    /// Button 3 alone is Gesture Navigation; with ⌘ it holds Shift (a virtual modifier).
+    private func configureGestureAndCommandShiftBindings() {
+        configureGestureBinding()
+        let withCommand = RecordedEvent(
+            type: .mouse, code: 3, modifiers: UInt(CGEventFlags.maskCommand.rawValue),
+            displayComponents: ["⌘", "🖱4"], deviceFilter: nil
+        )
+        Options.shared.buttons.binding.append(ButtonBinding(
+            triggerEvent: withCommand, systemShortcutName: "custom::56:0", isEnabled: true
+        ))
+        ButtonUtils.shared.invalidateCache()
+    }
+
+    private func commandEvent(phase: InputPhase) -> InputEvent {
+        return InputEvent(type: .mouse, code: 3, modifiers: .maskCommand, phase: phase, source: .hidPP, device: nil)
+    }
+
+    func testAPressAfterAnAbandonedHoldKeepsItsOwnButtonUp() {
+        configureGestureAndCommandShiftBindings()
+
+        // A gesture hold whose button-up was lost.
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        InputProcessor.shared.fireMouseGestureWatchdogsForTests()
+
+        // The next press of the same button, with ⌘, holds Shift.
+        XCTAssertEqual(InputProcessor.shared.process(commandEvent(phase: .down)), .consumed)
+        XCTAssertNotEqual(InputProcessor.shared.activeModifierFlags, 0)
+
+        // Its up releases Shift instead of being swallowed by the stale hold.
+        XCTAssertEqual(InputProcessor.shared.process(commandEvent(phase: .up)), .consumed)
+        XCTAssertEqual(InputProcessor.shared.activeModifierFlags, 0)
+        XCTAssertFalse(InputProcessor.shared.hasActiveMouseGestureSessions)
+    }
+
+    func testAnUpPrefersTheBindingPressedWhileTheAbandonedHoldWasStillLive() {
+        configureGestureAndCommandShiftBindings()
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        XCTAssertEqual(InputProcessor.shared.process(commandEvent(phase: .down)), .consumed)
+        XCTAssertNotEqual(InputProcessor.shared.activeModifierFlags, 0)
+        InputProcessor.shared.fireMouseGestureWatchdogsForTests()
+
+        XCTAssertEqual(InputProcessor.shared.process(commandEvent(phase: .up)), .consumed)
+        XCTAssertEqual(InputProcessor.shared.activeModifierFlags, 0)
+        XCTAssertFalse(InputProcessor.shared.hasActiveMouseGestureSessions)
+    }
+
+    func testAnUnboundPressAfterAnAbandonedHoldPassesItsUpThrough() {
+        configureGestureBinding()
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        InputProcessor.shared.fireMouseGestureWatchdogsForTests()
+
+        // The binding is gone by the next press: down and up both belong to the app.
+        Options.shared.buttons.binding = []
+        ButtonUtils.shared.invalidateCache()
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .passthrough)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .passthrough)
+        XCTAssertFalse(InputProcessor.shared.hasActiveMouseGestureSessions)
     }
 
     /// The real timer, with a short timeout: pressing the button arms the watchdog.
@@ -1169,6 +1286,87 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(observedEvents.map(\.type), [.otherMouseDown, .otherMouseUp])
         XCTAssertEqual(observedEvents.map(\.buttonNumber), [4, 4])
         XCTAssertFalse(ScrollCore.shared.toggleScroll)
+    }
+
+    // MARK: - Synthetic releases (the mouse went away mid-hold)
+
+    private func syntheticRelease(code: UInt16 = 3) -> InputEvent {
+        return InputEvent(
+            type: .mouse, code: code, modifiers: [], phase: .up, source: .hidPP, device: nil,
+            isSyntheticRelease: true
+        )
+    }
+
+    func testSyntheticReleaseFlagOnlyExistsOnAnUp() {
+        let down = InputEvent(
+            type: .mouse, code: 3, modifiers: [], phase: .down, source: .hidPP, device: nil,
+            isSyntheticRelease: true
+        )
+        XCTAssertFalse(down.isSyntheticRelease)
+        XCTAssertTrue(syntheticRelease().isSyntheticRelease)
+        XCTAssertFalse(gestureInputEvent(phase: .up).isSyntheticRelease)
+        XCTAssertFalse(InputEvent(fromCGEvent: makeOtherMouseEvent(.otherMouseUp)).isSyntheticRelease)
+    }
+
+    func testSyntheticReleaseOfAGestureHoldRunsNoClickAndReleasesEverything() {
+        configureGestureBinding()
+        var replayCount = 0
+        ShortcutExecutor.shared.setTestingMouseEventObserver { _ in replayCount += 1 }
+        let executed = recordKeyboardShortcuts()
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 3, deltaY: 0)
+        XCTAssertTrue(MouseGesturePointerLock.shared.isLocked)
+
+        // A hold that barely moved would run the click action (Mission Control) on a real up.
+        XCTAssertEqual(InputProcessor.shared.process(syntheticRelease()), .consumed)
+        waitForMainQueue()
+
+        XCTAssertTrue(executed().isEmpty, "no click action for an interrupted hold")
+        XCTAssertEqual(replayCount, 0)
+        XCTAssertFalse(InputProcessor.shared.hasActiveMouseGestureSessions)
+        XCTAssertFalse(MouseInteractionSessionController.shared.isMotionTapRunning)
+        XCTAssertFalse(MouseGesturePointerLock.shared.isLocked)
+        XCTAssertEqual(pointerAssociations, [false, true])
+
+        // The next real press and release work as usual.
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: -45, deltaY: 0)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        waitForMainQueue()
+        XCTAssertEqual(executed().count, 1)
+    }
+
+    func testSyntheticReleaseOfAMosScrollHoldDoesNotReplayTheClick() {
+        let trigger = RecordedEvent(type: .mouse, code: 1007, modifiers: 0, displayComponents: ["[Logi]", "Forward"], deviceFilter: nil)
+        Options.shared.buttons.binding = [ButtonBinding(triggerEvent: trigger, systemShortcutName: "mosScrollToggle", isEnabled: true)]
+        ButtonUtils.shared.invalidateCache()
+        var observed: [CGEventType] = []
+        ShortcutExecutor.shared.setTestingMouseEventObserver { observed.append($0.type) }
+
+        XCTAssertEqual(
+            InputProcessor.shared.process(InputEvent(type: .mouse, code: 1007, modifiers: [], phase: .down, source: .hidPP, device: nil)),
+            .consumed
+        )
+        XCTAssertTrue(ScrollCore.shared.toggleScroll)
+        XCTAssertEqual(InputProcessor.shared.process(syntheticRelease(code: 1007)), .consumed)
+
+        XCTAssertEqual(observed, [], "an interrupted hold is not a tap")
+        XCTAssertFalse(ScrollCore.shared.toggleScroll, "the hold itself is still unwound")
+    }
+
+    func testSyntheticReleaseStillReleasesAVirtualModifier() {
+        let trigger = RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil)
+        Options.shared.buttons.binding = [ButtonBinding(triggerEvent: trigger, systemShortcutName: "custom::56:0", isEnabled: true)]
+        ButtonUtils.shared.invalidateCache()
+
+        XCTAssertEqual(
+            InputProcessor.shared.process(InputEvent(type: .mouse, code: 3, modifiers: [], phase: .down, source: .hidPP, device: nil)),
+            .consumed
+        )
+        XCTAssertNotEqual(InputProcessor.shared.activeModifierFlags, 0)
+        XCTAssertEqual(InputProcessor.shared.process(syntheticRelease()), .consumed)
+        XCTAssertEqual(InputProcessor.shared.activeModifierFlags, 0)
     }
 
     func testProcess_mosScrollBlock_downAndUpControlsBlockState() {

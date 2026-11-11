@@ -57,7 +57,7 @@ enum PreferencesForm {
     static func makeBackground() -> NSVisualEffectView {
         let root = NSVisualEffectView()
         root.blendingMode = .behindWindow
-        if #available(macOS 10.14, *) { root.material = .toolTip }
+        root.material = .toolTip
         root.state = .followsWindowActiveState
         return root
     }
@@ -277,8 +277,7 @@ enum PreferencesForm {
     ) -> NSImage {
         let canvas = NSSize(width: 135, height: 135)
         let image: NSImage
-        if #available(macOS 11.0, *),
-           let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+        if let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 64, weight: .regular)) {
             image = NSImage(size: canvas, flipped: false) { rect in
                 // A wide glyph is held to 80% of the canvas width instead.

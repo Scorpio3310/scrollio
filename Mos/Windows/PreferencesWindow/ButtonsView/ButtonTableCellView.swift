@@ -154,7 +154,6 @@ class ButtonTableCellView: NSTableCellView, NSMenuDelegate {
         refreshForAppearanceChange()
     }
 
-    @available(macOS 10.14, *)
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         refreshForAppearanceChange()
@@ -180,12 +179,7 @@ class ButtonTableCellView: NSTableCellView, NSMenuDelegate {
     func highlight() {
         guard let rowView = self.superview as? NSTableRowView else { return }
         // 设置主题色高亮
-        let highlightColor: NSColor
-        if #available(macOS 10.14, *) {
-            highlightColor = NSColor.controlAccentColor.withAlphaComponent(1)
-        } else {
-            highlightColor = NSColor.mainBlue
-        }
+        let highlightColor = NSColor.controlAccentColor.withAlphaComponent(1)
         let originalColor = originalRowBackgroundColor ?? rowView.backgroundColor
         // 高亮
         rowView.backgroundColor = highlightColor
@@ -343,9 +337,7 @@ class ButtonTableCellView: NSTableCellView, NSMenuDelegate {
         imageView.image = iconImage
         imageView.imageAlignment = .alignCenter
         imageView.imageScaling = .scaleNone
-        if #available(macOS 11.0, *) {
-            imageView.contentTintColor = iconTintColor(for: status)
-        }
+        imageView.contentTintColor = iconTintColor(for: status)
         imageView.setAccessibilityLabel(NSLocalizedString(status.titleKey, comment: ""))
 
         contentView.addSubview(imageView)
@@ -372,37 +364,28 @@ class ButtonTableCellView: NSTableCellView, NSMenuDelegate {
         }
     }
 
-    /// macOS 11+ 用 SF Symbol (14pt); 10.13~10.15 fallback 到系统 caution.
-    /// 10.13~10.15 fallback 到系统 NSCaution (黄三角+感叹号, 内置色彩, 缩放到 14pt).
+    /// SF Symbol at 14 pt; the first name the system knows wins.
     private func conflictIconImage(for status: ButtonCapturePresentationStatus) -> NSImage? {
         let size = Self.conflictIconSize
-        if #available(macOS 11.0, *) {
-            let config = NSImage.SymbolConfiguration(pointSize: size, weight: .regular)
-            let symbolNames: [String]
-            switch status {
-            case .bleHIDPPUnstable:
-                symbolNames = [
-                    "antenna.radiowaves.left.and.right",
-                    "wifi.exclamationmark",
-                    "exclamationmark.triangle",
-                ]
-            case .normal, .conflict, .contended, .standardMouseAliasAvailable:
-                symbolNames = ["arrow.triangle.branch"]
-            }
-            for symbolName in symbolNames {
-                if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
-                    .withSymbolConfiguration(config) {
-                    return image
-                }
-            }
-            return nil
+        let config = NSImage.SymbolConfiguration(pointSize: size, weight: .regular)
+        let symbolNames: [String]
+        switch status {
+        case .bleHIDPPUnstable:
+            symbolNames = [
+                "antenna.radiowaves.left.and.right",
+                "wifi.exclamationmark",
+                "exclamationmark.triangle",
+            ]
+        case .normal, .conflict, .contended, .standardMouseAliasAvailable:
+            symbolNames = ["arrow.triangle.branch"]
         }
-        guard let caution = NSImage(named: NSImage.cautionName) else { return nil }
-        let scaled = NSImage(size: NSSize(width: size, height: size))
-        scaled.lockFocus()
-        caution.draw(in: NSRect(origin: .zero, size: NSSize(width: size, height: size)))
-        scaled.unlockFocus()
-        return scaled
+        for symbolName in symbolNames {
+            if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+                .withSymbolConfiguration(config) {
+                return image
+            }
+        }
+        return nil
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -630,9 +613,7 @@ class ButtonTableCellView: NSTableCellView, NSMenuDelegate {
         )
         item.target = self
         item.representedObject = Self.gestureSettingsMenuMarker as NSString
-        if #available(macOS 11.0, *) {
-            item.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: nil)
-        }
+        item.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: nil)
         item.isHidden = !isGestureNavigationBound
         menu.insertItem(item, at: 3)
     }

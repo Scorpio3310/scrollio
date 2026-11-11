@@ -393,10 +393,7 @@ final class MouseGestureSettingsControls: NSObject {
     }
 
     private static func symbolImage(_ name: String) -> NSImage? {
-        if #available(macOS 11.0, *) {
-            return NSImage(systemSymbolName: name, accessibilityDescription: nil)
-        }
-        return nil
+        return NSImage(systemSymbolName: name, accessibilityDescription: nil)
     }
 
     // MARK: - Actions

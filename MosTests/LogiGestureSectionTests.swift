@@ -4,7 +4,7 @@ import XCTest
 /// The "Logitech" section of the Gestures tab: two checkboxes bound to the shared gesture
 /// settings, enabled only when a connected mouse can do what they offer, with a hint that
 /// says why not otherwise. Capabilities come from fixtures; no HID device is touched.
-/// (The section lived in the Mouse tab before; the file keeps its name.)
+/// (The section lived in the Mouse tab before.)
 final class LogiGestureSectionTests: XCTestCase {
 
     private var savedGesture = MouseGestureSettings.default
