@@ -82,6 +82,16 @@ See `.agents/docs/code-map.md` for the map. The rules:
 - `Mos/ScrollCore/`, input event handling and HID callbacks are hot paths: no avoidable
   allocations, no synchronous I/O, no heavy logging, no notifications, no UI or
   persistence work in them.
+- Smooth scrolling has one path (`ScrollCore` -> `ScrollPoster`, see the code map). The
+  scroll tap callback runs on the main thread, the display link on its own thread:
+  `ScrollPoster` state is touched only under its lock, and only the main thread stops a
+  session (`performRequestedStop`).
+- Diagnostics go to the system log (`ScrollSystemLog`, category `scroll`; `LogiSystemLog`,
+  category `logi`): state changes, decisions and one line per scroll, never a line per
+  event, and no string built per event. Reading it: `README.md`, "Diagnostics".
+- Nothing is written to a Logitech mouse unless "Let Scrollio manage this mouse"
+  (`Options.shared.logiMouseManaged`) is on and the user set that value. Reading needs no
+  switch.
 - ButtonCore, InputEvent, Shortcut and Keys share one meaning of recording, display,
   persistence and execution. When you change one, check the others.
 
@@ -106,9 +116,10 @@ Choose by risk, and run it: reading the code is not verification.
 | Docs, agent files | `git diff --check`, check paths and links | search for old paths |
 | Swift logic | the related `MosTests` class | full test run |
 | New, moved or deleted Swift file; project or target change | Debug build | related tests |
-| ScrollCore hot path | ScrollCore, Interpolator, ScrollFilter tests | full run; the owner scrolls by hand |
+| ScrollCore hot path | `ScrollClassicPathTests`, `ScrollMotionTests`, `ScrollFilterTests`, `ScrollPoster*Tests`, `ScrollSystemLogTests` | full run; the owner scrolls by hand and reads the `scroll` log |
 | ButtonCore, Shortcut, InputEvent | ButtonBinding, InputProcessor, ShortcutExecutor tests | the owner checks the Buttons pane |
-| Logi, HID | the `MosTests/Logi*` tests and the boundary lint | real-device tests, by the owner |
+| Logi, HID | the `MosTests/Logi*` tests and the boundary lint | real-device tests and the `logi` log, by the owner |
+| Preferences panes | the pane's `Preferences*Tests` / `MousePreferencesTests`, `PreferencesWindowTests` | the owner looks at the pane; previews stop when it is hidden |
 | UI text | catalogs in sync, `PreferencesLocalizationTests` | long text, dark mode |
 
 - A bug fix gets a regression test that covers the old failure. If it cannot be automated,
@@ -116,7 +127,8 @@ Choose by risk, and run it: reading the code is not verification.
 - Prefer testable shapes: pure logic, planners, packet builders, small injected seams and
   test doubles. Do not widen an API only for a test.
 - A change to anything persisted needs a canary or migration test, or a clear statement
-  of the risk.
+  of the risk. A retired setting's UserDefaults key goes into
+  `ScrollSettingsCleanup.retiredDefaultsKeys` (removed on load) and is never reused.
 
 ## What needs the owner
 

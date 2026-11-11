@@ -17,7 +17,9 @@ See [Attribution and licence](#attribution-and-licence).
 
 - Smooth scrolling: every click of the wheel becomes an even movement that glides out,
   the way a trackpad scrolls. Two things shape it: how long the page keeps gliding after
-  the wheel stops, and how far one click moves it.
+  the wheel stops (five feels from Direct to Float, or an exact glide time under
+  Advanced), and how far one click moves it. An animated preview in the Scrolling pane
+  shows the feel before you scroll.
 - Reverse the wheel direction.
 - Trackpad-style scroll events (gesture phases), so apps bounce at the top and bottom.
 - Scroll keys: hold a key or button to scroll faster, scroll sideways, or pause
@@ -43,8 +45,12 @@ See [Attribution and licence](#attribution-and-licence).
 
 - Buttons that macOS does not report (gesture button, mode-shift button and others)
   become bindable.
-- Scroll-wheel mode (SmartShift, ratchet, free-spin), SmartShift sensitivity and wheel
-  force, on mice that support them.
+- The Mouse pane shows the battery and, on mice that support them, pointer speed (DPI),
+  haptic feedback and its strength, the thumb panel's press force, scroll-wheel mode
+  (SmartShift, ratchet, free-spin), SmartShift sensitivity and wheel force.
+- Nothing is written to a mouse until "Let Scrollio manage this mouse" is on. Then only
+  the values you set are written, only when the mouse reports something else, and again
+  after each reconnect. With several mice connected, your choices go to all of them.
 - Movement tracked by the mouse itself during a gesture, and haptic feedback on mice
   that have it.
 - A diagnostics panel for HID++ traffic.
@@ -52,6 +58,7 @@ See [Attribution and licence](#attribution-and-licence).
 **App**
 
 - Lives in the menu bar; can launch at login.
+- Preferences in one window with a sidebar of panes, as in System Settings.
 - It quits a running Mos at launch and, on the first launch, copies its settings.
 
 ## Diagnostics
@@ -60,14 +67,31 @@ Scrollio writes what it really did to the system log, so behaviour can be checke
 machine it runs on instead of guessed at:
 
 ```bash
+# the last ten minutes
 log show --last 10m --predicate 'subsystem == "com.nikklemenc.Scrollio"'
+# live, one category
+log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "scroll"'
 ```
 
-- category `scroll`: one line per finished scroll (wheel events and distance in, frames
-  and distance out, how long it glided, the settings in effect) and a line whenever wheel
-  events are let through unsmoothed, with the reason;
-- category `logi`: what a Logitech mouse reported and what was sent to it (for example
-  haptic pulses).
+The debug build logs under `com.nikklemenc.Scrollio.debug`. Nothing is logged per event.
+
+- Category `scroll`, one line per finished scroll:
+
+  ```text
+  scroll: 5 wheel events 2140 px in -> 61 frames 2112 px out (largest 98.4), wheel 44 ms,
+  glide after the last event 820 ms, Duration 4.50 (tau 230 ms), trackpad-style off, ended MomentumEnd
+  ```
+
+  The distance in is what the wheel asked for (Step and Speed applied); the distance out is
+  what was posted, short of it only by the tail under the dead zone. Duration is the one
+  that scroll used: the global one or the app's own.
+- Category `scroll`, at most one line per reason every 3 seconds while wheel events are
+  let through unsmoothed, with how many: taken for trackpad events, remote desktop
+  (already smoothed), smoothing off for this event (with the switch, scroll key, app
+  rule and allowlist), smoothing on but not for this axis, no display link.
+- Category `logi`: what a Logitech mouse reported (battery, DPI, haptic state, press
+  force; once per change), every decision to write or not to write and why, the read-back
+  after a write, requests the mouse refused or did not answer, and each gesture haptic cue.
 
 Nothing in these lines identifies a person or an app's content, and nothing leaves the Mac.
 
