@@ -114,7 +114,8 @@ final class MouseArtworkTests: XCTestCase {
     }
 
     /// Shown as a button the drawing cannot show: with its number when the Mac knows it by
-    /// one, lit again on a mouse that has the part. The stored answer is not touched.
+    /// one, lit again on a mouse that has the part. Its place is known, so it is not
+    /// "unplaced". The stored answer is not touched.
     func testAPartTheMouseDoesNotHaveIsShownAsAnUnknownButton() {
         let panel = trigger(2000 + 0x01A0)
         let gesture = trigger(1000)
@@ -122,15 +123,15 @@ final class MouseArtworkTests: XCTestCase {
         let placedGesture = trigger(6, placed: .gestureButton)
 
         XCTAssertEqual(ButtonTriggerPicture.make(for: panel, mouse: .mxMaster4), .mouse(part: .thumbPanel, number: nil))
-        XCTAssertEqual(ButtonTriggerPicture.make(for: panel, mouse: .mxMaster3), .mouse(part: nil, number: nil))
+        XCTAssertEqual(ButtonTriggerPicture.make(for: panel, mouse: .mxMaster3), .mouse(part: nil, number: nil, notDrawn: .thumbPanel))
         XCTAssertEqual(ButtonTriggerPicture.make(for: placedPanel, mouse: .mxMaster4), .mouse(part: .thumbPanel, number: nil))
-        XCTAssertEqual(ButtonTriggerPicture.make(for: placedPanel, mouse: .mxMaster3), .mouse(part: nil, number: 5))
+        XCTAssertEqual(ButtonTriggerPicture.make(for: placedPanel, mouse: .mxMaster3), .mouse(part: nil, number: 5, notDrawn: .thumbPanel))
         XCTAssertEqual(placedPanel.mousePart, .thumbPanel, "kept")
 
         XCTAssertEqual(ButtonTriggerPicture.make(for: gesture, mouse: .mxMaster3), .mouse(part: .gesture, number: nil))
-        XCTAssertEqual(ButtonTriggerPicture.make(for: gesture, mouse: .generic), .mouse(part: nil, number: nil))
-        XCTAssertEqual(ButtonTriggerPicture.make(for: placedGesture, mouse: .generic), .mouse(part: nil, number: 6))
-        XCTAssertEqual(ButtonTriggerPicture.make(for: trigger(1001), mouse: .generic), .mouse(part: nil, number: nil),
+        XCTAssertEqual(ButtonTriggerPicture.make(for: gesture, mouse: .generic), .mouse(part: nil, number: nil, notDrawn: .gesture))
+        XCTAssertEqual(ButtonTriggerPicture.make(for: placedGesture, mouse: .generic), .mouse(part: nil, number: 6, notDrawn: .gesture))
+        XCTAssertEqual(ButtonTriggerPicture.make(for: trigger(1001), mouse: .generic), .mouse(part: nil, number: nil, notDrawn: .modeShift),
                        "a plain mouse has no button behind the wheel")
 
         for model in MouseArtworkModel.allCases {
@@ -138,7 +139,16 @@ final class MouseArtworkTests: XCTestCase {
                 XCTAssertNotNil(ButtonTriggerPicture.make(for: trigger(code), mouse: model).part, "\(model) \(code)")
             }
         }
-        // The card says how to place it again.
+        for picture in [
+            ButtonTriggerPicture.make(for: panel, mouse: .mxMaster3), ButtonTriggerPicture.make(for: placedPanel, mouse: .mxMaster3),
+            ButtonTriggerPicture.make(for: gesture, mouse: .generic), ButtonTriggerPicture.make(for: trigger(1001), mouse: .generic),
+        ] {
+            XCTAssertFalse(picture.isUnplaced, "its place is known: \(picture)")
+        }
+        XCTAssertTrue(ButtonTriggerPicture.make(for: trigger(6), mouse: .mxMaster3).isUnplaced, "no part known")
+
+        // The card does not ask to find or place a known button; it says the mouse lacks it.
+        let notHere = "The mouse shown doesn't have this button."
         let focus = ButtonsHeaderContent.Focus(
             title: "Thumb panel (button 5)", action: nil,
             picture: ButtonTriggerPicture.make(for: placedPanel, mouse: .mxMaster3)
@@ -146,10 +156,16 @@ final class MouseArtworkTests: XCTestCase {
         let content = ButtonsHeaderContent.make(deviceName: "MX Master 3S", boundCount: 1, isRecording: false, focus: focus)
         XCTAssertNil(content.part)
         XCTAssertEqual(content.number, 5)
+        XCTAssertEqual(content.hint, notHere)
+        let gestureFocus = ButtonsHeaderContent.Focus(
+            title: "Gesture button", action: "Copy", picture: ButtonTriggerPicture.make(for: gesture, mouse: .generic)
+        )
+        XCTAssertEqual(ButtonsHeaderContent.make(deviceName: nil, boundCount: 1, isRecording: false, focus: gestureFocus),
+                       ButtonsHeaderContent(title: "Gesture button", subtitle: "Copy", part: nil, hint: notHere))
     }
 
     /// "Which Button Is This?" offers the parts of the shown mouse; an answer it does not
-    /// have is not offered (and not ticked), and still stored.
+    /// have is listed ticked and disabled (not offered, not lost), and still stored.
     func testWhichButtonIsThisOffersThePartsOfTheShownMouse() throws {
         let six = trigger(6)
         let placed = trigger(6, placed: .thumbPanel)
@@ -161,10 +177,14 @@ final class MouseArtworkTests: XCTestCase {
         XCTAssertEqual(try parts(six, .generic), [.backButton, .forwardButton, .middleButton])
 
         let onThree = try XCTUnwrap(ButtonPlaceMenuModel.make(for: placed, among: [placed], mouse: .mxMaster3))
-        XCTAssertFalse(onThree.items.contains { $0.isChosen })
+        XCTAssertEqual(onThree.items.map(\.part), [.gestureButton, .thumbPanel, .backButton, .forwardButton, .modeShiftButton, .middleButton])
+        XCTAssertEqual(onThree.items.filter(\.isChosen).map(\.part), [.thumbPanel])
+        XCTAssertEqual(onThree.items.filter { !$0.isOnMouse }.map(\.part), [.thumbPanel])
         XCTAssertEqual(onThree.mouse, .mxMaster3)
         let onFour = try XCTUnwrap(ButtonPlaceMenuModel.make(for: placed, among: [placed], mouse: .mxMaster4))
         XCTAssertEqual(onFour.items.filter(\.isChosen).map(\.part), [.thumbPanel])
+        XCTAssertTrue(onFour.items.allSatisfy(\.isOnMouse))
+        XCTAssertEqual(placed.mousePart, .thumbPanel, "kept")
     }
 
     // MARK: - The stored values are the same

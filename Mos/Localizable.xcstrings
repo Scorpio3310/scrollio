@@ -5105,6 +5105,18 @@
           }
         }
       }
+    },
+    "buttons-header-not-on-this-mouse": {
+      "comment": "Buttons pane card: under a button whose place is known (a Logitech gesture button, a thumb panel) that the mouse in the drawing does not have",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The mouse shown doesn't have this button."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

@@ -636,7 +636,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(pane.headerView.artwork.model, .mxMaster3)
         XCTAssertEqual(pane.rows.map(\.mouse), [.mxMaster3, .mxMaster3, .mxMaster3])
         XCTAssertEqual(pane.rows.map(\.picture), [
-            .mouse(part: nil, number: nil), .mouse(part: nil, number: 5), .mouse(part: nil, number: 6),
+            .mouse(part: nil, number: nil, notDrawn: .thumbPanel), .mouse(part: nil, number: 5, notDrawn: .thumbPanel), .mouse(part: nil, number: 6),
         ])
         XCTAssertEqual(try XCTUnwrap(pane.placeMenu(for: six)).items.compactMap { ($0.representedObject as? ButtonPlaceChoice)?.part },
                        [.gestureButton, .backButton, .forwardButton, .modeShiftButton, .middleButton])
@@ -651,6 +651,44 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(pane.headerView.artwork.model, .generic)
         XCTAssertEqual(try XCTUnwrap(pane.placeMenu(for: six)).items.compactMap { ($0.representedObject as? ButtonPlaceChoice)?.part },
                        [.backButton, .forwardButton, .middleButton])
+    }
+
+    /// A button whose place is known but that the shown mouse does not have (a thumb panel
+    /// while an MX Master 3S is connected, a Logitech gesture button on the plain drawing) is
+    /// not asked to be found or placed, and its menu keeps the stored answer ticked and
+    /// disabled: nothing is lost by accident, and nothing is saved by showing it.
+    func testAKnownButtonTheShownMouseLacksIsNotAskedToBeFound() throws {
+        let panelAnswer = ButtonBinding(triggerEvent: placed(6, .thumbPanel), systemShortcutName: "copy", isEnabled: true)
+        deviceName = "MX Master 3S"
+        let pane = makePane([panelAnswer, binding(1000, "copy")])
+        let stored = Options.shared.buttons.binding
+        let notHere = "The mouse shown doesn't have this button."
+        XCTAssertEqual(pane.rows[0].title, "Thumb panel (button 6)")
+        XCTAssertEqual(pane.rows[0].picture, .mouse(part: nil, number: 6, notDrawn: .thumbPanel))
+        XCTAssertFalse(pane.rows[0].picture.isUnplaced)
+        pane.list.select(pane.rows[0].id)
+        XCTAssertEqual(pane.headerView.content.hint, notHere)
+        XCTAssertEqual(pane.headerView.content.number, 6)
+
+        let menu = try XCTUnwrap(pane.placeMenu(for: pane.rows[0].binding.id))
+        let ticked = menu.items.filter { $0.state == .on }
+        XCTAssertEqual(ticked.map(\.title), ["Thumb Panel"])
+        XCTAssertFalse(try XCTUnwrap(ticked.first).isEnabled, "the stored answer cannot be chosen again here")
+        XCTAssertEqual(menu.items.filter { $0.representedObject != nil && !$0.isEnabled }.map(\.title), ["Thumb Panel"])
+        XCTAssertEqual(menu.items.last?.title, "Not on This List")
+        XCTAssertTrue(try XCTUnwrap(menu.items.last).isEnabled)
+        XCTAssertEqual(Options.shared.buttons.binding, stored, "showing it saves nothing")
+
+        // The Logitech gesture button with no Logitech mouse connected: the plain drawing.
+        deviceName = nil
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(pane.headerView.artwork.model, .generic)
+        pane.list.select(pane.rows[1].id)
+        XCTAssertEqual(pane.headerView.content.title, "Gesture button")
+        XCTAssertEqual(pane.headerView.content.hint, notHere)
+        XCTAssertNil(pane.placeMenu(for: pane.rows[1].binding.id), "its place is known: no menu")
+        XCTAssertEqual(Options.shared.buttons.binding, stored)
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.triggerEvent.mousePart), [.thumbPanel, nil], "the answer is kept")
     }
 
     /// The owner's MX Master 4 over Bluetooth: Gesture Navigation on Button 6, a shortcut on

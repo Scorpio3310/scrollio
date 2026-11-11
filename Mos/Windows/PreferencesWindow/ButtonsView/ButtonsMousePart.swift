@@ -145,14 +145,15 @@ extension RecordedEvent {
 /// number ("Button 5") could be any extra button of any mouse (the MX Master 4's gesture
 /// button or thumb panel, or another mouse's side button), so it lights nothing and shows
 /// its number instead. So does a part the shown mouse does not have (a thumb panel on the
-/// MX Master 3, a gesture button on a plain mouse): it keeps its place and shows again on a
-/// mouse that has it.
+/// MX Master 3, a gesture button on a plain mouse), with that part as `notDrawn`: its place
+/// is known, it is not "unplaced", and it shows again on a mouse that has it.
 enum ButtonTriggerPicture: Equatable {
     /// A key of the keyboard.
     case key
     /// The mouse with `part` lit; `part` nil: a button the drawing cannot show, with
-    /// `number` when the Mac knows it only by its number.
-    case mouse(part: ButtonsMousePart?, number: Int?)
+    /// `number` when the Mac knows it only by its number, and `notDrawn` when it is known to
+    /// be a part the shown mouse does not have.
+    case mouse(part: ButtonsMousePart?, number: Int?, notDrawn: ButtonsMousePart? = nil)
 
     /// - Parameter mouse: the drawing the picture is of.
     static func make(
@@ -163,7 +164,7 @@ enum ButtonTriggerPicture: Equatable {
         guard event.type == .mouse else { return .key }
         let part = ButtonsMousePart.part(for: event, logitechRole: logitechRole)
         if let part, !mouse.has(part.artworkPart) {
-            return .mouse(part: nil, number: number(for: event))
+            return .mouse(part: nil, number: number(for: event), notDrawn: part)
         }
         // A numbered button the user placed lights its part like a known one, no number.
         let number = event.placedPart == nil ? number(for: event) : nil
@@ -180,19 +181,25 @@ enum ButtonTriggerPicture: Equatable {
 
     /// The lit part, nil for a key or a button the drawing cannot show.
     var part: ButtonsMousePart? {
-        guard case .mouse(let part, _) = self else { return nil }
+        guard case .mouse(let part, _, _) = self else { return nil }
         return part
     }
 
     var number: Int? {
-        guard case .mouse(_, let number) = self else { return nil }
+        guard case .mouse(_, let number, _) = self else { return nil }
         return number
     }
 
-    /// A mouse button the drawing cannot show: where it is, only the mouse can tell
-    /// ("+", then press it).
+    /// The part the button is known to be when the shown mouse does not have it.
+    var notDrawn: ButtonsMousePart? {
+        guard case .mouse(_, _, let notDrawn) = self else { return nil }
+        return notDrawn
+    }
+
+    /// A mouse button whose place is not known: where it is, only the mouse can tell
+    /// ("+", then press it). A known part the shown mouse does not have is not unplaced.
     var isUnplaced: Bool {
-        guard case .mouse(let part, _) = self else { return false }
-        return part == nil
+        guard case .mouse(let part, _, let notDrawn) = self else { return false }
+        return part == nil && notDrawn == nil
     }
 }

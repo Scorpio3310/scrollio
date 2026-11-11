@@ -40,7 +40,7 @@ enum ButtonsMouseMiniature {
         switch picture {
         case .key:
             drawKeyboard(in: rect, highlighted: highlighted)
-        case .mouse(let part, let number):
+        case .mouse(let part, let number, _):
             drawMouse(mouse, in: rect, lit: part, highlighted: highlighted)
             if let number {
                 let fill = highlighted ? NSColor.white : MiniaturePalette.badge
