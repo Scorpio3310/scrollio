@@ -20,6 +20,12 @@ struct ScrollPosterInput {
     var duration: Double
 }
 
+/// Where a wheel event goes: the app that gets it and the pointer's place (global points).
+struct ScrollInputPlace: Equatable {
+    var pid: pid_t
+    var pointer: CGPoint
+}
+
 /// One scroll event as ScrollPoster sends it.
 struct ScrollOutgoingFrame: Equatable {
     /// Pixel deltas.
@@ -28,14 +34,22 @@ struct ScrollOutgoingFrame: Equatable {
     /// Phase field values; nil leaves the phase fields of the copied wheel event alone.
     var scrollPhase: Double? = nil
     var momentumPhase: Double? = nil
+    /// Event timestamp (`ScrollEventClock.uptimeNanoseconds`); nil keeps the copied wheel event's.
+    /// Given with "Trackpad-style events" only: apps take the speed of a gesture from the time
+    /// between its events, and every frame of a wheel tick used to carry that tick's time.
+    var timestamp: UInt64? = nil
 
-    /// Only the point delta is written; the line delta and the timestamp stay those of the
-    /// copied wheel event. CoreGraphics drops the fraction of a point delta, so the frames of
-    /// a glide come here in whole pixels (ScrollPixelCarry keeps the fraction for the next).
+    /// Only the point delta is written; the line delta stays that of the copied wheel event,
+    /// and so does the timestamp unless one is given. CoreGraphics drops the fraction of a point
+    /// delta, so the frames of a glide come here in whole pixels (ScrollPixelCarry keeps the
+    /// fraction for the next).
     func write(to event: CGEvent) {
         if let scrollPhase = scrollPhase, let momentumPhase = momentumPhase {
             event.setDoubleValueField(.scrollWheelEventScrollPhase, value: scrollPhase)
             event.setDoubleValueField(.scrollWheelEventMomentumPhase, value: momentumPhase)
+        }
+        if let timestamp = timestamp {
+            event.timestamp = timestamp
         }
         event.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: y)
         event.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: x)
@@ -101,6 +115,32 @@ class ScrollPoster {
     private let manualSeparationThreshold: CFTimeInterval = 0.45
     private let trackingEndAdvance: CFTimeInterval = 0.04
     private let momentumEndDelay: CFTimeInterval = 0.13
+    // "Trackpad-style events": how a wheel scroll looks as a trackpad gesture.
+    //
+    // A real flick is a short touch (3 or 4 events, ~50 ms) and then a long glide (momentum).
+    // At a page edge apps treat the two very differently: the touch drags the page past the edge
+    // as a finger would (the stretch follows every delta, with resistance, until the finger lifts),
+    // while a glide that reaches the edge starts the bounce at once, sized by the glide's speed,
+    // and the rest of the glide is ignored. Sent as one long touch for as long as the wheel turned
+    // (and 0.18 s more), a fast scroll dragged the page far past the edge and held it there, and a
+    // tick that put the finger down again during the bounce made the page jump.
+    /// The finger lifts this long after the touch began; the rest of the scroll is its glide.
+    private let trackpadStyleTouchTime: CFTimeInterval = 0.045
+    /// When the current touch began ("began" planned), for `fingerLiftedLocked`.
+    private var touchBeganTime: CFTimeInterval = 0.0
+    /// A tick turned back during the glide; its touch begins with the first frame that moves its way.
+    private var touchWaitsForTurn = false
+    /// The direction of the touch and its glide: the last wheel input that did not ask for a turn.
+    private var glideDelta = (y: 0.0, x: 0.0)
+    /// Where the current touch began and where the last wheel input was. nil: not known, or the
+    /// touch began without trackpad-style events (the app got no "began" for it).
+    private var touchPlace: ScrollInputPlace?
+    private var lastInputPlace: ScrollInputPlace?
+    /// A tick adds to the glide only where its touch began: in the same app, with the pointer no
+    /// farther than this (points) from there. Apps keep a gesture on the scroller that got its
+    /// "began", so a tick over another pane has to begin a touch of its own; a hand that turns
+    /// the wheel moves the pointer by a few points at most.
+    private let trackpadStylePointerSlack: CGFloat = 30
     // Ending a session from the display link (see `displayLinkFrameLocked`)
     /// Counts wheel inputs; a stop the display link asked for is dropped when it is stale.
     private var inputSequence: UInt64 = 0
@@ -118,6 +158,8 @@ class ScrollPoster {
 #if DEBUG
     /// Tests: receives every frame instead of posting it.
     var frameRecorderForTests: ((ScrollOutgoingFrame) -> Void)?
+    /// Tests: the clock of the frames' timestamps (`ScrollEventClock.uptimeNanoseconds` otherwise).
+    var eventClockForTests: (() -> UInt64)?
     /// The cumulative drop counters of the dispatch context, as `stop` logs them.
     struct DropCounts: Equatable {
         var byGeneration: UInt64 = 0
@@ -167,11 +209,14 @@ extension ScrollPoster {
         defer { os_unfair_lock_unlock(&stateLock) }
         // 捕获本次手势的配置快照 (主线程读 Options/ScrollCore, CVDisplayLink 线程只读)
         captureConfigSnapshotLocked()
-        handleInputLocked(input, at: CFAbsoluteTimeGetCurrent())
+        let place = config.simTrackpadEnabled
+            ? ScrollInputPlace(pid: pid_t(event.getIntegerValueField(.eventTargetUnixProcessID)), pointer: event.location)
+            : nil
+        handleInputLocked(input, at: CFAbsoluteTimeGetCurrent(), place: place)
         return self
     }
     /// 处理一次滚轮输入: 缓冲与阶段 (调用方须持有 stateLock)
-    private func handleInputLocked(_ input: ScrollPosterInput, at now: CFTimeInterval) {
+    private func handleInputLocked(_ input: ScrollPosterInput, at now: CFTimeInterval, place: ScrollInputPlace? = nil) {
         if sessionLog.isEmpty {
             sessionLog.startedAt = now
         }
@@ -181,13 +226,88 @@ extension ScrollPoster {
         sessionLog.lastInputAt = now
         sessionLog.trackpadStyle = config.simTrackpadEnabled
         inputSequence &+= 1
+        if !config.simTrackpadEnabled {
+            // The switch can differ per app: a turn asked for with it on is not carried into a
+            // scroll with it off.
+            touchWaitsForTurn = false
+        }
+        lastInputPlace = place
         let separatedByTime = lastManualEventTime <= 0.0 || now - lastManualEventTime >= manualSeparationThreshold
+        // Trackpad-style, while the glide (momentum) runs: a tick in its direction adds to it. A new
+        // touch ("began") takes hold of a page that may be bouncing at an edge, and a touch that then
+        // moves toward the edge snaps the stretch to what that touch alone would give (WebKit forgets
+        // the stretch's force on "began"): the page jumped. A tick the other way starts a new touch,
+        // but only with the first frame that moves the other way (`touchWaitsForTurn`): until the
+        // motion has turned, its frames still go toward the edge and stay part of the glide.
+        // Only where the touch began (`staysAtTouchPlaceLocked`): over another pane or app the tick
+        // begins a touch of its own, as it did before.
+        let inGlide = config.simTrackpadEnabled
+            && (phases.phase == .MomentumBegin || phases.phase == .MomentumOngoing)
+            && staysAtTouchPlaceLocked(place)
+        let addsToGlide = inGlide && continuesGlideLocked(input)
         applyInputLocked(input, at: now)
+        if inGlide {
+            // A tick back in the glide's direction takes back a turn that has not happened yet.
+            touchWaitsForTurn = !addsToGlide
+            if addsToGlide {
+                sessionLog.glideInputs += 1
+            }
+            lastManualEventTime = now
+            momentumEndScheduledTime = nil
+            trackingEndScheduledTime = nil
+            return
+        }
+        if config.simTrackpadEnabled {
+            phases.dropWaitingMomentumBegan()
+        }
         let phase = phases.phase
         let separatedPhase = (phase == .Idle || phase == .Leave || phase == .MomentumEnd || phase == .TrackingEnd)
         let separated = manualInputEnded || separatedByTime || separatedPhase
-        perform(phases.onManualInputDetected(isSeparated: separated), emitTargetImmediately: false)
+        let plan = phases.onManualInputDetected(isSeparated: separated)
+        if plan.beginsTouch {
+            touchBeganTime = now
+            touchPlace = place
+            sessionLog.touches += 1
+        }
+        touchWaitsForTurn = false
+        glideDelta = delta
+        perform(plan, emitTargetImmediately: false)
         lastManualEventTime = now
+        manualInputEnded = false
+        momentumActive = false
+        momentumEndScheduledTime = nil
+        trackingEndScheduledTime = nil
+    }
+    /// Whether a wheel input goes on in the glide's direction: the same sign on each axis that
+    /// moved, and no axis newly moving. Compared with the glide (`glideDelta`), not with the last
+    /// input: a tick back and at once forward again goes on with the glide. Caller holds stateLock.
+    private func continuesGlideLocked(_ input: ScrollPosterInput) -> Bool {
+        guard input.y != 0.0 || input.x != 0.0 else { return false }
+        let sameY = input.y == 0.0 ? glideDelta.y == 0.0 : input.y * glideDelta.y > 0
+        let sameX = input.x == 0.0 ? glideDelta.x == 0.0 : input.x * glideDelta.x > 0
+        return sameY && sameX
+    }
+    /// Whether a wheel input is for the scroller its touch began on, as far as can be told: the
+    /// same app, the pointer within `trackpadStylePointerSlack` of where the touch began. A touch
+    /// that began without a known place (trackpad-style events were off for it) is not gone on
+    /// with: its app got no "began". Caller holds stateLock.
+    private func staysAtTouchPlaceLocked(_ place: ScrollInputPlace?) -> Bool {
+        guard let began = touchPlace else { return place == nil }
+        guard let place = place else { return true }
+        guard place.pid == began.pid else { return false }
+        return hypot(place.pointer.x - began.pointer.x, place.pointer.y - began.pointer.y) <= trackpadStylePointerSlack
+    }
+    /// Trackpad-style: the glide's motion has turned to the last input's direction; the touch that
+    /// input asked for begins now ("momentum ended", "began"), and this frame is its first "changed".
+    /// Caller holds stateLock.
+    private func beginTouchAfterTurnLocked(now: CFTimeInterval) {
+        touchWaitsForTurn = false
+        glideDelta = delta
+        touchPlace = lastInputPlace
+        sessionLog.touches += 1
+        phases.dropWaitingMomentumBegan()
+        perform(phases.onManualInputDetected(isSeparated: true), emitTargetImmediately: false)
+        touchBeganTime = now
         manualInputEnded = false
         momentumActive = false
         momentumEndScheduledTime = nil
@@ -303,9 +423,9 @@ extension ScrollPoster {
     }
     /// One wheel event through the whole input path (buffer, lead cap, phases, session log),
     /// without an event to copy. Frames go to `frameRecorderForTests`.
-    func inputForTests(_ input: ScrollPosterInput, at time: CFTimeInterval) {
+    func inputForTests(_ input: ScrollPosterInput, at time: CFTimeInterval, place: ScrollInputPlace? = nil) {
         os_unfair_lock_lock(&stateLock)
-        handleInputLocked(input, at: time)
+        handleInputLocked(input, at: time, place: place)
         os_unfair_lock_unlock(&stateLock)
     }
     /// One display frame at `now`, exactly as the display link runs it but without the hop
@@ -355,6 +475,11 @@ extension ScrollPoster {
         manualInputEnded = true
         momentumActive = false
         lastManualEventTime = 0.0
+        touchBeganTime = 0.0
+        touchWaitsForTurn = false
+        glideDelta = ( y: 0.0, x: 0.0 )
+        touchPlace = nil
+        lastInputPlace = nil
         momentumEndScheduledTime = nil
         trackingEndScheduledTime = nil
     }
@@ -668,6 +793,20 @@ private extension ScrollPoster {
         }
     }
 
+    /// Whether the touch ("began", "changed") is over and the rest goes out as its glide. Without
+    /// trackpad-style events the phases are not posted and the touch lasts until the wheel has
+    /// been still for `manualContinuationThreshold`. With them it lasts `trackpadStyleTouchTime`
+    /// from its "began", however long the wheel turns: the motion is the same, only its second
+    /// part reaches the app as momentum. A touch that leaves no glide (what remains is under the
+    /// dead zone) lasts until its last frame has gone out: a frame posted after "ended" and
+    /// before "momentum began" would carry "ended" again, with a distance. Caller holds stateLock.
+    func fingerLiftedLocked(now: CFTimeInterval, glideFollows: Bool, outputSettled: Bool) -> Bool {
+        if config.simTrackpadEnabled {
+            return now - touchBeganTime >= trackpadStyleTouchTime && (glideFollows || outputSettled)
+        }
+        return now - lastManualEventTime > manualContinuationThreshold
+    }
+
     /// 处理一帧, 返回需要以哪个阶段结束会话 (nil 表示继续)。调用方须持有 stateLock。
     func processFrameLocked(frameInterval: Double, now: CFTimeInterval) -> Phase? {
         var pendingStopPhase: Phase?
@@ -675,8 +814,19 @@ private extension ScrollPoster {
         let filledValue = advanceMotionLocked(frameInterval: frameInterval)
         // 变换滚动结果，将滤波后的插值映射到当前姿态（考虑灵敏度、方向等因素）
         let shiftedValue = shift(with: filledValue)
+        // 计算缓冲值与当前位置的剩余距离，用于判断滚动是否已收敛
+        let residualY = buffer.y - current.y
+        let residualX = buffer.x - current.x
+        let residualMagnitude = max(residualY.magnitude, residualX.magnitude)
+        let deadZone = config.deadZone
+        // The dead zone is a speed, in pixels per 60 Hz frame: a frame of a faster display
+        // carries less distance at the same speed and is judged as the same motion.
+        let outputMagnitude = ScrollMotion.outputPerReferenceFrame(
+            max(abs(shiftedValue.y), abs(shiftedValue.x)), frameInterval: frameInterval
+        )
         // 检测是否已经超过手动输入的持续时间阈值，准备结束手动阶段
-        if !manualInputEnded && lastManualEventTime > 0.0 && now - lastManualEventTime > manualContinuationThreshold {
+        if !manualInputEnded && lastManualEventTime > 0.0
+            && fingerLiftedLocked(now: now, glideFollows: residualMagnitude > deadZone, outputSettled: outputMagnitude <= deadZone) {
             let endPlan = phases.onManualInputEnded()
             if !(endPlan.queue.isEmpty && endPlan.target == nil) {
                 perform(endPlan, emitTargetImmediately: true)
@@ -686,11 +836,6 @@ private extension ScrollPoster {
                 trackingEndScheduledTime = now + trackingEndAdvance
             }
         }
-        // 计算缓冲值与当前位置的剩余距离，用于判断滚动是否已收敛
-        let residualY = buffer.y - current.y
-        let residualX = buffer.x - current.x
-        let residualMagnitude = max(residualY.magnitude, residualX.magnitude)
-        let deadZone = config.deadZone
         if manualInputEnded && residualMagnitude > deadZone {
             if !momentumActive {
                 perform(phases.onMomentumStart(), emitTargetImmediately: false)
@@ -711,16 +856,16 @@ private extension ScrollPoster {
             }
         }
         // 发送滚动结果 - 只有当输出值超过死区阈值时才发送
-        // The dead zone is a speed, in pixels per 60 Hz frame: a frame of a faster display
-        // carries less distance at the same speed and is judged as the same motion.
-        let outputMagnitude = ScrollMotion.outputPerReferenceFrame(
-            max(abs(shiftedValue.y), abs(shiftedValue.x)), frameInterval: frameInterval
-        )
         if outputMagnitude > deadZone {
             // Whole pixels go out, the fraction waits for the next frame. A frame that comes
             // to no whole pixel yet (faster displays) posts nothing and keeps its distance.
             let pixels = pixelCarry.take(shiftedValue)
-            if (pixels.y != 0.0 || pixels.x != 0.0) && post(pixels) {
+            let posts = pixels.y != 0.0 || pixels.x != 0.0
+            if posts && touchWaitsForTurn
+                && (filledValue.y * delta.y > 0 || filledValue.x * delta.x > 0) {
+                beginTouchAfterTurnLocked(now: now)
+            }
+            if posts && post(pixels) {
                 let moved = abs(pixels.y) + abs(pixels.x)
                 sessionLog.frames += 1
                 sessionLog.postedDistance += moved
@@ -797,6 +942,15 @@ private extension ScrollPoster {
         )
     }
 
+    func eventTimestamp() -> UInt64 {
+#if DEBUG
+        if let clock = eventClockForTests {
+            return clock()
+        }
+#endif
+        return ScrollEventClock.uptimeNanoseconds()
+    }
+
     func phaseValues(for phase: Phase) -> (scroll: Double, momentum: Double)? {
         guard let scrollValue = PhaseValueMapping[phase]?[.Scroll],
               let momentumValue = PhaseValueMapping[phase]?[.Momentum] else {
@@ -812,7 +966,11 @@ private extension ScrollPoster {
         if phaseValues == nil && fallbackToCurrentPhase && config.simTrackpadEnabled {
             phaseValues = self.phaseValues(for: phases.phase)
         }
-        let frame = ScrollOutgoingFrame(y: v.y, x: v.x, scrollPhase: phaseValues?.scroll, momentumPhase: phaseValues?.momentum)
+        var frame = ScrollOutgoingFrame(y: v.y, x: v.x, scrollPhase: phaseValues?.scroll, momentumPhase: phaseValues?.momentum)
+        if config.simTrackpadEnabled {
+            // The time of this frame, so that an app finds the glide's real speed when it bounces.
+            frame.timestamp = eventTimestamp()
+        }
 #if DEBUG
         if let recorder = frameRecorderForTests {
             recorder(frame)

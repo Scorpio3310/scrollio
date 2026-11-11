@@ -210,4 +210,11 @@ enum ScrollEventClock {
     static var secondsPerTick: Double {
         return timebase.numer / timebase.denom / 1_000_000_000
     }
+
+    /// Now as an event timestamp: nanoseconds of the mach clock since startup. That is the unit of
+    /// `CGEvent.timestamp` (AppKit gives `NSEvent.timestamp` as that value / 10^9, the same clock as
+    /// `ProcessInfo.systemUptime`), so on Apple Silicon it is not the raw mach tick count.
+    static func uptimeNanoseconds() -> UInt64 {
+        return clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+    }
 }

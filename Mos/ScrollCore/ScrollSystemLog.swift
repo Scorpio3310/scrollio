@@ -36,6 +36,10 @@ enum ScrollSystemLog {
         /// or an app's own. The last event's wins.
         var transition = 0.0
         var trackpadStyle = false
+        /// Trackpad-style: how many touches ("began") the scroll was sent as, and how many of its
+        /// wheel events went on with a glide instead of beginning a touch.
+        var touches = 0
+        var glideInputs = 0
 
         var isEmpty: Bool { return inputs == 0 }
 
@@ -53,13 +57,16 @@ enum ScrollSystemLog {
 
     static func message(for session: Session, endedWith phase: String) -> String {
         let tau = ScrollMotion.timeConstant(forTransition: session.transition)
+        let trackpadStyle = session.trackpadStyle
+            ? "on (\(session.touches) touches, \(session.glideInputs) wheel events into a glide)"
+            : "off"
         return String(
             format: "scroll: %d wheel events %.0f px in -> %d frames %.0f px out (largest %.1f), wheel %.0f ms, glide after the last event %.0f ms, Duration %.2f (tau %.0f ms), trackpad-style %@, ended %@",
             session.inputs, session.inputDistance, session.frames, session.postedDistance, session.largestFrame,
             (session.lastInputAt - session.startedAt) * 1000,
             max(0, session.lastFrameAt - session.lastInputAt) * 1000,
             session.duration, tau * 1000,
-            session.trackpadStyle ? "on" : "off",
+            trackpadStyle,
             phase
         )
     }
