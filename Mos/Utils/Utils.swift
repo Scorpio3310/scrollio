@@ -101,19 +101,28 @@ public class Utils {
     // 禁止重复运行
     // killExist = true 则杀掉已有进程, 否则自杀
     class func preventMultiRunning(killExist kill: Bool = false) {
-        // 自己的 BundleId
-        let mainBundleID = Bundle.main.bundleIdentifier!
-        // 如果检测到在运行
-        if NSRunningApplication.runningApplications(withBundleIdentifier: mainBundleID).count > 1 {
-            if kill {
-                let runningInst = NSRunningApplication.runningApplications(withBundleIdentifier: mainBundleID)[0]
-                runningInst.terminate()
-                NSLog("Terminate: Other instance", runningInst.processIdentifier)
-            } else {
-                NSApp.terminate(nil)
-                NSLog("Terminate: Suicide")
+        guard let mainBundleID = Bundle.main.bundleIdentifier else { return }
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: mainBundleID)
+        let others = otherInstanceProcessIdentifiers(
+            running: running.map { $0.processIdentifier },
+            own: ProcessInfo.processInfo.processIdentifier
+        )
+        guard !others.isEmpty else { return }
+        if kill {
+            for instance in running where others.contains(instance.processIdentifier) {
+                instance.terminate()
+                NSLog("Terminate: Other instance %d", instance.processIdentifier)
             }
+        } else {
+            NSLog("Terminate: Suicide")
+            NSApp.terminate(nil)
         }
+    }
+    /// Process ids of the other running copies of this app. Never contains `own`: the list
+    /// from NSRunningApplication includes this process, in no guaranteed position, and
+    /// "terminate the first one" could pick the instance that is starting up.
+    class func otherInstanceProcessIdentifiers(running: [pid_t], own: pid_t) -> [pid_t] {
+        return running.filter { $0 != own }
     }
     
     // 从 StoryBroad 获取一个特定 Controller 的实例
