@@ -8,6 +8,7 @@
 
 import Cocoa
 import DGCharts
+import UniformTypeIdentifiers
 
 let scrollEventName = NSNotification.Name(rawValue: "ScrollEvent")
 let buttonEventName = NSNotification.Name(rawValue: "ButtonEvent")
@@ -232,7 +233,7 @@ class MonitorViewController: NSViewController, ChartViewDelegate {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd-HHmmss"
         savePanel.nameFieldStringValue = "monitor-button-events-\(formatter.string(from: Date())).log"
-        savePanel.allowedFileTypes = ["log", "txt"]
+        savePanel.allowedContentTypes = [.log, .plainText]
 
         savePanel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = savePanel.url, let self else { return }
