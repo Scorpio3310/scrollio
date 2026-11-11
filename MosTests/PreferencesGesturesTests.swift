@@ -141,8 +141,9 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(controller.invertRow.title, "Invert left and right")
         XCTAssertEqual(controller.freezeRow.title, "Freeze pointer during a gesture")
         XCTAssertEqual(controls.invertToggle.accessibilityLabel(), "Invert left and right")
-        XCTAssertEqual(controller.trackingSpeedRow.lowEndLabel?.stringValue, "Slower")
-        XCTAssertEqual(controller.trackingSpeedRow.highEndLabel?.stringValue, "Faster")
+        // The speed sliders of every pane end in "Slow" and "Fast", as System Settings' do.
+        XCTAssertEqual(controller.trackingSpeedRow.lowEndLabel?.stringValue, "Slow")
+        XCTAssertEqual(controller.trackingSpeedRow.highEndLabel?.stringValue, "Fast")
     }
 
     func testEveryExplanationIsOnePlainSentence() {
@@ -293,7 +294,9 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(slider.maxValue, 3)
         XCTAssertEqual(slider.doubleValue, 1, accuracy: 1e-9)
         XCTAssertEqual(controller.trackingSpeedRow.valueText, "1.0×")
-        XCTAssertEqual(slider.accessibilityLabel(), "Tracking speed")
+        // Not "Tracking speed": that is the macOS pointer setting under Mouse.
+        XCTAssertEqual(controller.trackingSpeedRow.title, "Swipe speed")
+        XCTAssertEqual(slider.accessibilityLabel(), "Swipe speed")
         // A tick every 0.25, and the knob stops only on them.
         XCTAssertEqual(slider.numberOfTickMarks, 11)
         XCTAssertEqual(slider.tickMarkPosition, .below)

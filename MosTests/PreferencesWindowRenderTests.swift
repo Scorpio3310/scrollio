@@ -138,8 +138,9 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
-    /// Access allowed and not, the login item waiting for approval, "Advanced" open. The
-    /// login item and the permission are fixed, nothing is asked of the system.
+    /// Access allowed and not, the login item waiting for approval, paused, and a build
+    /// stamped by scripts/install.sh (the longest line: a commit with "+"). The login item
+    /// and the permission are fixed, nothing is asked of the system.
     func testRenderGeneral() throws {
         final class FixedLoginItem: LoginItemService {
             let status: LoginItemStatus
@@ -154,19 +155,21 @@ final class PreferencesWindowRenderTests: XCTestCase {
             Options.shared.general.autoLaunch = savedAutoLaunch
             LoginItem.service = LoginItem.defaultService
         }
-        let cases: [(name: String, access: Bool, login: LoginItemStatus, advanced: Bool, paused: Bool)] = [
-            ("general", true, .enabled, false, false),
-            ("general-no-access", false, .notRegistered, false, false),
-            ("general-login-approval", true, .requiresApproval, false, false),
-            ("general-advanced", true, .enabled, true, false),
-            ("general-paused", true, .enabled, false, true),
+        let stamp: [String: Any] = [
+            "CFBundleShortVersionString": "1.0", "CFBundleVersion": "1456",
+            PreferencesGeneralViewController.buildCommitKey: "e904756+",
+            PreferencesGeneralViewController.buildDateKey: "2026-11-11",
+        ]
+        let plain: [String: Any] = ["CFBundleShortVersionString": "1.0", "CFBundleVersion": "1"]
+        let cases: [(name: String, access: Bool, login: LoginItemStatus, paused: Bool, info: [String: Any])] = [
+            ("general", true, .enabled, false, plain),
+            ("general-no-access", false, .notRegistered, false, plain),
+            ("general-login-approval", true, .requiresApproval, false, plain),
+            ("general-paused", true, .enabled, true, plain),
+            ("general-build-stamp", true, .enabled, false, stamp),
         ]
         for item in cases {
             LoginItem.service = FixedLoginItem(item.login)
-            let suite = "ScrollioTests.window-render.general.\(UUID().uuidString)"
-            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-            defaults.set(item.advanced, forKey: PreferencesGeneralViewController.advancedExpandedDefaultsKey)
-            addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
             try renderPane(PANEL_IDENTIFIER.general, name: item.name, prepare: { preferences in
                 guard let general = preferences.controller(for: PANEL_IDENTIFIER.general)
                     as? PreferencesGeneralViewController else { return }
@@ -174,7 +177,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 general.isPaused = { item.paused }
                 general.resume = {}
                 general.isMenuBarIconHidden = { false }
-                general.uiStateDefaults = defaults
+                general.bundleInfo = { item.info }
             }, afterLoad: { controller in
                 // The window calls viewWillAppear, which reads the login item.
                 controller.viewWillAppear()
@@ -583,14 +586,16 @@ final class PreferencesWindowRenderTests: XCTestCase {
         buttons.list.mouseMoved(with: event)
     }
 
-    /// The empty list, and a list with apps (one with settings of its own, selected) and the
-    /// switch on, in a key and a non-key window.
+    /// The empty list (the limit off, and on with its muted line), and a list with apps (one
+    /// with settings of its own, selected) and the switch on, in a key and a non-key window.
     func testRenderApps() throws {
         let stored = Options.shared.application.applications
         addTeardownBlock { Options.shared.application.applications = stored }
         Options.shared.application.applications = EnhanceArray<Application>(matchKey: "path")
         Options.shared.application.allowlist = false
         try renderPane(PANEL_IDENTIFIER.application, name: "apps-empty")
+        Options.shared.application.allowlist = true
+        try renderPane(PANEL_IDENTIFIER.application, name: "apps-empty-limit-on")
 
         let calculator = Application(path: "/System/Applications/Calculator.app")
         calculator.inherit = false
@@ -1038,7 +1043,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try renderPane(MousePreferencesViewController.tabIdentifier, name: name, windowHeight: windowHeight, prepare: { preferences in
             guard let mouse = preferences.controller(for: MousePreferencesViewController.tabIdentifier)
                 as? MousePreferencesViewController else { return }
-            mouse.deviceSource = MouseDeviceSource(deviceStates: { devices }, refresh: {}, showDiagnostics: {})
+            mouse.deviceSource = MouseDeviceSource(deviceStates: { devices }, refresh: {})
             mouse.readbackSettleTime = 0
         }, afterLoad: { controller in
             guard let mouse = controller as? MousePreferencesViewController else { return }

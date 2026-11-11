@@ -7,7 +7,7 @@
 //  On top a preview that shows what a gesture does with the current settings (and the
 //  gesture of the row under the pointer). Then a box with the mode, a box with the action
 //  of every direction and of Click, a box with how a gesture behaves (invert, freeze,
-//  tracking speed) and, when a connected mouse can do it, a box with what a Logitech mouse
+//  swipe speed) and, when a connected mouse can do it, a box with what a Logitech mouse
 //  does itself; under it, while the mouse has its haptics off because the user switched
 //  them off under Mouse, a muted line that says so and leads there ("Open Mouse").
 //  Mode, actions, invert and freeze come from MouseGestureSettingsControls.

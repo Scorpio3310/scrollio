@@ -22,14 +22,12 @@ import Foundation
 struct MouseDeviceSource {
     var deviceStates: () -> [LogiMouseDeviceState]
     var refresh: () -> Void
-    var showDiagnostics: () -> Void
     /// One pulse at the new strength, after the strength slider is let go.
     var playHapticSample: () -> Void = {}
 
     static let live = MouseDeviceSource(
         deviceStates: { LogiCenter.shared.mouseDeviceStates() },
         refresh: { LogiCenter.shared.refreshMouseStates() },
-        showDiagnostics: { LogiCenter.shared.showDebugPanel() },
         playHapticSample: { LogiCenter.shared.playHapticSample() }
     )
 }

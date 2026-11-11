@@ -2,7 +2,8 @@
 //  GeneralHeaderView.swift
 //  Mos
 //  The card at the top of the General pane: on the left the app icon, on the right the
-//  app's name and "Version 1.0 (1)" (what the About pane showed). It has the look of the
+//  app's name and "Version 1.0 (1)" (what the About pane showed), with the commit and the
+//  day of a stamped build. It has the look of the
 //  Mouse pane's card (MouseHeaderView): the same height, corners, fill, columns and type,
 //  so the two panes start alike.
 //

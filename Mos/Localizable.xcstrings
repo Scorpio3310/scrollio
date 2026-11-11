@@ -709,7 +709,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Back"
+            "value": "Back Button"
           }
         }
       }
@@ -720,7 +720,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Forward"
+            "value": "Forward Button"
           }
         }
       }
@@ -896,7 +896,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tracking speed"
+            "value": "Swipe speed"
           }
         }
       }
@@ -995,7 +995,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Slower"
+            "value": "Slow"
           }
         }
       }
@@ -1006,7 +1006,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Faster"
+            "value": "Fast"
           }
         }
       }
@@ -1143,17 +1143,6 @@
         }
       }
     },
-    "mouse-diagnostics-button": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Logitech Diagnostics…"
-          }
-        }
-      }
-    },
     "mouse-haptics": {
       "extractionState": "manual",
       "localizations": {
@@ -1259,7 +1248,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pointer"
+            "value": "Sensor"
           }
         }
       }
@@ -1281,7 +1270,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Faster"
+            "value": "Fast"
           }
         }
       }
@@ -1303,7 +1292,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Slower"
+            "value": "Slow"
           }
         }
       }
@@ -4052,7 +4041,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shorter"
+            "value": "Slow"
           }
         }
       }
@@ -4063,7 +4052,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Farther"
+            "value": "Fast"
           }
         }
       }
@@ -4476,72 +4465,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Open Settings…"
-          }
-        }
-      }
-    },
-    "general-advanced": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Advanced"
-          }
-        }
-      }
-    },
-    "general-scroll-monitor": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scroll monitor"
-          }
-        }
-      }
-    },
-    "general-scroll-monitor-hint": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A live chart of wheel events. Scrolling is slower while it's open."
-          }
-        }
-      }
-    },
-    "general-diagnostics": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Logitech diagnostics"
-          }
-        }
-      }
-    },
-    "general-diagnostics-hint": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Technical details of connected Logitech mice, for troubleshooting."
-          }
-        }
-      }
-    },
-    "general-open-window": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open…"
           }
         }
       }
@@ -5149,6 +5072,42 @@
           "stringUnit": {
             "state": "translated",
             "value": "Scrollio couldn't start and is trying again."
+          }
+        }
+      }
+    },
+    "apps-limit-empty": {
+      "comment": "Apps pane: muted line under \"Limit scrolling to these apps\" while it is on and no app is on the list (smoothing and reversing are then off in every app)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No apps on the list yet: every app scrolls the way macOS does."
+          }
+        }
+      }
+    },
+    "about-version-commit": {
+      "comment": "General pane card: the version, the build number and the commit of a build installed by scripts/install.sh (a commit ending in + was built with uncommitted changes), when its date is not known",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version %1$@ (%2$@) · %3$@"
+          }
+        }
+      }
+    },
+    "about-version-commit-date": {
+      "comment": "General pane card: the version, the build number, the commit (a commit ending in + was built with uncommitted changes) and the day of a build installed by scripts/install.sh, the day in the user's date format",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version %1$@ (%2$@) · %3$@ · %4$@"
           }
         }
       }

@@ -807,6 +807,65 @@ final class ButtonBindingTests: XCTestCase {
         XCTAssertFalse(SystemShortcut.shortcutsByCategory.flatMap(\.shortcuts).contains { $0.identifier == gestureIdentifier })
     }
 
+    // MARK: - One name for one thing
+
+    /// Every action of the menu has a name of its own: the mouse buttons are "Back Button"
+    /// and "Forward Button", apart from Back and Forward (⌘← / ⌘→) under Navigation, and
+    /// Spotlight is offered once.
+    func testEveryActionOfTheMenuHasANameOfItsOwn() {
+        let menu = NSMenu()
+        ShortcutManager.buildShortcutMenu(
+            into: menu,
+            target: ShortcutMenuTestTarget(),
+            action: #selector(ShortcutMenuTestTarget.noop(_:)),
+            showLogiActions: true,
+            showsGestureSettings: true
+        )
+        func actions(in menu: NSMenu) -> [NSMenuItem] {
+            return menu.items.flatMap { item -> [NSMenuItem] in
+                if let submenu = item.submenu { return actions(in: submenu) }
+                return item.representedObject is SystemShortcut.Shortcut ? [item] : []
+            }
+        }
+        let titles = actions(in: menu).map(\.title)
+        XCTAssertGreaterThan(titles.count, 60)
+        var seen = Set<String>()
+        XCTAssertEqual(titles.filter { !seen.insert($0).inserted }, [], "a name used twice")
+        XCTAssertEqual(SystemShortcut.mouseBackClick.localizedName, "Back Button")
+        XCTAssertEqual(SystemShortcut.mouseForwardClick.localizedName, "Forward Button")
+        XCTAssertEqual(SystemShortcut.navigateBack.localizedName, "Back")
+        XCTAssertEqual(SystemShortcut.navigateForward.localizedName, "Forward")
+        XCTAssertEqual(titles.filter { $0.localizedCaseInsensitiveContains("Spotlight") }, ["Spotlight"])
+    }
+
+    /// Spotlight is listed once: ⌘Space, under System. The Spotlight key of Apple keyboards
+    /// ("Spotlight (System)") is no longer offered, but a binding stored with it still runs
+    /// and shows under its own name, in the Buttons and the Gestures pane.
+    func testSpotlightIsListedOnceAndAStoredSpotlightKeyStillShowsAndRuns() throws {
+        let listed = SystemShortcut.shortcutsByCategory.flatMap(\.shortcuts).map(\.identifier)
+        XCTAssertTrue(listed.contains("spotlight"))
+        XCTAssertFalse(listed.contains("spotlightSys"))
+        let system = try XCTUnwrap(SystemShortcut.shortcutsByCategory.first { $0.category == "categorySystem" })
+        XCTAssertTrue(system.shortcuts.contains { $0.identifier == "spotlight" })
+        XCTAssertFalse(MouseGestureSettingsControls.actionCategories(showLogiActions: true)
+            .flatMap(\.shortcuts).contains { $0.identifier == "spotlightSys" }, "nor in the Gestures pane")
+
+        // Stored before: still known, named and run as the Spotlight key.
+        let stored = try XCTUnwrap(SystemShortcut.getShortcut(named: "spotlightSys"))
+        XCTAssertEqual(stored.code, 177)
+        XCTAssertEqual(stored.localizedName, "Spotlight (System)")
+        XCTAssertEqual(SystemShortcut.spotlight.localizedName, "Spotlight")
+        XCTAssertEqual(SystemShortcut.spotlight.code, 49)
+        XCTAssertEqual(SystemShortcut.spotlight.modifiers, .command)
+        let pullDown = makePullDown(binding: makeBinding(stored))
+        XCTAssertEqual(pullDown.menu?.items.first?.title, "Spotlight (System)")
+        XCTAssertEqual(ActionDisplayResolver().actionName(of: makeBinding(stored)), "Spotlight (System)")
+        guard case .systemShortcut(let identifier)? = ShortcutExecutor.shared.resolveAction(named: "spotlightSys") else {
+            return XCTFail("a stored Spotlight key is still an action")
+        }
+        XCTAssertEqual(identifier, "spotlightSys")
+    }
+
     func testGestureNavigationKeepsItsIdentifierAndLookup() {
         XCTAssertEqual(SystemShortcut.mouseGestureNavigation.identifier, "mouseGestureNavigation")
         XCTAssertEqual(

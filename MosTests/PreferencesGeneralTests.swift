@@ -4,10 +4,10 @@
 //
 //  The General pane: the card with the app's name and version (what the About pane
 //  showed), "Scrollio is paused" with Resume, "Open at login" and its approval row, "Show
-//  in menu bar" (the stored "hide" shown the other way round), the Accessibility row,
-//  "Advanced", and at the bottom the Welcome Guide and the credit line. The login item, the
-//  permission, the pause, System Settings, the menu bar icon and the windows are replaced;
-//  nothing is shown on screen.
+//  in menu bar" (the stored "hide" shown the other way round), the Accessibility row, no
+//  developer tools, and at the bottom the Welcome Guide and the credit line. The login
+//  item, the permission, the pause, System Settings, the menu bar icon and the windows are
+//  replaced; nothing is shown on screen.
 //
 
 import XCTest
@@ -54,29 +54,22 @@ final class PreferencesGeneralTests: XCTestCase {
         var access = true
         var menuBarIconHidden = false
         var accessibilitySettingsOpened = 0
-        var monitorsOpened = 0
-        var diagnosticsOpened = 0
         var paused = false
         var resumes = 0
         var welcomeGuidesOpened = 0
     }
 
     private var savedAutoLaunch = false
-    private var suite = ""
-    private var uiDefaults: UserDefaults!
 
     override func setUp() {
         super.setUp()
         savedAutoLaunch = Options.shared.general.autoLaunch
-        suite = "ScrollioTests.general.\(UUID().uuidString)"
-        uiDefaults = UserDefaults(suiteName: suite)
     }
 
     override func tearDown() {
         LoginItem.service = InertLoginItemService()
         Options.shared.general.autoLaunch = savedAutoLaunch
         LoginItem.service = LoginItem.defaultService
-        uiDefaults.removePersistentDomain(forName: suite)
         super.tearDown()
     }
 
@@ -97,14 +90,11 @@ final class PreferencesGeneralTests: XCTestCase {
         pane.openAccessibilitySettings = { world.accessibilitySettingsOpened += 1 }
         pane.isMenuBarIconHidden = { world.menuBarIconHidden }
         pane.setMenuBarIconHidden = { world.menuBarIconHidden = $0 }
-        pane.openScrollMonitor = { world.monitorsOpened += 1 }
-        pane.openDiagnostics = { world.diagnosticsOpened += 1 }
         pane.isPaused = { world.paused }
         pane.resume = {
             world.resumes += 1
             world.paused = false
         }
-        pane.uiStateDefaults = uiDefaults
         pane.showWelcomeGuide = { world.welcomeGuidesOpened += 1 }
         _ = pane.view
         return pane
@@ -151,6 +141,64 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertEqual(pane.title, "General")
     }
 
+    /// A build installed by scripts/install.sh says which commit it is and when it was
+    /// built; any other build shows the line as before. Read through one pure function.
+    func testTheVersionLineShowsTheBuildStampWhenThereIsOne() throws {
+        let plain: [String: Any] = ["CFBundleShortVersionString": "1.0", "CFBundleVersion": "1"]
+        let gb = Locale(identifier: "en_GB")
+        let us = Locale(identifier: "en_US")
+        typealias Pane = PreferencesGeneralViewController
+        XCTAssertEqual(Pane.buildCommitKey, "ScrollioBuildCommit")
+        XCTAssertEqual(Pane.buildDateKey, "ScrollioBuildDate")
+
+        // Without the keys, or with them empty (every build but an installed one).
+        XCTAssertEqual(Pane.versionText(info: plain, locale: gb), "Version 1.0 (1)")
+        var empty = plain
+        empty[Pane.buildCommitKey] = ""
+        empty[Pane.buildDateKey] = ""
+        XCTAssertEqual(Pane.versionText(info: empty, locale: gb), "Version 1.0 (1)")
+
+        // Stamped: the commit and the day in the user's format.
+        let stamped: [String: Any] = [
+            "CFBundleShortVersionString": "1.0", "CFBundleVersion": "1456",
+            Pane.buildCommitKey: "e904756", Pane.buildDateKey: "2026-11-11",
+        ]
+        XCTAssertEqual(Pane.versionText(info: stamped, locale: gb), "Version 1.0 (1456) · e904756 · 11 Nov 2026")
+        XCTAssertEqual(Pane.versionText(info: stamped, locale: us), "Version 1.0 (1456) · e904756 · Nov 11, 2026")
+        // Built with uncommitted changes: the "+" stays.
+        var dirty = stamped
+        dirty[Pane.buildCommitKey] = "e904756+"
+        XCTAssertEqual(Pane.versionText(info: dirty, locale: gb), "Version 1.0 (1456) · e904756+ · 11 Nov 2026")
+        // The first of a month stays that day in any time zone; a day that is no date is
+        // shown as it is; without one, the commit alone.
+        var newYear = stamped
+        newYear[Pane.buildDateKey] = "2026-01-01"
+        XCTAssertEqual(Pane.versionText(info: newYear, locale: us), "Version 1.0 (1456) · e904756 · Jan 1, 2026")
+        var odd = stamped
+        odd[Pane.buildDateKey] = "yesterday"
+        XCTAssertEqual(Pane.versionText(info: odd, locale: gb), "Version 1.0 (1456) · e904756 · yesterday")
+        var noDay = stamped
+        noDay[Pane.buildDateKey] = nil
+        XCTAssertEqual(Pane.versionText(info: noDay, locale: gb), "Version 1.0 (1456) · e904756")
+
+        // The card shows what the bundle says, and still fits on one line.
+        install(.notRegistered)
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesGeneralViewController.self))
+        let pane = try XCTUnwrap(
+            storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.general) as? PreferencesGeneralViewController
+        )
+        pane.isAccessGranted = { true }
+        pane.isPaused = { false }
+        pane.isMenuBarIconHidden = { false }
+        pane.bundleInfo = { dirty }
+        pane.view.layoutSubtreeIfNeeded()
+        let label = pane.headerView.versionLabel
+        XCTAssertEqual(label.stringValue, Pane.versionText(info: dirty))
+        XCTAssertGreaterThanOrEqual(label.frame.width, label.intrinsicContentSize.width - 0.5, "not cut off")
+        // This test build has no stamp: the line as before.
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: Pane.buildCommitKey) as? String ?? "", "")
+    }
+
     /// The card has the size and the look of the Mouse pane's card.
     func testTheCardHasTheLookOfTheMouseCard() throws {
         install(.notRegistered)
@@ -180,14 +228,13 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertTrue(pane.welcomeGuideButton.accessibilityTitleUIElement() as? NSTextField === pane.welcomeGuideRow.titleLabel)
         click(pane.welcomeGuideButton)
         XCTAssertEqual(world.welcomeGuidesOpened, 1)
-        XCTAssertEqual(world.monitorsOpened + world.diagnosticsOpened + world.accessibilitySettingsOpened, 0)
+        XCTAssertEqual(world.accessibilitySettingsOpened, 0)
     }
 
     /// The licence (CC BY-NC 4.0) asks for the attribution: it is always on the pane, last.
     func testTheCreditLineIsShownLast() throws {
-        for (paused, advanced) in [(false, false), (true, true)] {
+        for paused in [false, true] {
             install(.requiresApproval)
-            uiDefaults.set(advanced, forKey: PreferencesGeneralViewController.advancedExpandedDefaultsKey)
             let world = World()
             world.paused = paused
             let pane = try makePane(world)
@@ -210,7 +257,6 @@ final class PreferencesGeneralTests: XCTestCase {
     /// The links and donations of Mos's About pane did not come along.
     func testNothingOfTheOldAboutPaneIsLeft() throws {
         install(.notRegistered)
-        uiDefaults.set(true, forKey: PreferencesGeneralViewController.advancedExpandedDefaultsKey)
         let pane = try makePane(World())
         let removed = ["Home Page", "GitHub", "Contributors", "Donate", "Feed", "Welcome Window", "Buy me a coffee"]
         for text in shownTexts(pane) {
@@ -431,59 +477,33 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertEqual(pane.accessibilityStatusLabel.stringValue, "Allowed")
     }
 
-    // MARK: - Advanced
+    // MARK: - No developer tools
 
-    func testAdvancedIsClosedByDefaultAndRemembersItsState() throws {
+    /// The scroll monitor and the Logitech diagnostics are developer tools: they left the
+    /// pane with its "Advanced" box (the status-bar menu lists them while Option is held).
+    /// The pane no longer reads or writes the stored "Advanced is open"
+    /// (`generalAdvancedExpanded`, kept by name in StoredDataCanaryTests).
+    func testThePaneHasNoDeveloperToolsAndNoAdvanced() throws {
         install(.notRegistered)
-        let world = World()
-        let pane = try makePane(world)
-        XCTAssertFalse(pane.isAdvancedExpanded)
-        XCTAssertEqual(pane.advancedRow.button.title, "Advanced")
-        XCTAssertTrue(pane.scrollMonitorRow.isHidden)
-        XCTAssertTrue(pane.diagnosticsRow.isHidden)
-        let closedHeight = pane.view.fittingSize.height
-
-        click(pane.advancedRow.button)
-        XCTAssertTrue(pane.isAdvancedExpanded)
-        XCTAssertFalse(pane.scrollMonitorRow.isHidden)
-        XCTAssertFalse(pane.diagnosticsRow.isHidden)
-        XCTAssertTrue(uiDefaults.bool(forKey: PreferencesGeneralViewController.advancedExpandedDefaultsKey))
-        XCTAssertEqual(PreferencesGeneralViewController.advancedExpandedDefaultsKey, "generalAdvancedExpanded")
-        XCTAssertGreaterThan(pane.view.fittingSize.height, closedHeight)
+        let pane = try makePane(World())
+        let texts = shownTexts(pane) + allSubviews(of: pane.view).compactMap { ($0 as? NSButton)?.title }
+        for word in ["Advanced", "Scroll monitor", "Scroll Monitor", "Diagnostics", "diagnostics", "Toasts"] {
+            XCTAssertFalse(texts.contains { $0.contains(word) }, "\(word) in \(texts)")
+        }
+        XCTAssertFalse(allSubviews(of: pane.view).contains { $0 is PreferencesDisclosureRow })
         XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
-
-        // A pane made later opens with it.
-        let again = try makePane(world)
-        XCTAssertTrue(again.isAdvancedExpanded)
-        XCTAssertFalse(again.scrollMonitorRow.isHidden)
-        XCTAssertEqual(again.view.frame.size, again.view.fittingSize)
-    }
-
-    func testAdvancedOpensTheDiagnosticWindows() throws {
-        install(.notRegistered)
-        let world = World()
-        uiDefaults.set(true, forKey: PreferencesGeneralViewController.advancedExpandedDefaultsKey)
-        let pane = try makePane(world)
-
-        XCTAssertEqual(pane.scrollMonitorRow.title, "Scroll monitor")
-        XCTAssertEqual(pane.scrollMonitorRow.explanation, "A live chart of wheel events. Scrolling is slower while it's open.")
-        XCTAssertEqual(pane.diagnosticsRow.title, "Logitech diagnostics")
-        XCTAssertEqual(pane.diagnosticsRow.explanation, "Technical details of connected Logitech mice, for troubleshooting.")
-        XCTAssertEqual(pane.scrollMonitorButton.title, "Open…")
-        XCTAssertEqual(pane.diagnosticsButton.title, "Open…")
-
-        click(pane.scrollMonitorButton)
-        XCTAssertEqual(world.monitorsOpened, 1)
-        XCTAssertEqual(world.diagnosticsOpened, 0)
-        click(pane.diagnosticsButton)
-        XCTAssertEqual(world.diagnosticsOpened, 1)
+        // The boxes: the card, (paused), startup, permissions, the Welcome Guide, the credit.
+        let content = try XCTUnwrap(pane.headerView.superview as? NSStackView)
+        XCTAssertEqual(content.arrangedSubviews.filter { $0 is PreferencesGroupSection }.count, 4)
+        for removed in ["general-advanced", "general-scroll-monitor", "general-diagnostics", "general-open-window"] {
+            XCTAssertEqual(NSLocalizedString(removed, comment: ""), removed, "\(removed) left the catalog")
+        }
     }
 
     // MARK: - Kit and wording
 
     func testEveryControlIsNamedByItsRow() throws {
         install(.requiresApproval)
-        uiDefaults.set(true, forKey: PreferencesGeneralViewController.advancedExpandedDefaultsKey)
         let world = World()
         world.access = false
         let pane = try makePane(world)
@@ -493,8 +513,6 @@ final class PreferencesGeneralTests: XCTestCase {
         for (button, row) in [
             (pane.openLoginItemsButton!, pane.loginApprovalRow!),
             (pane.openAccessibilitySettingsButton!, pane.accessibilityRow!),
-            (pane.scrollMonitorButton!, pane.scrollMonitorRow!),
-            (pane.diagnosticsButton!, pane.diagnosticsRow!),
             (pane.welcomeGuideButton!, pane.welcomeGuideRow!),
         ] {
             XCTAssertTrue(button.accessibilityTitleUIElement() as? NSTextField === row.titleLabel, button.title)
@@ -504,7 +522,6 @@ final class PreferencesGeneralTests: XCTestCase {
 
     func testNoJargonAndNoNegativeSwitch() throws {
         install(.requiresApproval)
-        uiDefaults.set(true, forKey: PreferencesGeneralViewController.advancedExpandedDefaultsKey)
         let world = World()
         world.access = false
         let pane = try makePane(world)

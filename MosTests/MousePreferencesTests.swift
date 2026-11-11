@@ -167,7 +167,6 @@ final class MousePreferencesViewControllerTests: XCTestCase {
     private var savedWheel = LogiWheelSettings.default
     private var devices: [LogiMouseDeviceState] = []
     private var refreshCount = 0
-    private var diagnosticsCount = 0
     private var sampleCount = 0
     private var mac = FakeMacPointer()
 
@@ -179,7 +178,6 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         Options.shared.logiWheel = .default
         devices = []
         refreshCount = 0
-        diagnosticsCount = 0
         sampleCount = 0
         mac = FakeMacPointer()
     }
@@ -198,7 +196,6 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         controller.deviceSource = MouseDeviceSource(
             deviceStates: { [weak self] in self?.devices ?? [] },
             refresh: { [weak self] in self?.refreshCount += 1 },
-            showDiagnostics: { [weak self] in self?.diagnosticsCount += 1 },
             playHapticSample: { [weak self] in self?.sampleCount += 1 }
         )
         controller.pointerSettings = mac.settings
@@ -664,8 +661,6 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         for section in [controller.managedSection!, controller.pointerSection!, controller.wheelSection!, controller.hapticsSection!] {
             XCTAssertTrue(section.isHidden)
         }
-        XCTAssertFalse(controller.footer.isHidden)
-        XCTAssertTrue(controller.diagnosticsButton.isEnabled)
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
         // Nothing to point at.
         controller.rowHoverChanged(.wheel, inside: true)
@@ -1119,7 +1114,6 @@ final class MousePreferencesViewControllerTests: XCTestCase {
             (controller.sensitivitySlider, .wheel), (controller.firmnessSlider, .wheel),
             (controller.hapticsSwitch, .thumbPanel), (controller.strengthSlider, .thumbPanel),
             (controller.pressForceSlider, .thumbPanel), (controller.managedSwitch, nil),
-            (controller.diagnosticsButton, nil),
         ]
         for (control, part) in focused {
             controller.firstResponderDidChange(control)
@@ -1224,6 +1218,14 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertEqual(controller.trackingSpeedRow.explanation, text("mouse-macos-tracking-speed-hint"))
         XCTAssertEqual(controller.trackingSpeedRow.lowEndLabel?.stringValue, text("mouse-macos-tracking-speed-slow"))
         XCTAssertEqual(controller.trackingSpeedRow.highEndLabel?.stringValue, text("mouse-macos-tracking-speed-fast"))
+        // One name for one thing: the Logitech box is the sensor, not a second "Pointer";
+        // every speed slider ends in the words of System Settings.
+        XCTAssertEqual(controller.macSection.titleLabel?.stringValue, "Pointer (macOS)")
+        XCTAssertEqual(controller.pointerSection.titleLabel?.stringValue, "Sensor")
+        XCTAssertEqual(controller.trackingSpeedRow.lowEndLabel?.stringValue, "Slow")
+        XCTAssertEqual(controller.trackingSpeedRow.highEndLabel?.stringValue, "Fast")
+        XCTAssertEqual(controller.pointerSpeedRow.lowEndLabel?.stringValue, "Slow")
+        XCTAssertEqual(controller.pointerSpeedRow.highEndLabel?.stringValue, "Fast")
         XCTAssertEqual(controller.trackingSpeedRow.valueText, "", "macOS shows no number either")
         XCTAssertEqual(controller.pointerAccelerationRow.title, text("mouse-macos-acceleration"))
         XCTAssertEqual(controller.pointerAccelerationRow.explanation, text("mouse-macos-acceleration-hint"))
@@ -1417,11 +1419,10 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertFalse(controller.pointerSection.isHidden)
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
 
-        // Without a Logitech mouse only the card and the footer are left.
+        // Without a Logitech mouse only the card is left.
         devices = []
         controller.reloadDevices()
         XCTAssertFalse(controller.headerView.isHidden)
-        XCTAssertFalse(controller.footer.isHidden)
         for section in [controller.macSection!, controller.managedSection!, controller.pointerSection!,
                         controller.wheelSection!, controller.hapticsSection!] {
             XCTAssertTrue(section.isHidden)
@@ -1593,11 +1594,20 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         controller.viewDidDisappear()
     }
 
-    func testDiagnosticsButtonOpensThePanel() {
-        let controller = makeController()
-        XCTAssertEqual(controller.diagnosticsButton.title, text("mouse-diagnostics-button"))
-        send(controller.diagnosticsButton)
-        XCTAssertEqual(diagnosticsCount, 1)
+    /// The Logitech diagnostics are a developer tool: not in the pane, with or without a
+    /// Logitech mouse (the status-bar menu lists them while Option is held).
+    func testThePaneHasNoDeveloperTools() {
+        for devices in [[], [Fixtures.mxMaster4()]] as [[LogiMouseDeviceState]] {
+            let controller = makeController(devices)
+            let views = allSubviews(of: controller.view)
+            let buttons = views.compactMap { $0 as? NSButton }
+            XCTAssertFalse(buttons.contains { $0.title.localizedCaseInsensitiveContains("Diagnostics") }, "\(devices.count) mice")
+            XCTAssertFalse(views.contains { $0.identifier?.rawValue == "mouse-diagnostics" })
+            XCTAssertFalse(views.contains { $0 is PreferencesGroupFooter }, "no footer left under the boxes")
+            XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+        }
+        XCTAssertEqual(NSLocalizedString("mouse-diagnostics-button", comment: ""), "mouse-diagnostics-button",
+                       "the string left the catalog")
     }
 
     func testModeSegmentsFollowTheContractOrder() {
@@ -1768,7 +1778,7 @@ final class MousePreferencesRenderTests: XCTestCase {
 
         func tab(_ devices: [LogiMouseDeviceState], mac: FakeMacPointer = FakeMacPointer()) -> MousePreferencesViewController {
             let controller = MousePreferencesViewController()
-            controller.deviceSource = MouseDeviceSource(deviceStates: { devices }, refresh: {}, showDiagnostics: {})
+            controller.deviceSource = MouseDeviceSource(deviceStates: { devices }, refresh: {})
             controller.pointerSettings = mac.settings
             controller.readbackSettleTime = 0
             _ = controller.view

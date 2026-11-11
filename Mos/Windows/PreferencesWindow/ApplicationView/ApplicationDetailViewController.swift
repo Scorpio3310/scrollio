@@ -8,8 +8,10 @@
 //  with a target application: no preview, dimmed while the app uses the Scrolling settings,
 //  its own "Reset to Defaults").
 //
-//  The page only edits the app it was opened for: `inherit` and its scroll options. The
-//  Apps pane puts the page in place of the list and takes it away again.
+//  The page only edits the app it was opened for: `inherit` and its scroll options. When
+//  the switch goes off while its own options were never edited, they become a copy of the
+//  Scrolling settings first. The Apps pane puts the page in place of the list and takes
+//  it away again.
 //
 
 import Cocoa
@@ -160,9 +162,14 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
     // MARK: - Actions
 
     /// On: the app follows the Scrolling pane; its own options stay stored for later.
+    /// Off: the app's own options, which start as a copy of the Scrolling settings when
+    /// they were never edited (so switching off changes nothing until the user does).
     @objc func inheritClick(_ sender: NSSwitch) {
         let inherit = sender.state == .on
         if application.inherit != inherit {
+            if !inherit {
+                application.adoptScrollOptionsIfUnedited(from: Options.shared.scroll)
+            }
             application.inherit = inherit
         }
         syncViewWithOptions()

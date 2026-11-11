@@ -118,6 +118,36 @@ extension Application {
     }
 }
 
+// MARK: - Own settings from the Scrolling settings
+
+extension Application {
+    /// Before "Use settings from Scrolling" is switched off: scroll options of the app's
+    /// own that were never edited (exactly those of a new entry, `OPTIONS_SCROLL_DEFAULT()`)
+    /// become a copy of `global`, so the app scrolls on as it did until the user changes
+    /// something. Options that were edited are kept. Returns whether they were copied.
+    /// The app keeps its own container: only its values change, stored as before.
+    @discardableResult
+    func adoptScrollOptionsIfUnedited(from global: OPTIONS_SCROLL_DEFAULT) -> Bool {
+        guard scroll == OPTIONS_SCROLL_DEFAULT(), scroll != global else { return false }
+        let own = scroll
+        own.smooth = global.smooth
+        own.reverse = global.reverse
+        own.reverseVertical = global.reverseVertical
+        own.reverseHorizontal = global.reverseHorizontal
+        own.dash = global.dash
+        own.toggle = global.toggle
+        own.block = global.block
+        own.step = global.step
+        own.speed = global.speed
+        own.duration = global.duration
+        own.deadZone = global.deadZone
+        own.smoothSimTrackpad = global.smoothSimTrackpad
+        own.smoothVertical = global.smoothVertical
+        own.smoothHorizontal = global.smoothHorizontal
+        return true
+    }
+}
+
 private extension Application {
     func resolvedScrollOptions() -> OPTIONS_SCROLL_DEFAULT {
         return inherit ? Options.shared.scroll : scroll

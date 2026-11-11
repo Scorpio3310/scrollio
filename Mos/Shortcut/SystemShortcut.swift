@@ -355,9 +355,12 @@ struct SystemShortcut {
 
     /// 按类别分组的快捷键 (有序数组,顺序即菜单显示顺序)
     /// Gesture Navigation is not a key: the action menu lists it on its own, next to "Open…".
+    /// Spotlight is listed once, as ⌘Space under System ("Spotlight"): `spotlightSys`
+    /// (the Spotlight key of Apple keyboards, "Spotlight (System)") is no longer offered.
+    /// A binding stored with it still runs and shows under its own name (`allShortcuts`).
     static let shortcutsByCategory: [(category: String, shortcuts: [Shortcut])] = [
         ("categoryFunctionKeys", [
-            missionControl, appExpose, spotlightSys, dictation, doNotDisturb, showDesktop, escapeKey,
+            missionControl, appExpose, dictation, doNotDisturb, showDesktop, escapeKey,
             moveSpaceLeft, moveSpaceRight
         ]),
         ("categoryAppsAndWindows", [

@@ -7,9 +7,10 @@
 //  scene is a shell.
 //
 //  On top a preview, then a box with what most people need: smooth scrolling, its feel,
-//  the speed and the direction. A second box starts with "Advanced" (closed by default),
-//  which opens the exact glide time, the smallest step and trackpad-style events in that
-//  box and the three keys in a box of their own. "Reset to defaults" sits under the boxes.
+//  the speed and the direction. Under it "While you hold a key" with the three keys, which
+//  work from the first launch, so they always show. The last box starts with "Advanced"
+//  (closed by default), which opens the exact glide time, the smallest step and
+//  trackpad-style events in that box. "Reset to defaults" sits under the boxes.
 //  The tab only edits scroll options: Options.shared.scroll, or the target application's own.
 //
 //  Created by Caldis on 2017/1/26.
@@ -176,7 +177,8 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     private(set) var feelRow: PreferencesGroupRow!
     private(set) var speedRow: PreferencesSliderRow!
     private(set) var reverseRow: PreferencesSwitchRow!
-    /// The second box: "Advanced" and what it opens in that box.
+    /// The last box: "Advanced" and what it opens in that box.
+    private(set) var advancedSection: PreferencesGroupSection!
     private(set) var advancedRow: PreferencesDisclosureRow!
     private(set) var glideTimeRow: PreferencesSliderRow!
     private(set) var smallestStepRow: PreferencesSliderRow!
@@ -184,9 +186,9 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// "While you hold a key": its title and box, and the row of each key.
     private(set) var keysSection: PreferencesGroupSection!
     private(set) var keyRows: [PreferencesGroupRow] = []
-    /// The boxes (as sections), top to bottom.
+    /// The boxes (as sections), top to bottom: the main box, the keys, "Advanced".
     private(set) var sections: [PreferencesGroupSection] = []
-    /// Everything "Advanced" shows and hides: three rows of its box and the keys' section.
+    /// What "Advanced" shows and hides: the three rows of its box under it.
     private(set) var advancedRows: [NSView] = []
 
     // MARK: - Lifecycle
@@ -211,10 +213,11 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         let advanced = PreferencesGroupSection(width: width, rows: [
             makeAdvancedRow(), makeGlideTimeRow(), makeSmallestStepRow(), makeTrackpadEventsRow(),
         ])
+        advancedSection = advanced
         keyRows = ScrollHoldKey.allCases.map { makeKeyRow($0) }
         let keys = PreferencesGroupSection(title: text("scrolling-keys-header"), width: width, rows: keyRows)
         keysSection = keys
-        sections = [basic, advanced, keys]
+        sections = [basic, keys, advanced]
 
         let reset = PreferencesGroupedForm.makePushButton(
             title: text("scrolling-reset"),
@@ -224,11 +227,11 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         reset.identifier = Identifier.reset
         resetToDefaultsButton = reset
 
-        advancedRows = [glideTimeRow, smallestStepRow, trackpadEventsRow, keys]
+        advancedRows = [glideTimeRow, smallestStepRow, trackpadEventsRow]
         advancedRow.revealedViews = advancedRows
 
         PreferencesGroupedForm.add(
-            [preview, basic, advanced, keys, PreferencesGroupFooter(trailing: [reset])],
+            [preview, basic, keys, advanced, PreferencesGroupFooter(trailing: [reset])],
             to: content
         )
 
@@ -330,9 +333,9 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
 
     // MARK: - Preview
 
-    /// What the preview points out: a key only while "Advanced" shows the key rows.
+    /// What the preview points out: the key whose row is recording, under the pointer or
+    /// focused, in that order; otherwise the wheel.
     var previewEmphasis: ScrollPreviewView.Emphasis {
-        guard isAdvancedExpanded else { return .wheel }
         return (recordingKey ?? hoveredKey ?? focusedKey)?.emphasis ?? .wheel
     }
 
@@ -397,16 +400,11 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         isAdvancedExpanded = expanded
         uiStateDefaults.set(expanded, forKey: Self.advancedExpandedDefaultsKey)
         applyAdvancedExpanded()
-        updatePreviewScene()
         contentHeightDidChange()
     }
 
     private func applyAdvancedExpanded() {
         advancedRow.isExpanded = isAdvancedExpanded
-        if !isAdvancedExpanded {
-            hoveredKey = nil
-            focusedKey = nil
-        }
     }
 
     private func contentHeightDidChange() {
@@ -577,7 +575,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         return row
     }
 
-    /// "Advanced": the first row of the second box; it opens the rest of that box and the keys.
+    /// "Advanced": the first row of the last box; it opens the rest of that box.
     private func makeAdvancedRow() -> PreferencesGroupRow {
         let row = PreferencesDisclosureRow(
             title: text("scrolling-advanced"),

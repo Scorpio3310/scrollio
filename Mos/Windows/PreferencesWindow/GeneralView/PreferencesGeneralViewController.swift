@@ -3,16 +3,17 @@
 //  Mos
 //  "General" preferences pane, built in code on the grouped kit (PreferencesGroupedForm);
 //  the storyboard scene is a shell. On top a card with the app icon, its name, version and
-//  build (GeneralHeaderView; the About pane that showed them is gone, "About Scrollio" in
-//  the app menu opens this pane). Under it, only while Scrollio is paused, "Scrollio is
+//  build, and for a build installed by scripts/install.sh its commit and date
+//  (GeneralHeaderView; the About pane that showed them is gone, "About Scrollio" in the app
+//  menu opens this pane). Under it, only while Scrollio is paused, "Scrollio is
 //  paused" with "Resume" (with the menu bar icon hidden there is no other way back). Then
-//  three boxes:
+//  two boxes:
 //  - "Open at login" (with a row to approve it in System Settings while macOS waits for
 //    that) and "Show in menu bar";
 //  - "Permissions": whether Scrollio has Accessibility access, with a way to System
-//    Settings when it has not;
-//  - "Advanced" (closed by default, remembered): the scroll monitor and the Logitech
-//    diagnostics windows.
+//    Settings when it has not.
+//  The developer tools (scroll monitor, Logitech diagnostics) are not in the pane: the
+//  status-bar menu lists them while Option is held.
 //  At the bottom a box with the Welcome Guide and one muted line with the credit for the
 //  project Scrollio is based on (the licence asks for it: it stays visible).
 //  Created by Caldis on 2017/1/15.
@@ -26,7 +27,9 @@ class PreferencesGeneralViewController: NSViewController {
     /// The column of the Preferences window.
     static let paneWidth: CGFloat = PreferencesWindowLayout.contentWidth
 
-    /// Where "Advanced" remembers whether it is open. Plain UI state, not a setting.
+    /// Retired: where the pane's "Advanced" (gone with the developer tools) remembered
+    /// whether it was open. Plain UI state, not a setting. Nothing reads or writes it any
+    /// more; a stored value is left alone, and the name stays taken (never reuse it).
     static let advancedExpandedDefaultsKey = "generalAdvancedExpanded"
 
     // MARK: - Seams (tests and renders replace them: no permission read, no window, no menu bar change)
@@ -38,18 +41,15 @@ class PreferencesGeneralViewController: NSViewController {
     /// The stored "hide the menu bar icon" (`hideStatusItem`); the switch shows its opposite.
     var isMenuBarIconHidden: () -> Bool = { Options.shared.general.hideStatusItem }
     var setMenuBarIconHidden: (Bool) -> Void = { Options.shared.general.hideStatusItem = $0 }
-    var openScrollMonitor: () -> Void = {
-        WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.monitorWindowController)
-    }
-    var openDiagnostics: () -> Void = { LogiCenter.shared.showDebugPanel() }
     /// "Pause Scrollio" of the status-bar menu is on.
     var isPaused: () -> Bool = { AppRunController.shared.isPaused }
     /// Ends the pause, as "Resume Scrollio" of the status-bar menu does.
     var resume: () -> Void = { AppRunController.shared.setPaused(false) }
-    /// Keeps the state of "Advanced"; tests and screenshots give it a store of their own.
-    var uiStateDefaults: UserDefaults = .standard
     /// Opens the Welcome Guide.
     var showWelcomeGuide: () -> Void = IntroductionWindowController.showWelcomeGuide
+    /// The app's Info.plist, for the version line; tests and renders give one with or
+    /// without a build stamp.
+    var bundleInfo: () -> [String: Any] = { Bundle.main.infoDictionary ?? [:] }
 
     // MARK: - Views (read access for tests)
 
@@ -70,12 +70,6 @@ class PreferencesGeneralViewController: NSViewController {
     private(set) var accessibilityStatusLabel: NSTextField!
     private(set) var openAccessibilitySettingsButton: NSButton!
 
-    private(set) var advancedRow: PreferencesDisclosureRow!
-    private(set) var scrollMonitorRow: PreferencesGroupRow!
-    private(set) var scrollMonitorButton: NSButton!
-    private(set) var diagnosticsRow: PreferencesGroupRow!
-    private(set) var diagnosticsButton: NSButton!
-
     private(set) var welcomeGuideRow: PreferencesGroupRow!
     private(set) var welcomeGuideButton: NSButton!
     /// "Based on Mos by Caldis, …": the attribution the licence asks for.
@@ -86,7 +80,6 @@ class PreferencesGeneralViewController: NSViewController {
 
     // MARK: - State
 
-    private(set) var isAdvancedExpanded = false
     /// What the Accessibility row shows.
     private(set) var hasAccess = false
     /// What the login item rows show.
@@ -106,7 +99,7 @@ class PreferencesGeneralViewController: NSViewController {
         content.setHuggingPriority(.defaultHigh, for: .vertical)
         let width = PreferencesGroupedForm.boxWidth(paneWidth: Self.paneWidth)
 
-        let header = GeneralHeaderView(name: text("about-app-name"), version: Self.versionText())
+        let header = GeneralHeaderView(name: text("about-app-name"), version: Self.versionText(info: bundleInfo()))
         header.identifier = NSUserInterfaceItemIdentifier("general-header")
         headerView = header
         let paused = PreferencesGroupSection(width: width, rows: [makePausedRow()])
@@ -118,21 +111,15 @@ class PreferencesGeneralViewController: NSViewController {
         let permissions = PreferencesGroupSection(
             title: text("general-permissions-header"), width: width, rows: [makeAccessibilityRow()]
         )
-        let advanced = PreferencesGroupSection(width: width, rows: [
-            makeAdvancedRow(), makeScrollMonitorRow(), makeDiagnosticsRow(),
-        ])
-        advancedRow.revealedViews = [scrollMonitorRow, diagnosticsRow]
         let guide = PreferencesGroupSection(width: width, rows: [makeWelcomeGuideRow()])
         let credit = makeCreditLabel(width: width)
-        PreferencesGroupedForm.add([header, paused, startup, permissions, advanced, guide, credit], to: content)
+        PreferencesGroupedForm.add([header, paused, startup, permissions, guide, credit], to: content)
         // The credit sits close under the last box, as the muted lines of the other panes.
         content.setCustomSpacing(PreferencesGroupedForm.noteSpacing, after: guide)
 
         view = root
         // The seams are set by now (before the view loads): show the real state at once, so
         // the pane is as tall as what it shows.
-        isAdvancedExpanded = uiStateDefaults.bool(forKey: Self.advancedExpandedDefaultsKey)
-        advancedRow.isExpanded = isAdvancedExpanded
         syncViewWithOptions()
         refreshAccessState()
         refreshPauseState()
@@ -236,49 +223,6 @@ class PreferencesGeneralViewController: NSViewController {
         return row
     }
 
-    /// "Advanced": the first row of the last box; it opens the rest of that box.
-    private func makeAdvancedRow() -> PreferencesGroupRow {
-        let row = PreferencesDisclosureRow(
-            title: text("general-advanced"),
-            target: self,
-            action: #selector(advancedClick(_:))
-        )
-        advancedRow = row
-        return row
-    }
-
-    private func makeScrollMonitorRow() -> PreferencesGroupRow {
-        let button = PreferencesGroupedForm.makePushButton(
-            title: text("general-open-window"),
-            target: self,
-            action: #selector(scrollMonitorClicked(_:))
-        )
-        scrollMonitorButton = button
-        let row = PreferencesGroupRow(
-            title: text("general-scroll-monitor"),
-            explanation: text("general-scroll-monitor-hint"),
-            accessory: button
-        )
-        scrollMonitorRow = row
-        return row
-    }
-
-    private func makeDiagnosticsRow() -> PreferencesGroupRow {
-        let button = PreferencesGroupedForm.makePushButton(
-            title: text("general-open-window"),
-            target: self,
-            action: #selector(diagnosticsClicked(_:))
-        )
-        diagnosticsButton = button
-        let row = PreferencesGroupRow(
-            title: text("general-diagnostics"),
-            explanation: text("general-diagnostics-hint"),
-            accessory: button
-        )
-        diagnosticsRow = row
-        return row
-    }
-
     /// "Welcome Guide" with "Open…": the first-launch steps again.
     private func makeWelcomeGuideRow() -> PreferencesGroupRow {
         let button = PreferencesGroupedForm.makePushButton(
@@ -312,11 +256,51 @@ class PreferencesGeneralViewController: NSViewController {
 
     // MARK: - Content
 
+    /// The Info.plist keys scripts/install.sh fills (empty in every other build): the short
+    /// commit, with "+" when it was built with uncommitted changes, and the day, "2026-11-11".
+    static let buildCommitKey = "ScrollioBuildCommit"
+    static let buildDateKey = "ScrollioBuildDate"
+
     /// "Version 1.0 (1)": the version and the build number the bundle was built with.
     static func versionText(bundle: Bundle = .main) -> String {
-        let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-        let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
-        return String(format: NSLocalizedString("about-version", comment: ""), version, build)
+        return versionText(info: bundle.infoDictionary ?? [:])
+    }
+
+    /// The version line from an Info.plist. Pure. Without a build stamp "Version 1.0 (1)";
+    /// with one, the commit (as it is, "+" included) and the day in `locale`'s format:
+    /// "Version 1.0 (1456) · e904756 · 11 Nov 2026".
+    static func versionText(info: [String: Any], locale: Locale = .current) -> String {
+        func value(_ key: String) -> String {
+            return (info[key] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let version = value("CFBundleShortVersionString")
+        let build = value("CFBundleVersion")
+        let commit = value(buildCommitKey)
+        guard !commit.isEmpty else {
+            return String(format: NSLocalizedString("about-version", comment: ""), version, build)
+        }
+        let day = buildDayText(value(buildDateKey), locale: locale)
+        guard !day.isEmpty else {
+            return String(format: NSLocalizedString("about-version-commit", comment: ""), version, build, commit)
+        }
+        return String(format: NSLocalizedString("about-version-commit-date", comment: ""), version, build, commit, day)
+    }
+
+    /// "2026-11-11" as `locale` writes a date ("11 Nov 2026", "Nov 11, 2026"); anything
+    /// else as it is. The day is read and written in one time zone, so it never moves.
+    static func buildDayText(_ iso: String, locale: Locale) -> String {
+        guard let utc = TimeZone(identifier: "UTC") else { return iso }
+        let reader = DateFormatter()
+        reader.locale = Locale(identifier: "en_US_POSIX")
+        reader.timeZone = utc
+        reader.dateFormat = "yyyy-MM-dd"
+        guard let date = reader.date(from: iso) else { return iso }
+        let writer = DateFormatter()
+        writer.locale = locale
+        writer.timeZone = utc
+        writer.dateStyle = .medium
+        writer.timeStyle = .none
+        return writer.string(from: date)
     }
 
     // MARK: - Lifecycle
@@ -430,29 +414,6 @@ class PreferencesGeneralViewController: NSViewController {
 
     @objc func openAccessibilitySettingsClicked(_ sender: NSButton) {
         openAccessibilitySettings()
-    }
-
-    // MARK: - Advanced
-
-    /// Opens or closes "Advanced", remembers it, and lets the column follow.
-    func setAdvancedExpanded(_ expanded: Bool) {
-        guard expanded != isAdvancedExpanded else { return }
-        isAdvancedExpanded = expanded
-        uiStateDefaults.set(expanded, forKey: Self.advancedExpandedDefaultsKey)
-        advancedRow.isExpanded = expanded
-        PreferencesForm.fitToContent(self)
-    }
-
-    @objc func advancedClick(_ sender: NSButton) {
-        setAdvancedExpanded(!isAdvancedExpanded)
-    }
-
-    @objc func scrollMonitorClicked(_ sender: NSButton) {
-        openScrollMonitor()
-    }
-
-    @objc func diagnosticsClicked(_ sender: NSButton) {
-        openDiagnostics()
     }
 
     // MARK: - Welcome Guide
