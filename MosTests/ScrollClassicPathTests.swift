@@ -861,92 +861,6 @@ final class ScrollClassicPathTests: XCTestCase {
 
     // MARK: Posting
 
-    /// Safari gets its frames as newly made events: the same event as the copy of the wheel
-    /// event in everything an app reads from it, but without the record of the hardware event
-    /// (from which WebKit would take the tick's time for every frame and a glide of its own).
-    func testFrameForSafari_isANewEventLikeTheCopyButWithoutTheHardwareRecord() throws {
-        let template = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: 3, wheel2: -1, wheel3: 0))
-        template.location = CGPoint(x: 412, y: 318)
-        template.flags = [.maskShift, .maskCommand]
-        template.timestamp = 1_234
-        template.setIntegerValueField(.eventTargetUnixProcessID, value: 4321)
-        template.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: 77)
-        template.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: 77)
-        template.setIntegerValueField(.scrollWheelEventScrollCount, value: 2)
-
-        let now = ScrollEventClock.uptimeNanoseconds()
-        let frame = ScrollOutgoingFrame(y: -41, x: 6, scrollPhase: 0, momentumPhase: 2, timestamp: now)
-        let copy = try XCTUnwrap(template.copy())
-        let made = try XCTUnwrap(ScrollDispatchContext.eventWithoutHardwareRecord(like: template))
-        frame.write(to: copy)
-        frame.write(to: made)
-
-        XCTAssertEqual(made.type, .scrollWheel)
-        XCTAssertEqual(made.location, copy.location)
-        XCTAssertEqual(made.flags.intersection([.maskShift, .maskCommand, .maskAlternate, .maskControl]),
-                       copy.flags.intersection([.maskShift, .maskCommand, .maskAlternate, .maskControl]))
-        XCTAssertEqual(made.timestamp, now)
-        let integerFields: [CGEventField] = [
-            .scrollWheelEventDeltaAxis1, .scrollWheelEventDeltaAxis2,
-            .scrollWheelEventPointDeltaAxis1, .scrollWheelEventPointDeltaAxis2,
-            .scrollWheelEventIsContinuous, .scrollWheelEventScrollCount,
-            .eventTargetUnixProcessID, .mouseEventWindowUnderMousePointer,
-            .mouseEventWindowUnderMousePointerThatCanHandleThisEvent,
-        ]
-        for field in integerFields {
-            XCTAssertEqual(made.getIntegerValueField(field), copy.getIntegerValueField(field), "field \(field.rawValue)")
-        }
-        let doubleFields: [CGEventField] = [
-            .scrollWheelEventFixedPtDeltaAxis1, .scrollWheelEventFixedPtDeltaAxis2,
-            .scrollWheelEventScrollPhase, .scrollWheelEventMomentumPhase,
-        ]
-        for field in doubleFields {
-            XCTAssertEqual(made.getDoubleValueField(field), copy.getDoubleValueField(field), accuracy: 1e-9, "field \(field.rawValue)")
-        }
-        XCTAssertEqual(made.getIntegerValueField(.scrollWheelEventPointDeltaAxis1), -41)
-        XCTAssertEqual(made.getIntegerValueField(.scrollWheelEventDeltaAxis1), 3, "the wheel's line delta stays")
-
-        // What an app sees.
-        let seen = try XCTUnwrap(NSEvent(cgEvent: made))
-        let seenCopy = try XCTUnwrap(NSEvent(cgEvent: copy))
-        XCTAssertEqual(seen.scrollingDeltaY, seenCopy.scrollingDeltaY)
-        XCTAssertEqual(seen.scrollingDeltaX, seenCopy.scrollingDeltaX)
-        XCTAssertEqual(seen.deltaY, seenCopy.deltaY)
-        XCTAssertTrue(seen.hasPreciseScrollingDeltas)
-        XCTAssertEqual(seen.momentumPhase, .changed)
-        XCTAssertEqual(seen.phase, seenCopy.phase)
-        XCTAssertEqual(seen.timestamp, Double(now) / 1e9, accuracy: 1e-6)
-        XCTAssertEqual(seen.modifierFlags.intersection([.shift, .command]), [.shift, .command])
-
-        // The point of it: no hardware record. (The lookup is not public; without it this part
-        // is skipped. A copy of a real wheel event has one, which cannot be made here.)
-        typealias CopyHardwareRecord = @convention(c) (CGEvent) -> Unmanaged<AnyObject>?
-        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGEventCopyIOHIDEvent") else {
-            throw XCTSkip("CGEventCopyIOHIDEvent is not there")
-        }
-        let record = unsafeBitCast(symbol, to: CopyHardwareRecord.self)(made)
-        XCTAssertNil(record, "a newly made scroll event carries no hardware record")
-        record?.release()
-    }
-
-    /// The dispatch context hands out the copy or the newly made event, as asked.
-    func testDispatchContext_makesANewEventWhenAsked() throws {
-        let context = ScrollDispatchContext()
-        let wheel = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 2, wheel2: 0, wheel3: 0))
-        wheel.location = CGPoint(x: 50, y: 60)
-        wheel.setIntegerValueField(.eventTargetUnixProcessID, value: 4321)
-        wheel.setIntegerValueField(.eventSourceUserData, value: 99)
-        XCTAssertTrue(context.capture(event: wheel))
-
-        let copied = try XCTUnwrap(context.preparePostingSnapshot())
-        XCTAssertEqual(copied.event.getIntegerValueField(.eventSourceUserData), 99, "a copy keeps everything")
-        let made = try XCTUnwrap(context.preparePostingSnapshot(withoutHardwareRecord: true))
-        XCTAssertEqual(made.event.getIntegerValueField(.eventSourceUserData), 0, "a new event is made from scratch")
-        XCTAssertEqual(made.event.location, CGPoint(x: 50, y: 60))
-        XCTAssertEqual(made.event.getIntegerValueField(.scrollWheelEventDeltaAxis1), 2)
-        XCTAssertEqual(made.targetPID, 4321)
-    }
-
     func testFrame_isWrittenAsAPointDeltaOfTheCopiedEvent() throws {
         let template = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: 3, wheel2: 0, wheel3: 0))
         template.timestamp = 1_234
@@ -1162,17 +1076,34 @@ final class ScrollGlideFollowerTests: XCTestCase {
         XCTAssertFalse(ScrollUtils.isChromiumBased(bundleURL: URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")))
     }
 
-    /// Three kinds of apps, three forms: Safari gets the flick as newly made events, a
-    /// Chromium-based app the flick, everything else the long touch.
+    /// Three kinds of apps: Safari gets no trackpad-style events at all (with them it does not
+    /// scroll smoothly), a Chromium-based app the flick, everything else the long touch.
     func testTheFormFollowsTheApp() throws {
         let electron = try app("Editor.app", files: ["Contents/Frameworks/Electron Framework.framework/Resources/resources.pak"])
         let plain = try app("Plain.app", files: ["Contents/MacOS/Plain"])
-        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "com.apple.Safari", bundleURL: plain), .followsGlideWithoutHardwareRecord)
-        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "com.apple.SafariTechnologyPreview", bundleURL: plain), .followsGlideWithoutHardwareRecord)
+        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "com.apple.Safari", bundleURL: plain), .plainScrolling)
+        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "com.apple.SafariTechnologyPreview", bundleURL: plain), .plainScrolling)
         XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "com.example.editor", bundleURL: electron), .followsGlide)
         XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "com.apple.finder", bundleURL: plain), .touchOnly)
         XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: nil, bundleURL: plain), .touchOnly)
         XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "org.mozilla.firefox", bundleURL: plain), .touchOnly, "not checked on screen")
+    }
+
+    /// What the switch comes to for each kind of app. Safari: no phases, exactly as with the
+    /// switch off, which is the one way it is known to scroll as it should.
+    func testTheSwitchAndTheApp_decideTheForm() {
+        func form(_ switchOn: Bool, _ target: ScrollUtils.TrackpadStyleTarget?) -> [Bool] {
+            let form = ScrollPoster.trackpadStyleForm(switchOn: switchOn, target: target)
+            return [form.phases, form.flick, form.withheld]
+        }
+        //                                          phases flick  withheld
+        XCTAssertEqual(form(true, .plainScrolling), [false, false, true], "Safari")
+        XCTAssertEqual(form(true, .followsGlide), [true, true, false], "Chromium")
+        XCTAssertEqual(form(true, .touchOnly), [true, false, false], "native apps")
+        XCTAssertEqual(form(true, nil), [true, false, false], "an app that is not known")
+        for target in [ScrollUtils.TrackpadStyleTarget.plainScrolling, .followsGlide, .touchOnly] {
+            XCTAssertEqual(form(false, target), [false, false, false], "the switch is off")
+        }
     }
 }
 
@@ -1228,14 +1159,14 @@ final class ScrollSystemLogTests: XCTestCase {
         session.touches = 1
         session.glideInputs = 4
         XCTAssertTrue(ScrollSystemLog.message(for: session, endedWith: "MomentumEnd").contains("trackpad-style off, ended"))
+        session.trackpadStyleWithheld = true
+        XCTAssertTrue(ScrollSystemLog.message(for: session, endedWith: "MomentumEnd").contains("trackpad-style off (not sent to this app), ended"))
+        session.trackpadStyleWithheld = false
         session.trackpadStyle = true
         XCTAssertTrue(ScrollSystemLog.message(for: session, endedWith: "MomentumEnd").contains("trackpad-style on (long touch: 1 touches), ended"))
         session.flick = true
         XCTAssertTrue(ScrollSystemLog.message(for: session, endedWith: "MomentumEnd")
             .contains("trackpad-style on (flick: 1 touches, 4 wheel events into a glide), ended"))
-        session.plainEvents = true
-        XCTAssertTrue(ScrollSystemLog.message(for: session, endedWith: "MomentumEnd")
-            .contains("trackpad-style on (flick, new events: 1 touches, 4 wheel events into a glide), ended"))
     }
 
     func testDurationForTransition_invertsTheSliderMapping() {

@@ -93,55 +93,16 @@ final class ScrollDispatchContext {
         os_unfair_lock_unlock(&lock)
     }
 
-    /// - Parameter withoutHardwareRecord: the frame is a newly made event instead of a copy of
-    ///   the wheel event (see `eventWithoutHardwareRecord`).
-    func preparePostingSnapshot(withoutHardwareRecord: Bool = false) -> PostingSnapshot? {
+    func preparePostingSnapshot() -> PostingSnapshot? {
         os_unfair_lock_lock(&lock)
         guard state.targetPID != 0,
-              let template = state.eventTemplate,
-              let eventClone = (withoutHardwareRecord ? Self.eventWithoutHardwareRecord(like: template) : nil) ?? template.copy() else {
+              let eventClone = state.eventTemplate?.copy() else {
             os_unfair_lock_unlock(&lock)
             return nil
         }
         let snapshot = PostingSnapshot(event: eventClone, targetPID: state.targetPID, generation: state.generation, capturedAt: state.updatedAt)
         os_unfair_lock_unlock(&lock)
         return snapshot
-    }
-
-    /// A scroll event like `template`, but newly made: it carries no record of the hardware
-    /// event (IOHIDEvent) the wheel tick came with; a copy of the wheel event keeps it.
-    ///
-    /// WebKit (Safari) reads that record on every scroll event that has a phase: the time of a
-    /// frame from it (every frame of a tick then has the tick's time, and the filter WebKit runs
-    /// over a gesture's deltas gets no time between them: no smooth scrolling at all), and the
-    /// wheel's raw delta, from which it computes a glide of its own that replaces the momentum
-    /// events. Without the record it takes the event's own time and deltas.
-    ///
-    /// Carried over: the place, the modifier flags, the time, the wheel's line and fixed-point
-    /// deltas, the scroll count and the target (process, window). The caller writes the frame.
-    static func eventWithoutHardwareRecord(like template: CGEvent) -> CGEvent? {
-        guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0, wheel2: 0, wheel3: 0) else {
-            return nil
-        }
-        event.location = template.location
-        event.flags = template.flags
-        event.timestamp = template.timestamp
-        let integerFields: [CGEventField] = [
-            .scrollWheelEventDeltaAxis1, .scrollWheelEventDeltaAxis2, .scrollWheelEventDeltaAxis3,
-            .scrollWheelEventScrollCount, .scrollWheelEventInstantMouser,
-            .eventTargetProcessSerialNumber, .eventTargetUnixProcessID,
-            .mouseEventWindowUnderMousePointer, .mouseEventWindowUnderMousePointerThatCanHandleThisEvent,
-        ]
-        for field in integerFields {
-            event.setIntegerValueField(field, value: template.getIntegerValueField(field))
-        }
-        let fixedPointFields: [CGEventField] = [
-            .scrollWheelEventFixedPtDeltaAxis1, .scrollWheelEventFixedPtDeltaAxis2, .scrollWheelEventFixedPtDeltaAxis3,
-        ]
-        for field in fixedPointFields {
-            event.setDoubleValueField(field, value: template.getDoubleValueField(field))
-        }
-        return event
     }
 
     func enqueue(_ snapshot: PostingSnapshot) {
