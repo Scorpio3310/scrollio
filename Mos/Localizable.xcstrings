@@ -96,7 +96,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Finder Actions"
+            "value": "Finder"
           }
         }
       }
@@ -118,7 +118,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Logi Actions"
+            "value": "Logitech Mouse"
           }
         }
       }
@@ -151,7 +151,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mouse Scroll"
+            "value": "Scrolling"
           }
         }
       }
@@ -251,7 +251,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Custom…"
+            "value": "Keyboard Shortcut…"
           }
         }
       }
@@ -491,7 +491,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "DPI Cycle Down"
+            "value": "Decrease Pointer Speed"
           }
         }
       }
@@ -502,7 +502,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Decrease DPI sensitivity level"
+            "value": "Moves the pointer speed of the mouse one step down."
           }
         }
       }
@@ -513,7 +513,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "DPI Cycle Up"
+            "value": "Increase Pointer Speed"
           }
         }
       }
@@ -524,7 +524,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Increase DPI sensitivity level"
+            "value": "Moves the pointer speed of the mouse one step up."
           }
         }
       }
@@ -535,7 +535,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hi-Res Scroll Toggle"
+            "value": "Toggle Hi-Res Scrolling"
           }
         }
       }
@@ -546,7 +546,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Toggle hi-resolution scroll mode"
+            "value": "Turns the finer wheel steps of the mouse on or off."
           }
         }
       }
@@ -557,7 +557,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Host 1"
+            "value": "Switch to Computer 1"
           }
         }
       }
@@ -568,7 +568,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Host 2"
+            "value": "Switch to Computer 2"
           }
         }
       }
@@ -579,7 +579,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Host 3"
+            "value": "Switch to Computer 3"
           }
         }
       }
@@ -590,7 +590,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Switch to the specified host device"
+            "value": "Switches the mouse to another computer it is paired with."
           }
         }
       }
@@ -601,7 +601,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pointer Speed Cycle"
+            "value": "Next Pointer Speed"
           }
         }
       }
@@ -612,7 +612,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cycle through pointer speed presets"
+            "value": "Steps through the pointer speeds of the mouse."
           }
         }
       }
@@ -623,7 +623,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scroll Invert Toggle"
+            "value": "Invert Scrolling"
           }
         }
       }
@@ -634,7 +634,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Toggle scroll direction inversion"
+            "value": "Reverses the wheel direction on the mouse."
           }
         }
       }
@@ -645,7 +645,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "SmartShift Toggle"
+            "value": "Switch Wheel Mode"
           }
         }
       }
@@ -656,7 +656,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Toggle between free-spin and ratchet scroll mode"
+            "value": "Switches the wheel between clicking and spinning freely."
           }
         }
       }
@@ -667,7 +667,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Thumb Wheel Toggle"
+            "value": "Toggle Thumb Wheel"
           }
         }
       }
@@ -678,7 +678,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Toggle thumb wheel functionality"
+            "value": "Turns the thumb wheel on or off."
           }
         }
       }
@@ -748,17 +748,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Gesture Navigation"
-          }
-        }
-      }
-    },
-    "gesture-settings-menu": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gesture Settings…"
           }
         }
       }
@@ -858,17 +847,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Freeze pointer during a gesture"
-          }
-        }
-      }
-    },
-    "gesture-settings-footnote": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Applies to every Gesture Navigation button. Hold the button and move the mouse."
           }
         }
       }
@@ -1060,28 +1038,6 @@
         }
       }
     },
-    "gestures-unbound-title": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No gesture button yet"
-          }
-        }
-      }
-    },
-    "gestures-unbound-hint": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Under Buttons, set a mouse button to Gesture Navigation."
-          }
-        }
-      }
-    },
     "gestures-directions-header": {
       "extractionState": "manual",
       "localizations": {
@@ -1122,17 +1078,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connect a Logitech MX Master to let the mouse track gestures, with haptic feedback on the MX Master 4."
-          }
-        }
-      }
-    },
-    "gestures-buttons-note": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose the gesture button under Buttons."
           }
         }
       }
@@ -2408,7 +2353,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pause smoothing"
+            "value": "Pause Smoothing"
           }
         }
       }
@@ -2419,7 +2364,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scroll faster"
+            "value": "Scroll Faster"
           }
         }
       }
@@ -2430,7 +2375,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scroll sideways"
+            "value": "Scroll Sideways"
           }
         }
       }
@@ -2607,7 +2552,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open…"
+            "value": "Open App or File…"
           }
         }
       }
@@ -2651,7 +2596,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Space-separated; quote arguments containing spaces"
+            "value": "Separate with spaces. Put quotes around an argument with spaces."
           }
         }
       }
@@ -2684,7 +2629,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Choose an app or script"
+            "value": "Choose an app, file or script"
           }
         }
       }
@@ -2695,7 +2640,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "or drop a file here"
+            "value": "or drag one here"
           }
         }
       }
@@ -2706,7 +2651,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Click to choose a file, or drag a .app/script here"
+            "value": "Click to choose an app, file or script, or drag one here."
           }
         }
       }
@@ -2739,7 +2684,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Choose an app, script, or any file to open"
+            "value": "Choose an app, file or script to open."
           }
         }
       }
@@ -2783,7 +2728,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The previously chosen app can no longer be found"
+            "value": "Can't find the app chosen before. Choose it again."
           }
         }
       }
@@ -3076,17 +3021,6 @@
           "stringUnit": {
             "state": "translated",
             "value": " Toast"
-          }
-        }
-      }
-    },
-    "unbind": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unbind"
           }
         }
       }
@@ -3385,7 +3319,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Button may be managed by another app"
+            "value": "Another app may be using this button"
           }
         }
       }
@@ -3396,7 +3330,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This button appears to be managed by another app. Capturing it in multiple apps at the same time may cause abnormal behavior. Release this button in the other app, or disable that app. For more stable capture, connect the device through a Bolt/Unifying receiver when possible."
+            "value": "Another app, such as Logi Options+, seems to capture this button too, so it may act twice or not at all. Turn the button off in that app, or quit it. Connecting the mouse with its Logitech receiver also helps."
           }
         }
       }
@@ -3407,7 +3341,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Button ownership is contested"
+            "value": "Logi Options+ keeps taking this button over"
           }
         }
       }
@@ -3418,7 +3352,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Another app keeps clearing Scrollio's HID++ ownership. Over BLE this is commonly caused by Logi Options+, and this control has no safe standard mouse-button alternative. Quit the conflicting app, or connect through a Bolt or Unifying receiver for better stability."
+            "value": "Over Bluetooth, Logi Options+ keeps taking this button back, and it has no standard Mac button to fall back on. Quit Logi Options+, or connect the mouse with its Logitech receiver."
           }
         }
       }
@@ -3429,7 +3363,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use system mouse button"
+            "value": "Use Standard Button"
           }
         }
       }
@@ -3440,7 +3374,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "System mouse button available"
+            "value": "A standard button can do this"
           }
         }
       }
@@ -3451,7 +3385,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This Logitech HID++ button has the same meaning as a standard macOS mouse button. Switch this binding to the system mouse-button event to avoid BLE HID++ ownership issues. For better stability, connect through a Bolt or Unifying receiver when possible."
+            "value": "This Logitech button is also a standard Mac mouse button. Using the standard button keeps working when Logi Options+ runs or the mouse is on Bluetooth."
           }
         }
       }
@@ -3462,7 +3396,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This button may be recognized unreliably"
+            "value": "May stop working while Logi Options+ runs"
           }
         }
       }
@@ -3473,7 +3407,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This Logi button has no standard macOS mouse-button fallback. Over a Bluetooth connection, the data stream may be taken over or interrupted by Logitech Options. For stable triggering, try connecting through a Bolt/Unifying receiver, or try disabling Logitech Options."
+            "value": "Over Bluetooth this button has no standard Mac button to fall back on, and Logi Options+ can take it over. Connect the mouse with its Logitech receiver, or quit Logi Options+."
           }
         }
       }
@@ -3511,35 +3445,470 @@
         }
       }
     },
-    "button_activity_phase_discovery": {
+    "buttons-trigger-left": {
+      "comment": "Buttons pane: a row title",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Initializing device"
+            "value": "Left button"
           }
         }
       }
     },
-    "button_activity_phase_reporting": {
+    "buttons-trigger-right": {
+      "comment": "Buttons pane: a row title",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Refreshing button state"
+            "value": "Right button"
           }
         }
       }
     },
-    "button_activity_popover_fallback": {
+    "buttons-trigger-middle": {
+      "comment": "Buttons pane: a row title (pressing the wheel)",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Finishing up…"
+            "value": "Middle button"
+          }
+        }
+      }
+    },
+    "buttons-trigger-back": {
+      "comment": "Buttons pane: a row title",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back button"
+          }
+        }
+      }
+    },
+    "buttons-trigger-forward": {
+      "comment": "Buttons pane: a row title",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward button"
+          }
+        }
+      }
+    },
+    "buttons-trigger-number": {
+      "comment": "Buttons pane: a row title, the mouse button number",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Button %d"
+          }
+        }
+      }
+    },
+    "buttons-trigger-gesture": {
+      "comment": "Buttons pane: the thumb button of a Logitech MX Master",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesture button"
+          }
+        }
+      }
+    },
+    "buttons-trigger-mode-shift": {
+      "comment": "Buttons pane: the small button behind the wheel of a Logitech mouse",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mode shift button"
+          }
+        }
+      }
+    },
+    "buttons-trigger-logitech": {
+      "comment": "Buttons pane: a Logitech control by its name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ button"
+          }
+        }
+      }
+    },
+    "buttons-trigger-key": {
+      "comment": "Buttons pane: a key without a name, by its code",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Key %d"
+          }
+        }
+      }
+    },
+    "buttons-header-your-mouse": {
+      "comment": "Buttons pane card: title without a Logitech mouse",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your mouse"
+          }
+        }
+      }
+    },
+    "buttons-header-count": {
+      "comment": "Buttons pane card: how many buttons have an action (2 or more)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d buttons have actions"
+          }
+        }
+      }
+    },
+    "buttons-header-one": {
+      "comment": "Buttons pane card",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 button has an action"
+          }
+        }
+      }
+    },
+    "buttons-header-none": {
+      "comment": "Buttons pane card",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No buttons set up yet"
+          }
+        }
+      }
+    },
+    "buttons-header-no-action": {
+      "comment": "Buttons pane card: the button pointed at has no action",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No action"
+          }
+        }
+      }
+    },
+    "buttons-header-recording": {
+      "comment": "Buttons pane card while + waits for a button",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press a button"
+          }
+        }
+      }
+    },
+    "buttons-header-recording-hint": {
+      "comment": "Buttons pane card while + waits for a button",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Or a key with ⌘, ⌥, ⌃ or ⇧. Press Esc to cancel."
+          }
+        }
+      }
+    },
+    "buttons-empty-title": {
+      "comment": "Buttons pane: the empty list",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No buttons yet"
+          }
+        }
+      }
+    },
+    "buttons-empty-hint": {
+      "comment": "Buttons pane: the empty list",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click + and press a mouse button to give it an action."
+          }
+        }
+      }
+    },
+    "buttons-list-label": {
+      "comment": "Buttons pane: accessibility name of the list",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buttons"
+          }
+        }
+      }
+    },
+    "buttons-note-gesture-navigation": {
+      "comment": "Buttons pane: under a button with Gesture Navigation",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold and move the mouse. Set the directions under Gestures."
+          }
+        }
+      }
+    },
+    "buttons-note-hold-action": {
+      "comment": "Buttons pane: under a button with a scroll action",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Works while you hold the button."
+          }
+        }
+      }
+    },
+    "buttons-note-no-action": {
+      "comment": "Buttons pane: under a button without an action",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose what this button does."
+          }
+        }
+      }
+    },
+    "buttons-note-scroll-key": {
+      "comment": "Buttons pane: problem note, the button is also a scroll key",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Also set under Scrolling › While you hold a key."
+          }
+        }
+      }
+    },
+    "buttons-note-conflict": {
+      "comment": "Buttons pane: problem note",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Another app may be using this button."
+          }
+        }
+      }
+    },
+    "buttons-note-contended": {
+      "comment": "Buttons pane: problem note",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logi Options+ keeps taking this button over."
+          }
+        }
+      }
+    },
+    "buttons-note-bluetooth": {
+      "comment": "Buttons pane: problem note",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "May stop working while Logi Options+ runs. The receiver is more reliable."
+          }
+        }
+      }
+    },
+    "buttons-note-standard-button": {
+      "comment": "Buttons pane: hint; the argument is a button name such as \"Back button\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can use the standard %@ instead."
+          }
+        }
+      }
+    },
+    "buttons-scroll-key-title": {
+      "comment": "Buttons pane: popover title",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Also a key under Scrolling"
+          }
+        }
+      }
+    },
+    "buttons-scroll-key-detail": {
+      "comment": "Buttons pane: popover text",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Holding this button also does what Scrolling › While you hold a key sets for it, so both happen at once. Clear one of them to keep only the other."
+          }
+        }
+      }
+    },
+    "buttons-problem-info": {
+      "comment": "Buttons pane: accessibility name of the ⓘ button of a row",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "More Info"
+          }
+        }
+      }
+    },
+    "buttons-checking": {
+      "comment": "Buttons pane: under the list while Logitech mice are asked about their buttons",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking buttons…"
+          }
+        }
+      }
+    },
+    "buttons-undo-remove": {
+      "comment": "Buttons pane: the Undo menu item reads \"Undo Remove Button\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove Button"
+          }
+        }
+      }
+    },
+    "buttons-show-gesture-settings": {
+      "comment": "Action menu of a button with Gesture Navigation",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Gesture Settings"
+          }
+        }
+      }
+    },
+    "open-target-title": {
+      "comment": "Title of the popover of the action Open App or File",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open App or File"
+          }
+        }
+      }
+    },
+    "gestures-gesture-button": {
+      "comment": "Gestures pane: row title",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesture button"
+          }
+        }
+      }
+    },
+    "gestures-gesture-button-none": {
+      "comment": "Gestures pane: under Gesture button",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No button has the action Gesture Navigation yet."
+          }
+        }
+      }
+    },
+    "gestures-gesture-button-set-up": {
+      "comment": "Gestures pane: push button, no gesture button yet",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set Up…"
+          }
+        }
+      }
+    },
+    "gestures-gesture-button-change": {
+      "comment": "Gestures pane: push button",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change…"
           }
         }
       }

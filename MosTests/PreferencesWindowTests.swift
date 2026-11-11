@@ -486,10 +486,11 @@ final class PreferencesNamingTests: XCTestCase {
             XCTAssertFalse(shown.contains(old), "\(old) is still in the Scrolling tab")
         }
 
-        // Button actions (code): the same three names as the Scrolling tab.
-        XCTAssertEqual(SystemShortcut.mosScrollDash.localizedName, "Scroll faster")
-        XCTAssertEqual(SystemShortcut.mosScrollToggle.localizedName, "Scroll sideways")
-        XCTAssertEqual(SystemShortcut.mosScrollBlock.localizedName, "Pause smoothing")
+        // Button actions (code): the same three names as the Scrolling tab, in the Title
+        // Case of menu items.
+        XCTAssertEqual(SystemShortcut.mosScrollDash.localizedName, "Scroll Faster")
+        XCTAssertEqual(SystemShortcut.mosScrollToggle.localizedName, "Scroll Sideways")
+        XCTAssertEqual(SystemShortcut.mosScrollBlock.localizedName, "Pause Smoothing")
     }
 
     func testScrollKeyIdentifiersAreUnchanged() {

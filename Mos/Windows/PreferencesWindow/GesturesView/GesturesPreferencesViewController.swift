@@ -8,9 +8,9 @@
 //  gesture of the row under the pointer). Then a box with the mode, a box with the action
 //  of every direction and of Click, a box with how a gesture behaves (invert, freeze,
 //  tracking speed) and, when a connected mouse can do it, a box with what a Logitech mouse
-//  does itself. Mode, actions, invert and freeze come from MouseGestureSettingsControls,
-//  shared with the popover in the Buttons tab. The tab only edits Options.shared.gesture;
-//  which button runs Gesture Navigation is chosen in the Buttons tab.
+//  does itself. Mode, actions, invert and freeze come from MouseGestureSettingsControls.
+//  The tab only edits Options.shared.gesture; which button runs Gesture Navigation is
+//  chosen in the Buttons tab, and the first row ("Gesture button") names it and leads there.
 //
 
 import Cocoa
@@ -35,13 +35,12 @@ final class GesturesPreferencesViewController: NSViewController {
     /// controls have theirs in `MouseGestureSettingsControls.Identifier`.
     enum Identifier {
         static let preview = NSUserInterfaceItemIdentifier("gestures-preview")
-        static let unbound = NSUserInterfaceItemIdentifier("gestures-unbound")
+        static let gestureButton = NSUserInterfaceItemIdentifier("gestures-gesture-button")
         static let directionsHint = NSUserInterfaceItemIdentifier("gestures-directions-hint")
         static let trackingSpeed = NSUserInterfaceItemIdentifier("gesture-tracking-speed")
         static let deviceTracking = NSUserInterfaceItemIdentifier("gesture-device-tracking")
         static let haptics = NSUserInterfaceItemIdentifier("gesture-haptics")
         static let logitechNeeds = NSUserInterfaceItemIdentifier("gestures-logitech-needs")
-        static let buttonsNote = NSUserInterfaceItemIdentifier("gestures-buttons-note")
     }
 
     typealias Slot = MouseGestureSettingsControls.Slot
@@ -52,6 +51,9 @@ final class GesturesPreferencesViewController: NSViewController {
     var deviceSource: MouseGestureDeviceSource = .live
     /// Which buttons use Gesture Navigation; tests and screenshots replace it with fixtures.
     var bindingSummary: () -> MouseGestureBindingSummary = { .current }
+    /// "Set Up…" or "Change…": shows the Buttons pane and, with no gesture button yet
+    /// (true), records one that gets Gesture Navigation. Tests replace it.
+    var openButtonsPane: ((Bool) -> Void)?
 
     /// As last read from `deviceSource`.
     private(set) var gestureSupport = MouseGestureDeviceSupport.none
@@ -68,8 +70,9 @@ final class GesturesPreferencesViewController: NSViewController {
     /// Mode, action pop-ups, invert and freeze.
     private(set) var controls: MouseGestureSettingsControls!
 
-    /// The first box: "no gesture button yet" (only while none is set up) and the mode.
-    private(set) var unboundRow: PreferencesGroupRow!
+    /// The first box: which button runs Gesture Navigation, and the mode.
+    private(set) var gestureButtonRow: PreferencesGroupRow!
+    private(set) var gestureButtonButton: NSButton!
     private(set) var modeRow: PreferencesGroupRow!
     /// Up, Down, Left, Right, Click, in `Slot.allCases` order, and the line under the title.
     private(set) var directionRows: [PreferencesGroupRow] = []
@@ -83,8 +86,6 @@ final class GesturesPreferencesViewController: NSViewController {
     private(set) var deviceTrackingRow: PreferencesSwitchRow!
     private(set) var hapticsRow: PreferencesSwitchRow!
     private(set) var logitechNeedsLabel: NSTextField!
-    /// "Choose the gesture button under Buttons."
-    private(set) var buttonsNoteLabel: NSTextField!
     /// Everything in the content stack, top to bottom.
     private(set) var sections: [NSView] = []
     private var contentStack: NSStackView!
@@ -134,7 +135,7 @@ final class GesturesPreferencesViewController: NSViewController {
         previewView = preview
 
         let width = Self.boxWidth
-        let first = PreferencesGroupSection(width: width, rows: [makeUnboundRow(), makeModeRow()])
+        let first = PreferencesGroupSection(width: width, rows: [makeGestureButtonRow(), makeModeRow()])
         directionRows = Slot.allCases.map { makeDirectionRow($0) }
         let directions = makeDirectionsSection(rows: directionRows)
         let behaviour = PreferencesGroupSection(
@@ -149,19 +150,16 @@ final class GesturesPreferencesViewController: NSViewController {
         )
         logitechSection = logitech
         logitechNeedsLabel = Self.makeNote(text("gestures-logitech-needs"), identifier: Identifier.logitechNeeds)
-        buttonsNoteLabel = Self.makeNote(text("gestures-buttons-note"), identifier: Identifier.buttonsNote)
         let logitechNeeds = Self.inset(logitechNeedsLabel)
-        let buttonsNote = Self.inset(buttonsNoteLabel)
 
-        sections = [preview, first, directions, behaviour, logitech, logitechNeeds, buttonsNote]
+        sections = [preview, first, directions, behaviour, logitech, logitechNeeds]
         PreferencesGroupedForm.add(sections, to: content)
         contentStack = content
         behaviourSection = behaviour
-        // The directions carry their title in a view of their own. The muted lines sit
-        // close under the boxes and to each other.
+        // The directions carry their title in a view of their own. The muted line sits
+        // close under the boxes.
         content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: first)
         content.setCustomSpacing(Self.noteSpacing, after: logitech)
-        content.setCustomSpacing(PreferencesGroupedForm.sectionTitleSpacing, after: logitechNeeds)
 
         view = root
         reload()
@@ -181,9 +179,8 @@ final class GesturesPreferencesViewController: NSViewController {
 
     override func viewWillAppear() {
         super.viewWillAppear()
-        // Show what is known right away (the popover in Buttons may have changed the
-        // settings, and a button may have been bound), then ask the mice again; the
-        // answer arrives as `gestureStateChanged`.
+        // Show what is known right away (a button may have been bound under Buttons),
+        // then ask the mice again; the answer arrives as `gestureStateChanged`.
         reload()
         deviceSource.refresh()
     }
@@ -221,8 +218,8 @@ final class GesturesPreferencesViewController: NSViewController {
         let gesture = Options.shared.gesture
         let presentation = controls.modePresentation
 
-        unboundRow.isHidden = summary.hasGestureButton
-        buttonsNoteLabel.isHidden = !summary.hasGestureButton
+        gestureButtonRow.explanation = summary.gestureButtonExplanation
+        gestureButtonButton.title = text(summary.hasGestureButton ? "gestures-gesture-button-change" : "gestures-gesture-button-set-up")
         modeRow.explanation = text(presentation.descriptionKey)
 
         for slot in Slot.allCases where slot.isHorizontal {
@@ -350,24 +347,35 @@ final class GesturesPreferencesViewController: NSViewController {
         return NSLocalizedString(key, comment: "")
     }
 
-    /// Shown in place of the bottom line while no button runs Gesture Navigation: until one
-    /// does, nothing on this tab has an effect.
-    private func makeUnboundRow() -> PreferencesGroupRow {
-        let icon = NSImageView()
-        let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
-        icon.image = NSImage(systemSymbolName: "exclamationmark.circle.fill", accessibilityDescription: nil)?
-            .withSymbolConfiguration(configuration)
-        icon.contentTintColor = .systemOrange
-        icon.setAccessibilityElement(false)
-        let row = PreferencesGroupRow(
-            title: text("gestures-unbound-title"),
-            explanation: text("gestures-unbound-hint"),
-            accessory: icon,
-            controls: []
+    /// "Gesture button": the buttons that run Gesture Navigation, or none yet, and a push
+    /// button to the Buttons pane ("Set Up…" records a new one, "Change…" shows the list).
+    private func makeGestureButtonRow() -> PreferencesGroupRow {
+        let button = PreferencesGroupedForm.makePushButton(
+            title: text("gestures-gesture-button-set-up"),
+            target: self,
+            action: #selector(gestureButtonClicked(_:))
         )
-        row.identifier = Identifier.unbound
-        unboundRow = row
+        button.identifier = Identifier.gestureButton
+        gestureButtonButton = button
+        let row = PreferencesGroupRow(
+            title: text("gestures-gesture-button"),
+            explanation: text("gestures-gesture-button-none"),
+            accessory: button
+        )
+        gestureButtonRow = row
         return row
+    }
+
+    @objc func gestureButtonClicked(_ sender: NSButton) {
+        let addsButton = !bindingSummary().hasGestureButton
+        if let openButtonsPane {
+            openButtonsPane(addsButton)
+            return
+        }
+        guard let split = PreferencesButtonsViewController.splitViewController(of: self),
+              split.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons) else { return }
+        guard addsButton, let buttons = split.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController else { return }
+        buttons.beginAddingBinding(action: SystemShortcut.mouseGestureNavigation)
     }
 
     /// "Mode": what the selected mode does under the title, the two modes across the box.

@@ -51,13 +51,30 @@ final class PreferencesLocalizationTests: XCTestCase {
         "scrolling-key-clear", "scrolling-reset",
     ]
 
-    /// Buttons pane: the Gesture Navigation action and the Gesture Settings popover.
+    /// Buttons pane: the card, the list and its rows, the action menu, the ⓘ popovers and
+    /// the Open App or File popover.
     static let buttonsKeys = [
+        "buttons-trigger-left", "buttons-trigger-right", "buttons-trigger-middle", "buttons-trigger-back",
+        "buttons-trigger-forward", "buttons-trigger-number", "buttons-trigger-gesture", "buttons-trigger-mode-shift",
+        "buttons-trigger-logitech", "buttons-trigger-key",
+        "buttons-header-your-mouse", "buttons-header-count", "buttons-header-one", "buttons-header-none",
+        "buttons-header-no-action", "buttons-header-recording", "buttons-header-recording-hint",
+        "buttons-empty-title", "buttons-empty-hint", "buttons-list-label",
+        "buttons-note-gesture-navigation", "buttons-note-hold-action", "buttons-note-no-action",
+        "buttons-note-scroll-key", "buttons-note-conflict", "buttons-note-contended", "buttons-note-bluetooth",
+        "buttons-note-standard-button", "buttons-scroll-key-title", "buttons-scroll-key-detail",
+        "buttons-problem-info", "buttons-checking", "buttons-undo-remove", "buttons-show-gesture-settings",
+        "button_conflict_title", "button_conflict_detail", "button_contended_title", "button_contended_detail",
+        "button_standard_mouse_alias_title", "button_standard_mouse_alias_detail",
+        "button_ble_hidpp_unstable_title", "button_ble_hidpp_unstable_detail", "button_use_native_mouse",
+        "unbound", "custom-recording-prompt", "custom-shortcut", "open-target-action",
         "mouseGestureNavigation", "gesture-navigation-menu-tooltip",
-        "gesture-settings-menu", "gesture-settings-footnote",
+        "categoryMosMouseScroll", "categoryLogiActions", "categoryFinderActions",
+        "open-target-title", "open-target-empty-primary", "open-target-empty-secondary",
+        "open-target-arguments-placeholder", "open-target-stale-warning", "open-target-cancel", "open-target-done",
     ]
 
-    /// Gestures pane, and the gesture controls it shares with the Gesture Settings popover.
+    /// Gestures pane and its gesture controls.
     static let gesturesKeys = [
         "gesture-direction-up", "gesture-direction-down",
         "gesture-direction-left", "gesture-direction-right", "gesture-direction-click", "gesture-action-none",
@@ -68,8 +85,9 @@ final class PreferencesLocalizationTests: XCTestCase {
         "gesture-mode-interactive-description", "gesture-invert-horizontal-hint", "gesture-freeze-pointer-hint",
         "gesture-tracking-speed-label", "gesture-tracking-speed-hint", "gesture-tracking-speed-hint-discrete",
         "gesture-tracking-speed-slower", "gesture-tracking-speed-faster",
-        "gestures-unbound-title", "gestures-unbound-hint", "gestures-directions-header", "gestures-directions-hint",
-        "gestures-behaviour-header", "gestures-logitech-header", "gestures-logitech-needs", "gestures-buttons-note",
+        "gestures-gesture-button", "gestures-gesture-button-none", "gestures-gesture-button-set-up",
+        "gestures-gesture-button-change", "gestures-directions-header", "gestures-directions-hint",
+        "gestures-behaviour-header", "gestures-logitech-header", "gestures-logitech-needs",
         "mouse-gesture-device-tracking", "mouse-gesture-device-tracking-hint", "mouse-gesture-device-tracking-unavailable",
         "mouse-gesture-haptics", "mouse-gesture-haptics-hint", "mouse-gesture-haptics-unavailable",
     ]

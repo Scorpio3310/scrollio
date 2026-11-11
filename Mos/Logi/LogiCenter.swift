@@ -62,6 +62,13 @@ final class LogiCenter {
         let displayName = LogiCIDDirectory.name(forMosCode: code)
         return displayName.isEmpty ? nil : displayName
     }
+    /// What a Logitech control is on the mouse, for the Buttons pane's drawing: the gesture
+    /// button, the mode shift button behind the wheel, or one of the buttons a standard mouse
+    /// has too. nil for any other control and for codes that are not Logitech's.
+    func controlRole(forMosCode code: UInt16) -> LogiControlRole? {
+        guard let cid = LogiCIDDirectory.toCID(code) else { return nil }
+        return LogiControlRole(cid: cid)
+    }
     func nativeMouseButton(forMosCode code: UInt16) -> UInt16? {
         let nativeButton = LogiCIDDirectory.nativeMouseButton(forMosCode: code)
         #if DEBUG
@@ -262,4 +269,26 @@ final class LogiCenter {
     static let conflictChanged       = LogiSessionManager.conflictChangedNotification
     static let buttonEventRelay      = LogiSessionManager.buttonEventNotification
     static let rawButtonEvent        = NSNotification.Name("LogiRawButtonEvent")  // Step 4 fills in posters
+}
+
+/// The role of a Logitech control on the mouse (`LogiCenter.controlRole(forMosCode:)`).
+enum LogiControlRole: Equatable {
+    /// The gesture button under the thumb (also its virtual twin).
+    case gesture
+    /// The small button behind the wheel that switches the wheel mode (SmartShift).
+    case modeShift
+    case middle
+    case back
+    case forward
+
+    init?(cid: UInt16) {
+        switch cid {
+        case 0x00C3, 0x00D7: self = .gesture
+        case 0x00C4: self = .modeShift
+        case 0x0052: self = .middle
+        case 0x0053, 0x0054, 0x0055: self = .back
+        case 0x0056, 0x0057, 0x0058: self = .forward
+        default: return nil
+        }
+    }
 }

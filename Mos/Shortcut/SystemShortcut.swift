@@ -512,7 +512,7 @@ struct SystemShortcut {
         case "categoryModifierKeys": return "command"
         case "categoryMouseButtons": return "computermouse"
         case "categoryMosMouseScroll": return "scroll"
-        case "categoryLogiActions": return "gear.badge"
+        case "categoryLogiActions": return "computermouse"
         default: return "questionmark.folder"
         }
     }

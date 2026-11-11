@@ -1,7 +1,8 @@
 //
 //  OpenTargetConfigPopover.swift
 //  Mos
-//  "打开应用…" 动作的配置 popover - 文件槽 + 参数 + 完成/取消
+//  "Open App or File…": a popover with a title, the file slot, the arguments and
+//  Cancel (Esc) / Done (Return).
 //
 
 import Cocoa
@@ -29,6 +30,7 @@ final class OpenTargetConfigPopover: NSObject {
     private weak var argsField: NSTextField?
     private weak var doneButton: NSButton?
     private weak var staleBanner: NSView?
+    private(set) weak var titleLabel: NSTextField?
 
     // Layout constants
     private static let contentWidth: CGFloat = 320
@@ -94,6 +96,13 @@ final class OpenTargetConfigPopover: NSObject {
         let vc = OpenTargetContentViewController()
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
+
+        // Title
+        let title = NSTextField(labelWithString: NSLocalizedString("open-target-title", comment: ""))
+        title.font = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
+        title.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(title)
+        self.titleLabel = title
 
         // Stale banner (initially hidden)
         let banner = makeStaleBanner()
@@ -174,7 +183,11 @@ final class OpenTargetConfigPopover: NSObject {
         NSLayoutConstraint.activate([
             container.widthAnchor.constraint(equalToConstant: Self.contentWidth + Self.padding * 2),
 
-            banner.topAnchor.constraint(equalTo: container.topAnchor, constant: Self.padding),
+            title.topAnchor.constraint(equalTo: container.topAnchor, constant: Self.padding),
+            title.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Self.padding),
+            title.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -Self.padding),
+
+            banner.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 8),
             banner.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Self.padding),
             banner.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -Self.padding),
 

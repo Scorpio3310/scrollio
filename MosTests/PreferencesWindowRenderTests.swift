@@ -117,7 +117,11 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
                 gestures.deviceSource = MouseGestureDeviceSource(support: { item.support }, refresh: {})
                 gestures.bindingSummary = {
-                    MouseGestureBindingSummary(hasGestureButton: item.bound, hasLogitechGestureButton: item.support.deviceTracking)
+                    MouseGestureBindingSummary(
+                        hasGestureButton: item.bound,
+                        hasLogitechGestureButton: item.support.deviceTracking,
+                        buttonTitles: item.bound ? (item.support.deviceTracking ? ["Gesture button"] : ["Back button"]) : []
+                    )
                 }
                 return gestures
             }, afterLoad: { controller in
@@ -173,19 +177,141 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try renderPane(AboutPreferencesViewController.tabIdentifier, name: "about")
     }
 
+    /// The Buttons pane: empty; with buttons; a row pointed at (its button lit); a row
+    /// selected; recording; and rows with problems while the mice are asked.
     func testRenderButtons() throws {
-        // The window calls viewWillAppear, which shows or hides the empty list's hint.
-        let appear: (NSViewController) -> Void = { $0.viewWillAppear() }
-        Options.shared.buttons.binding = []
-        try renderPane(PANEL_IDENTIFIER.buttons, name: "buttons-empty", afterLoad: appear)
-        Options.shared.buttons.binding = [
-            binding(3, SystemShortcut.mouseGestureNavigation.identifier, display: ["Mouse 4"]),
-            binding(4, SystemShortcut.mosScrollDash.identifier, display: ["Mouse 5"]),
-            binding(5, SystemShortcut.mosScrollToggle.identifier, display: ["Mouse 6"]),
-            binding(6, SystemShortcut.mosScrollBlock.identifier, display: ["Mouse 7"]),
-            binding(7, SystemShortcut.copy.identifier, display: ["Mouse 8"]),
+        let option = UInt(CGEventFlags.maskAlternate.rawValue)
+        let controlOption = UInt(CGEventFlags.maskControl.rawValue | CGEventFlags.maskAlternate.rawValue)
+        let bindings = [
+            binding(3, SystemShortcut.mouseGestureNavigation.identifier),
+            binding(4, SystemShortcut.mosScrollDash.identifier),
+            binding(2, SystemShortcut.missionControl.identifier, modifiers: option),
+            binding(5, SystemShortcut.copy.identifier),
+            binding(6, ""),
+            ButtonBinding(
+                triggerEvent: RecordedEvent(type: .keyboard, code: 40, modifiers: controlOption, deviceFilter: nil),
+                systemShortcutName: "custom::21:\(UInt64(CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue))"
+            ),
         ]
-        try renderPane(PANEL_IDENTIFIER.buttons, name: "buttons-bindings", afterLoad: appear)
+        let plain = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { "MX Master 4" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+        let none = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+
+        Options.shared.buttons.binding = []
+        try renderButtons(name: "buttons-empty", source: none)
+
+        Options.shared.buttons.binding = bindings
+        try renderButtons(name: "buttons-bindings", source: plain)
+        try renderButtons(name: "buttons-hovered", source: plain) { buttons in
+            self.hover(buttons, rowAt: 0)
+        }
+        try renderButtons(name: "buttons-selected", source: plain) { buttons in
+            buttons.list.select(buttons.rows[2].id)
+        }
+        try renderButtons(name: "buttons-recording", source: plain) { buttons in
+            buttons.onRecordingStarted(KeyRecorder())
+        }
+
+        // A Logitech mouse that reports trouble, while the pane asks it again.
+        Options.shared.buttons.binding = [
+            binding(1000, SystemShortcut.mouseGestureNavigation.identifier),
+            binding(1006, SystemShortcut.navigateBack.identifier),
+            binding(1001, SystemShortcut.logiSmartShiftToggle.identifier),
+            binding(5, SystemShortcut.mosScrollDash.identifier),
+        ]
+        let troubled = ButtonsDeviceSource(
+            captureStatus: { code in
+                switch code {
+                case 1000: return .conflict(.foreignDivert)
+                case 1006: return .standardMouseAliasAvailable
+                case 1001: return .bleHIDPPUnstable
+                default: return .normal
+                }
+            },
+            deviceName: { "MX Master 4" }, isBusy: { true }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        try renderButtons(name: "buttons-problems", source: troubled, scrollKeys: [ScrollHotkey(type: .mouse, code: 5)]) { buttons in
+            buttons.list.select(buttons.rows[1].id)
+        }
+        try renderMouseParts()
+    }
+
+    /// The mouse of the Buttons pane with nothing lit, then each part lit, side by side on
+    /// the card's colour, at four times the size.
+    private func renderMouseParts() throws {
+        let size = ButtonsMouseArtworkView.size
+        let parts: [ButtonsMousePart?] = [nil] + ButtonsMousePart.allCases
+        let strip = NSView(frame: NSRect(x: 0, y: 0, width: size.width * CGFloat(parts.count), height: size.height))
+        strip.wantsLayer = true
+        for (index, part) in parts.enumerated() {
+            let artwork = ButtonsMouseArtworkView()
+            artwork.frame.origin = NSPoint(x: size.width * CGFloat(index), y: 0)
+            artwork.setEmphasis(part, animated: false)
+            strip.addSubview(artwork)
+        }
+        for (suffix, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            strip.appearance = appearance
+            strip.display()
+            let rep = try XCTUnwrap(strip.bitmapImageRepForCachingDisplay(in: strip.bounds))
+            strip.cacheDisplay(in: strip.bounds, to: rep)
+            let scale: CGFloat = 4
+            let canvas = try XCTUnwrap(NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: Int(strip.bounds.width * scale), pixelsHigh: Int(strip.bounds.height * scale),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+            ))
+            canvas.size = strip.bounds.size
+            let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: canvas))
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            appearance.performAsCurrentDrawingAppearance {
+                ScrollPreviewPalette.cardFill.setFill()
+                strip.bounds.fill()
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            appearance.performAsCurrentDrawingAppearance {
+                strip.displayIgnoringOpacity(strip.bounds, in: context)
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            let png = try XCTUnwrap(canvas.representation(using: .png, properties: [:]))
+            try png.write(to: directory.appendingPathComponent("buttons-mouse-parts-\(suffix).png"))
+        }
+    }
+
+    private func renderButtons(
+        name: String,
+        source: ButtonsDeviceSource,
+        scrollKeys: [ScrollHotkey] = [],
+        then change: @escaping (PreferencesButtonsViewController) -> Void = { _ in }
+    ) throws {
+        try renderPane(PANEL_IDENTIFIER.buttons, name: name, prepare: { preferences in
+            guard let buttons = preferences.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController else { return }
+            buttons.deviceSource = source
+            buttons.scrollHoldKeys = { scrollKeys }
+            buttons.startRecording = { _ in }
+            buttons.openActionMenu = { _ in }
+        }, afterLoad: { controller in
+            guard let buttons = controller as? PreferencesButtonsViewController else { return }
+            buttons.headerView.prefersReducedMotion = { true }
+            buttons.viewWillAppear()
+            buttons.view.layoutSubtreeIfNeeded()
+            change(buttons)
+        })
+    }
+
+    /// Points at a row: a mouse-moved event handed to the list, never posted.
+    private func hover(_ buttons: PreferencesButtonsViewController, rowAt index: Int) {
+        guard let window = buttons.view.window else { return }
+        window.contentView?.layoutSubtreeIfNeeded()
+        let row = buttons.rows[index]
+        let point = row.convert(NSPoint(x: row.bounds.midX, y: row.bounds.midY), to: nil)
+        guard let event = NSEvent.mouseEvent(
+            with: .mouseMoved, location: point, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0
+        ) else { return }
+        buttons.list.mouseMoved(with: event)
     }
 
     /// The empty list, and a list with apps (one with settings of its own, selected) and the
@@ -279,7 +405,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 ("slider", gestures.trackingSpeedSlider),
                 ("segmented", gestures.controls.modeControl),
                 ("pop-up", gestures.controls.actionPopUp(for: .left)),
-                ("note", gestures.buttonsNoteLabel),
+                ("note", gestures.logitechNeedsLabel),
             ]
             for (label, view) in controls {
                 lines.append("\(appearanceName.rawValue) \(label): \(type(of: view)) allowsVibrancy \(view.allowsVibrancy) enabled \((view as? NSControl)?.isEnabled ?? true)")
@@ -303,9 +429,9 @@ final class PreferencesWindowRenderTests: XCTestCase {
         return defaults
     }
 
-    private func binding(_ code: UInt16, _ action: String, display: [String]) -> ButtonBinding {
-        let trigger = RecordedEvent(type: .mouse, code: code, modifiers: 0, displayComponents: display, deviceFilter: nil)
-        return ButtonBinding(triggerEvent: trigger, systemShortcutName: action, isEnabled: true)
+    private func binding(_ code: UInt16, _ action: String, modifiers: UInt = 0) -> ButtonBinding {
+        let trigger = RecordedEvent(type: .mouse, code: code, modifiers: modifiers, deviceFilter: nil)
+        return ButtonBinding(triggerEvent: trigger, systemShortcutName: action, isEnabled: !action.isEmpty)
     }
 
     private func renderMouse(_ devices: [LogiMouseDeviceState], name: String) throws {
