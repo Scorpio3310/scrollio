@@ -15,7 +15,9 @@
 //  This?"), and from then on it is named and lit as that part. "+" records a button (or a
 //  key with a modifier), "−" removes one, and the window's Undo puts it back. Only
 //  Options.shared.buttons.binding is edited, in the format it always had; a placed button
-//  adds the trigger's optional `mousePart`.
+//  adds the trigger's optional `mousePart`. The one row that is no button, the MX Master's
+//  thumb wheel (after the mode shift button), edits what the sideways wheel does instead
+//  (Options.shared.thumbWheel, as Scrolling › Thumb wheel does) and never a binding.
 //  Created by Claude on 2025/8/10.
 //  Copyright © 2025年 Caldis. All rights reserved.
 //
@@ -144,7 +146,10 @@ class PreferencesButtonsViewController: NSViewController {
     private(set) var list: PreferencesListBox!
     private(set) var busyView: NSStackView!
     private(set) var busySpinner: NSProgressIndicator!
+    /// The rows of bindings and of the mouse's buttons, top to bottom (not the thumb wheel's).
     private(set) var rows: [ButtonBindingRow] = []
+    /// The thumb wheel's row while the shown mouse has one (`ButtonsListLayout.hasThumbWheel`).
+    private(set) var thumbWheelRow: ButtonsThumbWheelRow?
     private(set) var problemPopover: NSPopover?
     /// "Open App or File", while it is open.
     private(set) var openTargetPopover: OpenTargetConfigPopover?
@@ -173,7 +178,12 @@ class PreferencesButtonsViewController: NSViewController {
             self?.removeBinding(id: id)
         }
         list.onOpen = { [weak self] id in
-            guard let self, let row = self.row(for: id) else { return }
+            guard let self else { return }
+            if id == ButtonsListLayout.thumbWheelRowID, let thumbWheel = self.thumbWheelRow {
+                self.openActionMenu(thumbWheel.pullDown)
+                return
+            }
+            guard let row = self.row(for: id) else { return }
             self.openActionMenu(row.pullDown)
         }
         list.onHover = { [weak self] _ in self?.updateHeader() }
@@ -209,6 +219,10 @@ class PreferencesButtonsViewController: NSViewController {
         })
         observers.append(center.addObserver(forName: LogiCenter.activityChanged, object: nil, queue: .main) { [weak self] _ in
             self?.syncBusy()
+        })
+        // What the thumb wheel does may change under Scrolling while this pane exists.
+        observers.append(ThumbWheelSettingsChange.addObserver { [weak self] in
+            self?.syncThumbWheel()
         })
     }
 
@@ -297,9 +311,9 @@ class PreferencesButtonsViewController: NSViewController {
     }
 
     /// Puts every binding into its row: first a row for each button of the connected mouse
-    /// (with its binding or "Default"), then the other bindings under their title. The rows
-    /// still there are updated (a pull-down keeps the keyboard focus), new ones made, and the
-    /// list told only when the rows themselves changed.
+    /// (with its binding or "Default") and the thumb wheel's, then the other bindings under
+    /// their title. The rows still there are updated (a pull-down keeps the keyboard focus),
+    /// new ones made, and the list told only when the rows themselves changed.
     func reloadRows() {
         guard let list else { return }
         mouse = connectedMouse()
@@ -311,42 +325,87 @@ class PreferencesButtonsViewController: NSViewController {
             uniquingKeysWith: { first, _ in first }
         )
         var shown: [ButtonBindingRow] = []
-        for partRow in layout.partRows {
-            let part = partRow.part
-            let binding = partRow.binding ?? defaultBinding(for: part)
-            let isStored = partRow.binding != nil
-            let title = titles[binding.id] ?? ButtonTriggerNaming.title(for: binding.triggerEvent)
-            let note = CellActionState(binding: binding).hasBoundAction
-                ? note(for: binding)
-                : defaultNote(for: part, trigger: binding.triggerEvent)
-            if let existing = old.first(where: { $0.id == AnyHashable(part) }) {
-                existing.update(binding: binding, title: title, note: note, mouse: mouse, isStored: isStored)
-                shown.append(existing)
-            } else {
-                shown.append(makeRow(for: binding, title: title, note: note, part: part, isStored: isStored))
-            }
-        }
-        for binding in layout.others {
-            let title = titles[binding.id] ?? title(for: binding.triggerEvent)
-            let note = note(for: binding)
-            if let existing = old.first(where: { $0.id == AnyHashable(binding.id) }) {
-                existing.update(binding: binding, title: title, note: note, mouse: mouse)
-                shown.append(existing)
-            } else {
-                shown.append(makeRow(for: binding, title: title, note: note))
+        var listed: [PreferencesListRow] = []
+        var thumbWheel: ButtonsThumbWheelRow?
+        for entry in layout.rows {
+            switch entry {
+            case .part(let partRow):
+                let part = partRow.part
+                let binding = partRow.binding ?? defaultBinding(for: part)
+                let isStored = partRow.binding != nil
+                let title = titles[binding.id] ?? ButtonTriggerNaming.title(for: binding.triggerEvent)
+                let note = CellActionState(binding: binding).hasBoundAction
+                    ? note(for: binding)
+                    : defaultNote(for: part, trigger: binding.triggerEvent)
+                let row: ButtonBindingRow
+                if let existing = old.first(where: { $0.id == AnyHashable(part) }) {
+                    existing.update(binding: binding, title: title, note: note, mouse: mouse, isStored: isStored)
+                    row = existing
+                } else {
+                    row = makeRow(for: binding, title: title, note: note, part: part, isStored: isStored)
+                }
+                shown.append(row)
+                listed.append(row)
+            case .thumbWheel:
+                let row = thumbWheelRow ?? makeThumbWheelRow()
+                row.update(function: Options.shared.thumbWheel.function, mouse: mouse)
+                thumbWheel = row
+                listed.append(row)
+            case .other(let binding):
+                let title = titles[binding.id] ?? title(for: binding.triggerEvent)
+                let note = note(for: binding)
+                let row: ButtonBindingRow
+                if let existing = old.first(where: { $0.id == AnyHashable(binding.id) }) {
+                    existing.update(binding: binding, title: title, note: note, mouse: mouse)
+                    row = existing
+                } else {
+                    row = makeRow(for: binding, title: title, note: note)
+                }
+                shown.append(row)
+                listed.append(row)
             }
         }
         rows = shown
+        thumbWheelRow = thumbWheel
         // "Other buttons and keys" above the first binding under the mouse's buttons.
         var groupTitles: [AnyHashable: String] = [:]
         if !layout.partRows.isEmpty, let first = layout.others.first {
             groupTitles[AnyHashable(first.id)] = text("buttons-list-other")
         }
-        if rows.count != old.count || zip(rows, old).contains(where: { $0 !== $1 })
+        if listed.count != list.rows.count || zip(listed, list.rows).contains(where: { $0 !== $1 })
             || Set(list.groupTitles.keys) != Set(groupTitles.keys) {
-            list.setRows(rows, groupTitles: groupTitles)
+            list.setRows(listed, groupTitles: groupTitles)
         }
         PreferencesForm.fitToContent(self)
+    }
+
+    // MARK: - The thumb wheel
+
+    /// The thumb wheel's row: what it does, as stored. Choosing a function stores it in
+    /// Options.shared.thumbWheel (never a binding).
+    private func makeThumbWheelRow() -> ButtonsThumbWheelRow {
+        let row = ButtonsThumbWheelRow(function: Options.shared.thumbWheel.function, mouse: mouse)
+        row.pullDown.onFunctionSelected = { [weak self] function in
+            self?.setThumbWheelFunction(function)
+        }
+        return row
+    }
+
+    /// Stores what the thumb wheel does, only when it changes. Both panes then show it
+    /// (ThumbWheelSettingsChange); the bindings are not touched.
+    func setThumbWheelFunction(_ function: ThumbWheelFunction) {
+        if Options.shared.thumbWheel.function != function {
+            Options.shared.thumbWheel.function = function
+        }
+        syncThumbWheel()
+    }
+
+    /// The thumb wheel's row (and the card while it is about that row) shows the stored
+    /// value. Writes nothing.
+    func syncThumbWheel() {
+        guard let thumbWheelRow else { return }
+        thumbWheelRow.update(function: Options.shared.thumbWheel.function, mouse: mouse)
+        updateHeader()
     }
 
     /// Remembers the trigger of every button of the mouse that has a binding; another mouse
@@ -839,8 +898,15 @@ class PreferencesButtonsViewController: NSViewController {
     func updateHeader() {
         guard let headerView else { return }
         var focus: ButtonsHeaderContent.Focus? = recordedFocus
-        if focus == nil, let id = list.hoveredID ?? list.selectedID, let row = row(for: id) {
-            focus = self.focus(for: row)
+        if focus == nil, let id = list.hoveredID ?? list.selectedID {
+            if id == ButtonsListLayout.thumbWheelRowID, let thumbWheelRow {
+                focus = .thumbWheel(
+                    title: thumbWheelRow.title,
+                    action: ThumbWheelPresentation.buttonsTitle(for: thumbWheelRow.function)
+                )
+            } else if let row = row(for: id) {
+                focus = self.focus(for: row)
+            }
         }
         let bound = buttonBindings.filter { CellActionState(binding: $0).hasBoundAction }.count
         let deviceName = deviceSource.deviceName()

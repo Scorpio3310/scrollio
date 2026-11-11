@@ -4,7 +4,8 @@
 //  The card at the top of the Buttons pane, with the metrics and colours of the Mouse
 //  pane's card (MouseHeaderView): on the left the connected mouse seen from above (its
 //  model's drawing, MouseArtwork.swift), on the right what the pane is about. The button of the row under the pointer
-//  (or the selected row, or the button just recorded) lights up in the accent colour; a
+//  (or the selected row, or the button just recorded) lights up in the accent colour, the
+//  thumb wheel for the thumb wheel's row; a
 //  button the drawing cannot show ("Button 5") gets its number on a badge by the mouse and
 //  a line on how to find it. Idle, a second line says how to tell the buttons apart: "+"
 //  and a press of a listed button makes the card answer "That's …".
@@ -23,6 +24,8 @@ struct ButtonsHeaderContent: Equatable {
     var hint: String? = nil
     /// The number of a button the drawing cannot show ("Button 5"), on a badge by the mouse.
     var number: Int? = nil
+    /// The thumb wheel is lit (its row is pointed at or selected); `part` is then nil.
+    var lightsThumbWheel = false
 
     /// A row the card is about: its title, its action and its picture.
     struct Focus: Equatable {
@@ -31,6 +34,14 @@ struct ButtonsHeaderContent: Equatable {
         var action: String?
         var picture: ButtonTriggerPicture
         var reason: Reason = .row
+        /// The row is the thumb wheel's, which is no button: the card lights the thumb
+        /// wheel and says nothing about finding a button (`picture` is not used).
+        var isThumbWheel = false
+
+        /// The thumb wheel's row: its title and what it does ("Default" while it scrolls).
+        static func thumbWheel(title: String, action: String) -> Focus {
+            return Focus(title: title, action: action, picture: .mouse(part: nil, number: nil), isThumbWheel: true)
+        }
 
         /// Why the card is about the button.
         enum Reason: Equatable {
@@ -67,6 +78,14 @@ struct ButtonsHeaderContent: Equatable {
                 title: text("buttons-header-recording"),
                 subtitle: text(mouseButtonOnly ? "buttons-header-recording-hint-gesture" : "buttons-header-recording-hint"),
                 part: nil
+            )
+        }
+        if let focus, focus.isThumbWheel {
+            return ButtonsHeaderContent(
+                title: focus.title,
+                subtitle: focus.action ?? text("buttons-default"),
+                part: nil,
+                lightsThumbWheel: true
             )
         }
         if let focus {
@@ -217,7 +236,11 @@ final class ButtonsHeaderView: NSView {
         subtitleLabel.isHidden = content.subtitle == nil
         hintLabel.stringValue = content.hint ?? ""
         hintLabel.isHidden = content.hint == nil
-        artwork.setEmphasis(content.part, animated: animated)
+        if content.lightsThumbWheel {
+            artwork.setThumbWheelEmphasis(animated: animated)
+        } else {
+            artwork.setEmphasis(content.part, animated: animated)
+        }
         artwork.setNumber(content.number, animated: animated)
         setAccessibilityLabel([content.title, content.subtitle, content.hint].compactMap { $0 }.joined(separator: ", "))
     }
@@ -342,7 +365,18 @@ final class ButtonsMouseArtworkView: NSView {
     /// Lights `part` up and puts out the others.
     func setEmphasis(_ part: ButtonsMousePart?, animated: Bool) {
         emphasis = part
+        emphasizesThumbWheel = false
         base.setEmphasis(part?.artworkPart, animated: animated)
+    }
+
+    /// The thumb wheel is lit (it is no button: `emphasis` is nil).
+    private(set) var emphasizesThumbWheel = false
+
+    /// Lights the thumb wheel up and puts out the buttons.
+    func setThumbWheelEmphasis(animated: Bool) {
+        emphasis = nil
+        emphasizesThumbWheel = true
+        base.setEmphasis(.thumbWheel, animated: animated)
     }
 }
 
