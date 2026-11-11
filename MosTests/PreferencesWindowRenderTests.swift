@@ -307,6 +307,142 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
+    /// "Which button is this?" on the owner's bindings (Gesture Navigation on Button 6, a
+    /// shortcut on Button 5, a screenshot on the mode shift button): before, with the
+    /// picture under the pointer, and after Button 6 was said to be the gesture button and
+    /// Button 5 the thumb panel (the rows, the card, "That's …", the Gestures pane's line),
+    /// and the menu's items. An NSMenu draws only on screen: its items are drawn here from
+    /// the menu the pane builds, in the menu's order, as a stand-in.
+    func testRenderButtonPlace() throws {
+        let plain = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { "MX Master 4" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+        let optionCommand = UInt64(CGEventFlags.maskCommand.rawValue | CGEventFlags.maskAlternate.rawValue)
+        let before = [
+            binding(6, SystemShortcut.mouseGestureNavigation.identifier),
+            binding(5, "custom::17:\(optionCommand)"),
+            binding(1001, SystemShortcut.screenshotSelection.identifier),
+        ]
+        Options.shared.buttons.binding = before
+        try renderButtons(name: "button-place-before", source: plain)
+        try renderButtons(name: "button-place-before-hovered-button-6", source: plain) { buttons in
+            self.hover(buttons, rowAt: 0)
+        }
+        try renderButtons(name: "button-place-before-picture-pointed", source: plain) { buttons in
+            buttons.list.select(buttons.rows[1].id)
+            buttons.rows[1].placeButton.isPointerInside = true
+            buttons.rows[0].placeButton.isPointerInside = true
+        }
+        try renderPlaceMenu(name: "button-place-menu-before", rowAt: 0)
+
+        let after = before.enumerated().map { index, binding -> ButtonBinding in
+            let part: PlacedMousePart? = [0: .gestureButton, 1: .thumbPanel][index]
+            return part.map { binding.replacingTriggerEvent(binding.triggerEvent.placed(at: $0)) } ?? binding
+        }
+        Options.shared.buttons.binding = after
+        try renderButtons(name: "button-place-after", source: plain)
+        try renderButtons(name: "button-place-after-selected-button-6", source: plain) { buttons in
+            buttons.list.select(buttons.rows[0].id)
+        }
+        try renderButtons(name: "button-place-after-hovered-button-5", source: plain) { buttons in
+            self.hover(buttons, rowAt: 1)
+        }
+        try renderButtons(name: "button-place-after-thats-button-6", source: plain) { buttons in
+            self.answer(buttons, code: 6)
+        }
+        try renderPlaceMenu(name: "button-place-menu-after", rowAt: 0)
+        var gesture = MouseGestureSettings.default
+        gesture.mode = .discrete
+        Options.shared.gesture = gesture
+        try renderPane(GesturesPreferencesViewController.tabIdentifier, name: "button-place-after-gestures", replacement: {
+            let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+            gestures.deviceSource = MouseGestureDeviceSource(support: { MouseGestureDeviceSupport(deviceTracking: true, haptics: true) }, refresh: {})
+            gestures.bindingSummary = { .current }
+            return gestures
+        }, afterLoad: { controller in
+            guard let gestures = controller as? GesturesPreferencesViewController else { return }
+            gestures.previewView.prefersReducedMotion = { true }
+            gestures.previewView.reduceMotionDidChange()
+        })
+    }
+
+    /// The items of "Which Button Is This?" for the row at `index` of the stored bindings,
+    /// as the pane builds the menu: drawn by this test in the menu's order (the section
+    /// title, a tick, each picture, the title, the mark at the end, the separator), on the
+    /// window colour. AppKit's menu itself cannot be drawn off screen.
+    private func renderPlaceMenu(name: String, rowAt index: Int) throws {
+        let buttons = PreferencesButtonsViewController()
+        buttons.deviceSource = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+        buttons.presentPlaceMenu = { _, _ in }
+        _ = buttons.view
+        let menu = try XCTUnwrap(buttons.placeMenu(for: buttons.rows[index].binding.id))
+        let width: CGFloat = 300
+        let heights = menu.items.map { item -> CGFloat in
+            if item.isSeparatorItem { return 11 }
+            if item.isSectionHeader { return 22 }
+            return 30
+        }
+        let bounds = NSRect(x: 0, y: 0, width: width, height: heights.reduce(10, +))
+        for (suffix, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            let scale: CGFloat = 2
+            let canvas = try XCTUnwrap(NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: Int(bounds.width * scale), pixelsHigh: Int(bounds.height * scale),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+            ))
+            canvas.size = bounds.size
+            let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: canvas))
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context.cgContext, flipped: true)
+            context.cgContext.translateBy(x: 0, y: bounds.height)
+            context.cgContext.scaleBy(x: 1, y: -1)
+            appearance.performAsCurrentDrawingAppearance {
+                NSColor.windowBackgroundColor.setFill()
+                NSBezierPath(roundedRect: bounds, xRadius: 10, yRadius: 10).fill()
+                NSColor.separatorColor.setStroke()
+                NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 10, yRadius: 10).stroke()
+                var y: CGFloat = 5
+                let font = NSFont.menuFont(ofSize: 0)
+                for (item, height) in zip(menu.items, heights) {
+                    defer { y += height }
+                    if item.isSeparatorItem {
+                        NSColor.separatorColor.setFill()
+                        NSRect(x: 14, y: y + 5, width: width - 28, height: 1).fill()
+                        continue
+                    }
+                    let isHeader = item.isSectionHeader
+                    let attributes: [NSAttributedString.Key: Any] = [
+                        .font: isHeader ? NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold) : font,
+                        .foregroundColor: isHeader ? NSColor.secondaryLabelColor : NSColor.labelColor,
+                    ]
+                    let title = NSAttributedString(string: item.title, attributes: attributes)
+                    var x: CGFloat = 14
+                    if !isHeader {
+                        if item.state == .on {
+                            NSAttributedString(string: "✓", attributes: [.font: font, .foregroundColor: NSColor.labelColor])
+                                .draw(at: NSPoint(x: x, y: y + (height - font.boundingRectForFont.height) / 2 + 1))
+                        }
+                        x += 16
+                        if let image = item.image {
+                            image.draw(in: NSRect(x: x, y: y + (height - image.size.height) / 2, width: image.size.width, height: image.size.height),
+                                       from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+                            x += image.size.width + 6
+                        }
+                    }
+                    title.draw(at: NSPoint(x: x, y: y + (height - title.size().height) / 2))
+                    if let mark = item.badge?.stringValue {
+                        let badge = NSAttributedString(string: mark, attributes: [
+                            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize), .foregroundColor: NSColor.secondaryLabelColor,
+                        ])
+                        badge.draw(at: NSPoint(x: width - 14 - badge.size().width, y: y + (height - badge.size().height) / 2))
+                    }
+                }
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            let png = try XCTUnwrap(canvas.representation(using: .png, properties: [:]))
+            try png.write(to: directory.appendingPathComponent("\(name)-\(suffix).png"))
+        }
+    }
+
     /// "+" waits, then a listed button is pressed: the recorder is stubbed, nothing is
     /// recorded from the system.
     private func answer(_ buttons: PreferencesButtonsViewController, code: UInt16) {
@@ -421,6 +557,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
             buttons.scrollHoldKeys = { scrollKeys }
             buttons.startRecording = { _ in }
             buttons.openActionMenu = { _ in }
+            buttons.presentPlaceMenu = { _, _ in }
         }, afterLoad: { controller in
             guard let buttons = controller as? PreferencesButtonsViewController else { return }
             buttons.headerView.prefersReducedMotion = { true }

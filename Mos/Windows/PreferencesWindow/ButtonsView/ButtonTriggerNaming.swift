@@ -2,7 +2,8 @@
 //  ButtonTriggerNaming.swift
 //  Mos
 //  What the Buttons pane calls a trigger: "Left button", "⌥⌘ Back button", "Gesture
-//  button", "⌃⌥ K", "F5", and the text of a keyboard-shortcut action ("⇧⌘4"). Pure: the
+//  button", "Gesture button (button 6)" for a numbered button the user placed, "⌃⌥ K",
+//  "F5", and the text of a keyboard-shortcut action ("⇧⌘4"). Pure: the
 //  pane, the Gestures pane and the tests share the rules. Only the display changes; the
 //  stored trigger is never touched.
 //
@@ -29,7 +30,7 @@ enum ButtonTriggerNaming {
         let modifiers = UInt64(event.modifiers)
         switch event.type {
         case .mouse:
-            return joined(symbols(modifiers), buttonName(code: event.code, logitech: logitech))
+            return joined(symbols(modifiers), buttonName(for: event, logitech: logitech))
         case .keyboard:
             if KeyCode.modifierKeys.contains(event.code) {
                 // A modifier on its own: every modifier held, its own included.
@@ -37,6 +38,28 @@ enum ButtonTriggerNaming {
             }
             let fn = !impliesFn(event.code)
             return joined(symbols(modifiers, includesFn: fn), keyName(event.code))
+        }
+    }
+
+    /// The button of a mouse trigger: as `buttonName(code:)`, and a numbered button the
+    /// user placed by its part with its number after it, so where the name comes from stays
+    /// visible: "Gesture button (button 6)".
+    static func buttonName(for event: RecordedEvent, logitech: Logitech = .live) -> String {
+        guard let part = event.placedPart else {
+            return buttonName(code: event.code, logitech: logitech)
+        }
+        return String(format: text("buttons-trigger-placed"), name(of: part), Int(event.code))
+    }
+
+    /// What the pane calls `part` in a row title: as the known button of that place is called.
+    static func name(of part: PlacedMousePart) -> String {
+        switch part {
+        case .gestureButton: return text("buttons-trigger-gesture")
+        case .thumbPanel: return text("buttons-trigger-thumb-panel")
+        case .backButton: return text("buttons-trigger-back")
+        case .forwardButton: return text("buttons-trigger-forward")
+        case .modeShiftButton: return text("buttons-trigger-mode-shift")
+        case .middleButton: return text("buttons-trigger-middle")
         }
     }
 

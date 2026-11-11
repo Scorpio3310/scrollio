@@ -51,8 +51,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "scrolling-key-clear", "scrolling-reset",
     ]
 
-    /// Buttons pane: the card, the list and its rows, the action menu, the ⓘ popovers and
-    /// the Open App or File popover.
+    /// Buttons pane: the card, the list and its rows, the action menu, "Which Button Is
+    /// This?", the ⓘ popovers and the Open App or File popover.
     static let buttonsKeys = [
         "buttons-trigger-left", "buttons-trigger-right", "buttons-trigger-middle", "buttons-trigger-back",
         "buttons-trigger-forward", "buttons-trigger-number", "buttons-trigger-gesture", "buttons-trigger-mode-shift",
@@ -66,6 +66,10 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-note-scroll-key", "buttons-note-conflict", "buttons-note-contended", "buttons-note-bluetooth",
         "buttons-note-standard-button", "buttons-scroll-key-title", "buttons-scroll-key-detail",
         "buttons-problem-info", "buttons-checking", "buttons-undo-remove", "buttons-show-gesture-settings",
+        "buttons-trigger-placed", "buttons-header-place-this-one", "buttons-place-title", "buttons-place-help",
+        "buttons-place-gesture", "buttons-place-thumb-panel", "buttons-place-back", "buttons-place-forward",
+        "buttons-place-mode-shift", "buttons-place-middle", "buttons-place-none", "buttons-place-used-by",
+        "buttons-place-in-list",
         "button_conflict_title", "button_conflict_detail", "button_contended_title", "button_contended_detail",
         "button_standard_mouse_alias_title", "button_standard_mouse_alias_detail",
         "button_ble_hidpp_unstable_title", "button_ble_hidpp_unstable_detail", "button_use_native_mouse",

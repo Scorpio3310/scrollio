@@ -831,6 +831,25 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(result, .consumed)
     }
 
+    /// Where the Buttons pane says a numbered button is (`mousePart`) is display only: the
+    /// binding runs for the same button and modifiers as without it, and for no other.
+    func testProcess_placedNumberedButtonMatchesAsBefore() {
+        let trigger = RecordedEvent(type: .mouse, code: 6, modifiers: 0, deviceFilter: nil, mousePart: .gestureButton)
+        Options.shared.buttons.binding = [ButtonBinding(triggerEvent: trigger, systemShortcutName: "custom::56:0", isEnabled: true)]
+        ButtonUtils.shared.invalidateCache()
+
+        func press(_ code: UInt16) -> InputResult {
+            let down = InputProcessor.shared.process(InputEvent(type: .mouse, code: code, modifiers: CGEventFlags(rawValue: 0),
+                                                                 phase: .down, source: .hidPP, device: nil))
+            _ = InputProcessor.shared.process(InputEvent(type: .mouse, code: code, modifiers: CGEventFlags(rawValue: 0),
+                                                         phase: .up, source: .hidPP, device: nil))
+            return down
+        }
+        XCTAssertEqual(press(6), .consumed)
+        XCTAssertEqual(press(5), .passthrough, "the gesture button's place does not make another button match")
+        XCTAssertEqual(press(3), .passthrough)
+    }
+
     func testProcess_upEvent_consumedViaActiveBindings() {
         let trigger = RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil)
         let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "custom::56:0", isEnabled: true)

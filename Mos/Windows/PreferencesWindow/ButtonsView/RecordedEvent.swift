@@ -100,6 +100,15 @@ struct RecordedEvent: Codable, Equatable {
     let code: UInt16 // 按键代码
     let modifiers: UInt // 修饰键
     let deviceFilter: DeviceFilter?
+    /// Where on the mouse a button the Mac knows only by its number is, as the user said in
+    /// the Buttons pane ("Which button is this?"); nil: not said. Display only: matching,
+    /// execution and `==` ignore it. Stored under "mousePart" only when set, so a trigger
+    /// without it is written as before; a value this version does not know reads as nil.
+    let mousePart: PlacedMousePart?
+
+    enum CodingKeys: String, CodingKey {
+        case type, code, modifiers, deviceFilter, mousePart
+    }
 
     // MARK: - 计算属性
 
@@ -139,6 +148,7 @@ struct RecordedEvent: Codable, Equatable {
             self.code = event.mouseCode
         }
         self.deviceFilter = nil
+        self.mousePart = nil
     }
 
     /// 从 InputEvent 构造
@@ -147,14 +157,16 @@ struct RecordedEvent: Codable, Equatable {
         self.code = event.code
         self.modifiers = UInt(event.modifiers.rawValue)
         self.deviceFilter = deviceFilter
+        self.mousePart = nil
     }
 
     /// 便捷构造 - 直接指定事件字段
-    init(type: EventType, code: UInt16, modifiers: UInt, deviceFilter: DeviceFilter?) {
+    init(type: EventType, code: UInt16, modifiers: UInt, deviceFilter: DeviceFilter?, mousePart: PlacedMousePart? = nil) {
         self.type = type
         self.code = code
         self.modifiers = modifiers
         self.deviceFilter = deviceFilter
+        self.mousePart = mousePart
     }
 
     /// 兼容旧调用点: displayComponents 已改为动态计算, 这里不再存储传入值.
@@ -163,6 +175,26 @@ struct RecordedEvent: Codable, Equatable {
         self.code = code
         self.modifiers = modifiers
         self.deviceFilter = deviceFilter
+        self.mousePart = nil
+    }
+
+    /// The fields as the synthesized decoder read them, and `mousePart` only when it is a
+    /// value this version knows (anything else, a wrong type included, reads as nil and
+    /// does not fail the binding). Encoding stays synthesized: `mousePart` is left out
+    /// while nil.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.type = try c.decode(EventType.self, forKey: .type)
+        self.code = try c.decode(UInt16.self, forKey: .code)
+        self.modifiers = try c.decode(UInt.self, forKey: .modifiers)
+        self.deviceFilter = try c.decodeIfPresent(DeviceFilter.self, forKey: .deviceFilter)
+        let stored = (try? c.decodeIfPresent(String.self, forKey: .mousePart)) ?? nil
+        self.mousePart = stored.flatMap(PlacedMousePart.init(rawValue:))
+    }
+
+    /// The same trigger, said to be `part` of the mouse (nil: not said).
+    func placed(at part: PlacedMousePart?) -> RecordedEvent {
+        return RecordedEvent(type: type, code: code, modifiers: modifiers, deviceFilter: deviceFilter, mousePart: part)
     }
 
     func standardMouseAliasTriggerIfAvailable() -> RecordedEvent? {
@@ -232,7 +264,7 @@ struct RecordedEvent: Codable, Equatable {
         return expectedModifiers.nonzeroBitCount
     }
 
-    /// Equatable
+    /// Equatable: the same trigger, wherever it is said to be (`mousePart` is display only).
     static func == (lhs: RecordedEvent, rhs: RecordedEvent) -> Bool {
         return lhs.type == rhs.type &&
                lhs.code == rhs.code &&

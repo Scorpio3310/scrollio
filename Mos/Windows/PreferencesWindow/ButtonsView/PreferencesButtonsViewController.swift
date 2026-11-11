@@ -7,9 +7,11 @@
 //  where the button is in a small picture, names the button, says what its action needs or
 //  what is wrong with it, and has the action pull-down. A button the drawing cannot show
 //  ("Button 5") is found by asking the mouse: "+" and pressing it makes the card say
-//  "That's Button 5". "+" records a button (or a key with a modifier), "−" removes one,
-//  and the window's Undo puts it back. Only Options.shared.buttons.binding is edited, in the format
-//  it always had.
+//  "That's Button 5"; a click on its picture then says where it is ("Which Button Is
+//  This?"), and from then on it is named and lit as that part. "+" records a button (or a
+//  key with a modifier), "−" removes one, and the window's Undo puts it back. Only
+//  Options.shared.buttons.binding is edited, in the format it always had; a placed button
+//  adds the trigger's optional `mousePart`.
 //  Created by Claude on 2025/8/10.
 //  Copyright © 2025年 Caldis. All rights reserved.
 //
@@ -80,6 +82,12 @@ class PreferencesButtonsViewController: NSViewController {
     }
     /// Opens a row's action menu. The menu runs until it closes, so tests replace it.
     var openActionMenu: (NSPopUpButton) -> Void = { $0.performClick(nil) }
+    /// Opens "Which Button Is This?" under a row's picture. The menu runs until it closes,
+    /// so tests replace it.
+    var presentPlaceMenu: (NSMenu, NSView) -> Void = { menu, anchor in
+        let below = anchor.isFlipped ? anchor.bounds.maxY + 4 : anchor.bounds.minY - 4
+        menu.popUp(positioning: nil, at: NSPoint(x: anchor.bounds.minX, y: below), in: anchor)
+    }
     /// Shows another pane of the window (the Gestures pane).
     var showPane: ((String) -> Void)?
     /// Takes Undo and Redo of a removal; the window's when nil.
@@ -295,6 +303,14 @@ class PreferencesButtonsViewController: NSViewController {
         let row = ButtonBindingRow(binding: binding, title: title, note: note, pullDown: pullDown)
         row.infoButton.target = self
         row.infoButton.action = #selector(infoClicked(_:))
+        row.onPlaceRequested = { [weak self] anchor in
+            self?.showPlaceMenu(for: id, from: anchor)
+        }
+        row.placeMenu = { [weak self] in
+            guard let self, let menu = self.placeMenu(for: id) else { return nil }
+            self.list.select(id)
+            return menu
+        }
         return row
     }
 
@@ -353,6 +369,61 @@ class PreferencesButtonsViewController: NSViewController {
         replaceBinding(updated)
     }
 
+    // MARK: - Which button is this?
+
+    /// "Which Button Is This?" for `id`'s row; nil when its button's place is known.
+    func placeMenu(for id: UUID) -> NSMenu? {
+        guard let binding = binding(for: id),
+              let model = ButtonPlaceMenuModel.make(for: binding.triggerEvent, among: buttonBindings.map(\.triggerEvent))
+        else { return nil }
+        return ButtonPlaceMenu.make(model, bindingID: id, target: self, action: #selector(placeChosen(_:)))
+    }
+
+    /// The row's picture was clicked: the row is selected (the card shows it) and the menu
+    /// opens under the picture.
+    func showPlaceMenu(for id: UUID, from anchor: NSView) {
+        guard let menu = placeMenu(for: id) else { return }
+        list.select(id)
+        presentPlaceMenu(menu, anchor)
+    }
+
+    @objc func placeChosen(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? ButtonPlaceChoice else { return }
+        setPlace(of: choice.bindingID, to: choice.part)
+    }
+
+    /// Says that `id`'s numbered button is `part` of the mouse (nil: not on the list), for
+    /// every row of that button number: they are the same button with other modifiers.
+    /// Only the display changes; nothing is saved when nothing changes.
+    func setPlace(of id: UUID, to part: PlacedMousePart?) {
+        guard let trigger = binding(for: id)?.triggerEvent, ButtonTriggerPicture.number(for: trigger) != nil else { return }
+        var changed = false
+        buttonBindings = buttonBindings.map { binding in
+            let other = binding.triggerEvent
+            guard Self.isSameButton(other, as: trigger), other.mousePart != part else { return binding }
+            changed = true
+            return binding.replacingTriggerEvent(other.placed(at: part))
+        }
+        guard changed else { return }
+        save()
+        reloadRows()
+        updateHeader()
+    }
+
+    /// `trigger` placed as the list's rows of its button number are (the same button with
+    /// other modifiers); as it is when the list has no other row of that number.
+    func placedLikeItsButton(_ trigger: RecordedEvent, except id: UUID? = nil) -> RecordedEvent {
+        guard ButtonTriggerPicture.number(for: trigger) != nil,
+              let sibling = buttonBindings.first(where: { $0.id != id && Self.isSameButton($0.triggerEvent, as: trigger) })
+        else { return trigger }
+        let part = sibling.triggerEvent.mousePart
+        return trigger.mousePart == part ? trigger : trigger.placed(at: part)
+    }
+
+    private static func isSameButton(_ a: RecordedEvent, as b: RecordedEvent) -> Bool {
+        return a.type == .mouse && b.type == .mouse && a.code == b.code
+    }
+
     // MARK: - Removing, with Undo
 
     /// Where a removal registers its Undo: the window's undo manager while the pane is in
@@ -393,6 +464,9 @@ class PreferencesButtonsViewController: NSViewController {
             focusList()
             return
         }
+        // Its place as the rows of its button say now (it keeps its own when it is alone).
+        let placed = placedLikeItsButton(binding.triggerEvent, except: binding.id)
+        let binding = placed.mousePart == binding.triggerEvent.mousePart ? binding : binding.replacingTriggerEvent(placed)
         buttonBindings.insert(binding, at: min(max(0, index), buttonBindings.count))
         save()
         reloadRows()
@@ -434,10 +508,11 @@ class PreferencesButtonsViewController: NSViewController {
         }
     }
 
+    /// The trigger of a recorded event, placed like the rows of its button number.
     private func normalizedTrigger(for event: InputEvent) -> RecordedEvent {
         let recorded = RecordedEvent(from: event)
         let diagnosis = LogiCenter.shared.buttonCaptureDiagnosis(forMosCode: event.code)
-        return recorded.normalizedForButtonBinding(diagnosis: diagnosis)
+        return placedLikeItsButton(recorded.normalizedForButtonBinding(diagnosis: diagnosis))
     }
 
     /// The binding the list has for `trigger`, if any.
@@ -467,7 +542,7 @@ class PreferencesButtonsViewController: NSViewController {
             return existing.id
         }
         let binding = ButtonBinding(
-            triggerEvent: trigger,
+            triggerEvent: placedLikeItsButton(trigger),
             systemShortcutName: action?.identifier ?? "",
             isEnabled: action != nil
         )

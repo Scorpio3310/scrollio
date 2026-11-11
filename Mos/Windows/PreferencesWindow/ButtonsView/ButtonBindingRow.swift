@@ -5,7 +5,8 @@
 //  the button is (ButtonsMouseMiniature), the button's name, a line under it only when
 //  there is something to say (what the action needs, a problem after an orange sign, or
 //  that a numbered button is an extra one), an ⓘ that explains a problem, and the action
-//  pull-down.
+//  pull-down. A numbered button's picture (and the row's context menu) opens "Which Button
+//  Is This?" (ButtonPlaceMenu).
 //
 
 import Cocoa
@@ -111,7 +112,8 @@ struct ButtonRowNote: Equatable {
         if let action = actionNote(for: binding) {
             return action
         }
-        if ButtonTriggerPicture.number(for: trigger) != nil {
+        // Placed: its name says where it is.
+        if ButtonTriggerPicture.number(for: trigger) != nil, trigger.placedPart == nil {
             return ButtonRowNote(kind: .extraButton, text: text("buttons-note-extra-button"))
         }
         return nil
@@ -157,6 +159,14 @@ final class ButtonBindingRow: PreferencesListRow {
     /// or a hint. It is not part of the accessory: the note under the title runs on below
     /// it, so a problem takes two lines, not three.
     let infoButton: NSButton
+    /// Over the picture of a numbered button ("Button 6"): opens "Which Button Is This?".
+    /// Hidden for a button whose place is known and for a key.
+    let placeButton = ButtonPlacePictureButton()
+    /// The picture was clicked: the pane opens the menu under it.
+    var onPlaceRequested: ((NSView) -> Void)?
+    /// The menu of a right-click on the row: "Which Button Is This?" for
+    /// a numbered button, nil otherwise.
+    var placeMenu: (() -> NSMenu?)?
     /// Keeps the title off the ⓘ while it shows.
     private var titleBeforeInfo: NSLayoutConstraint?
     /// The picture the icon shows now, and whether drawn for the selection.
@@ -196,8 +206,24 @@ final class ButtonBindingRow: PreferencesListRow {
             info.centerYAnchor.constraint(equalTo: pullDown.centerYAnchor),
         ])
         titleBeforeInfo = titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: info.leadingAnchor, constant: -spacing)
+        if let iconView {
+            // A little larger than the picture, so its background has room around it.
+            addSubview(placeButton)
+            let outset = Self.placeButtonOutset
+            NSLayoutConstraint.activate([
+                placeButton.leadingAnchor.constraint(equalTo: iconView.leadingAnchor, constant: -outset),
+                placeButton.trailingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: outset),
+                placeButton.topAnchor.constraint(equalTo: iconView.topAnchor, constant: -outset),
+                placeButton.bottomAnchor.constraint(equalTo: iconView.bottomAnchor, constant: outset),
+            ])
+            placeButton.target = self
+            placeButton.action = #selector(placeClicked(_:))
+        }
         applyNote()
     }
+
+    /// How far the picture's button reaches beyond the picture on each side.
+    static let placeButtonOutset: CGFloat = 2
 
     required init?(coder: NSCoder) {
         fatalError("ButtonBindingRow is built in code")
@@ -217,7 +243,23 @@ final class ButtonBindingRow: PreferencesListRow {
         applyNote()
     }
 
+    /// The picture is a button only for a button the Mac knows by its number.
+    var offersPlace: Bool {
+        return ButtonTriggerPicture.number(for: binding.triggerEvent) != nil
+    }
+
+    @objc private func placeClicked(_ sender: NSButton) {
+        onPlaceRequested?(sender)
+    }
+
+    /// A right-click on the row (not on its controls) offers "Which Button Is This?".
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard offersPlace, let menu = placeMenu?() else { return super.menu(for: event) }
+        return menu
+    }
+
     private func applyNote() {
+        placeButton.isHidden = !offersPlace
         let details = note?.hasDetails ?? false
         infoButton.isHidden = !details
         titleBeforeInfo?.isActive = details
@@ -237,6 +279,7 @@ final class ButtonBindingRow: PreferencesListRow {
     override func applyEnabled() {
         super.applyEnabled()
         applyPicture()
+        placeButton.isOnSelection = isHighlighted
         // The ⓘ draws like the pull-down: light on the accent-coloured selection.
         infoButton.appearance = accessory?.appearance
         infoButton.contentTintColor = isHighlighted ? .alternateSelectedControlTextColor : .secondaryLabelColor

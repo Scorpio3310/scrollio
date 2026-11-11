@@ -4835,6 +4835,162 @@
           }
         }
       }
+    },
+    "buttons-trigger-placed": {
+      "comment": "Buttons pane: a button the Mac knows only by its number, after the user said where it is; %1$@ is the part (Gesture button, Thumb panel), %2$d the button's number",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ (button %2$d)"
+          }
+        }
+      }
+    },
+    "buttons-header-place-this-one": {
+      "comment": "Buttons pane card: under a numbered button (Button 6) whose place is not known yet; its row's small picture opens Which Button Is This?",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click its picture below to say which button it is. Not sure? Click + and press buttons to find it."
+          }
+        }
+      }
+    },
+    "buttons-place-title": {
+      "comment": "Buttons pane: title of the menu that says where a numbered button (Button 6) is on the mouse",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Which Button Is This?"
+          }
+        }
+      }
+    },
+    "buttons-place-help": {
+      "comment": "Buttons pane: help tag and accessibility name of a numbered button's row picture, which opens Which Button Is This?",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Which button is this?"
+          }
+        }
+      }
+    },
+    "buttons-place-gesture": {
+      "comment": "Buttons pane, Which Button Is This? menu: the gesture button under the thumb",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesture Button"
+          }
+        }
+      }
+    },
+    "buttons-place-thumb-panel": {
+      "comment": "Buttons pane, Which Button Is This? menu: the haptic sense panel of the MX Master 4, named as the Mouse pane names it",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thumb Panel"
+          }
+        }
+      }
+    },
+    "buttons-place-back": {
+      "comment": "Buttons pane, Which Button Is This? menu: the back button on the side",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back Button"
+          }
+        }
+      }
+    },
+    "buttons-place-forward": {
+      "comment": "Buttons pane, Which Button Is This? menu: the forward button on the side",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward Button"
+          }
+        }
+      }
+    },
+    "buttons-place-mode-shift": {
+      "comment": "Buttons pane, Which Button Is This? menu: the small button behind the wheel",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mode Shift Button"
+          }
+        }
+      }
+    },
+    "buttons-place-middle": {
+      "comment": "Buttons pane, Which Button Is This? menu: pressing the wheel",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Middle Button"
+          }
+        }
+      }
+    },
+    "buttons-place-none": {
+      "comment": "Buttons pane, Which Button Is This? menu: takes the answer back; the row is called Button 6 again",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not on This List"
+          }
+        }
+      }
+    },
+    "buttons-place-used-by": {
+      "comment": "Buttons pane, Which Button Is This? menu: at the end of a part another numbered button was said to be; %d is its number",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used by button %d"
+          }
+        }
+      }
+    },
+    "buttons-place-in-list": {
+      "comment": "Buttons pane, Which Button Is This? menu: at the end of a part a listed button already is (the Back button, a Logitech gesture button)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Already in the list"
+          }
+        }
+      }
     }
   },
   "version": "1.1"
