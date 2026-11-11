@@ -69,8 +69,7 @@ class ScrollUtils {
     }
     
     // 判断 LaunchPad 是否激活
-    var launchpadActiveCache = false
-    var launchpadLastDetectTime = 0.0
+    static let dockExecutablePath = "/System/Library/CoreServices/Dock.app/Contents/MacOS/Dock"
     func getLaunchpadActivity(withRunningApplication runningApplication: NSRunningApplication?) -> Bool {
         guard let validRunningApplication = runningApplication else {
             return false
@@ -79,30 +78,14 @@ class ScrollUtils {
         if #available(macOS 26.0, *) {
             return false
         }
-        // 10.15 - 26 以下判断是否为 Dock (LaunchPad 依附于 Dock 进程)
-        // FIXME: 当 Dock 的目录设置为 "叠放" 时, 应用对 Dock 的目录预览无法平滑, 且发送平滑后的滚动事件无法被识别, 需要找别的方式
-        if #available(OSX 10.15, *) {
-            if validRunningApplication.executableURL?.path == "/System/Library/CoreServices/Dock.app/Contents/MacOS/Dock" {
-                launchpadActiveCache = true
-                return launchpadActiveCache
-            }
-        }
-        // 如果距离上次检测时间大于 1s, 则重新检测一遍, 否则直接返回上次的结果
-        let nowTime = NSDate().timeIntervalSince1970
-        if nowTime - launchpadLastDetectTime > 1.0 {
-            // 10.15以下需要根据 windowList 判断
-            let windowInfoList = CGWindowListCopyWindowInfo(CGWindowListOption.optionOnScreenOnly, CGWindowID(0)) as [AnyObject]?
-            for windowInfo in windowInfoList! {
-                let windowName = windowInfo[kCGWindowName]!
-                if windowName != nil && windowName as! String == "LPSpringboard" {
-                    launchpadActiveCache = true
-                    return true
-                }
-            }
-            launchpadActiveCache = false
-            launchpadLastDetectTime = nowTime
-        }
-        return launchpadActiveCache
+        return Self.isLaunchpadHost(executablePath: validRunningApplication.executableURL?.path)
+    }
+    /// Before macOS 26, Launchpad lives in the Dock process: a scroll aimed at the Dock is
+    /// treated as a scroll in Launchpad.
+    /// (The window-list scan that macOS 10.14 and earlier needed is gone with the 14.0 target.)
+    // FIXME: 当 Dock 的目录设置为 "叠放" 时, 应用对 Dock 的目录预览无法平滑, 且发送平滑后的滚动事件无法被识别, 需要找别的方式
+    static func isLaunchpadHost(executablePath: String?) -> Bool {
+        return executablePath == dockExecutablePath
     }
 
     // 从 Applications 中取回符合传入的 key 的 Application 对象

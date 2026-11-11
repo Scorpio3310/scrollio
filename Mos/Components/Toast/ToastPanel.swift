@@ -73,13 +73,9 @@ class ToastPanel: NSObject {
             keyEquivalent: ""
         )
         item.target = self
-        if #available(macOS 11.0, *) {
-            if let img = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: nil) {
-                img.isTemplate = true
-                item.image = img
-            }
-        } else {
-            item.image = #imageLiteral(resourceName: "SF.bubble.left.fill")
+        if let img = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: nil) {
+            img.isTemplate = true
+            item.image = img
         }
         return item
     }
@@ -134,12 +130,8 @@ class ToastPanel: NSObject {
         effectView.state = .active
         effectView.blendingMode = .behindWindow
 
-        if #available(macOS 10.14, *) {
-            effectView.material = .hudWindow
-            panel.appearance = NSAppearance(named: .vibrantDark)
-        } else {
-            effectView.material = .dark
-        }
+        effectView.material = .hudWindow
+        panel.appearance = NSAppearance(named: .vibrantDark)
         panel.contentView = effectView
 
         let topInset = resolvedTopInset(for: panel)
