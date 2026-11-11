@@ -114,7 +114,10 @@ The debug build logs under `com.nikklemenc.Scrollio.debug`. Nothing is logged pe
   decision to write or not to write and why (wheel lines start with the mouse's name and
   receiver slot, for example `[MX Master 4 slot 0x01] Wheel: Mode: ... already set, no
   write`; a value you never set is "not set by the user, left alone"), the read-back
-  after a write, requests the mouse refused or did not answer, and each gesture haptic cue.
+  after a write, requests the mouse refused or did not answer, each gesture haptic cue,
+  HID++ writes that took 5 ms or more (they block the thread that serves the event taps;
+  at most one line a second, with how many and the longest), and once per connection the
+  number of writes while connecting with their total and longest time.
 - Category `app`, the app's own health: every start and stop with its cause (launch,
   sleep and wake, another user, "Pause Scrollio", the Accessibility access lost or back,
   quitting), event taps that could not be created and the retries, taps that macOS turned
