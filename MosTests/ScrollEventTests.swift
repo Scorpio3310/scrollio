@@ -1285,6 +1285,26 @@ final class ThumbWheelScrollTapTests: XCTestCase {
         XCTAssertEqual(rig.lines, [], "and none is in the thumb wheel's log")
     }
 
+    /// REVIEW PROOF (fails on purpose): with "Reverse wheel direction" on and "Only apps in
+    /// the list" on, an app outside the list gets no reverse rule. The direction of a function
+    /// then depends on the app under the pointer: the same physical turn of the thumb wheel
+    /// turns the volume up over one app and down over another (the same holds for an app with
+    /// its own reverse rule, and for desktops). Encodes the expectation that a system-wide
+    /// function follows the turn, not the app under the pointer.
+    func testReviewProof_volumeDirectionDoesNotDependOnTheAppUnderThePointer() throws {
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .volume)
+        Options.shared.scroll.reverse = true
+        Options.shared.scroll.reverseHorizontal = true
+        Options.shared.application.allowlist = false
+        XCTAssertFalse(goesOn(try sideways(-1)), "an app Scrollio handles")
+        Options.shared.application.allowlist = true
+        XCTAssertFalse(goesOn(try sideways(-1)), "the same turn over an app outside the allowlist")
+        rig.advance(to: rig.now)
+        XCTAssertEqual(rig.performed.count, 2)
+        XCTAssertEqual(rig.performed.first?.action, rig.performed.last?.action,
+                       "the same turn of the thumb wheel: \(rig.performed.map(\.action))")
+    }
+
     // MARK: The decisions (pure)
 
     func testSidewaysWheelEvent_horizontalOnly_notRemoteSmoothed_noHoldKey() {
