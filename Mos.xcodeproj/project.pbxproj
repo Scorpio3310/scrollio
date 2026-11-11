@@ -382,22 +382,8 @@
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
-				Base,
-				"zh-Hans",
-				ja,
-				"zh-Hant",
 				en,
-				ru,
-				tr,
-				ko,
-				de,
-				"zh-Hant-TW",
-				"zh-Hant-HK",
-				el,
-				uk,
-				fr,
-				cs,
-				th,
+				Base,
 			);
 			mainGroup = 22142D971E25344E00E4BFBF;
 			packageReferences = (

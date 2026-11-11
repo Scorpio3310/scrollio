@@ -411,10 +411,7 @@ final class ScrollMomentumPresetTests: XCTestCase {
             "scroll-tuning-thumb-wheel-label", "scroll-tuning-thumb-wheel-scroll",
             "scroll-tuning-thumb-wheel-page-swipe", "scroll-tuning-thumb-wheel-hint",
         ]
-        let locales = [
-            "cs", "de", "el", "en", "fr", "ja", "ko", "ru", "th", "tr", "uk",
-            "zh-Hans", "zh-Hant", "zh-Hant-HK", "zh-Hant-TW",
-        ]
+        let locales = PreferencesLocalizationTests.locales
         let missing = "\u{1}missing"
         let app = Bundle(for: PreferencesScrollingViewController.self)
         for locale in locales {

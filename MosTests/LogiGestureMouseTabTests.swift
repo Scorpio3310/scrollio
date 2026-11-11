@@ -186,10 +186,7 @@ final class LogiGestureMouseTabTests: XCTestCase {
 
     // MARK: - Strings
 
-    private static let locales = [
-        "cs", "de", "el", "en", "fr", "ja", "ko", "ru", "th", "tr", "uk",
-        "zh-Hans", "zh-Hant", "zh-Hant-HK", "zh-Hant-TW",
-    ]
+    private static let locales = PreferencesLocalizationTests.locales
 
     private static let keys = [
         "mouse-gesture-label",

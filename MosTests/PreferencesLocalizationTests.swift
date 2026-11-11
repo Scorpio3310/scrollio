@@ -7,10 +7,9 @@ import XCTest
 /// one would only show up as the key itself in the UI.
 final class PreferencesLocalizationTests: XCTestCase {
 
-    static let locales = [
-        "cs", "de", "el", "en", "fr", "ja", "ko", "ru", "th", "tr", "uk",
-        "zh-Hans", "zh-Hant", "zh-Hant-HK", "zh-Hant-TW",
-    ]
+    /// English only for now. The string catalogs stay, so adding a language means adding
+    /// its translations to the catalogs, its region to the project and its code here.
+    static let locales = ["en"]
 
     static let keys = [
         // Mouse tab
