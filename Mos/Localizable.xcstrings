@@ -828,6 +828,17 @@
         }
       }
     },
+    "gesture-navigation-menu-tooltip": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold the button and move the mouse up, down, left or right, or just click."
+          }
+        }
+      }
+    },
     "gesture-direction-up": {
       "extractionState": "manual",
       "localizations": {

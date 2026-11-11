@@ -37,6 +37,8 @@ class ShortcutManager {
     /// - 索引2: "未绑定"/"取消绑定" - 可选菜单项,representedObject 为 nil
     /// - 索引3: 分割线 #2 - 分隔操作区和分类菜单
     /// - 索引4+: 分类子菜单 (功能键,应用与窗口等)
+    /// - last group, after a separator: "Gesture Navigation", "Open…" and "Custom…",
+    ///   the actions that are configured rather than picked from a list
     ///
     /// - Parameter menu: 目标菜单对象
     /// - Parameter target: 菜单项点击事件的目标对象
@@ -159,6 +161,22 @@ class ShortcutManager {
 
         // 自定义绑定分隔线
         menu.addItem(NSMenuItem.separator())
+
+        // Gesture Navigation: a top-level action with settings of its own (the Gestures
+        // tab), not a function key. Its representedObject is the shortcut, so selecting it
+        // binds like any item of the categories above.
+        let gestureShortcut = SystemShortcut.mouseGestureNavigation
+        let gestureItem = NSMenuItem(title: gestureShortcut.localizedName, action: action, keyEquivalent: "")
+        gestureItem.target = target
+        gestureItem.representedObject = gestureShortcut
+        gestureItem.toolTip = NSLocalizedString("gesture-navigation-menu-tooltip", comment: "")
+        if supportsSFSymbols {
+            if #available(macOS 11.0, *) {
+                gestureItem.image = createSymbolImage(gestureShortcut.symbolName)
+            }
+        }
+        menu.addItem(gestureItem)
+        totalShortcuts += 1
 
         // "打开应用…" 菜单项 (representedObject 为字符串标记 __open__)
         let openItem = NSMenuItem(

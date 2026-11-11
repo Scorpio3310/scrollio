@@ -29,7 +29,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "scroll-tuning-free-spin-checkbox", "scroll-tuning-free-spin-smoothness", "scroll-tuning-free-spin-speed",
         "scroll-tuning-acceleration", "scroll-tuning-acceleration-off", "scroll-tuning-footnote",
         // Gesture Settings
-        "mouseGestureNavigation", "gesture-settings-menu", "gesture-direction-up", "gesture-direction-down",
+        "mouseGestureNavigation", "gesture-navigation-menu-tooltip",
+        "gesture-settings-menu", "gesture-direction-up", "gesture-direction-down",
         "gesture-direction-left", "gesture-direction-right", "gesture-direction-click", "gesture-action-none",
         "gesture-invert-horizontal", "gesture-freeze-pointer", "gesture-settings-footnote",
         "gesture-mode-discrete", "gesture-mode-interactive", "gesture-mode-interactive-note",
