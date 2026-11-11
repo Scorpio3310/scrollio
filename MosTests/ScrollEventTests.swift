@@ -517,6 +517,48 @@ final class ScrollHandoverTests: XCTestCase {
         XCTAssertEqual(ScrollCore.shared.handover.state, .idle)
     }
 
+    // MARK: Wheel to trackpad
+
+    /// A finger that begins to scroll stops Scrollio's glide from the wheel at once; other
+    /// touch phases and the trackpad's glide leave it alone.
+    func testFingerBeginningToScroll_stopsTheWheelGlide() {
+        let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: ScrollDispatchContext())
+        var frames: [ScrollOutgoingFrame] = []
+        poster.frameRecorderForTests = { frames.append($0) }
+        poster.setConfigForTests(simTrackpadEnabled: false)
+        let frameInterval = 1.0 / 60.0
+        var now = 100.0
+        func runFrames(_ count: Int) -> [ScrollStopRequest] {
+            var requests: [ScrollStopRequest] = []
+            for _ in 0..<count {
+                now += frameInterval
+                if let request = poster.displayLinkFrameForTests(frameInterval: frameInterval, now: now) {
+                    requests.append(request)
+                }
+            }
+            return requests
+        }
+
+        XCTAssertFalse(ScrollCore.stopWheelGlide(forTrackpadScrollPhase: 1, poster: poster), "no glide, nothing to stop")
+        let transition = OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: 3.69)
+        poster.inputForTests(ScrollPosterInput(y: 600, x: 0, notch: 90, duration: transition), at: now)
+        XCTAssertTrue(runFrames(6).isEmpty)
+        XCTAssertTrue(poster.isGliding)
+        XCTAssertFalse(frames.isEmpty, "the glide moves the page")
+
+        for phase in [0.0, 2, 4, 8, 128] {
+            XCTAssertFalse(ScrollCore.stopWheelGlide(forTrackpadScrollPhase: phase, poster: poster), "phase \(phase)")
+        }
+        XCTAssertTrue(poster.isGliding)
+
+        XCTAssertTrue(ScrollCore.stopWheelGlide(forTrackpadScrollPhase: 1, poster: poster))
+        XCTAssertFalse(poster.isGliding)
+        let framesAtTheTouch = frames.count
+        XCTAssertTrue(runFrames(60).isEmpty)
+        XCTAssertEqual(frames.count, framesAtTheTouch, "nothing more is posted")
+        XCTAssertEqual(poster.motionStateForTests.buffer.y, 0)
+    }
+
     // MARK: The log
 
     func testLog_saysWhatTheHandOverDid() throws {

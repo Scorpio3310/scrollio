@@ -146,9 +146,15 @@ enum ScrollSystemLog {
         return "handover: the wheel took over a trackpad glide: \(droppedMomentumEvents) momentum events dropped"
     }
 
+    static let fingerTookOverMessage = "handover: a finger on the trackpad took over: the wheel's glide stopped"
+
     static func noteWheelTookOverGlide(droppedMomentumEvents: Int) {
         let line = wheelTookOverMessage(droppedMomentumEvents: droppedMomentumEvents)
         logger.notice("\(line, privacy: .public)")
+    }
+
+    static func noteFingerTookOverWheelGlide() {
+        logger.notice("\(fingerTookOverMessage, privacy: .public)")
     }
 }
 

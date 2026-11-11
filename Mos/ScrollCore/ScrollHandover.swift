@@ -21,10 +21,14 @@ import Foundation
 /// interleaved with the wheel's, until a real "ended" with no delta. So an "ended" that carries
 /// a delta does not end the glide here.
 ///
+/// Wheel to trackpad: `fingerTakesOver(scrollPhase:)`.
+///
 /// Pure. In the app it lives on `ScrollCore` and is used on the main thread only (the scroll
 /// tap's callback); a few comparisons per event, nothing allocated.
 struct ScrollHandover: Equatable {
 
+    /// `scrollPhase` of a finger that begins to scroll (kCGScrollPhaseBegan).
+    static let scrollBegan = 1.0
     /// `momentumPhase` values (kCGMomentumScrollPhaseBegin, Continue, End).
     static let momentumBegan = 1.0
     static let momentumChanged = 2.0
@@ -87,5 +91,11 @@ struct ScrollHandover: Equatable {
         if state == .glide {
             state = .wheelTookOver(dropped: 0)
         }
+    }
+
+    /// Wheel to trackpad: a finger that begins to scroll on the trackpad stops Scrollio's own
+    /// glide from the wheel at once, so only the finger moves the page.
+    static func fingerTakesOver(scrollPhase: Double) -> Bool {
+        return scrollPhase == scrollBegan
     }
 }

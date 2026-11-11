@@ -149,6 +149,12 @@ class ScrollPoster {
     private let rateVerifyRatio = 0.7
     // 主线程访问, 无需锁
     var isAvailable: Bool { return poster != nil }
+    /// Whether a scroll runs: from its first wheel event until its stop.
+    var isGliding: Bool {
+        os_unfair_lock_lock(&stateLock)
+        defer { os_unfair_lock_unlock(&stateLock) }
+        return !sessionLog.isEmpty
+    }
 }
 
 // MARK: - 滚动数据更新控制

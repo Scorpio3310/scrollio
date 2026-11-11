@@ -102,10 +102,14 @@ class ScrollCore: ScrollActionPort {
         // 无法区分黑苹果, 因为黑苹果的触控板驱动直接模拟鼠标输入
         // 无法区分 Magic Mouse, 因为其滚动特征与内置的 Trackpad 一致
         if scrollEvent.isTrackpad() {
-            // Trackpad and wheel together (ScrollHandover): the rest of a trackpad glide the
-            // wheel took over is dropped.
+            // Trackpad and wheel together (ScrollHandover): a finger that begins to scroll
+            // stops the wheel's glide; the rest of a trackpad glide the wheel took over is dropped.
+            let scrollPhase = event.getDoubleValueField(.scrollWheelEventScrollPhase)
+            if ScrollCore.stopWheelGlide(forTrackpadScrollPhase: scrollPhase) {
+                ScrollSystemLog.noteFingerTookOverWheelGlide()
+            }
             switch ScrollCore.shared.handover.trackpadEvent(
-                scrollPhase: event.getDoubleValueField(.scrollWheelEventScrollPhase),
+                scrollPhase: scrollPhase,
                 momentumPhase: event.getDoubleValueField(.scrollWheelEventMomentumPhase),
                 hasDelta: hasVerticalDelta || hasHorizontalDelta
             ) {
@@ -461,6 +465,17 @@ class ScrollCore: ScrollActionPort {
         // 如果点击左键则停止滚动
         ScrollPoster.shared.stop()
         return nil
+    }
+
+    /// Wheel to trackpad: a finger that begins to scroll on the trackpad while Scrollio's glide
+    /// from the wheel still runs stops that glide at once, as a left click does, so that only
+    /// the finger moves the page. Main thread.
+    /// - Returns: whether a glide was stopped.
+    @discardableResult
+    static func stopWheelGlide(forTrackpadScrollPhase scrollPhase: Double, poster: ScrollPoster = .shared) -> Bool {
+        guard ScrollHandover.fingerTakesOver(scrollPhase: scrollPhase), poster.isGliding else { return false }
+        poster.stop()
+        return true
     }
     
     // MARK: - 事件运行管理
