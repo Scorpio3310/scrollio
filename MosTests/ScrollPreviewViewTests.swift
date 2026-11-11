@@ -26,6 +26,8 @@ final class ScrollPreviewViewTests: XCTestCase {
         let view = ScrollPreviewView(frame: NSRect(origin: .zero, size: size ?? self.size))
         view.prefersReducedMotion = { reduceMotion }
         view.reduceMotionDidChange()
+        // The test windows are never shown, so none of them is ever really visible.
+        view.isWindowVisible = { _ in true }
         return view
     }
 
@@ -147,6 +149,39 @@ final class ScrollPreviewViewTests: XCTestCase {
         XCTAssertFalse(view.isTimerRunning, "no window, no timer")
     }
 
+    /// Minimised, hidden or covered by other windows: the demo pauses, and goes on when
+    /// the window shows again. Only its own window counts.
+    func testItPausesWhileItsWindowCannotBeSeen() {
+        var visible = true
+        let view = makeView()
+        view.isWindowVisible = { _ in visible }
+        let window = host(view)
+        view.setAnimating(true)
+        XCTAssertTrue(view.isTimerRunning)
+
+        visible = false
+        NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
+        XCTAssertFalse(view.isTimerRunning, "not while nobody can see it")
+
+        visible = true
+        NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
+        XCTAssertTrue(view.isTimerRunning, "on again once it shows")
+
+        visible = false
+        let other = NSWindow(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: true)
+        other.isReleasedWhenClosed = false
+        NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: other)
+        XCTAssertTrue(view.isTimerRunning, "another window's change is not its own")
+        other.close()
+
+        // By default it asks the window itself: one that was never shown cannot be seen.
+        let plain = ScrollPreviewView(frame: NSRect(origin: .zero, size: size))
+        plain.prefersReducedMotion = { false }
+        host(plain)
+        plain.setAnimating(true)
+        XCTAssertFalse(plain.isTimerRunning)
+    }
+
     func testSetAnimatingStartsAndStopsTheTimer() {
         let view = makeView()
         let window = host(view)
@@ -199,9 +234,9 @@ final class ScrollPreviewViewTests: XCTestCase {
         XCTAssertEqual(view.shownFrame.offset, .zero)
         XCTAssertTrue(view.isTimerRunning)
 
-        // The new scene plays: ten times the speed takes the page much farther.
+        // The new scene plays: the top speed takes the page farther.
         view.showLoop(at: view.loop.out.settleTime + 0.1)
-        XCTAssertEqual(Double(view.shownFrame.offset.y), 3 * 336 * Motion.pointsPerPixel, accuracy: 1e-6)
+        XCTAssertEqual(Double(view.shownFrame.offset.y), 3 * 33.6 * Motion.shownSpeed(10) * Motion.pointsPerPixel, accuracy: 1e-6)
 
         // Setting the same scene again is not a change.
         let time = view.loopTime

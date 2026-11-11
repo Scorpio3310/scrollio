@@ -28,12 +28,14 @@ struct ScrollPreviewMotion {
     static let pixelsPerClick = 33.6
     /// What the "scroll faster" key multiplies a click by.
     static let fasterFactor = 5.0
-    /// Demo points per real pixel. With it three clicks move the page 7 pt at speed 1,
-    /// 19 pt at the default 2.7 and 71 pt at speed 10; five times the default (95 pt)
-    /// still fits into `travel`.
+    /// Demo points per real pixel.
     static let pointsPerPixel = 0.07
     /// How far the demo page can scroll, in points: it is this much longer than its window.
     static let travel = 104.0
+    /// The Speed slider (scroll.speed).
+    static let speedRange = 1.0...10.0
+    /// The share of `travel` a burst with the "faster" key covers at the top speed.
+    static let fastestBurstShare = 0.96
     /// The slider scale of `Scene.duration`.
     static let durationRange = 0.0...5.0
     /// Step of the simulation. The engine's factors are defined per 60 Hz frame and
@@ -148,16 +150,34 @@ struct ScrollPreviewMotion {
         return scene.smoothing && scene.emphasis != .paused
     }
 
-    /// Real pixels (signed) one click with turn +1 moves the page: 33.6 × speed, five times
-    /// that while the "faster" key is held, the other way when reversed. The key only works
-    /// on smoothed scrolling (unsmoothed events pass through the engine untouched).
+    /// Real pixels (signed) one click with turn +1 moves the page: 33.6 × the speed as the
+    /// demo shows it (`shownSpeed`), five times that while the "faster" key is held, the
+    /// other way when reversed. The key only works on smoothed scrolling (unsmoothed events
+    /// pass through the engine untouched).
     static func clickDistance(for scene: ScrollPreviewView.Scene) -> Double {
-        let speed = scene.speed.isFinite ? max(0, scene.speed) : 0
-        var distance = pixelsPerClick * speed
+        var distance = pixelsPerClick * shownSpeed(scene.speed)
         if scene.emphasis == .faster && isEased(scene) {
             distance *= fasterFactor
         }
         return scene.reversed ? -distance : distance
+    }
+
+    /// The speed the demo moves its page at, for a Speed of the slider. The page is only
+    /// `travel` long, and a burst with the "faster" key has to fit into it at the top speed
+    /// while a burst at speed 1 still moves visibly: the demo shows the speed on a
+    /// square-root scale. Three clicks then move the page 6 pt at speed 1, 16 pt at the
+    /// default 6.3 and 20 pt at speed 10, and five times as far with the key (32, 79 and
+    /// 100 pt): "faster" is always five times "normal", and a higher speed always farther.
+    static func shownSpeed(_ speed: Double) -> Double {
+        let clamped = speed.isFinite ? min(speedRange.upperBound, max(0, speed)) : 0
+        return topShownSpeed * (clamped / speedRange.upperBound).squareRoot()
+    }
+
+    /// The shown speed of the top of the slider: a burst with the key covers
+    /// `fastestBurstShare` of the page.
+    static var topShownSpeed: Double {
+        let burst = fasterFactor * Double(ScrollPreviewLoop.clicksPerBurst) * pixelsPerClick * pointsPerPixel
+        return travel * fastestBurstShare / burst
     }
 
     /// The engine's per-frame factor for a Duration on the slider scale.

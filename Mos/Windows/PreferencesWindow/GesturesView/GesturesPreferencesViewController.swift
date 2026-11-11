@@ -229,9 +229,10 @@ final class GesturesPreferencesViewController: NSViewController {
             directionRows[slot.rawValue].isEnabled = presentation.areHorizontalActionsEditable
         }
 
-        // A refresh arriving mid-drag must not snap the knob back. A stored speed between two
-        // ticks shows on the nearer one and stays as stored until the slider is moved.
-        if !PreferencesForm.isTrackingMouse {
+        // A refresh arriving while the user drags the knob must not snap it back. A stored
+        // speed between two ticks shows on the nearer one and stays as stored until the
+        // slider is moved.
+        if !trackingSpeedRow.isTracking {
             trackingSpeedRow.showValue(gesture.trackingSpeed)
         }
         trackingSpeedRow.valueText = MouseGestureTrackingSpeed.text(gesture.trackingSpeed)

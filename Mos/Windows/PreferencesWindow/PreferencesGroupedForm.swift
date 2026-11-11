@@ -716,10 +716,39 @@ struct PreferencesSliderScale: Equatable {
 /// The slider of a PreferencesSliderRow. With a scale it has the scale's tick marks under
 /// its track, its knob moves through the scale's values while it is dragged, and an arrow
 /// key (or VoiceOver's increment) moves it by one value and sends the action as a drag does.
+///
+/// It knows when the user drags its own knob (`isTracking`): a pane leaves only that
+/// knob alone while it refreshes, never the others, and never because some other mouse
+/// button happens to be down. When the user lets go it sends its action once more, no
+/// longer tracking: the pane then shows the stored value and does what belongs to a
+/// finished move (the Mouse pane's sample pulse).
 final class PreferencesSlider: NSSlider {
 
     var scale: PreferencesSliderScale? {
         didSet { applyScale() }
+    }
+
+    /// True between the user pressing on the slider and letting go.
+    private(set) var isTracking = false
+
+    /// The user pressed on the slider. `mouseDown` calls it; tests call it to stand in
+    /// for a drag.
+    func beginTracking() {
+        isTracking = true
+    }
+
+    /// The user let go: the action goes out once more, with `isTracking` false.
+    func endTracking() {
+        guard isTracking else { return }
+        isTracking = false
+        sendAction(action, to: target)
+    }
+
+    /// NSSlider tracks the mouse in here until the button goes up.
+    override func mouseDown(with event: NSEvent) {
+        beginTracking()
+        super.mouseDown(with: event)
+        endTracking()
     }
 
     /// The slider's range as set.
@@ -894,6 +923,11 @@ final class PreferencesSliderRow: PreferencesGroupRow {
     /// stops only there. The value itself is left alone.
     func showValue(_ value: Double) {
         slider.showValue(value)
+    }
+
+    /// The user is dragging this row's knob: a refresh leaves the knob where it is.
+    var isTracking: Bool {
+        return slider.isTracking
     }
 
     /// The value written next to the slider.

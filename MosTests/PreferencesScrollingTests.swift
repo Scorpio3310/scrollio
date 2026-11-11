@@ -738,6 +738,31 @@ final class PreferencesScrollingTests: XCTestCase {
 
     // MARK: - Preview
 
+    /// A refresh leaves only the knob the user is dragging alone; every other knob shows
+    /// its stored value at once, and the dragged one too once it is let go.
+    func testARefreshLeavesOnlyTheDraggedKnobAlone() {
+        let controller = makeController(advanced: true)
+        let speed = controller.scrollSpeedSlider as! PreferencesSlider
+        speed.beginTracking()
+        drag(speed, to: 8)
+        XCTAssertEqual(Options.shared.scroll.speed, 8)
+
+        Options.shared.scroll.speed = 3
+        Options.shared.scroll.duration = 1.5
+        controller.syncViewWithOptions()
+        XCTAssertEqual(speed.doubleValue, 8, accuracy: 1e-9, "under the pointer")
+        XCTAssertEqual(controller.glideTimeSlider.doubleValue, 1.5, accuracy: 1e-9, "not being dragged")
+
+        // Let go: the slider's last action stores where it was left, and the knob shows it.
+        speed.endTracking()
+        XCTAssertFalse(speed.isTracking)
+        XCTAssertEqual(Options.shared.scroll.speed, 8)
+        XCTAssertEqual(speed.doubleValue, 8, accuracy: 1e-9)
+        Options.shared.scroll.speed = 3
+        controller.syncViewWithOptions()
+        XCTAssertEqual(speed.doubleValue, 3, accuracy: 1e-9)
+    }
+
     func testPreviewFollowsTheOptions() {
         let controller = makeController()
         var expected = ScrollPreviewView.Scene()

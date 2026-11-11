@@ -45,9 +45,6 @@ final class MousePreferencesViewController: NSViewController {
     /// Where the mice come from; tests and renders replace it with fixtures.
     var deviceSource: MouseDeviceSource = .live
 
-    /// True while a slider is being dragged. A seam for the tests.
-    var isTrackingMouse: () -> Bool = { PreferencesForm.isTrackingMouse }
-
     /// How long the "On the mouse" line of a setting the user just changed waits, so it does
     /// not flash up while the mouse takes the new value.
     var readbackSettleTime: TimeInterval = 1.5
@@ -196,7 +193,13 @@ final class MousePreferencesViewController: NSViewController {
         // `mouseStateChanged`.
         reloadDevices()
         deviceSource.refresh()
-        firstResponderObservation = view.window?.observe(\.firstResponder, options: [.new]) { [weak self] window, _ in
+    }
+
+    /// The pane is in its window only now: opened from the sidebar it has none yet in
+    /// `viewWillAppear`. From here on the focused control lights up its part.
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        firstResponderObservation = view.window?.observe(\.firstResponder, options: [.initial, .new]) { [weak self] window, _ in
             self?.firstResponderDidChange(window.firstResponder)
         }
     }
@@ -227,8 +230,8 @@ final class MousePreferencesViewController: NSViewController {
         syncControls()
     }
 
-    /// Puts the stored settings and what the mice report into the controls. A slider that is
-    /// being dragged keeps its knob where the pointer has it.
+    /// Puts the stored settings and what the mice report into the controls. A slider the
+    /// user is dragging keeps its knob where the pointer has it; every other one follows.
     func syncControls() {
         guard isViewLoaded else { return }
         let options = Options.shared
@@ -239,14 +242,13 @@ final class MousePreferencesViewController: NSViewController {
             heldReadbacks: heldReadbacks
         )
         self.model = model
-        let dragging = isTrackingMouse()
 
         headerView.content = model.header
         noMouseSection.isHidden = model.hasMouse
         managedSection.isHidden = !model.hasMouse
         managedRow.isOn = model.managed
 
-        apply(model.pointerSpeed, to: pointerSpeedRow, hint: "mouse-pointer-speed-hint", dragging: dragging)
+        apply(model.pointerSpeed, to: pointerSpeedRow, hint: "mouse-pointer-speed-hint")
 
         if let mode = model.wheelMode {
             wheelModeRow.isHidden = false
@@ -256,8 +258,8 @@ final class MousePreferencesViewController: NSViewController {
         } else {
             wheelModeRow.isHidden = true
         }
-        apply(model.sensitivity, to: sensitivityRow, hint: "mouse-wheel-sensitivity-hint", dragging: dragging)
-        apply(model.firmness, to: firmnessRow, hint: "mouse-wheel-force-hint", dragging: dragging)
+        apply(model.sensitivity, to: sensitivityRow, hint: "mouse-wheel-sensitivity-hint")
+        apply(model.firmness, to: firmnessRow, hint: "mouse-wheel-force-hint")
 
         if let haptics = model.haptics {
             hapticsRow.isHidden = false
@@ -267,8 +269,8 @@ final class MousePreferencesViewController: NSViewController {
         } else {
             hapticsRow.isHidden = true
         }
-        apply(model.strength, to: strengthRow, hint: "mouse-haptics-strength-hint", dragging: dragging)
-        apply(model.pressForce, to: pressForceRow, hint: "mouse-press-force-hint", dragging: dragging)
+        apply(model.strength, to: strengthRow, hint: "mouse-haptics-strength-hint")
+        apply(model.pressForce, to: pressForceRow, hint: "mouse-press-force-hint")
 
         for section in [pointerSection!, wheelSection!, hapticsSection!] {
             section.isHidden = !model.hasMouse || section.box.visibleRows.isEmpty
@@ -298,16 +300,16 @@ final class MousePreferencesViewController: NSViewController {
             + settingRows.map { row in (row.explanation ?? "").filter { $0 == "\n" }.count }
     }
 
-    private func apply(_ slider: MousePaneModel.Slider?, to row: PreferencesSliderRow, hint: String, dragging: Bool) {
+    private func apply(_ slider: MousePaneModel.Slider?, to row: PreferencesSliderRow, hint: String) {
         guard let slider else {
             row.isHidden = true
             return
         }
         row.isHidden = false
         let control = row.slider
-        // Moving the range or the ticks would move the knob: not while it is dragged. The
-        // knob goes to the tick nearest the value; the value itself is not rewritten.
-        if !dragging {
+        // Moving the range or the ticks would move the knob: not while the user drags it.
+        // The knob goes to the tick nearest the value; the value itself is not rewritten.
+        if !row.isTracking {
             if control.minValue != slider.range.lowerBound { control.minValue = slider.range.lowerBound }
             if control.maxValue != slider.range.upperBound { control.maxValue = slider.range.upperBound }
             if row.scale != slider.scale { row.scale = slider.scale }
@@ -465,8 +467,9 @@ final class MousePreferencesViewController: NSViewController {
         updateMouseSettings(.haptics) { $0.hapticsOn = on }
     }
 
-    /// Stores the strength as it moves; once the slider is let go (or an arrow key moved it)
-    /// the mouse plays one pulse at the new strength.
+    /// Stores the strength as it moves; once the slider is let go (its last action, no
+    /// longer tracking) or an arrow key moved it, the mouse plays one pulse at the new
+    /// strength.
     @objc func strengthChanged(_ sender: NSSlider) {
         let value: Int
         if let choices = model.strengthChoices, !choices.isEmpty {
@@ -476,7 +479,7 @@ final class MousePreferencesViewController: NSViewController {
         }
         updateMouseSettings(.strength) { $0.hapticStrength = value }
         strengthRow.valueText = MouseText.percent(value)
-        if !isTrackingMouse() {
+        if !strengthRow.isTracking {
             deviceSource.playHapticSample()
         }
     }

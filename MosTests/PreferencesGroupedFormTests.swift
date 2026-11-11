@@ -469,6 +469,34 @@ final class PreferencesGroupedFormTests: XCTestCase {
         XCTAssertEqual(recorder.values.last, 80)
     }
 
+    /// The slider knows when the user drags its own knob, and sends its action once more
+    /// when it is let go, no longer tracking.
+    func testASliderKnowsWhenItsKnobIsDragged() {
+        let target = ActionCounter()
+        let row = PreferencesSliderRow(title: "Speed", range: 0...10, scale: .ticks(11, step: 1), target: target, action: #selector(ActionCounter.act(_:)))
+        let slider = row.slider
+        XCTAssertFalse(slider.isTracking)
+        XCTAssertFalse(row.isTracking)
+
+        slider.beginTracking()
+        XCTAssertTrue(row.isTracking)
+        slider.doubleValue = 4.4
+        XCTAssertTrue(slider.sendAction(slider.action, to: slider.target))
+        XCTAssertEqual(target.trackingStates, [true])
+
+        slider.endTracking()
+        XCTAssertFalse(row.isTracking)
+        XCTAssertEqual(target.trackingStates, [true, false], "let go: the action once more")
+        XCTAssertEqual(target.values.last ?? -1, 4, accuracy: 1e-9)
+
+        // Ending twice, or without a drag, sends nothing.
+        slider.endTracking()
+        XCTAssertEqual(target.trackingStates.count, 2)
+        // An arrow key is a move outside a drag.
+        XCTAssertTrue(slider.moveKnob(by: 1))
+        XCTAssertEqual(target.trackingStates.last, false)
+    }
+
     func testADragDeliversValuesOfTheScale() {
         let recorder = ActionRecorder()
         let row = PreferencesSliderRow(
@@ -685,5 +713,16 @@ final class PreferencesGroupedFormTests: XCTestCase {
         XCTAssertEqual(frame(of: button, in: root).maxX, paneWidth - Form.margin, accuracy: 1)
         XCTAssertEqual(button.bezelStyle, .push)
         XCTAssertEqual(button.controlSize, .regular)
+    }
+}
+
+/// Records what a slider's action saw.
+private final class ActionCounter: NSObject {
+    private(set) var trackingStates: [Bool] = []
+    private(set) var values: [Double] = []
+
+    @objc func act(_ sender: PreferencesSlider) {
+        trackingStates.append(sender.isTracking)
+        values.append(sender.doubleValue)
     }
 }

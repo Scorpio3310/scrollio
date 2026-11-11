@@ -240,7 +240,6 @@ final class PreferencesWindowRenderTests: XCTestCase {
             guard let mouse = preferences.controller(for: MousePreferencesViewController.tabIdentifier)
                 as? MousePreferencesViewController else { return }
             mouse.deviceSource = MouseDeviceSource(deviceStates: { devices }, refresh: {}, showDiagnostics: {})
-            mouse.isTrackingMouse = { false }
             mouse.readbackSettleTime = 0
         }, afterLoad: { controller in
             (controller as? MousePreferencesViewController)?.reloadDevices()

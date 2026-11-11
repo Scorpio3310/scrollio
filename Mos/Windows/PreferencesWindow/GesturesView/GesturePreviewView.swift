@@ -8,8 +8,9 @@
 //
 //  The view only keeps time: it asks GesturePreviewLoop for the picture at the current
 //  moment and hands it to the artwork (GesturePreviewArtwork.swift). Nothing runs while it
-//  is not asked to animate, has no window, or Reduce Motion is on. It is a drawing: it
-//  never runs an action or touches Spaces.
+//  is not asked to animate, has no window, its window cannot be seen (minimised, hidden, or
+//  covered by other windows), or Reduce Motion is on. It is a drawing: it never runs an
+//  action or touches Spaces.
 //
 
 import Cocoa
@@ -33,6 +34,12 @@ final class GesturePreviewView: NSView {
     /// Reduce Motion in System Settings › Accessibility. A seam for the tests; call
     /// `reduceMotionDidChange()` after replacing it.
     var prefersReducedMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    /// Some of `window` shows on screen: not minimised, not hidden, not covered by other
+    /// windows. A seam for the tests; call `occlusionDidChange()` after replacing it.
+    var isWindowVisible: (NSWindow) -> Bool = { $0.occlusionState.contains(.visible) }
+    /// The window whose occlusion is followed.
+    private weak var observedWindow: NSWindow?
 
     private(set) var loop = GesturePreviewLoop(scene: GesturePreviewScene())
     /// The moment of the loop that is on screen (seconds from its start).
@@ -63,6 +70,7 @@ final class GesturePreviewView: NSView {
     deinit {
         frameLink?.invalidate()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
+        NotificationCenter.default.removeObserver(self)
     }
 
     private func setUp() {
@@ -96,7 +104,23 @@ final class GesturePreviewView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        observeOcclusion(of: window)
         updateTimer()
+    }
+
+    /// Follows whether the window can be seen: the demo pauses while it cannot.
+    private func observeOcclusion(of window: NSWindow?) {
+        guard window !== observedWindow else { return }
+        if let old = observedWindow {
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: old)
+        }
+        observedWindow = window
+        if let window {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(occlusionDidChange),
+                name: NSWindow.didChangeOcclusionStateNotification, object: window
+            )
+        }
     }
 
     // MARK: - Running
@@ -116,10 +140,16 @@ final class GesturePreviewView: NSView {
         updateTimer()
     }
 
+    /// The window was minimised, hidden or covered, or shows again.
+    @objc func occlusionDidChange() {
+        updateTimer()
+    }
+
     /// Starts or stops the timer. Stopped, the picture rests: at the start of the loop, or,
     /// with Reduce Motion, on the still frame.
     private func updateTimer() {
-        let shouldRun = wantsAnimation && window != nil && !prefersReducedMotion()
+        let visible = window.map(isWindowVisible) ?? false
+        let shouldRun = wantsAnimation && visible && !prefersReducedMotion()
         if shouldRun {
             guard frameLink == nil else { return }
             loopOrigin = nil

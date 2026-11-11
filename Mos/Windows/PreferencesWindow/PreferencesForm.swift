@@ -260,12 +260,6 @@ enum PreferencesForm {
         return button
     }
 
-    /// True while a slider is being dragged (continuous actions arrive in between).
-    static var isTrackingMouse: Bool {
-        guard let type = NSApp?.currentEvent?.type else { return false }
-        return type == .leftMouseDown || type == .leftMouseDragged
-    }
-
     /// Clamps a slider value into `range` and rounds it to the nearest `step` from the lower bound.
     static func snapped(_ value: Double, to range: ClosedRange<Double>, step: Double) -> Double {
         guard value.isFinite else { return range.lowerBound }

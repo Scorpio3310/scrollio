@@ -21,7 +21,7 @@ final class ScrollPreviewMotionTests: XCTestCase {
 
     private func scene(
         _ emphasis: ScrollPreviewView.Emphasis = .wheel, smoothing: Bool = true,
-        duration: Double = 3.67, speed: Double = 2.7, reversed: Bool = false
+        duration: Double = 3.69, speed: Double = 6.3, reversed: Bool = false
     ) -> ScrollPreviewView.Scene {
         var scene = ScrollPreviewView.Scene()
         scene.emphasis = emphasis
@@ -34,7 +34,7 @@ final class ScrollPreviewMotionTests: XCTestCase {
 
     /// Demo points one click moves the page at `speed`.
     private func points(perClickAt speed: Double) -> Double {
-        return 33.6 * speed * Motion.pointsPerPixel
+        return 33.6 * Motion.shownSpeed(speed) * Motion.pointsPerPixel
     }
 
     /// When the motion has covered `fraction` of its way.
@@ -63,8 +63,8 @@ final class ScrollPreviewMotionTests: XCTestCase {
         for emphasis in [ScrollPreviewView.Emphasis.wheel, .faster, .sideways, .paused] {
             for smoothing in [true, false] {
                 for reversed in [false, true] {
-                    for speed in [1.0, 2.7, 10.0] {
-                        for duration in [0.0, 3.67, 5.0] {
+                    for speed in [1.0, 6.3, 10.0] {
+                        for duration in [0.0, 3.69, 5.0] {
                             scenes.append(scene(emphasis, smoothing: smoothing, duration: duration, speed: speed, reversed: reversed))
                         }
                     }
@@ -76,32 +76,43 @@ final class ScrollPreviewMotionTests: XCTestCase {
 
     // MARK: - The scale
 
+    /// The demo's defaults are the scroll options' defaults (they were left at an old
+    /// tuning, 3.67 and 2.7).
     func testTheDefaultSceneIsTheDefaultFeel() {
         let scene = ScrollPreviewView.Scene()
+        let options = OPTIONS_SCROLL_DEFAULT()
         XCTAssertTrue(scene.smoothing)
-        XCTAssertEqual(scene.duration, 3.67)
-        XCTAssertEqual(scene.speed, 2.7)
+        XCTAssertEqual(scene.duration, options.duration)
+        XCTAssertEqual(scene.speed, options.speed)
+        XCTAssertEqual(scene.duration, 3.69)
+        XCTAssertEqual(scene.speed, 6.3)
         XCTAssertFalse(scene.reversed)
         XCTAssertEqual(scene.emphasis, .wheel)
     }
 
-    /// One click is 33.6 × speed real pixels, shown at a fixed scale.
-    func testAClickIsTheEnginesStepTimesTheSpeed() {
-        XCTAssertEqual(Motion.clickDistance(for: scene(speed: 1)), 33.6, accuracy: 1e-12)
-        XCTAssertEqual(Motion.clickDistance(for: scene(speed: 2.7)), 90.72, accuracy: 1e-12)
-        XCTAssertEqual(Motion.clickDistance(for: scene(speed: 10)), 336, accuracy: 1e-12)
-        let motion = Motion(scene: scene(speed: 2.7), clicks: [Click(time: 0.1, turn: 1)])
-        XCTAssertEqual(motion.end, 90.72 * Motion.pointsPerPixel, accuracy: 1e-9)
+    /// One click is the engine's 33.6 px times the speed on the demo's square-root scale.
+    func testAClickIsTheEnginesStepTimesTheShownSpeed() {
+        let top = Motion.topShownSpeed
+        XCTAssertEqual(Motion.shownSpeed(10), top, accuracy: 1e-12)
+        XCTAssertEqual(Motion.shownSpeed(2.5), top / 2, accuracy: 1e-12)
+        XCTAssertEqual(Motion.shownSpeed(0), 0)
+        XCTAssertEqual(Motion.shownSpeed(.nan), 0)
+        XCTAssertEqual(Motion.clickDistance(for: scene(speed: 6.3)), 33.6 * Motion.shownSpeed(6.3), accuracy: 1e-12)
+        let motion = Motion(scene: scene(), clicks: [Click(time: 0.1, turn: 1)])
+        XCTAssertEqual(motion.end, 33.6 * Motion.shownSpeed(6.3) * Motion.pointsPerPixel, accuracy: 1e-9)
     }
 
     /// The scale leaves both ends of the Speed slider readable: a burst moves the page a
-    /// clearly visible distance at speed 1 and still fits into the page at speed 10.
+    /// clearly visible distance at speed 1, and five times that with the "faster" key still
+    /// fits into the page at speed 10.
     func testSpeedOneAndSpeedTenAreBothReadable() {
         let slow = Motion(scene: scene(speed: 1), clicks: burst)
         let fast = Motion(scene: scene(speed: 10), clicks: burst)
+        let fastest = Motion(scene: scene(.faster, speed: 10), clicks: burst)
         XCTAssertGreaterThanOrEqual(slow.end, 6)
-        XCTAssertLessThan(fast.end, Motion.travel)
-        XCTAssertEqual(fast.end, 10 * slow.end, accuracy: 1e-9)
+        XCTAssertEqual(fast.end, 10.0.squareRoot() * slow.end, accuracy: 1e-9)
+        XCTAssertLessThan(fastest.end, Motion.travel)
+        XCTAssertEqual(fastest.end, 5 * fast.end, accuracy: 1e-9)
     }
 
     func testAHigherSpeedMovesFarther() {
@@ -120,7 +131,7 @@ final class ScrollPreviewMotionTests: XCTestCase {
         var lastSettle = 0.0
         for duration in [1.0, 2.0, 3.0, 3.67, 4.35, 5.0] {
             let motion = Motion(scene: scene(duration: duration), clicks: burst)
-            XCTAssertEqual(motion.end, 3 * points(perClickAt: 2.7), accuracy: 1e-9, "the distance does not depend on the duration")
+            XCTAssertEqual(motion.end, 3 * points(perClickAt: 6.3), accuracy: 1e-9, "the distance does not depend on the duration")
             XCTAssertGreaterThan(motion.settleTime, lastSettle, "duration \(duration)")
             lastSettle = motion.settleTime
         }
@@ -148,7 +159,7 @@ final class ScrollPreviewMotionTests: XCTestCase {
             while Double(frame + 1) * interval < motion.settleTime {
                 frame += 1
                 let time = Double(frame) * interval
-                target = Double(burst.filter { $0.time <= time }.count) * 90.72
+                target = Double(burst.filter { $0.time <= time }.count) * Motion.clickDistance(for: scene)
                 let step = (target - position) * transition
                 position += step
                 offset += filter.fill(with: (y: step, x: 0), weight: weight).y * Motion.pointsPerPixel
@@ -171,7 +182,7 @@ final class ScrollPreviewMotionTests: XCTestCase {
             var reached: [Double: Double] = [:]
             for frame in 1...600 {
                 let time = Double(frame) / 60
-                target = Double(burst.filter { $0.time <= time }.count) * 90.72
+                target = Double(burst.filter { $0.time <= time }.count) * Motion.clickDistance(for: scene)
                 let step = (target - position) * factor
                 position += step
                 offset += filter.fill(with: (y: step, x: 0), weight: weight).y * Motion.pointsPerPixel
@@ -191,7 +202,7 @@ final class ScrollPreviewMotionTests: XCTestCase {
 
     func testTheEasedPageNeverJumpsAndNeverTurnsBack() {
         let motion = Motion(scene: scene(), clicks: burst)
-        let click = points(perClickAt: 2.7)
+        let click = points(perClickAt: 6.3)
         var last = motion.value(at: 0)
         for frame in 1...Int(motion.settleTime * 240) + 10 {
             let value = motion.value(at: Double(frame) / 240)
@@ -205,7 +216,7 @@ final class ScrollPreviewMotionTests: XCTestCase {
     func testDurationZeroLandsAtOnce() {
         let motion = Motion(scene: scene(duration: 0), clicks: burst)
         XCTAssertEqual(motion.settleTime, 0.4, accuracy: 2 * Motion.frameInterval)
-        XCTAssertEqual(motion.end, 3 * points(perClickAt: 2.7), accuracy: 1e-9)
+        XCTAssertEqual(motion.end, 3 * points(perClickAt: 6.3), accuracy: 1e-9)
     }
 
     func testADurationOutsideTheSliderIsClamped() {
@@ -223,7 +234,7 @@ final class ScrollPreviewMotionTests: XCTestCase {
 
     func testSmoothingOffJumpsExactlyOneClickPerClick() {
         let motion = Motion(scene: scene(smoothing: false), clicks: burst)
-        let click = points(perClickAt: 2.7)
+        let click = points(perClickAt: 6.3)
         XCTAssertEqual(motion.value(at: 0.099), 0)
         XCTAssertEqual(motion.value(at: 0.1), click, accuracy: 1e-12)
         XCTAssertEqual(motion.value(at: 0.249), click, accuracy: 1e-12)
@@ -255,19 +266,22 @@ final class ScrollPreviewMotionTests: XCTestCase {
         let faster = Motion(scene: scene(.faster), clicks: one)
         XCTAssertEqual(faster.end, 5 * plain.end, accuracy: 1e-9)
 
-        // A whole burst at the default speed still fits into the page…
-        let burstPlain = Motion(scene: scene(), clicks: burst)
-        let burstFaster = Motion(scene: scene(.faster), clicks: burst)
-        XCTAssertEqual(burstFaster.end, 5 * burstPlain.end, accuracy: 1e-9)
-        XCTAssertLessThan(burstFaster.end, Motion.travel)
-        // …and at a high speed it stops at the end of the page.
-        XCTAssertEqual(Motion(scene: scene(.faster, speed: 10), clicks: burst).end, Motion.travel)
+        // A whole burst is five times as far at every speed of the slider: the page never
+        // stops at its end first, so "faster" is always a clear five times "normal" (at the
+        // default 6.3 it was about 2.3 times when the demo was tuned for 2.7).
+        for speed in stride(from: 1.0, through: 10.0, by: 0.5) {
+            let burstPlain = Motion(scene: scene(speed: speed), clicks: burst)
+            let burstFaster = Motion(scene: scene(.faster, speed: speed), clicks: burst)
+            XCTAssertEqual(burstFaster.end, 5 * burstPlain.end, accuracy: 1e-9, "speed \(speed)")
+            XCTAssertLessThan(burstFaster.end, Motion.travel, "speed \(speed)")
+            XCTAssertGreaterThanOrEqual(burstFaster.end - burstPlain.end, 20, "speed \(speed): a clear difference")
+        }
     }
 
     /// The key multiplies smoothed scrolling only: unsmoothed events pass the engine untouched.
     func testFasterNeedsSmoothing() {
         let off = Motion(scene: scene(.faster, smoothing: false), clicks: burst)
-        XCTAssertEqual(off.end, 3 * points(perClickAt: 2.7), accuracy: 1e-12)
+        XCTAssertEqual(off.end, 3 * points(perClickAt: 6.3), accuracy: 1e-12)
     }
 
     func testSidewaysMovesOnlyX() {
@@ -298,7 +312,7 @@ final class ScrollPreviewMotionTests: XCTestCase {
         }
         XCTAssertGreaterThan(plain.end, middle)
         XCTAssertLessThan(reversed.end, middle)
-        XCTAssertEqual(Motion.clickDistance(for: scene(reversed: true)), -90.72, accuracy: 1e-12)
+        XCTAssertEqual(Motion.clickDistance(for: scene(reversed: true)), -33.6 * Motion.shownSpeed(6.3), accuracy: 1e-12)
     }
 
     func testAClickAwayFromTheHandGoesBack() {
@@ -313,7 +327,7 @@ final class ScrollPreviewMotionTests: XCTestCase {
         XCTAssertEqual(Motion(scene: scene(), clicks: burst).start, 0)
         XCTAssertEqual(Motion(scene: scene(reversed: true), clicks: burst).start, Motion.travel)
         XCTAssertEqual(Motion(scene: scene(), clicks: [Click(time: 0, turn: -1)]).start, Motion.travel)
-        XCTAssertEqual(Motion(scene: scene(reversed: true), clicks: burst).end, Motion.travel - 3 * points(perClickAt: 2.7), accuracy: 1e-9)
+        XCTAssertEqual(Motion(scene: scene(reversed: true), clicks: burst).end, Motion.travel - 3 * points(perClickAt: 6.3), accuracy: 1e-9)
         XCTAssertEqual(Motion(scene: scene(), clicks: []).end, 0)
     }
 
@@ -346,7 +360,7 @@ final class ScrollPreviewMotionTests: XCTestCase {
     }
 
     func testThePageStopsAtItsEnd() {
-        let motion = Motion(scene: scene(speed: 10), clicks: (0..<8).map { Click(time: 0.1 + Double($0) * 0.1, turn: 1) })
+        let motion = Motion(scene: scene(.faster, speed: 10), clicks: (0..<8).map { Click(time: 0.1 + Double($0) * 0.1, turn: 1) })
         XCTAssertEqual(motion.end, Motion.travel)
         XCTAssertEqual(motion.value(at: motion.settleTime + 1), Motion.travel)
         XCTAssertLessThan(motion.value(at: 0.15), Motion.travel)
