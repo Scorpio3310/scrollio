@@ -257,15 +257,15 @@ class PreferencesApplicationViewController: NSViewController {
     }
 
     private func makeRow(_ application: Application, id: String) -> PreferencesListRow {
-        let path = application.path
+        let name = application.getName()
         let row = ApplicationListRow(
             id: id,
-            title: application.getName(),
+            title: name,
             explanation: Self.explanation(for: application),
             icon: .image(application.getIcon()),
             showsChevron: true
         )
-        row.toolTip = path
+        row.toolTip = ApplicationDetailViewController.toolTip(name: name, path: application.path)
         row.onChevronClick = { [weak self] in self?.openApplication(withID: id) }
         return row
     }
