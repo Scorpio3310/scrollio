@@ -135,15 +135,27 @@ class PreferencesTabViewController: NSTabViewController {
     // 更新窗口尺寸以适应当前内容
     func updateWindowSize() {
         if let currentWindow = view.window, let currentContentView = tabView.subviews.first {
-            let windowSize = currentWindow.frame.size
-            let contentSize = currentContentView.frame.size
-            let heightDiff = contentSize.height + TOOLBAR_HEIGHT + MACOS_TAHOE_COMPENSATE - windowSize.height
-            let targetOrigin = NSPoint(x: currentWindow.frame.origin.x, y: currentWindow.frame.origin.y - heightDiff)
-            let targetSize = NSSize(width: contentSize.width, height: contentSize.height + TOOLBAR_HEIGHT + MACOS_TAHOE_COMPENSATE)
-            let targetRect = NSRect(origin: targetOrigin, size: targetSize)
+            let targetRect = Self.windowFrame(
+                forContentSize: currentContentView.frame.size,
+                from: currentWindow.frame,
+                visibleFrame: currentWindow.screen?.visibleFrame
+            )
             Utils.groupAnimatorContainer({(context) in
                 currentWindow.setFrame(targetRect, display: true)
             })
         }
+    }
+
+    /// The window frame for a pane of `contentSize`: the top edge stays where it is and the
+    /// window grows or shrinks at the bottom. A window that would reach below the visible
+    /// screen (a tall pane, such as Scrolling with "Advanced" open) moves up instead, as far
+    /// as the top of the screen allows, so its last rows stay reachable.
+    static func windowFrame(forContentSize contentSize: NSSize, from frame: NSRect, visibleFrame: NSRect?) -> NSRect {
+        let height = contentSize.height + TOOLBAR_HEIGHT + MACOS_TAHOE_COMPENSATE
+        var target = NSRect(x: frame.origin.x, y: frame.maxY - height, width: contentSize.width, height: height)
+        if let visible = visibleFrame, target.minY < visible.minY {
+            target.origin.y = max(target.minY, min(visible.minY, visible.maxY - height))
+        }
+        return target
     }
 }

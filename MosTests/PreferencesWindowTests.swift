@@ -65,6 +65,62 @@ final class PreferencesTabsTests: XCTestCase {
         }
     }
 
+    func testWindowKeepsItsTopEdgeWhenAPaneChangesHeight() {
+        let chrome = TOOLBAR_HEIGHT + MACOS_TAHOE_COMPENSATE
+        let screen = NSRect(x: 0, y: 80, width: 1512, height: 870)
+        let window = NSRect(x: 300, y: 500, width: 450, height: 300 + chrome)
+
+        // Taller: the bottom edge moves down.
+        let taller = PreferencesTabViewController.windowFrame(
+            forContentSize: NSSize(width: 450, height: 500), from: window, visibleFrame: screen
+        )
+        XCTAssertEqual(taller.maxY, window.maxY)
+        XCTAssertEqual(taller.height, 500 + chrome)
+        XCTAssertEqual(taller.origin.x, 300)
+        XCTAssertEqual(taller.width, 450)
+
+        // Shorter: the bottom edge moves up.
+        let shorter = PreferencesTabViewController.windowFrame(
+            forContentSize: NSSize(width: 450, height: 200), from: window, visibleFrame: screen
+        )
+        XCTAssertEqual(shorter.maxY, window.maxY)
+        XCTAssertEqual(shorter.height, 200 + chrome)
+
+        // Without a screen nothing else is done.
+        let offScreen = PreferencesTabViewController.windowFrame(
+            forContentSize: NSSize(width: 450, height: 2000), from: window, visibleFrame: nil
+        )
+        XCTAssertEqual(offScreen.maxY, window.maxY)
+    }
+
+    func testWindowMovesUpWhenATallPaneWouldReachBelowTheScreen() {
+        let chrome = TOOLBAR_HEIGHT + MACOS_TAHOE_COMPENSATE
+        let screen = NSRect(x: 0, y: 80, width: 1512, height: 870)
+        let window = NSRect(x: 300, y: 500, width: 450, height: 300 + chrome)
+
+        // 780 pt of content would end below the Dock: the window moves up to stand on it.
+        let tall = PreferencesTabViewController.windowFrame(
+            forContentSize: NSSize(width: 450, height: 780), from: window, visibleFrame: screen
+        )
+        XCTAssertEqual(tall.height, 780 + chrome)
+        XCTAssertEqual(tall.minY, screen.minY)
+        XCTAssertLessThanOrEqual(tall.maxY, screen.maxY)
+
+        // Taller than the screen: the title bar stays reachable, the rest hangs below.
+        let huge = PreferencesTabViewController.windowFrame(
+            forContentSize: NSSize(width: 450, height: 1200), from: window, visibleFrame: screen
+        )
+        XCTAssertEqual(huge.maxY, screen.maxY)
+        XCTAssertLessThan(huge.minY, screen.minY)
+
+        // A window that already hangs below the screen is never moved down.
+        let low = NSRect(x: 300, y: 20, width: 450, height: 300 + chrome)
+        let same = PreferencesTabViewController.windowFrame(
+            forContentSize: NSSize(width: 450, height: 300), from: low, visibleFrame: screen
+        )
+        XCTAssertEqual(same.minY, screen.minY, "it only moves up to the visible edge")
+    }
+
     func testCodeBuiltTabsUseTheirOwnControllers() throws {
         let tabs = try makeTabs()
         let controllers = Dictionary(uniqueKeysWithValues: tabs.tabViewItems.compactMap { item -> (String, NSViewController)? in
