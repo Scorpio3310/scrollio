@@ -504,6 +504,12 @@ class LogiDeviceSession {
     private var bleStandardUndivertGuardGeneration = 0
     private var bleStandardUndivertGuardTargets: Set<UInt16> = []
     private var pendingBLEUndivertGuardQueries: [UInt16: PendingControlReportingQuery] = [:]
+    /// The reporting query that runs follows a discovery (a connection, or features found
+    /// again), not a refresh for the UI. Only after a discovery are leftover diverts looked for.
+    private var reportingQueryFollowsDiscovery = false
+    /// Set by `divertBoundControls` around the prime that follows a discovery: that
+    /// `applyUsage` also gives back leftover diverts (`staleDivertDecision`).
+    private var staleDivertCheckDue = false
 
     struct RecordingDivertPlan: Equatable {
         let desired: Set<UInt16>
@@ -585,7 +591,23 @@ class LogiDeviceSession {
             policy: policy
         )
         let toDivert = targetCIDs.subtracting(self.lastApplied)
-        let toUndivert = self.lastApplied.subtracting(targetCIDs).union(nativeFirstCIDs)
+        var toUndivert = self.lastApplied.subtracting(targetCIDs).union(nativeFirstCIDs)
+        if staleDivertCheckDue {
+            // Once per discovery: controls the mouse still has diverted from an earlier run.
+            // Nothing stale, nothing added: the writes below are the usual ones.
+            staleDivertCheckDue = false
+            let stale = Self.staleDivertDecision(
+                queriedControls: queriedControlStates,
+                wanted: targetCIDs,
+                undivertedAnyway: toUndivert,
+                managed: LogiSessionManager.shared.mouseManaged,
+                recording: LogiCenter.shared.isRecording
+            )
+            toUndivert.formUnion(stale.giveBack)
+            if let line = Self.staleDivertLine(stale, name: LogiCIDDirectory.name(forCID:)) {
+                LogiSystemLog.note("[\(deviceName(slot: deviceIndex)) slot \(String(format: "0x%02X", deviceIndex))] \(line)")
+            }
+        }
         #if DEBUG
         LogiTrace.log(
             "[Session] applyUsage target=\(LogiTrace.cids(targetCIDs)) nativeFirst=\(LogiTrace.cids(nativeFirstCIDs)) toDivert=\(LogiTrace.cids(toDivert)) toUndivert=\(LogiTrace.cids(toUndivert))",
@@ -4522,11 +4544,14 @@ class LogiDeviceSession {
               featureIndex[Self.featureReprogV4] != nil else { return }
         if reportingQueryTimer != nil { return }
         LogiDebugPanel.log("[\(deviceInfo.name)] Refreshing reporting state (throttled)")
-        startReportingQuery()
+        startReportingQuery(afterDiscovery: false)
     }
 
     /// 开始逐个查询按键的 reporting 状态
-    private func startReportingQuery() {
+    /// - Parameter afterDiscovery: false for a refresh of the UI; only a query that ends a
+    ///   discovery looks for leftover diverts.
+    private func startReportingQuery(afterDiscovery: Bool = true) {
+        reportingQueryFollowsDiscovery = afterDiscovery
         pendingBLEUndivertGuardQueries.removeAll()
         reportingQueryIndex = 0
         for index in discoveredControls.indices {
@@ -4732,7 +4757,13 @@ class LogiDeviceSession {
 
     /// 初始化完成后: 按 binding 状态 divert 对应按键.
     /// 不再扫全部 divertable 控件 - 避免覆盖 Logitech Options+ 等第三方进程的 divert 设置.
-    /// 跨启动残留: 本进程 Set 为空, 仅能处理当前 bound CID; 曾绑定但已解绑的残留依赖设备断电/重连自然清除 (tmpDivert 固件态).
+    /// Stale diverts: a run that ended without giving the buttons back (a crash, also during
+    /// key recording, which diverts every divertable control) leaves them diverted on the
+    /// mouse (tmpDivert lasts until the mouse is switched off). After a discovery the prime
+    /// below gives back each control the query found diverted that Scrollio does not want,
+    /// but only while "Let Scrollio manage this mouse" is on: that switch tells the user not
+    /// to run Logi Options+ at the same time, so such a divert is a leftover. While it is off
+    /// they are left alone and logged (`staleDivertDecision`).
     private func divertBoundControls() {
         reconcileAppliedDivertsWithQueriedState()
         reprogInitComplete = true
@@ -4741,7 +4772,10 @@ class LogiDeviceSession {
         #if DEBUG
         LogiTrace.log("[Session] divertBoundControls prime registry discovered=\(discoveredControls.count)", device: deviceInfo.name)
         #endif
+        staleDivertCheckDue = reportingQueryFollowsDiscovery
+        reportingQueryFollowsDiscovery = false
         primeFromRegistry()
+        staleDivertCheckDue = false
         LogiDebugPanel.log("[\(deviceInfo.name)] Init complete, listening for button events")
         // 正常 init 终点直接赋值 handshakeComplete, 不经过 markHandshakeComplete.
         // sweep 中: 由 receiverSlotDiscoveryDidFinish 决定推进下一个 slot 还是(巡检 slot)探测可选功能;
@@ -4804,6 +4838,61 @@ class LogiDeviceSession {
             divertedCIDs: divertedCIDs.subtracting(lostCIDs),
             lostCIDs: lostCIDs
         )
+    }
+
+    /// What one discovery does with the controls the mouse reports diverted although Scrollio
+    /// does not want them diverted.
+    struct StaleDivertDecision: Equatable {
+        /// Given back now (SetControlReporting, divert off).
+        var giveBack: Set<UInt16> = []
+        /// Left as they are: "Let Scrollio manage this mouse" is off, so they may belong to
+        /// another app (Logi Options+).
+        var leftAlone: Set<UInt16> = []
+    }
+
+    /// Pure: the controls that GetControlReporting found temporarily diverted (bit 0) and
+    /// that are neither wanted nor given back by the usual writes anyway. While keys are
+    /// recorded Scrollio may want every divertable control: nothing is touched then.
+    static func staleDivertDecision(
+        queriedControls: [QueriedControlState],
+        wanted: Set<UInt16>,
+        undivertedAnyway: Set<UInt16>,
+        managed: Bool,
+        recording: Bool
+    ) -> StaleDivertDecision {
+        guard !recording else { return StaleDivertDecision() }
+        let temporaryDivert: UInt8 = 0x01
+        let stale = Set(queriedControls.compactMap { control -> UInt16? in
+            guard control.reportingQueried,
+                  control.reportingFlags & temporaryDivert != 0,
+                  !wanted.contains(control.cid),
+                  !undivertedAnyway.contains(control.cid) else {
+                return nil
+            }
+            return control.cid
+        })
+        return managed ? StaleDivertDecision(giveBack: stale) : StaleDivertDecision(leftAlone: stale)
+    }
+
+    /// The one `logi` line of a discovery that found stale diverts; nil when it found none.
+    static func staleDivertLine(_ decision: StaleDivertDecision, name: (UInt16) -> String) -> String? {
+        func count(_ cids: Set<UInt16>) -> String {
+            return cids.count == 1 ? "1 button" : "\(cids.count) buttons"
+        }
+        func names(_ cids: Set<UInt16>) -> String {
+            return cids.sorted().map { String(format: "0x%04X ", $0) + name($0) }.joined(separator: ", ")
+        }
+        if !decision.giveBack.isEmpty {
+            let cids = decision.giveBack
+            return "Gave back \(count(cids)) the mouse still had diverted from an earlier run "
+                + "(Scrollio does not use \(cids.count == 1 ? "it" : "them"); manage switch on): \(names(cids))"
+        }
+        if !decision.leftAlone.isEmpty {
+            let cids = decision.leftAlone
+            return "Left \(count(cids)) diverted that Scrollio does not use (manage switch off: another app may "
+                + "use \(cids.count == 1 ? "it" : "them"); a leftover is freed by switching the mouse off and on): \(names(cids))"
+        }
+        return nil
     }
 
     #if DEBUG
