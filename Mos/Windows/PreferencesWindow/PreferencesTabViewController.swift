@@ -68,6 +68,7 @@ class PreferencesTabViewController: NSTabViewController {
     override func viewWillAppear() {
         super.viewWillAppear()
         removeToolbarFlexibleSpaces()
+        updateWindowTitle()
     }
 
     /// PreferencesWindowController spreads the tabs with flexible spaces. With the Mouse tab
@@ -96,8 +97,19 @@ class PreferencesTabViewController: NSTabViewController {
     }
 
     override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
+        updateWindowTitle()
         // Tab 切换后同步窗口尺寸
         updateWindowSize()
+    }
+
+    /// The window is named after the pane it shows, as in System Settings.
+    func updateWindowTitle() {
+        guard let window = view.window,
+              tabViewItems.indices.contains(selectedTabViewItemIndex) else { return }
+        let label = tabViewItems[selectedTabViewItemIndex].label
+        if !label.isEmpty {
+            window.title = label
+        }
     }
 
     // 更新窗口尺寸以适应当前内容

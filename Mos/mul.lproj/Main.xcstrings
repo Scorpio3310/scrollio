@@ -193,13 +193,13 @@
       }
     },
     "bga-wG-iim.title" : {
-      "comment" : "Class = \"NSViewController\"; title = \"Application\"; ObjectID = \"bga-wG-iim\";",
+      "comment" : "Class = \"NSViewController\"; title = \"Apps\"; ObjectID = \"bga-wG-iim\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Application"
+            "value" : "Apps"
           }
         }
       }

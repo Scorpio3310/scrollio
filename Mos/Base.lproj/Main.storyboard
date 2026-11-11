@@ -535,11 +535,11 @@
             </objects>
             <point key="canvasLocation" x="1443" y="1277"/>
         </scene>
-        <!--Application-->
+        <!--Apps-->
         <scene sceneID="UqT-28-MT6">
             <objects>
                 <customObject id="l11-a0-4Xa" userLabel="First Responder" customClass="NSResponder" sceneMemberID="firstResponder"/>
-                <viewController title="Application" storyboardIdentifier="application" id="bga-wG-iim" customClass="PreferencesApplicationViewController" customModule="Mos" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController title="Apps" storyboardIdentifier="application" id="bga-wG-iim" customClass="PreferencesApplicationViewController" customModule="Mos" customModuleProvider="target" sceneMemberID="viewController">
                     <visualEffectView key="view" wantsLayer="YES" blendingMode="behindWindow" material="toolTip" state="followsWindowActiveState" id="jc3-9p-Bfo">
                         <rect key="frame" x="0.0" y="0.0" width="450" height="321"/>
                         <autoresizingMask key="autoresizingMask"/>

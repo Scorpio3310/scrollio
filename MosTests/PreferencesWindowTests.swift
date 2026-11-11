@@ -38,8 +38,23 @@ final class PreferencesTabsTests: XCTestCase {
         let tabs = try makeTabs()
         XCTAssertEqual(
             tabs.tabViewItems.map(\.label),
-            ["General", "Scrolling", "Buttons", "Mouse", "Application", "About"]
+            ["General", "Scrolling", "Buttons", "Mouse", "Apps", "About"]
         )
+    }
+
+    func testWindowTitleFollowsTheSelectedPane() throws {
+        let tabs = try makeTabs()
+        let window = try XCTUnwrap(tabs.view.window)
+
+        // What viewWillAppear does for the pane the window opens with.
+        tabs.updateWindowTitle()
+        XCTAssertEqual(window.title, "General")
+
+        for (index, item) in tabs.tabViewItems.enumerated() {
+            tabs.selectedTabViewItemIndex = index
+            XCTAssertEqual(window.title, item.label)
+        }
+        XCTAssertEqual(window.title, "About")
     }
 
     func testEveryTabHasAnImageAndAController() throws {
