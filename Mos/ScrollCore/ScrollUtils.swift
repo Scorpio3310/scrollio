@@ -54,10 +54,13 @@ class ScrollUtils {
         /// The Chromium engine (Chrome, Dia, Arc, Edge, Electron and CEF apps) scrolls by the
         /// glide's events: a flick.
         case followsGlide
-        /// WebKit in Safari scrolls by them too, but only when the events carry no record of the
-        /// wheel's hardware event (`ScrollDispatchContext.eventWithoutHardwareRecord`): a flick
-        /// of newly made events.
-        case followsGlideWithoutHardwareRecord
+        /// Safari: no trackpad-style events at all, the frames go out as with the switch off.
+        /// With phases Safari does not scroll smoothly (owner, build 1521; the frames went out as
+        /// always). WebKit reads, on every scroll event that has a phase, the record of the
+        /// hardware event the frame still carries as a copy of the wheel event: its time (the
+        /// same for every frame of a tick) and the wheel's raw delta, for a glide of its own.
+        /// Frames made anew without that record did not scroll Safari at all (build 1538).
+        case plainScrolling
     }
 
     /// Bundle path -> answer. Main thread.
@@ -81,7 +84,7 @@ class ScrollUtils {
     /// cannot be told from the app's own lists.)
     static func trackpadStyleTarget(bundleIdentifier: String?, bundleURL: URL, fileManager: FileManager = .default) -> TrackpadStyleTarget {
         if let identifier = bundleIdentifier, safariBundleIdentifiers.contains(identifier) {
-            return .followsGlideWithoutHardwareRecord
+            return .plainScrolling
         }
         return isChromiumBased(bundleURL: bundleURL, fileManager: fileManager) ? .followsGlide : .touchOnly
     }
