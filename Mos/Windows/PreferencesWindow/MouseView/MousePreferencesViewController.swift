@@ -1,14 +1,18 @@
 //
 //  MousePreferencesViewController.swift
 //  Mos
-//  "Mouse" preferences tab: the connected Logitech mouse, in the boxes of System Settings
-//  like the Scrolling tab (PreferencesGroupedForm). On top a card with the mouse, its name
-//  and battery; under it "Let Scrollio manage this mouse", the pointer speed, the wheel
-//  and the haptics. A row for something the mouse does not have is hidden.
+//  "Mouse" preferences tab, in the boxes of System Settings like the Scrolling tab
+//  (PreferencesGroupedForm). On top a card with the mouse; under it "Pointer (macOS)", the
+//  user's macOS tracking speed and pointer acceleration, shown for any mouse. With a
+//  Logitech mouse the card shows its name and battery, and "Let Scrollio manage this mouse",
+//  the pointer speed, the wheel and the haptics follow. A row for something the mouse does
+//  not have, or a macOS value that could not be read, is hidden.
 //
-//  The tab only edits Options.shared.logiMouse and Options.shared.logiWheel; the Logi layer
-//  sends them to the mice (LogiUsageBootstrap). What the mice report comes in with
-//  LogiCenter.mouseStateChanged. What a mouse does during Gesture Navigation is in the
+//  The Logitech rows only edit Options.shared.logiMouse and Options.shared.logiWheel; the
+//  Logi layer sends them to the mice (LogiUsageBootstrap). What the mice report comes in
+//  with LogiCenter.mouseStateChanged. The macOS rows read the macOS settings when the pane
+//  appears and when the app becomes active, and write them only when the user moves their
+//  control (MacPointerSettings). What a mouse does during Gesture Navigation is in the
 //  Gestures tab.
 //
 
@@ -21,6 +25,8 @@ final class MousePreferencesViewController: NSViewController {
     /// Identifiers for the controls (tests and accessibility tooling).
     enum Identifier {
         static let header = NSUserInterfaceItemIdentifier("mouse-header")
+        static let trackingSpeed = NSUserInterfaceItemIdentifier("mouse-macos-tracking-speed")
+        static let pointerAcceleration = NSUserInterfaceItemIdentifier("mouse-macos-pointer-acceleration")
         static let managed = NSUserInterfaceItemIdentifier("mouse-managed")
         static let pointerSpeed = NSUserInterfaceItemIdentifier("mouse-pointer-speed")
         static let wheelMode = NSUserInterfaceItemIdentifier("mouse-wheel-mode")
@@ -45,6 +51,12 @@ final class MousePreferencesViewController: NSViewController {
     /// Where the mice come from; tests and renders replace it with fixtures.
     var deviceSource: MouseDeviceSource = .live
 
+    /// The user's macOS pointer settings; tests and renders replace it.
+    var pointerSettings: MacPointerSettings = .standard
+
+    /// The macOS pointer settings as last read.
+    private(set) var macPointer = MacPointerState()
+
     /// How long the "On the mouse" line of a setting the user just changed waits, so it does
     /// not flash up while the mouse takes the new value.
     var readbackSettleTime: TimeInterval = 1.5
@@ -66,13 +78,15 @@ final class MousePreferencesViewController: NSViewController {
     // MARK: - Views (read access for tests)
 
     private(set) var headerView: MouseHeaderView!
-    private(set) var noMouseSection: PreferencesGroupSection!
+    private(set) var macSection: PreferencesGroupSection!
     private(set) var managedSection: PreferencesGroupSection!
     private(set) var pointerSection: PreferencesGroupSection!
     private(set) var wheelSection: PreferencesGroupSection!
     private(set) var hapticsSection: PreferencesGroupSection!
     private(set) var footer: PreferencesGroupFooter!
 
+    private(set) var trackingSpeedRow: PreferencesSliderRow!
+    private(set) var pointerAccelerationRow: PreferencesSwitchRow!
     private(set) var managedRow: PreferencesSwitchRow!
     private(set) var pointerSpeedRow: PreferencesSliderRow!
     private(set) var wheelModeRow: PreferencesGroupRow!
@@ -82,6 +96,8 @@ final class MousePreferencesViewController: NSViewController {
     private(set) var strengthRow: PreferencesSliderRow!
     private(set) var pressForceRow: PreferencesSliderRow!
 
+    private(set) var trackingSpeedSlider: NSSlider!
+    private(set) var pointerAccelerationSwitch: NSSwitch!
     private(set) var managedSwitch: NSSwitch!
     private(set) var pointerSpeedSlider: NSSlider!
     private(set) var wheelModeControl: NSSegmentedControl!
@@ -128,9 +144,10 @@ final class MousePreferencesViewController: NSViewController {
         headerView = header
 
         let width = Self.boxWidth
-        noMouseSection = PreferencesGroupSection(width: width, rows: [
-            PreferencesGroupRow(title: MouseText.text("mouse-no-mouse"), explanation: MouseText.text("mouse-no-mouse-hint")),
-        ])
+        macSection = PreferencesGroupSection(
+            title: MouseText.text("mouse-macos-header"), width: width,
+            rows: [makeTrackingSpeedRow(), makePointerAccelerationRow()]
+        )
         managedSection = PreferencesGroupSection(width: width, rows: [makeManagedRow()])
         pointerSection = PreferencesGroupSection(
             title: MouseText.text("mouse-pointer-header"), width: width, rows: [makePointerSpeedRow()]
@@ -154,11 +171,12 @@ final class MousePreferencesViewController: NSViewController {
         footer = PreferencesGroupFooter(trailing: [diagnostics])
 
         PreferencesGroupedForm.add(
-            [header, noMouseSection, managedSection, pointerSection, wheelSection, hapticsSection, footer],
+            [header, macSection, managedSection, pointerSection, wheelSection, hapticsSection, footer],
             to: content
         )
 
         rowParts = [
+            (trackingSpeedRow, .body), (pointerAccelerationRow, .body),
             (pointerSpeedRow, .body),
             (wheelModeRow, .wheel), (sensitivityRow, .wheel), (firmnessRow, .wheel),
             (hapticsRow, .thumbPanel), (strengthRow, .thumbPanel), (pressForceRow, .thumbPanel),
@@ -173,6 +191,7 @@ final class MousePreferencesViewController: NSViewController {
         }
 
         view = root
+        macPointer = pointerSettings.read()
         syncControls()
         root.setFrameSize(root.fittingSize)
     }
@@ -185,14 +204,27 @@ final class MousePreferencesViewController: NSViewController {
             name: LogiCenter.mouseStateChanged,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationDidBecomeActive(_:)),
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
     }
 
     override func viewWillAppear() {
         super.viewWillAppear()
         // Show what is known right away, then ask the mice again; the answer arrives as
-        // `mouseStateChanged`.
+        // `mouseStateChanged`. The macOS settings may have changed in System Settings.
+        macPointer = pointerSettings.read()
         reloadDevices()
         deviceSource.refresh()
+    }
+
+    /// Back from System Settings, say: the pane shows what macOS has now.
+    @objc private func applicationDidBecomeActive(_ notification: Notification) {
+        guard isViewLoaded, view.window != nil else { return }
+        reloadMacPointerSettings()
     }
 
     /// The pane is in its window only now: opened from the sidebar it has none yet in
@@ -222,6 +254,13 @@ final class MousePreferencesViewController: NSViewController {
 
     // MARK: - Refresh
 
+    /// Re-reads the macOS pointer settings and puts them into their controls.
+    func reloadMacPointerSettings() {
+        guard isViewLoaded else { return }
+        macPointer = pointerSettings.read()
+        syncControls()
+    }
+
     /// Re-reads the mice and puts everything into the controls; the window follows a change
     /// of height.
     func reloadDevices() {
@@ -244,7 +283,7 @@ final class MousePreferencesViewController: NSViewController {
         self.model = model
 
         headerView.content = model.header
-        noMouseSection.isHidden = model.hasMouse
+        applyMacPointer(MacPointerPaneModel(macPointer))
         managedSection.isHidden = !model.hasMouse
         managedRow.isOn = model.managed
 
@@ -286,10 +325,29 @@ final class MousePreferencesViewController: NSViewController {
         }
     }
 
-    /// Every row of the tab except "no mouse", top to bottom.
+    /// Every row of the tab, top to bottom.
     private var settingRows: [PreferencesGroupRow] {
-        return [managedRow, pointerSpeedRow, wheelModeRow, sensitivityRow, firmnessRow,
-                hapticsRow, strengthRow, pressForceRow]
+        return [trackingSpeedRow, pointerAccelerationRow, managedRow, pointerSpeedRow, wheelModeRow,
+                sensitivityRow, firmnessRow, hapticsRow, strengthRow, pressForceRow]
+    }
+
+    /// The "Pointer (macOS)" box. A knob the user is dragging stays where the pointer has it.
+    private func applyMacPointer(_ mac: MacPointerPaneModel) {
+        if let index = mac.trackingSpeedIndex {
+            trackingSpeedRow.isHidden = false
+            if !trackingSpeedRow.isTracking {
+                trackingSpeedSlider.doubleValue = Double(index)
+            }
+        } else {
+            trackingSpeedRow.isHidden = true
+        }
+        if let on = mac.pointerAcceleration {
+            pointerAccelerationRow.isHidden = false
+            pointerAccelerationRow.isOn = on
+        } else {
+            pointerAccelerationRow.isHidden = true
+        }
+        macSection.isHidden = mac.isEmpty
     }
 
     /// What decides the pane's height: which boxes and rows show, and how many lines each
@@ -329,7 +387,9 @@ final class MousePreferencesViewController: NSViewController {
             contentStack.setCustomSpacing(PreferencesGroupedForm.boxSpacing, after: view)
         }
         for (above, below) in zip(shown, shown.dropFirst()) {
+            // "Let Scrollio manage this mouse" starts the Logitech part: apart from the macOS box.
             let titled = (below as? PreferencesGroupSection)?.titleLabel != nil || below is PreferencesGroupFooter
+                || (below === managedSection && above === macSection)
             contentStack.setCustomSpacing(
                 titled ? PreferencesGroupedForm.sectionSpacing : PreferencesGroupedForm.boxSpacing,
                 after: above
@@ -410,6 +470,23 @@ final class MousePreferencesViewController: NSViewController {
     }
 
     // MARK: - Actions
+
+    /// Writes the tick's tracking speed to macOS when the knob moved to another tick, then
+    /// reads back what macOS has: a value macOS did not take puts the knob back on release.
+    @objc func trackingSpeedChanged(_ sender: NSSlider) {
+        let speeds = MacPointerSettings.trackingSpeeds
+        let index = min(max(Int(sender.doubleValue.rounded()), 0), speeds.count - 1)
+        guard index != MacPointerPaneModel(macPointer).trackingSpeedIndex else { return }
+        _ = pointerSettings.writeTrackingSpeed(speeds[index])
+        reloadMacPointerSettings()
+    }
+
+    @objc func pointerAccelerationToggled(_ sender: NSSwitch) {
+        let on = sender.state == .on
+        guard on != macPointer.pointerAcceleration else { return }
+        _ = pointerSettings.writePointerAcceleration(on)
+        reloadMacPointerSettings()
+    }
 
     /// Only the switch changes: no value is taken over from a mouse. A setting the user never
     /// set stays unset, so the mouse keeps its own value (the rows show it); what the user did
@@ -504,6 +581,39 @@ final class MousePreferencesViewController: NSViewController {
     }
 
     // MARK: - Rows
+
+    /// System Settings › Mouse › Tracking speed: its ten stops, slow to fast. No value is
+    /// written next to it (macOS shows none), but it keeps the value column, so it lines up
+    /// with the Logitech sliders.
+    private func makeTrackingSpeedRow() -> PreferencesGroupRow {
+        let row = PreferencesSliderRow(
+            title: MouseText.text("mouse-macos-tracking-speed"),
+            explanation: MouseText.text("mouse-macos-tracking-speed-hint"),
+            range: MacPointerPaneModel.trackingSpeedRange,
+            scale: MacPointerPaneModel.trackingSpeedScale,
+            ends: (low: MouseText.text("mouse-macos-tracking-speed-slow"), high: MouseText.text("mouse-macos-tracking-speed-fast")),
+            valueWidth: Self.sliderValueWidth,
+            target: self,
+            action: #selector(trackingSpeedChanged(_:))
+        )
+        row.slider.identifier = Identifier.trackingSpeed
+        trackingSpeedRow = row
+        trackingSpeedSlider = row.slider
+        return row
+    }
+
+    private func makePointerAccelerationRow() -> PreferencesGroupRow {
+        let row = PreferencesSwitchRow(
+            title: MouseText.text("mouse-macos-acceleration"),
+            explanation: MouseText.text("mouse-macos-acceleration-hint"),
+            target: self,
+            action: #selector(pointerAccelerationToggled(_:))
+        )
+        row.toggle.identifier = Identifier.pointerAcceleration
+        pointerAccelerationRow = row
+        pointerAccelerationSwitch = row.toggle
+        return row
+    }
 
     private func makeManagedRow() -> PreferencesGroupRow {
         let row = PreferencesSwitchRow(

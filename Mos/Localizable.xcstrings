@@ -1276,39 +1276,6 @@
         }
       }
     },
-    "mouse-header-no-mouse": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No Logitech mouse connected"
-          }
-        }
-      }
-    },
-    "mouse-no-mouse": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Turn on your Logitech mouse"
-          }
-        }
-      }
-    },
-    "mouse-no-mouse-hint": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Its battery, pointer speed, wheel and haptics show here once it connects."
-          }
-        }
-      }
-    },
     "mouse-pointer-header": {
       "extractionState": "manual",
       "localizations": {
@@ -1348,7 +1315,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "How far the pointer moves with the mouse."
+            "value": "The sensor's resolution on this mouse (DPI). Combines with macOS tracking speed."
           }
         }
       }
@@ -5001,6 +4968,114 @@
           "stringUnit": {
             "state": "translated",
             "value": "Open Mouse"
+          }
+        }
+      }
+    },
+    "mouse-header-any-mouse": {
+      "comment": "Mouse pane: the card's title while no Logitech mouse is connected",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mouse"
+          }
+        }
+      }
+    },
+    "mouse-header-any-mouse-detail": {
+      "comment": "Mouse pane: the card's line while no Logitech mouse is connected. A no-break space joins \"MX\" and \"mice\", so \"mice.\" never stands alone on the last line",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buttons, scrolling and gestures work with any mouse. Extra settings appear for Logitech MX mice."
+          }
+        }
+      }
+    },
+    "mouse-macos-header": {
+      "comment": "Mouse pane: title of the box with the macOS pointer settings for every mouse",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pointer (macOS)"
+          }
+        }
+      }
+    },
+    "mouse-macos-tracking-speed": {
+      "comment": "Mouse pane: the macOS tracking speed slider, as in System Settings > Mouse",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tracking speed"
+          }
+        }
+      }
+    },
+    "mouse-macos-tracking-speed-hint": {
+      "comment": "Mouse pane: explanation under Tracking speed",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The macOS setting for every mouse. Same as System Settings › Mouse."
+          }
+        }
+      }
+    },
+    "mouse-macos-tracking-speed-slow": {
+      "comment": "Mouse pane: the slow end of the Tracking speed slider",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Slow"
+          }
+        }
+      }
+    },
+    "mouse-macos-tracking-speed-fast": {
+      "comment": "Mouse pane: the fast end of the Tracking speed slider",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast"
+          }
+        }
+      }
+    },
+    "mouse-macos-acceleration": {
+      "comment": "Mouse pane: the macOS pointer acceleration switch, as in System Settings > Mouse",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pointer acceleration"
+          }
+        }
+      }
+    },
+    "mouse-macos-acceleration-hint": {
+      "comment": "Mouse pane: explanation under Pointer acceleration",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off moves the pointer exactly as far as the mouse, at any speed."
           }
         }
       }

@@ -3,7 +3,8 @@
 //  Mos
 //  What the Mouse tab shows, worked out without views so the rules can be unit tested:
 //  where the mice come from, which rows a mouse gets, what each control shows, when it
-//  can be changed and when an "On the mouse: …" line is due.
+//  can be changed and when an "On the mouse: …" line is due. The "Pointer (macOS)" box,
+//  shown for any mouse, is `MacPointerPaneModel`.
 //
 //  The rules:
 //  - A row for something no connected mouse has is hidden, not disabled.
@@ -69,7 +70,7 @@ struct MousePaneModel: Equatable {
     }
 
     struct Header: Equatable {
-        /// The mouse's name, or that none is connected.
+        /// The Logitech mouse's name, or "Mouse" while none is connected.
         let title: String
         let subtitle: String?
         let battery: Battery?
@@ -327,7 +328,12 @@ struct MousePaneModel: Equatable {
 
     private static func header(for mice: [LogiMouseDeviceState]) -> Header {
         guard let mouse = mice.first else {
-            return Header(title: MouseText.text("mouse-header-no-mouse"), subtitle: nil, battery: nil, isConnected: false)
+            return Header(
+                title: MouseText.text("mouse-header-any-mouse"),
+                subtitle: MouseText.text("mouse-header-any-mouse-detail"),
+                battery: nil,
+                isConnected: false
+            )
         }
         let subtitle = mice.count > 1
             ? String(format: MouseText.text("mouse-header-connected-several"), mice.count)
@@ -426,6 +432,29 @@ struct MousePaneModel: Equatable {
         let span = range.upperBound - range.lowerBound
         guard span > 0 else { return 0 }
         return Int((Double(clamp(value, to: range) - range.lowerBound) / Double(span) * 100).rounded())
+    }
+}
+
+/// The "Pointer (macOS)" box: the user's macOS settings for every mouse. A row whose value
+/// macOS did not give is hidden, and the box with it once both are.
+struct MacPointerPaneModel: Equatable {
+
+    /// The tick of the tracking speed slider (`MacPointerSettings.trackingSpeeds`); nil: hidden.
+    let trackingSpeedIndex: Int?
+    /// nil: hidden.
+    let pointerAcceleration: Bool?
+
+    /// The slider runs over the ticks, 0 (slow) … 9 (fast), and stops only on them.
+    static let trackingSpeedRange: ClosedRange<Double> = 0...Double(MacPointerSettings.trackingSpeeds.count - 1)
+    static let trackingSpeedScale = PreferencesSliderScale.ticksOnly(MacPointerSettings.trackingSpeeds.count)
+
+    init(_ state: MacPointerState) {
+        trackingSpeedIndex = state.trackingSpeed.map(MacPointerSettings.trackingSpeedIndex(nearest:))
+        pointerAcceleration = state.pointerAcceleration
+    }
+
+    var isEmpty: Bool {
+        return trackingSpeedIndex == nil && pointerAcceleration == nil
     }
 }
 

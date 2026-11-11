@@ -3,11 +3,12 @@
 //  MosTests
 //
 //  The Mouse tab: every control reads and writes the right option, which rows MX Master 4,
-//  MX Master 3S, MX Master 3 and no mouse get, what is greyed out while Scrollio does not
-//  manage the mouse, the "On the mouse" lines, the sample pulse of the strength slider,
-//  the header lighting up the part of the hovered or focused row, and the tab's place in
-//  the toolbar. The mice are fixtures: nothing is read from or written to a real mouse, and
-//  nothing is shown on screen.
+//  MX Master 3S, MX Master 3 and no Logitech mouse get, what is greyed out while Scrollio
+//  does not manage the mouse, the "On the mouse" lines, the sample pulse of the strength
+//  slider, the header lighting up the part of the hovered or focused row, the "Pointer
+//  (macOS)" box for any mouse, and the tab's place in the toolbar. The mice and the macOS
+//  settings are fixtures: nothing is read from or written to a real mouse or the real macOS
+//  settings, and nothing is shown on screen.
 //
 
 import XCTest
@@ -122,6 +123,42 @@ enum MouseDeviceFixtures {
     }
 }
 
+/// The user's macOS pointer settings as a test double: what macOS "has", whether it takes a
+/// new value, and every read and write.
+final class FakeMacPointer {
+    var trackingSpeed: Double? = 0.6875
+    var pointerAcceleration: Bool? = true
+    /// false: macOS refuses every write and keeps its values.
+    var accepts = true
+    private(set) var reads = 0
+    private(set) var trackingSpeedWrites: [Double] = []
+    private(set) var accelerationWrites: [Bool] = []
+
+    var writes: Int {
+        return trackingSpeedWrites.count + accelerationWrites.count
+    }
+
+    var settings: MacPointerSettings {
+        return MacPointerSettings(
+            readTrackingSpeed: { [unowned self] in
+                self.reads += 1
+                return self.trackingSpeed
+            },
+            writeTrackingSpeed: { [unowned self] value in
+                self.trackingSpeedWrites.append(value)
+                if self.accepts { self.trackingSpeed = value }
+                return self.accepts
+            },
+            readPointerAcceleration: { [unowned self] in self.pointerAcceleration },
+            writePointerAcceleration: { [unowned self] on in
+                self.accelerationWrites.append(on)
+                if self.accepts { self.pointerAcceleration = on }
+                return self.accepts
+            }
+        )
+    }
+}
+
 final class MousePreferencesViewControllerTests: XCTestCase {
 
     private typealias Fixtures = MouseDeviceFixtures
@@ -132,6 +169,7 @@ final class MousePreferencesViewControllerTests: XCTestCase {
     private var refreshCount = 0
     private var diagnosticsCount = 0
     private var sampleCount = 0
+    private var mac = FakeMacPointer()
 
     override func setUp() {
         super.setUp()
@@ -143,6 +181,7 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         refreshCount = 0
         diagnosticsCount = 0
         sampleCount = 0
+        mac = FakeMacPointer()
     }
 
     override func tearDown() {
@@ -162,6 +201,7 @@ final class MousePreferencesViewControllerTests: XCTestCase {
             showDiagnostics: { [weak self] in self?.diagnosticsCount += 1 },
             playHapticSample: { [weak self] in self?.sampleCount += 1 }
         )
+        controller.pointerSettings = mac.settings
         controller.readbackSettleTime = 0
         _ = controller.view
         controller.reloadDevices()
@@ -207,10 +247,10 @@ final class MousePreferencesViewControllerTests: XCTestCase {
     }
 
     private func sliderRows(_ c: MousePreferencesViewController) -> [PreferencesSliderRow] {
-        return [c.pointerSpeedRow, c.sensitivityRow, c.firmnessRow, c.strengthRow, c.pressForceRow]
+        return [c.trackingSpeedRow, c.pointerSpeedRow, c.sensitivityRow, c.firmnessRow, c.strengthRow, c.pressForceRow]
     }
 
-    /// Every row of the tab except "no mouse", top to bottom.
+    /// The Logitech rows, top to bottom.
     private func settingRows(_ c: MousePreferencesViewController) -> [PreferencesGroupRow] {
         return [c.managedRow, c.pointerSpeedRow, c.wheelModeRow, c.sensitivityRow, c.firmnessRow,
                 c.hapticsRow, c.strengthRow, c.pressForceRow]
@@ -555,17 +595,18 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         manage()
         let controller = makeController([Fixtures.mxMaster4()])
 
-        XCTAssertTrue(controller.noMouseSection.isHidden)
-        for section in [controller.managedSection!, controller.pointerSection!, controller.wheelSection!, controller.hapticsSection!] {
+        for section in [controller.macSection!, controller.managedSection!, controller.pointerSection!,
+                        controller.wheelSection!, controller.hapticsSection!] {
             XCTAssertFalse(section.isHidden)
         }
-        for row in settingRows(controller) {
+        for row in settingRows(controller) + [controller.trackingSpeedRow!, controller.pointerAccelerationRow!] {
             XCTAssertFalse(row.isHidden, row.title)
         }
         XCTAssertEqual(controller.headerView.nameLabel.stringValue, "MX Master 4")
         XCTAssertEqual(controller.headerView.statusLabel.stringValue, text("mouse-header-connected"))
         XCTAssertEqual(controller.headerView.batteryLabel.stringValue, MouseText.percent(75))
         XCTAssertEqual(controller.headerView.artwork.alphaValue, 1)
+        XCTAssertEqual(controller.headerView.artwork.style, .mxMaster)
     }
 
     func testMXMaster3SHasNoHapticsAndNoClickFirmness() {
@@ -597,21 +638,38 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         )
     }
 
-    func testWithoutAMouseOnlyAnExplanationIsLeft() {
+    /// Any mouse: a plain mouse on the card, what works with it, and the macOS settings.
+    func testWithoutALogitechMouseTheCardAndTheMacOSBoxShow() {
         let controller = makeController()
+        controller.view.layoutSubtreeIfNeeded()
 
-        XCTAssertEqual(controller.headerView.nameLabel.stringValue, text("mouse-header-no-mouse"))
-        XCTAssertTrue(controller.headerView.statusLabel.isHidden)
-        XCTAssertEqual(controller.headerView.artwork.alphaValue, MouseHeaderView.dimmedAlpha)
-        XCTAssertNil(controller.headerView.content.battery)
-        XCTAssertFalse(controller.noMouseSection.isHidden)
+        let header = controller.headerView!
+        XCTAssertEqual(header.nameLabel.stringValue, text("mouse-header-any-mouse"))
+        XCTAssertEqual(header.statusLabel.stringValue, text("mouse-header-any-mouse-detail"))
+        XCTAssertFalse(header.statusLabel.isHidden)
+        XCTAssertEqual(header.artwork.style, .anyMouse)
+        XCTAssertEqual(header.artwork.alphaValue, 1, "a mouse of its own, not a dimmed MX Master")
+        XCTAssertTrue(header.artwork.highlights.values.allSatisfy(\.isHidden), "nothing to light up")
+        XCTAssertNil(header.content.battery)
+        // The line wraps inside the card and is not cut off.
+        let detail = frame(of: header.statusLabel, in: controller)
+        XCTAssertLessThanOrEqual(detail.maxX, frame(of: header, in: controller).maxX - MouseHeaderView.textTrailingInset + 0.5)
+        XCTAssertGreaterThan(detail.height, header.statusLabel.font!.boundingRectForFont.height, "more than one line")
+        XCTAssertLessThan(header.statusLabel.fittingSize.height, MouseHeaderView.preferredHeight)
+
+        XCTAssertFalse(controller.macSection.isHidden)
+        XCTAssertEqual(controller.macSection.titleLabel?.stringValue, text("mouse-macos-header"))
+        XCTAssertEqual(controller.macSection.box.visibleRows, [controller.trackingSpeedRow, controller.pointerAccelerationRow])
         for section in [controller.managedSection!, controller.pointerSection!, controller.wheelSection!, controller.hapticsSection!] {
             XCTAssertTrue(section.isHidden)
         }
         XCTAssertFalse(controller.footer.isHidden)
         XCTAssertTrue(controller.diagnosticsButton.isEnabled)
+        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
         // Nothing to point at.
         controller.rowHoverChanged(.wheel, inside: true)
+        XCTAssertNil(controller.headerView.emphasis)
+        controller.rowHoverChanged(.body, inside: true)
         XCTAssertNil(controller.headerView.emphasis)
     }
 
@@ -627,7 +685,8 @@ final class MousePreferencesViewControllerTests: XCTestCase {
 
         devices = []
         NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
-        XCTAssertFalse(controller.noMouseSection.isHidden)
+        XCTAssertFalse(controller.macSection.isHidden)
+        XCTAssertEqual(controller.headerView.artwork.style, .anyMouse)
         XCTAssertTrue(controller.managedSection.isHidden)
         XCTAssertEqual(controller.view.frame.height, emptyHeight)
     }
@@ -935,6 +994,7 @@ final class MousePreferencesViewControllerTests: XCTestCase {
     func testEachRowLightsUpItsPartOfTheMouse() {
         let controller = makeController([Fixtures.mxMaster4()])
         let expected: [(PreferencesGroupRow, MousePart)] = [
+            (controller.trackingSpeedRow, .body), (controller.pointerAccelerationRow, .body),
             (controller.pointerSpeedRow, .body),
             (controller.wheelModeRow, .wheel), (controller.sensitivityRow, .wheel), (controller.firmnessRow, .wheel),
             (controller.hapticsRow, .thumbPanel), (controller.strengthRow, .thumbPanel), (controller.pressForceRow, .thumbPanel),
@@ -969,6 +1029,7 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         }
 
         let focused: [(NSView, MousePart?)] = [
+            (controller.trackingSpeedSlider, .body), (controller.pointerAccelerationSwitch, .body),
             (controller.pointerSpeedSlider, .body), (controller.wheelModeControl, .wheel),
             (controller.sensitivitySlider, .wheel), (controller.firmnessSlider, .wheel),
             (controller.hapticsSwitch, .thumbPanel), (controller.strengthSlider, .thumbPanel),
@@ -1067,6 +1128,180 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertNotEqual(controller.pointerSpeedSlider.maxValue, MousePaneModel.percentSliderRange.upperBound)
     }
 
+    // MARK: - Pointer (macOS)
+
+    func testTheMacOSBoxShowsWhatMacOSHas() {
+        mac.trackingSpeed = 3
+        mac.pointerAcceleration = false
+        let controller = makeController([Fixtures.mxMaster4()])
+
+        XCTAssertEqual(controller.trackingSpeedRow.title, text("mouse-macos-tracking-speed"))
+        XCTAssertEqual(controller.trackingSpeedRow.explanation, text("mouse-macos-tracking-speed-hint"))
+        XCTAssertEqual(controller.trackingSpeedRow.lowEndLabel?.stringValue, text("mouse-macos-tracking-speed-slow"))
+        XCTAssertEqual(controller.trackingSpeedRow.highEndLabel?.stringValue, text("mouse-macos-tracking-speed-fast"))
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, "", "macOS shows no number either")
+        XCTAssertEqual(controller.pointerAccelerationRow.title, text("mouse-macos-acceleration"))
+        XCTAssertEqual(controller.pointerAccelerationRow.explanation, text("mouse-macos-acceleration-hint"))
+
+        // Ten stops, as in System Settings › Mouse.
+        let slider = controller.trackingSpeedSlider!
+        XCTAssertEqual(slider.minValue, 0)
+        XCTAssertEqual(slider.maxValue, 9)
+        XCTAssertEqual(slider.numberOfTickMarks, 10)
+        XCTAssertTrue(slider.allowsTickMarkValuesOnly)
+        XCTAssertEqual(slider.doubleValue, 9)
+        XCTAssertFalse(controller.pointerAccelerationRow.isOn)
+        // Not greyed out with the Logitech rows: macOS settings need no "manage".
+        XCTAssertFalse(controller.managedRow.isOn)
+        XCTAssertTrue(controller.trackingSpeedRow.isEnabled)
+        XCTAssertTrue(controller.pointerAccelerationRow.isEnabled)
+        XCTAssertEqual(mac.writes, 0)
+    }
+
+    func testAValueOffTheScaleShowsOnTheNearestStopAndIsKept() {
+        mac.trackingSpeed = 1.2
+        let controller = makeController()
+        XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 5, "1.2 is nearest the 1.0 stop")
+        mac.trackingSpeed = -1
+        controller.reloadMacPointerSettings()
+        XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 0, "below the scale: the slow end")
+        controller.syncControls()
+        XCTAssertEqual(mac.writes, 0, "showing a value never writes it")
+    }
+
+    /// Reading happens on load, when the pane appears and when the app becomes active; none
+    /// of them writes.
+    func testNothingIsWrittenWhenThePaneLoadsAppearsOrTheAppBecomesActive() {
+        let controller = makeController([Fixtures.mxMaster4()])
+        XCTAssertEqual(mac.reads, 1, "read once on load")
+
+        mac.trackingSpeed = 2
+        controller.viewWillAppear()
+        XCTAssertEqual(mac.reads, 2)
+        XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 7)
+
+        // Back from System Settings: the app becomes active and the pane shows the change.
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: controller.view.frame.size),
+            styleMask: [.titled], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = controller.view
+        mac.trackingSpeed = 0.5
+        mac.pointerAcceleration = false
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: NSApp)
+        XCTAssertEqual(mac.reads, 3)
+        XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 2)
+        XCTAssertFalse(controller.pointerAccelerationRow.isOn)
+
+        // Not in a window (another pane is shown): nothing to update.
+        window.contentView = nil
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: NSApp)
+        XCTAssertEqual(mac.reads, 3)
+
+        devices = []
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        controller.viewDidDisappear()
+        XCTAssertEqual(mac.writes, 0)
+    }
+
+    func testTrackingSpeedWritesTheValueOfTheStop() {
+        let controller = makeController()
+        let slider = controller.trackingSpeedSlider!
+
+        drag(slider, to: 9)
+        XCTAssertEqual(mac.trackingSpeedWrites, [3])
+        drag(slider, to: 9)
+        XCTAssertEqual(mac.trackingSpeedWrites, [3], "the same stop again writes nothing")
+        drag(slider, to: 0)
+        drag(slider, to: 4.4)
+        XCTAssertEqual(mac.trackingSpeedWrites, [3, 0, 0.875], "4.4 stops at the fifth tick")
+        XCTAssertEqual(slider.doubleValue, 4)
+        // Every stop writes its own value of the scale.
+        for (index, speed) in MacPointerSettings.trackingSpeeds.enumerated().reversed() {
+            drag(slider, to: Double(index))
+            XCTAssertEqual(mac.trackingSpeed, speed)
+        }
+        XCTAssertTrue(mac.accelerationWrites.isEmpty, "one control, one setting")
+    }
+
+    func testPointerAccelerationSwitchWritesMacOS() {
+        let controller = makeController([Fixtures.mxMaster4()])
+        set(controller.pointerAccelerationSwitch, false)
+        XCTAssertEqual(mac.accelerationWrites, [false])
+        XCTAssertFalse(controller.pointerAccelerationRow.isOn)
+        set(controller.pointerAccelerationSwitch, true)
+        XCTAssertEqual(mac.accelerationWrites, [false, true])
+        XCTAssertTrue(mac.trackingSpeedWrites.isEmpty, "one control, one setting")
+        XCTAssertEqual(Options.shared.logiMouse, .default, "no Scrollio setting")
+        XCTAssertEqual(Options.shared.logiWheel, .default)
+    }
+
+    /// A value macOS does not take is not kept: the control shows what macOS has again (a
+    /// dragged knob once it is let go).
+    func testAValueMacOSDoesNotTakePutsTheControlBack() throws {
+        let controller = makeController()
+        mac.accepts = false
+
+        set(controller.pointerAccelerationSwitch, false)
+        XCTAssertEqual(mac.accelerationWrites, [false])
+        XCTAssertTrue(controller.pointerAccelerationRow.isOn)
+
+        let slider = try XCTUnwrap(controller.trackingSpeedSlider as? PreferencesSlider)
+        XCTAssertEqual(slider.doubleValue, 3)
+        slider.beginTracking()
+        drag(slider, to: 8)
+        XCTAssertEqual(mac.trackingSpeedWrites, [2.5])
+        XCTAssertEqual(slider.doubleValue, 8, "the knob stays under the pointer while dragged")
+        slider.endTracking()
+        XCTAssertEqual(slider.doubleValue, 3, "let go: back where macOS is")
+        XCTAssertEqual(mac.trackingSpeed, 0.6875)
+    }
+
+    /// A value macOS does not give hides its row, and the box once both are hidden; the
+    /// Logitech part is not touched.
+    func testValuesThatCannotBeReadHideTheirRows() {
+        mac.trackingSpeed = nil
+        let controller = makeController([Fixtures.mxMaster4()])
+        XCTAssertTrue(controller.trackingSpeedRow.isHidden)
+        XCTAssertFalse(controller.pointerAccelerationRow.isHidden)
+        XCTAssertFalse(controller.macSection.isHidden)
+
+        mac.trackingSpeed = 1
+        mac.pointerAcceleration = nil
+        controller.reloadMacPointerSettings()
+        XCTAssertFalse(controller.trackingSpeedRow.isHidden)
+        XCTAssertTrue(controller.pointerAccelerationRow.isHidden)
+        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+
+        mac.trackingSpeed = nil
+        controller.reloadMacPointerSettings()
+        XCTAssertTrue(controller.macSection.isHidden)
+        XCTAssertFalse(controller.managedSection.isHidden)
+        XCTAssertFalse(controller.pointerSection.isHidden)
+        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+
+        // Without a Logitech mouse only the card and the footer are left.
+        devices = []
+        controller.reloadDevices()
+        XCTAssertFalse(controller.headerView.isHidden)
+        XCTAssertFalse(controller.footer.isHidden)
+        for section in [controller.macSection!, controller.managedSection!, controller.pointerSection!,
+                        controller.wheelSection!, controller.hapticsSection!] {
+            XCTAssertTrue(section.isHidden)
+        }
+        XCTAssertEqual(mac.writes, 0)
+    }
+
+    /// In tests the pane never reaches the real macOS settings: its default is inert.
+    func testThePaneUsesTheInertSettingsInTests() {
+        XCTAssertTrue(AppRuntime.isRunningXCTest)
+        let controller = MousePreferencesViewController()
+        XCTAssertEqual(controller.pointerSettings.read(), MacPointerSettings.inert.read())
+        XCTAssertEqual(MacPointerSettings.standard.read(), MacPointerState(trackingSpeed: 0.6875, pointerAcceleration: true))
+    }
+
     // MARK: - Header
 
     func testBatteryTexts() {
@@ -1127,18 +1362,25 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         let margin = PreferencesGroupedForm.margin
         let boxRight = MousePreferencesViewController.paneWidth - margin
 
-        // The header and the boxes span the pane between its margins.
-        for view in [controller.headerView!, controller.managedSection.box, controller.pointerSection.box,
-                     controller.wheelSection.box, controller.hapticsSection.box] as [NSView] {
+        // The header and the boxes span the pane between its margins, top to bottom.
+        let boxes = [controller.headerView!, controller.macSection.box, controller.managedSection.box,
+                     controller.pointerSection.box, controller.wheelSection.box, controller.hapticsSection.box] as [NSView]
+        for view in boxes {
             let box = frame(of: view, in: controller)
             XCTAssertEqual(box.minX, margin, accuracy: 0.5)
             XCTAssertEqual(box.maxX, boxRight, accuracy: 0.5)
         }
-        for row in settingRows(controller) {
+        let tops = boxes.map { frame(of: $0, in: controller).maxY }
+        XCTAssertEqual(tops, tops.sorted(by: >), "the macOS box above the Logitech boxes")
+        // The Logitech part keeps a section's distance from the macOS box above it.
+        let gap = frame(of: controller.macSection.box, in: controller).minY - frame(of: controller.managedSection.box, in: controller).maxY
+        XCTAssertEqual(gap, PreferencesGroupedForm.sectionSpacing, accuracy: 0.5)
+        for row in settingRows(controller) + [controller.trackingSpeedRow!, controller.pointerAccelerationRow!] {
             XCTAssertEqual(frame(of: row.titleLabel, in: controller).minX, margin + inset, accuracy: 0.5, row.title)
         }
         // The switches and the values end at the box's inset; the sliders form one column.
-        let rightEdges: [NSView] = [controller.managedSwitch, controller.hapticsSwitch, controller.wheelModeControl]
+        let rightEdges: [NSView] = [controller.managedSwitch, controller.hapticsSwitch, controller.wheelModeControl,
+                                    controller.pointerAccelerationSwitch]
             + sliderRows(controller).compactMap(\.valueLabel)
         for view in rightEdges {
             XCTAssertEqual(frame(of: view, in: controller).maxX, boxRight - inset, accuracy: 1, "\(view)")
@@ -1148,7 +1390,8 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertEqual(Set(sliders.map { $0.width.rounded() }).count, 1)
         // Each control sits on the line of its title.
         var lines: [(NSView, PreferencesGroupRow)] = [(controller.managedSwitch, controller.managedRow),
-                                                      (controller.hapticsSwitch, controller.hapticsRow)]
+                                                      (controller.hapticsSwitch, controller.hapticsRow),
+                                                      (controller.pointerAccelerationSwitch, controller.pointerAccelerationRow)]
         lines += sliderRows(controller).map { ($0.slider as NSView, $0 as PreferencesGroupRow) }
         for (control, row) in lines {
             XCTAssertEqual(frame(of: control, in: controller).midY, frame(of: row.titleLabel, in: controller).midY, accuracy: 1, row.title)
@@ -1156,7 +1399,7 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         // The three modes fill the box under the text of "Wheel mode".
         let modes = frame(of: controller.wheelModeControl, in: controller)
         XCTAssertEqual(modes.minX, margin + inset, accuracy: 1)
-        for toggle in [controller.managedSwitch!, controller.hapticsSwitch!] {
+        for toggle in [controller.managedSwitch!, controller.hapticsSwitch!, controller.pointerAccelerationSwitch!] {
             XCTAssertEqual(toggle.controlSize, PreferencesGroupedForm.switchControlSize)
         }
         // "8000 DPI" fits the value column.
@@ -1173,7 +1416,8 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         measure.font = PreferencesForm.hintFont
         let oneLine = measure.fittingSize.height
         let lines: [(PreferencesGroupRow, Int)] = [
-            (controller.managedRow, 2), (controller.pointerSpeedRow, 1), (controller.wheelModeRow, 1),
+            (controller.trackingSpeedRow, 2), (controller.pointerAccelerationRow, 1),
+            (controller.managedRow, 2), (controller.pointerSpeedRow, 2), (controller.wheelModeRow, 1),
             (controller.sensitivityRow, 1), (controller.firmnessRow, 1), (controller.hapticsRow, 1),
             // One line each at 520 pt: no word left alone on a second line.
             (controller.strengthRow, 1), (controller.pressForceRow, 1),
@@ -1182,9 +1426,12 @@ final class MousePreferencesViewControllerTests: XCTestCase {
             XCTAssertEqual(row.explanationLabel.font?.pointSize, PreferencesForm.hintFontSize, row.title)
             XCTAssertEqual(row.explanationLabel.frame.height, CGFloat(count) * oneLine, accuracy: 0.5, row.title)
         }
-        // No protocol words in the tab: "DPI" only as the unit of a value.
+        // No protocol words in the tab: "DPI" only as the unit of a value, and where Pointer
+        // speed says what it is beside the macOS tracking speed.
+        XCTAssertEqual(controller.pointerSpeedRow.explanation, text("mouse-pointer-speed-hint"))
+        XCTAssertTrue(text("mouse-pointer-speed-hint").contains("tracking speed"))
         let texts = allSubviews(of: controller.view).compactMap { ($0 as? NSTextField)?.stringValue }
-        for text in texts where text != controller.pointerSpeedRow.valueText {
+        for text in texts where text != controller.pointerSpeedRow.valueText && text != controller.pointerSpeedRow.explanation {
             XCTAssertFalse(text.contains("HID++"), text)
             XCTAssertFalse(text.contains("DPI"), text)
         }
@@ -1234,6 +1481,88 @@ final class MousePreferencesViewControllerTests: XCTestCase {
     }
 }
 
+/// The scale and the reading rules of the macOS pointer settings. Only the pure parts:
+/// nothing here reads or writes the real settings.
+final class MacPointerSettingsTests: XCTestCase {
+
+    func testTheScaleIsTheOneOfSystemSettings() {
+        XCTAssertEqual(MacPointerSettings.trackingSpeeds, [0, 0.125, 0.5, 0.6875, 0.875, 1, 1.5, 2, 2.5, 3])
+        XCTAssertEqual(MacPointerPaneModel.trackingSpeedRange, 0...9)
+        XCTAssertEqual(MacPointerPaneModel.trackingSpeedScale, .ticksOnly(10))
+    }
+
+    func testTheNearestStop() {
+        for (index, speed) in MacPointerSettings.trackingSpeeds.enumerated() {
+            XCTAssertEqual(MacPointerSettings.trackingSpeedIndex(nearest: speed), index)
+        }
+        XCTAssertEqual(MacPointerSettings.trackingSpeedIndex(nearest: 0.3125), 1, "the slower one on a tie")
+        XCTAssertEqual(MacPointerSettings.trackingSpeedIndex(nearest: 0.7), 3)
+        XCTAssertEqual(MacPointerSettings.trackingSpeedIndex(nearest: -1), 0)
+        XCTAssertEqual(MacPointerSettings.trackingSpeedIndex(nearest: 5), 9)
+    }
+
+    func testTheModelHidesWhatCannotBeRead() {
+        let full = MacPointerPaneModel(MacPointerState(trackingSpeed: 1.5, pointerAcceleration: false))
+        XCTAssertEqual(full.trackingSpeedIndex, 6)
+        XCTAssertEqual(full.pointerAcceleration, false)
+        XCTAssertFalse(full.isEmpty)
+        let none = MacPointerPaneModel(MacPointerState())
+        XCTAssertNil(none.trackingSpeedIndex)
+        XCTAssertNil(none.pointerAcceleration)
+        XCTAssertTrue(none.isEmpty)
+    }
+
+    /// The HID event system keeps 16.16 fixed point: 3.0 is the 196608 `hidutil` shows.
+    func testFixedPoint() {
+        XCTAssertEqual(MacPointerSystem.fixedPoint(3), 196608)
+        XCTAssertEqual(MacPointerSystem.fixedPoint(0.6875), 45056)
+        XCTAssertEqual(MacPointerSystem.fixedPoint(0), 0)
+        XCTAssertEqual(MacPointerSystem.double(fromFixedPoint: 196608), 3)
+        for speed in MacPointerSettings.trackingSpeeds {
+            XCTAssertEqual(MacPointerSystem.double(fromFixedPoint: Int(MacPointerSystem.fixedPoint(speed))), speed)
+        }
+    }
+
+    func testTheKeysAreTheOnesSystemSettingsUses() {
+        XCTAssertEqual(MacPointerSystem.trackingSpeedPreferenceKey, "com.apple.mouse.scaling")
+        XCTAssertEqual(MacPointerSystem.linearPreferenceKey, "com.apple.mouse.linear")
+        XCTAssertEqual(MacPointerSystem.trackingSpeedProperty, "HIDMouseAcceleration")
+        XCTAssertEqual(MacPointerSystem.linearProperty, "HIDUseLinearScalingMouseAcceleration")
+    }
+
+    /// What is in effect wins over what is stored.
+    func testReadingTheTrackingSpeed() {
+        let read = MacPointerSystem.trackingSpeed(property:preference:)
+        XCTAssertEqual(read(NSNumber(value: 196608), NSNumber(value: 1.0)), 3)
+        XCTAssertEqual(read(NSNumber(value: 0), NSNumber(value: 1.0)), 0, "slowest is a number, not false")
+        XCTAssertEqual(read(nil, NSNumber(value: 1.5)), 1.5)
+        XCTAssertEqual(read(nil, "2"), 2, "defaults write without -float stores text")
+        XCTAssertNil(read(nil, NSNumber(value: true)), "a Boolean is no speed")
+        XCTAssertNil(read(nil, "fast"))
+        XCTAssertNil(read(nil, nil))
+    }
+
+    /// On unless linear tracking is set; on is also the macOS default.
+    func testReadingPointerAcceleration() {
+        let read = MacPointerSystem.pointerAcceleration(property:preference:)
+        XCTAssertFalse(read(NSNumber(value: 1), nil))
+        XCTAssertTrue(read(NSNumber(value: 0), NSNumber(value: true)), "what is in effect wins")
+        XCTAssertFalse(read(nil, NSNumber(value: true)))
+        XCTAssertTrue(read(nil, NSNumber(value: false)))
+        XCTAssertFalse(read(nil, NSNumber(value: 1)))
+        XCTAssertFalse(read(nil, "YES"))
+        XCTAssertTrue(read(nil, "NO"))
+        XCTAssertTrue(read(nil, nil))
+    }
+
+    func testTheInertSettingsNeverWrite() {
+        let inert = MacPointerSettings.inert
+        XCTAssertFalse(inert.writeTrackingSpeed(1))
+        XCTAssertFalse(inert.writePointerAcceleration(false))
+        XCTAssertEqual(inert.read(), MacPointerState(trackingSpeed: 0.6875, pointerAcceleration: true))
+    }
+}
+
 final class MousePreferencesTabPlacementTests: XCTestCase {
 
     func testMousePaneSitsAfterGestures() throws {
@@ -1255,7 +1584,8 @@ final class MousePreferencesTabPlacementTests: XCTestCase {
 }
 
 /// Renders the tab off screen for a look at it, light and dark: MX Master 4 managed and not,
-/// with "On the mouse" lines and each part lit up, MX Master 3S and no mouse. Off screen the
+/// with "On the mouse" lines and each part lit up, MX Master 3S, any mouse with its macOS
+/// settings, and macOS settings that could not be read. Off screen the
 /// window's material draws a flat grey and vibrant text is not blended, so text looks a
 /// little dimmer than on screen. Only runs when asked to:
 /// `TEST_RUNNER_SCROLLIO_SHOTS_DIR=<folder> xcodebuild … test -only-testing:MosTests/MousePreferencesRenderTests`.
@@ -1283,9 +1613,10 @@ final class MousePreferencesRenderTests: XCTestCase {
         let directory = URL(fileURLWithPath: folder, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        func tab(_ devices: [LogiMouseDeviceState]) -> MousePreferencesViewController {
+        func tab(_ devices: [LogiMouseDeviceState], mac: FakeMacPointer = FakeMacPointer()) -> MousePreferencesViewController {
             let controller = MousePreferencesViewController()
             controller.deviceSource = MouseDeviceSource(deviceStates: { devices }, refresh: {}, showDiagnostics: {})
+            controller.pointerSettings = mac.settings
             controller.readbackSettleTime = 0
             _ = controller.view
             controller.reloadDevices()
@@ -1313,7 +1644,24 @@ final class MousePreferencesRenderTests: XCTestCase {
         Options.shared.logiWheel = .default
         try render(tab([master4]).view, name: "mx-master-4-not-managed", into: directory)
         try render(tab([MouseDeviceFixtures.mxMaster3S()]).view, name: "mx-master-3s", into: directory)
-        try render(tab([]).view, name: "no-mouse", into: directory)
+
+        // Any mouse: the macOS settings as on the owner's Mac (fastest, acceleration on), then
+        // a slow linear one, then values macOS did not give.
+        let owner = FakeMacPointer()
+        owner.trackingSpeed = 3
+        try render(tab([], mac: owner).view, name: "any-mouse", into: directory)
+        let linear = FakeMacPointer()
+        linear.trackingSpeed = 0.5
+        linear.pointerAcceleration = false
+        try render(tab([], mac: linear).view, name: "any-mouse-linear", into: directory)
+        let speedOnly = FakeMacPointer()
+        speedOnly.pointerAcceleration = nil
+        try render(tab([], mac: speedOnly).view, name: "any-mouse-acceleration-unreadable", into: directory)
+        let unreadable = FakeMacPointer()
+        unreadable.trackingSpeed = nil
+        unreadable.pointerAcceleration = nil
+        try render(tab([], mac: unreadable).view, name: "any-mouse-unreadable", into: directory)
+        try render(tab([master4], mac: unreadable).view, name: "mx-master-4-macos-unreadable", into: directory)
     }
 
     /// Writes `<name>-light.png` and `<name>-dark.png`, as PreferencesScrollingRenderTests does.
