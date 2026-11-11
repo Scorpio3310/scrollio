@@ -47,6 +47,10 @@ struct OptionItem {
         static let Settings = "logiWheelSettings"
     }
 
+    struct MouseBasics {
+        static let Settings = "logiMouseSettings"
+    }
+
     struct Application {
         static let Allowlist = "allowlist"
         static let Applications = "applications"
@@ -55,7 +59,7 @@ struct OptionItem {
 
 /// 配置分组: 变更通知与脏组写入的粒度
 enum OptionsGroup: CaseIterable {
-    case general, scroll, buttons, application, gesture, scrollTuning, logiWheel
+    case general, scroll, buttons, application, gesture, scrollTuning, logiWheel, logiMouse
 }
 
 class Options {
@@ -97,6 +101,17 @@ class Options {
     // Logitech 滚轮硬件设置 (SmartShift 模式 / 灵敏度 / 齿感力度), 仅在 managedByMos 时写入设备
     var logiWheel = LogiWheelSettings.default {
         didSet { markChanged(.logiWheel) }
+    }
+    // Logitech basic mouse settings (pointer speed, haptics, press force). Every value is
+    // optional (nil = leave the mouse's own); written only while `logiMouseManaged` is on.
+    var logiMouse = LogiMouseSettings.default {
+        didSet { markChanged(.logiMouse) }
+    }
+    /// "Let Scrollio manage this mouse": the one switch for everything Scrollio writes to a
+    /// Logitech mouse (wheel and basic settings). Stored as `logiWheel.managedByMos`.
+    var logiMouseManaged: Bool {
+        get { logiWheel.managedByMos }
+        set { logiWheel.managedByMos = newValue }
     }
 
     /// 保留无法 decode 的 binding 原始 JSON 元素 (来自未来 Mos 版本).
@@ -249,6 +264,8 @@ extension Options {
         scrollTuning = loadScrollTuningSettings()
         // Logitech 滚轮
         logiWheel = loadLogiWheelSettings()
+        // Logitech basic mouse settings
+        logiMouse = Self.decodeLogiMouseSettings(UserDefaults.standard.data(forKey: OptionItem.MouseBasics.Settings))
         // What the Scrolling tab can no longer show is brought in line (global and per app).
         // Still inside the lock: nothing is notified or saved, the next save writes it.
         ScrollSettingsCleanup.run(
@@ -318,7 +335,23 @@ extension Options {
             } else {
                 NSLog("Failed to serialize Logitech wheel settings, skipping save")
             }
+        case .logiMouse:
+            if let data = try? encoder.encode(logiMouse) {
+                UserDefaults.standard.set(data, forKey: OptionItem.MouseBasics.Settings)
+            } else {
+                NSLog("Failed to serialize Logitech mouse settings, skipping save")
+            }
         }
+    }
+
+    /// Logitech basic mouse settings from their stored JSON. Missing or unreadable data gives
+    /// the default (nothing set, nothing written); single bad fields fall back to nil.
+    static func decodeLogiMouseSettings(_ data: Data?) -> LogiMouseSettings {
+        guard let data = data,
+              let settings = try? JSONDecoder().decode(LogiMouseSettings.self, from: data) else {
+            return .default
+        }
+        return settings
     }
 
     // Logitech 滚轮设置; 缺失或损坏时回退默认值 (默认不接管设备)

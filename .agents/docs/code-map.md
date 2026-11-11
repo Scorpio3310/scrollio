@@ -12,7 +12,7 @@ and the tests. Rules live in `AGENTS.md`.
 | `InputEvent/` | The unified input event model, binding matching (`InputProcessor`), gesture navigation (recognizer, "follow the hand" session, pointer lock, dock swipe). |
 | `Shortcut/` | System shortcut definitions and the executor of actions. |
 | `Keys/` | Recording keys and mouse buttons: UI and data. |
-| `Logi/` | Logitech HID++: device sessions, feature discovery, button divert, usage registry, wheel (SmartShift), gesture raw XY and haptics, debug panel. |
+| `Logi/` | Logitech HID++: device sessions, feature discovery, button divert, usage registry, wheel (SmartShift), basic mouse settings (`Basics/`: battery, pointer speed, haptic settings, press force), gesture raw XY and haptics, debug panel. |
 | `Integration/` | The bridge between `Logi/` and the rest of the app. |
 | `Options/` | Settings in UserDefaults, per-app rules, persistence models. |
 | `Managers/` | App-level singletons: windows, the status item, the main menu. |

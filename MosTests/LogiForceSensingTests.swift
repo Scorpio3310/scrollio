@@ -86,4 +86,49 @@ final class LogiForceSensingTests: XCTestCase {
     func testFeatureDirectory_containsForceSensing() {
         XCTAssertEqual(HIDPPInfo.featureNames[LogiDeviceSession.featureForceSensing]?.0, "ForceSensing")
     }
+
+    // MARK: - LogiPressForceProtocol (one definition for the debug panel and the Mouse settings)
+
+    /// OpenLogi's MX Master 4 sample: changeable, default 5089, max 6768, min 4071.
+    private static let mxMaster4Info: [UInt8] = {
+        var report = [UInt8](repeating: 0, count: 20)
+        report[0] = 0x11; report[1] = 0xFF; report[2] = 0x0C; report[3] = 0x11
+        report[4] = 0x00; report[5] = 0x01
+        report[6] = 0x13; report[7] = 0xE1
+        report[8] = 0x1A; report[9] = 0x70
+        report[10] = 0x0F; report[11] = 0xE7
+        return report
+    }()
+
+    func testProtocolParsesTheMXMaster4Sample() {
+        let info = LogiPressForceProtocol.parseInfo(Self.mxMaster4Info)
+        XCTAssertEqual(info, LogiPressForceInfo(changeable: true, minValue: 4071, maxValue: 6768, defaultValue: 5089))
+        XCTAssertEqual(info.map(LogiPressForceProtocol.isValid), true)
+        XCTAssertEqual(LogiDeviceSession.parseForceSensingInfoForTests(Self.mxMaster4Info), info, "the session uses the same parser")
+    }
+
+    func testProtocolRequestsAddressButtonZero() {
+        XCTAssertEqual(LogiPressForceProtocol.infoParams(), [0, 0, 0])
+        XCTAssertEqual(LogiPressForceProtocol.currentParams(), [0, 0, 0])
+        XCTAssertEqual(LogiPressForceProtocol.setParams(value: 6000), [0x00, 0x17, 0x70])
+        XCTAssertEqual(LogiPressForceProtocol.infoFunction, 1)
+        XCTAssertEqual(LogiPressForceProtocol.currentFunction, 2)
+        XCTAssertEqual(LogiPressForceProtocol.setFunction, 3)
+    }
+
+    func testInfoValidity() {
+        XCTAssertFalse(LogiPressForceProtocol.isValid(LogiPressForceInfo(changeable: true, minValue: 4071, maxValue: 6768, defaultValue: 9000)),
+                       "a default outside the range is refused")
+        XCTAssertFalse(LogiPressForceProtocol.isValid(LogiPressForceInfo(changeable: true, minValue: 500, maxValue: 50, defaultValue: 200)),
+                       "upside-down range")
+        XCTAssertFalse(LogiPressForceProtocol.isValid(LogiPressForceInfo(changeable: true, minValue: 0, maxValue: 0, defaultValue: 0)),
+                       "all zero")
+        XCTAssertTrue(LogiPressForceProtocol.isValid(LogiPressForceInfo(changeable: false, minValue: 50, maxValue: 500, defaultValue: 50)),
+                      "validity is about the range; changeable is checked separately")
+    }
+
+    func testClampWithUpsideDownRangeLeavesTheValue() {
+        let info = LogiPressForceInfo(changeable: true, minValue: 500, maxValue: 50, defaultValue: 200)
+        XCTAssertEqual(LogiPressForceProtocol.clamp(9999, info: info), 9999)
+    }
 }

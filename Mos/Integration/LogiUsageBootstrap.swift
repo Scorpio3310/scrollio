@@ -20,6 +20,8 @@ enum LogiUsageBootstrap {
         }
         // Logitech 滚轮硬件设置 (SmartShift / 灵敏度 / 齿感力度), 见 LogiUsageBootstrap+Wheel
         installWheelObserver()
+        // Logitech basic mouse settings (DPI / haptics / press force), see LogiUsageBootstrap+Basics
+        installMouseObserver()
         // 手势导航的设备侧位移跟踪 (raw XY), 见 LogiUsageBootstrap+Gesture
         installGestureObserver()
     }
