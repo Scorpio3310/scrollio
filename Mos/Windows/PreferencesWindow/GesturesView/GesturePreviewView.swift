@@ -1,8 +1,8 @@
 //
 //  GesturePreviewView.swift
 //  Mos
-//  The picture at the top of the Gestures tab: on the left a mouse whose gesture button is
-//  held while the hand moves it, on the right a small desktop that answers as the settings
+//  The picture at the top of the Gestures tab: on the left the connected mouse (its
+//  model's drawing, MouseArtwork.swift) whose gesture button is held while the hand moves it, on the right a small desktop that answers as the settings
 //  say (the desktops follow the hand, Mission Control opens, the app grid shows, a Space
 //  changes, or the action's icon pulses). Built like the Scrolling tab's preview.
 //
@@ -40,6 +40,12 @@ final class GesturePreviewView: NSView {
     var isWindowVisible: (NSWindow) -> Bool = { $0.occlusionState.contains(.visible) }
     /// The window whose occlusion is followed.
     private weak var observedWindow: NSWindow?
+
+    /// The drawing for the connected mouse. A seam for the tests and renders; call
+    /// `reloadMouse()` after replacing it. The preview follows a mouse coming and going.
+    var mouseSource: () -> MouseArtworkModel = {
+        MouseArtworkModel.model(forDeviceName: LogiCenter.shared.mouseDeviceStates().first?.deviceName)
+    }
 
     private(set) var loop = GesturePreviewLoop(scene: GesturePreviewScene())
     /// The moment of the loop that is on screen (seconds from its start).
@@ -82,6 +88,10 @@ final class GesturePreviewView: NSView {
             self, selector: #selector(reduceMotionDidChange),
             name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil
         )
+        for name in [LogiCenter.sessionChanged, LogiCenter.mouseStateChanged] {
+            NotificationCenter.default.addObserver(self, selector: #selector(reloadMouse), name: name, object: nil)
+        }
+        reloadMouse()
         layoutCards()
         showResting()
     }
@@ -128,7 +138,19 @@ final class GesturePreviewView: NSView {
     /// The tab calls this with true when it appears and with false when it disappears.
     func setAnimating(_ on: Bool) {
         wantsAnimation = on
+        if on {
+            reloadMouse()
+        }
         updateTimer()
+    }
+
+    /// Draws the mouse `mouseSource` gives now.
+    @objc func reloadMouse() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.reloadMouse() }
+            return
+        }
+        deviceCard.model = mouseSource()
     }
 
     /// The display-synchronised timer is running.

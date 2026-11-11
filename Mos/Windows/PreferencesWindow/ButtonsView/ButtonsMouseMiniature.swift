@@ -1,12 +1,13 @@
 //
 //  ButtonsMouseMiniature.swift
 //  Mos
-//  The small picture in front of each row of the Buttons pane: the card's mouse
-//  (ButtonsMouseArtworkView) about 20 pt tall with the row's button filled in the accent
-//  colour, a keyboard for a key, and for a button the drawing cannot show the mouse with
-//  nothing lit and the button's number on a badge. The body, the seam and the two buttons
-//  are the card's geometry; the wheel, the button behind it, the side buttons and the thumb
-//  panel sit where the card has them but larger, so they can be told apart at this size.
+//  The small picture in front of each row of the Buttons pane: the card's mouse (the
+//  connected model's drawing, MouseArtwork.swift) about 20 pt tall with the row's button
+//  filled in the accent colour, a keyboard for a key, and for a button the drawing cannot
+//  show the mouse with nothing lit and the button's number on a badge. The outline, the
+//  seams and the two buttons are the card's; the side buttons, the thumb wheel, the wheel
+//  and the button behind it are the schematic variant's, larger and further apart than on
+//  the card, so the front, middle and rear side buttons can be told apart at this size.
 //
 
 import Cocoa
@@ -23,23 +24,24 @@ enum ButtonsMouseMiniature {
         return NSFont.systemFont(ofSize: 8.5, weight: .bold)
     }
 
-    /// The picture of `picture`; `highlighted`: on the accent-coloured selection, drawn in
-    /// white. It is drawn each time it shows, in the appearance and accent colour of then.
-    static func image(for picture: ButtonTriggerPicture, highlighted: Bool) -> NSImage {
+    /// The picture of `picture` on `mouse`'s drawing; `highlighted`: on the accent-coloured
+    /// selection, drawn in white. It is drawn each time it shows, in the appearance and
+    /// accent colour of then.
+    static func image(for picture: ButtonTriggerPicture, mouse: MouseArtworkModel, highlighted: Bool) -> NSImage {
         let image = NSImage(size: size, flipped: true) { rect in
-            draw(picture, in: rect, highlighted: highlighted)
+            draw(picture, mouse: mouse, in: rect, highlighted: highlighted)
             return true
         }
         image.cacheMode = .never
         return image
     }
 
-    static func draw(_ picture: ButtonTriggerPicture, in rect: NSRect, highlighted: Bool) {
+    static func draw(_ picture: ButtonTriggerPicture, mouse: MouseArtworkModel, in rect: NSRect, highlighted: Bool) {
         switch picture {
         case .key:
             drawKeyboard(in: rect, highlighted: highlighted)
         case .mouse(let part, let number):
-            drawMouse(in: rect, lit: part, highlighted: highlighted)
+            drawMouse(mouse, in: rect, lit: part, highlighted: highlighted)
             if let number {
                 let fill = highlighted ? NSColor.white : MiniaturePalette.badge
                 let text = highlighted ? NSColor.controlAccentColor : MiniaturePalette.badgeText
@@ -55,157 +57,68 @@ enum ButtonsMouseMiniature {
 
     // MARK: - Geometry
 
-    /// The shape of `part` in a picture drawn in `rect` (flipped).
-    static func shape(of part: ButtonsMousePart, in rect: NSRect) -> NSBezierPath {
-        let path = artworkShape(of: part)
+    /// The shape of `part` in a picture of `mouse` drawn in `rect` (flipped); nil when the
+    /// mouse does not have it.
+    static func shape(of part: ButtonsMousePart, mouse: MouseArtworkModel, in rect: NSRect) -> NSBezierPath? {
+        guard let path = MouseArtworkShapes(model: mouse, schematic: true).shape(of: part.artworkPart) else { return nil }
         path.transform(using: transform(in: rect))
         return path
     }
 
     /// The mouse's outline in a picture drawn in `rect` (flipped).
-    static func bodyPath(in rect: NSRect) -> NSBezierPath {
-        let path = MouseArtworkView.bodyPath()
+    static func bodyPath(of mouse: MouseArtworkModel, in rect: NSRect) -> NSBezierPath {
+        let path = MouseArtworkShapes(model: mouse, schematic: true).outline()
         path.transform(using: transform(in: rect))
         return path
     }
 
-    /// From the card's mouse (ButtonsMouseArtworkView's coordinates) to the picture: the
-    /// body `mouseHeight` tall, in the middle of `rect`.
+    /// Points per unit of the drawing's grid.
+    private static var unit: CGFloat {
+        return mouseHeight / MouseArtworkShapes.grid.height
+    }
+
+    /// From the drawing's grid to the picture: the grid `mouseHeight` tall, in the middle
+    /// of `rect`.
     private static func transform(in rect: NSRect) -> AffineTransform {
-        let scale = mouseHeight / MouseArtworkView.bodySize.height
-        let width = MouseArtworkView.bodySize.width * scale
-        let originX = rect.minX + (rect.width - width) / 2
-        let originY = rect.minY + (rect.height - mouseHeight) / 2
-        let margin = MouseArtworkView.margin
-        return AffineTransform(m11: scale, m12: 0, m21: 0, m22: scale, tX: originX - margin * scale, tY: originY - margin * scale)
-    }
-
-    /// One point of the picture in the card's coordinates.
-    private static var hairline: CGFloat {
-        return MouseArtworkView.bodySize.height / mouseHeight
-    }
-
-    /// `part` in the card's coordinates, larger than the card draws it where it is small.
-    private static func artworkShape(of part: ButtonsMousePart) -> NSBezierPath {
-        let p = MouseArtworkView.point
-        let unit = MouseArtworkView.bodySize.width / MouseArtworkView.designSize.width
-        switch part {
-        case .left:
-            return ButtonsMouseArtworkView.buttonAreaPath(left: true)
-        case .right:
-            return ButtonsMouseArtworkView.buttonAreaPath(left: false)
-        case .middle:
-            return MouseArtworkHighlight.capsule(grown(MouseArtworkView.wheelRect, width: 1.5, height: 1))
-        case .modeShift:
-            let rect = grown(MouseArtworkView.backButtonRect, width: 2.0, height: 1.6)
-            return NSBezierPath(roundedRect: rect, xRadius: hairline, yRadius: hairline)
-        // Along the left edge above the thumb panel, Forward in front; they lie on the
-        // outline so they read as buttons on the side.
-        case .forward:
-            return capsule(from: p(17.5, 44.5), to: p(15.5, 51.5), width: 9.5 * unit)
-        case .back:
-            return capsule(from: p(12, 59.5), to: p(7.5, 66), width: 9.5 * unit)
-        case .gesture:
-            return capsule(from: p(11.5, 80), to: p(14.5, 103), width: 11 * unit)
-        }
-    }
-
-    private static func grown(_ rect: NSRect, width: CGFloat, height: CGFloat) -> NSRect {
-        return rect.insetBy(dx: -rect.width * (width - 1) / 2, dy: -rect.height * (height - 1) / 2)
-    }
-
-    /// A capsule `width` wide whose round ends are centred on `start` and `end`.
-    private static func capsule(from start: NSPoint, to end: NSPoint, width: CGFloat) -> NSBezierPath {
-        let dx = end.x - start.x
-        let dy = end.y - start.y
-        let length = (dx * dx + dy * dy).squareRoot() + width
-        let path = NSBezierPath(
-            roundedRect: NSRect(x: -length / 2, y: -width / 2, width: length, height: width),
-            xRadius: width / 2, yRadius: width / 2
+        let grid = MouseArtworkShapes.grid
+        var transform = AffineTransform(
+            translationByX: rect.minX + (rect.width - grid.width * unit) / 2,
+            byY: rect.minY + (rect.height - mouseHeight) / 2
         )
-        let angle = atan2(dy, dx)
-        path.transform(using: AffineTransform(
-            m11: cos(angle), m12: sin(angle), m21: -sin(angle), m22: cos(angle),
-            tX: (start.x + end.x) / 2, tY: (start.y + end.y) / 2
-        ))
-        return path
+        transform.scale(unit)
+        return transform
     }
 
     // MARK: - Drawing
 
-    private static func drawMouse(in rect: NSRect, lit: ButtonsMousePart?, highlighted: Bool) {
-        let accent = NSColor.controlAccentColor
-        let white = NSColor.white
-        let litColor = highlighted ? white : accent
-        let bodyFill = highlighted ? white.withAlphaComponent(0.14) : ScrollPreviewPalette.mouseFill
-        let outline = highlighted ? white : ScrollPreviewPalette.mouseLine
-        let seamColor = highlighted ? white.withAlphaComponent(0.5) : ScrollPreviewPalette.mouseSeam
-        // On the selection the parts that are not lit stay faint, so the lit one stands out.
-        let partEdge = highlighted ? white.withAlphaComponent(0.4) : MiniaturePalette.partEdge
-        let px = hairline
-
+    private static func drawMouse(_ mouse: MouseArtworkModel, in rect: NSRect, lit: ButtonsMousePart?, highlighted: Bool) {
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
-        let move = transform(in: rect)
-        (move as NSAffineTransform).concat()
+        (transform(in: rect) as NSAffineTransform).concat()
+        MouseArtworkPainter.draw(
+            MouseArtworkShapes(model: mouse, schematic: true),
+            ink: ink(highlighted: highlighted), lit: lit?.artworkPart, unit: unit
+        )
+    }
 
-        let body = MouseArtworkView.bodyPath()
-        bodyFill.setFill()
-        body.fill()
-        if lit == .left || lit == .right {
-            litColor.setFill()
-            artworkShape(of: lit == .left ? .left : .right).fill()
-        }
-        NSGraphicsContext.saveGraphicsState()
-        body.addClip()
-        let seams = MouseArtworkView.seamPath()
-        seams.lineWidth = 0.6 * px
-        seamColor.setStroke()
-        seams.stroke()
-        NSGraphicsContext.restoreGraphicsState()
-
-        /// A part inside the body: lit, or in its own colour with a fine edge.
-        func drawInner(_ part: ButtonsMousePart, fill: NSColor) {
-            let shape = artworkShape(of: part)
-            if part == lit {
-                litColor.setFill()
-                shape.fill()
-                return
-            }
-            if !highlighted {
-                ScrollPreviewPalette.mouseFill.setFill()
-                shape.fill()
-                fill.setFill()
-                shape.fill()
-            }
-            shape.lineWidth = 0.6 * px
-            partEdge.setStroke()
-            shape.stroke()
-        }
-        drawInner(.middle, fill: MouseArtworkPalette.wheel)
-        drawInner(.modeShift, fill: ScrollPreviewPalette.wheelWell)
-        drawInner(.gesture, fill: MouseArtworkPalette.panel)
-
-        body.lineWidth = px
-        outline.setStroke()
-        body.stroke()
-
-        // The side buttons over the outline.
-        for part in [ButtonsMousePart.forward, .back] {
-            let shape = artworkShape(of: part)
-            if part == lit {
-                litColor.setFill()
-                shape.fill()
-            } else if !highlighted {
-                ScrollPreviewPalette.mouseFill.setFill()
-                shape.fill()
-                ScrollPreviewPalette.wheelWell.setFill()
-                shape.fill()
-            }
-            shape.lineWidth = 0.8 * px
-            (part == lit ? litColor : (highlighted ? partEdge : outline)).setStroke()
-            shape.stroke()
-        }
+    /// The card's colours with finer lines; on the selection everything in white, the parts
+    /// that are not lit faint, so the lit one stands out.
+    private static func ink(highlighted: Bool) -> MouseArtworkInk {
+        let white = NSColor.white
+        var ink = MouseArtworkInk.card
+        ink.bodyFill = highlighted ? white.withAlphaComponent(0.14) : ScrollPreviewPalette.mouseFill
+        ink.outline = highlighted ? white : ScrollPreviewPalette.mouseLine
+        ink.seam = highlighted ? white.withAlphaComponent(0.5) : ScrollPreviewPalette.mouseSeam
+        ink.partEdge = highlighted ? white.withAlphaComponent(0.4) : MiniaturePalette.partEdge
+        ink.lit = highlighted ? white : .controlAccentColor
+        ink.outlineWidth = 1
+        ink.seamWidth = 0.6
+        ink.partEdgeWidth = 0.6
+        ink.ridges = false
+        ink.shadow = false
+        ink.drawsWell = false
+        ink.fillsParts = !highlighted
+        return ink
     }
 
     private static func drawKeyboard(in rect: NSRect, highlighted: Bool) {
@@ -232,7 +145,8 @@ enum ButtonsMouseMiniature {
 
     static func drawBadge(_ number: Int, in rect: NSRect, font: NSFont, fill: NSColor, text color: NSColor) {
         fill.setFill()
-        MouseArtworkHighlight.capsule(rect).fill()
+        let radius = min(rect.width, rect.height) / 2
+        NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
         let text = NSAttributedString(string: String(number), attributes: [.font: font, .foregroundColor: color])
         let size = text.size()
         text.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))

@@ -370,9 +370,9 @@ final class PreferencesWindowRenderTests: XCTestCase {
     /// as the pane builds the menu: drawn by this test in the menu's order (the section
     /// title, a tick, each picture, the title, the mark at the end, the separator), on the
     /// window colour. AppKit's menu itself cannot be drawn off screen.
-    private func renderPlaceMenu(name: String, rowAt index: Int) throws {
+    private func renderPlaceMenu(name: String, rowAt index: Int, deviceName: String? = "MX Master 4") throws {
         let buttons = PreferencesButtonsViewController()
-        buttons.deviceSource = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+        buttons.deviceSource = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { deviceName }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
         buttons.presentPlaceMenu = { _, _ in }
         _ = buttons.view
         let menu = try XCTUnwrap(buttons.placeMenu(for: buttons.rows[index].binding.id))
@@ -489,7 +489,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
                                 y: CGFloat(row) * cell + (cell - size.height) / 2,
                                 width: size.width, height: size.height
                             )
-                            ButtonsMouseMiniature.image(for: picture, highlighted: highlighted).draw(in: frame)
+                            ButtonsMouseMiniature.image(for: picture, mouse: .mxMaster4, highlighted: highlighted).draw(in: frame)
                         }
                     }
                 }
@@ -509,6 +509,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
         strip.wantsLayer = true
         for (index, part) in parts.enumerated() {
             let artwork = ButtonsMouseArtworkView()
+            artwork.model = .mxMaster4
             artwork.frame.origin = NSPoint(x: size.width * CGFloat(index), y: 0)
             artwork.setEmphasis(part, animated: false)
             strip.addSubview(artwork)
@@ -819,6 +820,205 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try lines.joined(separator: "\n").write(to: directory.appendingPathComponent("colour-probe.txt"), atomically: true, encoding: .utf8)
     }
 
+    // MARK: - The mouse drawing per model
+
+    /// The Mouse, Buttons and Gestures panes with an MX Master 4, an MX Master 3S and no
+    /// Logitech mouse (`pane-<pane>-<mouse>-<appearance>.png`): the Mouse pane plain and
+    /// with each part lit; the Buttons pane with the gesture button and the thumb panel
+    /// selected (Button 5 is said to be the thumb panel, which only the MX Master 4 has) and
+    /// "That's …" for the gesture button; the Gestures pane at rest; and "Which Button Is
+    /// This?" for Button 6 (`menu-place-<mouse>-<appearance>.png`).
+    func testRenderMouseArtworkPanes() throws {
+        let mice: [(name: String, device: LogiMouseDeviceState?, support: MouseGestureDeviceSupport)] = [
+            ("mx4", MouseDeviceFixtures.mxMaster4(), MouseGestureDeviceSupport(deviceTracking: true, haptics: true)),
+            ("mx3s", MouseDeviceFixtures.mxMaster3S(), MouseGestureDeviceSupport(deviceTracking: true, haptics: false)),
+            ("none", nil, .none),
+        ]
+        for mouse in mice {
+            Options.shared.logiMouse = .default
+            Options.shared.logiWheel = LogiWheelSettings(managedByMos: mouse.device != nil)
+            try renderMouse(mouse.device.map { [$0] } ?? [], name: "pane-mouse-\(mouse.name)")
+            if let device = mouse.device {
+                let model = MouseArtworkModel.model(forDeviceName: device.deviceName)
+                for part in MousePart.allCases where model.has(part.artworkPart) {
+                    try renderMouse([device], name: "pane-mouse-\(mouse.name)-lit-\(part)", lit: part)
+                }
+            }
+
+            Options.shared.buttons.binding = [
+                binding(3, SystemShortcut.navigateBack.identifier),
+                binding(4, SystemShortcut.navigateForward.identifier),
+                binding(1000, SystemShortcut.mouseGestureNavigation.identifier),
+                binding(1001, SystemShortcut.logiSmartShiftToggle.identifier),
+                binding(2000 + 0x01A0, SystemShortcut.missionControl.identifier),
+                binding(6, SystemShortcut.copy.identifier),
+                ButtonBinding(
+                    triggerEvent: RecordedEvent(type: .mouse, code: 5, modifiers: 0, deviceFilter: nil, mousePart: .thumbPanel),
+                    systemShortcutName: SystemShortcut.paste.identifier
+                ),
+            ]
+            let name = mouse.device?.deviceName
+            let source = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { name }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+            try renderButtons(name: "pane-buttons-\(mouse.name)", source: source) { buttons in
+                buttons.list.select(buttons.rows[2].id)
+            }
+            try renderButtons(name: "pane-buttons-\(mouse.name)-thumb-panel", source: source) { buttons in
+                buttons.list.select(buttons.rows[6].id)
+            }
+            try renderButtons(name: "pane-buttons-\(mouse.name)-thats-gesture-button", source: source) { buttons in
+                self.answer(buttons, code: 1000)
+            }
+            try renderPlaceMenu(name: "menu-place-\(mouse.name)", rowAt: 5, deviceName: name)
+
+            var gesture = MouseGestureSettings.default
+            gesture.mode = .discrete
+            Options.shared.gesture = gesture
+            Options.shared.logiMouse = LogiMouseSettings()
+            try renderPane(GesturesPreferencesViewController.tabIdentifier, name: "pane-gestures-\(mouse.name)", replacement: {
+                let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+                gestures.deviceSource = MouseGestureDeviceSource(support: { mouse.support }, refresh: {})
+                gestures.bindingSummary = {
+                    MouseGestureBindingSummary(
+                        hasGestureButton: true,
+                        hasLogitechGestureButton: mouse.device != nil,
+                        buttonTitles: [mouse.device != nil ? "Gesture button" : "Back button"]
+                    )
+                }
+                return gestures
+            }, afterLoad: { controller in
+                guard let gestures = controller as? GesturesPreferencesViewController else { return }
+                gestures.previewView.prefersReducedMotion = { true }
+                gestures.previewView.reduceMotionDidChange()
+                gestures.previewView.mouseSource = { MouseArtworkModel.model(forDeviceName: name) }
+                gestures.previewView.reloadMouse()
+            })
+        }
+    }
+
+    /// Each drawing alone at four times the card's size on the card's colour, plain and with
+    /// each part it has lit, light and dark (`art-<mouse>-<part>-<appearance>.png`), plain
+    /// also at its size on a 1x and a 2x screen; and the rows' pictures of every drawing
+    /// with each part lit, on the list's box and on the selection, at four times their size
+    /// (`art-miniatures-<appearance>.png`).
+    func testRenderMouseArtwork() throws {
+        for model in MouseArtworkModel.allCases {
+            let name = Self.shortName(of: model)
+            for part in [nil] + model.parts {
+                let artwork = MouseArtworkView()
+                artwork.model = model
+                artwork.setEmphasis(part, animated: false)
+                try renderDrawing(artwork, name: "art-\(name)-\(part.map { "\($0)" } ?? "plain")", scale: 4)
+            }
+            for scale in [CGFloat(1), 2] {
+                let artwork = MouseArtworkView()
+                artwork.model = model
+                try renderDrawing(artwork, name: "art-\(name)-plain-\(Int(scale))x", scale: scale)
+            }
+        }
+        try renderMiniatureSheet()
+    }
+
+    private static func shortName(of model: MouseArtworkModel) -> String {
+        switch model {
+        case .mxMaster4: return "mx4"
+        case .mxMaster3: return "mx3"
+        case .generic: return "generic"
+        }
+    }
+
+    /// `view` on the card's colour at `scale` times its size, light and dark.
+    private func renderDrawing(_ view: NSView, name: String, scale: CGFloat) throws {
+        let holder = NSView(frame: view.bounds)
+        holder.wantsLayer = true
+        holder.addSubview(view)
+        for (suffix, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            holder.appearance = appearance
+            holder.display()
+            let canvas = try XCTUnwrap(NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: Int(holder.bounds.width * scale), pixelsHigh: Int(holder.bounds.height * scale),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+            ))
+            canvas.size = holder.bounds.size
+            let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: canvas))
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            appearance.performAsCurrentDrawingAppearance {
+                NSColor.windowBackgroundColor.setFill()
+                holder.bounds.fill()
+                ScrollPreviewPalette.cardFill.setFill()
+                holder.bounds.fill()
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            appearance.performAsCurrentDrawingAppearance {
+                holder.displayIgnoringOpacity(holder.bounds, in: context)
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            let png = try XCTUnwrap(canvas.representation(using: .png, properties: [:]))
+            try png.write(to: directory.appendingPathComponent("\(name)-\(suffix).png"))
+        }
+    }
+
+    /// The rows' pictures: a row per drawing on the list's box and one on the selection;
+    /// each part the drawing has lit, then nothing lit, a numbered button and a part it
+    /// does not have (as the row shows it then).
+    private func renderMiniatureSheet() throws {
+        let cell: CGFloat = 32
+        let label: CGFloat = 64
+        let parts = ButtonsMousePart.allCases
+        let columns = parts.count + 2
+        let bounds = NSRect(x: 0, y: 0, width: label + cell * CGFloat(columns), height: cell * CGFloat(2 * MouseArtworkModel.allCases.count))
+        let size = ButtonsMouseMiniature.size
+        for (suffix, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            let scale: CGFloat = 4
+            let canvas = try XCTUnwrap(NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: Int(bounds.width * scale), pixelsHigh: Int(bounds.height * scale),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+            ))
+            canvas.size = bounds.size
+            let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: canvas))
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context.cgContext, flipped: true)
+            context.cgContext.translateBy(x: 0, y: bounds.height)
+            context.cgContext.scaleBy(x: 1, y: -1)
+            appearance.performAsCurrentDrawingAppearance {
+                NSColor.windowBackgroundColor.setFill()
+                bounds.fill()
+                for (index, model) in MouseArtworkModel.allCases.enumerated() {
+                    for (row, highlighted) in [(0, false), (1, true)] {
+                        let y = CGFloat(index * 2 + row) * cell
+                        (highlighted ? NSColor.controlAccentColor : PreferencesGroupedForm.boxFillColor).setFill()
+                        NSRect(x: label, y: y, width: bounds.width - label, height: cell).fill()
+                        if row == 0 {
+                            NSAttributedString(string: Self.shortName(of: model), attributes: [
+                                .font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.labelColor,
+                            ]).draw(at: NSPoint(x: 6, y: y + 24))
+                        }
+                        var pictures: [ButtonTriggerPicture] = parts.map { part in
+                            model.has(part.artworkPart) ? .mouse(part: part, number: nil) : .mouse(part: nil, number: 5)
+                        }
+                        pictures += [.mouse(part: nil, number: nil), .mouse(part: nil, number: 6)]
+                        for (column, picture) in pictures.enumerated() {
+                            let frame = NSRect(
+                                x: label + CGFloat(column) * cell + (cell - size.width) / 2,
+                                y: y + (cell - size.height) / 2, width: size.width, height: size.height
+                            )
+                            ButtonsMouseMiniature.draw(picture, mouse: model, in: frame, highlighted: highlighted)
+                        }
+                    }
+                }
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            let png = try XCTUnwrap(canvas.representation(using: .png, properties: [:]))
+            try png.write(to: directory.appendingPathComponent("art-miniatures-\(suffix).png"))
+        }
+    }
+
     // MARK: - Helpers
 
     private func uiDefaults(advanced: Bool) -> UserDefaults {
@@ -834,14 +1034,19 @@ final class PreferencesWindowRenderTests: XCTestCase {
         return ButtonBinding(triggerEvent: trigger, systemShortcutName: action, isEnabled: !action.isEmpty)
     }
 
-    private func renderMouse(_ devices: [LogiMouseDeviceState], name: String, windowHeight: CGFloat? = nil) throws {
+    private func renderMouse(_ devices: [LogiMouseDeviceState], name: String, windowHeight: CGFloat? = nil, lit: MousePart? = nil) throws {
         try renderPane(MousePreferencesViewController.tabIdentifier, name: name, windowHeight: windowHeight, prepare: { preferences in
             guard let mouse = preferences.controller(for: MousePreferencesViewController.tabIdentifier)
                 as? MousePreferencesViewController else { return }
             mouse.deviceSource = MouseDeviceSource(deviceStates: { devices }, refresh: {}, showDiagnostics: {})
             mouse.readbackSettleTime = 0
         }, afterLoad: { controller in
-            (controller as? MousePreferencesViewController)?.reloadDevices()
+            guard let mouse = controller as? MousePreferencesViewController else { return }
+            mouse.reloadDevices()
+            if let lit {
+                mouse.headerView.prefersReducedMotion = { true }
+                mouse.rowHoverChanged(lit, inside: true)
+            }
         })
     }
 

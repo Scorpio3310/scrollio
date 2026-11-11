@@ -606,7 +606,7 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertEqual(controller.headerView.statusLabel.stringValue, text("mouse-header-connected"))
         XCTAssertEqual(controller.headerView.batteryLabel.stringValue, MouseText.percent(75))
         XCTAssertEqual(controller.headerView.artwork.alphaValue, 1)
-        XCTAssertEqual(controller.headerView.artwork.style, .mxMaster)
+        XCTAssertEqual(controller.headerView.artwork.model, .mxMaster4)
     }
 
     func testMXMaster3SHasNoHapticsAndNoClickFirmness() {
@@ -622,6 +622,7 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertEqual(controller.wheelSection.box.visibleRows, [controller.wheelModeRow, controller.sensitivityRow])
         XCTAssertEqual(controller.headerView.nameLabel.stringValue, "MX Master 3S")
         XCTAssertEqual(controller.headerView.batteryLabel.stringValue, MouseText.percent(90))
+        XCTAssertEqual(controller.headerView.artwork.model, .mxMaster3, "the 3S has its own drawing")
     }
 
     func testMXMaster3ShowsItsCoarseBatteryAsAnEstimate() {
@@ -647,9 +648,9 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertEqual(header.nameLabel.stringValue, text("mouse-header-any-mouse"))
         XCTAssertEqual(header.statusLabel.stringValue, text("mouse-header-any-mouse-detail"))
         XCTAssertFalse(header.statusLabel.isHidden)
-        XCTAssertEqual(header.artwork.style, .anyMouse)
+        XCTAssertEqual(header.artwork.model, .generic)
         XCTAssertEqual(header.artwork.alphaValue, 1, "a mouse of its own, not a dimmed MX Master")
-        XCTAssertTrue(header.artwork.highlights.values.allSatisfy(\.isHidden), "nothing to light up")
+        XCTAssertTrue(header.artwork.highlights.values.allSatisfy { $0.alphaValue == 0 }, "nothing lit")
         XCTAssertNil(header.content.battery)
         // The line wraps inside the card and is not cut off.
         let detail = frame(of: header.statusLabel, in: controller)
@@ -686,7 +687,7 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         devices = []
         NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
         XCTAssertFalse(controller.macSection.isHidden)
-        XCTAssertEqual(controller.headerView.artwork.style, .anyMouse)
+        XCTAssertEqual(controller.headerView.artwork.model, .generic)
         XCTAssertTrue(controller.managedSection.isHidden)
         XCTAssertEqual(controller.view.frame.height, emptyHeight)
     }
@@ -1020,9 +1021,9 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         for part in MousePart.allCases {
             controller.rowHoverChanged(part, inside: true)
             XCTAssertEqual(header.emphasis, part)
-            XCTAssertEqual(header.artwork.emphasis, part)
-            for candidate in MousePart.allCases {
-                XCTAssertEqual(header.artwork.highlights[candidate]?.alphaValue, candidate == part ? 1 : 0)
+            XCTAssertEqual(header.artwork.emphasis, part.artworkPart)
+            for candidate in MouseArtworkPart.allCases {
+                XCTAssertEqual(header.artwork.highlights[candidate]?.alphaValue, candidate == part.artworkPart ? 1 : 0)
             }
             controller.rowHoverChanged(part, inside: false)
             XCTAssertNil(header.emphasis)
