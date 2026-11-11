@@ -272,3 +272,23 @@ final class LogiSessionManagerOpenTests: XCTestCase {
     }
 }
 
+// MARK: - Diagnostics spinner (G)
+
+final class BrailleSpinnerTests: XCTestCase {
+
+    /// The spinner's 80 ms timer used to run for the rest of the app's life once the
+    /// diagnostics panel had been opened. It runs only between start() and stop() now; the
+    /// panel is never opened in the tests, so the shared spinner is idle here.
+    func testItTicksOnlyBetweenStartAndStop() {
+        let spinner = BrailleSpinner.shared
+        _ = spinner.currentFrame
+        XCTAssertFalse(spinner.isRunning, "reading a frame starts nothing")
+        spinner.start()
+        spinner.start()
+        XCTAssertTrue(spinner.isRunning)
+        spinner.stop()
+        XCTAssertFalse(spinner.isRunning)
+        spinner.stop()
+        XCTAssertFalse(spinner.isRunning)
+    }
+}
