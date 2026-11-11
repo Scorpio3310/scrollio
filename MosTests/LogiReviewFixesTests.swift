@@ -216,23 +216,46 @@ final class LogiFeatureCacheInvalidationTests: XCTestCase {
         super.tearDown()
     }
 
+    /// Byte 4 of an error: the refused request's function << 4 | software id. This app's id is 1.
+    private let ownGetState: UInt8 = 0x11
+    private let foreignGetState: UInt8 = 0x1A
+
     func testInvalidIndexOrFunctionOnACachedIndexDropsTheCache() {
         let cached: Set<UInt8> = [0x08, 0x09, 0x0B, 0x0C, 0x14]
-        XCTAssertTrue(LogiDeviceSession.errorInvalidatesFeatureCache(errorCode: 0x06, originalFeatureIndex: 0x0B, cachedIndices: cached))
-        XCTAssertTrue(LogiDeviceSession.errorInvalidatesFeatureCache(errorCode: 0x07, originalFeatureIndex: 0x14, cachedIndices: cached))
+        XCTAssertTrue(LogiDeviceSession.errorInvalidatesFeatureCache(
+            errorCode: 0x06, originalFeatureIndex: 0x0B, originalFunctionByte: ownGetState, cachedIndices: cached))
+        XCTAssertTrue(LogiDeviceSession.errorInvalidatesFeatureCache(
+            errorCode: 0x07, originalFeatureIndex: 0x14, originalFunctionByte: ownGetState, cachedIndices: cached))
     }
 
     func testOtherErrorsAndIndicesKeepIt() {
         let cached: Set<UInt8> = [0x08, 0x09]
         for code: UInt8 in [0x01, 0x02, 0x03, 0x04, 0x05, 0x08, 0x09] {
-            XCTAssertFalse(LogiDeviceSession.errorInvalidatesFeatureCache(errorCode: code, originalFeatureIndex: 0x08, cachedIndices: cached))
+            XCTAssertFalse(LogiDeviceSession.errorInvalidatesFeatureCache(
+                errorCode: code, originalFeatureIndex: 0x08, originalFunctionByte: ownGetState, cachedIndices: cached))
         }
-        XCTAssertFalse(LogiDeviceSession.errorInvalidatesFeatureCache(errorCode: 0x06, originalFeatureIndex: 0x0E, cachedIndices: cached),
-                       "an index that was looked up on this connection, not cached")
-        XCTAssertFalse(LogiDeviceSession.errorInvalidatesFeatureCache(errorCode: 0x06, originalFeatureIndex: 0x00, cachedIndices: [0x00]),
-                       "IRoot is never cached")
-        XCTAssertFalse(LogiDeviceSession.errorInvalidatesFeatureCache(errorCode: 0x06, originalFeatureIndex: 0x08, cachedIndices: []),
-                       "a receiver session never uses the cache")
+        XCTAssertFalse(LogiDeviceSession.errorInvalidatesFeatureCache(
+            errorCode: 0x06, originalFeatureIndex: 0x0E, originalFunctionByte: ownGetState, cachedIndices: cached),
+            "an index that was looked up on this connection, not cached")
+        XCTAssertFalse(LogiDeviceSession.errorInvalidatesFeatureCache(
+            errorCode: 0x06, originalFeatureIndex: 0x00, originalFunctionByte: ownGetState, cachedIndices: [0x00]),
+            "IRoot is never cached")
+        XCTAssertFalse(LogiDeviceSession.errorInvalidatesFeatureCache(
+            errorCode: 0x06, originalFeatureIndex: 0x08, originalFunctionByte: ownGetState, cachedIndices: []),
+            "a receiver session never uses the cache")
+    }
+
+    /// An error for another HID++ client's request (Logi Options+ asking with its own indices)
+    /// says nothing about this app's cache.
+    func testAnotherClientsErrorKeepsTheCache() {
+        let cached: Set<UInt8> = [0x08, 0x09]
+        for code: UInt8 in [0x06, 0x07] {
+            XCTAssertFalse(LogiDeviceSession.errorInvalidatesFeatureCache(
+                errorCode: code, originalFeatureIndex: 0x08, originalFunctionByte: foreignGetState, cachedIndices: cached))
+            XCTAssertFalse(LogiDeviceSession.errorInvalidatesFeatureCache(
+                errorCode: code, originalFeatureIndex: 0x08, originalFunctionByte: 0x10, cachedIndices: cached),
+                "software id 0: a device event, not an answer to this app")
+        }
     }
 
     /// Dropping one product leaves the others and the stored format as they were.

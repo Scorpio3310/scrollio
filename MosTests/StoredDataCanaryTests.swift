@@ -140,6 +140,13 @@ final class StoredDataCanaryTests: XCTestCase {
         let readableOnly = Data(("[" + Self.readableApp + "]").utf8)
         XCTAssertEqual(Options.applicationsDataForSaving(known: readableOnly, preservedUnknown: []), readableOnly)
 
+        // B.app added again, readable this time: its kept entry is not stored a second time.
+        let readded = Data(("[" + Self.readableApp + "," + Self.readableApp.replacingOccurrences(of: "A.app", with: "B.app") + "]").utf8)
+        let once = try XCTUnwrap(Options.applicationsDataForSaving(known: readded, preservedUnknown: result.unknownElements))
+        let onceList = try XCTUnwrap(try JSONSerialization.jsonObject(with: once) as? [NSDictionary])
+        XCTAssertEqual(onceList.compactMap { $0["path"] as? String }, ["/Applications/A.app", "/Applications/B.app"])
+        XCTAssertNil(onceList.last?["future"], "the readable entry wins")
+
         // Not a list at all: nothing to keep (the list is reset, as before).
         XCTAssertNil(Options.decodeApplicationsWithUnknowns(from: Data(#"{"path":"\/Applications\/A.app"}"#.utf8)))
     }

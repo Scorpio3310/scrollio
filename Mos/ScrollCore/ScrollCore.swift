@@ -64,11 +64,15 @@ class ScrollCore: ScrollActionPort {
         _ = refcon
         // Tap 被系统禁用或重启边界时，强制清理 poster 上下文并失效历史异步帧
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            ScrollPoster.shared.stop(.TrackingEnd)
-            if type == .tapDisabledByTimeout {
-                // On again now: until the keeper's next look the wheel went by raw (and the
-                // other way round with "reverse" on).
-                ScrollCore.shared.scrollEventInterceptor?.restartUnlessThrottled()
+            // After a timeout the tap goes on again now: until the keeper's next look the wheel
+            // went by raw (and the other way round with "reverse" on). The restart ends the
+            // scroll session itself (onRestart), so it is not ended here as well: two stops in
+            // a row moved the dispatch generation twice, and the second could drop the
+            // end-of-scroll frame the first had just queued (a "began" without its "ended").
+            let restarted = type == .tapDisabledByTimeout
+                && (ScrollCore.shared.scrollEventInterceptor?.restartUnlessThrottled() ?? false)
+            if !restarted {
+                ScrollPoster.shared.stop(.TrackingEnd)
             }
             return Unmanaged.passUnretained(event)
         }

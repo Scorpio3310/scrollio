@@ -498,6 +498,9 @@ extension ScrollPoster {
         create()
         if Self.startsRecreatedDisplayLink(replacedWasRunning: replacedWasRunning, scrollWaiting: scrollWaiting),
            let validPoster = poster {
+            // A new link is tied to the main display: tie it to the display the pointer is on
+            // before it runs, as tryStart does (a glide on a second display stuttered otherwise).
+            followDisplayUnderPointer(validPoster)
             let result = CVDisplayLinkStart(validPoster)
             if result == kCVReturnSuccess {
                 os_unfair_lock_lock(&stateLock)
@@ -581,6 +584,7 @@ extension ScrollPoster {
         create()
         isVerifying = false
         if wasRunning, let refreshed = poster {
+            followDisplayUnderPointer(refreshed)
             CVDisplayLinkStart(refreshed)
         }
         // 自纠说明显示器仍在过渡: 清除冷却, 让后续 screenChange 能及时用最终配置重建

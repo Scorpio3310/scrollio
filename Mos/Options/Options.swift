@@ -569,7 +569,13 @@ extension Options {
         guard let known = known else { return nil }
         guard !preservedUnknown.isEmpty else { return known }
         guard var merged = (try? JSONSerialization.jsonObject(with: known)) as? [Any] else { return nil }
-        merged.append(contentsOf: preservedUnknown)
+        // A kept entry for an app that has since been added again (the same path) is not
+        // stored a second time: the entry this version can read wins.
+        let knownPaths = Set(merged.compactMap { ($0 as? [String: Any])?["path"] as? String })
+        merged.append(contentsOf: preservedUnknown.filter { element in
+            guard let path = (element as? [String: Any])?["path"] as? String else { return true }
+            return !knownPaths.contains(path)
+        })
         return try? JSONSerialization.data(withJSONObject: merged)
     }
 }

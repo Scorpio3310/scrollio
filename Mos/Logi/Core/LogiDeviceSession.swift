@@ -343,9 +343,18 @@ class LogiDeviceSession {
     private static let invalidFunctionError: UInt8 = 0x07
 
     /// Whether an error means the cached feature indices are wrong (the firmware changed
-    /// them): 0x06 or 0x07 on an index that came from the cache on this connection.
-    static func errorInvalidatesFeatureCache(errorCode: UInt8, originalFeatureIndex: UInt8, cachedIndices: Set<UInt8>) -> Bool {
+    /// them): 0x06 or 0x07 on an index that came from the cache on this connection, for a
+    /// request of this app. `originalFunctionByte` is byte 4 of the error (function << 4 |
+    /// software id): an error for another HID++ client's request (Logi Options+) says
+    /// nothing about this app's indices.
+    static func errorInvalidatesFeatureCache(
+        errorCode: UInt8,
+        originalFeatureIndex: UInt8,
+        originalFunctionByte: UInt8,
+        cachedIndices: Set<UInt8>
+    ) -> Bool {
         guard errorCode == invalidFeatureIndexError || errorCode == invalidFunctionError else { return false }
+        guard originalFunctionByte & 0x0F == hidppSoftwareId else { return false }
         return originalFeatureIndex != 0x00 && cachedIndices.contains(originalFeatureIndex)
     }
 
@@ -355,11 +364,15 @@ class LogiDeviceSession {
     /// The cache entry was dropped on this connection: the indices in hand may be wrong, so
     /// nothing is saved until a fresh discovery (the next connect, or Re-discover).
     private var featureCacheDropped = false
+    /// A getFeature went unanswered on this connection. If its answer comes late it is taken
+    /// for the next request's (an answer names no feature), so every index found after it
+    /// may be off by one request: nothing is saved until a fresh discovery.
+    private var featureDiscoveryTimedOut = false
 
     /// Saves the feature indices of the current slot under the product id (as before), unless
-    /// the cache entry was dropped on this connection.
+    /// the cache entry was dropped or a getFeature timed out on this connection.
     private func saveFeatureIndexCache() {
-        guard !featureCacheDropped else { return }
+        guard !featureCacheDropped, !featureDiscoveryTimedOut else { return }
         Self.saveCachedFeatureIndex(for: deviceInfo.productId, featureMap: featureIndex)
     }
 
@@ -1298,6 +1311,7 @@ class LogiDeviceSession {
             self.discoveryTimers[token] = nil
             guard let entry = self.pendingDiscovery.remove(token: token) else { return }
             LogiDebugPanel.log("[\(self.deviceInfo.name)] Feature discovery timed out for \(String(format: "0x%04X", entry.featureId))")
+            self.featureDiscoveryTimedOut = true
             entry.completion(nil)
         }
     }
@@ -1514,6 +1528,7 @@ class LogiDeviceSession {
         featureIndex.removeAll()
         featureIndicesFromCache.removeAll()
         featureCacheDropped = false  // a fresh discovery: what it finds may be saved again
+        featureDiscoveryTimedOut = false
         resetOptionalProbeState()
         resetHapticDiscoveryState()
         resetScrollForceDiscoveryState()
@@ -4026,6 +4041,7 @@ class LogiDeviceSession {
             if Self.errorInvalidatesFeatureCache(
                 errorCode: errorCode,
                 originalFeatureIndex: originalFeatureIdx,
+                originalFunctionByte: report.count > 4 ? report[4] : 0,
                 cachedIndices: featureIndicesFromCache
             ) {
                 dropFeatureIndexCache(errorCode: errorCode, featureIndex: originalFeatureIdx)
