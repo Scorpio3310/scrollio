@@ -94,12 +94,13 @@ final class ScrollClassicRig {
     }
 
     /// One vertical wheel event that adds `pixels` (already multiplied by speed) at `time`.
-    func input(_ pixels: Double, notch: Double? = nil, at time: Double) {
+    func input(_ pixels: Double, notch: Double? = nil, at time: Double, place: ScrollInputPlace? = nil) {
         run(until: time)
         now = start + time
         poster.inputForTests(
             ScrollPosterInput(y: pixels, x: 0, notch: notch ?? self.notch, duration: transition),
-            at: start + time
+            at: start + time,
+            place: place
         )
         isRunning = true
     }
@@ -520,6 +521,152 @@ final class ScrollClassicPathTests: XCTestCase {
                              "the new touch begins after the tick, when the motion has turned")
     }
 
+    /// A tick back and at once forward again (the wheel settles on a detent): the motion never
+    /// turns, so no touch begins. It used to begin with the next frame, which still moved toward
+    /// the edge: a "began" for a page that may be bouncing there.
+    func testTrackpadStyle_turnBackTakenBack_staysOneGlide() {
+        let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
+        for (points, time) in [(1.0, 0.0), (12, 0.024), (54, 0.038), (78, 0.060)] {
+            rig.input(max(33.6, points) * 6.3, notch: 33.6 * 6.3, at: time)
+        }
+        rig.input(-33.6 * 6.3, notch: 33.6 * 6.3, at: 0.300)
+        rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0.310)
+        rig.run(until: 3)
+
+        XCTAssertEqual(rig.phaseSequence, ["began", "changed", "ended", "momentumBegan", "momentumChanged", "momentumEnded"])
+        XCTAssertTrue(rig.moving.allSatisfy { $0.frame.y > 0 }, "the page never moved back")
+        XCTAssertEqual(rig.sessions.last?.touches, 1)
+    }
+
+    /// The glide goes on only where its touch began. Apps keep a gesture on the scroller that got
+    /// its "began": a tick over another pane, or for another app, begins a touch of its own at
+    /// once. The hand that turns the wheel may move the pointer a little.
+    func testTrackpadStyle_tickSomewhereElse_beginsItsOwnTouch() {
+        let here = ScrollInputPlace(pid: 100, pointer: CGPoint(x: 400, y: 300))
+        let cases: [(String, ScrollInputPlace, Bool)] = [
+            ("the hand moved the pointer a little", ScrollInputPlace(pid: 100, pointer: CGPoint(x: 406, y: 296)), false),
+            ("another pane", ScrollInputPlace(pid: 100, pointer: CGPoint(x: 400, y: 380)), true),
+            ("another app under the pointer", ScrollInputPlace(pid: 200, pointer: CGPoint(x: 400, y: 300)), true),
+        ]
+        let flick = ["began", "changed", "ended", "momentumBegan", "momentumChanged", "momentumEnded"]
+        for (name, there, beginsATouch) in cases {
+            let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
+            rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0, place: here)
+            rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0.2, place: there)
+            rig.run(until: 3)
+
+            XCTAssertEqual(rig.phaseSequence, beginsATouch ? flick + flick : flick, name)
+            XCTAssertEqual(rig.sessions.last?.touches, beginsATouch ? 2 : 1, name)
+            XCTAssertEqual(rig.sessions.last?.glideInputs, beginsATouch ? 0 : 1, name)
+            if beginsATouch {
+                let second = rig.recorded.last { $0.frame.scrollPhase == 1 }
+                XCTAssertEqual((second?.time ?? 0) - rig.start, 0.2, accuracy: 1e-6, "\(name): with the tick itself")
+            }
+        }
+    }
+
+    /// The switch can differ per app. A scroll that began in an app with it off goes on in an
+    /// app with it on as a touch of its own: that app got no "began" for the glide.
+    func testTrackpadStyle_afterAScrollWithTheSwitchOff_beginsATouch() {
+        let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: false)
+        rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0)
+        rig.run(until: 0.25)
+        XCTAssertEqual(rig.phases.phase, .MomentumOngoing, "the phase machine runs with the switch off too")
+        rig.poster.setConfigForTests(simTrackpadEnabled: true)
+        rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0.25, place: ScrollInputPlace(pid: 100, pointer: .zero))
+        rig.run(until: 3)
+
+        XCTAssertEqual(Array(rig.phaseSequence.prefix(3)), ["momentumEnded", "began", "changed"])
+    }
+
+    /// And the other way: a turn asked for with the switch on is not carried into a scroll with
+    /// it off. It used to begin a "touch" there with the next frame: two frames without distance
+    /// that the switch-off path does not post.
+    func testSwitchOffInTheNextApp_carriesNoTurnOver() {
+        let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
+        for (points, time) in [(1.0, 0.0), (12, 0.024), (54, 0.038), (78, 0.060)] {
+            rig.input(max(33.6, points) * 6.3, notch: 33.6 * 6.3, at: time)
+        }
+        rig.input(-33.6 * 6.3, notch: 33.6 * 6.3, at: 0.300)
+        rig.poster.setConfigForTests(simTrackpadEnabled: false)
+        rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0.310)
+        rig.run(until: 3)
+
+        // From the tick until the wheel counts as still (0.18 s later) only frames that move the page.
+        let afterTheTick = rig.recorded.filter { $0.time - rig.start > 0.310 + 1e-6 && $0.time - rig.start < 0.45 }
+        XCTAssertFalse(afterTheTick.isEmpty)
+        XCTAssertTrue(afterTheTick.allSatisfy { $0.frame.y != 0 }, "no frame without distance")
+        XCTAssertTrue(afterTheTick.allSatisfy { $0.frame.scrollPhase == nil }, "and no phases")
+    }
+
+    /// The phases an app gets always make whole gestures, at any Duration, Speed, dead zone and
+    /// display rate: "began, changed…, ended", then "momentum began, momentum changed…, momentum
+    /// ended" or nothing. A glide whose first frame comes to no whole pixel posts nothing; its
+    /// "momentum began" waits for the frame that is posted. It used to be skipped: the app got
+    /// "momentum changed" alone and took the glide for a finger that drags the page past the edge.
+    /// And a touch that leaves no glide ends after its last frame (frames after "ended" carried
+    /// "ended" again, with a distance); a glide of which no frame went out sends nothing at all.
+    func testTrackpadStyle_phasesAlwaysMakeWholeGestures() {
+        let allowed: [String: Set<String>] = [
+            "": ["began"],
+            "began": ["changed", "ended"],
+            "changed": ["changed", "ended"],
+            "ended": ["momentumBegan", "began"],
+            "momentumBegan": ["momentumChanged", "momentumEnded"],
+            "momentumChanged": ["momentumChanged", "momentumEnded"],
+            "momentumEnded": ["began"],
+        ]
+        // (notches, seconds)
+        var spin: [(Double, Double)] = []
+        for index in 0..<27 { spin.append((1 + Double(index) * 0.1, Double(index) * 0.015)) }
+        var keepsTurning: [(Double, Double)] = []
+        for index in 0..<12 { keepsTurning.append((1, Double(index) * 0.12)) }
+        let burst: [(Double, Double)] = [(1, 0), (1, 0.024), (1.6, 0.038), (2.3, 0.060)]
+        let scenarios: [(String, [(Double, Double)])] = [
+            ("click", [(1, 0)]),
+            ("burst", burst),
+            ("spin", spin),
+            ("keeps turning", keepsTurning),
+            ("turn back in the glide", burst + [(-1, 0.3)]),
+            ("turn back in the touch", [(1, 0), (-1, 0.030)]),
+            ("wobble", [(1, 0), (-1, 0.3), (1, 0.31), (-1, 0.32)]),
+            ("two clicks", [(1, 0), (1, 0.5)]),
+        ]
+        var failures: [String] = []
+        for duration in [1.0, 2.0, 3.13, 3.69, 5.0] {
+            for rate in [60.0, 120.0, 144.0] {
+                for speed in [1.0, 6.3] {
+                    for deadZone in [1.0, 3.0] {
+                        for (name, inputs) in scenarios {
+                            let rig = ScrollClassicRig(duration: duration, rate: rate, trackpadStyle: true, deadZone: deadZone)
+                            let notch = 33.6 * speed
+                            for (notches, time) in inputs { rig.input(notches * notch, notch: notch, at: time) }
+                            rig.run(until: 30)  // Duration 5 glides for many seconds
+
+                            var last = ""
+                            var broken: String?
+                            for item in rig.recorded {
+                                let phase = ScrollClassicRig.phaseName(scroll: item.frame.scrollPhase ?? -1, momentum: item.frame.momentumPhase ?? -1)
+                                if allowed[last]?.contains(phase) != true {
+                                    broken = "\"\(phase)\" after \"\(last)\" at \(Int(((item.time - rig.start) * 1000).rounded())) ms"
+                                    break
+                                }
+                                last = phase
+                            }
+                            if broken == nil && last != "ended" && last != "momentumEnded" {
+                                broken = "ends with \"\(last)\""
+                            }
+                            if let broken = broken {
+                                failures.append("\(name), Duration \(duration), \(Int(rate)) Hz, Speed \(speed), dead zone \(deadZone): \(broken)")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        XCTAssertTrue(failures.isEmpty, "\(failures.count) broken:\n" + failures.prefix(40).joined(separator: "\n"))
+    }
+
     /// A click after the glide has ended is a new flick.
     func testTrackpadStyle_clickAfterTheGlide_isANewFlick() {
         let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
@@ -626,6 +773,10 @@ final class ScrollClassicPathTests: XCTestCase {
 
     /// The touch-and-glide split changes the phases only: in every scenario each frame that moves
     /// the page goes out at the same time with the same delta as without trackpad-style events.
+    /// At the owner's Duration (3.69) and dead zone (1). A scroll with the switch on ends when its
+    /// glide has run out; with it off, 0.22 s after the last tick at the earliest. At a short
+    /// Duration or a larger dead zone the two can lie up to ~0.1 s apart, and a tick in that gap
+    /// goes on with one scroll and starts the other anew (a pixel a frame of difference).
     func testTrackpadStyle_keepsEveryFrameOfTheMotion() {
         let scenarios: [(String, [(Double, Double)])] = [
             ("click", [(211.68, 0)]),
@@ -712,8 +863,9 @@ final class ScrollTrackpadStyleScrollViewTests: XCTestCase {
     }
 
     /// Feeds the events at their times (seconds after the start) and returns the top of the visible
-    /// rect every few milliseconds (negative: stretched past the top) until `total`.
-    private func positions(feeding events: [Fed], total: Double) throws -> [Double] {
+    /// rect every few milliseconds (negative: stretched past the top) until `total`, each with the
+    /// time it was read at.
+    private func positions(feeding events: [Fed], total: Double) throws -> [(time: Double, y: Double)] {
         // Inside the main screen's frame, so that the scroll view has a screen, but never ordered in.
         let screen = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1000, height: 1000)
         let window = NSWindow(contentRect: NSRect(x: screen.minX + 10, y: screen.minY + 10, width: 400, height: 600),
@@ -734,7 +886,7 @@ final class ScrollTrackpadStyleScrollViewTests: XCTestCase {
                                 timestamp: start + UInt64(event.time * 1e9)).write(to: cgEvent)
             nsEvents.append(try XCTUnwrap(NSEvent(cgEvent: cgEvent)))
         }
-        var samples: [Double] = []
+        var samples: [(time: Double, y: Double)] = []
         var next = 0
         let begin = CACurrentMediaTime()
         let feeder = Timer(timeInterval: 0.002, repeats: true) { _ in
@@ -743,7 +895,7 @@ final class ScrollTrackpadStyleScrollViewTests: XCTestCase {
                 scrollView.scrollWheel(with: nsEvents[next])
                 next += 1
             }
-            samples.append(scrollView.contentView.bounds.origin.y)
+            samples.append((now, scrollView.contentView.bounds.origin.y))
         }
         RunLoop.main.add(feeder, forMode: .common)
         while CACurrentMediaTime() - begin < total {
@@ -792,18 +944,22 @@ final class ScrollTrackpadStyleScrollViewTests: XCTestCase {
         let before = try positions(feeding: longTouch, total: 1.6)
         let after = try positions(feeding: flick, total: 1.6)
 
-        let stretchBefore = -(before.min() ?? 0)
-        let stretchAfter = -(after.min() ?? 0)
+        let stretchBefore = -(before.map(\.y).min() ?? 0)
+        let stretchAfter = -(after.map(\.y).min() ?? 0)
         XCTAssertGreaterThan(stretchBefore, 150, "one long touch drags the page far past the edge")
         XCTAssertLessThan(stretchAfter, 20, "the short touch stretches it a little")
         XCTAssertGreaterThan(stretchAfter, 0, "and it does stretch")
-        // Back at the edge, monotonically from the deepest point, in small steps.
-        let deepest = after.firstIndex(of: -stretchAfter) ?? 0
+        // Back at the edge, monotonically from the deepest point, in small steps. The steps are
+        // judged between samples read in a row only: on a busy machine the run loop stalls, and
+        // the page is then rightly farther along at the next sample.
+        let deepest = after.firstIndex { $0.y == -stretchAfter } ?? 0
         for index in (deepest + 1)..<after.count {
-            XCTAssertGreaterThanOrEqual(after[index], after[index - 1] - 0.5, "sample \(index): only back toward the edge")
-            XCTAssertLessThanOrEqual(after[index] - after[index - 1], 10, "sample \(index): no jump")
+            XCTAssertGreaterThanOrEqual(after[index].y, after[index - 1].y - 0.5, "sample \(index): only back toward the edge")
+            if after[index].time - after[index - 1].time < 0.008 {
+                XCTAssertLessThanOrEqual(after[index].y - after[index - 1].y, 10, "sample \(index): no jump")
+            }
         }
-        XCTAssertEqual(after.last ?? -1, 0, accuracy: 0.5, "at rest at the edge")
+        XCTAssertEqual(after.last?.y ?? -1, 0, accuracy: 0.5, "at rest at the edge")
     }
 }
 
