@@ -44,7 +44,7 @@ final class GesturePreviewView: NSView {
     /// The drawing for the connected mouse. A seam for the tests and renders; call
     /// `reloadMouse()` after replacing it. The preview follows a mouse coming and going.
     var mouseSource: () -> MouseArtworkModel = {
-        MouseArtworkModel.model(forDeviceName: MousePaneModel.ordered(LogiCenter.shared.mouseDeviceStates()).first?.deviceName)
+        MouseArtworkModel.model(forDeviceName: MousePaneModel.shownMouse()?.deviceName)
     }
 
     private(set) var loop = GesturePreviewLoop(scene: GesturePreviewScene())

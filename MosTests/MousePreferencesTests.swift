@@ -751,6 +751,29 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertNotNil(model.firmness)
     }
 
+    /// One choice of the shown mouse for every pane: the one with the most settings, the
+    /// first of equals; the Mouse card's mouse is it, and so are the Buttons card's name
+    /// and the gesture preview's drawing (both read `shownMouse`).
+    func testTheShownMouseIsOneChoice() {
+        let lists: [[LogiMouseDeviceState]] = [
+            [Fixtures.mxMaster3S(), Fixtures.mxMaster4()],
+            [Fixtures.mxMaster4(), Fixtures.mxMaster3S()],
+            [Fixtures.mxMaster3(), Fixtures.mxMaster3S()],
+            [Fixtures.mxMaster3S()],
+        ]
+        XCTAssertEqual(lists.map { MousePaneModel.shownMouse(among: $0)?.deviceName }, [
+            "MX Master 4", "MX Master 4", "MX Master 3", "MX Master 3S",
+        ])
+        for devices in lists {
+            let model = MousePaneModel(devices: devices, settings: .default, wheel: .default)
+            XCTAssertEqual(model.header.title, MousePaneModel.shownMouse(among: devices)?.deviceName)
+            XCTAssertEqual(MousePaneModel.ordered(devices).first?.id, MousePaneModel.shownMouse(among: devices)?.id)
+            XCTAssertEqual(MousePaneModel.ordered(devices).count, devices.count)
+        }
+        XCTAssertNil(MousePaneModel.shownMouse(among: []))
+        XCTAssertEqual(MousePaneModel.ordered([]).count, 0)
+    }
+
     // MARK: - "On the mouse"
 
     func testNoLineUnderAValueYouNeverSet() {

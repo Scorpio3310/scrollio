@@ -653,6 +653,31 @@ final class PreferencesButtonsTests: XCTestCase {
                        [.backButton, .forwardButton, .middleButton])
     }
 
+    /// The card names the mouse the Mouse pane's card names: another mouse with the same
+    /// drawing (an MX Master 3 after an MX Master 3S) renames it too.
+    func testTheCardFollowsTheShownMousesName() {
+        deviceName = "MX Master 3S"
+        let pane = makePane([binding(3, "copy")])
+        XCTAssertEqual(pane.headerView.content.title, "MX Master 3S")
+        XCTAssertEqual(pane.headerView.artwork.model, .mxMaster3)
+
+        deviceName = "MX Master 3"
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(pane.headerView.content.title, "MX Master 3", "same drawing, another name")
+        XCTAssertEqual(pane.headerView.artwork.model, .mxMaster3)
+
+        deviceName = "MX Master 4"
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(pane.headerView.content.title, "MX Master 4")
+        XCTAssertEqual(pane.headerView.artwork.model, .mxMaster4)
+
+        deviceName = nil
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(pane.headerView.content.title, "Your mouse")
+        XCTAssertEqual(pane.headerView.artwork.model, .generic)
+        XCTAssertEqual(Options.shared.buttons.binding.count, 1)
+    }
+
     /// A button whose place is known but that the shown mouse does not have (a thumb panel
     /// while an MX Master 3S is connected, a Logitech gesture button on the plain drawing) is
     /// not asked to be found or placed, and its menu keeps the stored answer ticked and

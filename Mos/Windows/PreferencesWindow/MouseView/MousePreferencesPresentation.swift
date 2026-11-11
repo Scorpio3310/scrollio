@@ -313,16 +313,27 @@ struct MousePaneModel: Equatable {
 
     // MARK: - Helpers
 
-    /// The mouse the header is about first (the one with the most settings), then the others:
-    /// each row takes its values from the first mouse that has it.
-    static func ordered(_ devices: [LogiMouseDeviceState]) -> [LogiMouseDeviceState] {
+    /// The mouse the panes are about when several are connected: the one with the most
+    /// settings, the first of equals. The Mouse card names it, the Buttons card names and
+    /// draws it, the gesture preview draws it: they never show different mice. nil: none.
+    static func shownMouse(
+        among devices: [LogiMouseDeviceState] = LogiCenter.shared.mouseDeviceStates()
+    ) -> LogiMouseDeviceState? {
+        return shownMouseIndex(devices).map { devices[$0] }
+    }
+
+    private static func shownMouseIndex(_ devices: [LogiMouseDeviceState]) -> Int? {
         func score(_ device: LogiMouseDeviceState) -> Int {
             return device.supported.count + (device.wheel == nil ? 0 : 1)
         }
         // `max(by:)` keeps the first of equals: the list's own order breaks ties.
-        guard let best = devices.indices.max(by: { score(devices[$0]) < score(devices[$1]) }) else {
-            return []
-        }
+        return devices.indices.max(by: { score(devices[$0]) < score(devices[$1]) })
+    }
+
+    /// The shown mouse first (`shownMouse`), then the others: each row takes its values
+    /// from the first mouse that has it.
+    static func ordered(_ devices: [LogiMouseDeviceState]) -> [LogiMouseDeviceState] {
+        guard let best = shownMouseIndex(devices) else { return [] }
         var result = devices
         let first = result.remove(at: best)
         return [first] + result
