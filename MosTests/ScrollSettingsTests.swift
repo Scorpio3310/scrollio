@@ -177,16 +177,39 @@ final class ScrollSettingsTests: XCTestCase {
         XCTAssertFalse(scroll.reversesWheel)
     }
 
-    func testReversesWheel_readsWhatTheVerticalWheelDoes() {
-        // Left over from the per-axis switches of older builds.
+    func testReversesWheel_isOnWhileEitherAxisIsReversed() {
+        // Left over from the per-axis switches of older builds and from settings imported
+        // from Mos: the main flag on, only one axis on.
         let scroll = OPTIONS_SCROLL_DEFAULT()
         scroll.reverseVertical = false
-        XCTAssertFalse(scroll.reversesWheel, "the wheel is not reversed, whatever the main flag says")
+        scroll.reverseHorizontal = true
+        XCTAssertTrue(scroll.reversesWheel, "the horizontal wheel is reversed, so the switch shows on")
+
+        scroll.reverseVertical = true
+        scroll.reverseHorizontal = false
+        XCTAssertTrue(scroll.reversesWheel, "the vertical wheel is reversed, so the switch shows on")
+
+        scroll.reverseVertical = false
+        XCTAssertFalse(scroll.reversesWheel, "neither axis is reversed, whatever the main flag says")
         scroll.reversesWheel = true
         XCTAssertTrue(scroll.reverseVertical)
+        XCTAssertTrue(scroll.reverseHorizontal)
+    }
 
-        scroll.reverseHorizontal = false
+    func testReversesWheel_offStopsBothAxesOfImportedSettings() {
+        // Imported from Mos: the main flag on, vertical off, horizontal on.
+        let scroll = OPTIONS_SCROLL_DEFAULT()
+        scroll.reverse = true
+        scroll.reverseVertical = false
+        scroll.reverseHorizontal = true
         XCTAssertTrue(scroll.reversesWheel)
+
+        scroll.reversesWheel = false
+
+        // What ScrollCore reverses: the main flag and the axis's flag.
+        XCTAssertFalse(scroll.reverse && scroll.reverseVertical)
+        XCTAssertFalse(scroll.reverse && scroll.reverseHorizontal)
+        XCTAssertFalse(scroll.reversesWheel)
     }
 
     // MARK: - Clean-up on load

@@ -135,11 +135,13 @@ struct ScrollSliderSetting: Equatable {
 
 extension OPTIONS_SCROLL_DEFAULT {
     /// The one "Reverse wheel direction" switch. The model keeps a main flag and one per
-    /// axis (older builds had a switch for each); the switch reads the vertical wheel and
-    /// turns everything on, or the main flag off.
+    /// axis (older builds, and settings imported from Mos, had a switch for each). The
+    /// switch is on while the engine reverses either axis (`ScrollCore` reverses an axis when
+    /// the main flag and that axis's flag are on); on turns everything on, off turns the
+    /// main flag off, which stops both axes.
     var reversesWheel: Bool {
         get {
-            return reverse && reverseVertical
+            return reverse && (reverseVertical || reverseHorizontal)
         }
         set {
             if newValue {
