@@ -155,15 +155,21 @@ enum EventTapDisableLog {
     private static let lock = NSLock()
     private static var counters: [EventTapKind: EventTapDisableCounter] = [:]
 
-    /// `type` is the event type the tap's callback got; anything but the two "turned off"
-    /// types is ignored.
+    /// Why a "turned off" event is a problem worth a line; nil when it is none.
+    ///
+    /// Only a timeout is: macOS gave up on the tap because Scrollio's main thread answered
+    /// too slowly. `tapDisabledByUserInput` is what a tap's callback gets whenever the tap
+    /// is switched off with `CGEvent.tapEnable(tap:enable: false)`, and that is Scrollio
+    /// itself every time it pauses a tap: Pause, sleep, a restart, the end of a gesture
+    /// hold. Logged as a problem it read "macOS turned off the pointer movement event tap:
+    /// user input" right after every launch.
+    static func problem(for type: CGEventType) -> EventTapDisableCounter.Reason? {
+        return type == .tapDisabledByTimeout ? .timeout : nil
+    }
+
+    /// `type` is the event type the tap's callback got; only a timeout is logged.
     static func note(_ tap: EventTapKind, _ type: CGEventType) {
-        let reason: EventTapDisableCounter.Reason
-        switch type {
-        case .tapDisabledByTimeout: reason = .timeout
-        case .tapDisabledByUserInput: reason = .userInput
-        default: return
-        }
+        guard let reason = problem(for: type) else { return }
         let now = ProcessInfo.processInfo.systemUptime
         lock.lock()
         let decision = counters[tap, default: EventTapDisableCounter()].note(reason, tap: tap, now: now)

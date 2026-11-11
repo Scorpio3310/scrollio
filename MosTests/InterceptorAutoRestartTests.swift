@@ -135,6 +135,16 @@ final class EventTapLogTests: XCTestCase {
         XCTAssertEqual(EventTapKind.pointerMovement.rawValue, "pointer movement")
     }
 
+    /// Only a timeout is a problem. A tap that Scrollio switches off itself (Pause, sleep, a
+    /// restart, the end of a gesture hold) tells its callback "disabled by user input":
+    /// that is not logged. It used to be, as an error, right after every launch.
+    func testATapSwitchedOffOnPurposeIsNoProblem() {
+        XCTAssertEqual(EventTapDisableLog.problem(for: .tapDisabledByTimeout), .timeout)
+        XCTAssertNil(EventTapDisableLog.problem(for: .tapDisabledByUserInput))
+        XCTAssertNil(EventTapDisableLog.problem(for: .scrollWheel))
+        XCTAssertNil(EventTapDisableLog.problem(for: .keyDown))
+    }
+
     // MARK: Turned off by macOS: at most one line per tap every 10 s
 
     func testTheFirstTimeIsWrittenAtOnce() {
