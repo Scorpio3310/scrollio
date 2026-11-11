@@ -218,7 +218,7 @@ final class PreferencesApplicationTests: XCTestCase {
             XCTAssertNotNil(row.chevronView, "\(row.title) opens a page of its own")
         }
         XCTAssertEqual(rows[0].accessibilityLabel(), "Calculator, Uses its own scrolling settings")
-        XCTAssertEqual(rows[1].toolTip, Self.textEditProgram)
+        XCTAssertEqual(rows[1].toolTip, "TextEdit\n" + Self.textEditProgram, "the name, then the path")
     }
 
     // MARK: - Adding
@@ -516,7 +516,7 @@ final class PreferencesApplicationTests: XCTestCase {
         // The header: the app's icon, name and where it is; then its Scrolling settings.
         XCTAssertEqual(page.headerRow.title, "Calculator")
         XCTAssertEqual(page.headerRow.explanation, Self.calculator)
-        XCTAssertEqual(page.headerRow.toolTip, Self.calculator)
+        XCTAssertEqual(page.headerRow.toolTip, "Calculator\n" + Self.calculator)
         XCTAssertEqual(page.headerRow.iconView.frame.size, NSSize(width: 32, height: 32))
         XCTAssertNotNil(page.headerRow.iconView.image)
         XCTAssertEqual(page.backButton.title, "Apps")
@@ -688,7 +688,8 @@ final class PreferencesApplicationTests: XCTestCase {
             XCTAssertLessThanOrEqual(text.maxX, row.maxX - PreferencesGroupedForm.rowHorizontalInset + 0.5)
         }
         XCTAssertEqual(header.explanationLabel.frame.height, oneLine.fittingSize.height, accuracy: 1, "one line, shortened in the middle")
-        XCTAssertEqual(header.toolTip, path, "the whole path in the tooltip")
+        XCTAssertEqual(header.toolTip, app.getName() + "\n" + path, "the whole name and path in the tooltip")
+        XCTAssertEqual(header.explanationLabel.toolTip, header.toolTip)
     }
 
     func testInTheWindowThePageKeepsTheTitleAndTheColumnFollowsItsHeight() throws {

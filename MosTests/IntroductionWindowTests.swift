@@ -419,7 +419,7 @@ final class IntroductionWindowTests: XCTestCase {
         return [("missing", missing), ("help", help), ("granted", granted), ("done", done)]
     }
 
-    func testTheViewIsAsWideAsAPreferencesPaneAndFitsItsContent() {
+    func testTheViewHasTheGuideWidthAndFitsItsContent() {
         for (name, controller) in controllersInEveryState() {
             let view = controller.view
             XCTAssertEqual(view.frame.width, PreferencesForm.contentWidth, name)
@@ -506,6 +506,21 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(window.frame.maxY, top, accuracy: 0.5)
         XCTAssertEqual(window.contentRect(forFrameRect: window.frame).size, controller.view.fittingSize)
         XCTAssertFalse(window.isVisible)
+    }
+
+    func testWithReduceMotionTheWindowChangesItsHeightAtOnce() {
+        XCTAssertTrue(IntroductionViewController.animatesResize(true, windowIsVisible: true, reduceMotion: false))
+        XCTAssertFalse(IntroductionViewController.animatesResize(true, windowIsVisible: true, reduceMotion: true), "Reduce motion")
+        XCTAssertFalse(IntroductionViewController.animatesResize(true, windowIsVisible: false, reduceMotion: false), "off screen")
+        XCTAssertFalse(IntroductionViewController.animatesResize(false, windowIsVisible: true, reduceMotion: false), "not asked for")
+
+        // The seam reads the system setting; with it on, the help still opens to its full height.
+        let (controller, _) = makeController(accessGranted: false)
+        XCTAssertEqual(controller.prefersReducedMotion(), NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        controller.prefersReducedMotion = { true }
+        let window = makeWindow(for: controller)
+        click(controller.helpButton)
+        XCTAssertEqual(window.contentRect(forFrameRect: window.frame).size, controller.view.fittingSize)
     }
 
     // MARK: - The storyboard shell

@@ -230,13 +230,30 @@ extension CGEvent {
         return false
     }
 
-    /// 时间戳
+    /// The time of day of the event, "14:03:27.512" (Monitor window).
     var timestampFormatted: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss.SSS"
-        formatter.timeZone = TimeZone.current
-        return formatter.string(from: Date(timeIntervalSince1970: (Double(self.timestamp)) / 1_000_000_000.0))
+        return CGEvent.timestampFormatter.string(from: CGEvent.date(ofTimestamp: timestamp))
     }
+
+    /// The clock time of an event. Its timestamp counts nanoseconds since the Mac started,
+    /// on the clock of `systemUptime` (which stands still while the Mac sleeps), so the
+    /// event happened `uptime - timestamp` before `now`.
+    static func date(
+        ofTimestamp timestamp: CGEventTimestamp,
+        now: Date = Date(),
+        uptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> Date {
+        return now.addingTimeInterval(Double(timestamp) / 1_000_000_000 - uptime)
+    }
+
+    /// One formatter for every line of the Monitor window.
+    static let timestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter
+    }()
 
     /// 显示名称 (原始分组)
     var displayComponents: [String] {

@@ -26,8 +26,9 @@ final class IntroductionViewController: NSViewController {
 
     // MARK: - Layout
 
-    /// The window is as wide as a preferences pane and uses the type sizes of the form
-    /// kit, so the two windows look like one app.
+    /// The window is `PreferencesForm.contentWidth` (450 pt) wide, narrower than the
+    /// Preferences panes, and uses the type sizes of the form kit, so the two windows look
+    /// like one app.
     enum Layout {
         static let width = PreferencesForm.contentWidth
         static let sideMargin: CGFloat = 32
@@ -71,6 +72,8 @@ final class IntroductionViewController: NSViewController {
     var openAppSettings: () -> Void = {
         MainMenuManager.showPreferencesWindow(paneIdentifier: PANEL_IDENTIFIER.scrolling)
     }
+    /// Accessibility › Display › Reduce motion: the window changes its height at once.
+    var prefersReducedMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     // MARK: - State
 
@@ -461,7 +464,14 @@ final class IntroductionViewController: NSViewController {
         if let visible = window.screen?.visibleFrame, frame.minY < visible.minY {
             frame.origin.y = min(visible.minY, visible.maxY - frame.height)
         }
-        window.setFrame(frame, display: true, animate: animated && window.isVisible)
+        let animate = Self.animatesResize(animated, windowIsVisible: window.isVisible, reduceMotion: prefersReducedMotion())
+        window.setFrame(frame, display: true, animate: animate)
+    }
+
+    /// Whether a change of the window's height is animated: only when asked for, on screen,
+    /// and not with Reduce motion on.
+    static func animatesResize(_ animated: Bool, windowIsVisible: Bool, reduceMotion: Bool) -> Bool {
+        return animated && windowIsVisible && !reduceMotion
     }
 
     // MARK: - Polling

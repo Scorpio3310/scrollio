@@ -210,11 +210,24 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
             selectedPaneIdentifier = identifier
             host.show(controller)
             updateWindowTitle()
+            keepKeyboardFocus()
+        } else {
+            // Asked for the pane on show ("About Scrollio" while General is open): its top,
+            // as when it is shown anew.
+            host.scrollToTop()
         }
         sidebar.select(identifier)
         if remember {
             uiStateDefaults?.set(identifier, forKey: Self.selectedPaneDefaultsKey)
         }
+    }
+
+    /// A button inside a pane that switches panes ("Open Mouse", "Set Up…") goes away with
+    /// its pane, and the window takes the focus: Tab would start over. The sidebar list gets
+    /// it, as when the window opens, so Tab goes on into the new pane.
+    private func keepKeyboardFocus() {
+        guard let window = view.window, window.firstResponder === window || window.firstResponder == nil else { return }
+        window.makeFirstResponder(sidebar.tableView)
     }
 
     /// The window is named after the pane it shows, as in System Settings; the title bar

@@ -215,12 +215,18 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
         }
         return (bundlePath as NSString).abbreviatingWithTildeInPath
     }
+
+    /// The tooltip of an app's row and of its header: the name, which may be cut off, then
+    /// the whole path on a second line.
+    static func toolTip(name: String, path: String) -> String {
+        return "\(name)\n\(path)"
+    }
 }
 
 // MARK: - Header row
 
 /// The app's row at the top of its page: its 32 pt icon, its name and where it is (one
-/// line, shortened in the middle; the full path in the tooltip).
+/// line, shortened in the middle; the full name and path in the tooltip).
 final class ApplicationDetailHeaderRow: PreferencesGroupRow {
 
     static let iconSize: CGFloat = 32
@@ -249,8 +255,8 @@ final class ApplicationDetailHeaderRow: PreferencesGroupRow {
         explanationLabel.cell?.wraps = false
         explanationLabel.lineBreakMode = .byTruncatingMiddle
         explanationLabel.maximumNumberOfLines = 1
-        toolTip = path
-        explanationLabel.toolTip = path
+        toolTip = ApplicationDetailViewController.toolTip(name: name, path: path)
+        explanationLabel.toolTip = toolTip
 
         addSubview(view)
         NSLayoutConstraint.activate([

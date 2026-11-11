@@ -17,8 +17,6 @@ struct MouseGestureModePresentation: Equatable {
     var isInteractiveSelectable: Bool
     /// False disables the Left and Right rows: the swipe owns sideways movement.
     var areHorizontalActionsEditable: Bool
-    /// Localization key of the note under the mode control.
-    var noteKey: String
 
     /// Tracking speed scales the swipe, so it only applies while the desktop follows the hand.
     var isTrackingSpeedEditable: Bool {
@@ -46,10 +44,7 @@ struct MouseGestureModePresentation: Equatable {
         return MouseGestureModePresentation(
             selectedMode: selected,
             isInteractiveSelectable: isInteractiveAvailable,
-            areHorizontalActionsEditable: selected == .discrete,
-            noteKey: isInteractiveAvailable
-                ? "gesture-mode-interactive-note"
-                : "gesture-mode-interactive-unavailable"
+            areHorizontalActionsEditable: selected == .discrete
         )
     }
 }
@@ -99,6 +94,7 @@ final class MouseGestureSettingsControls: NSObject {
     /// Identifiers for the controls (tests and accessibility tooling).
     enum Identifier {
         static let mode = NSUserInterfaceItemIdentifier("gesture-mode")
+        /// The explanation under "Mode" in the Gestures pane.
         static let modeNote = NSUserInterfaceItemIdentifier("gesture-mode-note")
         static let invertHorizontal = NSUserInterfaceItemIdentifier("gesture-invert-horizontal")
         static let freezePointer = NSUserInterfaceItemIdentifier("gesture-freeze-pointer")
@@ -175,8 +171,6 @@ final class MouseGestureSettingsControls: NSObject {
     // MARK: - Controls
 
     let modeControl: NSSegmentedControl
-    /// Under the mode control: what "Follow the hand" does, or why it cannot be picked.
-    let modeNote: NSTextField
     /// One pull-down per `Slot`, in `Slot.allCases` order.
     private(set) var actionPopUps: [NSPopUpButton] = []
     /// "Invert left and right" and "Freeze pointer": switches, named by the rows they sit in.
@@ -221,12 +215,6 @@ final class MouseGestureSettingsControls: NSObject {
         )
         modeControl.identifier = Identifier.mode
         modeControl.setAccessibilityLabel(NSLocalizedString("gesture-mode-label", comment: ""))
-
-        modeNote = NSTextField(wrappingLabelWithString: "")
-        modeNote.identifier = Identifier.modeNote
-        modeNote.font = NSFont.systemFont(ofSize: 11)
-        modeNote.textColor = NSColor.secondaryLabelColor
-        modeNote.isSelectable = false
 
         invertToggle = PreferencesGroupedForm.makeSwitch(target: nil, action: nil)
         invertToggle.identifier = Identifier.invertHorizontal
@@ -277,14 +265,13 @@ final class MouseGestureSettingsControls: NSObject {
         )
     }
 
-    /// Brings the mode control, its note and the Left / Right rows in line with the mode.
+    /// Brings the mode control and the Left / Right rows in line with the mode.
     private func applyModePresentation() {
         let presentation = modePresentation
         if let interactiveSegment = Self.modes.firstIndex(of: .interactive) {
             modeControl.selectedSegment = Self.modes.firstIndex(of: presentation.selectedMode) ?? 0
             modeControl.setEnabled(presentation.isInteractiveSelectable, forSegment: interactiveSegment)
         }
-        modeNote.stringValue = NSLocalizedString(presentation.noteKey, comment: "")
 
         let settings = Options.shared.gesture
         for popup in actionPopUps {

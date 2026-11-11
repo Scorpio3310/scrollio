@@ -499,20 +499,20 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         typealias Presentation = MouseGestureModePresentation
         XCTAssertEqual(
             Presentation.make(storedMode: .discrete, isInteractiveAvailable: true),
-            Presentation(selectedMode: .discrete, isInteractiveSelectable: true, areHorizontalActionsEditable: true, noteKey: "gesture-mode-interactive-note")
+            Presentation(selectedMode: .discrete, isInteractiveSelectable: true, areHorizontalActionsEditable: true)
         )
         XCTAssertEqual(
             Presentation.make(storedMode: .interactive, isInteractiveAvailable: true),
-            Presentation(selectedMode: .interactive, isInteractiveSelectable: true, areHorizontalActionsEditable: false, noteKey: "gesture-mode-interactive-note")
+            Presentation(selectedMode: .interactive, isInteractiveSelectable: true, areHorizontalActionsEditable: false)
         )
         // Unavailable: Mos runs discrete whatever is stored, and the controls say so.
         XCTAssertEqual(
             Presentation.make(storedMode: .interactive, isInteractiveAvailable: false),
-            Presentation(selectedMode: .discrete, isInteractiveSelectable: false, areHorizontalActionsEditable: true, noteKey: "gesture-mode-interactive-unavailable")
+            Presentation(selectedMode: .discrete, isInteractiveSelectable: false, areHorizontalActionsEditable: true)
         )
         XCTAssertEqual(
             Presentation.make(storedMode: .discrete, isInteractiveAvailable: false),
-            Presentation(selectedMode: .discrete, isInteractiveSelectable: false, areHorizontalActionsEditable: true, noteKey: "gesture-mode-interactive-unavailable")
+            Presentation(selectedMode: .discrete, isInteractiveSelectable: false, areHorizontalActionsEditable: true)
         )
     }
 
@@ -524,7 +524,6 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertTrue(mode.isEnabled(forSegment: 1))
         XCTAssertEqual(mode.label(forSegment: 0), NSLocalizedString("gesture-mode-discrete", comment: ""))
         XCTAssertEqual(mode.label(forSegment: 1), NSLocalizedString("gesture-mode-interactive", comment: ""))
-        XCTAssertEqual(note(in: view).stringValue, NSLocalizedString("gesture-mode-interactive-note", comment: ""))
         for direction in ["up", "down", "left", "right", "click"] {
             XCTAssertTrue(actionPopUp(direction, in: view).isEnabled, direction)
         }
@@ -574,7 +573,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertTrue(actionPopUp("click", in: view).isEnabled)
     }
 
-    func testControlsDisableFollowWithAHintWhenUnavailable() {
+    func testControlsDisableFollowWhenUnavailable() {
         Options.shared.gesture.mode = .interactive
         let view = makeControlsView(isInteractiveAvailable: { false })
         let mode = modeControl(in: view)
@@ -582,9 +581,6 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(mode.selectedSegment, 0, "Mos runs discrete, so discrete is shown")
         XCTAssertFalse(mode.isEnabled(forSegment: 1))
         XCTAssertTrue(mode.isEnabled(forSegment: 0))
-        let hint = NSLocalizedString("gesture-mode-interactive-unavailable", comment: "")
-        XCTAssertNotEqual(hint, "gesture-mode-interactive-unavailable")
-        XCTAssertEqual(note(in: view).stringValue, hint)
         XCTAssertTrue(actionPopUp("left", in: view).isEnabled)
         XCTAssertTrue(actionPopUp("right", in: view).isEnabled)
         XCTAssertEqual(Options.shared.gesture.mode, .interactive, "the stored choice is kept for when it works again")
@@ -708,7 +704,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         } ?? MouseGestureSettingsControls(showLogiActions: false)
         retainedControls.append(controls)
         let view = NSView()
-        for control in [controls.modeControl, controls.modeNote, controls.invertToggle, controls.freezeToggle] + controls.actionPopUps {
+        for control in [controls.modeControl, controls.invertToggle, controls.freezeToggle] + controls.actionPopUps {
             view.addSubview(control)
         }
         return view
@@ -724,10 +720,6 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
 
     private func modeControl(in view: NSView) -> NSSegmentedControl {
         find(MouseGestureSettingsControls.Identifier.mode, in: view) as! NSSegmentedControl
-    }
-
-    private func note(in view: NSView) -> NSTextField {
-        find(MouseGestureSettingsControls.Identifier.modeNote, in: view) as! NSTextField
     }
 
     private func actionPopUp(_ direction: String, in view: NSView) -> NSPopUpButton {

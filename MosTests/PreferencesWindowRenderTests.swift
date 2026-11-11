@@ -764,7 +764,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
     // MARK: - Kit
 
     /// The kit's list in a pane: four rows (symbol and app icons, explanations, a pull-down,
-    /// a chevron, one selected) with a note under the box, and an empty list. The selection
+    /// a chevron, one selected) under a box, and an empty list. The selection
     /// in a key window and in one that is not.
     func testRenderListBox() throws {
         for key in [true, false] {
@@ -1260,8 +1260,7 @@ private final class ListRenderController: NSViewController {
         let switchBox = PreferencesGroupSection(width: width, rows: [
             PreferencesSwitchRow(title: "Limit scrolling to these apps", explanation: "Apps not in the list scroll the way macOS does.", target: nil, action: nil),
         ])
-        let note = PreferencesGroupedForm.makeNote("Buttons and gestures still work everywhere. A second line of the note shows where it wraps under the box.")
-        PreferencesGroupedForm.add([switchBox, section, note], to: content)
+        PreferencesGroupedForm.add([switchBox, section], to: content)
         view = root
         root.setFrameSize(root.fittingSize)
     }

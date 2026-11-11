@@ -4,8 +4,8 @@
 //
 //  The grouped-form kit (System Settings boxes): the numbers, how rows lay out their
 //  title, explanation and control, the hairlines between the rows that show, dimming a
-//  row, the accessibility names of its controls, the spacing of boxes, section titles,
-//  notes and the footer in a pane, and the list (PreferencesListBox): its rows, selection,
+//  row, the accessibility names of its controls, the spacing of boxes, section titles
+//  and the footer in a pane, and the list (PreferencesListBox): its rows, selection,
 //  mouse, keyboard, footer, empty row, hairlines and accessibility. Nothing is shown on
 //  screen.
 //
@@ -827,37 +827,6 @@ final class PreferencesGroupedFormTests: XCTestCase {
         XCTAssertEqual(frame(of: button, in: root).maxX, paneWidth - Form.margin, accuracy: 1)
         XCTAssertEqual(button.bezelStyle, .push)
         XCTAssertEqual(button.controlSize, .regular)
-    }
-
-    func testANoteSitsCloseUnderTheBoxAndWrapsAtTheRowsInset() {
-        let box = PreferencesGroupSection(width: boxWidth, rows: [PreferencesSwitchRow(title: "One", target: nil, action: nil)])
-        let long = String(repeating: "Buttons and gestures still work everywhere. ", count: 3)
-        let note = Form.makeNote(long)
-        let second = Form.makeNote("Another line.")
-        let after = PreferencesGroupSection(width: boxWidth, rows: [PreferencesSwitchRow(title: "Two", target: nil, action: nil)])
-        let root = makePane([box, note, second, after])
-
-        XCTAssertEqual(note.text, long)
-        XCTAssertEqual(note.label.font, Form.explanationFont)
-        XCTAssertEqual(note.label.textColor, Form.explanationColor(enabled: true))
-        XCTAssertFalse(note.label.isSelectable)
-        XCTAssertEqual(note.contentWidth, boxWidth, "the content stack's width")
-        XCTAssertEqual(note.label.preferredMaxLayoutWidth, boxWidth - 2 * Form.rowHorizontalInset, accuracy: 0.5)
-
-        let boxFrame = frame(of: box, in: root)
-        let label = frame(of: note.label, in: root)
-        XCTAssertEqual(label.minX - boxFrame.minX, Form.rowHorizontalInset, accuracy: 0.5, "at the rows' inset")
-        XCTAssertLessThanOrEqual(label.maxX, boxFrame.maxX - Form.rowHorizontalInset + 0.5)
-        XCTAssertGreaterThan(label.height, 2 * explanationLineHeight() - 1, "it wraps")
-        XCTAssertEqual(boxFrame.minY - frame(of: note, in: root).maxY, Form.noteSpacing, accuracy: 0.5)
-        XCTAssertEqual(frame(of: note, in: root).minY - frame(of: second, in: root).maxY, Form.sectionTitleSpacing, accuracy: 0.5, "two notes sit close")
-        XCTAssertEqual(frame(of: second, in: root).minY - frame(of: after, in: root).maxY, Form.boxSpacing, accuracy: 0.5)
-
-        // Outside a content stack the note learns its width when it is laid out.
-        let loose = Form.makeNote(long)
-        loose.frame = NSRect(x: 0, y: 0, width: 300, height: 100)
-        loose.layout()
-        XCTAssertEqual(loose.label.preferredMaxLayoutWidth, 300 - 2 * Form.rowHorizontalInset, accuracy: 0.5)
     }
 
     // MARK: - List

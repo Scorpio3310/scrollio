@@ -564,33 +564,46 @@ final class PreferencesScrollingTests: XCTestCase {
 
     func testKeyRowsShowTheStoredKeysAndClearThem() {
         let controller = makeController(advanced: true)
-        XCTAssertEqual(controller.keyBindButtons.map(\.title), ["⌥ Option", "⇧ Shift", "⌘ Command"], "the default keys")
+        XCTAssertEqual(controller.keyBindButtons.map(\.title), ["⌥", "⇧", "⌘"], "the default keys, named as the Buttons pane names them")
         XCTAssertTrue(controller.keyClearButtons.allSatisfy { $0.isEnabled && $0.alphaValue == 1 })
-        XCTAssertTrue(controller.keyClearButtons.allSatisfy { $0.accessibilityLabel() == "Clear key" })
+        XCTAssertEqual(
+            controller.keyClearButtons.map { $0.accessibilityLabel() },
+            ["Clear key for Scroll faster", "Clear key for Scroll sideways", "Clear key for Pause smoothing"],
+            "VoiceOver tells the three apart"
+        )
+        XCTAssertTrue(controller.keyClearButtons.allSatisfy { $0.isAccessibilityElement() })
 
         send(controller.keyClearButtons[ScrollHoldKey.sideways.rawValue])
 
         XCTAssertNil(Options.shared.scroll.toggle)
         XCTAssertNotNil(Options.shared.scroll.dash)
         XCTAssertNotNil(Options.shared.scroll.block)
-        XCTAssertEqual(controller.keyBindButtons.map(\.title), ["⌥ Option", "Disabled", "⌘ Command"])
+        XCTAssertEqual(controller.keyBindButtons.map(\.title), ["⌥", "None", "⌘"])
         let cleared = controller.keyClearButtons[ScrollHoldKey.sideways.rawValue]
         XCTAssertFalse(cleared.isEnabled)
         XCTAssertEqual(cleared.alphaValue, 0, "nothing to clear")
+        XCTAssertFalse(cleared.isAccessibilityElement(), "a hidden button is not in the accessibility tree")
+        XCTAssertTrue(controller.keyClearButtons[ScrollHoldKey.faster.rawValue].isAccessibilityElement())
 
         send(controller.keyClearButtons[ScrollHoldKey.faster.rawValue])
         send(controller.keyClearButtons[ScrollHoldKey.pause.rawValue])
         XCTAssertNil(Options.shared.scroll.dash)
         XCTAssertNil(Options.shared.scroll.block)
+        XCTAssertFalse(controller.keyClearButtons.contains { $0.isAccessibilityElement() })
+
+        // A key again: the button is back in the tree.
+        Options.shared.scroll.dash = ScrollHotkey(type: .keyboard, code: KeyCode.optionL)
+        controller.syncViewWithOptions()
+        XCTAssertTrue(controller.keyClearButtons[ScrollHoldKey.faster.rawValue].isAccessibilityElement())
     }
 
     func testARecordedKeyGoesToTheRowThatRecorded() {
         let controller = makeController(advanced: true)
         let recorder = KeyRecorder()
         let stored: [(ScrollHoldKey, UInt16, String)] = [
-            (.faster, KeyCode.controlL, "⌃ Control"),
-            (.sideways, KeyCode.optionL, "⌥ Option"),
-            (.pause, KeyCode.shiftL, "⇧ Shift"),
+            (.faster, KeyCode.controlL, "⌃"),
+            (.sideways, KeyCode.optionL, "⌥"),
+            (.pause, KeyCode.shiftL, "⇧"),
         ]
         for (key, code, name) in stored {
             controller.recordingKey = key
@@ -609,6 +622,45 @@ final class PreferencesScrollingTests: XCTestCase {
         let stray = InputEvent(type: .keyboard, code: KeyCode.commandL, modifiers: [], phase: .down, source: .hidPP, device: nil)
         controller.onEventRecorded(recorder, didRecordEvent: stray, isDuplicate: false)
         XCTAssertEqual(Options.shared.scroll.dash, ScrollHotkey(type: .keyboard, code: KeyCode.controlL))
+    }
+
+    func testHoldKeysAreNamedAsTheButtonsPaneNamesTriggers() {
+        let unnamed = ButtonTriggerNaming.Logitech(role: { _ in nil }, name: { _ in nil })
+        let names = PreferencesScrollingViewController.holdKeyTitles(for: [
+            ScrollHotkey(type: .keyboard, code: KeyCode.controlL),
+            ScrollHotkey(type: .keyboard, code: 40),
+            ScrollHotkey(type: .mouse, code: 2),
+            ScrollHotkey(type: .mouse, code: 3),
+            ScrollHotkey(type: .mouse, code: 5),
+            ScrollHotkey(type: .mouse, code: 1234),
+            nil,
+        ], logitech: unnamed)
+        XCTAssertEqual(names, ["⌃", "K", "Middle button", "Back button", "Button 5", "1234 button", "None"])
+        XCTAssertFalse(names.contains { $0.isEmpty || $0.contains("🖱") }, "no empty title, no mouse emoji")
+        for (index, hotkey) in [ScrollHotkey(type: .mouse, code: 3), ScrollHotkey(type: .mouse, code: 5)].enumerated() {
+            let event = RecordedEvent(type: hotkey.type, code: hotkey.code, modifiers: 0, deviceFilter: nil)
+            XCTAssertEqual(names[3 + index], ButtonTriggerNaming.title(for: event), "the Buttons pane's name")
+        }
+
+        // A Logitech Back button next to the standard one says which it is, as in the Buttons pane.
+        let back = ButtonTriggerNaming.Logitech(role: { _ in .back }, name: { _ in "Back" })
+        XCTAssertEqual(
+            PreferencesScrollingViewController.holdKeyTitles(for: [
+                ScrollHotkey(type: .mouse, code: 3), nil, ScrollHotkey(type: .mouse, code: 1234),
+            ], logitech: back),
+            ["Back button", "None", "Back button (Logitech)"]
+        )
+    }
+
+    func testKeyRowsNameAModifierAMouseButtonAndNoKey() {
+        let controller = makeController(advanced: true)
+        let scroll = Options.shared.scroll
+        scroll.dash = ScrollHotkey(type: .keyboard, code: KeyCode.optionL)
+        scroll.toggle = ScrollHotkey(type: .mouse, code: 3)
+        scroll.block = nil
+        controller.syncViewWithOptions()
+
+        XCTAssertEqual(controller.keyBindButtons.map(\.title), ["⌥", "Back button", "None"])
     }
 
     func testHoldKeysMapToTheThreeHotkeys() {
@@ -730,7 +782,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(controller.smallestStepSlider.doubleValue, 33.6, accuracy: 1e-9)
         XCTAssertEqual(controller.trackpadEventsSwitch.state, .off)
         XCTAssertEqual(controller.reverseSwitch.state, .on)
-        XCTAssertEqual(controller.keyBindButtons.map(\.title), ["⌥ Option", "⇧ Shift", "⌘ Command"])
+        XCTAssertEqual(controller.keyBindButtons.map(\.title), ["⌥", "⇧", "⌘"])
         XCTAssertFalse(controller.resetToDefaultsButton.isEnabled)
         XCTAssertTrue(controller.isAdvancedExpanded, "reset closes nothing")
         XCTAssertTrue(uiDefaults.bool(forKey: PreferencesScrollingViewController.advancedExpandedDefaultsKey))
@@ -1144,6 +1196,16 @@ final class PreferencesScrollingRenderTests: XCTestCase {
             Options.shared.scroll.smooth = false
             tab.syncViewWithOptions()
             try render(tab.view, name: "tab-\(state)-smooth-off", into: directory)
+
+            // Three kinds of hold key: a modifier, a mouse button, none.
+            if advanced {
+                Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+                Options.shared.scroll.dash = ScrollHotkey(type: .keyboard, code: KeyCode.optionL)
+                Options.shared.scroll.toggle = ScrollHotkey(type: .mouse, code: 3)
+                Options.shared.scroll.block = nil
+                tab.syncViewWithOptions()
+                try render(tab.view, name: "tab-advanced-keys", into: directory)
+            }
 
             // An app's page, with settings of its own and inheriting.
             Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()

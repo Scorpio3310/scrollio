@@ -292,18 +292,6 @@
         }
       }
     },
-    "Disabled": {
-      "comment": "Hotkey disabled state",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Disabled"
-          }
-        }
-      }
-    },
     "doNotDisturb": {
       "extractionState": "manual",
       "localizations": {
@@ -865,17 +853,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Follow the hand"
-          }
-        }
-      }
-    },
-    "gesture-mode-interactive-note": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Follow the hand is experimental: moving sideways slides between desktops."
           }
         }
       }
@@ -4267,17 +4244,6 @@
         }
       }
     },
-    "scrolling-key-clear": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Clear key"
-          }
-        }
-      }
-    },
     "scrolling-reset": {
       "extractionState": "manual",
       "localizations": {
@@ -5112,6 +5078,30 @@
           "stringUnit": {
             "state": "translated",
             "value": "A key cannot be held while the mouse moves."
+          }
+        }
+      }
+    },
+    "scrolling-key-none": {
+      "comment": "Scrolling pane: the recorder button of a hold key that is not set",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "None"
+          }
+        }
+      }
+    },
+    "scrolling-key-clear-for": {
+      "comment": "Scrolling pane: accessibility name of the button that clears a hold key; %@ is the row title, e.g. Scroll faster",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear key for %@"
           }
         }
       }
