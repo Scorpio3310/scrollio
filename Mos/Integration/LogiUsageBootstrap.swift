@@ -20,6 +20,8 @@ enum LogiUsageBootstrap {
         }
         // Logitech 滚轮硬件设置 (SmartShift / 灵敏度 / 齿感力度), 见 LogiUsageBootstrap+Wheel
         installWheelObserver()
+        // 手势导航的设备侧位移跟踪 (raw XY), 见 LogiUsageBootstrap+Gesture
+        installGestureObserver()
     }
 
     static func refreshAll() {
@@ -56,9 +58,12 @@ enum LogiUsageBootstrap {
             }
         }
         lastPushedAppPaths = currentPaths
+
+        // 4. Gesture Navigation 绑定里由鼠标自行跟踪位移的按键 (依赖上面的绑定与热键)
+        refreshGestureTracking()
     }
 
-    private static func globalScrollCodes(role: ScrollRole) -> Set<UInt16> {
+    static func globalScrollCodes(role: ScrollRole) -> Set<UInt16> {
         let hotkey: ScrollHotkey? = {
             switch role {
             case .dash:   return Options.shared.scroll.dash
@@ -70,7 +75,7 @@ enum LogiUsageBootstrap {
         return [h.code]
     }
 
-    private static func appScrollCodes(app: Application, role: ScrollRole) -> Set<UInt16> {
+    static func appScrollCodes(app: Application, role: ScrollRole) -> Set<UInt16> {
         guard !app.inherit else { return [] }
         let hotkey: ScrollHotkey? = {
             switch role {
