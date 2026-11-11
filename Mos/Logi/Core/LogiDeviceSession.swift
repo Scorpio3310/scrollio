@@ -55,8 +55,8 @@ class LogiDeviceSession {
     enum ConnectionMode {
         /// BLE 直连: long report + ID in payload, devIdx=0xFF, divert flags=0x03
         case bleDirect
-        /// USB Receiver (Unifying/Bolt): vendor-specific interface, devIdx=slot(0x01~0x06)
-        /// TODO: 需要实现槽位发现 (HID++ 1.0 枚举配对设备)
+        /// USB Receiver (Unifying/Bolt): vendor-specific interface, devIdx=slot(0x01~0x06);
+        /// slots are found by enumerateReceiverDevices (ping per slot + register 0xB5).
         case receiver
         /// 未知/不支持
         case unsupported

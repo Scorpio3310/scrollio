@@ -227,8 +227,8 @@ internal class LogiSessionManager {
     /// 聚合后只在 "全局是否忙碌" 翻转的瞬间 post, UI 订阅后用来驱动 activity spinner.
     static let activityStateDidChangeNotification = NSNotification.Name("LogiActivityStateDidChange")
 
-    /// 冲突状态变化通知; Step 4/5 会在 reporting query 完成等位置 post 此通知.
-    /// Step 2 仅声明命名,不在任何位置 post.
+    /// 冲突状态变化通知: notifyConflictChanged() posts it when a control's delivery mode
+    /// leaves .hidpp (recordExternalClear), so that the conflict indicators refresh.
     static let conflictChangedNotification = NSNotification.Name("LogiConflictChanged")
 
     // MARK: - Activity State Aggregation
@@ -270,7 +270,7 @@ internal class LogiSessionManager {
     /// Coalesced 入口:刷新所有 HID++ session 的 reporting 状态 (重跑 GetControlReporting).
     /// 调用方决定时机 (例如 UI 想看冲突图标), manager 只负责执行 + 节流.
     ///
-    /// 节流: `reportingRefreshMinInterval` (~3s) 内重复调用直接返回, 防 UI 抖动.
+    /// 节流: `reportingRefreshMinInterval` (10 s) 内重复调用直接返回, 防 UI 抖动.
     /// 没 Logi 候选会话时自然 no-op (sessions filter 后为空集合).
     /// 同步返回, 不阻塞 UI — 实际 HID++ 请求在各自 session 的 input-report 回调里
     /// 异步处理, 完成后通过 `reportingQueryDidCompleteNotification` 刷新 indicator.
