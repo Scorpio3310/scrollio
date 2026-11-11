@@ -1063,6 +1063,37 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(scrollKey.titleLabel.stringValue, "Also a key under Scrolling")
     }
 
+    /// A key that has Gesture Navigation from before does nothing with it (the input side
+    /// passes it through): its row says so as a problem, not "Hold and move the mouse", and
+    /// the ⓘ says why. A mouse button with it keeps the plain note. Nothing is saved.
+    func testAKeyWithGestureNavigationSaysItCannotRunIt() throws {
+        let gesture = SystemShortcut.mouseGestureNavigation.identifier
+        let pane = makePane([
+            binding(41, gesture, modifiers: UInt(CGEventFlags.maskCommand.rawValue), type: .keyboard),
+            binding(3, gesture),
+        ])
+        let stored = Options.shared.buttons.binding
+        XCTAssertEqual(pane.rows.map(\.explanation), [
+            "A key cannot run Gesture Navigation. Choose a mouse button.",
+            "Hold and move the mouse. Set the directions under Gestures.",
+        ])
+        XCTAssertEqual(pane.rows.map { $0.note?.tone }, [.problem, .plain])
+        XCTAssertFalse(pane.rows[0].infoButton.isHidden)
+        XCTAssertTrue(pane.rows[1].infoButton.isHidden)
+        let line = pane.rows[0].explanationLabel.attributedStringValue
+        XCTAssertTrue(line.containsAttachments(in: NSRange(location: 0, length: line.length)), "after the warning sign")
+        XCTAssertEqual(line.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .systemOrange)
+        XCTAssertEqual(pane.rows[0].accessibilityLabel(), "\(pane.rows[0].title), A key cannot run Gesture Navigation. Choose a mouse button.")
+
+        let popover = try XCTUnwrap(pane.showProblem(of: pane.rows[0], relativeTo: pane.rows[0].infoButton))
+        _ = popover.view
+        XCTAssertEqual(popover.titleLabel.stringValue, "Gestures need a mouse button")
+        XCTAssertEqual(popover.detailLabel.stringValue, "A key cannot be held while the mouse moves.")
+        XCTAssertNil(popover.standardButton)
+        pane.problemPopover?.close()
+        XCTAssertEqual(Options.shared.buttons.binding, stored)
+    }
+
     /// The ⓘ sits on the title line just before the pull-down, and the note under the title
     /// runs on below it: no problem takes more than two lines.
     func testProblemNotesRunUnderTheInfoButtonInTwoLinesAtMost() throws {

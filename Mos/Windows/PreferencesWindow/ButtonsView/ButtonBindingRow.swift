@@ -20,6 +20,8 @@ struct ButtonRowNote: Equatable {
     enum Kind: Equatable {
         /// Gesture Navigation: the directions are under Gestures.
         case gestureNavigation
+        /// Gesture Navigation on a key (from before): a key cannot run it.
+        case keyGestureNavigation
         /// A scroll action works while the button is held.
         case holdAction
         /// No action yet.
@@ -49,7 +51,7 @@ struct ButtonRowNote: Equatable {
         switch kind {
         case .gestureNavigation, .holdAction, .noAction, .extraButton:
             return .plain
-        case .alsoScrollKey:
+        case .alsoScrollKey, .keyGestureNavigation:
             return .problem
         case .capture(let status):
             return status == .standardMouseAliasAvailable ? .hint : .problem
@@ -69,6 +71,7 @@ struct ButtonRowNote: Equatable {
     var detailTitle: String {
         switch kind {
         case .alsoScrollKey: return Self.text("buttons-scroll-key-title")
+        case .keyGestureNavigation: return Self.text("buttons-gesture-needs-mouse-button")
         case .capture(let status): return Self.text(status.titleKey)
         case .gestureNavigation, .holdAction, .noAction, .extraButton: return text
         }
@@ -77,6 +80,7 @@ struct ButtonRowNote: Equatable {
     var detailText: String {
         switch kind {
         case .alsoScrollKey: return Self.text("buttons-scroll-key-detail")
+        case .keyGestureNavigation: return Self.text("buttons-gesture-needs-mouse-button-detail")
         case .capture(let status): return Self.text(status.detailKey)
         case .gestureNavigation, .holdAction, .noAction, .extraButton: return ""
         }
@@ -119,14 +123,17 @@ struct ButtonRowNote: Equatable {
         return nil
     }
 
-    /// What the action needs: an action at all, the directions of Gesture Navigation, the
-    /// button held for a scroll action.
+    /// What the action needs: an action at all, the directions of Gesture Navigation (a
+    /// mouse button: on a key it does nothing), the button held for a scroll action.
     private static func actionNote(for binding: ButtonBinding) -> ButtonRowNote? {
         switch CellActionState(binding: binding) {
         case .unbound, .recordingPrompt:
             return ButtonRowNote(kind: .noAction, text: text("buttons-note-no-action"))
         case .namedShortcut(let shortcut):
             if shortcut.identifier == SystemShortcut.mouseGestureNavigation.identifier {
+                if binding.triggerEvent.type == .keyboard {
+                    return ButtonRowNote(kind: .keyGestureNavigation, text: text("buttons-note-key-gesture-navigation"))
+                }
                 return ButtonRowNote(kind: .gestureNavigation, text: text("buttons-note-gesture-navigation"))
             }
             if SystemShortcut.mosMouseScrollCategory.shortcuts.contains(where: { $0.identifier == shortcut.identifier }) {

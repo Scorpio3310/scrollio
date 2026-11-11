@@ -74,7 +74,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-trigger-placed", "buttons-header-place-this-one", "buttons-place-title", "buttons-place-help",
         "buttons-place-gesture", "buttons-place-thumb-panel", "buttons-place-back", "buttons-place-forward",
         "buttons-place-mode-shift", "buttons-place-middle", "buttons-place-none", "buttons-place-used-by",
-        "buttons-place-in-list", "buttons-header-not-on-this-mouse",
+        "buttons-place-in-list", "buttons-header-not-on-this-mouse", "buttons-note-key-gesture-navigation",
         "button_conflict_title", "button_conflict_detail", "button_contended_title", "button_contended_detail",
         "button_standard_mouse_alias_title", "button_standard_mouse_alias_detail",
         "button_ble_hidpp_unstable_title", "button_ble_hidpp_unstable_detail", "button_use_native_mouse",

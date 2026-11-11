@@ -5117,6 +5117,18 @@
           }
         }
       }
+    },
+    "buttons-note-key-gesture-navigation": {
+      "comment": "Buttons pane: under a keyboard key that has Gesture Navigation from before (only a mouse button can run it); after an orange warning sign",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A key cannot run Gesture Navigation. Choose a mouse button."
+          }
+        }
+      }
     }
   },
   "version": "1.1"
