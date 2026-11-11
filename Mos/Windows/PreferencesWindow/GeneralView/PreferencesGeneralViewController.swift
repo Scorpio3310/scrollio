@@ -13,10 +13,29 @@ class PreferencesGeneralViewController: NSViewController {
     // UI Elements
     @IBOutlet weak var launchOnLoginCheckBox: NSButton!
     @IBOutlet weak var hideStatusBarIconCheckBox: NSButton!
-    
+
+    private var keyWindowObserver: NSObjectProtocol?
+
     override func viewDidLoad() {
         // 读取设置
         syncViewWithOptions()
+        // Back from System Settings, where the login item may have been approved or
+        // switched off: the window becomes key again.
+        keyWindowObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self, let window = notification.object as? NSWindow,
+                  window === self.view.window else { return }
+            self.refreshLaunchAtLoginState()
+        }
+    }
+
+    deinit {
+        if let keyWindowObserver {
+            NotificationCenter.default.removeObserver(keyWindowObserver)
+        }
     }
 
     override func viewWillAppear() {
@@ -38,8 +57,16 @@ class PreferencesGeneralViewController: NSViewController {
     
     // 自启
     @IBAction func launchOnLoginClick(_ sender: NSButton) {
-        Options.shared.general.autoLaunch = sender.state.rawValue==0 ? false : true
-        syncViewWithOptions()
+        let wanted = sender.state == .on
+        if !wanted {
+            // Unchecking always removes the registration, also one that only waits for
+            // approval in System Settings.
+            LoginItem.removeRegistration()
+        }
+        Options.shared.general.autoLaunch = wanted
+        // Shows what the system did: an item that needs approval in System Settings is not
+        // on yet, so the box is not checked until it is approved there.
+        refreshLaunchAtLoginState()
     }
     
     // 隐藏

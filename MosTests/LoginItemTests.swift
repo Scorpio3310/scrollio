@@ -228,4 +228,88 @@ final class LoginItemTests: XCTestCase {
         XCTAssertEqual(fake.openSettingsCalls, 0)
         XCTAssertEqual(fake.status, .requiresApproval)
     }
+
+    // MARK: - The checkbox shows the real state
+
+    private func click(_ pane: PreferencesGeneralViewController, to state: NSControl.StateValue) {
+        pane.launchOnLoginCheckBox.state = state
+        pane.launchOnLoginClick(pane.launchOnLoginCheckBox)
+    }
+
+    func testCheckingAnItemThatNeedsApprovalLeavesTheBoxUnchecked() throws {
+        LoginItem.service = InertLoginItemService()
+        Options.shared.general.autoLaunch = false
+        let fake = install(.requiresApproval)
+        fake.statusAfterRegister = .requiresApproval
+        let pane = try makeGeneralPane()
+
+        click(pane, to: .on)
+
+        XCTAssertEqual(fake.registerCalls, 1)
+        XCTAssertEqual(fake.openSettingsCalls, 1, "System Settings opens where it can be approved")
+        XCTAssertEqual(pane.launchOnLoginCheckBox.state, .off, "it does not launch at login yet")
+        XCTAssertFalse(Options.shared.general.autoLaunch)
+    }
+
+    func testUncheckingAlwaysUnregisters() throws {
+        for status in [LoginItemStatus.enabled, .requiresApproval] {
+            LoginItem.service = InertLoginItemService()
+            Options.shared.general.autoLaunch = false
+            let fake = install(status)
+            let pane = try makeGeneralPane()
+            // The box may still show an earlier state (switched off in System Settings since).
+            pane.launchOnLoginCheckBox.state = .on
+
+            click(pane, to: .off)
+
+            XCTAssertEqual(fake.unregisterCalls, 1, "\(status)")
+            XCTAssertEqual(fake.status, .notRegistered, "\(status)")
+            XCTAssertEqual(pane.launchOnLoginCheckBox.state, .off, "\(status)")
+            XCTAssertEqual(fake.openSettingsCalls, 0, "\(status)")
+        }
+    }
+
+    func testUncheckingWithNothingRegisteredDoesNothing() throws {
+        let fake = install(.notRegistered)
+        let pane = try makeGeneralPane()
+        click(pane, to: .off)
+        XCTAssertEqual(fake.unregisterCalls, 0)
+        XCTAssertEqual(fake.registerCalls, 0)
+    }
+
+    func testCheckingRegisters() throws {
+        LoginItem.service = InertLoginItemService()
+        Options.shared.general.autoLaunch = false
+        let fake = install(.notRegistered)
+        let pane = try makeGeneralPane()
+
+        click(pane, to: .on)
+
+        XCTAssertEqual(fake.registerCalls, 1)
+        XCTAssertEqual(fake.status, .enabled)
+        XCTAssertEqual(pane.launchOnLoginCheckBox.state, .on)
+        XCTAssertTrue(Options.shared.general.autoLaunch)
+    }
+
+    func testThePaneRereadsTheStateWhenItsWindowBecomesKey() throws {
+        LoginItem.service = InertLoginItemService()
+        Options.shared.general.autoLaunch = false
+        let fake = install(.requiresApproval)
+        let pane = try makeGeneralPane()
+        let window = NSWindow(
+            contentRect: NSRect(x: -20000, y: -20000, width: 450, height: 120),
+            styleMask: [.titled], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentViewController = pane
+        defer { window.contentViewController = nil }
+        XCTAssertEqual(pane.launchOnLoginCheckBox.state, .off)
+
+        // Approved in System Settings; the user comes back to the window.
+        fake.status = .enabled
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
+        let shown = expectation(for: NSPredicate { _, _ in pane.launchOnLoginCheckBox.state == .on }, evaluatedWith: nil)
+        wait(for: [shown], timeout: 5)
+        XCTAssertEqual(fake.registerCalls, 0)
+    }
 }
