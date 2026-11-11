@@ -1143,17 +1143,6 @@
         }
       }
     },
-    "mouse-diagnostics-button": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Logitech Diagnostics…"
-          }
-        }
-      }
-    },
     "mouse-haptics": {
       "extractionState": "manual",
       "localizations": {
@@ -4476,72 +4465,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Open Settings…"
-          }
-        }
-      }
-    },
-    "general-advanced": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Advanced"
-          }
-        }
-      }
-    },
-    "general-scroll-monitor": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scroll monitor"
-          }
-        }
-      }
-    },
-    "general-scroll-monitor-hint": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A live chart of wheel events. Scrolling is slower while it's open."
-          }
-        }
-      }
-    },
-    "general-diagnostics": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Logitech diagnostics"
-          }
-        }
-      }
-    },
-    "general-diagnostics-hint": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Technical details of connected Logitech mice, for troubleshooting."
-          }
-        }
-      }
-    },
-    "general-open-window": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open…"
           }
         }
       }

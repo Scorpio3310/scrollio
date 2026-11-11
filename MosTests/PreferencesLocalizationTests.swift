@@ -36,7 +36,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "mouse-haptics-header", "mouse-haptics", "mouse-haptics-hint", "mouse-haptics-strength",
         "mouse-haptics-strength-hint", "mouse-haptics-strength-light", "mouse-haptics-strength-strong",
         "mouse-press-force", "mouse-press-force-hint", "mouse-press-force-light", "mouse-press-force-firm",
-        "mouse-value-on", "mouse-value-off", "mouse-diagnostics-button",
+        "mouse-value-on", "mouse-value-off",
     ]
 
     /// Scrolling pane.
@@ -122,8 +122,6 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-paused", "general-paused-hint", "general-resume",
         "general-permissions-header", "general-accessibility", "general-accessibility-hint",
         "general-accessibility-allowed", "general-accessibility-not-allowed", "general-accessibility-open-settings",
-        "general-advanced", "general-scroll-monitor", "general-scroll-monitor-hint",
-        "general-diagnostics", "general-diagnostics-hint", "general-open-window",
         "about-app-name", "about-version", "about-credit", "about-welcome-guide",
         "about-welcome-guide-open", "about-welcome-guide-hint",
     ]

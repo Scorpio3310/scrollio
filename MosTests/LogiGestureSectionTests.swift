@@ -93,7 +93,7 @@ final class LogiGestureSectionTests: XCTestCase {
 
     func testTheMouseTabNoLongerHoldsTheSection() {
         let mouse = MousePreferencesViewController()
-        mouse.deviceSource = MouseDeviceSource(deviceStates: { [] }, refresh: {}, showDiagnostics: {})
+        mouse.deviceSource = MouseDeviceSource(deviceStates: { [] }, refresh: {})
         _ = mouse.view
         mouse.reloadDevices()
         let titles = Self.allSubviews(of: mouse.view).compactMap { ($0 as? NSButton)?.title }
@@ -361,7 +361,7 @@ final class LogiGestureSectionTests: XCTestCase {
         gestures.deviceSource = MouseGestureDeviceSource(support: { [weak self] in self?.support ?? .none }, refresh: {})
         gestures.bindingSummary = { MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: true) }
         (preferences.controller(for: MousePreferencesViewController.tabIdentifier) as? MousePreferencesViewController)?
-            .deviceSource = MouseDeviceSource(deviceStates: { [] }, refresh: {}, showDiagnostics: {})
+            .deviceSource = MouseDeviceSource(deviceStates: { [] }, refresh: {})
         support = master4HapticsOff
         Options.shared.logiMouse.hapticsOn = false
         XCTAssertTrue(preferences.selectPane(withIdentifier: GesturesPreferencesViewController.tabIdentifier))

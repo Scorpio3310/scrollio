@@ -138,8 +138,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
-    /// Access allowed and not, the login item waiting for approval, "Advanced" open. The
-    /// login item and the permission are fixed, nothing is asked of the system.
+    /// Access allowed and not, the login item waiting for approval, paused. The login item
+    /// and the permission are fixed, nothing is asked of the system.
     func testRenderGeneral() throws {
         final class FixedLoginItem: LoginItemService {
             let status: LoginItemStatus
@@ -154,19 +154,14 @@ final class PreferencesWindowRenderTests: XCTestCase {
             Options.shared.general.autoLaunch = savedAutoLaunch
             LoginItem.service = LoginItem.defaultService
         }
-        let cases: [(name: String, access: Bool, login: LoginItemStatus, advanced: Bool, paused: Bool)] = [
-            ("general", true, .enabled, false, false),
-            ("general-no-access", false, .notRegistered, false, false),
-            ("general-login-approval", true, .requiresApproval, false, false),
-            ("general-advanced", true, .enabled, true, false),
-            ("general-paused", true, .enabled, false, true),
+        let cases: [(name: String, access: Bool, login: LoginItemStatus, paused: Bool)] = [
+            ("general", true, .enabled, false),
+            ("general-no-access", false, .notRegistered, false),
+            ("general-login-approval", true, .requiresApproval, false),
+            ("general-paused", true, .enabled, true),
         ]
         for item in cases {
             LoginItem.service = FixedLoginItem(item.login)
-            let suite = "ScrollioTests.window-render.general.\(UUID().uuidString)"
-            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-            defaults.set(item.advanced, forKey: PreferencesGeneralViewController.advancedExpandedDefaultsKey)
-            addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
             try renderPane(PANEL_IDENTIFIER.general, name: item.name, prepare: { preferences in
                 guard let general = preferences.controller(for: PANEL_IDENTIFIER.general)
                     as? PreferencesGeneralViewController else { return }
@@ -174,7 +169,6 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 general.isPaused = { item.paused }
                 general.resume = {}
                 general.isMenuBarIconHidden = { false }
-                general.uiStateDefaults = defaults
             }, afterLoad: { controller in
                 // The window calls viewWillAppear, which reads the login item.
                 controller.viewWillAppear()
@@ -1040,7 +1034,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try renderPane(MousePreferencesViewController.tabIdentifier, name: name, windowHeight: windowHeight, prepare: { preferences in
             guard let mouse = preferences.controller(for: MousePreferencesViewController.tabIdentifier)
                 as? MousePreferencesViewController else { return }
-            mouse.deviceSource = MouseDeviceSource(deviceStates: { devices }, refresh: {}, showDiagnostics: {})
+            mouse.deviceSource = MouseDeviceSource(deviceStates: { devices }, refresh: {})
             mouse.readbackSettleTime = 0
         }, afterLoad: { controller in
             guard let mouse = controller as? MousePreferencesViewController else { return }

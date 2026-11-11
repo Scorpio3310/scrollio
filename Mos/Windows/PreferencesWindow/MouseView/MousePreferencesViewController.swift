@@ -35,7 +35,6 @@ final class MousePreferencesViewController: NSViewController {
         static let haptics = NSUserInterfaceItemIdentifier("mouse-haptics")
         static let strength = NSUserInterfaceItemIdentifier("mouse-haptics-strength")
         static let pressForce = NSUserInterfaceItemIdentifier("mouse-press-force")
-        static let diagnostics = NSUserInterfaceItemIdentifier("mouse-diagnostics")
     }
 
     /// As wide as the Scrolling tab: the sliders sit on the right of their rows.
@@ -83,7 +82,6 @@ final class MousePreferencesViewController: NSViewController {
     private(set) var pointerSection: PreferencesGroupSection!
     private(set) var wheelSection: PreferencesGroupSection!
     private(set) var hapticsSection: PreferencesGroupSection!
-    private(set) var footer: PreferencesGroupFooter!
 
     private(set) var trackingSpeedRow: PreferencesSliderRow!
     private(set) var pointerAccelerationRow: PreferencesSwitchRow!
@@ -106,7 +104,6 @@ final class MousePreferencesViewController: NSViewController {
     private(set) var hapticsSwitch: NSSwitch!
     private(set) var strengthSlider: NSSlider!
     private(set) var pressForceSlider: NSSlider!
-    private(set) var diagnosticsButton: NSButton!
 
     /// Every row that lights up a part of the mouse, with that part.
     private(set) var rowParts: [(row: PreferencesGroupRow, part: MousePart)] = []
@@ -161,17 +158,8 @@ final class MousePreferencesViewController: NSViewController {
             rows: [makeHapticsRow(), makeStrengthRow(), makePressForceRow()]
         )
 
-        let diagnostics = PreferencesGroupedForm.makePushButton(
-            title: MouseText.text("mouse-diagnostics-button"),
-            target: self,
-            action: #selector(diagnosticsClicked(_:))
-        )
-        diagnostics.identifier = Identifier.diagnostics
-        diagnosticsButton = diagnostics
-        footer = PreferencesGroupFooter(trailing: [diagnostics])
-
         PreferencesGroupedForm.add(
-            [header, macSection, managedSection, pointerSection, wheelSection, hapticsSection, footer],
+            [header, macSection, managedSection, pointerSection, wheelSection, hapticsSection],
             to: content
         )
 
@@ -388,8 +376,8 @@ final class MousePreferencesViewController: NSViewController {
         row.isEnabled = slider.isEnabled
     }
 
-    /// A titled box keeps a wider gap above it than an untitled one, and so does the footer.
-    /// Hidden views are left out of the stack, so the gaps are worked out from what shows.
+    /// A titled box keeps a wider gap above it than an untitled one. Hidden views are left
+    /// out of the stack, so the gaps are worked out from what shows.
     private func updateSpacing() {
         let views = contentStack.arrangedSubviews
         let shown = views.filter { !$0.isHidden }
@@ -398,7 +386,7 @@ final class MousePreferencesViewController: NSViewController {
         }
         for (above, below) in zip(shown, shown.dropFirst()) {
             // "Let Scrollio manage this mouse" starts the Logitech part: apart from the macOS box.
-            let titled = (below as? PreferencesGroupSection)?.titleLabel != nil || below is PreferencesGroupFooter
+            let titled = (below as? PreferencesGroupSection)?.titleLabel != nil
                 || (below === managedSection && above === macSection)
             contentStack.setCustomSpacing(
                 titled ? PreferencesGroupedForm.sectionSpacing : PreferencesGroupedForm.boxSpacing,
@@ -564,10 +552,6 @@ final class MousePreferencesViewController: NSViewController {
         let value = MousePaneModel.clamp(Int(sender.doubleValue.rounded()), to: range)
         updateMouseSettings(.pressForce) { $0.pressForce = value }
         pressForceRow.valueText = MouseText.percent(MousePaneModel.share(of: value, in: range))
-    }
-
-    @objc func diagnosticsClicked(_ sender: NSButton) {
-        deviceSource.showDiagnostics()
     }
 
     private func updateMouseSettings(_ setting: MouseSetting, _ change: (inout LogiMouseSettings) -> Void) {

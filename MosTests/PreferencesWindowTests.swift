@@ -548,8 +548,7 @@ final class PreferencesTextSizeTests: XCTestCase {
         let mouse = MousePreferencesViewController()
         mouse.deviceSource = MouseDeviceSource(
             deviceStates: { [MouseDeviceFixtures.mxMaster4()] },
-            refresh: {},
-            showDiagnostics: {}
+            refresh: {}
         )
         _ = mouse.view
         mouse.reloadDevices()
@@ -628,7 +627,6 @@ final class PreferencesKeyboardAccessibilityTests: XCTestCase {
         let suite = "ScrollioTests.preferences-keyboard.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.set(true, forKey: PreferencesScrollingViewController.advancedExpandedDefaultsKey)
-        defaults.set(true, forKey: PreferencesGeneralViewController.advancedExpandedDefaultsKey)
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         return defaults
     }
@@ -644,7 +642,6 @@ final class PreferencesKeyboardAccessibilityTests: XCTestCase {
         let defaults = makeDefaults()
         (preferences.controller(for: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)?.uiStateDefaults = defaults
         if let general = preferences.controller(for: PANEL_IDENTIFIER.general) as? PreferencesGeneralViewController {
-            general.uiStateDefaults = defaults
             general.isAccessGranted = { false }
             general.isMenuBarIconHidden = { false }
         }
@@ -657,7 +654,7 @@ final class PreferencesKeyboardAccessibilityTests: XCTestCase {
         }
         (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?.uiStateDefaults = defaults
         if let mouse = preferences.controller(for: MousePreferencesViewController.tabIdentifier) as? MousePreferencesViewController {
-            mouse.deviceSource = MouseDeviceSource(deviceStates: { [MouseDeviceFixtures.mxMaster4()] }, refresh: {}, showDiagnostics: {})
+            mouse.deviceSource = MouseDeviceSource(deviceStates: { [MouseDeviceFixtures.mxMaster4()] }, refresh: {})
             mouse.readbackSettleTime = 0
         }
         controller.contentViewController = preferences

@@ -819,7 +819,6 @@ final class SecondaryWindowNamingTests: XCTestCase {
 
     func testTheNamesOfTheDiagnostics() {
         XCTAssertEqual(NSLocalizedString("logitech-diagnostics-title", comment: ""), "Logitech Diagnostics")
-        XCTAssertEqual(NSLocalizedString("mouse-diagnostics-button", comment: ""), "Logitech Diagnostics…")
         XCTAssertEqual(NSLocalizedString("scroll-monitor-title", comment: ""), "Scroll Monitor")
     }
 
