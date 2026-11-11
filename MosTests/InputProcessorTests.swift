@@ -240,6 +240,36 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(pointerWarps.count, 1)
     }
 
+    /// "Freeze pointer" in the discrete mode when the detach is not honoured (macOS 27): the
+    /// event back on the anchor reports "hand + jump back". Without the compensation two
+    /// 15 pt steps would count as 15 + 0 + 15 + 0 = 30 pt, below the gesture distance.
+    func testDiscreteModeCountsThePhysicalMovementWhenThePointerIsWarpedBack() {
+        configureGestureBinding()
+        let executed = recordKeyboardShortcuts()
+        XCTAssertEqual(
+            InputProcessor.shared.process(InputEvent(fromCGEvent: makeOtherMouseEvent(.otherMouseDown))),
+            .consumed
+        )
+        XCTAssertTrue(MouseGesturePointerLock.shared.isLocked)
+
+        for _ in 0..<2 {
+            let drifted = makeMouseMoveEvent(deltaX: -15, deltaY: 0, location: CGPoint(x: 85, y: 100))
+            _ = MouseInteractionSessionController.shared.handleMotionTapEventForTests(drifted)
+            let snappedBack = makeMouseMoveEvent(deltaX: 0, deltaY: 0, location: pointerAnchor)
+            _ = MouseInteractionSessionController.shared.handleMotionTapEventForTests(snappedBack)
+        }
+        waitForMainQueue()
+
+        let expected = resolvedShortcut(SystemShortcut.moveSpaceLeft)
+        XCTAssertEqual(executed().count, 1, "60 pt of hand movement is a gesture")
+        XCTAssertEqual(executed().first?.0, expected.code)
+        XCTAssertEqual(pointerWarps.count, 2)
+        XCTAssertEqual(
+            InputProcessor.shared.process(InputEvent(fromCGEvent: makeOtherMouseEvent(.otherMouseUp))),
+            .consumed
+        )
+    }
+
     func testMouseGestureRecognizerKeepsVerticalGesturesOneShot() {
         var up = MouseGestureRecognizer()
         XCTAssertEqual(up.append(deltaX: 0, deltaY: -45), .up)

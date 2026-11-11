@@ -320,15 +320,22 @@ class InputProcessor: ModifierFlagsProviding {
     /// `handleDeviceGestureMovement`, and counting the pointer as well would double it.
     func handleMouseGestureMovement(deltaX: CGFloat, deltaY: CGFloat, location: CGPoint? = nil) {
         guard pointerTrackedGestureCount > 0 else { return }
-        if interactiveGestureKey != nil, interactiveGestureSource == .pointer {
-            accumulateInteractiveMovement(deltaX: deltaX, deltaY: deltaY, location: location)
+        // The pointer freeze can add a false delta when it has to warp the pointer back.
+        // The compensation keeps state, so it runs exactly once per motion event, and both
+        // kinds of hold (discrete and "follow the hand") read its result.
+        var delta = CGPoint(x: deltaX, y: deltaY)
+        if let location {
+            delta = MouseGesturePointerLock.shared.physicalDelta(delta, at: location)
         }
-        guard deltaX != 0 || deltaY != 0 else { return }
+        if interactiveGestureKey != nil, interactiveGestureSource == .pointer {
+            accumulateInteractiveMovement(delta)
+        }
+        guard delta != .zero else { return }
 
         var recognizedAction: String?
         for session in activeMouseGestures.values
         where session.interactive == nil && session.movementSource == .pointer && !session.isAbandoned {
-            if let direction = session.recognizer.append(deltaX: deltaX, deltaY: deltaY) {
+            if let direction = session.recognizer.append(deltaX: delta.x, deltaY: delta.y) {
                 let action = session.settings.actionIdentifier(for: direction)
                 playLockInHaptic(for: session, action: action)
                 if recognizedAction == nil {
@@ -353,9 +360,9 @@ class InputProcessor: ModifierFlagsProviding {
         guard deltaX != 0 || deltaY != 0 else { return }
 
         if interactiveGestureKey == key {
-            // No pointer location: the pointer is not frozen by Mos, so there is no warp
-            // to compensate for.
-            accumulateInteractiveMovement(deltaX: deltaX, deltaY: deltaY, location: nil)
+            // The pointer is not frozen by Mos for this hold, so there is no warp to
+            // compensate for.
+            accumulateInteractiveMovement(CGPoint(x: deltaX, y: deltaY))
             return
         }
         guard session.interactive == nil,
@@ -441,12 +448,8 @@ class InputProcessor: ModifierFlagsProviding {
     /// Runs inside the motion tap callback: only adds up the movement. The session sees it
     /// on the main queue at most once per display frame, because the Dock stutters when
     /// swipe events arrive faster than it draws, and nothing may be posted from the callback.
-    private func accumulateInteractiveMovement(deltaX: CGFloat, deltaY: CGFloat, location: CGPoint?) {
-        var delta = CGPoint(x: deltaX, y: deltaY)
-        if let location {
-            // The pointer freeze can add a false delta when it has to warp the pointer back.
-            delta = MouseGesturePointerLock.shared.physicalDelta(delta, at: location)
-        }
+    /// `delta` is already the physical movement (see `handleMouseGestureMovement`).
+    private func accumulateInteractiveMovement(_ delta: CGPoint) {
         guard delta != .zero else { return }
         pendingInteractiveDelta.x += delta.x
         pendingInteractiveDelta.y += delta.y
