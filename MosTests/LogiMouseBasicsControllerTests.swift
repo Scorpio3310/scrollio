@@ -330,6 +330,45 @@ final class LogiMouseBasicsControllerTests: XCTestCase {
         XCTAssertTrue(logs.contains("Not managed any more: nothing is written"))
     }
 
+    /// A value changed while the write of the old one still waited in the queue: only the new
+    /// value goes to the mouse (it used to get the old one first, then the new one).
+    func testAChangeSupersedesAWriteThatHasNotGoneOut() {
+        let controller = makeController()
+        controller.start(desired: LogiMouseSettings(pointerDPI: 1600), managed: true)
+        answerNext(controller)  // battery
+        answerNext(controller)  // list
+        answerNext(controller)  // current: the DPI write is queued behind the haptic and press reads
+        controller.apply(desired: LogiMouseSettings(pointerDPI: 800), managed: true)
+        answerAll(controller)
+        XCTAssertEqual(writes, [Sent(index: Self.dpiIndex, functionId: 3, params: [0x00, 0x03, 0x20])])
+        XCTAssertEqual(mouse.dpi, 800)
+        XCTAssertFalse(logs.contains { $0.contains("wrote 1600") }, "nothing claims a write that never went out")
+    }
+
+    func testSwitchingOffForgetsWritesThatNeverWentOut() {
+        let controller = makeController()
+        controller.start(desired: LogiMouseSettings(pointerDPI: 1600), managed: true)
+        answerNext(controller)
+        answerNext(controller)
+        answerNext(controller)
+        controller.apply(desired: LogiMouseSettings(pointerDPI: 1600), managed: false)
+        answerAll(controller)
+        XCTAssertEqual(writes, [])
+        XCTAssertFalse(logs.contains { $0.contains("wrote 1600") })
+    }
+
+    /// A controller kept across a rediscovery asks again for a basic the mouse refused before.
+    func testStartingAgainAsksForABasicRefusedEarlier() {
+        mouse.refused = [FakeMouse.key(Self.dpiIndex, 1)]
+        let controller = started(LogiMouseSettings(pointerDPI: 1600), managed: true)
+        XCTAssertFalse(controller.supported.contains(.pointerSpeed))
+        mouse.refused = []
+        controller.start(desired: LogiMouseSettings(pointerDPI: 1600), managed: true)
+        answerAll(controller)
+        XCTAssertTrue(controller.supported.contains(.pointerSpeed))
+        XCTAssertEqual(mouse.dpi, 1600)
+    }
+
     func testClearingAValueWritesNothing() {
         let controller = started(LogiMouseSettings(pointerDPI: 1600), managed: true)
         let before = writes.count
