@@ -362,3 +362,170 @@ struct TracedScrollEvent {
         return event
     }
 }
+
+/// Who moves the page when the trackpad and the wheel overlap (ScrollHandover), with event
+/// sequences from a trace on the owner's Mac (2026-11-11).
+final class ScrollHandoverTests: XCTestCase {
+
+    /// Runs events as the scroll tap does. Each becomes T (taken for trackpad, let through),
+    /// S (dropped: the wheel took over that glide) or W (wheel); `ended` holds the drop count
+    /// of each takeover that ended.
+    private func run(_ events: [TracedScrollEvent], _ handover: inout ScrollHandover) -> (kinds: String, ended: [Int]) {
+        var kinds = ""
+        var ended: [Int] = []
+        for event in events {
+            guard ScrollEvent.isTrackpad(scrollPhase: event.phase, momentumPhase: event.momentum, scrollCount: event.count, isContinuous: event.continuous) else {
+                if event.hasDelta { handover.wheelEvent() }
+                kinds += "W"
+                continue
+            }
+            switch handover.trackpadEvent(scrollPhase: event.phase, momentumPhase: event.momentum, hasDelta: event.hasDelta) {
+            case .swallow:
+                kinds += "S"
+            case .letThrough:
+                kinds += "T"
+            case .letThroughEndingTakeover(let dropped):
+                kinds += "T"
+                ended.append(dropped)
+            }
+        }
+        return (kinds, ended)
+    }
+
+    /// A swipe with its glide (count 1), then the wheel turned the other way during the glide.
+    /// Before, the wheel's events were taken for the trackpad's while the count was set (raw,
+    /// the wrong way) and the glide went on under them.
+    private let wheelDuringAGlide: [TracedScrollEvent] = [
+        .touch(1, point: 1), .touch(2, point: 22), .touch(2, count: 1, point: 93), .touch(4, count: 1),
+        .momentum(1, point: 180), .momentum(2, point: 169), .momentum(2, point: 24),
+        .wheelMarker(count: 1, line: -1, point: -1),
+        .wheel(count: 1, line: -1, point: -1),
+        .momentum(2, point: 22),
+        .wheel(count: 1, line: -1, point: -13),
+        .momentum(2, point: 20),
+        .wheel(count: 1, line: -7, point: -80),
+        .momentum(2, count: 0, point: 5),
+        .wheel(count: 0, line: -12, point: -122),
+        .momentum(2, count: 0, point: 5),
+        .momentum(2, count: 0, point: 1),
+        .momentum(3, count: 0),
+        .touch(1, point: 2),
+    ]
+
+    func testWheelDuringATrackpadGlide_takesOverAndTheGlideStillEnds() {
+        var handover = ScrollHandover()
+        let result = run(wheelDuringAGlide, &handover)
+        // The touch and the glide up to the wheel go on; the "ended" that comes with the wheel
+        // goes on; the wheel's events are wheel events; the rest of the glide is dropped, its
+        // real "ended" goes on; the next touch starts fresh.
+        XCTAssertEqual(result.kinds, "TTTTTTT" + "T" + "W" + "SWSWSW" + "SS" + "T" + "T")
+        XCTAssertEqual(result.ended, [5])
+        XCTAssertEqual(handover.state, .idle)
+    }
+
+    /// Trackpad alone: nothing is ever dropped (a swipe, its glide, a second swipe at once).
+    func testTrackpadAlone_dropsNothing() {
+        var handover = ScrollHandover()
+        let swipes: [TracedScrollEvent] = [
+            .touch(1, point: 1), .touch(2, point: 16), .touch(2, count: 1, point: 37), .touch(4, count: 1),
+            .momentum(1, point: 99), .momentum(2, point: 99), .momentum(2, point: 29), .momentum(3),
+            .touch(1, count: 2, point: 1), .touch(2, count: 2, point: 239), .touch(4, count: 2),
+            .momentum(1, count: 2, point: 234), .momentum(2, count: 2, point: 215),
+            // A touch while the glide runs (may begin, cancelled).
+            .touch(128), .touch(8),
+            TracedScrollEvent(phase: 0, momentum: 0, count: 1, continuous: 1),
+        ]
+        let result = run(swipes, &handover)
+        XCTAssertEqual(result.kinds, String(repeating: "T", count: swipes.count))
+        XCTAssertEqual(result.ended, [])
+    }
+
+    /// Wheel alone: nothing changes.
+    func testWheelAlone_changesNothing() {
+        var handover = ScrollHandover()
+        let notches = (0..<20).map { _ in TracedScrollEvent.wheel(count: 0, line: -9, point: -95) }
+        XCTAssertEqual(run(notches, &handover).kinds, String(repeating: "W", count: notches.count))
+        XCTAssertEqual(handover.state, .idle)
+    }
+
+    /// The wheel after a glide that ended takes over nothing.
+    func testWheelAfterTheGlideEnded_takesOverNothing() {
+        var handover = ScrollHandover()
+        let events: [TracedScrollEvent] = [
+            .momentum(1, point: 99), .momentum(2, point: 29), .momentum(3),
+            .wheel(count: 1, line: -1, point: -13),
+            .touch(1, point: 1), .touch(2, point: 22), .touch(4), .momentum(1, point: 50), .momentum(2, point: 40),
+        ]
+        let result = run(events, &handover)
+        XCTAssertEqual(result.kinds, "TTTWTTTTT")
+        XCTAssertEqual(result.ended, [])
+    }
+
+    /// A new touch or a new glide ends the takeover and is never dropped.
+    func testANewTouchOrANewGlide_startsFresh() {
+        var handover = ScrollHandover()
+        let touch = run([
+            .momentum(1, point: 99), .momentum(2, point: 90),
+            .wheel(count: 1, line: 5, point: 54),
+            .momentum(2, point: 80), .momentum(2, point: 70),
+            .touch(128), .touch(1, point: 1), .touch(2, point: 20),
+        ], &handover)
+        XCTAssertEqual(touch.kinds, "TTWSSTTT")
+        XCTAssertEqual(touch.ended, [2])
+
+        handover = ScrollHandover()
+        let glide = run([
+            .momentum(1, point: 99), .wheel(count: 1, line: 5, point: 54), .momentum(2, point: 80),
+            .momentum(1, count: 2, point: 234), .momentum(2, count: 2, point: 215),
+        ], &handover)
+        XCTAssertEqual(glide.kinds, "TWSTT")
+        XCTAssertEqual(glide.ended, [1])
+    }
+
+    /// The glide's "ended" that comes with the wheel does not end the glide: its "changed"
+    /// events go on after it.
+    func testTheEndedThatComesWithTheWheel_doesNotEndTheGlide() {
+        var handover = ScrollHandover()
+        XCTAssertEqual(handover.trackpadEvent(scrollPhase: 0, momentumPhase: 2, hasDelta: true), .letThrough)
+        XCTAssertEqual(handover.trackpadEvent(scrollPhase: 0, momentumPhase: 3, hasDelta: true), .letThrough)
+        XCTAssertEqual(handover.state, .glide)
+        XCTAssertEqual(handover.trackpadEvent(scrollPhase: 0, momentumPhase: 3, hasDelta: false), .letThrough)
+        XCTAssertEqual(handover.state, .idle)
+    }
+
+    // MARK: The scroll tap
+
+    /// End to end through the scroll tap's callback, with smoothing off: the wheel is let
+    /// through raw, and it still takes over (raw, it would move the page against the glide).
+    func testScrollTap_dropsTheRestOfAGlideTheWheelTookOver_withSmoothingOff() throws {
+        let savedSmooth = Options.shared.scroll.smooth
+        defer {
+            Options.shared.scroll.smooth = savedSmooth
+            ScrollCore.shared.handover = ScrollHandover()
+        }
+        Options.shared.scroll.smooth = false
+        ScrollCore.shared.handover = ScrollHandover()
+
+        var kinds = ""
+        for traced in wheelDuringAGlide {
+            let event = try XCTUnwrap(traced.cgEvent())
+            let result = ScrollCore.shared.scrollEventCallBack(CGEventTapProxy(bitPattern: 1)!, .scrollWheel, event, nil)
+            kinds += result == nil ? "x" : "o"
+        }
+        // o = goes on, x = dropped. The wheel's events go on (smoothing is off).
+        XCTAssertEqual(kinds, "ooooooo" + "o" + "o" + "xoxoxo" + "xx" + "o" + "o")
+        XCTAssertEqual(ScrollCore.shared.handover.state, .idle)
+    }
+
+    // MARK: The log
+
+    func testLog_saysWhatTheHandOverDid() throws {
+        XCTAssertEqual(
+            ScrollSystemLog.wheelTookOverMessage(droppedMomentumEvents: 5),
+            "handover: the wheel took over a trackpad glide: 5 momentum events dropped"
+        )
+        let event = try XCTUnwrap(TracedScrollEvent.momentum(2, point: 22).cgEvent())
+        let line = ScrollHandoverTrace.describe(event, takenForTrackpad: true, swallowed: true, sinceOther: 0.012)
+        XCTAssertTrue(line.hasPrefix("handover S +12 ms phase 0 momentum 2 count 1 continuous 1"), line)
+    }
+}
