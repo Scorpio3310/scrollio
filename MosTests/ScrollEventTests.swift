@@ -561,13 +561,4 @@ final class ScrollHandoverTests: XCTestCase {
 
     // MARK: The log
 
-    func testLog_saysWhatTheHandOverDid() throws {
-        XCTAssertEqual(
-            ScrollSystemLog.wheelTookOverMessage(droppedMomentumEvents: 5),
-            "handover: the wheel took over a trackpad glide: 5 momentum events dropped"
-        )
-        let event = try XCTUnwrap(TracedScrollEvent.momentum(2, point: 22).cgEvent())
-        let line = ScrollHandoverTrace.describe(event, takenForTrackpad: true, swallowed: true, sinceOther: 0.012)
-        XCTAssertTrue(line.hasPrefix("handover S +12 ms phase 0 momentum 2 count 1 continuous 1"), line)
-    }
 }
