@@ -192,6 +192,13 @@ class InputProcessor: ModifierFlagsProviding {
         if let stale = activeMouseGestures[key], stale.isAbandoned {
             activeMouseGestures.removeValue(forKey: key)
         }
+        // A held key repeats its keyDown. The press it repeats holds its action already: the
+        // repeat is swallowed, not run as a new press (that released and pressed the action
+        // again: repeated clicks instead of a drag, a flickering modifier). A plain key output
+        // still repeats like the key itself.
+        if event.isAutoRepeat, let session = activeBindings[key], !Self.repeatsWhileHeld(session.action) {
+            return .consumed
+        }
         guard let binding = ButtonUtils.shared.getBestMatchingBinding(for: event) else {
             return .passthrough
         }
@@ -209,6 +216,10 @@ class InputProcessor: ModifierFlagsProviding {
         }
 
         if action.executionMode == .trigger {
+            // A trigger action runs once per press: a held key's repeats are swallowed (they
+            // used to run it again and again; a key whose action posts that same key ran it
+            // in a loop).
+            guard !event.isAutoRepeat else { return .consumed }
             ShortcutExecutor.shared.execute(action: action, phase: .down, inputModifiers: event.modifiers)
             return .consumed
         }
@@ -230,6 +241,17 @@ class InputProcessor: ModifierFlagsProviding {
         )
         recomputeActiveModifierFlags()
         return .consumed
+    }
+
+    /// A plain key (not a modifier) as the action of a held keyboard trigger: each repeat of
+    /// the trigger releases and presses it again, as it always did, so it repeats like the
+    /// key itself. Every other held action (mouse buttons, modifiers, Scrollio scroll
+    /// actions) stays pressed until the trigger's key-up.
+    static func repeatsWhileHeld(_ action: ResolvedAction) -> Bool {
+        if case .customKey(let code, _) = action {
+            return !KeyCode.modifierKeys.contains(code)
+        }
+        return false
     }
 
     // MARK: - Mouse Gesture Navigation

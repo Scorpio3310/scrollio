@@ -1959,6 +1959,84 @@ final class InputProcessorTests: XCTestCase {
                        CGPoint(x: 10, y: 10))
     }
 
+    // MARK: - A held keyboard trigger (auto-repeat)
+
+    private func keyEvent(_ code: CGKeyCode, down: Bool, flags: CGEventFlags, repeating: Bool = false) -> InputEvent {
+        let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)!
+        event.flags = flags
+        if repeating {
+            event.setIntegerValueField(.keyboardEventAutorepeat, value: 1)
+        }
+        return InputEvent(fromCGEvent: event)
+    }
+
+    private func bindKey(_ code: UInt16, flags: CGEventFlags, to action: String) {
+        let trigger = RecordedEvent(type: .keyboard, code: code, modifiers: UInt(flags.rawValue),
+                                    displayComponents: ["⌃ ⌥", "F"], deviceFilter: nil)
+        Options.shared.buttons.binding = [ButtonBinding(triggerEvent: trigger, systemShortcutName: action, isEnabled: true)]
+        ButtonUtils.shared.invalidateCache()
+    }
+
+    func testAnInputEventKnowsAnAutoRepeat() {
+        XCTAssertFalse(keyEvent(3, down: true, flags: []).isAutoRepeat)
+        XCTAssertTrue(keyEvent(3, down: true, flags: [], repeating: true).isAutoRepeat)
+        XCTAssertFalse(keyEvent(3, down: false, flags: [], repeating: true).isAutoRepeat, "only a keyDown repeats")
+        XCTAssertFalse(InputEvent(type: .keyboard, code: 3, modifiers: [], phase: .down, source: .hidPP, device: nil).isAutoRepeat)
+    }
+
+    /// A held keyboard trigger repeats its keyDown, and a trigger action ran again for every
+    /// repeat (a key bound to the shortcut it is itself ran in a loop).
+    func testAHeldKeyboardTriggerRunsItsActionOncePerPress() {
+        let flags: CGEventFlags = [.maskControl, .maskAlternate]
+        bindKey(3, flags: flags, to: SystemShortcut.copy.identifier)
+        let executed = recordKeyboardShortcuts()
+
+        XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: true, flags: flags)), .consumed)
+        for _ in 0..<5 {
+            XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: true, flags: flags, repeating: true)), .consumed,
+                           "the repeat is swallowed")
+        }
+        XCTAssertEqual(executed().count, 1)
+        _ = InputProcessor.shared.process(keyEvent(3, down: false, flags: flags))
+
+        XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: true, flags: flags)), .consumed)
+        XCTAssertEqual(executed().count, 2, "the next press runs it again")
+    }
+
+    /// A key bound to a click: holding it holds the button (a drag), instead of releasing and
+    /// pressing it again on every repeat.
+    func testAHeldKeyboardTriggerHoldsItsMouseButton() {
+        let flags: CGEventFlags = [.maskControl, .maskAlternate]
+        bindKey(3, flags: flags, to: "mouseLeftClick")
+        var observedTypes: [CGEventType] = []
+        ShortcutExecutor.shared.setTestingMouseEventObserver { observedTypes.append($0.type) }
+
+        XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: true, flags: flags)), .consumed)
+        for _ in 0..<3 {
+            XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: true, flags: flags, repeating: true)), .consumed)
+        }
+        XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: false, flags: flags)), .consumed)
+
+        XCTAssertEqual(observedTypes, [.leftMouseDown, .leftMouseUp])
+    }
+
+    /// A key without a binding repeats for the app in front, as always.
+    func testTheRepeatOfAnUnboundKeyPassesThrough() {
+        XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: true, flags: [])), .passthrough)
+        XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: true, flags: [], repeating: true)), .passthrough)
+    }
+
+    /// Only a plain key as the action keeps repeating with its trigger (as before): a mouse
+    /// button, a modifier or a Scrollio scroll action stays held.
+    func testOnlyAPlainKeyActionRepeatsWithItsTrigger() {
+        XCTAssertTrue(InputProcessor.repeatsWhileHeld(.customKey(code: 125, modifiers: 0)))
+        XCTAssertTrue(InputProcessor.repeatsWhileHeld(.customKey(code: 8, modifiers: CGEventFlags.maskCommand.rawValue)))
+        XCTAssertFalse(InputProcessor.repeatsWhileHeld(.customKey(code: KeyCode.shiftL, modifiers: 0)))
+        XCTAssertFalse(InputProcessor.repeatsWhileHeld(.mouseButton(kind: .left)))
+        XCTAssertFalse(InputProcessor.repeatsWhileHeld(.customMouseButton(buttonNumber: 5, modifiers: 0)))
+        XCTAssertFalse(InputProcessor.repeatsWhileHeld(.mosScroll(role: .dash)))
+    }
+
     private func configureGestureBinding(type: EventType = .mouse, code: UInt16 = 3) {
         let trigger = RecordedEvent(
             type: type,
