@@ -2,9 +2,11 @@
 //  WelcomeGuideFeelStep.swift
 //  Mos
 //  Step 3 of the Welcome Guide: how scrolling feels. The five "Feel" presets of the
-//  Scrolling pane as cards, each with the path the page takes after three clicks (the scroll
-//  engine's own maths, ScrollPreviewMotion), and over them a real page to scroll: a scroll
-//  view in a drawn window, smoothed by Scrollio's engine itself, as any other window is.
+//  Scrolling pane as cards, each with a small picture of how far the page glides on (a dot
+//  resting further from the wheel's stop, card by card), its name and a word on how it stops;
+//  over them a real page to scroll: a scroll view in a drawn window, smoothed by Scrollio's engine
+//  itself, as any other window is. A line under the cards shows only for a glide time of
+//  the user's own (none of the five is chosen).
 //
 //  A pick applies at once and stores only the preset's glide time (`ScrollFeel.apply`, as
 //  the Scrolling pane's Feel control). Under the cards, the Scrolling pane's "Reverse wheel
@@ -14,8 +16,8 @@
 //  demo plays the chosen feel on it (three clicks there and back); while the pointer is on
 //  the page nothing animates: the scroll tap runs on the main thread too. When the page
 //  cannot be smoothed (Scrollio not running, "Limit scrolling to these apps" without
-//  Scrollio, smoothing off) the text says to watch the demo, and a line in the window
-//  says why.
+//  Scrollio, smoothing off) the text says to watch the demo (with Reduce Motion, where
+//  nothing moves, just to pick), and a line in the window says why.
 //
 
 import Cocoa
@@ -29,9 +31,11 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
     let artwork: WelcomeGuideFeelPicture
     private(set) var titleLabel: NSTextField!
     private(set) var textLabel: NSTextField!
+    /// Under the cards, only while the glide time is none of the five.
     private(set) var hintLabel: NSTextField!
-    private(set) var noteLabel: NSTextField!
     private(set) var feelButtons: [WelcomeGuideFeelButton] = []
+    private var stack: NSStackView!
+    private var row: NSStackView!
     /// "Reverse wheel direction", the row of the Scrolling pane, in a box of its own.
     private(set) var reverseRow: PreferencesSwitchRow!
     private(set) var reverseBox: PreferencesGroupBox!
@@ -71,31 +75,25 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
         row.setAccessibilityElement(true)
         row.setAccessibilityRole(.radioGroup)
         row.setAccessibilityLabel(WelcomeGuideText.localized("scrolling-feel-label"))
-        let hint = WelcomeGuideText.makeText("", font: NSFont.systemFont(ofSize: 12))
-        let note = WelcomeGuideText.makeText(
-            WelcomeGuideText.localized("intro-feel-note"), font: PreferencesForm.hintFont, color: .tertiaryLabelColor
-        )
+        let hint = WelcomeGuideText.makeText(WelcomeGuideText.localized("intro-feel-custom-hint"), font: NSFont.systemFont(ofSize: 12))
         let reverse = PreferencesSwitchRow(
             title: WelcomeGuideText.localized("scrolling-reverse"),
             explanation: WelcomeGuideText.localized("scrolling-reverse-hint"),
             target: nil, action: nil
         )
         let box = PreferencesGroupBox(width: WelcomeGuideLayout.rowBoxWidth, rows: [reverse])
-        let (view, stack) = WelcomeGuideText.makeContent([title, text, row, hint, box, note])
+        let (view, stack) = WelcomeGuideText.makeContent([title, text, row, hint, box])
         stack.setCustomSpacing(WelcomeGuideLayout.titleToText, after: title)
         stack.setCustomSpacing(WelcomeGuideLayout.textToControl, after: text)
-        stack.setCustomSpacing(8, after: row)
-        stack.setCustomSpacing(10, after: hint)
-        stack.setCustomSpacing(8, after: box)
-        // The hint changes with the pick: its height stays that of one line.
-        hint.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        stack.setCustomSpacing(Self.hintSpacing, after: hint)
         content = view
 
         super.init()
         titleLabel = title
         textLabel = text
         hintLabel = hint
-        noteLabel = note
+        self.stack = stack
+        self.row = row
         feelButtons = buttons
         reverseRow = reverse
         reverseBox = box
@@ -113,13 +111,18 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
         artwork.setAnimating(shown)
     }
 
+    /// Between the cards and the switch's box; with the line for a custom glide time, around it.
+    static var rowToBox: CGFloat { return WelcomeGuideLayout.controlToControl }
+    static let hintSpacing: CGFloat = 6
+
     /// Puts the stored feel, the try area's state and the mouse on screen.
     func refresh() {
         let feel = selectedFeel
         for button in feelButtons {
             button.state = button.feel == feel ? .on : .off
         }
-        hintLabel.stringValue = ScrollFeel.hint(for: feel)
+        hintLabel.isHidden = feel != nil
+        stack.setCustomSpacing(feel == nil ? Self.hintSpacing : Self.rowToBox, after: row)
         reverseRow.isOn = scrollOptions().reversesWheel
         artwork.model = mouseSource()
         artwork.setScene(duration: scrollOptions().duration, speed: scrollOptions().speed)
@@ -127,12 +130,23 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
     }
 
     /// The page is smoothed or not (the access, the per-app list, the switch): the text and
-    /// the line in the window follow. Cheap; the container calls it with its poll.
+    /// the line in the window follow. Cheap; the container calls it with its poll, and the
+    /// text is set only when it changes (no relayout, nothing for VoiceOver to read again).
     func refreshTryArea() {
         let state = tryAreaState()
         tryArea = state
-        textLabel.stringValue = WelcomeGuideText.localized(state == .smoothed ? "intro-feel-text" : "intro-feel-text-watch")
+        let text = WelcomeGuideText.localized(Self.textKey(tryArea: state, reduceMotion: artwork.prefersReducedMotion()))
+        if textLabel.stringValue != text {
+            textLabel.stringValue = text
+        }
         artwork.tryArea = state
+    }
+
+    /// Scroll the page yourself; or, when it is not smoothed, watch the demo; or, when the
+    /// demo stands still too (Reduce Motion), just pick.
+    static func textKey(tryArea: WelcomeGuideTryArea, reduceMotion: Bool) -> String {
+        if tryArea == .smoothed { return "intro-feel-text" }
+        return reduceMotion ? "intro-feel-text-still" : "intro-feel-text-watch"
     }
 
     @objc func feelClicked(_ sender: WelcomeGuideFeelButton) {
@@ -160,23 +174,29 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
 
 // MARK: - A choice
 
-/// One preset: the path of the page over time for three clicks, and its name. A radio
-/// button: the five are one group (arrow keys move between them), VoiceOver reads the
-/// name and the line that says how it feels.
+/// One preset: a small picture of how far the page glides on, its name, and a word on how
+/// it stops. A radio button: the five are one group (arrow keys move between them),
+/// VoiceOver reads the name and that word.
+///
+/// The card tracks the mouse itself. AppKit's radio cell takes a click only on the title
+/// it would draw beside its circle, a strip 47 × 16 pt at the left of the card's middle
+/// that this card never shows: a click on the drawn name, the picture or an edge did nothing.
+/// Here the whole card takes the click, as a button does: pressed while the pointer is
+/// on it, chosen when the button is released on it, also the first click into a window
+/// that is not key, and never the start of a window drag (the guide's window moves by
+/// its background).
 final class WelcomeGuideFeelButton: NSButton {
 
-    static let size = NSSize(width: 100, height: 64)
+    /// Five cards and four gaps are as wide as the picture (552 pt).
+    static let size = NSSize(width: 104, height: 76)
     static let spacing: CGFloat = 8
-    static let curveSize = NSSize(width: 80, height: 28)
+    static let pictureSize = NSSize(width: 80, height: 22)
     static let cornerRadius: CGFloat = 10
 
     let feel: ScrollFeel
-    /// Points of the curve in its 80 × 28 box (top left origin).
-    let curve: [NSPoint]
 
     init(feel: ScrollFeel) {
         self.feel = feel
-        curve = Self.curvePoints(duration: feel.duration)
         super.init(frame: NSRect(origin: .zero, size: Self.size))
         setButtonType(.radio)
         isBordered = false
@@ -187,8 +207,13 @@ final class WelcomeGuideFeelButton: NSButton {
         heightAnchor.constraint(equalToConstant: Self.size.height).isActive = true
         setAccessibilityRole(.radioButton)
         setAccessibilityLabel(feel.localizedName)
-        setAccessibilityHelp(feel.localizedHint)
+        setAccessibilityHelp(caption)
         toolTip = feel.localizedHint
+    }
+
+    /// The word under the name: how the page stops.
+    var caption: String {
+        return WelcomeGuideText.localized("intro-feel-caption-\(feel.name)")
     }
 
     required init?(coder: NSCoder) {
@@ -205,24 +230,134 @@ final class WelcomeGuideFeelButton: NSButton {
         didSet { needsDisplay = true }
     }
 
-    /// Where the page is over 1.4 s after three clicks 0.15 s apart, as the engine moves it
-    /// (ScrollPreviewMotion), from 0 (bottom of the box) to the three clicks' distance (top).
-    static func curvePoints(duration: Double) -> [NSPoint] {
-        var scene = ScrollPreviewView.Scene()
-        scene.duration = duration
-        let clicks = [0.0, 0.15, 0.3].map { ScrollPreviewMotion.Click(time: $0, turn: 1) }
-        let motion = ScrollPreviewMotion(scene: scene, clicks: clicks, start: 0)
-        let end = max(0.001, motion.end - motion.start)
-        let span = 1.4
-        let samples = 48
-        return (0...samples).map { index in
-            let time = span * Double(index) / Double(samples)
-            let progress = (motion.value(at: time) - motion.start) / end
-            return NSPoint(
-                x: 4 + (curveSize.width - 8) * CGFloat(index) / CGFloat(samples),
-                y: 25 - 21 * CGFloat(min(1.05, max(0, progress)))
-            )
+    override var isHighlighted: Bool {
+        didSet { if isHighlighted != oldValue { needsDisplay = true } }
+    }
+
+    // MARK: The mouse
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
+    }
+
+    override var mouseDownCanMoveWindow: Bool {
+        return false
+    }
+
+    /// As a push button tracks: pressed while the pointer is on the card, chosen when the
+    /// button goes up on it; released elsewhere, nothing changes.
+    override func mouseDown(with event: NSEvent) {
+        guard isEnabled, let window else { return }
+        var inside = contains(event)
+        isHighlighted = inside
+        while let next = window.nextEvent(matching: [.leftMouseUp, .leftMouseDragged]) {
+            inside = contains(next)
+            isHighlighted = inside
+            if next.type == .leftMouseUp { break }
         }
+        isHighlighted = false
+        if inside {
+            choose()
+        }
+    }
+
+    private func contains(_ event: NSEvent) -> Bool {
+        return bounds.contains(convert(event.locationInWindow, from: nil))
+    }
+
+    /// Selects this card and tells the step: the click, Space, Return, an arrow key, and
+    /// VoiceOver's press (`performClick`).
+    func choose() {
+        state = .on
+        sendAction(action, to: target)
+    }
+
+    override func performClick(_ sender: Any?) {
+        guard isEnabled else { return }
+        choose()
+    }
+
+    // MARK: VoiceOver
+
+    /// A radio button's value: 1 chosen, 0 not.
+    override func accessibilityValue() -> Any? {
+        return NSNumber(value: state == .on ? 1 : 0)
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        guard isEnabled else { return false }
+        choose()
+        return true
+    }
+
+    // MARK: The keyboard
+
+    /// The five cards, left to right (the order of their row).
+    private var group: [WelcomeGuideFeelButton] {
+        let row = (superview as? NSStackView)?.arrangedSubviews ?? superview?.subviews ?? [self]
+        return row.compactMap { $0 as? WelcomeGuideFeelButton }
+    }
+
+    /// The card Tab stops at: the selected one, the first while none is (a custom glide
+    /// time). Tab reaches the group once; the arrow keys move inside it.
+    var isGroupEntry: Bool {
+        let cards = group
+        return (cards.first { $0.state == .on } ?? cards.first) === self
+    }
+
+    override var canBecomeKeyView: Bool {
+        return isGroupEntry && super.canBecomeKeyView
+    }
+
+    /// Left and up choose the card before, right and down the one after (as a radio group:
+    /// the focus and the choice move together); Space chooses the focused card, and so does
+    /// Return while it is not chosen yet (then Return goes on to the window's main button).
+    override func keyDown(with event: NSEvent) {
+        guard isEnabled, let key = event.charactersIgnoringModifiers?.unicodeScalars.first?.value else {
+            return super.keyDown(with: event)
+        }
+        switch Int(key) {
+        case NSLeftArrowFunctionKey, NSUpArrowFunctionKey:
+            move(by: -1)
+        case NSRightArrowFunctionKey, NSDownArrowFunctionKey:
+            move(by: 1)
+        case 0x20:
+            choose()
+        case 0x0D, 0x03:
+            if state == .on {
+                super.keyDown(with: event)
+            } else {
+                choose()
+            }
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
+    private func move(by offset: Int) {
+        let cards = group
+        guard let index = cards.firstIndex(where: { $0 === self }) else { return }
+        let target = cards[min(max(0, index + offset), cards.count - 1)]
+        if target !== self {
+            window?.makeFirstResponder(target)
+        }
+        target.choose()
+    }
+
+    /// The picture, in its 80 × 22 box (top-left origin): a mark where the wheel stops and a
+    /// dot where the page comes to rest, with a trail between them.
+    static let trailStart: CGFloat = 6
+    static let dotRadius: CGFloat = 4
+    private static let firstDot: CGFloat = 14
+    private static let dotStep: CGFloat = 15
+
+    /// How far from the mark a feel's dot rests. A rank, not a measure: the presets are in
+    /// the order of their glide times, and each card's dot is one even step further than the
+    /// one before. Drawn to scale (as curves of the page over time, which the cards had) the
+    /// five were too alike to tell apart.
+    static func dotX(for feel: ScrollFeel) -> CGFloat {
+        let rank = ScrollFeel.allCases.firstIndex(of: feel) ?? 0
+        return firstDot + dotStep * CGFloat(rank)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -234,7 +369,7 @@ final class WelcomeGuideFeelButton: NSButton {
         (selected ? WelcomeGuidePalette.selectedFill : WelcomeGuidePalette.box).setFill()
         box.fill()
         if isHighlighted {
-            NSColor.black.withAlphaComponent(0.06).setFill()
+            WelcomeGuidePalette.pressed.setFill()
             box.fill()
         }
         if selected {
@@ -246,33 +381,62 @@ final class WelcomeGuideFeelButton: NSButton {
         }
         box.stroke()
 
-        // The curve, in a box 80 × 28 centred at the top.
-        let origin = NSPoint(x: ((bounds.width - Self.curveSize.width) / 2).rounded(), y: 8)
-        let axis = NSBezierPath()
-        axis.move(to: NSPoint(x: origin.x + 4, y: origin.y + 25.5))
-        axis.line(to: NSPoint(x: origin.x + Self.curveSize.width - 4, y: origin.y + 25.5))
-        axis.lineWidth = 1
-        WelcomeGuidePalette.hairline.setStroke()
-        axis.stroke()
-        if let first = curve.first {
-            let path = NSBezierPath()
-            path.move(to: NSPoint(x: origin.x + first.x, y: origin.y + first.y))
-            for point in curve.dropFirst() {
-                path.line(to: NSPoint(x: origin.x + point.x, y: origin.y + point.y))
-            }
-            path.lineWidth = 1.6
-            path.lineCapStyle = .round
-            path.lineJoinStyle = .round
-            (selected ? NSColor.controlAccentColor : NSColor.secondaryLabelColor).setStroke()
-            path.stroke()
-        }
+        // The picture, in a box 80 × 22 centred at the top.
+        let origin = NSPoint(x: ((bounds.width - Self.pictureSize.width) / 2).rounded(), y: 8)
+        let middle = origin.y + Self.pictureSize.height / 2
+        let start = origin.x + Self.trailStart
+        let dotCentre = NSPoint(x: origin.x + Self.dotX(for: feel), y: middle)
+        let dot = NSRect(
+            x: dotCentre.x - Self.dotRadius, y: dotCentre.y - Self.dotRadius,
+            width: Self.dotRadius * 2, height: Self.dotRadius * 2
+        )
+        let ink = selected ? NSColor.controlAccentColor : NSColor.secondaryLabelColor
+        let faint = selected ? NSColor.controlAccentColor.withAlphaComponent(0.45) : NSColor.tertiaryLabelColor
 
-        let name = NSAttributedString(string: feel.localizedName, attributes: [
+        // Where the wheel stops.
+        let mark = NSBezierPath()
+        mark.move(to: NSPoint(x: start, y: middle - 6))
+        mark.line(to: NSPoint(x: start, y: middle + 6))
+        mark.lineWidth = 1.5
+        mark.lineCapStyle = .round
+        faint.setStroke()
+        mark.stroke()
+
+        // The trail widens from the mark to the dot; it stays out of the dot, whose ink is
+        // translucent and would show the trail through.
+        NSGraphicsContext.saveGraphicsState()
+        let outsideTheDot = NSBezierPath(rect: bounds)
+        outsideTheDot.appendOval(in: dot)
+        outsideTheDot.windingRule = .evenOdd
+        outsideTheDot.addClip()
+        let trail = NSBezierPath()
+        trail.move(to: NSPoint(x: start, y: middle))
+        trail.line(to: NSPoint(x: dotCentre.x, y: middle - 3))
+        trail.line(to: NSPoint(x: dotCentre.x, y: middle + 3))
+        trail.close()
+        faint.setFill()
+        trail.fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        // Where the page comes to rest.
+        ink.setFill()
+        NSBezierPath(ovalIn: dot).fill()
+
+        // The name and the word under it, centred, cut short rather than overflowing.
+        let line = NSMutableParagraphStyle()
+        line.alignment = .center
+        line.lineBreakMode = .byTruncatingTail
+        let text = bounds.insetBy(dx: 6, dy: 0)
+        NSAttributedString(string: feel.localizedName, attributes: [
             .font: NSFont.systemFont(ofSize: 12, weight: selected ? .semibold : .medium),
             .foregroundColor: NSColor.labelColor,
-        ])
-        let size = name.size()
-        name.draw(at: NSPoint(x: (bounds.width - size.width) / 2, y: bounds.height - 8 - size.height))
+            .paragraphStyle: line,
+        ]).draw(in: NSRect(x: text.minX, y: 36, width: text.width, height: 16))
+        NSAttributedString(string: caption, attributes: [
+            .font: NSFont.systemFont(ofSize: 11),
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .paragraphStyle: line,
+        ]).draw(in: NSRect(x: text.minX, y: 52, width: text.width, height: 15))
     }
 
     override var focusRingMaskBounds: NSRect {
@@ -318,6 +482,8 @@ final class WelcomeGuideFeelPicture: WelcomeGuideAnimatedView {
 
     /// The user's wheel turned on the page (called for every event: keep it cheap).
     var onUserScroll: (() -> Void)?
+    /// The line about a trackpad shows this long after it appeared.
+    static let trackpadNoteDuration: TimeInterval = 4
 
     private(set) var loop = ScrollPreviewLoop(scene: ScrollPreviewView.Scene())
     /// Where the demo's leg starts on the page.
@@ -325,7 +491,11 @@ final class WelcomeGuideFeelPicture: WelcomeGuideAnimatedView {
     /// The pointer is on the page, or just left it: the demo waits.
     private(set) var isDemoPaused = false
     private(set) var hasUserScrolled = false
+    /// The last scroll on the page came from a trackpad or a Magic Mouse.
     private(set) var sawTrackpad = false
+    /// The line that says so shows (for `trackpadNoteDuration`, from the first such scroll).
+    private(set) var showsTrackpadNote = false
+    private(set) var trackpadNoteTimer: Timer?
     private var isShown = false
     private var resumeTimer: Timer?
 
@@ -348,7 +518,7 @@ final class WelcomeGuideFeelPicture: WelcomeGuideAnimatedView {
         scrollView.contentView.scroll(to: .zero)
         addSubview(scrollView)
 
-        pill.maxWidth = window.width - 40
+        pill.maxWidth = window.width - 16
         addSubview(pill)
         pill.centreX = window.midX
         pill.bottom = window.maxY - 14
@@ -358,10 +528,7 @@ final class WelcomeGuideFeelPicture: WelcomeGuideAnimatedView {
             guard let self else { return }
             self.userDidScroll()
             self.onUserScroll?()
-            if trackpad && !self.sawTrackpad {
-                self.sawTrackpad = true
-                self.updatePill()
-            }
+            self.wheelCame(fromTrackpad: trackpad)
         }
         // The cards are pictures; the page is what VoiceOver finds.
         setAccessibilityElement(false)
@@ -374,6 +541,25 @@ final class WelcomeGuideFeelPicture: WelcomeGuideAnimatedView {
 
     deinit {
         resumeTimer?.invalidate()
+        trackpadNoteTimer?.invalidate()
+    }
+
+    /// A trackpad's scroll shows the line for a while; the next wheel scroll takes it away.
+    private func wheelCame(fromTrackpad trackpad: Bool) {
+        guard trackpad != sawTrackpad else { return }
+        sawTrackpad = trackpad
+        trackpadNoteTimer?.invalidate()
+        trackpadNoteTimer = nil
+        showsTrackpadNote = trackpad
+        if trackpad {
+            trackpadNoteTimer = Timer.scheduledTimer(withTimeInterval: Self.trackpadNoteDuration, repeats: false) { [weak self] _ in
+                guard let self else { return }
+                self.trackpadNoteTimer = nil
+                self.showsTrackpadNote = false
+                self.updatePill()
+            }
+        }
+        updatePill()
     }
 
     func setScene(duration: Double, speed: Double) {
@@ -395,6 +581,9 @@ final class WelcomeGuideFeelPicture: WelcomeGuideAnimatedView {
         if !on {
             resumeTimer?.invalidate()
             resumeTimer = nil
+            // A view taken out of the window hears no mouse-exit: a pointer still on the page
+            // pauses the demo again with the next mouse-entered.
+            isDemoPaused = false
         }
         anchor = demoAnchor()
         setClockRunning(on && !isDemoPaused)
@@ -473,7 +662,7 @@ final class WelcomeGuideFeelPicture: WelcomeGuideAnimatedView {
         case .notInAppList: return WelcomeGuideText.localized("intro-feel-not-in-list")
         case .smoothingOff: return WelcomeGuideText.localized("intro-feel-smoothing-off")
         case .smoothed:
-            if sawTrackpad { return WelcomeGuideText.localized("intro-feel-trackpad") }
+            if showsTrackpadNote { return WelcomeGuideText.localized("intro-feel-trackpad") }
             return hasUserScrolled ? nil : WelcomeGuideText.localized("intro-feel-try")
         }
     }
@@ -600,19 +789,26 @@ final class WelcomeGuideFeelDesktopCard: WelcomeGuideFlippedView {
 }
 
 /// The page to scroll: a real scroll view. It tells when the pointer comes and goes and
-/// when the wheel turns on it, and whether that was a trackpad (a scroll phase that is not
-/// one of Scrollio's own smoothed frames).
+/// when the wheel turns on it, and whether that was a trackpad (as the scroll engine tells
+/// them apart, `ScrollEvent.isTrackpad`; Scrollio's own smoothed frames are a wheel's even
+/// with a phase). A press on it never drags the window (which moves by its background):
+/// its clip view and its page say so.
 final class WelcomeGuideTryScrollView: NSScrollView {
 
     var onHover: ((Bool) -> Void)?
     /// Every scroll event on the page; true: from a trackpad or Magic Mouse.
     var onWheel: ((Bool) -> Void)?
-    /// Once a trackpad was seen the events are no longer looked at.
-    private var trackpadSeen = false
     private var tracking: NSTrackingArea?
+
+    /// The clip view of the page: where the page does not reach (a bounce at either end),
+    /// a press does not drag the window either.
+    private final class ClipView: NSClipView {
+        override var mouseDownCanMoveWindow: Bool { return false }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        contentView = ClipView(frame: contentView.frame)
         hasVerticalScroller = true
         hasHorizontalScroller = false
         autohidesScrollers = true
@@ -648,15 +844,9 @@ final class WelcomeGuideTryScrollView: NSScrollView {
     }
 
     override func scrollWheel(with event: NSEvent) {
-        var trackpad = false
-        if !trackpadSeen, !event.phase.isEmpty || !event.momentumPhase.isEmpty {
-            // Scrollio's own frames may carry phases too ("Trackpad-style events").
-            let synthetic = event.cgEvent.map { ScrollUtils.shared.isSyntheticSmoothEvent($0) } ?? false
-            if !synthetic {
-                trackpad = true
-                trackpadSeen = true
-            }
-        }
+        let trackpad = event.cgEvent.map {
+            ScrollEvent.isTrackpad(with: $0) && !ScrollUtils.shared.isSyntheticSmoothEvent($0)
+        } ?? false
         onWheel?(trackpad)
         super.scrollWheel(with: event)
     }
@@ -680,6 +870,11 @@ final class WelcomeGuideSamplePage: WelcomeGuideFlippedView {
 
     required init?(coder: NSCoder) {
         fatalError("built in code")
+    }
+
+    /// The window moves by its background; a press on the page to scroll must not move it.
+    override var mouseDownCanMoveWindow: Bool {
+        return false
     }
 
     override func draw(_ dirtyRect: NSRect) {

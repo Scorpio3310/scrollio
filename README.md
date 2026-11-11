@@ -107,7 +107,14 @@ The debug build logs under `com.nikklemenc.Scrollio.debug`. Nothing is logged pe
   The distance in is what the wheel asked for (Step and Speed applied); the distance out is
   what was posted, short of it only by the tail under the dead zone (frames go out in whole
   pixels, the fraction of each carried into the next, so the same on any display rate).
-  Duration is the one that scroll used: the global one or the app's own.
+  Duration is the one that scroll used: the global one or the app's own. With trackpad-style
+  events the line says in which form the scroll went out. `on (long touch: 1 touches)`: one
+  touch for as long as the wheel turned, for apps whose scroll views follow the touch only and
+  compute the glide themselves (AppKit and UIKit: Finder, Settings, most apps).
+  `on (flick: 1 touches, 4 wheel events into a glide)`: a short touch and its glide, so that a
+  page edge bounces as after a trackpad flick, for apps that scroll by the glide's events (the
+  Chromium engine: Chrome, Dia, Arc, Electron apps); it says how many touches ("began") the
+  app got and how many wheel events went on with a glide instead of beginning a touch.
 - Category `scroll`, at most one line per reason every 3 seconds while wheel events are
   let through unsmoothed, with how many: taken for trackpad events, remote desktop
   (already smoothed), smoothing off for this event (with the switch, scroll key, app

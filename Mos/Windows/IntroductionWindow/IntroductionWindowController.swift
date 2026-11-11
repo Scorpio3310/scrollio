@@ -1,8 +1,8 @@
 //
 //  IntroductionWindowController.swift
 //  Mos
-//  The window of the Welcome Guide: 600 × 620 pt, fixed, centred, its title bar
-//  transparent. Its content is built in IntroductionViewController. Here are also the ways
+//  The window of the Welcome Guide: 600 × 680 pt (600 × 620 on a screen too short for
+//  it), fixed, centred, its title bar transparent. Its content is built in IntroductionViewController. Here are also the ways
 //  the app opens it: by itself (a new user at launch, the access missing) and by hand
 //  (General › Welcome Guide, Help › Welcome Guide).
 //  Created by Caldis on 15/11/2019.
@@ -18,6 +18,16 @@ class IntroductionWindowController: NSWindowController, NSWindowDelegate {
     override func windowDidLoad() {
         super.windowDidLoad()
         guard let window = window else { return }
+        Self.style(window)
+        // Always in the middle of the screen, not cascaded from the last window.
+        shouldCascadeWindows = false
+        window.center()
+    }
+
+    /// How the guide's window looks and behaves; also the tests' windows that take real
+    /// clicks. It moves by its background: every control of the guide (and the page of the
+    /// feel step) says that a press on it does not (`mouseDownCanMoveWindow`).
+    static func style(_ window: NSWindow) {
         // The content names the window; the title is still set, for the Window menu,
         // Mission Control and VoiceOver.
         window.title = NSLocalizedString("intro-title", comment: "")
@@ -32,9 +42,6 @@ class IntroductionWindowController: NSWindowController, NSWindowDelegate {
         window.contentMinSize = WelcomeGuideLayout.windowSize
         window.contentMaxSize = WelcomeGuideLayout.windowSize
         window.standardWindowButton(.zoomButton)?.isEnabled = false
-        // Always in the middle of the screen, not cascaded from the last window.
-        shouldCascadeWindows = false
-        window.center()
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -78,15 +85,28 @@ class IntroductionWindowController: NSWindowController, NSWindowDelegate {
         return progress.isPending || !hasAccess
     }
 
+    /// The run an open guide starts again when it is asked for once more; nil: it stays as it
+    /// is. By hand, the Accessibility step alone becomes the whole guide. By the app (the
+    /// access is missing), a run without the Accessibility step starts again with it.
+    static func restart(_ open: IntroductionViewController, for request: Request) -> WelcomeGuideFlow? {
+        switch request {
+        case .byHand:
+            return open.flow == .accessOnly ? .full : nil
+        case .automatic:
+            guard !open.steps.contains(.access), !open.refreshAccessState().isReady else { return nil }
+            return open.flow ?? .full
+        }
+    }
+
     private static func show(_ request: Request) {
         let identifier = WINDOW_IDENTIFIER.introductionWindowController
         if let open = WindowManager.shared.refs[identifier]?.contentViewController as? IntroductionViewController {
-            // Already open: a guide the app opened stays what it is; by hand, the
-            // Accessibility step alone becomes the whole guide.
-            if request == .byHand && open.flow == .accessOnly {
-                open.begin(.full)
+            if let flow = restart(open, for: request) {
+                open.begin(flow)
             }
         } else {
+            // Roomy, unless this screen cannot show the roomy window whole.
+            WelcomeGuideLayout.metrics = .fitting(visibleHeight: NSScreen.main?.visibleFrame.height)
             let controller: NSWindowController = Utils.instantiateControllerFromStoryboard(withIdentifier: identifier)
             if let content = controller.contentViewController as? IntroductionViewController {
                 content.begin(flow(for: request, progress: content.progress))

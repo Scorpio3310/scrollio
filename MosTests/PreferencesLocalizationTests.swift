@@ -183,11 +183,13 @@ final class PreferencesLocalizationTests: XCTestCase {
         "intro-status-granted-detail", "intro-status-granted-detail-hidden-icon",
         "intro-open-settings-button", "intro-help-link", "intro-help-heading", "intro-help-text",
         "intro-help-finder-button",
-        "intro-feel-title", "intro-feel-text", "intro-feel-text-watch", "intro-feel-note", "intro-feel-try",
+        "intro-feel-title", "intro-feel-text", "intro-feel-text-watch", "intro-feel-text-still", "intro-feel-try",
         "intro-feel-trackpad", "intro-feel-not-running", "intro-feel-not-in-list", "intro-feel-smoothing-off",
-        "intro-feel-try-area",
-        "intro-finish-title", "intro-finish-text", "intro-finish-picture", "intro-open-app-settings-button",
-        "intro-done-button",
+        "intro-feel-try-area", "intro-feel-custom-hint", "intro-feel-caption-direct", "intro-feel-caption-quick",
+        "intro-feel-caption-smooth", "intro-feel-caption-glide", "intro-feel-caption-float",
+        "intro-access-could-not-start", "intro-access-todo", "intro-access-todo-detail", "intro-status-running",
+        "intro-finish-title", "intro-finish-text", "intro-finish-picture", "intro-finish-picture-hidden-icon",
+        "intro-finish-hidden-icon-paused", "intro-open-app-settings-button", "intro-done-button",
     ]
 
     static let keys = mouseKeys + scrollingKeys + buttonsKeys + gesturesKeys + appsKeys

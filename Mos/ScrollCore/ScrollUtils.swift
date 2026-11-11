@@ -43,6 +43,48 @@ class ScrollUtils {
         return cachedRunningApplication
     }
     
+    // MARK: - Apps that scroll by the events of a glide
+
+    /// Bundle path -> answer of `isChromiumBased`. Main thread.
+    private var glideFollowerByBundlePath: [String: Bool] = [:]
+
+    /// Whether the app a wheel event goes to scrolls by the events of a glide ("momentum"), so
+    /// that "Trackpad-style events" can send it a flick (ScrollPoster). The Chromium engine does:
+    /// Chrome, Dia, Arc, Edge, Electron and CEF apps. AppKit and UIKit scroll views do not: they
+    /// follow the touch only and compute the glide themselves. Anything not known to follow
+    /// (Safari and Firefox too: not checked on screen) counts as not following. Main thread.
+    func followsGlideEvents(_ event: CGEvent) -> Bool {
+        guard let bundleURL = getRunningApplication(from: event)?.bundleURL else {
+            return false
+        }
+        if let known = glideFollowerByBundlePath[bundleURL.path] {
+            return known
+        }
+        let follows = Self.isChromiumBased(bundleURL: bundleURL)
+        glideFollowerByBundlePath[bundleURL.path] = follows
+        return follows
+    }
+
+    /// A Chromium-based app carries the engine's resources (`resources.pak`) in one of its
+    /// frameworks: "Google Chrome Framework", "Electron Framework", "Chromium Embedded
+    /// Framework", Dia's and Arc's "ArcCore". One look into `Contents/Frameworks`.
+    static func isChromiumBased(bundleURL: URL, fileManager: FileManager = .default) -> Bool {
+        let frameworks = bundleURL.appendingPathComponent("Contents/Frameworks", isDirectory: true)
+        guard let names = try? fileManager.contentsOfDirectory(atPath: frameworks.path) else {
+            return false
+        }
+        for name in names where name.hasSuffix(".framework") {
+            let framework = frameworks.appendingPathComponent(name, isDirectory: true)
+            for resources in ["Resources", "Versions/Current/Resources"] {
+                let pak = framework.appendingPathComponent(resources, isDirectory: true).appendingPathComponent("resources.pak")
+                if fileManager.fileExists(atPath: pak.path) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
     // 判断目标是否为 Chrome
     func isEventTargetingChrome(_ event: CGEvent?) -> Bool {
         guard let validEvent = event else {

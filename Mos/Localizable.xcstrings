@@ -1952,7 +1952,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Smooth scrolling, gestures and button actions for your mouse."
+            "value": "Smooth scrolling, button actions and gestures for your mouse."
           }
         }
       }
@@ -1985,7 +1985,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrollio is running. Its menu bar icon is hidden: open Scrollio again to reach Settings."
+            "value": "Scrollio is running, but its menu bar icon is hidden. To reach Settings, open Scrollio again."
           }
         }
       }
@@ -5339,7 +5339,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Each click of the wheel glides."
+            "value": "The page glides instead of jumping."
           }
         }
       }
@@ -5405,7 +5405,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrollio reads your mouse to smooth scrolling and run your buttons. macOS allows that only with this permission; nothing leaves your Mac."
+            "value": "Scrollio needs this permission to smooth scrolling and run your buttons and gestures. Nothing leaves your Mac."
           }
         }
       }
@@ -5482,7 +5482,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scroll in the box with your mouse wheel, then pick what feels right."
+            "value": "Scroll the page above with your mouse wheel, then pick what feels right. You can change it later in Settings."
           }
         }
       }
@@ -5493,18 +5493,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Watch the page in the box, then pick what feels right."
-          }
-        }
-      }
-    },
-    "intro-feel-note": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You can change this anytime in Settings › Scrolling."
+            "value": "Watch the page above, then pick what feels right. You can change it later in Settings."
           }
         }
       }
@@ -5526,7 +5515,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "That was a trackpad or Magic Mouse. Scrollio leaves those as macOS makes them."
+            "value": "Trackpads and Magic Mouse aren't changed"
           }
         }
       }
@@ -5537,7 +5526,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrollio isn't running, so this box isn't smoothed."
+            "value": "Not smoothed: Scrollio isn't running"
           }
         }
       }
@@ -5548,7 +5537,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrollio isn't in your list of apps, so this box isn't smoothed."
+            "value": "Not smoothed: Scrollio isn't on the app list"
           }
         }
       }
@@ -5559,7 +5548,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Smooth scrolling is off, so this box isn't smoothed."
+            "value": "Not smoothed: Smooth scrolling is off"
           }
         }
       }
@@ -5988,6 +5977,149 @@
           "stringUnit": {
             "state": "translated",
             "value": "For the sideways wheel: an MX Master's thumb wheel, or a wheel that tilts."
+          }
+        }
+      }
+    },
+    "intro-feel-text-still": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pick what feels right. You can change it later in Settings."
+          }
+        }
+      }
+    },
+    "intro-feel-custom-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your own glide time, set in Settings › Scrolling."
+          }
+        }
+      }
+    },
+    "intro-feel-caption-direct": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stops at once"
+          }
+        }
+      }
+    },
+    "intro-feel-caption-quick": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Soft stop"
+          }
+        }
+      }
+    },
+    "intro-feel-caption-smooth": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Like a trackpad"
+          }
+        }
+      }
+    },
+    "intro-feel-caption-glide": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Longer glide"
+          }
+        }
+      }
+    },
+    "intro-feel-caption-float": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Longest glide"
+          }
+        }
+      }
+    },
+    "intro-access-could-not-start": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio couldn't start yet and keeps trying. If nothing changes, quit Scrollio and open it again."
+          }
+        }
+      }
+    },
+    "intro-access-todo": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not allowed yet"
+          }
+        }
+      }
+    },
+    "intro-access-todo-detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click Open Accessibility Settings, then turn on Scrollio in the list."
+          }
+        }
+      }
+    },
+    "intro-status-running": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio is running."
+          }
+        }
+      }
+    },
+    "intro-finish-hidden-icon-paused": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio's menu bar icon is hidden. To reach Settings, open Scrollio again."
+          }
+        }
+      }
+    },
+    "intro-finish-picture-hidden-icon": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The menu bar, with an empty place where Scrollio's icon would be."
           }
         }
       }
