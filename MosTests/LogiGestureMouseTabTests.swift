@@ -1,10 +1,11 @@
 import XCTest
 @testable import Mos_Debug
 
-/// The "Gestures" section of the Mouse tab: two checkboxes bound to the shared gesture
+/// The "Logitech" section of the Gestures tab: two checkboxes bound to the shared gesture
 /// settings, enabled only when a connected mouse can do what they offer, with a hint that
 /// says why not otherwise. Capabilities come from fixtures; no HID device is touched.
-final class LogiGestureMouseTabTests: XCTestCase {
+/// (The section lived in the Mouse tab before; the file keeps its name.)
+final class LogiGestureSectionTests: XCTestCase {
 
     private var savedGesture = MouseGestureSettings.default
     private var support = MouseGestureDeviceSupport.none
@@ -23,16 +24,15 @@ final class LogiGestureMouseTabTests: XCTestCase {
         super.tearDown()
     }
 
-    private func makeController() -> MousePreferencesViewController {
-        let controller = MousePreferencesViewController()
-        controller.deviceSource = MouseWheelDeviceSource(
-            deviceStates: { [] },
-            refresh: { [weak self] in self?.refreshCount += 1 },
-            showDiagnostics: {},
-            gestureSupport: { [weak self] in self?.support ?? .none }
+    private func makeController() -> GesturesPreferencesViewController {
+        let controller = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+        controller.deviceSource = MouseGestureDeviceSource(
+            support: { [weak self] in self?.support ?? .none },
+            refresh: { [weak self] in self?.refreshCount += 1 }
         )
+        controller.bindingSummary = { MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: true) }
         _ = controller.view
-        controller.reloadDevices()
+        controller.reload()
         return controller
     }
 
@@ -67,10 +67,25 @@ final class LogiGestureMouseTabTests: XCTestCase {
         XCTAssertEqual(master4.hapticsHintKey, "mouse-gesture-haptics-hint")
     }
 
-    func testADeviceSourceWithoutGestureDataReportsNoSupport() {
-        // The initializer the existing tests and fixtures use.
-        let source = MouseWheelDeviceSource(deviceStates: { [] }, refresh: {}, showDiagnostics: {})
-        XCTAssertEqual(source.gestureSupport(), .none)
+    func testOpeningTheTabAsksTheMiceAgain() {
+        let controller = makeController()
+        XCTAssertEqual(refreshCount, 0)
+        controller.viewWillAppear()
+        XCTAssertEqual(refreshCount, 1)
+    }
+
+    func testTheMouseTabNoLongerHoldsTheSection() {
+        let mouse = MousePreferencesViewController()
+        mouse.deviceSource = MouseWheelDeviceSource(deviceStates: { [] }, refresh: {}, showDiagnostics: {})
+        _ = mouse.view
+        mouse.reloadDevices()
+        let titles = Self.allSubviews(of: mouse.view).compactMap { ($0 as? NSButton)?.title }
+        XCTAssertFalse(titles.contains(text("mouse-gesture-device-tracking")))
+        XCTAssertFalse(titles.contains(text("mouse-gesture-haptics")))
+    }
+
+    private static func allSubviews(of view: NSView) -> [NSView] {
+        return view.subviews.flatMap { [$0] + allSubviews(of: $0) }
     }
 
     // MARK: - Controls
@@ -175,13 +190,26 @@ final class LogiGestureMouseTabTests: XCTestCase {
 
     func testTheSectionFitsTheTabWidthInBothStates() {
         let controller = makeController()
-        XCTAssertEqual(controller.view.frame.width, MousePreferencesViewController.contentWidth)
+        XCTAssertEqual(controller.view.frame.width, PreferencesForm.contentWidth)
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
 
         support = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
-        controller.reloadDevices()
-        XCTAssertEqual(controller.view.frame.width, MousePreferencesViewController.contentWidth)
+        controller.reload()
+        XCTAssertEqual(controller.view.frame.width, PreferencesForm.contentWidth)
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+    }
+
+    func testTheSectionSitsUnderALogitechHeader() {
+        let controller = makeController()
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(controller.logitechHeaderLabel.stringValue, "Logitech")
+        let header = controller.logitechHeaderLabel.convert(controller.logitechHeaderLabel.bounds, to: controller.view)
+        let tracking = controller.deviceTrackingCheckbox.convert(controller.deviceTrackingCheckbox.bounds, to: controller.view)
+        let haptics = controller.hapticsCheckbox.convert(controller.hapticsCheckbox.bounds, to: controller.view)
+        // The root view is not flipped: lower on screen means a smaller y.
+        XCTAssertGreaterThan(header.minY, tracking.maxY)
+        XCTAssertGreaterThan(tracking.minY, haptics.maxY)
+        XCTAssertEqual(tracking.minX, 171, accuracy: 0.5)
     }
 
     // MARK: - Strings
@@ -189,7 +217,7 @@ final class LogiGestureMouseTabTests: XCTestCase {
     private static let locales = PreferencesLocalizationTests.locales
 
     private static let keys = [
-        "mouse-gesture-label",
+        "gestures-logitech-header", "gestures-logitech-row-label",
         "mouse-gesture-device-tracking", "mouse-gesture-device-tracking-hint",
         "mouse-gesture-device-tracking-unavailable",
         "mouse-gesture-haptics", "mouse-gesture-haptics-hint", "mouse-gesture-haptics-unavailable",

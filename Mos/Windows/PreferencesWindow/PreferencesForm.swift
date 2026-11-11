@@ -89,6 +89,33 @@ enum PreferencesForm {
         }
     }
 
+    /// Gives every separator of the content stack its spacing, above and below.
+    static func applySeparatorSpacing(in content: NSStackView) {
+        let rows = content.arrangedSubviews
+        for (index, row) in rows.enumerated() where (row as? NSBox)?.boxType == .separator {
+            content.setCustomSpacing(separatorSpacing, after: row)
+            if index > 0 {
+                content.setCustomSpacing(separatorSpacing, after: rows[index - 1])
+            }
+        }
+    }
+
+    /// Keeps a pane's frame at its content size; when the pane is on screen the window follows.
+    static func fitToContent(_ controller: NSViewController) {
+        let view = controller.view
+        if let window = view.window,
+           let tabs = controller.parent as? PreferencesTabViewController,
+           tabs.tabView.selectedTabViewItem?.viewController === controller {
+            window.contentView?.layoutSubtreeIfNeeded()
+            if view.frame.size != view.fittingSize {
+                view.setFrameSize(view.fittingSize)
+            }
+            tabs.updateWindowSize()
+        } else {
+            view.setFrameSize(view.fittingSize)
+        }
+    }
+
     // MARK: - Rows
 
     /// A form row: right-aligned title in the label column, `column` in the control
@@ -169,11 +196,16 @@ enum PreferencesForm {
     /// A checkbox whose long title wraps instead of widening the pane.
     static func makeCheckbox(title: String, target: AnyObject?, action: Selector?) -> NSButton {
         let checkbox = NSButton(checkboxWithTitle: title, target: target, action: action)
+        fitInControlColumn(checkbox)
+        return checkbox
+    }
+
+    /// Lets a checkbox made elsewhere wrap its title at the width of the control column.
+    static func fitInControlColumn(_ checkbox: NSButton) {
         checkbox.lineBreakMode = .byWordWrapping
         checkbox.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         checkbox.translatesAutoresizingMaskIntoConstraints = false
         checkbox.widthAnchor.constraint(lessThanOrEqualToConstant: controlWidth).isActive = true
-        return checkbox
     }
 
     /// A small continuous slider with its value written to the right of it.
@@ -234,10 +266,12 @@ enum PreferencesForm {
 
     /// Toolbar image of a pane built in code: an SF Symbol drawn on the same 135 pt canvas
     /// as the SF.* assets of the storyboard panes, so the glyph comes out at the same size.
-    /// `fallback` draws the image where the symbol does not exist.
+    /// `fallback` draws the image where the symbol does not exist. `glyphHeight` is the
+    /// share of the canvas the glyph fills; symbols with a lot of air of their own take more.
     static func toolbarImage(
         symbolName: String,
         accessibilityDescription: String,
+        glyphHeight: CGFloat = 0.6,
         fallback: @escaping (NSRect) -> Void
     ) -> NSImage {
         let canvas = NSSize(width: 135, height: 135)
@@ -246,9 +280,9 @@ enum PreferencesForm {
            let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 64, weight: .regular)) {
             image = NSImage(size: canvas, flipped: false) { rect in
-                // 60% of the canvas high; a wide glyph is held to 80% of its width instead.
+                // A wide glyph is held to 80% of the canvas width instead.
                 let aspect = symbol.size.width / max(symbol.size.height, 1)
-                let height = min(rect.height * 0.6, rect.width * 0.8 / max(aspect, 0.01))
+                let height = min(rect.height * glyphHeight, rect.width * 0.8 / max(aspect, 0.01))
                 let width = height * aspect
                 symbol.draw(in: NSRect(
                     x: rect.midX - width / 2,

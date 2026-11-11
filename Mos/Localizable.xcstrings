@@ -993,6 +993,105 @@
         }
       }
     },
+    "gesture-mode-label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mode"
+          }
+        }
+      }
+    },
+    "gesture-tracking-speed-label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tracking Speed"
+          }
+        }
+      }
+    },
+    "gesture-tracking-speed-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Follow the hand only. Higher is faster."
+          }
+        }
+      }
+    },
+    "gesture-options-label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Options"
+          }
+        }
+      }
+    },
+    "gestures-tab-title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gestures"
+          }
+        }
+      }
+    },
+    "gestures-actions-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold a button set to Gesture Navigation and move the mouse. Click runs when you release it without moving."
+          }
+        }
+      }
+    },
+    "gestures-actions-hint-unbound": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No button is set to Gesture Navigation yet. Choose it as an action in Buttons."
+          }
+        }
+      }
+    },
+    "gestures-logitech-header": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logitech"
+          }
+        }
+      }
+    },
+    "gestures-logitech-row-label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mouse"
+          }
+        }
+      }
+    },
     "mouse-advanced-label": {
       "extractionState": "manual",
       "localizations": {
@@ -1242,17 +1341,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sensitivity"
-          }
-        }
-      }
-    },
-    "mouse-gesture-label": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gestures"
           }
         }
       }

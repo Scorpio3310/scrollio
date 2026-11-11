@@ -30,7 +30,7 @@ final class PreferencesTabsTests: XCTestCase {
         let tabs = try makeTabs()
         XCTAssertEqual(
             tabs.tabViewItems.map { $0.identifier as? String },
-            ["general", "scrolling", "buttons", "mouse", "application", "about"]
+            ["general", "scrolling", "buttons", "gestures", "mouse", "application", "about"]
         )
     }
 
@@ -38,7 +38,7 @@ final class PreferencesTabsTests: XCTestCase {
         let tabs = try makeTabs()
         XCTAssertEqual(
             tabs.tabViewItems.map(\.label),
-            ["General", "Scrolling", "Buttons", "Mouse", "Apps", "About"]
+            ["General", "Scrolling", "Buttons", "Gestures", "Mouse", "Apps", "About"]
         )
     }
 
@@ -71,6 +71,7 @@ final class PreferencesTabsTests: XCTestCase {
             guard let identifier = item.identifier as? String, let controller = item.viewController else { return nil }
             return (identifier, controller)
         })
+        XCTAssertTrue(controllers["gestures"] is GesturesPreferencesViewController)
         XCTAssertTrue(controllers["mouse"] is MousePreferencesViewController)
         XCTAssertTrue(controllers["about"] is AboutPreferencesViewController)
     }

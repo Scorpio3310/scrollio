@@ -34,14 +34,21 @@ class PreferencesTabViewController: NSTabViewController {
     }
 
     /// Main.storyboard holds General, Scrolling, Buttons and Apps, in that order. The tabs
-    /// built in code are added around them: Mouse right after Buttons, About last.
+    /// built in code are added around them: Gestures and Mouse after Buttons, About last.
     private func insertCodeBuiltTabs() {
+        let gestures = GesturesPreferencesViewController()
+        insertTab(
+            gestures,
+            identifier: GesturesPreferencesViewController.tabIdentifier,
+            image: GesturesPreferencesViewController.tabImage(),
+            after: PANEL_IDENTIFIER.buttons
+        )
         let mouse = MousePreferencesViewController()
         insertTab(
             mouse,
             identifier: MousePreferencesViewController.tabIdentifier,
             image: MousePreferencesViewController.tabImage(),
-            after: PANEL_IDENTIFIER.buttons
+            after: GesturesPreferencesViewController.tabIdentifier
         )
         let about = AboutPreferencesViewController()
         insertTab(
