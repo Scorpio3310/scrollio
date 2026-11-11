@@ -1256,6 +1256,11 @@ final class ScrollSystemLogTests: XCTestCase {
         )
         swapped.stepsRan(2)
         XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: swapped).hasSuffix(": 2 steps next, 1 previous"))
+        swapped.pendingSteps = 13
+        swapped.stepsDropped(12)
+        XCTAssertEqual(swapped.pendingSteps, 1)
+        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: swapped).hasSuffix("volume x1.50 swapped, travel 4.5: 2 steps next, 1 previous, 12 dropped"),
+                      "the steps the pacer dropped, only when there are any")
         XCTAssertEqual(
             ThumbWheelFunction.allCases.map(\.logName),
             ["scroll sideways", "zoom", "switch tabs", "switch desktops", "back and forward", "volume"]

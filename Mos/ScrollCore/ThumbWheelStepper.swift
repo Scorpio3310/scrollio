@@ -60,11 +60,22 @@ enum ThumbWheelTuning {
     static let desktops = ThumbWheelStepping(first: 3, next: 12, accelerates: false, rest: 0.3)
     static let backForward = ThumbWheelStepping(first: 3, next: 12, accelerates: false, rest: 0.3)
 
+    /// Volume's pacing (`ThumbWheelPacer`): at most one step each 50 ms, at most 3 waiting.
+    /// From the owner's second log (2026-11-11): at speed 3 two volume key presses per event,
+    /// about 100 a second, queued up in the system, and the volume display moved on for seconds
+    /// after the hand stopped. 20 steps a second sweep the whole range (16 steps) in under a
+    /// second; with 3 waiting the volume stops within 150 ms of the hand. The other functions
+    /// have no pacing: their steps feel right at once.
+    static let volumePacing = ThumbWheelPacing(interval: 0.05, maxWaiting: 3)
+
     /// A pause this long (s) ends a roll for the log: its line is written.
     static let logRollRest: TimeInterval = 0.6
     /// During a long roll a log line is written at least this often (s), and at most this
     /// often apart from the line at its end.
     static let logInterval: TimeInterval = 2.0
+    /// A roll's line is due but steps still wait to run: the look comes again after at least
+    /// this long (s), so it never spins on the main queue.
+    static let pendingRecheck: TimeInterval = 0.01
     /// Rounding slack: travel this close under a threshold counts as reaching it (fractions of
     /// a unit added up are not exact in binary).
     static let thresholdSlack = 1e-9
