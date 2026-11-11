@@ -113,7 +113,7 @@
                                 <constraints>
                                     <constraint firstAttribute="width" relation="greaterThanOrEqual" constant="136" id="W3A-cF-zN1"/>
                                 </constraints>
-                                <textFieldCell key="cell" sendsActionOnEndEditing="YES" alignment="right" title="Status Bar Icon" id="AGU-43-8RD">
+                                <textFieldCell key="cell" sendsActionOnEndEditing="YES" alignment="right" title="Menu Bar Icon" id="AGU-43-8RD">
                                     <font key="font" metaFont="smallSystem"/>
                                     <color key="textColor" name="secondaryLabelColor" catalog="System" colorSpace="catalog"/>
                                     <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
@@ -134,7 +134,7 @@
                             </button>
                             <button verticalHuggingPriority="751" translatesAutoresizingMaskIntoConstraints="NO" id="1OP-ac-77Z">
                                 <rect key="frame" x="171" y="37" width="146" height="14"/>
-                                <buttonCell key="cell" type="check" title="Hide Status Bar Icon" bezelStyle="regularSquare" imagePosition="left" inset="2" id="hGj-vV-zcY">
+                                <buttonCell key="cell" type="check" title="Hide Menu Bar Icon" bezelStyle="regularSquare" imagePosition="left" inset="2" id="hGj-vV-zcY">
                                     <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
                                     <font key="font" metaFont="system"/>
                                 </buttonCell>
@@ -162,7 +162,7 @@
                             </button>
                             <textField wantsLayer="YES" focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="Gt2-mv-Ris" userLabel="Launch On Login Description">
                                 <rect key="frame" x="169" y="20" width="264" height="11"/>
-                                <textFieldCell key="cell" controlSize="small" sendsActionOnEndEditing="YES" title="Re-run Scrollio again to show the hidden Icon" id="bB5-2R-9Da">
+                                <textFieldCell key="cell" controlSize="small" sendsActionOnEndEditing="YES" title="Open Scrollio again to show the icon" id="bB5-2R-9Da">
                                     <font key="font" metaFont="miniSystem"/>
                                     <color key="textColor" name="secondaryLabelColor" catalog="System" colorSpace="catalog"/>
                                     <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
@@ -916,7 +916,7 @@
         <!--Application Allowlist hint-->
         <scene sceneID="57E-oo-PEW">
             <objects>
-                <viewController id="o12-9v-Ej5" userLabel="Application Allowlist hint" customClass="AdaptivePopover" customModule="Mos" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="allowlistHint" id="o12-9v-Ej5" userLabel="Application Allowlist hint" customClass="AdaptivePopover" customModule="Mos" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" id="wdx-Jb-jwG">
                         <rect key="frame" x="0.0" y="0.0" width="224" height="62"/>
                         <autoresizingMask key="autoresizingMask"/>
@@ -1010,13 +1010,13 @@
                                 <constraints>
                                     <constraint firstAttribute="width" relation="greaterThanOrEqual" constant="136" id="rlL-do-7ec"/>
                                 </constraints>
-                                <textFieldCell key="cell" sendsActionOnEndEditing="YES" alignment="right" title="Dash Key" id="hOO-M8-I1z">
+                                <textFieldCell key="cell" sendsActionOnEndEditing="YES" alignment="right" title="Fast Scroll" id="hOO-M8-I1z">
                                     <font key="font" metaFont="smallSystem"/>
                                     <color key="textColor" name="secondaryLabelColor" catalog="System" colorSpace="catalog"/>
                                     <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
                                 </textFieldCell>
                             </textField>
-                            <textField wantsLayer="YES" focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" verticalCompressionResistancePriority="751" translatesAutoresizingMaskIntoConstraints="NO" id="45l-vw-E0o" userLabel="Dash Key Description">
+                            <textField wantsLayer="YES" focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" verticalCompressionResistancePriority="751" translatesAutoresizingMaskIntoConstraints="NO" id="45l-vw-E0o" userLabel="Fast Scroll Description">
                                 <rect key="frame" x="169" y="353" width="263" height="11"/>
                                 <textFieldCell key="cell" sendsActionOnEndEditing="YES" title="Increase scrolling speed on long pages" id="Z59-tN-QjE">
                                     <font key="font" metaFont="miniSystem"/>
@@ -1029,13 +1029,13 @@
                                 <constraints>
                                     <constraint firstAttribute="width" relation="greaterThanOrEqual" constant="136" id="i4m-8K-DpA"/>
                                 </constraints>
-                                <textFieldCell key="cell" sendsActionOnEndEditing="YES" alignment="right" title="Toggle Key" id="bQw-5w-Yv0">
+                                <textFieldCell key="cell" sendsActionOnEndEditing="YES" alignment="right" title="Horizontal Scroll" id="bQw-5w-Yv0">
                                     <font key="font" metaFont="smallSystem"/>
                                     <color key="textColor" name="secondaryLabelColor" catalog="System" colorSpace="catalog"/>
                                     <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
                                 </textFieldCell>
                             </textField>
-                            <textField wantsLayer="YES" focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" verticalCompressionResistancePriority="751" translatesAutoresizingMaskIntoConstraints="NO" id="gSx-dp-Tvn" userLabel="Toggle Key Description">
+                            <textField wantsLayer="YES" focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" verticalCompressionResistancePriority="751" translatesAutoresizingMaskIntoConstraints="NO" id="gSx-dp-Tvn" userLabel="Horizontal Scroll Description">
                                 <rect key="frame" x="169" y="300" width="263" height="11"/>
                                 <textFieldCell key="cell" sendsActionOnEndEditing="YES" title="Change vertical scrolling to horizontal scrolling" id="KnM-kA-wn5">
                                     <font key="font" metaFont="miniSystem"/>
@@ -1048,13 +1048,13 @@
                                 <constraints>
                                     <constraint firstAttribute="width" relation="greaterThanOrEqual" constant="136" id="y87-5B-rDj"/>
                                 </constraints>
-                                <textFieldCell key="cell" sendsActionOnEndEditing="YES" alignment="right" title="Block Key" id="ebE-Zf-T98">
+                                <textFieldCell key="cell" sendsActionOnEndEditing="YES" alignment="right" title="Pause Smoothing" id="ebE-Zf-T98">
                                     <font key="font" metaFont="smallSystem"/>
                                     <color key="textColor" name="secondaryLabelColor" catalog="System" colorSpace="catalog"/>
                                     <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
                                 </textFieldCell>
                             </textField>
-                            <textField wantsLayer="YES" focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" verticalCompressionResistancePriority="751" translatesAutoresizingMaskIntoConstraints="NO" id="1eQ-Un-ZLh" userLabel="Block Key Description">
+                            <textField wantsLayer="YES" focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" verticalCompressionResistancePriority="751" translatesAutoresizingMaskIntoConstraints="NO" id="1eQ-Un-ZLh" userLabel="Pause Smoothing Description">
                                 <rect key="frame" x="169" y="247" width="158" height="11"/>
                                 <textFieldCell key="cell" sendsActionOnEndEditing="YES" title="Temporarily block smooth scrolling" id="iki-Jk-qSr">
                                     <font key="font" metaFont="miniSystem"/>
@@ -1508,7 +1508,7 @@
         <!--Scroll Smooth Detail Settings Popover View Controller-->
         <scene sceneID="cWM-rm-1Zc">
             <objects>
-                <viewController id="6NY-mX-uto" customClass="ScrollSmoothDetailSettingsPopoverViewController" customModule="Mos" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="scrollSmoothDetail" id="6NY-mX-uto" customClass="ScrollSmoothDetailSettingsPopoverViewController" customModule="Mos" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" id="Ii6-1I-pb4">
                         <rect key="frame" x="0.0" y="0.0" width="215" height="118"/>
                         <autoresizingMask key="autoresizingMask"/>
@@ -1535,7 +1535,7 @@
                             </button>
                             <button verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="Yww-b9-vE7">
                                 <rect key="frame" x="20" y="36" width="175" height="14"/>
-                                <buttonCell key="cell" type="check" title="Simulate Trackpad (Beta)" bezelStyle="regularSquare" imagePosition="left" controlSize="small" state="on" inset="2" id="p7Y-SJ-d6t">
+                                <buttonCell key="cell" type="check" title="Trackpad-style events (Beta)" bezelStyle="regularSquare" imagePosition="left" controlSize="small" state="on" inset="2" id="p7Y-SJ-d6t">
                                     <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
                                     <font key="font" metaFont="smallSystem"/>
                                 </buttonCell>
@@ -2071,14 +2071,14 @@ mouseEventWindowUnderMousePointerThatCanHandleThisEvent: 0.0</string>
         <!--Adaptive Popover-->
         <scene sceneID="V22-gr-sOZ">
             <objects>
-                <viewController id="3aa-uW-Wet" customClass="AdaptivePopover" customModule="Mos" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="menuBarIconHint" id="3aa-uW-Wet" customClass="AdaptivePopover" customModule="Mos" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" id="Yv2-eG-rK5">
                         <rect key="frame" x="0.0" y="0.0" width="317" height="34"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <textField focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" horizontalCompressionResistancePriority="250" textCompletion="NO" translatesAutoresizingMaskIntoConstraints="NO" id="lw5-DQ-yJl">
                                 <rect key="frame" x="10" y="10" width="297" height="14"/>
-                                <textFieldCell key="cell" controlSize="mini" sendsActionOnEndEditing="YES" alignment="left" title="You need to re-run Scrollio to change the settings" id="cIk-j1-vYt">
+                                <textFieldCell key="cell" controlSize="mini" sendsActionOnEndEditing="YES" alignment="left" title="While the icon is hidden, open Scrollio again to reach its settings." id="cIk-j1-vYt">
                                     <font key="font" metaFont="smallSystem"/>
                                     <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
                                     <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
@@ -2319,7 +2319,7 @@ Remove Scrollio from the list first, and then re-add Scrollio to authorize. (You
         <!--Scroll Reverse Detail Settings Popover View Controller-->
         <scene sceneID="Bqh-wS-uAC">
             <objects>
-                <viewController id="LBo-ML-z89" customClass="ScrollReverseDetailSettingsPopoverViewController" customModule="Mos" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="scrollReverseDetail" id="LBo-ML-z89" customClass="ScrollReverseDetailSettingsPopoverViewController" customModule="Mos" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" id="WvQ-ub-c9c">
                         <rect key="frame" x="0.0" y="0.0" width="215" height="78"/>
                         <autoresizingMask key="autoresizingMask"/>

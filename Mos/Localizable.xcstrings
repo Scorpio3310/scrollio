@@ -1472,7 +1472,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Trackpad-like"
+            "value": "Glide"
           }
         }
       }
@@ -1769,7 +1769,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Disable Key"
+            "value": "Pause Smoothing"
           }
         }
       }
@@ -1780,7 +1780,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Acceleration Key"
+            "value": "Fast Scroll"
           }
         }
       }
@@ -1791,7 +1791,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Conversion Key"
+            "value": "Horizontal Scroll"
           }
         }
       }
@@ -2305,7 +2305,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Simulate Trackpad locks duration"
+            "value": "Trackpad-style events lock the duration"
           }
         }
       }
@@ -2480,7 +2480,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Unbound"
+            "value": "No Action"
           }
         }
       }

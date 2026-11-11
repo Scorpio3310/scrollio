@@ -133,13 +133,13 @@
       }
     },
     "AGU-43-8RD.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Status Bar Icon\"; ObjectID = \"AGU-43-8RD\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"Menu Bar Icon\"; ObjectID = \"AGU-43-8RD\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Status Bar Icon"
+            "value" : "Menu Bar Icon"
           }
         }
       }
@@ -181,13 +181,13 @@
       }
     },
     "bB5-2R-9Da.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Re-run Scrollio again to show the hidden Icon\"; ObjectID = \"bB5-2R-9Da\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"Open Scrollio again to show the icon\"; ObjectID = \"bB5-2R-9Da\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Re-run Scrollio again to show the hidden Icon"
+            "value" : "Open Scrollio again to show the icon"
           }
         }
       }
@@ -217,13 +217,13 @@
       }
     },
     "bQw-5w-Yv0.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Toggle Key\"; ObjectID = \"bQw-5w-Yv0\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"Horizontal Scroll\"; ObjectID = \"bQw-5w-Yv0\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Toggle Key"
+            "value" : "Horizontal Scroll"
           }
         }
       }
@@ -265,13 +265,13 @@
       }
     },
     "cIk-j1-vYt.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"You need to re-run Scrollio to change the settings\"; ObjectID = \"cIk-j1-vYt\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"While the icon is hidden, open Scrollio again to reach its settings.\"; ObjectID = \"cIk-j1-vYt\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "You need to re-run Scrollio to change the settings"
+            "value" : "While the icon is hidden, open Scrollio again to reach its settings."
           }
         }
       }
@@ -373,13 +373,13 @@
       }
     },
     "ebE-Zf-T98.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Block Key\"; ObjectID = \"ebE-Zf-T98\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"Pause Smoothing\"; ObjectID = \"ebE-Zf-T98\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Block Key"
+            "value" : "Pause Smoothing"
           }
         }
       }
@@ -503,13 +503,13 @@
       }
     },
     "hGj-vV-zcY.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Hide Status Bar Icon\"; ObjectID = \"hGj-vV-zcY\";",
+      "comment" : "Class = \"NSButtonCell\"; title = \"Hide Menu Bar Icon\"; ObjectID = \"hGj-vV-zcY\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Hide Status Bar Icon"
+            "value" : "Hide Menu Bar Icon"
           }
         }
       }
@@ -527,13 +527,13 @@
       }
     },
     "hOO-M8-I1z.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Dash Key\"; ObjectID = \"hOO-M8-I1z\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"Fast Scroll\"; ObjectID = \"hOO-M8-I1z\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Dash Key"
+            "value" : "Fast Scroll"
           }
         }
       }
@@ -717,13 +717,13 @@
       }
     },
     "p7Y-SJ-d6t.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Simulate Trackpad (Beta)\"; ObjectID = \"p7Y-SJ-d6t\";",
+      "comment" : "Class = \"NSButtonCell\"; title = \"Trackpad-style events (Beta)\"; ObjectID = \"p7Y-SJ-d6t\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Simulate Trackpad (Beta)"
+            "value" : "Trackpad-style events (Beta)"
           }
         }
       }

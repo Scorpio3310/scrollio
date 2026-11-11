@@ -160,3 +160,99 @@ final class PreferencesAboutTests: XCTestCase {
         XCTAssertEqual(controller.iconView.frame.midX, controller.view.bounds.midX, accuracy: 0.5)
     }
 }
+
+/// Names the redesign changed. Only what the user reads changed: every identifier that is
+/// stored in the settings or used as a key stays as it was.
+final class PreferencesNamingTests: XCTestCase {
+
+    private let app = Bundle(for: PreferencesTabViewController.self)
+
+    private func texts(in view: NSView) -> [String] {
+        let views = allSubviews(of: view)
+        return views.compactMap { ($0 as? NSTextField)?.stringValue } + views.compactMap { ($0 as? NSButton)?.title }
+    }
+
+    private func instantiate(_ identifier: String) -> NSViewController? {
+        let storyboard = NSStoryboard(name: "Main", bundle: app)
+        return storyboard.instantiateController(withIdentifier: identifier) as? NSViewController
+    }
+
+    func testScrollKeysHaveTheSameNamesInBothPlaces() throws {
+        // Scrolling tab (storyboard)
+        let scrolling = try XCTUnwrap(instantiate(PANEL_IDENTIFIER.scrolling))
+        let shown = texts(in: scrolling.view)
+        for name in ["Fast Scroll", "Horizontal Scroll", "Pause Smoothing"] {
+            XCTAssertTrue(shown.contains(name), "\(name) is not in the Scrolling tab")
+        }
+        for old in ["Dash Key", "Toggle Key", "Block Key"] {
+            XCTAssertFalse(shown.contains(old), "\(old) is still in the Scrolling tab")
+        }
+
+        // Button actions (code)
+        XCTAssertEqual(SystemShortcut.mosScrollDash.localizedName, "Fast Scroll")
+        XCTAssertEqual(SystemShortcut.mosScrollToggle.localizedName, "Horizontal Scroll")
+        XCTAssertEqual(SystemShortcut.mosScrollBlock.localizedName, "Pause Smoothing")
+    }
+
+    func testScrollKeyIdentifiersAreUnchanged() {
+        XCTAssertEqual(SystemShortcut.mosScrollDash.identifier, "mosScrollDash")
+        XCTAssertEqual(SystemShortcut.mosScrollToggle.identifier, "mosScrollToggle")
+        XCTAssertEqual(SystemShortcut.mosScrollBlock.identifier, "mosScrollBlock")
+        XCTAssertEqual(
+            SystemShortcut.mosMouseScrollCategory.shortcuts.map(\.identifier),
+            ["mosScrollDash", "mosScrollToggle", "mosScrollBlock"]
+        )
+    }
+
+    func testGlidePresetKeepsItsStoredName() {
+        XCTAssertEqual(ScrollPreset.trackpadLike.localizedName, "Glide")
+        XCTAssertEqual(ScrollPreset.trackpadLike.rawValue, "trackpadLike")
+        XCTAssertEqual(
+            ScrollPreset.allCases.map(\.localizedName),
+            ["Direct", "Balanced", "Smooth", "Glide", "Magic Mouse"]
+        )
+    }
+
+    func testTrackpadStyleEventsWording() throws {
+        let popover = try XCTUnwrap(instantiate("scrollSmoothDetail") as? ScrollSmoothDetailSettingsPopoverViewController)
+        _ = popover.view
+        XCTAssertEqual(popover.simulateTrackpadCheckBox?.title, "Trackpad-style events (Beta)")
+        XCTAssertEqual(
+            NSLocalizedString("scrollDurationLockedMessage", comment: ""),
+            "Trackpad-style events lock the duration"
+        )
+    }
+
+    func testAnUnboundButtonSaysNoActionEverywhere() {
+        XCTAssertEqual(NSLocalizedString("unbound", comment: ""), "No Action")
+        XCTAssertEqual(NSLocalizedString("gesture-action-none", comment: ""), "No Action")
+        XCTAssertEqual(ActionDisplayResolver().resolve(state: .unbound).title, "No Action")
+
+        let menu = NSMenu()
+        ShortcutManager.buildShortcutMenu(into: menu, target: self, action: #selector(noop(_:)))
+        XCTAssertEqual(menu.items[2].title, "No Action")
+        XCTAssertNil(menu.items[2].representedObject)
+    }
+
+    @objc private func noop(_ sender: Any?) {}
+
+    func testGeneralTabSaysMenuBar() throws {
+        let general = try XCTUnwrap(instantiate(PANEL_IDENTIFIER.general) as? PreferencesGeneralViewController)
+        _ = general.view
+        XCTAssertEqual(general.hideStatusBarIconCheckBox.title, "Hide Menu Bar Icon")
+        let shown = texts(in: general.view)
+        XCTAssertTrue(shown.contains("Menu Bar Icon"))
+        XCTAssertTrue(shown.contains("Open Scrollio again to show the icon"))
+        for text in shown {
+            XCTAssertFalse(text.localizedCaseInsensitiveContains("status bar"), text)
+            XCTAssertFalse(text.localizedCaseInsensitiveContains("re-run"), text)
+        }
+
+        // The "?" popover next to the checkbox.
+        let hint = try XCTUnwrap(instantiate("menuBarIconHint"))
+        XCTAssertEqual(
+            texts(in: hint.view),
+            ["While the icon is hidden, open Scrollio again to reach its settings."]
+        )
+    }
+}
