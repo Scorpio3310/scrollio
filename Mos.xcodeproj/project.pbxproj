@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0D5E7AB00000000000000003 /* MosTests/MousePreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D5E7AB00000000000000002 /* MosTests/MousePreferencesTests.swift */; };
 		1A5E00000000000000000602 /* MosTests/LegacyMosTakeoverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5E00000000000000000601 /* MosTests/LegacyMosTakeoverTests.swift */; };
+		C0DE4EA10000000000000502 /* MosTests/ScrollPosterStopHandoffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE4EA10000000000000501 /* MosTests/ScrollPosterStopHandoffTests.swift */; };
 		C0DE4EA10000000000000402 /* MosTests/LoginItemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE4EA10000000000000401 /* MosTests/LoginItemTests.swift */; };
 		C0DE4EA10000000000000302 /* MosTests/ScrollCoreEnableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE4EA10000000000000301 /* MosTests/ScrollCoreEnableTests.swift */; };
 		C0DE4EA10000000000000202 /* MosTests/LogiDebugPanelTimestampTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE4EA10000000000000201 /* MosTests/LogiDebugPanelTimestampTests.swift */; };
@@ -98,6 +99,7 @@
 /* Begin PBXFileReference section */
 		0D5E7AB00000000000000002 /* MosTests/MousePreferencesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/MousePreferencesTests.swift; sourceTree = SOURCE_ROOT; };
 		1A5E00000000000000000601 /* MosTests/LegacyMosTakeoverTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LegacyMosTakeoverTests.swift; sourceTree = SOURCE_ROOT; };
+		C0DE4EA10000000000000501 /* MosTests/ScrollPosterStopHandoffTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollPosterStopHandoffTests.swift; sourceTree = SOURCE_ROOT; };
 		C0DE4EA10000000000000401 /* MosTests/LoginItemTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LoginItemTests.swift; sourceTree = SOURCE_ROOT; };
 		C0DE4EA10000000000000301 /* MosTests/ScrollCoreEnableTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollCoreEnableTests.swift; sourceTree = SOURCE_ROOT; };
 		C0DE4EA10000000000000201 /* MosTests/LogiDebugPanelTimestampTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiDebugPanelTimestampTests.swift; sourceTree = SOURCE_ROOT; };
@@ -222,6 +224,7 @@
 				A1B2C3D4E5F6A7B8C9D0E1F3 /* MosTests/ButtonBindingTests.swift */,
 				0D5E7AB00000000000000002 /* MosTests/MousePreferencesTests.swift */,
 				1A5E00000000000000000601 /* MosTests/LegacyMosTakeoverTests.swift */,
+				C0DE4EA10000000000000501 /* MosTests/ScrollPosterStopHandoffTests.swift */,
 				C0DE4EA10000000000000401 /* MosTests/LoginItemTests.swift */,
 				C0DE4EA10000000000000301 /* MosTests/ScrollCoreEnableTests.swift */,
 				C0DE4EA10000000000000201 /* MosTests/LogiDebugPanelTimestampTests.swift */,
@@ -448,6 +451,7 @@
 				A1B2C3D4E5F6A7B8C9D0E1F2 /* MosTests/ButtonBindingTests.swift in Sources */,
 				0D5E7AB00000000000000003 /* MosTests/MousePreferencesTests.swift in Sources */,
 				1A5E00000000000000000602 /* MosTests/LegacyMosTakeoverTests.swift in Sources */,
+				C0DE4EA10000000000000502 /* MosTests/ScrollPosterStopHandoffTests.swift in Sources */,
 				C0DE4EA10000000000000402 /* MosTests/LoginItemTests.swift in Sources */,
 				C0DE4EA10000000000000302 /* MosTests/ScrollCoreEnableTests.swift in Sources */,
 				C0DE4EA10000000000000202 /* MosTests/LogiDebugPanelTimestampTests.swift in Sources */,
