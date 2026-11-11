@@ -11898,6 +11898,766 @@
         }
       }
     },
+    "scroll-preset-magic-mouse": {
+      "extractionState": "manual",
+      "localizations": {
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magic Mouse"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magic Mouse"
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magic Mouse"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magic Mouse"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magic Mouse"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magic Mouse"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magic Mouse"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magic Mouse"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magic Mouse"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magic Mouse"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magic Mouse"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "妙控鼠标"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "巧控滑鼠"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "精妙滑鼠"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "巧控滑鼠"
+          }
+        }
+      }
+    },
+    "scroll-preset-magic-mouse-description": {
+      "extractionState": "manual",
+      "localizations": {
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Přesné kroky, doběh po švihu a odraz na okrajích."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exakte Rasterschritte, Nachlauf nach einem Schwung und Abfedern an den Rändern."
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ακριβή βήματα, ολίσθηση μετά από γρήγορη κίνηση και αναπήδηση στα άκρα."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exact notches, a glide after a flick, and a bounce at the edges."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crans précis, inertie après un élan et rebond aux extrémités."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 ノッチずつ正確に動き、弾くと慣性で流れ、端ではバウンドします。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한 칸씩 정확하게 움직이고, 튕기면 미끄러지며, 끝에서는 튕겨 돌아옵니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Точные шаги, инерция после рывка и отскок у краёв."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "เลื่อนทีละขั้นอย่างแม่นยำ ไหลต่อเมื่อปัดเร็ว และเด้งกลับที่ขอบ"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Net kademeler, hızlı çevirmeden sonra süzülme ve kenarlarda esneme."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Точні кроки, інерція після ривка та відскік біля країв."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "逐格精准，快速拨动后滑行，到边缘时回弹。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "逐格精準，快速撥動後滑行，到邊緣時回彈。"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "逐格精準，快速撥動後滑行，到邊緣時回彈。"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "逐格精準，快速撥動後滑行，到邊緣時回彈。"
+          }
+        }
+      }
+    },
+    "scroll-tuning-momentum-checkbox": {
+      "extractionState": "manual",
+      "localizations": {
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Setrvačnost po švihu"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nachlauf nach einem Schwung"
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Αδράνεια μετά από γρήγορη κίνηση"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Momentum after a flick"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inertie après un élan"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "弾いたあとの慣性スクロール"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "튕긴 후 관성 스크롤"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Инерция после рывка"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ไหลต่อหลังปัดเร็ว"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hızlı çevirmeden sonra süzülme"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Інерція після ривка"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快速拨动后惯性滑行"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快速撥動後慣性滑行"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快速撥動後慣性滑行"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快速撥動後慣性滑行"
+          }
+        }
+      }
+    },
+    "scroll-tuning-momentum-tooltip": {
+      "extractionState": "manual",
+      "localizations": {
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Po rychlém švihu stránka dobíhá a zpomaluje. Jednotlivé kroky zůstávají přesné a krok opačným směrem doběh zastaví."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nach einem schnellen Schwung gleitet die Seite weiter und wird langsamer. Einzelne Rasterschritte bleiben exakt, und ein Schritt in die Gegenrichtung stoppt den Nachlauf."
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Με μια γρήγορη κίνηση η σελίδα συνεχίζει να ολισθαίνει και επιβραδύνει. Τα μεμονωμένα βήματα παραμένουν ακριβή και ένα βήμα προς την αντίθετη κατεύθυνση σταματά την ολίσθηση."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A quick flick lets the page glide on and slow down. Single notches stay exact, and a notch in the other direction stops the glide."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Après un élan rapide, la page continue de glisser en ralentissant. Les crans isolés restent précis, et un cran dans l’autre sens arrête la glisse."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホイールを素早く弾くと、ページが慣性で流れて減速します。1 ノッチずつの操作は正確なままで、逆方向に 1 ノッチ回すと慣性が止まります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "휠을 빠르게 튕기면 페이지가 미끄러지다가 느려집니다. 한 칸씩 돌릴 때는 정확하게 움직이며, 반대 방향으로 한 칸 돌리면 미끄러짐이 멈춥니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "После быстрого рывка страница продолжает двигаться и замедляется. Отдельные шаги остаются точными, а шаг в обратную сторону останавливает инерцию."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "เมื่อปัดล้ออย่างรวดเร็ว หน้าจะไหลต่อแล้วค่อยๆ ช้าลง การหมุนทีละขั้นยังแม่นยำเหมือนเดิม และการหมุนกลับหนึ่งขั้นจะหยุดการไหล"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hızlı bir çevirmeden sonra sayfa süzülmeye devam eder ve yavaşlar. Tek kademeler net kalır; ters yönde bir kademe süzülmeyi durdurur."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Після швидкого ривка сторінка продовжує рухатися й сповільнюється. Окремі кроки залишаються точними, а крок у зворотний бік зупиняє інерцію."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快速拨动滚轮后，页面会继续滑行并逐渐减速。单格滚动保持精准，反向拨动一格即可停止滑行。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快速撥動滾輪後，頁面會繼續滑行並逐漸減速。單格捲動保持精準，反向撥動一格即可停止滑行。"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快速撥動滾輪後，頁面會繼續滑行並逐漸減速。單格捲動保持精準，反向撥動一格即可停止滑行。"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快速撥動滾輪後，頁面會繼續滑行並逐漸減速。單格捲動保持精準，反向撥動一格即可停止滑行。"
+          }
+        }
+      }
+    },
+    "scroll-tuning-thumb-wheel-label": {
+      "extractionState": "manual",
+      "localizations": {
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Palcové kolečko"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Daumenrad"
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ροδέλα αντίχειρα"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thumb wheel"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Molette de pouce"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サムホイール"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "썸 휠"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Боковое колёсико"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ล้อนิ้วโป้ง"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Başparmak tekerleği"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Бічне коліщатко"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拇指滚轮"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拇指滾輪"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拇指滾輪"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拇指滾輪"
+          }
+        }
+      }
+    },
+    "scroll-tuning-thumb-wheel-scroll": {
+      "extractionState": "manual",
+      "localizations": {
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Posouvat do stran"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seitwärts scrollen"
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Κύλιση στο πλάι"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll sideways"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Défiler latéralement"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "横にスクロール"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "좌우로 스크롤"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Прокрутка вбок"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "เลื่อนไปด้านข้าง"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yana kaydır"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Прокручування вбік"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "横向滚动"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "橫向捲動"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "橫向捲動"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "橫向捲動"
+          }
+        }
+      }
+    },
+    "scroll-tuning-thumb-wheel-page-swipe": {
+      "extractionState": "manual",
+      "localizations": {
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Přejíždět mezi stránkami"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zwischen Seiten streichen"
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Σάρωση μεταξύ σελίδων"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swipe between pages"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Balayer entre les pages"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページ間をスワイプ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "페이지 쓸어넘기기"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Смахивание между страницами"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ปัดไปมาระหว่างหน้า"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sayfalar arasında kaydır"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перехід між сторінками"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在页面之间轻扫"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在頁面之間滑動"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在頁面之間滑動"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在頁面之間滑動"
+          }
+        }
+      }
+    },
+    "scroll-tuning-thumb-wheel-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volba „Přejíždět mezi stránkami“ je v Nastavení systému (Myš nebo Trackpad) vypnutá, takže aplikace toto gesto ignorují."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "„Zwischen Seiten streichen“ ist in den Systemeinstellungen (Maus oder Trackpad) aus, daher ignorieren Apps diese Geste."
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Η επιλογή «Σάρωση μεταξύ σελίδων» είναι ανενεργή στις Ρυθμίσεις συστήματος (Ποντίκι ή Trackpad), οπότε οι εφαρμογές αγνοούν αυτή τη χειρονομία."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“Swipe between pages” is off in System Settings (Mouse or Trackpad), so apps ignore this gesture."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "« Balayer entre les pages » est désactivé dans Réglages Système (Souris ou Trackpad) ; les apps ignorent donc ce geste."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システム設定（マウスまたはトラックパッド）の「ページ間をスワイプ」がオフのため、アプリはこのジェスチャーを無視します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시스템 설정(마우스 또는 트랙패드)에서 ‘페이지 쓸어넘기기’가 꺼져 있어 앱이 이 제스처를 무시합니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Параметр «Смахивание между страницами» выключен в Системных настройках (Мышь или Трекпад), поэтому приложения игнорируют этот жест."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“ปัดไปมาระหว่างหน้า” ปิดอยู่ในการตั้งค่าระบบ (เมาส์หรือแทร็กแพด) แอปจึงไม่ตอบสนองต่อท่าทางนี้"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sistem Ayarları’nda (Fare veya Trackpad) “Sayfalar arasında kaydır” kapalı olduğundan uygulamalar bu hareketi yok sayar."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Параметр «Перехід між сторінками» вимкнено в Системних параметрах (Миша або Трекпад), тому програми ігнорують цей жест."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统设置（鼠标或触控板）中的“在页面之间轻扫”已关闭，因此应用会忽略此手势。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系統設定（滑鼠或觸控式軌跡板）中的「在頁面之間滑動」已關閉，因此應用程式會忽略此手勢。"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系統設定（滑鼠或觸控式軌跡板）中的「在頁面之間滑動」已關閉，因此應用程式會忽略此手勢。"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系統設定（滑鼠或觸控式軌跡板）中的「在頁面之間滑動」已關閉，因此應用程式會忽略此手勢。"
+          }
+        }
+      }
+    },
     "modifierCommand": {
       "extractionState": "manual",
       "localizations": {
