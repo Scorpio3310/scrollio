@@ -1,15 +1,26 @@
 //
 //  IntroductionViewController.swift
 //  Mos
-//  The Welcome Guide, built in code: what Scrollio is, the one step it needs (Accessibility
-//  access) and whether that step is done. The storyboard scene is only a shell.
+//  The Welcome Guide, built in code (the storyboard scene is only a shell): one window of
+//  600 × 620 pt that never changes its size, with up to four steps (Welcome, Allow
+//  Accessibility, Choose how scrolling feels, Scrollio is ready). This controller owns the
+//  steps of a run (WelcomeGuideFlow), the bar under them (Back, the dots, the main button),
+//  the change from one step to the next, and everything about the permission:
 //
-//  Two states, taken from the real permission and polled while the window is open:
-//  - access missing: two numbered steps, a status row, "Open Accessibility Settings" and
-//    the "Having trouble?" help under it;
-//  - access granted: the status row and, when the app opened the window (at launch, or
-//    because the access is missing), "Open Settings" (the Preferences on Scrolling) next to
-//    "Done"; opened by hand (General, Help), only "Done".
+//  - the main button of the Accessibility step asks macOS (which adds Scrollio to the
+//    Accessibility list, switched off, and may show its own alert) and opens the
+//    Accessibility pane of System Settings;
+//  - the permission is checked every second while the window shows, and when the app
+//    becomes active; when it arrives the app's recovery starts the event taps at once
+//    (`accessWasGranted`), VoiceOver is told and Scrollio comes back to the front;
+//  - the step may go on once the access is allowed and the event taps run; when they
+//    cannot start it says so, and AppRunController keeps trying;
+//  - "Having trouble?" shows the help for a stale entry; it opens by itself once when the
+//    user comes back from System Settings without the access.
+//
+//  Done (or Open Settings) marks the guide finished, and so does closing the window once
+//  the access is allowed (WelcomeGuideProgress). Return presses the main button, Esc goes
+//  back; with Reduce Motion the steps change by a short crossfade.
 //
 //  Created by Caldis on 15/11/2019.
 //  Copyright © 2019 Caldis. All rights reserved.
@@ -17,39 +28,18 @@
 
 import Cocoa
 
-final class IntroductionViewController: NSViewController {
+/// One step as the container shows it: a picture for the top card and the text area.
+protocol WelcomeGuideStepView: AnyObject {
+    var step: WelcomeGuideStep { get }
+    var picture: NSView { get }
+    var content: NSView { get }
+    /// The step came on screen (its loops and timers may run) or went away.
+    func setShown(_ shown: Bool)
+}
 
-    enum AccessState {
-        case missing
-        case granted
-    }
+final class IntroductionViewController: NSViewController, NSPopoverDelegate {
 
-    // MARK: - Layout
-
-    /// The window is `PreferencesForm.contentWidth` (450 pt) wide, narrower than the
-    /// Preferences panes, and uses the type sizes of the form kit, so the two windows look
-    /// like one app.
-    enum Layout {
-        static let width = PreferencesForm.contentWidth
-        static let sideMargin: CGFloat = 32
-        /// Above the icon: the content runs under the transparent title bar.
-        static let topInset: CGFloat = 44
-        static let bottomMargin: CGFloat = 28
-        static let iconSize: CGFloat = 72
-        static let cardPadding: CGFloat = 16
-        static let cardWidth = width - 2 * sideMargin
-        static let cardTextWidth = cardWidth - 2 * cardPadding
-        static let badgeSize: CGFloat = 20
-        static let badgeSpacing: CGFloat = 10
-        /// Between a row's title and the small print under it.
-        static let detailSpacing: CGFloat = 3
-        static let primaryButtonMinWidth: CGFloat = 230
-        /// Each of the two buttons of the granted state, side by side.
-        static let pairedButtonMinWidth: CGFloat = 150
-        static let buttonSpacing: CGFloat = 12
-    }
-
-    // MARK: - Seams (tests replace them: no prompt, no other app, no window)
+    // MARK: - Seams (tests replace them: no prompt, no other app, no window on screen)
 
     /// Whether macOS lets Scrollio use the Accessibility API right now.
     var isAccessGranted: () -> Bool = { Utils.isHadAccessibilityPermissions() }
@@ -62,156 +52,200 @@ final class IntroductionViewController: NSViewController {
     var revealApplication: () -> Void = {
         NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
     }
-    /// The permission arrived while the window was open.
+    /// The permission arrived while the window was open: the app starts its event taps now.
     var accessWasGranted: () -> Void = {
         (NSApp.delegate as? AppDelegate)?.accessibilityPermissionWasGranted()
     }
+    /// Whether Scrollio's event taps run (AppRunController).
+    var runState: () -> WelcomeGuideRunState = IntroductionViewController.liveRunState
     /// Whether the menu bar icon is hidden (General › Show in menu bar is off).
     var isMenuBarIconHidden: () -> Bool = { Options.shared.general.hideStatusItem }
-    /// Opens the Preferences window on Scrolling ("Open Settings" once the access is there).
+    /// Opens the Preferences window on Scrolling ("Open Settings" on the last step).
     var openAppSettings: () -> Void = {
         MainMenuManager.showPreferencesWindow(paneIdentifier: PANEL_IDENTIFIER.scrolling)
     }
-    /// Accessibility › Display › Reduce motion: the window changes its height at once.
+    /// Accessibility › Display › Reduce motion: steps change by a crossfade, pictures stand still.
     var prefersReducedMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    /// Whether the guide was finished, and where that is stored.
+    var progress = WelcomeGuideProgress.live
+    /// The drawing for the connected mouse.
+    var mouseSource: () -> MouseArtworkModel = {
+        MouseArtworkModel.model(forDeviceName: MousePaneModel.shownMouse()?.deviceName)
+    }
+    /// The scroll options the feel step picks for (the Scrolling pane's).
+    var scrollOptions: () -> OPTIONS_SCROLL_DEFAULT = { Options.shared.scroll }
+    /// Whether the scroll engine smooths the feel step's page (Scrollio's own window).
+    var tryAreaState: () -> WelcomeGuideTryArea = IntroductionViewController.liveTryAreaState
+    /// Brings the guide back to the front (the access arrived while System Settings was).
+    var bringToFront: (NSWindow?) -> Void = { window in
+        guard let window, window.isVisible else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+    /// Tells VoiceOver something that changed out of sight.
+    var announce: (String) -> Void = { message in
+        NSAccessibility.post(
+            element: NSApp as Any, notification: .announcementRequested,
+            userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue]
+        )
+    }
+    /// Shows the help of "Having trouble?" under its link.
+    var presentHelp: (NSPopover, NSView) -> Void = { popover, link in
+        popover.show(relativeTo: link.bounds, of: link, preferredEdge: .maxY)
+    }
 
     // MARK: - State
 
-    private(set) var accessState: AccessState = .missing
-    private(set) var isHelpExpanded = false
-    /// Opened by hand (General › Welcome Guide, Help › Welcome Guide), not by the app at launch.
-    private(set) var isManuallyOpened = false
+    /// The run on screen; set by `begin`, or at loading the one the app opens by itself.
+    private(set) var flow: WelcomeGuideFlow?
+    /// Its steps, and the one shown.
+    private(set) var steps: [WelcomeGuideStep] = []
+    private(set) var index = 0
+    private(set) var accessState: WelcomeGuideAccessState = .missing
+    private(set) var isHelpShown = false
     /// "Open Accessibility Settings" was used; the help opens by itself once when the user
     /// comes back and the access is still missing.
     private var didOpenSettings = false
     private var didOfferHelp = false
+    private var helpPopover: NSPopover?
+    private var transitionGeneration = 0
 
     /// Polls the permission while the window is open.
     private(set) var accessibilityPermissionsCheckerTimer: Timer?
 
+    var currentStep: WelcomeGuideStep? {
+        return steps.indices.contains(index) ? steps[index] : nil
+    }
+
     // MARK: - Views (read access for tests)
 
-    private(set) var iconView: NSImageView!
-    private(set) var titleLabel: NSTextField!
-    private(set) var subtitleLabel: NSTextField!
-    private(set) var accessCard: NSView!
-    private(set) var accessHeadingLabel: NSTextField!
-    private(set) var accessExplanationLabel: NSTextField!
-    private(set) var stepLabels: [NSTextField] = []
-    private(set) var stepDetailLabels: [NSTextField] = []
-    private(set) var statusIconView: NSImageView!
-    private(set) var statusLabel: NSTextField!
-    private(set) var statusDetailLabel: NSTextField!
+    private(set) var pictureHost: NSView!
+    private(set) var contentHost: NSView!
+    private(set) var backButton: NSButton!
     private(set) var primaryButton: NSButton!
-    /// "Done" next to "Open Settings", in the granted state of a window the app opened.
+    /// "Open Settings", next to Done on the last step.
     private(set) var secondaryButton: NSButton!
-    /// The primary and secondary buttons, centred.
-    private(set) var buttonRow: NSStackView!
-    private(set) var helpButton: NSButton!
-    private(set) var helpCard: NSView!
-    private(set) var helpHeadingLabel: NSTextField!
-    private(set) var helpTextLabel: NSTextField!
-    private(set) var showInFinderButton: NSButton!
+    private(set) var dots: WelcomeGuideStepDots!
 
-    /// Rows of the access card that only make sense while the access is missing.
-    private var stepsRows: [NSView] = []
-    /// The primary button's least width: alone, or paired with "Done".
-    private var primaryMinWidth: NSLayoutConstraint!
+    private(set) lazy var welcomeStep: WelcomeGuideWelcomeStep = {
+        let step = WelcomeGuideWelcomeStep(mouseSource: { [weak self] in self?.mouseSource() ?? .generic })
+        step.artwork.prefersReducedMotion = reducedMotion
+        return step
+    }()
+
+    private(set) lazy var accessStep: WelcomeGuideAccessStep = {
+        let step = WelcomeGuideAccessStep(target: self, helpAction: #selector(helpButtonClicked(_:)))
+        step.artwork.prefersReducedMotion = reducedMotion
+        step.statusBox.prefersReducedMotion = reducedMotion
+        step.show(accessState, menuBarIconHidden: isMenuBarIconHidden())
+        return step
+    }()
+
+    private(set) lazy var feelStep: WelcomeGuideFeelStep = {
+        let step = WelcomeGuideFeelStep(
+            scrollOptions: { [weak self] in self?.scrollOptions() ?? Options.shared.scroll },
+            tryAreaState: { [weak self] in self?.tryAreaState() ?? .notRunning },
+            mouseSource: { [weak self] in self?.mouseSource() ?? .generic }
+        )
+        step.artwork.prefersReducedMotion = reducedMotion
+        return step
+    }()
+
+    private(set) lazy var finishStep: WelcomeGuideFinishStep = {
+        let step = WelcomeGuideFinishStep(isMenuBarIconHidden: { [weak self] in self?.isMenuBarIconHidden() ?? false })
+        step.artwork.prefersReducedMotion = reducedMotion
+        return step
+    }()
+
+    /// The seam, for the pictures: they may outlive the controller by a moment (a window
+    /// that is torn down after it).
+    private var reducedMotion: () -> Bool {
+        return { [weak self] in
+            self?.prefersReducedMotion() ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        }
+    }
+
+    /// "Having trouble?" of the Accessibility step.
+    var helpButton: NSButton {
+        return accessStep.helpButton
+    }
+
+    func stepView(for step: WelcomeGuideStep) -> WelcomeGuideStepView {
+        switch step {
+        case .welcome: return welcomeStep
+        case .access: return accessStep
+        case .feel: return feelStep
+        case .finish: return finishStep
+        }
+    }
+
+    private var shownStepView: WelcomeGuideStepView?
 
     // MARK: - Lifecycle
 
     override func loadView() {
-        // The Welcome Guide keeps the vibrant look it was designed in.
-        let root = PreferencesForm.makeBackground(plainContent: false)
+        let size = WelcomeGuideLayout.windowSize
+        let root = PreferencesForm.makeBackground()
+        root.frame = NSRect(origin: .zero, size: size)
+        let canvas = WelcomeGuideFlippedView(frame: root.bounds)
+        canvas.autoresizingMask = [.width, .height]
+        canvas.wantsLayer = true
+        root.addSubview(canvas)
 
-        let icon = NSImageView()
-        icon.image = NSImage(named: NSImage.applicationIconName)
-        icon.imageScaling = .scaleProportionallyUpOrDown
-        // Decoration: the title under it names the app.
-        icon.setAccessibilityElement(false)
-        iconView = icon
+        let pictures = WelcomeGuideFlippedView(frame: WelcomeGuideLayout.pictureFrame)
+        let contents = WelcomeGuideFlippedView(frame: WelcomeGuideLayout.contentFrame)
+        contents.clipsToBounds = false
+        pictures.clipsToBounds = false
+        // The Welcome step's icon lies on the picture's edge: the text area on top.
+        canvas.addSubview(pictures)
+        canvas.addSubview(contents)
+        pictureHost = pictures
+        contentHost = contents
 
-        let title = NSTextField(labelWithString: text("intro-title"))
-        title.font = NSFont.systemFont(ofSize: 24, weight: .bold)
-        title.alignment = .center
-        titleLabel = title
-
-        let subtitle = Self.makeText(text("intro-subtitle"), font: NSFont.systemFont(ofSize: NSFont.systemFontSize), width: Layout.cardWidth)
-        subtitle.textColor = .secondaryLabelColor
-        subtitle.alignment = .center
-        subtitleLabel = subtitle
-
-        let access = makeAccessCard()
-        accessCard = access
-
-        let primary = NSButton(title: "", target: self, action: #selector(primaryButtonClicked(_:)))
+        let back = NSButton(title: text("intro-back-button"), target: self, action: #selector(backButtonClicked(_:)))
+        back.bezelStyle = .push
+        back.controlSize = .large
+        back.keyEquivalent = "\u{1b}"
+        let primary = NSButton(title: text("intro-continue-button"), target: self, action: #selector(primaryButtonClicked(_:)))
         primary.bezelStyle = .push
         primary.controlSize = .large
         primary.keyEquivalent = "\r"
-        primaryButton = primary
-
-        let secondary = NSButton(title: text("intro-done-button"), target: self, action: #selector(secondaryButtonClicked(_:)))
+        let secondary = NSButton(title: text("intro-open-app-settings-button"), target: self, action: #selector(secondaryButtonClicked(_:)))
         secondary.bezelStyle = .push
         secondary.controlSize = .large
-        secondary.keyEquivalent = "\u{1b}"
-        secondary.isHidden = true
-        secondaryButton = secondary
-
-        let buttons = NSStackView(views: [secondary, primary])
-        buttons.orientation = .horizontal
-        buttons.alignment = .centerY
-        buttons.spacing = Layout.buttonSpacing
-        buttons.detachesHiddenViews = true
-        buttons.translatesAutoresizingMaskIntoConstraints = false
-        buttonRow = buttons
-
-        let help = PreferencesForm.makeLinkButton(
-            title: text("intro-help-link"),
-            target: self,
-            action: #selector(helpButtonClicked(_:))
-        )
-        helpButton = help
-
-        let helpContent = makeHelpCard()
-        helpCard = helpContent
-
-        let content = NSStackView(views: [icon, title, subtitle, access, buttons, help, helpContent])
-        content.orientation = .vertical
-        content.alignment = .centerX
-        content.detachesHiddenViews = true
-        content.spacing = PreferencesForm.rowSpacing
-        content.setCustomSpacing(14, after: icon)
-        content.setCustomSpacing(6, after: title)
-        content.setCustomSpacing(24, after: subtitle)
-        content.setCustomSpacing(20, after: access)
-        content.setCustomSpacing(12, after: buttons)
-        content.setCustomSpacing(14, after: help)
-        content.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(content)
-
-        // The window is sized by hand (fitWindowToContent), from the top edge down. The
-        // bottom constraint stays below NSLayoutConstraint.Priority.windowSizeStayPut, so
-        // Auto Layout does not resize the window as well while that change animates.
-        let bottom = content.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -Layout.bottomMargin)
-        bottom.priority = .defaultLow
-        primaryMinWidth = primary.widthAnchor.constraint(greaterThanOrEqualToConstant: Layout.primaryButtonMinWidth)
+        let dots = WelcomeGuideStepDots(frame: .zero)
+        for view in [back, primary, secondary, dots] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            canvas.addSubview(view)
+        }
+        let bar = WelcomeGuideLayout.barFrame
         NSLayoutConstraint.activate([
-            root.widthAnchor.constraint(equalToConstant: Layout.width),
-            content.topAnchor.constraint(equalTo: root.topAnchor, constant: Layout.topInset),
-            content.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: Layout.sideMargin),
-            content.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -Layout.sideMargin),
-            bottom,
-            icon.widthAnchor.constraint(equalToConstant: Layout.iconSize),
-            icon.heightAnchor.constraint(equalToConstant: Layout.iconSize),
-            access.widthAnchor.constraint(equalToConstant: Layout.cardWidth),
-            helpContent.widthAnchor.constraint(equalToConstant: Layout.cardWidth),
-            primaryMinWidth,
-            secondary.widthAnchor.constraint(greaterThanOrEqualToConstant: Layout.pairedButtonMinWidth),
+            back.leadingAnchor.constraint(equalTo: canvas.leadingAnchor, constant: bar.minX),
+            back.centerYAnchor.constraint(equalTo: canvas.topAnchor, constant: bar.midY),
+            back.widthAnchor.constraint(greaterThanOrEqualToConstant: 96),
+            primary.trailingAnchor.constraint(equalTo: canvas.leadingAnchor, constant: bar.maxX),
+            primary.centerYAnchor.constraint(equalTo: back.centerYAnchor),
+            primary.widthAnchor.constraint(greaterThanOrEqualToConstant: 96),
+            secondary.trailingAnchor.constraint(equalTo: primary.leadingAnchor, constant: -10),
+            secondary.centerYAnchor.constraint(equalTo: back.centerYAnchor),
+            secondary.widthAnchor.constraint(greaterThanOrEqualToConstant: 96),
+            dots.centerXAnchor.constraint(equalTo: canvas.centerXAnchor),
+            dots.centerYAnchor.constraint(equalTo: back.centerYAnchor),
+            dots.heightAnchor.constraint(equalToConstant: 12),
         ])
+        backButton = back
+        primaryButton = primary
+        secondaryButton = secondary
+        self.dots = dots
 
         view = root
-        accessState = isAccessGranted() ? .granted : .missing
-        applyState(animated: false)
+        accessState = WelcomeGuideAccessState(granted: isAccessGranted(), run: runState())
+        if flow == nil {
+            flow = WelcomeGuideFlow.automatic(guideFinished: progress.isFinished)
+            steps = flow!.steps(accessReady: accessState.isReady)
+            index = 0
+        }
+        show(stepAt: index, direction: 1, animated: false)
     }
 
     override func viewWillAppear() {
@@ -219,262 +253,205 @@ final class IntroductionViewController: NSViewController {
         refreshAccessState()
         startPolling()
         NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(applicationDidBecomeActive(_:)),
-            name: NSApplication.didBecomeActiveNotification,
-            object: nil
+            self, selector: #selector(applicationDidBecomeActive(_:)),
+            name: NSApplication.didBecomeActiveNotification, object: nil
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(runStateDidChange(_:)),
+            name: AppRunController.didChangeNotification, object: nil
+        )
+        shownStepView?.setShown(true)
     }
 
     override func viewWillDisappear() {
         super.viewWillDisappear()
         stopPolling()
         NotificationCenter.default.removeObserver(self, name: NSApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: AppRunController.didChangeNotification, object: nil)
+        shownStepView?.setShown(false)
     }
-
-    // MARK: - Building
 
     private func text(_ key: String) -> String {
         return NSLocalizedString(key, comment: "")
     }
 
-    /// A label that wraps at `width`.
-    private static func makeText(_ string: String, font: NSFont, width: CGFloat) -> NSTextField {
-        let label = NSTextField(wrappingLabelWithString: string)
-        label.font = font
-        label.isSelectable = false
-        label.preferredMaxLayoutWidth = width
-        label.translatesAutoresizingMaskIntoConstraints = false
-        return label
-    }
+    // MARK: - The run
 
-    private static func makeSymbolView(_ name: String, pointSize: CGFloat, weight: NSFont.Weight, tint: NSColor) -> NSImageView {
-        let view = NSImageView()
-        view.image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
-        view.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
-        view.contentTintColor = tint
-        view.imageScaling = .scaleNone
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.setContentHuggingPriority(.required, for: .horizontal)
-        return view
-    }
-
-    /// A rounded card with `rows` stacked inside, each as wide as the card's text column.
-    private static func makeCard(rows: [NSView]) -> (card: IntroductionCardView, stack: NSStackView) {
-        let stack = NSStackView(views: rows)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 12
-        stack.detachesHiddenViews = true
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        for row in rows {
-            row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+    /// Starts a run at its first step. The whole guide skips the Accessibility step when
+    /// Scrollio already runs with the access.
+    func begin(_ flow: WelcomeGuideFlow) {
+        self.flow = flow
+        accessState = WelcomeGuideAccessState(granted: isAccessGranted(), run: runState())
+        steps = flow.steps(accessReady: accessState.isReady)
+        index = 0
+        didOpenSettings = false
+        didOfferHelp = false
+        setHelpShown(false)
+        if isViewLoaded {
+            show(stepAt: 0, direction: -1, animated: true)
         }
-
-        let card = IntroductionCardView()
-        card.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(stack)
-        let padding = Layout.cardPadding
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: padding),
-            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: padding),
-            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -padding),
-            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -padding),
-        ])
-        return (card, stack)
     }
 
-    /// Icon or number on the left, text to its right, both starting at the top.
-    private static func makeIconRow(icon: NSView, text: NSView) -> NSView {
-        let row = NSView()
-        row.translatesAutoresizingMaskIntoConstraints = false
-        row.addSubview(icon)
-        row.addSubview(text)
-        NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: row.leadingAnchor),
-            icon.widthAnchor.constraint(equalToConstant: Layout.badgeSize),
-            icon.heightAnchor.constraint(equalToConstant: Layout.badgeSize),
-            icon.topAnchor.constraint(equalTo: row.topAnchor),
-            icon.bottomAnchor.constraint(lessThanOrEqualTo: row.bottomAnchor),
-            text.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: Layout.badgeSpacing),
-            text.trailingAnchor.constraint(equalTo: row.trailingAnchor),
-            // Puts the first line of 13 pt text on the middle of the 20 pt icon.
-            text.topAnchor.constraint(equalTo: row.topAnchor, constant: 2),
-            text.bottomAnchor.constraint(equalTo: row.bottomAnchor),
-        ])
-        return row
+    /// The next step (Continue) or the one before (Back).
+    func go(by offset: Int) {
+        let target = index + offset
+        guard steps.indices.contains(target) else { return }
+        setHelpShown(false)
+        show(stepAt: target, direction: offset > 0 ? 1 : -1, animated: true)
     }
 
-    private func makeAccessCard() -> NSView {
-        let rowTextWidth = Layout.cardTextWidth - Layout.badgeSize - Layout.badgeSpacing
+    private var isLastStep: Bool {
+        return index == steps.count - 1
+    }
 
-        let heading = PreferencesForm.makeSectionHeader(text("intro-access-heading"))
-        accessHeadingLabel = heading
+    private func show(stepAt newIndex: Int, direction: CGFloat, animated: Bool) {
+        guard steps.indices.contains(newIndex) else { return }
+        let previous = shownStepView
+        let next = stepView(for: steps[newIndex])
+        index = newIndex
+        shownStepView = next
+        transitionGeneration += 1
+        let generation = transitionGeneration
 
-        let explanation = Self.makeText(text("intro-access-explanation"), font: PreferencesForm.hintFont, width: Layout.cardTextWidth)
-        explanation.textColor = .secondaryLabelColor
-        accessExplanationLabel = explanation
-
-        let intro = PreferencesForm.makeColumn([heading, explanation])
-
-        // Every row of the card reads the same way: what, and under it the small print.
-        func makeTitleAndDetail(_ title: String, _ detail: String, weight: NSFont.Weight) -> (NSTextField, NSTextField, NSView) {
-            let titleLabel = Self.makeText(title, font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: weight), width: rowTextWidth)
-            let detailLabel = Self.makeText(detail, font: PreferencesForm.hintFont, width: rowTextWidth)
-            detailLabel.textColor = .secondaryLabelColor
-            let column = PreferencesForm.makeColumn([titleLabel, detailLabel])
-            column.spacing = Layout.detailSpacing
-            return (titleLabel, detailLabel, column)
+        // What an unfinished change left behind goes now.
+        for host in [pictureHost!, contentHost!] {
+            for subview in host.subviews where subview !== previous?.picture && subview !== previous?.content
+                && subview !== next.picture && subview !== next.content {
+                subview.removeFromSuperview()
+            }
         }
-
-        var steps: [NSView] = []
-        for (index, key) in ["intro-step-open-settings", "intro-step-turn-on"].enumerated() {
-            let badge = Self.makeSymbolView("\(index + 1).circle.fill", pointSize: 17, weight: .regular, tint: .controlAccentColor)
-            badge.setAccessibilityElement(false)
-            let (label, detail, column) = makeTitleAndDetail(text(key), text(key + "-detail"), weight: .regular)
-            // VoiceOver reads the number the badge shows.
-            label.setAccessibilityLabel(String(format: text("intro-step-accessibility"), index + 1, text(key)))
-            stepLabels.append(label)
-            stepDetailLabels.append(detail)
-            steps.append(Self.makeIconRow(icon: badge, text: column))
+        if previous !== next {
+            previous?.setShown(false)
         }
+        next.picture.frame = pictureHost.bounds
+        next.picture.alphaValue = 1
+        next.content.frame = contentHost.bounds
+        next.content.alphaValue = 1
+        if next.picture.superview !== pictureHost { pictureHost.addSubview(next.picture) }
+        if next.content.superview !== contentHost { contentHost.addSubview(next.content) }
+        if next === accessStep {
+            accessStep.show(accessState, menuBarIconHidden: isMenuBarIconHidden())
+        }
+        // Loops start only in a window that shows; the step's content is brought up to date.
+        next.setShown(true)
+        updateBar()
+        view.window?.recalculateKeyViewLoop()
 
-        let statusIcon = Self.makeSymbolView("circle.dashed", pointSize: 17, weight: .regular, tint: .secondaryLabelColor)
-        statusIcon.setAccessibilityElement(false)
-        statusIconView = statusIcon
-        let (status, detail, statusColumn) = makeTitleAndDetail("", "", weight: .medium)
-        statusLabel = status
-        statusDetailLabel = detail
-        let statusRow = Self.makeIconRow(icon: statusIcon, text: statusColumn)
-
-        let stepsSeparator = PreferencesForm.makeSeparator()
-        let statusSeparator = PreferencesForm.makeSeparator()
-        stepsRows = [intro, stepsSeparator] + steps + [statusSeparator]
-
-        let (card, _) = Self.makeCard(rows: stepsRows + [statusRow])
-        return card
+        guard let previous, previous !== next else { return }
+        // Each part of the step that goes leaves when its own animation ends (unless another
+        // change began meanwhile, which clears what is left).
+        let removePicture = { [weak self] in
+            guard let self, generation == self.transitionGeneration else { return }
+            previous.picture.removeFromSuperview()
+            previous.picture.alphaValue = 1
+        }
+        let removeContent = { [weak self] in
+            guard let self, generation == self.transitionGeneration else { return }
+            previous.content.removeFromSuperview()
+            previous.content.alphaValue = 1
+            previous.content.setFrameOrigin(.zero)
+        }
+        guard animated, view.window?.isVisible == true else {
+            removePicture()
+            removeContent()
+            return
+        }
+        if prefersReducedMotion() {
+            next.picture.alphaValue = 0
+            next.content.alphaValue = 0
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.2
+                next.picture.animator().alphaValue = 1
+                next.content.animator().alphaValue = 1
+                previous.picture.animator().alphaValue = 0
+                previous.content.animator().alphaValue = 0
+            }, completionHandler: {
+                removePicture()
+                removeContent()
+            })
+            return
+        }
+        // The picture crossfades in place; the text leaves to one side and the next comes
+        // in from the other (mirrored for Back).
+        next.picture.alphaValue = 0
+        next.content.alphaValue = 0
+        next.content.setFrameOrigin(NSPoint(x: 24 * direction, y: 0))
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.25
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            next.picture.animator().alphaValue = 1
+            previous.picture.animator().alphaValue = 0
+        }, completionHandler: removePicture)
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.18
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 1, 1)
+            previous.content.animator().alphaValue = 0
+            previous.content.animator().setFrameOrigin(NSPoint(x: -24 * direction, y: 0))
+        }, completionHandler: { [weak self] in
+            guard let self, generation == self.transitionGeneration else { return }
+            removeContent()
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.3
+                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1)
+                next.content.animator().alphaValue = 1
+                next.content.animator().setFrameOrigin(.zero)
+            }
+        })
     }
 
-    private func makeHelpCard() -> NSView {
-        let heading = PreferencesForm.makeSectionHeader(text("intro-help-heading"))
-        heading.lineBreakMode = .byWordWrapping
-        heading.maximumNumberOfLines = 0
-        heading.preferredMaxLayoutWidth = Layout.cardTextWidth
-        helpHeadingLabel = heading
-
-        let body = Self.makeText(text("intro-help-text"), font: PreferencesForm.hintFont, width: Layout.cardTextWidth)
-        body.textColor = .secondaryLabelColor
-        helpTextLabel = body
-
-        let finder = NSButton(title: text("intro-help-finder-button"), target: self, action: #selector(showInFinderClicked(_:)))
-        finder.bezelStyle = .push
-        finder.translatesAutoresizingMaskIntoConstraints = false
-        showInFinderButton = finder
-
-        // The button keeps its own width: it sits in a row of its own, at the leading edge.
-        let buttonRow = NSView()
-        buttonRow.translatesAutoresizingMaskIntoConstraints = false
-        buttonRow.addSubview(finder)
-        NSLayoutConstraint.activate([
-            finder.leadingAnchor.constraint(equalTo: buttonRow.leadingAnchor),
-            finder.topAnchor.constraint(equalTo: buttonRow.topAnchor),
-            finder.bottomAnchor.constraint(equalTo: buttonRow.bottomAnchor),
-            finder.trailingAnchor.constraint(lessThanOrEqualTo: buttonRow.trailingAnchor),
-        ])
-
-        let (card, stack) = Self.makeCard(rows: [heading, body, buttonRow])
-        stack.setCustomSpacing(PreferencesForm.hintSpacing, after: heading)
-        return card
+    /// Back, the dots and the buttons for the step on screen.
+    private func updateBar() {
+        guard isViewLoaded, let step = currentStep else { return }
+        backButton.isHidden = index == 0
+        dots.isHidden = steps.count < 2
+        dots.set(current: index, of: steps.count)
+        secondaryButton.isHidden = step != .finish
+        switch step {
+        case .welcome, .feel:
+            primaryButton.title = text("intro-continue-button")
+            primaryButton.isEnabled = true
+        case .access:
+            if accessState == .missing {
+                primaryButton.title = text("intro-open-settings-button")
+                primaryButton.isEnabled = true
+            } else {
+                primaryButton.title = text(isLastStep ? "intro-done-button" : "intro-continue-button")
+                primaryButton.isEnabled = accessState.isReady
+            }
+        case .finish:
+            primaryButton.title = text("intro-done-button")
+            primaryButton.isEnabled = true
+        }
     }
 
-    // MARK: - State
+    // MARK: - The permission
 
-    /// The window was opened by hand: the only button of the granted state says "Done".
-    func setManuallyOpened(_ manually: Bool) {
-        isManuallyOpened = manually
-        applyState(animated: false)
-    }
-
-    /// Reads the permission and shows it. Returns the state it found.
+    /// Reads the permission and the event taps and shows them. Returns the state it found.
     @discardableResult
-    func refreshAccessState() -> AccessState {
-        let found: AccessState = isAccessGranted() ? .granted : .missing
+    func refreshAccessState() -> WelcomeGuideAccessState {
+        let granted = isAccessGranted()
+        let arrived = granted && !accessState.isGranted
+        if arrived {
+            // The recovery timer's next look, now: the event taps start before the state is read.
+            accessWasGranted()
+        }
+        let found = WelcomeGuideAccessState(granted: granted, run: runState())
         guard found != accessState else { return found }
         accessState = found
-        applyState(animated: true)
-        if found == .granted {
-            accessWasGranted()
+        if found.isGranted {
+            setHelpShown(false)
+        }
+        if isViewLoaded {
+            accessStep.show(found, menuBarIconHidden: isMenuBarIconHidden())
+            feelStep.refreshTryArea()
+            updateBar()
+        }
+        if arrived {
+            announce(text("intro-status-granted"))
+            bringToFront(view.window)
         }
         return found
     }
-
-    /// Shows or hides the help under "Having trouble?".
-    func setHelpExpanded(_ expanded: Bool, animated: Bool) {
-        guard expanded != isHelpExpanded else { return }
-        isHelpExpanded = expanded
-        applyState(animated: animated)
-    }
-
-    private func applyState(animated: Bool) {
-        guard isViewLoaded else { return }
-        let granted = accessState == .granted
-
-        for row in stepsRows {
-            row.isHidden = granted
-        }
-        if granted {
-            statusIconView.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)
-            statusIconView.contentTintColor = .systemGreen
-            statusLabel.stringValue = text("intro-status-granted")
-            statusDetailLabel.stringValue = text(
-                isMenuBarIconHidden() ? "intro-status-granted-detail-hidden-icon" : "intro-status-granted-detail"
-            )
-            primaryButton.title = text(isManuallyOpened ? "intro-done-button" : "intro-open-app-settings-button")
-        } else {
-            statusIconView.image = NSImage(systemSymbolName: "exclamationmark.circle.fill", accessibilityDescription: nil)
-            statusIconView.contentTintColor = .systemOrange
-            statusLabel.stringValue = text("intro-status-missing")
-            statusDetailLabel.stringValue = text("intro-status-missing-detail")
-            primaryButton.title = text("intro-open-settings-button")
-        }
-
-        let paired = granted && !isManuallyOpened
-        secondaryButton.isHidden = !paired
-        primaryMinWidth.constant = paired ? Layout.pairedButtonMinWidth : Layout.primaryButtonMinWidth
-
-        helpButton.isHidden = granted
-        helpCard.isHidden = granted || !isHelpExpanded
-        helpButton.setAccessibilityExpanded(isHelpExpanded)
-
-        fitWindowToContent(animated: animated)
-    }
-
-    /// Makes the window (or, without one, the view) as tall as the content. The top edge
-    /// of the window stays where it is.
-    private func fitWindowToContent(animated: Bool) {
-        let size = view.fittingSize
-        guard let window = view.window else {
-            view.setFrameSize(size)
-            return
-        }
-        var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
-        guard frame.size != window.frame.size else { return }
-        frame.origin = NSPoint(x: window.frame.minX, y: window.frame.maxY - frame.height)
-        // Growing downwards must not push the buttons off the screen.
-        if let visible = window.screen?.visibleFrame, frame.minY < visible.minY {
-            frame.origin.y = min(visible.minY, visible.maxY - frame.height)
-        }
-        let animate = Self.animatesResize(animated, windowIsVisible: window.isVisible, reduceMotion: prefersReducedMotion())
-        window.setFrame(frame, display: true, animate: animate)
-    }
-
-    /// Whether a change of the window's height is animated: only when asked for, on screen,
-    /// and not with Reduce motion on.
-    static func animatesResize(_ animated: Bool, windowIsVisible: Bool, reduceMotion: Bool) -> Bool {
-        return animated && windowIsVisible && !reduceMotion
-    }
-
-    // MARK: - Polling
 
     private func startPolling() {
         stopPolling()
@@ -488,49 +465,145 @@ final class IntroductionViewController: NSViewController {
         accessibilityPermissionsCheckerTimer = nil
     }
 
-    /// One tick of the poll: the status row follows the permission, both ways.
+    /// One tick of the poll: the status follows the permission and the event taps, both
+    /// ways, and the feel step's page whether it is smoothed.
     func accessibilityPermissionsChecker(_ timer: Timer?) {
+        refreshAccessState()
+        if currentStep == .feel {
+            feelStep.refreshTryArea()
+        }
+    }
+
+    @objc func runStateDidChange(_ notification: Notification?) {
         refreshAccessState()
     }
 
     /// Back in Scrollio. If the user went to System Settings from here and the access is
     /// still missing, the help opens by itself, once.
     @objc func applicationDidBecomeActive(_ notification: Notification?) {
-        guard refreshAccessState() == .missing, didOpenSettings, !didOfferHelp else { return }
+        guard refreshAccessState() == .missing, didOpenSettings, !didOfferHelp, currentStep == .access else { return }
         didOfferHelp = true
-        setHelpExpanded(true, animated: true)
+        setHelpShown(true)
+    }
+
+    // MARK: - Help
+
+    /// Shows or hides the help under "Having trouble?".
+    func setHelpShown(_ shown: Bool) {
+        guard shown != isHelpShown else { return }
+        isHelpShown = shown
+        guard isViewLoaded else { return }
+        accessStep.helpButton.setAccessibilityExpanded(shown)
+        if shown {
+            let popover = NSPopover()
+            popover.behavior = .transient
+            popover.animates = !prefersReducedMotion()
+            popover.delegate = self
+            popover.contentViewController = WelcomeGuideHelpViewController(showInFinder: { [weak self] in
+                self?.revealApplication()
+            })
+            helpPopover = popover
+            presentHelp(popover, accessStep.helpButton)
+        } else {
+            let popover = helpPopover
+            helpPopover = nil
+            popover?.close()
+        }
+    }
+
+    /// The help shown, or nil.
+    var helpContent: WelcomeGuideHelpViewController? {
+        return helpPopover?.contentViewController as? WelcomeGuideHelpViewController
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        guard (notification.object as? NSPopover) === helpPopover else { return }
+        helpPopover = nil
+        isHelpShown = false
+        accessStep.helpButton.setAccessibilityExpanded(false)
     }
 
     // MARK: - Actions
 
     @objc func primaryButtonClicked(_ sender: Any?) {
-        switch accessState {
-        case .missing:
+        guard let step = currentStep else { return }
+        switch step {
+        case .access where accessState == .missing:
             didOpenSettings = true
             // The request puts Scrollio into the Accessibility list; the pane shows the list.
             requestAccess()
             openAccessibilitySettings()
-        case .granted:
-            if !isManuallyOpened {
-                // First the Preferences, then the guide closes: the app keeps its Dock icon.
-                openAppSettings()
+        case .access:
+            guard accessState.isReady else { return }
+            if isLastStep {
+                finish()
+            } else {
+                go(by: 1)
             }
-            view.window?.close()
+        case .finish:
+            finish()
+        case .welcome, .feel:
+            go(by: 1)
         }
     }
 
-    /// "Done" next to "Open Settings".
+    /// "Open Settings": the Preferences on Scrolling, then the guide closes (the app keeps
+    /// its Dock icon).
     @objc func secondaryButtonClicked(_ sender: Any?) {
+        progress.markFinished()
+        openAppSettings()
         view.window?.close()
+    }
+
+    @objc func backButtonClicked(_ sender: Any?) {
+        go(by: -1)
     }
 
     @objc func helpButtonClicked(_ sender: Any?) {
         didOfferHelp = true
-        setHelpExpanded(!isHelpExpanded, animated: true)
+        setHelpShown(!isHelpShown)
     }
 
-    @objc func showInFinderClicked(_ sender: Any?) {
-        revealApplication()
+    private func finish() {
+        progress.markFinished()
+        view.window?.close()
+    }
+
+    /// The window closes (its close button, Done, Open Settings): with the access allowed
+    /// the guide counts as finished, so it does not come back by itself.
+    func windowWillClose() {
+        if isAccessGranted() {
+            progress.markFinished()
+        }
+        setHelpShown(false)
+        stopPolling()
+        shownStepView?.setShown(false)
+    }
+
+    // MARK: - The live world
+
+    static func liveRunState() -> WelcomeGuideRunState {
+        let controller = AppRunController.shared
+        if controller.coresActive { return .running }
+        if controller.isPaused { return .paused }
+        if controller.isRetryingStart { return .retrying }
+        return .stopped
+    }
+
+    /// Scrollio's own window as the scroll engine sees it: looked up on the per-app list by
+    /// the bundle's path, then by the program's.
+    static func liveTryAreaState() -> WelcomeGuideTryArea {
+        let scrollio = AppSmoothing.App(
+            name: Bundle.main.bundleURL.deletingPathExtension().lastPathComponent,
+            bundlePath: Bundle.main.bundlePath, executablePath: Bundle.main.executablePath
+        )
+        let list = Options.shared.application
+        return WelcomeGuideTryArea.state(
+            running: AppRunController.shared.coresActive,
+            rule: AppSmoothing.rule(of: AppSmoothing.entry(for: scrollio, in: list.applications)),
+            scrollingSmooth: Options.shared.scroll.smooth,
+            limitedToListedApps: list.allowlist
+        )
     }
 
     /// System Settings › Privacy & Security › Accessibility.
@@ -539,26 +612,5 @@ final class IntroductionViewController: NSViewController {
     /// Also the "Open Settings…" of General › Permissions.
     static func openAccessibilityPane() {
         NSWorkspace.shared.open(accessibilityPaneURL)
-    }
-}
-
-/// The rounded box behind a group of rows, like the groups of System Settings.
-final class IntroductionCardView: NSView {
-
-    static let cornerRadius: CGFloat = 10
-
-    override func draw(_ dirtyRect: NSRect) {
-        // Drawn here, not with a layer colour: system colours follow light and dark by
-        // themselves when they are resolved while drawing.
-        let path = NSBezierPath(
-            roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
-            xRadius: Self.cornerRadius,
-            yRadius: Self.cornerRadius
-        )
-        NSColor.quaternarySystemFill.setFill()
-        path.fill()
-        NSColor.separatorColor.setStroke()
-        path.lineWidth = 1
-        path.stroke()
     }
 }

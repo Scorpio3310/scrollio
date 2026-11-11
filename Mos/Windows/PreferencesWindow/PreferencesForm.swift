@@ -2,22 +2,13 @@
 //  PreferencesForm.swift
 //  Mos
 //  What the panes built in code share besides the grouped kit (PreferencesGroupedForm):
-//  the window background, fitting a pane to its content, the hint type, and the column,
-//  separators and headers of the Welcome Guide.
+//  the window background, fitting a pane to its content, the hint and header type, and the
+//  link button (also the Welcome Guide's).
 //
 
 import Cocoa
 
 enum PreferencesForm {
-
-    // MARK: - Metrics
-
-    /// Width of the Welcome Guide's content.
-    static let contentWidth: CGFloat = 450
-    /// Between two blocks of the Welcome Guide.
-    static let rowSpacing: CGFloat = 17
-    /// Between a line and the smaller text under it.
-    static let hintSpacing: CGFloat = 6
 
     // MARK: - Type
 
@@ -61,37 +52,6 @@ enum PreferencesForm {
         if view.frame.size != size {
             view.setFrameSize(size)
         }
-    }
-
-    // MARK: - Pieces
-
-    /// Lines stacked from the top, `hintSpacing` apart.
-    static func makeColumn(_ views: [NSView]) -> NSStackView {
-        let column = NSStackView(views: views)
-        column.orientation = .vertical
-        column.alignment = .leading
-        column.spacing = hintSpacing
-        column.detachesHiddenViews = true
-        column.translatesAutoresizingMaskIntoConstraints = false
-        return column
-    }
-
-    static func makeSeparator() -> NSView {
-        let box = NSBox()
-        box.boxType = .separator
-        box.translatesAutoresizingMaskIntoConstraints = false
-        return box
-    }
-
-    /// Title of a group of lines.
-    static func makeSectionHeader(_ title: String) -> NSTextField {
-        let label = NSTextField(labelWithString: title)
-        label.font = sectionHeaderFont
-        label.textColor = .labelColor
-        label.lineBreakMode = .byTruncatingTail
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.setAccessibilityRole(.staticText)
-        return label
     }
 
     // MARK: - Controls
