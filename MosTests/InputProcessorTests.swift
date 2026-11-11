@@ -2072,6 +2072,25 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(executed().count, 0)
     }
 
+    // MARK: - The user's System Settings shortcuts are read again
+
+    /// They were read once, so a shortcut changed in System Settings (Move left a space)
+    /// was ignored until the next launch.
+    func testTheSystemShortcutsAreReadAgainWhenTheyMayHaveChanged() {
+        XCTAssertTrue(SystemShortcut.reloadsSystemShortcuts(after: NSApplication.didBecomeActiveNotification),
+                      "Scrollio became active: its settings opened")
+        XCTAssertTrue(SystemShortcut.reloadsSystemShortcuts(
+            after: NSWorkspace.didDeactivateApplicationNotification,
+            deactivatedBundleIdentifier: "com.apple.systempreferences"
+        ), "System Settings went to the background")
+        XCTAssertFalse(SystemShortcut.reloadsSystemShortcuts(
+            after: NSWorkspace.didDeactivateApplicationNotification,
+            deactivatedBundleIdentifier: "com.apple.Safari"
+        ))
+        XCTAssertFalse(SystemShortcut.reloadsSystemShortcuts(after: NSWorkspace.didDeactivateApplicationNotification))
+        XCTAssertFalse(SystemShortcut.reloadsSystemShortcuts(after: NSApplication.didResignActiveNotification))
+    }
+
     // MARK: - The release of a native button that ran a trigger action
 
     private func bindNativeButton3(to action: String) {
