@@ -4,9 +4,11 @@
 //
 //  The sideways wheel's own settings (Options.thumbWheel) in the scroll tap. ScrollCore hands
 //  over every sideways wheel event (`ScrollCore.isSidewaysWheelEvent`); while the wheel runs a
-//  function, the event feeds the stepper and the steps run their actions on the main queue,
-//  never inside the tap callback. Every sideways event, at the defaults as well, goes into the
-//  roll's one log line.
+//  function, the event feeds the stepper, and the steps it decides run their actions on the
+//  main queue, never inside the tap callback. A function with a pacing (volume) runs them
+//  through `ThumbWheelPacer`: one at once, the others one per interval, a few waiting at most
+//  (the system does not keep up with volume keys); the others run at once. Every sideways
+//  event, at the defaults as well, goes into the roll's one log line.
 //
 
 import Cocoa
@@ -128,6 +130,12 @@ final class ThumbWheelEngine {
     private(set) var roll: Roll?
     /// A roll ended in the middle (a setting changed): written once its steps have run.
     private(set) var ended: Roll?
+    /// The steps of a paced function (volume) that wait, and when the last one ran.
+    private(set) var pacer = ThumbWheelPacer()
+    /// The function whose steps the pacer holds.
+    private var pacedFunction: ThumbWheelFunction?
+    /// A look at the pacer is scheduled: one at a time, none while no step waits.
+    private var paceScheduled = false
     /// Runs a step's action this many times, on the main queue (tests replace it).
     var perform: (ThumbWheelAction, Int) -> Void = { action, times in
         ThumbWheelActionPerformer().perform(action, times: times)
@@ -192,7 +200,11 @@ final class ThumbWheelEngine {
             steps = stepper.feed(travel: travel, function: settings.function, at: time)
         }
         record(event, settings: settings, travel: travel, at: time, seenAt: seenAt)
-        if steps != 0, let action = ThumbWheelAction.action(for: settings.function, towardNext: steps > 0), roll != nil {
+        guard steps != 0, roll != nil else { return steps }
+        if let pacing = settings.function.pacing {
+            pace(steps, function: settings.function, pacing: pacing, at: seenAt)
+        } else if let action = ThumbWheelAction.action(for: settings.function, towardNext: steps > 0) {
+            // No pacing: the steps run at once, after the callback.
             roll?.pendingSteps += abs(steps)
             let rollID = roll?.id
             let generation = self.generation
@@ -203,6 +215,61 @@ final class ThumbWheelEngine {
             }
         }
         return steps
+    }
+
+    // MARK: Pacing
+
+    /// Steps of a paced function: one may run now (after the callback), the others wait for
+    /// the pacer's interval; the ones the pacer drops are counted for the log.
+    private func pace(_ steps: Int, function: ThumbWheelFunction, pacing: ThumbWheelPacing, at now: TimeInterval) {
+        if pacedFunction != function {
+            dropWaitingSteps()
+            pacedFunction = function
+        }
+        let added = pacer.add(steps, pacing: pacing, at: now)
+        roll?.pendingSteps += abs(steps)
+        roll?.stepsDropped(added.dropped)
+        if added.runNow != 0, let action = ThumbWheelAction.action(for: function, towardNext: added.runNow > 0) {
+            let step = added.runNow
+            let rollID = roll?.id
+            let generation = self.generation
+            schedule(0) { [weak self] in
+                guard let self = self, self.generation == generation else { return }
+                self.perform(action, 1)
+                self.stepsRan(step, rollID: rollID)
+            }
+        }
+        schedulePaceLook(pacing)
+    }
+
+    /// Schedules the pacer's next look while a step waits; nothing while none waits.
+    private func schedulePaceLook(_ pacing: ThumbWheelPacing) {
+        guard !paceScheduled, let due = pacer.nextRunAt(pacing: pacing) else { return }
+        paceScheduled = true
+        let generation = self.generation
+        schedule(max(0, due - clock())) { [weak self] in
+            guard let self = self, self.generation == generation else { return }
+            self.paceScheduled = false
+            self.lookAtThePacer()
+        }
+    }
+
+    /// Runs the waiting step that is due (main queue), then schedules the next look.
+    private func lookAtThePacer() {
+        guard let function = pacedFunction, let pacing = function.pacing else { return }
+        let step = pacer.take(pacing: pacing, at: clock())
+        if step != 0, let action = ThumbWheelAction.action(for: function, towardNext: step > 0) {
+            perform(action, 1)
+            // Waiting steps belong to the open roll: a roll that ends drops them.
+            stepsRan(step, rollID: roll?.id)
+        }
+        schedulePaceLook(pacing)
+    }
+
+    /// Drops the steps that wait (another function, the end of the roll, a stop); the open
+    /// roll counts them.
+    private func dropWaitingSteps() {
+        roll?.stepsDropped(pacer.dropWaiting())
     }
 
     private func record(_ event: ThumbWheelEvent, settings: ThumbWheelSettings, travel: Double, at time: TimeInterval, seenAt: TimeInterval) {
@@ -223,6 +290,7 @@ final class ThumbWheelEngine {
     }
 
     private func endOpenRoll() {
+        dropWaitingSteps()
         guard let open = roll else { return }
         roll = nil
         if let previous = ended {
@@ -264,16 +332,26 @@ final class ThumbWheelEngine {
             return
         }
         checkScheduled = true
-        // Steps still queued run before a look scheduled now.
-        schedule(max(0, due - now)) { [weak self] in self?.checkRoll() }
+        var delay = due - now
+        if delay <= 0 {
+            // Due, but steps still to run: look again when the next waiting one runs, or just
+            // after the steps already queued; never a busy loop on the main queue.
+            let nextPaced = pacedFunction?.pacing.flatMap { pacer.nextRunAt(pacing: $0) }
+            delay = max(ThumbWheelTuning.pendingRecheck, (nextPaced ?? now) - now)
+        }
+        schedule(delay) { [weak self] in self?.checkRoll() }
     }
 
     /// Scrollio's scroll handling stopped (`ScrollCore.disable`): steps already decided do not
-    /// run, the next event starts a new roll, and the lines of the rolls so far are written now
-    /// with the steps that ran.
+    /// run (waiting ones included), the next event starts a new roll, and the lines of the rolls
+    /// so far are written now with the steps that ran.
     func reset() {
         generation &+= 1
         stepper.reset()
+        dropWaitingSteps()
+        pacer = ThumbWheelPacer()
+        pacedFunction = nil
+        paceScheduled = false
         writeEndedRoll()
         if let open = roll {
             roll = nil

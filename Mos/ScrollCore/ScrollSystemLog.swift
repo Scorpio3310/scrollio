@@ -217,8 +217,11 @@ enum ScrollSystemLog {
         /// Steps that ran, toward "next" and toward "previous".
         var stepsNext = 0
         var stepsPrevious = 0
-        /// Steps decided but not run yet (on the main queue). Not in the line: a step that
-        /// never runs (dropped by a stop) is not counted.
+        /// Steps the pacer dropped (too many waiting, or waiting in the old direction when the
+        /// wheel turned back, or when the roll or the function ended).
+        var droppedSteps = 0
+        /// Steps decided but not run yet (on the main queue, or waiting in the pacer). Not in
+        /// the line: a step that never runs (dropped by a stop) is not counted.
         var pendingSteps = 0
 
         init(id: Int, settings: ThumbWheelSettings, at time: TimeInterval, seenAt: TimeInterval? = nil) {
@@ -265,6 +268,13 @@ enum ScrollSystemLog {
             if steps > 0 { stepsNext += steps } else { stepsPrevious -= steps }
         }
 
+        /// Steps the pacer dropped; they were pending.
+        mutating func stepsDropped(_ count: Int) {
+            guard count > 0 else { return }
+            pendingSteps = max(0, pendingSteps - count)
+            droppedSteps += count
+        }
+
         /// The wheel has rested before an event at `time` (its own time): the roll is over.
         func hasRested(at time: TimeInterval) -> Bool {
             return time >= lastEventAt + ThumbWheelTuning.logRollRest
@@ -282,7 +292,8 @@ enum ScrollSystemLog {
     }
 
     /// One line per roll, for example
-    /// `thumb wheel: 14 events in 620 ms (longest gap 85 ms), lines -9, fixed -9.40 (largest 1.25), points -212 (largest 31), 1 direction change, not continuous, switch tabs x1.00, travel 14.0: 3 steps next, 1 previous`.
+    /// `thumb wheel: 14 events in 620 ms (longest gap 85 ms), lines -9, fixed -9.40 (largest 1.25), points -212 (largest 31), 1 direction change, not continuous, volume x3.00, travel 56.8: 7 steps next, 15 dropped`
+    /// ("dropped": steps the pacer did not run; only when there are any).
     static func thumbWheelMessage(for roll: ThumbWheelRoll) -> String {
         let continuity: String
         if roll.continuousEvents == 0 {
@@ -303,6 +314,7 @@ enum ScrollSystemLog {
         case (let next, let previous):
             steps = "\(next) \(next == 1 ? "step" : "steps") next, \(previous) previous"
         }
+        let dropped = roll.droppedSteps > 0 ? ", \(roll.droppedSteps) dropped" : ""
         return String(
             format: "thumb wheel: %ld %@ in %.0f ms (longest gap %.0f ms), lines %lld, fixed %.2f (largest %.2f), points %.0f (largest %.0f), %ld %@, %@, %@ x%.2f%@, travel %.1f: %@",
             roll.events, roll.events == 1 ? "event" : "events",
@@ -313,7 +325,7 @@ enum ScrollSystemLog {
             continuity,
             roll.function.logName, roll.speed, roll.swapsDirection ? " swapped" : "",
             roll.travel,
-            steps
+            steps + dropped
         )
     }
 

@@ -818,6 +818,81 @@ final class ThumbWheelStepperTests: XCTestCase {
     }
 }
 
+/// The pacer between the stepper and volume's actions: the system does not keep up with
+/// volume keys faster than about 20 a second (the owner's second log, 2026-11-11).
+final class ThumbWheelPacerTests: XCTestCase {
+
+    private let volume = ThumbWheelTuning.volumePacing
+
+    private func added(_ runNow: Int, _ dropped: Int) -> ThumbWheelPacer.Added {
+        return ThumbWheelPacer.Added(runNow: runNow, dropped: dropped)
+    }
+
+    func testNumbers_onlyVolumeIsPaced() {
+        XCTAssertEqual(volume, ThumbWheelPacing(interval: 0.05, maxWaiting: 3))
+        XCTAssertEqual(ThumbWheelFunction.volume.pacing, volume)
+        for function in [ThumbWheelFunction.scroll, .zoom, .tabs, .desktops, .backForward] {
+            XCTAssertNil(function.pacing, "\(function)")
+        }
+    }
+
+    func testTheFirstStepRunsAtOnce_andOneAfterTheIntervalToo() {
+        var pacer = ThumbWheelPacer()
+        XCTAssertEqual(pacer.add(1, pacing: volume, at: 10), added(1, 0))
+        XCTAssertNil(pacer.nextRunAt(pacing: volume), "nothing waits: nothing to schedule")
+        XCTAssertEqual(pacer.add(1, pacing: volume, at: 10.05), added(1, 0))
+        XCTAssertEqual(pacer.add(-1, pacing: volume, at: 10.2), added(-1, 0))
+    }
+
+    func testFurtherStepsAreSpacedByTheInterval() {
+        var pacer = ThumbWheelPacer()
+        XCTAssertEqual(pacer.add(2, pacing: volume, at: 10), added(1, 0))
+        XCTAssertEqual(pacer.waiting, 1)
+        XCTAssertEqual(pacer.nextRunAt(pacing: volume) ?? 0, 10.05, accuracy: 1e-12)
+        XCTAssertEqual(pacer.take(pacing: volume, at: 10.04), 0, "not before the interval")
+        XCTAssertEqual(pacer.add(1, pacing: volume, at: 10.045), added(0, 0))
+        XCTAssertEqual(pacer.waiting, 2)
+        XCTAssertEqual(pacer.take(pacing: volume, at: 10.05), 1)
+        XCTAssertEqual(pacer.take(pacing: volume, at: 10.06), 0)
+        XCTAssertEqual(pacer.take(pacing: volume, at: 10.1), 1)
+        XCTAssertNil(pacer.nextRunAt(pacing: volume), "none waits any more")
+        XCTAssertEqual(pacer.take(pacing: volume, at: 11), 0)
+    }
+
+    func testAtMostMaxWaiting_moreAreDropped() {
+        var pacer = ThumbWheelPacer()
+        XCTAssertEqual(pacer.add(2, pacing: volume, at: 0), added(1, 0))
+        XCTAssertEqual(pacer.add(2, pacing: volume, at: 0.01), added(0, 0))
+        XCTAssertEqual(pacer.waiting, 3)
+        XCTAssertEqual(pacer.add(2, pacing: volume, at: 0.02), added(0, 2))
+        XCTAssertEqual(pacer.waiting, 3)
+        XCTAssertEqual(pacer.add(-5, pacing: ThumbWheelPacing(interval: 0.05, maxWaiting: 1), at: 0.03), added(0, 7),
+                       "the 3 of the other direction, and 4 of the 5 new ones")
+    }
+
+    /// Turning back drops what waits in the old direction: the new direction is next in line.
+    func testTurningBack_dropsTheWaitingSteps_andTheNewOnesAnswer() {
+        var pacer = ThumbWheelPacer()
+        _ = pacer.add(2, pacing: volume, at: 0)
+        _ = pacer.add(2, pacing: volume, at: 0.01)
+        XCTAssertEqual(pacer.add(-1, pacing: volume, at: 0.02), added(0, 3))
+        XCTAssertEqual(pacer.waiting, -1)
+        XCTAssertEqual(pacer.take(pacing: volume, at: 0.05), -1, "the first step that may run is the new direction's")
+
+        XCTAssertEqual(pacer.add(3, pacing: volume, at: 1), added(1, 0))
+        XCTAssertEqual(pacer.add(-1, pacing: volume, at: 1.06), added(-1, 2), "after the interval it runs at once")
+        XCTAssertEqual(pacer.waiting, 0)
+    }
+
+    func testDropWaiting() {
+        var pacer = ThumbWheelPacer()
+        _ = pacer.add(-3, pacing: volume, at: 0)
+        XCTAssertEqual(pacer.dropWaiting(), 2)
+        XCTAssertEqual(pacer.waiting, 0)
+        XCTAssertNil(pacer.nextRunAt(pacing: volume))
+    }
+}
+
 /// The thumb wheel in the scroll tap, without the tap: what a step does, when it runs, and the
 /// one log line per roll.
 final class ThumbWheelEngineTests: XCTestCase {
@@ -835,6 +910,8 @@ final class ThumbWheelEngineTests: XCTestCase {
         private(set) var queue: [(due: Double, order: Int, work: () -> Void)] = []
         private var scheduledCount = 0
         private(set) var performed: [Performed] = []
+        /// When each action ran (seconds after the rig's start).
+        private(set) var performedAt: [Double] = []
         private(set) var lines: [ScrollSystemLog.ThumbWheelRoll] = []
 
         init() {
@@ -844,18 +921,29 @@ final class ThumbWheelEngineTests: XCTestCase {
                 self.scheduledCount += 1
                 self.queue.append((self.now + max(0, delay), self.scheduledCount, work))
             }
-            engine.perform = { [unowned self] action, times in self.performed.append(Performed(action: action, times: times)) }
+            engine.perform = { [unowned self] action, times in
+                self.performed.append(Performed(action: action, times: times))
+                self.performedAt.append(self.now - 500)
+            }
             engine.writeLog = { [unowned self] roll in self.lines.append(roll) }
         }
 
         var hasPendingWork: Bool { return !queue.isEmpty }
 
-        /// Runs the work due up to `time`, in order.
-        func advance(to time: Double) {
+        /// Runs the work due up to `time`, in order. Work that keeps scheduling itself without
+        /// time moving on (a busy loop on the main queue) fails the test instead of hanging it.
+        func advance(to time: Double, file: StaticString = #filePath, line: UInt = #line) {
+            var runsAtThisMoment = 0
             while let next = queue.enumerated()
                 .filter({ $0.element.due <= time + 1e-9 })
                 .min(by: { ($0.element.due, $0.element.order) < ($1.element.due, $1.element.order) }) {
                 queue.remove(at: next.offset)
+                runsAtThisMoment = next.element.due > now ? 0 : runsAtThisMoment + 1
+                guard runsAtThisMoment < 1_000 else {
+                    XCTFail("a busy loop on the main queue at \(now - 500) s", file: file, line: line)
+                    queue.removeAll()
+                    break
+                }
                 now = max(now, next.element.due)
                 next.element.work()
             }
@@ -1007,11 +1095,114 @@ final class ThumbWheelEngineTests: XCTestCase {
         XCTAssertEqual(rig.performed.last, Performed(action: .keys(ThumbWheelAction.previousTab), times: 1))
     }
 
-    func testSeveralStepsOfOneEvent_runTogether() {
+    /// A function without pacing (zoom, tabs, desktops, back / forward) runs its steps at once,
+    /// in the main-queue turn right after the callback, as before the pacer: two steps of one
+    /// event in one go.
+    func testAFunctionWithoutPacing_runsItsStepsAtOnce() {
         let rig = Rig()
-        XCTAssertEqual(rig.turn(lines: -12, at: 0, settings: ThumbWheelSettings(function: .volume, speed: 3)), 2)
-        rig.advance(to: 500)
-        XCTAssertEqual(rig.performed, [Performed(action: .volume(.up), times: 2)])
+        let zoom = ThumbWheelSettings(function: .zoom, speed: 3)
+        XCTAssertEqual(rig.turn(lines: -12, at: 0, settings: zoom), 1, "6 units: the first 3")
+        XCTAssertEqual(rig.turn(lines: -12, at: 0.01, settings: zoom), 1, "3 + 6: the next 5")
+        XCTAssertEqual(rig.turn(lines: -12, at: 0.02, settings: zoom), 2, "4 + 6: two of 5")
+        rig.advance(to: 500.02)
+        XCTAssertEqual(rig.performed, [
+            Performed(action: .zoomIn, times: 1), Performed(action: .zoomIn, times: 1), Performed(action: .zoomIn, times: 2),
+        ])
+        XCTAssertEqual(rig.performedAt.map { ($0 * 1000).rounded() }, [0, 10, 20], "each right after its event")
+        XCTAssertNil(rig.engine.pacer.nextRunAt(pacing: ThumbWheelTuning.volumePacing))
+
+        for function in [ThumbWheelFunction.tabs, .desktops, .backForward] {
+            let other = Rig()
+            let settings = ThumbWheelSettings(function: function, speed: 3)
+            XCTAssertEqual(other.turn(lines: -1, at: 0, settings: settings), 1, "\(function)")
+            other.advance(to: 500)
+            XCTAssertEqual(other.performed.map(\.times), [1], "\(function)")
+            XCTAssertEqual(other.performedAt, [0], "\(function): at once")
+        }
+    }
+
+    /// His x3.00 flick (11 events in 189 ms, 2 volume steps each): at most one step per 50 ms,
+    /// the last within 150 ms of the last event, the rest dropped and counted in the line.
+    func testVolume_theOwnersFlickAtSpeed3_isPaced() throws {
+        let rig = Rig()
+        let settings = ThumbWheelSettings(function: .volume, speed: 3)
+        var decided = 0
+        for index in 0..<11 {
+            decided += rig.turn(lines: -12, at: Double(index) * 0.0189, settings: settings)
+        }
+        XCTAssertEqual(decided, 22)
+        rig.advance(to: 510)
+
+        XCTAssertTrue(rig.performed.allSatisfy { $0 == Performed(action: .volume(.up), times: 1) }, "one action per step")
+        let times = rig.performedAt
+        for (earlier, later) in zip(times, times.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(later - earlier, 0.05 - 1e-9, "at most one step per 50 ms: \(times)")
+        }
+        let lastEvent = 10 * 0.0189
+        XCTAssertLessThanOrEqual(try XCTUnwrap(times.last) - lastEvent, 0.15 + 1e-9, "finished soon after the hand stopped")
+        XCTAssertEqual(times.map { ($0 * 1000).rounded() }, [0, 50, 100, 150, 200, 250, 300])
+
+        let roll = try XCTUnwrap(rig.lines.first)
+        XCTAssertEqual(roll.stepsNext, 7)
+        XCTAssertEqual(roll.droppedSteps, 15)
+        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: roll).hasSuffix("volume x3.00, travel 66.0: 7 steps next, 15 dropped"),
+                      ScrollSystemLog.thumbWheelMessage(for: roll))
+        XCTAssertFalse(rig.hasPendingWork, "nothing scheduled once none wait")
+    }
+
+    /// A long roll at x3.00: its line falls due (after 2 s) while volume steps wait. The look
+    /// comes again when the next one has run, it does not spin on the main queue meanwhile; the
+    /// line is written once the roll's steps have run, after the hand stopped.
+    func testVolume_aLongPacedRoll_noBusyLoopWhileStepsWait() throws {
+        let rig = Rig()
+        let settings = ThumbWheelSettings(function: .volume, speed: 3)
+        var decided = 0
+        for index in 0..<110 {
+            decided += rig.turn(lines: -12, at: Double(index) * 0.02, settings: settings)
+        }
+        rig.advance(to: 510)
+        XCTAssertEqual(rig.lines.count, 1, "steps waited all along: one line, once they ran")
+        XCTAssertEqual(rig.lines.reduce(0) { $0 + $1.stepsNext + $1.droppedSteps }, decided, "every step ran or was dropped")
+        XCTAssertEqual(rig.lines.reduce(0) { $0 + $1.stepsNext }, rig.performed.count)
+        XCTAssertFalse(rig.hasPendingWork)
+    }
+
+    /// At x1.00 a roll's steps come no faster than the pacing: every one runs, at its event.
+    func testVolume_atSpeed1_everyStepRunsAtItsEvent() throws {
+        let rig = Rig()
+        var decidedAt: [Double] = []
+        for index in 0..<22 {
+            let time = Double(index) * 0.0856
+            if rig.turn(lines: -5, at: time, settings: ThumbWheelSettings(function: .volume)) != 0 {
+                decidedAt.append(time)
+            }
+        }
+        rig.advance(to: 510)
+        let roll = try XCTUnwrap(rig.lines.first)
+        XCTAssertEqual(roll.stepsNext, 10, "about 30 units: as his 22 events in 1797 ms")
+        XCTAssertEqual(roll.droppedSteps, 0)
+        XCTAssertEqual(rig.performedAt.map { ($0 * 1000).rounded() }, decidedAt.map { ($0 * 1000).rounded() })
+    }
+
+    /// A stop (Pause, sleep, lost access) with volume steps waiting: none of them runs, then or
+    /// later, and the next turn starts with nothing waiting.
+    func testReset_withVolumeStepsWaiting_runsNone() throws {
+        let rig = Rig()
+        let settings = ThumbWheelSettings(function: .volume, speed: 3)
+        rig.turn(lines: -12, at: 0, settings: settings)
+        rig.turn(lines: -12, at: 0.01, settings: settings)
+        XCTAssertEqual(rig.performed.count, 1, "the first ran at once")
+        XCTAssertEqual(rig.engine.pacer.waiting, 3)
+        rig.engine.reset()
+        XCTAssertEqual(rig.engine.pacer.waiting, 0)
+        rig.advance(to: 505)
+        XCTAssertEqual(rig.performed.count, 1, "none of the waiting ran")
+        XCTAssertEqual(rig.lines.first?.droppedSteps, 3)
+
+        rig.turn(lines: -12, at: 10, settings: settings)
+        rig.advance(to: 520)
+        XCTAssertEqual(rig.performed.count, 3, "the next turn's own two steps only")
+        XCTAssertEqual(rig.lines.last?.droppedSteps, 0)
     }
 
     /// Scrollio's scroll handling stopped (Pause, sleep, lost access): steps already decided
