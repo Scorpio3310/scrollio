@@ -58,23 +58,63 @@ public class Utils {
     
     // 禁止重复运行
     // killExist = true 则杀掉已有进程, 否则自杀
-    class func preventMultiRunning(killExist kill: Bool = false) {
+    /// With `killExist`, another running copy of this app is asked to quit and waited for (at
+    /// most `timeout`, then force-quit), the way LegacyMosTakeover quits the old Mos: until it
+    /// is gone both copies would run event taps and Logitech sessions, bound actions could fire
+    /// twice and the old copy's answers to its teardown writes would confuse this one. Call it
+    /// before any event tap or Logitech session starts; it blocks the main thread meanwhile.
+    class func preventMultiRunning(killExist kill: Bool = false, timeout: TimeInterval = 3.0) {
         guard let mainBundleID = Bundle.main.bundleIdentifier else { return }
         let running = NSRunningApplication.runningApplications(withBundleIdentifier: mainBundleID)
-        let others = otherInstanceProcessIdentifiers(
-            running: running.map { $0.processIdentifier },
-            own: ProcessInfo.processInfo.processIdentifier
-        )
-        guard !others.isEmpty else { return }
+        let own = ProcessInfo.processInfo.processIdentifier
+        guard !otherInstanceProcessIdentifiers(running: running.map { $0.processIdentifier }, own: own).isEmpty else { return }
         if kill {
-            for instance in running where others.contains(instance.processIdentifier) {
-                instance.terminate()
-                NSLog("Terminate: Other instance %d", instance.processIdentifier)
+            let outcome = quitOtherInstances(running, own: own, timeout: timeout)
+            let quitWhenAsked = outcome.forced.isEmpty && outcome.stillRunning.isEmpty
+            for line in otherInstanceLines(outcome, timeout: timeout) {
+                if quitWhenAsked {
+                    AppSystemLog.note(line)
+                } else {
+                    AppSystemLog.problem(line)
+                }
             }
         } else {
-            NSLog("Terminate: Suicide")
+            AppSystemLog.note("Another copy of Scrollio runs: this one quits")
             NSApp.terminate(nil)
         }
+    }
+
+    /// Asks the other copies in `running` to quit and waits for them (LegacyMosTakeover's
+    /// quitAndWait). Never this process.
+    class func quitOtherInstances(
+        _ running: [LegacyAppHandle],
+        own: pid_t,
+        timeout: TimeInterval = 3.0,
+        forceTimeout: TimeInterval = 1.0,
+        isAlive: (LegacyAppHandle) -> Bool = { LegacyMosTakeover.isProcessAlive($0.processIdentifier) }
+    ) -> LegacyMosTakeover.QuitOutcome {
+        let others = otherInstanceProcessIdentifiers(running: running.map { $0.processIdentifier }, own: own)
+        let targets = running.filter { others.contains($0.processIdentifier) }
+        return LegacyMosTakeover.quitAndWait(targets, timeout: timeout, forceTimeout: forceTimeout, isAlive: isAlive)
+    }
+
+    /// What the log says about replacing the other copies.
+    class func otherInstanceLines(_ outcome: LegacyMosTakeover.QuitOutcome, timeout: TimeInterval) -> [String] {
+        let waited = String(format: "%.1f s", outcome.waited)
+        var lines: [String] = []
+        for pid in outcome.quit {
+            lines.append("Another copy of Scrollio was running (pid \(pid)): it quit when asked, after \(waited); "
+                + "this one starts now")
+        }
+        for pid in outcome.forced {
+            lines.append("Another copy of Scrollio (pid \(pid)) did not quit within \(Int(timeout)) s: forced it to quit "
+                + "(\(waited) in all); this one starts now")
+        }
+        for pid in outcome.stillRunning {
+            lines.append("Another copy of Scrollio (pid \(pid)) still runs after it was forced to quit (\(waited)); "
+                + "this one starts anyway")
+        }
+        return lines
     }
     /// Process ids of the other running copies of this app. Never contains `own`: the list
     /// from NSRunningApplication includes this process, in no guaranteed position, and

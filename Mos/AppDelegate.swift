@@ -70,7 +70,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Its login item (or the user) can start it again later: quit it each time.
         LegacyMosTakeover.startWatchingLaunches()
 
-        // 禁止重复运行, 结束正在运行的实例
+        // 禁止重复运行, 结束正在运行的实例: another copy is asked to quit and waited for (at
+        // most 3 s, then force-quit) before this one starts any event tap or Logitech session.
         Utils.preventMultiRunning(killExist: true)
         
         // DEBUG: 清空用户设置

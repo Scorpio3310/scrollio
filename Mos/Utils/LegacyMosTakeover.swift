@@ -18,6 +18,7 @@
 import Cocoa
 
 /// A running app as the takeover sees it: NSRunningApplication in the app, fakes in tests.
+/// Also another copy of Scrollio (Utils.preventMultiRunning), which is replaced the same way.
 protocol LegacyAppHandle: AnyObject {
     var bundleIdentifier: String? { get }
     var processIdentifier: pid_t { get }
@@ -98,26 +99,71 @@ enum LegacyMosTakeover {
         guard !targets.isEmpty else { return }
         for app in targets {
             AppSystemLog.note("The old Mos app is running (pid \(app.processIdentifier)): asking it to quit")
-            app.terminate()
         }
-        waitForExit(of: targets.map { $0.processIdentifier }, timeout: timeout)
-        let survivors = targets.filter { isProcessAlive($0.processIdentifier) }
-        guard !survivors.isEmpty else { return }
-        for app in survivors {
-            AppSystemLog.problem("The old Mos app (pid \(app.processIdentifier)) did not quit within \(Int(timeout)) s: forcing it to quit")
-            app.forceTerminate()
+        let outcome = quitAndWait(targets, timeout: timeout)
+        for pid in outcome.forced {
+            AppSystemLog.problem("The old Mos app (pid \(pid)) did not quit within \(Int(timeout)) s: forced it to quit")
         }
-        waitForExit(of: survivors.map { $0.processIdentifier }, timeout: 1.0)
+        for pid in outcome.stillRunning {
+            AppSystemLog.problem("The old Mos app (pid \(pid)) still runs after it was forced to quit")
+        }
     }
 
-    private static func isProcessAlive(_ processIdentifier: pid_t) -> Bool {
+    // MARK: - Quit and wait
+
+    /// What asking running apps to quit came to.
+    struct QuitOutcome: Equatable {
+        /// Gone within the wait after they were asked.
+        var quit: [pid_t] = []
+        /// Still there after the wait: force-quit, and gone after that.
+        var forced: [pid_t] = []
+        /// Still there even after the force-quit and its wait.
+        var stillRunning: [pid_t] = []
+        /// How long it took, in seconds.
+        var waited: TimeInterval = 0
+    }
+
+    /// Asks each app to quit and waits (at most `timeout`) until they are gone. One that
+    /// ignores the request is force-quit after the wait, and waited for once more (at most
+    /// `forceTimeout`). Blocks the calling thread: call it before any event tap runs.
+    /// `isAlive` is the seam for tests; the app asks the process itself (an
+    /// NSRunningApplication's `isTerminated` is not updated while the main thread waits).
+    static func quitAndWait(
+        _ apps: [LegacyAppHandle],
+        timeout: TimeInterval = 3.0,
+        forceTimeout: TimeInterval = 1.0,
+        isAlive: (LegacyAppHandle) -> Bool = { isProcessAlive($0.processIdentifier) }
+    ) -> QuitOutcome {
+        var outcome = QuitOutcome()
+        guard !apps.isEmpty else { return outcome }
+        let started = ProcessInfo.processInfo.systemUptime
+        for app in apps {
+            app.terminate()
+        }
+        waitForExit(of: apps, timeout: timeout, isAlive: isAlive)
+        let survivors = apps.filter(isAlive)
+        outcome.quit = apps.filter { app in !survivors.contains { $0 === app } }.map(\.processIdentifier)
+        if !survivors.isEmpty {
+            for app in survivors {
+                app.forceTerminate()
+            }
+            waitForExit(of: survivors, timeout: forceTimeout, isAlive: isAlive)
+            let stubborn = survivors.filter(isAlive)
+            outcome.forced = survivors.filter { app in !stubborn.contains { $0 === app } }.map(\.processIdentifier)
+            outcome.stillRunning = stubborn.map(\.processIdentifier)
+        }
+        outcome.waited = ProcessInfo.processInfo.systemUptime - started
+        return outcome
+    }
+
+    static func isProcessAlive(_ processIdentifier: pid_t) -> Bool {
         // Signal 0 only checks that the process exists.
         return kill(processIdentifier, 0) == 0 || errno == EPERM
     }
 
-    private static func waitForExit(of processIdentifiers: [pid_t], timeout: TimeInterval) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline, processIdentifiers.contains(where: isProcessAlive) {
+    private static func waitForExit(of apps: [LegacyAppHandle], timeout: TimeInterval, isAlive: (LegacyAppHandle) -> Bool) {
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        while ProcessInfo.processInfo.systemUptime < deadline, apps.contains(where: isAlive) {
             Thread.sleep(forTimeInterval: 0.05)
         }
     }

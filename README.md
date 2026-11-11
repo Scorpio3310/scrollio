@@ -78,7 +78,9 @@ See [Attribution and licence](#attribution-and-licence).
 - Settings in one window with a sidebar of panes, as in System Settings.
 - Stops while the Mac sleeps or another user has it, and starts again when this user is
   back.
-- It quits a running Mos at launch and, on the first launch, copies its settings.
+- It quits a running Mos at launch and, on the first launch, copies its settings. Another
+  running copy of Scrollio is asked to quit too, and waited for (at most 3 seconds, then
+  forced) before this one starts its event taps and Logitech sessions.
 
 ## Diagnostics
 
@@ -123,7 +125,7 @@ The debug build logs under `com.nikklemenc.Scrollio.debug`. Nothing is logged pe
   quitting), event taps that could not be created and the retries, taps that macOS turned
   off (at most one line per tap every 10 seconds, with how many times since the last
   line), tap restarts and their throttle, the display link's recovery, the gesture
-  watchdogs, and the old Mos being quit at launch:
+  watchdogs, and the old Mos or another copy of Scrollio being quit at launch:
 
   ```text
   Started (the Mac woke up): the event taps and the Logitech sessions run

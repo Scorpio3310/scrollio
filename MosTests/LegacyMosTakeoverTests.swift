@@ -317,6 +317,74 @@ final class LegacyMosTakeoverTests: XCTestCase {
         XCTAssertEqual(mos.terminateCalls, 1, "no observer after stopping")
     }
 
+    // MARK: - Quit and wait (the old app at launch, another copy of Scrollio)
+
+    /// In the app the process itself is asked; here the fake's state stands for it.
+    private let fakeIsAlive: (LegacyAppHandle) -> Bool = { !$0.isTerminated }
+
+    func testAnAppThatQuitsWhenAskedIsNotForced() {
+        let polite = FakeApp("com.nikklemenc.Scrollio", pid: 200)
+        let outcome = LegacyMosTakeover.quitAndWait([polite], timeout: 3, isAlive: fakeIsAlive)
+        XCTAssertEqual(outcome.quit, [200])
+        XCTAssertEqual(outcome.forced, [])
+        XCTAssertEqual(outcome.stillRunning, [])
+        XCTAssertEqual(polite.terminateCalls, 1)
+        XCTAssertEqual(polite.forceTerminateCalls, 0)
+        XCTAssertLessThan(outcome.waited, 1, "no wait once it is gone")
+    }
+
+    func testAnAppThatIgnoresTheRequestIsForcedAfterTheWait() {
+        let stubborn = FakeApp("com.nikklemenc.Scrollio", pid: 200, quitsWhenAsked: false)
+        let polite = FakeApp("com.nikklemenc.Scrollio", pid: 300)
+        let outcome = LegacyMosTakeover.quitAndWait([stubborn, polite], timeout: 0.1, forceTimeout: 0.1, isAlive: fakeIsAlive)
+        XCTAssertEqual(outcome.quit, [300])
+        XCTAssertEqual(outcome.forced, [200])
+        XCTAssertEqual(outcome.stillRunning, [])
+        XCTAssertEqual(stubborn.forceTerminateCalls, 1)
+        XCTAssertEqual(polite.forceTerminateCalls, 0)
+        XCTAssertGreaterThanOrEqual(outcome.waited, 0.1, "the request had its time first")
+    }
+
+    func testAnAppThatSurvivesTheForceQuitIsReported() {
+        let zombie = FakeApp("com.nikklemenc.Scrollio", pid: 200, quitsWhenAsked: false)
+        let outcome = LegacyMosTakeover.quitAndWait([zombie], timeout: 0.05, forceTimeout: 0.05, isAlive: { _ in true })
+        XCTAssertEqual(outcome.quit, [])
+        XCTAssertEqual(outcome.forced, [])
+        XCTAssertEqual(outcome.stillRunning, [200])
+    }
+
+    func testNothingToQuitWaitsForNothing() {
+        XCTAssertEqual(LegacyMosTakeover.quitAndWait([], isAlive: fakeIsAlive), LegacyMosTakeover.QuitOutcome())
+    }
+
+    /// Another copy of Scrollio is waited for before this one starts its taps; this process
+    /// is never asked to quit, wherever it is in the list.
+    func testAnotherCopyOfScrollioIsWaitedForAndNeverThisOne() {
+        let own = FakeApp("com.nikklemenc.Scrollio", pid: 100)
+        let other = FakeApp("com.nikklemenc.Scrollio", pid: 200, quitsWhenAsked: false)
+        let outcome = Utils.quitOtherInstances([other, own], own: 100, timeout: 0.05, forceTimeout: 0.05, isAlive: fakeIsAlive)
+        XCTAssertEqual(own.terminateCalls + own.forceTerminateCalls, 0)
+        XCTAssertEqual(other.terminateCalls, 1)
+        XCTAssertEqual(outcome.forced, [200])
+
+        XCTAssertEqual(Utils.quitOtherInstances([own], own: 100, isAlive: fakeIsAlive), LegacyMosTakeover.QuitOutcome())
+        XCTAssertEqual(own.terminateCalls, 0)
+    }
+
+    func testWhatTheLogSaysAboutTheOtherCopy() {
+        var outcome = LegacyMosTakeover.QuitOutcome()
+        outcome.quit = [200]
+        outcome.waited = 0.42
+        XCTAssertEqual(Utils.otherInstanceLines(outcome, timeout: 3), [
+            "Another copy of Scrollio was running (pid 200): it quit when asked, after 0.4 s; this one starts now",
+        ])
+        outcome = LegacyMosTakeover.QuitOutcome(quit: [], forced: [200], stillRunning: [300], waited: 4.04)
+        XCTAssertEqual(Utils.otherInstanceLines(outcome, timeout: 3), [
+            "Another copy of Scrollio (pid 200) did not quit within 3 s: forced it to quit (4.0 s in all); this one starts now",
+            "Another copy of Scrollio (pid 300) still runs after it was forced to quit (4.0 s); this one starts anyway",
+        ])
+    }
+
     // MARK: - XCTest
 
     func testTakeoverIsNeverAllowedUnderXCTest() {
