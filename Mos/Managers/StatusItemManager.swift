@@ -15,6 +15,11 @@
 //  or the access is there but an event tap could not be created or stays off because its
 //  restarts are throttled (AppRunController, Interceptor). Its tooltip says which.
 //
+//  While a Logitech mouse's battery is low and not charging, its percentage stands next to the
+//  icon ("8%", "Low" for a mouse that reports only levels), the lowest of several mice, and
+//  VoiceOver reads "Scrollio, mouse battery 8%". It follows what LogiCenter reports
+//  (`mouseStateChanged`) and goes when the mouse charges, recovers or disconnects.
+//
 //  What the menu lists is decided by `StatusMenu` from a `StatusMenu.State`, and what its
 //  items do is in `StatusMenuActions`, so both are tested without a status item.
 //
@@ -34,12 +39,15 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
 
     private var isOpen = false
     private var observers: [NSObjectProtocol] = []
+    /// How the button places its icon without a battery next to it.
+    private var plainImagePosition: NSControl.ImagePosition = .imageOnly
 
     // 初始化
     override func awakeFromNib() {
         NSLog("Module initialized: StatusItemManager")
         // 设置图标/行为
         item.button?.image = #imageLiteral(resourceName: "AppStatusBarIcon")
+        plainImagePosition = item.button?.imagePosition ?? .imageOnly
         // 设置事件响应
         item.menu = self
         item.menu?.delegate = self
@@ -59,16 +67,23 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
             ) { [weak self] _ in
                 self?.updateIcon()
             },
-            // Answers to the battery read made when the menu opened.
+            // What the mice report (also when one connects, disconnects or the Logitech
+            // sessions stop): the battery next to the icon, and the answers to the battery
+            // read made when the menu opened.
             NotificationCenter.default.addObserver(
                 forName: LogiCenter.mouseStateChanged,
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                guard let self, self.isOpen else { return }
-                StatusMenu.updateBatteryItems(in: self, with: StatusMenu.batteries(from: LogiCenter.shared.mouseDeviceStates()))
+                guard let self else { return }
+                let mice = LogiCenter.shared.mouseDeviceStates()
+                self.show(StatusMenu.batteryBadge(for: mice))
+                if self.isOpen {
+                    StatusMenu.updateBatteryItems(in: self, with: StatusMenu.batteries(from: mice))
+                }
             },
         ]
+        show(StatusMenu.batteryBadge(for: LogiCenter.shared.mouseDeviceStates()))
     }
 
     deinit {
@@ -89,6 +104,16 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
         )
         item.button?.appearsDisabled = look.appearsDisabled
         item.button?.toolTip = look.toolTip
+    }
+
+    /// The battery of a mouse that runs low next to the icon, and the item's name for VoiceOver.
+    func show(_ badge: StatusMenu.BatteryBadge) {
+        guard let button = item.button else { return }
+        if button.title != badge.title {
+            button.title = badge.title
+            button.imagePosition = badge.title.isEmpty ? plainImagePosition : .imageLeading
+        }
+        button.setAccessibilityLabel(badge.accessibilityLabel)
     }
 
     /// The state the menu is built from, read when it opens.
@@ -353,6 +378,56 @@ enum StatusMenu {
             return action("status-menu-allow-access", #selector(StatusMenuActions.allowAccessClicked(_:)))
         case .quit:
             return action("main-menu-quit", #selector(StatusMenuActions.quitClicked(_:)), shortcut: "q")
+        }
+    }
+
+    /// What stands next to the menu bar icon: the battery of a Logitech mouse that runs low.
+    struct BatteryBadge: Equatable {
+        /// "8%", "Low"; empty while no mouse runs low.
+        let title: String
+        /// The status item for VoiceOver: "Scrollio", "Scrollio, mouse battery 8%".
+        let accessibilityLabel: String
+
+        /// Nothing next to the icon.
+        static var plain: BatteryBadge {
+            return BatteryBadge(title: "", accessibilityLabel: NSLocalizedString("status-item-accessibility", comment: ""))
+        }
+    }
+
+    /// The badge for the connected mice: the lowest battery that is low and not charging.
+    /// Low is BatteryWatcher's rule, the one of the warnings: 10 % or less, or the mouse's
+    /// own "low" or "critical". A mouse that reports only a level (or coarse steps, whose
+    /// number the warnings leave out too) shows "Low".
+    static func batteryBadge(for mice: [LogiMouseDeviceState]) -> BatteryBadge {
+        let low = mice.compactMap(\.battery).filter { battery in
+            !BatteryWatcher.isCharging(battery) && BatteryWatcher.alert(for: battery) > BatteryWatcher.Alert.none
+        }
+        guard let lowest = low.min(by: isEmptier) else { return .plain }
+        if let percent = lowest.percent, !lowest.isApproximate {
+            let text = MouseText.percent(percent)
+            return BatteryBadge(
+                title: text,
+                accessibilityLabel: String(format: NSLocalizedString("status-item-accessibility-battery", comment: ""), text)
+            )
+        }
+        return BatteryBadge(
+            title: NSLocalizedString("status-item-battery-low", comment: ""),
+            accessibilityLabel: NSLocalizedString("status-item-accessibility-battery-low", comment: "")
+        )
+    }
+
+    /// `a` is emptier than `b`: almost empty before low, then the smaller number; a battery
+    /// without a number after one with.
+    private static func isEmptier(_ a: LogiMouseDeviceState.Battery, than b: LogiMouseDeviceState.Battery) -> Bool {
+        let alertA = BatteryWatcher.alert(for: a)
+        let alertB = BatteryWatcher.alert(for: b)
+        if alertA != alertB {
+            return alertA > alertB
+        }
+        switch (a.percent, b.percent) {
+        case let (percentA?, percentB?): return percentA < percentB
+        case (.some, nil): return true
+        default: return false
         }
     }
 

@@ -136,7 +136,8 @@ final class PreferencesLocalizationTests: XCTestCase {
     static let menuKeys = [
         "status-menu-pause", "status-menu-resume", "status-menu-allow-access", "status-menu-test-toasts",
         "status-menu-battery", "status-menu-battery-charging", "status-item-paused", "status-item-needs-access",
-        "status-item-could-not-start", "status-menu-app-smoothing",
+        "status-item-could-not-start", "status-menu-app-smoothing", "status-item-battery-low",
+        "status-item-accessibility", "status-item-accessibility-battery", "status-item-accessibility-battery-low",
         "scroll-monitor-title", "logitech-diagnostics-title",
         "toast-accessibility-lost", "toast-battery-low", "toast-battery-low-plain",
         "toast-battery-critical", "toast-battery-critical-plain",
@@ -207,6 +208,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "status-menu-battery": "@@",
         "status-menu-battery-charging": "@@",
         "status-menu-app-smoothing": "@",
+        "status-item-accessibility-battery": "@",
         "toast-battery-low": "@@",
         "toast-battery-low-plain": "@",
         "toast-battery-critical": "@@",

@@ -6,8 +6,8 @@
 //  with Option held, paused, with batteries, with "Smooth Scrolling in …" for the app in
 //  front and how that item decides and changes the app's rule, and what its items do), the
 //  run state behind "Pause Scrollio" (AppRunController), the low-battery warnings
-//  (BatteryWatcher), the names of the windows the menu opens, and the window a reopened app
-//  shows. Nothing is shown on screen, no status item is made, no event tap starts and no
+//  (BatteryWatcher) and the low battery next to the icon, the names of the windows the menu
+//  opens, and the window a reopened app shows. Nothing is shown on screen, no status item is made, no event tap starts and no
 //  mouse is asked.
 //
 
@@ -1348,6 +1348,89 @@ final class BatteryWatcherTests: XCTestCase {
 
     func testTheSharedWatcherIsIdleUnderTests() {
         XCTAssertFalse(BatteryWatcher.shared.isWatching, "started only with the app's startup side effects")
+    }
+}
+
+// MARK: - Low battery next to the icon
+
+/// What stands next to the status icon for a list of mouse states, and what VoiceOver reads
+/// for the item. No status item is made.
+final class StatusItemBatteryBadgeTests: XCTestCase {
+
+    private typealias Badge = StatusMenu.BatteryBadge
+
+    private func battery(_ percent: Int?, level: LogiMouseDeviceState.Battery.Level = .good,
+                         charging: LogiMouseDeviceState.Battery.Charging = .discharging,
+                         approximate: Bool = false) -> LogiMouseDeviceState.Battery {
+        return MouseDeviceFixtures.battery(percent, level: level, charging: charging, approximate: approximate)
+    }
+
+    private func badge(_ batteries: LogiMouseDeviceState.Battery?...) -> Badge {
+        let mice = batteries.enumerated().map { index, battery in
+            MouseDeviceFixtures.mxMaster4(id: "mouse\(index)", battery: battery)
+        }
+        return StatusMenu.batteryBadge(for: mice)
+    }
+
+    private let plain = Badge(title: "", accessibilityLabel: "Scrollio")
+
+    func testNothingWhileNoMouseRunsLow() {
+        XCTAssertEqual(StatusMenu.batteryBadge(for: []), plain)
+        XCTAssertEqual(Badge.plain, plain)
+        XCTAssertEqual(badge(battery(75)), plain)
+        XCTAssertEqual(badge(battery(11)), plain, "just above the low mark")
+        XCTAssertEqual(badge(nil), plain, "not reported yet")
+        XCTAssertEqual(badge(battery(nil, level: .unknown)), plain)
+        XCTAssertEqual(badge(battery(nil, level: .good)), plain)
+    }
+
+    func testALowMouseShowsItsPercentage() {
+        XCTAssertEqual(badge(battery(8, level: .low)), Badge(title: "8%", accessibilityLabel: "Scrollio, mouse battery 8%"))
+        XCTAssertEqual(badge(battery(10)).title, "10%", "at the low mark")
+        XCTAssertEqual(badge(battery(3, level: .critical)).title, "3%")
+        XCTAssertEqual(badge(battery(15, level: .low)).title, "15%", "the mouse's own level counts, as for the warnings")
+        // A charging problem is not charging.
+        XCTAssertEqual(badge(battery(8, level: .low, charging: .problem)).title, "8%")
+    }
+
+    /// Charging, or charged again: it goes.
+    func testChargingOrRecoveredShowsNothing() {
+        for charging: LogiMouseDeviceState.Battery.Charging in [.charging, .chargingSlowly, .almostFull, .full] {
+            XCTAssertEqual(badge(battery(8, level: .low, charging: charging)), plain, "\(charging)")
+        }
+        XCTAssertEqual(badge(battery(nil, level: .critical, charging: .charging)), plain)
+        XCTAssertEqual(badge(battery(40)), plain)
+    }
+
+    /// A mouse that reports only a level, or coarse steps: a word, not a number.
+    func testWithoutAnExactNumberItSaysLow() {
+        let low = Badge(title: "Low", accessibilityLabel: "Scrollio, mouse battery low")
+        XCTAssertEqual(badge(battery(nil, level: .low)), low)
+        XCTAssertEqual(badge(battery(nil, level: .critical)), low)
+        XCTAssertEqual(badge(battery(5, level: .critical, approximate: true)), low)
+    }
+
+    /// Several mice: the emptiest one that is not charging.
+    func testTheLowestOfSeveralMice() {
+        XCTAssertEqual(badge(battery(9, level: .low), battery(6, level: .low)).title, "6%")
+        XCTAssertEqual(badge(battery(75), battery(7, level: .low)).title, "7%")
+        XCTAssertEqual(badge(battery(4, level: .critical, charging: .charging), battery(9, level: .low)).title, "9%",
+                       "the charging one does not count")
+        XCTAssertEqual(badge(battery(nil, level: .critical), battery(8, level: .low)).title, "Low", "almost empty first")
+        XCTAssertEqual(badge(battery(4, level: .critical), battery(nil, level: .critical)).title, "4%", "a number first")
+        XCTAssertEqual(badge(battery(nil, level: .low), battery(9, level: .low)).title, "9%")
+        XCTAssertEqual(badge(nil, battery(75), battery(nil, level: .unknown)), plain)
+    }
+
+    /// One mouse going through a day: the badge follows each report, and leaves when the
+    /// mouse charges or disconnects.
+    func testItFollowsTheReports() {
+        XCTAssertEqual(badge(battery(12)).title, "")
+        XCTAssertEqual(badge(battery(10, level: .low)).title, "10%")
+        XCTAssertEqual(badge(battery(9, level: .low)).title, "9%")
+        XCTAssertEqual(badge(battery(9, level: .low, charging: .charging)).title, "", "plugged in")
+        XCTAssertEqual(badge(battery(9, level: .low)).title, "9%", "unplugged while still low")
+        XCTAssertEqual(StatusMenu.batteryBadge(for: []).title, "", "disconnected")
     }
 }
 

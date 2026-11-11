@@ -5123,6 +5123,54 @@
           }
         }
       }
+    },
+    "status-item-battery-low": {
+      "comment": "Menu bar, next to the Scrollio icon: a Logitech mouse that reports only a battery level (no percentage) is low and not charging",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Low"
+          }
+        }
+      }
+    },
+    "status-item-accessibility": {
+      "comment": "VoiceOver name of the Scrollio menu bar icon",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio"
+          }
+        }
+      }
+    },
+    "status-item-accessibility-battery": {
+      "comment": "VoiceOver name of the Scrollio menu bar icon while a mouse battery is low; %@ is its percentage, e.g. 8%",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio, mouse battery %@"
+          }
+        }
+      }
+    },
+    "status-item-accessibility-battery-low": {
+      "comment": "VoiceOver name of the Scrollio menu bar icon while a mouse that reports only a battery level is low",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio, mouse battery low"
+          }
+        }
+      }
     }
   },
   "version": "1.1"
