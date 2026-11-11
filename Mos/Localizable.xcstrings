@@ -5364,6 +5364,18 @@
           }
         }
       }
+    },
+    "about-tagline": {
+      "comment": "General pane header card: one line on what the app is for, under its name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smooth, trackpad-like scrolling for any mouse."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

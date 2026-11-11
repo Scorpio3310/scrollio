@@ -99,7 +99,11 @@ class PreferencesGeneralViewController: NSViewController {
         content.setHuggingPriority(.defaultHigh, for: .vertical)
         let width = PreferencesGroupedForm.boxWidth(paneWidth: Self.paneWidth)
 
-        let header = GeneralHeaderView(name: text("about-app-name"), version: Self.versionText(info: bundleInfo()))
+        let header = GeneralHeaderView(
+            name: text("about-app-name"),
+            tagline: text("about-tagline"),
+            version: Self.versionText(info: bundleInfo())
+        )
         header.identifier = NSUserInterfaceItemIdentifier("general-header")
         headerView = header
         let paused = PreferencesGroupSection(width: width, rows: [makePausedRow()])

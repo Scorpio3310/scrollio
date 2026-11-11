@@ -129,7 +129,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-paused", "general-paused-hint", "general-resume",
         "general-permissions-header", "general-accessibility", "general-accessibility-hint",
         "general-accessibility-allowed", "general-accessibility-not-allowed", "general-accessibility-open-settings",
-        "about-app-name", "about-version", "about-credit", "about-welcome-guide",
+        "about-app-name", "about-tagline", "about-version", "about-credit", "about-welcome-guide",
         "about-welcome-guide-open", "about-welcome-guide-hint",
         "about-version-commit", "about-version-commit-date",
     ]

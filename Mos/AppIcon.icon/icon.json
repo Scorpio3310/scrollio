@@ -1,116 +1,148 @@
 {
-  "features" : [
-    "refractivity"
-  ],
-  "fill" : {
-    "linear-gradient" : [
-      "display-p3:0.12644,0.12843,0.12945,1.00000",
-      "display-p3:0.08074,0.07853,0.07998,1.00000"
+  "fill": {
+    "linear-gradient": [
+      "srgb:0.65882,0.40000,0.72941,1.00000",
+      "srgb:0.22745,0.10980,0.27843,1.00000"
     ]
   },
-  "groups" : [
+  "groups": [
     {
-      "hidden" : true,
-      "layers" : [
+      "name": "Shade",
+      "layers": [
         {
-          "image-name" : "mouse-glass-master-1254.png",
-          "name" : "mouse-glass-master-1254",
-          "position" : {
-            "scale" : 0.79,
-            "translation-in-points" : [
-              0,
-              0
-            ]
-          }
+          "image-name": "11_shade-bevel-multiply.svg",
+          "name": "11_shade-bevel-multiply",
+          "glass": false,
+          "fill": "none",
+          "blend-mode": "multiply"
+        },
+        {
+          "image-name": "10_shade-veil.svg",
+          "name": "10_shade-veil",
+          "glass": false,
+          "fill": "none"
+        },
+        {
+          "image-name": "09_shade-rim-multiply.svg",
+          "name": "09_shade-rim-multiply",
+          "glass": false,
+          "fill": "none",
+          "blend-mode": "multiply"
         }
       ],
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
+      "specular": false,
+      "lighting": "individual",
+      "shadow": {
+        "kind": "none",
+        "opacity": 0.0
       },
-      "translucency" : {
-        "enabled" : true,
-        "value" : 0.3
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      },
+      "blend-mode": "multiply",
+      "hidden-specializations": [
+        {
+          "appearance": "tinted",
+          "value": true
+        }
+      ]
+    },
+    {
+      "name": "Mouse top",
+      "layers": [
+        {
+          "image-name": "08_wheel.svg",
+          "name": "08_wheel",
+          "glass": true,
+          "fill": "none"
+        },
+        {
+          "image-name": "07_edge-line.svg",
+          "name": "07_edge-line",
+          "glass": false,
+          "fill": "none"
+        },
+        {
+          "image-name": "06_button-left.svg",
+          "name": "06_button-left",
+          "glass": false,
+          "fill": "none"
+        },
+        {
+          "image-name": "05_button-right.svg",
+          "name": "05_button-right",
+          "glass": false,
+          "fill": "none"
+        }
+      ],
+      "specular": true,
+      "lighting": "individual",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.3
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
       }
     },
     {
-      "blend-mode" : "normal",
-      "blur-material" : null,
-      "hidden" : false,
-      "layers" : [
+      "name": "Body",
+      "layers": [
         {
-          "fill" : "automatic",
-          "glass" : false,
-          "hidden" : false,
-          "image-name" : "07 — Original glass edge.png",
-          "name" : "07 — Original glass edge",
-          "position" : {
-            "scale" : 0.995,
-            "translation-in-points" : [
-              0,
-              0
-            ]
-          }
+          "image-name": "04_groove.svg",
+          "name": "04_groove",
+          "glass": false,
+          "fill": "none"
         },
         {
-          "glass" : false,
-          "hidden" : false,
-          "image-name" : "06 — Original flowing glass highlight.png",
-          "name" : "06 — Original flowing glass highlight"
-        },
-        {
-          "glass" : true,
-          "hidden" : false,
-          "image-name" : "05 — Original pearl wheel.png",
-          "name" : "05 — Original pearl wheel"
-        },
-        {
-          "glass" : false,
-          "hidden" : false,
-          "image-name" : "04 — Original scroll wheel recess.png",
-          "name" : "04 — Original scroll wheel recess"
-        },
-        {
-          "glass" : false,
-          "hidden" : false,
-          "image-name" : "03 — Original right pearl button.png",
-          "name" : "03 — Original right pearl button"
-        },
-        {
-          "glass" : false,
-          "hidden" : false,
-          "image-name" : "02 — Original left pearl button.png",
-          "name" : "02 — Original left pearl button"
-        },
-        {
-          "glass" : false,
-          "hidden" : false,
-          "image-name" : "01 — Original pastel shell.png",
-          "name" : "01 — Original pastel shell"
+          "image-name": "03_body.svg",
+          "name": "03_body",
+          "glass": true,
+          "fill": "none"
         }
       ],
-      "lighting" : "individual",
-      "opacity" : 1,
-      "refractivity" : {
-        "depth" : 0,
-        "enabled" : true,
-        "strength" : 0.0585546875
+      "specular": true,
+      "lighting": "individual",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.55
       },
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 2
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    },
+    {
+      "name": "Backdrop",
+      "layers": [
+        {
+          "image-name": "02_dots.svg",
+          "name": "02_dots",
+          "glass": false,
+          "fill": "none"
+        },
+        {
+          "image-name": "01_backdrop.svg",
+          "name": "01_backdrop",
+          "glass": false,
+          "fill": "none"
+        }
+      ],
+      "specular": false,
+      "lighting": "individual",
+      "shadow": {
+        "kind": "none",
+        "opacity": 0.0
       },
-      "specular" : true,
-      "translucency" : {
-        "enabled" : true,
-        "value" : 0.3
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
       }
     }
   ],
-  "supported-platforms" : {
-    "circles" : [
-      "watchOS"
-    ],
-    "squares" : "shared"
+  "supported-platforms": {
+    "squares": "shared"
   }
 }

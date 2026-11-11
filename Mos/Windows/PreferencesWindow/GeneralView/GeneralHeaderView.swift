@@ -31,9 +31,11 @@ final class GeneralHeaderView: NSView {
 
     let iconView = NSImageView()
     let nameLabel = NSTextField(labelWithString: "")
+    /// One line on what the app is for, under its name.
+    let taglineLabel = NSTextField(wrappingLabelWithString: "")
     let versionLabel = NSTextField(labelWithString: "")
 
-    init(name: String, version: String, icon: NSImage? = NSImage(named: NSImage.applicationIconName)) {
+    init(name: String, tagline: String = "", version: String, icon: NSImage? = NSImage(named: NSImage.applicationIconName)) {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
 
@@ -48,6 +50,13 @@ final class GeneralHeaderView: NSView {
         nameLabel.font = Self.nameFont
         nameLabel.textColor = .labelColor
         nameLabel.lineBreakMode = .byTruncatingTail
+        taglineLabel.stringValue = tagline
+        taglineLabel.font = Self.detailFont
+        taglineLabel.textColor = .labelColor
+        taglineLabel.maximumNumberOfLines = 2
+        taglineLabel.isSelectable = false
+        taglineLabel.isHidden = tagline.isEmpty
+        taglineLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         versionLabel.stringValue = version
         versionLabel.font = Self.detailFont
         versionLabel.textColor = .secondaryLabelColor
@@ -58,7 +67,7 @@ final class GeneralHeaderView: NSView {
             label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         }
 
-        let text = NSStackView(views: [nameLabel, versionLabel])
+        let text = NSStackView(views: [nameLabel, taglineLabel, versionLabel])
         text.orientation = .vertical
         text.alignment = .leading
         text.spacing = 4
