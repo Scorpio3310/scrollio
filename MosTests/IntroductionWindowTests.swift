@@ -1112,6 +1112,52 @@ final class IntroductionWindowTests: XCTestCase {
     /// one height, so the box that moves between them keeps its size; nothing comes closer
     /// than 16 pt to the bar.
     func testTheStepsShareOneGrid() throws {
+        XCTAssertEqual(WelcomeGuideLayout.metrics, .roomy)
+        try assertTheStepsShareOneGrid()
+    }
+
+    /// The same rules in the 620 pt window of a screen too short for the roomy one.
+    func testTheTightGridOfAShortScreenKeepsTheRules() throws {
+        WelcomeGuideLayout.metrics = .tight
+        addTeardownBlock { WelcomeGuideLayout.metrics = .roomy }
+        XCTAssertEqual(WelcomeGuideLayout.windowSize.height, 620)
+        try assertTheStepsShareOneGrid()
+    }
+
+    /// The owner found the feel step crammed in 620 pt (its parts 14 to 18 pt apart). The
+    /// window is 680 pt tall unless the screen cannot show that whole: then Continue would
+    /// lie under the Dock, and the guide keeps the 620 pt it had.
+    func testTheWindowIsRoomyUnlessTheScreenIsTooShort() {
+        typealias Metrics = WelcomeGuideLayout.Metrics
+        XCTAssertEqual(Metrics.roomy.windowHeight, 680)
+        XCTAssertEqual(Metrics.tight.windowHeight, 620)
+        XCTAssertEqual(Metrics.fitting(visibleHeight: nil), .roomy)
+        XCTAssertEqual(Metrics.fitting(visibleHeight: 838), .roomy, "a 13-inch display at its default size")
+        XCTAssertEqual(Metrics.fitting(visibleHeight: 696), .roomy)
+        XCTAssertEqual(Metrics.fitting(visibleHeight: 695), .tight)
+        XCTAssertEqual(Metrics.fitting(visibleHeight: 637), .tight, "a 13-inch display at Larger Text")
+    }
+
+    /// The air on the feel step: its sentence, cards, box and the bar stand well apart.
+    func testTheFeelStepHasAirBetweenItsParts() throws {
+        let controller = world.makeController(flow: .full)
+        _ = makeWindow(for: controller)
+        controller.go(by: try XCTUnwrap(controller.steps.firstIndex(of: .feel)) - controller.index)
+        controller.view.layoutSubtreeIfNeeded()
+        let canvas = try XCTUnwrap(controller.contentHost.superview)
+        func frame(_ view: NSView) -> NSRect {
+            return canvas.convert(view.bounds, from: view)
+        }
+        let step = controller.feelStep
+        let cards = step.feelButtons.map(frame).reduce(NSRect.null) { $0.union($1) }
+        let box = frame(step.reverseBox)
+        XCTAssertGreaterThanOrEqual(cards.minY - frame(step.textLabel).maxY, 24, "sentence to cards")
+        XCTAssertGreaterThanOrEqual(box.minY - cards.maxY, 24, "cards to box")
+        XCTAssertGreaterThanOrEqual(WelcomeGuideLayout.barFrame.minY - box.maxY, 40, "box to bar")
+        XCTAssertGreaterThanOrEqual(frame(step.titleLabel).minY - WelcomeGuideLayout.pictureFrame.maxY, 36, "picture to title")
+    }
+
+    private func assertTheStepsShareOneGrid() throws {
         world.runAfterGrant = .running
         world.mouse = .mxMaster4
         let controller = world.makeController(flow: .full)

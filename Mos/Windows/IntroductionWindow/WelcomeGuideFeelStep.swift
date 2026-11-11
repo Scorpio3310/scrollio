@@ -112,7 +112,7 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
     }
 
     /// Between the cards and the switch's box; with the line for a custom glide time, around it.
-    static let rowToBox: CGFloat = 14
+    static var rowToBox: CGFloat { return WelcomeGuideLayout.controlToControl }
     static let hintSpacing: CGFloat = 6
 
     /// Puts the stored feel, the try area's state and the mouse on screen.

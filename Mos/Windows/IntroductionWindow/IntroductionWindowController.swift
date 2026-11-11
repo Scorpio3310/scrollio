@@ -1,8 +1,8 @@
 //
 //  IntroductionWindowController.swift
 //  Mos
-//  The window of the Welcome Guide: 600 × 620 pt, fixed, centred, its title bar
-//  transparent. Its content is built in IntroductionViewController. Here are also the ways
+//  The window of the Welcome Guide: 600 × 680 pt (600 × 620 on a screen too short for
+//  it), fixed, centred, its title bar transparent. Its content is built in IntroductionViewController. Here are also the ways
 //  the app opens it: by itself (a new user at launch, the access missing) and by hand
 //  (General › Welcome Guide, Help › Welcome Guide).
 //  Created by Caldis on 15/11/2019.
@@ -105,6 +105,8 @@ class IntroductionWindowController: NSWindowController, NSWindowDelegate {
                 open.begin(flow)
             }
         } else {
+            // Roomy, unless this screen cannot show the roomy window whole.
+            WelcomeGuideLayout.metrics = .fitting(visibleHeight: NSScreen.main?.visibleFrame.height)
             let controller: NSWindowController = Utils.instantiateControllerFromStoryboard(withIdentifier: identifier)
             if let content = controller.contentViewController as? IntroductionViewController {
                 content.begin(flow(for: request, progress: content.progress))

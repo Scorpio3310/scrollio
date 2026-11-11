@@ -4,34 +4,75 @@
 //  What every step of the Welcome Guide shares: the grid of the window, the text styles,
 //  the picture card, the step dots and the clock of the animated pictures.
 //
-//  The window is 600 × 620 pt and never changes its size. Every step puts a 552 × 236
-//  picture at the top, then its title, at most two sentences and one control under it;
-//  the bottom bar holds Back, the dots and the main button.
+//  The window is 600 × 680 pt and never changes its size while it is open (600 × 620 with
+//  tighter gaps on a screen too short for it: `WelcomeGuideLayout.Metrics`). Every step puts
+//  a 552 × 236 picture at the top, then its title, at most two sentences and one control
+//  under it; the bottom bar holds Back, the dots and the main button.
 //
 
 import Cocoa
 import QuartzCore
 
 enum WelcomeGuideLayout {
-    static let windowSize = NSSize(width: 600, height: 620)
+
+    /// How tall the window is and how much air its parts get. The feel step holds the most
+    /// (a sentence of two lines, five cards, a box): in 620 pt its parts sat 14 to 18 pt
+    /// apart and the owner found it crammed. Roomy unless the screen is too short for it.
+    struct Metrics: Equatable {
+        let windowHeight: CGFloat
+        /// From the top of the text area to the title: the same on every step (the Welcome
+        /// step's icon on the picture's edge fits above it).
+        let titleTop: CGFloat
+        let titleToText: CGFloat
+        /// The control under the text.
+        let textToControl: CGFloat
+        /// A second control under the first (the box under the feel cards).
+        let controlToControl: CGFloat
+        let barBottom: CGFloat
+
+        static let roomy = Metrics(
+            windowHeight: 680, titleTop: 40, titleToText: 10, textToControl: 28, controlToControl: 28, barBottom: 24
+        )
+        /// The whole guide in 620 pt, for a screen that cannot show the roomy window whole:
+        /// the window does not resize, and its bottom bar (Continue) would lie under the Dock.
+        static let tight = Metrics(
+            windowHeight: 620, titleTop: 36, titleToText: 8, textToControl: 18, controlToControl: 14, barBottom: 20
+        )
+        /// What must stay free around the roomy window on its screen.
+        static let screenMargin: CGFloat = 16
+
+        /// The measures for a screen with this much height between the menu bar and the Dock.
+        static func fitting(visibleHeight: CGFloat?) -> Metrics {
+            guard let visibleHeight else { return .roomy }
+            return visibleHeight >= roomy.windowHeight + screenMargin ? .roomy : .tight
+        }
+    }
+
+    /// Chosen for the screen before a guide's window is built
+    /// (`IntroductionWindowController`); the views read it as they are built.
+    static var metrics = Metrics.roomy
+
+    static var windowSize: NSSize {
+        return NSSize(width: 600, height: metrics.windowHeight)
+    }
     static let sideMargin: CGFloat = 24
     /// Under the transparent title bar.
     static let pictureTop: CGFloat = 44
     static let pictureSize = NSSize(width: 552, height: 236)
-    /// The text area of a step: from under the picture to above the bar.
+    /// The text area of a step: from under the picture to 8 pt above the bar.
     static let contentTop: CGFloat = 280
-    static let contentHeight: CGFloat = 284
-    /// From the top of the text area to the title: the same on every step (the Welcome
-    /// step's icon on the picture's edge fits above it).
-    static let titleTop: CGFloat = 36
-    static let titleToText: CGFloat = 8
-    /// The control under the text.
-    static let textToControl: CGFloat = 18
+    static var contentHeight: CGFloat {
+        return barFrame.minY - 8 - contentTop
+    }
+    static var titleTop: CGFloat { return metrics.titleTop }
+    static var titleToText: CGFloat { return metrics.titleToText }
+    static var textToControl: CGFloat { return metrics.textToControl }
+    static var controlToControl: CGFloat { return metrics.controlToControl }
     static let textWidth: CGFloat = 452
     /// A box of settings rows under the text (the status line is as wide).
     static let rowBoxWidth: CGFloat = 440
     static let barHeight: CGFloat = 28
-    static let barBottom: CGFloat = 20
+    static var barBottom: CGFloat { return metrics.barBottom }
     static let pictureCornerRadius: CGFloat = 12
 
     /// In the flipped canvas of the window (origin top left).
