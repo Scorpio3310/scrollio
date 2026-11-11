@@ -14,6 +14,11 @@ private func allSubviews(of view: NSView) -> [NSView] {
     return view.subviews.flatMap { [$0] + allSubviews(of: $0) }
 }
 
+/// A view that takes the keyboard focus, whatever the Mac's keyboard navigation setting says.
+private final class FocusTakingView: NSView {
+    override var acceptsFirstResponder: Bool { true }
+}
+
 final class PreferencesSidebarTests: XCTestCase {
 
     private let app = Bundle(for: PreferencesSplitViewController.self)
@@ -162,6 +167,28 @@ final class PreferencesSidebarTests: XCTestCase {
         XCTAssertFalse(preferences.selectPane(withIdentifier: "toolbar"))
         XCTAssertFalse(preferences.selectPane(withIdentifier: "about"), "no pane of its own any more")
         XCTAssertEqual(preferences.selectedPaneIdentifier, "general")
+    }
+
+    func testAButtonThatSwitchesPanesLeavesTheFocusOnTheSidebar() throws {
+        let (window, preferences) = try makeWindow()
+        XCTAssertTrue(preferences.selectPane(withIdentifier: "gestures"))
+        // A control of the pane has the keyboard focus, as "Open Mouse" has when it is
+        // pressed with the keyboard.
+        let focused = FocusTakingView(frame: NSRect(x: 0, y: 0, width: 10, height: 10))
+        try XCTUnwrap(preferences.selectedController).view.addSubview(focused)
+        XCTAssertTrue(window.makeFirstResponder(focused))
+
+        XCTAssertTrue(preferences.selectPane(withIdentifier: "mouse"))
+
+        XCTAssertNil(focused.window, "the control went away with its pane")
+        XCTAssertTrue(window.firstResponder === preferences.sidebar.tableView, "Tab goes on from the sidebar, not from the start")
+
+        // Focus that is still in the window stays where it is.
+        let other = FocusTakingView(frame: NSRect(x: 0, y: 0, width: 10, height: 10))
+        try XCTUnwrap(window.contentView).addSubview(other)
+        XCTAssertTrue(window.makeFirstResponder(other))
+        XCTAssertTrue(preferences.selectPane(withIdentifier: "general"))
+        XCTAssertTrue(window.firstResponder === other)
     }
 
     func testRemembersTheLastOpenPane() throws {
