@@ -76,12 +76,15 @@ extension ThumbWheelFunction {
 
 /// Turns the travel of sideways wheel events into steps. Pure value type.
 ///
-/// Direction: travel is counted toward "next", the turn that, as a scroll, would show what
-/// lies to the right. That is a NEGATIVE X delta (the event's horizontal delta after "Reverse
-/// wheel direction" and the thumb wheel's "Swap direction"): a positive X delta moves the
-/// content to the right and shows what lies to the left, as a positive Y delta shows what
-/// lies above. Steps are positive toward "next" (zoom in, the next tab, the desktop on the
-/// right, forward, volume up) and negative toward "previous".
+/// Direction: travel is counted toward "next": a NEGATIVE X delta of the raw event (its
+/// horizontal delta as it arrived at the tap), turned around only by the thumb wheel's "Swap
+/// direction". A negative X delta, as a scroll, shows what lies to the right (a positive one
+/// moves the content right and shows what lies to the left, as a positive Y delta shows what
+/// lies above). "Reverse wheel direction" (global or an app's) and the allowlist play no part:
+/// they depend on the app under the pointer, and a function must not. Which physical turn of
+/// the thumb wheel gives a negative X delta only the owner's mouse (the `scroll` log) can show.
+/// Steps are positive toward "next" (zoom in, the next tab, the desktop on the right,
+/// forward, volume up) and negative toward "previous".
 struct ThumbWheelStepper: Equatable {
 
     /// Travel not yet used for a step, in lines: positive toward "next".
@@ -114,8 +117,7 @@ struct ThumbWheelStepper: Equatable {
     /// One event's travel toward "next", in lines × speed.
     /// - Parameters:
     ///   - lineDelta, fixedDelta, pointDelta: the event's X deltas as they arrived.
-    ///   - flipped: X is turned around once ("Reverse wheel direction" and "Swap direction"
-    ///     together: one of them, not both).
+    ///   - flipped: X is turned around ("Swap direction").
     ///   - speed: the thumb wheel's speed (more travel per turn, so steps come sooner).
     static func travel(lineDelta: Int64, fixedDelta: Double, pointDelta: Double, flipped: Bool, speed: Double) -> Double {
         let x = lines(lineDelta: lineDelta, fixedDelta: fixedDelta, pointDelta: pointDelta)

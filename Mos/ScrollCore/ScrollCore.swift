@@ -141,15 +141,20 @@ class ScrollCore: ScrollActionPort {
             hasVerticalDelta: hasVerticalDelta,
             hasHorizontalDelta: hasHorizontalDelta,
             remoteSmoothed: remoteSmoothed,
-            holdKeyDown: ScrollCore.shared.toggleScroll || event.flags.contains(.maskShift)
+            shiftDown: event.flags.contains(.maskShift)
         )
         // A turn that runs a function (zoom, tabs, ...) is swallowed further down: it is not
         // smoothed and never reaches an app, whatever "Smooth scrolling", an app's rule, the
         // allowlist or Launchpad say.
         let runsThumbWheelFunction = sideways && thumbWheel.function != .scroll
-        // Its X deltas as they arrived, before any direction rule (for the stepper and the log).
+        // Its X deltas as they arrived, before any direction rule, and its own time (for the
+        // stepper and the log).
         let thumbWheelEvent = sideways
-            ? ThumbWheelEvent(axis: scrollEvent.X, isContinuous: event.getDoubleValueField(.scrollWheelEventIsContinuous) != 0)
+            ? ThumbWheelEvent(
+                axis: scrollEvent.X,
+                isContinuous: event.getDoubleValueField(.scrollWheelEventIsContinuous) != 0,
+                timestamp: event.timestamp
+            )
             : nil
         // A wheel event takes over a trackpad glide that still runs, whether it is smoothed or
         // not: let through raw, it would still move the page against the glide. A turn of the
@@ -203,9 +208,9 @@ class ScrollCore: ScrollActionPort {
         if hasVerticalDelta && verticalReversePreference {
             ScrollEvent.reverseY(scrollEvent)
         }
-        // The thumb wheel's "Swap direction" turns a sideways event around once more, after
-        // "Reverse wheel direction" (global or the app's): X is turned around once or not at
-        // all. (Two `reverseX` would not undo each other: each writes the negated original.)
+        // While the sideways wheel scrolls, its "Swap direction" turns it around once more,
+        // after "Reverse wheel direction" (global or the app's): X is turned around once or not
+        // at all. (Two `reverseX` would not undo each other: each writes the negated original.)
         let flipsHorizontal = ScrollCore.flipsHorizontal(
             reverseRule: enableReverseHorizontal,
             swapsSideways: sideways && thumbWheel.swapsDirection
@@ -214,7 +219,13 @@ class ScrollCore: ScrollActionPort {
             ScrollEvent.reverseX(scrollEvent)
         }
         if let thumbWheelEvent = thumbWheelEvent {
-            ScrollCore.shared.thumbWheelEngine.handle(thumbWheelEvent, settings: thumbWheel, flipped: flipsHorizontal)
+            // A function's direction is the turn itself, turned around only by "Swap
+            // direction": "Reverse wheel direction" (global or the app's) and the allowlist
+            // depend on the app under the pointer, and the volume or the desktop must not.
+            ScrollCore.shared.thumbWheelEngine.handle(
+                thumbWheelEvent, settings: thumbWheel,
+                flipped: runsThumbWheelFunction ? thumbWheel.swapsDirection : flipsHorizontal
+            )
             if runsThumbWheelFunction {
                 // Swallowed: the steps run on the main queue. No glide starts or changes, and
                 // the hand-over above left a trackpad glide alone.
@@ -310,17 +321,18 @@ class ScrollCore: ScrollActionPort {
 
     /// Whether a wheel event is a sideways wheel event, the only kind the thumb wheel's
     /// settings (`Options.thumbWheel`) apply to: it moves sideways only (a horizontal delta, no
-    /// vertical one), it was not smoothed by a remote desktop client, and no hold key turns the
-    /// main wheel sideways (Scrollio's "scroll sideways" key, `toggleScroll`, or Shift, with
-    /// which some drivers, Logitech's among them, already send the main wheel's turns sideways).
-    /// An event with both deltas is not one. Trackpad events and Scrollio's own are let through
-    /// before this is asked.
-    static func isSidewaysWheelEvent(hasVerticalDelta: Bool, hasHorizontalDelta: Bool, remoteSmoothed: Bool, holdKeyDown: Bool) -> Bool {
-        return hasHorizontalDelta && !hasVerticalDelta && !remoteSmoothed && !holdKeyDown
+    /// vertical one), it was not smoothed by a remote desktop client, and Shift is not held
+    /// (with Shift, macOS and some drivers, Logitech's among them, send the main wheel's turns
+    /// as sideways-only events). An event with both deltas is not one. Scrollio's own "scroll
+    /// sideways" key needs no rule: the main wheel's events are still vertical at the tap.
+    /// Trackpad events and Scrollio's own are let through before this is asked.
+    static func isSidewaysWheelEvent(hasVerticalDelta: Bool, hasHorizontalDelta: Bool, remoteSmoothed: Bool, shiftDown: Bool) -> Bool {
+        return hasHorizontalDelta && !hasVerticalDelta && !remoteSmoothed && !shiftDown
     }
 
-    /// Whether X is turned around: by "Reverse wheel direction" (global or the app's), or by
-    /// the thumb wheel's "Swap direction" for a sideways event; both together cancel out.
+    /// Whether X of a scrolling event is turned around: by "Reverse wheel direction" (global or
+    /// the app's), or by the thumb wheel's "Swap direction" for a sideways event; both together
+    /// cancel out. (A function's direction uses "Swap direction" only.)
     static func flipsHorizontal(reverseRule: Bool, swapsSideways: Bool) -> Bool {
         return reverseRule != swapsSideways
     }
