@@ -152,6 +152,33 @@ final class StatusMenuTests: XCTestCase {
         ])
     }
 
+    /// Release build: Option offers Logitech Diagnostics only; Scroll Monitor and Test Toasts
+    /// are developer tools of the debug build.
+    func testOptionOffersOnlyLogitechDiagnosticsInTheReleaseBuild() {
+        var release = state(diagnostics: true)
+        release.isDebugBuild = false
+        XCTAssertEqual(rows(release), [
+            Row(title: "Pause Scrollio"),
+            Row(title: "Settings…", shortcut: "⌘,"),
+            .separator,
+            Row(title: "Logitech Diagnostics"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+        // Without Option nothing of it, in either build.
+        var plain = state()
+        plain.isDebugBuild = false
+        XCTAssertEqual(rows(plain), rows(state()))
+    }
+
+    func testWhichDiagnosticsEachBuildOffers() {
+        XCTAssertEqual(StatusMenu.diagnosticItems(isDebugBuild: false), [.diagnostics])
+        XCTAssertEqual(StatusMenu.diagnosticItems(isDebugBuild: true), [.scrollMonitor, .diagnostics, .testToasts])
+        // These tests run in the debug build.
+        XCTAssertTrue(StatusMenu.isDebugBuild)
+        XCTAssertTrue(state().isDebugBuild)
+    }
+
     func testOneDisabledBatteryLinePerMouseOnTop() {
         let batteries = StatusMenu.batteries(from: [
             MouseDeviceFixtures.mxMaster4(),
@@ -276,6 +303,37 @@ final class StatusMenuTests: XCTestCase {
         let noAccess = StatusMenu.IconLook(coresActive: false, isPaused: false)
         XCTAssertTrue(noAccess.appearsDisabled)
         XCTAssertEqual(noAccess.toolTip, "Scrollio needs Accessibility access")
+    }
+
+    /// Regression: with the access allowed but an event tap that could not be created, the
+    /// tooltip said the access was needed; with a tap whose restarts were throttled the icon
+    /// looked as if everything worked.
+    func testTheIconSaysWhenScrollioCouldNotStart() {
+        let couldNotStart = "Scrollio couldn't start and is trying again."
+
+        let failedStart = StatusMenu.IconLook(coresActive: false, isPaused: false, startFailed: true)
+        XCTAssertTrue(failedStart.appearsDisabled)
+        XCTAssertEqual(failedStart.toolTip, couldNotStart)
+
+        let throttled = StatusMenu.IconLook(coresActive: true, isPaused: false, tapRestartsThrottled: true)
+        XCTAssertTrue(throttled.appearsDisabled, "the not-active look while a tap stays off")
+        XCTAssertEqual(throttled.toolTip, couldNotStart)
+
+        // Back to normal by itself once the taps run.
+        XCTAssertEqual(StatusMenu.IconLook(coresActive: true, isPaused: false, startFailed: false, tapRestartsThrottled: false),
+                       StatusMenu.IconLook(coresActive: true, isPaused: false))
+
+        // A pause says "paused" whatever else is true.
+        XCTAssertEqual(StatusMenu.IconLook(coresActive: false, isPaused: true, startFailed: true, tapRestartsThrottled: true).toolTip,
+                       "Scrollio is paused")
+        // Without the access the start did not fail: it waits.
+        XCTAssertEqual(StatusMenu.IconLook(coresActive: false, isPaused: false, startFailed: false, tapRestartsThrottled: true).toolTip,
+                       "Scrollio needs Accessibility access")
+    }
+
+    /// The live state of the taps: nothing is throttled under tests.
+    func testNoTapIsThrottledUnderTests() {
+        XCTAssertFalse(Interceptor.hasThrottledTap)
     }
 }
 
@@ -568,7 +626,8 @@ final class AppRunControllerTests: XCTestCase {
         controller.start()
         XCTAssertEqual(world.log, ["start", "stop"])
         XCTAssertFalse(controller.coresActive)
-        XCTAssertTrue(controller.isWaitingForAccess, "a timer tries again")
+        XCTAssertTrue(controller.isRetryingStart, "a timer tries again")
+        XCTAssertFalse(controller.isWaitingForAccess, "the access is there: the status item must not ask for it")
         XCTAssertEqual(controller.recoveryTimer?.timeInterval, AppRunController.launchRecoveryInterval)
 
         // A permission-lost report from the failing tap changes nothing more.
@@ -580,6 +639,49 @@ final class AppRunControllerTests: XCTestCase {
         XCTAssertEqual(world.log, ["start", "stop", "start"])
         XCTAssertTrue(controller.coresActive)
         XCTAssertFalse(controller.isWaitingForAccess)
+        XCTAssertFalse(controller.isRetryingStart, "back to normal by itself")
+    }
+
+    /// A retry that keeps failing goes on trying; when the access goes away meanwhile it
+    /// waits for the access instead, and says so.
+    func testAFailedStartThatLosesTheAccessWaitsForTheAccess() {
+        let world = World()
+        world.tapsStart = false
+        let controller = make(world)
+        controller.start()
+        controller.accessibilityPermissionWasGranted()   // a retry that fails again
+        XCTAssertEqual(world.log, ["start", "stop", "start", "stop"])
+        XCTAssertTrue(controller.isRetryingStart)
+
+        world.access = false
+        XCTAssertEqual(changes(of: controller) { controller.accessibilityPermissionWasGranted() }, 1)
+        XCTAssertFalse(controller.isRetryingStart)
+        XCTAssertTrue(controller.isWaitingForAccess)
+        XCTAssertEqual(world.log.count, 4, "no start without the access")
+    }
+
+    /// Pausing, sleeping or another user ends the "could not start" state.
+    func testStoppingEndsAFailedStart() {
+        let world = World()
+        world.tapsStart = false
+        let controller = make(world)
+        controller.start()
+        XCTAssertTrue(controller.isRetryingStart)
+        controller.setPaused(true)
+        XCTAssertFalse(controller.isRetryingStart)
+        XCTAssertNil(controller.recoveryTimer)
+    }
+
+    /// A start that keeps failing is tried every 10 s; the log gets the first three and then
+    /// one in 30, not a line every 10 s for hours.
+    func testAFailingStartIsLoggedSparingly() {
+        let logged = (1...120).filter(AppRunController.logsFailedStart)
+        XCTAssertEqual(logged, [1, 2, 3, 30, 60, 90, 120])
+        XCTAssertEqual(
+            AppRunController.failedStartLine(trigger: .launch, failedStarts: 1),
+            "Could not start (launch): an event tap could not be created although Accessibility access is allowed; "
+                + "trying again in 10 s (failed starts in a row: 1)"
+        )
     }
 
     // MARK: - The order of the live cores
@@ -631,7 +733,7 @@ final class AppRunControllerTests: XCTestCase {
     func testTheToastText() {
         XCTAssertEqual(
             NSLocalizedString("toast-accessibility-lost", comment: ""),
-            "Scrollio is paused: Accessibility access was turned off."
+            "Scrollio stopped: Accessibility access was turned off. It starts again as soon as you allow it."
         )
     }
 

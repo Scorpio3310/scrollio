@@ -6,11 +6,13 @@
 //  With Accessibility access, top to bottom: one disabled line per Logitech mouse with its
 //  battery ("MX Master 4: 75%"), "Pause Scrollio" or "Resume Scrollio", "Settings…", and
 //  "Quit Scrollio". While Option is held (always in the debug build) the diagnostic windows
-//  are added above Quit. Without the access: "Allow Accessibility Access…" (the Welcome
-//  Guide) and Quit.
+//  are added above Quit: Logitech Diagnostics in every build, Scroll Monitor and Test
+//  Toasts only in the debug build. Without the access: "Allow Accessibility Access…" (the
+//  Welcome Guide) and Quit.
 //
-//  The icon is dimmed while the event handling does not run: paused, or the access is
-//  missing (AppRunController).
+//  The icon is dimmed while the event handling does not run: paused, the access is missing,
+//  or the access is there but an event tap could not be created or stays off because its
+//  restarts are throttled (AppRunController, Interceptor). Its tooltip says which.
 //
 //  What the menu lists is decided by `StatusMenu` from a `StatusMenu.State`, and what its
 //  items do is in `StatusMenuActions`, so both are tested without a status item.
@@ -48,6 +50,14 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
             ) { [weak self] _ in
                 self?.updateIcon()
             },
+            // A tap whose restarts are refused stays off: the icon says so until it runs again.
+            NotificationCenter.default.addObserver(
+                forName: Interceptor.restartThrottleDidChangeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.updateIcon()
+            },
             // Answers to the battery read made when the menu opened.
             NotificationCenter.default.addObserver(
                 forName: LogiCenter.mouseStateChanged,
@@ -66,10 +76,16 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
         }
     }
 
-    /// Dims the icon while Scrollio is paused or waits for the access, and says why.
+    /// Dims the icon while Scrollio is paused, waits for the access or could not start, and
+    /// says why.
     func updateIcon() {
         let controller = AppRunController.shared
-        let look = StatusMenu.IconLook(coresActive: controller.coresActive, isPaused: controller.isPaused)
+        let look = StatusMenu.IconLook(
+            coresActive: controller.coresActive,
+            isPaused: controller.isPaused,
+            startFailed: controller.isRetryingStart,
+            tapRestartsThrottled: Interceptor.hasThrottledTap
+        )
         item.button?.appearsDisabled = look.appearsDisabled
         item.button?.toolTip = look.toolTip
     }
@@ -141,6 +157,23 @@ enum StatusMenu {
         var showsDiagnostics: Bool
         /// One line per Logitech mouse that reports its battery.
         var batteries: [Battery]
+        /// The developer tools (Scroll Monitor, Test Toasts) are offered only in the debug build.
+        var isDebugBuild: Bool = StatusMenu.isDebugBuild
+    }
+
+    /// This build is the debug build.
+    static let isDebugBuild: Bool = {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }()
+
+    /// The diagnostic windows listed while Option is held: Logitech Diagnostics in every
+    /// build, the developer tools only in the debug build.
+    static func diagnosticItems(isDebugBuild: Bool) -> [Item] {
+        return isDebugBuild ? [.scrollMonitor, .diagnostics, .testToasts] : [.diagnostics]
     }
 
     /// The battery line of one mouse: "MX Master 4: 75%", "MX Master 4: 75%, charging".
@@ -175,7 +208,7 @@ enum StatusMenu {
         }
         items += [state.isPaused ? .resume : .pause, .settings, .separator]
         if state.showsDiagnostics {
-            items += [.scrollMonitor, .diagnostics, .testToasts, .separator]
+            items += diagnosticItems(isDebugBuild: state.isDebugBuild) + [.separator]
         }
         items.append(.quit)
         return items
@@ -249,13 +282,23 @@ enum StatusMenu {
         let appearsDisabled: Bool
         let toolTip: String?
 
-        init(coresActive: Bool, isPaused: Bool) {
-            appearsDisabled = !coresActive
+        /// - Parameters:
+        ///   - startFailed: the access is there but the cores did not all start; a timer
+        ///     tries again (AppRunController.isRetryingStart).
+        ///   - tapRestartsThrottled: an event tap is off and its restarts are refused for a
+        ///     while (Interceptor.hasThrottledTap); the cores count as running meanwhile.
+        init(coresActive: Bool, isPaused: Bool, startFailed: Bool = false, tapRestartsThrottled: Bool = false) {
             if isPaused {
+                appearsDisabled = !coresActive
                 toolTip = NSLocalizedString("status-item-paused", comment: "")
+            } else if (!coresActive && startFailed) || (coresActive && tapRestartsThrottled) {
+                appearsDisabled = true
+                toolTip = NSLocalizedString("status-item-could-not-start", comment: "")
             } else if !coresActive {
+                appearsDisabled = true
                 toolTip = NSLocalizedString("status-item-needs-access", comment: "")
             } else {
+                appearsDisabled = false
                 toolTip = nil
             }
         }

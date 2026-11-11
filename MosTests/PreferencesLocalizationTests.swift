@@ -137,6 +137,7 @@ final class PreferencesLocalizationTests: XCTestCase {
     static let menuKeys = [
         "status-menu-pause", "status-menu-resume", "status-menu-allow-access", "status-menu-test-toasts",
         "status-menu-battery", "status-menu-battery-charging", "status-item-paused", "status-item-needs-access",
+        "status-item-could-not-start",
         "scroll-monitor-title", "logitech-diagnostics-title",
         "toast-accessibility-lost", "toast-battery-low", "toast-battery-low-plain",
         "toast-battery-critical", "toast-battery-critical-plain",

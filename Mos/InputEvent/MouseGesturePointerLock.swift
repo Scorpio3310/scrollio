@@ -127,7 +127,7 @@ final class MouseGesturePointerLock {
     private func armSafetyTimeout() {
         safetyWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
-            NSLog("MouseGesturePointerLock: safety timeout, releasing pointer")
+            AppSystemLog.problem("MouseGesturePointerLock: safety timeout, releasing the pointer")
             self?.unlock()
         }
         safetyWorkItem = workItem

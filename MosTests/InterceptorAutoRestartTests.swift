@@ -109,3 +109,125 @@ final class InterceptorAutoRestartTests: XCTestCase {
         Interceptor.replaceKeeper(&keeper, with: nil)
     }
 }
+
+// MARK: - The app log of the event taps
+
+/// The lines the event taps write to the system log (category `app`): which tap, why it was
+/// turned off or restarted, and how often. Nothing here creates a tap.
+final class EventTapLogTests: XCTestCase {
+
+    private func mask(_ types: CGEventType...) -> CGEventMask {
+        return types.reduce(CGEventMask(0)) { $0 | CGEventMask(1 << $1.rawValue) }
+    }
+
+    /// The taps are named by the events they listen to, as ScrollCore, ButtonCore and the
+    /// gesture motion tap set them up.
+    func testTheTapsAreNamedByTheirEvents() {
+        let scrollCore = ScrollCore.shared
+        XCTAssertEqual(EventTapKind.of(mask: scrollCore.scrollEventMask), .scroll)
+        XCTAssertEqual(EventTapKind.of(mask: scrollCore.hotkeyEventMask), .scrollKeys)
+        XCTAssertEqual(EventTapKind.of(mask: scrollCore.mouseLeftEventMask), .leftClick)
+        XCTAssertEqual(EventTapKind.of(mask: ButtonCore.shared.dispatchEventMask), .buttonsAndKeys)
+        XCTAssertEqual(EventTapKind.of(mask: MouseInteractionSessionController.motionEventMask), .pointerMovement)
+        XCTAssertEqual(EventTapKind.of(mask: mask(.tabletPointer)), .other)
+        XCTAssertEqual(EventTapKind.scroll.rawValue, "scroll")
+        XCTAssertEqual(EventTapKind.buttonsAndKeys.rawValue, "buttons and keys")
+        XCTAssertEqual(EventTapKind.pointerMovement.rawValue, "pointer movement")
+    }
+
+    // MARK: Turned off by macOS: at most one line per tap every 10 s
+
+    func testTheFirstTimeIsWrittenAtOnce() {
+        var counter = EventTapDisableCounter()
+        XCTAssertEqual(counter.note(.timeout, tap: .scroll, now: 100),
+                       .log("macOS turned off the scroll event tap: timeout (Scrollio's main thread answered too slowly)"))
+        var other = EventTapDisableCounter()
+        XCTAssertEqual(other.note(.userInput, tap: .buttonsAndKeys, now: 100),
+                       .log("macOS turned off the buttons and keys event tap: user input"))
+    }
+
+    func testTimesWithinTheIntervalAreCountedAndFlushedOnce() {
+        var counter = EventTapDisableCounter()
+        _ = counter.note(.timeout, tap: .scroll, now: 100)
+        // The next ones come 2 s and 3 s later: one flush is scheduled, for 10 s after the line.
+        XCTAssertEqual(counter.note(.timeout, tap: .scroll, now: 102), .flush(after: 8))
+        XCTAssertEqual(counter.note(.userInput, tap: .scroll, now: 103), EventTapDisableCounter.Decision.none)
+        XCTAssertEqual(counter.timeouts, 1)
+        XCTAssertEqual(counter.userInputs, 1)
+
+        XCTAssertEqual(counter.flush(tap: .scroll, now: 110), .log(
+            "macOS turned off the scroll event tap 2 times since the last line: "
+                + "1 timeout (Scrollio's main thread answered too slowly), 1 by user input"
+        ))
+        XCTAssertEqual(counter.timeouts, 0)
+        // A second flush has nothing to say.
+        XCTAssertEqual(counter.flush(tap: .scroll, now: 111), EventTapDisableCounter.Decision.none)
+    }
+
+    func testATimeAfterTheIntervalIsWrittenAtOnce() {
+        var counter = EventTapDisableCounter()
+        _ = counter.note(.timeout, tap: .scroll, now: 100)
+        XCTAssertEqual(counter.note(.timeout, tap: .scroll, now: 110), .log(
+            "macOS turned off the scroll event tap: timeout (Scrollio's main thread answered too slowly)"
+        ))
+    }
+
+    /// A line written by a new time just before the scheduled flush: the flush must not write
+    /// a second line within 10 s, it waits for the rest of the interval.
+    func testAFlushNeverWritesWithinTheIntervalOfAnotherLine() {
+        var counter = EventTapDisableCounter()
+        _ = counter.note(.timeout, tap: .scroll, now: 100)
+        XCTAssertEqual(counter.note(.timeout, tap: .scroll, now: 101), .flush(after: 9))
+        // The flush is late; a time at 110 writes the line itself (2 times).
+        guard case .log(let line) = counter.note(.timeout, tap: .scroll, now: 110) else {
+            return XCTFail("a line is due at 110")
+        }
+        XCTAssertTrue(line.contains("2 times since the last line: 2 timeouts"), line)
+        XCTAssertEqual(counter.note(.timeout, tap: .scroll, now: 111), EventTapDisableCounter.Decision.none,
+                       "the flush from 101 is still scheduled")
+        XCTAssertEqual(counter.flush(tap: .scroll, now: 112), .flush(after: 8))
+        XCTAssertEqual(counter.flush(tap: .scroll, now: 120), .log(
+            "macOS turned off the scroll event tap: timeout (Scrollio's main thread answered too slowly)"
+        ))
+    }
+
+    func testOnlyTheTwoTurnedOffTypesAreCounted() {
+        // Anything else is ignored before a counter is touched; this must not log or crash.
+        EventTapDisableLog.note(.scroll, .scrollWheel)
+        EventTapDisableLog.note(.buttonsAndKeys, .otherMouseDown)
+    }
+
+    // MARK: Restarts and their throttle
+
+    func testRestartAndThrottleLines() {
+        XCTAssertEqual(
+            Interceptor.restartLine(kind: .scroll, cause: .timeout, restartsInWindow: 2),
+            "Restarting the scroll event tap: macOS turned it off after a timeout (restart 2 of 3 allowed within 60 s)"
+        )
+        XCTAssertEqual(
+            Interceptor.restartLine(kind: .buttonsAndKeys, cause: .foundOff, restartsInWindow: 1),
+            "Restarting the buttons and keys event tap: the keeper found it off (restart 1 of 3 allowed within 60 s)"
+        )
+        XCTAssertEqual(
+            Interceptor.throttledLine(kind: .scroll),
+            "Not restarting the scroll event tap: it was restarted 3 times within 60 s. It stays off until that "
+                + "time has passed, so input stays usable; the keeper tries again every 5 s"
+        )
+    }
+
+    /// The status item asks whether any tap is throttled; the set changes only once per tap.
+    func testTheThrottledTapsAreCountedOncePerTap() {
+        var taps = Interceptor.ThrottledTaps()
+        let first = ObjectIdentifier(NSObject.self)
+        let second = ObjectIdentifier(NSString.self)
+        XCTAssertTrue(taps.isEmpty)
+        XCTAssertTrue(taps.set(true, for: first))
+        XCTAssertFalse(taps.set(true, for: first), "no second change for the same tap")
+        XCTAssertTrue(taps.set(true, for: second))
+        XCTAssertTrue(taps.set(false, for: first))
+        XCTAssertFalse(taps.isEmpty)
+        XCTAssertFalse(taps.set(false, for: first))
+        XCTAssertTrue(taps.set(false, for: second))
+        XCTAssertTrue(taps.isEmpty)
+    }
+}

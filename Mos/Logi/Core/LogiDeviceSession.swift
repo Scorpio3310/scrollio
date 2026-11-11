@@ -1214,10 +1214,12 @@ class LogiDeviceSession {
                 return
             }
             report = built
+            let writeStarted = DispatchTime.now().uptimeNanoseconds
             result = IOHIDDeviceSetReport(
                 hidDevice, kIOHIDReportTypeOutput,
                 CFIndex(report[0]), report, report.count
             )
+            noteWriteTime(since: writeStarted, .feature(index: featureIndex, function: functionId))
 
         case .unsupported:
             LogiDebugPanel.log(device: deviceInfo.name, type: .warning, message: "Cannot send: unsupported connection mode")
@@ -1228,6 +1230,29 @@ class LogiDeviceSession {
         let resultStr = result == kIOReturnSuccess ? "OK" : String(format: "0x%08x", result)
         let decoded = decodeRequest(featureIndex: featureIndex, functionId: functionId, params: params)
         LogiDebugPanel.log(device: deviceInfo.name, type: .tx, message: "TX: \(hex)... -> \(resultStr)", decoded: decoded)
+    }
+
+    // MARK: - Write timing (measurement only, see LogiWriteTiming)
+
+    private var writeTiming = LogiWriteTiming()
+
+    private var writeLink: LogiWriteTiming.Link {
+        return connectionMode == .bleDirect ? .bluetooth : .receiver
+    }
+
+    /// After a write: how long it took, to the `logi` log when it was slow.
+    private func noteWriteTime(since started: UInt64, _ request: LogiWriteTiming.Request) {
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard let line = writeTiming.record(duration: now &- started, now: now, request: request, link: writeLink) else { return }
+        LogiSystemLog.note("[\(deviceInfo.name)] \(line)")
+    }
+
+    /// The discovery ran out. The first time on this connection (for a receiver: after the
+    /// last slot of its takeover sweep), the summary of the writes so far.
+    private func noteSetupWritesDone() {
+        guard !(receiverSweepActive && !pendingDivertSlots.isEmpty) else { return }
+        guard let line = writeTiming.finishSetup(link: writeLink) else { return }
+        LogiSystemLog.note("[\(deviceInfo.name)] \(line)")
     }
 
     // MARK: - Feature Discovery
@@ -1267,6 +1292,7 @@ class LogiDeviceSession {
     private func setDiscoveryInFlight(_ flag: Bool) {
         guard discoveryInFlight != flag else { return }
         discoveryInFlight = flag
+        if !flag { noteSetupWritesDone() }
         NotificationCenter.default.post(name: LogiSessionManager.discoveryStateDidChangeNotification, object: nil)
         LogiSessionManager.shared.recomputeAndNotifyActivityState()
     }
@@ -1737,10 +1763,12 @@ class LogiDeviceSession {
 
         pendingSlotPings.insert(slot)
 
+        let writeStarted = DispatchTime.now().uptimeNanoseconds
         let result = IOHIDDeviceSetReport(
             hidDevice, kIOHIDReportTypeOutput,
             CFIndex(report[0]), report, report.count
         )
+        noteWriteTime(since: writeStarted, .ping(slot: slot))
 
         let hex = report.map { String(format: "%02X", $0) }.joined(separator: " ")
         let resultStr = result == kIOReturnSuccess ? "OK" : String(format: "0x%08x", result)
@@ -1786,10 +1814,12 @@ class LogiDeviceSession {
             if 4 + i < report.count { report[4 + i] = p }
         }
 
+        let writeStarted = DispatchTime.now().uptimeNanoseconds
         let result = IOHIDDeviceSetReport(
             hidDevice, kIOHIDReportTypeOutput,
             CFIndex(report[0]), report, report.count
         )
+        noteWriteTime(since: writeStarted, .receiverRegister(register, long: isLong))
 
         let hex = report.prefix(min(report.count, 20)).map { String(format: "%02X", $0) }.joined(separator: " ")
         let resultStr = result == kIOReturnSuccess ? "OK" : String(format: "0x%08x", result)

@@ -29,6 +29,9 @@
 //  What starting and stopping does is in `Environment`, so the tests run the rules without
 //  event taps, windows or toasts.
 //
+//  Each start, stop and retry writes one line to the system log (category `app`, see
+//  AppSystemLog) with what caused it and how it ended.
+//
 
 import Cocoa
 
@@ -123,6 +126,11 @@ final class AppRunController {
     private(set) var isSessionActive = true
     /// Waits for the Accessibility access (at launch, or after it was lost).
     private(set) var recoveryTimer: Timer?
+    /// The access is there but the cores did not all start (an event tap could not be
+    /// created); the timer tries again. The status item says so instead of "needs access".
+    private(set) var isRetryingStart = false
+    /// Starts that failed in a row, for the log.
+    private var failedStarts = 0
 
     init(environment: Environment) {
         self.environment = environment
@@ -132,39 +140,65 @@ final class AppRunController {
         recoveryTimer?.invalidate()
     }
 
-    /// The cores do not run because the access is missing (not paused, not merely asleep).
+    /// The cores do not run because the access is missing (not paused, not merely asleep,
+    /// not a start that failed with the access there).
     var isWaitingForAccess: Bool {
-        return recoveryTimer != nil
+        return recoveryTimer != nil && !isRetryingStart
+    }
+
+    /// What started the cores, for the log.
+    enum StartTrigger: String {
+        case launch = "launch"
+        case resume = "resumed by the user"
+        case wake = "the Mac woke up"
+        case userBack = "this user has the Mac again"
+        case accessAllowed = "Accessibility access allowed"
+        case accessBack = "Accessibility access is back"
+        case retry = "retry"
+    }
+
+    /// What stopped them, for the log.
+    enum StopReason: String {
+        case sleep = "the Mac goes to sleep"
+        case quit = "Scrollio quits"
+        case otherUser = "another user has the Mac"
+        case paused = "paused by the user"
+        case other = "stop requested"
     }
 
     // MARK: - Lifecycle
 
-    /// Launch, resume. Does nothing while paused, while another user has the Mac, or when the
-    /// cores run already.
+    /// Launch. Does nothing while paused, while another user has the Mac, or when the cores
+    /// run already.
     func start() {
-        start(showingWelcomeGuide: true)
+        start(.launch, showingWelcomeGuide: true)
     }
 
     /// The Mac woke up. Like `start()`, but without the access only the timer is armed again:
     /// every wake opened the Welcome Guide again while the access was missing.
     func wake() {
-        start(showingWelcomeGuide: false)
+        start(.wake, showingWelcomeGuide: false)
     }
 
-    private func start(showingWelcomeGuide: Bool) {
+    private func start(_ trigger: StartTrigger, showingWelcomeGuide: Bool) {
         defer { postChange() }
-        guard !isPaused, isSessionActive else { return }
+        guard !isPaused, isSessionActive else {
+            AppSystemLog.note("Not starting (\(trigger.rawValue)): \(isPaused ? "paused by the user" : "another user has the Mac")")
+            return
+        }
         guard !coresActive else {
             cancelRecovery()
             return
         }
         if environment.hasAccess() {
-            NSLog("Regular Initialization")
             cancelRecovery()
-            startCoresOrRetry()
+            startCoresOrRetry(trigger)
         } else {
             // Not in the Accessibility list (or switched off there): the Welcome Guide
             // explains it, and the timer starts the cores once the access is there.
+            AppSystemLog.note("Not starting (\(trigger.rawValue)): Accessibility access is missing; "
+                + "checking again every \(Int(Self.launchRecoveryInterval)) s")
+            isRetryingStart = false
             if showingWelcomeGuide {
                 environment.showWelcomeGuide()
             }
@@ -173,8 +207,11 @@ final class AppRunController {
     }
 
     /// Mac going to sleep, app quitting.
-    func stop() {
+    func stop(because reason: StopReason = .other) {
+        AppSystemLog.note("Stopped (\(reason.rawValue)): "
+            + (coresActive ? "the event taps and the Logitech sessions are off" : "they were not running"))
         cancelRecovery()
+        isRetryingStart = false
         stopCores()
         postChange()
     }
@@ -182,23 +219,22 @@ final class AppRunController {
     /// Another user took the Mac: stop, and stay stopped (also through sleep and wake)
     /// until this session is active again.
     func sessionDidResign() {
-        NSLog("Scrollio: another user has the Mac, the event taps stop")
         isSessionActive = false
-        stop()
+        stop(because: .otherUser)
     }
 
     /// This user is back. Like a wake: without the access only the timer is armed again.
     func sessionDidBecomeActive() {
-        NSLog("Scrollio: this user has the Mac again")
         isSessionActive = true
-        start(showingWelcomeGuide: false)
+        start(.userBack, showingWelcomeGuide: false)
     }
 
     /// An event tap found the access gone. Several taps may report it at once: only the
     /// first one while the cores run does anything.
     func accessWasLost() {
         guard coresActive else { return }
-        NSLog("Accessibility permission lost at runtime, disabling cores")
+        AppSystemLog.problem("Accessibility access was turned off while Scrollio ran: stopped the event taps "
+            + "and the Logitech sessions; checking for the access every \(Int(Self.lostRecoveryInterval)) s")
         stopCores()
         environment.showAccessLostToast()
         scheduleRecovery(every: Self.lostRecoveryInterval)
@@ -209,11 +245,10 @@ final class AppRunController {
     func setPaused(_ paused: Bool) {
         guard paused != isPaused else { return }
         isPaused = paused
-        NSLog(paused ? "Paused by the user" : "Resumed by the user")
         if paused {
-            stop()
+            stop(because: .paused)
         } else {
-            start()
+            start(.resume, showingWelcomeGuide: true)
         }
     }
 
@@ -227,15 +262,34 @@ final class AppRunController {
 
     /// Starts the cores. When they do not all start, whatever did is stopped again and the
     /// timer tries again later.
-    private func startCoresOrRetry() {
+    private func startCoresOrRetry(_ trigger: StartTrigger) {
         if environment.startCores() {
             coresActive = true
+            isRetryingStart = false
+            AppSystemLog.note("Started (\(trigger.rawValue)): the event taps and the Logitech sessions run"
+                + (failedStarts > 0 ? " (after \(failedStarts) failed \(failedStarts == 1 ? "start" : "starts"))" : ""))
+            failedStarts = 0
             return
         }
-        NSLog("Scrollio: the event taps could not be started; trying again in %.0f s", Self.launchRecoveryInterval)
+        failedStarts += 1
+        if Self.logsFailedStart(failedStarts) {
+            AppSystemLog.problem(Self.failedStartLine(trigger: trigger, failedStarts: failedStarts))
+        }
         environment.stopCores()
         coresActive = false
+        isRetryingStart = true
         scheduleRecovery(every: Self.launchRecoveryInterval)
+    }
+
+    /// A start that keeps failing is tried every 10 s: the first three failures are written,
+    /// then one in 30 (every 5 minutes).
+    static func logsFailedStart(_ failedStarts: Int) -> Bool {
+        return failedStarts <= 3 || failedStarts % 30 == 0
+    }
+
+    static func failedStartLine(trigger: StartTrigger, failedStarts: Int) -> String {
+        return "Could not start (\(trigger.rawValue)): an event tap could not be created although Accessibility "
+            + "access is allowed; trying again in \(Int(launchRecoveryInterval)) s (failed starts in a row: \(failedStarts))"
     }
 
     private func stopCores() {
@@ -256,10 +310,23 @@ final class AppRunController {
     }
 
     private func recoveryTick() {
-        guard !isPaused, isSessionActive, !coresActive, environment.hasAccess() else { return }
-        NSLog("First Initialization (Accessibility Authorization Needed)")
+        guard !isPaused, isSessionActive, !coresActive else { return }
+        guard environment.hasAccess() else {
+            if isRetryingStart {
+                // The access went away while a failed start waited: now it waits for the access.
+                isRetryingStart = false
+                postChange()
+            }
+            return
+        }
+        let trigger: StartTrigger
+        if isRetryingStart {
+            trigger = .retry
+        } else {
+            trigger = recoveryTimer?.timeInterval == Self.lostRecoveryInterval ? .accessBack : .accessAllowed
+        }
         cancelRecovery()
-        startCoresOrRetry()
+        startCoresOrRetry(trigger)
         postChange()
     }
 

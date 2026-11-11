@@ -70,7 +70,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Its login item (or the user) can start it again later: quit it each time.
         LegacyMosTakeover.startWatchingLaunches()
 
-        // 禁止重复运行, 结束正在运行的实例
+        // 禁止重复运行, 结束正在运行的实例: another copy is asked to quit and waited for (at
+        // most 3 s, then force-quit) before this one starts any event tap or Logitech session.
         Utils.preventMultiRunning(killExist: true)
         
         // DEBUG: 清空用户设置
@@ -177,7 +178,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard AppRuntime.shouldRunAppStartupSideEffects else { return }
         MouseGesturePointerLock.shared.forceRelease()
         // The same stop as sleep: the event taps, then the Logitech mice get their buttons back.
-        AppRunController.shared.stop()
+        AppRunController.shared.stop(because: .quit)
         // 写入尚未 flush 的脏配置组
         Options.shared.flushPendingSaves()
     }
@@ -197,7 +198,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AppRunController.shared.sessionDidResign()
     }
     @objc func willSleep(notification: NSNotification) {
-        AppRunController.shared.stop()
+        AppRunController.shared.stop(because: .sleep)
     }
     @objc func didWake(notification: NSNotification) {
         AppRunController.shared.wake()

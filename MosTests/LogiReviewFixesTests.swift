@@ -315,3 +315,75 @@ final class BrailleSpinnerTests: XCTestCase {
         XCTAssertFalse(spinner.isRunning)
     }
 }
+
+// MARK: - How long the HID++ writes take
+
+/// Every HID++ write is a synchronous IOHIDDeviceSetReport on the main thread. The time each
+/// one takes goes to the `logi` log when it is slow, at most once a second, and once per
+/// connection as a summary. Only the wording and the limits are tested; nothing is written.
+final class LogiWriteTimingTests: XCTestCase {
+
+    private let ms: UInt64 = 1_000_000
+    private let second: UInt64 = 1_000_000_000
+
+    func testFastWritesWriteNoLine() {
+        var timing = LogiWriteTiming()
+        XCTAssertNil(timing.record(duration: 4 * ms, now: 10 * second, request: .feature(index: 0x05, function: 1), link: .bluetooth))
+        XCTAssertNil(timing.record(duration: 4_999_999, now: 11 * second, request: .feature(index: 0x05, function: 1), link: .bluetooth))
+    }
+
+    func testASlowWriteIsWrittenWithWhatItAskedAndTheLink() {
+        var timing = LogiWriteTiming()
+        XCTAssertEqual(
+            timing.record(duration: 12_340_000, now: 10 * second, request: .feature(index: 0x05, function: 1), link: .bluetooth),
+            "Slow HID++ write: 12.3 ms (feature index 0x05, function 1, over Bluetooth); "
+                + "1 write of 5 ms or more since the last such line, longest 12.3 ms"
+        )
+        var receiver = LogiWriteTiming()
+        XCTAssertEqual(
+            receiver.record(duration: 5 * ms, now: 10 * second, request: .ping(slot: 2), link: .receiver),
+            "Slow HID++ write: 5.0 ms (ping of slot 0x02, through a receiver); "
+                + "1 write of 5 ms or more since the last such line, longest 5.0 ms"
+        )
+        XCTAssertEqual(LogiWriteTiming.Request.receiverRegister(0xB5, long: true).text, "receiver register 0xB5 long read")
+        XCTAssertEqual(LogiWriteTiming.Request.receiverRegister(0xB5, long: false).text, "receiver register 0xB5 read")
+    }
+
+    /// At most one line a second; the next one counts the slow writes in between.
+    func testAtMostOneLineASecondWithTheCountAndTheLongest() {
+        var timing = LogiWriteTiming()
+        let request = LogiWriteTiming.Request.feature(index: 0x0B, function: 3)
+        XCTAssertNotNil(timing.record(duration: 6 * ms, now: 10 * second, request: request, link: .bluetooth))
+        XCTAssertNil(timing.record(duration: 30 * ms, now: 10 * second + 200 * ms, request: request, link: .bluetooth))
+        XCTAssertNil(timing.record(duration: 2 * ms, now: 10 * second + 300 * ms, request: request, link: .bluetooth), "fast: not counted")
+        XCTAssertNil(timing.record(duration: 8 * ms, now: 10 * second + 999 * ms, request: request, link: .bluetooth))
+        XCTAssertEqual(
+            timing.record(duration: 7 * ms, now: 11 * second, request: request, link: .bluetooth),
+            "Slow HID++ write: 7.0 ms (feature index 0x0B, function 3, over Bluetooth); "
+                + "3 writes of 5 ms or more since the last such line, longest 30.0 ms"
+        )
+    }
+
+    /// Once per connection: the writes of the first batch, their total and the longest.
+    func testTheSetupSummaryIsWrittenOnce() {
+        var timing = LogiWriteTiming()
+        let request = LogiWriteTiming.Request.feature(index: 0x00, function: 0)
+        _ = timing.record(duration: 1 * ms, now: 1 * second, request: request, link: .receiver)
+        _ = timing.record(duration: 2 * ms, now: 2 * second, request: request, link: .receiver)
+        _ = timing.record(duration: 9 * ms, now: 3 * second, request: request, link: .receiver)
+        XCTAssertEqual(
+            timing.finishSetup(link: .receiver),
+            "HID++ writes while connecting (through a receiver): 3, 12.0 ms in total, longest 9.0 ms"
+        )
+        XCTAssertNil(timing.finishSetup(link: .receiver), "once per connection")
+        // Later writes are no longer added up.
+        _ = timing.record(duration: 1 * ms, now: 4 * second, request: request, link: .receiver)
+        XCTAssertEqual(timing.setupWrites, 3)
+    }
+
+    func testASummaryWithoutWrites() {
+        var timing = LogiWriteTiming()
+        XCTAssertEqual(timing.finishSetup(link: .bluetooth),
+                       "HID++ writes while connecting (over Bluetooth): 0, 0.0 ms in total, longest 0.0 ms")
+    }
+}

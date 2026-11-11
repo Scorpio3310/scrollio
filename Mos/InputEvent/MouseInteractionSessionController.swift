@@ -229,7 +229,7 @@ final class MouseInteractionSessionController {
                 try motionInterceptor.start()
                 isMotionTapRunning = true
             } catch {
-                NSLog("MouseInteractionSessionController: Failed to start motion interceptor: \(error)")
+                AppSystemLog.problem("MouseInteractionSessionController: could not start the pointer movement event tap: \(error)")
                 isMotionTapRunning = false
             }
             return
@@ -253,7 +253,7 @@ final class MouseInteractionSessionController {
             motionInterceptor = interceptor
             isMotionTapRunning = true
         } catch {
-            NSLog("MouseInteractionSessionController: Failed to create motion interceptor: \(error)")
+            AppSystemLog.problem("MouseInteractionSessionController: could not create the pointer movement event tap: \(error)")
             isMotionTapRunning = false
         }
     }
@@ -277,6 +277,7 @@ final class MouseInteractionSessionController {
 
     private func handleMotionTapEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            EventTapDisableLog.note(.pointerMovement, type)
             InputProcessor.shared.clearActiveBindings()
             return Unmanaged.passUnretained(event)
         }

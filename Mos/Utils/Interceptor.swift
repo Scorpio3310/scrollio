@@ -13,9 +13,14 @@ class Interceptor {
     private var keeper: Timer?
     private var _eventTapRef: CFMachPort?
     private var _runLoopSourceRef: CFRunLoopSource?
+    /// What this tap listens to, for the log.
+    let kind: EventTapKind
 
     /// keeper 触发的自动重启时间戳, 仅保留冷却窗口内的记录
     private var autoRestartHistory: [Date] = []
+    /// The restarts of this tap are refused by the throttle; it is off. Cleared when a
+    /// restart is admitted again, and when the tap is stopped or paused on purpose.
+    private(set) var restartsThrottled = false
 
     // 防自锁: 主线程被阻塞时 (如 TCC 权限弹窗挂起同步文件调用), active tap 无响应,
     // 系统超时禁用 tap 后输入才恢复; keeper 若盲目重启会把刚恢复的输入再次冻住,
@@ -50,7 +55,9 @@ class Interceptor {
     
     public init(event mask: CGEventMask, handleBy eventHandler: @escaping CGEventTapCallBack, listenOn eventTap: CGEventTapLocation, placeAt eventPlace: CGEventTapPlacement, for behaver: CGEventTapOptions) throws {
         // 创建拦截层
+        kind = EventTapKind.of(mask: mask)
         guard let tap = CGEvent.tapCreate(tap: eventTap, place: eventPlace, options: behaver, eventsOfInterest: mask, callback: eventHandler, userInfo: nil) else {
+            AppSystemLog.problem("Could not create the \(kind.rawValue) event tap")
             throw InterceptorError.eventTapCreationFailed
         }
         _eventTapRef = tap
@@ -119,9 +126,17 @@ extension Interceptor {
                 return
             }
             if !self.isRunning() {
-                self.restartUnlessThrottled()
+                self.restartUnlessThrottled(after: .foundOff)
             }
         })
+    }
+
+    /// Why an automatic restart was asked for.
+    enum RestartCause: String {
+        /// macOS turned the tap off because a callback took too long (`tapDisabledByTimeout`).
+        case timeout = "macOS turned it off after a timeout"
+        /// The keeper found the tap off.
+        case foundOff = "the keeper found it off"
     }
 
     /// An automatic restart: the keeper found the tap off, or the system turned it off
@@ -130,14 +145,70 @@ extension Interceptor {
     /// through the same throttle.
     /// - Returns: false when the throttle refused it.
     @discardableResult
-    func restartUnlessThrottled() -> Bool {
+    func restartUnlessThrottled(after cause: RestartCause = .timeout) -> Bool {
         guard Self.admitAutoRestart(history: &autoRestartHistory, now: Date()) else {
-            NSLog("Scrollio: event tap auto-restart throttled (%d restarts within %.0fs), cooling down",
-                  Self.autoRestartLimit, Self.autoRestartWindow)
+            if !restartsThrottled {
+                setRestartsThrottled(true)
+                AppSystemLog.problem(Self.throttledLine(kind: kind))
+            }
             return false
         }
+        if restartsThrottled {
+            setRestartsThrottled(false)
+        }
+        AppSystemLog.note(Self.restartLine(kind: kind, cause: cause, restartsInWindow: autoRestartHistory.count))
         restart()
         return true
+    }
+
+    static func restartLine(kind: EventTapKind, cause: RestartCause, restartsInWindow: Int) -> String {
+        return "Restarting the \(kind.rawValue) event tap: \(cause.rawValue) "
+            + "(restart \(restartsInWindow) of \(autoRestartLimit) allowed within \(Int(autoRestartWindow)) s)"
+    }
+
+    static func throttledLine(kind: EventTapKind) -> String {
+        return "Not restarting the \(kind.rawValue) event tap: it was restarted \(autoRestartLimit) times "
+            + "within \(Int(autoRestartWindow)) s. It stays off until that time has passed, so input stays usable; "
+            + "the keeper tries again every 5 s"
+    }
+
+    // MARK: Restarts refused by the throttle
+
+    /// Posted (main queue, object nil) when a tap's restarts started or stopped being refused
+    /// by the throttle. The status item follows it: while a tap stays off, Scrollio does not
+    /// work although it looks as if it did.
+    static let restartThrottleDidChangeNotification = Notification.Name("ScrollioEventTapRestartThrottleDidChange")
+
+    /// The taps whose restarts the throttle refuses now. Main thread only, as the taps.
+    private static var throttledTaps = ThrottledTaps()
+
+    /// Some event tap is off and its restarts are refused until the throttle's window passed.
+    static var hasThrottledTap: Bool {
+        return !throttledTaps.isEmpty
+    }
+
+    private func setRestartsThrottled(_ throttled: Bool) {
+        restartsThrottled = throttled
+        guard Self.throttledTaps.set(throttled, for: ObjectIdentifier(self)) else { return }
+        // Later, never from inside a tap callback.
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: Self.restartThrottleDidChangeNotification, object: nil)
+        }
+    }
+
+    /// The set of taps whose restarts are refused.
+    struct ThrottledTaps {
+        private var taps = Set<ObjectIdentifier>()
+
+        var isEmpty: Bool { taps.isEmpty }
+
+        /// - Returns: whether the set changed.
+        mutating func set(_ throttled: Bool, for tap: ObjectIdentifier) -> Bool {
+            if throttled {
+                return taps.insert(tap).inserted
+            }
+            return taps.remove(tap) != nil
+        }
     }
 
     /// Installs a keeper timer, invalidating the one it replaces. A replaced timer that is
@@ -149,11 +220,21 @@ extension Interceptor {
     }
     
     public func stop() {
+        endThrottleOnPurpose()
         stop(removeFromRunLoop: true)
     }
 
     public func pause() {
+        endThrottleOnPurpose()
         stop(removeFromRunLoop: false)
+    }
+
+    /// Stopped or paused on purpose: off because it should be, not because its restarts are
+    /// refused.
+    private func endThrottleOnPurpose() {
+        if restartsThrottled {
+            setRestartsThrottled(false)
+        }
     }
 
     private func stop(removeFromRunLoop: Bool) {
@@ -187,7 +268,7 @@ extension Interceptor {
             NotificationCenter.default.post(name: .mosAccessibilityPermissionLost, object: nil)
             return
         }
-        pause()
+        stop(removeFromRunLoop: false)
         onRestart?()
         guard shouldRestart?() ?? true else { return }
         // 使用 closure timer 避免 @objc throws 方法作为 selector 的 ObjC bridge 问题

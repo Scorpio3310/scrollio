@@ -66,10 +66,11 @@ See [Attribution and licence](#attribution-and-licence).
 - Lives in the menu bar. Its menu shows each Logitech mouse's battery, "Pause Scrollio" /
   "Resume Scrollio" (a pause stops the event handling and gives the Logitech mice their
   buttons back; it is not remembered, a relaunch runs again), Settings and Quit. With
-  Option held it also lists Scroll Monitor, Logitech Diagnostics and Test Toasts. The
-  icon is dimmed while Scrollio is paused or waits for the Accessibility access. While
-  paused, General also says so, with a Resume button (the way back when the menu bar
-  icon is hidden).
+  Option held it also lists Logitech Diagnostics (the debug build also Scroll Monitor and
+  Test Toasts). The icon is dimmed while Scrollio is paused, waits for the Accessibility
+  access, or could not start its event taps and tries again (its tooltip says which).
+  While paused, General also says so, with a Resume button (the way back when the menu
+  bar icon is hidden).
 - The menu bar icon can be hidden (General > Show in menu bar); opening the app again
   then shows the settings, or the Welcome Guide while the access is missing.
 - Can open at login; General says when macOS waits for that to be approved in System
@@ -77,7 +78,9 @@ See [Attribution and licence](#attribution-and-licence).
 - Settings in one window with a sidebar of panes, as in System Settings.
 - Stops while the Mac sleeps or another user has it, and starts again when this user is
   back.
-- It quits a running Mos at launch and, on the first launch, copies its settings.
+- It quits a running Mos at launch and, on the first launch, copies its settings. Another
+  running copy of Scrollio is asked to quit too, and waited for (at most 3 seconds, then
+  forced) before this one starts its event taps and Logitech sessions.
 
 ## Diagnostics
 
@@ -113,13 +116,24 @@ The debug build logs under `com.nikklemenc.Scrollio.debug`. Nothing is logged pe
   decision to write or not to write and why (wheel lines start with the mouse's name and
   receiver slot, for example `[MX Master 4 slot 0x01] Wheel: Mode: ... already set, no
   write`; a value you never set is "not set by the user, left alone"), the read-back
-  after a write, requests the mouse refused or did not answer, and each gesture haptic cue.
-- Starting and stopping (launch and wake, another user, "Pause Scrollio", the
-  Accessibility access lost or back, event taps that could not be created) are plain
-  lines of the app's process, without a category:
+  after a write, requests the mouse refused or did not answer, each gesture haptic cue,
+  HID++ writes that took 5 ms or more (they block the thread that serves the event taps;
+  at most one line a second, with how many and the longest), and once per connection the
+  number of writes while connecting with their total and longest time.
+- Category `app`, the app's own health: every start and stop with its cause (launch,
+  sleep and wake, another user, "Pause Scrollio", the Accessibility access lost or back,
+  quitting), event taps that could not be created and the retries, taps that macOS turned
+  off (at most one line per tap every 10 seconds, with how many times since the last
+  line), tap restarts and their throttle, the display link's recovery, the gesture
+  watchdogs, and the old Mos or another copy of Scrollio being quit at launch:
+
+  ```text
+  Started (the Mac woke up): the event taps and the Logitech sessions run
+  macOS turned off the scroll event tap 4 times since the last line: 4 timeouts (Scrollio's main thread answered too slowly), 0 by user input
+  ```
 
   ```bash
-  log show --last 1h --predicate 'process == "Scrollio" AND (eventMessage CONTAINS "Initialization" OR eventMessage CONTAINS "Paused" OR eventMessage CONTAINS "Resumed" OR eventMessage CONTAINS "Accessibility" OR eventMessage CONTAINS "event taps" OR eventMessage CONTAINS "has the Mac")'
+  log show --last 1h --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "app"'
   ```
 
 Nothing in these lines identifies a person or an app's content, and nothing leaves the Mac.
