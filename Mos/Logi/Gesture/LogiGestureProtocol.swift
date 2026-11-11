@@ -136,10 +136,6 @@ enum LogiGestureProtocol {
     static let hapticSetStateFunction: UInt8 = 2
     static let hapticPlayFunction: UInt8 = 4
 
-    static let hapticEnabledFlag: UInt8 = 0x01
-    /// Intensity used when the mouse reports 0 (0 with "enabled" would still be silent).
-    static let hapticFallbackLevel: UInt8 = LogiHapticSettingsProtocol.fallbackStrength
-
     /// The two state bytes (flags, intensity) of a getState answer.
     static func hapticState(_ report: [UInt8]) -> (flags: UInt8, level: UInt8)? {
         guard report.count >= 6 else { return nil }

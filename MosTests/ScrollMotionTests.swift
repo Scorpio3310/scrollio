@@ -321,26 +321,11 @@ final class ScrollMotionTests: XCTestCase {
         XCTAssertEqual(ScrollLeadLimiter.tailGap(timeConstant: 0.187), 0.561, accuracy: 1e-9)
     }
 
-    // MARK: - Event clock
+    // MARK: - Display-link clock
 
-    func testEventClock_readsMachTicks() {
-        let now: UInt64 = 10_000_000_000
-        let ts = now - 1_000
-        let seconds = ScrollEventClock.seconds(fromTimestamp: ts, now: now)
-        XCTAssertEqual(seconds ?? -1, Double(ts) * ScrollEventClock.secondsPerTick, accuracy: 1e-12)
-    }
-
-    func testEventClock_acceptsNanosecondTimestamps() {
-        let now: UInt64 = 10_000_000_000
-        let nowSeconds = Double(now) * ScrollEventClock.secondsPerTick
-        let nanoseconds = UInt64(nowSeconds * 1_000_000_000)
-        let seconds = ScrollEventClock.seconds(fromTimestamp: nanoseconds, now: now)
-        XCTAssertEqual(seconds ?? -1, nowSeconds, accuracy: 1e-6)
-    }
-
-    func testEventClock_rejectsZeroAndFutureTimestamps() {
-        XCTAssertNil(ScrollEventClock.seconds(fromTimestamp: 0, now: 1_000))
-        XCTAssertNil(ScrollEventClock.seconds(fromTimestamp: UInt64.max / 2, now: 1_000_000))
-        XCTAssertEqual(ScrollEventClock.seconds(fromTimestamp: 0), CACurrentMediaTime(), accuracy: 0.05, "falls back to now")
+    func testEventClock_secondsPerTickMatchesTheMachTimebase() {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        XCTAssertEqual(ScrollEventClock.secondsPerTick, Double(info.numer) / Double(info.denom) / 1e9, accuracy: 1e-18)
     }
 }
