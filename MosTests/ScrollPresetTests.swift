@@ -68,10 +68,9 @@ final class ScrollPresetTests: XCTestCase {
             let scroll = OPTIONS_SCROLL_DEFAULT()
             scroll.smooth = false
             scroll.smoothSimTrackpad = true
-            scroll.durationBeforeSimTrackpadLock = 1.2
             scroll.step = 99
             scroll.speed = 9
-            scroll.duration = ScrollDurationLimits.simulateTrackpadDefault
+            scroll.duration = 4.75
             var tuning = ScrollTuningSettings(freeSpinEnabled: false, freeSpinSmoothness: 4, freeSpinSpeed: 3, acceleration: 1)
 
             preset.apply(to: scroll, tuning: &tuning)
@@ -79,7 +78,6 @@ final class ScrollPresetTests: XCTestCase {
             let values = preset.values
             XCTAssertTrue(scroll.smooth, "\(preset)")
             XCTAssertEqual(scroll.smoothSimTrackpad, values.simulateTrackpad, "\(preset)")
-            XCTAssertNil(scroll.durationBeforeSimTrackpadLock, "\(preset)")
             XCTAssertEqual(scroll.step, values.step, "\(preset)")
             XCTAssertEqual(scroll.speed, values.speed, "\(preset)")
             XCTAssertEqual(scroll.duration, values.duration, "\(preset)")
@@ -203,7 +201,6 @@ struct ScrollPresetGlobalSnapshot {
     private let speed: Double
     private let duration: Double
     private let smoothSimTrackpad: Bool
-    private let durationBeforeSimTrackpadLock: Double?
     private let tuning: ScrollTuningSettings
 
     init() {
@@ -213,7 +210,6 @@ struct ScrollPresetGlobalSnapshot {
         speed = scroll.speed
         duration = scroll.duration
         smoothSimTrackpad = scroll.smoothSimTrackpad
-        durationBeforeSimTrackpadLock = scroll.durationBeforeSimTrackpadLock
         tuning = Options.shared.scrollTuning
     }
 
@@ -224,7 +220,6 @@ struct ScrollPresetGlobalSnapshot {
         scroll.speed = speed
         scroll.duration = duration
         scroll.smoothSimTrackpad = smoothSimTrackpad
-        scroll.durationBeforeSimTrackpadLock = durationBeforeSimTrackpadLock
         Options.shared.scrollTuning = tuning
     }
 }

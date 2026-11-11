@@ -79,10 +79,6 @@ struct REMOTE_CONTROL_APPLICATION {
     ]
 }
 
-enum ScrollDurationLimits {
-    static let simulateTrackpadDefault: Double = 4.75
-}
-
 /// 默认设置项
 // 常规
 class OPTIONS_GENERAL_DEFAULT {
@@ -154,9 +150,6 @@ class OPTIONS_SCROLL_DEFAULT: Codable {
     var smoothHorizontal = true {
         didSet {Options.shared.markChanged(scrollContainer: self)}
     }
-    var durationBeforeSimTrackpadLock: Double? {
-        didSet {Options.shared.markChanged(scrollContainer: self)}
-    }
     // 工具
     static func generateDurationTransition(with duration: Double) -> Double {
         // 上界, 此处需要与界面的 Slider 上界保持同步, 并添加 0.2 的偏移令结果不为 0
@@ -183,9 +176,32 @@ extension OPTIONS_SCROLL_DEFAULT: Equatable {
             l.deadZone == r.deadZone &&
             l.smoothSimTrackpad == r.smoothSimTrackpad &&
             l.smoothVertical == r.smoothVertical &&
-            l.smoothHorizontal == r.smoothHorizontal &&
-            l.durationBeforeSimTrackpadLock == r.durationBeforeSimTrackpadLock
+            l.smoothHorizontal == r.smoothHorizontal
         )
+    }
+}
+
+// Legacy: the Duration lock of "Trackpad-style events".
+// Older builds forced Duration to 4.75 while "Trackpad-style events" was on without momentum and
+// kept the Duration from before in `durationBeforeSimTrackpadLock`. The lock is gone. Only per-app
+// scroll options ever stored that key (inside the applications JSON); the global ones kept it in
+// memory. Decoding ignores the key, `Application.init(from:)` reads it once through
+// `LegacySimTrackpadLock`, and nothing writes it again.
+extension OPTIONS_SCROLL_DEFAULT {
+    /// The remembered Duration of the old lock, as stored per-app scroll options carry it.
+    struct LegacySimTrackpadLock: Decodable {
+        /// The Duration the lock forced.
+        static let lockedDuration = 4.75
+        var durationBeforeSimTrackpadLock: Double?
+    }
+
+    /// Gives back the Duration from before the old lock, when trackpad-style events are on and
+    /// Duration still is the locked 4.75. Anything else stays as stored.
+    func restoreDuration(from legacy: LegacySimTrackpadLock) {
+        guard let remembered = legacy.durationBeforeSimTrackpadLock,
+              smoothSimTrackpad,
+              duration == LegacySimTrackpadLock.lockedDuration else { return }
+        duration = remembered
     }
 }
 

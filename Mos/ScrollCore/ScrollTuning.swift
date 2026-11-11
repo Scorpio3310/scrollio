@@ -205,27 +205,16 @@ struct ScrollTuningSettings: Codable, Equatable {
         horizontalWheelAction = action.flatMap(ScrollHorizontalWheelAction.init(rawValue:)) ?? fallback.horizontalWheelAction
     }
 
-    /// "Simulate trackpad" locks Duration to `ScrollDurationLimits.simulateTrackpadDefault`,
-    /// which gives a trackpad-like glide from the smoothing alone. With momentum on, the glide
-    /// comes from the coast instead, so Duration stays free.
-    func locksDuration(simulateTrackpad: Bool) -> Bool {
-        return simulateTrackpad && momentum == nil
-    }
-
     /// Adjusts speed and smoothing for the current wheel state.
     /// - Parameters:
     ///   - speed: regular speed (global or per-app)
     ///   - durationTransition: regular per-frame interpolation factor at 60 Hz (already transformed)
     ///   - spin: vertical wheel state (`.idle` for the horizontal axis)
-    ///   - simulateTrackpad: Duration is locked while trackpad simulation is on, so free-spin
-    ///     smoothness is not applied then. Pass `locksDuration(simulateTrackpad:)`: with
-    ///     momentum on there is no lock
     ///   - amplification: dash multiplier (1 when dash is not held)
     func resolve(
         speed: Double,
         durationTransition: Double,
         spin: ScrollSpinState,
-        simulateTrackpad: Bool = false,
         amplification: Double = 1
     ) -> ScrollTuningResolution {
         let blend = freeSpinEnabled ? Self.clamp(spin.freeSpinBlend, to: 0...1) : 0
@@ -236,7 +225,7 @@ struct ScrollTuningSettings: Codable, Equatable {
         let multiplier = min(Self.maximumCombinedMultiplier, combined)
 
         var resolvedDuration = durationTransition
-        if blend > 0 && !simulateTrackpad {
+        if blend > 0 {
             let freeSpinDuration = OPTIONS_SCROLL_DEFAULT.generateDurationTransition(
                 with: Self.clamp(freeSpinSmoothness, to: Self.freeSpinSmoothnessRange)
             )

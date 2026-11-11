@@ -16,16 +16,9 @@ struct ScrollPresetValues: Equatable {
     var speed: Double
     /// Same scale as the Duration slider (0...5).
     var duration: Double
-    /// Turn on "Simulate trackpad". Without momentum the duration is then locked to
-    /// `ScrollDurationLimits.simulateTrackpadDefault` and `duration` is kept for when it is
-    /// turned off; with momentum (`tuning.momentum`) there is no lock and `duration` applies.
+    /// Turn on "Trackpad-style events". `duration` applies either way.
     var simulateTrackpad: Bool
     var tuning: ScrollTuningSettings
-
-    /// The Duration the Scrolling tab shows once the preset is applied.
-    var effectiveDuration: Double {
-        tuning.locksDuration(simulateTrackpad: simulateTrackpad) ? ScrollDurationLimits.simulateTrackpadDefault : duration
-    }
 }
 
 enum ScrollPreset: String, CaseIterable {
@@ -111,13 +104,7 @@ enum ScrollPreset: String, CaseIterable {
         let values = self.values
         scroll.smooth = true
         scroll.smoothSimTrackpad = values.simulateTrackpad
-        if values.tuning.locksDuration(simulateTrackpad: values.simulateTrackpad) {
-            scroll.durationBeforeSimTrackpadLock = values.duration
-            scroll.duration = ScrollDurationLimits.simulateTrackpadDefault
-        } else {
-            scroll.durationBeforeSimTrackpadLock = nil
-            scroll.duration = values.duration
-        }
+        scroll.duration = values.duration
         scroll.step = values.step
         scroll.speed = values.speed
         let horizontalWheelAction = tuning.horizontalWheelAction
@@ -144,7 +131,7 @@ enum ScrollPreset: String, CaseIterable {
               scroll.smoothSimTrackpad == values.simulateTrackpad,
               Self.isClose(scroll.step, values.step),
               Self.isClose(scroll.speed, values.speed),
-              Self.isClose(scroll.duration, values.effectiveDuration),
+              Self.isClose(scroll.duration, values.duration),
               Self.isClose(tuning.acceleration, values.tuning.acceleration),
               tuning.freeSpinEnabled == values.tuning.freeSpinEnabled,
               tuning.momentum == values.tuning.momentum else {
@@ -168,27 +155,5 @@ enum ScrollPreset: String, CaseIterable {
 
     private static func isClose(_ a: Double, _ b: Double) -> Bool {
         abs(a - b) <= matchTolerance + 1e-9
-    }
-}
-
-// MARK: - Momentum and the Duration lock
-
-extension ScrollTuningSettings {
-    /// Turns momentum on (`settings`) or off (nil) and hands the Duration lock over:
-    /// "Simulate trackpad" only locks Duration while momentum is off (`locksDuration`).
-    /// Unlocking gives back the Duration from before the lock; locking remembers the current one.
-    mutating func setMomentum(_ settings: ScrollMomentumSettings?, adjusting scroll: OPTIONS_SCROLL_DEFAULT) {
-        let wasLocked = locksDuration(simulateTrackpad: scroll.smoothSimTrackpad)
-        momentum = settings
-        let isLocked = locksDuration(simulateTrackpad: scroll.smoothSimTrackpad)
-        if wasLocked && !isLocked {
-            if let previous = scroll.durationBeforeSimTrackpadLock {
-                scroll.duration = previous
-            }
-            scroll.durationBeforeSimTrackpadLock = nil
-        } else if !wasLocked && isLocked {
-            scroll.durationBeforeSimTrackpadLock = scroll.duration
-            scroll.duration = ScrollDurationLimits.simulateTrackpadDefault
-        }
     }
 }

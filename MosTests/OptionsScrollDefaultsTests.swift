@@ -72,6 +72,50 @@ final class OptionsScrollDefaultsTests: XCTestCase {
                           "missing speed key must never resolve to 0.0 (deadens scrolling)")
     }
 
+    // MARK: - Migration: the old Duration lock of "Trackpad-style events"
+
+    // Builds with the lock forced Duration to 4.75 and stored the Duration from before in
+    // `durationBeforeSimTrackpadLock` (per-app scroll options only; the global ones never
+    // stored it). Loading gives that Duration back once and drops the key.
+
+    func testLegacyLock_restoresTheRememberedDuration() throws {
+        let app = try loadLegacyApplication(simTrackpad: true, duration: 4.75, remembered: 2.0)
+        XCTAssertEqual(app.scroll.duration, 2.0)
+        XCTAssertTrue(app.scroll.smoothSimTrackpad, "trackpad-style events stay on")
+        XCTAssertEqual(app.scroll.step, 40, "the other values load as stored")
+    }
+
+    func testLegacyLock_keepsADurationThatIsNotTheLockedOne() throws {
+        // With momentum on the lock did not apply, so Duration is the user's own.
+        let app = try loadLegacyApplication(simTrackpad: true, duration: 3.13, remembered: 2.0)
+        XCTAssertEqual(app.scroll.duration, 3.13)
+    }
+
+    func testLegacyLock_needsTrackpadStyleOn() throws {
+        let app = try loadLegacyApplication(simTrackpad: false, duration: 4.75, remembered: 2.0)
+        XCTAssertEqual(app.scroll.duration, 4.75)
+    }
+
+    func testLegacyLock_withoutARememberedDurationNothingChanges() throws {
+        let app = try loadLegacyApplication(simTrackpad: true, duration: 4.75, remembered: nil)
+        XCTAssertEqual(app.scroll.duration, 4.75)
+        XCTAssertEqual(app.scroll.step, 40)
+    }
+
+    func testLegacyLock_theRememberedDurationIsNeverWrittenAgain() throws {
+        for (simTrackpad, duration) in [(true, 4.75), (true, 3.13), (false, 4.75)] {
+            let data = try legacyApplicationsData(simTrackpad: simTrackpad, duration: duration, remembered: 2.0)
+            let applications = try EnhanceArray<Application>(withData: data, matchKey: "path")
+            let loaded = try XCTUnwrap(applications.get(by: Self.legacyPath))
+            let saved = try XCTUnwrap(applications.json())
+            let text = try XCTUnwrap(String(data: saved, encoding: .utf8))
+            XCTAssertFalse(text.contains("durationBeforeSimTrackpadLock"), "\(simTrackpad) \(duration)")
+            // Loading the saved settings again changes nothing more.
+            let reloaded = try EnhanceArray<Application>(withData: saved, matchKey: "path")
+            XCTAssertEqual(try XCTUnwrap(reloaded.get(by: Self.legacyPath)).scroll, loaded.scroll, "\(simTrackpad) \(duration)")
+        }
+    }
+
     // MARK: - setUp / tearDown
 
     override func setUp() {
@@ -106,6 +150,33 @@ final class OptionsScrollDefaultsTests: XCTestCase {
         defaultsSnapshots.append((key: key, original: defaults.object(forKey: key)))
         defaults.set(value, forKey: key)
     }
+
+    private static let legacyPath = "/Applications/Legacy.app"
+
+    /// The stored applications list with one app whose own scroll options were saved by a build
+    /// with the Duration lock (`remembered` nil: the key is absent).
+    private func legacyApplicationsData(simTrackpad: Bool, duration: Double, remembered: Double?) throws -> Data {
+        let app = Application(path: Self.legacyPath)
+        app.inherit = false
+        app.scroll.smoothSimTrackpad = simTrackpad
+        app.scroll.duration = duration
+        app.scroll.step = 40
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(app)) as? [String: Any])
+        var scroll = try XCTUnwrap(object["scroll"] as? [String: Any])
+        XCTAssertNil(scroll["durationBeforeSimTrackpadLock"], "today's model does not write the key")
+        if let remembered = remembered {
+            scroll["durationBeforeSimTrackpadLock"] = remembered
+        }
+        object["scroll"] = scroll
+        return try JSONSerialization.data(withJSONObject: [object])
+    }
+
+    /// Loads the list the way `Options.loadApplicationsData()` does.
+    private func loadLegacyApplication(simTrackpad: Bool, duration: Double, remembered: Double?) throws -> Application {
+        let data = try legacyApplicationsData(simTrackpad: simTrackpad, duration: duration, remembered: remembered)
+        let applications = try EnhanceArray<Application>(withData: data, matchKey: "path")
+        return try XCTUnwrap(applications.get(by: Self.legacyPath))
+    }
 }
 
 /// Value snapshot of the mutable `OPTIONS_SCROLL_DEFAULT` fields that
@@ -125,7 +196,6 @@ private struct ScrollSnapshot {
     let smoothSimTrackpad: Bool
     let smoothVertical: Bool
     let smoothHorizontal: Bool
-    let durationBeforeSimTrackpadLock: Double?
 
     init(of scroll: OPTIONS_SCROLL_DEFAULT) {
         self.smooth = scroll.smooth
@@ -142,7 +212,6 @@ private struct ScrollSnapshot {
         self.smoothSimTrackpad = scroll.smoothSimTrackpad
         self.smoothVertical = scroll.smoothVertical
         self.smoothHorizontal = scroll.smoothHorizontal
-        self.durationBeforeSimTrackpadLock = scroll.durationBeforeSimTrackpadLock
     }
 
     func restore(into scroll: OPTIONS_SCROLL_DEFAULT) {
@@ -160,6 +229,5 @@ private struct ScrollSnapshot {
         scroll.smoothSimTrackpad = smoothSimTrackpad
         scroll.smoothVertical = smoothVertical
         scroll.smoothHorizontal = smoothHorizontal
-        scroll.durationBeforeSimTrackpadLock = durationBeforeSimTrackpadLock
     }
 }

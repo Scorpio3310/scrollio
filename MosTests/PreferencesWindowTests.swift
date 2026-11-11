@@ -218,10 +218,6 @@ final class PreferencesNamingTests: XCTestCase {
         let popover = try XCTUnwrap(instantiate("scrollSmoothDetail") as? ScrollSmoothDetailSettingsPopoverViewController)
         _ = popover.view
         XCTAssertEqual(popover.simulateTrackpadCheckBox?.title, "Trackpad-style events (Beta)")
-        XCTAssertEqual(
-            NSLocalizedString("scrollDurationLockedMessage", comment: ""),
-            "Trackpad-style events lock the duration"
-        )
     }
 
     func testAnUnboundButtonSaysNoActionEverywhere() {
@@ -403,10 +399,10 @@ final class PreferencesScrollingPresetRowTests: XCTestCase {
         let direct = ScrollPreset.direct.values
         XCTAssertEqual(Options.shared.scroll.step, direct.step)
         XCTAssertEqual(Options.shared.scroll.speed, direct.speed)
-        XCTAssertEqual(Options.shared.scroll.duration, direct.effectiveDuration)
+        XCTAssertEqual(Options.shared.scroll.duration, direct.duration)
         XCTAssertEqual(Options.shared.scrollTuning, direct.tuning)
         XCTAssertEqual(controller.scrollSpeedSlider.doubleValue, direct.speed, accuracy: 1e-9)
-        XCTAssertEqual(controller.scrollDurationSlider.doubleValue, direct.effectiveDuration, accuracy: 1e-9)
+        XCTAssertEqual(controller.scrollDurationSlider.doubleValue, direct.duration, accuracy: 1e-9)
         XCTAssertEqual(popUp.titleOfSelectedItem, "Direct")
         XCTAssertEqual(controller.presetDescriptionLabel?.stringValue, ScrollPreset.direct.localizedDescription)
         XCTAssertEqual(ScrollPreset.current, .direct)

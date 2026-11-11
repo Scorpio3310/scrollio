@@ -44,6 +44,12 @@ class Application: Codable, Equatable {
         inherit = try container.decodeIfPresent(Bool.self, forKey: .inherit) ?? true
         // 滚动
         scroll = try container.decodeIfPresent(OPTIONS_SCROLL_DEFAULT.self, forKey: .scroll) ?? OPTIONS_SCROLL_DEFAULT()
+        // One-time migration: settings stored while "Trackpad-style events" locked Duration get
+        // the Duration from before the lock back. The remembered value is not kept in the model,
+        // so the next save drops it.
+        if let legacy = try? container.decodeIfPresent(OPTIONS_SCROLL_DEFAULT.LegacySimTrackpadLock.self, forKey: .scroll) {
+            scroll.restoreDuration(from: legacy)
+        }
         // 按钮绑定
         buttons = try container.decodeIfPresent(OPTIONS_BUTTONS_DEFAULT.self, forKey: .buttons)
     }
