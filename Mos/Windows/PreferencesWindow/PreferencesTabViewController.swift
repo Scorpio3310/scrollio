@@ -72,6 +72,19 @@ class PreferencesTabViewController: NSTabViewController {
         insertTabViewItem(item, at: anchorIndex.map { $0 + 1 } ?? tabViewItems.count)
     }
 
+    /// Shows the tab `identifier` (PANEL_IDENTIFIER, or a `tabIdentifier` of a tab built in
+    /// code), as a click on its toolbar item does. False when there is no such tab.
+    @discardableResult
+    func selectTab(withIdentifier identifier: String) -> Bool {
+        guard let index = tabViewItems.firstIndex(where: { ($0.identifier as? String) == identifier }) else {
+            return false
+        }
+        if selectedTabViewItemIndex != index {
+            selectedTabViewItemIndex = index
+        }
+        return true
+    }
+
     override func viewWillAppear() {
         super.viewWillAppear()
         removeToolbarFlexibleSpaces()

@@ -61,10 +61,8 @@ final class StoryboardIntegrityTests: XCTestCase {
             let content = try XCTUnwrap(controller.contentViewController, identifier)
             _ = content.view
             if let intro = content as? IntroductionViewController {
-                // viewDidLoad starts a permission poll and an activation observer; stop both
-                // before anything can fire.
-                intro.accessibilityPermissionsCheckerTimer?.invalidate()
-                NotificationCenter.default.removeObserver(intro)
+                // The permission poll starts when the window appears, which it never does here.
+                XCTAssertNil(intro.accessibilityPermissionsCheckerTimer)
             }
             if let tabs = content as? PreferencesTabViewController {
                 for item in tabs.tabViewItems {
@@ -108,10 +106,10 @@ final class StoryboardIntegrityTests: XCTestCase {
             storyboard.instantiateController(withIdentifier: WINDOW_IDENTIFIER.introductionWindowController) as? IntroductionWindowController
         )
         let introContent = try XCTUnwrap(introduction.contentViewController as? IntroductionViewController)
+        // Built in code: the scene is a shell and has no outlets of its own.
         _ = introContent.view
-        introContent.accessibilityPermissionsCheckerTimer?.invalidate()
-        NotificationCenter.default.removeObserver(introContent)
-        XCTAssertNotNil(introContent.authButton)
+        XCTAssertNotNil(introContent.primaryButton)
         XCTAssertNotNil(introContent.helpButton)
+        XCTAssertNotNil(introduction.introductionWindow)
     }
 }

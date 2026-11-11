@@ -16,14 +16,8 @@ struct ANIMATION {
 // 窗口
 struct WINDOW_IDENTIFIER {
     static let introductionWindowController = "introductionWindowController"
-    static let welcomeWindowController = "welcomeWindowController"
     static let monitorWindowController = "monitorWindowController"
     static let preferencesWindowController = "preferencesWindowController"
-}
-struct VIEW_IDENTIFIER {
-    static let introductionStepOneViewController = "introductionStepOneViewController"
-    static let introductionStepTwoViewController = "introductionStepTwoViewController"
-    static let introductionStepThreeViewController = "introductionStepThreeViewController"
 }
 
 // 视图
