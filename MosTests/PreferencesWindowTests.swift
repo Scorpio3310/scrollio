@@ -363,13 +363,8 @@ final class PreferencesTextSizeTests: XCTestCase {
 
     func testPanesBuiltInCode() {
         let mouse = MousePreferencesViewController()
-        mouse.deviceSource = MouseWheelDeviceSource(
-            deviceStates: {
-                [LogiWheelDeviceState(
-                    id: "a", deviceName: "MX Master 4", supportsSmartShift: true, supportsScrollForce: true,
-                    mode: .smartShift, smartShiftSensitivity: 40, scrollForce: 65
-                )]
-            },
+        mouse.deviceSource = MouseDeviceSource(
+            deviceStates: { [MouseDeviceFixtures.mxMaster4()] },
             refresh: {},
             showDiagnostics: {}
         )

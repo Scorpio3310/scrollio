@@ -76,7 +76,7 @@ final class LogiGestureSectionTests: XCTestCase {
 
     func testTheMouseTabNoLongerHoldsTheSection() {
         let mouse = MousePreferencesViewController()
-        mouse.deviceSource = MouseWheelDeviceSource(deviceStates: { [] }, refresh: {}, showDiagnostics: {})
+        mouse.deviceSource = MouseDeviceSource(deviceStates: { [] }, refresh: {}, showDiagnostics: {})
         _ = mouse.view
         mouse.reloadDevices()
         let titles = Self.allSubviews(of: mouse.view).compactMap { ($0 as? NSButton)?.title }

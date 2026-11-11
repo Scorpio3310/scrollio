@@ -1,11 +1,15 @@
 //
 //  MousePreferencesViewController.swift
 //  Mos
-//  "Mouse" preferences tab: hardware settings of connected Logitech mice
-//  (scroll mode, SmartShift sensitivity, scrolling force). Built in code on the
-//  PreferencesForm grid, like the storyboard tabs. It only edits Options.shared.logiWheel;
-//  the Logi layer applies it to the mice. What a mouse does during Gesture Navigation
-//  is in the Gestures tab.
+//  "Mouse" preferences tab: the connected Logitech mouse, in the boxes of System Settings
+//  like the Scrolling tab (PreferencesGroupedForm). On top a card with the mouse, its name
+//  and battery; under it "Let Scrollio manage this mouse", the pointer speed, the wheel
+//  and the haptics. A row for something the mouse does not have is hidden.
+//
+//  The tab only edits Options.shared.logiMouse and Options.shared.logiWheel; the Logi layer
+//  sends them to the mice (LogiUsageBootstrap). What the mice report comes in with
+//  LogiCenter.mouseStateChanged. What a mouse does during Gesture Navigation is in the
+//  Gestures tab.
 //
 
 import Cocoa
@@ -14,83 +18,164 @@ final class MousePreferencesViewController: NSViewController {
 
     static let tabIdentifier = "mouse"
 
-    // MARK: - Layout (the PreferencesForm grid)
+    /// Identifiers for the controls (tests and accessibility tooling).
+    enum Identifier {
+        static let header = NSUserInterfaceItemIdentifier("mouse-header")
+        static let managed = NSUserInterfaceItemIdentifier("mouse-managed")
+        static let pointerSpeed = NSUserInterfaceItemIdentifier("mouse-pointer-speed")
+        static let wheelMode = NSUserInterfaceItemIdentifier("mouse-wheel-mode")
+        static let sensitivity = NSUserInterfaceItemIdentifier("mouse-wheel-sensitivity")
+        static let firmness = NSUserInterfaceItemIdentifier("mouse-wheel-firmness")
+        static let haptics = NSUserInterfaceItemIdentifier("mouse-haptics")
+        static let strength = NSUserInterfaceItemIdentifier("mouse-haptics-strength")
+        static let pressForce = NSUserInterfaceItemIdentifier("mouse-press-force")
+        static let diagnostics = NSUserInterfaceItemIdentifier("mouse-diagnostics")
+    }
 
-    /// Width of every preferences tab.
-    static let contentWidth = PreferencesForm.contentWidth
-    private static let controlWidth = PreferencesForm.controlWidth
-    private static let separatorSpacing = PreferencesForm.separatorSpacing
-    private static let noteSpacing = PreferencesForm.hintSpacing
+    /// As wide as the Scrolling tab: the sliders sit on the right of their rows.
+    static let paneWidth: CGFloat = 520
+    static var boxWidth: CGFloat {
+        return PreferencesGroupedForm.boxWidth(paneWidth: paneWidth)
+    }
+    /// Room for "8000 DPI"; every slider of the tab gets it, so they line up.
+    static let sliderValueWidth: CGFloat = 56
 
     // MARK: - State
 
-    /// Device data source; tests and screenshots replace it with fixtures.
-    var deviceSource: MouseWheelDeviceSource = .live
+    /// Where the mice come from; tests and renders replace it with fixtures.
+    var deviceSource: MouseDeviceSource = .live
 
-    /// Connected mice as last read from `deviceSource`.
-    private(set) var devices: [LogiWheelDeviceState] = []
+    /// True while a slider is being dragged. A seam for the tests.
+    var isTrackingMouse: () -> Bool = { PreferencesForm.isTrackingMouse }
+
+    /// How long the "On the mouse" line of a setting the user just changed waits, so it does
+    /// not flash up while the mouse takes the new value.
+    var readbackSettleTime: TimeInterval = 1.5
+
+    /// The connected mice as last read from `deviceSource`.
+    private(set) var devices: [LogiMouseDeviceState] = []
+    /// What the controls show.
+    private(set) var model = MousePaneModel(devices: [], settings: .default, wheel: .default)
+
+    /// When the user last changed each setting.
+    private var changedAt: [MouseSetting: Date] = [:]
+    private var settleWork: DispatchWorkItem?
+
+    /// The part of the mouse whose row is under the pointer, and whose control has the focus.
+    private(set) var hoveredPart: MousePart?
+    private(set) var focusedPart: MousePart?
+    private var firstResponderObservation: NSKeyValueObservation?
 
     // MARK: - Views (read access for tests)
 
-    private(set) var deviceListColumn: NSStackView!
-    private(set) var deviceEntryViews: [NSView] = []
-    private(set) var emptyStateView: NSView!
-    private(set) var managedCheckbox: NSButton!
-    private(set) var modeControl: NSSegmentedControl!
-    private(set) var modeReadbackLabel: NSTextField!
+    private(set) var headerView: MouseHeaderView!
+    private(set) var noMouseSection: PreferencesGroupSection!
+    private(set) var managedSection: PreferencesGroupSection!
+    private(set) var pointerSection: PreferencesGroupSection!
+    private(set) var wheelSection: PreferencesGroupSection!
+    private(set) var hapticsSection: PreferencesGroupSection!
+    private(set) var footer: PreferencesGroupFooter!
+
+    private(set) var managedRow: PreferencesSwitchRow!
+    private(set) var pointerSpeedRow: PreferencesSliderRow!
+    private(set) var wheelModeRow: PreferencesGroupRow!
+    private(set) var sensitivityRow: PreferencesSliderRow!
+    private(set) var firmnessRow: PreferencesSliderRow!
+    private(set) var hapticsRow: PreferencesSwitchRow!
+    private(set) var strengthRow: PreferencesSliderRow!
+    private(set) var pressForceRow: PreferencesSliderRow!
+
+    private(set) var managedSwitch: NSSwitch!
+    private(set) var pointerSpeedSlider: NSSlider!
+    private(set) var wheelModeControl: NSSegmentedControl!
     private(set) var sensitivitySlider: NSSlider!
-    private(set) var sensitivityValueLabel: NSTextField!
-    private(set) var sensitivityReadbackLabel: NSTextField!
-    private(set) var scrollForceSlider: NSSlider!
-    private(set) var scrollForceValueLabel: NSTextField!
-    private(set) var scrollForceReadbackLabel: NSTextField!
+    private(set) var firmnessSlider: NSSlider!
+    private(set) var hapticsSwitch: NSSwitch!
+    private(set) var strengthSlider: NSSlider!
+    private(set) var pressForceSlider: NSSlider!
     private(set) var diagnosticsButton: NSButton!
 
-    private var devicesRowLabel: NSTextField!
-    private var emptyStateTitle: NSTextField!
-    private var devicesLabelBaseline: NSLayoutConstraint?
+    /// Every row that lights up a part of the mouse, with that part.
+    private(set) var rowParts: [(row: PreferencesGroupRow, part: MousePart)] = []
+
+    /// The boxes and the header, top to bottom, as they sit in the content stack.
+    private var contentStack: NSStackView!
+    private var lastLayoutShape: [Int] = []
 
     // MARK: - Lifecycle
 
     init() {
         super.init(nibName: nil, bundle: nil)
-        title = NSLocalizedString("mouse-tab-title", comment: "")
+        title = MouseText.text("mouse-tab-title")
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
-        title = NSLocalizedString("mouse-tab-title", comment: "")
+        title = MouseText.text("mouse-tab-title")
     }
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        settleWork?.cancel()
     }
 
     override func loadView() {
         let root = PreferencesForm.makeBackground()
-        let content = PreferencesForm.installContentStack(in: root)
+        let content = PreferencesGroupedForm.installContentStack(in: root, paneWidth: Self.paneWidth)
+        // The pane is exactly as tall as what shows; the window shrinks with it.
+        content.setHuggingPriority(.defaultHigh, for: .vertical)
+        contentStack = content
 
-        let devicesRow = makeDevicesRow()
-        let separator1 = Self.makeSeparator()
-        let managedRow = makeManagedRow()
-        let modeRow = makeModeRow()
-        let sensitivityRow = makeSensitivityRow()
-        let forceRow = makeScrollForceRow()
-        let separator2 = Self.makeSeparator()
-        let advancedRow = makeAdvancedRow()
+        let header = MouseHeaderView()
+        header.identifier = Identifier.header
+        headerView = header
 
-        PreferencesForm.add([
-            devicesRow, separator1, managedRow, modeRow, sensitivityRow, forceRow,
-            separator2, advancedRow,
-        ], to: content)
-        for separator in [separator1, separator2] {
-            content.setCustomSpacing(Self.separatorSpacing, after: separator)
+        let width = Self.boxWidth
+        noMouseSection = PreferencesGroupSection(width: width, rows: [
+            PreferencesGroupRow(title: MouseText.text("mouse-no-mouse"), explanation: MouseText.text("mouse-no-mouse-hint")),
+        ])
+        managedSection = PreferencesGroupSection(width: width, rows: [makeManagedRow()])
+        pointerSection = PreferencesGroupSection(
+            title: MouseText.text("mouse-pointer-header"), width: width, rows: [makePointerSpeedRow()]
+        )
+        wheelSection = PreferencesGroupSection(
+            title: MouseText.text("mouse-wheel-label"), width: width,
+            rows: [makeWheelModeRow(), makeSensitivityRow(), makeFirmnessRow()]
+        )
+        hapticsSection = PreferencesGroupSection(
+            title: MouseText.text("mouse-haptics-header"), width: width,
+            rows: [makeHapticsRow(), makeStrengthRow(), makePressForceRow()]
+        )
+
+        let diagnostics = PreferencesGroupedForm.makePushButton(
+            title: MouseText.text("mouse-diagnostics-button"),
+            target: self,
+            action: #selector(diagnosticsClicked(_:))
+        )
+        diagnostics.identifier = Identifier.diagnostics
+        diagnosticsButton = diagnostics
+        footer = PreferencesGroupFooter(trailing: [diagnostics])
+
+        PreferencesGroupedForm.add(
+            [header, noMouseSection, managedSection, pointerSection, wheelSection, hapticsSection, footer],
+            to: content
+        )
+
+        rowParts = [
+            (pointerSpeedRow, .body),
+            (wheelModeRow, .wheel), (sensitivityRow, .wheel), (firmnessRow, .wheel),
+            (hapticsRow, .thumbPanel), (strengthRow, .thumbPanel), (pressForceRow, .thumbPanel),
+        ]
+        for (row, part) in rowParts {
+            row.addTrackingArea(NSTrackingArea(
+                rect: .zero,
+                options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+                owner: self,
+                userInfo: [Self.hoverPartInfo: part.rawValue]
+            ))
         }
-        content.setCustomSpacing(Self.separatorSpacing, after: devicesRow)
-        content.setCustomSpacing(Self.separatorSpacing, after: forceRow)
 
         view = root
-        rebuildDeviceList()
         syncControls()
         root.setFrameSize(root.fittingSize)
     }
@@ -99,21 +184,32 @@ final class MousePreferencesViewController: NSViewController {
         super.viewDidLoad()
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(deviceStateDidChange(_:)),
-            name: LogiCenter.wheelStateChanged,
+            selector: #selector(mouseStateDidChange(_:)),
+            name: LogiCenter.mouseStateChanged,
             object: nil
         )
     }
 
     override func viewWillAppear() {
         super.viewWillAppear()
-        // Show what is known right away, then ask the mice again; the answer
-        // arrives as `wheelStateChanged`.
+        // Show what is known right away, then ask the mice again; the answer arrives as
+        // `mouseStateChanged`.
         reloadDevices()
         deviceSource.refresh()
+        firstResponderObservation = view.window?.observe(\.firstResponder, options: [.new]) { [weak self] window, _ in
+            self?.firstResponderDidChange(window.firstResponder)
+        }
     }
 
-    @objc private func deviceStateDidChange(_ notification: Notification) {
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        firstResponderObservation = nil
+        hoveredPart = nil
+        focusedPart = nil
+        updateEmphasis()
+    }
+
+    @objc private func mouseStateDidChange(_ notification: Notification) {
         if Thread.isMainThread {
             reloadDevices()
         } else {
@@ -123,341 +219,444 @@ final class MousePreferencesViewController: NSViewController {
 
     // MARK: - Refresh
 
-    /// Re-reads the device list and settings, then refits the window if the height changed.
+    /// Re-reads the mice and puts everything into the controls; the window follows a change
+    /// of height.
     func reloadDevices() {
         guard isViewLoaded else { return }
-        let newDevices = deviceSource.deviceStates()
-        if newDevices != devices {
-            devices = newDevices
-            rebuildDeviceList()
-        }
+        devices = deviceSource.deviceStates()
         syncControls()
-        fitToContent()
     }
 
-    /// Puts the stored settings, enabling rules and device read-backs into the controls.
+    /// Puts the stored settings and what the mice report into the controls. A slider that is
+    /// being dragged keeps its knob where the pointer has it.
     func syncControls() {
         guard isViewLoaded else { return }
-        let settings = Options.shared.logiWheel
-        let rules = MouseWheelControlRules(settings: settings, devices: devices)
+        let options = Options.shared
+        let model = MousePaneModel(
+            devices: devices,
+            settings: options.logiMouse,
+            wheel: options.logiWheel,
+            heldReadbacks: heldReadbacks
+        )
+        self.model = model
+        let dragging = isTrackingMouse()
 
-        managedCheckbox.state = settings.managedByMos ? .on : .off
+        headerView.content = model.header
+        noMouseSection.isHidden = model.hasMouse
+        managedSection.isHidden = !model.hasMouse
+        managedRow.isOn = model.managed
 
-        modeControl.selectedSegment = MouseWheelText.modes.firstIndex(of: settings.mode) ?? 0
-        modeControl.isEnabled = rules.modeEnabled
+        apply(model.pointerSpeed, to: pointerSpeedRow, hint: "mouse-pointer-speed-hint", dragging: dragging)
 
-        // A device update arriving mid-drag must not snap the knob back.
-        if !Self.isTrackingMouse {
-            sensitivitySlider.integerValue = settings.smartShiftSensitivity
-            sensitivityValueLabel.stringValue = MouseWheelText.percent(settings.smartShiftSensitivity)
-            scrollForceSlider.integerValue = settings.scrollForce
-            scrollForceValueLabel.stringValue = MouseWheelText.percent(settings.scrollForce)
+        if let mode = model.wheelMode {
+            wheelModeRow.isHidden = false
+            wheelModeControl.selectedSegment = MouseText.modes.firstIndex(of: mode.mode) ?? 0
+            wheelModeRow.explanation = MouseText.explanation(MouseText.modeHint(mode.mode), readback: mode.readback)
+            wheelModeRow.isEnabled = mode.isEnabled
+        } else {
+            wheelModeRow.isHidden = true
         }
-        sensitivitySlider.isEnabled = rules.sensitivityEnabled
-        sensitivityValueLabel.textColor = rules.sensitivityEnabled ? .labelColor : .tertiaryLabelColor
-        scrollForceSlider.isEnabled = rules.scrollForceEnabled
-        scrollForceValueLabel.textColor = rules.scrollForceEnabled ? .labelColor : .tertiaryLabelColor
+        apply(model.sensitivity, to: sensitivityRow, hint: "mouse-wheel-sensitivity-hint", dragging: dragging)
+        apply(model.firmness, to: firmnessRow, hint: "mouse-wheel-force-hint", dragging: dragging)
 
-        Self.setNote(modeReadbackLabel, MouseWheelText.modeReadback(devices))
-        Self.setNote(sensitivityReadbackLabel, MouseWheelText.sensitivityReadback(devices))
-        Self.setNote(scrollForceReadbackLabel, MouseWheelText.scrollForceReadback(devices))
+        if let haptics = model.haptics {
+            hapticsRow.isHidden = false
+            hapticsRow.isOn = haptics.isOn
+            hapticsRow.explanation = MouseText.explanation(MouseText.text("mouse-haptics-hint"), readback: haptics.readback)
+            hapticsRow.isEnabled = haptics.isEnabled
+        } else {
+            hapticsRow.isHidden = true
+        }
+        apply(model.strength, to: strengthRow, hint: "mouse-haptics-strength-hint", dragging: dragging)
+        apply(model.pressForce, to: pressForceRow, hint: "mouse-press-force-hint", dragging: dragging)
+
+        for section in [pointerSection!, wheelSection!, hapticsSection!] {
+            section.isHidden = !model.hasMouse || section.box.visibleRows.isEmpty
+        }
+        updateEmphasis()
+        // Only a row or a line that comes or goes changes the height: the window follows
+        // then, not on every step of a slider.
+        let shape = layoutShape
+        if shape != lastLayoutShape {
+            lastLayoutShape = shape
+            updateSpacing()
+            PreferencesForm.fitToContent(self)
+        }
     }
 
-    /// Keeps the frame at the content size; when the tab is on screen the window follows.
-    private func fitToContent() {
-        PreferencesForm.fitToContent(self)
+    /// Every row of the tab except "no mouse", top to bottom.
+    private var settingRows: [PreferencesGroupRow] {
+        return [managedRow, pointerSpeedRow, wheelModeRow, sensitivityRow, firmnessRow,
+                hapticsRow, strengthRow, pressForceRow]
+    }
+
+    /// What decides the pane's height: which boxes and rows show, and how many lines each
+    /// explanation has.
+    private var layoutShape: [Int] {
+        let views: [NSView] = contentStack.arrangedSubviews + settingRows
+        return views.map { $0.isHidden ? 0 : 1 }
+            + settingRows.map { row in (row.explanation ?? "").filter { $0 == "\n" }.count }
+    }
+
+    private func apply(_ slider: MousePaneModel.Slider?, to row: PreferencesSliderRow, hint: String, dragging: Bool) {
+        guard let slider else {
+            row.isHidden = true
+            return
+        }
+        row.isHidden = false
+        let control = row.slider
+        // Moving the range or the ticks would move the knob: not while it is dragged.
+        if !dragging {
+            if control.minValue != slider.range.lowerBound { control.minValue = slider.range.lowerBound }
+            if control.maxValue != slider.range.upperBound { control.maxValue = slider.range.upperBound }
+            control.numberOfTickMarks = slider.tickCount
+            control.allowsTickMarkValuesOnly = slider.tickCount > 0
+            control.doubleValue = slider.position
+            row.valueText = slider.valueText
+        }
+        row.explanation = MouseText.explanation(MouseText.text(hint), readback: slider.readback)
+        row.isEnabled = slider.isEnabled
+    }
+
+    /// A titled box keeps a wider gap above it than an untitled one, and so does the footer.
+    /// Hidden views are left out of the stack, so the gaps are worked out from what shows.
+    private func updateSpacing() {
+        let views = contentStack.arrangedSubviews
+        let shown = views.filter { !$0.isHidden }
+        for view in views {
+            contentStack.setCustomSpacing(PreferencesGroupedForm.boxSpacing, after: view)
+        }
+        for (above, below) in zip(shown, shown.dropFirst()) {
+            let titled = (below as? PreferencesGroupSection)?.titleLabel != nil || below is PreferencesGroupFooter
+            contentStack.setCustomSpacing(
+                titled ? PreferencesGroupedForm.sectionSpacing : PreferencesGroupedForm.boxSpacing,
+                after: above
+            )
+        }
+    }
+
+    // MARK: - "On the mouse" lines
+
+    /// The settings changed so recently that the mouse may not have taken them yet.
+    private var heldReadbacks: Set<MouseSetting> {
+        let now = Date()
+        return Set(changedAt.compactMap { setting, date in
+            now.timeIntervalSince(date) < readbackSettleTime ? setting : nil
+        })
+    }
+
+    /// Remembers that the user changed `settings`, and looks again once they have settled.
+    private func noteUserChange(_ settings: [MouseSetting]) {
+        let now = Date()
+        for setting in settings {
+            changedAt[setting] = now
+        }
+        settleWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.settleWork = nil
+            self?.syncControls()
+        }
+        settleWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + readbackSettleTime, execute: work)
+    }
+
+    // MARK: - Emphasis
+
+    /// The part the header lights up: the hovered row's, else the focused control's.
+    var emphasis: MousePart? {
+        return hoveredPart ?? focusedPart
+    }
+
+    private func updateEmphasis() {
+        headerView.emphasis = model.hasMouse ? emphasis : nil
+    }
+
+    /// The pointer entered or left a row about `part`.
+    func rowHoverChanged(_ part: MousePart, inside: Bool) {
+        if inside {
+            hoveredPart = part
+        } else if hoveredPart == part {
+            hoveredPart = nil
+        }
+        updateEmphasis()
+    }
+
+    /// The window's first responder changed: a control of a row may have the focus now.
+    func firstResponderDidChange(_ responder: NSResponder?) {
+        let view = responder as? NSView
+        focusedPart = view.flatMap { view in
+            rowParts.first { !$0.row.isHidden && view.isDescendant(of: $0.row) }?.part
+        }
+        updateEmphasis()
+    }
+
+    private static let hoverPartInfo = "mousePart"
+
+    private static func part(of event: NSEvent) -> MousePart? {
+        guard let raw = event.trackingArea?.userInfo?[hoverPartInfo] as? Int else { return nil }
+        return MousePart(rawValue: raw)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        guard let part = Self.part(of: event) else { return super.mouseEntered(with: event) }
+        rowHoverChanged(part, inside: true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        guard let part = Self.part(of: event) else { return super.mouseExited(with: event) }
+        rowHoverChanged(part, inside: false)
     }
 
     // MARK: - Actions
 
-    @objc func managedToggled(_ sender: NSButton) {
+    /// Turning it on starts from what the mouse has: the wheel settings (which are never
+    /// "not set") take the values the mouse reports, so nothing on it changes by itself.
+    @objc func managedToggled(_ sender: NSSwitch) {
         let managed = sender.state == .on
-        updateSettings { $0.managedByMos = managed }
+        var wheel = Options.shared.logiWheel
+        wheel.managedByMos = managed
+        if managed, !Options.shared.logiWheel.managedByMos,
+           let state = MousePaneModel.ordered(devices).lazy.compactMap({ $0.wheel }).first {
+            if state.supportsSmartShift, let mode = state.mode {
+                wheel.mode = mode
+            }
+            if state.supportsSmartShift, let sensitivity = state.smartShiftSensitivity {
+                wheel.smartShiftSensitivity = sensitivity
+            }
+            if state.supportsScrollForce, let force = state.scrollForce {
+                wheel.scrollForce = force
+            }
+        }
+        if wheel != Options.shared.logiWheel {
+            Options.shared.logiWheel = wheel
+        }
+        noteUserChange(MouseSetting.allCases)
+        syncControls()
     }
 
-    @objc func modeChanged(_ sender: NSSegmentedControl) {
-        guard MouseWheelText.modes.indices.contains(sender.selectedSegment) else { return }
-        let mode = MouseWheelText.modes[sender.selectedSegment]
-        updateSettings { $0.mode = mode }
+    @objc func pointerSpeedChanged(_ sender: NSSlider) {
+        let choices = model.pointerChoices
+        guard !choices.isEmpty else { return }
+        let index = min(max(Int(sender.doubleValue.rounded()), 0), choices.count - 1)
+        updateMouseSettings(.pointerSpeed) { $0.pointerDPI = choices[index] }
+        pointerSpeedRow.valueText = MouseText.dpi(choices[index])
+    }
+
+    @objc func wheelModeChanged(_ sender: NSSegmentedControl) {
+        guard MouseText.modes.indices.contains(sender.selectedSegment) else { return }
+        let mode = MouseText.modes[sender.selectedSegment]
+        updateWheelSettings(.wheelMode) { $0.mode = mode }
     }
 
     @objc func sensitivityChanged(_ sender: NSSlider) {
-        let value = Self.sliderValue(sender, in: LogiWheelSettings.sensitivityRange)
-        sensitivityValueLabel.stringValue = MouseWheelText.percent(value)
-        // Store once the drag ends, so the mouse is not rewritten on every step.
-        guard !Self.isTrackingMouse else { return }
-        updateSettings { $0.smartShiftSensitivity = value }
+        let value = MousePaneModel.clamp(Int(sender.doubleValue.rounded()), to: LogiWheelSettings.sensitivityRange)
+        updateWheelSettings(.sensitivity) { $0.smartShiftSensitivity = value }
+        sensitivityRow.valueText = MouseText.percent(value)
     }
 
-    @objc func scrollForceChanged(_ sender: NSSlider) {
-        let value = Self.sliderValue(sender, in: LogiWheelSettings.scrollForceRange)
-        scrollForceValueLabel.stringValue = MouseWheelText.percent(value)
-        guard !Self.isTrackingMouse else { return }
-        updateSettings { $0.scrollForce = value }
+    @objc func firmnessChanged(_ sender: NSSlider) {
+        let value = MousePaneModel.clamp(Int(sender.doubleValue.rounded()), to: LogiWheelSettings.scrollForceRange)
+        updateWheelSettings(.firmness) { $0.scrollForce = value }
+        firmnessRow.valueText = MouseText.percent(value)
+    }
+
+    @objc func hapticsToggled(_ sender: NSSwitch) {
+        let on = sender.state == .on
+        updateMouseSettings(.haptics) { $0.hapticsOn = on }
+    }
+
+    /// Stores the strength as it moves; once the slider is let go the mouse plays one pulse
+    /// at the new strength.
+    @objc func strengthChanged(_ sender: NSSlider) {
+        let value: Int
+        if let choices = model.strengthChoices, !choices.isEmpty {
+            value = choices[min(max(Int(sender.doubleValue.rounded()), 0), choices.count - 1)]
+        } else {
+            value = MousePaneModel.clamp(Int(sender.doubleValue.rounded()), to: LogiMouseSettings.hapticStrengthRange)
+        }
+        updateMouseSettings(.strength) { $0.hapticStrength = value }
+        strengthRow.valueText = MouseText.percent(value)
+        if !isTrackingMouse() {
+            deviceSource.playHapticSample()
+        }
+    }
+
+    @objc func pressForceChanged(_ sender: NSSlider) {
+        guard let range = model.pressForceRange else { return }
+        let value = MousePaneModel.clamp(Int(sender.doubleValue.rounded()), to: range)
+        updateMouseSettings(.pressForce) { $0.pressForce = value }
+        pressForceRow.valueText = MouseText.percent(MousePaneModel.share(of: value, in: range))
     }
 
     @objc func diagnosticsClicked(_ sender: NSButton) {
         deviceSource.showDiagnostics()
     }
 
-    private func updateSettings(_ change: (inout LogiWheelSettings) -> Void) {
+    private func updateMouseSettings(_ setting: MouseSetting, _ change: (inout LogiMouseSettings) -> Void) {
+        var settings = Options.shared.logiMouse
+        change(&settings)
+        if settings != Options.shared.logiMouse {
+            Options.shared.logiMouse = settings
+        }
+        noteUserChange([setting])
+        syncControls()
+    }
+
+    private func updateWheelSettings(_ setting: MouseSetting, _ change: (inout LogiWheelSettings) -> Void) {
         var settings = Options.shared.logiWheel
         change(&settings)
         if settings != Options.shared.logiWheel {
             Options.shared.logiWheel = settings
         }
+        noteUserChange([setting])
         syncControls()
-    }
-
-    private static func sliderValue(_ slider: NSSlider, in range: ClosedRange<Int>) -> Int {
-        let value = Int(slider.doubleValue.rounded())
-        return min(max(value, range.lowerBound), range.upperBound)
-    }
-
-    /// True while the slider is being dragged (continuous actions in between).
-    private static var isTrackingMouse: Bool {
-        return PreferencesForm.isTrackingMouse
     }
 
     // MARK: - Rows
 
-    private func makeDevicesRow() -> NSView {
-        let column = Self.makeColumn([])
-        column.spacing = 10
-        deviceListColumn = column
-
-        emptyStateTitle = NSTextField(wrappingLabelWithString: NSLocalizedString("mouse-devices-empty", comment: ""))
-        emptyStateTitle.font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
-        emptyStateTitle.textColor = .secondaryLabelColor
-        emptyStateTitle.preferredMaxLayoutWidth = Self.controlWidth
-        emptyStateTitle.isSelectable = false
-        let emptyHint = Self.makeNote(NSLocalizedString("mouse-devices-empty-hint", comment: ""))
-        let empty = Self.makeColumn([emptyStateTitle, emptyHint])
-        empty.spacing = Self.noteSpacing
-        emptyStateView = empty
-
-        let (row, label) = Self.makeRow(
-            title: NSLocalizedString("mouse-devices-label", comment: ""),
-            column: column
-        )
-        devicesRowLabel = label
-        return row
-    }
-
-    private func rebuildDeviceList() {
-        for view in deviceListColumn.arrangedSubviews {
-            deviceListColumn.removeArrangedSubview(view)
-            view.removeFromSuperview()
-        }
-        deviceEntryViews = []
-
-        let firstLine: NSView
-        if devices.isEmpty {
-            deviceListColumn.addArrangedSubview(emptyStateView)
-            firstLine = emptyStateTitle
-        } else {
-            var nameLabels: [NSTextField] = []
-            for device in devices {
-                let (entry, name) = Self.makeDeviceEntry(device)
-                deviceListColumn.addArrangedSubview(entry)
-                deviceEntryViews.append(entry)
-                nameLabels.append(name)
-            }
-            firstLine = nameLabels[0]
-        }
-
-        devicesLabelBaseline?.isActive = false
-        devicesLabelBaseline = devicesRowLabel.firstBaselineAnchor.constraint(equalTo: firstLine.firstBaselineAnchor)
-        devicesLabelBaseline?.isActive = true
-    }
-
-    private static func makeDeviceEntry(_ device: LogiWheelDeviceState) -> (entry: NSView, name: NSTextField) {
-        let name = NSTextField(labelWithString: device.deviceName)
-        name.font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
-        name.lineBreakMode = .byTruncatingTail
-        name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        let detail = NSTextField(labelWithString: MouseWheelText.capabilities(of: device))
-        detail.font = noteFont
-        detail.textColor = .secondaryLabelColor
-        detail.lineBreakMode = .byTruncatingTail
-        detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        let text = NSStackView(views: [name, detail])
-        text.orientation = .vertical
-        text.alignment = .leading
-        text.spacing = 2
-
-        var views: [NSView] = []
-        if let icon = deviceIcon() {
-            let imageView = NSImageView(image: icon)
-            imageView.imageScaling = .scaleProportionallyUpOrDown
-            imageView.contentTintColor = .secondaryLabelColor
-            imageView.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                imageView.widthAnchor.constraint(equalToConstant: 18),
-                imageView.heightAnchor.constraint(equalToConstant: 22),
-            ])
-            views.append(imageView)
-        }
-        views.append(text)
-
-        let entry = NSStackView(views: views)
-        entry.orientation = .horizontal
-        entry.alignment = .centerY
-        entry.spacing = 7
-        entry.translatesAutoresizingMaskIntoConstraints = false
-        entry.widthAnchor.constraint(lessThanOrEqualToConstant: controlWidth).isActive = true
-        entry.setAccessibilityElement(true)
-        entry.setAccessibilityRole(.group)
-        entry.setAccessibilityLabel("\(device.deviceName), \(MouseWheelText.capabilities(of: device))")
-        return (entry, name)
-    }
-
-    private func makeManagedRow() -> NSView {
-        let checkbox = NSButton(
-            checkboxWithTitle: NSLocalizedString("mouse-wheel-managed", comment: ""),
+    private func makeManagedRow() -> PreferencesGroupRow {
+        let row = PreferencesSwitchRow(
+            title: MouseText.text("mouse-wheel-managed"),
+            explanation: MouseText.text("mouse-wheel-managed-hint"),
             target: self,
             action: #selector(managedToggled(_:))
         )
-        managedCheckbox = checkbox
-        let hint = Self.makeNote(NSLocalizedString("mouse-wheel-managed-hint", comment: ""))
-        let column = Self.makeColumn([checkbox, hint])
-        let (row, label) = Self.makeRow(
-            title: NSLocalizedString("mouse-wheel-label", comment: ""),
-            column: column
-        )
-        label.firstBaselineAnchor.constraint(equalTo: checkbox.firstBaselineAnchor).isActive = true
+        row.toggle.identifier = Identifier.managed
+        managedRow = row
+        managedSwitch = row.toggle
         return row
     }
 
-    private func makeModeRow() -> NSView {
+    private func makePointerSpeedRow() -> PreferencesGroupRow {
+        let row = makeSliderRow(
+            titleKey: "mouse-pointer-speed",
+            hintKey: "mouse-pointer-speed-hint",
+            ends: ("mouse-pointer-speed-slower", "mouse-pointer-speed-faster"),
+            identifier: Identifier.pointerSpeed,
+            action: #selector(pointerSpeedChanged(_:))
+        )
+        pointerSpeedRow = row
+        pointerSpeedSlider = row.slider
+        return row
+    }
+
+    /// The title and a line on the chosen mode, the three modes under them across the box.
+    private func makeWheelModeRow() -> PreferencesGroupRow {
         let control = NSSegmentedControl(
-            labels: MouseWheelText.modes.map(MouseWheelText.modeName),
+            labels: MouseText.modes.map(MouseText.modeName),
             trackingMode: .selectOne,
             target: self,
-            action: #selector(modeChanged(_:))
+            action: #selector(wheelModeChanged(_:))
         )
-        control.translatesAutoresizingMaskIntoConstraints = false
-        control.widthAnchor.constraint(lessThanOrEqualToConstant: Self.controlWidth).isActive = true
-        modeControl = control
-        modeReadbackLabel = Self.makeNote("")
-
-        let title = NSLocalizedString("mouse-wheel-mode-label", comment: "")
-        control.setAccessibilityLabel(title)
-        let column = Self.makeColumn([control, modeReadbackLabel])
-        let (row, label) = Self.makeRow(title: title, column: column)
-        label.firstBaselineAnchor.constraint(equalTo: control.firstBaselineAnchor).isActive = true
+        control.identifier = Identifier.wheelMode
+        control.segmentDistribution = .fillEqually
+        wheelModeControl = control
+        let row = PreferencesGroupRow(
+            title: MouseText.text("mouse-wheel-mode-label"),
+            explanation: MouseText.modeHint(.smartShift),
+            accessory: control,
+            placement: .below
+        )
+        // Room for the longest line, so picking another mode never changes the height.
+        row.reservedExplanations = MouseText.modes.map(MouseText.modeHint)
+        wheelModeRow = row
         return row
     }
 
-    private func makeSensitivityRow() -> NSView {
-        let title = NSLocalizedString("mouse-wheel-sensitivity-label", comment: "")
-        let (slider, valueLabel, line) = makeSliderLine(
-            range: LogiWheelSettings.sensitivityRange,
-            action: #selector(sensitivityChanged(_:)),
-            accessibilityLabel: title
+    private func makeSensitivityRow() -> PreferencesGroupRow {
+        let row = makeSliderRow(
+            titleKey: "mouse-wheel-sensitivity-label",
+            hintKey: "mouse-wheel-sensitivity-hint",
+            ends: ("mouse-wheel-sensitivity-later", "mouse-wheel-sensitivity-sooner"),
+            identifier: Identifier.sensitivity,
+            action: #selector(sensitivityChanged(_:))
         )
-        sensitivitySlider = slider
-        sensitivityValueLabel = valueLabel
-        let hint = Self.makeNote(NSLocalizedString("mouse-wheel-sensitivity-hint", comment: ""))
-        sensitivityReadbackLabel = Self.makeNote("")
-        let column = Self.makeColumn([line, hint, sensitivityReadbackLabel])
-        column.setCustomSpacing(2, after: hint)
-        let (row, label) = Self.makeRow(title: title, column: column)
-        label.centerYAnchor.constraint(equalTo: slider.centerYAnchor).isActive = true
+        sensitivityRow = row
+        sensitivitySlider = row.slider
         return row
     }
 
-    private func makeScrollForceRow() -> NSView {
-        let title = NSLocalizedString("mouse-wheel-force-label", comment: "")
-        let (slider, valueLabel, line) = makeSliderLine(
-            range: LogiWheelSettings.scrollForceRange,
-            action: #selector(scrollForceChanged(_:)),
-            accessibilityLabel: title
+    private func makeFirmnessRow() -> PreferencesGroupRow {
+        let row = makeSliderRow(
+            titleKey: "mouse-wheel-force-label",
+            hintKey: "mouse-wheel-force-hint",
+            ends: ("mouse-wheel-force-soft", "mouse-wheel-force-firm"),
+            identifier: Identifier.firmness,
+            action: #selector(firmnessChanged(_:))
         )
-        scrollForceSlider = slider
-        scrollForceValueLabel = valueLabel
-        let hint = Self.makeNote(NSLocalizedString("mouse-wheel-force-hint", comment: ""))
-        scrollForceReadbackLabel = Self.makeNote("")
-        let column = Self.makeColumn([line, hint, scrollForceReadbackLabel])
-        column.setCustomSpacing(2, after: hint)
-        let (row, label) = Self.makeRow(title: title, column: column)
-        label.centerYAnchor.constraint(equalTo: slider.centerYAnchor).isActive = true
+        firmnessRow = row
+        firmnessSlider = row.slider
         return row
     }
 
-    private func makeAdvancedRow() -> NSView {
-        let button = NSButton(
-            title: NSLocalizedString("mouse-diagnostics-button", comment: ""),
+    private func makeHapticsRow() -> PreferencesGroupRow {
+        let row = PreferencesSwitchRow(
+            title: MouseText.text("mouse-haptics"),
+            explanation: MouseText.text("mouse-haptics-hint"),
             target: self,
-            action: #selector(diagnosticsClicked(_:))
+            action: #selector(hapticsToggled(_:))
         )
-        button.bezelStyle = .rounded
-        diagnosticsButton = button
-        let hint = Self.makeNote(NSLocalizedString("mouse-diagnostics-hint", comment: ""))
-        let column = Self.makeColumn([button, hint])
-        let (row, label) = Self.makeRow(
-            title: NSLocalizedString("mouse-advanced-label", comment: ""),
-            column: column
-        )
-        label.firstBaselineAnchor.constraint(equalTo: button.firstBaselineAnchor).isActive = true
+        row.toggle.identifier = Identifier.haptics
+        hapticsRow = row
+        hapticsSwitch = row.toggle
         return row
     }
 
-    private func makeSliderLine(
-        range: ClosedRange<Int>,
-        action: Selector,
-        accessibilityLabel: String
-    ) -> (NSSlider, NSTextField, NSView) {
-        let line = PreferencesForm.makeSliderLine(
-            range: Double(range.lowerBound)...Double(range.upperBound),
-            widestValue: MouseWheelText.percent(range.upperBound),
-            target: self,
-            action: action,
-            accessibilityLabel: accessibilityLabel
+    private func makeStrengthRow() -> PreferencesGroupRow {
+        let row = makeSliderRow(
+            titleKey: "mouse-haptics-strength",
+            hintKey: "mouse-haptics-strength-hint",
+            ends: ("mouse-haptics-strength-light", "mouse-haptics-strength-strong"),
+            identifier: Identifier.strength,
+            action: #selector(strengthChanged(_:))
         )
-        return (line.slider, line.valueLabel, line.line)
+        strengthRow = row
+        strengthSlider = row.slider
+        return row
     }
 
-    // MARK: - Building blocks (PreferencesForm)
-
-    private static var noteFont: NSFont {
-        return PreferencesForm.hintFont
+    private func makePressForceRow() -> PreferencesGroupRow {
+        let row = makeSliderRow(
+            titleKey: "mouse-press-force",
+            hintKey: "mouse-press-force-hint",
+            ends: ("mouse-press-force-light", "mouse-press-force-firm"),
+            identifier: Identifier.pressForce,
+            action: #selector(pressForceChanged(_:))
+        )
+        pressForceRow = row
+        pressForceSlider = row.slider
+        return row
     }
 
-    private static func makeNote(_ text: String) -> NSTextField {
-        return PreferencesForm.makeHint(text)
-    }
-
-    private static func setNote(_ label: NSTextField, _ text: String?) {
-        PreferencesForm.setHint(label, text)
-    }
-
-    private static func makeColumn(_ views: [NSView]) -> NSStackView {
-        return PreferencesForm.makeColumn(views)
-    }
-
-    private static func makeSeparator() -> NSView {
-        return PreferencesForm.makeSeparator()
-    }
-
-    private static func makeRow(title: String, column: NSView) -> (row: NSView, label: NSTextField) {
-        return PreferencesForm.makeRow(title: title, column: column)
+    /// A slider with words under its ends and its value on the right. The tab's sliders all
+    /// have the same width and value column, so they line up.
+    private func makeSliderRow(
+        titleKey: String,
+        hintKey: String,
+        ends: (low: String, high: String),
+        identifier: NSUserInterfaceItemIdentifier,
+        action: Selector
+    ) -> PreferencesSliderRow {
+        let row = PreferencesSliderRow(
+            title: MouseText.text(titleKey),
+            explanation: MouseText.text(hintKey),
+            range: 0...100,
+            ends: (low: MouseText.text(ends.low), high: MouseText.text(ends.high)),
+            valueWidth: Self.sliderValueWidth,
+            target: self,
+            action: action
+        )
+        row.slider.identifier = identifier
+        return row
     }
 
     // MARK: - Icons
-
-    /// Small mouse glyph for the device list.
-    private static func deviceIcon() -> NSImage? {
-        return NSImage(systemSymbolName: "computermouse", accessibilityDescription: nil)
-    }
 
     /// Toolbar image, the size of the SF.* assets of the storyboard tabs.
     static func tabImage() -> NSImage {
         return PreferencesForm.toolbarImage(
             symbolName: "computermouse",
-            accessibilityDescription: NSLocalizedString("mouse-tab-title", comment: "")
+            accessibilityDescription: MouseText.text("mouse-tab-title")
         ) { _ in
             // macOS 10.13-10.15: outline of a mouse with a button split.
             let body = NSBezierPath(

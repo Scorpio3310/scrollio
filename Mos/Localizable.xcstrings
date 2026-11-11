@@ -1071,79 +1071,90 @@
         }
       }
     },
-    "mouse-advanced-label": {
+    "mouse-battery-about": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Advanced"
+            "value": "About %@"
           }
         }
       }
     },
-    "mouse-device-supports-none": {
+    "mouse-battery-accessibility": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No adjustable wheel settings"
+            "value": "Battery %@"
           }
         }
       }
     },
-    "mouse-device-supports-scroll-force": {
+    "mouse-battery-accessibility-charging": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrolling force"
+            "value": "Battery %@, charging"
           }
         }
       }
     },
-    "mouse-device-supports-smartshift": {
+    "mouse-battery-critical": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "SmartShift"
+            "value": "Very low"
           }
         }
       }
     },
-    "mouse-devices-empty": {
+    "mouse-battery-full": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No Logitech mouse with adjustable wheel found"
+            "value": "Full"
           }
         }
       }
     },
-    "mouse-devices-empty-hint": {
+    "mouse-battery-good": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Bluetooth and Bolt receiver mice appear here when connected."
+            "value": "Good"
           }
         }
       }
     },
-    "mouse-devices-label": {
+    "mouse-battery-low": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Logitech Mice"
+            "value": "Low"
+          }
+        }
+      }
+    },
+    "mouse-battery-not-charging": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, not charging"
           }
         }
       }
@@ -1159,13 +1170,244 @@
         }
       }
     },
-    "mouse-diagnostics-hint": {
+    "mouse-haptics": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Live connection log, for troubleshooting."
+            "value": "Haptic feedback"
+          }
+        }
+      }
+    },
+    "mouse-haptics-header": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haptics"
+          }
+        }
+      }
+    },
+    "mouse-haptics-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Short pulses from the thumb panel, for example when a gesture locks in."
+          }
+        }
+      }
+    },
+    "mouse-haptics-strength": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Strength"
+          }
+        }
+      }
+    },
+    "mouse-haptics-strength-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Let go of the slider to feel a sample pulse."
+          }
+        }
+      }
+    },
+    "mouse-haptics-strength-light": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Light"
+          }
+        }
+      }
+    },
+    "mouse-haptics-strength-strong": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Strong"
+          }
+        }
+      }
+    },
+    "mouse-header-connected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected"
+          }
+        }
+      }
+    },
+    "mouse-header-connected-several": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected. Your choices go to all %d mice."
+          }
+        }
+      }
+    },
+    "mouse-header-no-mouse": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Logitech mouse connected"
+          }
+        }
+      }
+    },
+    "mouse-no-mouse": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn on your Logitech mouse"
+          }
+        }
+      }
+    },
+    "mouse-no-mouse-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Its battery, pointer speed, wheel and haptics show here once it connects."
+          }
+        }
+      }
+    },
+    "mouse-pointer-header": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pointer"
+          }
+        }
+      }
+    },
+    "mouse-pointer-speed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pointer speed"
+          }
+        }
+      }
+    },
+    "mouse-pointer-speed-faster": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Faster"
+          }
+        }
+      }
+    },
+    "mouse-pointer-speed-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How far the pointer moves with the mouse."
+          }
+        }
+      }
+    },
+    "mouse-pointer-speed-slower": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Slower"
+          }
+        }
+      }
+    },
+    "mouse-pointer-speed-value": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d DPI"
+          }
+        }
+      }
+    },
+    "mouse-press-force": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thumb panel press"
+          }
+        }
+      }
+    },
+    "mouse-press-force-firm": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Firm"
+          }
+        }
+      }
+    },
+    "mouse-press-force-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How hard you press the thumb panel before it clicks."
+          }
+        }
+      }
+    },
+    "mouse-press-force-light": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Light"
           }
         }
       }
@@ -1181,13 +1423,46 @@
         }
       }
     },
+    "mouse-value-off": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off"
+          }
+        }
+      }
+    },
+    "mouse-value-on": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On"
+          }
+        }
+      }
+    },
+    "mouse-wheel-force-firm": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Firm"
+          }
+        }
+      }
+    },
     "mouse-wheel-force-hint": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Click firmness. MX Master 4 and newer."
+            "value": "How firmly each step of the wheel clicks."
           }
         }
       }
@@ -1198,7 +1473,18 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrolling Force"
+            "value": "Click firmness"
+          }
+        }
+      }
+    },
+    "mouse-wheel-force-soft": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Soft"
           }
         }
       }
@@ -1209,7 +1495,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scroll Wheel"
+            "value": "Scroll wheel"
           }
         }
       }
@@ -1220,7 +1506,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Let Scrollio manage wheel settings"
+            "value": "Let Scrollio manage this mouse"
           }
         }
       }
@@ -1231,7 +1517,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrollio writes these settings to the mouse when it connects. Don't let Logi Options+ manage them at the same time."
+            "value": "Scrollio sends your choices to the mouse each time it connects. Don't run Logi Options+ at the same time."
           }
         }
       }
@@ -1247,13 +1533,24 @@
         }
       }
     },
+    "mouse-wheel-mode-free-spin-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always spins freely, for long pages."
+          }
+        }
+      }
+    },
     "mouse-wheel-mode-label": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scroll Mode"
+            "value": "Wheel mode"
           }
         }
       }
@@ -1269,6 +1566,17 @@
         }
       }
     },
+    "mouse-wheel-mode-ratchet-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always clicks, one step at a time."
+          }
+        }
+      }
+    },
     "mouse-wheel-mode-smartshift": {
       "extractionState": "manual",
       "localizations": {
@@ -1280,13 +1588,13 @@
         }
       }
     },
-    "mouse-wheel-readback-named": {
+    "mouse-wheel-mode-smartshift-hint": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@: %2$@"
+            "value": "Clicks while you scroll slowly, spins freely when you flick it."
           }
         }
       }
@@ -1308,7 +1616,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "SmartShift only. Higher means free-spin sooner."
+            "value": "How soon a flick lets the wheel spin freely."
           }
         }
       }
@@ -1319,7 +1627,29 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sensitivity"
+            "value": "SmartShift sensitivity"
+          }
+        }
+      }
+    },
+    "mouse-wheel-sensitivity-later": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Later"
+          }
+        }
+      }
+    },
+    "mouse-wheel-sensitivity-sooner": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sooner"
           }
         }
       }
