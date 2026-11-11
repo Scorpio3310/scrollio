@@ -65,6 +65,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Takeover from the original Mos: quit it if it is running and, on the first launch,
         // copy its settings. Must come before readOptions, which seeds the defaults.
         LegacyMosTakeover.runAtLaunch()
+        // Its login item (or the user) can start it again later: quit it each time.
+        LegacyMosTakeover.startWatchingLaunches()
 
         // 禁止重复运行, 结束正在运行的实例
         Utils.preventMultiRunning(killExist: true)
