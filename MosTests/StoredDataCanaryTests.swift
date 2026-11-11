@@ -35,7 +35,7 @@ final class StoredDataCanaryTests: XCTestCase {
     }
 
     /// Undo of "Remove App" puts the very object back where it was (EnhanceArray.insert):
-    /// the stored JSON is byte for byte what it was before the removal, and lookups by path
+    /// the stored JSON is what it was before the removal, and lookups by path
     /// (what ScrollUtils uses) find every app again.
     func testInsertPutsARemovedAppBackExactlyWhereItWas() throws {
         let a = Application(path: "/Applications/A.app")
@@ -58,7 +58,11 @@ final class StoredDataCanaryTests: XCTestCase {
         XCTAssertTrue(store.get(by: a.path) === a)
         XCTAssertTrue(store.get(by: b.path) === b)
         XCTAssertTrue(store.get(by: c.path) === c)
-        XCTAssertEqual(try XCTUnwrap(store.json()), before)
+        // The same JSON (JSONEncoder's key order varies between runs: compared as objects).
+        XCTAssertEqual(
+            try JSONSerialization.jsonObject(with: try XCTUnwrap(store.json())) as? NSArray,
+            try JSONSerialization.jsonObject(with: before) as? NSArray
+        )
 
         // An index the shorter list no longer has appends; a negative one puts it first.
         store.remove(at: 2)

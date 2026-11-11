@@ -168,12 +168,14 @@ final class AppRunController {
     /// Another user took the Mac: stop, and stay stopped (also through sleep and wake)
     /// until this session is active again.
     func sessionDidResign() {
+        NSLog("Scrollio: another user has the Mac, the event taps stop")
         isSessionActive = false
         stop()
     }
 
     /// This user is back.
     func sessionDidBecomeActive() {
+        NSLog("Scrollio: this user has the Mac again")
         isSessionActive = true
         start()
     }

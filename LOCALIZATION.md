@@ -9,7 +9,7 @@ They must stay separate.
 
 | File | Scope | Keys |
 | --- | --- | --- |
-| `Mos/Localizable.xcstrings` | Strings used from Swift with `NSLocalizedString` | Readable phrases (`"Quit"`) or identifiers that mirror code constants (`appExpose`, `categoryFunctionKeys`, the identifiers of `SystemShortcut.Shortcut`, and by area `scrolling-*`, `mouse-*`, `gesture-*` / `gestures-*`, `about-*`, `preferences-*`, `main-menu-*`, `intro-*`) |
+| `Mos/Localizable.xcstrings` | Strings used from Swift with `NSLocalizedString` | Readable phrases (older keys) or identifiers that mirror code constants (`appExpose`, `categoryFunctionKeys`, the identifiers of `SystemShortcut.Shortcut`, and by area `general-*`, `scrolling-*`, `buttons-*`, `mouse-*`, `gesture-*` / `gestures-*`, `apps-*`, `about-*`, `preferences-*`, `main-menu-*`, `status-menu-*` / `status-item-*`, `intro-*`, `toast-*`) |
 | `Mos/mul.lproj/Main.xcstrings` | The storyboard | Interface Builder object ids (`2AK-Pu-mot.title`) |
 
 Rules:
@@ -36,12 +36,13 @@ In the storyboard: change `Mos/Base.lproj/Main.storyboard`, build, and fill in t
 object ids in `Mos/mul.lproj/Main.xcstrings`. When a UI element is deleted, remove its
 stale entries.
 
-Strings of the preference panes built in code (Scrolling, Mouse, Gestures, About, the
-sidebar and the Gesture Settings popover), of the main menu and of the Introduction
-window are also listed in
-`MosTests/PreferencesLocalizationTests.swift`. Add new keys of these to that list: several
-keys are built from variables in code, and a missing one would only show up as the raw
-key in the UI.
+Strings of the preference panes (all built in code), the sidebar, the main menu, the
+status-bar menu and the Welcome Guide are also listed in
+`MosTests/PreferencesLocalizationTests.swift`, one array per area (`generalKeys`,
+`scrollingKeys`, `buttonsKeys`, `gesturesKeys`, `mouseKeys`, `appsKeys`, `aboutKeys`,
+`windowKeys`, `menuKeys`, `introKeys`; `keys` is their union). Add a new key to the array
+of its area: several keys are built from variables in code, and a missing one would only
+show up as the raw key in the UI.
 
 ## The test
 

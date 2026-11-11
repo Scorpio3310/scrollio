@@ -94,6 +94,11 @@ See `.agents/docs/code-map.md` for the map. The rules:
   switch.
 - ButtonCore, InputEvent, Shortcut and Keys share one meaning of recording, display,
   persistence and execution. When you change one, check the others.
+- Only `AppRunController` (`Mos/Managers/`) starts and stops the cores (the scroll and
+  button event taps and the Logitech sessions): launch, sleep and wake, fast user
+  switching, lost Accessibility access, "Pause Scrollio", quit. An active event tap that
+  is not serviced freezes input system-wide: never leave one installed while the cores
+  count as stopped, and never block the main thread while one runs.
 
 ## Localization
 
@@ -102,9 +107,10 @@ See `.agents/docs/code-map.md` for the map. The rules:
   storyboard).
 - Every user-visible string is localized. In Swift use `NSLocalizedString(_:comment:)`,
   not `String(localized:)`.
-- `PreferencesLocalizationTests` checks that the keys of the preferences panels exist,
-  are not shown as raw keys and keep their format specifiers. Add the keys of new
-  preferences strings to its list.
+- `PreferencesLocalizationTests` checks that the keys of the preferences panels, the
+  menus and the Welcome Guide exist, are not shown as raw keys and keep their format
+  specifiers. Add the keys of new strings to the array of their area (`generalKeys`,
+  `buttonsKeys`, `appsKeys`, `menuKeys`, ...).
 - Details and the steps for adding a language: `LOCALIZATION.md`.
 
 ## Verification
@@ -118,6 +124,7 @@ Choose by risk, and run it: reading the code is not verification.
 | New, moved or deleted Swift file; project or target change | Debug build | related tests |
 | ScrollCore hot path | `ScrollClassicPathTests`, `ScrollMotionTests`, `ScrollFilterTests`, `ScrollPoster*Tests`, `ScrollSystemLogTests` | full run; the owner scrolls by hand and reads the `scroll` log |
 | ButtonCore, Shortcut, InputEvent | ButtonBinding, InputProcessor, ShortcutExecutor tests | the owner checks the Buttons pane |
+| App lifecycle (`AppRunController`, `AppDelegate`, status-bar menu) | `AppRunControllerTests`, `StatusMenuTests` | the owner: sleep and wake, another user, Pause / Resume, Accessibility turned off and on |
 | Logi, HID | the `MosTests/Logi*` tests and the boundary lint | real-device tests and the `logi` log, by the owner |
 | Preferences panes | the pane's `Preferences*Tests` / `MousePreferencesTests`, `PreferencesWindowTests` | the owner looks at the pane; previews stop when it is hidden |
 | UI text | catalogs in sync, `PreferencesLocalizationTests` | long text, dark mode |
