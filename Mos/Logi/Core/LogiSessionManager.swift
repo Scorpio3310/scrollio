@@ -65,6 +65,7 @@ internal class LogiSessionManager {
         hidManager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         guard let manager = hidManager else {
             LogiDebugPanel.log("[LogitechHID] Failed to create IOHIDManager")
+            LogiSystemLog.note("IOHIDManagerCreate failed; Logitech devices are not watched")
             return
         }
 
@@ -83,13 +84,29 @@ internal class LogiSessionManager {
         IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
 
         let result = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
-        if result != kIOReturnSuccess {
-            LogiDebugPanel.log("[LogitechHID] Failed to open IOHIDManager: \(String(format: "0x%08x", result))")
-            return
+        if let line = Self.openFailureLogLine(result: result) {
+            // Kept and counted as started (see openFailureLogLine): stop() then closes this
+            // manager, and a later start() does not make a second one beside it.
+            LogiDebugPanel.log("[LogitechHID] \(line)")
+            LogiSystemLog.note(line)
         }
 
         isActive = true
         LogiDebugPanel.log("[LogitechHID] Started")
+    }
+
+    /// The system-log line for an IOHIDManagerOpen result, nil for success.
+    ///
+    /// A failed open used to leave the manager scheduled but uncounted: stop() skipped it
+    /// and the next start() (wake, Resume) scheduled a second one beside it, so every device
+    /// could get two sessions. The manager is kept, as before, and now counted as started:
+    /// IOHIDManagerOpen opens every matched device and reports the error of any one it
+    /// could not open (a keyboard interface without Input Monitoring, a device another app
+    /// holds) while it stays open and keeps matching the others, so dropping it on an error
+    /// could take a working mouse away.
+    static func openFailureLogLine(result: IOReturn) -> String? {
+        guard result != kIOReturnSuccess else { return nil }
+        return String(format: "IOHIDManagerOpen returned 0x%08x; the manager stays open for the devices it could open", result)
     }
 
     func stop() {
@@ -210,8 +227,8 @@ internal class LogiSessionManager {
     /// 聚合后只在 "全局是否忙碌" 翻转的瞬间 post, UI 订阅后用来驱动 activity spinner.
     static let activityStateDidChangeNotification = NSNotification.Name("LogiActivityStateDidChange")
 
-    /// 冲突状态变化通知; Step 4/5 会在 reporting query 完成等位置 post 此通知.
-    /// Step 2 仅声明命名,不在任何位置 post.
+    /// 冲突状态变化通知: notifyConflictChanged() posts it when a control's delivery mode
+    /// leaves .hidpp (recordExternalClear), so that the conflict indicators refresh.
     static let conflictChangedNotification = NSNotification.Name("LogiConflictChanged")
 
     // MARK: - Activity State Aggregation
@@ -253,7 +270,7 @@ internal class LogiSessionManager {
     /// Coalesced 入口:刷新所有 HID++ session 的 reporting 状态 (重跑 GetControlReporting).
     /// 调用方决定时机 (例如 UI 想看冲突图标), manager 只负责执行 + 节流.
     ///
-    /// 节流: `reportingRefreshMinInterval` (~3s) 内重复调用直接返回, 防 UI 抖动.
+    /// 节流: `reportingRefreshMinInterval` (10 s) 内重复调用直接返回, 防 UI 抖动.
     /// 没 Logi 候选会话时自然 no-op (sessions filter 后为空集合).
     /// 同步返回, 不阻塞 UI — 实际 HID++ 请求在各自 session 的 input-report 回调里
     /// 异步处理, 完成后通过 `reportingQueryDidCompleteNotification` 刷新 indicator.

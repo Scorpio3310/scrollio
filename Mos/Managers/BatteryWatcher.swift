@@ -128,12 +128,14 @@ final class BatteryWatcher {
         }
     }
 
-    /// Clearly charged again, also when the charging itself was not seen.
+    /// Clearly charged again, also when the charging itself was not seen. A battery that
+    /// reports only a level counts as recovered at "full" only: "good" is the step right
+    /// above "low", and a battery hovering between the two would repeat the low warning.
     static func isRecovered(_ battery: LogiMouseDeviceState.Battery) -> Bool {
         if let percent = battery.percent {
             return percent >= recoveredPercent
         }
-        return battery.level == .good || battery.level == .full
+        return battery.level == .full
     }
 
     /// "MX Master 4 battery is low (8%)." A coarse reading (original MX Master 3) leaves the

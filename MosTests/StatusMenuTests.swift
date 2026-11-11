@@ -711,7 +711,25 @@ final class BatteryWatcherTests: XCTestCase {
         XCTAssertFalse(BatteryWatcher.isCharging(battery(5, charging: .problem)))
         XCTAssertTrue(BatteryWatcher.isRecovered(battery(30)))
         XCTAssertFalse(BatteryWatcher.isRecovered(battery(29)))
-        XCTAssertTrue(BatteryWatcher.isRecovered(battery(nil, level: .good)))
+        XCTAssertFalse(BatteryWatcher.isRecovered(battery(nil, level: .good)), "the step right above low")
+        XCTAssertTrue(BatteryWatcher.isRecovered(battery(nil, level: .full)))
+    }
+
+    /// Regression: a battery that reports only a level (no percentage) and hovers between
+    /// low and good warned again at every dip. Only full or charging starts over.
+    func testALevelOnlyBatteryAtTheLowEdgeWarnsOnce() {
+        report(battery(nil, level: .low))
+        report(battery(nil, level: .good))
+        report(battery(nil, level: .low))
+        report(battery(nil, level: .good))
+        report(battery(nil, level: .low))
+        XCTAssertEqual(toasts, ["MX Master 4 battery is low."])
+        report(battery(nil, level: .low, charging: .charging))
+        report(battery(nil, level: .low))
+        XCTAssertEqual(toasts.count, 2, "charging starts over")
+        report(battery(nil, level: .full))
+        report(battery(nil, level: .low))
+        XCTAssertEqual(toasts.count, 3, "full starts over")
     }
 
     /// It follows the mice's reports; it never asks them anything itself.

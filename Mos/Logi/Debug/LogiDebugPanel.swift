@@ -634,7 +634,10 @@ class LogiDebugPanel: NSObject {
 
         windowCloseObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: panel, queue: .main
-        ) { [weak self] _ in self?.stopObserving() }
+        ) { [weak self] _ in
+            self?.stopObserving()
+            self?.releaseSessions()
+        }
 
         return panel
     }
@@ -1167,11 +1170,18 @@ class LogiDebugPanel: NSObject {
         exportBtn.autoresizingMask = [.minXMargin]
         toolbar.addSubview(exportBtn)
 
-        let selfTestBtn = makeActionBtn(title: "Self-Test\u{2026}", action: #selector(selfTestClicked))
-        selfTestBtn.frame = NSRect(x: 0, y: 4, width: 70, height: 20)
-        selfTestBtn.font = NSFont.systemFont(ofSize: 9, weight: .medium)
-        selfTestBtn.autoresizingMask = [.minXMargin]
-        toolbar.addSubview(selfTestBtn)
+        // The self-test wizard exists only in Debug builds: no button where it does nothing.
+        #if DEBUG
+        let selfTestBtn: NSButton? = makeActionBtn(title: "Self-Test\u{2026}", action: #selector(selfTestClicked))
+        #else
+        let selfTestBtn: NSButton? = nil
+        #endif
+        if let selfTestBtn {
+            selfTestBtn.frame = NSRect(x: 0, y: 4, width: 70, height: 20)
+            selfTestBtn.font = NSFont.systemFont(ofSize: 9, weight: .medium)
+            selfTestBtn.autoresizingMask = [.minXMargin]
+            toolbar.addSubview(selfTestBtn)
+        }
 
         // Position clear/export/self-test from right using frame + autoresizingMask
         // Will be repositioned after layout
@@ -1181,7 +1191,7 @@ class LogiDebugPanel: NSObject {
             clearBtn.frame.origin.x = w - 50
             exportBtn.frame.origin.x = w - 100
             // exportBtn.x (w-100) - selfTest width (70) - gap (4) = w - 174
-            selfTestBtn.frame.origin.x = w - 174
+            selfTestBtn?.frame.origin.x = w - 174
         }
     }
 
@@ -2215,6 +2225,8 @@ class LogiDebugPanel: NSObject {
             self?.renderRightPanelHeaders()
             self?.refreshSpinningSlotRow()
         }
+        // The spinner ticks only while the panel is open (stopObserving stops it).
+        BrailleSpinner.shared.start()
         hapticStateObserver = NotificationCenter.default.addObserver(
             forName: LogiDeviceSession.hapticStateDidChangeNotification, object: nil, queue: .main
         ) { [weak self] notification in
@@ -2291,7 +2303,22 @@ class LogiDebugPanel: NSObject {
         }
     }
 
+    /// The panel was closed: let go of the sessions it showed. The sidebar nodes hold their
+    /// session strongly and nothing refreshes them while the panel is closed, so a mouse that
+    /// disconnected in the meantime would stay in memory. show() builds them again.
+    private func releaseSessions() {
+        deviceNodes.removeAll()
+        featureRows.removeAll()
+        controlRows.removeAll()
+        selectedFeatureId = nil
+        selectedControlCID = nil
+        outlineView?.reloadData()
+        featureTableView?.reloadData()
+        controlsTableView?.reloadData()
+    }
+
     private func stopObserving() {
+        BrailleSpinner.shared.stop()
         if let o = logObserver { NotificationCenter.default.removeObserver(o); logObserver = nil }
         if let o = sessionObserver { NotificationCenter.default.removeObserver(o); sessionObserver = nil }
         if let o = reportingCompleteObserver {

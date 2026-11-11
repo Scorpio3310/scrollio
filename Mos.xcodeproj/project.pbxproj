@@ -63,6 +63,7 @@
 		A7E1C0DE0000000000000001 /* MosTests/LogiWheelProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0DE0000000000000002 /* MosTests/LogiWheelProtocolTests.swift */; };
 		A7E1C0DE0000000000000003 /* MosTests/LogiWheelControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0DE0000000000000004 /* MosTests/LogiWheelControllerTests.swift */; };
 		A7E1C0DE0000000000000005 /* MosTests/LogiWheelSessionFixesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0DE0000000000000006 /* MosTests/LogiWheelSessionFixesTests.swift */; };
+		4C0F1E5D0000000000000001 /* MosTests/LogiReviewFixesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0F1E5D0000000000000002 /* MosTests/LogiReviewFixesTests.swift */; };
 		A7E1C0E00000000000000001 /* MosTests/LogiBatteryProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0E00000000000000002 /* MosTests/LogiBatteryProtocolTests.swift */; };
 		A7E1C0E00000000000000003 /* MosTests/LogiPointerSpeedProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0E00000000000000004 /* MosTests/LogiPointerSpeedProtocolTests.swift */; };
 		A7E1C0E00000000000000005 /* MosTests/LogiHapticSettingsProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0E00000000000000006 /* MosTests/LogiHapticSettingsProtocolTests.swift */; };
@@ -175,6 +176,7 @@
 		A7E1C0DE0000000000000002 /* MosTests/LogiWheelProtocolTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiWheelProtocolTests.swift; sourceTree = SOURCE_ROOT; };
 		A7E1C0DE0000000000000004 /* MosTests/LogiWheelControllerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiWheelControllerTests.swift; sourceTree = SOURCE_ROOT; };
 		A7E1C0DE0000000000000006 /* MosTests/LogiWheelSessionFixesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiWheelSessionFixesTests.swift; sourceTree = SOURCE_ROOT; };
+		4C0F1E5D0000000000000002 /* MosTests/LogiReviewFixesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiReviewFixesTests.swift; sourceTree = SOURCE_ROOT; };
 		A7E1C0E00000000000000002 /* MosTests/LogiBatteryProtocolTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiBatteryProtocolTests.swift; sourceTree = SOURCE_ROOT; };
 		A7E1C0E00000000000000004 /* MosTests/LogiPointerSpeedProtocolTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiPointerSpeedProtocolTests.swift; sourceTree = SOURCE_ROOT; };
 		A7E1C0E00000000000000006 /* MosTests/LogiHapticSettingsProtocolTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/LogiHapticSettingsProtocolTests.swift; sourceTree = SOURCE_ROOT; };
@@ -309,6 +311,7 @@
 				A7E1C0DE0000000000000002 /* MosTests/LogiWheelProtocolTests.swift */,
 				A7E1C0DE0000000000000004 /* MosTests/LogiWheelControllerTests.swift */,
 				A7E1C0DE0000000000000006 /* MosTests/LogiWheelSessionFixesTests.swift */,
+				4C0F1E5D0000000000000002 /* MosTests/LogiReviewFixesTests.swift */,
 				A7E1C0E00000000000000002 /* MosTests/LogiBatteryProtocolTests.swift */,
 				A7E1C0E00000000000000004 /* MosTests/LogiPointerSpeedProtocolTests.swift */,
 				A7E1C0E00000000000000006 /* MosTests/LogiHapticSettingsProtocolTests.swift */,
@@ -558,6 +561,7 @@
 				A7E1C0DE0000000000000001 /* MosTests/LogiWheelProtocolTests.swift in Sources */,
 				A7E1C0DE0000000000000003 /* MosTests/LogiWheelControllerTests.swift in Sources */,
 				A7E1C0DE0000000000000005 /* MosTests/LogiWheelSessionFixesTests.swift in Sources */,
+				4C0F1E5D0000000000000001 /* MosTests/LogiReviewFixesTests.swift in Sources */,
 				A7E1C0E00000000000000001 /* MosTests/LogiBatteryProtocolTests.swift in Sources */,
 				A7E1C0E00000000000000003 /* MosTests/LogiPointerSpeedProtocolTests.swift in Sources */,
 				A7E1C0E00000000000000005 /* MosTests/LogiHapticSettingsProtocolTests.swift in Sources */,

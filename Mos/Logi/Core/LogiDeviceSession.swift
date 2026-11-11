@@ -55,8 +55,8 @@ class LogiDeviceSession {
     enum ConnectionMode {
         /// BLE 直连: long report + ID in payload, devIdx=0xFF, divert flags=0x03
         case bleDirect
-        /// USB Receiver (Unifying/Bolt): vendor-specific interface, devIdx=slot(0x01~0x06)
-        /// TODO: 需要实现槽位发现 (HID++ 1.0 枚举配对设备)
+        /// USB Receiver (Unifying/Bolt): vendor-specific interface, devIdx=slot(0x01~0x06);
+        /// slots are found by enumerateReceiverDevices (ping per slot + register 0xB5).
         case receiver
         /// 未知/不支持
         case unsupported
@@ -105,6 +105,10 @@ class LogiDeviceSession {
     /// 非周期轮询, 不违红线(§2). 按 slot 各自去抖.
     private var receiverTakeoverDebounce: [UInt8: DispatchWorkItem] = [:]
     private static let receiverTakeoverDebounceDelay: TimeInterval = 0.4
+    /// Slots the running takeover sweep rediscovered (their controllers were dropped). At the
+    /// end of the sweep only these may have their wheel / haptic / basic features looked up
+    /// and their controllers built again (receiverSweepRebuildSlot).
+    private var receiverSweptSlots: Set<UInt8> = []
     /// 已探测过可选功能的 slot: 面板巡检切换时每 slot 只探一次, 避免每次切都重探(拖慢/撞在飞探测).
     /// slot 重新发现(sweep / setTargetSlot)时清除, 以便重探.
     private var receiverOptionalProbedSlots: Set<UInt8> = []
@@ -123,8 +127,10 @@ class LogiDeviceSession {
     private static let reportBufferSize = 64
 
     // MARK: - Async Discovery
-    private var pendingDiscovery: [UInt16: (UInt8?) -> Void] = [:]
-    private var discoveryTimer: Timer?
+    /// getFeature requests waiting for their answer, oldest first (answers come in request
+    /// order and carry no feature id). Each has its own timeout in `discoveryTimers`.
+    private var pendingDiscovery = LogiFeatureDiscoveryQueue(softwareId: LogiDeviceSession.hidppSoftwareId)
+    private var discoveryTimers: [Int: Timer] = [:]
     private static let discoveryTimeout: TimeInterval = 5.0
     private var pendingCacheValidation: UInt8? = nil  // 等待 ping 响应验证缓存
 
@@ -290,24 +296,80 @@ class LogiDeviceSession {
 
     #if DEBUG
     internal static var featureCacheKeyForTests: String { return featureCacheKey }
+
+    internal static func loadCachedFeatureIndexForTests(for productId: UInt16, defaults: UserDefaults) -> [UInt16: UInt8]? {
+        return loadCachedFeatureIndex(for: productId, defaults: defaults)
+    }
+
+    internal static func saveCachedFeatureIndexForTests(for productId: UInt16, featureMap: [UInt16: UInt8], defaults: UserDefaults) {
+        saveCachedFeatureIndex(for: productId, featureMap: featureMap, defaults: defaults)
+    }
+
+    internal static func removeCachedFeatureIndexForTests(for productId: UInt16, defaults: UserDefaults) {
+        removeCachedFeatureIndex(for: productId, defaults: defaults)
+    }
     #endif
 
-    private static func loadCachedFeatureIndex(for productId: UInt16) -> [UInt16: UInt8]? {
-        guard let data = UserDefaults.standard.data(forKey: featureCacheKey),
+    private static func loadCachedFeatureIndex(for productId: UInt16, defaults: UserDefaults = .standard) -> [UInt16: UInt8]? {
+        guard let data = defaults.data(forKey: featureCacheKey),
               let cache = try? JSONDecoder().decode([UInt16: [UInt16: UInt8]].self, from: data) else { return nil }
         return cache[productId]
     }
 
-    private static func saveCachedFeatureIndex(for productId: UInt16, featureMap: [UInt16: UInt8]) {
+    private static func saveCachedFeatureIndex(for productId: UInt16, featureMap: [UInt16: UInt8], defaults: UserDefaults = .standard) {
         var cache: [UInt16: [UInt16: UInt8]] = [:]
-        if let data = UserDefaults.standard.data(forKey: featureCacheKey),
+        if let data = defaults.data(forKey: featureCacheKey),
            let existing = try? JSONDecoder().decode([UInt16: [UInt16: UInt8]].self, from: data) {
             cache = existing
         }
         cache[productId] = featureMap
         if let data = try? JSONEncoder().encode(cache) {
-            UserDefaults.standard.set(data, forKey: featureCacheKey)
+            defaults.set(data, forKey: featureCacheKey)
         }
+    }
+
+    /// Drops one product's entry; the other products and the stored format stay as they are.
+    private static func removeCachedFeatureIndex(for productId: UInt16, defaults: UserDefaults = .standard) {
+        guard let data = defaults.data(forKey: featureCacheKey),
+              var cache = try? JSONDecoder().decode([UInt16: [UInt16: UInt8]].self, from: data),
+              cache.removeValue(forKey: productId) != nil,
+              let encoded = try? JSONEncoder().encode(cache) else { return }
+        defaults.set(encoded, forKey: featureCacheKey)
+    }
+
+    /// HID++ 2.0 errors that say the request went to the wrong place: 0x06 invalid feature
+    /// index, 0x07 invalid function id.
+    private static let invalidFeatureIndexError: UInt8 = 0x06
+    private static let invalidFunctionError: UInt8 = 0x07
+
+    /// Whether an error means the cached feature indices are wrong (the firmware changed
+    /// them): 0x06 or 0x07 on an index that came from the cache on this connection.
+    static func errorInvalidatesFeatureCache(errorCode: UInt8, originalFeatureIndex: UInt8, cachedIndices: Set<UInt8>) -> Bool {
+        guard errorCode == invalidFeatureIndexError || errorCode == invalidFunctionError else { return false }
+        return originalFeatureIndex != 0x00 && cachedIndices.contains(originalFeatureIndex)
+    }
+
+    /// The feature indices this connection took from the cache (BLE direct only). An error
+    /// that invalidates them drops the product's cache entry (errorInvalidatesFeatureCache).
+    private var featureIndicesFromCache: Set<UInt8> = []
+    /// The cache entry was dropped on this connection: the indices in hand may be wrong, so
+    /// nothing is saved until a fresh discovery (the next connect, or Re-discover).
+    private var featureCacheDropped = false
+
+    /// Saves the feature indices of the current slot under the product id (as before), unless
+    /// the cache entry was dropped on this connection.
+    private func saveFeatureIndexCache() {
+        guard !featureCacheDropped else { return }
+        Self.saveCachedFeatureIndex(for: deviceInfo.productId, featureMap: featureIndex)
+    }
+
+    private func dropFeatureIndexCache(errorCode: UInt8, featureIndex index: UInt8) {
+        featureIndicesFromCache.removeAll()
+        featureCacheDropped = true
+        Self.removeCachedFeatureIndex(for: deviceInfo.productId)
+        let message = String(format: "Feature index cache dropped: error 0x%02X on cached index 0x%02X; the next connect looks the features up again", errorCode, index)
+        LogiDebugPanel.log("[\(deviceInfo.name)] \(message)")
+        LogiSystemLog.note("[\(deviceInfo.name)] \(message)")
     }
 
     // MARK: - HID++ Constants
@@ -897,18 +959,22 @@ class LogiDeviceSession {
         0x04, // Presenter
     ]
 
-    /// 接管集合: 需要各自 discovery+divert 常驻接管的 slot.
-    /// 过滤 isConnected && hasBinding(wirelessPID) && 非已知非鼠标类型; 按 slot 升序.
-    /// 绑定过滤是性能考虑(§4.6): 不给用户没绑定的设备做 divert, 避免无谓 HID++ 负载与 Options+ 争用.
-    /// 注: 当前绑定注册表是全局的(UsageRegistry 单一 aggregate), hasBinding 对所有设备同真同假;
-    /// 保留 wirelessPID 参数以便未来按设备细分. 类型未知的 slot 也会纳入(见 receiverNonDivertDeviceTypes),
-    /// 其 divert 仍被 applyUsage 按各设备实际 divertable CID 过滤, 不会误伤键盘按键.
-    static func receiverDivertSlots(
-        devices: [ReceiverPairedDevice],
-        hasBinding: (UInt16) -> Bool
-    ) -> [UInt8] {
+    /// Whether a receiver slot is taken over (discovered, kept as a session slot): connected
+    /// and not a known keyboard / numpad / presenter (an unknown type counts as a mouse, see
+    /// receiverNonDivertDeviceTypes). Bindings play no part: the Mouse pane, the battery line
+    /// and the managed wheel and basic values need the slot without any Logitech button
+    /// binding. Bindings only decide what is diverted (applyUsage diverts nothing for an
+    /// empty aggregate).
+    static func receiverSlotIsTakeoverCandidate(connected: Bool, deviceType: UInt8) -> Bool {
+        return connected && !receiverNonDivertDeviceTypes.contains(deviceType)
+    }
+
+    /// 接管集合: 启动时需要各自 discovery 常驻接管的 slot (receiverSlotIsTakeoverCandidate), 按 slot 升序.
+    /// 类型未知的 slot 也会纳入(见 receiverNonDivertDeviceTypes); sweep 后非鼠标 slot 不进
+    /// receiverManagedSlots, 其 divert 仍被 applyUsage 按各设备实际 divertable CID 过滤, 不会误伤键盘按键.
+    static func receiverTakeoverSlots(devices: [ReceiverPairedDevice]) -> [UInt8] {
         return devices
-            .filter { $0.isConnected && hasBinding($0.wirelessPID) && !receiverNonDivertDeviceTypes.contains($0.deviceType) }
+            .filter { receiverSlotIsTakeoverCandidate(connected: $0.isConnected, deviceType: $0.deviceType) }
             .map { $0.slot }
             .sorted()
     }
@@ -928,7 +994,8 @@ class LogiDeviceSession {
 
     /// 多设备热插拔(§Phase 4): 某 slot 的 0x41 连接/断开通知该做什么(纯决策).
     /// - 断开: 若该 slot 正被接管 -> release(释放其按键状态 + 标记未 init); 否则 ignore
-    /// - 连接: 若已接管 -> ignore(防振荡, "已 init 且在线则忽略"); 否则若是 divert 候选 -> takeover
+    /// - 连接: 若已接管 -> ignore(防振荡, "已 init 且在线则忽略"); 否则若是接管候选 -> takeover
+    ///   (isDivertCandidate = receiverSlotIsTakeoverCandidate: connected and mouse-like, bindings play no part)
     /// 关键: 鼠标关机 / 按背面键切 Bolt 主机再切回, 重连会丢失 divert 状态, 必须重新
     /// discovery+divert(takeover), 否则其 HID++ 按键不再生效. 全为离散事件驱动, 不违红线(§2).
     static func receiverSlotConnectionAction(
@@ -1030,6 +1097,7 @@ class LogiDeviceSession {
            let reprogIdx = cached[Self.featureReprogV4] {
             LogiDebugPanel.log("\(tag) Using cached feature index: REPROG at 0x\(String(format: "%02X", reprogIdx))")
             self.featureIndex = cached.reduce(into: [UInt16: UInt8]()) { $0[$1.key] = $1.value }
+            featureIndicesFromCache = Set(cached.values)
             // 用 ping 验证缓存是否有效 (IRoot.GetProtocolVersion)
             sendRequest(featureIndex: 0x00, functionId: 1)
             pendingCacheValidation = reprogIdx
@@ -1055,18 +1123,17 @@ class LogiDeviceSession {
         receiverManagedSlots.removeAll()
         pendingDivertSlots.removeAll()
         receiverInspectionSlot = nil
+        receiverSweptSlots.removeAll()
         receiverOptionalProbedSlots.removeAll()
         receiverTakeoverDebounce.values.forEach { $0.cancel() }
         receiverTakeoverDebounce.removeAll()
         dropAllWheelControllers()
         dropAllMouseBasicsControllers()
-        discoveryTimer?.invalidate()
-        discoveryTimer = nil
+        dropAllPendingDiscoveries()
         controlInfoQueryTimer?.invalidate()
         controlInfoQueryTimer = nil
         reportingQueryTimer?.invalidate()
         reportingQueryTimer = nil
-        pendingDiscovery.removeAll()
         controlInfoRetryCounts.removeAll()
         cancelDivertReassertion()
         cancelBLEStandardUndivertGuard()
@@ -1168,7 +1235,7 @@ class LogiDeviceSession {
             self.featureIndex[Self.featureReprogV4] = index
             LogiDebugPanel.log("\(tag) REPROG_CONTROLS_V4 at index \(String(format: "0x%02X", index))")
             // 缓存 feature index
-            Self.saveCachedFeatureIndex(for: self.deviceInfo.productId, featureMap: self.featureIndex)
+            self.saveFeatureIndexCache()
             self.sendGetControlCount(featureIndex: index)
         }
     }
@@ -1223,17 +1290,30 @@ class LogiDeviceSession {
     private func discoverFeature(featureId: UInt16, completion: @escaping (UInt8?) -> Void) {
         let params: [UInt8] = [UInt8(featureId >> 8), UInt8(featureId & 0xFF)]
         sendRequest(featureIndex: 0x00, functionId: 0, params: params)
-        pendingDiscovery[featureId] = completion
+        let token = pendingDiscovery.append(deviceIndex: deviceIndex, featureId: featureId, completion: completion)
 
-        discoveryTimer?.invalidate()
-        discoveryTimer = Timer.scheduledTimer(withTimeInterval: Self.discoveryTimeout, repeats: false) { [weak self] _ in
+        // Its own timeout: a request that is never answered fails alone, the others wait on.
+        discoveryTimers[token] = Timer.scheduledTimer(withTimeInterval: Self.discoveryTimeout, repeats: false) { [weak self] _ in
             guard let self = self else { return }
-            self.discoveryTimer = nil  // 一次性 timer 已触发, 置 nil 以免 anyDiscoveryInFlight 误判为在飞
-            if let pending = self.pendingDiscovery.removeValue(forKey: featureId) {
-                LogiDebugPanel.log("[\(self.deviceInfo.name)] Feature discovery timed out for \(String(format: "0x%04X", featureId))")
-                pending(nil)
-            }
+            self.discoveryTimers[token] = nil
+            guard let entry = self.pendingDiscovery.remove(token: token) else { return }
+            LogiDebugPanel.log("[\(self.deviceInfo.name)] Feature discovery timed out for \(String(format: "0x%04X", entry.featureId))")
+            entry.completion(nil)
         }
+    }
+
+    /// Ends one getFeature request: stops its timeout, then hands the result on.
+    private func finishDiscovery(_ entry: LogiFeatureDiscoveryQueue.Entry, featureIndex: UInt8?) {
+        discoveryTimers.removeValue(forKey: entry.token)?.invalidate()
+        entry.completion(featureIndex)
+    }
+
+    /// Forgets every getFeature request without calling back (teardown, a new discovery):
+    /// a late answer then finds nobody waiting and is ignored.
+    private func dropAllPendingDiscoveries() {
+        discoveryTimers.values.forEach { $0.invalidate() }
+        discoveryTimers.removeAll()
+        pendingDiscovery.removeAll()
     }
 
     // MARK: - REPROG_CONTROLS_V4 Flow
@@ -1432,6 +1512,8 @@ class LogiDeviceSession {
     func rediscoverFeatures() {
         cancelInflightDiscovery()
         featureIndex.removeAll()
+        featureIndicesFromCache.removeAll()
+        featureCacheDropped = false  // a fresh discovery: what it finds may be saved again
         resetOptionalProbeState()
         resetHapticDiscoveryState()
         resetScrollForceDiscoveryState()
@@ -1460,10 +1542,9 @@ class LogiDeviceSession {
     /// 只清 dict 不主动触发 callback(nil): 旧响应到达时找不到 callback 自然被忽略,
     /// 避免触发 markHandshakeComplete 造成 ready→init 的 UI 闪烁.
     private func cancelInflightDiscovery() {
-        discoveryTimer?.invalidate(); discoveryTimer = nil
+        dropAllPendingDiscoveries()
         controlInfoQueryTimer?.invalidate(); controlInfoQueryTimer = nil
         reportingQueryTimer?.invalidate(); reportingQueryTimer = nil
-        pendingDiscovery.removeAll()
         pendingCacheValidation = nil
         controlInfoRetryCounts.removeAll()
         cancelDivertReassertion()
@@ -1583,7 +1664,7 @@ class LogiDeviceSession {
         // 可选功能每个 slot 只探一次, 且仅在空闲时(避免每次切都重探; 本接收器 getFeature 可能
         // 超时, 重探会拖慢并让后续点击撞上在飞探测). 未探过 + 空闲才 reset+探.
         let idle = !receiverSweepActive && pendingDiscovery.isEmpty
-            && discoveryTimer == nil && controlInfoQueryTimer == nil && reportingQueryTimer == nil
+            && controlInfoQueryTimer == nil && reportingQueryTimer == nil
         if idle && !receiverOptionalProbedSlots.contains(slot) {
             receiverOptionalProbedSlots.insert(slot)
             resetOptionalProbeState()
@@ -1728,13 +1809,16 @@ class LogiDeviceSession {
             checkPingPhaseComplete()
         }
 
-        // 只处理来自当前目标设备的 feature discovery 错误
-        // (receiver 自身的 register 错误 devIdx=0xFF 不应影响设备的 feature discovery)
-        if devIdx == deviceIndex {
-            for (featureId, callback) in pendingDiscovery {
-                callback(nil)
-                pendingDiscovery.removeValue(forKey: featureId)
-            }
+        // A getFeature of this app refused for this slot (e.g. the device is out of range):
+        // only the oldest request to that slot fails. Errors for other requests (the slot
+        // pings, the receiver's own registers at 0xFF) leave the discoveries alone.
+        if report.count > 4,
+           let entry = pendingDiscovery.takeRefused(
+               deviceIndex: devIdx,
+               originalFeatureIndex: report[3],
+               originalFunctionByte: report[4]
+           ) {
+            finishDiscovery(entry, featureIndex: nil)
         }
     }
 
@@ -1816,10 +1900,9 @@ class LogiDeviceSession {
             return
         }
 
-        // 接管集合: 已连接 + 鼠标 + 有绑定的 slot 各自 discovery+divert 常驻接管.
-        // 绑定当前是全局的(UsageRegistry 单一 aggregate), 有任一绑定则所有鼠标进入接管集.
-        let bindingsExist = !LogiCenter.shared.registry.aggregatedCacheIsEmpty
-        let divertSlots = Self.receiverDivertSlots(devices: receiverPairedDevices) { _ in bindingsExist }
+        // 接管集合: 已连接 + 像鼠标的 slot 各自 discovery 常驻接管, 与有无按键绑定无关
+        // (Mouse pane / battery / managed values 也需要它); 绑定只决定 applyUsage divert 什么.
+        let divertSlots = Self.receiverTakeoverSlots(devices: receiverPairedDevices)
 
         // 巡检 slot 始终发现(面板要显示其 features)且排最后, 让路由游标最终停靠它;
         // 其余接管 slot 在前, 只做 discovery+divert, 不做可选功能探测(§4.3).
@@ -1851,6 +1934,7 @@ class LogiDeviceSession {
         }
         let slot = pendingDivertSlots.removeFirst()
         deviceIndex = slot
+        receiverSweptSlots.insert(slot)
         receiverOptionalProbedSlots.remove(slot)  // 全新发现 -> 可选功能允许重探
         // 全新发现: 清该 slot 的 per-slot 发现状态(startup 本为默认, 显式清以支持 Phase 4 重扫).
         featureIndex.removeAll()
@@ -1925,6 +2009,17 @@ class LogiDeviceSession {
         return cids.contains(0x0050) && cids.contains(0x0051)  // Left + Right click
     }
 
+    /// After a takeover sweep: the slot whose wheel, haptic and basic features are looked up
+    /// again and whose controllers are built anew. That is the cursor slot, and only when
+    /// this sweep rediscovered it (which dropped its controllers). A sweep of another slot
+    /// (a keyboard waking on the same receiver) leaves the cursor's controllers alone:
+    /// starting them again would read and write its wheel and basic values again. nil while
+    /// the optional probe has not run yet (it builds them at the end of its chain).
+    static func receiverSweepRebuildSlot(cursor: UInt8, sweptSlots: Set<UInt8>, probeAlreadyRan: Bool) -> UInt8? {
+        guard probeAlreadyRan, sweptSlots.contains(cursor) else { return nil }
+        return cursor
+    }
+
     private func finishReceiverSweep() {
         receiverSweepActive = false
         // 巡检游标: 优先落到真正的鼠标(据发现的控件判定, 键盘无 Left/Right); 无鼠标回退预选 slot.
@@ -1935,13 +2030,18 @@ class LogiDeviceSession {
         // 才能只探测巡检的鼠标而非 sweep 最后一个 slot. probeOptionalFeatures 自带 once 守卫.
         receiverOptionalProbedSlots.insert(deviceIndex)  // 巡检游标那台已探, inspectSlot 不重探
         let probeAlreadyRan = optionalProbeSent
+        let sweptSlots = receiverSweptSlots
+        receiverSweptSlots.removeAll()
         probeOptionalFeatures()
-        if probeAlreadyRan {
+        if let slot = Self.receiverSweepRebuildSlot(
+            cursor: deviceIndex, sweptSlots: sweptSlots, probeAlreadyRan: probeAlreadyRan
+        ) {
             // 热插拔重连: 探测链不会再跑 (once 守卫), 但该 slot 的 featureIndex 已被清空.
             // 按需补发现滚轮 feature, 让托管设置在重连后重放.
             // 同理补发现 haptic feature (手势触觉提示), 排在滚轮之后保持 getFeature 串行.
             // Then the basic settings (battery, DPI, press force), still one getFeature at a time.
-            let slot = deviceIndex
+            // Only for the cursor slot when this sweep rediscovered it: a keyboard waking on
+            // the same receiver must not make the mouse's values be read and written again.
             discoverWheelFeatureIfNeeded(slot: slot) { [weak self] in
                 self?.discoverGestureHapticFeatureIfNeeded(slot: slot) { [weak self] in
                     self?.discoverMouseBasicsFeaturesIfNeeded(slot: slot)
@@ -2015,11 +2115,11 @@ class LogiDeviceSession {
             }
 
             // 多设备热插拔(Phase 4): 每个 slot 的 0x41 各自决策, 不再单目标抢占式 retarget.
+            // Taken over whatever the bindings say (they only decide what applyUsage diverts).
             let dev = receiverPairedDevices.first(where: { $0.slot == devIdx })
-            let bindingsExist = !LogiCenter.shared.registry.aggregatedCacheIsEmpty
-            let isDivertCandidate = connected
-                && !Self.receiverNonDivertDeviceTypes.contains(dev?.deviceType ?? 0)
-                && bindingsExist
+            let isDivertCandidate = Self.receiverSlotIsTakeoverCandidate(
+                connected: connected, deviceType: dev?.deviceType ?? 0
+            )
             let action = Self.receiverSlotConnectionAction(
                 slot: devIdx,
                 connected: connected,
@@ -2056,9 +2156,9 @@ class LogiDeviceSession {
         receiverPairedDevices[idx].lastError = nil
 
         let device = receiverPairedDevices.first(where: { $0.slot == slot })
-        let bindingsExist = !LogiCenter.shared.registry.aggregatedCacheIsEmpty
-        let isDivertCandidate = !Self.receiverNonDivertDeviceTypes.contains(device?.deviceType ?? 0)
-            && bindingsExist
+        let isDivertCandidate = Self.receiverSlotIsTakeoverCandidate(
+            connected: true, deviceType: device?.deviceType ?? 0
+        )
         let action = Self.receiverPeripheralActivityAction(
             slot: slot,
             wasConnected: wasConnected,
@@ -2132,8 +2232,8 @@ class LogiDeviceSession {
     /// (真机复现: mx4 重连时被 queued 后从未 discovery, 拇指键退回原生鼠标键).
     private func pumpPendingDivertQueue() {
         guard !receiverSweepActive, !pendingDivertSlots.isEmpty else { return }
-        // getFeature 在飞用 pendingDiscovery(权威集)判定, 不用 discoveryTimer != nil ——
-        // 后者曾因完成后漏置 nil 变成"已失效但非 nil"永远误判在飞, 把 pump 毒死(见 29f3bd1).
+        // getFeature 在飞用 pendingDiscovery(权威集)判定, 不用超时 timer ——
+        // 旧的共享 discoveryTimer 曾因完成后漏置 nil 变成"已失效但非 nil"永远误判在飞, 把 pump 毒死(见 29f3bd1).
         let anyDiscoveryInFlight = !pendingDiscovery.isEmpty
             || controlInfoQueryTimer != nil || reportingQueryTimer != nil
         guard !anyDiscoveryInFlight else { return }
@@ -2444,8 +2544,6 @@ class LogiDeviceSession {
 
     // MARK: - ChangeHost
 
-    private var pendingHostCycle: UInt8? = nil  // feature index, 等待 getHostInfo 响应后循环
-
     /// 切换到指定主机 (0-based index)
     func executeChangeHost(hostIndex: UInt8) {
         let changeHostFeatureId: UInt16 = 0x1814
@@ -2463,28 +2561,17 @@ class LogiDeviceSession {
         }
     }
 
-    /// 循环切换主机
-    func executeHostCycle() {
-        let changeHostFeatureId: UInt16 = 0x1814
-        if let idx = featureIndex[changeHostFeatureId] {
-            // 先查询当前主机信息, 然后切换到下一个
-            sendRequest(featureIndex: idx, functionId: 0)
-            pendingHostCycle = idx
-        } else {
-            discoverFeature(featureId: changeHostFeatureId) { [weak self] idx in
-                guard let self = self, let idx = idx else {
-                    LogiDebugPanel.log("[\(self?.deviceInfo.name ?? "?")] ChangeHost feature not supported")
-                    return
-                }
-                self.featureIndex[changeHostFeatureId] = idx
-                self.sendRequest(featureIndex: idx, functionId: 0)
-                self.pendingHostCycle = idx
-            }
-        }
+    /// One system-log line for a write a Logitech button action makes. These actions write
+    /// whatever "Let Scrollio manage this mouse" says (the user pressed the button for it),
+    /// like the SmartShift Toggle, which the wheel controller logs.
+    private func noteActionWrite(_ what: String) {
+        let managed = LogiSessionManager.shared.mouseManaged ? "on" : "off"
+        LogiSystemLog.note("[\(deviceName(slot: deviceIndex)) slot \(String(format: "0x%02X", deviceIndex))] Button action: \(what) (manage switch \(managed))")
     }
 
     private func switchToHost(featureIndex: UInt8, hostIndex: UInt8) {
         LogiDebugPanel.log("[\(deviceInfo.name)] Switching to host \(hostIndex + 1)")
+        noteActionWrite("Easy-Switch to host \(hostIndex + 1)")
         // setHost: function 1, param = target host index (0-based)
         sendRequest(featureIndex: featureIndex, functionId: 1, params: [hostIndex])
         // 注意: 切换后设备会断开连接, session 会被清理
@@ -2636,8 +2723,8 @@ class LogiDeviceSession {
     #endif
 
     /// 握手完成后探测一批可选 feature, 让 Debug 面板 FEATURES 表能列出它们.
-    /// 必须串行 (一次一个): IRoot getFeature 响应不带 featureId, handleDiscoveryResponse
-    /// 只能按 pendingDiscovery 唯一项匹配; 并发探测会把 index 张冠李戴.
+    /// 串行 (一次一个): IRoot getFeature 响应不带 featureId, 按请求顺序匹配 pendingDiscovery
+    /// (LogiFeatureDiscoveryQueue); 一次一个让丢失的响应只影响它自己那一项.
     private func probeOptionalFeatures() {
         guard !optionalProbeSent else { return }
         optionalProbeSent = true
@@ -2664,7 +2751,7 @@ class LogiDeviceSession {
                 guard let self = self else { return }
                 if let idx = idx {
                     self.featureIndex[fid] = idx
-                    Self.saveCachedFeatureIndex(for: self.deviceInfo.productId, featureMap: self.featureIndex)
+                    self.saveFeatureIndexCache()
                     LogiDebugPanel.log("[\(self.deviceInfo.name)] feature \(String(format: "0x%04X", fid)) at index \(String(format: "0x%02X", idx))")
                     self.postOptionalFeatureNotification(fid)
                     if fid == Self.featureDeviceNameType { self.requestDeviceTypeIfNeeded() }
@@ -2796,7 +2883,7 @@ class LogiDeviceSession {
                     return
                 }
                 self.featureIndex[Self.featureHaptic] = idx
-                Self.saveCachedFeatureIndex(for: self.deviceInfo.productId, featureMap: self.featureIndex)
+                self.saveFeatureIndexCache()
                 body(idx)
             }
         }
@@ -2885,7 +2972,7 @@ class LogiDeviceSession {
                     return
                 }
                 self.featureIndex[Self.featureSmartShiftEnhanced] = idx
-                Self.saveCachedFeatureIndex(for: self.deviceInfo.productId, featureMap: self.featureIndex)
+                self.saveFeatureIndexCache()
                 body(idx)
             }
         }
@@ -3023,7 +3110,7 @@ class LogiDeviceSession {
     private func recordWheelFeatureIndex(_ featureId: UInt16, index: UInt8, slot: UInt8) {
         slotStates[slot, default: PerSlotState()].featureIndex[featureId] = index
         if deviceIndex == slot {
-            Self.saveCachedFeatureIndex(for: deviceInfo.productId, featureMap: featureIndex)
+            saveFeatureIndexCache()
         }
     }
 
@@ -3483,7 +3570,7 @@ class LogiDeviceSession {
                     return
                 }
                 self.featureIndex[Self.featureForceSensing] = idx
-                Self.saveCachedFeatureIndex(for: self.deviceInfo.productId, featureMap: self.featureIndex)
+                self.saveFeatureIndexCache()
                 body(idx)
             }
         }
@@ -3500,11 +3587,6 @@ class LogiDeviceSession {
         guard report.count >= 6 else { return nil }
         let base = report.startIndex
         return (report[base + 3], report[base + 4] >> 4, report[base + 5])
-    }
-
-    /// HID++ 2.0 错误只有在原请求是 IRoot (index 0x00, getFeature) 时才终止在飞的 feature discovery.
-    static func hidppErrorCancelsDiscovery(originalFeatureIndex: UInt8) -> Bool {
-        return originalFeatureIndex == 0x00
     }
 
     private static func isGetControlReportingQueryResponse(_ report: UnsafeBufferPointer<UInt8>) -> Bool {
@@ -3939,13 +4021,27 @@ class LogiDeviceSession {
             let errorCode = fields?.errorCode ?? 0
             LogiDebugPanel.log("[\(deviceInfo.name)] HID++ Error: feat=\(String(format: "0x%02X", originalFeatureIdx)) func=\(originalFuncId) err=\(String(format: "0x%02X", errorCode))")
 
-            // Feature discovery pending callbacks: 只有 IRoot (index 0x00) 的错误才属于 getFeature.
-            // 其它 feature 的错误 (如滚轮 SetState 被拒) 不得把在飞的 discovery 误判为"不支持".
-            if Self.hidppErrorCancelsDiscovery(originalFeatureIndex: originalFeatureIdx) {
-                for (featureId, callback) in pendingDiscovery {
-                    callback(nil)
-                    pendingDiscovery.removeValue(forKey: featureId)
-                }
+            // A cached index the mouse does not know (firmware update): drop the product's
+            // cache entry so that the next connect looks the features up again.
+            if Self.errorInvalidatesFeatureCache(
+                errorCode: errorCode,
+                originalFeatureIndex: originalFeatureIdx,
+                cachedIndices: featureIndicesFromCache
+            ) {
+                dropFeatureIndexCache(errorCode: errorCode, featureIndex: originalFeatureIdx)
+            }
+
+            // Only an error for a getFeature of this app (IRoot fn0, own software id) fails a
+            // discovery, and only the oldest one waiting for this device: answers and errors
+            // come in request order. Errors for other features (a refused wheel SetState), a
+            // ping or another client's request leave the discoveries alone.
+            if report.count > 4,
+               let entry = pendingDiscovery.takeRefused(
+                   deviceIndex: report[1],
+                   originalFeatureIndex: originalFeatureIdx,
+                   originalFunctionByte: report[4]
+               ) {
+                finishDiscovery(entry, featureIndex: nil)
             }
 
             // 滚轮 feature (0x2110/0x2111) 的错误交给该 slot 的滚轮控制器
@@ -3986,8 +4082,11 @@ class LogiDeviceSession {
                 sendGetControlCount(featureIndex: reprogIdx)
                 return
             }
-            if !pendingDiscovery.isEmpty {
-                handleDiscoveryResponse(report)
+            // Only fn0 with this app's software id answers a getFeature (a late ping answer
+            // is fn1, another client's answer has its own id); see LogiFeatureDiscoveryQueue.
+            if let (entry, discoveredIndex) = pendingDiscovery.takeAnswer(report) {
+                LogiDebugPanel.log("[\(deviceInfo.name)] IRoot response: \(String(format: "0x%04X", entry.featureId)) at index \(discoveredIndex.map { String(format: "0x%02X", $0) } ?? "none")")
+                finishDiscovery(entry, featureIndex: discoveredIndex)
             }
             return
         }
@@ -4080,7 +4179,8 @@ class LogiDeviceSession {
             if isOwnResponse {
                 basics.handleResponse(featureIndex: featureIdx, functionId: functionId, report: Array(report))
             } else {
-                basics.handleEvent(featureIndex: featureIdx, functionId: functionId, report: Array(report))
+                basics.handleEvent(featureIndex: featureIdx, functionId: functionId,
+                                   softwareId: report[3] & 0x0F, report: Array(report))
             }
         }
 
@@ -4210,21 +4310,11 @@ class LogiDeviceSession {
                 // setSensorDpi: function 3, params: sensorIdx(1) + dpi(2)
                 if let params = LogiPointerSpeedProtocol.setParams(dpi: Int(newDPI)) {
                     sendRequest(featureIndex: dpiInfo.featureIndex, functionId: LogiPointerSpeedProtocol.setFunction, params: params)
+                    noteActionWrite("DPI \(dpiInfo.direction == .up ? "up" : "down") \(curDPI) -> \(newDPI)")
                 }
             } else {
                 LogiDebugPanel.log("[\(deviceInfo.name)] DPI: \(curDPI) (already at limit)")
             }
-            return
-        }
-
-        // ChangeHost response (getHostInfo, function 0) - 用于 cycle
-        if let hostIdx = pendingHostCycle, featureIdx == hostIdx && functionId == 0 {
-            pendingHostCycle = nil
-            let hostCount = report[4]
-            let currentHost = report[5]
-            let nextHost = (currentHost + 1) % hostCount
-            LogiDebugPanel.log("[\(deviceInfo.name)] Host: \(currentHost + 1)/\(hostCount) -> \(nextHost + 1)")
-            switchToHost(featureIndex: hostIdx, hostIndex: nextHost)
             return
         }
 
@@ -4235,6 +4325,7 @@ class LogiDeviceSession {
                 guard let params = Self.hiResWheelModeParams(toggling: Self.hiResWheelResolutionBit, in: report) else { return }
                 sendRequest(featureIndex: hiresIdx, functionId: 2, params: params)  // setWheelMode (fn2)
                 LogiDebugPanel.log("[\(deviceInfo.name)] HiResScroll: \((params[0] & Self.hiResWheelResolutionBit) != 0 ? "ON" : "OFF")")
+                noteActionWrite("high-resolution scrolling \((params[0] & Self.hiResWheelResolutionBit) != 0 ? "on" : "off")")
                 return
             }
             if pendingScrollInvertToggle && functionId == 1 && isOwnResponse {  // getWheelMode (fn1) 响应
@@ -4242,6 +4333,7 @@ class LogiDeviceSession {
                 guard let params = Self.hiResWheelModeParams(toggling: Self.hiResWheelInvertBit, in: report) else { return }
                 sendRequest(featureIndex: hiresIdx, functionId: 2, params: params)  // setWheelMode (fn2)
                 LogiDebugPanel.log("[\(deviceInfo.name)] ScrollInvert: \((params[0] & Self.hiResWheelInvertBit) != 0 ? "ON" : "OFF")")
+                noteActionWrite("wheel direction \((params[0] & Self.hiResWheelInvertBit) != 0 ? "inverted" : "normal")")
                 return
             }
         }
@@ -4255,6 +4347,7 @@ class LogiDeviceSession {
                 sendRequest(featureIndex: thumbIdx, functionId: 2, params: [newByte1, byte2])  // setThumbwheelReporting (fn2)
                 pendingThumbWheelToggle = false
                 LogiDebugPanel.log("[\(deviceInfo.name)] ThumbWheel: \((newByte1 & 0x01) != 0 ? "DIVERT" : "NORMAL")")
+                noteActionWrite("thumb wheel \((newByte1 & 0x01) != 0 ? "diverted" : "normal")")
                 return
             }
         }
@@ -4280,19 +4373,9 @@ class LogiDeviceSession {
                 pendingPointerSpeedCycle = false
                 let speedStr = String(format: "%.1fx", Double(nextSpeed) / 256.0)
                 LogiDebugPanel.log("[\(deviceInfo.name)] PointerSpeed: \(speedStr)")
+                noteActionWrite("pointer speed \(String(format: "0x%04X", currentSpeed)) -> \(speedStr)")
                 return
             }
-        }
-    }
-
-    private func handleDiscoveryResponse(_ report: UnsafeBufferPointer<UInt8>) {
-        let discoveredIndex = report[4]
-        LogiDebugPanel.log("[\(deviceInfo.name)] IRoot response: discoveredIndex=\(String(format: "0x%02X", discoveredIndex))")
-        if let (featureId, callback) = pendingDiscovery.first {
-            discoveryTimer?.invalidate()
-            discoveryTimer = nil  // 置 nil: 否则 anyDiscoveryInFlight 会因已失效但非 nil 的 timer 永远误判在飞, 毒死 pump
-            pendingDiscovery.removeValue(forKey: featureId)
-            callback(discoveredIndex == 0 ? nil : discoveredIndex)
         }
     }
 
