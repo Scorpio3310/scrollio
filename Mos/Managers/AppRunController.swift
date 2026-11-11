@@ -4,9 +4,11 @@
 //  Whether Scrollio's event handling runs: the scroll and button event taps and the
 //  Logitech sessions ("the cores"). One path starts and stops them:
 //
-//  - start(): at launch and after waking. With Accessibility access the cores start; without
+//  - start(): at launch (and on resume). With Accessibility access the cores start; without
 //    it the Welcome Guide opens and a timer waits for the access. Cores that run already are
 //    not started again.
+//  - wake(): after waking. The same, but without the access only the timer is armed again:
+//    the Welcome Guide opened at launch and opens when the app is reopened, not at every wake.
 //  - stop(): when the Mac goes to sleep (and when the app quits).
 //  - sessionDidResign() / sessionDidBecomeActive(): fast user switching. While another user
 //    has the Mac nothing starts the cores, also not waking up: a Logitech mouse diverted for
@@ -137,9 +139,19 @@ final class AppRunController {
 
     // MARK: - Lifecycle
 
-    /// Launch, wake, resume. Does nothing while paused, while another user has the Mac, or
-    /// when the cores run already.
+    /// Launch, resume. Does nothing while paused, while another user has the Mac, or when the
+    /// cores run already.
     func start() {
+        start(showingWelcomeGuide: true)
+    }
+
+    /// The Mac woke up. Like `start()`, but without the access only the timer is armed again:
+    /// every wake opened the Welcome Guide again while the access was missing.
+    func wake() {
+        start(showingWelcomeGuide: false)
+    }
+
+    private func start(showingWelcomeGuide: Bool) {
         defer { postChange() }
         guard !isPaused, isSessionActive else { return }
         guard !coresActive else {
@@ -153,7 +165,9 @@ final class AppRunController {
         } else {
             // Not in the Accessibility list (or switched off there): the Welcome Guide
             // explains it, and the timer starts the cores once the access is there.
-            environment.showWelcomeGuide()
+            if showingWelcomeGuide {
+                environment.showWelcomeGuide()
+            }
             scheduleRecovery(every: Self.launchRecoveryInterval)
         }
     }
@@ -173,11 +187,11 @@ final class AppRunController {
         stop()
     }
 
-    /// This user is back.
+    /// This user is back. Like a wake: without the access only the timer is armed again.
     func sessionDidBecomeActive() {
         NSLog("Scrollio: this user has the Mac again")
         isSessionActive = true
-        start()
+        start(showingWelcomeGuide: false)
     }
 
     /// An event tap found the access gone. Several taps may report it at once: only the

@@ -200,7 +200,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AppRunController.shared.stop()
     }
     @objc func didWake(notification: NSNotification) {
-        AppRunController.shared.start()
+        AppRunController.shared.wake()
     }
     @objc func reloadSystemShortcutsIfNeeded(notification: NSNotification) {
         let deactivated = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
