@@ -5111,6 +5111,18 @@
           }
         }
       }
+    },
+    "status-menu-app-smoothing": {
+      "comment": "Status-bar menu: toggles smooth scrolling for the app in front; %@ is its name, e.g. Safari",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smooth Scrolling in %@"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

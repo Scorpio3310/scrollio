@@ -4,8 +4,9 @@
 //  The menu bar icon and its menu.
 //
 //  With Accessibility access, top to bottom: one disabled line per Logitech mouse with its
-//  battery ("MX Master 4: 75%"), "Pause Scrollio" or "Resume Scrollio", "Settings…", and
-//  "Quit Scrollio". While Option is held (always in the debug build) the diagnostic windows
+//  battery ("MX Master 4: 75%"), "Smooth Scrolling in Safari" for the app in front (while the
+//  event handling runs; `AppSmoothing`), "Pause Scrollio" or "Resume Scrollio", "Settings…",
+//  and "Quit Scrollio". While Option is held (always in the debug build) the diagnostic windows
 //  are added above Quit: Logitech Diagnostics in every build, Scroll Monitor and Test
 //  Toasts only in the debug build. Without the access: "Allow Accessibility Access…" (the
 //  Welcome Guide) and Quit.
@@ -102,7 +103,36 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
             hasAccess: hasAccess,
             isPaused: AppRunController.shared.isPaused,
             showsDiagnostics: showsDiagnostics,
-            batteries: hasAccess ? StatusMenu.batteries(from: LogiCenter.shared.mouseDeviceStates()) : []
+            batteries: hasAccess ? StatusMenu.batteries(from: LogiCenter.shared.mouseDeviceStates()) : [],
+            appSmoothing: hasAccess ? liveAppSmoothingItem() : nil
+        )
+    }
+
+    /// "Smooth Scrolling in …" for the app in front. Opening this menu does not change which
+    /// app is in front: Scrollio is a menu-bar app.
+    static func liveAppSmoothingItem() -> StatusMenu.AppSmoothingItem? {
+        let controller = AppRunController.shared
+        let running = NSWorkspace.shared.frontmostApplication
+        let front = running.map(frontApp)
+        let list = Options.shared.application
+        return StatusMenu.appSmoothingItem(
+            front: front,
+            isScrollio: running?.processIdentifier == ProcessInfo.processInfo.processIdentifier,
+            scrollingRuns: controller.coresActive && !controller.isPaused && !Interceptor.hasThrottledTap,
+            rule: front.map { AppSmoothing.rule(of: AppSmoothing.entry(for: $0, in: list.applications)) } ?? .notListed,
+            scrollingSmooth: Options.shared.scroll.smooth,
+            limitedToListedApps: list.allowlist
+        )
+    }
+
+    /// A running app as the menu names and finds it.
+    static func frontApp(_ running: NSRunningApplication) -> AppSmoothing.App {
+        let bundle = running.bundleURL?.path
+        let program = running.executableURL?.path
+        return AppSmoothing.App(
+            name: running.localizedName ?? Utils.getApplicationName(fromPath: bundle ?? program),
+            bundlePath: bundle,
+            executablePath: program
         )
     }
 }
@@ -157,6 +187,8 @@ enum StatusMenu {
         var showsDiagnostics: Bool
         /// One line per Logitech mouse that reports its battery.
         var batteries: [Battery]
+        /// "Smooth Scrolling in Safari" for the app in front; nil: no such item.
+        var appSmoothing: AppSmoothingItem? = nil
         /// The developer tools (Scroll Monitor, Test Toasts) are offered only in the debug build.
         var isDebugBuild: Bool = StatusMenu.isDebugBuild
     }
@@ -182,8 +214,40 @@ enum StatusMenu {
         let symbolName: String
     }
 
+    /// "Smooth Scrolling in Safari", checked while Safari is smoothed; a click changes its
+    /// rule (`AppSmoothing.toggle`).
+    struct AppSmoothingItem: Equatable {
+        let app: AppSmoothing.App
+        let title: String
+        let isChecked: Bool
+        let isEnabled: Bool
+    }
+
+    /// The item for the app in front. None without an app in front (or one without a path),
+    /// for Scrollio itself, and while Scrollio does not run its event taps (paused, could not
+    /// start, a tap kept off): smoothing then is in effect nowhere.
+    ///
+    /// - Parameters:
+    ///   - rule: what the per-app list holds for `front`.
+    ///   - scrollingSmooth: "Smooth scrolling" of the Scrolling settings.
+    ///   - limitedToListedApps: "Limit scrolling to these apps".
+    static func appSmoothingItem(
+        front: AppSmoothing.App?, isScrollio: Bool, scrollingRuns: Bool,
+        rule: AppSmoothing.Rule, scrollingSmooth: Bool, limitedToListedApps: Bool
+    ) -> AppSmoothingItem? {
+        guard let front, front.pathToStore != nil, !isScrollio, scrollingRuns else { return nil }
+        let decision = AppSmoothing.decide(rule: rule, scrollingSmooth: scrollingSmooth, limitedToListedApps: limitedToListedApps)
+        return AppSmoothingItem(
+            app: front,
+            title: String(format: NSLocalizedString("status-menu-app-smoothing", comment: ""), front.name),
+            isChecked: decision.isSmoothed,
+            isEnabled: decision.change != nil
+        )
+    }
+
     enum Item: Equatable {
         case battery(Battery)
+        case appSmoothing(AppSmoothingItem)
         case separator
         case pause
         case resume
@@ -205,6 +269,9 @@ enum StatusMenu {
         var items: [Item] = state.batteries.map(Item.battery)
         if !items.isEmpty {
             items.append(.separator)
+        }
+        if let appSmoothing = state.appSmoothing {
+            items += [.appSmoothing(appSmoothing), .separator]
         }
         items += [state.isPaused ? .resume : .pause, .settings, .separator]
         if state.showsDiagnostics {
@@ -256,6 +323,18 @@ enum StatusMenu {
             line.image = NSImage(systemSymbolName: battery.symbolName, accessibilityDescription: nil)
             line.tag = batteryTag
             return line
+        case .appSmoothing(let appSmoothing):
+            // Without an action AppKit shows it disabled.
+            let toggle = NSMenuItem(
+                title: appSmoothing.title,
+                action: appSmoothing.isEnabled ? #selector(StatusMenuActions.appSmoothingClicked(_:)) : nil,
+                keyEquivalent: ""
+            )
+            toggle.target = actions
+            toggle.isEnabled = appSmoothing.isEnabled
+            toggle.state = appSmoothing.isChecked ? .on : .off
+            toggle.representedObject = appSmoothing.app
+            return toggle
         case .separator:
             return .separator()
         case .pause:
@@ -319,6 +398,10 @@ final class StatusMenuActions: NSObject {
     var showScrollMonitor: () -> Void = {
         WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.monitorWindowController)
     }
+    /// "Smooth Scrolling in …": decided again with the settings as they are, then changed.
+    var toggleAppSmoothing: (AppSmoothing.App) -> Void = { app in
+        AppSmoothing.toggle(app, list: Options.shared.application, scrolling: Options.shared.scroll)
+    }
     var showDiagnostics: () -> Void = { LogiCenter.shared.showDebugPanel() }
     var showTestToasts: () -> Void = { Toast.showTestPanel() }
     var quit: () -> Void = { NSApp.terminate(nil) }
@@ -326,6 +409,10 @@ final class StatusMenuActions: NSObject {
     @objc func settingsClicked(_ sender: Any?) { showSettings() }
     @objc func allowAccessClicked(_ sender: Any?) { showWelcomeGuide() }
     @objc func togglePauseClicked(_ sender: Any?) { togglePause() }
+    @objc func appSmoothingClicked(_ sender: Any?) {
+        guard let app = (sender as? NSMenuItem)?.representedObject as? AppSmoothing.App else { return }
+        toggleAppSmoothing(app)
+    }
     @objc func scrollMonitorClicked(_ sender: Any?) { showScrollMonitor() }
     @objc func diagnosticsClicked(_ sender: Any?) { showDiagnostics() }
     @objc func testToastsClicked(_ sender: Any?) { showTestToasts() }

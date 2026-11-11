@@ -165,13 +165,7 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
     /// Off: the app's own options, which start as a copy of the Scrolling settings when
     /// they were never edited (so switching off changes nothing until the user does).
     @objc func inheritClick(_ sender: NSSwitch) {
-        let inherit = sender.state == .on
-        if application.inherit != inherit {
-            if !inherit {
-                application.adoptScrollOptionsIfUnedited(from: Options.shared.scroll)
-            }
-            application.inherit = inherit
-        }
+        application.setUsesScrollingSettings(sender.state == .on, scrolling: Options.shared.scroll)
         syncViewWithOptions()
         onInheritChange?()
     }

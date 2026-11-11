@@ -3,10 +3,12 @@
 //  MosTests
 //
 //  The menu of the status-bar item (what it lists with and without Accessibility access,
-//  with Option held, paused, with batteries, and what its items do), the run state behind
-//  "Pause Scrollio" (AppRunController), the low-battery warnings (BatteryWatcher), the names
-//  of the windows the menu opens, and the window a reopened app shows. Nothing is shown on
-//  screen, no status item is made, no event tap starts and no mouse is asked.
+//  with Option held, paused, with batteries, with "Smooth Scrolling in …" for the app in
+//  front and how that item decides and changes the app's rule, and what its items do), the
+//  run state behind "Pause Scrollio" (AppRunController), the low-battery warnings
+//  (BatteryWatcher), the names of the windows the menu opens, and the window a reopened app
+//  shows. Nothing is shown on screen, no status item is made, no event tap starts and no
+//  mouse is asked.
 //
 
 import XCTest
@@ -19,13 +21,15 @@ final class StatusMenuTests: XCTestCase {
         let title: String
         let shortcut: String
         let enabled: Bool
+        let checked: Bool
 
         static let separator = Row(title: "—")
 
-        init(title: String, shortcut: String = "", enabled: Bool = true) {
+        init(title: String, shortcut: String = "", enabled: Bool = true, checked: Bool = false) {
             self.title = title
             self.shortcut = shortcut
             self.enabled = enabled
+            self.checked = checked
         }
 
         init(_ item: NSMenuItem) {
@@ -39,11 +43,11 @@ final class StatusMenuTests: XCTestCase {
             }
             // AppKit enables an item whose target implements its action (autoenablesItems).
             let enabled = item.action.map { action in (item.target as? NSObject)?.responds(to: action) ?? false } ?? false
-            self.init(title: item.title, shortcut: shortcut, enabled: enabled)
+            self.init(title: item.title, shortcut: shortcut, enabled: enabled, checked: item.state == .on)
         }
 
         var description: String {
-            return "\(title)\(shortcut.isEmpty ? "" : " [\(shortcut)]")\(enabled ? "" : " (disabled)")"
+            return "\(checked ? "✓ " : "")\(title)\(shortcut.isEmpty ? "" : " [\(shortcut)]")\(enabled ? "" : " (disabled)")"
         }
     }
 
@@ -63,6 +67,7 @@ final class StatusMenuTests: XCTestCase {
         actions.showSettings = { calls.log.append("settings") }
         actions.showWelcomeGuide = { calls.log.append("guide") }
         actions.togglePause = { calls.log.append("pause") }
+        actions.toggleAppSmoothing = { calls.log.append("smoothing \($0.name)") }
         actions.showScrollMonitor = { calls.log.append("monitor") }
         actions.showDiagnostics = { calls.log.append("diagnostics") }
         actions.showTestToasts = { calls.log.append("toasts") }
@@ -88,9 +93,26 @@ final class StatusMenuTests: XCTestCase {
 
     private func state(
         access: Bool = true, paused: Bool = false, diagnostics: Bool = false,
-        batteries: [StatusMenu.Battery] = []
+        batteries: [StatusMenu.Battery] = [], appSmoothing: StatusMenu.AppSmoothingItem? = nil
     ) -> StatusMenu.State {
-        return StatusMenu.State(hasAccess: access, isPaused: paused, showsDiagnostics: diagnostics, batteries: batteries)
+        return StatusMenu.State(
+            hasAccess: access, isPaused: paused, showsDiagnostics: diagnostics, batteries: batteries,
+            appSmoothing: appSmoothing
+        )
+    }
+
+    private static let safari = AppSmoothing.App(
+        name: "Safari",
+        bundlePath: "/Applications/Safari.app",
+        executablePath: "/Applications/Safari.app/Contents/MacOS/Safari"
+    )
+
+    /// The item for Safari while Scrollio runs.
+    private func safariItem(_ rule: AppSmoothing.Rule, smooth: Bool = true, limited: Bool = false) -> StatusMenu.AppSmoothingItem? {
+        return StatusMenu.appSmoothingItem(
+            front: Self.safari, isScrollio: false, scrollingRuns: true,
+            rule: rule, scrollingSmooth: smooth, limitedToListedApps: limited
+        )
     }
 
     private func choose(_ title: String, in menu: NSMenu) throws {
@@ -263,6 +285,89 @@ final class StatusMenuTests: XCTestCase {
         XCTAssertTrue(application.items.contains { $0.title == "Quit Scrollio" })
     }
 
+    // MARK: - Smooth Scrolling in the app in front
+
+    /// One item for the app in front, in a group of its own above Pause, checked while the
+    /// app is smoothed.
+    func testTheAppInFrontHasItsSmoothingItemAbovePause() throws {
+        let checked = try XCTUnwrap(safariItem(.usesScrollingSettings))
+        XCTAssertEqual(rows(state(appSmoothing: checked)), [
+            Row(title: "Smooth Scrolling in Safari", checked: true),
+            .separator,
+            Row(title: "Pause Scrollio"),
+            Row(title: "Settings…", shortcut: "⌘,"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+        // Under the battery lines; unchecked for an app that is not smoothed.
+        let battery = StatusMenu.Battery(title: "MX Master 4: 75%", symbolName: "battery.75percent")
+        let unchecked = try XCTUnwrap(safariItem(.own(smooth: false)))
+        XCTAssertEqual(rows(state(batteries: [battery], appSmoothing: unchecked)), [
+            Row(title: "MX Master 4: 75%", enabled: false),
+            .separator,
+            Row(title: "Smooth Scrolling in Safari"),
+            .separator,
+            Row(title: "Pause Scrollio"),
+            Row(title: "Settings…", shortcut: "⌘,"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+        // A combination it cannot change sensibly: shown, disabled.
+        let disabled = try XCTUnwrap(safariItem(.notListed, smooth: false))
+        XCTAssertEqual(rows(state(appSmoothing: disabled)).first, Row(title: "Smooth Scrolling in Safari", enabled: false))
+        XCTAssertNil(menu(state(appSmoothing: disabled)).items.first?.action)
+        // Without the access only the way to it and Quit, as before.
+        XCTAssertEqual(rows(state(access: false, appSmoothing: checked)).map(\.title),
+                       ["Allow Accessibility Access…", "—", "Quit Scrollio"])
+    }
+
+    /// No item without an app in front (or one without a path), for Scrollio itself, and
+    /// while Scrollio does not run its taps.
+    func testNoSmoothingItemWithoutAnAppOrWhileScrollioDoesNotRun() {
+        func item(front: AppSmoothing.App? = Self.safari, isScrollio: Bool = false, runs: Bool = true) -> StatusMenu.AppSmoothingItem? {
+            return StatusMenu.appSmoothingItem(
+                front: front, isScrollio: isScrollio, scrollingRuns: runs,
+                rule: .usesScrollingSettings, scrollingSmooth: true, limitedToListedApps: false
+            )
+        }
+        XCTAssertNotNil(item())
+        XCTAssertNil(item(front: nil))
+        XCTAssertNil(item(front: AppSmoothing.App(name: "Ghost", bundlePath: nil, executablePath: nil)))
+        XCTAssertNil(item(isScrollio: true))
+        XCTAssertNil(item(runs: false), "paused, could not start, or a tap kept off")
+        // A program without a bundle, or a bundle without a known program, still counts.
+        XCTAssertNotNil(item(front: AppSmoothing.App(name: "tool", bundlePath: nil, executablePath: "/usr/local/bin/tool")))
+        XCTAssertNotNil(item(front: AppSmoothing.App(name: "Odd", bundlePath: "/Applications/Odd.app", executablePath: nil)))
+        XCTAssertNil(menu(state()).items.first { $0.title.hasPrefix("Smooth Scrolling") })
+    }
+
+    /// The live run state of the tests: nothing runs, so no item.
+    func testNoSmoothingItemUnderTests() {
+        XCTAssertNil(StatusItemManager.liveAppSmoothingItem())
+    }
+
+    func testTheNameOfTheRunningAppNamesTheItem() throws {
+        let current = NSRunningApplication.current
+        let app = StatusItemManager.frontApp(current)
+        XCTAssertEqual(app.bundlePath, current.bundleURL?.path)
+        XCTAssertEqual(app.executablePath, current.executableURL?.path)
+        XCTAssertEqual(app.pathToStore, current.executableURL?.path, "the program's path, as \"+\" stores a running app")
+        XCTAssertFalse(app.name.isEmpty)
+        let item = try XCTUnwrap(StatusMenu.appSmoothingItem(
+            front: app, isScrollio: false, scrollingRuns: true,
+            rule: .notListed, scrollingSmooth: true, limitedToListedApps: false
+        ))
+        XCTAssertEqual(item.title, "Smooth Scrolling in \(app.name)")
+    }
+
+    func testChoosingTheSmoothingItemChangesThatApp() throws {
+        let item = try XCTUnwrap(safariItem(.own(smooth: true)))
+        let built = menu(state(appSmoothing: item))
+        try choose("Smooth Scrolling in Safari", in: built)
+        XCTAssertEqual(calls.log, ["smoothing Safari"])
+        XCTAssertEqual(built.items.first?.representedObject as? AppSmoothing.App, Self.safari)
+    }
+
     // MARK: - Actions
 
     func testWhatTheItemsDo() throws {
@@ -284,7 +389,8 @@ final class StatusMenuTests: XCTestCase {
     }
 
     func testBuildingTheMenuDoesNothing() {
-        _ = menu(state(diagnostics: true, batteries: StatusMenu.batteries(from: [MouseDeviceFixtures.mxMaster4()])))
+        _ = menu(state(diagnostics: true, batteries: StatusMenu.batteries(from: [MouseDeviceFixtures.mxMaster4()]),
+                       appSmoothing: safariItem(.usesScrollingSettings)))
         _ = menu(state(access: false))
         XCTAssertEqual(calls.log, [])
     }
@@ -743,6 +849,348 @@ final class AppRunControllerTests: XCTestCase {
     func testReopeningShowsTheSettingsOrTheWelcomeGuide() {
         XCTAssertEqual(AppDelegate.windowForReopen(hasAccess: true), WINDOW_IDENTIFIER.preferencesWindowController)
         XCTAssertEqual(AppDelegate.windowForReopen(hasAccess: false), WINDOW_IDENTIFIER.introductionWindowController)
+    }
+}
+
+// MARK: - Smooth Scrolling in the app in front: the rule and the click
+
+/// What "Smooth Scrolling in …" says for every combination of the app's rule, the global
+/// "Smooth scrolling" and "Limit scrolling to these apps", that it says what the scroll engine
+/// does, and what a click changes on the per-app list. The settings of the app are swapped for
+/// fresh ones and put back; nothing is saved under tests.
+final class AppSmoothingTests: XCTestCase {
+
+    private var originalApplications: EnhanceArray<Application>!
+    private var originalAllowlist = false
+    private var originalScroll: OPTIONS_SCROLL_DEFAULT!
+
+    private static let safari = AppSmoothing.App(
+        name: "Safari",
+        bundlePath: "/Applications/Safari.app",
+        executablePath: "/Applications/Safari.app/Contents/MacOS/Safari"
+    )
+
+    override func setUp() {
+        super.setUp()
+        originalApplications = Options.shared.application.applications
+        originalAllowlist = Options.shared.application.allowlist
+        originalScroll = Options.shared.scroll
+        Options.shared.application.applications = Self.makeStore()
+        Options.shared.application.allowlist = false
+        Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+    }
+
+    override func tearDown() {
+        Options.shared.application.applications = originalApplications
+        Options.shared.application.allowlist = originalAllowlist
+        Options.shared.scroll = originalScroll
+        originalApplications = nil
+        originalScroll = nil
+        super.tearDown()
+    }
+
+    private static func makeStore(_ applications: [Application] = []) -> EnhanceArray<Application> {
+        return EnhanceArray<Application>(
+            withArray: applications,
+            matchKey: "path",
+            forObserver: { Options.shared.markChanged(.application) }
+        )
+    }
+
+    private static func copy(_ scroll: OPTIONS_SCROLL_DEFAULT) throws -> OPTIONS_SCROLL_DEFAULT {
+        return try JSONDecoder().decode(OPTIONS_SCROLL_DEFAULT.self, from: JSONEncoder().encode(scroll))
+    }
+
+    /// Scrolling settings that differ from a new entry's in every way a copy would show.
+    private static func customScrolling(smooth: Bool = true) -> OPTIONS_SCROLL_DEFAULT {
+        let scrolling = OPTIONS_SCROLL_DEFAULT()
+        scrolling.smooth = smooth
+        scrolling.reversesWheel = false
+        scrolling.speed = 8.5
+        scrolling.dash = nil
+        scrolling.duration = ScrollFeel.glide.duration
+        return scrolling
+    }
+
+    private func application(_ path: String, inherit: Bool, smooth: Bool = true) -> Application {
+        let application = Application(path: path)
+        application.inherit = inherit
+        application.scroll.smooth = smooth
+        return application
+    }
+
+    /// The list as it would be stored (key order aside).
+    private func storedList() throws -> NSArray {
+        let data = try XCTUnwrap(Options.shared.application.applications.json())
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? NSArray)
+    }
+
+    private func list(_ applications: [Application] = [], limited: Bool = false) -> OPTIONS_APPLICATION_DEFAULT {
+        let list = OPTIONS_APPLICATION_DEFAULT()
+        list.applications = Self.makeStore(applications)
+        list.allowlist = limited
+        return list
+    }
+
+    // MARK: - The decision
+
+    func testEveryCombination() {
+        typealias D = AppSmoothing.Decision
+        for limited in [false, true] {
+            for smooth in [true, false] {
+                func decide(_ rule: AppSmoothing.Rule) -> D {
+                    return AppSmoothing.decide(rule: rule, scrollingSmooth: smooth, limitedToListedApps: limited)
+                }
+                let context = "global smoothing \(smooth), limited \(limited)"
+                // Not on the list: the Scrolling settings, or macOS while the list limits.
+                if limited {
+                    XCTAssertEqual(decide(.notListed), D(isSmoothed: false, change: nil), context)
+                } else if smooth {
+                    XCTAssertEqual(decide(.notListed), D(isSmoothed: true, change: .addWithSmoothingOff), context)
+                } else {
+                    XCTAssertEqual(decide(.notListed), D(isSmoothed: false, change: nil), context)
+                }
+                // On the list with the Scrolling settings: the global switch, list limited or not.
+                XCTAssertEqual(decide(.usesScrollingSettings),
+                               smooth ? D(isSmoothed: true, change: .ownSettingsWithSmoothingOff) : D(isSmoothed: false, change: nil),
+                               context)
+                // Its own settings: only those count, also with smoothing off globally.
+                XCTAssertEqual(decide(.own(smooth: true)), D(isSmoothed: true, change: .setOwnSmoothing(false)), context)
+                XCTAssertEqual(decide(.own(smooth: false)), D(isSmoothed: false, change: .setOwnSmoothing(true)), context)
+            }
+        }
+    }
+
+    func testTheItemShowsTheDecision() throws {
+        func item(_ rule: AppSmoothing.Rule, smooth: Bool = true, limited: Bool = false) throws -> StatusMenu.AppSmoothingItem {
+            return try XCTUnwrap(StatusMenu.appSmoothingItem(
+                front: Self.safari, isScrollio: false, scrollingRuns: true,
+                rule: rule, scrollingSmooth: smooth, limitedToListedApps: limited
+            ))
+        }
+        XCTAssertEqual(try item(.usesScrollingSettings).title, "Smooth Scrolling in Safari")
+        XCTAssertEqual(try item(.usesScrollingSettings).app, Self.safari)
+        let combinations: [(rule: AppSmoothing.Rule, smooth: Bool, limited: Bool, checked: Bool, enabled: Bool)] = [
+            (.notListed, true, false, true, true),
+            (.notListed, false, false, false, false),
+            (.notListed, true, true, false, false),
+            (.usesScrollingSettings, true, true, true, true),
+            (.usesScrollingSettings, false, false, false, false),
+            (.own(smooth: true), false, false, true, true),
+            (.own(smooth: false), true, true, false, true),
+        ]
+        for (rule, smooth, limited, checked, enabled) in combinations {
+            let shown = try item(rule, smooth: smooth, limited: limited)
+            XCTAssertEqual(shown.isChecked, checked, "\(rule), global \(smooth), limited \(limited)")
+            XCTAssertEqual(shown.isEnabled, enabled, "\(rule), global \(smooth), limited \(limited)")
+        }
+    }
+
+    func testTheRuleOfAnEntry() {
+        XCTAssertEqual(AppSmoothing.rule(of: nil), .notListed)
+        XCTAssertEqual(AppSmoothing.rule(of: application("/a", inherit: true, smooth: false)), .usesScrollingSettings)
+        XCTAssertEqual(AppSmoothing.rule(of: application("/a", inherit: false, smooth: true)), .own(smooth: true))
+        XCTAssertEqual(AppSmoothing.rule(of: application("/a", inherit: false, smooth: false)), .own(smooth: false))
+    }
+
+    /// The entry is found as the engine finds it: by the bundle's path, then the program's.
+    func testTheEntryIsFoundAsTheEngineFindsIt() throws {
+        let current = NSRunningApplication.current
+        let app = StatusItemManager.frontApp(current)
+        let program = try XCTUnwrap(current.executableURL?.path)
+        let bundle = try XCTUnwrap(current.bundleURL?.path)
+        for paths in [[program], [bundle], [program, bundle]] {
+            Options.shared.application.applications = Self.makeStore(paths.map { application($0, inherit: true) })
+            let entry = AppSmoothing.entry(for: app, in: Options.shared.application.applications)
+            XCTAssertNotNil(entry, "\(paths)")
+            XCTAssertTrue(entry === ScrollUtils.shared.getTargetApplication(from: current), "\(paths)")
+        }
+        Options.shared.application.applications = Self.makeStore([application("/Applications/Other.app", inherit: true)])
+        XCTAssertNil(AppSmoothing.entry(for: app, in: Options.shared.application.applications))
+        XCTAssertNil(ScrollUtils.shared.getTargetApplication(from: current))
+    }
+
+    /// For every combination the checkmark says what the engine does (ScrollCore: the entry's
+    /// rule, else the Scrolling settings unless the list limits), and a click that is offered
+    /// turns it the other way while the app stays on the list.
+    func testTheCheckmarkSaysWhatTheEngineDoesAndAClickTurnsIt() throws {
+        let current = NSRunningApplication.current
+        let app = StatusItemManager.frontApp(current)
+        let program = try XCTUnwrap(app.executablePath)
+
+        func engineSmooths() -> Bool {
+            if let entry = ScrollUtils.shared.getTargetApplication(from: current) {
+                return entry.isSmooth(false)
+            }
+            return !Options.shared.application.allowlist && Options.shared.scroll.smooth
+        }
+
+        let rules: [(String, () -> [Application])] = [
+            ("not listed", { [] }),
+            ("uses Scrolling", { [self.application(program, inherit: true)] }),
+            ("own, smooth", { [self.application(program, inherit: false, smooth: true)] }),
+            ("own, not smooth", { [self.application(program, inherit: false, smooth: false)] }),
+        ]
+        for (name, entries) in rules {
+            for smooth in [true, false] {
+                for limited in [false, true] {
+                    let context = "\(name), global smoothing \(smooth), limited \(limited)"
+                    Options.shared.application.applications = Self.makeStore(entries())
+                    Options.shared.application.allowlist = limited
+                    Options.shared.scroll = Self.customScrolling(smooth: smooth)
+
+                    let before = AppSmoothing.decision(for: app, list: Options.shared.application, scrolling: Options.shared.scroll)
+                    XCTAssertEqual(before.isSmoothed, engineSmooths(), context)
+
+                    let stored = try storedList()
+                    let change = AppSmoothing.toggle(app, list: Options.shared.application, scrolling: Options.shared.scroll)
+                    XCTAssertEqual(change, before.change, context)
+                    guard change != nil else {
+                        XCTAssertEqual(try storedList(), stored, "disabled: nothing changes, \(context)")
+                        continue
+                    }
+                    XCTAssertEqual(engineSmooths(), !before.isSmoothed, context)
+                    XCTAssertEqual(Options.shared.application.applications.count, 1, context)
+                    let after = AppSmoothing.decision(for: app, list: Options.shared.application, scrolling: Options.shared.scroll)
+                    XCTAssertEqual(after.isSmoothed, !before.isSmoothed, context)
+                    XCTAssertNotNil(after.change, "it can be turned back, \(context)")
+                    XCTAssertTrue(Options.shared.scroll == Self.customScrolling(smooth: smooth), "the Scrolling settings stay, \(context)")
+                }
+            }
+        }
+    }
+
+    // MARK: - What a click changes
+
+    /// Not on the list: added as "+" adds a running app, with its own settings copied from
+    /// the Scrolling settings and smoothing off; checking again turns only that back on.
+    func testAnAppNotOnTheListIsAddedWithItsOwnSettingsAndSmoothingOff() throws {
+        let scrolling = Self.customScrolling()
+        let list = self.list()
+        XCTAssertEqual(AppSmoothing.toggle(Self.safari, list: list, scrolling: scrolling), .addWithSmoothingOff)
+        XCTAssertEqual(list.applications.count, 1)
+        let added = try XCTUnwrap(list.applications.get(by: 0))
+        XCTAssertEqual(added.path, Self.safari.executablePath, "stored by the program's path, as \"+\" does")
+        XCTAssertFalse(added.inherit)
+        XCTAssertEqual(added.displayName, "")
+        XCTAssertNil(added.buttons)
+        XCTAssertFalse(added.scroll.smooth)
+        XCTAssertFalse(added.scroll === scrolling, "its own container")
+        let expected = try Self.copy(scrolling)
+        expected.smooth = false
+        XCTAssertTrue(added.scroll == expected, "everything else as in the Scrolling settings")
+
+        // Stored as an app the pane adds: the same keys.
+        let stored = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(list.applications.json())) as? [[String: Any]])
+        XCTAssertEqual(Set(try XCTUnwrap(stored.first).keys), ["path", "displayName", "inherit", "scroll"])
+
+        XCTAssertEqual(AppSmoothing.toggle(Self.safari, list: list, scrolling: scrolling), .setOwnSmoothing(true))
+        XCTAssertEqual(list.applications.count, 1, "it stays on the list")
+        XCTAssertTrue(added.scroll.smooth)
+        XCTAssertFalse(added.inherit)
+        XCTAssertTrue(added.scroll == scrolling)
+    }
+
+    /// An app found by its bundle's path is not added a second time.
+    func testAnAppListedByItsBundleIsNotAddedAgain() throws {
+        let entry = application(try XCTUnwrap(Self.safari.bundlePath), inherit: true)
+        let list = self.list([entry])
+        XCTAssertEqual(AppSmoothing.toggle(Self.safari, list: list, scrolling: Self.customScrolling()), .ownSettingsWithSmoothingOff)
+        XCTAssertEqual(list.applications.count, 1)
+        XCTAssertFalse(entry.inherit)
+        XCTAssertFalse(entry.scroll.smooth)
+    }
+
+    /// "Use settings from Scrolling" on, own settings never edited: they become a copy of
+    /// the Scrolling settings (in the app's own container), then smoothing goes off.
+    func testAnAppUsingTheScrollingSettingsGetsACopyWithSmoothingOff() throws {
+        let scrolling = Self.customScrolling()
+        let entry = Application(path: try XCTUnwrap(Self.safari.executablePath))
+        let own = entry.scroll
+        let list = self.list([entry])
+        XCTAssertEqual(AppSmoothing.toggle(Self.safari, list: list, scrolling: scrolling), .ownSettingsWithSmoothingOff)
+        XCTAssertFalse(entry.inherit)
+        XCTAssertTrue(entry.scroll === own)
+        let expected = try Self.copy(scrolling)
+        expected.smooth = false
+        XCTAssertTrue(entry.scroll == expected)
+        XCTAssertTrue(scrolling.smooth, "the Scrolling settings stay")
+    }
+
+    /// Own settings that were edited are kept, as the Apps pane keeps them.
+    func testEditedOwnSettingsAreKept() throws {
+        let entry = Application(path: try XCTUnwrap(Self.safari.executablePath))
+        entry.scroll.speed = 2
+        let list = self.list([entry])
+        AppSmoothing.toggle(Self.safari, list: list, scrolling: Self.customScrolling())
+        XCTAssertFalse(entry.inherit)
+        XCTAssertFalse(entry.scroll.smooth)
+        XCTAssertEqual(entry.scroll.speed, 2)
+        XCTAssertTrue(entry.scroll.reversesWheel, "the app's own value")
+        XCTAssertEqual(entry.scroll.dash, OPTIONS_SCROLL_DEFAULT().dash)
+    }
+
+    /// Own settings: only "Smooth scrolling" changes, both ways; the global switch does not matter.
+    func testOwnSettingsChangeOnlySmoothing() throws {
+        let entry = application(try XCTUnwrap(Self.safari.executablePath), inherit: false, smooth: true)
+        entry.scroll.speed = 3
+        entry.scroll.reverse = false
+        let before = try Self.copy(entry.scroll)
+        let list = self.list([entry], limited: true)
+        let globallyOff = Self.customScrolling(smooth: false)
+
+        XCTAssertEqual(AppSmoothing.toggle(Self.safari, list: list, scrolling: globallyOff), .setOwnSmoothing(false))
+        before.smooth = false
+        XCTAssertTrue(entry.scroll == before)
+        XCTAssertFalse(entry.inherit)
+
+        XCTAssertEqual(AppSmoothing.toggle(Self.safari, list: list, scrolling: globallyOff), .setOwnSmoothing(true))
+        before.smooth = true
+        XCTAssertTrue(entry.scroll == before)
+        XCTAssertEqual(list.applications.count, 1)
+    }
+
+    /// Where the item is disabled a click changes nothing.
+    func testADisabledCombinationChangesNothing() throws {
+        let off = Self.customScrolling(smooth: false)
+        let notListed = list()
+        XCTAssertNil(AppSmoothing.toggle(Self.safari, list: notListed, scrolling: off))
+        XCTAssertEqual(notListed.applications.count, 0)
+
+        let limited = list(limited: true)
+        XCTAssertNil(AppSmoothing.toggle(Self.safari, list: limited, scrolling: Self.customScrolling()))
+        XCTAssertEqual(limited.applications.count, 0, "not added: that would start reversing in it too")
+
+        let entry = Application(path: try XCTUnwrap(Self.safari.executablePath))
+        let inheriting = list([entry])
+        XCTAssertNil(AppSmoothing.toggle(Self.safari, list: inheriting, scrolling: off))
+        XCTAssertTrue(entry.inherit)
+        XCTAssertTrue(entry.scroll == OPTIONS_SCROLL_DEFAULT())
+    }
+
+    // MARK: - The step shared with the Apps pane
+
+    func testUsingTheScrollingSettingsOnAndOff() {
+        let scrolling = Self.customScrolling()
+        let app = Application(path: "/Applications/Safari.app")
+        app.setUsesScrollingSettings(true, scrolling: scrolling)
+        XCTAssertTrue(app.inherit)
+        XCTAssertTrue(app.scroll == OPTIONS_SCROLL_DEFAULT(), "already on: nothing copied")
+
+        app.setUsesScrollingSettings(false, scrolling: scrolling)
+        XCTAssertFalse(app.inherit)
+        XCTAssertTrue(app.scroll == scrolling)
+
+        // Already off: the Scrolling settings changed since, the app's own stay.
+        let other = Self.customScrolling()
+        other.speed = 1.5
+        app.setUsesScrollingSettings(false, scrolling: other)
+        XCTAssertEqual(app.scroll.speed, 8.5)
+
+        // On again: its own are kept for later.
+        app.setUsesScrollingSettings(true, scrolling: other)
+        XCTAssertTrue(app.inherit)
+        XCTAssertEqual(app.scroll.speed, 8.5)
     }
 }
 
