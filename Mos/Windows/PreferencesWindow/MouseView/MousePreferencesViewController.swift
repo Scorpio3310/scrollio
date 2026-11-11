@@ -4,7 +4,7 @@
 //  "Mouse" preferences tab: hardware settings of connected Logitech mice
 //  (scroll mode, SmartShift sensitivity, scrolling force) and what the mouse may do
 //  itself during Gesture Navigation (track the movement, haptic cues). Built in code
-//  with the same form layout as the storyboard tabs. It only edits
+//  on the PreferencesForm grid, like the storyboard tabs. It only edits
 //  Options.shared.logiWheel and two switches of Options.shared.gesture; the Logi layer
 //  applies them to the mice.
 //
@@ -15,22 +15,14 @@ final class MousePreferencesViewController: NSViewController {
 
     static let tabIdentifier = "mouse"
 
-    // MARK: - Layout (matches the storyboard tabs)
+    // MARK: - Layout (the PreferencesForm grid)
 
     /// Width of every preferences tab.
-    static let contentWidth: CGFloat = 450
-    private static let margin: CGFloat = 20
-    /// Right-aligned row titles on the left, controls to their right.
-    private static let labelWidth: CGFloat = 136
-    private static let columnSpacing: CGFloat = 15
-    private static let controlWidth = contentWidth - 2 * margin - labelWidth - columnSpacing
-    private static let sliderWidth: CGFloat = 180
-    private static let valueLabelWidth: CGFloat = 44
-    private static let rowSpacing: CGFloat = 17
-    private static let separatorSpacing: CGFloat = 18
-    private static let noteSpacing: CGFloat = 6
-    /// Between two options (checkbox + hint) of one row.
-    private static let optionSpacing: CGFloat = 12
+    static let contentWidth = PreferencesForm.contentWidth
+    private static let controlWidth = PreferencesForm.controlWidth
+    private static let separatorSpacing = PreferencesForm.separatorSpacing
+    private static let noteSpacing = PreferencesForm.hintSpacing
+    private static let optionSpacing = PreferencesForm.optionSpacing
 
     // MARK: - State
 
@@ -83,19 +75,8 @@ final class MousePreferencesViewController: NSViewController {
     }
 
     override func loadView() {
-        // Same background as the storyboard tabs.
-        let root = NSVisualEffectView()
-        root.blendingMode = .behindWindow
-        if #available(macOS 10.14, *) { root.material = .toolTip }
-        root.state = .followsWindowActiveState
-
-        let content = NSStackView()
-        content.orientation = .vertical
-        content.alignment = .leading
-        content.spacing = Self.rowSpacing
-        content.detachesHiddenViews = true
-        content.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(content)
+        let root = PreferencesForm.makeBackground()
+        let content = PreferencesForm.installContentStack(in: root)
 
         let devicesRow = makeDevicesRow()
         let separator1 = Self.makeSeparator()
@@ -108,28 +89,16 @@ final class MousePreferencesViewController: NSViewController {
         let separator2 = Self.makeSeparator()
         let advancedRow = makeAdvancedRow()
 
-        let rows = [
+        PreferencesForm.add([
             devicesRow, separator1, managedRow, modeRow, sensitivityRow, forceRow,
             gestureSeparator, gestureRow, separator2, advancedRow,
-        ]
-        for row in rows {
-            content.addArrangedSubview(row)
-            row.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
-        }
+        ], to: content)
         for separator in [separator1, gestureSeparator, separator2] {
             content.setCustomSpacing(Self.separatorSpacing, after: separator)
         }
         content.setCustomSpacing(Self.separatorSpacing, after: devicesRow)
         content.setCustomSpacing(Self.separatorSpacing, after: forceRow)
         content.setCustomSpacing(Self.separatorSpacing, after: gestureRow)
-
-        NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: root.topAnchor, constant: Self.margin),
-            content.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: Self.margin),
-            content.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -Self.margin),
-            content.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -Self.margin),
-            content.widthAnchor.constraint(equalToConstant: Self.contentWidth - 2 * Self.margin),
-        ])
 
         view = root
         rebuildDeviceList()
@@ -301,8 +270,7 @@ final class MousePreferencesViewController: NSViewController {
 
     /// True while the slider is being dragged (continuous actions in between).
     private static var isTrackingMouse: Bool {
-        guard let type = NSApp?.currentEvent?.type else { return false }
-        return type == .leftMouseDown || type == .leftMouseDragged
+        return PreferencesForm.isTrackingMouse
     }
 
     // MARK: - Rows
@@ -476,29 +444,22 @@ final class MousePreferencesViewController: NSViewController {
     /// Two switches of the shared gesture settings that only make sense with a mouse that
     /// can do them. The hint under each turns into the reason when no such mouse is connected.
     private func makeGestureRow() -> NSView {
-        let tracking = NSButton(
-            checkboxWithTitle: NSLocalizedString("mouse-gesture-device-tracking", comment: ""),
+        let tracking = PreferencesForm.makeCheckbox(
+            title: NSLocalizedString("mouse-gesture-device-tracking", comment: ""),
             target: self,
             action: #selector(deviceTrackingToggled(_:))
         )
         deviceTrackingCheckbox = tracking
         deviceTrackingHintLabel = Self.makeNote(NSLocalizedString("mouse-gesture-device-tracking-hint", comment: ""))
 
-        let haptics = NSButton(
-            checkboxWithTitle: NSLocalizedString("mouse-gesture-haptics", comment: ""),
+        let haptics = PreferencesForm.makeCheckbox(
+            title: NSLocalizedString("mouse-gesture-haptics", comment: ""),
             target: self,
             action: #selector(hapticsToggled(_:))
         )
         hapticsCheckbox = haptics
         hapticsHintLabel = Self.makeNote(NSLocalizedString("mouse-gesture-haptics-hint", comment: ""))
 
-        for checkbox in [tracking, haptics] {
-            // A long translation wraps instead of widening the tab.
-            checkbox.lineBreakMode = .byWordWrapping
-            checkbox.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            checkbox.translatesAutoresizingMaskIntoConstraints = false
-            checkbox.widthAnchor.constraint(lessThanOrEqualToConstant: Self.controlWidth).isActive = true
-        }
 
         let column = Self.makeColumn([tracking, deviceTrackingHintLabel, haptics, hapticsHintLabel])
         column.setCustomSpacing(Self.optionSpacing, after: deviceTrackingHintLabel)
@@ -533,95 +494,40 @@ final class MousePreferencesViewController: NSViewController {
         action: Selector,
         accessibilityLabel: String
     ) -> (NSSlider, NSTextField, NSView) {
-        let slider = NSSlider(
-            value: Double(range.lowerBound),
-            minValue: Double(range.lowerBound),
-            maxValue: Double(range.upperBound),
+        let line = PreferencesForm.makeSliderLine(
+            range: Double(range.lowerBound)...Double(range.upperBound),
+            widestValue: MouseWheelText.percent(range.upperBound),
             target: self,
-            action: action
+            action: action,
+            accessibilityLabel: accessibilityLabel
         )
-        slider.controlSize = .small
-        slider.isContinuous = true
-        slider.setAccessibilityLabel(accessibilityLabel)
-        slider.translatesAutoresizingMaskIntoConstraints = false
-        slider.widthAnchor.constraint(equalToConstant: Self.sliderWidth).isActive = true
-
-        let valueLabel = NSTextField(labelWithString: MouseWheelText.percent(range.upperBound))
-        valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
-        valueLabel.translatesAutoresizingMaskIntoConstraints = false
-        valueLabel.widthAnchor.constraint(equalToConstant: Self.valueLabelWidth).isActive = true
-
-        let line = NSStackView(views: [slider, valueLabel])
-        line.orientation = .horizontal
-        line.alignment = .centerY
-        line.spacing = 8
-        return (slider, valueLabel, line)
+        return (line.slider, line.valueLabel, line.line)
     }
 
-    // MARK: - Building blocks
+    // MARK: - Building blocks (PreferencesForm)
 
     private static var noteFont: NSFont {
-        return NSFont.systemFont(ofSize: NSFont.systemFontSize(for: .mini))
+        return PreferencesForm.hintFont
     }
 
-    /// Small secondary text under a control, like the descriptions in the other tabs.
     private static func makeNote(_ text: String) -> NSTextField {
-        let label = NSTextField(wrappingLabelWithString: text)
-        label.font = noteFont
-        label.textColor = .secondaryLabelColor
-        label.preferredMaxLayoutWidth = controlWidth
-        label.isSelectable = false
-        return label
+        return PreferencesForm.makeHint(text)
     }
 
     private static func setNote(_ label: NSTextField, _ text: String?) {
-        label.stringValue = text ?? ""
-        label.isHidden = text == nil
+        PreferencesForm.setHint(label, text)
     }
 
     private static func makeColumn(_ views: [NSView]) -> NSStackView {
-        let column = NSStackView(views: views)
-        column.orientation = .vertical
-        column.alignment = .leading
-        column.spacing = noteSpacing
-        column.detachesHiddenViews = true
-        column.translatesAutoresizingMaskIntoConstraints = false
-        return column
+        return PreferencesForm.makeColumn(views)
     }
 
     private static func makeSeparator() -> NSView {
-        let box = NSBox()
-        box.boxType = .separator
-        box.translatesAutoresizingMaskIntoConstraints = false
-        return box
+        return PreferencesForm.makeSeparator()
     }
 
-    /// A form row: right-aligned title in the label column, `column` in the control
-    /// column. The caller aligns the title with the column's first control.
     private static func makeRow(title: String, column: NSView) -> (row: NSView, label: NSTextField) {
-        let row = NSView()
-        row.translatesAutoresizingMaskIntoConstraints = false
-
-        let label = NSTextField(labelWithString: title)
-        label.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
-        label.textColor = .secondaryLabelColor
-        label.alignment = .right
-        label.lineBreakMode = .byTruncatingTail
-        label.translatesAutoresizingMaskIntoConstraints = false
-
-        row.addSubview(label)
-        row.addSubview(column)
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: row.leadingAnchor),
-            label.widthAnchor.constraint(equalToConstant: labelWidth),
-            label.topAnchor.constraint(greaterThanOrEqualTo: row.topAnchor),
-            label.bottomAnchor.constraint(lessThanOrEqualTo: row.bottomAnchor),
-            column.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: columnSpacing),
-            column.trailingAnchor.constraint(equalTo: row.trailingAnchor),
-            column.topAnchor.constraint(equalTo: row.topAnchor),
-            column.bottomAnchor.constraint(equalTo: row.bottomAnchor),
-        ])
-        return (row, label)
+        return PreferencesForm.makeRow(title: title, column: column)
     }
 
     // MARK: - Icons
@@ -634,47 +540,26 @@ final class MousePreferencesViewController: NSViewController {
         return nil
     }
 
-    /// Toolbar image drawn on the same 135 pt canvas as the SF.* assets of the other
-    /// tabs, so the glyph comes out at the same size.
+    /// Toolbar image, the size of the SF.* assets of the storyboard tabs.
     static func tabImage() -> NSImage {
-        let canvas = NSSize(width: 135, height: 135)
-        let image: NSImage
-        if #available(macOS 11.0, *),
-           let symbol = NSImage(systemSymbolName: "computermouse", accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 64, weight: .regular)) {
-            image = NSImage(size: canvas, flipped: false) { rect in
-                let height = rect.height * 0.6
-                let width = symbol.size.width * height / max(symbol.size.height, 1)
-                symbol.draw(in: NSRect(
-                    x: rect.midX - width / 2,
-                    y: rect.midY - height / 2,
-                    width: width,
-                    height: height
-                ))
-                return true
-            }
-        } else {
+        return PreferencesForm.toolbarImage(
+            symbolName: "computermouse",
+            accessibilityDescription: NSLocalizedString("mouse-tab-title", comment: "")
+        ) { _ in
             // macOS 10.13-10.15: outline of a mouse with a button split.
-            image = NSImage(size: canvas, flipped: false) { _ in
-                NSColor.black.setStroke()
-                let body = NSBezierPath(
-                    roundedRect: NSRect(x: 45, y: 27, width: 45, height: 81),
-                    xRadius: 22.5,
-                    yRadius: 24
-                )
-                body.lineWidth = 7
-                body.stroke()
-                let split = NSBezierPath()
-                split.move(to: NSPoint(x: 67.5, y: 101))
-                split.line(to: NSPoint(x: 67.5, y: 84))
-                split.lineWidth = 7
-                split.lineCapStyle = .round
-                split.stroke()
-                return true
-            }
+            let body = NSBezierPath(
+                roundedRect: NSRect(x: 45, y: 27, width: 45, height: 81),
+                xRadius: 22.5,
+                yRadius: 24
+            )
+            body.lineWidth = 7
+            body.stroke()
+            let split = NSBezierPath()
+            split.move(to: NSPoint(x: 67.5, y: 101))
+            split.line(to: NSPoint(x: 67.5, y: 84))
+            split.lineWidth = 7
+            split.lineCapStyle = .round
+            split.stroke()
         }
-        image.isTemplate = true
-        image.accessibilityDescription = NSLocalizedString("mouse-tab-title", comment: "")
-        return image
     }
 }
