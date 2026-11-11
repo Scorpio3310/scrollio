@@ -152,6 +152,33 @@ final class StatusMenuTests: XCTestCase {
         ])
     }
 
+    /// Release build: Option offers Logitech Diagnostics only; Scroll Monitor and Test Toasts
+    /// are developer tools of the debug build.
+    func testOptionOffersOnlyLogitechDiagnosticsInTheReleaseBuild() {
+        var release = state(diagnostics: true)
+        release.isDebugBuild = false
+        XCTAssertEqual(rows(release), [
+            Row(title: "Pause Scrollio"),
+            Row(title: "Settings…", shortcut: "⌘,"),
+            .separator,
+            Row(title: "Logitech Diagnostics"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+        // Without Option nothing of it, in either build.
+        var plain = state()
+        plain.isDebugBuild = false
+        XCTAssertEqual(rows(plain), rows(state()))
+    }
+
+    func testWhichDiagnosticsEachBuildOffers() {
+        XCTAssertEqual(StatusMenu.diagnosticItems(isDebugBuild: false), [.diagnostics])
+        XCTAssertEqual(StatusMenu.diagnosticItems(isDebugBuild: true), [.scrollMonitor, .diagnostics, .testToasts])
+        // These tests run in the debug build.
+        XCTAssertTrue(StatusMenu.isDebugBuild)
+        XCTAssertTrue(state().isDebugBuild)
+    }
+
     func testOneDisabledBatteryLinePerMouseOnTop() {
         let batteries = StatusMenu.batteries(from: [
             MouseDeviceFixtures.mxMaster4(),

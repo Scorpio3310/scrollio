@@ -66,11 +66,11 @@ See [Attribution and licence](#attribution-and-licence).
 - Lives in the menu bar. Its menu shows each Logitech mouse's battery, "Pause Scrollio" /
   "Resume Scrollio" (a pause stops the event handling and gives the Logitech mice their
   buttons back; it is not remembered, a relaunch runs again), Settings and Quit. With
-  Option held it also lists Scroll Monitor, Logitech Diagnostics and Test Toasts. The
-  icon is dimmed while Scrollio is paused, waits for the Accessibility access, or could
-  not start its event taps and tries again (its tooltip says which). While
-  paused, General also says so, with a Resume button (the way back when the menu bar
-  icon is hidden).
+  Option held it also lists Logitech Diagnostics (the debug build also Scroll Monitor and
+  Test Toasts). The icon is dimmed while Scrollio is paused, waits for the Accessibility
+  access, or could not start its event taps and tries again (its tooltip says which).
+  While paused, General also says so, with a Resume button (the way back when the menu
+  bar icon is hidden).
 - The menu bar icon can be hidden (General > Show in menu bar); opening the app again
   then shows the settings, or the Welcome Guide while the access is missing.
 - Can open at login; General says when macOS waits for that to be approved in System

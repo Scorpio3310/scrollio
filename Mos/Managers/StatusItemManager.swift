@@ -6,8 +6,9 @@
 //  With Accessibility access, top to bottom: one disabled line per Logitech mouse with its
 //  battery ("MX Master 4: 75%"), "Pause Scrollio" or "Resume Scrollio", "Settings…", and
 //  "Quit Scrollio". While Option is held (always in the debug build) the diagnostic windows
-//  are added above Quit. Without the access: "Allow Accessibility Access…" (the Welcome
-//  Guide) and Quit.
+//  are added above Quit: Logitech Diagnostics in every build, Scroll Monitor and Test
+//  Toasts only in the debug build. Without the access: "Allow Accessibility Access…" (the
+//  Welcome Guide) and Quit.
 //
 //  The icon is dimmed while the event handling does not run: paused, the access is missing,
 //  or the access is there but an event tap could not be created or stays off because its
@@ -156,6 +157,23 @@ enum StatusMenu {
         var showsDiagnostics: Bool
         /// One line per Logitech mouse that reports its battery.
         var batteries: [Battery]
+        /// The developer tools (Scroll Monitor, Test Toasts) are offered only in the debug build.
+        var isDebugBuild: Bool = StatusMenu.isDebugBuild
+    }
+
+    /// This build is the debug build.
+    static let isDebugBuild: Bool = {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }()
+
+    /// The diagnostic windows listed while Option is held: Logitech Diagnostics in every
+    /// build, the developer tools only in the debug build.
+    static func diagnosticItems(isDebugBuild: Bool) -> [Item] {
+        return isDebugBuild ? [.scrollMonitor, .diagnostics, .testToasts] : [.diagnostics]
     }
 
     /// The battery line of one mouse: "MX Master 4: 75%", "MX Master 4: 75%, charging".
@@ -190,7 +208,7 @@ enum StatusMenu {
         }
         items += [state.isPaused ? .resume : .pause, .settings, .separator]
         if state.showsDiagnostics {
-            items += [.scrollMonitor, .diagnostics, .testToasts, .separator]
+            items += diagnosticItems(isDebugBuild: state.isDebugBuild) + [.separator]
         }
         items.append(.quit)
         return items
