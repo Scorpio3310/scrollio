@@ -402,7 +402,7 @@ final class PreferencesAboutTests: XCTestCase {
         XCTAssertTrue(buttons.first === controller.welcomeGuideButton)
         // A push button in a row of the grouped kit, named by the row.
         XCTAssertEqual(controller.welcomeGuideRow.title, "Welcome Guide")
-        XCTAssertEqual(controller.welcomeGuideButton.title, "Open")
+        XCTAssertEqual(controller.welcomeGuideButton.title, "Open…", "it opens a window")
         XCTAssertEqual(controller.welcomeGuideButton.bezelStyle, .push)
         XCTAssertTrue(controller.welcomeGuideRow.controls.contains { $0 === controller.welcomeGuideButton })
 
@@ -615,5 +615,180 @@ final class PreferencesTextSizeTests: XCTestCase {
         let scrolling = try XCTUnwrap(storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)
         _ = scrolling.view
         XCTAssertEqual(scrolling.feelHintLabel.font?.pointSize, PreferencesForm.hintFontSize)
+    }
+}
+
+// MARK: - Keyboard and accessibility
+
+/// Every pane in its fullest state (bindings with a problem, apps and an app's page,
+/// "Advanced" open, a connected mouse): Tab runs through it top to bottom, and every control
+/// VoiceOver lands on has a name.
+final class PreferencesKeyboardAccessibilityTests: XCTestCase {
+
+    private let app = Bundle(for: PreferencesSplitViewController.self)
+    private var savedBindings: [ButtonBinding] = []
+    private var savedApplications: EnhanceArray<Application>!
+    private var savedScroll: OPTIONS_SCROLL_DEFAULT!
+
+    override func setUp() {
+        super.setUp()
+        savedBindings = Options.shared.buttons.binding
+        savedApplications = Options.shared.application.applications
+        savedScroll = Options.shared.scroll
+        let trigger = { (code: UInt16) in RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil) }
+        Options.shared.buttons.binding = [
+            ButtonBinding(triggerEvent: trigger(3), systemShortcutName: SystemShortcut.mouseGestureNavigation.identifier),
+            ButtonBinding(triggerEvent: trigger(1000), systemShortcutName: SystemShortcut.copy.identifier),
+            ButtonBinding(triggerEvent: trigger(6), systemShortcutName: "", isEnabled: false),
+        ]
+        let calculator = Application(path: "/System/Applications/Calculator.app")
+        calculator.inherit = false
+        Options.shared.application.applications = EnhanceArray<Application>(
+            withArray: [calculator, Application(path: "/Applications/Safari.app")], matchKey: "path"
+        )
+    }
+
+    override func tearDown() {
+        Options.shared.buttons.binding = savedBindings
+        Options.shared.application.applications = savedApplications
+        Options.shared.scroll = savedScroll
+        super.tearDown()
+    }
+
+    private func makeDefaults() -> UserDefaults {
+        let suite = "ScrollioTests.preferences-keyboard.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.set(true, forKey: PreferencesScrollingViewController.advancedExpandedDefaultsKey)
+        defaults.set(true, forKey: PreferencesGeneralViewController.advancedExpandedDefaultsKey)
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        return defaults
+    }
+
+    /// The window as the app makes it, every pane in its fullest state. Never shown.
+    private func makeWindow() throws -> (NSWindow, PreferencesSplitViewController) {
+        let storyboard = NSStoryboard(name: "Main", bundle: app)
+        let controller = try XCTUnwrap(
+            storyboard.instantiateController(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController) as? PreferencesWindowController
+        )
+        let window = try XCTUnwrap(controller.window)
+        let preferences = PreferencesSplitViewController(storyboard: storyboard, uiStateDefaults: nil)
+        let defaults = makeDefaults()
+        (preferences.controller(for: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)?.uiStateDefaults = defaults
+        if let general = preferences.controller(for: PANEL_IDENTIFIER.general) as? PreferencesGeneralViewController {
+            general.uiStateDefaults = defaults
+            general.isAccessGranted = { false }
+            general.isMenuBarIconHidden = { false }
+        }
+        if let buttons = preferences.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController {
+            buttons.deviceSource = ButtonsDeviceSource(
+                captureStatus: { $0 == 1000 ? .contended : .normal }, deviceName: { "MX Master 4" },
+                isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+            )
+            buttons.startRecording = { _ in }
+        }
+        (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?.uiStateDefaults = defaults
+        if let mouse = preferences.controller(for: MousePreferencesViewController.tabIdentifier) as? MousePreferencesViewController {
+            mouse.deviceSource = MouseDeviceSource(deviceStates: { [MouseDeviceFixtures.mxMaster4()] }, refresh: {}, showDiagnostics: {})
+            mouse.readbackSettleTime = 0
+        }
+        controller.contentViewController = preferences
+        controller.configure(window, remembersFrame: false)
+        window.contentView?.layoutSubtreeIfNeeded()
+        addTeardownBlock { controller.close() }
+        return (window, preferences)
+    }
+
+    /// The pages to look at: every pane, and an app's page under Apps.
+    private func eachPage(in preferences: PreferencesSplitViewController, window: NSWindow, _ body: (String, NSView) throws -> Void) throws {
+        for pane in preferences.panes {
+            XCTAssertTrue(preferences.selectPane(withIdentifier: pane.identifier))
+            (preferences.selectedController as? MousePreferencesViewController)?.reloadDevices()
+            window.contentView?.layoutSubtreeIfNeeded()
+            try body(pane.identifier, try XCTUnwrap(preferences.selectedController?.view))
+        }
+        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        let apps = try XCTUnwrap(preferences.selectedController as? PreferencesApplicationViewController)
+        apps.openApplication(withID: "/System/Applications/Calculator.app")
+        window.contentView?.layoutSubtreeIfNeeded()
+        try body("app page", apps.view)
+    }
+
+    private func descendants(of view: NSView) -> [NSView] {
+        return view.subviews.flatMap { [$0] + descendants(of: $0) }
+    }
+
+    private func isShown(_ view: NSView, in root: NSView) -> Bool {
+        var current: NSView? = view
+        while let candidate = current, candidate !== root {
+            if candidate.isHidden || candidate.alphaValue == 0 { return false }
+            current = candidate.superview
+        }
+        return true
+    }
+
+    /// What VoiceOver says a control is called.
+    private func name(of control: NSControl) -> String? {
+        if let label = control.accessibilityLabel(), !label.isEmpty { return label }
+        if let field = control.accessibilityTitleUIElement() as? NSTextField, field.isAccessibilityElement(), !field.stringValue.isEmpty {
+            return field.stringValue
+        }
+        if !(control is NSPopUpButton), let button = control as? NSButton, !button.title.isEmpty {
+            return button.title
+        }
+        return nil
+    }
+
+    func testTheWindowKeepsItsKeyViewLoopUpToDate() throws {
+        let (window, _) = try makeWindow()
+        XCTAssertTrue(window.autorecalculatesKeyViewLoop, "panes come and go: Tab has to reach the controls of the one shown")
+    }
+
+    /// Tab goes through the controls of a pane from top to bottom (left to right on one line).
+    func testTabRunsThroughEachPaneFromTopToBottom() throws {
+        let (window, preferences) = try makeWindow()
+        try eachPage(in: preferences, window: window) { identifier, page in
+            window.recalculateKeyViewLoop()
+            let wanted = descendants(of: page).filter { view in
+                guard isShown(view, in: page) else { return false }
+                if view is PreferencesListBox { return true }
+                guard let control = view as? NSControl, !(control is NSTextField) else { return false }
+                return control.isEnabled && !(view.superview is NSControl)
+            }
+            var chain: [NSView] = []
+            var current: NSView? = preferences.sidebar.tableView
+            var steps = 0
+            while let view = current?.nextKeyView, steps < 500 {
+                if view === preferences.sidebar.tableView { break }
+                if wanted.contains(where: { $0 === view }) { chain.append(view) }
+                current = view
+                steps += 1
+            }
+            XCTAssertEqual(chain.count, wanted.count, "\(identifier): Tab reaches every control")
+            // By their top edges: a list comes before the controls in its rows.
+            let frames = chain.map { $0.convert($0.bounds, to: nil) }
+            for (above, below) in zip(frames, frames.dropFirst()) {
+                let sameLine = abs(above.maxY - below.maxY) < 8
+                XCTAssertTrue(sameLine ? above.minX < below.minX : above.maxY > below.maxY,
+                              "\(identifier): \(above) before \(below)")
+            }
+        }
+    }
+
+    func testEveryControlHasANameAndEveryPictureIsNamedOrHidden() throws {
+        let (window, preferences) = try makeWindow()
+        try eachPage(in: preferences, window: window) { identifier, page in
+            for view in descendants(of: page) where isShown(view, in: page) {
+                if let control = view as? NSControl, !(control is NSTextField), control.isAccessibilityElement() {
+                    XCTAssertNotNil(name(of: control), "\(identifier): \(type(of: control)) \(control.identifier?.rawValue ?? "")")
+                }
+                if let image = view as? NSImageView, image.isAccessibilityElement() {
+                    let label = image.accessibilityLabel() ?? image.image?.accessibilityDescription
+                    XCTAssertFalse(label?.isEmpty ?? true, "\(identifier): a picture without a name")
+                }
+                if let list = view as? PreferencesListBox {
+                    XCTAssertFalse(list.rowsView.accessibilityLabel()?.isEmpty ?? true, "\(identifier): the list has a name")
+                }
+            }
+        }
     }
 }

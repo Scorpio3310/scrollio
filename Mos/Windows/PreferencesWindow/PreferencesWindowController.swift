@@ -43,6 +43,9 @@ class PreferencesWindowController: NSWindowController, NSWindowDelegate, NSToolb
         window.toolbar = toolbar
         window.toolbarStyle = .unified
         window.collectionBehavior.insert(.fullScreenNone)
+        // Panes are built in code and swapped in the column: the key view loop follows
+        // them, so Tab (and Full Keyboard Access) runs through the pane shown, top to bottom.
+        window.autorecalculatesKeyViewLoop = true
 
         let size = NSSize(
             width: PreferencesWindowLayout.contentWidth(of: splitViewController?.splitView),

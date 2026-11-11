@@ -528,6 +528,14 @@ final class PreferencesListBox: NSView {
         for rect in separatorRects + [footerSeparatorRect, footerDividerRect] {
             rect.fill()
         }
+        if drawsOutline {
+            PreferencesGroupedForm.drawOutline(of: bounds)
+        }
+    }
+
+    /// Under Increase Contrast the box has an outline, as the kit's other boxes.
+    var drawsOutline: Bool {
+        return PreferencesGroupedForm.isHighContrast(effectiveAppearance)
     }
 
     /// The focus ring goes round the box, and only where focus rings show for every control
@@ -861,8 +869,9 @@ class PreferencesListRow: PreferencesGroupRow {
 
 // MARK: - Empty row
 
-/// What a list without rows shows: a title and an optional explanation, centred and
-/// dimmed. It cannot be selected.
+/// What a list without rows shows: a title and an optional explanation, centred, in the
+/// secondary colour (it says what to do, so it stays readable; the tertiary colour of a
+/// dimmed row is too faint on a light box). It cannot be selected.
 final class PreferencesListEmptyRow: NSView {
 
     let titleLabel: NSTextField
@@ -889,12 +898,12 @@ final class PreferencesListEmptyRow: NSView {
         let inset = PreferencesGroupedForm.rowHorizontalInset
 
         titleLabel.font = PreferencesGroupedForm.titleFont
-        titleLabel.textColor = .tertiaryLabelColor
+        titleLabel.textColor = .secondaryLabelColor
         titleLabel.alignment = .center
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         explanationLabel.font = PreferencesGroupedForm.explanationFont
-        explanationLabel.textColor = .tertiaryLabelColor
+        explanationLabel.textColor = .secondaryLabelColor
         explanationLabel.alignment = .center
         explanationLabel.isSelectable = false
         explanationLabel.isHidden = explanation == nil

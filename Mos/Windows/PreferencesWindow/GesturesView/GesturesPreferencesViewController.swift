@@ -122,7 +122,6 @@ final class GesturesPreferencesViewController: NSViewController {
 
         controls = MouseGestureSettingsControls(
             showLogiActions: bindingSummary().hasLogitechGestureButton,
-            toggleStyle: .switches,
             isInteractiveAvailable: isInteractiveAvailable
         )
         controls.onChange = { [weak self] in self?.reload() }

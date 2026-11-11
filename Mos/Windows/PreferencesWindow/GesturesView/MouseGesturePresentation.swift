@@ -101,12 +101,15 @@ struct MouseGestureBindingSummary: Equatable {
     }
 
     /// The explanation of the Gestures pane's "Gesture button" row: the buttons, joined as
-    /// a list ("Back button and Gesture button"), or that there is none yet.
+    /// a list ("Assigned to Back button and Gesture button."), or that there is none yet.
+    /// Not the names alone: under the row's title "Gesture button" an MX Master's own
+    /// "Gesture button" would read twice.
     var gestureButtonExplanation: String {
         guard hasGestureButton else {
             return NSLocalizedString("gestures-gesture-button-none", comment: "")
         }
-        return ListFormatter.localizedString(byJoining: buttonTitles)
+        let buttons = ListFormatter.localizedString(byJoining: buttonTitles)
+        return String(format: NSLocalizedString("gestures-gesture-button-bound", comment: ""), buttons)
     }
 
     /// The summary of the stored bindings, global and per app.

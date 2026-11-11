@@ -2,10 +2,9 @@
 //  MouseGestureSettingsControls.swift
 //  Mos
 //  The controls that edit Options.shared.gesture: mode, one action per direction and
-//  click, invert left/right and freeze pointer. The Gestures tab and the Gesture Settings
-//  popover lay out the same controls, so their rules live here once: the popover with
-//  checkboxes, the tab with switches. Changes apply immediately. (The tracking speed is
-//  in the tab only; the tab edits it itself.)
+//  click, and the switches for invert left/right and freeze pointer. The Gestures pane lays
+//  them out in its rows; their rules live here. Changes apply immediately. (The tracking
+//  speed is the pane's own.)
 //
 
 import Cocoa
@@ -97,13 +96,6 @@ final class MouseGestureActionPopUpButton: NSPopUpButton {
 
 final class MouseGestureSettingsControls: NSObject {
 
-    /// How invert and freeze look: checkboxes with their titles (the popover), or switches
-    /// that sit in rows titled by the layout (the tab).
-    enum ToggleStyle {
-        case checkboxes
-        case switches
-    }
-
     /// Identifiers for the controls (tests and accessibility tooling).
     enum Identifier {
         static let mode = NSUserInterfaceItemIdentifier("gesture-mode")
@@ -187,11 +179,9 @@ final class MouseGestureSettingsControls: NSObject {
     let modeNote: NSTextField
     /// One pull-down per `Slot`, in `Slot.allCases` order.
     private(set) var actionPopUps: [NSPopUpButton] = []
-    /// "Invert left and right" and "Freeze pointer": an NSButton checkbox or an NSSwitch,
-    /// as `toggleStyle` says.
+    /// "Invert left and right" and "Freeze pointer": switches, named by the rows they sit in.
     let invertToggle: NSControl
     let freezeToggle: NSControl
-    let toggleStyle: ToggleStyle
 
     /// Called after a control has written a setting (and the controls show it).
     var onChange: (() -> Void)?
@@ -215,11 +205,9 @@ final class MouseGestureSettingsControls: NSObject {
     /// - Parameter showLogiActions: also offer Logi actions in the action popups.
     init(
         showLogiActions: Bool,
-        toggleStyle: ToggleStyle = .checkboxes,
         isInteractiveAvailable: @escaping () -> Bool = { DockSwipeSynthesizer.shared.isAvailable }
     ) {
         self.showLogiActions = showLogiActions
-        self.toggleStyle = toggleStyle
         self.isInteractiveAvailable = isInteractiveAvailable
 
         modeControl = NSSegmentedControl(
@@ -240,9 +228,9 @@ final class MouseGestureSettingsControls: NSObject {
         modeNote.textColor = NSColor.secondaryLabelColor
         modeNote.isSelectable = false
 
-        invertToggle = Self.makeToggle(toggleStyle, titleKey: "gesture-invert-horizontal")
+        invertToggle = PreferencesGroupedForm.makeSwitch(target: nil, action: nil)
         invertToggle.identifier = Identifier.invertHorizontal
-        freezeToggle = Self.makeToggle(toggleStyle, titleKey: "gesture-freeze-pointer")
+        freezeToggle = PreferencesGroupedForm.makeSwitch(target: nil, action: nil)
         freezeToggle.identifier = Identifier.freezePointer
 
         super.init()
@@ -257,32 +245,13 @@ final class MouseGestureSettingsControls: NSObject {
         sync()
     }
 
-    private static func makeToggle(_ style: ToggleStyle, titleKey: String) -> NSControl {
-        switch style {
-        case .checkboxes:
-            return NSButton(checkboxWithTitle: NSLocalizedString(titleKey, comment: ""), target: nil, action: nil)
-        case .switches:
-            // Named by the row it sits in.
-            return PreferencesGroupedForm.makeSwitch(target: nil, action: nil)
-        }
-    }
-
-    /// On or off, for a checkbox or a switch.
+    /// On or off.
     static func isOn(_ toggle: NSControl) -> Bool {
-        switch toggle {
-        case let button as NSButton: return button.state == .on
-        case let toggle as NSSwitch: return toggle.state == .on
-        default: return false
-        }
+        return (toggle as? NSSwitch)?.state == .on
     }
 
     static func setOn(_ on: Bool, _ toggle: NSControl) {
-        let state: NSControl.StateValue = on ? .on : .off
-        switch toggle {
-        case let button as NSButton: button.state = state
-        case let toggle as NSSwitch: toggle.state = state
-        default: break
-        }
+        (toggle as? NSSwitch)?.state = on ? .on : .off
     }
 
     /// The popup that edits `slot`.

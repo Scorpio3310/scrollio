@@ -182,14 +182,14 @@ final class PreferencesApplicationTests: XCTestCase {
         let rows = controller.list.rows
         XCTAssertEqual(rows.map { $0.id as? String }, [Self.calculator, Self.textEditProgram, "/Applications/Renamed Test.app"])
         XCTAssertEqual(rows.map(\.title), ["Calculator", "TextEdit", "My Renamed App"])
-        XCTAssertEqual(rows.map(\.explanation), ["Own scrolling settings", "Uses your scrolling settings", "Uses your scrolling settings"])
+        XCTAssertEqual(rows.map(\.explanation), ["Uses its own scrolling settings", "Uses your scrolling settings", "Uses your scrolling settings"])
         for row in rows {
             let icon = try XCTUnwrap(row.iconView, row.title)
             XCTAssertNotNil(icon.image, row.title)
             XCTAssertEqual(icon.image?.isTemplate, false, "an app's own icon, not a symbol")
             XCTAssertNotNil(row.chevronView, "\(row.title) opens a page of its own")
         }
-        XCTAssertEqual(rows[0].accessibilityLabel(), "Calculator, Own scrolling settings")
+        XCTAssertEqual(rows[0].accessibilityLabel(), "Calculator, Uses its own scrolling settings")
         XCTAssertEqual(rows[1].toolTip, Self.textEditProgram)
     }
 
@@ -499,7 +499,7 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertFalse(calculator.inherit)
         XCTAssertTrue(rows.allSatisfy(\.isEnabled))
         XCTAssertEqual(scrolling.scrollSpeedSlider.doubleValue, 1.5, accuracy: 1e-9)
-        XCTAssertEqual(controller.list.rows.first?.explanation, "Own scrolling settings")
+        XCTAssertEqual(controller.list.rows.first?.explanation, "Uses its own scrolling settings")
     }
 
     func testThePageFollowsAdvancedAndTheSettingsEditOnlyTheApp() throws {
@@ -619,7 +619,7 @@ final class PreferencesApplicationTests: XCTestCase {
         )
         let controller = makeController()
         XCTAssertEqual(controller.list.rows.map(\.title), ["Calculator", "Editor"])
-        XCTAssertEqual(controller.list.rows.map(\.explanation), ["Own scrolling settings", "Uses your scrolling settings"])
+        XCTAssertEqual(controller.list.rows.map(\.explanation), ["Uses its own scrolling settings", "Uses your scrolling settings"])
 
         controller.openApplication(withID: Self.calculatorProgram)
         let scrolling = try XCTUnwrap(controller.detailController?.scrollingController)

@@ -24,9 +24,16 @@ enum ScrollPreviewPalette {
         return adaptive(light: NSColor(white: 0, alpha: light), dark: NSColor(white: 1, alpha: dark))
     }
 
-    // The cards
+    // The cards (also the Mouse and Buttons cards). Under Increase Contrast the edge is as
+    // clear as the outline of the kit's boxes.
     static let cardFill = ink(0.04, 0.055)
-    static let cardEdge = ink(0.07, 0.09)
+    static let cardEdge = NSColor(name: nil) { appearance in
+        let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        if PreferencesGroupedForm.isHighContrast(appearance) {
+            return NSColor(white: dark ? 1 : 0, alpha: dark ? 0.5 : 0.45)
+        }
+        return NSColor(white: dark ? 1 : 0, alpha: dark ? 0.09 : 0.07)
+    }
 
     // The mouse and the key
     static let mouseFill = adaptive(light: .white, dark: NSColor(white: 0.27, alpha: 1))

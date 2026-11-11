@@ -41,7 +41,7 @@ enum ButtonTriggerNaming {
     }
 
     /// "Left button", "Back button", "Button 5"; Logitech: "Gesture button", "Mode shift
-    /// button", otherwise the control's name and "button".
+    /// button", "Thumb panel", otherwise the control's name and "button".
     static func buttonName(code: UInt16, logitech: Logitech = .live) -> String {
         switch code {
         case 0: return text("buttons-trigger-left")
@@ -61,10 +61,20 @@ enum ButtonTriggerNaming {
             case .forward?: return text("buttons-trigger-forward")
             case nil:
                 let name = logitech.name(code) ?? String(Int(code))
+                if let plain = plainLogitechNames[name] {
+                    return text(plain)
+                }
                 return String(format: text("buttons-trigger-logitech"), name)
             }
         }
     }
+
+    /// Logitech's names that the other panes say in plain words: the MX Master 4's haptic
+    /// sense panel is the Mouse pane's "thumb panel", and "DPI" is jargon.
+    private static let plainLogitechNames: [String: String] = [
+        "Haptic": "buttons-trigger-thumb-panel",
+        "DPI Switch": "buttons-trigger-pointer-speed",
+    ]
 
     // MARK: - Keyboard shortcuts as actions
 

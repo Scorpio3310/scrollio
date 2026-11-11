@@ -2,8 +2,8 @@
 //  ButtonBindingRow.swift
 //  Mos
 //  One button of the Buttons pane: a row of the kit's list with the button's name, a line
-//  under it only when there is something to say (what the action needs, or a problem in
-//  orange), an ⓘ that explains a problem, and the action pull-down.
+//  under it only when there is something to say (what the action needs, or a problem after
+//  an orange sign), an ⓘ that explains a problem, and the action pull-down.
 //
 
 import Cocoa
@@ -30,9 +30,9 @@ struct ButtonRowNote: Equatable {
     enum Tone: Equatable {
         /// Secondary text, like any explanation.
         case plain
-        /// Orange, after a warning sign.
+        /// After an orange warning sign.
         case problem
-        /// Blue: a better way exists.
+        /// After a blue light bulb: a better way exists.
         case hint
     }
 
@@ -127,11 +127,18 @@ struct ButtonRowNote: Equatable {
 
 final class ButtonBindingRow: PreferencesListRow {
 
+    /// Between the ⓘ and the pull-down, and between the title and the ⓘ.
+    static let infoSpacing: CGFloat = 8
+
     private(set) var binding: ButtonBinding
     private(set) var note: ButtonRowNote?
     let pullDown: ButtonActionPullDown
-    /// The ⓘ before the pull-down; it shows while the note is a problem or a hint.
+    /// The ⓘ before the pull-down, on the title line; it shows while the note is a problem
+    /// or a hint. It is not part of the accessory: the note under the title runs on below
+    /// it, so a problem takes two lines, not three.
     let infoButton: NSButton
+    /// Keeps the title off the ⓘ while it shows.
+    private var titleBeforeInfo: NSLayoutConstraint?
 
     init(binding: ButtonBinding, title: String, note: ButtonRowNote?, pullDown: ButtonActionPullDown) {
         self.binding = binding
@@ -146,22 +153,24 @@ final class ButtonBindingRow: PreferencesListRow {
         info.imagePosition = .imageOnly
         info.contentTintColor = .secondaryLabelColor
         info.setAccessibilityLabel(NSLocalizedString("buttons-problem-info", comment: ""))
+        info.translatesAutoresizingMaskIntoConstraints = false
         infoButton = info
-
-        let accessory = NSStackView(views: [info, pullDown])
-        accessory.orientation = .horizontal
-        accessory.alignment = .centerY
-        accessory.spacing = 8
-        accessory.detachesHiddenViews = true
 
         super.init(
             id: binding.id,
             title: title,
             explanation: note?.text,
-            accessory: accessory,
+            accessory: pullDown,
             centeredOn: pullDown,
             controls: [pullDown]
         )
+        addSubview(info)
+        let spacing = Self.infoSpacing
+        NSLayoutConstraint.activate([
+            info.trailingAnchor.constraint(equalTo: pullDown.leadingAnchor, constant: -spacing),
+            info.centerYAnchor.constraint(equalTo: pullDown.centerYAnchor),
+        ])
+        titleBeforeInfo = titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: info.leadingAnchor, constant: -spacing)
         applyNote()
     }
 
@@ -184,23 +193,44 @@ final class ButtonBindingRow: PreferencesListRow {
     private func applyNote() {
         let details = note?.hasDetails ?? false
         infoButton.isHidden = !details
+        titleBeforeInfo?.isActive = details
         infoButton.toolTip = details ? note?.detailTitle : nil
         infoButton.setAccessibilityHelp(details ? note?.detailTitle : nil)
         applyEnabled()
     }
 
-    /// The note's colour, and its sign before the text; white on the selection.
+    /// The colour of the note's sign: orange for a problem, blue for a hint.
+    static func symbolColor(for tone: ButtonRowNote.Tone) -> NSColor {
+        return tone == .problem ? .systemOrange : .systemBlue
+    }
+
+    /// The note's sign before its text, the sign in its colour and the text in the colour
+    /// of any explanation (orange or blue text is too faint on a light box to read); all
+    /// white on the selection.
     override func applyEnabled() {
         super.applyEnabled()
+        // The ⓘ draws like the pull-down: light on the accent-coloured selection.
+        infoButton.appearance = accessory?.appearance
+        infoButton.contentTintColor = isHighlighted ? .alternateSelectedControlTextColor : .secondaryLabelColor
         guard let note, note.tone != .plain else { return }
-        let color: NSColor
+        let symbolColor: NSColor
+        let textColor: NSColor
         if isHighlighted {
-            color = NSColor.alternateSelectedControlTextColor.withAlphaComponent(0.85)
+            symbolColor = NSColor.alternateSelectedControlTextColor.withAlphaComponent(0.85)
+            textColor = symbolColor
         } else {
-            color = note.tone == .problem ? .systemOrange : .systemBlue
+            symbolColor = Self.symbolColor(for: note.tone)
+            textColor = PreferencesGroupedForm.explanationColor(enabled: isEnabled)
         }
         let symbol = note.tone == .problem ? "exclamationmark.triangle.fill" : "lightbulb.fill"
-        explanationLabel.attributedStringValue = Self.noteText(note.text, symbol: symbol, color: color, font: explanationLabel.font)
+        explanationLabel.attributedStringValue = Self.noteText(
+            note.text, symbol: symbol, symbolColor: symbolColor, textColor: textColor, font: explanationLabel.font
+        )
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        infoButton.appearance = accessory?.appearance
     }
 
     /// The note as text: the label holds the sign in front of it.
@@ -215,21 +245,26 @@ final class ButtonBindingRow: PreferencesListRow {
         return "\(title), \(note.text)"
     }
 
-    static func noteText(_ text: String, symbol: String, color: NSColor, font: NSFont?) -> NSAttributedString {
+    static func noteText(_ text: String, symbol: String, symbolColor: NSColor, textColor: NSColor, font: NSFont?) -> NSAttributedString {
         let font = font ?? PreferencesGroupedForm.explanationFont
         let result = NSMutableAttributedString()
         let configuration = NSImage.SymbolConfiguration(pointSize: font.pointSize, weight: .regular)
-            .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+            .applying(NSImage.SymbolConfiguration(paletteColors: [symbolColor]))
         if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(configuration) {
             let attachment = NSTextAttachment()
             attachment.image = image
             let size = image.size
             attachment.bounds = NSRect(x: 0, y: (font.capHeight - size.height) / 2, width: size.width, height: size.height)
             result.append(NSAttributedString(attachment: attachment))
-            result.append(NSAttributedString(string: " "))
+            result.append(NSAttributedString(string: " ", attributes: [.foregroundColor: symbolColor]))
         }
+        let start = result.length
         result.append(NSAttributedString(string: text))
-        result.addAttributes([.font: font, .foregroundColor: color], range: NSRange(location: 0, length: result.length))
+        result.addAttribute(.font, value: font, range: NSRange(location: 0, length: result.length))
+        if start > 0 {
+            result.addAttribute(.foregroundColor, value: symbolColor, range: NSRange(location: 0, length: start))
+        }
+        result.addAttribute(.foregroundColor, value: textColor, range: NSRange(location: start, length: result.length - start))
         return result
     }
 }

@@ -160,6 +160,31 @@ final class PreferencesGroupedFormTests: XCTestCase {
         }
     }
 
+    /// Increase Contrast: the boxes get an outline and the preview cards a clear edge, as
+    /// System Settings outlines its boxes.
+    func testBoxesAndCardsAreOutlinedUnderIncreaseContrast() throws {
+        let box = PreferencesGroupBox(width: 300, rows: [PreferencesGroupRow(title: "Row")])
+        let list = PreferencesListBox(width: 300, emptyTitle: "Nothing yet")
+        for view in [box, list] as [NSView] {
+            view.appearance = NSAppearance(named: .aqua)
+        }
+        XCTAssertFalse(box.drawsOutline)
+        XCTAssertFalse(list.drawsOutline)
+        XCTAssertLessThan(resolve(ScrollPreviewPalette.cardEdge, in: .aqua).alpha, 0.1)
+        XCTAssertLessThan(resolve(ScrollPreviewPalette.cardEdge, in: .darkAqua).alpha, 0.1)
+
+        for name in [NSAppearance.Name.accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua] {
+            let appearance = try XCTUnwrap(NSAppearance(named: name))
+            // Some systems hand out the plain appearance while Increase Contrast is off.
+            guard appearance.name.rawValue.contains("Accessibility") else { continue }
+            box.appearance = appearance
+            list.appearance = appearance
+            XCTAssertTrue(box.drawsOutline, name.rawValue)
+            XCTAssertTrue(list.drawsOutline, name.rawValue)
+            XCTAssertGreaterThanOrEqual(resolve(ScrollPreviewPalette.cardEdge, in: name).alpha, 0.4, name.rawValue)
+        }
+    }
+
     func testAStoryboardBoxCanTakeTheLookOfTheKit() {
         let box = NSBox()
         Form.styleAsGroupBox(box)
@@ -593,6 +618,16 @@ final class PreferencesGroupedFormTests: XCTestCase {
         row.isEnabled = false
         XCTAssertFalse(recorder.isEnabled)
         XCTAssertTrue(clear.isEnabled, "the caller decides about controls it did not name")
+
+        // A pop-up shows its value: it is named by the row, also in a list, whose row
+        // speaks for its title (VoiceOver: "Back button, Copy, pop-up button").
+        let popUp = NSPopUpButton(frame: .zero, pullsDown: true)
+        popUp.addItem(withTitle: "Copy")
+        let listRow = PreferencesListRow(id: 1, title: "Back button", accessory: popUp)
+        XCTAssertEqual(popUp.accessibilityLabel(), "Back button")
+        XCTAssertFalse(listRow.titleLabel.isAccessibilityElement())
+        listRow.title = "⌥ Back button"
+        XCTAssertEqual(popUp.accessibilityLabel(), "⌥ Back button")
     }
 
     // MARK: - Box
@@ -1062,14 +1097,15 @@ final class PreferencesGroupedFormTests: XCTestCase {
         XCTAssertEqual(empty.title, "Nothing yet")
         XCTAssertEqual(empty.explanation, "Click + to add one.")
 
-        // Centred and dimmed, with more room than a row.
+        // Centred, in the secondary colour (readable: it says what to do), with more room
+        // than a row.
         let box = frame(of: list, in: root)
         let title = frame(of: empty.titleLabel, in: root)
         let explanation = frame(of: empty.explanationLabel, in: root)
         XCTAssertEqual(title.midX, box.midX, accuracy: 1)
         XCTAssertEqual(explanation.midX, box.midX, accuracy: 1)
-        XCTAssertEqual(empty.titleLabel.textColor, .tertiaryLabelColor)
-        XCTAssertEqual(empty.explanationLabel.textColor, .tertiaryLabelColor)
+        XCTAssertEqual(empty.titleLabel.textColor, .secondaryLabelColor)
+        XCTAssertEqual(empty.explanationLabel.textColor, .secondaryLabelColor)
         XCTAssertEqual(empty.titleLabel.font, Form.titleFont)
         XCTAssertEqual(empty.explanationLabel.font, Form.explanationFont)
         XCTAssertEqual(frame(of: empty, in: root).maxY - title.maxY, PreferencesListBox.emptyRowVerticalInset, accuracy: 0.5)

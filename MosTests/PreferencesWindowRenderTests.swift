@@ -284,9 +284,11 @@ final class PreferencesWindowRenderTests: XCTestCase {
         name: String,
         source: ButtonsDeviceSource,
         scrollKeys: [ScrollHotkey] = [],
+        key: Bool = true,
+        windowHeight: CGFloat? = nil,
         then change: @escaping (PreferencesButtonsViewController) -> Void = { _ in }
     ) throws {
-        try renderPane(PANEL_IDENTIFIER.buttons, name: name, prepare: { preferences in
+        try renderPane(PANEL_IDENTIFIER.buttons, name: name, key: key, windowHeight: windowHeight, prepare: { preferences in
             guard let buttons = preferences.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController else { return }
             buttons.deviceSource = source
             buttons.scrollHoldKeys = { scrollKeys }
@@ -358,6 +360,138 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 })
             }
         }
+    }
+
+    // MARK: - States for the final visual check
+
+    /// The tallest panes at the window's minimum height: the column as the window shows it.
+    func testRenderMinimumHeight() throws {
+        let minimum = PreferencesWindowLayout.minimumContentHeight
+        Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+        try renderPane(PANEL_IDENTIFIER.scrolling, name: "min-scrolling-advanced", windowHeight: minimum, prepare: { preferences in
+            (preferences.controller(for: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)?
+                .uiStateDefaults = self.uiDefaults(advanced: true)
+        })
+        Options.shared.logiMouse = .default
+        Options.shared.logiWheel = LogiWheelSettings(managedByMos: true)
+        try renderMouse([MouseDeviceFixtures.mxMaster4()], name: "min-mouse-managed", windowHeight: minimum)
+        Options.shared.logiWheel = .default
+        Options.shared.buttons.binding = [
+            binding(3, SystemShortcut.mouseGestureNavigation.identifier),
+            binding(4, SystemShortcut.mosScrollDash.identifier),
+            binding(2, SystemShortcut.missionControl.identifier),
+            binding(5, SystemShortcut.copy.identifier),
+            binding(6, ""),
+        ]
+        let plain = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { "MX Master 4" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+        try renderButtons(name: "min-buttons", source: plain, windowHeight: minimum)
+        var gesture = MouseGestureSettings.default
+        gesture.mode = .interactive
+        gesture.deviceTracking = true
+        Options.shared.gesture = gesture
+        try renderPane(GesturesPreferencesViewController.tabIdentifier, name: "min-gestures-follow", windowHeight: minimum, replacement: {
+            let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+            gestures.deviceSource = MouseGestureDeviceSource(support: { MouseGestureDeviceSupport(deviceTracking: true, haptics: true) }, refresh: {})
+            gestures.bindingSummary = {
+                MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: true, buttonTitles: ["Gesture button"])
+            }
+            return gestures
+        }, afterLoad: { controller in
+            guard let gestures = controller as? GesturesPreferencesViewController else { return }
+            gestures.previewView.prefersReducedMotion = { true }
+            gestures.previewView.reduceMotionDidChange()
+        })
+        let stored = Options.shared.application.applications
+        addTeardownBlock { Options.shared.application.applications = stored }
+        let calculator = Application(path: "/System/Applications/Calculator.app")
+        calculator.inherit = false
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [calculator], matchKey: "path")
+        let defaults = uiDefaults(advanced: true)
+        try renderPane(PANEL_IDENTIFIER.application, name: "min-app-page-own-advanced", windowHeight: minimum, prepare: { preferences in
+            (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                .uiStateDefaults = defaults
+        }, afterLoad: { controller in
+            (controller as? PreferencesApplicationViewController)?.openApplication(withID: calculator.path)
+        })
+    }
+
+    /// Long names: a Logitech control with a long name, every modifier, a long action, a
+    /// long mouse name, a problem note on each row; a selection in a window that is not key.
+    func testRenderButtonsLongNames() throws {
+        let all = UInt(CGEventFlags.maskControl.rawValue | CGEventFlags.maskAlternate.rawValue
+            | CGEventFlags.maskShift.rawValue | CGEventFlags.maskCommand.rawValue)
+        Options.shared.buttons.binding = [
+            binding(2214, SystemShortcut.mosScrollDash.identifier),
+            binding(2253, SystemShortcut.logiDPICycleUp.identifier),
+            binding(4, SystemShortcut.missionControl.identifier, modifiers: all),
+            binding(1001, SystemShortcut.logiSmartShiftToggle.identifier),
+            binding(1000, ""),
+        ]
+        let source = ButtonsDeviceSource(
+            captureStatus: { code in
+                switch code {
+                case 2214: return .contended
+                case 2253: return .conflict(.foreignDivert)
+                case 1001: return .bleHIDPPUnstable
+                default: return .normal
+                }
+            },
+            deviceName: { "MX Master 3S for Mac with a very long name" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        try renderButtons(name: "buttons-long-names", source: source, scrollKeys: [ScrollHotkey(type: .mouse, code: 4)])
+        try renderButtons(name: "buttons-long-names-selected", source: source, scrollKeys: [ScrollHotkey(type: .mouse, code: 4)]) { buttons in
+            buttons.list.select(buttons.rows[0].id)
+        }
+        Options.shared.buttons.binding = [
+            binding(3, SystemShortcut.mouseGestureNavigation.identifier),
+            binding(4, SystemShortcut.mosScrollDash.identifier),
+            binding(5, SystemShortcut.copy.identifier),
+        ]
+        let plain = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+        try renderButtons(name: "buttons-selected-not-key", source: plain, key: false) { buttons in
+            buttons.list.select(buttons.rows[1].id)
+        }
+    }
+
+    /// The ⓘ popover of each kind of problem, in the popover's material.
+    func testRenderButtonProblemPopovers() throws {
+        let kinds: [(String, ButtonCapturePresentationStatus?)] = [
+            ("conflict", .conflict(.foreignDivert)),
+            ("contended", .contended),
+            ("bluetooth", .bleHIDPPUnstable),
+            ("standard-button", .standardMouseAliasAvailable),
+            ("scroll-key", nil),
+        ]
+        for (name, status) in kinds {
+            let note: ButtonRowNote?
+            if let status {
+                note = ButtonRowNote.make(for: binding(1006, SystemShortcut.copy.identifier), captureStatus: status, scrollHoldKeys: [], standardButtonName: "Back button")
+            } else {
+                note = ButtonRowNote.make(for: binding(4, SystemShortcut.copy.identifier), captureStatus: .normal, scrollHoldKeys: [ScrollHotkey(type: .mouse, code: 4)])
+            }
+            let controller = ButtonProblemPopoverController(note: try XCTUnwrap(note))
+            let view = controller.view
+            view.setFrameSize(view.fittingSize)
+            try renderInPopoverMaterial(view, name: "buttons-popover-\(name)")
+        }
+    }
+
+    /// Apps with long names, and the page of one of them.
+    func testRenderAppsLongNames() throws {
+        let stored = Options.shared.application.applications
+        addTeardownBlock { Options.shared.application.applications = stored }
+        let long = Application(path: "/Applications/Microsoft Visual Studio Code Insiders Edition With A Long Name.app")
+        long.displayName = "Microsoft Visual Studio Code Insiders Edition With A Very Long Name"
+        long.inherit = false
+        let calculator = Application(path: "/System/Applications/Calculator.app")
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [long, calculator], matchKey: "path")
+        Options.shared.application.allowlist = false
+        try renderPane(PANEL_IDENTIFIER.application, name: "apps-long-names", afterLoad: { controller in
+            (controller as? PreferencesApplicationViewController)?.list.select(long.path)
+        })
+        try renderPane(PANEL_IDENTIFIER.application, name: "app-page-long-name", afterLoad: { controller in
+            (controller as? PreferencesApplicationViewController)?.openApplication(withID: long.path)
+        })
     }
 
     // MARK: - Kit
@@ -434,8 +568,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
         return ButtonBinding(triggerEvent: trigger, systemShortcutName: action, isEnabled: !action.isEmpty)
     }
 
-    private func renderMouse(_ devices: [LogiMouseDeviceState], name: String) throws {
-        try renderPane(MousePreferencesViewController.tabIdentifier, name: name, prepare: { preferences in
+    private func renderMouse(_ devices: [LogiMouseDeviceState], name: String, windowHeight: CGFloat? = nil) throws {
+        try renderPane(MousePreferencesViewController.tabIdentifier, name: name, windowHeight: windowHeight, prepare: { preferences in
             guard let mouse = preferences.controller(for: MousePreferencesViewController.tabIdentifier)
                 as? MousePreferencesViewController else { return }
             mouse.deviceSource = MouseDeviceSource(deviceStates: { devices }, refresh: {}, showDiagnostics: {})
@@ -484,6 +618,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
         _ identifier: String,
         name: String,
         key: Bool = true,
+        windowHeight: CGFloat? = nil,
         prepare: @escaping (PreferencesSplitViewController) -> Void = { _ in },
         replacement: (() -> NSViewController)? = nil,
         afterLoad: @escaping (NSViewController) -> Void = { _ in }
@@ -500,11 +635,16 @@ final class PreferencesWindowRenderTests: XCTestCase {
             content.layoutSubtreeIfNeeded()
             let top = preferences.host.view.safeAreaInsets.top
             let paneHeight = max(controller.view.frame.height, controller.view.fittingSize.height)
-            let height = max(PreferencesWindowLayout.defaultContentHeight, ceil(paneHeight + top))
+            let height = windowHeight ?? max(PreferencesWindowLayout.defaultContentHeight, ceil(paneHeight + top))
             window.setContentSize(NSSize(width: content.frame.width, height: height))
             content.layoutSubtreeIfNeeded()
             let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
-            let column = preferences.host.scrollView.convert(preferences.host.scrollView.bounds, to: content)
+            // At a given window height: the column as the window shows it, the title bar's
+            // strip included, so a pane that does not fit shows where it is cut.
+            let scroll = preferences.host.scrollView!
+            let column = windowHeight == nil
+                ? scroll.convert(scroll.bounds, to: content)
+                : NSRect(x: scroll.convert(scroll.bounds, to: content).minX, y: 0, width: scroll.frame.width, height: content.frame.height)
             try write(content, rect: column, appearance: appearance, to: directory.appendingPathComponent("\(name)-\(suffix).png"))
         }
     }
@@ -626,7 +766,7 @@ private final class ListRenderController: NSViewController {
                 PreferencesListRow(id: "back", title: "⌥ Back button", explanation: "Hold and move the mouse. Set the directions under Gestures.",
                                    icon: .symbol("computermouse"), accessory: accessory, centeredOn: selectedPopUp, controls: [selectedPopUp]),
                 PreferencesListRow(id: "forward", title: "Forward button", icon: .symbol("arrow.right.circle"), accessory: popUp),
-                PreferencesListRow(id: "calculator", title: "Calculator", explanation: "Own scrolling settings",
+                PreferencesListRow(id: "calculator", title: "Calculator", explanation: "Uses its own scrolling settings",
                                    icon: .image(calculator), showsChevron: true),
                 PreferencesListRow(id: "dimmed", title: "Button 6", explanation: "Choose what this button does.",
                                    icon: .symbol("questionmark.circle")),

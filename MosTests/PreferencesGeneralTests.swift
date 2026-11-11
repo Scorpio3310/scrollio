@@ -323,7 +323,7 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertEqual(pane.scrollMonitorRow.title, "Scroll monitor")
         XCTAssertEqual(pane.scrollMonitorRow.explanation, "A live chart of wheel events. Scrolling is slower while it's open.")
         XCTAssertEqual(pane.diagnosticsRow.title, "Logitech diagnostics")
-        XCTAssertEqual(pane.diagnosticsRow.explanation, "HID++ details of connected Logitech mice, for troubleshooting.")
+        XCTAssertEqual(pane.diagnosticsRow.explanation, "Technical details of connected Logitech mice, for troubleshooting.")
         XCTAssertEqual(pane.scrollMonitorButton.title, "Open…")
         XCTAssertEqual(pane.diagnosticsButton.title, "Open…")
 

@@ -548,9 +548,10 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(Options.shared.gesture.rightAction, SystemShortcut.moveSpaceRight.identifier)
 
         // "Invert left and right" keeps working in follow mode.
-        let invert = find(MouseGestureSettingsControls.Identifier.invertHorizontal, in: view) as! NSButton
+        let invert = find(MouseGestureSettingsControls.Identifier.invertHorizontal, in: view) as! NSSwitch
         XCTAssertTrue(invert.isEnabled)
-        invert.performClick(nil)
+        invert.state = .on
+        invert.sendAction(invert.action, to: invert.target)
         XCTAssertTrue(Options.shared.gesture.invertHorizontal)
 
         mode.selectedSegment = 0
@@ -700,11 +701,11 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         wait(for: [queuedWorkFinished], timeout: 1)
     }
 
-    /// The gesture controls with checkboxes, in a view of their own.
+    /// The gesture controls, in a view of their own.
     private func makeControlsView(isInteractiveAvailable: (() -> Bool)? = nil) -> NSView {
         let controls = isInteractiveAvailable.map {
-            MouseGestureSettingsControls(showLogiActions: false, toggleStyle: .checkboxes, isInteractiveAvailable: $0)
-        } ?? MouseGestureSettingsControls(showLogiActions: false, toggleStyle: .checkboxes)
+            MouseGestureSettingsControls(showLogiActions: false, isInteractiveAvailable: $0)
+        } ?? MouseGestureSettingsControls(showLogiActions: false)
         retainedControls.append(controls)
         let view = NSView()
         for control in [controls.modeControl, controls.modeNote, controls.invertToggle, controls.freezeToggle] + controls.actionPopUps {

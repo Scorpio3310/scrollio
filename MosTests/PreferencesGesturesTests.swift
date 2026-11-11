@@ -479,7 +479,7 @@ final class PreferencesGesturesTests: XCTestCase {
         summary = MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: true, buttonTitles: ["Back button", "Gesture button"])
         controller.reload()
         XCTAssertFalse(row.isHidden, "always shown")
-        XCTAssertEqual(row.explanation, "Back button and Gesture button")
+        XCTAssertEqual(row.explanation, "Assigned to Back button and Gesture button.")
         XCTAssertEqual(controller.gestureButtonButton.title, "Change…")
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
         // The old line under the boxes is gone.
@@ -500,7 +500,10 @@ final class PreferencesGesturesTests: XCTestCase {
             isLogitechCode: { $0 >= 1000 }
         )
         XCTAssertEqual(summary.buttonTitles, ["Back button", "⌥ Forward button"])
-        XCTAssertEqual(summary.gestureButtonExplanation, "Back button and ⌥ Forward button")
+        XCTAssertEqual(summary.gestureButtonExplanation, "Assigned to Back button and ⌥ Forward button.")
+        // An MX Master's own gesture button is not named twice under the row's title.
+        XCTAssertEqual(MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: true, buttonTitles: ["Gesture button"])
+            .gestureButtonExplanation, "Assigned to Gesture button.")
         XCTAssertEqual(MouseGestureBindingSummary(bindings: [], isLogitechCode: { _ in false }).gestureButtonExplanation,
                        "No button has the action Gesture Navigation yet.")
     }

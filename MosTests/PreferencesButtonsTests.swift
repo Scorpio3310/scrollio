@@ -164,6 +164,10 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(logitech(1006), "Back button")
         XCTAssertEqual(logitech(1007), "Forward button")
         XCTAssertEqual(logitech(2000 + 0x005B), "Left Tilt button")
+        // In the words of the other panes: the MX Master 4's haptic sense panel is the Mouse
+        // pane's thumb panel, and no "DPI".
+        XCTAssertEqual(logitech(2000 + 0x01A0), "Thumb panel")
+        XCTAssertEqual(logitech(2000 + 0x00FD), "Pointer speed button")
     }
 
     func testRowTitlesPutModifiersInFrontInMenuOrder() {
@@ -206,6 +210,22 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertNil(part(3, type: .keyboard))
     }
 
+    /// Under Reduce Motion a part lights at once, without the fade; otherwise it fades in.
+    func testTheLitPartFollowsReduceMotion() {
+        let header = ButtonsHeaderView(frame: NSRect(x: 0, y: 0, width: 480, height: ButtonsHeaderView.preferredHeight))
+        let window = NSWindow(contentRect: header.frame, styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = header
+        addTeardownBlock { window.close() }
+        header.prefersReducedMotion = { true }
+        header.content = ButtonsHeaderContent(title: "Back button", subtitle: "Copy", part: .back)
+        XCTAssertEqual(header.artwork.highlights[.back]?.alphaValue, 1, "no fade under Reduce Motion")
+        XCTAssertEqual(header.artwork.highlights[.left]?.alphaValue, 0)
+        header.content = ButtonsHeaderContent(title: "Left button", subtitle: "Copy", part: .left)
+        XCTAssertEqual(header.artwork.highlights[.back]?.alphaValue, 0)
+        XCTAssertEqual(header.artwork.highlights[.left]?.alphaValue, 1)
+    }
+
     func testLogiCenterTellsTheRoleOfAControl() {
         let center = LogiCenter.shared
         XCTAssertEqual(center.controlRole(forMosCode: 1000), .gesture)
@@ -232,7 +252,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(Content.make(deviceName: nil, boundCount: 4, isRecording: false, focus: focus),
                        Content(title: "Back button", subtitle: "No action", part: .back))
         XCTAssertEqual(Content.make(deviceName: nil, boundCount: 4, isRecording: true, focus: focus),
-                       Content(title: "Press a button", subtitle: "Or a key with ⌘, ⌥, ⌃ or ⇧. Press Esc to cancel.", part: nil))
+                       Content(title: "Press a button", subtitle: "Or a key with ⌘, ⌥, ⌃ or ⇧.\nPress Esc to cancel.", part: nil))
     }
 
     func testTheCardFollowsTheSelectedRowAndCountsOnlyBoundButtons() {
@@ -278,7 +298,7 @@ final class PreferencesButtonsTests: XCTestCase {
             XCTAssertTrue(row.infoButton.isHidden, row.title)
             XCTAssertEqual(row.explanationLabel.textColor, PreferencesGroupedForm.explanationColor(enabled: true))
             XCTAssertTrue(row.pullDown.pullsDown)
-            XCTAssertTrue(row.accessory?.subviews.contains(row.pullDown) ?? false)
+            XCTAssertTrue(row.accessory === row.pullDown)
             let width = row.pullDown.alignmentRect(forFrame: row.pullDown.frame).width
             XCTAssertEqual(width, 240, accuracy: 0.5)
         }
@@ -293,9 +313,9 @@ final class PreferencesButtonsTests: XCTestCase {
             binding(5, "copy", modifiers: option), binding(4, "copy"),
         ])
         XCTAssertEqual(pane.rows.map(\.explanation), [
-            "Another app may be using this button.",
+            "Another app may use this button.",
             "Logi Options+ keeps taking this button over.",
-            "May stop working while Logi Options+ runs. The receiver is more reliable.",
+            "May stop working while Logi Options+ runs.",
             "Can use the standard Back button instead.",
             "Also set under Scrolling › While you hold a key.",
             nil,
@@ -305,14 +325,20 @@ final class PreferencesButtonsTests: XCTestCase {
             XCTAssertFalse(row.infoButton.isHidden, row.title)
             XCTAssertEqual(row.infoButton.accessibilityLabel(), "More Info")
         }
-        // Orange text after a warning sign; the alias hint in blue.
+        // An orange warning sign before the text, a blue light bulb before the alias hint;
+        // the text itself in the colour of any explanation (orange or blue text is too
+        // faint to read on a light box).
         let conflict = pane.rows[0].explanationLabel.attributedStringValue
-        XCTAssertTrue(conflict.string.hasSuffix("Another app may be using this button."))
+        XCTAssertTrue(conflict.string.hasSuffix("Another app may use this button."))
         XCTAssertTrue(conflict.containsAttachments(in: NSRange(location: 0, length: conflict.length)))
-        XCTAssertEqual(conflict.attribute(.foregroundColor, at: conflict.length - 1, effectiveRange: nil) as? NSColor, .systemOrange)
+        XCTAssertEqual(conflict.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .systemOrange)
+        XCTAssertEqual(conflict.attribute(.foregroundColor, at: conflict.length - 1, effectiveRange: nil) as? NSColor,
+                       PreferencesGroupedForm.explanationColor(enabled: true))
         let hint = pane.rows[3].explanationLabel.attributedStringValue
-        XCTAssertEqual(hint.attribute(.foregroundColor, at: hint.length - 1, effectiveRange: nil) as? NSColor, .systemBlue)
-        XCTAssertEqual(pane.rows[0].accessibilityLabel(), "Gesture button, Another app may be using this button.")
+        XCTAssertEqual(hint.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .systemBlue)
+        XCTAssertEqual(hint.attribute(.foregroundColor, at: hint.length - 1, effectiveRange: nil) as? NSColor,
+                       PreferencesGroupedForm.explanationColor(enabled: true))
+        XCTAssertEqual(pane.rows[0].accessibilityLabel(), "Gesture button, Another app may use this button.")
 
         // The ⓘ explains, in plain words.
         let popover = try XCTUnwrap(pane.showProblem(of: pane.rows[0], relativeTo: pane.rows[0].infoButton))
@@ -324,6 +350,37 @@ final class PreferencesButtonsTests: XCTestCase {
         let scrollKey = try XCTUnwrap(pane.showProblem(of: pane.rows[4], relativeTo: pane.rows[4].infoButton))
         _ = scrollKey.view
         XCTAssertEqual(scrollKey.titleLabel.stringValue, "Also a key under Scrolling")
+    }
+
+    /// The ⓘ sits on the title line just before the pull-down, and the note under the title
+    /// runs on below it: no problem takes more than two lines.
+    func testProblemNotesRunUnderTheInfoButtonInTwoLinesAtMost() throws {
+        captureStatus = [1000: .conflict(.foreignDivert), 1001: .contended, 1002: .bleHIDPPUnstable, 1006: .standardMouseAliasAvailable]
+        scrollKeys = [ScrollHotkey(type: .mouse, code: 5)]
+        let pane = makePane([
+            binding(1000, "copy"), binding(1001, "copy"), binding(1002, "copy"), binding(1006, "copy"), binding(5, "copy"),
+        ])
+        pane.view.layoutSubtreeIfNeeded()
+        let oneLine = NSTextField(labelWithString: "Xg")
+        oneLine.font = PreferencesGroupedForm.explanationFont
+        let lineHeight = oneLine.fittingSize.height
+        let column = PreferencesButtonsViewController.boxWidth - 2 * PreferencesGroupedForm.rowHorizontalInset
+            - ButtonActionPullDown.width - PreferencesGroupedForm.controlSpacing
+        for row in pane.rows {
+            XCTAssertTrue(row.accessory === row.pullDown, row.title)
+            XCTAssertFalse(row.infoButton.isHidden, row.title)
+            let info = row.infoButton.alignmentRect(forFrame: row.infoButton.frame)
+            let pullDown = row.pullDown.alignmentRect(forFrame: row.pullDown.frame)
+            XCTAssertEqual(info.maxX, pullDown.minX - ButtonBindingRow.infoSpacing, accuracy: 0.5, row.title)
+            XCTAssertEqual(info.midY, pullDown.midY, accuracy: 1, row.title)
+            XCTAssertLessThanOrEqual(row.titleLabel.frame.maxX, info.minX, row.title)
+            XCTAssertEqual(row.explanationLabel.preferredMaxLayoutWidth, column, accuracy: 0.5, row.title)
+            XCTAssertLessThanOrEqual(row.explanationLabel.frame.height, 2 * lineHeight + 1, row.title)
+        }
+        // Without a problem the ⓘ leaves the title its room.
+        let plain = makePane([binding(3, "copy")])
+        plain.view.layoutSubtreeIfNeeded()
+        XCTAssertTrue(try XCTUnwrap(plain.rows.first).infoButton.isHidden)
     }
 
     func testUseStandardButtonTurnsTheLogitechButtonIntoTheStandardOne() throws {
@@ -409,7 +466,7 @@ final class PreferencesButtonsTests: XCTestCase {
         pane.onRecordingStarted(recorder)
         XCTAssertTrue(pane.isRecording)
         XCTAssertEqual(pane.headerView.content.title, "Press a button")
-        XCTAssertEqual(pane.headerView.content.subtitle, "Or a key with ⌘, ⌥, ⌃ or ⇧. Press Esc to cancel.")
+        XCTAssertEqual(pane.headerView.content.subtitle, "Or a key with ⌘, ⌥, ⌃ or ⇧.\nPress Esc to cancel.")
         XCTAssertNil(pane.headerView.artwork.emphasis)
 
         let event = mouseEvent(4, modifiers: .maskAlternate)

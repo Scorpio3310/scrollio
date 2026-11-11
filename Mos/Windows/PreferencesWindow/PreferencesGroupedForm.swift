@@ -111,6 +111,20 @@ enum PreferencesGroupedForm {
         }
     }
 
+    /// Increase Contrast is on where `appearance` draws: System Settings then outlines its
+    /// boxes. Read from the name, as `PreferencesBackgroundView.plainAppearance` does.
+    static func isHighContrast(_ appearance: NSAppearance) -> Bool {
+        return appearance.name.rawValue.contains("Accessibility")
+    }
+
+    /// The outline of a box under Increase Contrast, half a point inside its edge.
+    static func drawOutline(of rect: NSRect) {
+        let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: boxCornerRadius - 0.5, yRadius: boxCornerRadius - 0.5)
+        path.lineWidth = 1
+        hairlineColor.setStroke()
+        path.stroke()
+    }
+
     static func titleColor(enabled: Bool) -> NSColor {
         return enabled ? .labelColor : .tertiaryLabelColor
     }
@@ -319,6 +333,11 @@ final class PreferencesGroupBox: NSView {
         needsDisplay = true
     }
 
+    /// Under Increase Contrast the box has an outline.
+    var drawsOutline: Bool {
+        return PreferencesGroupedForm.isHighContrast(effectiveAppearance)
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         let radius = PreferencesGroupedForm.boxCornerRadius
         PreferencesGroupedForm.boxFillColor.setFill()
@@ -326,6 +345,9 @@ final class PreferencesGroupBox: NSView {
         PreferencesGroupedForm.hairlineColor.setFill()
         for rect in separatorRects {
             rect.fill()
+        }
+        if drawsOutline {
+            PreferencesGroupedForm.drawOutline(of: bounds)
         }
     }
 }
@@ -674,10 +696,11 @@ class PreferencesGroupRow: NSView {
 
     /// Every control is named by the row's title and explained by its explanation. A
     /// button that shows a title of its own (a key recorder) keeps it and points at the
-    /// row's title instead.
+    /// row's title instead. A pop-up's title is its value, not its name: it is named by
+    /// the row (a list row's title is no accessibility element of its own to point at).
     private func labelControls() {
         for control in controls {
-            if let button = control as? NSButton, !button.title.isEmpty {
+            if let button = control as? NSButton, !(button is NSPopUpButton), !button.title.isEmpty {
                 button.setAccessibilityTitleUIElement(titleLabel)
             } else {
                 control.setAccessibilityLabel(titleLabel.stringValue)

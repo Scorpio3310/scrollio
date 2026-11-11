@@ -38,13 +38,13 @@
       }
     },
     "cvF-hf-KVW.title" : {
-      "comment" : "Class = \"NSWindow\"; title = \"Preferences\"; ObjectID = \"cvF-hf-KVW\";",
+      "comment" : "Class = \"NSWindow\"; title = \"Settings\"; ObjectID = \"cvF-hf-KVW\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Preferences"
+            "value" : "Settings"
           }
         }
       }
@@ -110,13 +110,13 @@
       }
     },
     "TUE-3v-CaJ.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Rendering this chart will affect scrolling performance. Close the window when not in use.\"; ObjectID = \"TUE-3v-CaJ\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"Scrolling is slower while this window is open. Close it when you're done.\"; ObjectID = \"TUE-3v-CaJ\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Rendering this chart will affect scrolling performance. Close the window when not in use."
+            "value" : "Scrolling is slower while this window is open. Close it when you're done."
           }
         }
       }

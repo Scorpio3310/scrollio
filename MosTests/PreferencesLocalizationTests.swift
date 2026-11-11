@@ -56,6 +56,7 @@ final class PreferencesLocalizationTests: XCTestCase {
     static let buttonsKeys = [
         "buttons-trigger-left", "buttons-trigger-right", "buttons-trigger-middle", "buttons-trigger-back",
         "buttons-trigger-forward", "buttons-trigger-number", "buttons-trigger-gesture", "buttons-trigger-mode-shift",
+        "buttons-trigger-thumb-panel", "buttons-trigger-pointer-speed",
         "buttons-trigger-logitech", "buttons-trigger-key",
         "buttons-header-your-mouse", "buttons-header-count", "buttons-header-one", "buttons-header-none",
         "buttons-header-no-action", "buttons-header-recording", "buttons-header-recording-hint",
@@ -85,7 +86,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "gesture-mode-interactive-description", "gesture-invert-horizontal-hint", "gesture-freeze-pointer-hint",
         "gesture-tracking-speed-label", "gesture-tracking-speed-hint", "gesture-tracking-speed-hint-discrete",
         "gesture-tracking-speed-slower", "gesture-tracking-speed-faster",
-        "gestures-gesture-button", "gestures-gesture-button-none", "gestures-gesture-button-set-up",
+        "gestures-gesture-button", "gestures-gesture-button-none", "gestures-gesture-button-bound", "gestures-gesture-button-set-up",
         "gestures-gesture-button-change", "gestures-directions-header", "gestures-directions-hint",
         "gestures-behaviour-header", "gestures-logitech-header", "gestures-logitech-needs",
         "mouse-gesture-device-tracking", "mouse-gesture-device-tracking-hint", "mouse-gesture-device-tracking-unavailable",
