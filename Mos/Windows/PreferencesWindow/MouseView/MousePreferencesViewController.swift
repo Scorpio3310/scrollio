@@ -175,6 +175,12 @@ final class MousePreferencesViewController: NSViewController {
             to: content
         )
 
+        // A refresh skips a pressed knob; a press let go without a move sends nothing, so
+        // the pane shows here what arrived meanwhile (it only reads, nothing is written).
+        for row in [trackingSpeedRow!, pointerSpeedRow!, sensitivityRow!, firmnessRow!, strengthRow!, pressForceRow!] {
+            row.slider.onPressEndedWithoutAction = { [weak self] in self?.syncControls() }
+        }
+
         rowParts = [
             (trackingSpeedRow, .body), (pointerAccelerationRow, .body),
             (pointerSpeedRow, .body),

@@ -996,6 +996,61 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertEqual(controller.sensitivityRow.valueText, MouseText.percent(80))
     }
 
+    /// A press that does not move a knob sends nothing; a mouse update that came while it
+    /// was held (the refresh skips a pressed knob) shows when it is let go. Nothing is
+    /// stored, nothing goes to the mouse or to macOS, no sample pulse plays.
+    func testAPressLetGoWithoutAMoveShowsWhatArrivedMeanwhile() throws {
+        // Managed, with no sensitivity or strength of your own: the sliders show the mouse's.
+        manage(sensitivity: nil)
+        Options.shared.logiMouse.hapticsOn = true
+        let controller = makeController([Fixtures.mxMaster4(hapticsOn: true, strength: 50, sensitivity: 50)])
+        let sensitivity = try XCTUnwrap(controller.sensitivitySlider as? PreferencesSlider)
+        let strength = try XCTUnwrap(controller.strengthSlider as? PreferencesSlider)
+        XCTAssertTrue(sensitivity.isEnabled)
+        XCTAssertTrue(strength.isEnabled)
+        let storedMouse = Options.shared.logiMouse
+        let storedWheel = Options.shared.logiWheel
+        XCTAssertEqual(controller.sensitivityRow.valueText, MouseText.percent(50))
+        let sensitivityKnob = sensitivity.doubleValue
+        let strengthKnob = strength.doubleValue
+
+        for slider in [sensitivity, strength] {
+            slider.beginTracking()
+            // AppKit sends on the press, the knob where it was: nothing goes out.
+            XCTAssertFalse(slider.sendAction(slider.action, to: slider.target))
+        }
+        devices = [Fixtures.mxMaster4(hapticsOn: true, strength: 100, sensitivity: 30)]
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(sensitivity.doubleValue, sensitivityKnob, "a pressed knob is left alone")
+        XCTAssertEqual(controller.sensitivityRow.valueText, MouseText.percent(50))
+        XCTAssertEqual(strength.doubleValue, strengthKnob)
+
+        sensitivity.endTracking()
+        XCTAssertEqual(controller.sensitivityRow.valueText, MouseText.percent(30), "shown once let go")
+        XCTAssertNotEqual(sensitivity.doubleValue, sensitivityKnob)
+        strength.endTracking()
+        XCTAssertEqual(controller.strengthRow.valueText, MouseText.percent(100))
+        XCTAssertNotEqual(strength.doubleValue, strengthKnob)
+
+        XCTAssertEqual(Options.shared.logiMouse, storedMouse, "nothing stored")
+        XCTAssertEqual(Options.shared.logiWheel, storedWheel)
+        XCTAssertEqual(sampleCount, 0, "no sample pulse")
+        XCTAssertEqual(mac.writes, 0)
+
+        // The macOS tracking speed: a value read during the press shows once let go,
+        // and nothing is written to macOS.
+        let tracking = try XCTUnwrap(controller.trackingSpeedSlider as? PreferencesSlider)
+        let trackingKnob = tracking.doubleValue
+        tracking.beginTracking()
+        mac.trackingSpeed = 3
+        controller.reloadMacPointerSettings()
+        XCTAssertEqual(tracking.doubleValue, trackingKnob)
+        tracking.endTracking()
+        XCTAssertEqual(tracking.doubleValue, Double(try XCTUnwrap(MacPointerSettings.trackingSpeeds.firstIndex(of: 3))))
+        XCTAssertEqual(mac.writes, 0, "nothing written to macOS")
+        XCTAssertEqual(Options.shared.logiMouse, storedMouse)
+    }
+
     // MARK: - The header lights up the part
 
     func testEachRowLightsUpItsPartOfTheMouse() {

@@ -551,6 +551,43 @@ final class PreferencesGroupedFormTests: XCTestCase {
         XCTAssertEqual(target.trackingStates, [true, true, false])
     }
 
+    /// A press let go without a move tells the pane (it may show a value that arrived
+    /// meanwhile), never with the action; a moved press sends the action and not that.
+    func testAPressLetGoWithoutAMoveTellsThePaneAndSendsNothing() {
+        let target = ActionCounter()
+        let row = PreferencesSliderRow(title: "Speed", range: 1...10, scale: .ticks(10, step: 0.5), target: target, action: #selector(ActionCounter.act(_:)))
+        let slider = row.slider
+        var unmoved = 0
+        slider.onPressEndedWithoutAction = { unmoved += 1 }
+        row.showValue(6.3)
+
+        slider.beginTracking()
+        XCTAssertFalse(slider.sendAction(slider.action, to: slider.target))
+        XCTAssertEqual(unmoved, 0, "not while pressed")
+        slider.endTracking()
+        XCTAssertEqual(unmoved, 1)
+        XCTAssertTrue(target.values.isEmpty, "no action")
+        slider.endTracking()
+        XCTAssertEqual(unmoved, 1, "once per press")
+
+        // Moved: the action goes out, the callback does not.
+        slider.beginTracking()
+        slider.doubleValue = 8
+        XCTAssertTrue(slider.sendAction(slider.action, to: slider.target))
+        slider.endTracking()
+        XCTAssertEqual(unmoved, 1)
+        XCTAssertEqual(target.values, [8, 8])
+
+        // Turned off during the press: nothing goes out, the pane hears it.
+        slider.beginTracking()
+        slider.isEnabled = false
+        slider.doubleValue = 3
+        slider.endTracking()
+        XCTAssertEqual(unmoved, 2)
+        XCTAssertEqual(target.values, [8, 8])
+        XCTAssertEqual(slider.doubleValue, 8)
+    }
+
     /// AppKit works the value out again from the knob's position when it is pressed: less
     /// than a point of travel is not a move.
     func testAPressMayShiftTheValueByLessThanAPointOfTravel() {
