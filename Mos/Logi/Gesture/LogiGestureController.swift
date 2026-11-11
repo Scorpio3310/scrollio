@@ -285,12 +285,25 @@ final class LogiGestureController {
     /// The mouse has a haptic motor Mos can pulse.
     var supportsHaptics: Bool { hapticFeatureIndex != nil }
 
+    /// A cue asked for before the mouse had said what it can play and whether haptics are
+    /// on. It is played when both answers are in, unless that takes longer than
+    /// `pendingCueLifetime`: a pulse long after the gesture would only confuse.
+    private var pendingCue: (cue: MouseGestureHapticCue, token: Int)?
+    private var pendingCueToken = 0
+    static let pendingCueLifetime: TimeInterval = 0.4
+
     /// Called when the feature index of 0x19B0 is known (or known to be missing).
     func setHapticFeature(index: UInt8?) {
         guard index != hapticFeatureIndex else { return }
         hapticFeatureIndex = index
         hapticsEnabled = nil
         hapticWaveformMask = nil
+        pendingCue = nil
+        if let index = index {
+            log("Haptics: feature at index \(String(format: "0x%02X", index)), reading waveforms and state")
+        } else {
+            log("Haptics: feature gone")
+        }
         onChange()
         refreshHaptics()
     }
@@ -308,29 +321,77 @@ final class LogiGestureController {
     func handleHapticResponse(functionId: UInt8, report: [UInt8]) {
         switch functionId {
         case LogiGestureProtocol.hapticCapabilitiesFunction:
-            guard let mask = LogiGestureProtocol.hapticWaveformMask(report) else { return }
+            guard let mask = LogiGestureProtocol.hapticWaveformMask(report) else {
+                log("Haptics: unreadable waveform answer \(Self.hex(report))")
+                return
+            }
+            if mask != hapticWaveformMask {
+                log("Haptics: waveform mask \(String(format: "0x%08X", mask)) from \(Self.hex(report))")
+            }
             hapticWaveformMask = mask
         case LogiGestureProtocol.hapticGetStateFunction:
-            guard let enabled = LogiGestureProtocol.hapticsEnabled(report) else { return }
+            guard let enabled = LogiGestureProtocol.hapticsEnabled(report) else {
+                log("Haptics: unreadable state answer \(Self.hex(report))")
+                return
+            }
+            if enabled != hapticsEnabled {
+                log("Haptics: switched \(enabled ? "on" : "off") on the mouse, state \(Self.hex(report))")
+            }
             hapticsEnabled = enabled
         default:
             return  // play acknowledgement, or somebody else's setState
         }
+        playPendingCueIfReady()
     }
 
     /// Plays the cue when the mouse can and the user has haptics on. Returns whether a
-    /// pulse was sent.
+    /// pulse was sent now; a cue that has to wait for the mouse's answers returns false and
+    /// is played when they arrive.
     @discardableResult
     func play(_ cue: MouseGestureHapticCue) -> Bool {
-        guard hapticFeatureIndex != nil else { return false }
-        guard let enabled = hapticsEnabled, let mask = hapticWaveformMask else {
-            // An answer got lost: ask again and skip this pulse.
-            refreshHaptics()
+        guard hapticFeatureIndex != nil else {
+            log("Haptic cue \(cue) skipped: this mouse has no haptic feature")
             return false
         }
-        let waveform = LogiGestureProtocol.waveform(for: cue)
-        guard enabled, LogiGestureProtocol.supports(waveform: waveform, mask: mask) else { return false }
+        guard let enabled = hapticsEnabled, let mask = hapticWaveformMask else {
+            // Not read yet, or an answer got lost: ask again and keep the cue for a moment.
+            log("Haptic cue \(cue) waits: state \(hapticsEnabled == nil ? "unknown" : "known"), waveforms \(hapticWaveformMask == nil ? "unknown" : "known")")
+            pendingCueToken += 1
+            let token = pendingCueToken
+            pendingCue = (cue, token)
+            refreshHaptics()
+            schedule(Self.pendingCueLifetime) { [weak self] in
+                guard let self = self, self.pendingCue?.token == token else { return }
+                self.pendingCue = nil
+                self.log("Haptic cue \(cue) dropped: the mouse did not answer in time")
+            }
+            return false
+        }
+        return send(cue, enabled: enabled, mask: mask)
+    }
+
+    private func playPendingCueIfReady() {
+        guard let pending = pendingCue, let enabled = hapticsEnabled, let mask = hapticWaveformMask else { return }
+        pendingCue = nil
+        send(pending.cue, enabled: enabled, mask: mask)
+    }
+
+    @discardableResult
+    private func send(_ cue: MouseGestureHapticCue, enabled: Bool, mask: UInt32) -> Bool {
+        guard enabled else {
+            log("Haptic cue \(cue) skipped: haptics are switched off on the mouse")
+            return false
+        }
+        guard let waveform = LogiGestureProtocol.waveform(for: cue, mask: mask) else {
+            log("Haptic cue \(cue) skipped: no usable waveform in mask \(String(format: "0x%08X", mask))")
+            return false
+        }
         sendHaptic(LogiGestureProtocol.hapticPlayFunction, [waveform])
+        log("Haptic cue \(cue): waveform \(String(format: "0x%02X", waveform)) sent")
         return true
+    }
+
+    private static func hex(_ bytes: [UInt8]) -> String {
+        return bytes.prefix(12).map { String(format: "%02X", $0) }.joined(separator: " ")
     }
 }

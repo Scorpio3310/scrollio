@@ -34,9 +34,13 @@ extension LogiSessionManager {
     /// was sent: false without such a mouse, without haptics, or with haptics switched off.
     @discardableResult
     func playGestureHaptic(_ cue: MouseGestureHapticCue, forMosCode code: UInt16) -> Bool {
-        guard let owner = gestureHoldOwners[code] else { return false }
+        guard let owner = gestureHoldOwners[code] else {
+            LogiSystemLog.note("Haptic cue \(cue) skipped: no mouse owns button code \(code)")
+            return false
+        }
         guard let session = owner.session else {
             gestureHoldOwners[code] = nil
+            LogiSystemLog.note("Haptic cue \(cue) skipped: the mouse of button code \(code) is gone")
             return false
         }
         return session.playGestureHaptic(cue, slot: owner.slot)

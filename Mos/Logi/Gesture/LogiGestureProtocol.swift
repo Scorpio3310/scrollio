@@ -142,6 +142,23 @@ enum LogiGestureProtocol {
         }
     }
 
+    /// The waveforms to try for a cue, best first: the intended one, then its nearest
+    /// relatives (collision / state change, damp before sharp).
+    static func waveformCandidates(for cue: MouseGestureHapticCue) -> [UInt8] {
+        switch cue {
+        case .lockIn: return [0x04, 0x03, 0x02, 0x01, 0x00]
+        case .commit: return [0x01, 0x00, 0x03, 0x02]
+        }
+    }
+
+    /// The waveform to play for a cue on a mouse with the given capabilities, or nil when it
+    /// lists none of the candidates. An empty mask means the list could not be read, not
+    /// that the motor can play nothing: the intended waveform is tried then.
+    static func waveform(for cue: MouseGestureHapticCue, mask: UInt32) -> UInt8? {
+        guard mask != 0 else { return waveform(for: cue) }
+        return waveformCandidates(for: cue).first { supports(waveform: $0, mask: mask) }
+    }
+
     /// getCapabilities answer: bit n set = the mouse can play waveform n.
     static func hapticWaveformMask(_ report: [UInt8]) -> UInt32? {
         guard report.count >= 12 else { return nil }

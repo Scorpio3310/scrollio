@@ -605,26 +605,69 @@ final class LogiGestureControllerTests: XCTestCase {
         XCTAssertEqual(haptics, [], "neither played nor switched back on")
     }
 
-    func testNoPulseForAWaveformTheMouseDoesNotList() {
-        // Only waveform 1.
+    func testAWaveformTheMouseDoesNotListFallsBackToARelatedOne() {
+        // Only waveform 1 (Damp State Change): the light cue uses it too.
         let controller = hapticController(waveforms: [0, 0, 0, 0, 0x00, 0x00, 0x00, 0x02])
-        XCTAssertFalse(controller.play(.lockIn))
+        XCTAssertTrue(controller.play(.lockIn))
         XCTAssertTrue(controller.play(.commit))
-        XCTAssertEqual(haptics, [Haptic(functionId: 4, params: [0x01])])
+        XCTAssertEqual(haptics, [Haptic(functionId: 4, params: [0x01]), Haptic(functionId: 4, params: [0x01])])
     }
 
-    func testUnknownStateIsAskedForAgainInsteadOfPlayingBlind() {
+    func testNoPulseWhenTheMouseListsNoneOfTheCandidates() {
+        // Only waveform 0x0A (Firework).
+        let controller = hapticController(waveforms: [0, 0, 0, 0, 0x00, 0x00, 0x04, 0x00])
+        XCTAssertFalse(controller.play(.lockIn))
+        XCTAssertFalse(controller.play(.commit))
+        XCTAssertEqual(haptics, [])
+    }
+
+    func testAnEmptyWaveformListStillTriesTheIntendedWaveform() {
+        let controller = hapticController(waveforms: [0, 0, 0, 0, 0, 0, 0, 0])
+        XCTAssertTrue(controller.play(.lockIn))
+        XCTAssertEqual(haptics, [Haptic(functionId: 4, params: [0x04])])
+    }
+
+    func testACueAskedForBeforeTheMouseAnsweredPlaysWhenTheAnswerArrives() {
         let controller = makeController()
         controller.setHapticFeature(index: 0x21)
         // Only the capabilities answer arrived.
         controller.handleHapticResponse(functionId: 0, report: hapticReport(functionId: 0, payload: Self.allWaveforms))
         haptics = []
 
-        XCTAssertFalse(controller.play(.lockIn))
-        XCTAssertEqual(haptics, [Haptic(functionId: 1, params: [])])
+        XCTAssertFalse(controller.play(.lockIn), "nothing is played blind")
+        XCTAssertEqual(haptics, [Haptic(functionId: 1, params: [])], "the missing state is asked for again")
 
         controller.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [0x01, 60]))
+        XCTAssertEqual(haptics.last, Haptic(functionId: 4, params: [0x04]), "the waiting cue plays with the answer")
+        haptics = []
+        // Only once.
+        controller.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [0x01, 60]))
+        XCTAssertEqual(haptics, [])
         XCTAssertTrue(controller.play(.lockIn))
+    }
+
+    func testAWaitingCueIsDroppedWhenTheAnswerComesTooLate() {
+        let controller = makeController()
+        controller.setHapticFeature(index: 0x21)
+        controller.handleHapticResponse(functionId: 0, report: hapticReport(functionId: 0, payload: Self.allWaveforms))
+        timers = []
+        XCTAssertFalse(controller.play(.commit))
+        XCTAssertEqual(timers.last?.delay, LogiGestureController.pendingCueLifetime)
+        timers.last?.work()
+        haptics = []
+
+        controller.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [0x01, 60]))
+        XCTAssertEqual(haptics, [], "a pulse long after the gesture would only confuse")
+    }
+
+    func testAWaitingCueIsNotPlayedWhenHapticsTurnOutToBeOff() {
+        let controller = makeController()
+        controller.setHapticFeature(index: 0x21)
+        controller.handleHapticResponse(functionId: 0, report: hapticReport(functionId: 0, payload: Self.allWaveforms))
+        XCTAssertFalse(controller.play(.lockIn))
+        haptics = []
+        controller.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [0x00, 60]))
+        XCTAssertEqual(haptics, [])
     }
 
     func testStateFollowsWhatTheMouseReportsLater() {

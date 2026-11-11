@@ -3061,6 +3061,7 @@ class LogiDeviceSession {
             },
             log: { message in
                 LogiDebugPanel.log(device: name, type: .info, message: "[Gesture slot \(String(format: "0x%02X", slot))] \(message)")
+                LogiSystemLog.note("[\(name) slot \(String(format: "0x%02X", slot))] \(message)")
             }
         )
         gestureControllers[slot] = controller
@@ -3189,7 +3190,11 @@ class LogiDeviceSession {
 
     @discardableResult
     func playGestureHaptic(_ cue: MouseGestureHapticCue, slot: UInt8) -> Bool {
-        return gestureControllers[slot]?.play(cue) ?? false
+        guard let controller = gestureControllers[slot] else {
+            LogiSystemLog.note("[\(deviceInfo.name)] Haptic cue \(cue) skipped: nothing known about slot \(String(format: "0x%02X", slot)) (known: \(gestureControllers.keys.sorted().map { String(format: "0x%02X", $0) }))")
+            return false
+        }
+        return controller.play(cue)
     }
 
     // MARK: - Force Sensing Button (0x19C0)
