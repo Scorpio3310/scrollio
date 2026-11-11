@@ -90,7 +90,8 @@ final class LogiGestureController {
     /// Controls the device itself reported with raw XY on although Mos did not set it now:
     /// left over from a Mos that died, or set by another app. Cleared the next time Mos
     /// writes that control. Read from getCidReporting, whose layout is the least certain
-    /// part of the research, so it is only ever used to send that one extra "raw XY off".
+    /// part of the research, so it is only ever used to send that one extra "raw XY off",
+    /// and only to a control that has the capability (`hasLeftoverRawXY`).
     private var leftoverRawXY: Set<UInt16> = []
     private var armAttempt = 0
     /// Usually zero or one entry; an array keeps the 125 Hz sample path free of allocations.
@@ -127,6 +128,12 @@ final class LogiGestureController {
         return rawXYRequest.contains(cid) && rawXYCapableCIDs.contains(cid) && !rejectedCIDs.contains(cid)
     }
 
+    /// The raw XY bits are never stated for a control without the capability, whatever a
+    /// reporting answer seemed to say.
+    private func hasLeftoverRawXY(_ cid: UInt16) -> Bool {
+        return leftoverRawXY.contains(cid) && rawXYCapableCIDs.contains(cid)
+    }
+
     // MARK: - Raw XY: reporting writes
 
     /// The flags for a divert change of one control, with raw XY folded in. The session
@@ -157,7 +164,7 @@ final class LogiGestureController {
 
     private func nextChange(cid: UInt16, divert: Bool) -> LogiGestureProtocol.ReportingChange {
         if divert && wantsRawXY(cid) { return .divertWithRawXY }
-        let rawXYMayBeOn = rawXYPhases[cid] != nil || leftoverRawXY.contains(cid)
+        let rawXYMayBeOn = rawXYPhases[cid] != nil || hasLeftoverRawXY(cid)
         if rawXYMayBeOn { return divert ? .divertWithoutRawXY : .undivertAndClearRawXY }
         return divert ? .divert : .undivert
     }
@@ -173,7 +180,7 @@ final class LogiGestureController {
         for cid in diverted.sorted() {
             let wants = wantsRawXY(cid)
             let isSet = rawXYPhases[cid] != nil
-            if wants != isSet || (!wants && leftoverRawXY.contains(cid)) {
+            if wants != isSet || (!wants && hasLeftoverRawXY(cid)) {
                 write(cid: cid, divert: true)
             }
         }

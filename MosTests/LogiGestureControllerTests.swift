@@ -379,6 +379,16 @@ final class LogiGestureControllerTests: XCTestCase {
         XCTAssertEqual(writes.count, 1, "another app may be using raw XY on that control")
     }
 
+    func testRawXYBitsAreNeverStatedForAControlWithoutTheCapability() {
+        let controller = makeController()
+        // Whatever that bit meant in the answer: the plain control only ever gets the plain bytes.
+        controller.noteDeviceReporting(cid: Self.plain, reportingFlags: 0x11)
+        applyUsage(controller, bound: [Self.plain], tracking: [Self.plain])
+        applyUsage(controller, bound: [Self.plain], tracking: [])
+        applyUsage(controller, bound: [], tracking: [])
+        XCTAssertEqual(writes, [Write(cid: Self.plain, flags: 0x03), Write(cid: Self.plain, flags: 0x02)])
+    }
+
     func testTheDevicesOwnReportOfAnArmedControlIsNotALeftover() {
         let controller = armedController()
         controller.noteDeviceReporting(cid: Self.gesture, reportingFlags: 0x11)
