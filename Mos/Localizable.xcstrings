@@ -5927,7 +5927,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "How far a turn scrolls sideways, compared with the main wheel."
+            "value": "How far a turn scrolls sideways."
           }
         }
       }
@@ -5975,7 +5975,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "For the sideways wheel of a mouse: the thumb wheel of an MX Master, or a wheel that tilts."
+            "value": "For the sideways wheel: an MX Master's thumb wheel, or a wheel that tilts."
           }
         }
       }

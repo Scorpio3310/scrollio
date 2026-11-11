@@ -268,9 +268,9 @@ final class PreferencesScrollingTests: XCTestCase {
             text("scrolling-smooth-hint"), text("scrolling-speed-hint"), text("scrolling-reverse-hint"),
             text("scrolling-glide-time-hint"), text("scrolling-step-hint"), text("scrolling-trackpad-events-hint"),
             text("scrolling-key-faster-hint"), text("scrolling-key-sideways-hint"), text("scrolling-key-pause-hint"),
-            "Thumb wheel", "Action", "Scrolls sideways.", "How far a turn scrolls sideways, compared with the main wheel.",
+            "Thumb wheel", "Action", "Scrolls sideways.", "How far a turn scrolls sideways.",
             "Swap direction", "Turns the thumb wheel around.",
-            "For the sideways wheel of a mouse: the thumb wheel of an MX Master, or a wheel that tilts.",
+            "For the sideways wheel: an MX Master's thumb wheel, or a wheel that tilts.",
         ]
         for line in expected {
             XCTAssertTrue(shown.contains(line), "\"\(line)\" is not on the tab")
@@ -911,12 +911,24 @@ final class PreferencesScrollingTests: XCTestCase {
     func testThumbWheelSpeedLineFollowsTheFunctionAndDimsWhenItHasNoEffect() {
         let controller = makeController()
         let row = controller.thumbWheelSpeedRow!
+        controller.view.layoutSubtreeIfNeeded()
         let height = controller.view.fittingSize.height
-        XCTAssertEqual(row.explanation, "How far a turn scrolls sideways, compared with the main wheel.")
+        let rowHeight = row.frame.height
+        // Both lines take one line: the row is as tall as the main Speed row, whatever the
+        // function.
+        let measure = NSTextField(wrappingLabelWithString: "X")
+        measure.font = PreferencesForm.hintFont
+        let oneLine = measure.fittingSize.height
+        XCTAssertEqual(rowHeight, controller.speedRow.frame.height, accuracy: 0.5)
+        XCTAssertEqual(row.explanation, "How far a turn scrolls sideways.")
+        XCTAssertEqual(row.explanationLabel.frame.height, oneLine, accuracy: 0.5)
         choose(.tabs, in: controller)
+        controller.view.layoutSubtreeIfNeeded()
         XCTAssertEqual(row.explanation, "How little of a turn it takes.")
+        XCTAssertEqual(row.explanationLabel.frame.height, oneLine, accuracy: 0.5)
         XCTAssertEqual(controller.thumbWheelSpeedSlider.accessibilityHelp(), "How little of a turn it takes.")
-        XCTAssertEqual(controller.view.fittingSize.height, height, "room for the longer line is kept")
+        XCTAssertEqual(controller.view.fittingSize.height, height, "the tab never jumps")
+        XCTAssertEqual(row.frame.height, rowHeight, accuracy: 0.5)
         XCTAssertTrue(row.isEnabled)
 
         set(controller.smoothSwitch, false)
@@ -1624,6 +1636,8 @@ final class PreferencesScrollingTests: XCTestCase {
             "scrolling-smooth-hint", "scrolling-speed-hint", "scrolling-reverse-hint",
             "scrolling-glide-time-hint", "scrolling-step-hint",
             "scrolling-key-faster-hint", "scrolling-key-sideways-hint", "scrolling-key-pause-hint",
+            "thumb-wheel-function-scroll-hint", "scrolling-thumb-wheel-speed-hint-scroll", "scrolling-thumb-wheel-swap-hint",
+            "scrolling-thumb-wheel-note",
         ]
         let fields = allSubviews(of: controller.view).compactMap { $0 as? NSTextField }
         for key in keys {
