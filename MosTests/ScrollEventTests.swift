@@ -574,3 +574,740 @@ final class ScrollHandoverTests: XCTestCase {
         )
     }
 }
+
+// MARK: - The sideways wheel (thumb wheel)
+
+/// The stepper of the thumb wheel's functions: how the travel of wheel events becomes steps.
+final class ThumbWheelStepperTests: XCTestCase {
+
+    private func lines(_ line: Int64, _ fixed: Double, _ point: Double) -> Double {
+        return ThumbWheelStepper.lines(lineDelta: line, fixedDelta: fixed, pointDelta: point)
+    }
+
+    /// Travel toward "next" of an event with these line deltas (fixed-point = integer).
+    private func travel(_ lines: Double, flipped: Bool = false, speed: Double = 1) -> Double {
+        return ThumbWheelStepper.travel(lineDelta: Int64(lines), fixedDelta: lines, pointDelta: lines * 10, flipped: flipped, speed: speed)
+    }
+
+    // MARK: Travel of one event
+
+    func testLines_fixedPointFirst_thenTheLineDelta_thenPointsOverTen() {
+        XCTAssertEqual(lines(2, 1.25, 30), 1.25)
+        XCTAssertEqual(lines(-2, 0, -30), -2)
+        XCTAssertEqual(lines(0, 0, -7), -0.7, accuracy: 1e-12)
+        XCTAssertEqual(lines(0, 0, 0), 0)
+        XCTAssertEqual(ThumbWheelTuning.pointsPerLine, 10)
+    }
+
+    func testLines_oneEventCountsForAtMostThreeLines() {
+        XCTAssertEqual(ThumbWheelTuning.maxLinesPerEvent, 3)
+        XCTAssertEqual(lines(12, 12.4, 140), 3)
+        XCTAssertEqual(lines(-9, -9, -95), -3)
+        XCTAssertEqual(lines(0, 0, 400), 3)
+        XCTAssertEqual(lines(0, .infinity, 0), 0, "not a number: no travel")
+    }
+
+    /// A negative X delta shows what lies to the right: that is "next". The direction rules
+    /// turn it around (once), and the speed multiplies the capped travel.
+    func testTravel_aNegativeXDeltaIsNext_flippedTurnsItAround_speedAfterTheCap() {
+        XCTAssertEqual(travel(-1), 1)
+        XCTAssertEqual(travel(1), -1)
+        XCTAssertEqual(travel(-1, flipped: true), -1)
+        XCTAssertEqual(travel(1, flipped: true), 1)
+        XCTAssertEqual(travel(-10, speed: 2), 6, "3 lines at most, then × 2")
+        XCTAssertEqual(travel(-1, speed: 0.25), 0.25)
+        XCTAssertEqual(travel(-1, speed: 50), 3, "the speed stays inside its range")
+    }
+
+    // MARK: Functions that repeat
+
+    func testThresholds_zoomAndVolumeOneLine_tabsTwoLines() {
+        XCTAssertEqual(ThumbWheelFunction.zoom.stepping, .repeating(linesPerStep: 1))
+        XCTAssertEqual(ThumbWheelFunction.volume.stepping, .repeating(linesPerStep: 1))
+        XCTAssertEqual(ThumbWheelFunction.tabs.stepping, .repeating(linesPerStep: 2))
+        XCTAssertEqual(ThumbWheelFunction.desktops.stepping, .oncePerRoll(lines: 1.5))
+        XCTAssertEqual(ThumbWheelFunction.backForward.stepping, .oncePerRoll(lines: 1.5))
+        XCTAssertEqual(ThumbWheelFunction.scroll.stepping, .none)
+
+        for function in [ThumbWheelFunction.zoom, .volume] {
+            var stepper = ThumbWheelStepper()
+            XCTAssertEqual(stepper.feed(travel: 1, function: function, at: 0), 1, "\(function)")
+            XCTAssertEqual(stepper.feed(travel: 0.5, function: function, at: 0.05), 0, "\(function)")
+            XCTAssertEqual(stepper.feed(travel: 0.5, function: function, at: 0.1), 1, "\(function)")
+        }
+        var tabs = ThumbWheelStepper()
+        XCTAssertEqual(tabs.feed(travel: 1, function: .tabs, at: 0), 0)
+        XCTAssertEqual(tabs.feed(travel: 1, function: .tabs, at: 0.05), 1)
+        XCTAssertEqual(tabs.feed(travel: -1, function: .tabs, at: 0.1), 0)
+        XCTAssertEqual(tabs.feed(travel: -1, function: .tabs, at: 0.15), -1, "previous")
+    }
+
+    func testCarry_theRestGoesTowardTheNextStep() {
+        var stepper = ThumbWheelStepper()
+        XCTAssertEqual(stepper.feed(travel: 0.4, function: .zoom, at: 0), 0)
+        XCTAssertEqual(stepper.feed(travel: 0.4, function: .zoom, at: 0.05), 0)
+        XCTAssertEqual(stepper.feed(travel: 0.4, function: .zoom, at: 0.1), 1)
+        XCTAssertEqual(stepper.carried, 0.2, accuracy: 1e-9)
+        XCTAssertEqual(stepper.feed(travel: 0.8, function: .zoom, at: 0.15), 1)
+        XCTAssertEqual(stepper.carried, 0, accuracy: 1e-9)
+    }
+
+    /// Tenths of a line do not add up to exactly one in binary: ten of them still make a step.
+    func testCarry_tenthsOfALineAddUpToAStep() {
+        var stepper = ThumbWheelStepper()
+        var steps = 0
+        for index in 0..<10 {
+            steps += stepper.feed(travel: 0.1, function: .zoom, at: Double(index) * 0.01)
+        }
+        XCTAssertEqual(steps, 1)
+        XCTAssertEqual(stepper.carried, 0)
+    }
+
+    func testDirectionChange_dropsTheCarriedTravel() {
+        var stepper = ThumbWheelStepper()
+        XCTAssertEqual(stepper.feed(travel: 0.8, function: .zoom, at: 0), 0)
+        // Without the drop: 0.8 − 0.5 − 0.5 = −0.2, no step.
+        XCTAssertEqual(stepper.feed(travel: -0.5, function: .zoom, at: 0.05), 0)
+        XCTAssertEqual(stepper.carried, -0.5, accuracy: 1e-12)
+        XCTAssertEqual(stepper.feed(travel: -0.5, function: .zoom, at: 0.1), -1)
+    }
+
+    func testRest_dropsTheCarriedTravel() {
+        XCTAssertEqual(ThumbWheelTuning.carryRest, 0.3)
+        var stepper = ThumbWheelStepper()
+        XCTAssertEqual(stepper.feed(travel: 0.8, function: .zoom, at: 0), 0)
+        XCTAssertEqual(stepper.feed(travel: 0.5, function: .zoom, at: 0.31), 0, "after a rest it starts from 0")
+        XCTAssertEqual(stepper.feed(travel: 0.4, function: .zoom, at: 0.5), 0)
+        XCTAssertEqual(stepper.feed(travel: 0.2, function: .zoom, at: 0.79), 1, "a shorter pause keeps it: 0.5 + 0.4 + 0.2")
+    }
+
+    /// macOS accelerates a fast turn: one event counts for three lines at most, so one flick
+    /// runs three zoom steps, nine at the highest speed.
+    func testCapPerEvent_oneEventRunsAtMostThreeStepsTimesTheSpeed() {
+        let flick = ThumbWheelStepper.travel(lineDelta: -12, fixedDelta: -12.5, pointDelta: -140, flipped: false, speed: 1)
+        var stepper = ThumbWheelStepper()
+        XCTAssertEqual(stepper.feed(travel: flick, function: .zoom, at: 0), 3)
+        let fastest = ThumbWheelStepper.travel(lineDelta: -12, fixedDelta: -12.5, pointDelta: -140, flipped: false, speed: ThumbWheelSettings.speedRange.upperBound)
+        stepper = ThumbWheelStepper()
+        XCTAssertEqual(stepper.feed(travel: fastest, function: .zoom, at: 0), 9)
+        stepper = ThumbWheelStepper()
+        XCTAssertEqual(stepper.feed(travel: flick, function: .tabs, at: 0), 1)
+        XCTAssertEqual(stepper.carried, 1, accuracy: 1e-12)
+    }
+
+    /// A higher speed takes less of a turn per step.
+    func testSpeed_scalesTheTravel() {
+        var tabs = ThumbWheelStepper()
+        XCTAssertEqual(tabs.feed(travel: travel(-1, speed: 2), function: .tabs, at: 0), 1, "one line at × 2 is a tab")
+        XCTAssertEqual(tabs.feed(travel: travel(-1, speed: 2), function: .tabs, at: 0.05), 1)
+        var zoom = ThumbWheelStepper()
+        XCTAssertEqual(zoom.feed(travel: travel(-1, speed: 0.5), function: .zoom, at: 0), 0, "one line at × 0.5 is half a step")
+        XCTAssertEqual(zoom.feed(travel: travel(-1, speed: 0.5), function: .zoom, at: 0.05), 1)
+    }
+
+    // MARK: Functions that step once per roll
+
+    func testOncePerRoll_oneStepThenNothingUntilTheWheelRested() {
+        XCTAssertEqual(ThumbWheelTuning.oncePerRollLines, 1.5)
+        XCTAssertEqual(ThumbWheelTuning.rollRest, 0.4)
+        for function in [ThumbWheelFunction.desktops, .backForward] {
+            var stepper = ThumbWheelStepper()
+            XCTAssertEqual(stepper.feed(travel: 1, function: function, at: 0), 0, "\(function)")
+            XCTAssertEqual(stepper.feed(travel: 1, function: function, at: 0.05), 1, "\(function)")
+            XCTAssertEqual(stepper.feed(travel: 3, function: function, at: 0.1), 0, "\(function): the roll goes on")
+            XCTAssertEqual(stepper.feed(travel: -3, function: function, at: 0.2), 0, "\(function): turned back in the same roll")
+            XCTAssertEqual(stepper.feed(travel: 3, function: function, at: 0.55), 0, "\(function): a pause shorter than a rest")
+            XCTAssertEqual(stepper.feed(travel: -1, function: function, at: 0.96), 0, "\(function): rested, a new roll")
+            XCTAssertEqual(stepper.feed(travel: -1, function: function, at: 1.0), -1, "\(function)")
+        }
+    }
+
+    // MARK: Changes in the middle of a roll
+
+    func testAnotherFunction_startsAfresh() {
+        var stepper = ThumbWheelStepper()
+        XCTAssertEqual(stepper.feed(travel: 1, function: .tabs, at: 0), 0)
+        // Without the reset the tab's line carried would make this a zoom step.
+        XCTAssertEqual(stepper.feed(travel: 0.5, function: .zoom, at: 0.05), 0)
+        XCTAssertEqual(stepper.function, .zoom)
+
+        stepper = ThumbWheelStepper()
+        XCTAssertEqual(stepper.feed(travel: 2, function: .desktops, at: 0), 1)
+        XCTAssertEqual(stepper.feed(travel: 2, function: .backForward, at: 0.05), 1, "a new function has not stepped in this roll")
+    }
+
+    func testReset_forgetsEverything() {
+        var stepper = ThumbWheelStepper()
+        _ = stepper.feed(travel: 2, function: .desktops, at: 0)
+        _ = stepper.feed(travel: 1, function: .desktops, at: 0.05)
+        stepper.reset()
+        XCTAssertEqual(stepper, ThumbWheelStepper())
+    }
+}
+
+/// The thumb wheel in the scroll tap, without the tap: what a step does, when it runs, and the
+/// one log line per roll.
+final class ThumbWheelEngineTests: XCTestCase {
+
+    /// One action run, as recorded.
+    struct Performed: Equatable {
+        var action: ThumbWheelAction
+        var times: Int
+    }
+
+    /// An engine on a simulated clock and main queue: work it schedules runs in `advance`.
+    final class Rig {
+        let engine = ThumbWheelEngine()
+        var now = 500.0
+        private(set) var queue: [(due: Double, order: Int, work: () -> Void)] = []
+        private var scheduledCount = 0
+        private(set) var performed: [Performed] = []
+        private(set) var lines: [ScrollSystemLog.ThumbWheelRoll] = []
+
+        init() {
+            engine.clock = { [unowned self] in self.now }
+            engine.schedule = { [unowned self] delay, work in
+                self.scheduledCount += 1
+                self.queue.append((self.now + max(0, delay), self.scheduledCount, work))
+            }
+            engine.perform = { [unowned self] action, times in self.performed.append(Performed(action: action, times: times)) }
+            engine.writeLog = { [unowned self] roll in self.lines.append(roll) }
+        }
+
+        var hasPendingWork: Bool { return !queue.isEmpty }
+
+        /// Runs the work due up to `time`, in order.
+        func advance(to time: Double) {
+            while let next = queue.enumerated()
+                .filter({ $0.element.due <= time + 1e-9 })
+                .min(by: { ($0.element.due, $0.element.order) < ($1.element.due, $1.element.order) }) {
+                queue.remove(at: next.offset)
+                now = max(now, next.element.due)
+                next.element.work()
+            }
+            now = max(now, time)
+        }
+
+        /// One sideways event at `time` (seconds after the rig's start).
+        @discardableResult
+        func turn(lines: Double, at time: Double, settings: ThumbWheelSettings, flipped: Bool = false, continuous: Bool = false) -> Int {
+            advance(to: 500 + time)
+            let event = ThumbWheelEvent(lineDelta: Int64(lines), fixedDelta: lines, pointDelta: (lines * 10).rounded(), isContinuous: continuous)
+            return engine.handle(event, settings: settings, flipped: flipped)
+        }
+    }
+
+    // MARK: What a step does
+
+    func testActions_eachFunctionNextAndPrevious() {
+        func action(_ function: ThumbWheelFunction, _ next: Bool) -> ThumbWheelAction? {
+            return ThumbWheelAction.action(for: function, towardNext: next)
+        }
+        XCTAssertNil(action(.scroll, true))
+        XCTAssertNil(action(.scroll, false))
+        XCTAssertEqual(action(.zoom, true), .keys(ThumbWheelAction.appZoomIn))
+        XCTAssertEqual(action(.zoom, false), .keys(ThumbWheelAction.appZoomOut))
+        XCTAssertEqual(action(.tabs, true), .named("switchTabRight"))
+        XCTAssertEqual(action(.tabs, false), .named("switchTabLeft"))
+        XCTAssertEqual(action(.desktops, true), .named("moveSpaceRight"))
+        XCTAssertEqual(action(.desktops, false), .named("moveSpaceLeft"))
+        XCTAssertEqual(action(.backForward, true), .named("navigateForward"))
+        XCTAssertEqual(action(.backForward, false), .named("navigateBack"))
+        XCTAssertEqual(action(.volume, true), .volume(.up))
+        XCTAssertEqual(action(.volume, false), .volume(.down))
+        // Every named action is one of the action menu's, run as a binding runs it.
+        for function in ThumbWheelFunction.allCases {
+            for next in [true, false] {
+                if case .named(let name)? = action(function, next) {
+                    XCTAssertNotNil(SystemShortcut.getShortcut(named: name), name)
+                }
+            }
+        }
+    }
+
+    /// App zoom: ⌘= and ⌘−, not the screen zoom of the Accessibility settings (⌘⌥= / ⌘⌥−).
+    func testZoom_isTheAppsZoomKeys() {
+        XCTAssertEqual(ThumbWheelAction.appZoomIn.code, 24)
+        XCTAssertEqual(ThumbWheelAction.appZoomIn.modifiers, .command)
+        XCTAssertEqual(ThumbWheelAction.appZoomOut.code, 27)
+        XCTAssertEqual(ThumbWheelAction.appZoomOut.modifiers, .command)
+        XCTAssertNil(SystemShortcut.getShortcut(named: ThumbWheelAction.appZoomIn.identifier), "not an action of the menu")
+        XCTAssertNil(SystemShortcut.getShortcut(named: ThumbWheelAction.appZoomOut.identifier))
+    }
+
+    private func resolved(_ shortcut: SystemShortcut.Shortcut) -> [UInt64] {
+        let resolved = SystemShortcut.resolveSystemShortcut(shortcut.identifier)
+            ?? (shortcut.code, UInt64(shortcut.modifiers.rawValue))
+        return [UInt64(resolved.code), resolved.modifiers]
+    }
+
+    /// Keys go through the app's action path (ShortcutExecutor), as a button binding's do;
+    /// the executor's test observer receives them instead of the system.
+    func testPerformer_runsKeysThroughTheShortcutExecutor() {
+        var keys: [[UInt64]] = []
+        ShortcutExecutor.shared.setTestingKeyboardShortcutObserver { code, flags, _ in
+            keys.append([UInt64(code), flags])
+        }
+        defer { ShortcutExecutor.shared.clearTestingKeyboardShortcutObserver() }
+        let performer = ThumbWheelActionPerformer(volumeKeys: SystemVolumeKeys(post: { _ in XCTFail("no volume key") }))
+
+        performer.perform(.named("switchTabRight"), times: 2)
+        XCTAssertEqual(keys, [resolved(SystemShortcut.switchTabRight), resolved(SystemShortcut.switchTabRight)])
+        keys = []
+        performer.perform(.keys(ThumbWheelAction.appZoomOut), times: 1)
+        XCTAssertEqual(keys, [[27, UInt64(NSEvent.ModifierFlags.command.rawValue)]])
+        keys = []
+        for (function, next) in [(ThumbWheelFunction.desktops, false), (.backForward, true), (.backForward, false)] {
+            performer.perform(ThumbWheelAction.action(for: function, towardNext: next)!, times: 1)
+        }
+        XCTAssertEqual(keys, [
+            resolved(SystemShortcut.moveSpaceLeft), resolved(SystemShortcut.navigateForward), resolved(SystemShortcut.navigateBack),
+        ])
+        keys = []
+        performer.perform(.named("switchTabLeft"), times: 0)
+        XCTAssertEqual(keys, [])
+    }
+
+    /// The volume keys are pressed as an Apple keyboard presses them, through a seam: nothing
+    /// is posted here and the volume does not change.
+    func testVolumeKeys_downAndUpAsTheKeyboardSendsThem() throws {
+        var events: [CGEvent] = []
+        let performer = ThumbWheelActionPerformer(volumeKeys: SystemVolumeKeys(post: { events.append($0) }))
+        performer.perform(.volume(.up), times: 1)
+        performer.perform(.volume(.down), times: 2)
+        XCTAssertEqual(events.count, 6, "each press: down and up")
+
+        let expected = [0x0A00, 0x0B00, 0x1_0A00, 0x1_0B00, 0x1_0A00, 0x1_0B00]
+        for (event, data1) in zip(events, expected) {
+            let nsEvent = try XCTUnwrap(NSEvent(cgEvent: event))
+            XCTAssertEqual(nsEvent.type, .systemDefined)
+            XCTAssertEqual(nsEvent.subtype.rawValue, 8, "the keyboard's special keys")
+            XCTAssertEqual(nsEvent.data1, data1)
+            XCTAssertEqual(event.getIntegerValueField(.eventSourceUserData), MosEventMarker.syntheticCustom, "marked as Scrollio's own")
+        }
+        XCTAssertEqual(SystemVolumeKey.up.keyType, 0, "NX_KEYTYPE_SOUND_UP")
+        XCTAssertEqual(SystemVolumeKey.down.keyType, 1, "NX_KEYTYPE_SOUND_DOWN")
+    }
+
+    // MARK: When steps run
+
+    func testSteps_runOnTheMainQueueAfterTheCallback() {
+        let rig = Rig()
+        let tabs = ThumbWheelSettings(function: .tabs)
+        XCTAssertEqual(rig.turn(lines: -1, at: 0, settings: tabs), 0)
+        XCTAssertEqual(rig.turn(lines: -1, at: 0.02, settings: tabs), 1)
+        XCTAssertEqual(rig.performed, [], "not inside the callback")
+        rig.advance(to: 500.02)
+        XCTAssertEqual(rig.performed, [Performed(action: .named("switchTabRight"), times: 1)])
+
+        // Swapped (or reversed) the same turn is the previous tab.
+        XCTAssertEqual(rig.turn(lines: -2, at: 1, settings: tabs, flipped: true), -1)
+        rig.advance(to: 501)
+        XCTAssertEqual(rig.performed.last, Performed(action: .named("switchTabLeft"), times: 1))
+    }
+
+    func testSeveralStepsOfOneEvent_runTogether() {
+        let rig = Rig()
+        XCTAssertEqual(rig.turn(lines: -3, at: 0, settings: ThumbWheelSettings(function: .volume, speed: 2)), 6)
+        rig.advance(to: 500)
+        XCTAssertEqual(rig.performed, [Performed(action: .volume(.up), times: 6)])
+    }
+
+    /// Scrollio's scroll handling stopped (Pause, sleep, lost access): steps already decided
+    /// do not run afterwards.
+    func testReset_dropsStepsNotYetRun_andWritesTheOpenRollsLine() {
+        let rig = Rig()
+        XCTAssertEqual(rig.turn(lines: -2, at: 0, settings: ThumbWheelSettings(function: .zoom)), 2)
+        rig.engine.reset()
+        XCTAssertEqual(rig.lines.count, 1, "the roll so far")
+        rig.advance(to: 510)
+        XCTAssertEqual(rig.performed, [])
+        XCTAssertEqual(rig.engine.stepper, ThumbWheelStepper())
+        XCTAssertEqual(rig.lines.count, 1)
+        XCTAssertFalse(rig.hasPendingWork)
+    }
+
+    func testScroll_runsNoSteps() {
+        let rig = Rig()
+        for index in 0..<10 {
+            XCTAssertEqual(rig.turn(lines: -3, at: Double(index) * 0.02, settings: .default), 0)
+        }
+        rig.advance(to: 510)
+        XCTAssertEqual(rig.performed, [])
+    }
+
+    // MARK: The log: one line per roll
+
+    func testLog_oneLineOnceTheWheelRested_nothingPerEvent_nothingLeftRunning() throws {
+        let rig = Rig()
+        let tabs = ThumbWheelSettings(function: .tabs)
+        for index in 0..<5 {
+            rig.turn(lines: -1, at: Double(index) * 0.05, settings: tabs, continuous: index == 0)
+        }
+        rig.advance(to: 500.2 + ThumbWheelTuning.rollRest - 0.01)
+        XCTAssertEqual(rig.lines.count, 0, "not before the wheel rested")
+        rig.advance(to: 500.2 + ThumbWheelTuning.rollRest)
+        let roll = try XCTUnwrap(rig.lines.first)
+        XCTAssertEqual(rig.lines.count, 1)
+        XCTAssertEqual(roll.events, 5)
+        XCTAssertEqual(roll.lines, -5)
+        XCTAssertEqual(roll.fixed, -5)
+        XCTAssertEqual(roll.points, -50)
+        XCTAssertEqual(roll.largestPoints, 10)
+        XCTAssertEqual(roll.continuousEvents, 1)
+        XCTAssertEqual(roll.steps, 2)
+        XCTAssertEqual(roll.function, .tabs)
+        XCTAssertEqual(roll.lastEventAt - roll.startedAt, 0.2, accuracy: 1e-9)
+        XCTAssertEqual(
+            ScrollSystemLog.thumbWheelMessage(for: roll),
+            "thumb wheel: 5 events in 200 ms, lines -5 (fixed -5.00, points -50, largest 10), partly continuous (1 of 5), switch tabs x1.00: 2 steps"
+        )
+        XCTAssertFalse(rig.hasPendingWork, "no timer while the wheel is still")
+        XCTAssertNil(rig.engine.roll)
+    }
+
+    /// The defaults log as well: it is how we learn what a wheel sends.
+    func testLog_atTheDefaultsToo() throws {
+        let rig = Rig()
+        rig.turn(lines: 1, at: 0, settings: .default)
+        rig.advance(to: 501)
+        let roll = try XCTUnwrap(rig.lines.first)
+        XCTAssertEqual(roll.function, .scroll)
+        XCTAssertEqual(roll.events, 1)
+    }
+
+    /// A long roll: a line every two seconds, then the last one once the wheel rested.
+    func testLog_aLongRollWritesALineEveryTwoSeconds() {
+        let rig = Rig()
+        for index in 0..<50 {
+            rig.turn(lines: -1, at: Double(index) / 10, settings: .default)
+        }
+        rig.advance(to: 510)
+        XCTAssertEqual(rig.lines.map(\.events), [20, 20, 10])
+        XCTAssertEqual(rig.lines.map(\.startedAt), [500, 502, 504])
+        XCTAssertFalse(rig.hasPendingWork)
+    }
+
+    /// A setting changed in the middle of a roll (the function, the speed, the direction):
+    /// the roll so far gets its own line, written after the callback.
+    func testLog_aSettingChangedInTheMiddleOfARollEndsItsLine() {
+        let rig = Rig()
+        rig.turn(lines: -1, at: 0, settings: ThumbWheelSettings(function: .tabs))
+        rig.turn(lines: -1, at: 0.05, settings: ThumbWheelSettings(function: .tabs))
+        rig.turn(lines: -1, at: 0.1, settings: ThumbWheelSettings(function: .zoom))
+        XCTAssertEqual(rig.lines.count, 0, "nothing written inside the callback")
+        rig.advance(to: 500.1)
+        XCTAssertEqual(rig.lines.map(\.function), [.tabs])
+        XCTAssertEqual(rig.lines.first?.events, 2)
+        rig.turn(lines: -1, at: 0.15, settings: ThumbWheelSettings(function: .zoom, speed: 2))
+        rig.advance(to: 510)
+        XCTAssertEqual(rig.lines.map(\.function), [.tabs, .zoom, .zoom])
+        XCTAssertEqual(rig.lines.map(\.speed), [1, 1, 2])
+        XCTAssertFalse(rig.hasPendingWork)
+    }
+}
+
+/// The sideways wheel through the scroll tap's callback, as the tap runs it. Nothing is
+/// posted: smoothed input goes to `ScrollCore.posterInputObserverForTests`, steps to a test
+/// engine.
+final class ThumbWheelScrollTapTests: XCTestCase {
+
+    private var rig: ThumbWheelEngineTests.Rig!
+    private var savedEngine: ThumbWheelEngine!
+    private var savedThumbWheel = ThumbWheelSettings.default
+    private var savedSmooth = true
+    private var savedReverse = true
+    private var savedReverseHorizontal = true
+    private var savedAllowlist = false
+    private var inputs: [ScrollPosterInput] = []
+
+    override func setUp() {
+        super.setUp()
+        savedEngine = ScrollCore.shared.thumbWheelEngine
+        savedThumbWheel = Options.shared.thumbWheel
+        savedSmooth = Options.shared.scroll.smooth
+        savedReverse = Options.shared.scroll.reverse
+        savedReverseHorizontal = Options.shared.scroll.reverseHorizontal
+        savedAllowlist = Options.shared.application.allowlist
+        rig = ThumbWheelEngineTests.Rig()
+        ScrollCore.shared.thumbWheelEngine = rig.engine
+        ScrollCore.shared.handover = ScrollHandover()
+        ScrollCore.posterInputObserverForTests = { [unowned self] input in self.inputs.append(input) }
+        inputs = []
+        Options.shared.thumbWheel = .default
+        Options.shared.scroll.smooth = true
+        Options.shared.scroll.reverse = false
+        Options.shared.scroll.reverseHorizontal = true
+        Options.shared.application.allowlist = false
+    }
+
+    override func tearDown() {
+        ScrollCore.posterInputObserverForTests = nil
+        ScrollCore.shared.thumbWheelEngine = savedEngine
+        ScrollCore.shared.handover = ScrollHandover()
+        ScrollCore.shared.toggleScroll = false
+        Options.shared.thumbWheel = savedThumbWheel
+        Options.shared.scroll.smooth = savedSmooth
+        Options.shared.scroll.reverse = savedReverse
+        Options.shared.scroll.reverseHorizontal = savedReverseHorizontal
+        Options.shared.application.allowlist = savedAllowlist
+        ScrollSystemLog.resetPassthroughForTests()
+        super.tearDown()
+    }
+
+    /// A wheel event as a mouse sends it: no phase, not continuous, aimed at no app.
+    private func wheelEvent(
+        line2: Int64 = 0, fixed2: Double = 0, point2: Double = 0,
+        line1: Int64 = 0, point1: Double = 0, flags: CGEventFlags = []
+    ) throws -> CGEvent {
+        let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: 0, wheel2: 0, wheel3: 0))
+        event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: line1)
+        event.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: point1)
+        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: Double(line1))
+        event.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: line2)
+        event.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: point2)
+        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: fixed2)
+        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 0)
+        event.setIntegerValueField(.eventTargetUnixProcessID, value: 1)
+        event.flags = flags
+        return event
+    }
+
+    private func sideways(_ lines: Int64, point: Double? = nil, flags: CGEventFlags = []) throws -> CGEvent {
+        return try wheelEvent(line2: lines, fixed2: Double(lines), point2: point ?? Double(lines * 10), flags: flags)
+    }
+
+    /// The tap's callback. Its result is an unretained reference: use it while `event` lives.
+    @discardableResult
+    private func tap(_ event: CGEvent) -> Unmanaged<CGEvent>? {
+        return ScrollCore.shared.scrollEventCallBack(CGEventTapProxy(bitPattern: 1)!, .scrollWheel, event, nil)
+    }
+
+    /// Whether the tap lets the event go on (false: swallowed).
+    private func goesOn(_ event: CGEvent) -> Bool {
+        return tap(event) != nil
+    }
+
+    /// The X fields of an event: line, fixed-point, point.
+    private func xFields(_ event: CGEvent) -> [Double] {
+        return [
+            Double(event.getIntegerValueField(.scrollWheelEventDeltaAxis2)),
+            event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2),
+            event.getDoubleValueField(.scrollWheelEventPointDeltaAxis2),
+        ]
+    }
+
+    // MARK: The defaults change nothing
+
+    /// At the defaults (scroll, × 1, not swapped) the poster gets exactly what it got before
+    /// the thumb wheel had settings, value for value: the formula of before, written out here.
+    func testAtTheDefaults_aSmoothedSidewaysEventGivesThePosterWhatItGaveBefore() throws {
+        let step = Options.shared.scroll.step
+        let speed = Options.shared.scroll.speed
+        let duration = Options.shared.scroll.durationTransition
+        let dash = ScrollCore.shared.dashAmplification
+        let samples: [(line: Int64, fixed: Double, point: Double)] = [
+            (1, 1, 10), (-1, -1, -10), (1, 0.25, 3), (-3, -3.5, -39), (12, 12.25, 140), (0, 0.5, 0), (2, 0, 0), (-7, 0, 0), (0, 0, 5),
+        ]
+        var count = 0
+        for reverse in [false, true] {
+            Options.shared.scroll.reverse = reverse
+            for sample in samples {
+                let event = try wheelEvent(line2: sample.line, fixed2: sample.fixed, point2: sample.point)
+                // Before: the point delta, else the fixed-point one, else the line delta;
+                // turned around by "Reverse wheel direction"; at least one Step; × Speed × dash.
+                let point = event.getDoubleValueField(.scrollWheelEventPointDeltaAxis2)
+                let fixed = event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2)
+                var usable = point != 0 ? point : (fixed != 0 ? fixed : Double(event.getIntegerValueField(.scrollWheelEventDeltaAxis2)))
+                if reverse { usable = -usable }
+                let distance = usable > 0 ? max(usable.magnitude, step) : -max(usable.magnitude, step)
+                let gain = speed * dash
+                inputs = []
+
+                tap(event)
+                count += 1
+
+                let label = "\(sample), reverse \(reverse)"
+                let input = try XCTUnwrap(inputs.first, label)
+                XCTAssertEqual(inputs.count, 1, label)
+                XCTAssertEqual(input.x, distance * gain, label)
+                XCTAssertEqual(input.y, 0.0 * gain, label)
+                XCTAssertEqual(input.notch, step * gain, label)
+                XCTAssertEqual(input.duration, duration, label)
+            }
+        }
+        XCTAssertEqual(rig.performed, [])
+        XCTAssertEqual(rig.engine.roll?.events, count, "every sideways event is in the log line")
+    }
+
+    /// Smoothing off: the event goes on as before, turned around only by the reverse rule.
+    func testAtTheDefaults_anUnsmoothedSidewaysEventGoesOnAsBefore() throws {
+        Options.shared.scroll.smooth = false
+        for reverse in [false, true] {
+            Options.shared.scroll.reverse = reverse
+            let event = try wheelEvent(line2: -2, fixed2: -2.5, point2: -27)
+            let before = xFields(event)
+            let result = tap(event)
+            XCTAssertTrue(result?.takeUnretainedValue() === event, "reverse \(reverse)")
+            XCTAssertEqual(xFields(event), before.map { reverse ? -$0 : $0 }, "reverse \(reverse)")
+        }
+        XCTAssertEqual(inputs.count, 0)
+    }
+
+    // MARK: Speed and direction while it scrolls
+
+    func testSpeed_scalesTheDistanceAndTheNotchOfASmoothedSidewaysEvent() throws {
+        tap(try sideways(-3))
+        let atOne = try XCTUnwrap(inputs.last)
+        Options.shared.thumbWheel.speed = 2.5
+        tap(try sideways(-3))
+        let faster = try XCTUnwrap(inputs.last)
+        XCTAssertEqual(faster.x, atOne.x * 2.5, accuracy: 1e-9)
+        XCTAssertEqual(faster.notch, atOne.notch * 2.5, accuracy: 1e-9)
+        XCTAssertEqual(faster.duration, atOne.duration)
+
+        // Not the main wheel's events.
+        tap(try wheelEvent(line1: -3, point1: -30))
+        let vertical = try XCTUnwrap(inputs.last)
+        Options.shared.thumbWheel.speed = 1
+        tap(try wheelEvent(line1: -3, point1: -30))
+        XCTAssertEqual(vertical.y, try XCTUnwrap(inputs.last).y)
+        XCTAssertEqual(vertical.notch, try XCTUnwrap(inputs.last).notch)
+
+        // Not an event let through unsmoothed.
+        Options.shared.thumbWheel.speed = 3
+        Options.shared.scroll.smooth = false
+        let event = try sideways(-3)
+        let before = xFields(event)
+        tap(event)
+        XCTAssertEqual(xFields(event), before)
+    }
+
+    /// "Swap direction" turns the sideways wheel around once more, after the reverse rule,
+    /// smoothed or let through.
+    func testSwap_turnsTheSidewaysWheelAroundAfterTheReverseRule() throws {
+        Options.shared.thumbWheel.swapsDirection = true
+        tap(try sideways(-2))
+        XCTAssertGreaterThan(try XCTUnwrap(inputs.last).x, 0, "swapped: −2 lines scroll the other way")
+
+        Options.shared.scroll.smooth = false
+        for reverse in [false, true] {
+            Options.shared.scroll.reverse = reverse
+            let event = try sideways(-2, point: -23)
+            let before = xFields(event)
+            tap(event)
+            XCTAssertEqual(xFields(event), before.map { reverse ? $0 : -$0 }, "reverse \(reverse): one flip, or two that cancel")
+        }
+        // The main wheel is not swapped.
+        Options.shared.scroll.reverse = false
+        let vertical = try wheelEvent(line1: -2, point1: -20)
+        tap(vertical)
+        XCTAssertEqual(vertical.getIntegerValueField(.scrollWheelEventDeltaAxis1), -2)
+    }
+
+    // MARK: A function
+
+    /// Tabs: the sideways event is swallowed, it reaches no poster and no app, the trackpad's
+    /// glide that runs is not taken over, and the step runs after the callback.
+    func testAFunction_swallowsTheSidewaysEvent_andItsStepRunsAfterTheCallback() throws {
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .tabs)
+        XCTAssertEqual(ScrollCore.shared.handover.trackpadEvent(scrollPhase: 0, momentumPhase: 1, hasDelta: true), .letThrough)
+        XCTAssertEqual(ScrollCore.shared.handover.state, .glide)
+
+        XCTAssertFalse(goesOn(try sideways(-1)))
+        XCTAssertFalse(goesOn(try sideways(-1)))
+
+        XCTAssertEqual(inputs.count, 0, "no glide starts or changes")
+        XCTAssertEqual(ScrollCore.shared.handover.state, .glide, "the trackpad's glide goes on")
+        XCTAssertEqual(rig.performed, [], "nothing runs inside the callback")
+        rig.advance(to: rig.now)
+        XCTAssertEqual(rig.performed, [ThumbWheelEngineTests.Performed(action: .named("switchTabRight"), times: 1)])
+    }
+
+    /// The function does not depend on "Smooth scrolling", the allowlist or the reverse rule's
+    /// absence: every sideways event is swallowed. The direction follows the reverse rule.
+    func testAFunction_doesNotDependOnSmoothingOrTheAllowlist() throws {
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .zoom)
+        Options.shared.scroll.smooth = false
+        XCTAssertFalse(goesOn(try sideways(-1)))
+        Options.shared.application.allowlist = true
+        XCTAssertFalse(goesOn(try sideways(-1)))
+        Options.shared.application.allowlist = false
+        Options.shared.scroll.smooth = true
+        Options.shared.scroll.reverse = true
+        XCTAssertFalse(goesOn(try sideways(-1)))
+        rig.advance(to: rig.now)
+        XCTAssertEqual(rig.performed.map(\.action), [
+            .keys(ThumbWheelAction.appZoomIn), .keys(ThumbWheelAction.appZoomIn), .keys(ThumbWheelAction.appZoomOut),
+        ])
+        XCTAssertEqual(inputs.count, 0)
+    }
+
+    /// The main wheel (vertical), an event with both deltas, the main wheel turned sideways
+    /// with a hold key, and the trackpad: none is a sideways event; they go as before.
+    func testOtherEvents_areNotSidewaysEvents() throws {
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .tabs)
+        Options.shared.scroll.smooth = false
+        // The trackpad's glide, moving sideways.
+        let trackpad = try XCTUnwrap(TracedScrollEvent.momentum(2, point: 0).cgEvent())
+        trackpad.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: -4)
+        trackpad.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: -40)
+        trackpad.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: -4)
+        let others: [(String, CGEvent)] = [
+            ("vertical", try wheelEvent(line1: -3, point1: -30)),
+            ("both", try wheelEvent(line2: -3, fixed2: -3, point2: -30, line1: -1, point1: -10)),
+            ("Shift held", try sideways(-3, flags: .maskShift)),
+            ("trackpad", trackpad),
+        ]
+        for (label, event) in others {
+            XCTAssertTrue(goesOn(event), label)
+        }
+        let withHoldKey = try sideways(-3)
+        ScrollCore.shared.toggleScroll = true
+        let passedOn = goesOn(withHoldKey)
+        ScrollCore.shared.toggleScroll = false
+        XCTAssertTrue(passedOn, "Scrollio's hold key turns the main wheel sideways")
+        rig.advance(to: rig.now + 10)
+        XCTAssertEqual(rig.performed, [])
+        XCTAssertEqual(rig.lines, [], "and none is in the thumb wheel's log")
+    }
+
+    // MARK: The decisions (pure)
+
+    func testSidewaysWheelEvent_horizontalOnly_notRemoteSmoothed_noHoldKey() {
+        func sideways(v: Bool, h: Bool, remote: Bool = false, hold: Bool = false) -> Bool {
+            return ScrollCore.isSidewaysWheelEvent(hasVerticalDelta: v, hasHorizontalDelta: h, remoteSmoothed: remote, holdKeyDown: hold)
+        }
+        XCTAssertTrue(sideways(v: false, h: true))
+        XCTAssertFalse(sideways(v: true, h: false), "the main wheel")
+        XCTAssertFalse(sideways(v: true, h: true), "both: as before")
+        XCTAssertFalse(sideways(v: false, h: false))
+        XCTAssertFalse(sideways(v: false, h: true, remote: true))
+        XCTAssertFalse(sideways(v: false, h: true, hold: true))
+    }
+
+    func testFlipsHorizontal_swapTurnsAroundOnceMore() {
+        XCTAssertFalse(ScrollCore.flipsHorizontal(reverseRule: false, swapsSideways: false))
+        XCTAssertTrue(ScrollCore.flipsHorizontal(reverseRule: true, swapsSideways: false))
+        XCTAssertTrue(ScrollCore.flipsHorizontal(reverseRule: false, swapsSideways: true))
+        XCTAssertFalse(ScrollCore.flipsHorizontal(reverseRule: true, swapsSideways: true))
+    }
+
+    /// With the sideways speed 1 the poster's input is the formula of before for any values.
+    func testPosterInput_atSidewaysSpeedOneIsTheFormulaOfBefore() {
+        for step in [1.0, 33.6, 50] {
+            for speed in [0.7, 2.7, 6.3, 9.9] {
+                for dash in [1.0, 5.0] {
+                    for (y, x) in [(0.0, 33.6), (0, -217.3), (88.1, 0), (-33.6, 12.5)] {
+                        let input = ScrollCore.posterInput(smoothedY: y, smoothedX: x, step: step, speed: speed, dash: dash, sidewaysSpeed: 1, duration: 0.2)
+                        let gain = speed * dash
+                        XCTAssertEqual(input.y, y * gain)
+                        XCTAssertEqual(input.x, x * gain)
+                        XCTAssertEqual(input.notch, step * gain)
+                        XCTAssertEqual(input.duration, 0.2)
+                    }
+                }
+            }
+        }
+    }
+}

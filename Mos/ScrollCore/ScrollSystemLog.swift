@@ -7,7 +7,8 @@
 //      log show --last 10m --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "scroll"'
 //
 //  One line per finished scroll (never per event), and one line now and then when wheel
-//  events are let through unsmoothed, with the reason. Tests pass on a simulated wheel; this
+//  events are let through unsmoothed, with the reason; one line per roll of the sideways
+//  (thumb) wheel, with what it sent and what it ran. Tests pass on a simulated wheel; this
 //  is how to see what happened on the real one.
 //
 
@@ -155,5 +156,95 @@ enum ScrollSystemLog {
 
     static func noteFingerTookOverWheelGlide() {
         logger.notice("\(fingerTookOverMessage, privacy: .public)")
+    }
+
+    // MARK: - The sideways wheel (ThumbWheelEngine)
+
+    /// What one roll of the sideways wheel (the thumb wheel) added up to: from its first event
+    /// until the wheel rested (`ThumbWheelTuning.rollRest`), or `ThumbWheelTuning.logInterval`
+    /// of a longer roll. The deltas are those the events arrived with, before "Reverse wheel
+    /// direction" and "Swap direction": the log is how we learn what a wheel sends.
+    struct ThumbWheelRoll: Equatable {
+        /// The settings of the roll's events (a change ends the roll).
+        var function: ThumbWheelFunction
+        var speed: Double
+        var swapsDirection: Bool
+        var startedAt: TimeInterval
+        var lastEventAt: TimeInterval
+        var events = 0
+        var continuousEvents = 0
+        /// Sums of the integer line delta, the fixed-point line delta and the point delta.
+        var lines: Int64 = 0
+        var fixed = 0.0
+        var points = 0.0
+        /// The largest |point delta| of one event.
+        var largestPoints = 0.0
+        /// Steps that ran (each one action).
+        var steps = 0
+
+        init(settings: ThumbWheelSettings, at now: TimeInterval) {
+            function = settings.function
+            speed = settings.speed
+            swapsDirection = settings.swapsDirection
+            startedAt = now
+            lastEventAt = now
+        }
+
+        mutating func add(_ event: ThumbWheelEvent, steps: Int, at now: TimeInterval) {
+            events += 1
+            if event.isContinuous { continuousEvents += 1 }
+            lines = lines &+ event.lineDelta
+            if event.fixedDelta.isFinite { fixed += event.fixedDelta }
+            if event.pointDelta.isFinite {
+                points += event.pointDelta
+                largestPoints = max(largestPoints, event.pointDelta.magnitude)
+            }
+            self.steps += abs(steps)
+            lastEventAt = now
+        }
+
+        /// The wheel has rested since the last event: the roll is over.
+        func hasRested(at now: TimeInterval) -> Bool {
+            return now >= lastEventAt + ThumbWheelTuning.rollRest
+        }
+
+        /// When its line is due: once the wheel rested, or once the roll has gone on for
+        /// `logInterval`, whichever comes first.
+        var lineDueAt: TimeInterval {
+            return min(lastEventAt + ThumbWheelTuning.rollRest, startedAt + ThumbWheelTuning.logInterval)
+        }
+
+        func matches(_ settings: ThumbWheelSettings) -> Bool {
+            return function == settings.function && speed == settings.speed && swapsDirection == settings.swapsDirection
+        }
+    }
+
+    /// One line per roll, for example
+    /// `thumb wheel: 14 events in 620 ms, lines -9 (fixed -9.40, points -212, largest 31), not continuous, switch tabs x1.00: 3 steps`.
+    static func thumbWheelMessage(for roll: ThumbWheelRoll) -> String {
+        let continuity: String
+        if roll.continuousEvents == 0 {
+            continuity = "not continuous"
+        } else if roll.continuousEvents == roll.events {
+            continuity = "continuous"
+        } else {
+            continuity = "partly continuous (\(roll.continuousEvents) of \(roll.events))"
+        }
+        return String(
+            format: "thumb wheel: %ld %@ in %.0f ms, lines %lld (fixed %.2f, points %.0f, largest %.0f), %@, %@ x%.2f%@: %ld %@",
+            roll.events, roll.events == 1 ? "event" : "events",
+            max(0, roll.lastEventAt - roll.startedAt) * 1000,
+            roll.lines, roll.fixed, roll.points, roll.largestPoints,
+            continuity,
+            roll.function.logName, roll.speed, roll.swapsDirection ? " swapped" : "",
+            roll.steps, roll.steps == 1 ? "step" : "steps"
+        )
+    }
+
+    /// Main queue, never inside the tap callback.
+    static func noteThumbWheelRoll(_ roll: ThumbWheelRoll) {
+        guard roll.events > 0 else { return }
+        let line = thumbWheelMessage(for: roll)
+        logger.notice("\(line, privacy: .public)")
     }
 }

@@ -554,4 +554,40 @@ final class ScrollSystemLogTests: XCTestCase {
         let next = ScrollSystemLog.notePassthrough(.smoothingOff, now: 100 + ScrollSystemLog.passthroughInterval, detail: detail)
         XCTAssertEqual(next, "wheel events let through unsmoothed (51): smoothing is off for this event (x)")
     }
+
+    /// The thumb wheel's line, one per roll: the tuning of its functions is read from it on the
+    /// owner's machine, so its wording is part of the contract.
+    func testThumbWheelLine_saysWhatTheWheelSentAndWhatRan() {
+        var roll = ScrollSystemLog.ThumbWheelRoll(settings: ThumbWheelSettings(function: .tabs), at: 10)
+        roll.events = 14
+        roll.lastEventAt = 10.62
+        roll.lines = -9
+        roll.fixed = -9.4
+        roll.points = -212
+        roll.largestPoints = 31
+        roll.steps = 3
+        XCTAssertEqual(
+            ScrollSystemLog.thumbWheelMessage(for: roll),
+            "thumb wheel: 14 events in 620 ms, lines -9 (fixed -9.40, points -212, largest 31), not continuous, switch tabs x1.00: 3 steps"
+        )
+
+        var one = ScrollSystemLog.ThumbWheelRoll(settings: .default, at: 5)
+        one.add(ThumbWheelEvent(lineDelta: 1, fixedDelta: 1, pointDelta: 10, isContinuous: true), steps: 0, at: 5)
+        XCTAssertEqual(
+            ScrollSystemLog.thumbWheelMessage(for: one),
+            "thumb wheel: 1 event in 0 ms, lines 1 (fixed 1.00, points 10, largest 10), continuous, scroll sideways x1.00: 0 steps"
+        )
+
+        var swapped = ScrollSystemLog.ThumbWheelRoll(settings: ThumbWheelSettings(function: .volume, speed: 1.5, swapsDirection: true), at: 0)
+        swapped.add(ThumbWheelEvent(lineDelta: 2, fixedDelta: 2.25, pointDelta: 24, isContinuous: false), steps: -1, at: 0)
+        swapped.add(ThumbWheelEvent(lineDelta: -1, fixedDelta: -0.5, pointDelta: -31, isContinuous: true), steps: 0, at: 0.05)
+        XCTAssertEqual(
+            ScrollSystemLog.thumbWheelMessage(for: swapped),
+            "thumb wheel: 2 events in 50 ms, lines 1 (fixed 1.75, points -7, largest 31), partly continuous (1 of 2), volume x1.50 swapped: 1 step"
+        )
+        XCTAssertEqual(
+            ThumbWheelFunction.allCases.map(\.logName),
+            ["scroll sideways", "zoom", "switch tabs", "switch desktops", "back and forward", "volume"]
+        )
+    }
 }
