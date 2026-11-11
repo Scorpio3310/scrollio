@@ -1,0 +1,800 @@
+//
+//  PreferencesGroupedForm.swift
+//  Mos
+//  Layout kit for preference panes in the style of System Settings: the settings sit in
+//  rounded boxes on the window background, one setting per row. A row has its title on
+//  the left with an optional explanation under it and its control on the right, centred
+//  on the title line; hairlines separate the rows of a box.
+//
+//  The pieces:
+//  - PreferencesGroupedForm: the numbers, the pane's content stack, section titles and the
+//    footer line under the boxes.
+//  - PreferencesGroupBox: a box of rows, as wide as the pane's content.
+//  - PreferencesGroupSection: a box with an optional small title above it.
+//  - PreferencesGroupRow: a row with any control on the right, or below the title (stacked).
+//    PreferencesSwitchRow, PreferencesSliderRow and PreferencesDisclosureRow are the
+//    common kinds.
+//
+//  The numbers are measured on System Settings › Trackpad (macOS 26, 2x screenshot).
+//
+
+import Cocoa
+
+enum PreferencesGroupedForm {
+
+    // MARK: - Metrics
+
+    /// Between the pane's edges and its boxes.
+    static let margin: CGFloat = 20
+    static let boxCornerRadius: CGFloat = 10
+    /// Between a box's edges and the content of its rows, left and right. The hairlines
+    /// between the rows are inset by the same amount.
+    static let rowHorizontalInset: CGFloat = 10
+    /// Above and below the text of a row.
+    static let rowVerticalInset: CGFloat = 10
+    /// The least room above and below a control that is taller than the title line.
+    static let controlMinimumInset: CGFloat = 4
+    /// Between a row's title and its explanation.
+    static let explanationSpacing: CGFloat = 2
+    /// The least room between the title column and the control on the right.
+    static let controlSpacing: CGFloat = 16
+    /// Between the text of a stacked row and the control under it.
+    static let stackedControlSpacing: CGFloat = 8
+    /// Between two boxes.
+    static let boxSpacing: CGFloat = 16
+    /// Above a titled section and above the footer.
+    static let sectionSpacing: CGFloat = 20
+    /// Between a section's title and its box.
+    static let sectionTitleSpacing: CGFloat = 6
+    /// A slider's default width.
+    static let sliderWidth: CGFloat = 140
+    /// Between a slider and its value, and the room kept for the value.
+    static let sliderValueSpacing: CGFloat = 8
+    static let sliderValueWidth: CGFloat = 34
+    /// Between a slider and the words under its ends.
+    static let sliderEndsSpacing: CGFloat = 2
+    /// The switches of System Settings: 36 × 16 pt on macOS 26.
+    static let switchControlSize: NSControl.ControlSize = .mini
+
+    // MARK: - Type
+
+    /// Row titles: the regular system font, 13 pt.
+    static var titleFont: NSFont {
+        return NSFont.systemFont(ofSize: NSFont.systemFontSize)
+    }
+
+    /// Explanations under a title: 11 pt, the hint size of every pane.
+    static var explanationFont: NSFont {
+        return NSFont.systemFont(ofSize: PreferencesForm.hintFontSize)
+    }
+
+    static var sectionTitleFont: NSFont {
+        return NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
+    }
+
+    /// The words under a slider's ends and its value.
+    static var sliderLabelFont: NSFont {
+        return NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+    }
+
+    static var sliderValueFont: NSFont {
+        return NSFont.monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+    }
+
+    // MARK: - Colours
+
+    /// A box: a light grey on a light window, a slightly lighter grey on a dark one. It is
+    /// the system's tertiary fill (black or white at about 5%).
+    static let boxFillColor = plain(name: "PreferencesGroupBoxFill") { .tertiarySystemFill }
+
+    /// The line between two rows of a box.
+    static let hairlineColor = plain(name: "PreferencesGroupHairline") { .separatorColor }
+
+    /// The appearances `plain` resolves colours in.
+    private static let plainAppearances: [NSAppearance.Name] = [
+        .aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
+    ]
+
+    /// A system colour as it is outside vibrancy. The panes stand on an NSVisualEffectView,
+    /// which gives everything in it a vibrant appearance; there the system fills are opaque
+    /// greys that only look right when the system blends them (a near-black box otherwise).
+    /// The box draws as an ordinary view, so it takes the colour of the matching plain
+    /// appearance: still dynamic, light and dark and high contrast follow the system.
+    static func plain(name: String, _ color: @escaping () -> NSColor) -> NSColor {
+        return NSColor(name: NSColor.Name(name)) { appearance in
+            let match = appearance.bestMatch(from: plainAppearances) ?? .aqua
+            var resolved = color()
+            NSAppearance(named: match)?.performAsCurrentDrawingAppearance {
+                resolved = color().usingColorSpace(.extendedSRGB) ?? resolved
+            }
+            return resolved
+        }
+    }
+
+    static func titleColor(enabled: Bool) -> NSColor {
+        return enabled ? .labelColor : .tertiaryLabelColor
+    }
+
+    static func explanationColor(enabled: Bool) -> NSColor {
+        return enabled ? .secondaryLabelColor : .tertiaryLabelColor
+    }
+
+    // MARK: - Pane
+
+    /// Width of the boxes in a pane `paneWidth` wide.
+    static func boxWidth(paneWidth: CGFloat) -> CGFloat {
+        return paneWidth - 2 * margin
+    }
+
+    /// The vertical stack that holds a pane's preview, boxes and footer, pinned inside
+    /// `root` with the margins. Its width fixes the pane at `paneWidth`.
+    static func installContentStack(in root: NSView, paneWidth: CGFloat) -> NSStackView {
+        let content = NSStackView()
+        content.orientation = .vertical
+        content.alignment = .leading
+        content.spacing = boxSpacing
+        content.detachesHiddenViews = true
+        content.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.topAnchor.constraint(equalTo: root.topAnchor, constant: margin),
+            content.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: margin),
+            content.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -margin),
+            content.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -margin),
+            content.widthAnchor.constraint(equalToConstant: boxWidth(paneWidth: paneWidth)),
+        ])
+        return content
+    }
+
+    /// Adds views to the content stack, each as wide as the stack. A titled section and the
+    /// footer get `sectionSpacing` above them, everything else `boxSpacing`.
+    static func add(_ views: [NSView], to content: NSStackView) {
+        for view in views {
+            content.addArrangedSubview(view)
+            view.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
+        }
+        let all = content.arrangedSubviews
+        for (index, view) in all.enumerated() where index > 0 && needsSectionSpacing(above: view) {
+            content.setCustomSpacing(sectionSpacing, after: all[index - 1])
+        }
+    }
+
+    private static func needsSectionSpacing(above view: NSView) -> Bool {
+        if let section = view as? PreferencesGroupSection {
+            return section.titleLabel != nil
+        }
+        return view is PreferencesGroupFooter
+    }
+
+    /// The small title above a box, as System Settings puts it over a group.
+    static func makeSectionTitle(_ title: String) -> NSTextField {
+        let label = NSTextField(labelWithString: title)
+        label.font = sectionTitleFont
+        label.textColor = .labelColor
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.setAccessibilityRole(.staticText)
+        return label
+    }
+
+    /// A switch in the size System Settings uses in its boxes.
+    static func makeSwitch(target: AnyObject?, action: Selector?) -> NSSwitch {
+        let toggle = NSSwitch()
+        toggle.controlSize = switchControlSize
+        toggle.target = target
+        toggle.action = action
+        toggle.translatesAutoresizingMaskIntoConstraints = false
+        return toggle
+    }
+
+    /// Gives a box made elsewhere (a storyboard NSBox) the look of the kit's boxes.
+    static func styleAsGroupBox(_ box: NSBox) {
+        box.boxType = .custom
+        box.titlePosition = .noTitle
+        box.borderWidth = 0
+        box.cornerRadius = boxCornerRadius
+        box.fillColor = boxFillColor
+    }
+
+    /// A push button for the footer, such as "Reset to defaults".
+    static func makePushButton(title: String, target: AnyObject?, action: Selector?) -> NSButton {
+        let button = NSButton(title: title, target: target, action: action)
+        button.bezelStyle = .push
+        button.controlSize = .regular
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }
+}
+
+// MARK: - Box
+
+/// A rounded box of rows. Rows that are hidden take no room, and the hairlines are only
+/// drawn between rows that show.
+final class PreferencesGroupBox: NSView {
+
+    let width: CGFloat
+    private let stack = NSStackView()
+    private(set) var rows: [PreferencesGroupRow] = []
+
+    init(width: CGFloat, rows: [PreferencesGroupRow] = []) {
+        self.width = width
+        super.init(frame: NSRect(x: 0, y: 0, width: width, height: 0))
+        translatesAutoresizingMaskIntoConstraints = false
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 0
+        stack.detachesHiddenViews = true
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: width),
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
+        rows.forEach(addRow)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("PreferencesGroupBox is built in code")
+    }
+
+    override var isFlipped: Bool { return true }
+
+    func addRow(_ row: PreferencesGroupRow) {
+        rows.append(row)
+        row.contentWidth = width
+        stack.addArrangedSubview(row)
+        row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        needsDisplay = true
+    }
+
+    /// The rows that show, top to bottom.
+    var visibleRows: [PreferencesGroupRow] {
+        return rows.filter { !$0.isHidden }
+    }
+
+    /// The hairlines, in the box's (flipped) coordinates: one on top of every row that
+    /// shows, except the first. Inset like the rows' content, one pixel thick.
+    var separatorRects: [NSRect] {
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        let thickness = 1 / max(1, window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2)
+        return visibleRows.dropFirst().map { row in
+            let top = convert(row.bounds, from: row).minY
+            return NSRect(x: inset, y: top, width: bounds.width - 2 * inset, height: thickness)
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        // A row that hides or shows moves the hairlines.
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let radius = PreferencesGroupedForm.boxCornerRadius
+        PreferencesGroupedForm.boxFillColor.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+        PreferencesGroupedForm.hairlineColor.setFill()
+        for rect in separatorRects {
+            rect.fill()
+        }
+    }
+}
+
+// MARK: - Section
+
+/// A box with an optional title above it ("While you hold a key").
+final class PreferencesGroupSection: NSView {
+
+    let titleLabel: NSTextField?
+    let box: PreferencesGroupBox
+
+    init(title: String? = nil, box: PreferencesGroupBox) {
+        self.box = box
+        self.titleLabel = title.map(PreferencesGroupedForm.makeSectionTitle)
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        addSubview(box)
+        var constraints = [
+            box.leadingAnchor.constraint(equalTo: leadingAnchor),
+            box.trailingAnchor.constraint(equalTo: trailingAnchor),
+            box.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ]
+        if let titleLabel {
+            addSubview(titleLabel)
+            constraints += [
+                titleLabel.topAnchor.constraint(equalTo: topAnchor),
+                titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: PreferencesGroupedForm.rowHorizontalInset),
+                titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -PreferencesGroupedForm.rowHorizontalInset),
+                box.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: PreferencesGroupedForm.sectionTitleSpacing),
+            ]
+        } else {
+            constraints.append(box.topAnchor.constraint(equalTo: topAnchor))
+        }
+        NSLayoutConstraint.activate(constraints)
+    }
+
+    convenience init(title: String? = nil, width: CGFloat, rows: [PreferencesGroupRow]) {
+        self.init(title: title, box: PreferencesGroupBox(width: width, rows: rows))
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("PreferencesGroupSection is built in code")
+    }
+}
+
+// MARK: - Footer
+
+/// The line under the boxes: buttons at the right edge, like "Set Up Bluetooth Trackpad…".
+final class PreferencesGroupFooter: NSView {
+
+    let views: [NSView]
+
+    init(trailing views: [NSView]) {
+        self.views = views
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        let line = NSStackView(views: views)
+        line.orientation = .horizontal
+        line.alignment = .centerY
+        line.spacing = 12
+        line.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(line)
+        NSLayoutConstraint.activate([
+            line.topAnchor.constraint(equalTo: topAnchor),
+            line.bottomAnchor.constraint(equalTo: bottomAnchor),
+            line.trailingAnchor.constraint(equalTo: trailingAnchor),
+            line.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("PreferencesGroupFooter is built in code")
+    }
+}
+
+// MARK: - Row
+
+/// One setting: the title on the left, an optional explanation under it, the control on
+/// the right (centred on the title line) or, in a stacked row, under the text at full width.
+class PreferencesGroupRow: NSView {
+
+    enum Placement {
+        /// On the right, centred on the title line.
+        case trailing
+        /// Under the title and the explanation, as wide as the row.
+        case below
+    }
+
+    let titleLabel: NSTextField
+    /// Always there; hidden while the row has no explanation.
+    let explanationLabel: NSTextField
+    let accessory: NSView?
+    let placement: Placement
+    /// The controls the row names (accessibility) and turns on and off with itself.
+    let controls: [NSControl]
+
+    /// The width of the box the row is in. Its box sets it; it fixes where explanations wrap.
+    var contentWidth: CGFloat = 0 {
+        didSet { updateExplanationWidth() }
+    }
+
+    /// Texts the explanation may show, so that switching between them never changes the
+    /// row's height ("Feel" changes its explanation with the choice).
+    var reservedExplanations: [String] = [] {
+        didSet { updateExplanationWidth() }
+    }
+
+    /// Off: the title, the explanation and the controls are dimmed together.
+    var isEnabled = true {
+        didSet { applyEnabled() }
+    }
+
+    var title: String {
+        get { return titleLabel.stringValue }
+        set {
+            titleLabel.stringValue = newValue
+            labelControls()
+        }
+    }
+
+    var explanation: String? {
+        get { return explanationLabel.isHidden ? nil : explanationLabel.stringValue }
+        set {
+            explanationLabel.stringValue = newValue ?? ""
+            explanationLabel.isHidden = newValue == nil
+            updateExplanationConstraints()
+            labelControls()
+        }
+    }
+
+    private var reservedHeightConstraint: NSLayoutConstraint?
+    /// Active while the explanation shows, and while it does not.
+    private var explanationShownConstraints: [NSLayoutConstraint] = []
+    private var explanationHiddenConstraints: [NSLayoutConstraint] = []
+
+    /// - Parameters:
+    ///   - accessory: the control, or a view holding the controls.
+    ///   - centeredOn: the view inside `accessory` whose middle sits on the title line
+    ///     (a slider rather than the words under it). The accessory itself by default.
+    ///   - controls: what the row names and enables; the accessory when it is a control.
+    init(
+        title: String,
+        explanation: String? = nil,
+        accessory: NSView? = nil,
+        placement: Placement = .trailing,
+        centeredOn anchor: NSView? = nil,
+        controls: [NSControl]? = nil
+    ) {
+        titleLabel = NSTextField(labelWithString: title)
+        explanationLabel = NSTextField(wrappingLabelWithString: explanation ?? "")
+        self.accessory = accessory
+        self.placement = placement
+        self.controls = controls ?? [accessory as? NSControl].compactMap { $0 }
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+
+        titleLabel.font = PreferencesGroupedForm.titleFont
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(titleLabel)
+
+        explanationLabel.font = PreferencesGroupedForm.explanationFont
+        explanationLabel.isSelectable = false
+        explanationLabel.isHidden = explanation == nil
+        explanationLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        explanationLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(explanationLabel)
+
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        let vertical = PreferencesGroupedForm.rowVerticalInset
+        var constraints = [
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
+            titleLabel.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: vertical),
+            titleLabel.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -vertical),
+            explanationLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            explanationLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: PreferencesGroupedForm.explanationSpacing),
+        ]
+        // The title sits at the top padding unless a tall control needs more room, and the
+        // row is no taller than what it holds.
+        let titleTop = titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: vertical)
+        titleTop.priority = .defaultHigh
+        let hug = heightAnchor.constraint(equalToConstant: 0)
+        hug.priority = .fittingSizeCompression
+        constraints += [titleTop, hug]
+        // Only an explanation that shows holds the bottom of the row.
+        explanationShownConstraints = [
+            explanationLabel.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -vertical),
+        ]
+
+        if let accessory {
+            accessory.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(accessory)
+            switch placement {
+            case .trailing:
+                let anchorView = anchor ?? accessory
+                constraints += [
+                    accessory.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
+                    anchorView.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+                    accessory.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: PreferencesGroupedForm.controlMinimumInset),
+                    accessory.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -PreferencesGroupedForm.controlMinimumInset),
+                    titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: accessory.leadingAnchor, constant: -PreferencesGroupedForm.controlSpacing),
+                    explanationLabel.trailingAnchor.constraint(lessThanOrEqualTo: accessory.leadingAnchor, constant: -PreferencesGroupedForm.controlSpacing),
+                ]
+            case .below:
+                let spacing = PreferencesGroupedForm.stackedControlSpacing
+                constraints += [
+                    accessory.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
+                    accessory.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
+                    accessory.topAnchor.constraint(greaterThanOrEqualTo: titleLabel.bottomAnchor, constant: spacing),
+                    accessory.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -vertical),
+                    titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -inset),
+                    explanationLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -inset),
+                ]
+                // Snug under the text that shows.
+                let underExplanation = accessory.topAnchor.constraint(equalTo: explanationLabel.bottomAnchor, constant: spacing)
+                underExplanation.priority = .defaultHigh
+                let underTitle = accessory.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: spacing)
+                underTitle.priority = .defaultHigh
+                explanationShownConstraints += [
+                    accessory.topAnchor.constraint(greaterThanOrEqualTo: explanationLabel.bottomAnchor, constant: spacing),
+                    underExplanation,
+                ]
+                explanationHiddenConstraints = [underTitle]
+            }
+        } else {
+            constraints += [
+                titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -inset),
+                explanationLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -inset),
+            ]
+        }
+        NSLayoutConstraint.activate(constraints)
+        updateExplanationConstraints()
+        applyEnabled()
+        labelControls()
+    }
+
+    private func updateExplanationConstraints() {
+        let shows = !explanationLabel.isHidden
+        NSLayoutConstraint.deactivate(shows ? explanationHiddenConstraints : explanationShownConstraints)
+        NSLayoutConstraint.activate(shows ? explanationShownConstraints : explanationHiddenConstraints)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("PreferencesGroupRow is built in code")
+    }
+
+    /// The width of the title column: the row's content minus the control on the right.
+    var titleColumnWidth: CGFloat {
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        let full = max(0, contentWidth - 2 * inset)
+        guard let accessory, placement == .trailing else { return full }
+        let accessoryWidth = accessory.frame.width > 0 ? accessory.frame.width : accessory.fittingSize.width
+        return max(0, full - accessoryWidth - PreferencesGroupedForm.controlSpacing)
+    }
+
+    override func layout() {
+        super.layout()
+        // A control may only know its size once it is in a window (NSSwitch): check again.
+        if contentWidth > 0, abs(explanationLabel.preferredMaxLayoutWidth - titleColumnWidth) > 0.5 {
+            updateExplanationWidth()
+        }
+    }
+
+    private func updateExplanationWidth() {
+        guard contentWidth > 0 else { return }
+        let width = titleColumnWidth
+        explanationLabel.preferredMaxLayoutWidth = width
+        explanationLabel.invalidateIntrinsicContentSize()
+
+        reservedHeightConstraint?.isActive = false
+        reservedHeightConstraint = nil
+        guard !reservedExplanations.isEmpty else { return }
+        let measure = NSTextField(wrappingLabelWithString: "")
+        measure.font = explanationLabel.font
+        measure.preferredMaxLayoutWidth = width
+        let tallest = reservedExplanations.map { text -> CGFloat in
+            measure.stringValue = text
+            return measure.fittingSize.height
+        }.max() ?? 0
+        let constraint = explanationLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: tallest)
+        constraint.isActive = true
+        reservedHeightConstraint = constraint
+    }
+
+    /// Dims or restores the texts and turns the controls on or off. Subclasses dim their
+    /// own extra texts.
+    func applyEnabled() {
+        titleLabel.textColor = PreferencesGroupedForm.titleColor(enabled: isEnabled)
+        explanationLabel.textColor = PreferencesGroupedForm.explanationColor(enabled: isEnabled)
+        for control in controls {
+            control.isEnabled = isEnabled
+        }
+    }
+
+    /// Every control is named by the row's title and explained by its explanation. A
+    /// button that shows a title of its own (a key recorder) keeps it and points at the
+    /// row's title instead.
+    private func labelControls() {
+        for control in controls {
+            if let button = control as? NSButton, !button.title.isEmpty {
+                button.setAccessibilityTitleUIElement(titleLabel)
+            } else {
+                control.setAccessibilityLabel(titleLabel.stringValue)
+            }
+            control.setAccessibilityHelp(explanation)
+        }
+    }
+}
+
+// MARK: - Switch row
+
+/// A row with a switch on the right.
+final class PreferencesSwitchRow: PreferencesGroupRow {
+
+    let toggle: NSSwitch
+
+    init(title: String, explanation: String? = nil, target: AnyObject?, action: Selector?) {
+        toggle = PreferencesGroupedForm.makeSwitch(target: target, action: action)
+        super.init(title: title, explanation: explanation, accessory: toggle)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("PreferencesSwitchRow is built in code")
+    }
+
+    var isOn: Bool {
+        get { return toggle.state == .on }
+        set { toggle.state = newValue ? .on : .off }
+    }
+}
+
+// MARK: - Slider row
+
+/// A row with a slider on the right: optionally a word under each end of the slider
+/// ("Slow" and "Fast") and the value next to it.
+final class PreferencesSliderRow: PreferencesGroupRow {
+
+    let slider: NSSlider
+    let valueLabel: NSTextField?
+    let lowEndLabel: NSTextField?
+    let highEndLabel: NSTextField?
+
+    init(
+        title: String,
+        explanation: String? = nil,
+        range: ClosedRange<Double>,
+        sliderWidth: CGFloat = PreferencesGroupedForm.sliderWidth,
+        ends: (low: String, high: String)? = nil,
+        showsValue: Bool = true,
+        valueWidth: CGFloat = PreferencesGroupedForm.sliderValueWidth,
+        target: AnyObject?,
+        action: Selector?
+    ) {
+        let slider = NSSlider(value: range.lowerBound, minValue: range.lowerBound, maxValue: range.upperBound, target: target, action: action)
+        slider.controlSize = .regular
+        slider.isContinuous = true
+        slider.translatesAutoresizingMaskIntoConstraints = false
+        self.slider = slider
+
+        let accessory = NSView()
+        accessory.translatesAutoresizingMaskIntoConstraints = false
+        accessory.addSubview(slider)
+        var constraints = [
+            slider.widthAnchor.constraint(equalToConstant: sliderWidth),
+            slider.leadingAnchor.constraint(equalTo: accessory.leadingAnchor),
+            slider.topAnchor.constraint(equalTo: accessory.topAnchor),
+        ]
+
+        if showsValue {
+            let value = NSTextField(labelWithString: "")
+            value.font = PreferencesGroupedForm.sliderValueFont
+            value.alignment = .right
+            value.translatesAutoresizingMaskIntoConstraints = false
+            accessory.addSubview(value)
+            constraints += [
+                value.leadingAnchor.constraint(equalTo: slider.trailingAnchor, constant: PreferencesGroupedForm.sliderValueSpacing),
+                value.trailingAnchor.constraint(equalTo: accessory.trailingAnchor),
+                value.widthAnchor.constraint(equalToConstant: valueWidth),
+                value.centerYAnchor.constraint(equalTo: slider.centerYAnchor),
+            ]
+            valueLabel = value
+        } else {
+            constraints.append(slider.trailingAnchor.constraint(equalTo: accessory.trailingAnchor))
+            valueLabel = nil
+        }
+
+        if let ends {
+            let low = NSTextField(labelWithString: ends.low)
+            let high = NSTextField(labelWithString: ends.high)
+            high.alignment = .right
+            for label in [low, high] {
+                label.font = PreferencesGroupedForm.sliderLabelFont
+                label.translatesAutoresizingMaskIntoConstraints = false
+                accessory.addSubview(label)
+            }
+            constraints += [
+                low.leadingAnchor.constraint(equalTo: slider.leadingAnchor),
+                low.topAnchor.constraint(equalTo: slider.bottomAnchor, constant: PreferencesGroupedForm.sliderEndsSpacing),
+                high.trailingAnchor.constraint(equalTo: slider.trailingAnchor),
+                high.firstBaselineAnchor.constraint(equalTo: low.firstBaselineAnchor),
+                high.leadingAnchor.constraint(greaterThanOrEqualTo: low.trailingAnchor, constant: 8),
+                low.bottomAnchor.constraint(equalTo: accessory.bottomAnchor),
+            ]
+            lowEndLabel = low
+            highEndLabel = high
+        } else {
+            constraints.append(slider.bottomAnchor.constraint(equalTo: accessory.bottomAnchor))
+            lowEndLabel = nil
+            highEndLabel = nil
+        }
+        NSLayoutConstraint.activate(constraints)
+
+        super.init(title: title, explanation: explanation, accessory: accessory, centeredOn: slider, controls: [slider])
+
+        // The words under the ends are text: they keep the full padding at the bottom.
+        if let lowEndLabel {
+            lowEndLabel.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -PreferencesGroupedForm.rowVerticalInset).isActive = true
+        }
+        applyEnabled()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("PreferencesSliderRow is built in code")
+    }
+
+    /// The value written next to the slider.
+    var valueText: String {
+        get { return valueLabel?.stringValue ?? "" }
+        set { valueLabel?.stringValue = newValue }
+    }
+
+    override func applyEnabled() {
+        super.applyEnabled()
+        let color = PreferencesGroupedForm.titleColor(enabled: isEnabled)
+        for label in [valueLabel, lowEndLabel, highEndLabel].compactMap({ $0 }) {
+            label.textColor = color
+        }
+    }
+}
+
+// MARK: - Disclosure row
+
+/// A header row that opens and closes the rows under it: a chevron and a title, the whole
+/// row is the button. It shows or hides `revealedViews`; whoever owns it decides what else
+/// happens (remembering the state, resizing the window) in the button's action.
+final class PreferencesDisclosureRow: PreferencesGroupRow {
+
+    let button: NSButton
+
+    /// The rows (or sections) shown while the row is open.
+    var revealedViews: [NSView] = [] {
+        didSet { applyExpanded() }
+    }
+
+    var isExpanded = false {
+        didSet { applyExpanded() }
+    }
+
+    init(title: String, target: AnyObject?, action: Selector?) {
+        let button = NSButton(title: title, target: target, action: action)
+        button.isBordered = false
+        button.setButtonType(.momentaryChange)
+        button.imagePosition = .imageLeading
+        button.imageHugsTitle = true
+        button.alignment = .left
+        button.contentTintColor = .secondaryLabelColor
+        button.attributedTitle = NSAttributedString(string: title, attributes: [
+            .font: PreferencesGroupedForm.titleFont,
+            .foregroundColor: NSColor.labelColor,
+        ])
+        button.translatesAutoresizingMaskIntoConstraints = false
+        self.button = button
+        super.init(title: title, controls: [])
+
+        // The button stands in for the title: the whole row is its click target.
+        titleLabel.isHidden = true
+        addSubview(button)
+        NSLayoutConstraint.activate([
+            button.leadingAnchor.constraint(equalTo: leadingAnchor, constant: PreferencesGroupedForm.rowHorizontalInset),
+            button.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -PreferencesGroupedForm.rowHorizontalInset),
+            button.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            button.heightAnchor.constraint(equalTo: heightAnchor),
+        ])
+        applyExpanded()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("PreferencesDisclosureRow is built in code")
+    }
+
+    private func applyExpanded() {
+        button.image = Self.chevron(expanded: isExpanded)
+        button.setAccessibilityExpanded(isExpanded)
+        for view in revealedViews {
+            view.isHidden = !isExpanded
+        }
+    }
+
+    /// Both directions are drawn on one canvas, so the title does not move when the row opens.
+    static func chevron(expanded: Bool) -> NSImage? {
+        let configuration = NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
+        guard let symbol = NSImage(systemSymbolName: expanded ? "chevron.down" : "chevron.right", accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration) else { return nil }
+        let image = NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
+            let size = symbol.size
+            symbol.draw(in: NSRect(
+                x: rect.midX - size.width / 2,
+                y: rect.midY - size.height / 2,
+                width: size.width,
+                height: size.height
+            ))
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+}
