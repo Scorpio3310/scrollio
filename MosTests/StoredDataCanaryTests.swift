@@ -3,8 +3,9 @@ import XCTest
 
 /// What the settings are stored under and how a removed item comes back. The redesign of
 /// General, Buttons and Apps changed none of it; "Which button is this?" added one optional
-/// field to a binding's trigger, on purpose. The keys and values below are frozen, never
-/// derive them from production code. ("Show in menu bar" over `hideStatusItem`:
+/// field to a binding's trigger, on purpose, and the Welcome Guide one Int of its own. The
+/// keys and values below are frozen, never derive them from production code. ("Show in
+/// menu bar" over `hideStatusItem`:
 /// PreferencesGeneralTests; bindings: PreferencesButtonsTests
 /// .testStoredBindingsLoadAndSaveUnchanged; apps: PreferencesApplicationTests
 /// .testStoredAppsLoadAndSaveUnchanged; wheel: LogiWheelSettingsPersistenceTests; Logitech
@@ -14,6 +15,7 @@ final class StoredDataCanaryTests: XCTestCase {
     func testTheSettingsKeysAreFrozen() {
         XCTAssertEqual(OptionItem.General.OptionsExist, "optionsExist")
         XCTAssertEqual(OptionItem.General.HideStatusItem, "hideStatusItem")
+        XCTAssertEqual(OptionItem.General.WelcomeGuideCompletedVersion, "welcomeGuideCompletedVersion")
         XCTAssertEqual(
             [OptionItem.Scroll.Smooth, OptionItem.Scroll.Reverse, OptionItem.Scroll.ReverseVertical,
              OptionItem.Scroll.ReverseHorizontal, OptionItem.Scroll.Dash, OptionItem.Scroll.Toggle,
@@ -33,6 +35,31 @@ final class StoredDataCanaryTests: XCTestCase {
         XCTAssertEqual(PreferencesSplitViewController.selectedPaneDefaultsKey, "preferencesSelectedPane")
         XCTAssertEqual(PreferencesScrollingViewController.advancedExpandedDefaultsKey, "scrollingAdvancedExpanded")
         XCTAssertEqual(PreferencesGeneralViewController.advancedExpandedDefaultsKey, "generalAdvancedExpanded")
+    }
+
+    // MARK: - The Welcome Guide
+
+    /// The one value the Welcome Guide added, deliberately: an Int under
+    /// "welcomeGuideCompletedVersion", 0 while a new user has not finished the guide, 1 once
+    /// it was finished (written once, silently, for settings that existed before the guide).
+    /// It is the only thing the guide stores (its feel step goes through the Scrolling
+    /// pane's own path); `readOptions` and the saves never read or write it.
+    func testTheWelcomeGuideStoresOneIntUnderAFrozenKey() throws {
+        let suite = "ScrollioTests.canary.welcomeGuide.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let progress = WelcomeGuideProgress(defaults: defaults)
+
+        progress.settleAtLaunch(isNewInstallation: true)
+        XCTAssertEqual(defaults.persistentDomain(forName: suite) as NSDictionary?, ["welcomeGuideCompletedVersion": 0])
+        progress.markFinished()
+        XCTAssertEqual(defaults.persistentDomain(forName: suite) as NSDictionary?, ["welcomeGuideCompletedVersion": 1])
+
+        defaults.removePersistentDomain(forName: suite)
+        progress.settleAtLaunch(isNewInstallation: false)
+        XCTAssertEqual(defaults.persistentDomain(forName: suite) as NSDictionary?, ["welcomeGuideCompletedVersion": 1])
+        XCTAssertEqual(WelcomeGuideProgress.currentVersion, 1)
+        XCTAssertEqual(WelcomeGuideProgress.notFinished, 0)
     }
 
     // MARK: - A button's place ("Which button is this?")

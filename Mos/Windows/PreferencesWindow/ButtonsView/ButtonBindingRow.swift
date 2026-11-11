@@ -6,7 +6,9 @@
 //  there is something to say (what the action needs, a problem after an orange sign, or
 //  that a numbered button is an extra one), an ⓘ that explains a problem, and the action
 //  pull-down. A numbered button's picture (and the row's context menu) opens "Which Button
-//  Is This?" (ButtonPlaceMenu).
+//  Is This?" (ButtonPlaceMenu). A button of the connected mouse has its row whether or not
+//  it has a binding: without an action its pull-down reads "Default" and the line says
+//  what the button then does, and it is never removed with "−".
 //
 
 import Cocoa
@@ -33,6 +35,8 @@ struct ButtonRowNote: Equatable {
         case alsoScrollKey
         /// What the Logitech mouse says about the button.
         case capture(ButtonCapturePresentationStatus)
+        /// A button of the connected mouse without an action: what it does by itself.
+        case defaultAction
     }
 
     enum Tone: Equatable {
@@ -49,7 +53,7 @@ struct ButtonRowNote: Equatable {
 
     var tone: Tone {
         switch kind {
-        case .gestureNavigation, .holdAction, .noAction, .extraButton:
+        case .gestureNavigation, .holdAction, .noAction, .extraButton, .defaultAction:
             return .plain
         case .alsoScrollKey, .keyGestureNavigation:
             return .problem
@@ -73,7 +77,7 @@ struct ButtonRowNote: Equatable {
         case .alsoScrollKey: return Self.text("buttons-scroll-key-title")
         case .keyGestureNavigation: return Self.text("buttons-gesture-needs-mouse-button")
         case .capture(let status): return Self.text(status.titleKey)
-        case .gestureNavigation, .holdAction, .noAction, .extraButton: return text
+        case .gestureNavigation, .holdAction, .noAction, .extraButton, .defaultAction: return text
         }
     }
 
@@ -82,7 +86,7 @@ struct ButtonRowNote: Equatable {
         case .alsoScrollKey: return Self.text("buttons-scroll-key-detail")
         case .keyGestureNavigation: return Self.text("buttons-gesture-needs-mouse-button-detail")
         case .capture(let status): return Self.text(status.detailKey)
-        case .gestureNavigation, .holdAction, .noAction, .extraButton: return ""
+        case .gestureNavigation, .holdAction, .noAction, .extraButton, .defaultAction: return ""
         }
     }
 
@@ -123,6 +127,31 @@ struct ButtonRowNote: Equatable {
         return nil
     }
 
+    /// The line of a button of the connected mouse without an action ("Default"): that it
+    /// is also a key under Scrolling › While you hold a key, else what it does by itself,
+    /// only where that is certain. Nothing when Scrollio catches its Logitech control for
+    /// another binding (the plain press then reaches only Scrollio).
+    /// - Parameters:
+    ///   - trigger: what the row stores once it gets an action. A numbered button the user
+    ///     placed there sends its number, not a standard button: no claim beyond its own.
+    ///   - isCaught: `ButtonsListLayout.catchesControl(of:in:)`.
+    static func makeDefault(
+        for part: ButtonsMousePart,
+        trigger: RecordedEvent,
+        scrollHoldKeys: [ScrollHotkey],
+        isCaught: Bool
+    ) -> ButtonRowNote? {
+        let isScrollKey = scrollHoldKeys.contains { key in
+            key.type == .mouse && ButtonsMousePart.part(for: RecordedEvent(type: .mouse, code: key.code, modifiers: 0, deviceFilter: nil)) == part
+        }
+        if isScrollKey {
+            return ButtonRowNote(kind: .alsoScrollKey, text: text("buttons-note-scroll-key"))
+        }
+        guard !isCaught else { return nil }
+        let key = ButtonTriggerPicture.number(for: trigger) == nil ? part.defaultExplanationKey : "buttons-default-own"
+        return ButtonRowNote(kind: .defaultAction, text: text(key))
+    }
+
     /// What the action needs: an action at all, the directions of Gesture Navigation (a
     /// mouse button: on a key it does nothing), the button held for a scroll action.
     private static func actionNote(for binding: ButtonBinding) -> ButtonRowNote? {
@@ -157,7 +186,14 @@ final class ButtonBindingRow: PreferencesListRow {
     /// Between the ⓘ and the pull-down, and between the title and the ⓘ.
     static let infoSpacing: CGFloat = 8
 
+    /// The binding the row shows. On a button of the connected mouse without one, the
+    /// binding the row would store once an action is chosen (`isStored` is false).
     private(set) var binding: ButtonBinding
+    /// `binding` is in the stored list.
+    private(set) var isStored: Bool
+    /// The button of the connected mouse the row is about; nil for any other binding. The
+    /// row stays while the mouse does, whatever its binding.
+    let part: ButtonsMousePart?
     private(set) var note: ButtonRowNote?
     /// What the picture before the title shows.
     private(set) var picture: ButtonTriggerPicture
@@ -181,11 +217,27 @@ final class ButtonBindingRow: PreferencesListRow {
     /// The picture the icon shows now, on which mouse, and whether drawn for the selection.
     private var shownPicture: (picture: ButtonTriggerPicture, mouse: MouseArtworkModel, highlighted: Bool)?
 
-    init(binding: ButtonBinding, title: String, note: ButtonRowNote?, mouse: MouseArtworkModel, pullDown: ButtonActionPullDown) {
+    /// - Parameters:
+    ///   - part: the button of the connected mouse the row is about (its id is the part);
+    ///     nil: a row of `binding` (its id is the binding's).
+    ///   - isStored: `binding` is stored; false for a button of the connected mouse that has
+    ///     no binding.
+    init(
+        binding: ButtonBinding,
+        title: String,
+        note: ButtonRowNote?,
+        mouse: MouseArtworkModel,
+        pullDown: ButtonActionPullDown,
+        part: ButtonsMousePart? = nil,
+        isStored: Bool = true
+    ) {
         self.binding = binding
+        self.isStored = isStored
+        self.part = part
         self.note = note
         self.mouse = mouse
         self.pullDown = pullDown
+        pullDown.offersDefault = part != nil
         let picture = ButtonTriggerPicture.make(for: binding.triggerEvent, mouse: mouse)
         self.picture = picture
 
@@ -201,7 +253,7 @@ final class ButtonBindingRow: PreferencesListRow {
         infoButton = info
 
         super.init(
-            id: binding.id,
+            id: part.map { AnyHashable($0) } ?? AnyHashable(binding.id),
             title: title,
             explanation: note?.text,
             icon: .image(ButtonsMouseMiniature.image(for: picture, mouse: mouse, highlighted: false)),
@@ -229,6 +281,8 @@ final class ButtonBindingRow: PreferencesListRow {
             placeButton.target = self
             placeButton.action = #selector(placeClicked(_:))
         }
+        // A button of the mouse is cleared with "Default", never removed.
+        isRemovable = part == nil
         applyNote()
     }
 
@@ -241,8 +295,9 @@ final class ButtonBindingRow: PreferencesListRow {
 
     /// Shows `binding` with `title` and `note` on `mouse`; the row and its pull-down stay the
     /// same views.
-    func update(binding: ButtonBinding, title: String, note: ButtonRowNote?, mouse: MouseArtworkModel) {
+    func update(binding: ButtonBinding, title: String, note: ButtonRowNote?, mouse: MouseArtworkModel, isStored: Bool = true) {
         self.binding = binding
+        self.isStored = isStored
         self.note = note
         self.mouse = mouse
         // "Use Standard Button" gives the row another trigger.
@@ -255,9 +310,14 @@ final class ButtonBindingRow: PreferencesListRow {
         applyNote()
     }
 
-    /// The picture is a button only for a button the Mac knows by its number.
+    /// A button of the connected mouse without an action: its pull-down reads "Default".
+    var isDefault: Bool {
+        return part != nil && !CellActionState(binding: binding).hasBoundAction
+    }
+
+    /// The picture is a button only for a stored button the Mac knows by its number.
     var offersPlace: Bool {
-        return ButtonTriggerPicture.number(for: binding.triggerEvent) != nil
+        return isStored && ButtonTriggerPicture.number(for: binding.triggerEvent) != nil
     }
 
     @objc private func placeClicked(_ sender: NSButton) {

@@ -465,10 +465,9 @@ enum StatusMenu {
 final class StatusMenuActions: NSObject {
 
     var showSettings: () -> Void = { MainMenuManager.showPreferencesWindow(paneIdentifier: nil) }
-    /// The Welcome Guide, as the app opens it (with "Open Settings" once the access is there).
-    var showWelcomeGuide: () -> Void = {
-        WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.introductionWindowController)
-    }
+    /// The Welcome Guide, as the app opens it (the Accessibility step alone once the guide
+    /// was finished).
+    var showWelcomeGuide: () -> Void = { IntroductionWindowController.showAutomatically() }
     var togglePause: () -> Void = {
         AppRunController.shared.setPaused(!AppRunController.shared.isPaused)
     }

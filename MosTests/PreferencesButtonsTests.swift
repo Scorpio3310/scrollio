@@ -3,8 +3,10 @@
 //  MosTests
 //
 //  The Buttons pane: what its rows and its card are called, which part of the mouse a
-//  button lights (on the card and in each row's picture), how a button the drawing cannot
-//  show is found ("That's …"), the notes under the rows, recording a button (stubbed: no event is
+//  button lights (on the card and in each row's picture), the rows of the connected MX
+//  Master's buttons ("Default" until one gets an action) above the other bindings, how a
+//  button the drawing cannot show is found ("That's …"), the notes under the rows,
+//  recording a button (stubbed: no event is
 //  recorded or posted), removing with Undo (also from another pane), the keyboard focus,
 //  what closes with the pane, the action menu, "Checking buttons…", and that stored
 //  bindings load and save unchanged. Nothing is shown on screen and no HID device is
@@ -133,6 +135,14 @@ final class PreferencesButtonsTests: XCTestCase {
         return NSLocalizedString(key, comment: "")
     }
 
+    /// The rows that show `bindings`, in their order, wherever the pane put them.
+    private func rows(of bindings: [ButtonBinding], in pane: PreferencesButtonsViewController) throws -> [ButtonBindingRow] {
+        return try bindings.map { try XCTUnwrap(pane.row(for: $0.id), "no row for \($0.triggerEvent)") }
+    }
+
+    /// The rows of the MX Master 4's buttons when none has a binding, top to bottom.
+    private let mxMaster4Titles = ["Middle button", "Mode shift button", "Gesture button", "Forward button", "Back button", "Thumb panel"]
+
     private let option = UInt(CGEventFlags.maskAlternate.rawValue)
     private let command = UInt(CGEventFlags.maskCommand.rawValue)
     private let control = UInt(CGEventFlags.maskControl.rawValue)
@@ -178,15 +188,436 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(Set(header.artwork.highlights.keys), Set(ButtonsMousePart.allCases))
     }
 
+    /// Without a Logitech mouse the list holds only what was added, as it always did.
     func testTheEmptyList() {
+        deviceName = nil
         let pane = makePane()
         XCTAssertTrue(pane.rows.isEmpty)
         XCTAssertEqual(pane.list.emptyRow.title, "No buttons yet")
         XCTAssertEqual(pane.list.emptyRow.explanation, "Click + and press a mouse button to give it an action.")
         XCTAssertTrue(pane.list.emptyRow.superview === pane.list.rowsView)
         XCTAssertFalse(pane.list.removeButton.isEnabled)
-        XCTAssertEqual(pane.headerView.content.title, "MX Master 4")
+        XCTAssertEqual(pane.headerView.content.title, "Your mouse")
         XCTAssertEqual(pane.headerView.content.subtitle, "No buttons set up yet")
+    }
+
+    // MARK: - The connected mouse's buttons
+
+    /// An item of an action menu (or one of its submenus) by the action's identifier.
+    private func item(_ identifier: String, in menu: NSMenu?) -> NSMenuItem? {
+        for item in menu?.items ?? [] {
+            if (item.representedObject as? SystemShortcut.Shortcut)?.identifier == identifier {
+                return item
+            }
+            if let found = self.item(identifier, in: item.submenu) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    /// An MX Master 4 with nothing set up: a row for each of its buttons, in the order they
+    /// sit on it, each "Default" with what it then does where that is certain. Left and
+    /// right clicks are not listed, nothing is stored, the list has no title inside, and
+    /// "−" and Delete never remove one.
+    func testAnMXMaster4ListsEveryButtonInTheOrderTheySit() throws {
+        let pane = makePane()
+        let (window, _) = makeWindow(for: pane)
+        XCTAssertEqual(ButtonsMousePart.listed(on: .mxMaster4), [.middle, .modeShift, .gesture, .forward, .back, .thumbPanel])
+        XCTAssertEqual(pane.rows.map(\.title), mxMaster4Titles)
+        XCTAssertEqual(pane.rows.map(\.id), ButtonsMousePart.listed(on: .mxMaster4).map { AnyHashable($0) })
+        XCTAssertEqual(pane.rows.map { shown($0.pullDown) }, Array(repeating: "Default", count: 6))
+        XCTAssertEqual(pane.rows.map(\.explanation), [
+            "Middle click.",
+            "Switches the wheel between ratchet and free-spin.",
+            "Does what the mouse does on its own.",
+            "Goes forward in apps that support it.",
+            "Goes back in apps that support it.",
+            "Does what the mouse does on its own.",
+        ])
+        XCTAssertEqual(pane.rows.map { $0.note?.tone }, Array(repeating: ButtonRowNote.Tone.plain as ButtonRowNote.Tone?, count: 6))
+        XCTAssertTrue(pane.rows.allSatisfy { $0.isDefault && !$0.isStored && !$0.isRemovable && $0.infoButton.isHidden && $0.placeButton.isHidden })
+        XCTAssertEqual(pane.rows.map(\.picture), ButtonsMousePart.listed(on: .mxMaster4).map { ButtonTriggerPicture.mouse(part: $0, number: nil) })
+        XCTAssertEqual(pane.rows[4].accessibilityLabel(), "Back button, Goes back in apps that support it.")
+        XCTAssertTrue(pane.list.groupTitles.isEmpty)
+        XCTAssertNil(pane.list.emptyRow.superview, "never empty")
+
+        // "Default" where other rows offer "No Action".
+        let back = pane.rows[4].pullDown
+        XCTAssertEqual(back.noActionItem?.title, "Default")
+        XCTAssertNil(back.menu?.items.first { $0.title == "No Action" })
+        XCTAssertEqual(ButtonActionPullDown(binding: binding(5)).noActionItem?.title, "No Action")
+
+        // The card: no button has an action; a row lights its button and says "Default".
+        XCTAssertEqual(pane.headerView.content.subtitle, "No buttons set up yet")
+        pane.list.select(ButtonsMousePart.thumbPanel)
+        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "Thumb panel", subtitle: "Default", part: .thumbPanel))
+        XCTAssertEqual(pane.headerView.artwork.emphasis, .thumbPanel)
+
+        // "−" is off on it, and Delete does nothing.
+        XCTAssertFalse(pane.list.removeButton.isEnabled)
+        window.makeFirstResponder(pane.list)
+        pane.list.keyDown(with: try key("\u{7F}", keyCode: 51))
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(ButtonsMousePart.thumbPanel))
+        XCTAssertEqual(pane.rows.count, 6)
+        XCTAssertTrue(Options.shared.buttons.binding.isEmpty, "showing, selecting and Delete store nothing")
+    }
+
+    /// An MX Master 3S has no thumb panel and its gesture button in the thumb rest; with no
+    /// Logitech mouse the list is what was added, as before. The list follows the mouse,
+    /// and nothing is stored for it.
+    func testEachMouseListsItsOwnButtonsAndAPlainMouseNone() throws {
+        let added = [binding(3, "copy", modifiers: option), binding(40, "copy", modifiers: control, type: .keyboard)]
+        deviceName = "MX Master 3S"
+        let pane = makePane(added)
+        XCTAssertEqual(ButtonsMousePart.listed(on: .mxMaster3), [.middle, .modeShift, .forward, .back, .gesture])
+        XCTAssertEqual(pane.rows.map(\.title), ["Middle button", "Mode shift button", "Forward button", "Back button", "Gesture button",
+                                                "⌥ Back button", "⌃ K"])
+        XCTAssertEqual(pane.rows[4].picture, .mouse(part: .gesture, number: nil))
+        XCTAssertEqual(pane.rows[4].explanation, "Does what the mouse does on its own.")
+        XCTAssertEqual(pane.list.groupTitles[AnyHashable(added[0].id)]?.title, "Other buttons and keys")
+        XCTAssertEqual(pane.list.groupTitles.count, 1)
+
+        deviceName = nil
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(pane.rows.map(\.title), ["⌥ Back button", "⌃ K"])
+        XCTAssertEqual(pane.rows.map(\.id), added.map { AnyHashable($0.id) })
+        XCTAssertTrue(pane.rows.allSatisfy(\.isRemovable))
+        XCTAssertTrue(pane.list.groupTitles.isEmpty)
+        XCTAssertEqual(ButtonsMousePart.listed(on: .generic), [])
+
+        deviceName = "MX Master 4"
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(pane.rows.map(\.title), mxMaster4Titles + ["⌥ Back button", "⌃ K"])
+        XCTAssertEqual(Options.shared.buttons.binding, added)
+    }
+
+    /// A binding of a button without modifiers is that button's row: a standard button, a
+    /// Logitech control, a numbered button said to be there. Two of one button: the one
+    /// with an action is the row, the other is below with what tells them apart. The rest
+    /// is below, as stored, where "−" works; the card counts every binding with an action.
+    func testABindingOfAButtonIsItsRowAndEverythingElseIsBelow() throws {
+        let gestureNumber = ButtonBinding(triggerEvent: placed(6, .gestureButton), systemShortcutName: SystemShortcut.mouseGestureNavigation.identifier, isEnabled: true)
+        let bindings = [
+            binding(1006),
+            binding(3, "copy"),
+            gestureNumber,
+            binding(1001, "paste", modifiers: option),
+            binding(2, SystemShortcut.missionControl.identifier),
+            binding(2000 + 0x005B, "copy"),
+            binding(7, "copy"),
+            binding(40, "copy", modifiers: control, type: .keyboard),
+        ]
+        let pane = makePane(bindings)
+        XCTAssertEqual(pane.rows.map(\.title), [
+            "Middle button", "Mode shift button", "Gesture button (button 6)", "Forward button", "Back button", "Thumb panel",
+            "Back button (Logitech)", "⌥ Mode shift button", "Left Tilt button", "Button 7", "⌃ K",
+        ])
+        let top = Array(pane.rows.prefix(6))
+        XCTAssertEqual(top.map(\.isStored), [true, false, true, false, true, false])
+        XCTAssertEqual(top.map(\.isDefault), [false, true, false, true, false, true])
+        XCTAssertEqual(top.map { shown($0.pullDown) }, [
+            SystemShortcut.missionControl.localizedName, "Default", "Gesture Navigation", "Default", "Copy", "Default",
+        ])
+        XCTAssertEqual(pane.row(for: ButtonsMousePart.back)?.binding, bindings[1])
+        XCTAssertEqual(pane.row(for: ButtonsMousePart.gesture)?.binding, gestureNumber)
+        XCTAssertEqual(pane.rows.dropFirst(6).map(\.id), [bindings[0], bindings[3], bindings[5], bindings[6], bindings[7]].map { AnyHashable($0.id) })
+        XCTAssertEqual(pane.list.groupTitles.count, 1)
+        XCTAssertEqual(pane.list.groupTitles[AnyHashable(bindings[0].id)]?.title, "Other buttons and keys")
+        XCTAssertEqual(pane.layout.others, [bindings[0], bindings[3], bindings[5], bindings[6], bindings[7]])
+
+        pane.list.select(bindings[6].id)
+        XCTAssertTrue(pane.list.removeButton.isEnabled)
+        pane.list.select(ButtonsMousePart.back)
+        XCTAssertFalse(pane.list.removeButton.isEnabled, "a button of the mouse is cleared with Default")
+        pane.list.select(nil)
+        XCTAssertEqual(pane.headerView.content.subtitle, "7 buttons have actions")
+        XCTAssertEqual(Options.shared.buttons.binding, bindings, "nothing is rewritten")
+
+        // "−" below; the Logitech Back button goes and the Back button's row stays.
+        pane.list.select(bindings[0].id)
+        pane.list.removeButton.performClick(nil)
+        XCTAssertEqual(Options.shared.buttons.binding.count, 7)
+        XCTAssertEqual(pane.list.groupTitles[AnyHashable(bindings[3].id)]?.title, "Other buttons and keys", "the title moves to the first one below")
+    }
+
+    /// Choosing an action on a "Default" row stores that button's binding, as bindings were
+    /// always stored, with what "+" would record for the button on this mouse; the row stays
+    /// the same view. "Default" on a row with a binding removes it, and Undo puts it back.
+    func testADefaultRowStoresItsBindingWhenItGetsAnAction() throws {
+        let pane = makePane()
+        let undo = try XCTUnwrap(pane.paneUndoManager)
+        undo.groupsByEvent = false
+        let back = try XCTUnwrap(pane.row(for: ButtonsMousePart.back))
+        let menu = try XCTUnwrap(back.pullDown.menu)
+        back.pullDown.shortcutSelected(try XCTUnwrap(item("copy", in: menu)))
+
+        XCTAssertEqual(Options.shared.buttons.binding.count, 1)
+        let stored = try XCTUnwrap(Options.shared.buttons.binding.first)
+        XCTAssertEqual(stored.triggerEvent, RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil),
+                       "the standard Back button: no Logitech session diverts it here")
+        XCTAssertEqual(stored.systemShortcutName, "copy")
+        XCTAssertTrue(stored.isEnabled)
+        XCTAssertTrue(pane.row(for: ButtonsMousePart.back) === back, "the same row")
+        XCTAssertTrue(back.pullDown.menu === menu)
+        XCTAssertTrue(back.isStored)
+        XCTAssertFalse(back.isDefault)
+        XCTAssertEqual(shown(back.pullDown), "Copy")
+        XCTAssertNil(back.explanation)
+        XCTAssertEqual(pane.headerView.content.subtitle, "1 button has an action")
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try sortedJSON(Options.shared.buttons.binding)) as? [[String: Any]])
+        XCTAssertEqual(Set(object[0].keys), ["id", "triggerEvent", "systemShortcutName", "isEnabled", "createdAt"])
+        XCTAssertEqual(Set((object[0]["triggerEvent"] as? [String: Any] ?? [:]).keys), ["type", "code", "modifiers"])
+
+        // The others: the standard middle and forward buttons, the Logitech controls.
+        let expected: [(ButtonsMousePart, UInt16)] = [(.gesture, 1000), (.modeShift, 1001), (.thumbPanel, 2000 + 0x01A0), (.middle, 2), (.forward, 4)]
+        for (part, code) in expected {
+            let row = try XCTUnwrap(pane.row(for: part))
+            row.pullDown.shortcutSelected(try XCTUnwrap(item("paste", in: row.pullDown.menu)))
+            XCTAssertEqual(pane.row(for: part)?.binding.triggerEvent, RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil), "\(part)")
+            XCTAssertTrue(pane.row(for: part) === row)
+        }
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.triggerEvent.code), [3, 1000, 1001, 2000 + 0x01A0, 2, 4])
+        XCTAssertEqual(pane.rows.count, 6)
+        XCTAssertTrue(pane.list.groupTitles.isEmpty)
+
+        // "Default": the binding goes, the row stays; Undo puts it back, Redo removes it.
+        let defaultItem = try XCTUnwrap(back.pullDown.noActionItem)
+        undo.beginUndoGrouping()
+        back.pullDown.shortcutSelected(defaultItem)
+        undo.endUndoGrouping()
+        XCTAssertFalse(Options.shared.buttons.binding.contains { $0.id == stored.id })
+        XCTAssertTrue(pane.row(for: ButtonsMousePart.back) === back)
+        XCTAssertTrue(back.isDefault)
+        XCTAssertFalse(back.isStored)
+        XCTAssertEqual(shown(back.pullDown), "Default")
+        XCTAssertEqual(back.explanation, "Goes back in apps that support it.")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Remove Button")
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding.first, stored, "back where it was, unchanged")
+        XCTAssertEqual(shown(back.pullDown), "Copy")
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(ButtonsMousePart.back))
+        undo.redo()
+        XCTAssertFalse(Options.shared.buttons.binding.contains { $0.id == stored.id })
+
+        // "Default" on a row without a binding changes nothing.
+        back.pullDown.shortcutSelected(defaultItem)
+        XCTAssertEqual(Options.shared.buttons.binding.count, 5)
+        XCTAssertEqual(shown(back.pullDown), "Default")
+    }
+
+    /// What a "Default" row stores is what "+" records for that button on this mouse: over a
+    /// receiver every control is diverted while "+" records (the Logitech code); over
+    /// Bluetooth the standard middle, back and forward buttons stay native; a control no
+    /// Logitech session reports reaches the Mac as the standard button it is. The gesture
+    /// button, the mode shift button and the thumb panel are always their Logitech code.
+    func testTheTriggerADefaultRowStoresIsWhatPlusRecords() throws {
+        let policy = LogiButtonDeliveryPolicy(standardMouseButtonsUseNativeEvents: true)
+        func diagnosis(over transport: LogiTransportIdentity?) -> (UInt16) -> LogiButtonCaptureDiagnosis {
+            return { code in
+                let native = LogiCenter.shared.nativeMouseButton(forMosCode: code)
+                guard let transport, let cid = LogiCIDDirectory.toCID(code) else { return .unknown(nativeMouseButton: native) }
+                return LogiButtonCaptureDiagnosis(
+                    ownership: .mosOwned,
+                    delivery: .hidpp,
+                    ownershipKey: LogiOwnershipKey(vendorId: 0x046D, productId: 0xB042, name: "MX Master 4", transport: transport, cid: cid),
+                    nativeMouseButton: native,
+                    usesNativeEvents: !policy.shouldUseHIDPPDelivery(transport: transport, cid: cid, phase: .recording)
+                )
+            }
+        }
+        let parts: [ButtonsMousePart] = [.middle, .back, .forward, .gesture, .modeShift, .thumbPanel]
+        func codes(over transport: LogiTransportIdentity?) -> [UInt16] {
+            return parts.map { $0.recordedTrigger(diagnosis: diagnosis(over: transport)).code }
+        }
+        XCTAssertEqual(codes(over: .receiver), [1005, 1006, 1007, 1000, 1001, 2000 + 0x01A0])
+        XCTAssertEqual(codes(over: .bleDirect), [2, 3, 4, 1000, 1001, 2000 + 0x01A0])
+        XCTAssertEqual(codes(over: nil), [2, 3, 4, 1000, 1001, 2000 + 0x01A0])
+        XCTAssertTrue(parts.allSatisfy { $0.recordedTrigger(diagnosis: diagnosis(over: .receiver)).modifiers == 0 })
+        // The same as "+" stores a press of the control while it is diverted.
+        let receiver = diagnosis(over: .receiver)
+        for code: UInt16 in [1005, 1006, 1007, 1000] {
+            let pressed = RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil)
+            XCTAssertEqual(pressed.normalizedForButtonBinding(diagnosis: receiver(code)).code, code)
+            XCTAssertEqual(pressed.normalizedForButtonBinding(diagnosis: diagnosis(over: .bleDirect)(code)).code,
+                           LogiCenter.shared.nativeMouseButton(forMosCode: code) ?? code)
+        }
+
+        // In the pane, over a receiver: the Back button's row stores the Logitech Back button.
+        let pane = makePane()
+        pane.deviceSource.recordedTrigger = { $0.recordedTrigger(diagnosis: receiver) }
+        pane.reload()
+        let back = try XCTUnwrap(pane.row(for: ButtonsMousePart.back))
+        XCTAssertEqual(back.title, "Back button")
+        XCTAssertEqual(back.explanation, "Goes back in apps that support it.", "not caught while it has no binding")
+        back.pullDown.shortcutSelected(try XCTUnwrap(item("copy", in: back.pullDown.menu)))
+        XCTAssertEqual(Options.shared.buttons.binding.first?.triggerEvent.code, 1006)
+        XCTAssertEqual(back.title, "Back button")
+    }
+
+    /// "+" and a button of the mouse: its row is selected and flashes, the card answers
+    /// "That's …", nothing is added, with a binding or without. With a modifier it is
+    /// another button, added below. Gestures › Set Up… gives a row without a binding
+    /// Gesture Navigation, stored for what was pressed.
+    func testPlusOnAButtonOfTheMouseFlashesItsRow() throws {
+        let pane = makePane([binding(3, "copy")])
+        let recorder = KeyRecorder()
+        pane.beginAddingBinding()
+        pane.onRecordingStarted(recorder)
+        let gesture = mouseEvent(1000)
+        XCTAssertFalse(pane.validateRecordedEvent(recorder, event: gesture), "the recorder says it is listed")
+        pane.onEventRecorded(recorder, didRecordEvent: gesture, isDuplicate: true)
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(ButtonsMousePart.gesture))
+        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "That's Gesture button", subtitle: "Default", part: .gesture))
+        pane.onRecordingStopped(recorder, didRecord: true)
+        flush()
+        XCTAssertEqual(Options.shared.buttons.binding.count, 1)
+        XCTAssertEqual(pane.rows.count, 6)
+        XCTAssertTrue(openedMenus.isEmpty)
+
+        // The Logitech Back button is the Back button's row too.
+        pane.beginAddingBinding()
+        pane.onRecordingStarted(recorder)
+        XCTAssertFalse(pane.validateRecordedEvent(recorder, event: mouseEvent(1006)))
+        pane.onEventRecorded(recorder, didRecordEvent: mouseEvent(1006), isDuplicate: true)
+        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "That's Back button", subtitle: "Copy", part: .back))
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(ButtonsMousePart.back))
+        pane.onRecordingStopped(recorder, didRecord: true)
+        XCTAssertEqual(Options.shared.buttons.binding.count, 1)
+
+        // With a modifier: another button, added below, its menu opens.
+        pane.beginAddingBinding()
+        pane.onRecordingStarted(recorder)
+        let optionGesture = mouseEvent(1000, modifiers: .maskAlternate)
+        XCTAssertTrue(pane.validateRecordedEvent(recorder, event: optionGesture))
+        pane.onEventRecorded(recorder, didRecordEvent: optionGesture, isDuplicate: false)
+        pane.onRecordingStopped(recorder, didRecord: true)
+        flush()
+        let added = try XCTUnwrap(Options.shared.buttons.binding.last)
+        XCTAssertEqual(pane.rows.last?.title, "⌥ Gesture button")
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(added.id))
+        XCTAssertEqual(pane.list.groupTitles[AnyHashable(added.id)]?.title, "Other buttons and keys")
+        XCTAssertEqual(openedMenus.count, 1)
+
+        // Gestures › Set Up…: the thumb panel without a binding gets Gesture Navigation.
+        pane.beginAddingBinding(action: SystemShortcut.mouseGestureNavigation)
+        pane.onRecordingStarted(recorder)
+        let panel = mouseEvent(2000 + 0x01A0)
+        XCTAssertTrue(pane.validateRecordedEvent(recorder, event: panel), "it takes the action")
+        pane.onEventRecorded(recorder, didRecordEvent: panel, isDuplicate: false)
+        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "Thumb panel", subtitle: "Gesture Navigation", part: .thumbPanel))
+        pane.onRecordingStopped(recorder, didRecord: true)
+        flush()
+        let gestureButton = try XCTUnwrap(Options.shared.buttons.binding.last)
+        XCTAssertEqual(gestureButton.triggerEvent, RecordedEvent(type: .mouse, code: 2000 + 0x01A0, modifiers: 0, deviceFilter: nil))
+        XCTAssertEqual(gestureButton.systemShortcutName, SystemShortcut.mouseGestureNavigation.identifier)
+        XCTAssertEqual(pane.row(for: ButtonsMousePart.thumbPanel)?.binding, gestureButton)
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(ButtonsMousePart.thumbPanel))
+        XCTAssertEqual(openedMenus.count, 1, "the action is set: no menu")
+        let summary = MouseGestureBindingSummary(bindings: Options.shared.buttons.binding, isLogitechCode: { LogiCenter.shared.isLogiCode($0) })
+        XCTAssertEqual(summary.buttonTitles, ["Thumb panel"], "the Gestures pane's line")
+    }
+
+    /// The line under a "Default" row says what the button then does only where that is
+    /// certain: a hold key under Scrolling says so; while Scrollio catches its Logitech
+    /// control for a binding with modifiers (the plain press then reaches only Scrollio),
+    /// nothing; a numbered button said to be there makes no claim beyond its own.
+    func testTheDefaultLineSaysOnlyWhatIsCertain() throws {
+        scrollKeys = [ScrollHotkey(type: .mouse, code: 1001)]
+        let caught = binding(1006, "copy", modifiers: option)
+        let middle = ButtonBinding(triggerEvent: placed(8, .middleButton, modifiers: option), systemShortcutName: "copy", isEnabled: true)
+        let pane = makePane([caught, binding(4, "copy", modifiers: command), middle])
+        func row(_ part: ButtonsMousePart) throws -> ButtonBindingRow {
+            return try XCTUnwrap(pane.row(for: part))
+        }
+        XCTAssertNil(try row(.back).explanation, "the plain press reaches only Scrollio")
+        XCTAssertEqual(try row(.forward).explanation, "Goes forward in apps that support it.", "a standard button with ⌘ is not caught")
+        XCTAssertEqual(try row(.modeShift).explanation, "Also set under Scrolling\u{A0}›\u{A0}While\u{A0}you\u{A0}hold\u{A0}a\u{A0}key.")
+        XCTAssertEqual(try row(.modeShift).note?.tone, .problem)
+        XCTAssertFalse(try row(.modeShift).infoButton.isHidden)
+        XCTAssertEqual(try row(.middle).title, "Middle button (button 8)")
+        XCTAssertEqual(try row(.middle).picture, .mouse(part: .middle, number: nil))
+        XCTAssertEqual(try row(.middle).explanation, "Does what the mouse does on its own.")
+        XCTAssertTrue(try row(.middle).placeButton.isHidden)
+
+        // Without its action the ⌥ binding catches nothing.
+        pane.setAction(of: caught.id, to: nil)
+        XCTAssertEqual(try row(.back).explanation, "Goes back in apps that support it.")
+
+        // The middle row stores the number said to be there, without modifiers.
+        try row(.middle).pullDown.shortcutSelected(try XCTUnwrap(item("paste", in: try row(.middle).pullDown.menu)))
+        let stored = try XCTUnwrap(Options.shared.buttons.binding.last)
+        XCTAssertEqual(stored.triggerEvent, RecordedEvent(type: .mouse, code: 8, modifiers: 0, deviceFilter: nil))
+        XCTAssertEqual(stored.triggerEvent.mousePart, .middleButton)
+        XCTAssertEqual(try row(.middle).title, "Middle button (button 8)")
+        XCTAssertFalse(try row(.middle).placeButton.isHidden, "stored, its place can be changed")
+    }
+
+    /// A button set to "Default" and given an action again gets the trigger it had, a
+    /// numbered one too (an MX Master 4 over Bluetooth may send Button 6 for its gesture
+    /// button). Another mouse starts afresh.
+    func testADefaultRowGetsBackTheTriggerItHad() throws {
+        let six = ButtonBinding(triggerEvent: placed(6, .gestureButton), systemShortcutName: SystemShortcut.mouseGestureNavigation.identifier, isEnabled: true)
+        let pane = makePane([six])
+        let row = try XCTUnwrap(pane.row(for: ButtonsMousePart.gesture))
+        XCTAssertEqual(row.binding, six)
+        row.pullDown.shortcutSelected(try XCTUnwrap(row.pullDown.noActionItem))
+        XCTAssertTrue(Options.shared.buttons.binding.isEmpty)
+        XCTAssertTrue(row.isDefault)
+        XCTAssertEqual(row.title, "Gesture button (button 6)")
+        XCTAssertEqual(row.explanation, "Does what the mouse does on its own.")
+
+        let gestureItem = try XCTUnwrap(row.pullDown.gestureNavigationItem)
+        row.pullDown.shortcutSelected(gestureItem)
+        let stored = try XCTUnwrap(Options.shared.buttons.binding.first)
+        XCTAssertEqual(stored.triggerEvent, six.triggerEvent)
+        XCTAssertEqual(stored.triggerEvent.mousePart, .gestureButton)
+        XCTAssertEqual(row.explanation, "Hold and move the mouse. Set the directions under Gestures.")
+
+        // Another mouse: what "+" records for it.
+        row.pullDown.shortcutSelected(try XCTUnwrap(row.pullDown.noActionItem))
+        deviceName = "MX Master 3S"
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(pane.row(for: ButtonsMousePart.gesture)?.binding.triggerEvent.code, 1000)
+        XCTAssertEqual(pane.row(for: ButtonsMousePart.gesture)?.title, "Gesture button")
+    }
+
+    /// "Open App or File…" and "Keyboard Shortcut…" on a "Default" row: nothing is stored
+    /// until the app or the keys are chosen, then the button's binding.
+    func testADefaultRowTakesAnAppOrAKeyboardShortcut() throws {
+        let pane = makePane()
+        let forward = try XCTUnwrap(pane.row(for: ButtonsMousePart.forward))
+        let openItem = try XCTUnwrap(forward.pullDown.menu?.items.first { $0.representedObject as? String == ShortcutManager.MenuMarker.openTarget })
+        forward.pullDown.shortcutSelected(openItem)
+        let popover = try XCTUnwrap(pane.openTargetPopover)
+        XCTAssertTrue(shownOpenTargets.first === forward.pullDown)
+        XCTAssertTrue(Options.shared.buttons.binding.isEmpty, "nothing until it is chosen")
+        let calculator = OpenTargetPayload(path: "/System/Applications/Calculator.app", bundleID: "com.apple.calculator", arguments: "", kind: .application)
+        popover.onCommit?(calculator)
+        XCTAssertNil(pane.openTargetPopover)
+        let opens = try XCTUnwrap(Options.shared.buttons.binding.first)
+        XCTAssertEqual(opens.openTarget, calculator)
+        XCTAssertEqual(opens.triggerEvent.code, 4)
+        XCTAssertEqual(shown(forward.pullDown), "Calculator")
+
+        let middle = try XCTUnwrap(pane.row(for: ButtonsMousePart.middle))
+        let shortcut = "custom::40:\(UInt64(CGEventFlags.maskCommand.rawValue))"
+        middle.pullDown.onCustomShortcutRecorded?(shortcut)
+        XCTAssertEqual(Options.shared.buttons.binding.last?.systemShortcutName, shortcut)
+        XCTAssertEqual(Options.shared.buttons.binding.last?.triggerEvent.code, 2)
+        XCTAssertEqual(shown(middle.pullDown), "⌘K")
+    }
+
+    /// A Logitech button that may stop working over Bluetooth warns once when it gets an
+    /// action on its row, as when "+" adds it; without an action it says what it does.
+    func testAButtonThatMayStopWorkingOverBluetoothWarnsWhenItGetsAnAction() throws {
+        captureStatus = [2000 + 0x01A0: .bleHIDPPUnstable]
+        let pane = makePane()
+        let panel = try XCTUnwrap(pane.row(for: ButtonsMousePart.thumbPanel))
+        XCTAssertEqual(panel.explanation, "Does what the mouse does on its own.")
+        panel.pullDown.shortcutSelected(try XCTUnwrap(item("copy", in: panel.pullDown.menu)))
+        XCTAssertEqual(warnedCodes, [2000 + 0x01A0])
+        XCTAssertEqual(panel.explanation, "May stop working while Logi Options+ runs.")
     }
 
     // MARK: - Names
@@ -226,6 +657,8 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(titles([3, 1006], modifiers: [3: option]), ["⌥ Back button", "Back button"])
         XCTAssertEqual(titles([3, 1006], modifiers: [3: option, 1006: option]), ["⌥ Back button", "⌥ Back button (Logitech)"])
 
+        // The plain list; on an MX Master the second one is under the Back button's row.
+        deviceName = nil
         let native = binding(3, "copy")
         let logitech = binding(1006, SystemShortcut.mouseGestureNavigation.identifier)
         let pane = makePane([native, logitech])
@@ -332,13 +765,13 @@ final class PreferencesButtonsTests: XCTestCase {
         let gesture = binding(1000, "copy")
         let pane = makePane([binding(3, "copy"), panel, gesture])
         XCTAssertEqual(pane.headerView.artwork.model, .mxMaster4)
-        pane.list.select(panel.id)
+        pane.list.select(pane.rowID(forBinding: panel.id))
         XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "Thumb panel", subtitle: "Gesture Navigation", part: .thumbPanel))
         XCTAssertEqual(pane.headerView.artwork.emphasis, .thumbPanel)
         XCTAssertEqual(pane.headerView.artwork.highlights[.thumbPanel]?.alphaValue, 1)
         XCTAssertEqual(pane.headerView.artwork.highlights[.gesture]?.alphaValue, 0)
         XCTAssertEqual(pane.headerView.artwork.highlights[.back]?.alphaValue, 0)
-        pane.list.select(gesture.id)
+        pane.list.select(pane.rowID(forBinding: gesture.id))
         XCTAssertEqual(pane.headerView.artwork.highlights[.gesture]?.alphaValue, 1)
         XCTAssertEqual(pane.headerView.artwork.highlights[.thumbPanel]?.alphaValue, 0)
         let front = MouseArtworkView.shape(of: .gesture, model: .mxMaster4)?.bounds
@@ -373,17 +806,18 @@ final class PreferencesButtonsTests: XCTestCase {
             hint: "Not sure which is which? Click + and press a button."
         ))
 
-        pane.list.select(pane.rows[0].id)
+        pane.list.select(ButtonsMousePart.back)
         XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "Back button", subtitle: "Gesture Navigation", part: .back))
         XCTAssertEqual(pane.headerView.artwork.emphasis, .back)
         XCTAssertEqual(pane.headerView.artwork.highlights[.back]?.alphaValue, 1)
         XCTAssertEqual(pane.headerView.artwork.highlights[.left]?.alphaValue, 0)
 
-        pane.list.select(pane.rows[1].id)
-        XCTAssertEqual(pane.headerView.content.subtitle, "No action")
+        // A button of the mouse without an action does what it does by itself.
+        pane.list.select(ButtonsMousePart.forward)
+        XCTAssertEqual(pane.headerView.content.subtitle, "Default")
         XCTAssertEqual(pane.headerView.artwork.emphasis, .forward)
 
-        pane.list.select(pane.rows[2].id)
+        pane.list.select(ButtonsMousePart.gesture)
         XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "Gesture button", subtitle: "Copy", part: .gesture))
 
         pane.list.select(nil)
@@ -428,23 +862,29 @@ final class PreferencesButtonsTests: XCTestCase {
     /// Button 5, a screenshot on the mode shift button.
     func testEveryRowShowsWhereItsButtonIs() throws {
         let custom = "custom::21:\(UInt64(CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue))"
-        let pane = makePane([
+        let bindings = [
             binding(6, SystemShortcut.mouseGestureNavigation.identifier),
             binding(5, custom),
             binding(1001, SystemShortcut.screenshotSelection.identifier),
             binding(40, "copy", modifiers: control | option, type: .keyboard),
-        ])
-        XCTAssertEqual(pane.rows.map(\.title), ["Button 6", "Button 5", "Mode shift button", "⌃⌥ K"])
+        ]
+        let pane = makePane(bindings)
+        // The mouse's buttons first, the mode shift button with its screenshot; then the
+        // numbered buttons and the key.
+        XCTAssertEqual(pane.rows.map(\.title), mxMaster4Titles + ["Button 6", "Button 5", "⌃⌥ K"])
         XCTAssertEqual(pane.rows.map(\.picture), [
-            .mouse(part: nil, number: 6), .mouse(part: nil, number: 5), .mouse(part: .modeShift, number: nil), .key,
+            .mouse(part: .middle, number: nil), .mouse(part: .modeShift, number: nil), .mouse(part: .gesture, number: nil),
+            .mouse(part: .forward, number: nil), .mouse(part: .back, number: nil), .mouse(part: .thumbPanel, number: nil),
+            .mouse(part: nil, number: 6), .mouse(part: nil, number: 5), .key,
         ])
-        XCTAssertEqual(pane.rows.map(\.explanation), [
+        let listed = try rows(of: bindings, in: pane)
+        XCTAssertEqual(listed.map(\.explanation), [
             "Hold and move the mouse. Set the directions under Gestures.",
             "An extra button on your mouse.",
             nil,
             nil,
         ])
-        XCTAssertEqual(pane.rows[1].accessibilityLabel(), "Button 5, An extra button on your mouse.")
+        XCTAssertEqual(listed[1].accessibilityLabel(), "Button 5, An extra button on your mouse.")
         for row in pane.rows {
             let icon = try XCTUnwrap(row.iconView, row.title)
             XCTAssertEqual(icon.image?.size, ButtonsMouseMiniature.size, row.title)
@@ -452,23 +892,24 @@ final class PreferencesButtonsTests: XCTestCase {
         }
 
         // Another trigger for the same row ("Use Standard Button"): the picture follows.
-        let row = pane.rows[1]
+        let row = listed[1]
         let old = try XCTUnwrap(pane.binding(for: row.binding.id))
         pane.replaceBinding(ButtonBinding(
-            id: old.id, triggerEvent: RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil),
+            id: old.id, triggerEvent: RecordedEvent(type: .mouse, code: 4, modifiers: option, deviceFilter: nil),
             systemShortcutName: old.systemShortcutName, isEnabled: true, createdAt: old.createdAt
         ))
-        XCTAssertTrue(pane.rows[1] === row)
+        XCTAssertTrue(pane.row(for: old.id) === row)
         XCTAssertEqual(row.picture, .mouse(part: .forward, number: nil))
         XCTAssertNil(row.explanation)
     }
 
     /// A numbered button's row says it is an extra one only when nothing more pressing
     /// is to be said: a problem or what the action needs comes first.
-    func testTheExtraButtonNoteComesLast() {
+    func testTheExtraButtonNoteComesLast() throws {
         scrollKeys = [ScrollHotkey(type: .mouse, code: 7)]
-        let pane = makePane([binding(5), binding(6, SystemShortcut.mosScrollDash.identifier), binding(7, "copy"), binding(8, "copy"), binding(2000 + 0x005B, "copy")])
-        XCTAssertEqual(pane.rows.map(\.explanation), [
+        let bindings = [binding(5), binding(6, SystemShortcut.mosScrollDash.identifier), binding(7, "copy"), binding(8, "copy"), binding(2000 + 0x005B, "copy")]
+        let pane = makePane(bindings)
+        XCTAssertEqual(try rows(of: bindings, in: pane).map(\.explanation), [
             "Choose what this button does.",
             "Works while you hold the button.",
             "Also set under Scrolling\u{A0}›\u{A0}While\u{A0}you\u{A0}hold\u{A0}a\u{A0}key.",
@@ -569,8 +1010,9 @@ final class PreferencesButtonsTests: XCTestCase {
                        Content(title: "That's Back button", subtitle: "Copy", part: .back))
 
         // In the pane: the selected Button 6, then the mode shift button.
-        let pane = makePane([binding(6, SystemShortcut.mouseGestureNavigation.identifier), binding(1001, "copy")])
-        pane.list.select(pane.rows[0].id)
+        let sixBinding = binding(6, SystemShortcut.mouseGestureNavigation.identifier)
+        let pane = makePane([sixBinding, binding(1001, "copy")])
+        pane.list.select(sixBinding.id)
         XCTAssertEqual(pane.headerView.content, Content(title: "Button 6", subtitle: "Gesture Navigation", part: nil, hint: place, number: 6))
         XCTAssertFalse(pane.headerView.hintLabel.isHidden)
         XCTAssertEqual(pane.headerView.hintLabel.stringValue, place)
@@ -578,7 +1020,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(pane.headerView.artwork.badge.alphaValue, 1)
         XCTAssertNil(pane.headerView.artwork.emphasis)
         XCTAssertEqual(pane.headerView.accessibilityLabel(), "Button 6, Gesture Navigation, \(place)")
-        pane.list.select(pane.rows[1].id)
+        pane.list.select(ButtonsMousePart.modeShift)
         XCTAssertEqual(pane.headerView.content, Content(title: "Mode shift button", subtitle: "Copy", part: .modeShift))
         XCTAssertTrue(pane.headerView.hintLabel.isHidden)
         XCTAssertEqual(pane.headerView.artwork.badge.alphaValue, 0)
@@ -588,14 +1030,15 @@ final class PreferencesButtonsTests: XCTestCase {
     /// "+" and a listed numbered button: its row flashes and the card answers "That's
     /// Button 6" with its number by the mouse, for as long as a recorded button shows.
     func testPressingAListedNumberedButtonAfterPlusSaysWhichRowItIs() {
-        let pane = makePane([binding(3, "copy"), binding(6, SystemShortcut.mouseGestureNavigation.identifier)])
+        let six = binding(6, SystemShortcut.mouseGestureNavigation.identifier)
+        let pane = makePane([binding(3, "copy"), six])
         let recorder = KeyRecorder()
         pane.beginAddingBinding()
         pane.onRecordingStarted(recorder)
         let event = mouseEvent(6)
         XCTAssertFalse(pane.validateRecordedEvent(recorder, event: event))
         pane.onEventRecorded(recorder, didRecordEvent: event, isDuplicate: true)
-        XCTAssertEqual(pane.list.selectedID, pane.rows[1].id)
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(six.id))
         XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "That's Button 6", subtitle: "Gesture Navigation", part: nil, number: 6))
         XCTAssertEqual(pane.headerView.artwork.badge.alphaValue, 1)
         pane.onRecordingStopped(recorder, didRecord: true)
@@ -621,11 +1064,18 @@ final class PreferencesButtonsTests: XCTestCase {
         let panelAnswer = ButtonBinding(
             triggerEvent: placed(5, .thumbPanel), systemShortcutName: "copy", isEnabled: true
         )
-        let pane = makePane([binding(2000 + 0x01A0, "copy"), panelAnswer, binding(6)])
-        let six = pane.rows[2].binding.id
+        let panel = binding(2000 + 0x01A0, "copy")
+        let bindings = [panel, panelAnswer, binding(6)]
+        let pane = makePane(bindings)
+        let six = bindings[2].id
         XCTAssertEqual(pane.headerView.artwork.model, .mxMaster4)
-        XCTAssertEqual(pane.rows.map(\.mouse), [.mxMaster4, .mxMaster4, .mxMaster4])
-        XCTAssertEqual(pane.rows.map(\.picture), [
+        XCTAssertEqual(pane.rows.map(\.mouse), Array(repeating: .mxMaster4, count: 8))
+        // The Logitech thumb panel is the thumb panel's row; Button 5, said to be it too, is
+        // below.
+        XCTAssertEqual(pane.rows.map(\.title), ["Middle button", "Mode shift button", "Gesture button", "Forward button", "Back button",
+                                                "Thumb panel", "Thumb panel (button 5)", "Button 6"])
+        XCTAssertTrue(pane.row(for: ButtonsMousePart.thumbPanel)?.binding == panel)
+        XCTAssertEqual(try rows(of: bindings, in: pane).map(\.picture), [
             .mouse(part: .thumbPanel, number: nil), .mouse(part: .thumbPanel, number: nil), .mouse(part: nil, number: 6),
         ])
         XCTAssertEqual(try XCTUnwrap(pane.placeMenu(for: six)).items.compactMap { ($0.representedObject as? ButtonPlaceChoice)?.part },
@@ -634,21 +1084,27 @@ final class PreferencesButtonsTests: XCTestCase {
         deviceName = "MX Master 3S"
         NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
         XCTAssertEqual(pane.headerView.artwork.model, .mxMaster3)
-        XCTAssertEqual(pane.rows.map(\.mouse), [.mxMaster3, .mxMaster3, .mxMaster3])
-        XCTAssertEqual(pane.rows.map(\.picture), [
+        XCTAssertEqual(pane.rows.map(\.mouse), Array(repeating: .mxMaster3, count: 8))
+        // The MX Master 3S has no thumb panel: its row goes, the bindings are below.
+        XCTAssertEqual(pane.rows.map(\.title), ["Middle button", "Mode shift button", "Forward button", "Back button", "Gesture button",
+                                                "Thumb panel", "Thumb panel (button 5)", "Button 6"])
+        XCTAssertNil(pane.row(for: ButtonsMousePart.thumbPanel))
+        XCTAssertEqual(try rows(of: bindings, in: pane).map(\.picture), [
             .mouse(part: nil, number: nil, notDrawn: .thumbPanel), .mouse(part: nil, number: 5, notDrawn: .thumbPanel), .mouse(part: nil, number: 6),
         ])
         XCTAssertEqual(try XCTUnwrap(pane.placeMenu(for: six)).items.compactMap { ($0.representedObject as? ButtonPlaceChoice)?.part },
                        [.gestureButton, .backButton, .forwardButton, .modeShiftButton, .middleButton])
-        pane.list.select(pane.rows[1].id)
+        pane.list.select(panelAnswer.id)
         XCTAssertEqual(pane.headerView.content.number, 5)
         XCTAssertNil(pane.headerView.artwork.emphasis)
         XCTAssertEqual(Options.shared.buttons.binding[1].triggerEvent.mousePart, .thumbPanel, "the answer is kept")
-        XCTAssertEqual(pane.rows[1].title, "Thumb panel (button 5)")
+        XCTAssertEqual(pane.row(for: panelAnswer.id)?.title, "Thumb panel (button 5)")
 
         deviceName = nil
         NotificationCenter.default.post(name: LogiCenter.sessionChanged, object: nil)
         XCTAssertEqual(pane.headerView.artwork.model, .generic)
+        XCTAssertEqual(pane.rows.map(\.title), ["Thumb panel", "Thumb panel (button 5)", "Button 6"], "the plain list")
+        XCTAssertTrue(pane.list.groupTitles.isEmpty)
         XCTAssertEqual(try XCTUnwrap(pane.placeMenu(for: six)).items.compactMap { ($0.representedObject as? ButtonPlaceChoice)?.part },
                        [.backButton, .forwardButton, .middleButton])
     }
@@ -684,18 +1140,22 @@ final class PreferencesButtonsTests: XCTestCase {
     /// disabled: nothing is lost by accident, and nothing is saved by showing it.
     func testAKnownButtonTheShownMouseLacksIsNotAskedToBeFound() throws {
         let panelAnswer = ButtonBinding(triggerEvent: placed(6, .thumbPanel), systemShortcutName: "copy", isEnabled: true)
+        let gesture = binding(1000, "copy")
         deviceName = "MX Master 3S"
-        let pane = makePane([panelAnswer, binding(1000, "copy")])
+        let pane = makePane([panelAnswer, gesture])
         let stored = Options.shared.buttons.binding
         let notHere = "The mouse shown doesn't have this button."
-        XCTAssertEqual(pane.rows[0].title, "Thumb panel (button 6)")
-        XCTAssertEqual(pane.rows[0].picture, .mouse(part: nil, number: 6, notDrawn: .thumbPanel))
-        XCTAssertFalse(pane.rows[0].picture.isUnplaced)
-        pane.list.select(pane.rows[0].id)
+        let panel = try XCTUnwrap(pane.row(for: panelAnswer.id))
+        XCTAssertEqual(pane.rows.map(\.title), ["Middle button", "Mode shift button", "Forward button", "Back button", "Gesture button",
+                                                "Thumb panel (button 6)"])
+        XCTAssertEqual(panel.title, "Thumb panel (button 6)")
+        XCTAssertEqual(panel.picture, .mouse(part: nil, number: 6, notDrawn: .thumbPanel))
+        XCTAssertFalse(panel.picture.isUnplaced)
+        pane.list.select(panel.id)
         XCTAssertEqual(pane.headerView.content.hint, notHere)
         XCTAssertEqual(pane.headerView.content.number, 6)
 
-        let menu = try XCTUnwrap(pane.placeMenu(for: pane.rows[0].binding.id))
+        let menu = try XCTUnwrap(pane.placeMenu(for: panelAnswer.id))
         let ticked = menu.items.filter { $0.state == .on }
         XCTAssertEqual(ticked.map(\.title), ["Thumb Panel"])
         XCTAssertFalse(try XCTUnwrap(ticked.first).isEnabled, "the stored answer cannot be chosen again here")
@@ -708,10 +1168,10 @@ final class PreferencesButtonsTests: XCTestCase {
         deviceName = nil
         NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
         XCTAssertEqual(pane.headerView.artwork.model, .generic)
-        pane.list.select(pane.rows[1].id)
+        pane.list.select(pane.rowID(forBinding: gesture.id))
         XCTAssertEqual(pane.headerView.content.title, "Gesture button")
         XCTAssertEqual(pane.headerView.content.hint, notHere)
-        XCTAssertNil(pane.placeMenu(for: pane.rows[1].binding.id), "its place is known: no menu")
+        XCTAssertNil(pane.placeMenu(for: gesture.id), "its place is known: no menu")
         XCTAssertEqual(Options.shared.buttons.binding, stored)
         XCTAssertEqual(Options.shared.buttons.binding.map(\.triggerEvent.mousePart), [.thumbPanel, nil], "the answer is kept")
     }
@@ -782,9 +1242,10 @@ final class PreferencesButtonsTests: XCTestCase {
     /// chosen one ticked, a mark at the end of a taken one, then "Not on This List" with the
     /// button's number; every item answers to the pane.
     func testThePaneBuildsTheMenuWithPictures() throws {
-        let pane = makePane(ownerBindings())
-        let six = pane.rows[0].binding.id
-        pane.setPlace(of: pane.rows[1].binding.id, to: .thumbPanel)
+        let owner = ownerBindings()
+        let pane = makePane(owner)
+        let six = owner[0].id
+        pane.setPlace(of: owner[1].id, to: .thumbPanel)
         let menu = try XCTUnwrap(pane.placeMenu(for: six))
         XCTAssertEqual(menu.items.map(\.title), [
             "Which Button Is This?", "Gesture Button", "Thumb Panel", "Back Button", "Forward Button",
@@ -810,17 +1271,21 @@ final class PreferencesButtonsTests: XCTestCase {
         let again = try XCTUnwrap(pane.placeMenu(for: six))
         XCTAssertEqual(again.items[1].state, .on, "the answer is ticked")
         XCTAssertEqual(again.items.filter { $0.state == .on }.count, 1)
-        XCTAssertNil(pane.placeMenu(for: pane.rows[2].binding.id), "the mode shift button's place is known")
+        XCTAssertNil(pane.placeMenu(for: owner[2].id), "the mode shift button's place is known")
     }
 
     /// The picture of a numbered button is a button over the row's picture that opens the
     /// menu (and selects the row, so the card shows the button); a right-click on the row
     /// offers the same menu. A known button and a key have neither.
     func testThePictureAndARightClickOpenTheMenu() throws {
-        let pane = makePane(ownerBindings() + [binding(40, "copy", modifiers: control | option, type: .keyboard)])
+        let bindings = ownerBindings() + [binding(40, "copy", modifiers: control | option, type: .keyboard)]
+        let pane = makePane(bindings)
         pane.view.layoutSubtreeIfNeeded()
-        XCTAssertEqual(pane.rows.map(\.placeButton.isHidden), [false, false, true, true])
-        let row = pane.rows[1]
+        let listed = try rows(of: bindings, in: pane)
+        XCTAssertEqual(listed.map(\.placeButton.isHidden), [false, false, true, true])
+        let defaultRow = try XCTUnwrap(pane.row(for: ButtonsMousePart.gesture))
+        XCTAssertTrue(defaultRow.placeButton.isHidden, "a button of the mouse without a binding is known")
+        let row = listed[1]
         XCTAssertEqual(row.placeButton.toolTip, "Which button is this?")
         XCTAssertEqual(row.placeButton.accessibilityLabel(), "Which button is this?")
         let icon = try XCTUnwrap(row.iconView)
@@ -839,38 +1304,50 @@ final class PreferencesButtonsTests: XCTestCase {
             with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
             eventNumber: 0, clickCount: 1, pressure: 1
         ))
-        let menu = try XCTUnwrap(pane.rows[0].menu(for: rightClick))
+        let menu = try XCTUnwrap(listed[0].menu(for: rightClick))
         XCTAssertEqual(menu.items.first?.title, "Which Button Is This?")
-        XCTAssertEqual(pane.list.selectedID, pane.rows[0].id)
-        XCTAssertNil(pane.rows[2].menu(for: rightClick), "the mode shift button")
-        XCTAssertNil(pane.rows[3].menu(for: rightClick), "a key")
+        XCTAssertEqual(pane.list.selectedID, listed[0].id)
+        XCTAssertNil(listed[2].menu(for: rightClick), "the mode shift button")
+        XCTAssertNil(listed[3].menu(for: rightClick), "a key")
+        XCTAssertNil(defaultRow.menu(for: rightClick), "a button of the mouse without a binding")
 
-        // Placed, it stays a button: the answer can be changed or taken back.
+        // Placed, it stays a button: the answer can be changed or taken back. Said to be the
+        // thumb panel, it is now that button's row.
         pane.setPlace(of: row.binding.id, to: .thumbPanel)
-        XCTAssertFalse(pane.rows[1].placeButton.isHidden)
+        let panel = try XCTUnwrap(pane.row(for: bindings[1].id))
+        XCTAssertEqual(panel.id, AnyHashable(ButtonsMousePart.thumbPanel))
+        XCTAssertFalse(panel.placeButton.isHidden)
     }
 
     /// After the answer the button is named and lit as the part, with its number after the
     /// name, wherever a known button is: the row, its picture, the card, the Gestures pane's
     /// line, and the stored trigger holds the answer. "Not on This List" takes it back.
     func testChoosingAPartNamesAndLightsTheButton() throws {
-        let pane = makePane(ownerBindings())
-        let six = pane.rows[0].binding.id
-        let five = pane.rows[1].binding.id
+        let owner = ownerBindings()
+        let pane = makePane(owner)
+        let six = owner[0].id
+        let five = owner[1].id
         let gesture = try XCTUnwrap(pane.placeMenu(for: six)?.items.first { ($0.representedObject as? ButtonPlaceChoice)?.part == .gestureButton })
         pane.placeChosen(gesture)
         let panel = try XCTUnwrap(pane.placeMenu(for: five)?.items.first { ($0.representedObject as? ButtonPlaceChoice)?.part == .thumbPanel })
         pane.placeChosen(panel)
 
-        XCTAssertEqual(pane.rows.map(\.title), ["Gesture button (button 6)", "Thumb panel (button 5)", "Mode shift button"])
-        XCTAssertEqual(pane.rows.map(\.picture), [
+        // They are the rows of those buttons now, nothing is below.
+        XCTAssertEqual(pane.rows.map(\.title), ["Middle button", "Mode shift button", "Gesture button (button 6)", "Forward button",
+                                                "Back button", "Thumb panel (button 5)"])
+        XCTAssertTrue(pane.list.groupTitles.isEmpty)
+        let listed = try rows(of: owner, in: pane)
+        XCTAssertEqual(listed.map(\.id), [AnyHashable(ButtonsMousePart.gesture), AnyHashable(ButtonsMousePart.thumbPanel),
+                                          AnyHashable(ButtonsMousePart.modeShift)])
+        XCTAssertEqual(listed.map(\.title), ["Gesture button (button 6)", "Thumb panel (button 5)", "Mode shift button"])
+        XCTAssertEqual(listed.map(\.picture), [
             .mouse(part: .gesture, number: nil), .mouse(part: .thumbPanel, number: nil), .mouse(part: .modeShift, number: nil),
         ])
-        XCTAssertEqual(pane.rows.map(\.explanation), ["Hold and move the mouse. Set the directions under Gestures.", nil, nil],
+        XCTAssertEqual(listed.map(\.explanation), ["Hold and move the mouse. Set the directions under Gestures.", nil, nil],
                        "a placed button is no longer just an extra one")
-        XCTAssertEqual(pane.rows[1].accessibilityLabel(), "Thumb panel (button 5)")
+        XCTAssertEqual(listed[1].accessibilityLabel(), "Thumb panel (button 5)")
 
-        pane.list.select(six)
+        pane.list.select(pane.rowID(forBinding: six))
         XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "Gesture button (button 6)", subtitle: "Gesture Navigation", part: .gesture))
         XCTAssertEqual(pane.headerView.artwork.emphasis, .gesture)
         XCTAssertEqual(pane.headerView.artwork.highlights[.gesture]?.alphaValue, 1)
@@ -891,12 +1368,17 @@ final class PreferencesButtonsTests: XCTestCase {
         // Modifiers stay in front.
         XCTAssertEqual(ButtonTriggerNaming.title(for: placed(6, .gestureButton, modifiers: option | command)), "⌥⌘ Gesture button (button 6)")
 
-        // "Not on This List": Button 6 again, and the stored trigger as it was.
+        // "Not on This List": Button 6 again, below, still selected, and the stored trigger
+        // as it was.
         let none = try XCTUnwrap(pane.placeMenu(for: six)?.items.last)
         XCTAssertEqual(none.title, "Not on This List")
         pane.placeChosen(none)
-        XCTAssertEqual(pane.rows[0].title, "Button 6")
-        XCTAssertEqual(pane.rows[0].picture, .mouse(part: nil, number: 6))
+        let back = try XCTUnwrap(pane.row(for: six))
+        XCTAssertEqual(back.id, AnyHashable(six))
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(six), "the selection goes with it")
+        XCTAssertEqual(back.title, "Button 6")
+        XCTAssertEqual(back.picture, .mouse(part: nil, number: 6))
+        XCTAssertEqual(pane.row(for: ButtonsMousePart.gesture)?.isDefault, true)
         XCTAssertEqual(pane.headerView.content.number, 6)
         XCTAssertEqual(pane.headerView.content.hint, "Click its picture below to say which button it is. Not sure? Click + and press buttons to find it.")
         XCTAssertNil(Options.shared.buttons.binding[0].triggerEvent.mousePart)
@@ -915,8 +1397,9 @@ final class PreferencesButtonsTests: XCTestCase {
 
     /// "+" and a placed button: the card answers with its part lit, no number.
     func testPressingAPlacedButtonAfterPlusSaysItsPart() {
-        let pane = makePane(ownerBindings())
-        pane.setPlace(of: pane.rows[0].binding.id, to: .gestureButton)
+        let owner = ownerBindings()
+        let pane = makePane(owner)
+        pane.setPlace(of: owner[0].id, to: .gestureButton)
         let recorder = KeyRecorder()
         pane.beginAddingBinding()
         pane.onRecordingStarted(recorder)
@@ -932,14 +1415,16 @@ final class PreferencesButtonsTests: XCTestCase {
     /// the answer for all, a row added later for that number gets it, and a row removed and
     /// put back with Undo keeps it.
     func testAnAnswerHoldsForEveryRowOfTheButtonNumber() throws {
-        let pane = makePane([
+        let bindings = [
             binding(6, SystemShortcut.mouseGestureNavigation.identifier),
             binding(6, "copy", modifiers: option),
             binding(5, "copy"),
             binding(3, "paste"),
-        ])
-        pane.setPlace(of: pane.rows[1].binding.id, to: .gestureButton)
-        XCTAssertEqual(pane.rows.map(\.title), ["Gesture button (button 6)", "⌥ Gesture button (button 6)", "Button 5", "Back button"])
+        ]
+        let pane = makePane(bindings)
+        pane.setPlace(of: bindings[1].id, to: .gestureButton)
+        XCTAssertEqual(try rows(of: bindings, in: pane).map(\.title), ["Gesture button (button 6)", "⌥ Gesture button (button 6)", "Button 5", "Back button"])
+        XCTAssertEqual(pane.row(for: bindings[0].id)?.id, AnyHashable(ButtonsMousePart.gesture), "now the gesture button's row")
         XCTAssertEqual(Options.shared.buttons.binding.map(\.triggerEvent.mousePart), [.gestureButton, .gestureButton, nil, nil])
 
         // "+" catches ⌘ Button 6: the card already calls it by its part, and so does its row.
@@ -958,7 +1443,7 @@ final class PreferencesButtonsTests: XCTestCase {
         // Removed and put back: its part comes back with it.
         let undo = try XCTUnwrap(pane.paneUndoManager)
         undo.groupsByEvent = false
-        let removed = pane.rows[1].binding.id
+        let removed = bindings[1].id
         undo.beginUndoGrouping()
         pane.removeBinding(id: removed)
         undo.endUndoGrouping()
@@ -967,7 +1452,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(pane.row(for: removed)?.title, "⌥ Gesture button (button 6)")
 
         // The last row of its number, removed and put back alone, keeps its part too.
-        let five = pane.rows[2].binding.id
+        let five = bindings[2].id
         pane.setPlace(of: five, to: .thumbPanel)
         undo.beginUndoGrouping()
         pane.removeBinding(id: five)
@@ -987,15 +1472,21 @@ final class PreferencesButtonsTests: XCTestCase {
         let owner = ownerBindings()
         let before = try sortedJSON(owner)
         let pane = makePane(owner)
-        pane.list.select(pane.rows[0].id)
-        _ = pane.placeMenu(for: pane.rows[0].binding.id)
-        pane.showPlaceMenu(for: pane.rows[1].binding.id, from: pane.rows[1].placeButton)
-        pane.setPlace(of: pane.rows[0].binding.id, to: nil)
-        pane.setPlace(of: pane.rows[2].binding.id, to: .backButton)
+        let listed = try rows(of: owner, in: pane)
+        pane.list.select(listed[0].id)
+        _ = pane.placeMenu(for: owner[0].id)
+        pane.showPlaceMenu(for: owner[1].id, from: listed[1].placeButton)
+        pane.setPlace(of: owner[0].id, to: nil)
+        pane.setPlace(of: owner[2].id, to: .backButton)
+        // The rows of the mouse's buttons without a binding: shown, selected, pointed at.
+        for part in [ButtonsMousePart.middle, .gesture, .thumbPanel] {
+            pane.list.select(part)
+            _ = pane.row(for: part)?.placeMenu?()
+        }
         XCTAssertEqual(try sortedJSON(Options.shared.buttons.binding), before)
         pane.reload()
         XCTAssertEqual(try sortedJSON(Options.shared.buttons.binding), before)
-        XCTAssertEqual(pane.rows.map(\.title), ["Button 6", "Button 5", "Mode shift button"], "a known button cannot be placed")
+        XCTAssertEqual(try rows(of: owner, in: pane).map(\.title), ["Button 6", "Button 5", "Mode shift button"], "a known button cannot be placed")
     }
 
     /// The answer is for the eyes only: the trigger matches and runs as before.
@@ -1015,15 +1506,17 @@ final class PreferencesButtonsTests: XCTestCase {
 
     // MARK: - Rows
 
-    func testRowsSayWhatTheActionNeeds() {
-        let pane = makePane([
+    func testRowsSayWhatTheActionNeeds() throws {
+        let bindings = [
             binding(3, SystemShortcut.mouseGestureNavigation.identifier),
             binding(4, SystemShortcut.mosScrollToggle.identifier),
             binding(5),
             binding(6, "copy"),
-        ])
-        XCTAssertEqual(pane.rows.map(\.title), ["Back button", "Forward button", "Button 5", "Button 6"])
-        XCTAssertEqual(pane.rows.map(\.explanation), [
+        ]
+        let pane = makePane(bindings)
+        let listed = try rows(of: bindings, in: pane)
+        XCTAssertEqual(listed.map(\.title), ["Back button", "Forward button", "Button 5", "Button 6"])
+        XCTAssertEqual(listed.map(\.explanation), [
             "Hold and move the mouse. Set the directions under Gestures.",
             "Works while you hold the button.",
             "Choose what this button does.",
@@ -1038,17 +1531,19 @@ final class PreferencesButtonsTests: XCTestCase {
             let width = row.pullDown.alignmentRect(forFrame: row.pullDown.frame).width
             XCTAssertEqual(width, 240, accuracy: 0.5)
         }
-        XCTAssertEqual(pane.rows[2].accessibilityLabel(), "Button 5, Choose what this button does.")
+        XCTAssertEqual(listed[2].accessibilityLabel(), "Button 5, Choose what this button does.")
     }
 
     func testProblemNotesAreOrangeWithADetailsButton() throws {
         captureStatus = [1000: .conflict(.foreignDivert), 1001: .contended, 1002: .bleHIDPPUnstable, 1006: .standardMouseAliasAvailable]
         scrollKeys = [ScrollHotkey(type: .mouse, code: 5), ScrollHotkey(type: .keyboard, code: 4)]
-        let pane = makePane([
+        let bindings = [
             binding(1000, "copy"), binding(1001, "copy"), binding(1002, "copy"), binding(1006, "copy"),
             binding(5, "copy", modifiers: option), binding(4, "copy"),
-        ])
-        XCTAssertEqual(pane.rows.map(\.explanation), [
+        ]
+        let pane = makePane(bindings)
+        let listed = try rows(of: bindings, in: pane)
+        XCTAssertEqual(listed.map(\.explanation), [
             "Another app may use this button.",
             "Logi Options+ keeps taking this button over.",
             "May stop working while Logi Options+ runs.",
@@ -1056,34 +1551,34 @@ final class PreferencesButtonsTests: XCTestCase {
             "Also set under Scrolling\u{A0}›\u{A0}While\u{A0}you\u{A0}hold\u{A0}a\u{A0}key.",
             nil,
         ])
-        XCTAssertEqual(pane.rows.map { $0.note?.tone }, [.problem, .problem, .problem, .hint, .problem, nil])
-        for row in pane.rows.prefix(5) {
+        XCTAssertEqual(listed.map { $0.note?.tone }, [.problem, .problem, .problem, .hint, .problem, nil])
+        for row in listed.prefix(5) {
             XCTAssertFalse(row.infoButton.isHidden, row.title)
             XCTAssertEqual(row.infoButton.accessibilityLabel(), "More Info")
         }
         // An orange warning sign before the text, a blue light bulb before the alias hint;
         // the text itself in the colour of any explanation (orange or blue text is too
         // faint to read on a light box).
-        let conflict = pane.rows[0].explanationLabel.attributedStringValue
+        let conflict = listed[0].explanationLabel.attributedStringValue
         XCTAssertTrue(conflict.string.hasSuffix("Another app may use this button."))
         XCTAssertTrue(conflict.containsAttachments(in: NSRange(location: 0, length: conflict.length)))
         XCTAssertEqual(conflict.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .systemOrange)
         XCTAssertEqual(conflict.attribute(.foregroundColor, at: conflict.length - 1, effectiveRange: nil) as? NSColor,
                        PreferencesGroupedForm.explanationColor(enabled: true))
-        let hint = pane.rows[3].explanationLabel.attributedStringValue
+        let hint = listed[3].explanationLabel.attributedStringValue
         XCTAssertEqual(hint.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .systemBlue)
         XCTAssertEqual(hint.attribute(.foregroundColor, at: hint.length - 1, effectiveRange: nil) as? NSColor,
                        PreferencesGroupedForm.explanationColor(enabled: true))
-        XCTAssertEqual(pane.rows[0].accessibilityLabel(), "Gesture button, Another app may use this button.")
+        XCTAssertEqual(listed[0].accessibilityLabel(), "Gesture button, Another app may use this button.")
 
         // The ⓘ explains, in plain words.
-        let popover = try XCTUnwrap(pane.showProblem(of: pane.rows[0], relativeTo: pane.rows[0].infoButton))
+        let popover = try XCTUnwrap(pane.showProblem(of: listed[0], relativeTo: listed[0].infoButton))
         _ = popover.view
         XCTAssertEqual(popover.titleLabel.stringValue, "Another app may be using this button")
         XCTAssertFalse(popover.detailLabel.stringValue.contains("HID++"))
         XCTAssertNil(popover.standardButton)
         XCTAssertEqual(pane.problemPopover?.behavior, .transient)
-        let scrollKey = try XCTUnwrap(pane.showProblem(of: pane.rows[4], relativeTo: pane.rows[4].infoButton))
+        let scrollKey = try XCTUnwrap(pane.showProblem(of: listed[4], relativeTo: listed[4].infoButton))
         _ = scrollKey.view
         XCTAssertEqual(scrollKey.titleLabel.stringValue, "Also a key under Scrolling")
     }
@@ -1092,6 +1587,7 @@ final class PreferencesButtonsTests: XCTestCase {
     /// passes it through): its row says so as a problem, not "Hold and move the mouse", and
     /// the ⓘ says why. A mouse button with it keeps the plain note. Nothing is saved.
     func testAKeyWithGestureNavigationSaysItCannotRunIt() throws {
+        deviceName = nil
         let gesture = SystemShortcut.mouseGestureNavigation.identifier
         let pane = makePane([
             binding(41, gesture, modifiers: UInt(CGEventFlags.maskCommand.rawValue), type: .keyboard),
@@ -1124,9 +1620,10 @@ final class PreferencesButtonsTests: XCTestCase {
     func testProblemNotesRunUnderTheInfoButtonInTwoLinesAtMost() throws {
         captureStatus = [1000: .conflict(.foreignDivert), 1001: .contended, 1002: .bleHIDPPUnstable, 1006: .standardMouseAliasAvailable]
         scrollKeys = [ScrollHotkey(type: .mouse, code: 5)]
-        let pane = makePane([
+        let bindings = [
             binding(1000, "copy"), binding(1001, "copy"), binding(1002, "copy"), binding(1006, "copy"), binding(5, "copy"),
-        ])
+        ]
+        let pane = makePane(bindings)
         pane.view.layoutSubtreeIfNeeded()
         let oneLine = NSTextField(labelWithString: "Xg")
         oneLine.font = PreferencesGroupedForm.explanationFont
@@ -1135,7 +1632,7 @@ final class PreferencesButtonsTests: XCTestCase {
         let column = PreferencesButtonsViewController.boxWidth - 2 * PreferencesGroupedForm.rowHorizontalInset
             - PreferencesListRow.imageIconSize - PreferencesListRow.iconSpacing
             - ButtonActionPullDown.width - PreferencesGroupedForm.controlSpacing
-        for row in pane.rows {
+        for row in try rows(of: bindings, in: pane) {
             XCTAssertTrue(row.accessory === row.pullDown, row.title)
             XCTAssertFalse(row.infoButton.isHidden, row.title)
             let info = row.infoButton.alignmentRect(forFrame: row.infoButton.frame)
@@ -1149,13 +1646,13 @@ final class PreferencesButtonsTests: XCTestCase {
         // Without a problem the ⓘ leaves the title its room.
         let plain = makePane([binding(3, "copy")])
         plain.view.layoutSubtreeIfNeeded()
-        XCTAssertTrue(try XCTUnwrap(plain.rows.first).infoButton.isHidden)
+        XCTAssertTrue(try XCTUnwrap(plain.row(for: ButtonsMousePart.back)).infoButton.isHidden)
     }
 
     func testUseStandardButtonTurnsTheLogitechButtonIntoTheStandardOne() throws {
         captureStatus = [1006: .standardMouseAliasAvailable]
         let pane = makePane([binding(1006, SystemShortcut.navigateBack.identifier)])
-        let row = try XCTUnwrap(pane.rows.first)
+        let row = try XCTUnwrap(pane.row(for: ButtonsMousePart.back))
         let popover = try XCTUnwrap(pane.showProblem(of: row, relativeTo: row.infoButton))
         _ = popover.view
         let button = try XCTUnwrap(popover.standardButton)
@@ -1167,11 +1664,13 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(stored.triggerEvent.code, 3)
         XCTAssertEqual(stored.systemShortcutName, SystemShortcut.navigateBack.identifier)
         XCTAssertEqual(stored.id, row.binding.id)
-        XCTAssertEqual(pane.rows.first?.title, "Back button")
-        XCTAssertNil(pane.rows.first?.note, "no hint any more")
+        XCTAssertTrue(pane.row(for: ButtonsMousePart.back) === row, "still the Back button's row")
+        XCTAssertEqual(row.title, "Back button")
+        XCTAssertNil(row.note, "no hint any more")
     }
 
     func testBindingsWithoutAnyProblemStayQuietForKeys() {
+        deviceName = nil
         captureStatus = [40: .conflict(.foreignDivert)]
         let pane = makePane([binding(40, "copy", modifiers: control, type: .keyboard)])
         XCTAssertNil(pane.rows.first?.note, "a key never asks the mouse")
@@ -1180,7 +1679,10 @@ final class PreferencesButtonsTests: XCTestCase {
 
     // MARK: - Changing an action
 
+    /// On the plain list; a button of an MX Master has "Default" instead of "No Action"
+    /// (`testADefaultRowStoresItsBindingWhenItGetsAnAction`).
     func testChoosingAnActionSavesItAndUpdatesTheRowInPlace() throws {
+        deviceName = nil
         let pane = makePane([binding(3)])
         let row = try XCTUnwrap(pane.rows.first)
         let pullDown = row.pullDown
@@ -1261,7 +1763,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(openedMenus.count, 1)
         XCTAssertTrue(openedMenus.first === pane.rows.last?.pullDown)
         // The part just recorded stays lit for a moment, whatever is selected.
-        pane.list.select(pane.rows[0].id)
+        pane.list.select(ButtonsMousePart.back)
         XCTAssertEqual(pane.headerView.artwork.emphasis, .forward)
         flush(PreferencesButtonsViewController.recordedPartDuration + 0.1)
         XCTAssertEqual(pane.headerView.artwork.emphasis, .back)
@@ -1275,7 +1777,7 @@ final class PreferencesButtonsTests: XCTestCase {
         let event = mouseEvent(3)
         XCTAssertFalse(pane.validateRecordedEvent(recorder, event: event), "the recorder says Duplicate key")
         pane.onEventRecorded(recorder, didRecordEvent: event, isDuplicate: true)
-        XCTAssertEqual(pane.list.selectedID, pane.rows[0].id)
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(ButtonsMousePart.back))
         XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "That's Back button", subtitle: "Copy", part: .back))
         XCTAssertEqual(pane.headerView.artwork.emphasis, .back)
         pane.onRecordingStopped(recorder, didRecord: true)
@@ -1331,6 +1833,8 @@ final class PreferencesButtonsTests: XCTestCase {
             "The mouse button you will hold for gestures.\nPress Esc to cancel.",
             "no \"or a key\" while the gesture button is set up"
         )
+        recorder.delegate = pane
+        XCTAssertEqual(recorder.waitingHint(for: .combination), "Press a mouse button", "the popover asks for a mouse button only")
         XCTAssertFalse(pane.validateRecordedEvent(recorder, event: key), "refused")
         XCTAssertEqual(pane.refusalHint(recorder, event: key), "Gestures need a mouse button", "not \"Duplicate key\"")
         pane.onEventRecorded(recorder, didRecordEvent: key, isDuplicate: true)
@@ -1344,6 +1848,8 @@ final class PreferencesButtonsTests: XCTestCase {
         pane.beginAddingBinding()
         pane.onRecordingStarted(recorder)
         XCTAssertEqual(pane.headerView.content.subtitle, "Or a key with ⌘, ⌥, ⌃ or ⇧.\nPress Esc to cancel.")
+        XCTAssertNil(pane.waitingHint(recorder, mode: .combination))
+        XCTAssertEqual(recorder.waitingHint(for: .combination), "Press a mouse button,\nor a key with ⌘, ⌥, ⌃ or ⇧")
         XCTAssertTrue(pane.validateRecordedEvent(recorder, event: key))
         XCTAssertNil(pane.refusalHint(recorder, event: key))
         pane.onRecordingStopped(recorder, didRecord: false)
@@ -1360,6 +1866,7 @@ final class PreferencesButtonsTests: XCTestCase {
     /// A key is not offered Gesture Navigation in its menu; a mouse button is. A key that
     /// has it from before keeps the item, so the menu shows what is set.
     func testAKeyIsNotOfferedGestureNavigation() throws {
+        deviceName = nil
         let gesture = SystemShortcut.mouseGestureNavigation.identifier
         let pane = makePane([
             binding(3, "copy"),
@@ -1393,8 +1900,8 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(updated.id, unbound.id, "the same binding")
         XCTAssertEqual(updated.systemShortcutName, SystemShortcut.mouseGestureNavigation.identifier)
         XCTAssertTrue(updated.isEnabled)
-        XCTAssertEqual(pane.list.selectedID, AnyHashable(unbound.id))
-        XCTAssertEqual(pane.rows.first?.explanation, "Hold and move the mouse. Set the directions under Gestures.")
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(ButtonsMousePart.back))
+        XCTAssertEqual(pane.row(for: unbound.id)?.explanation, "Hold and move the mouse. Set the directions under Gestures.")
         XCTAssertTrue(openedMenus.isEmpty)
 
         pane.beginAddingBinding(action: SystemShortcut.mouseGestureNavigation)
@@ -1403,7 +1910,7 @@ final class PreferencesButtonsTests: XCTestCase {
         pane.onEventRecorded(recorder, didRecordEvent: mouseEvent(4), isDuplicate: true)
         pane.onRecordingStopped(recorder, didRecord: true)
         XCTAssertEqual(Options.shared.buttons.binding.last?.systemShortcutName, "copy", "its own action stays")
-        XCTAssertEqual(pane.list.selectedID, AnyHashable(bound.id))
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(ButtonsMousePart.forward))
 
         // Without "Set Up…" a listed button without an action stays a duplicate.
         pane.setAction(of: unbound.id, to: nil)
@@ -1426,6 +1933,7 @@ final class PreferencesButtonsTests: XCTestCase {
 
     /// After a button is added the list has the keyboard, with the new row selected.
     func testAfterAddingTheListHasTheKeyboard() throws {
+        deviceName = nil
         let pane = makePane([binding(3, "copy")])
         let (window, _) = makeWindow(for: pane)
         let recorder = KeyRecorder()
@@ -1442,20 +1950,22 @@ final class PreferencesButtonsTests: XCTestCase {
     /// recorder of "+" and the one of "Keyboard Shortcut…".
     func testLeavingThePaneClosesItsPopoversAndRecorders() throws {
         captureStatus = [1000: .conflict(.foreignDivert)]
-        let pane = makePane([binding(1000, "copy"), binding(3, "copy")])
+        let bindings = [binding(1000, "copy"), binding(3, "copy")]
+        let pane = makePane(bindings)
+        let listed = try rows(of: bindings, in: pane)
 
         // "Open App or File…" of the second row.
-        let pullDown = pane.rows[1].pullDown
+        let pullDown = listed[1].pullDown
         let openItem = try XCTUnwrap(pullDown.menu?.items.first { $0.representedObject as? String == ShortcutManager.MenuMarker.openTarget })
         pullDown.shortcutSelected(openItem)
         XCTAssertNotNil(pane.openTargetPopover)
         XCTAssertTrue(shownOpenTargets.first === pullDown, "shown at the row's pull-down")
         // The ⓘ of the first row.
-        XCTAssertNotNil(pane.showProblem(of: pane.rows[0], relativeTo: pane.rows[0].infoButton))
+        XCTAssertNotNil(pane.showProblem(of: listed[0], relativeTo: listed[0].infoButton))
         XCTAssertNotNil(pane.problemPopover)
         // "Keyboard Shortcut…" waits for a key in the first row.
-        pane.rows[0].pullDown.beginCustomShortcutSelection(startRecorder: false)
-        XCTAssertEqual(pane.rows[0].pullDown.actionState, .recordingPrompt)
+        listed[0].pullDown.beginCustomShortcutSelection(startRecorder: false)
+        XCTAssertEqual(listed[0].pullDown.actionState, .recordingPrompt)
         // "+" waits for a button.
         pane.beginAddingBinding(action: SystemShortcut.mouseGestureNavigation)
         pane.onRecordingStarted(KeyRecorder())
@@ -1468,7 +1978,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertFalse(pane.isRecording)
         XCTAssertFalse(pane.isRecorderOpen)
         XCTAssertNil(pane.pendingAction)
-        XCTAssertNotEqual(pane.rows[0].pullDown.actionState, .recordingPrompt, "the action shows again")
+        XCTAssertNotEqual(listed[0].pullDown.actionState, .recordingPrompt, "the action shows again")
         XCTAssertEqual(Options.shared.buttons.binding.count, 2, "nothing added")
         XCTAssertEqual(pane.headerView.content.title, "MX Master 4")
 
@@ -1479,6 +1989,7 @@ final class PreferencesButtonsTests: XCTestCase {
     }
 
     func testAddingABluetoothOnlyLogitechButtonWarnsOnce() {
+        deviceName = nil
         captureStatus = [1001: .bleHIDPPUnstable]
         let pane = makePane()
         pane.addBinding(for: RecordedEvent(type: .mouse, code: 1001, modifiers: 0, deviceFilter: nil), action: nil)
@@ -1488,6 +1999,7 @@ final class PreferencesButtonsTests: XCTestCase {
     // MARK: - Removing, with Undo
 
     func testMinusRemovesTheSelectedButtonAndUndoPutsItBack() throws {
+        deviceName = nil
         let first = binding(3, "copy")
         let second = binding(4, SystemShortcut.mosScrollDash.identifier)
         let third = binding(5)
@@ -1514,6 +2026,7 @@ final class PreferencesButtonsTests: XCTestCase {
     }
 
     func testDeleteKeyRemovesTooAndAnEmptyListShowsItsRow() throws {
+        deviceName = nil
         let only = binding(3, "copy")
         let pane = makePane([only])
         let (window, _) = makeWindow(for: pane)
@@ -1528,6 +2041,7 @@ final class PreferencesButtonsTests: XCTestCase {
     /// window then): it puts the button back, and Redo and Undo keep working. Back in the
     /// window an Undo gives the list the keyboard with the row selected.
     func testUndoAndRedoWorkWhileAnotherPaneShows() throws {
+        deviceName = nil
         let first = binding(3, "copy")
         let second = binding(4, "paste")
         let pane = makePane([first, second])
@@ -1664,8 +2178,12 @@ final class PreferencesButtonsTests: XCTestCase {
         let before = try encoder.encode(decoded)
 
         let pane = makePane(decoded)
-        XCTAssertEqual(pane.rows.map(\.title), ["⌥ Back button", "Gesture button", "⌃⌥ K", "Button 5"])
-        XCTAssertEqual(pane.rows.map { shown($0.pullDown) }, ["Gesture Navigation", "⌥⌘K", "Calculator", "No Action"])
+        XCTAssertEqual(try rows(of: decoded, in: pane).map(\.title), ["⌥ Back button", "Gesture button", "⌃⌥ K", "Button 5"])
+        XCTAssertEqual(try rows(of: decoded, in: pane).map { shown($0.pullDown) }, ["Gesture Navigation", "⌥⌘K", "Calculator", "No Action"])
+        // Where they are: the gesture button is its row, the rest below in stored order.
+        XCTAssertEqual(pane.rows.map(\.title), mxMaster4Titles + ["⌥ Back button", "⌃⌥ K", "Button 5"])
+        XCTAssertEqual(pane.row(for: ButtonsMousePart.gesture)?.binding, decoded[1])
+        XCTAssertEqual(pane.list.groupTitles[AnyHashable(decoded[0].id)]?.title, "Other buttons and keys")
 
         // Changing one binding leaves the others byte for byte as they were.
         pane.setAction(of: decoded[3].id, to: SystemShortcut.copy)

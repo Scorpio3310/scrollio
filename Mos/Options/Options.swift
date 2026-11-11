@@ -12,6 +12,10 @@ struct OptionItem {
     struct General {
         static let OptionsExist = "optionsExist"
         static let HideStatusItem = "hideStatusItem"
+        /// The Welcome Guide (an Int, `WelcomeGuideProgress`): 0 while a new user has not
+        /// finished it, the version of the guide once finished. Read and written only by the
+        /// guide, never by `readOptions` or a save.
+        static let WelcomeGuideCompletedVersion = "welcomeGuideCompletedVersion"
     }
 
     struct Scroll {

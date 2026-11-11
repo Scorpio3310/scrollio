@@ -561,4 +561,16 @@ final class ScrollHandoverTests: XCTestCase {
 
     // MARK: The log
 
+    /// The two lines the owner's log shows for a hand-over. Diagnosis on his machine reads
+    /// them (`log show`, category `scroll`), so their wording is part of the contract.
+    func testLog_saysWhatTheHandOverDid() {
+        XCTAssertEqual(
+            ScrollSystemLog.wheelTookOverMessage(droppedMomentumEvents: 5),
+            "handover: the wheel took over a trackpad glide: 5 momentum events dropped"
+        )
+        XCTAssertEqual(
+            ScrollSystemLog.fingerTookOverMessage,
+            "handover: a finger on the trackpad took over: the wheel's glide stopped"
+        )
+    }
 }

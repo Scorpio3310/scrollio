@@ -5,6 +5,8 @@
 //  action as the pull-downs of the Gestures pane do (a symbol and a name), and opens the
 //  menu of ShortcutManager. "Open App or File…", "Keyboard Shortcut…" and "Show Gesture
 //  Settings" are handed to the pane (or recorded here); every other item binds directly.
+//  On a button of the connected mouse (`offersDefault`) "No Action" is "Default": the
+//  button keeps doing what it does by itself, and the pane removes its binding.
 //
 
 import Cocoa
@@ -29,6 +31,15 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
     // MARK: State
 
     private(set) var binding: ButtonBinding
+    /// The pull-down reads "Default" without an action, and its menu offers "Default"
+    /// where it offers "No Action" (nil, as "No Action"): a button of the connected mouse.
+    var offersDefault = false {
+        didSet {
+            guard offersDefault != oldValue else { return }
+            applyNoActionTitle()
+            refreshActionDisplay()
+        }
+    }
     private var isCustomRecordingActive = false
     /// The recorder of "Keyboard Shortcut…" caught a key; it is stored after the recorder's
     /// moment of feedback.
@@ -99,6 +110,18 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         // must never pick an item of a closed menu.
         disableKeyEquivalents(in: menu)
         self.menu = menu
+        applyNoActionTitle()
+    }
+
+    /// The item that clears the action ("No Action", or "Default").
+    var noActionItem: NSMenuItem? {
+        return menu?.items.dropFirst().first {
+            $0.action == #selector(shortcutSelected(_:)) && $0.representedObject == nil
+        }
+    }
+
+    private func applyNoActionTitle() {
+        noActionItem?.title = NSLocalizedString(offersDefault ? "buttons-default" : "unbound", comment: "")
     }
 
     /// The "Gesture Navigation" item of the menu.
@@ -125,7 +148,10 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
     /// Puts the action into the title (item 0).
     func refreshActionDisplay() {
         guard let titleItem = menu?.items.first else { return }
-        let presentation = resolver.resolve(state: actionState)
+        var presentation = resolver.resolve(state: actionState)
+        if offersDefault, presentation.kind == .unbound {
+            presentation = ActionPresentation(kind: .unbound, title: NSLocalizedString("buttons-default", comment: ""))
+        }
         titleItem.title = presentation.title
         if let image = presentation.image {
             let sized = image.copy() as? NSImage ?? image

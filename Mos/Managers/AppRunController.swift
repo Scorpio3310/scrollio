@@ -123,9 +123,7 @@ final class AppRunController {
                 hasAccess: { Utils.isHadAccessibilityPermissions() },
                 startCores: cores.start,
                 stopCores: cores.stop,
-                showWelcomeGuide: {
-                    WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.introductionWindowController)
-                },
+                showWelcomeGuide: { IntroductionWindowController.showAutomatically() },
                 showAccessLostToast: {
                     Toast.show(NSLocalizedString("toast-accessibility-lost", comment: ""), style: .warning, duration: 5.0)
                 }

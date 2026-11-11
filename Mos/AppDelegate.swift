@@ -77,12 +77,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // DEBUG: 清空用户设置
         // UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier!)
         
+        // The Welcome Guide: a new installation is one without settings before they are first
+        // read (settings taken over from Mos count as existing); it then waits for the guide.
+        WelcomeGuideProgress.live.settleAtLaunch(
+            isNewInstallation: UserDefaults.standard.object(forKey: OptionItem.General.OptionsExist) == nil
+        )
+
         // 读取用户设置
         Options.shared.readOptions()
         
-        // DEBUG: 直接弹出设置窗口
+        // DEBUG: 直接弹出设置窗口 (not when the Welcome Guide opens at launch)
         #if DEBUG
-        WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController)
+        if !IntroductionWindowController.opensAtLaunch(hasAccess: Utils.isHadAccessibilityPermissions()) {
+            WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController)
+        }
         #endif
 
         // 监听用户切换, 在切换用户 session 时停止运行
@@ -154,6 +162,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         LogiUsageBootstrap.refreshAll()
         BatteryWatcher.shared.start()
         AppRunController.shared.start()
+        // A new user meets the Welcome Guide (without the access AppRunController opened it).
+        if WelcomeGuideProgress.live.isPending {
+            IntroductionWindowController.showAutomatically()
+        }
     }
 
     /// The window a reopened app shows (Finder, Spotlight, the Dock): the settings, or the
@@ -169,7 +181,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
         let identifier = Self.windowForReopen(hasAccess: Utils.isHadAccessibilityPermissions())
-        WindowManager.shared.showWindow(withIdentifier: identifier)
+        if identifier == WINDOW_IDENTIFIER.introductionWindowController {
+            IntroductionWindowController.showAutomatically()
+        } else {
+            WindowManager.shared.showWindow(withIdentifier: identifier)
+        }
         return false
     }
     
@@ -183,7 +199,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Options.shared.flushPendingSaves()
     }
 
-    /// The Introduction window saw the permission arrive. The recovery timer would notice
+    /// The Welcome Guide saw the permission arrive. The recovery timer would notice
     /// at its next tick, up to 10 s later; this is that tick, now, so the window can say
     /// that Scrollio is running. Nothing to do when no timer is waiting.
     func accessibilityPermissionWasGranted() {

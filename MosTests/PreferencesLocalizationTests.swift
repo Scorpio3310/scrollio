@@ -59,7 +59,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "scrolling-key-clear-for", "scrolling-key-none", "scrolling-reset",
         "scrolling-undo-reset",
         "scrolling-speed-value", "scrolling-glide-time-shorter", "scrolling-glide-time-longer",
-        "scrolling-step-smaller", "scrolling-step-larger",
+        "scrolling-step-smaller", "scrolling-step-larger", "key-recorder-waiting-single-key",
     ]
 
     /// Buttons pane: the card, the list and its rows, the action menu, "Which Button Is
@@ -92,6 +92,10 @@ final class PreferencesLocalizationTests: XCTestCase {
         "open-target-title", "open-target-empty-primary", "open-target-empty-secondary",
         "open-target-arguments-placeholder", "open-target-stale-warning", "open-target-cancel", "open-target-done",
         "appExposeApps", "categoryMissionControlAndSpaces",
+        "key-recorder-waiting-combination", "key-recorder-waiting-adaptive", "buttons-recorder-waiting-gesture",
+        "Press ESC to cancel recording", "button-recording-duplicate-hint",
+        "buttons-default", "buttons-default-back", "buttons-default-forward", "buttons-default-middle",
+        "buttons-default-mode-shift", "buttons-default-own", "buttons-list-other",
     ]
 
     /// Gestures pane and its gesture controls.
@@ -158,15 +162,22 @@ final class PreferencesLocalizationTests: XCTestCase {
         "main-menu-welcome-guide",
     ]
 
-    /// Introduction window (Welcome Guide).
+    /// The Welcome Guide (Introduction window): its bar, the four steps and their pictures.
     static let introKeys = [
-        "intro-title", "intro-subtitle", "intro-access-heading", "intro-access-explanation",
-        "intro-step-open-settings", "intro-step-open-settings-detail", "intro-step-turn-on",
-        "intro-step-turn-on-detail", "intro-step-accessibility",
-        "intro-status-missing", "intro-status-missing-detail", "intro-status-granted",
+        "intro-title", "intro-subtitle", "intro-continue-button", "intro-back-button", "intro-step-of",
+        "intro-welcome-picture", "intro-feature-scrolling", "intro-feature-scrolling-detail",
+        "intro-feature-buttons", "intro-feature-buttons-detail", "intro-feature-gestures",
+        "intro-feature-gestures-detail",
+        "intro-access-title", "intro-access-text", "intro-access-waiting", "intro-access-waiting-detail",
+        "intro-access-starting", "intro-access-paused", "intro-access-picture", "intro-status-granted",
         "intro-status-granted-detail", "intro-status-granted-detail-hidden-icon",
-        "intro-open-settings-button", "intro-open-app-settings-button", "intro-done-button",
-        "intro-help-link", "intro-help-heading", "intro-help-text", "intro-help-finder-button",
+        "intro-open-settings-button", "intro-help-link", "intro-help-heading", "intro-help-text",
+        "intro-help-finder-button",
+        "intro-feel-title", "intro-feel-text", "intro-feel-text-watch", "intro-feel-note", "intro-feel-try",
+        "intro-feel-trackpad", "intro-feel-not-running", "intro-feel-not-in-list", "intro-feel-smoothing-off",
+        "intro-feel-try-area",
+        "intro-finish-title", "intro-finish-text", "intro-finish-picture", "intro-open-app-settings-button",
+        "intro-done-button",
     ]
 
     static let keys = mouseKeys + scrollingKeys + buttonsKeys + gesturesKeys + appsKeys
@@ -216,7 +227,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "about-version-commit": "@@@",
         "about-version-commit-date": "@@@@",
         // Welcome Guide
-        "intro-step-accessibility": "d@",
+        "intro-step-of": "dd",
         // Status-bar menu and toasts
         "status-menu-battery": "@@",
         "status-menu-battery-charging": "@@",
