@@ -21,7 +21,7 @@ class ScrollFilter {
 
     /// The smoothed per-frame distance (what `fill` returns, before any catch-up release).
     private(set) var smoothed = (y: 0.0, x: 0.0)
-    // 已输入但尚未输出的距离 (sum(in) - sum(out)), 跳过滤波时补发, 不丢失也不突跳
+    // 已输入但尚未输出的距离 (sum(in) - sum(out))
     private(set) var pending = (y: 0.0, x: 0.0)
 
     // 填充值
@@ -29,11 +29,11 @@ class ScrollFilter {
     // catchUp: 每帧补发 "多余" 距离的比例 (见下), 0 = 不补发
     //
     // With a constant weight the filter hands out everything it took in by itself: what it
-    // still holds is (1 − w) / w × smoothed. When the weight changes on the way (free-spin
-    // opens the filter up, Duration changes with the wheel speed), what has gone in but not
-    // out (`pending`) no longer matches that. The difference is released at `catchUp` per
-    // frame, so no distance is lost and the speed never jumps. A release against the
-    // direction of the motion only slows it down, it never turns it around.
+    // still holds is (1 − w) / w × smoothed. When the weight changes on the way (the frame
+    // interval varies, Duration changes), what has gone in but not out (`pending`) no longer
+    // matches that. The difference is released at `catchUp` per frame, so no distance is
+    // lost and the speed never jumps. A release against the direction of the motion only
+    // slows it down, it never turns it around.
     public func fill(with nextValue: ( y: Double, x: Double ), weight: Double = ScrollFilter.defaultWeight, catchUp: Double = 0.0) -> ( y: Double, x: Double ) {
         let w = weight.isFinite ? min(1.0, max(0.0, weight)) : 1.0
         let k = catchUp.isFinite ? min(1.0, max(0.0, catchUp)) : 1.0
@@ -58,27 +58,9 @@ class ScrollFilter {
         pending -= release
         return output
     }
-    // 跳过滤波: 输出本帧输入, 并按 catchUp 比例补发滤波器中尚未输出的距离;
-    // 平滑值停在本帧输入, 之后重新启用滤波时速度连续
-    public func passThrough(with nextValue: ( y: Double, x: Double ), catchUp: Double) -> ( y: Double, x: Double ) {
-        return fill(with: nextValue, weight: 1.0, catchUp: catchUp)
-    }
-    /// Nothing held and nothing moving: the next input starts a motion from standstill.
-    public var isAtRest: Bool {
-        return smoothed.y == 0.0 && smoothed.x == 0.0 && pending.y == 0.0 && pending.x == 0.0
-    }
     // 获取值
     public func value() -> ( y: Double, x: Double ) {
         return smoothed
-    }
-    /// Clears one axis (see `reset()`).
-    public func resetY() {
-        smoothed.y = 0.0
-        pending.y = 0.0
-    }
-    public func resetX() {
-        smoothed.x = 0.0
-        pending.x = 0.0
     }
     // 清空
     public func reset() {

@@ -31,7 +31,7 @@
 		296126EA068FF77D423ACAA9 /* MosTests/ScrollEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B8B50E951D72C6195DBA3A /* MosTests/ScrollEventTests.swift */; };
 		5C0E5C0E0000000000000A04 /* MosTests/ScrollMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0E5C0E0000000000000A03 /* MosTests/ScrollMotionTests.swift */; };
 		5C0E5C1F0000000000000202 /* MosTests/ScrollMomentumPresetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0E5C1F0000000000000201 /* MosTests/ScrollMomentumPresetTests.swift */; };
-		5C0E5C1F0000000000000102 /* MosTests/ScrollMomentumTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0E5C1F0000000000000101 /* MosTests/ScrollMomentumTests.swift */; };
+		5C0E5C1F0000000000000102 /* MosTests/ScrollClassicPathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0E5C1F0000000000000101 /* MosTests/ScrollClassicPathTests.swift */; };
 		5C0E5C0E0000000000000A02 /* MosTests/ScrollTuningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0E5C0E0000000000000A01 /* MosTests/ScrollTuningTests.swift */; };
 		568F976CF65380A55E73E588 /* MosTests/ScrollHotkeyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7D69BB23DED610DCD5A0103 /* MosTests/ScrollHotkeyTests.swift */; };
 		754D86BF951F4E0C56F76E8D /* MosTests/ScrollPosterStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CCA64306C761E8CA5D0759A /* MosTests/ScrollPosterStateTests.swift */; };
@@ -183,7 +183,7 @@
 		E1B8B50E951D72C6195DBA3A /* MosTests/ScrollEventTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollEventTests.swift; sourceTree = SOURCE_ROOT; };
 		5C0E5C0E0000000000000A03 /* MosTests/ScrollMotionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollMotionTests.swift; sourceTree = SOURCE_ROOT; };
 		5C0E5C1F0000000000000201 /* MosTests/ScrollMomentumPresetTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollMomentumPresetTests.swift; sourceTree = SOURCE_ROOT; };
-		5C0E5C1F0000000000000101 /* MosTests/ScrollMomentumTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollMomentumTests.swift; sourceTree = SOURCE_ROOT; };
+		5C0E5C1F0000000000000101 /* MosTests/ScrollClassicPathTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollClassicPathTests.swift; sourceTree = SOURCE_ROOT; };
 		5C0E5C0E0000000000000A01 /* MosTests/ScrollTuningTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollTuningTests.swift; sourceTree = SOURCE_ROOT; };
 		E7D69BB23DED610DCD5A0103 /* MosTests/ScrollHotkeyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/ScrollHotkeyTests.swift; sourceTree = SOURCE_ROOT; };
 		F00A00000000000000000002 /* MosTests/OpenTargetPayloadTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MosTests/OpenTargetPayloadTests.swift; sourceTree = SOURCE_ROOT; };
@@ -303,7 +303,7 @@
 				E1B8B50E951D72C6195DBA3A /* MosTests/ScrollEventTests.swift */,
 				5C0E5C0E0000000000000A03 /* MosTests/ScrollMotionTests.swift */,
 				5C0E5C1F0000000000000201 /* MosTests/ScrollMomentumPresetTests.swift */,
-				5C0E5C1F0000000000000101 /* MosTests/ScrollMomentumTests.swift */,
+				5C0E5C1F0000000000000101 /* MosTests/ScrollClassicPathTests.swift */,
 				5C0E5C0E0000000000000A01 /* MosTests/ScrollTuningTests.swift */,
 				31AFD832EF49533E8168BAA0 /* MosTests/ScrollFilterTests.swift */,
 				F1A2B3C4D5E6F7081920A1B2 /* MosTests/ExtractRegexPatternArgTests.swift */,
@@ -536,7 +536,7 @@
 				296126EA068FF77D423ACAA9 /* MosTests/ScrollEventTests.swift in Sources */,
 				5C0E5C0E0000000000000A04 /* MosTests/ScrollMotionTests.swift in Sources */,
 				5C0E5C1F0000000000000202 /* MosTests/ScrollMomentumPresetTests.swift in Sources */,
-				5C0E5C1F0000000000000102 /* MosTests/ScrollMomentumTests.swift in Sources */,
+				5C0E5C1F0000000000000102 /* MosTests/ScrollClassicPathTests.swift in Sources */,
 				5C0E5C0E0000000000000A02 /* MosTests/ScrollTuningTests.swift in Sources */,
 				BF0CC4D63CC0E5FE8FCF6E01 /* MosTests/ScrollFilterTests.swift in Sources */,
 				F1A2B3C4D5E6F7081920A1B1 /* MosTests/ExtractRegexPatternArgTests.swift in Sources */,
