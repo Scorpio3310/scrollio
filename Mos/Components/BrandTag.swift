@@ -44,7 +44,7 @@ struct BrandTagConfig: Equatable {
 
     /// Mos: 深色蓝紫渐变, 呼应应用图标的霓虹光环主题
     static let mos = BrandTagConfig(
-        name: "Mos",
+        name: "Scrollio",
         bgColor: NSColor(calibratedRed: 0.05, green: 0.07, blue: 0.16, alpha: 1.0),  // #0D1229
         textColor: NSColor(calibratedRed: 0.92, green: 0.98, blue: 1.0, alpha: 1.0), // #EBFAFF
         innerHighlightColor: NSColor(calibratedRed: 0.86, green: 0.94, blue: 1.0, alpha: 0.18),

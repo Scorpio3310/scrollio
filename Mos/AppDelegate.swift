@@ -211,7 +211,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ScrollCore.shared.disable()
         ButtonCore.shared.disable()
         Toast.show(
-            NSLocalizedString("Accessibility permission lost, Mos has been paused", comment: ""),
+            NSLocalizedString("Accessibility permission lost, Scrollio has been paused", comment: ""),
             style: .warning,
             duration: 5.0
         )

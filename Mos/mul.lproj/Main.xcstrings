@@ -14,25 +14,25 @@
       }
     },
     "1su-Cm-MUc.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"After the update, macOS sometimes fails to authorize correctly.\\nRemove Mos from the list first, and then re-add Mos to authorize. (You can also drag the icon above directly)\"; ObjectID = \"1su-Cm-MUc\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"After the update, macOS sometimes fails to authorize correctly.\\nRemove Scrollio from the list first, and then re-add Scrollio to authorize. (You can also drag the icon above directly)\"; ObjectID = \"1su-Cm-MUc\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "After the update, macOS sometimes fails to authorize correctly.\nRemove Mos from the list first, and then re-add Mos to authorize. (You can also drag the icon above directly)"
+            "value" : "After the update, macOS sometimes fails to authorize correctly.\nRemove Scrollio from the list first, and then re-add Scrollio to authorize. (You can also drag the icon above directly)"
           }
         }
       }
     },
     "2AK-Pu-mot.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Mos\"; ObjectID = \"2AK-Pu-mot\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"Scrollio\"; ObjectID = \"2AK-Pu-mot\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Mos"
+            "value" : "Scrollio"
           }
         }
       }
@@ -276,13 +276,13 @@
       }
     },
     "bB5-2R-9Da.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Re-run Mos again to show the hidden Icon\"; ObjectID = \"bB5-2R-9Da\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"Re-run Scrollio again to show the hidden Icon\"; ObjectID = \"bB5-2R-9Da\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Re-run Mos again to show the hidden Icon"
+            "value" : "Re-run Scrollio again to show the hidden Icon"
           }
         }
       }
@@ -372,13 +372,13 @@
       }
     },
     "cIk-j1-vYt.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"You need to re-run Mos to change the settings\"; ObjectID = \"cIk-j1-vYt\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"You need to re-run Scrollio to change the settings\"; ObjectID = \"cIk-j1-vYt\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "You need to re-run Mos to change the settings"
+            "value" : "You need to re-run Scrollio to change the settings"
           }
         }
       }
@@ -896,13 +896,13 @@
       }
     },
     "MI6-Tq-Nev.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"© 2017-2026 Caldis. All rights reserved.\"; ObjectID = \"MI6-Tq-Nev\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"Copyright © 2026 Nik Klemenc. Based on Mos by Caldis.\"; ObjectID = \"MI6-Tq-Nev\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "© 2017-2026 Caldis. All rights reserved."
+            "value" : "Copyright © 2026 Nik Klemenc. Based on Mos by Caldis."
           }
         }
       }
@@ -1241,12 +1241,12 @@
       }
     },
     "v26-RK-BtL.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"The allow list mode will make Mos only apply to apps within the application list.\"; ObjectID = \"v26-RK-BtL\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"The allow list mode will make Scrollio only apply to apps within the application list.\"; ObjectID = \"v26-RK-BtL\";",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The allowlist mode will make Mos only apply to apps within the application list."
+            "value" : "The allowlist mode will make Scrollio only apply to apps within the application list."
           }
         }
       }
@@ -1395,7 +1395,7 @@
       }
     },
     "xoR-7p-3qj.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Launch Mos at Login\"; ObjectID = \"xoR-7p-3qj\";",
+      "comment" : "Class = \"NSButtonCell\"; title = \"Launch Scrollio at Login\"; ObjectID = \"xoR-7p-3qj\";",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1429,13 +1429,13 @@
       }
     },
     "YHn-dn-A4n.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Mos\"; ObjectID = \"YHn-dn-A4n\";",
+      "comment" : "Class = \"NSTextFieldCell\"; title = \"Scrollio\"; ObjectID = \"YHn-dn-A4n\";",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Mos"
+            "value" : "Scrollio"
           }
         }
       }
