@@ -9,7 +9,7 @@ They must stay separate.
 
 | File | Scope | Keys |
 | --- | --- | --- |
-| `Mos/Localizable.xcstrings` | Strings used from Swift with `NSLocalizedString` | Readable phrases (`"Quit"`) or identifiers that mirror code constants (`appExpose`, `categoryFunctionKeys`, the identifiers of `SystemShortcut.Shortcut`, `mouse-*`, `scroll-*`, `gesture-*`, `main-menu-*`, `intro-*`) |
+| `Mos/Localizable.xcstrings` | Strings used from Swift with `NSLocalizedString` | Readable phrases (`"Quit"`) or identifiers that mirror code constants (`appExpose`, `categoryFunctionKeys`, the identifiers of `SystemShortcut.Shortcut`, and by area `scrolling-*`, `mouse-*`, `gesture-*` / `gestures-*`, `about-*`, `preferences-*`, `main-menu-*`, `intro-*`) |
 | `Mos/mul.lproj/Main.xcstrings` | The storyboard | Interface Builder object ids (`2AK-Pu-mot.title`) |
 
 Rules:
@@ -36,8 +36,9 @@ In the storyboard: change `Mos/Base.lproj/Main.storyboard`, build, and fill in t
 object ids in `Mos/mul.lproj/Main.xcstrings`. When a UI element is deleted, remove its
 stale entries.
 
-Strings of the preferences panels (Mouse tab, Scrolling tab, Gesture Settings),
-of the main menu and of the Introduction window are also listed in
+Strings of the preference panes built in code (Scrolling, Mouse, Gestures, About, the
+sidebar and the Gesture Settings popover), of the main menu and of the Introduction
+window are also listed in
 `MosTests/PreferencesLocalizationTests.swift`. Add new keys of these to that list: several
 keys are built from variables in code, and a missing one would only show up as the raw
 key in the UI.

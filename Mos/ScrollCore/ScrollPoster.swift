@@ -151,9 +151,9 @@ extension ScrollPoster {
     private func handleInputLocked(_ input: ScrollPosterInput, at now: CFTimeInterval) {
         if sessionLog.isEmpty {
             sessionLog.startedAt = now
-            sessionLog.duration = Options.shared.scroll.duration
         }
         sessionLog.inputs += 1
+        sessionLog.transition = input.duration
         sessionLog.inputDistance += abs(input.y) + abs(input.x)
         sessionLog.lastInputAt = now
         sessionLog.trackpadStyle = config.simTrackpadEnabled
@@ -285,13 +285,6 @@ extension ScrollPoster {
         handleInputLocked(input, at: time)
         os_unfair_lock_unlock(&stateLock)
     }
-    /// One display frame at `now`, as the display link runs it. Returns the phase to pass to
-    /// `stop(_:)` when the motion has ended (the display link then stops), or nil while it goes on.
-    func frameForTests(frameInterval: Double, now: CFTimeInterval) -> Phase? {
-        os_unfair_lock_lock(&stateLock)
-        defer { os_unfair_lock_unlock(&stateLock) }
-        return processFrameLocked(frameInterval: frameInterval, now: now)
-    }
     /// One display frame at `now`, exactly as the display link runs it but without the hop
     /// to the main thread: returns the stop request the frame makes, if any.
     func displayLinkFrameForTests(frameInterval: Double, now: CFTimeInterval) -> ScrollStopRequest? {
@@ -420,7 +413,9 @@ extension ScrollPoster {
         // 重置参数 (不递增 generation, 保留本次收尾帧有效性)
         resetUnlocked()
         os_unfair_lock_unlock(&stateLock)
-        ScrollSystemLog.note(finished, endedWith: "\(requestedPhase)", now: CFAbsoluteTimeGetCurrent())
+        if !finished.isEmpty {
+            ScrollSystemLog.note(finished, endedWith: "\(requestedPhase)")
+        }
 #if DEBUG
         let diag = diagnosticsSnapshot()
         if diag.droppedFramesByGeneration > 0 || diag.droppedFramesByTTL > 0 || diag.updateSnapshotFailures > 0 {

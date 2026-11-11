@@ -90,12 +90,12 @@ class ScrollCore: ScrollActionPort {
         // 无法区分黑苹果, 因为黑苹果的触控板驱动直接模拟鼠标输入
         // 无法区分 Magic Mouse, 因为其滚动特征与内置的 Trackpad 一致
         if scrollEvent.isTrackpad() {
-            if hasVerticalDelta || hasHorizontalDelta { ScrollSystemLog.notePassthrough("taken for trackpad events") }
+            if hasVerticalDelta || hasHorizontalDelta { ScrollSystemLog.notePassthrough(.trackpad) }
             return Unmanaged.passUnretained(event)
         }
         // 当事件来自远程桌面，且其发送的事件 isContinuous=1.0，此时跳过本地平滑
         if ScrollUtils.shared.isRemoteSmoothedEvent(event) {
-            ScrollSystemLog.notePassthrough("remote desktop, already smoothed")
+            ScrollSystemLog.notePassthrough(.remoteSmoothed)
             return Unmanaged.passUnretained(event)
         }
         // 当鼠标输入, 根据需要执行翻转方向/平滑滚动
@@ -182,7 +182,17 @@ class ScrollCore: ScrollActionPort {
         }
 
         if needsPassthrough {
-            ScrollSystemLog.notePassthrough("one axis not smoothed (vertical \(shouldSmoothVertical), horizontal \(shouldSmoothHorizontal), paused by key \(ScrollCore.shared.blockSmooth))")
+            // Reached whenever an axis with a delta is not smoothed: smoothing off for the
+            // whole event, or on but not for that axis. The detail is only built for a line
+            // that is written (at most one per reason every few seconds).
+            ScrollSystemLog.notePassthrough(ScrollCore.passthroughReason(smoothingEnabled: enableSmooth)) {
+                ScrollCore.passthroughDetail(
+                    smoothingEnabled: enableSmooth,
+                    smoothedVertical: shouldSmoothVertical,
+                    smoothedHorizontal: shouldSmoothHorizontal,
+                    appRule: ScrollCore.shared.application != nil
+                )
+            }
             if shouldSmoothVertical {
                 ScrollEvent.clearY(scrollEvent)
             }
@@ -196,17 +206,26 @@ class ScrollCore: ScrollActionPort {
             if ScrollPoster.shared.isAvailable {
                 return nil
             } else {
-                ScrollSystemLog.notePassthrough("no display link")
+                ScrollSystemLog.notePassthrough(.noDisplayLink)
                 return Unmanaged.passUnretained(event)
             }
         } else {
-            if hasVerticalDelta || hasHorizontalDelta {
-                ScrollSystemLog.notePassthrough(
-                    "smoothing off for this event (smooth \(Options.shared.scroll.smooth), paused by key \(ScrollCore.shared.blockSmooth), app rule \(ScrollCore.shared.application != nil))"
-                )
-            }
+            // No delta on either axis: nothing to smooth and nothing to report.
             return Unmanaged.passUnretained(event)
         }
+    }
+
+    /// Why an event with an unsmoothed axis is let through.
+    static func passthroughReason(smoothingEnabled: Bool) -> ScrollSystemLog.PassthroughReason {
+        return smoothingEnabled ? .axisNotSmoothed : .smoothingOff
+    }
+
+    /// The settings behind a passthrough, for the log line only.
+    static func passthroughDetail(smoothingEnabled: Bool, smoothedVertical: Bool, smoothedHorizontal: Bool, appRule: Bool) -> String {
+        guard smoothingEnabled else {
+            return "smooth \(Options.shared.scroll.smooth), paused by key \(ScrollCore.shared.blockSmooth), app rule \(appRule), allowlist \(Options.shared.application.allowlist)"
+        }
+        return "vertical smoothed \(smoothedVertical), horizontal smoothed \(smoothedHorizontal), Shift to horizontal \(ScrollCore.shared.toggleScroll)"
     }
     
     // MARK: - HID++ 滚动热键处理

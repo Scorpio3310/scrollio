@@ -6,7 +6,7 @@
 //  - frame-rate independent smoothing (the Duration factor is defined per 60 Hz frame);
 //  - how strong ScrollFilter is;
 //  - how far the smoothed position may trail the wheel (lead cap);
-//  - converting CGEvent timestamps to seconds.
+//  - the mach clock of the display link's timestamps.
 //
 
 import Foundation
@@ -153,13 +153,7 @@ struct ScrollLeadLimiter {
     }
 }
 
-/// Converts CGEvent timestamps to seconds on the CACurrentMediaTime clock.
-///
-/// The CGEventTimestamp header says nanoseconds, but events from the HID system carry
-/// mach_absolute_time ticks. On Intel a tick is 1 ns, on Apple Silicon 125/3 ns (24 MHz),
-/// so ticks must be scaled with mach_timebase_info. Synthetic events can carry real
-/// nanoseconds (some tools set them that way); read as ticks those lie in the future, which
-/// is used to tell them apart. A zero timestamp falls back to the current time.
+/// The mach clock of display-link timestamps (`CVTimeStamp.hostTime`).
 enum ScrollEventClock {
 
     private static let timebase: (numer: Double, denom: Double) = {
@@ -169,34 +163,8 @@ enum ScrollEventClock {
         return (Double(info.numer), Double(info.denom))
     }()
 
-    /// Seconds per mach tick.
+    /// Seconds per mach tick: 1 ns on Intel, 125/3 ns (24 MHz) on Apple Silicon.
     static var secondsPerTick: Double {
         return timebase.numer / timebase.denom / 1_000_000_000
-    }
-
-    /// Allowed clock skew when deciding whether a timestamp lies in the future (50 ms).
-    private static let futureTolerance: Double = 0.05
-
-    /// - Parameters:
-    ///   - timestamp: CGEvent.timestamp
-    ///   - now: mach_absolute_time() at the time of reading
-    /// - Returns: seconds on the mach clock, or nil if the timestamp is unusable.
-    static func seconds(fromTimestamp timestamp: UInt64, now: UInt64) -> TimeInterval? {
-        guard timestamp != 0 else { return nil }
-        let nowSeconds = Double(now) * secondsPerTick
-        let asTicks = Double(timestamp) * secondsPerTick
-        if asTicks <= nowSeconds + futureTolerance {
-            return asTicks
-        }
-        let asNanoseconds = Double(timestamp) / 1_000_000_000
-        if asNanoseconds <= nowSeconds + futureTolerance {
-            return asNanoseconds
-        }
-        return nil
-    }
-
-    static func seconds(fromTimestamp timestamp: UInt64) -> TimeInterval {
-        let now = mach_absolute_time()
-        return seconds(fromTimestamp: timestamp, now: now) ?? Double(now) * secondsPerTick
     }
 }

@@ -172,10 +172,15 @@ final class LogiMouseBasicsController {
     // MARK: - Commands
 
     /// First contact after discovery: reads everything the mouse has, then writes what the
-    /// user set (only when `managed`).
+    /// user set (only when `managed`). A controller kept across a rediscovery starts afresh:
+    /// a basic the mouse refused before (often while it was still waking up) is asked again.
     func start(desired: LogiMouseSettings, managed: Bool) {
         self.desired = desired
         self.managed = managed
+        if !unavailable.isEmpty {
+            unavailable.removeAll()
+            onChange()
+        }
         freshlyRead.removeAll()
         settled.removeAll()
         writtenDPI = nil
@@ -213,6 +218,9 @@ final class LogiMouseBasicsController {
             log(newManaged ? "Managed from now on: \(Self.describe(newDesired))" : "Not managed any more: nothing is written")
         }
         guard newManaged else {
+            for basic in Basic.allCases where queue.contains(where: { $0.basic == basic && $0.kind == .write }) {
+                forgetWrite(basic)
+            }
             queue.removeAll { $0.kind == .write }
             if newDesired != old || wasManaged { onChange() }
             return
@@ -226,6 +234,12 @@ final class LogiMouseBasicsController {
         for basic in changed {
             settled.remove(basic)
             freshlyRead.remove(basic)
+            // A write decided from the old settings that has not gone out is not wanted any
+            // more: the read queued behind it decides again from the new ones.
+            if queue.contains(where: { $0.basic == basic && $0.kind == .write }) {
+                queue.removeAll { $0.basic == basic && $0.kind == .write }
+                forgetWrite(basic)
+            }
             if hasWish(basic) { enqueueReads(basic, includingStatic: false) }
         }
         if newDesired != old || turnedOn { onChange() }
@@ -547,6 +561,15 @@ final class LogiMouseBasicsController {
     }
 
     // MARK: - Write decisions
+
+    private func forgetWrite(_ basic: Basic) {
+        switch basic {
+        case .battery: break
+        case .pointerSpeed: writtenDPI = nil
+        case .haptics: writtenHaptics = nil
+        case .pressForce: writtenPressForce = nil
+        }
+    }
 
     private func hasWish(_ basic: Basic) -> Bool {
         switch basic {

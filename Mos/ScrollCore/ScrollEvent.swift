@@ -47,9 +47,6 @@ class ScrollEvent {
     func isTrackpad() -> Bool {
         return ScrollEvent.isTrackpad(with: event)
     }
-    func isMouse() -> Bool {
-        return !ScrollEvent.isTrackpad(with: event)
-    }
 }
 
 // MARK: - 工具方法
