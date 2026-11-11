@@ -97,9 +97,8 @@ final class ScrollMomentumRig {
     func wheel(lines: Double, at time: Double) {
         run(until: time)
         let spin = tracker.register(lines: lines, at: start + time)
-        let locked = tuning.locksDuration(simulateTrackpad: simulateTrackpad)
-        let horizontal = tuning.resolve(speed: speed, durationTransition: transition, spin: .idle, simulateTrackpad: locked)
-        let vertical = tuning.resolve(speed: speed, durationTransition: transition, spin: spin, simulateTrackpad: locked)
+        let horizontal = tuning.resolve(speed: speed, durationTransition: transition, spin: .idle)
+        let vertical = tuning.resolve(speed: speed, durationTransition: transition, spin: spin)
         // A line-mode wheel reports 10 px per line; ScrollCore raises it to at least one step.
         let regular = max(step, abs(lines) * 10) * (lines < 0 ? -1 : 1)
         let y = vertical.verticalDistance(regular: regular, lines: lines, step: step)
@@ -113,8 +112,7 @@ final class ScrollMomentumRig {
     /// One thumb wheel event of `lines` lines at `time`.
     func thumbWheel(lines: Double, at time: Double, flags: CGEventFlags = []) {
         run(until: time)
-        let locked = tuning.locksDuration(simulateTrackpad: simulateTrackpad)
-        let horizontal = tuning.resolve(speed: speed, durationTransition: transition, spin: .idle, simulateTrackpad: locked)
+        let horizontal = tuning.resolve(speed: speed, durationTransition: transition, spin: .idle)
         let x = max(step, abs(lines) * 10) * (lines < 0 ? -1 : 1)
         let input = ScrollCore.posterInput(
             y: 0, x: x, step: step, vertical: horizontal, horizontal: horizontal,
@@ -648,23 +646,19 @@ final class ScrollMomentumTests: XCTestCase {
     }
 
     func testFreeSpin_usesFreeSpinSmoothnessAlthoughSimulateTrackpadIsOn() {
-        // With momentum on, "simulate trackpad" does not lock Duration, so the free-spin
-        // smoothness applies (it would not with the lock).
+        // "Simulate trackpad" (on in this preset) has no say in the smoothing: the free-spin
+        // smoothness applies, with momentum and without.
         let tuning = ScrollPreset.magicMouse.values.tuning
-        XCTAssertFalse(tuning.locksDuration(simulateTrackpad: true))
+        XCTAssertTrue(ScrollPreset.magicMouse.values.simulateTrackpad)
         let spinning = ScrollSpinState(lineRate: 100, freeSpinBlend: 1, isFreeSpin: true, accelerationRate: 100)
         let regular = OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: 2.5)
-        let resolved = tuning.resolve(
-            speed: 1.8, durationTransition: regular, spin: spinning,
-            simulateTrackpad: tuning.locksDuration(simulateTrackpad: true)
-        )
+        let resolved = tuning.resolve(speed: 1.8, durationTransition: regular, spin: spinning)
         XCTAssertEqual(resolved.durationTransition, OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: 1.0), accuracy: 1e-12)
         XCTAssertEqual(resolved.speed, 1.8 * 1.2, accuracy: 1e-12)
 
         var classic = tuning
         classic.momentum = nil
-        XCTAssertTrue(classic.locksDuration(simulateTrackpad: true))
-        XCTAssertFalse(classic.locksDuration(simulateTrackpad: false))
+        XCTAssertEqual(classic.resolve(speed: 1.8, durationTransition: regular, spin: spinning), resolved)
     }
 
     func testFreeSpin_canGlideAndKeepPhasesWhenAsked() {
@@ -768,8 +762,8 @@ final class ScrollMomentumTests: XCTestCase {
     }
 
     func testPageSwipe_usesItsOwnDirectSmoothing() {
-        // Also when "simulate trackpad" locks the regular Duration to a long glide.
-        let lockedDuration = OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: ScrollDurationLimits.simulateTrackpadDefault)
+        // Also when the regular Duration is a long glide.
+        let lockedDuration = OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: 4.75)
         let slow = ScrollTuningResolution(multiplier: 1, speed: 2.7, durationTransition: lockedDuration, freeSpinBlend: 0)
         let swipe = ScrollCore.posterInput(y: 0, x: 33.6, step: 33.6, vertical: slow, horizontal: slow, pageSwipe: true)
         XCTAssertEqual(swipe.duration, ScrollCore.pageSwipeTransition)

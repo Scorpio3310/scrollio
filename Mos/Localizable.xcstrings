@@ -2398,17 +2398,6 @@
         }
       }
     },
-    "scrollDurationLockedMessage": {
-      "comment": "Message shown when simulate trackpad locks the duration setting",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Trackpad-style events lock the duration"
-          }
-        }
-      }
-    },
     "selectAll": {
       "extractionState": "manual",
       "localizations": {

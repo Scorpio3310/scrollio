@@ -158,14 +158,9 @@ class ScrollCore: ScrollActionPort {
 
         // 快速滚动调校 (全局): 竖向滚轮按转速应用 free-spin / 加速度, 横向 (拇指滚轮) 只有冲刺倍率
         let tuning = Options.shared.scrollTuning
-        // "模拟触控板" 只在 momentum 关闭时锁定时长 (开启时滑行由 momentum 提供)
-        let durationLocked = tuning.locksDuration(
-            simulateTrackpad: ScrollCore.isSimTrackpadEnabled(for: ScrollCore.shared.application)
-        )
         let amplification = ScrollCore.shared.dashAmplification
         let horizontalTuning = tuning.resolve(
-            speed: speed, durationTransition: duration, spin: .idle,
-            simulateTrackpad: durationLocked, amplification: amplification
+            speed: speed, durationTransition: duration, spin: .idle, amplification: amplification
         )
         var verticalTuning = horizontalTuning
         var verticalSpin = ScrollSpinState.idle
@@ -178,8 +173,7 @@ class ScrollCore: ScrollActionPort {
             )
             verticalSpin = spin
             verticalTuning = tuning.resolve(
-                speed: speed, durationTransition: duration, spin: spin,
-                simulateTrackpad: durationLocked, amplification: amplification
+                speed: speed, durationTransition: duration, spin: spin, amplification: amplification
             )
             if scrollEvent.Y.usableValue.magnitude < step {
                 ScrollEvent.normalizeY(scrollEvent, step)
@@ -282,14 +276,6 @@ class ScrollCore: ScrollActionPort {
     ) -> Bool {
         return action == .pageSwipe && x != 0.0 && y == 0.0
             && !toggleScroll && !flags.contains(.maskShift)
-    }
-
-    /// 与 ScrollPoster 的配置快照相同的规则: 例外应用 (不继承) 用自身设置, 否则用全局设置
-    static func isSimTrackpadEnabled(for application: Application?) -> Bool {
-        if let application = application, !application.inherit {
-            return application.scroll.smoothSimTrackpad
-        }
-        return Options.shared.scroll.smoothSimTrackpad
     }
 
     // MARK: - HID++ 滚动热键处理

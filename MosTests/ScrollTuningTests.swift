@@ -187,13 +187,15 @@ final class ScrollTuningTests: XCTestCase {
         XCTAssertEqual(r.durationTransition, (smooth + freeSpinDuration) / 2, accuracy: 1e-12)
     }
 
-    func testResolve_simulateTrackpadKeepsLockedDuration() {
+    /// The long Duration "Trackpad-style events" used to force gets the free-spin smoothness
+    /// like any other Duration (there is no trackpad-style exception any more).
+    func testResolve_longDurationStillGetsFreeSpinSmoothness() {
         let settings = ScrollTuningSettings(freeSpinEnabled: true, freeSpinSmoothness: 1.5, freeSpinSpeed: 0.7, acceleration: 0)
         let spinning = ScrollSpinState(lineRate: 120, freeSpinBlend: 1, isFreeSpin: true, accelerationRate: 120)
-        let locked = OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: ScrollDurationLimits.simulateTrackpadDefault)
-        let r = settings.resolve(speed: 2.7, durationTransition: locked, spin: spinning, simulateTrackpad: true)
-        XCTAssertEqual(r.durationTransition, locked)
-        XCTAssertEqual(r.multiplier, 0.7, accuracy: 1e-12, "free-spin speed still applies")
+        let long = OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: 4.75)
+        let r = settings.resolve(speed: 2.7, durationTransition: long, spin: spinning)
+        XCTAssertEqual(r.durationTransition, OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: 1.5), accuracy: 1e-12)
+        XCTAssertEqual(r.multiplier, 0.7, accuracy: 1e-12)
     }
 
     func testResolve_freeSpinDisabledIgnoresBlend() {

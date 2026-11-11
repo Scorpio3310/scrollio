@@ -53,11 +53,6 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     }
     // Constants
     let DefaultConfigForCompare = OPTIONS_SCROLL_DEFAULT()
-    private var scrollDurationDescriptionDefaultText: String?
-    private let scrollDurationLockedDescription = NSLocalizedString(
-        "scrollDurationLockedMessage",
-        comment: "Message shown when simulate trackpad locks the duration setting"
-    )
     // KeyRecorder for custom hotkey recording
     private let keyRecorder = KeyRecorder()
     private weak var currentRecordingPopup: NSButton?
@@ -70,7 +65,6 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         // 创建高度约束
         resetButtonHeightConstraint = resetToDefaultsButton.heightAnchor.constraint(equalToConstant: 24)
         resetButtonHeightConstraint?.isActive = true
-        scrollDurationDescriptionDefaultText = scrollDurationDescriptionLabel?.stringValue
         // 设置 KeyRecorder 代理
         keyRecorder.delegate = self
         // 快速滚动入口
@@ -309,12 +303,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         setScrollDuration(value: sender.doubleValue)
     }
     func setScrollDuration(value: Double) {
-        let scrollOptions = getTargetApplicationScrollOptions()
-        if isDurationLocked(scrollOptions) {
-            scrollOptions.duration = ScrollDurationLimits.simulateTrackpadDefault
-        } else {
-            scrollOptions.duration = value
-        }
+        getTargetApplicationScrollOptions().duration = value
         syncViewWithOptions()
     }
     
@@ -370,39 +359,20 @@ extension PreferencesScrollingViewController {
         scrollSpeedStepper.isEnabled = isNotInherit
         scrollSpeedInput.stringValue = String(format: "%.2f", speed)
         scrollSpeedInput.isEnabled = isNotInherit
-        // 过渡 ("模拟触控板" 仅在 momentum 关闭时锁定时长, 见 ScrollTuningSettings.locksDuration)
-        let durationLocked = isDurationLocked(scroll)
-        let resolvedDuration: Double
-        if durationLocked {
-            resolvedDuration = ScrollDurationLimits.simulateTrackpadDefault
-            if scroll.duration != resolvedDuration {
-                scroll.duration = resolvedDuration
-            }
-        } else {
-            resolvedDuration = scroll.duration
-        }
-        scrollDurationSlider.doubleValue = resolvedDuration
-        scrollDurationSlider.isEnabled = isNotInherit && !durationLocked
-        scrollDurationStepper.doubleValue = resolvedDuration
-        scrollDurationStepper.isEnabled = isNotInherit && !durationLocked
-        scrollDurationInput.stringValue = String(format: "%.2f", resolvedDuration)
-        scrollDurationInput.isEnabled = isNotInherit && !durationLocked
-        if durationLocked {
-            scrollDurationDescriptionLabel?.stringValue = scrollDurationLockedDescription
-        } else if let defaultText = scrollDurationDescriptionDefaultText {
-            scrollDurationDescriptionLabel?.stringValue = defaultText
-        }
+        // 过渡
+        let duration = scroll.duration
+        scrollDurationSlider.doubleValue = duration
+        scrollDurationSlider.isEnabled = isNotInherit
+        scrollDurationStepper.doubleValue = duration
+        scrollDurationStepper.isEnabled = isNotInherit
+        scrollDurationInput.stringValue = String(format: "%.2f", duration)
+        scrollDurationInput.isEnabled = isNotInherit
         // 快速滚动入口仅在全局配置中显示
         updateScrollTuningButtonVisibility()
         // 预设行同样仅在全局配置中显示, 并跟随当前数值
         updatePresetRow()
         // 更新重置按钮状态
         updateResetButtonState()
-    }
-    /// "模拟触控板" 是否锁定该配置的时长。momentum (全局) 开启时不锁定: 滑行由 momentum 提供,
-    /// 时长照常可调, 预设 (如 Magic Mouse) 写入的时长也不会被这里改回 4.75。
-    func isDurationLocked(_ scroll: OPTIONS_SCROLL_DEFAULT) -> Bool {
-        return Options.shared.scrollTuning.locksDuration(simulateTrackpad: scroll.smoothSimTrackpad)
     }
     /// 是否有可重置的改动: 滚动选项偏离默认值, 或 (仅全局配置) 快速滚动设置偏离默认值
     var hasSettingsToReset: Bool {

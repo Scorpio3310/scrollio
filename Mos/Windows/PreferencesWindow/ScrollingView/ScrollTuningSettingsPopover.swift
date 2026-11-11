@@ -480,12 +480,9 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
         onSettingsChanged?()
     }
 
-    /// On uses the default momentum settings; off removes them. "Simulate trackpad" only locks
-    /// Duration while momentum is off, so the lock is handed over here.
+    /// On uses the default momentum settings; off removes them.
     @objc private func momentumToggled(_ sender: NSButton) {
-        var tuning = Options.shared.scrollTuning
-        tuning.setMomentum(sender.state == .on ? .default : nil, adjusting: Options.shared.scroll)
-        Options.shared.scrollTuning = tuning
+        Options.shared.scrollTuning.momentum = sender.state == .on ? .default : nil
         syncControls()
         onSettingsChanged?()
     }

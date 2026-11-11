@@ -36,27 +36,9 @@ class ScrollSmoothDetailSettingsPopoverViewController: AdaptivePopover, ScrollOp
         onOptionsChanged?()
     }
 
+    /// Duration is not part of this: it stays as it is either way.
     @IBAction func simulateTrackpadToggle(_ sender: NSButton) {
-        let scrollOptions = getTargetApplicationScrollOptions()
-        let isOn = sender.state == .on
-        let wasOn = scrollOptions.smoothSimTrackpad
-        scrollOptions.smoothSimTrackpad = isOn
-        if isOn {
-            // momentum 开启时不锁定时长 (滑行由 momentum 提供), 时长保持不变
-            if Options.shared.scrollTuning.locksDuration(simulateTrackpad: true) {
-                if !wasOn {
-                    scrollOptions.durationBeforeSimTrackpadLock = scrollOptions.duration
-                }
-                scrollOptions.duration = ScrollDurationLimits.simulateTrackpadDefault
-            }
-        } else {
-            if wasOn, let previous = scrollOptions.durationBeforeSimTrackpadLock {
-                scrollOptions.duration = previous
-            }
-            if wasOn {
-                scrollOptions.durationBeforeSimTrackpadLock = nil
-            }
-        }
+        getTargetApplicationScrollOptions().smoothSimTrackpad = sender.state == .on
         syncViewWithOptions()
         onOptionsChanged?()
     }
