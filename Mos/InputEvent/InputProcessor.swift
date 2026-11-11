@@ -173,6 +173,9 @@ class InputProcessor: ModifierFlagsProviding {
         assertMainThread()
         if event.phase == .up {
             // Up 事件: 按 (type, code) 查表, 忽略 modifiers (用户可能已松开修饰键)
+            if releaseBindingPressedAfterAnAbandonedGesture(for: event) {
+                return .consumed
+            }
             if releaseActiveMouseGesture(for: event) {
                 return .consumed
             }
@@ -184,6 +187,11 @@ class InputProcessor: ModifierFlagsProviding {
 
         // Down 事件: 完整匹配 (type + code + modifiers + deviceFilter)
         let key = TriggerKey(type: event.type, code: event.code)
+        // A gesture hold of this button that the watchdog abandoned lost its up. A new press
+        // ends it, whatever the press binds, so it cannot swallow this press's up.
+        if let stale = activeMouseGestures[key], stale.isAbandoned {
+            activeMouseGestures.removeValue(forKey: key)
+        }
         guard let binding = ButtonUtils.shared.getBestMatchingBinding(for: event) else {
             return .passthrough
         }
@@ -256,6 +264,17 @@ class InputProcessor: ModifierFlagsProviding {
         beginInteractiveGestureIfEnabled(session, key: key)
         armMouseGestureWatchdog(for: session, key: key)
         MouseInteractionSessionController.shared.refreshMotionTapState()
+    }
+
+    /// An up for a button whose abandoned gesture hold is still in the table while another
+    /// binding of the same button is held: the up belongs to that binding (its press came
+    /// later), and the stale hold goes with it.
+    private func releaseBindingPressedAfterAnAbandonedGesture(for event: InputEvent) -> Bool {
+        let key = TriggerKey(type: event.type, code: event.code)
+        guard let gesture = activeMouseGestures[key], gesture.isAbandoned,
+              activeBindings[key] != nil else { return false }
+        activeMouseGestures.removeValue(forKey: key)
+        return releaseActiveBinding(for: event)
     }
 
     private func releaseActiveMouseGesture(for event: InputEvent) -> Bool {

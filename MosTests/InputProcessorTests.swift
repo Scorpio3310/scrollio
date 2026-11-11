@@ -665,6 +665,66 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(executed().count, 1)
     }
 
+    /// Button 3 alone is Gesture Navigation; with ⌘ it holds Shift (a virtual modifier).
+    private func configureGestureAndCommandShiftBindings() {
+        configureGestureBinding()
+        let withCommand = RecordedEvent(
+            type: .mouse, code: 3, modifiers: UInt(CGEventFlags.maskCommand.rawValue),
+            displayComponents: ["⌘", "🖱4"], deviceFilter: nil
+        )
+        Options.shared.buttons.binding.append(ButtonBinding(
+            triggerEvent: withCommand, systemShortcutName: "custom::56:0", isEnabled: true
+        ))
+        ButtonUtils.shared.invalidateCache()
+    }
+
+    private func commandEvent(phase: InputPhase) -> InputEvent {
+        return InputEvent(type: .mouse, code: 3, modifiers: .maskCommand, phase: phase, source: .hidPP, device: nil)
+    }
+
+    func testAPressAfterAnAbandonedHoldKeepsItsOwnButtonUp() {
+        configureGestureAndCommandShiftBindings()
+
+        // A gesture hold whose button-up was lost.
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        InputProcessor.shared.fireMouseGestureWatchdogsForTests()
+
+        // The next press of the same button, with ⌘, holds Shift.
+        XCTAssertEqual(InputProcessor.shared.process(commandEvent(phase: .down)), .consumed)
+        XCTAssertNotEqual(InputProcessor.shared.activeModifierFlags, 0)
+
+        // Its up releases Shift instead of being swallowed by the stale hold.
+        XCTAssertEqual(InputProcessor.shared.process(commandEvent(phase: .up)), .consumed)
+        XCTAssertEqual(InputProcessor.shared.activeModifierFlags, 0)
+        XCTAssertFalse(InputProcessor.shared.hasActiveMouseGestureSessions)
+    }
+
+    func testAnUpPrefersTheBindingPressedWhileTheAbandonedHoldWasStillLive() {
+        configureGestureAndCommandShiftBindings()
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        XCTAssertEqual(InputProcessor.shared.process(commandEvent(phase: .down)), .consumed)
+        XCTAssertNotEqual(InputProcessor.shared.activeModifierFlags, 0)
+        InputProcessor.shared.fireMouseGestureWatchdogsForTests()
+
+        XCTAssertEqual(InputProcessor.shared.process(commandEvent(phase: .up)), .consumed)
+        XCTAssertEqual(InputProcessor.shared.activeModifierFlags, 0)
+        XCTAssertFalse(InputProcessor.shared.hasActiveMouseGestureSessions)
+    }
+
+    func testAnUnboundPressAfterAnAbandonedHoldPassesItsUpThrough() {
+        configureGestureBinding()
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        InputProcessor.shared.fireMouseGestureWatchdogsForTests()
+
+        // The binding is gone by the next press: down and up both belong to the app.
+        Options.shared.buttons.binding = []
+        ButtonUtils.shared.invalidateCache()
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .passthrough)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .passthrough)
+        XCTAssertFalse(InputProcessor.shared.hasActiveMouseGestureSessions)
+    }
+
     /// The real timer, with a short timeout: pressing the button arms the watchdog.
     func testDiscreteHoldWatchdogFiresByItselfAfterTheTimeout() {
         configureGestureBinding()
