@@ -639,7 +639,7 @@ final class ButtonBindingTests: XCTestCase {
         let innerHighlightColor = tag.innerHighlightColor?.usingColorSpace(.deviceRGB)
         let gradientColors = tag.gradientColors?.compactMap { $0.usingColorSpace(.deviceRGB) }
 
-        XCTAssertEqual(tag.name, "Mos")
+        XCTAssertEqual(tag.name, "Scrollio")
         XCTAssertLessThan(bgColor?.redComponent ?? 1, 0.15)
         XCTAssertLessThan(bgColor?.greenComponent ?? 1, 0.18)
         XCTAssertLessThan(bgColor?.blueComponent ?? 1, 0.35)

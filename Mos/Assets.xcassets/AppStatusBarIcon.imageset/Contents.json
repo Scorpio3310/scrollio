@@ -1,35 +1,18 @@
 {
   "images" : [
     {
-      "idiom" : "universal"
-    },
-    {
-      "filename" : "MenubarIcon-16 1.png",
+      "filename" : "MouseMenuTemplate.png",
       "idiom" : "universal",
       "scale" : "1x"
     },
     {
-      "filename" : "MenubarIcon-32 1.png",
+      "filename" : "MouseMenuTemplate@2x.png",
       "idiom" : "universal",
       "scale" : "2x"
     },
     {
-      "filename" : "MenubarIcon-64.png",
       "idiom" : "universal",
       "scale" : "3x"
-    },
-    {
-      "idiom" : "mac"
-    },
-    {
-      "filename" : "MenubarIcon-16.png",
-      "idiom" : "mac",
-      "scale" : "1x"
-    },
-    {
-      "filename" : "MenubarIcon-32.png",
-      "idiom" : "mac",
-      "scale" : "2x"
     }
   ],
   "info" : {

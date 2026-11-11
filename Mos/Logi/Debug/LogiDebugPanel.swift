@@ -518,12 +518,12 @@ class LogiDebugPanel: NSObject {
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library", isDirectory: true)
         return library
             .appendingPathComponent("Logs", isDirectory: true)
-            .appendingPathComponent("Mos", isDirectory: true)
+            .appendingPathComponent("Scrollio", isDirectory: true)
     }
 
     private class func autoLogHeader() -> String {
         return [
-            "# Mos HID++ debug log",
+            "# Scrollio HID++ debug log",
             "# Session started: \(fullTimestamp())",
             "# Latest file: \(autoLogLatestFileName)",
             "",

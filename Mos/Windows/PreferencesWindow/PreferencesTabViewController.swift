@@ -52,9 +52,9 @@ class PreferencesTabViewController: NSTabViewController {
         removeToolbarFlexibleSpaces()
     }
 
-    /// PreferencesWindowController spreads the tabs with flexible spaces. With seven tabs
-    /// those spaces push About into the toolbar's overflow menu at the 450 pt window width,
-    /// so the tabs sit side by side instead (still centred). Runs after windowDidLoad.
+    /// PreferencesWindowController spreads the tabs with flexible spaces. With the Mouse tab
+    /// added those spaces can push About into the toolbar's overflow menu at the 450 pt window
+    /// width, so the tabs sit side by side instead (still centred). Runs after windowDidLoad.
     func removeToolbarFlexibleSpaces() {
         guard let toolbar = view.window?.toolbar else { return }
         for index in toolbar.items.indices.reversed() where toolbar.items[index].itemIdentifier == .flexibleSpace {

@@ -62,6 +62,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // Takeover from the original Mos: quit it if it is running and, on the first launch,
+        // copy its settings. Must come before readOptions, which seeds the defaults.
+        LegacyMosTakeover.runAtLaunch()
+
         // 禁止重复运行, 结束正在运行的实例
         Utils.preventMultiRunning(killExist: true)
         
@@ -131,7 +135,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         LogiUsageBootstrap.installOptionsObservers()
         LogiUsageBootstrap.refreshAll()
         startWithAccessibilityPermissionsChecker(nil)
-        UpdateManager.shared.scheduleCheckOnAppStartIfNeeded()
     }
 
     // 用户双击打开应用程序
@@ -212,7 +215,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ScrollCore.shared.disable()
         ButtonCore.shared.disable()
         Toast.show(
-            NSLocalizedString("Accessibility permission lost, Mos has been paused", comment: ""),
+            NSLocalizedString("Accessibility permission lost, Scrollio has been paused", comment: ""),
             style: .warning,
             duration: 5.0
         )
