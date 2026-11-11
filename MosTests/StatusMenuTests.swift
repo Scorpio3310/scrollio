@@ -416,6 +416,23 @@ final class AppRunControllerTests: XCTestCase {
         XCTAssertFalse(controller.isWaitingForAccess)
     }
 
+    /// The wait for the access goes on while the status-bar menu is open or a modal panel
+    /// runs: the timer is in the common modes (CommonModesTimer), not only the default one.
+    func testTheRecoveryTimerAlsoRunsWhileAMenuIsOpen() throws {
+        let world = World()
+        world.access = false
+        let controller = make(world)
+        controller.start()
+        let timer = try XCTUnwrap(controller.recoveryTimer)
+        for mode in [RunLoop.Mode.default, .eventTracking, .modalPanel] {
+            XCTAssertTrue(CFRunLoopContainsTimer(
+                CFRunLoopGetMain(),
+                unsafeBitCast(timer, to: CFRunLoopTimer.self),
+                CFRunLoopMode(mode.rawValue as CFString)
+            ), mode.rawValue)
+        }
+    }
+
     /// Pause is the stop path: the cores stop (LogiCenter.stop gives the mice their buttons back).
     func testPauseStopsAndResumeStarts() {
         let world = World()

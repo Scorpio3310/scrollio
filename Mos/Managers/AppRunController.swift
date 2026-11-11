@@ -299,7 +299,8 @@ final class AppRunController {
 
     private func scheduleRecovery(every interval: TimeInterval) {
         recoveryTimer?.invalidate()
-        recoveryTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+        // Also while a menu is open (CommonModesTimer).
+        recoveryTimer = CommonModesTimer.scheduled(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.recoveryTick()
         }
     }

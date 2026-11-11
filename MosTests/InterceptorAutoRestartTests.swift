@@ -108,6 +108,67 @@ final class InterceptorAutoRestartTests: XCTestCase {
         XCTAssertFalse(firstFired)
         Interceptor.replaceKeeper(&keeper, with: nil)
     }
+
+    // MARK: - Safety timers while a menu is open
+
+    /// Runs the main run loop in `mode`, as an open menu (`.eventTracking`) or a modal panel
+    /// (`.modalPanel`) does, until `done` or the timeout.
+    private func runMainRunLoop(in mode: RunLoop.Mode, timeout: TimeInterval, until done: () -> Bool) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !done() && Date() < deadline {
+            _ = RunLoop.main.run(mode: mode, before: min(deadline, Date().addingTimeInterval(0.05)))
+        }
+    }
+
+    private func isScheduled(_ timer: Timer, in mode: RunLoop.Mode) -> Bool {
+        return CFRunLoopContainsTimer(
+            CFRunLoopGetMain(),
+            unsafeBitCast(timer, to: CFRunLoopTimer.self),
+            CFRunLoopMode(mode.rawValue as CFString)
+        )
+    }
+
+    /// The keeper of a tap used to wait while the status-bar menu was open: a tap macOS
+    /// turned off meanwhile stayed off until the menu closed. A timer from the helper fires
+    /// while a menu tracks and while a modal panel runs; a `Timer.scheduledTimer` does not.
+    func testASafetyTimerFiresWhileAMenuIsOpen() {
+        XCTAssertEqual(CommonModesTimer.mode, .common)
+        for mode in [RunLoop.Mode.eventTracking, .modalPanel] {
+            var safetyFired = false
+            var plainFired = false
+            let safety = CommonModesTimer.scheduled(withTimeInterval: 0.01, repeats: false) { _ in safetyFired = true }
+            let plain = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: false) { _ in plainFired = true }
+
+            XCTAssertTrue(isScheduled(safety, in: .default), mode.rawValue)
+            XCTAssertTrue(isScheduled(safety, in: mode), mode.rawValue)
+            XCTAssertFalse(isScheduled(plain, in: mode), mode.rawValue)
+
+            runMainRunLoop(in: mode, timeout: 2) { safetyFired }
+            XCTAssertTrue(safetyFired, mode.rawValue)
+            XCTAssertFalse(plainFired, "\(mode.rawValue): a default-mode timer waits until the menu closes")
+            safety.invalidate()
+            plain.invalidate()
+        }
+    }
+
+    /// The safety timers are made through the helper: the keeper and the restart of every
+    /// event tap, the recovery of AppRunController, the keeper and the rate checks of the
+    /// display link. None of them may go back to a default-mode `Timer.scheduledTimer`.
+    func testTheSafetyTimersAreMadeThroughTheHelper() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()       // MosTests/
+            .deletingLastPathComponent()       // project root
+        let expected: [(path: String, timers: Int)] = [
+            ("Mos/Utils/Interceptor.swift", 2),
+            ("Mos/Managers/AppRunController.swift", 1),
+            ("Mos/ScrollCore/ScrollPoster.swift", 2),
+        ]
+        for file in expected {
+            let source = try String(contentsOf: root.appendingPathComponent(file.path), encoding: .utf8)
+            XCTAssertFalse(source.contains("Timer.scheduledTimer"), "\(file.path) makes a default-mode timer")
+            XCTAssertEqual(source.components(separatedBy: "CommonModesTimer.scheduled(").count - 1, file.timers, file.path)
+        }
+    }
 }
 
 // MARK: - The app log of the event taps
