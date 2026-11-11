@@ -2072,6 +2072,56 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(executed().count, 0)
     }
 
+    // MARK: - The release of a native button that ran a trigger action
+
+    private func bindNativeButton3(to action: String) {
+        let trigger = RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil)
+        Options.shared.buttons.binding = [ButtonBinding(triggerEvent: trigger, systemShortcutName: action, isEnabled: true)]
+        ButtonUtils.shared.invalidateCache()
+    }
+
+    private func nativeButton3(_ type: CGEventType) -> InputEvent {
+        return InputEvent(fromCGEvent: makeOtherMouseEvent(type))
+    }
+
+    /// The press was swallowed but the release went on to the app under the pointer: a
+    /// mouse-up without a mouse-down.
+    func testTheReleaseOfANativeButtonThatRanATriggerActionIsSwallowed() {
+        bindNativeButton3(to: SystemShortcut.missionControl.identifier)
+        let executed = recordKeyboardShortcuts()
+
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseDown)), .consumed)
+        XCTAssertEqual(executed().count, 1)
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseUp)), .consumed)
+        XCTAssertEqual(executed().count, 1, "the release runs nothing")
+        // Only that one release: the next is the app's again.
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseUp)), .passthrough)
+    }
+
+    /// Pause, sleep or a tap restart while the button is down: no entry stays behind.
+    func testClearingForgetsASwallowedTriggerPress() {
+        bindNativeButton3(to: SystemShortcut.missionControl.identifier)
+        _ = recordKeyboardShortcuts()
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseDown)), .consumed)
+
+        InputProcessor.shared.clearActiveBindings()
+
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseUp)), .passthrough)
+    }
+
+    /// A release that never came is forgotten at the button's next press, whatever that press
+    /// does, so it cannot swallow a release that belongs to the app.
+    func testANewPressForgetsATriggerPressWhoseReleaseWasLost() {
+        bindNativeButton3(to: SystemShortcut.missionControl.identifier)
+        _ = recordKeyboardShortcuts()
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseDown)), .consumed)
+
+        Options.shared.buttons.binding = []
+        ButtonUtils.shared.invalidateCache()
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseDown)), .passthrough)
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseUp)), .passthrough)
+    }
+
     private func configureGestureBinding(type: EventType = .mouse, code: UInt16 = 3) {
         let trigger = RecordedEvent(
             type: type,
