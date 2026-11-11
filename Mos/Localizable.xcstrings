@@ -1918,314 +1918,6 @@
         }
       }
     },
-    "scroll-preset-balanced": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Balanced"
-          }
-        }
-      }
-    },
-    "scroll-preset-balanced-description": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A light glide that still feels quick."
-          }
-        }
-      }
-    },
-    "scroll-preset-custom": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Custom"
-          }
-        }
-      }
-    },
-    "scroll-preset-custom-description": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your own values."
-          }
-        }
-      }
-    },
-    "scroll-preset-direct": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Direct"
-          }
-        }
-      }
-    },
-    "scroll-preset-direct-description": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Quick and precise, with a short glide."
-          }
-        }
-      }
-    },
-    "scroll-preset-smooth": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Smooth"
-          }
-        }
-      }
-    },
-    "scroll-preset-smooth-description": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A longer, softer glide for easy reading."
-          }
-        }
-      }
-    },
-    "scroll-preset-smooth-off-description": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Smooth scrolling is off."
-          }
-        }
-      }
-    },
-    "scroll-preset-trackpad-like": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Glide"
-          }
-        }
-      }
-    },
-    "scroll-preset-trackpad-like-description": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A long glide; fast spins scroll farther."
-          }
-        }
-      }
-    },
-    "scroll-tuning-acceleration": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Acceleration"
-          }
-        }
-      }
-    },
-    "scroll-tuning-acceleration-off": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Off"
-          }
-        }
-      }
-    },
-    "scroll-tuning-button": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Presets & Fast Scrolling…"
-          }
-        }
-      }
-    },
-    "scroll-tuning-footnote": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Free-spin is detected from how fast the wheel turns, so it also works when SmartShift switches to free-spin on its own. Lower smoothness feels more direct. These settings apply to all apps."
-          }
-        }
-      }
-    },
-    "scroll-tuning-free-spin-checkbox": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Separate settings for free-spin"
-          }
-        }
-      }
-    },
-    "scroll-tuning-free-spin-smoothness": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Smoothness"
-          }
-        }
-      }
-    },
-    "scroll-tuning-free-spin-speed": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Speed"
-          }
-        }
-      }
-    },
-    "scroll-tuning-preset-label": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Preset"
-          }
-        }
-      }
-    },
-    "scroll-tuning-title": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Presets & Fast Scrolling"
-          }
-        }
-      }
-    },
-    "scroll-preset-magic-mouse": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Magic Mouse"
-          }
-        }
-      }
-    },
-    "scroll-preset-magic-mouse-description": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Soft notches, a glide after a flick, and a bounce at the edges."
-          }
-        }
-      }
-    },
-    "scroll-tuning-momentum-checkbox": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Momentum after a flick"
-          }
-        }
-      }
-    },
-    "scroll-tuning-momentum-tooltip": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A quick flick lets the page glide on and slow down. Single notches stay exact, and a notch in the other direction stops the glide."
-          }
-        }
-      }
-    },
-    "scroll-tuning-thumb-wheel-label": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Thumb wheel"
-          }
-        }
-      }
-    },
-    "scroll-tuning-thumb-wheel-scroll": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scroll sideways"
-          }
-        }
-      }
-    },
-    "scroll-tuning-thumb-wheel-page-swipe": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Swipe between pages"
-          }
-        }
-      }
-    },
-    "scroll-tuning-thumb-wheel-hint": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "“Swipe between pages” is off in System Settings (Mouse or Trackpad), so apps ignore this gesture."
-          }
-        }
-      }
-    },
     "modifierCommand": {
       "extractionState": "manual",
       "localizations": {
@@ -3283,6 +2975,435 @@
           "stringUnit": {
             "state": "translated",
             "value": "Finishing up…"
+          }
+        }
+      }
+    },
+    "scrolling-wheel-label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mouse wheel"
+          }
+        }
+      }
+    },
+    "scrolling-smooth": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smooth scrolling"
+          }
+        }
+      }
+    },
+    "scrolling-smooth-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turns the wheel's steps into even movement."
+          }
+        }
+      }
+    },
+    "scrolling-feel-label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feel"
+          }
+        }
+      }
+    },
+    "scrolling-feel-direct": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direct"
+          }
+        }
+      }
+    },
+    "scrolling-feel-quick": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick"
+          }
+        }
+      }
+    },
+    "scrolling-feel-smooth": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smooth"
+          }
+        }
+      }
+    },
+    "scrolling-feel-glide": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glide"
+          }
+        }
+      }
+    },
+    "scrolling-feel-float": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Float"
+          }
+        }
+      }
+    },
+    "scrolling-feel-direct-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moves with the wheel and stops with it."
+          }
+        }
+      }
+    },
+    "scrolling-feel-quick-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A short, soft stop."
+          }
+        }
+      }
+    },
+    "scrolling-feel-smooth-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glides a little after you stop, like a trackpad."
+          }
+        }
+      }
+    },
+    "scrolling-feel-glide-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keeps gliding for a moment."
+          }
+        }
+      }
+    },
+    "scrolling-feel-float-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A long, slow glide."
+          }
+        }
+      }
+    },
+    "scrolling-feel-custom-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Custom glide time, set under Advanced."
+          }
+        }
+      }
+    },
+    "scrolling-speed-label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speed"
+          }
+        }
+      }
+    },
+    "scrolling-speed-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How far the page moves per click of the wheel."
+          }
+        }
+      }
+    },
+    "scrolling-speed-shorter": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shorter"
+          }
+        }
+      }
+    },
+    "scrolling-speed-farther": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Farther"
+          }
+        }
+      }
+    },
+    "scrolling-direction-label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direction"
+          }
+        }
+      }
+    },
+    "scrolling-reverse": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reverse wheel direction"
+          }
+        }
+      }
+    },
+    "scrolling-reverse-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Flips the wheel's direction, not the trackpad's."
+          }
+        }
+      }
+    },
+    "scrolling-advanced": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Advanced"
+          }
+        }
+      }
+    },
+    "scrolling-glide-time-label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glide time"
+          }
+        }
+      }
+    },
+    "scrolling-glide-time-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How long the page glides on after you stop."
+          }
+        }
+      }
+    },
+    "scrolling-step-label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smallest step"
+          }
+        }
+      }
+    },
+    "scrolling-step-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The least the page moves for one slow click."
+          }
+        }
+      }
+    },
+    "scrolling-apps-label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps"
+          }
+        }
+      }
+    },
+    "scrolling-trackpad-events": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trackpad-style events"
+          }
+        }
+      }
+    },
+    "scrolling-trackpad-events-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps treat the wheel like a trackpad and bounce at the ends. Turn off if an app scrolls oddly."
+          }
+        }
+      }
+    },
+    "scrolling-keys-header": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "While you hold a key"
+          }
+        }
+      }
+    },
+    "scrolling-key-faster": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll faster"
+          }
+        }
+      }
+    },
+    "scrolling-key-faster-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Covers long pages quickly: 5× the distance."
+          }
+        }
+      }
+    },
+    "scrolling-key-sideways": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll sideways"
+          }
+        }
+      }
+    },
+    "scrolling-key-sideways-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The wheel scrolls left and right."
+          }
+        }
+      }
+    },
+    "scrolling-key-pause": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause smoothing"
+          }
+        }
+      }
+    },
+    "scrolling-key-pause-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exact, unsmoothed steps, e.g. to zoom with ⌘."
+          }
+        }
+      }
+    },
+    "scrolling-key-clear": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear key"
+          }
+        }
+      }
+    },
+    "scrolling-reset": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset to defaults"
           }
         }
       }

@@ -15,6 +15,31 @@ import XCTest
 
 // MARK: - Rig
 
+/// The numbers of the two former UI presets these tests were written against (the presets
+/// themselves went with the Scrolling tab's redesign).
+enum ScrollMomentumRigPreset {
+    case magicMouse
+    case balanced
+
+    var values: (step: Double, speed: Double, duration: Double, simulateTrackpad: Bool, tuning: ScrollTuningSettings) {
+        switch self {
+        case .magicMouse:
+            return (
+                step: 33.6, speed: 1.8, duration: 3.13, simulateTrackpad: true,
+                tuning: ScrollTuningSettings(
+                    freeSpinEnabled: true, freeSpinSmoothness: 1.0, freeSpinSpeed: 1.2, acceleration: 0,
+                    momentum: .default
+                )
+            )
+        case .balanced:
+            return (
+                step: 33.6, speed: 2.7, duration: 2.0, simulateTrackpad: false,
+                tuning: ScrollTuningSettings(freeSpinEnabled: true, freeSpinSmoothness: 1.0, freeSpinSpeed: 0.8, acceleration: 0)
+            )
+        }
+    }
+}
+
 /// A poster with its own phase machine and dispatch context, driven by a simulated clock.
 /// Nothing is posted: frames go to the recorder.
 final class ScrollMomentumRig {
@@ -49,7 +74,7 @@ final class ScrollMomentumRig {
     private var finishedFloatTotal = 0.0
     private var runningFloatTotal = 0.0
 
-    init(preset: ScrollPreset = .magicMouse, rate: Double = 60) {
+    init(preset: ScrollMomentumRigPreset = .magicMouse, rate: Double = 60) {
         let values = preset.values
         tuning = values.tuning
         step = values.step
@@ -648,8 +673,8 @@ final class ScrollMomentumTests: XCTestCase {
     func testFreeSpin_usesFreeSpinSmoothnessAlthoughSimulateTrackpadIsOn() {
         // "Simulate trackpad" (on in this preset) has no say in the smoothing: the free-spin
         // smoothness applies, with momentum and without.
-        let tuning = ScrollPreset.magicMouse.values.tuning
-        XCTAssertTrue(ScrollPreset.magicMouse.values.simulateTrackpad)
+        let tuning = ScrollMomentumRigPreset.magicMouse.values.tuning
+        XCTAssertTrue(ScrollMomentumRigPreset.magicMouse.values.simulateTrackpad)
         let spinning = ScrollSpinState(lineRate: 100, freeSpinBlend: 1, isFreeSpin: true, accelerationRate: 100)
         let regular = OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: 2.5)
         let resolved = tuning.resolve(speed: 1.8, durationTransition: regular, spin: spinning)
@@ -1041,7 +1066,7 @@ final class ScrollMomentumContractTests: XCTestCase {
     }
 
     func testEncoding_roundTripsMomentumAndWheelAction() throws {
-        var settings = ScrollPreset.magicMouse.values.tuning
+        var settings = ScrollMomentumRigPreset.magicMouse.values.tuning
         settings.horizontalWheelAction = .pageSwipe
         settings.momentum?.coastGain = 1.5
         settings.momentum?.phasesOnHorizontal = true

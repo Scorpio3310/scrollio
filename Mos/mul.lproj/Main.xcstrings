@@ -13,18 +13,6 @@
         }
       }
     },
-    "2dJ-u6-vHd.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Disabled\"; ObjectID = \"2dJ-u6-vHd\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Disabled"
-          }
-        }
-      }
-    },
     "2hV-f7-8yO.title" : {
       "comment" : "Class = \"NSTextFieldCell\"; title = \"Customize mouse buttons to enhance your experience\"; ObjectID = \"2hV-f7-8yO\";",
       "extractionState" : "extracted_with_value",
@@ -133,30 +121,6 @@
         }
       }
     },
-    "B3O-iI-E7v.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Sets scrolling acceleration\"; ObjectID = \"B3O-iI-E7v\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Sets scrolling acceleration"
-          }
-        }
-      }
-    },
-    "B8B-hi-x3v.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Step\"; ObjectID = \"B8B-hi-x3v\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Step"
-          }
-        }
-      }
-    },
     "bB5-2R-9Da.title" : {
       "comment" : "Class = \"NSTextFieldCell\"; title = \"Open Scrollio again to show the icon\"; ObjectID = \"bB5-2R-9Da\";",
       "extractionState" : "extracted_with_value",
@@ -177,42 +141,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Apps"
-          }
-        }
-      }
-    },
-    "bqU-Is-gFB.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Duration\"; ObjectID = \"bqU-Is-gFB\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Duration"
-          }
-        }
-      }
-    },
-    "bQw-5w-Yv0.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Horizontal Scroll\"; ObjectID = \"bQw-5w-Yv0\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Horizontal Scroll"
-          }
-        }
-      }
-    },
-    "bsq-Pe-sDy.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Enable seamless scrolling\"; ObjectID = \"bsq-Pe-sDy\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Enable seamless scrolling"
           }
         }
       }
@@ -313,18 +241,6 @@
         }
       }
     },
-    "DsD-EW-zCH.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Sets the duration of the scroll animation\"; ObjectID = \"DsD-EW-zCH\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Sets the duration of the scroll animation"
-          }
-        }
-      }
-    },
     "E82-7w-YCr.title" : {
       "comment" : "Class = \"NSTextFieldCell\"; title = \"Startup\"; ObjectID = \"E82-7w-YCr\";",
       "extractionState" : "extracted_with_value",
@@ -333,18 +249,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Startup"
-          }
-        }
-      }
-    },
-    "ebE-Zf-T98.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Pause Smoothing\"; ObjectID = \"ebE-Zf-T98\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Pause Smoothing"
           }
         }
       }
@@ -361,41 +265,6 @@
         }
       }
     },
-    "eVu-TE-yMr.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Horizontal Reverse\"; ObjectID = \"eVu-TE-yMr\";",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Horizontal Reverse"
-          }
-        }
-      }
-    },
-    "Fgm-mm-22Q.placeholderString" : {
-      "comment" : "Class = \"NSTextFieldCell\"; placeholderString = \"1-10\"; ObjectID = \"Fgm-mm-22Q\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "1-10"
-          }
-        }
-      }
-    },
-    "Fgm-mm-22Q.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"3.00\"; ObjectID = \"Fgm-mm-22Q\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "3.00"
-          }
-        }
-      }
-    },
     "fXu-uF-M3Q.title" : {
       "comment" : "Class = \"NSTextFieldCell\"; title = \"Assign a button to a specific action\"; ObjectID = \"fXu-uF-M3Q\";",
       "extractionState" : "extracted_with_value",
@@ -404,18 +273,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Assign a button to a specific action"
-          }
-        }
-      }
-    },
-    "Gcw-Ir-olP.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Speed\"; ObjectID = \"Gcw-Ir-olP\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Speed"
           }
         }
       }
@@ -444,29 +301,6 @@
         }
       }
     },
-    "GtT-zh-x8d.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Vertical Smooth\"; ObjectID = \"GtT-zh-x8d\";",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Vertical Smooth"
-          }
-        }
-      }
-    },
-    "H2Z-K0-g9o.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Scroll Reverse\"; ObjectID = \"H2Z-K0-g9o\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Scroll Reverse"
-          }
-        }
-      }
-    },
     "hGj-vV-zcY.title" : {
       "comment" : "Class = \"NSButtonCell\"; title = \"Hide Menu Bar Icon\"; ObjectID = \"hGj-vV-zcY\";",
       "extractionState" : "extracted_with_value",
@@ -491,18 +325,6 @@
         }
       }
     },
-    "hOO-M8-I1z.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Fast Scroll\"; ObjectID = \"hOO-M8-I1z\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Fast Scroll"
-          }
-        }
-      }
-    },
     "HrY-s6-CCB.title" : {
       "comment" : "Class = \"NSMenuItem\"; title = \"⌃ Control\"; ObjectID = \"HrY-s6-CCB\";",
       "extractionState" : "stale",
@@ -511,18 +333,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "⌃ Control"
-          }
-        }
-      }
-    },
-    "iki-Jk-qSr.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Temporarily block smooth scrolling\"; ObjectID = \"iki-Jk-qSr\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Temporarily block smooth scrolling"
           }
         }
       }
@@ -551,18 +361,6 @@
         }
       }
     },
-    "Jan-OY-m70.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Sets the minimum scroll distance\"; ObjectID = \"Jan-OY-m70\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Sets the minimum scroll distance"
-          }
-        }
-      }
-    },
     "jaq-Cb-dKM.title" : {
       "comment" : "Class = \"NSTextFieldCell\"; title = \"Customize individual settings for each app\"; ObjectID = \"jaq-Cb-dKM\";",
       "extractionState" : "extracted_with_value",
@@ -587,18 +385,6 @@
         }
       }
     },
-    "KnM-kA-wn5.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Change vertical scrolling to horizontal scrolling\"; ObjectID = \"KnM-kA-wn5\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Change vertical scrolling to horizontal scrolling"
-          }
-        }
-      }
-    },
     "Ksp-g1-48g.title" : {
       "comment" : "Class = \"NSButtonCell\"; title = \"Allow list Mode\"; ObjectID = \"Ksp-g1-48g\";",
       "localizations" : {
@@ -606,18 +392,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Allowlist Mode"
-          }
-        }
-      }
-    },
-    "Ky0-gH-I3A.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Disabled\"; ObjectID = \"Ky0-gH-I3A\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Disabled"
           }
         }
       }
@@ -658,41 +432,6 @@
         }
       }
     },
-    "Ngq-sZ-qrp.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Smooth Scrolling\"; ObjectID = \"Ngq-sZ-qrp\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Smooth Scrolling"
-          }
-        }
-      }
-    },
-    "Nh1-iw-yGN.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Horizontal Smooth\"; ObjectID = \"Nh1-iw-yGN\";",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Horizontal Smooth"
-          }
-        }
-      }
-    },
-    "p7Y-SJ-d6t.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Trackpad-style events (Beta)\"; ObjectID = \"p7Y-SJ-d6t\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Trackpad-style events (Beta)"
-          }
-        }
-      }
-    },
     "PIa-ES-2Sf.title" : {
       "comment" : "Class = \"NSMenuItem\"; title = \"⇧ Shift\"; ObjectID = \"PIa-ES-2Sf\";",
       "extractionState" : "stale",
@@ -705,17 +444,6 @@
         }
       }
     },
-    "qjy-uD-jMy.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Vertical Reverse\"; ObjectID = \"qjy-uD-jMy\";",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Vertical Reverse"
-          }
-        }
-      }
-    },
     "qQe-2B-2rE.title" : {
       "comment" : "Class = \"NSButtonCell\"; title = \"Export Log\"; ObjectID = \"qQe-2B-2rE\";",
       "extractionState" : "extracted_with_value",
@@ -724,30 +452,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Export Log"
-          }
-        }
-      }
-    },
-    "Qse-ik-rgy.placeholderString" : {
-      "comment" : "Class = \"NSTextFieldCell\"; placeholderString = \"1-5\"; ObjectID = \"Qse-ik-rgy\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "1-5"
-          }
-        }
-      }
-    },
-    "Qse-ik-rgy.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"3.90\"; ObjectID = \"Qse-ik-rgy\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "3.90"
           }
         }
       }
@@ -807,18 +511,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "⇧ Shift"
-          }
-        }
-      }
-    },
-    "t2D-X2-Y6W.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Reset to defaults\"; ObjectID = \"t2D-X2-Y6W\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Reset to defaults"
           }
         }
       }
@@ -894,30 +586,6 @@
         }
       }
     },
-    "vcQ-FZ-z8x.placeholderString" : {
-      "comment" : "Class = \"NSTextFieldCell\"; placeholderString = \"0.1-100\"; ObjectID = \"vcQ-FZ-z8x\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "0.1-100"
-          }
-        }
-      }
-    },
-    "vcQ-FZ-z8x.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"35.00\"; ObjectID = \"vcQ-FZ-z8x\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "35.00"
-          }
-        }
-      }
-    },
     "vFk-37-HRU.title" : {
       "comment" : "Class = \"NSMenuItem\"; title = \"Disabled\"; ObjectID = \"vFk-37-HRU\";",
       "extractionState" : "stale",
@@ -938,29 +606,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Disabled"
-          }
-        }
-      }
-    },
-    "vjK-Rg-us9.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Invert wheel direction\"; ObjectID = \"vjK-Rg-us9\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Invert wheel direction"
-          }
-        }
-      }
-    },
-    "W2z-NX-9UO.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"May affect the scrolling behavior\"; ObjectID = \"W2z-NX-9UO\";",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "May affect the scrolling behavior."
           }
         }
       }
@@ -1012,18 +657,6 @@
         }
       }
     },
-    "Z59-tN-QjE.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Increase scrolling speed on long pages\"; ObjectID = \"Z59-tN-QjE\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Increase scrolling speed on long pages"
-          }
-        }
-      }
-    },
     "ZqO-Rs-CpS.title" : {
       "comment" : "Class = \"NSMenuItem\"; title = \"⌘ Command\"; ObjectID = \"ZqO-Rs-CpS\";",
       "extractionState" : "stale",
@@ -1032,18 +665,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "⌘ Command"
-          }
-        }
-      }
-    },
-    "zTP-iu-A6h.title" : {
-      "comment" : "Class = \"NSButtonCell\"; title = \"Disabled\"; ObjectID = \"zTP-iu-A6h\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Disabled"
           }
         }
       }

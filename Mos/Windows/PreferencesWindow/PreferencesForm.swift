@@ -263,6 +263,17 @@ enum PreferencesForm {
         return type == .leftMouseDown || type == .leftMouseDragged
     }
 
+    /// Clamps a slider value into `range` and rounds it to the nearest `step` from the lower bound.
+    static func snapped(_ value: Double, to range: ClosedRange<Double>, step: Double) -> Double {
+        guard value.isFinite else { return range.lowerBound }
+        let clamped = min(range.upperBound, max(range.lowerBound, value))
+        guard step > 0 else { return clamped }
+        let rounded = range.lowerBound + ((clamped - range.lowerBound) / step).rounded() * step
+        // Drop floating-point noise so stored values stay tidy (0.8, not 0.8000000000000002).
+        let tidy = (rounded * 1_000_000).rounded() / 1_000_000
+        return min(range.upperBound, max(range.lowerBound, tidy))
+    }
+
     // MARK: - Toolbar
 
     /// Toolbar image of a pane built in code: an SF Symbol drawn on the same 135 pt canvas

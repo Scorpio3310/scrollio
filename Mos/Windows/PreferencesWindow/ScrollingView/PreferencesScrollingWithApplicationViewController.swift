@@ -16,6 +16,8 @@ class PreferencesScrollingWithApplicationViewController: NSViewController {
     // Target application
     private var currentTargetApplication: Application?
     private var currentContentViewController: PreferencesScrollingViewController?
+    /// Height of what sits above the scroll settings (see `fitToContent`).
+    private var headerHeight: CGFloat?
     // UI Elements
     @IBOutlet weak var currentTargetApplicationIcon: NSImageView!
     @IBOutlet weak var currentTargetApplicationName: NSTextField!
@@ -28,6 +30,36 @@ class PreferencesScrollingWithApplicationViewController: NSViewController {
         currentTargetApplicationName.stringValue = currentTargetApplication?.getName() ?? ""
         // 读取设置
         syncViewWithOptions()
+    }
+
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        fitToContent()
+    }
+
+    /// The popover is as tall as the app's header and the scroll settings under it. The
+    /// settings call this once they are loaded (the embedded view loads after this one)
+    /// and whenever "Advanced" opens or closes.
+    ///
+    /// `preferredContentSize` becomes a constraint on the view, so once it is set the
+    /// view's own fitting size can no longer shrink. The header is therefore measured once,
+    /// before that, and the settings are measured on their own each time.
+    func fitToContent() {
+        guard isViewLoaded, let content = currentContentViewController, content.isViewLoaded else { return }
+        let contentSize = content.view.fittingSize
+        let header: CGFloat
+        if let measured = headerHeight {
+            header = measured
+        } else {
+            // Until the settings are in this view, its fitting size is the header alone.
+            let isEmbedded = content.view.isDescendant(of: view)
+            header = max(0, view.fittingSize.height - (isEmbedded ? contentSize.height : 0))
+            headerHeight = header
+        }
+        let size = NSSize(width: contentSize.width, height: contentSize.height + header)
+        if preferredContentSize != size {
+            preferredContentSize = size
+        }
     }
     
     override func prepare(for segue: NSStoryboardSegue, sender: Any?) {

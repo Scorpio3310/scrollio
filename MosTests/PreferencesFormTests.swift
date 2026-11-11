@@ -94,6 +94,21 @@ final class PreferencesFormTests: XCTestCase {
         XCTAssertLessThanOrEqual(line.line.fittingSize.width, PreferencesForm.controlWidth)
     }
 
+    func testSnappedClampsToTheRangeAndRoundsToTheStep() {
+        XCTAssertEqual(PreferencesForm.snapped(-1, to: 0...1, step: 0.05), 0)
+        XCTAssertEqual(PreferencesForm.snapped(9, to: 0...1, step: 0.05), 1)
+        XCTAssertEqual(PreferencesForm.snapped(0.42, to: 0...1, step: 0.05), 0.4)
+        XCTAssertEqual(PreferencesForm.snapped(0.43, to: 0...1, step: 0.05), 0.45)
+        // From the lower bound, without floating-point noise.
+        XCTAssertEqual(PreferencesForm.snapped(0.81, to: 0.25...3, step: 0.05), 0.8)
+        XCTAssertEqual(PreferencesForm.snapped(1.26, to: 0.5...3, step: 0.1), 1.3)
+        // Not a number: the lower bound.
+        XCTAssertEqual(PreferencesForm.snapped(.nan, to: 0.25...3, step: 0.05), 0.25)
+        XCTAssertEqual(PreferencesForm.snapped(.infinity, to: 0...5, step: 0.05), 0)
+        // No step: only clamped.
+        XCTAssertEqual(PreferencesForm.snapped(0.123, to: 0...1, step: 0), 0.123)
+    }
+
     func testToolbarImageIsATemplateOnTheSharedCanvas() {
         let image = PreferencesForm.toolbarImage(symbolName: "computermouse", accessibilityDescription: "Mouse") { _ in }
         XCTAssertEqual(image.size, NSSize(width: 135, height: 135))

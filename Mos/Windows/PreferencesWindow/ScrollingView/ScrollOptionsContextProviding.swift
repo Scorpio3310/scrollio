@@ -29,24 +29,4 @@ extension ScrollOptionsContextProviding {
         }
         return false
     }
-
-    func updateSmoothDependentControl(_ control: NSButton?, isOn: Bool) {
-        // Keep the original sync logic shared between the preferences panel and the popover.
-        let isNotInherit = !isTargetApplicationInheritOptions()
-        let scroll = getTargetApplicationScrollOptions()
-        control?.state = NSControl.StateValue(rawValue: isOn ? 1 : 0)
-        control?.isEnabled = isNotInherit && scroll.smooth
-    }
-
-    func updateSimulateTrackpadControl(_ control: NSButton?) {
-        let scroll = getTargetApplicationScrollOptions()
-        updateSmoothDependentControl(control, isOn: scroll.smoothSimTrackpad)
-    }
-
-    func updateReverseDependentControl(_ control: NSButton?, isOn: Bool) {
-        let isNotInherit = !isTargetApplicationInheritOptions()
-        let scroll = getTargetApplicationScrollOptions()
-        control?.state = NSControl.StateValue(rawValue: isOn ? 1 : 0)
-        control?.isEnabled = isNotInherit && scroll.reverse
-    }
 }

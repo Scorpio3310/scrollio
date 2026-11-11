@@ -27,7 +27,6 @@ struct OptionItem {
         static let Duration = "duration"
         static let DeadZone = "deadZone"
         static let SmoothSimTrackpad = "smoothSimTrackpad"
-        static let DurationForOtherTrackpadState = "durationForOtherTrackpadState"
         static let SmoothVertical = "smoothVertical"
         static let SmoothHorizontal = "smoothHorizontal"
     }
@@ -228,7 +227,6 @@ extension Options {
             scroll.deadZone = OPTIONS_SCROLL_DEFAULT().deadZone
         }
         scroll.smoothSimTrackpad = UserDefaults.standard.bool(forKey: OptionItem.Scroll.SmoothSimTrackpad)
-        scroll.durationForOtherTrackpadState = UserDefaults.standard.object(forKey: OptionItem.Scroll.DurationForOtherTrackpadState) as? Double
         if UserDefaults.standard.object(forKey: OptionItem.Scroll.SmoothVertical) == nil {
             scroll.smoothVertical = true
         } else {
@@ -249,9 +247,15 @@ extension Options {
         gesture = loadGestureSettings()
         // 快速滚动调校
         scrollTuning = loadScrollTuningSettings()
-        scroll.adoptTrackpadStyleDurationIfMissing(glideFromMomentum: scrollTuning.momentum != nil)
         // Logitech 滚轮
         logiWheel = loadLogiWheelSettings()
+        // What the Scrolling tab can no longer show is brought in line (global and per app).
+        // Still inside the lock: nothing is notified or saved, the next save writes it.
+        ScrollSettingsCleanup.run(
+            global: scroll,
+            applications: (0..<application.applications.count).compactMap { application.applications.get(by: $0) },
+            defaults: AppRuntime.isRunningXCTest ? nil : UserDefaults.standard
+        )
         // 解锁
         readingOptionsLock = false
     }
@@ -285,11 +289,6 @@ extension Options {
             UserDefaults.standard.set(scroll.duration, forKey: OptionItem.Scroll.Duration)
             UserDefaults.standard.set(scroll.deadZone, forKey: OptionItem.Scroll.DeadZone)
             UserDefaults.standard.set(scroll.smoothSimTrackpad, forKey: OptionItem.Scroll.SmoothSimTrackpad)
-            if let other = scroll.durationForOtherTrackpadState {
-                UserDefaults.standard.set(other, forKey: OptionItem.Scroll.DurationForOtherTrackpadState)
-            } else {
-                UserDefaults.standard.removeObject(forKey: OptionItem.Scroll.DurationForOtherTrackpadState)
-            }
             UserDefaults.standard.set(scroll.smoothVertical, forKey: OptionItem.Scroll.SmoothVertical)
             UserDefaults.standard.set(scroll.smoothHorizontal, forKey: OptionItem.Scroll.SmoothHorizontal)
         case .buttons:

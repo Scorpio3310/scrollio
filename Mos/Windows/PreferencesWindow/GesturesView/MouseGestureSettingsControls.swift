@@ -46,7 +46,7 @@ enum MouseGestureTrackingSpeed {
 
     /// Clamps into `MouseGestureSettings.trackingSpeedRange` and rounds to a tenth.
     static func snapped(_ value: Double) -> Double {
-        return ScrollTuningControlValues.snapped(value, to: MouseGestureSettings.trackingSpeedRange, step: step)
+        return PreferencesForm.snapped(value, to: MouseGestureSettings.trackingSpeedRange, step: step)
     }
 
     /// 1.5 -> "1.5×"

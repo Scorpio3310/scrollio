@@ -31,7 +31,7 @@ final class StoryboardIntegrityTests: XCTestCase {
     /// the popovers that segues open.
     private let viewIdentifiers = PANEL_IDENTIFIER.list + [
         PANEL_IDENTIFIER.scrollingWithApplication,
-        "menuBarIconHint", "allowlistHint", "scrollSmoothDetail", "scrollReverseDetail",
+        "menuBarIconHint", "allowlistHint",
     ]
 
     /// Identifiers in the compiled storyboard, read from its Info.plist: instantiating a

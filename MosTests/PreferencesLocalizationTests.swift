@@ -1,7 +1,7 @@
 import XCTest
 @testable import Mos_Debug
 
-/// Strings of the reorganised preferences (Mouse tab, Presets & Fast Scrolling, Gesture
+/// Strings of the reorganised preferences (Mouse tab, Scrolling tab, Gesture
 /// Settings), of the main menu and of the Introduction window must exist in every shipped
 /// locale, keep their format specifiers, and never fall back to the raw key. Several keys are built from variables in code, so a missing
 /// one would only show up as the key itself in the UI.
@@ -20,14 +20,20 @@ final class PreferencesLocalizationTests: XCTestCase {
         "mouse-wheel-sensitivity-label", "mouse-wheel-sensitivity-hint", "mouse-wheel-force-label",
         "mouse-wheel-force-hint", "mouse-wheel-readback-one", "mouse-wheel-readback-named",
         "mouse-advanced-label", "mouse-diagnostics-button", "mouse-diagnostics-hint",
-        // Presets & Fast Scrolling
-        "scroll-tuning-button", "scroll-tuning-title", "scroll-tuning-preset-label",
-        "scroll-preset-direct", "scroll-preset-balanced", "scroll-preset-smooth", "scroll-preset-trackpad-like",
-        "scroll-preset-custom", "scroll-preset-direct-description", "scroll-preset-balanced-description",
-        "scroll-preset-smooth-description", "scroll-preset-trackpad-like-description",
-        "scroll-preset-custom-description", "scroll-preset-smooth-off-description",
-        "scroll-tuning-free-spin-checkbox", "scroll-tuning-free-spin-smoothness", "scroll-tuning-free-spin-speed",
-        "scroll-tuning-acceleration", "scroll-tuning-acceleration-off", "scroll-tuning-footnote",
+        // Scrolling tab
+        "scrolling-wheel-label", "scrolling-smooth", "scrolling-smooth-hint",
+        "scrolling-feel-label", "scrolling-feel-direct", "scrolling-feel-quick", "scrolling-feel-smooth",
+        "scrolling-feel-glide", "scrolling-feel-float", "scrolling-feel-direct-hint", "scrolling-feel-quick-hint",
+        "scrolling-feel-smooth-hint", "scrolling-feel-glide-hint", "scrolling-feel-float-hint",
+        "scrolling-feel-custom-hint",
+        "scrolling-speed-label", "scrolling-speed-hint", "scrolling-speed-shorter", "scrolling-speed-farther",
+        "scrolling-direction-label", "scrolling-reverse", "scrolling-reverse-hint",
+        "scrolling-advanced", "scrolling-glide-time-label", "scrolling-glide-time-hint",
+        "scrolling-step-label", "scrolling-step-hint",
+        "scrolling-apps-label", "scrolling-trackpad-events", "scrolling-trackpad-events-hint",
+        "scrolling-keys-header", "scrolling-key-faster", "scrolling-key-faster-hint",
+        "scrolling-key-sideways", "scrolling-key-sideways-hint", "scrolling-key-pause", "scrolling-key-pause-hint",
+        "scrolling-key-clear", "scrolling-reset",
         // Gesture Settings
         "mouseGestureNavigation", "gesture-navigation-menu-tooltip",
         "gesture-settings-menu", "gesture-direction-up", "gesture-direction-down",

@@ -2,7 +2,7 @@ import XCTest
 @testable import Mos_Debug
 
 /// Regression tests for `Options.readOptions()`: the scroll `step` / `speed` /
-/// `duration` defaults (33.6 / 2.70 / 4.35) must survive a missing UserDefaults
+/// `duration` defaults (33.6 / 6.30 / 3.69) must survive a missing UserDefaults
 /// key — mirroring the existing `deadZone` nil-guard.
 ///
 /// `UserDefaults.double(forKey:)` returns `0.0` (not `nil`) for a missing key,
@@ -22,8 +22,8 @@ final class OptionsScrollDefaultsTests: XCTestCase {
     private var scrollSnapshot: ScrollSnapshot?
 
     private let expectedStep = OPTIONS_SCROLL_DEFAULT().step         // 33.6
-    private let expectedSpeed = OPTIONS_SCROLL_DEFAULT().speed       // 2.70
-    private let expectedDuration = OPTIONS_SCROLL_DEFAULT().duration // 4.35
+    private let expectedSpeed = OPTIONS_SCROLL_DEFAULT().speed       // 6.30
+    private let expectedDuration = OPTIONS_SCROLL_DEFAULT().duration // 3.69
 
     // MARK: - Missing key falls back to the OPTIONS_SCROLL_DEFAULT() value
 
@@ -35,7 +35,7 @@ final class OptionsScrollDefaultsTests: XCTestCase {
         snapshotUserDefaultsAndRemove(OptionItem.Scroll.Speed)
         Options.shared.readOptions()
         XCTAssertEqual(Options.shared.scroll.speed, expectedSpeed, accuracy: 1e-9,
-                       "speed must fall back to 2.70 when its key is missing, not 0.0")
+                       "speed must fall back to 6.30 when its key is missing, not 0.0")
     }
 
     func testReadOptions_restoresStepAndDurationDefaults_whenKeysMissing() {
@@ -46,7 +46,7 @@ final class OptionsScrollDefaultsTests: XCTestCase {
         XCTAssertEqual(Options.shared.scroll.step, expectedStep, accuracy: 1e-9,
                        "step must fall back to 33.6 when its key is missing, not 0.0")
         XCTAssertEqual(Options.shared.scroll.duration, expectedDuration, accuracy: 1e-9,
-                       "duration must fall back to 4.35 when its key is missing, not 0.0")
+                       "duration must fall back to 3.69 when its key is missing, not 0.0")
     }
 
     // MARK: - A genuinely stored value is honoured (regression guard)

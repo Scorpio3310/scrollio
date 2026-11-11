@@ -36,7 +36,7 @@ In the storyboard: change `Mos/Base.lproj/Main.storyboard`, build, and fill in t
 object ids in `Mos/mul.lproj/Main.xcstrings`. When a UI element is deleted, remove its
 stale entries.
 
-Strings of the preferences panels (Mouse tab, Presets & Fast Scrolling, Gesture Settings),
+Strings of the preferences panels (Mouse tab, Scrolling tab, Gesture Settings),
 of the main menu and of the Introduction window are also listed in
 `MosTests/PreferencesLocalizationTests.swift`. Add new keys of these to that list: several
 keys are built from variables in code, and a missing one would only show up as the raw
