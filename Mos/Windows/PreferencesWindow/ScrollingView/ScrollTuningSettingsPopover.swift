@@ -2,7 +2,8 @@
 //  ScrollTuningSettingsPopover.swift
 //  Mos
 //
-//  Scroll presets, free-spin and acceleration settings, opened from the Scrolling tab.
+//  Scroll presets, free-spin, acceleration, momentum and thumb wheel settings, opened from
+//  the Scrolling tab.
 //  Everything here is global (Options.shared.scroll / Options.shared.scrollTuning) and
 //  applies immediately.
 //
@@ -53,6 +54,9 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
     /// Called after any change to Options.shared.scroll or Options.shared.scrollTuning.
     var onSettingsChanged: (() -> Void)?
     var onClose: (() -> Void)?
+    /// The system's "Swipe between pages" setting. Apps only run their back/forward swipe
+    /// from scroll gestures while it is on, so the thumb wheel option shows a hint otherwise.
+    var isSwipeBetweenPagesEnabled: () -> Bool = { NSEvent.isSwipeTrackingFromScrollEventsEnabled }
 
     private var popover: NSPopover?
     private var controls: Controls?
@@ -73,6 +77,9 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
         static let smoothness = NSUserInterfaceItemIdentifier("scroll-tuning-free-spin-smoothness")
         static let speed = NSUserInterfaceItemIdentifier("scroll-tuning-free-spin-speed")
         static let acceleration = NSUserInterfaceItemIdentifier("scroll-tuning-acceleration")
+        static let momentum = NSUserInterfaceItemIdentifier("scroll-tuning-momentum")
+        static let thumbWheel = NSUserInterfaceItemIdentifier("scroll-tuning-thumb-wheel")
+        static let thumbWheelHint = NSUserInterfaceItemIdentifier("scroll-tuning-thumb-wheel-hint")
     }
 
     /// Which tuning value a slider edits.
@@ -154,6 +161,10 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
         let presetDescription: NSTextField
         let freeSpinCheckbox: NSButton
         let sliders: [SliderRow]
+        let momentumCheckbox: NSButton
+        let thumbWheelPopUp: NSPopUpButton
+        let thumbWheelHint: NSTextField
+        let thumbWheelHintRow: NSGridRow
     }
 
     // MARK: - Show / hide
@@ -209,6 +220,24 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
         // Acceleration
         let acceleration = makeSliderRow(.acceleration)
 
+        // Momentum
+        let momentumCheckbox = NSButton(
+            checkboxWithTitle: NSLocalizedString("scroll-tuning-momentum-checkbox", comment: ""),
+            target: self,
+            action: #selector(momentumToggled(_:))
+        )
+        momentumCheckbox.identifier = Identifier.momentum
+        momentumCheckbox.toolTip = NSLocalizedString("scroll-tuning-momentum-tooltip", comment: "")
+
+        // Thumb wheel
+        let thumbWheelLabel = makeRowLabel(NSLocalizedString("scroll-tuning-thumb-wheel-label", comment: ""))
+        let thumbWheelPopUp = makeThumbWheelPopUp()
+        thumbWheelPopUp.setAccessibilityLabel(thumbWheelLabel.stringValue)
+        let thumbWheelHint = NSTextField(wrappingLabelWithString: NSLocalizedString("scroll-tuning-thumb-wheel-hint", comment: ""))
+        thumbWheelHint.identifier = Identifier.thumbWheelHint
+        thumbWheelHint.font = NSFont.systemFont(ofSize: 11)
+        thumbWheelHint.textColor = .secondaryLabelColor
+
         let empty = NSGridCell.emptyContentView
         let grid = NSGridView(views: [
             [presetLabel, presetPopUp, empty],
@@ -219,7 +248,12 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
             [speed.label, speed.slider, speed.valueLabel],
             [makeSeparator(), empty, empty],
             [acceleration.label, acceleration.slider, acceleration.valueLabel],
+            [empty, momentumCheckbox, empty],
+            [makeSeparator(), empty, empty],
+            [thumbWheelLabel, thumbWheelPopUp, empty],
+            [empty, thumbWheelHint, empty],
         ])
+        let (descriptionRow, freeSpinRow, momentumRow, thumbWheelRow, thumbWheelHintRow) = (1, 3, 8, 10, 11)
         grid.translatesAutoresizingMaskIntoConstraints = false
         grid.rowSpacing = 8
         grid.columnSpacing = Self.columnSpacing
@@ -230,20 +264,24 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
         grid.column(at: 2).xPlacement = .trailing
         let valueColumnWidth = Self.fittedValueColumnWidth(font: smoothness.valueLabel.font)
         grid.column(at: 2).width = valueColumnWidth
-        // Popup, description and checkbox span the slider and value columns; separators span all.
-        for row in [0, 1, 3] {
+        // Popups, texts and checkboxes span the slider and value columns; separators span all.
+        for row in [0, descriptionRow, freeSpinRow, momentumRow, thumbWheelRow, thumbWheelHintRow] {
             grid.mergeCells(inHorizontalRange: NSRange(location: 1, length: 2), verticalRange: NSRange(location: row, length: 1))
         }
-        for row in [2, 6] {
+        for row in [2, 6, 9] {
             grid.mergeCells(inHorizontalRange: NSRange(location: 0, length: 3), verticalRange: NSRange(location: row, length: 1))
             grid.row(at: row).topPadding = 4
             grid.row(at: row).bottomPadding = 4
             grid.cell(atColumnIndex: 0, rowIndex: row).xPlacement = .fill
         }
-        grid.cell(atColumnIndex: 1, rowIndex: 1).xPlacement = .fill
-        grid.cell(atColumnIndex: 1, rowIndex: 1).yPlacement = .top
-        grid.cell(atColumnIndex: 1, rowIndex: 3).xPlacement = .leading
-        grid.row(at: 1).topPadding = -2
+        for row in [descriptionRow, thumbWheelHintRow] {
+            grid.cell(atColumnIndex: 1, rowIndex: row).xPlacement = .fill
+            grid.cell(atColumnIndex: 1, rowIndex: row).yPlacement = .top
+            grid.row(at: row).topPadding = -2
+        }
+        for row in [freeSpinRow, momentumRow] {
+            grid.cell(atColumnIndex: 1, rowIndex: row).xPlacement = .leading
+        }
 
         let footnote = NSTextField(wrappingLabelWithString: NSLocalizedString("scroll-tuning-footnote", comment: ""))
         footnote.font = NSFont.systemFont(ofSize: 11)
@@ -262,11 +300,11 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
         // of its longest text so the popover does not jump when switching presets.
         // Long translations (preset names, the free-spin checkbox) widen the popover instead
         // of being cut off.
-        let labelColumnWidth = ceil([presetLabel, smoothness.label, speed.label, acceleration.label]
+        let labelColumnWidth = ceil([presetLabel, smoothness.label, speed.label, acceleration.label, thumbWheelLabel]
             .map { $0.fittingSize.width }.max() ?? 0)
         let controlColumnWidth = ceil(max(
-            presetPopUp.fittingSize.width,
-            freeSpinCheckbox.fittingSize.width,
+            max(presetPopUp.fittingSize.width, thumbWheelPopUp.fittingSize.width),
+            max(freeSpinCheckbox.fittingSize.width, momentumCheckbox.fittingSize.width),
             Self.minimumSliderWidth + Self.columnSpacing + valueColumnWidth
         ))
         let contentWidth = max(
@@ -276,6 +314,7 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
         let innerWidth = contentWidth - 2 * Self.padding
         let descriptionWidth = innerWidth - labelColumnWidth - Self.columnSpacing
         presetDescription.preferredMaxLayoutWidth = descriptionWidth
+        thumbWheelHint.preferredMaxLayoutWidth = descriptionWidth
         footnote.preferredMaxLayoutWidth = innerWidth
         let descriptionBounds = NSRect(x: 0, y: 0, width: descriptionWidth, height: .greatestFiniteMagnitude)
         let descriptionHeight = Self.descriptionTexts.map { text -> CGFloat in
@@ -294,13 +333,18 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
             footnote.widthAnchor.constraint(equalTo: stack.widthAnchor),
             presetDescription.widthAnchor.constraint(equalToConstant: descriptionWidth),
             presetDescription.heightAnchor.constraint(greaterThanOrEqualToConstant: descriptionHeight),
+            thumbWheelHint.widthAnchor.constraint(equalToConstant: descriptionWidth),
         ])
 
         controls = Controls(
             presetPopUp: presetPopUp,
             presetDescription: presetDescription,
             freeSpinCheckbox: freeSpinCheckbox,
-            sliders: [smoothness, speed, acceleration]
+            sliders: [smoothness, speed, acceleration],
+            momentumCheckbox: momentumCheckbox,
+            thumbWheelPopUp: thumbWheelPopUp,
+            thumbWheelHint: thumbWheelHint,
+            thumbWheelHintRow: grid.row(at: thumbWheelHintRow)
         )
         syncControls()
 
@@ -343,6 +387,25 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
 
         popup.menu = menu
         return popup
+    }
+
+    private func makeThumbWheelPopUp() -> NSPopUpButton {
+        let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+        popup.identifier = Identifier.thumbWheel
+        popup.target = self
+        popup.action = #selector(thumbWheelSelected(_:))
+        for (index, action) in ScrollHorizontalWheelAction.allCases.enumerated() {
+            popup.addItem(withTitle: Self.title(for: action))
+            popup.lastItem?.tag = index
+        }
+        return popup
+    }
+
+    private static func title(for action: ScrollHorizontalWheelAction) -> String {
+        switch action {
+        case .scroll: return NSLocalizedString("scroll-tuning-thumb-wheel-scroll", comment: "")
+        case .pageSwipe: return NSLocalizedString("scroll-tuning-thumb-wheel-page-swipe", comment: "")
+        }
     }
 
     private func makeSliderRow(_ kind: SliderKind) -> SliderRow {
@@ -424,6 +487,24 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
             row.valueLabel.stringValue = row.kind.text(for: value)
             row.setEnabled(row.kind == .acceleration || tuning.freeSpinEnabled)
         }
+
+        controls.momentumCheckbox.state = tuning.momentum != nil ? .on : .off
+        if let index = ScrollHorizontalWheelAction.allCases.firstIndex(of: tuning.horizontalWheelAction) {
+            controls.thumbWheelPopUp.selectItem(withTag: index)
+        }
+        // The hint only takes up room while it applies.
+        let showsHint = tuning.horizontalWheelAction == .pageSwipe && !isSwipeBetweenPagesEnabled()
+        if controls.thumbWheelHintRow.isHidden == showsHint {
+            controls.thumbWheelHintRow.isHidden = !showsHint
+            resizePopoverToFitContent()
+        }
+    }
+
+    /// A shown popover follows its content when the hint row appears or goes away.
+    private func resizePopoverToFitContent() {
+        guard let popover, let view = popover.contentViewController?.view else { return }
+        view.layoutSubtreeIfNeeded()
+        popover.contentSize = view.fittingSize
     }
 
     // MARK: - Actions
@@ -441,6 +522,28 @@ final class ScrollTuningSettingsPopover: NSObject, NSPopoverDelegate {
         Options.shared.scrollTuning.freeSpinEnabled = sender.state == .on
         syncControls()
         onSettingsChanged?()
+    }
+
+    /// On uses the default momentum settings; off removes them. "Simulate trackpad" only locks
+    /// Duration while momentum is off, so the lock is handed over here.
+    @objc private func momentumToggled(_ sender: NSButton) {
+        var tuning = Options.shared.scrollTuning
+        tuning.setMomentum(sender.state == .on ? .default : nil, adjusting: Options.shared.scroll)
+        Options.shared.scrollTuning = tuning
+        syncControls()
+        onSettingsChanged?()
+    }
+
+    @objc private func thumbWheelSelected(_ sender: NSPopUpButton) {
+        let tag = sender.selectedTag()
+        if ScrollHorizontalWheelAction.allCases.indices.contains(tag) {
+            let action = ScrollHorizontalWheelAction.allCases[tag]
+            if action != Options.shared.scrollTuning.horizontalWheelAction {
+                Options.shared.scrollTuning.horizontalWheelAction = action
+                onSettingsChanged?()
+            }
+        }
+        syncControls()
     }
 
     @objc private func sliderChanged(_ sender: NSSlider) {
