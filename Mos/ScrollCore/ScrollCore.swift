@@ -472,5 +472,24 @@ class ScrollCore: ScrollActionPort {
         scrollEventInterceptor = nil
         hotkeyEventInterceptor = nil
         mouseEventInterceptor = nil
+        releaseHeldScrollKeys()
+    }
+
+    /// Forgets every scroll key held down (the keyboard and mouse keys of the Scrolling tab,
+    /// and those that arrive over HID++). Without the taps their release is never seen: sleep,
+    /// Pause or lost Accessibility access while such a key was down left fast scrolling on,
+    /// or smoothing paused, until that key was pressed again. Held Scrollio scroll actions of
+    /// button bindings are counted apart and released by ButtonCore.
+    private func releaseHeldScrollKeys() {
+        dashKeyHeld = false
+        toggleKeyHeld = false
+        blockKeyHeld = false
+        hidDashHeldCode = nil
+        hidToggleHeldCode = nil
+        hidBlockHeldCode = nil
+        currentApplication = nil
+        refreshDashState()
+        refreshToggleState()
+        refreshBlockState()
     }
 }

@@ -66,4 +66,80 @@ final class ScrollCoreEnableTests: XCTestCase {
         XCTAssertFalse(core.isActive)
         XCTAssertEqual(factoryCalls.count, 1)
     }
+
+    // MARK: - Scroll keys held while the core stops
+
+    /// Sleep, Pause or lost Accessibility access while a scroll key was held: without the
+    /// taps its release is never seen, and fast scrolling stayed on (or smoothing paused,
+    /// or Shift-to-horizontal on) until that key was pressed again.
+    func testDisableForgetsTheScrollKeysThatWereHeld() {
+        let saved = (Options.shared.scroll.dash, Options.shared.scroll.toggle, Options.shared.scroll.block)
+        Options.shared.scroll.dash = ScrollHotkey(type: .mouse, code: 50)
+        Options.shared.scroll.toggle = ScrollHotkey(type: .mouse, code: 60)
+        Options.shared.scroll.block = ScrollHotkey(type: .mouse, code: 70)
+        defer {
+            Options.shared.scroll.dash = saved.0
+            Options.shared.scroll.toggle = saved.1
+            Options.shared.scroll.block = saved.2
+        }
+        let core = ScrollCore()
+        defer { core.toggleScroll = false }
+        XCTAssertTrue(core.handleScrollHotkey(code: 50, isDown: true))
+        XCTAssertTrue(core.handleScrollHotkey(code: 60, isDown: true))
+        XCTAssertTrue(core.handleScrollHotkey(code: 70, isDown: true))
+        XCTAssertTrue(core.dashScroll)
+        XCTAssertEqual(core.dashAmplification, 5.0)
+        XCTAssertTrue(core.toggleScroll)
+        XCTAssertTrue(core.blockSmooth)
+
+        core.isActive = true   // as after enable(); no event tap is created here
+        core.disable()
+
+        XCTAssertFalse(core.dashScroll)
+        XCTAssertEqual(core.dashAmplification, 1.0)
+        XCTAssertFalse(core.toggleScroll)
+        XCTAssertFalse(core.blockSmooth)
+        XCTAssertFalse(core.dashKeyHeld)
+        XCTAssertFalse(core.toggleKeyHeld)
+        XCTAssertFalse(core.blockKeyHeld)
+        // The releases that come after the wake find nothing held.
+        XCTAssertFalse(core.handleScrollHotkey(code: 50, isDown: false))
+        XCTAssertFalse(core.handleScrollHotkey(code: 60, isDown: false))
+        XCTAssertFalse(core.handleScrollHotkey(code: 70, isDown: false))
+    }
+
+    /// The same for keyboard scroll keys, which the hotkey tap tracks.
+    func testDisableForgetsAHeldKeyboardScrollKey() {
+        let core = ScrollCore()
+        defer { core.toggleScroll = false }
+        core.dashKeyHeld = true
+        core.dashScroll = true
+        core.dashAmplification = 5.0
+        core.blockKeyHeld = true
+        core.blockSmooth = true
+        core.toggleKeyHeld = true
+        core.toggleScroll = true
+
+        core.isActive = true
+        core.disable()
+
+        XCTAssertFalse(core.dashScroll)
+        XCTAssertEqual(core.dashAmplification, 1.0)
+        XCTAssertFalse(core.blockSmooth)
+        XCTAssertFalse(core.toggleScroll)
+    }
+
+    /// A Scrollio scroll action held through a button binding is counted apart: ButtonCore
+    /// releases it when it stops (InputProcessor.clearActiveBindings), not ScrollCore.
+    func testDisableLeavesAHeldScrollActionToButtonCore() {
+        let core = ScrollCore()
+        core.handleMosScrollAction(role: .dash, isDown: true)
+        core.isActive = true
+        core.disable()
+        XCTAssertTrue(core.dashScroll)
+
+        core.handleMosScrollAction(role: .dash, isDown: false)
+        XCTAssertFalse(core.dashScroll)
+        XCTAssertEqual(core.dashAmplification, 1.0)
+    }
 }
