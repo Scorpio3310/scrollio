@@ -70,6 +70,22 @@ final class LogiCenter {
         guard let cid = LogiCIDDirectory.toCID(code) else { return nil }
         return LogiControlRole(cid: cid)
     }
+    /// The code of the control with `role` on an MX Master (the control the role is named
+    /// after: 0x52 middle, 0x53 back, 0x56 forward, 0xC3 gesture, 0xC4 mode shift, 0x1A0 the
+    /// MX Master 4's thumb panel): what a press of it is recorded as while it is diverted.
+    /// Read-only; touches no device.
+    func mosCode(for role: LogiControlRole) -> UInt16 {
+        let cid: UInt16
+        switch role {
+        case .middle: cid = 0x0052
+        case .back: cid = 0x0053
+        case .forward: cid = 0x0056
+        case .gesture: cid = 0x00C3
+        case .modeShift: cid = 0x00C4
+        case .thumbPanel: cid = 0x01A0
+        }
+        return LogiCIDDirectory.toMosCode(cid)
+    }
     func nativeMouseButton(forMosCode code: UInt16) -> UInt16? {
         let nativeButton = LogiCIDDirectory.nativeMouseButton(forMosCode: code)
         #if DEBUG

@@ -5,7 +5,11 @@
 //  Mouse; the storyboard scene is a shell. On top a card with the mouse whose button the
 //  pane is about lit up, then the list of buttons (PreferencesListBox): each row shows
 //  where the button is in a small picture, names the button, says what its action needs or
-//  what is wrong with it, and has the action pull-down. A button the drawing cannot show
+//  what is wrong with it, and has the action pull-down. With an MX Master connected the
+//  list starts with every button of that mouse (ButtonsListLayout), whether or not it has
+//  an action: one without reads "Default", and choosing an action stores its binding,
+//  choosing "Default" removes it. Every other binding follows under "Other buttons and
+//  keys", where "+" and "−" work as they always did. A button the drawing cannot show
 //  ("Button 5") is found by asking the mouse: "+" and pressing it makes the card say
 //  "That's Button 5"; a click on its picture then says where it is ("Which Button Is
 //  This?"), and from then on it is named and lit as that part. "+" records a button (or a
@@ -31,6 +35,9 @@ struct ButtonsDeviceSource {
     var refresh: () -> Void
     /// Warns once that a newly added Logitech button may stop working over Bluetooth.
     var warnBluetoothButton: (UInt16) -> Void
+    /// What "+" records for a button of the connected mouse pressed without modifiers
+    /// (`ButtonsMousePart.recordedTrigger`). Reads only.
+    var recordedTrigger: (ButtonsMousePart) -> RecordedEvent = { $0.recordedTrigger() }
 
     static let live = ButtonsDeviceSource(
         captureStatus: { code in
@@ -97,6 +104,15 @@ class PreferencesButtonsViewController: NSViewController {
     // MARK: - State
 
     private(set) var buttonBindings: [ButtonBinding] = []
+    /// The rows: the connected mouse's buttons, then every other binding.
+    private(set) var layout = ButtonsListLayout(partRows: [], others: [])
+    /// The trigger each button of the mouse last had while the pane showed this mouse: set to
+    /// "Default" and given an action again, it gets it back. Kept in memory only.
+    private var lastPartTriggers: [ButtonsMousePart: RecordedEvent] = [:]
+    private var lastPartTriggersMouse: String?
+    /// What a button of the mouse without a binding shows, by part; the same binding (and
+    /// id) while its trigger stays.
+    private var defaultBindings: [ButtonsMousePart: ButtonBinding] = [:]
     /// The drawing of the connected mouse, on the card and in every row's picture.
     private(set) var mouse: MouseArtworkModel = .generic
     /// The name of the mouse the card was last made for (`deviceSource.deviceName()`).
@@ -260,30 +276,127 @@ class PreferencesButtonsViewController: NSViewController {
         return buttonBindings.first { $0.id == id }
     }
 
+    /// The row with `id` (a binding's id, or a button of the mouse), or the row that shows
+    /// the stored binding with that id.
     func row(for id: AnyHashable) -> ButtonBindingRow? {
-        return rows.first { $0.id == id }
+        return rows.first { $0.id == id } ?? rows.first { $0.isStored && AnyHashable($0.binding.id) == id }
     }
 
-    /// Puts every binding into its row: the rows of bindings still there are updated (a
-    /// pull-down keeps the keyboard focus), new ones made, and the list told only when the
-    /// rows themselves changed.
+    /// The id of the row that shows the binding with `id`: a button of the mouse has its
+    /// part as id, any other binding its own.
+    func rowID(forBinding id: UUID) -> AnyHashable {
+        return rows.first { $0.binding.id == id }?.id ?? AnyHashable(id)
+    }
+
+    /// The stored binding of the row with `id`; nil for a button of the mouse without one.
+    func storedBinding(ofRow id: AnyHashable) -> ButtonBinding? {
+        if let part = id as? ButtonsMousePart {
+            return layout.row(of: part)?.binding
+        }
+        return (id as? UUID).flatMap(binding(for:))
+    }
+
+    /// Puts every binding into its row: first a row for each button of the connected mouse
+    /// (with its binding or "Default"), then the other bindings under their title. The rows
+    /// still there are updated (a pull-down keeps the keyboard focus), new ones made, and the
+    /// list told only when the rows themselves changed.
     func reloadRows() {
         guard let list else { return }
         mouse = connectedMouse()
+        layout = ButtonsListLayout.make(bindings: buttonBindings, mouse: mouse)
+        rememberPartTriggers()
         let old = rows
-        let titles = ButtonTriggerNaming.titles(for: buttonBindings.map(\.triggerEvent))
-        rows = zip(buttonBindings, titles).map { binding, title in
+        let titles = Dictionary(
+            zip(buttonBindings.map(\.id), ButtonTriggerNaming.titles(for: buttonBindings.map(\.triggerEvent))),
+            uniquingKeysWith: { first, _ in first }
+        )
+        var shown: [ButtonBindingRow] = []
+        for partRow in layout.partRows {
+            let part = partRow.part
+            let binding = partRow.binding ?? defaultBinding(for: part)
+            let isStored = partRow.binding != nil
+            let title = titles[binding.id] ?? ButtonTriggerNaming.title(for: binding.triggerEvent)
+            let note = CellActionState(binding: binding).hasBoundAction
+                ? note(for: binding)
+                : defaultNote(for: part, trigger: binding.triggerEvent)
+            if let existing = old.first(where: { $0.id == AnyHashable(part) }) {
+                existing.update(binding: binding, title: title, note: note, mouse: mouse, isStored: isStored)
+                shown.append(existing)
+            } else {
+                shown.append(makeRow(for: binding, title: title, note: note, part: part, isStored: isStored))
+            }
+        }
+        for binding in layout.others {
+            let title = titles[binding.id] ?? title(for: binding.triggerEvent)
             let note = note(for: binding)
             if let existing = old.first(where: { $0.id == AnyHashable(binding.id) }) {
                 existing.update(binding: binding, title: title, note: note, mouse: mouse)
-                return existing
+                shown.append(existing)
+            } else {
+                shown.append(makeRow(for: binding, title: title, note: note))
             }
-            return makeRow(for: binding, title: title, note: note)
         }
-        if rows.count != old.count || zip(rows, old).contains(where: { $0 !== $1 }) {
-            list.setRows(rows)
+        rows = shown
+        // "Other buttons and keys" above the first binding under the mouse's buttons.
+        var groupTitles: [AnyHashable: String] = [:]
+        if !layout.partRows.isEmpty, let first = layout.others.first {
+            groupTitles[AnyHashable(first.id)] = text("buttons-list-other")
+        }
+        if rows.count != old.count || zip(rows, old).contains(where: { $0 !== $1 })
+            || Set(list.groupTitles.keys) != Set(groupTitles.keys) {
+            list.setRows(rows, groupTitles: groupTitles)
         }
         PreferencesForm.fitToContent(self)
+    }
+
+    /// Remembers the trigger of every button of the mouse that has a binding; another mouse
+    /// starts afresh.
+    private func rememberPartTriggers() {
+        let name = deviceSource.deviceName()
+        if name != lastPartTriggersMouse {
+            lastPartTriggers = [:]
+            lastPartTriggersMouse = name
+        }
+        for partRow in layout.partRows {
+            if let binding = partRow.binding {
+                lastPartTriggers[partRow.part] = binding.triggerEvent
+            }
+        }
+    }
+
+    /// What a button of the mouse without a binding stores once it gets an action: the
+    /// trigger it last had here; else a numbered button the list says is there (that is what
+    /// the mouse sends for it on this Mac); else what "+" records for it on this mouse.
+    func defaultTrigger(for part: ButtonsMousePart) -> RecordedEvent {
+        if let last = lastPartTriggers[part] {
+            return last
+        }
+        if let placed = buttonBindings.first(where: { $0.triggerEvent.placedPart?.drawingPart == part })?.triggerEvent {
+            return RecordedEvent(type: .mouse, code: placed.code, modifiers: 0, deviceFilter: nil, mousePart: placed.mousePart)
+        }
+        return deviceSource.recordedTrigger(part)
+    }
+
+    /// The binding a "Default" row shows (not stored, no action), the same one while its
+    /// trigger stays.
+    private func defaultBinding(for part: ButtonsMousePart) -> ButtonBinding {
+        let trigger = defaultTrigger(for: part)
+        if let shown = defaultBindings[part], shown.triggerEvent == trigger, shown.triggerEvent.mousePart == trigger.mousePart {
+            return shown
+        }
+        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "", isEnabled: false)
+        defaultBindings[part] = binding
+        return binding
+    }
+
+    /// The line of a button of the mouse without an action.
+    func defaultNote(for part: ButtonsMousePart, trigger: RecordedEvent) -> ButtonRowNote? {
+        return ButtonRowNote.makeDefault(
+            for: part,
+            trigger: trigger,
+            scrollHoldKeys: scrollHoldKeys(),
+            isCaught: ButtonsListLayout.catchesControl(of: part, in: buttonBindings)
+        )
     }
 
     func note(for binding: ButtonBinding) -> ButtonRowNote? {
@@ -300,30 +413,38 @@ class PreferencesButtonsViewController: NSViewController {
         )
     }
 
-    private func makeRow(for binding: ButtonBinding, title: String, note: ButtonRowNote?) -> ButtonBindingRow {
-        let id = binding.id
+    private func makeRow(
+        for binding: ButtonBinding,
+        title: String,
+        note: ButtonRowNote?,
+        part: ButtonsMousePart? = nil,
+        isStored: Bool = true
+    ) -> ButtonBindingRow {
+        let rowID = part.map { AnyHashable($0) } ?? AnyHashable(binding.id)
         let pullDown = ButtonActionPullDown(binding: binding)
         pullDown.onShortcutSelected = { [weak self] shortcut in
-            self?.setAction(of: id, to: shortcut)
+            self?.setAction(ofRow: rowID, to: shortcut)
         }
         pullDown.onCustomShortcutRecorded = { [weak self] name in
-            self?.setAction(of: id, toShortcutNamed: name)
+            self?.setAction(ofRow: rowID, toShortcutNamed: name)
         }
         pullDown.onOpenTargetSelectionRequested = { [weak self] in
-            self?.presentOpenTargetPopover(forBindingID: id)
+            self?.presentOpenTargetPopover(forRow: rowID)
         }
         pullDown.onGestureSettingsRequested = { [weak self] in
             self?.showGesturesPane()
         }
-        let row = ButtonBindingRow(binding: binding, title: title, note: note, mouse: mouse, pullDown: pullDown)
+        let row = ButtonBindingRow(binding: binding, title: title, note: note, mouse: mouse, pullDown: pullDown, part: part, isStored: isStored)
         row.infoButton.target = self
         row.infoButton.action = #selector(infoClicked(_:))
-        row.onPlaceRequested = { [weak self] anchor in
-            self?.showPlaceMenu(for: id, from: anchor)
+        // A button of the mouse shows another binding over time: the one shown now.
+        row.onPlaceRequested = { [weak self, weak row] anchor in
+            guard let row else { return }
+            self?.showPlaceMenu(for: row.binding.id, from: anchor)
         }
-        row.placeMenu = { [weak self] in
-            guard let self, let menu = self.placeMenu(for: id) else { return nil }
-            self.list.select(id)
+        row.placeMenu = { [weak self, weak row] in
+            guard let self, let row, let menu = self.placeMenu(for: row.binding.id) else { return nil }
+            self.list.select(row.id)
             return menu
         }
         return row
@@ -352,6 +473,70 @@ class PreferencesButtonsViewController: NSViewController {
     func setAction(of id: UUID, toOpen payload: OpenTargetPayload) {
         update(id) { old in
             ButtonBinding(id: old.id, triggerEvent: old.triggerEvent, openTarget: payload, isEnabled: true, createdAt: old.createdAt)
+        }
+    }
+
+    /// The action chosen in the pull-down of the row with `id`. On a button of the mouse
+    /// without a binding an action stores one (the trigger the row shows) and "Default"
+    /// does nothing; on one with a binding "Default" removes it, with Undo.
+    func setAction(ofRow id: AnyHashable, to shortcut: SystemShortcut.Shortcut?) {
+        if let stored = storedBinding(ofRow: id) {
+            if shortcut == nil, id is ButtonsMousePart {
+                removeBinding(id: stored.id)
+            } else {
+                setAction(of: stored.id, to: shortcut)
+            }
+            return
+        }
+        guard let part = id as? ButtonsMousePart else { return }
+        guard let shortcut else {
+            reloadRows()
+            return
+        }
+        addBinding(toPart: part) { trigger in
+            ButtonBinding(triggerEvent: trigger, systemShortcutName: shortcut.identifier, isEnabled: true)
+        }
+    }
+
+    func setAction(ofRow id: AnyHashable, toShortcutNamed name: String) {
+        if let stored = storedBinding(ofRow: id) {
+            setAction(of: stored.id, toShortcutNamed: name)
+            return
+        }
+        guard let part = id as? ButtonsMousePart else { return }
+        addBinding(toPart: part) { trigger in
+            ButtonBinding(triggerEvent: trigger, systemShortcutName: name, isEnabled: true)
+        }
+    }
+
+    func setAction(ofRow id: AnyHashable, toOpen payload: OpenTargetPayload) {
+        if let stored = storedBinding(ofRow: id) {
+            setAction(of: stored.id, toOpen: payload)
+            return
+        }
+        guard let part = id as? ButtonsMousePart else { return }
+        addBinding(toPart: part) { trigger in
+            ButtonBinding(triggerEvent: trigger, openTarget: payload, isEnabled: true)
+        }
+    }
+
+    /// Stores the binding `make` builds for a button of the mouse that has none, from the
+    /// trigger its row shows.
+    private func addBinding(toPart part: ButtonsMousePart, _ make: (RecordedEvent) -> ButtonBinding) {
+        guard layout.row(of: part)?.binding == nil, let shown = row(for: part)?.binding else { return }
+        append(make(placedLikeItsButton(shown.triggerEvent)))
+        updateHeader()
+    }
+
+    /// Adds `binding` at the end and saves; a Logitech button that may stop working over
+    /// Bluetooth warns once.
+    private func append(_ binding: ButtonBinding) {
+        buttonBindings.append(binding)
+        save()
+        reloadRows()
+        let trigger = binding.triggerEvent
+        if trigger.type == .mouse, deviceSource.captureStatus(trigger.code) == .bleHIDPPUnstable {
+            deviceSource.warnBluetoothButton(trigger.code)
         }
     }
 
@@ -398,7 +583,7 @@ class PreferencesButtonsViewController: NSViewController {
     /// opens under the picture.
     func showPlaceMenu(for id: UUID, from anchor: NSView) {
         guard let menu = placeMenu(for: id) else { return }
-        list.select(id)
+        list.select(rowID(forBinding: id))
         presentPlaceMenu(menu, anchor)
     }
 
@@ -412,6 +597,9 @@ class PreferencesButtonsViewController: NSViewController {
     /// Only the display changes; nothing is saved when nothing changes.
     func setPlace(of id: UUID, to part: PlacedMousePart?) {
         guard let trigger = binding(for: id)?.triggerEvent, ButtonTriggerPicture.number(for: trigger) != nil else { return }
+        // Said to be a button of the mouse, it may move to that button's row (or back): the
+        // selection goes with it.
+        let wasSelected = list.selectedID != nil && list.selectedID == rowID(forBinding: id)
         var changed = false
         buttonBindings = buttonBindings.map { binding in
             let other = binding.triggerEvent
@@ -422,6 +610,9 @@ class PreferencesButtonsViewController: NSViewController {
         guard changed else { return }
         save()
         reloadRows()
+        if wasSelected {
+            list.select(rowID(forBinding: id))
+        }
         updateHeader()
     }
 
@@ -475,7 +666,7 @@ class PreferencesButtonsViewController: NSViewController {
     private func restoreBinding(_ binding: ButtonBinding, at index: Int, undoManager undo: UndoManager?) {
         if let existing = buttonBindings.first(where: { $0.triggerEvent == binding.triggerEvent }) {
             // Recorded again meanwhile: the new one stays.
-            list.select(existing.id)
+            list.select(rowID(forBinding: existing.id))
             focusList()
             return
         }
@@ -485,7 +676,7 @@ class PreferencesButtonsViewController: NSViewController {
         buttonBindings.insert(binding, at: min(max(0, index), buttonBindings.count))
         save()
         reloadRows()
-        list.select(binding.id)
+        list.select(rowID(forBinding: binding.id))
         focusList()
         updateHeader()
         guard let undo else { return }
@@ -532,8 +723,13 @@ class PreferencesButtonsViewController: NSViewController {
         return placedLikeItsButton(recorded.normalizedForButtonBinding(diagnosis: diagnosis))
     }
 
-    /// The binding the list has for `trigger`, if any.
+    /// The binding the list has for `trigger`, if any. A button of the connected mouse
+    /// pressed without modifiers is its row: the row's stored binding, or for a row without
+    /// one the binding it shows (no action: it takes the one of Gestures › Set Up…).
     func existingBinding(for trigger: RecordedEvent) -> ButtonBinding? {
+        if let part = layout.part(for: trigger), let row = row(for: part) {
+            return row.binding
+        }
         return buttonBindings.first { $0.triggerEvent == trigger }
     }
 
@@ -544,50 +740,49 @@ class PreferencesButtonsViewController: NSViewController {
     }
 
     /// Adds `trigger` and returns the id. A trigger the list has already is selected and
-    /// flashes; with `action` and no action of its own it gets `action`. The list then
-    /// has the keyboard.
+    /// flashes; with `action` and no action of its own it gets `action` (a button of the
+    /// mouse without a binding gets one, of what was pressed). The list then has the
+    /// keyboard.
     @discardableResult
     func addBinding(for trigger: RecordedEvent, action: SystemShortcut.Shortcut?) -> UUID {
         defer { focusList() }
         if let existing = existingBinding(for: trigger) {
-            if takesPendingAction(existing, action: action) {
-                setAction(of: existing.id, to: action)
-                list.select(existing.id)
-            } else {
-                list.flash(existing.id)
+            guard takesPendingAction(existing, action: action) else {
+                list.flash(rowID(forBinding: existing.id))
+                return existing.id
             }
-            return existing.id
+            if binding(for: existing.id) != nil {
+                setAction(of: existing.id, to: action)
+                list.select(rowID(forBinding: existing.id))
+                return existing.id
+            }
         }
         let binding = ButtonBinding(
             triggerEvent: placedLikeItsButton(trigger),
             systemShortcutName: action?.identifier ?? "",
             isEnabled: action != nil
         )
-        buttonBindings.append(binding)
-        save()
-        reloadRows()
-        list.select(binding.id)
-        if trigger.type == .mouse, deviceSource.captureStatus(trigger.code) == .bleHIDPPUnstable {
-            deviceSource.warnBluetoothButton(trigger.code)
-        }
+        append(binding)
+        list.select(rowID(forBinding: binding.id))
         return binding.id
     }
 
     // MARK: - Open App or File
 
-    private func presentOpenTargetPopover(forBindingID id: UUID) {
-        guard let binding = binding(for: id), let row = row(for: id) else { return }
+    /// "Open App or File" at the pull-down of the row with `id`.
+    private func presentOpenTargetPopover(forRow id: AnyHashable) {
+        guard let row = row(for: id) else { return }
         openTargetPopover?.hide()
         let popover = OpenTargetConfigPopover()
         openTargetPopover = popover
         popover.onCommit = { [weak self] payload in
-            self?.setAction(of: id, toOpen: payload)
+            self?.setAction(ofRow: id, toOpen: payload)
             self?.openTargetPopover = nil
         }
         popover.onCancel = { [weak self] in
             self?.openTargetPopover = nil
         }
-        presentOpenTarget(popover, row.pullDown, binding.openTarget)
+        presentOpenTarget(popover, row.pullDown, storedBinding(ofRow: id)?.openTarget)
     }
 
     // MARK: - Gestures
@@ -644,8 +839,8 @@ class PreferencesButtonsViewController: NSViewController {
     func updateHeader() {
         guard let headerView else { return }
         var focus: ButtonsHeaderContent.Focus? = recordedFocus
-        if focus == nil, let id = (list.hoveredID ?? list.selectedID) as? UUID, let binding = binding(for: id) {
-            focus = self.focus(for: binding)
+        if focus == nil, let id = list.hoveredID ?? list.selectedID, let row = row(for: id) {
+            focus = self.focus(for: row)
         }
         let bound = buttonBindings.filter { CellActionState(binding: $0).hasBoundAction }.count
         let deviceName = deviceSource.deviceName()
@@ -668,10 +863,24 @@ class PreferencesButtonsViewController: NSViewController {
     /// What the card says about `binding`'s row, pointed at or selected, or (`.answer`)
     /// pressed after "+" ("That's …").
     func focus(for binding: ButtonBinding, reason: ButtonsHeaderContent.Focus.Reason = .row) -> ButtonsHeaderContent.Focus {
+        if let row = rows.first(where: { $0.binding.id == binding.id }) {
+            return focus(for: row, reason: reason)
+        }
         return ButtonsHeaderContent.Focus(
             title: title(for: binding.triggerEvent),
             action: resolver.actionName(of: binding),
             picture: ButtonTriggerPicture.make(for: binding.triggerEvent, mouse: mouse),
+            reason: reason
+        )
+    }
+
+    /// What the card says about `row`: its title, its action ("Default" for a button of the
+    /// mouse without one) and its picture.
+    func focus(for row: ButtonBindingRow, reason: ButtonsHeaderContent.Focus.Reason = .row) -> ButtonsHeaderContent.Focus {
+        return ButtonsHeaderContent.Focus(
+            title: row.title,
+            action: row.isDefault ? text("buttons-default") : resolver.actionName(of: row.binding),
+            picture: row.picture,
             reason: reason
         )
     }
@@ -809,7 +1018,7 @@ extension PreferencesButtonsViewController: KeyRecorderDelegate {
         }
         if let existing = existingBinding(for: trigger), !takesPendingAction(existing, action: pendingAction) {
             pendingRecorded = nil
-            list.flash(existing.id)
+            list.flash(rowID(forBinding: existing.id))
             showRecorded(focus(for: existing, reason: .answer))
             return
         }

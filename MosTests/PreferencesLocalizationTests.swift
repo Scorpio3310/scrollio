@@ -92,6 +92,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "open-target-title", "open-target-empty-primary", "open-target-empty-secondary",
         "open-target-arguments-placeholder", "open-target-stale-warning", "open-target-cancel", "open-target-done",
         "appExposeApps", "categoryMissionControlAndSpaces",
+        "buttons-default", "buttons-default-back", "buttons-default-forward", "buttons-default-middle",
+        "buttons-default-mode-shift", "buttons-default-own", "buttons-list-other",
     ]
 
     /// Gestures pane and its gesture controls.

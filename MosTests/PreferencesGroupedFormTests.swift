@@ -1438,6 +1438,72 @@ final class PreferencesGroupedFormTests: XCTestCase {
         XCTAssertEqual((rowsView.accessibilityRows() as? [PreferencesListRow]) ?? [], [])
     }
 
+    /// A small title inside the box above a group of rows: the hairline above the group runs
+    /// over the title, none between the title and its first row, and none next to the
+    /// selection; the pointer over it points at no row, ↓ passes over it, VoiceOver reads it
+    /// between the rows. A row that cannot be removed turns − off, and − and Delete do
+    /// nothing on it.
+    func testAListGroupsRowsUnderASmallTitleAndKeepsRowsThatCannotBeRemoved() throws {
+        let (list, root) = makeList(ids: ["a", "b", "c"])
+        let window = makeWindow(with: root)
+        let recorder = ListRecorder(list)
+        let rows = list.rows
+        list.setRows(rows, groupTitles: ["c": "Other things", "a": "Never above the first row"])
+        root.setFrameSize(root.fittingSize)
+        root.layoutSubtreeIfNeeded()
+        let title = try XCTUnwrap(list.groupTitles["c"])
+        XCTAssertNil(list.groupTitles["a"])
+        XCTAssertEqual(list.rowsView.arrangedSubviews, [rows[0], rows[1], title, rows[2]])
+        XCTAssertEqual(title.title, "Other things")
+        XCTAssertEqual(title.titleLabel.font, PreferencesListGroupTitle.font)
+        XCTAssertEqual(title.titleLabel.textColor, .secondaryLabelColor)
+        func box(_ view: NSView) -> NSRect {
+            return list.convert(view.bounds, from: view)
+        }
+        XCTAssertEqual(box(title.titleLabel).minX, Form.rowHorizontalInset, accuracy: 0.5)
+        XCTAssertEqual(box(title.titleLabel).minY - box(title).minY, PreferencesListGroupTitle.topInset, accuracy: 0.5)
+        XCTAssertEqual(box(title).maxY - box(title.titleLabel).maxY, PreferencesListGroupTitle.bottomInset, accuracy: 0.5)
+        XCTAssertEqual(box(title).maxY, box(rows[2]).minY, accuracy: 0.5)
+
+        XCTAssertEqual(list.separatorRects.map(\.minY), [box(rows[1]).minY, box(title).minY])
+        list.select("b")
+        XCTAssertEqual(list.separatorRects, [], "none next to the selection, over the title neither")
+        list.select("c")
+        XCTAssertEqual(list.separatorRects.map(\.minY), [box(rows[1]).minY, box(title).minY], "the title keeps its line above")
+        XCTAssertNil(list.rowID(at: NSPoint(x: box(title).midX, y: box(title).midY)), "the title is no row")
+        list.select("b")
+        list.keyDown(with: try arrow(NSDownArrowFunctionKey))
+        XCTAssertEqual(list.selectedID, "c")
+
+        let rowsView = list.rowsView
+        XCTAssertEqual(rowsView.accessibilityChildren()?.count, 4)
+        XCTAssertTrue(rowsView.accessibilityChildren()?[2] as? PreferencesListGroupTitle === title)
+        XCTAssertEqual((rowsView.accessibilityRows() as? [PreferencesListRow]) ?? [], rows)
+        XCTAssertEqual(title.accessibilityRole(), .staticText)
+        XCTAssertEqual(title.accessibilityLabel(), "Other things")
+        XCTAssertFalse(title.titleLabel.isAccessibilityElement())
+
+        // A row that cannot be removed.
+        rows[0].isRemovable = false
+        list.select("a")
+        XCTAssertFalse(list.removeButton.isEnabled)
+        _ = list.removeButton.sendAction(list.removeButton.action, to: list.removeButton.target)
+        window.makeFirstResponder(list)
+        list.keyDown(with: try key("\u{7F}", keyCode: 51))
+        XCTAssertEqual(recorder.removed, [])
+        XCTAssertEqual(list.selectedID, "a")
+        rows[0].isRemovable = true
+        XCTAssertTrue(list.removeButton.isEnabled, "the − follows the row")
+        list.keyDown(with: try key("\u{7F}", keyCode: 51))
+        XCTAssertEqual(recorder.removed, ["a"])
+
+        // Without titles the rows stand as before.
+        list.setRows(rows)
+        XCTAssertTrue(list.groupTitles.isEmpty)
+        XCTAssertNil(title.superview)
+        XCTAssertEqual(list.rowsView.arrangedSubviews, rows)
+    }
+
     func testAListSectionSitsInThePaneLikeATitledBox() throws {
         let first = PreferencesGroupSection(width: boxWidth, rows: [PreferencesSwitchRow(title: "Limit", target: nil, action: nil)])
         let list = PreferencesListBox(width: boxWidth, rows: [PreferencesListRow(id: 1, title: "Calculator")], emptyTitle: "No apps yet")
