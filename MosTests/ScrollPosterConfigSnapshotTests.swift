@@ -37,4 +37,19 @@ final class ScrollPosterConfigSnapshotTests: XCTestCase {
         XCTAssertTrue(snap.simTrackpadEnabled, "simTrackpadEnabled 应为捕获时的 true")
         XCTAssertEqual(snap.deadZone, 7.0, "deadZone 应为捕获时的 7.0")
     }
+
+    /// A stored dead zone that is not positive kept the display link running forever: the
+    /// snapshot takes the default instead and leaves the stored value alone.
+    func testConfigSnapshot_takesTheDefaultForADeadZoneThatIsNotPositive() {
+        ScrollCore.shared.application = nil
+        for stored in [0.0, -2.0] {
+            Options.shared.scroll.deadZone = stored
+            ScrollPoster.shared.captureConfigSnapshotForTests()
+            XCTAssertEqual(ScrollPoster.shared.configSnapshotForTests.deadZone, 1.0, "\(stored)")
+            XCTAssertEqual(Options.shared.scroll.deadZone, stored, "the stored value stays")
+        }
+        Options.shared.scroll.deadZone = .nan
+        ScrollPoster.shared.captureConfigSnapshotForTests()
+        XCTAssertEqual(ScrollPoster.shared.configSnapshotForTests.deadZone, 1.0)
+    }
 }

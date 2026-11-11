@@ -415,3 +415,70 @@ final class ScrollSettingsLoadTests: XCTestCase {
         XCTAssertEqual(ScrollFeel.matching(duration: Options.shared.scroll.duration), .smooth)
     }
 }
+
+/// Stored values the sliders cannot give, guarded where the engine uses them; what is stored
+/// is never rewritten. A Duration of 5.2 or more (or not a number) gave a factor of 0 or
+/// less: nothing moved and the display link never stopped. A dead zone that is not positive
+/// kept the display link running forever.
+final class ScrollSettingsUsableValuesTests: XCTestCase {
+
+    private func transition(_ duration: Double) -> Double {
+        return OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: duration)
+    }
+
+    /// The formula as it was, for every Duration the slider can give.
+    private func unguarded(_ duration: Double) -> Double {
+        return Double(round(1000 * (1 - (duration / 5.2).squareRoot())) / 1000)
+    }
+
+    func testEveryDurationOnTheSliderKeepsItsFactor() {
+        let range = ScrollSliderSetting.glideTime.range
+        for duration in stride(from: range.lowerBound, through: range.upperBound, by: 0.01) {
+            XCTAssertEqual(transition(duration), unguarded(duration), "\(duration)")
+        }
+        for feel in ScrollFeel.allCases {
+            XCTAssertEqual(transition(feel.duration), unguarded(feel.duration), "\(feel)")
+        }
+        XCTAssertEqual(OPTIONS_SCROLL_DEFAULT.minimumDurationTransition, unguarded(range.upperBound),
+                       "the floor is the factor of the slider's longest Duration")
+    }
+
+    func testADurationBeyondTheSliderGlidesLikeTheLongest() {
+        for stored in [5.05, 5.2, 6.0, 100, -1, .nan, .infinity] {
+            XCTAssertEqual(transition(stored), OPTIONS_SCROLL_DEFAULT.minimumDurationTransition, "\(stored)")
+        }
+        let scroll = OPTIONS_SCROLL_DEFAULT()
+        scroll.duration = 6.0
+        XCTAssertEqual(scroll.durationTransition, OPTIONS_SCROLL_DEFAULT.minimumDurationTransition)
+        XCTAssertEqual(scroll.duration, 6.0, "the stored value stays")
+    }
+
+    /// With the factor of a stored Duration 6 a scroll moves and ends.
+    func testAScrollWithADurationBeyondTheSliderEnds() {
+        let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: ScrollDispatchContext())
+        var moved = 0.0
+        poster.frameRecorderForTests = { moved += $0.y }
+        poster.setConfigForTests(simTrackpadEnabled: false)
+        var now = 100.0
+        poster.inputForTests(ScrollPosterInput(y: 100, x: 0, notch: 100, duration: transition(6.0)), at: now)
+
+        var request: ScrollStopRequest?
+        for _ in 0..<(60 * 60) {
+            now += 1.0 / 60.0
+            request = poster.displayLinkFrameForTests(frameInterval: 1.0 / 60.0, now: now)
+            if request != nil { break }
+        }
+        XCTAssertNotNil(request, "the display link is asked to stop")
+        XCTAssertGreaterThan(moved, 0, "the page moves")
+    }
+
+    func testADeadZoneThatIsNotPositiveGivesTheDefault() {
+        XCTAssertEqual(OPTIONS_SCROLL_DEFAULT().deadZone, OPTIONS_SCROLL_DEFAULT.defaultDeadZone)
+        for stored in [0.0, -1.0, -.infinity, .nan, .infinity] {
+            XCTAssertEqual(OPTIONS_SCROLL_DEFAULT.usableDeadZone(stored), 1.0, "\(stored)")
+        }
+        for stored in [0.25, 1.0, 2.0, 7.0] {
+            XCTAssertEqual(OPTIONS_SCROLL_DEFAULT.usableDeadZone(stored), stored)
+        }
+    }
+}

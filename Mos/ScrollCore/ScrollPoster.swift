@@ -753,7 +753,7 @@ private extension ScrollPoster {
         }
         config = ConfigSnapshot(
             simTrackpadEnabled: simTrackpad,
-            deadZone: Options.shared.scroll.deadZone
+            deadZone: OPTIONS_SCROLL_DEFAULT.usableDeadZone(Options.shared.scroll.deadZone)
         )
     }
 
