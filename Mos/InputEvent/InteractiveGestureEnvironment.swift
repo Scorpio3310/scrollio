@@ -49,7 +49,7 @@ struct InteractiveGestureEnvironment {
         }
 
         var frameDuration = fallbackScreen.frameDuration
-        if #available(macOS 12.0, *), screen.maximumFramesPerSecond > 0 {
+        if screen.maximumFramesPerSecond > 0 {
             frameDuration = 1.0 / TimeInterval(screen.maximumFramesPerSecond)
         }
         let displayID = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value

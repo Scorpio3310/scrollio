@@ -7,8 +7,6 @@
 //
 
 import Cocoa
-import LoginServiceKit
-import ServiceManagement
 
 struct OptionItem {
     struct General {
@@ -188,7 +186,9 @@ extension Options {
         // 锁定
         readingOptionsLock = true
         // 常规
-        general.autoLaunch = LoginServiceKit.isExistLoginItems(at: Bundle.main.bundlePath)
+        // The login item lives in the system, not in UserDefaults. Assigning the value that
+        // was just read makes the property's observer a no-op (LoginItem.setEnabled).
+        general.autoLaunch = LoginItem.isEnabled
         general.hideStatusItem = UserDefaults.standard.bool(forKey: OptionItem.General.HideStatusItem)
         // 滚动
         scroll.smooth = UserDefaults.standard.bool(forKey: OptionItem.Scroll.Smooth)

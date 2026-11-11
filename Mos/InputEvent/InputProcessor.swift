@@ -24,6 +24,11 @@ class InputProcessor: ModifierFlagsProviding {
     init() { NSLog("Module initialized: InputProcessor") }
 
     private static let mosScrollTapReplayMovementTolerance: CGFloat = 8.0
+    /// A gesture hold older than this is abandoned, in case its button-up was lost. The same
+    /// limit as the pointer lock and the "follow the hand" session use.
+    static let mouseGestureHoldTimeout: TimeInterval = MouseGesturePointerLock.safetyTimeout
+    /// Tests shorten the hold timeout to see the watchdog fire for real.
+    private var mouseGestureHoldTimeoutOverride: TimeInterval?
 
     // MARK: - Active Bindings Table
     /// 跟踪当前按下中的 stateful 动作, 用于 Up 事件配对
@@ -65,6 +70,11 @@ class InputProcessor: ModifierFlagsProviding {
         var recognizer = MouseGestureRecognizer()
         /// Set in "follow the hand" mode; the recognizer above is then unused.
         var interactive: InteractiveGestureSession?
+        /// Gives up on the hold when its button-up never arrives.
+        var watchdog: DispatchWorkItem?
+        /// The watchdog gave up on this hold. It stays in the table, so a late button-up is
+        /// still swallowed, but it reads no movement and the next press starts over.
+        var isAbandoned = false
 
         init(settings: MouseGestureSettings, movementSource: MouseGestureMovementSource, hapticCode: UInt16?) {
             self.settings = settings
@@ -94,7 +104,6 @@ class InputProcessor: ModifierFlagsProviding {
     private var interactiveFrameDuration = InteractiveGestureEnvironment.fallbackScreen.frameDuration
     /// Counts swipes, so a terminal event queued for one swipe can never end a later one.
     private var interactiveSwipeGeneration = 0
-    private var interactiveWatchdog: DispatchWorkItem?
     private var interactiveEnvironment = InteractiveGestureEnvironment.system
     /// Plays a haptic cue on the mouse a button belongs to. Replaced in tests.
     private var gestureHapticPlayer: (MouseGestureHapticCue, UInt16) -> Void = InputProcessor.systemGestureHapticPlayer
@@ -123,6 +132,9 @@ class InputProcessor: ModifierFlagsProviding {
         }
         activeBindings.removeAll()
         cancelInteractiveGesture()
+        for session in activeMouseGestures.values {
+            session.watchdog?.cancel()
+        }
         activeMouseGestures.removeAll()
         pointerTrackedGestureCount = 0
         MouseGesturePointerLock.shared.unlock()
@@ -217,14 +229,10 @@ class InputProcessor: ModifierFlagsProviding {
     private func beginMouseGesture(key: TriggerKey, event: InputEvent) {
         if let existing = activeMouseGestures[key] {
             // A duplicate down for a held button keeps the running gesture.
-            guard existing.interactive?.phase == .finished else { return }
+            guard existing.isAbandoned || existing.interactive?.phase == .finished else { return }
             // The watchdog gave up on that hold because its button-up never came: start over.
-            if interactiveGestureKey == key {
-                interactiveGestureKey = nil
-            }
-            if existing.movementSource == .pointer {
-                pointerTrackedGestureCount -= 1
-            }
+            // (The motion tap is refreshed once, at the end, for the new hold.)
+            abandonMouseGesture(existing, key: key, refreshMotionTap: false)
         }
         let settings = Options.shared.gesture
         var hapticCode: UInt16?
@@ -246,6 +254,7 @@ class InputProcessor: ModifierFlagsProviding {
             MouseGesturePointerLock.shared.lock()
         }
         beginInteractiveGestureIfEnabled(session, key: key)
+        armMouseGestureWatchdog(for: session, key: key)
         MouseInteractionSessionController.shared.refreshMotionTapState()
     }
 
@@ -254,6 +263,11 @@ class InputProcessor: ModifierFlagsProviding {
         guard let session = activeMouseGestures.removeValue(forKey: key) else {
             return false
         }
+        session.watchdog?.cancel()
+        session.watchdog = nil
+        // The watchdog already released everything this hold owned; its late button-up is
+        // only swallowed, so the app under the pointer never sees an up without a down.
+        guard !session.isAbandoned else { return true }
         if session.movementSource == .pointer {
             pointerTrackedGestureCount -= 1
         }
@@ -287,7 +301,7 @@ class InputProcessor: ModifierFlagsProviding {
 
         var recognizedAction: String?
         for session in activeMouseGestures.values
-        where session.interactive == nil && session.movementSource == .pointer {
+        where session.interactive == nil && session.movementSource == .pointer && !session.isAbandoned {
             if let direction = session.recognizer.append(deltaX: deltaX, deltaY: deltaY) {
                 let action = session.settings.actionIdentifier(for: direction)
                 playLockInHaptic(for: session, action: action)
@@ -306,7 +320,8 @@ class InputProcessor: ModifierFlagsProviding {
     /// 125 times a second; like the motion tap path it never posts anything itself.
     func handleDeviceGestureMovement(code: UInt16, countsX: Int, countsY: Int) {
         let key = TriggerKey(type: .mouse, code: code)
-        guard let session = activeMouseGestures[key], session.movementSource == .device else { return }
+        guard let session = activeMouseGestures[key], session.movementSource == .device,
+              !session.isAbandoned else { return }
         let deltaX = CGFloat(countsX) * MouseGestureDeviceTracking.pointsPerCount
         let deltaY = CGFloat(countsY) * MouseGestureDeviceTracking.pointsPerCount
         guard deltaX != 0 || deltaY != 0 else { return }
@@ -395,14 +410,6 @@ class InputProcessor: ModifierFlagsProviding {
         interactiveGestureSource = session.movementSource
         interactiveFrameDuration = screen.frameDuration
         pendingInteractiveDelta = .zero
-
-        let watchdog = DispatchWorkItem { [weak self] in
-            self?.interactiveGestureWatchdogFired(key: key)
-        }
-        interactiveWatchdog?.cancel()
-        interactiveWatchdog = watchdog
-        let timeout = session.interactive?.configuration.watchdogTimeout ?? MouseGesturePointerLock.safetyTimeout
-        DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: watchdog)
     }
 
     /// Runs inside the motion tap callback: only adds up the movement. The session sees it
@@ -455,8 +462,6 @@ class InputProcessor: ModifierFlagsProviding {
             pending = pendingInteractiveDelta
             pendingInteractiveDelta = .zero
             interactiveGestureKey = nil
-            interactiveWatchdog?.cancel()
-            interactiveWatchdog = nil
         }
         let commands = session.interactive?.release(
             pendingDeltaX: pending.x,
@@ -481,8 +486,6 @@ class InputProcessor: ModifierFlagsProviding {
     /// callers are the cancel paths (event tap disabled, sleep, quit), where the main queue
     /// may never run again and a deferred event would leave the desktop between two Spaces.
     private func cancelInteractiveGesture() {
-        interactiveWatchdog?.cancel()
-        interactiveWatchdog = nil
         if let key = interactiveGestureKey, let session = activeMouseGestures[key] {
             let commands = session.interactive?.cancel() ?? []
             perform(commands.filter { $0.isSwipeCommand }, for: session)
@@ -495,11 +498,62 @@ class InputProcessor: ModifierFlagsProviding {
         interactiveFlushToken += 1
     }
 
-    private func interactiveGestureWatchdogFired(key: TriggerKey) {
-        guard interactiveGestureKey == key, let session = activeMouseGestures[key] else { return }
-        NSLog("InputProcessor: interactive gesture watchdog, abandoning the hold")
-        let commands = session.interactive?.expire() ?? []
-        perform(commands, for: session)
+    // MARK: - Hold watchdog
+    //
+    // A button-up can get lost (the event tap was disabled for a moment, the mouse went to
+    // sleep or out of range mid-hold). Without a limit such a hold would keep the motion tap
+    // running, keep feeding movement to the recognizer and swallow the next press of the
+    // button as a "duplicate down". Every hold is therefore abandoned after a timeout, in
+    // both modes.
+
+    /// Arms the watchdog of a hold that has just begun.
+    private func armMouseGestureWatchdog(for session: ActiveMouseGestureSession, key: TriggerKey) {
+        let watchdog = DispatchWorkItem { [weak self, weak session] in
+            guard let self, let session else { return }
+            self.mouseGestureWatchdogFired(session, key: key)
+        }
+        session.watchdog?.cancel()
+        session.watchdog = watchdog
+        let timeout = mouseGestureHoldTimeoutOverride
+            ?? session.interactive?.configuration.watchdogTimeout
+            ?? Self.mouseGestureHoldTimeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: watchdog)
+    }
+
+    private func mouseGestureWatchdogFired(_ session: ActiveMouseGestureSession, key: TriggerKey) {
+        // Only for the hold the watchdog was armed for, not a later press of the same button.
+        guard activeMouseGestures[key] === session, !session.isAbandoned else { return }
+        NSLog("InputProcessor: gesture hold watchdog, abandoning the hold")
+        abandonMouseGesture(session, key: key)
+    }
+
+    /// Gives up on a hold whose button-up never came: reverts a running swipe, stops reading
+    /// movement for it and releases the pointer and the motion tap. No click is replayed.
+    /// The entry stays in `activeMouseGestures` until its button-up or the next press.
+    private func abandonMouseGesture(
+        _ session: ActiveMouseGestureSession,
+        key: TriggerKey,
+        refreshMotionTap: Bool = true
+    ) {
+        guard !session.isAbandoned else { return }
+        session.isAbandoned = true
+        session.watchdog?.cancel()
+        session.watchdog = nil
+        if interactiveGestureKey == key {
+            let commands = session.interactive?.expire() ?? []
+            perform(commands, for: session)
+            interactiveGestureKey = nil
+            pendingInteractiveDelta = .zero
+        }
+        if session.movementSource == .pointer {
+            pointerTrackedGestureCount -= 1
+        }
+        if pointerTrackedGestureCount == 0 {
+            MouseGesturePointerLock.shared.unlock()
+        }
+        if refreshMotionTap {
+            MouseInteractionSessionController.shared.refreshMotionTapState()
+        }
     }
 
     private func perform(_ commands: [InteractiveGestureSession.Command], for session: ActiveMouseGestureSession) {
@@ -539,10 +593,23 @@ class InputProcessor: ModifierFlagsProviding {
         setTestingInteractiveGestureEnvironment(.system)
     }
 
-    /// Runs the watchdog now instead of after its timeout.
+    /// Runs the watchdog of the "follow the hand" hold now instead of after its timeout.
     func fireInteractiveGestureWatchdogForTests() {
-        guard let key = interactiveGestureKey else { return }
-        interactiveGestureWatchdogFired(key: key)
+        guard let key = interactiveGestureKey, let session = activeMouseGestures[key] else { return }
+        mouseGestureWatchdogFired(session, key: key)
+    }
+
+    /// Runs the watchdog of the held gesture buttons now instead of after its timeout:
+    /// of all of them, or only of the mouse button with `code`.
+    func fireMouseGestureWatchdogsForTests(code: UInt16? = nil) {
+        for (key, session) in activeMouseGestures where code == nil || key.code == code {
+            mouseGestureWatchdogFired(session, key: key)
+        }
+    }
+
+    /// nil restores the real timeout.
+    func setTestingMouseGestureHoldTimeout(_ timeout: TimeInterval?) {
+        mouseGestureHoldTimeoutOverride = timeout
     }
 
     func setTestingGestureHapticPlayer(_ player: @escaping (MouseGestureHapticCue, UInt16) -> Void) {

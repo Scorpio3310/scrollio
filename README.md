@@ -1,133 +1,148 @@
-<p align="center">
-  <a href="https://mos.caldis.me/">
-    <img width="160" src="assets/readme/app-icon.png" alt="Mos app icon">
-  </a>
-</p>
+# Scrollio
 
-<h1 align="center">Mos</h1>
+Scrollio is a macOS menu-bar utility for people who use a mouse. It makes the scroll
+wheel as smooth as a trackpad, lets every mouse button run an action, and adds
+gestures and wheel settings for Logitech mice.
 
-<p align="center">
-  让 macOS 上的鼠标滚轮和触控板一样顺滑，同时保留鼠标该有的精准控制。
-</p>
+It is a personal, non-commercial fork of [Mos](https://github.com/Caldis/Mos) by Caldis.
+See [Attribution and licence](#attribution-and-licence).
 
-<p align="center">
-  <a href="https://github.com/Caldis/Mos/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Caldis/Mos?style=flat-square"></a>
-  <img alt="macOS 10.13+" src="https://img.shields.io/badge/macOS-10.13%2B-black?style=flat-square&logo=apple">
-  <img alt="Swift 5" src="https://img.shields.io/badge/Swift-5.0-orange?style=flat-square&logo=swift">
-  <a href="LICENSE"><img alt="License: CC BY-NC 4.0" src="https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey?style=flat-square"></a>
-</p>
+- macOS 14.0 or later
+- Swift 5, AppKit, an Xcode project with Swift packages
+- No updater and no telemetry; the app makes no network requests
 
-<p align="center">
-  <a href="README.md">中文</a> ·
-  <a href="README.enUS.md">English</a> ·
-  <a href="README.de.md">Deutsch</a> ·
-  <a href="README.ja.md">日本語</a> ·
-  <a href="README.ko.md">한국어</a> ·
-  <a href="README.ru.md">Русский</a> ·
-  <a href="README.id.md">Bahasa Indonesia</a>
-</p>
+## Features at a glance
 
-<p align="center">
-  <a href="https://mos.caldis.me/">官网</a> ·
-  <a href="https://github.com/Caldis/Mos/releases">下载</a> ·
-  <a href="https://github.com/Caldis/Mos/wiki">Wiki</a> ·
-  <a href="https://github.com/Caldis/Mos/discussions">Discussions</a>
-</p>
+**Scrolling**
 
-<p align="center">
-  <img src="assets/readme/zh-cn/application-settings.png" alt="Mos 按应用配置滚动" width="920">
-</p>
+- Smooth scrolling with adjustable step, speed and duration, and presets.
+- Smoothing and reversing per axis (vertical and horizontal separately).
+- Fast-scroll tuning: acceleration, separate behaviour while a Logitech wheel spins
+  freely, and an optional glide after a flick.
+- Trackpad-style scroll events (gesture phases) for apps that expect them.
+- The thumb wheel can scroll sideways or run the back/forward page swipe.
+- Scroll keys: hold a key or button to scroll faster, scroll horizontally, or pause
+  smoothing.
+- Per-app settings: an app can inherit the global settings or override them, and an
+  allowlist can limit Scrollio to chosen apps.
 
-## 为什么是 Mos
+**Buttons**
 
-普通滚轮在 macOS 上常常显得生硬, 这是由于滚轮的精度不足导致的。Mos 会接管鼠标滚轮事件，将滚动行为插值转换成更顺滑的滚动，同时保留每个应用、每个方向、每颗按键的控制权。
+- Bind any mouse button or key to an action: system shortcuts (Mission Control, Spaces,
+  screenshots and more), custom key combinations, mouse buttons, or opening an app,
+  file or script.
+- Bindings can be limited to one device and overridden per app.
 
-同时, 你还可以使用 Mos 对任意鼠标按键进行重新映射或改写, 以适配你的工作流。
+**Gestures**
 
-Mos 是免费的开源菜单栏工具，支持 macOS 10.13 及以上版本。
+- Hold a button and move the mouse: one action per direction, plus a click action.
+- "Follow the hand" mode drives the Spaces swipe directly, like a trackpad.
+- The pointer can stay frozen while the button is held.
 
-## 功能亮点
+**Logitech mice (HID++, over Bolt or Unifying receivers and Bluetooth)**
 
-- **平滑滚动**：自定义最短步长、速度增益和持续时间，也可以启用模拟触控板模式。
-- **轴向独立**：垂直/水平滚动可以分别设置平滑和反向。
-- **滚动功能键**：为加速、方向转换、禁用平滑滚动绑定任意自定义按键。
-- **按应用配置**：每个 App 可以继承全局设置，也可以单独覆盖滚动、快捷键和按钮绑定规则。
-- **按钮绑定**：录制鼠标、键盘或自定义事件，绑定到系统动作、快捷键、打开 App、运行脚本或打开文件。
-- **动作库**：内置调度中心、空间切换、截图、访达操作、文档编辑、鼠标滚动等常用动作。
-- **Logi/HID++ 支持**：支持 Bolt、Unifying 接收器和蓝牙直连设备上的 Logitech 按钮事件，并可处理 Logi 专有动作。
+- Buttons that macOS does not report (gesture button, mode-shift button and others)
+  become bindable.
+- Scroll-wheel mode (SmartShift, ratchet, free-spin), SmartShift sensitivity and wheel
+  force, on mice that support them.
+- Movement tracked by the mouse itself during a gesture, and haptic feedback on mice
+  that have it.
+- A diagnostics panel for HID++ traffic.
 
-## 截图
+**App**
 
-| 滚动调节 | 按应用配置 |
-| --- | --- |
-| <img src="assets/readme/zh-cn/scrolling.png" alt="Mos 滚动设置" width="420"> | <img src="assets/readme/zh-cn/application-settings.png" alt="Mos 按应用配置设置" width="420"> |
+- Lives in the menu bar; can launch at login.
+- It quits a running Mos at launch and, on the first launch, copies its settings.
 
-| 打开 App、脚本或文件 | 快捷动作菜单 |
-| --- | --- |
-| <img src="assets/readme/zh-cn/buttons-open.png" alt="Mos 打开动作" width="420"> | <img src="assets/readme/zh-cn/buttons-action.png" alt="Mos 快捷动作菜单" width="420"> |
+## Requirements
 
-## 下载与安装
+- A Mac with macOS 14.0 or later and a recent Xcode.
+- An Apple Development signing identity for the team set in the project. Do not turn
+  signing off: the Accessibility permission is tied to the code signature.
+- At run time: the Accessibility permission (System Settings > Privacy & Security >
+  Accessibility). Scrollio asks for it on first launch. Without it no event is read
+  or changed.
 
-### 手动安装
-
-从 [GitHub Releases](https://github.com/Caldis/Mos/releases) 下载最新版本，解压后将 `Mos.app` 放入 `/Applications`。
-
-首次启动时，macOS 可能会要求你授予 Mos 辅助功能权限。Mos 需要这项权限读取和重写滚动事件；如果授权后仍无法工作，可以参考 [Wiki 中的权限排查](https://github.com/Caldis/Mos/wiki/%E5%A6%82%E6%9E%9C%E5%BA%94%E7%94%A8%E6%97%A0%E6%B3%95%E6%AD%A3%E5%B8%B8%E8%BF%90%E8%A1%8C)。
-
-### Homebrew
-
-如果你习惯用 Homebrew 管理应用：
+## Build
 
 ```bash
-brew install --cask mos
+xcodebuild -scheme Debug -configuration Debug -destination 'platform=macOS' build
 ```
 
-更新：
+This builds `Scrollio Debug.app` (bundle id `com.nikklemenc.Scrollio.debug`). For the
+release app `Scrollio.app` (`com.nikklemenc.Scrollio`):
 
 ```bash
-brew update
-brew upgrade --cask mos
+xcodebuild -scheme Debug -configuration Release -destination 'platform=macOS' build
 ```
 
-## 贡献
+Or open `Mos.xcodeproj` in Xcode and run the `Debug` scheme. The project, the targets
+and the Swift modules keep the name Mos (`Mos`, `Mos_Debug`, `MosTests`).
 
-Mos 是一个会处理系统输入、辅助功能权限、Logi/HID 设备和用户持久化配置的小工具。维护成本和回归风险都很真实，所以我们更欢迎小而集中的改动。
+## Tests
 
-涉及 Logi/HID、辅助功能权限、签名、notarization、更新机制或真实设备测试的改动风险较高，请先在 issue 或 Discussions 中说明背景。
+```bash
+pgrep -fl "Scrollio Debug.app"     # must print nothing: quit a running debug app first
+xcodebuild -scheme Debug -destination 'platform=macOS' test
+xcodebuild -scheme Debug -destination 'platform=macOS' test -only-testing:MosTests/<TestClassName>
+```
 
-PR 描述中请说明变更动机、测试方式和可能影响的行为。
+The tests run inside `Scrollio Debug.app` with its startup side effects switched off:
+the app's event taps and Logitech sessions are not started, the real settings are not
+written, and no login item is registered.
 
-> 由 AI 开发的代码已经成为主流，我们理解现在大量的 PR 都经由 AI 生成 (包括我自己)。但提交者仍需要自行理解、整理并验证每一行代码的实际作用, 因为每个 PR 审查都有成本。
+Never add `CODE_SIGNING_ALLOWED=NO`. It re-signs the debug app ad hoc, macOS then asks
+for the Accessibility permission again, and with a running instance that prompt can
+freeze mouse and keyboard input.
 
-### 非常欢迎
+Tests that talk to a real Logitech mouse are skipped unless they are asked for:
 
-- 小范围 bug 修复，并提供复现路径或验证说明。
-- UI/UX 细节修补，例如布局、文案、可读性和引导流程的小改进。
-- 小范围安全加固，例如更稳妥的权限状态处理、输入保护和边界检查。
-- 本地化、文档和测试补充。
-- 单一主题、变更行数较小、容易 review 的 PR。
+```bash
+LOGI_REAL_DEVICE=1 xcodebuild -scheme Debug -testPlan DebugWithDevice -destination 'platform=macOS' test
+```
 
-### 暂不合并
+## Repository layout
 
-- 未经讨论的大型新功能、模块或架构改造。
-- 大量 AI 生成的代码重写、格式化、迁移或“顺手优化”。
-- 会改变输入事件处理、权限提示、更新检查、旧用户数据读取或持久化格式的行为。
-- 一次性补全大量机器翻译，尤其是无法由母语使用者校对的翻译集。
+| Path | Contents |
+| --- | --- |
+| `Mos/` | The app: `ScrollCore`, `ButtonCore`, `InputEvent`, `Shortcut`, `Keys`, `Logi`, `Integration`, `Options`, `Managers`, `Components`, `Windows` |
+| `MosTests/` | Unit tests (XCTest) |
+| `Mos.xcodeproj/` | The Xcode project, schemes `Debug` and `Profile` |
+| `scripts/qa/` | The Logi boundary lint, also run by a test |
+| `tools/` | Hand-run HID++ probes and a small regression harness |
+| `docs/` | Design notes and plans, mostly from the original project |
+| `assets/` | Images and source artwork |
+| `AGENTS.md` | Rules for coding agents working in this repository |
+| `LOCALIZATION.md` | How the string catalogs work |
+| `CHANGELOG.md` | History of the original project up to the fork |
 
-我们欢迎任何形式的贡献，有任何建议或意见您可以给我们 [提问](https://github.com/Caldis/Mos/issues)。
+## Attribution and licence
 
-如果你对新增功能非常有热情，欢迎先在 [Discussions](https://github.com/Caldis/Mos/discussions) 发起讨论。
+Scrollio is based on **[Mos](https://github.com/Caldis/Mos)** by **Caldis**
+(Copyright © 2017-2026 Caldis).
 
-## 鸣谢
+Mos is licensed under the
+[Creative Commons Attribution-NonCommercial 4.0 International licence (CC BY-NC 4.0)](https://creativecommons.org/licenses/by-nc/4.0/),
+and so is Scrollio. A summary of the licence is in [LICENSE](LICENSE); the full text is
+at <https://creativecommons.org/licenses/by-nc/4.0/legalcode>.
 
-- [Charts](https://github.com/danielgindi/Charts)
-- [LoginServiceKit](https://github.com/Clipy/LoginServiceKit)
-- [Sparkle](https://github.com/sparkle-project/Sparkle)
-- [Smoothscroll-for-websites](https://github.com/galambalazs/smoothscroll-for-websites)
-- [Solaar](https://github.com/pwr-Solaar/Solaar)
+**This work has been modified.** Scrollio is not the original Mos. Among the changes:
+a new name, icon and bundle identifier; gesture navigation including the "follow the
+hand" mode; scroll presets, fast-scroll tuning and momentum; Logitech wheel settings,
+device-tracked gestures and haptics; the Mouse preferences tab; English as the only
+language; removal of the Sparkle updater, the website and the release tooling; a
+minimum system version of macOS 14.
 
-## License
+**Non-commercial use only.** Neither Scrollio nor anything derived from it may be used
+for commercial purposes, and it must not be distributed through the App Store.
 
-Copyright (c) 2017-2026 Caldis. All rights reserved.
+Caldis and the contributors to Mos do not endorse Scrollio and are not responsible for
+it. It comes with no warranty.
 
-Mos 使用 [CC BY-NC 4.0](http://creativecommons.org/licenses/by-nc/4.0/) 授权。请不要将 Mos 上传到 App Store。
+### Acknowledgements
+
+- [Mos](https://github.com/Caldis/Mos), the project this one is built on.
+- [Charts](https://github.com/danielgindi/Charts) (DGCharts), used by the scroll monitor window.
+- [Solaar](https://github.com/pwr-Solaar/Solaar), a reference for the Logitech HID++ protocol.
+- [Smoothscroll for websites](https://github.com/galambalazs/smoothscroll-for-websites),
+  credited by Mos for its smoothing approach.

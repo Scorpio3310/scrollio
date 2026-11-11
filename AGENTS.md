@@ -1,87 +1,140 @@
 # AGENTS.md
 
-本文件是 Mos 仓库的通用 agent 入口。Claude、Codex 和其他自动化编码代理都应从这里开始；工具专属入口文件只保留跳转，不复制长指令。
+The single guidance file for coding agents in this repository. Tool-specific entry files
+(`CLAUDE.md`) only point here; do not keep a second copy of these rules anywhere.
 
-## 指令优先级
+## Priority
 
-当不同文件或历史记录互相冲突时，按以下顺序执行：
+1. The user's current request and the system or tool safety rules.
+2. This file.
+3. `.agents/docs/code-map.md` and `LOCALIZATION.md`.
+4. The current sources, the Xcode project and the test plans.
+5. `docs/` and `CHANGELOG.md`. These are history, mostly from the original project:
+   background only, never the source for commands, structure or scope.
 
-1. 用户当前请求、系统/工具安全规则。
-2. 本文件 `AGENTS.md`。
-3. `.agents/INDEX.md` 指向的专题文档和 `.agents/skills/*`。
-4. 当前源码、Xcode 工程、test plan、`LOCALIZATION.md` 等活跃项目文件。
-5. `docs/`、`website/docs/` 中的历史设计、计划、复盘。
+## Before you start
 
-历史 plans 只能作为背景材料；构建命令、目录结构、target membership 和测试范围必须以当前工程为准。
+1. Read this file, then only the sources, tests and docs the task needs.
+2. Run `git status --short` and keep changes that are already there.
 
-## 启动流程
+## The project
 
-每个 agent 接手任务时先执行这组轻量索引：
+- Scrollio is a macOS menu-bar app: Swift 5, AppKit, an Xcode project, Swift packages
+  (DGCharts only). It is a personal, non-commercial fork of Mos by Caldis (CC BY-NC 4.0;
+  the attribution in `README.md` and the file headers stay).
+- Names: the products are `Scrollio.app` (`com.nikklemenc.Scrollio`) and
+  `Scrollio Debug.app` (`com.nikklemenc.Scrollio.debug`); the tests are
+  `com.nikklemenc.ScrollioTests`. The project, folders, targets and Swift modules keep
+  the old name: `Mos.xcodeproj`, `Mos/`, `MosTests/`, modules `Mos` (Release) and
+  `Mos_Debug` (Debug, what tests import).
+- Never rename persisted identifiers, even when they say "mos": UserDefaults keys, the
+  `mosScroll*` action identifiers, shortcut identifiers, the JSON key `managedByMos`,
+  Logi cache keys, CID and feature constants, storyboard object ids, string catalog keys.
+- Deployment target: macOS 14.0 for every target. Do not write fallbacks for older
+  systems. Gate only APIs newer than 14.0 (the existing `macOS 26` checks stay).
+- There is no updater, no release process and no remote of our own. The git remote
+  `upstream` is the original project: never push to it, never open issues or pull
+  requests there.
 
-1. 读本文件。
-2. 读 `.agents/INDEX.md`，按任务类型进入对应专题文档或 skill。
-3. 检查 `git status --short`，默认保留用户已有改动。
-4. 只读取与当前任务相关的源码、测试和文档。
-
-不要在 `CLAUDE.md`、未来的 `CODEX.md` 或其他工具入口里维护第二份规则；它们应只指向 `AGENTS.md`。
-
-## 项目硬约束
-
-- Mos 是 macOS 菜单栏应用，技术栈是 Swift 5、AppKit、Xcode 工程和 Swift Package Manager。
-- 最低系统版本是 macOS 10.13。新 API 必须有 availability gate 或 fallback。
-- 常规构建和测试使用共享 scheme `Debug`，不要用 `-target Mos` 代替。
-- 新增或移动 Swift 文件后，必须确认加入正确的 `Mos` / `MosTests` target，并跑一次相关 build 或 test。
-- UI 文案必须本地化；因为最低支持 macOS 10.13，Swift 代码使用 `NSLocalizedString(_:comment:)`，不要使用 `String(localized:)`。
-- Logi/HID、Accessibility、签名、notarization、发布和真实设备测试都属于高风险操作，必要时先向用户确认。
-- 危险命令：`xcodebuild test` 加 `CODE_SIGNING_ALLOWED=NO` 会把 `Mos Debug.app` 重签成 adhoc，改变代码签名身份，触发 macOS TCC 重新弹"允许访问"授权窗；若此时有完整 Mos 实例在跑（带全局 CGEvent tap），模态弹窗会占住主线程冻结全部鼠标键盘输入。验证代码优先用纯 `xcodebuild build`（只编译不启动、不改签名，与 Xcode ⌘B 等价）；确需跑 test 前先 `pgrep -fl "Mos Debug.app"` 确认无实例在跑，跑完用正常身份重新 build 把 app 签回去。
-
-## 常用命令
+## Commands
 
 ```bash
 xcodebuild -scheme Debug -configuration Debug -destination 'platform=macOS' build
 xcodebuild -scheme Debug -destination 'platform=macOS' test
 xcodebuild -scheme Debug -destination 'platform=macOS' test -only-testing:MosTests/<TestClassName>
-LOGI_REAL_DEVICE=1 xcodebuild -scheme Debug -testPlan DebugWithDevice -destination 'platform=macOS' test
+xcodebuild -scheme Debug -destination 'platform=macOS' test -only-testing:MosTests/<TestClassName>/<testMethodName>
+xcodebuild -scheme Debug -configuration Release -destination 'platform=macOS' build
 scripts/qa/lint-logi-boundary.sh
 ```
 
-真实设备测试前必须确认 Logi 设备已连接。`scripts/qa/lint-logi-boundary.sh` 用于守住 `Mos/Logi` 和 `Mos/Integration` 的边界。
+- Always use the shared scheme `Debug`. Never build with `-target Mos`.
+- **Never pass `CODE_SIGNING_ALLOWED=NO`.** It re-signs `Scrollio Debug.app` ad hoc.
+  The changed signature makes macOS ask for the Accessibility permission again, and if an
+  instance with its global event tap is running, that modal prompt blocks the main thread
+  and freezes all mouse and keyboard input. If it ever happened, rebuild normally to
+  restore the signature.
+- Keep the signing team and identities in the project as they are.
+- To check that code compiles, prefer a plain `build`: it starts nothing and changes no
+  signature.
+- Before `test`, make sure no debug instance runs: `pgrep -fl "Scrollio Debug.app"` must
+  print nothing. The tests run inside that app with its startup side effects off
+  (`AppRuntime`): the app's event taps and Logitech sessions are not started, the real
+  settings are not written and no login item is registered.
 
-## 质量门槛
+## Files and targets
 
-改动完成前，根据风险选择验证，不要只靠静态阅读宣称通过。最低要求：
+- `Mos/` is a file-system-synchronized group: a file placed there is compiled, or copied
+  into the app bundle, without a project edit. Put nothing there that should not ship.
+- `MosTests/` is **not** synchronized: a new test file must be added to
+  `Mos.xcodeproj/project.pbxproj` (file reference, group entry, build file, Sources
+  phase of the `MosTests` target). A file that is only created is not compiled.
+- After adding, moving or deleting Swift files, build or run the related tests.
 
-- bugfix 优先补回归测试；无法测试时说明原因和人工验证路径。
-- Swift 逻辑改动至少跑相关 `MosTests`。
-- Xcode 工程、target membership 或跨模块改动跑 Debug build。
-- Logi/HID 改动跑相关单测，并在涉及边界时跑 `scripts/qa/lint-logi-boundary.sh`。
-- 准备发布、更新 appcast、签名/notarization 或创建 GitHub release draft 时，必须使用 `release-preparation` skill，不要自行拼接发布流程。
-- 处理社区 PR（评估/审查/合并/关闭/批量扫描）与发版后回访 issue 时，必须使用 `community-pr-loop` skill（`.agents/skills/community-pr-loop/SKILL.md`），不要自行拼接处理流程。
+## Module boundaries
 
-最终汇报只列出已执行的相关验证、与本次改动直接相关但无法执行的验证，以及真实剩余风险。
+See `.agents/docs/code-map.md` for the map. The rules:
 
-更完整的测试矩阵和代码质量规则见 `.agents/docs/testing.md` 与 `.agents/docs/quality-gates.md`。
+- Logitech details (HID++ packets, device sessions, divert) stay inside `Mos/Logi/`.
+  The rest of the app talks to `LogiCenter` and `Mos/Integration/` only.
+  `scripts/qa/lint-logi-boundary.sh` enforces the allowlists and is run by
+  `LogiBoundaryEnforcementTests`; run it after any change in `Mos/Logi/` or
+  `Mos/Integration/`.
+- `Mos/ScrollCore/`, input event handling and HID callbacks are hot paths: no avoidable
+  allocations, no synchronous I/O, no heavy logging, no notifications, no UI or
+  persistence work in them.
+- ButtonCore, InputEvent, Shortcut and Keys share one meaning of recording, display,
+  persistence and execution. When you change one, check the others.
 
-## 人类确认边界
+## Localization
 
-AI 可以辅助实现、测试和整理文档，但这些动作必须由用户明确确认后再做：
+- English is the only language. The mechanism stays: two string catalogs that must stay
+  separate (`Mos/Localizable.xcstrings` for Swift, `Mos/mul.lproj/Main.xcstrings` for the
+  storyboard).
+- Every user-visible string is localized. In Swift use `NSLocalizedString(_:comment:)`,
+  not `String(localized:)`.
+- `PreferencesLocalizationTests` checks that the keys of the preferences panels exist,
+  are not shown as raw keys and keep their format specifiers. Add the keys of new
+  preferences strings to its list.
+- Details and the steps for adding a language: `LOCALIZATION.md`.
 
-- 发布 GitHub release、推送发布分支、提交 notarization 或签名相关变更。
-- 运行真实设备测试或需要用户本机权限/设备状态的操作。
-- 提交安全报告、批量创建 issue/PR、或替用户对外声明维护结论。
-- 修改会影响旧用户数据读取、更新检测、权限提示或持久化格式的行为。
+## Verification
 
-确认边界不是普通任务的检查清单。只有当高风险动作与当前请求直接相关时，才说明需要用户确认；不要把未请求的高风险流程列为普通提交的剩余风险。
+Choose by risk, and run it: reading the code is not verification.
 
-最终交付必须能解释改动原因、验证证据和剩余风险。
+| Change | Minimum | Also |
+| --- | --- | --- |
+| Docs, agent files | `git diff --check`, check paths and links | search for old paths |
+| Swift logic | the related `MosTests` class | full test run |
+| New, moved or deleted Swift file; project or target change | Debug build | related tests |
+| ScrollCore hot path | ScrollCore, Interpolator, ScrollFilter tests | full run; the owner scrolls by hand |
+| ButtonCore, Shortcut, InputEvent | ButtonBinding, InputProcessor, ShortcutExecutor tests | the owner checks the Buttons pane |
+| Logi, HID | the `MosTests/Logi*` tests and the boundary lint | real-device tests, by the owner |
+| UI text | catalogs in sync, `PreferencesLocalizationTests` | long text, dark mode |
 
-发布流程中的 push、publish 和对外可见 release 动作必须单独列为“用户确认后执行”，不要混入 agent 可直接执行的主命令序列。
+- A bug fix gets a regression test that covers the old failure. If it cannot be automated,
+  say why, what was checked by hand or by reading, and what the owner still has to confirm.
+- Prefer testable shapes: pure logic, planners, packet builders, small injected seams and
+  test doubles. Do not widen an API only for a test.
+- A change to anything persisted needs a canary or migration test, or a clear statement
+  of the risk.
 
-## 索引入口
+## What needs the owner
 
-- `.agents/INDEX.md`：任务类型到文档/skill 的路由表。
-- `.agents/docs/code-map.md`：模块地图和边界说明。
-- `.agents/docs/testing.md`：构建、测试、真实设备和发布验证矩阵。
-- `.agents/docs/quality-gates.md`：可测试性、热路径、持久化、本地化和发布质量门槛。
-- `.agents/skills/README.md`：仓库内 agent skills 清单。
-- `LOCALIZATION.md`：完整本地化指南。
+Do these only when the owner asked for them explicitly:
+
+- Anything with real hardware or the live system: real-device tests
+  (`LOGI_REAL_DEVICE=1 xcodebuild -scheme Debug -testPlan DebugWithDevice -destination 'platform=macOS' test`,
+  mouse connected), HID traffic, posting synthetic input events, launching the app while
+  the owner's installed copy runs, anything that depends on the Accessibility permission.
+- Changes to signing, entitlements or notarization.
+- Changes to how existing settings are read, to persistence formats or to permission
+  prompts.
+- Pushing, publishing, or anything visible outside this machine.
+
+This is not a checklist for ordinary tasks: mention it only when such an action is part
+of the request.
+
+## Reporting
+
+Say why the change was made, what verification you actually ran, which relevant
+verification you could not run, and the risks that remain. Nothing else.

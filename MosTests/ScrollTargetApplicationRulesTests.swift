@@ -174,4 +174,21 @@ final class ScrollTargetApplicationRulesTests: XCTestCase {
         // 未添加的其他路径不应命中
         XCTAssertNil(ScrollUtils.shared.getTargetApplication(from: current))
     }
+
+    // MARK: - Launchpad
+
+    /// Before macOS 26, Launchpad is drawn by the Dock process; only a scroll aimed at the
+    /// Dock counts as a scroll in Launchpad.
+    func testOnlyTheDockHostsLaunchpad() {
+        XCTAssertTrue(ScrollUtils.isLaunchpadHost(executablePath: "/System/Library/CoreServices/Dock.app/Contents/MacOS/Dock"))
+        XCTAssertFalse(ScrollUtils.isLaunchpadHost(executablePath: "/Applications/Safari.app/Contents/MacOS/Safari"))
+        XCTAssertFalse(ScrollUtils.isLaunchpadHost(executablePath: nil))
+    }
+
+    /// The test host is not the Dock, and a missing target is never Launchpad. No state is
+    /// kept between calls: the answer for one app must not depend on the app asked before.
+    func testLaunchpadActivityForOtherTargets() {
+        XCTAssertFalse(ScrollUtils.shared.getLaunchpadActivity(withRunningApplication: nil))
+        XCTAssertFalse(ScrollUtils.shared.getLaunchpadActivity(withRunningApplication: NSRunningApplication.current))
+    }
 }

@@ -153,7 +153,6 @@ final class ButtonBindingTests: XCTestCase {
     func testHoverIntentPopoverControllerHandlesCloseCallback() {
         let controller = HoverIntentPopoverController()
 
-        XCTAssertTrue(controller is NSPopoverDelegate)
         XCTAssertTrue(controller.responds(to: #selector(NSPopoverDelegate.popoverDidClose(_:))))
     }
 

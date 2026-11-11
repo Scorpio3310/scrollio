@@ -44,4 +44,45 @@ final class InterceptorAutoRestartTests: XCTestCase {
         let later = now.addingTimeInterval(61)
         XCTAssertFalse(Interceptor.isAutoRestartThrottled(history: history, now: later))
     }
+
+    // MARK: - Keeper replacement
+
+    /// start() and restart() install a new keeper timer. The one it replaces must be
+    /// invalidated first, otherwise it stays scheduled and keeps restarting the tap.
+    func testReplacingTheKeeperInvalidatesThePreviousTimer() {
+        var keeper: Timer?
+        let first = Timer(timeInterval: 60, repeats: true) { _ in }
+        let second = Timer(timeInterval: 60, repeats: true) { _ in }
+
+        Interceptor.replaceKeeper(&keeper, with: first)
+        XCTAssertTrue(keeper === first)
+        XCTAssertTrue(first.isValid)
+
+        Interceptor.replaceKeeper(&keeper, with: second)
+        XCTAssertTrue(keeper === second)
+        XCTAssertFalse(first.isValid, "the replaced keeper must not keep firing")
+        XCTAssertTrue(second.isValid)
+
+        Interceptor.replaceKeeper(&keeper, with: nil)
+        XCTAssertNil(keeper)
+        XCTAssertFalse(second.isValid)
+    }
+
+    /// A scheduled keeper that was replaced never fires again.
+    func testAReplacedScheduledKeeperDoesNotFire() {
+        var keeper: Timer?
+        var firstFired = false
+        let secondFired = expectation(description: "the current keeper fires")
+
+        Interceptor.replaceKeeper(&keeper, with: Timer.scheduledTimer(withTimeInterval: 0.01, repeats: false) { _ in
+            firstFired = true
+        })
+        Interceptor.replaceKeeper(&keeper, with: Timer.scheduledTimer(withTimeInterval: 0.02, repeats: false) { _ in
+            secondFired.fulfill()
+        })
+
+        wait(for: [secondFired], timeout: 2)
+        XCTAssertFalse(firstFired)
+        Interceptor.replaceKeeper(&keeper, with: nil)
+    }
 }

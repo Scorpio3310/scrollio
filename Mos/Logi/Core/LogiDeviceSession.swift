@@ -2883,6 +2883,9 @@ class LogiDeviceSession {
             send: { [weak self] functionId, params in
                 self?.sendWheelRequest(slot: slot, featureIndex: index, functionId: functionId, params: params)
             },
+            schedule: { delay, work in
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+            },
             onChange: {
                 LogiSessionManager.shared.notifyWheelStateChanged()
             },

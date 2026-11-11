@@ -100,7 +100,7 @@ extension Interceptor {
         // 启动拦截层
         CGEvent.tapEnable(tap: tap, enable: true)
         // 启动守护
-        keeper = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        Self.replaceKeeper(&keeper, with: Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             // 权限被撤销时, 主动停止 tap 并通知, 不等 restart 判断
             guard AXIsProcessTrusted() else {
@@ -120,7 +120,15 @@ extension Interceptor {
                 self.autoRestartHistory.append(now)
                 self.restart()
             }
-        }
+        })
+    }
+
+    /// Installs a keeper timer, invalidating the one it replaces. A replaced timer that is
+    /// still scheduled keeps firing: a second start() used to leave the first repeating
+    /// keeper running for as long as the Interceptor lived.
+    static func replaceKeeper(_ keeper: inout Timer?, with timer: Timer?) {
+        keeper?.invalidate()
+        keeper = timer
     }
     
     public func stop() {
@@ -133,8 +141,7 @@ extension Interceptor {
 
     private func stop(removeFromRunLoop: Bool) {
         // 停止守护
-        keeper?.invalidate()
-        keeper = nil
+        Self.replaceKeeper(&keeper, with: nil)
         // 关闭拦截层
         if let tap = _eventTapRef, let source = _runLoopSourceRef {
             CGEvent.tapEnable(tap: tap, enable: false)
@@ -167,8 +174,8 @@ extension Interceptor {
         onRestart?()
         guard shouldRestart?() ?? true else { return }
         // 使用 closure timer 避免 @objc throws 方法作为 selector 的 ObjC bridge 问题
-        keeper = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+        Self.replaceKeeper(&keeper, with: Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
             try? self?.start()
-        }
+        })
     }
 }

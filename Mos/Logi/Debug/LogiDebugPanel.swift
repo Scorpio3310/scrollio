@@ -554,10 +554,16 @@ class LogiDebugPanel: NSObject {
     }
     #endif
 
-    private static func timestamp() -> String {
+    /// One formatter for every log line. `timestamp` runs for each HID++ report, and a
+    /// DateFormatter is expensive to create; reading from one is thread-safe.
+    private static let timestampFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss.SSS"
-        return f.string(from: Date())
+        return f
+    }()
+
+    static func timestamp(for date: Date = Date()) -> String {
+        return timestampFormatter.string(from: date)
     }
 
     #if DEBUG
@@ -616,11 +622,7 @@ class LogiDebugPanel: NSObject {
         effectView.state = .active
         effectView.blendingMode = .behindWindow
         panel.appearance = NSAppearance(named: .vibrantDark)
-        if #available(macOS 10.14, *) {
-            effectView.material = .hudWindow
-        } else {
-            effectView.material = .dark
-        }
+        effectView.material = .hudWindow
         panel.contentView = effectView
 
         let topInset = resolvedTopInset(for: panel)
@@ -1137,7 +1139,7 @@ class LogiDebugPanel: NSObject {
             btn.layer?.backgroundColor = color.withAlphaComponent(0.3).cgColor
             btn.layer?.cornerRadius = 3
             btn.font = NSFont.systemFont(ofSize: 9, weight: .medium)
-            if #available(macOS 10.14, *) { btn.contentTintColor = color }
+            btn.contentTintColor = color
             btn.tag = i
             btn.frame = NSRect(x: fx, y: 4, width: 38, height: 20)
             btn.autoresizingMask = []
@@ -2377,7 +2379,7 @@ class LogiDebugPanel: NSObject {
         btn.layer?.borderWidth = 1
         btn.layer?.cornerRadius = 4
         btn.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-        if #available(macOS 10.14, *) { btn.contentTintColor = .labelColor }
+        btn.contentTintColor = .labelColor
         return btn
     }
 
@@ -2406,7 +2408,7 @@ class LogiDebugPanel: NSObject {
         btn.layer?.borderWidth = 1
         btn.layer?.cornerRadius = 4
         btn.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        if #available(macOS 10.14, *) { btn.contentTintColor = .labelColor }
+        btn.contentTintColor = .labelColor
         return btn
     }
 
@@ -2418,7 +2420,7 @@ class LogiDebugPanel: NSObject {
         p.layer?.borderWidth = 1
         p.layer?.cornerRadius = 4
         p.font = NSFont.systemFont(ofSize: 11)
-        if #available(macOS 10.14, *) { p.contentTintColor = .labelColor }
+        p.contentTintColor = .labelColor
     }
 
     private func configureDarkScroll(_ sv: NSScrollView) {

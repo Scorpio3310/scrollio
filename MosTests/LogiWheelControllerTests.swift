@@ -12,11 +12,14 @@ final class LogiWheelControllerTests: XCTestCase {
 
     private var sent: [Sent] = []
     private var changes = 0
+    /// Reply timeouts the controller asked for; a test runs them when "2 s later" should happen.
+    private var scheduled: [(delay: TimeInterval, work: () -> Void)] = []
 
     override func setUp() {
         super.setUp()
         sent = []
         changes = 0
+        scheduled = []
     }
 
     private func makeController(_ feature: LogiWheelFeature) -> LogiWheelController {
@@ -26,9 +29,21 @@ final class LogiWheelControllerTests: XCTestCase {
             send: { [unowned self] functionId, params in
                 self.sent.append(Sent(functionId: functionId, params: params))
             },
+            schedule: { [unowned self] delay, work in
+                self.scheduled.append((delay, work))
+            },
             onChange: { [unowned self] in self.changes += 1 }
         )
     }
+
+    /// Lets every pending reply timeout expire, as the main queue would after the delay.
+    private func expireReplyTimeouts() {
+        let work = scheduled
+        scheduled = []
+        work.forEach { $0.work() }
+    }
+
+    private var capabilityReads: [Sent] { sent.filter { $0.functionId == 0 } }
 
     private func report(functionId: UInt8, payload: [UInt8]) -> [UInt8] {
         var bytes: [UInt8] = [0x11, 0xFF, 0x0E, (functionId << 4) | 0x01] + payload
@@ -158,6 +173,148 @@ final class LogiWheelControllerTests: XCTestCase {
         wheel.handleError(functionId: 1, errorCode: 0x05)
         XCTAssertNil(wheel.pendingSettings)
         XCTAssertTrue(writes.isEmpty)
+    }
+
+    // MARK: - Lost capabilities reply
+
+    func testCapabilitiesRead_armsAReplyTimeout() {
+        let wheel = makeController(.smartShiftEnhanced)
+        wheel.start(desired: .default)
+        XCTAssertEqual(scheduled.map { $0.delay }, [LogiWheelController.replyTimeout])
+        XCTAssertFalse(wheel.capabilitiesKnown)
+    }
+
+    func testBasicFeature_hasNoCapabilitiesRead_andNoTimeout() {
+        let wheel = makeController(.smartShift)
+        wheel.start(desired: settings(.ratchet))
+        XCTAssertTrue(scheduled.isEmpty)
+    }
+
+    /// The regression: one lost reply used to hold managed writes back until reconnect.
+    func testLostCapabilitiesReply_isAskedAgain_thenTheWriteGoesOut() {
+        let wheel = makeController(.smartShiftEnhanced)
+        wheel.start(desired: settings(.freeSpin, force: 60))
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0x10, 0x32]))
+        XCTAssertTrue(writes.isEmpty, "torque support unknown yet")
+
+        expireReplyTimeouts()
+        XCTAssertEqual(capabilityReads.count, 2, "the read is repeated")
+        XCTAssertTrue(writes.isEmpty)
+
+        wheel.handleResponse(functionId: 0, report: report(functionId: 0, payload: [0x01, 0x10, 0x32]))
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x01, 0x00, 60])])
+        XCTAssertTrue(wheel.supportsScrollForce)
+    }
+
+    func testCapabilitiesNeverAnswered_managedWriteGoesOutWithoutTorque() {
+        let wheel = makeController(.smartShiftEnhanced)
+        wheel.start(desired: settings(.ratchet, force: 60))
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x01, 0x10, 0x32]))
+
+        for _ in 0..<LogiWheelController.maxCapabilitiesAttempts { expireReplyTimeouts() }
+
+        XCTAssertEqual(capabilityReads.count, LogiWheelController.maxCapabilitiesAttempts)
+        XCTAssertTrue(scheduled.isEmpty, "no further read is waiting")
+        XCTAssertTrue(wheel.capabilitiesKnown)
+        XCTAssertFalse(wheel.supportsScrollForce)
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x02, 0xFF, 0x00])])
+        XCTAssertNil(wheel.pendingSettings)
+    }
+
+    func testCapabilitiesNeverAnswered_statusArrivingLater_stillWrites() {
+        let wheel = makeController(.smartShiftEnhanced)
+        wheel.start(desired: settings(.ratchet, force: 60))
+        for _ in 0..<LogiWheelController.maxCapabilitiesAttempts { expireReplyTimeouts() }
+        XCTAssertTrue(writes.isEmpty, "still waiting for the status read")
+
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x01, 0x10, 0x32]))
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x02, 0xFF, 0x00])])
+    }
+
+    func testAnsweredCapabilities_timeoutDoesNothing() {
+        let wheel = makeController(.smartShiftEnhanced)
+        wheel.start(desired: settings(.freeSpin, force: 60))
+        wheel.handleResponse(functionId: 0, report: report(functionId: 0, payload: [0x01, 0x10, 0x32]))
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0x10, 0x32]))
+        let before = sent
+
+        expireReplyTimeouts()
+
+        XCTAssertEqual(sent, before)
+        XCTAssertTrue(scheduled.isEmpty)
+        XCTAssertTrue(wheel.supportsScrollForce)
+    }
+
+    func testCapabilitiesError_timeoutDoesNothing() {
+        let wheel = makeController(.smartShiftEnhanced)
+        wheel.start(desired: settings(.ratchet, force: 60))
+        wheel.handleError(functionId: 0, errorCode: 0x02)
+        let before = sent
+
+        expireReplyTimeouts()
+
+        XCTAssertEqual(sent, before)
+        XCTAssertTrue(scheduled.isEmpty)
+    }
+
+    /// A timeout only speaks for the read it was armed for.
+    func testStaleTimeoutOfAnEarlierRead_isIgnored() {
+        let wheel = makeController(.smartShiftEnhanced)
+        wheel.start(desired: .default)
+        let first = scheduled[0].work
+
+        first()
+        XCTAssertEqual(capabilityReads.count, 2)
+        first()
+        XCTAssertEqual(capabilityReads.count, 2, "the first read's timeout fired twice")
+    }
+
+    func testUnmanaged_timeoutsNeverWrite() {
+        let wheel = makeController(.smartShiftEnhanced)
+        wheel.start(desired: settings(.ratchet, managed: false))
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x01, 0x10, 0x32]))
+
+        for _ in 0..<LogiWheelController.maxCapabilitiesAttempts { expireReplyTimeouts() }
+
+        XCTAssertTrue(writes.isEmpty)
+        XCTAssertEqual(wheel.mode, .freeSpin)
+    }
+
+    func testAfterGivingUp_theNextRefreshAsksAgain_andLateCapabilitiesCompleteTheWrite() {
+        let wheel = makeController(.smartShiftEnhanced)
+        wheel.start(desired: settings(.ratchet, force: 60))
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x01, 0x10, 0x32]))
+        for _ in 0..<LogiWheelController.maxCapabilitiesAttempts { expireReplyTimeouts() }
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x02, 0xFF, 0x00])])
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0xFF, 0x32]))
+        sent.removeAll()
+
+        wheel.refresh()
+        XCTAssertEqual(sent, [Sent(functionId: 0, params: []), Sent(functionId: 1, params: [])])
+        XCTAssertFalse(wheel.capabilitiesKnown, "asked again, so unknown again until answered")
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0xFF, 0x32]))
+        XCTAssertTrue(writes.isEmpty)
+
+        // The mouse answers this time and can tune the force: the force that could not be
+        // written before goes out now, after a fresh status read.
+        wheel.handleResponse(functionId: 0, report: report(functionId: 0, payload: [0x01, 0x10, 0x32]))
+        XCTAssertEqual(sent.last, Sent(functionId: 1, params: []))
+        XCTAssertTrue(writes.isEmpty, "must wait for the fresh status read")
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0xFF, 0x32]))
+        XCTAssertEqual(writes, [Sent(functionId: 2, params: [0x02, 0xFF, 60])])
+    }
+
+    func testLateCapabilitiesWithoutTunableTorque_writeNothingMore() {
+        let wheel = makeController(.smartShiftEnhanced)
+        wheel.start(desired: settings(.ratchet, force: 60))
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x01, 0x10, 0x32]))
+        for _ in 0..<LogiWheelController.maxCapabilitiesAttempts { expireReplyTimeouts() }
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0xFF, 0x32]))
+        XCTAssertEqual(writes.count, 1)
+
+        wheel.handleResponse(functionId: 0, report: report(functionId: 0, payload: [0x00, 0x10, 0x32]))
+        XCTAssertEqual(writes.count, 1)
+        XCTAssertNil(wheel.pendingSettings)
     }
 
     // MARK: - Apply while connected

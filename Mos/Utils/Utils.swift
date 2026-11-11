@@ -7,46 +7,29 @@
 //
 
 import Cocoa
-import LoginServiceKit
 
 // 实用方法
 public class Utils {
 
     /// Determines whether the app is currently in Dark Mode.
-    /// - Parameter view: An optional view to help infer appearance on macOS 10.13 and earlier.
+    /// - Parameter view: Unused; kept for the callers (it helped on macOS 10.13 and earlier).
     /// - Returns: `true` if the effective appearance is dark-like, otherwise `false`.
     class func isDarkMode(for view: NSView?) -> Bool {
-        if #available(macOS 10.14, *) {
-            // 10.14+ Use effectiveAppearance to determine dark mode
-            let appearance = NSApp.effectiveAppearance
-            return appearance
-                .bestMatch(
-                    from: [
-                        .darkAqua,
-                        .vibrantDark,
-                        .accessibilityHighContrastDarkAqua,
-                        .accessibilityHighContrastVibrantDark
-                    ]
-                ) != nil
-        } else {
-            // 10.13 and earlier: approximate using window or view appearance name
-            let appearance = view?.window?.appearance ?? view?.appearance
-            let name = appearance?.name.rawValue.lowercased() ?? ""
-            return name.contains("vibrantdark") || name.contains("dark")
-        }
+        return NSApp.effectiveAppearance
+            .bestMatch(
+                from: [
+                    .darkAqua,
+                    .vibrantDark,
+                    .accessibilityHighContrastDarkAqua,
+                    .accessibilityHighContrastVibrantDark
+                ]
+            ) != nil
     }
 
 
-    // 切换自启
+    // 切换自启 (SMAppService.mainApp, 见 LoginItem.swift)
     class func launchAtStartup(on: Bool) {
-        let bundlePath = Bundle.main.bundlePath
-        if on {
-            if !LoginServiceKit.isExistLoginItems(at: bundlePath) {
-                LoginServiceKit.addLoginItems(at: bundlePath)
-            }
-        } else {
-            LoginServiceKit.removeLoginItems(at: bundlePath)
-        }
+        LoginItem.setEnabled(on)
     }
     
     // 菜单
@@ -72,16 +55,11 @@ public class Utils {
     // 动画
     // 需要设置 allowsImplicitAnimation = true 才能让 contentSize 有动画, https://stackoverflow.com/a/46946957/6727040
     class func groupAnimatorContainer(_ group: (NSAnimationContext?)->Void, completionHandler: @escaping ()->Void = {()}) {
-        if #available(OSX 10.12, *) {
-            NSAnimationContext.runAnimationGroup({ (context) -> Void in
-                context.duration = ANIMATION.duration
-                context.allowsImplicitAnimation = true
-                group(context)
-            }, completionHandler: completionHandler)
-        } else {
-            group(nil)
-            completionHandler()
-        }
+        NSAnimationContext.runAnimationGroup({ (context) -> Void in
+            context.duration = ANIMATION.duration
+            context.allowsImplicitAnimation = true
+            group(context)
+        }, completionHandler: completionHandler)
     }
     class func groupAnimatorContainer(_ group: (NSAnimationContext?)->Void, headHandler: @escaping ()->Void = {()}, completionHandler: @escaping ()->Void = {()}) {
         headHandler()
@@ -101,19 +79,28 @@ public class Utils {
     // 禁止重复运行
     // killExist = true 则杀掉已有进程, 否则自杀
     class func preventMultiRunning(killExist kill: Bool = false) {
-        // 自己的 BundleId
-        let mainBundleID = Bundle.main.bundleIdentifier!
-        // 如果检测到在运行
-        if NSRunningApplication.runningApplications(withBundleIdentifier: mainBundleID).count > 1 {
-            if kill {
-                let runningInst = NSRunningApplication.runningApplications(withBundleIdentifier: mainBundleID)[0]
-                runningInst.terminate()
-                NSLog("Terminate: Other instance", runningInst.processIdentifier)
-            } else {
-                NSApp.terminate(nil)
-                NSLog("Terminate: Suicide")
+        guard let mainBundleID = Bundle.main.bundleIdentifier else { return }
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: mainBundleID)
+        let others = otherInstanceProcessIdentifiers(
+            running: running.map { $0.processIdentifier },
+            own: ProcessInfo.processInfo.processIdentifier
+        )
+        guard !others.isEmpty else { return }
+        if kill {
+            for instance in running where others.contains(instance.processIdentifier) {
+                instance.terminate()
+                NSLog("Terminate: Other instance %d", instance.processIdentifier)
             }
+        } else {
+            NSLog("Terminate: Suicide")
+            NSApp.terminate(nil)
         }
+    }
+    /// Process ids of the other running copies of this app. Never contains `own`: the list
+    /// from NSRunningApplication includes this process, in no guaranteed position, and
+    /// "terminate the first one" could pick the instance that is starting up.
+    class func otherInstanceProcessIdentifiers(running: [pid_t], own: pid_t) -> [pid_t] {
+        return running.filter { $0 != own }
     }
     
     // 从 StoryBroad 获取一个特定 Controller 的实例
@@ -233,8 +220,11 @@ public class Utils {
         return parseName(fromPath: validPath)
     }
     class func parseName(fromPath path: String) -> String {
-        let applicationRawName = FileManager().displayName(atPath: path).removingPercentEncoding!
-        return Utils.removingRegexMatches(target: applicationRawName, pattern: ".app")
+        let displayName = FileManager().displayName(atPath: path)
+        // removingPercentEncoding is nil for a name with a stray "%" ("50% Off.app").
+        let applicationRawName = displayName.removingPercentEncoding ?? displayName
+        // Only the extension: a bare ".app" pattern also matches inside names ("Snapper").
+        return Utils.removingRegexMatches(target: applicationRawName, pattern: "\\.app$")
     }
     
     static var runningApplicationThreshold = 60.0

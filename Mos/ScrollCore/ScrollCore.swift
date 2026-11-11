@@ -39,6 +39,16 @@ class ScrollCore: ScrollActionPort {
     var scrollEventInterceptor: Interceptor?
     var hotkeyEventInterceptor: Interceptor?
     var mouseEventInterceptor: Interceptor?
+    /// Creates one of the three event taps. Tests replace it to make a tap fail.
+    var makeInterceptor: (CGEventMask, @escaping CGEventTapCallBack, CGEventTapOptions) throws -> Interceptor = { mask, callback, options in
+        try Interceptor(
+            event: mask,
+            handleBy: callback,
+            listenOn: .cgAnnotatedSessionEventTap,
+            placeAt: .tailAppendEventTap,
+            for: options
+        )
+    }
     // 拦截掩码
     let scrollEventMask = CGEventMask(1 << CGEventType.scrollWheel.rawValue)
     let hotkeyEventMask: CGEventMask = {
@@ -493,35 +503,23 @@ class ScrollCore: ScrollActionPort {
         isActive = true
         // 启动事件拦截层
         do {
-            scrollEventInterceptor = try Interceptor(
-                event: scrollEventMask,
-                handleBy: scrollEventCallBack,
-                listenOn: .cgAnnotatedSessionEventTap,
-                placeAt: .tailAppendEventTap,
-                for: .defaultTap
-            )
+            scrollEventInterceptor = try makeInterceptor(scrollEventMask, scrollEventCallBack, .defaultTap)
             scrollEventInterceptor?.onRestart = {
                 ScrollPoster.shared.stop(.TrackingEnd)
             }
-            hotkeyEventInterceptor = try Interceptor(
-                event: hotkeyEventMask,
-                handleBy: hotkeyEventCallBack,
-                listenOn: .cgAnnotatedSessionEventTap,
-                placeAt: .tailAppendEventTap,
-                for: .listenOnly
-            )
-            mouseEventInterceptor = try Interceptor(
-                event: mouseLeftEventMask,
-                handleBy: mouseLeftEventCallBack,
-                listenOn: .cgAnnotatedSessionEventTap,
-                placeAt: .tailAppendEventTap,
-                for: .listenOnly
-            )
+            hotkeyEventInterceptor = try makeInterceptor(hotkeyEventMask, hotkeyEventCallBack, .listenOnly)
+            mouseEventInterceptor = try makeInterceptor(mouseLeftEventMask, mouseLeftEventCallBack, .listenOnly)
             // 初始化滚动事件发送器
             ScrollPoster.shared.create()
             ScrollPoster.shared.startKeeper()
         } catch {
-            print("[ScrollCore] Create Interceptor failure: \(error)")
+            NSLog("[ScrollCore] Create Interceptor failure: \(error)")
+            // Roll back: without its taps the core must not count as active, or every later
+            // enable() returns early and scrolling stays unhandled until the app restarts.
+            // A tap that was already created is stopped and released here as well.
+            // (If the accessibility permission is the reason, the permission-lost handler has
+            // already run disable() and this call is a no-op.)
+            disable()
         }
     }
     // 停止

@@ -77,6 +77,14 @@ struct ScrollOutgoingFrame: Equatable {
     }
 }
 
+/// The display link found the motion finished and asks the main thread to end the session.
+struct ScrollStopRequest: Equatable {
+    /// Phase to end with (`ScrollPoster.stop(_:)`).
+    let phase: Phase
+    /// The wheel input the request was made after (`ScrollPoster.inputSequence`).
+    let inputSequence: UInt64
+}
+
 class ScrollPoster {
 
     // 单例
@@ -128,6 +136,11 @@ class ScrollPoster {
     private let manualSeparationThreshold: CFTimeInterval = 0.45
     private let trackingEndAdvance: CFTimeInterval = 0.04
     private let momentumEndDelay: CFTimeInterval = 0.13
+    // Ending a session from the display link (see `displayLinkFrameLocked`)
+    /// Counts wheel inputs; a stop the display link asked for is dropped when it is stale.
+    private var inputSequence: UInt64 = 0
+    /// Input sequence of the stop request already handed to the main thread; nil = none yet.
+    private var requestedStopSequence: UInt64?
     // 状态锁和投递上下文
     private var stateLock = os_unfair_lock_s()
     private let dispatchContext: ScrollDispatchContext
@@ -197,6 +210,7 @@ extension ScrollPoster {
     }
     /// 处理一次滚轮输入: 手势方式, 缓冲, 滑行与阶段 (调用方须持有 stateLock)
     private func handleInputLocked(_ input: ScrollPosterInput, at now: CFTimeInterval) {
+        inputSequence &+= 1
         let next = gestureMode(for: input)
         if gesture.precise {
             // 滑行中反向拨动一格: 停止滑行, 这一格本身不滚动
@@ -420,6 +434,22 @@ extension ScrollPoster {
         defer { os_unfair_lock_unlock(&stateLock) }
         return processFrameLocked(frameInterval: frameInterval, now: now)
     }
+    /// One display frame at `now`, exactly as the display link runs it but without the hop
+    /// to the main thread: returns the stop request the frame makes, if any.
+    func displayLinkFrameForTests(frameInterval: Double, now: CFTimeInterval) -> ScrollStopRequest? {
+        os_unfair_lock_lock(&stateLock)
+        defer { os_unfair_lock_unlock(&stateLock) }
+        return displayLinkFrameLocked(frameInterval: frameInterval, now: now)
+    }
+    /// The whole display link callback at `now`, including the hop to the main thread.
+    func displayLinkCallbackForTests(frameInterval: Double, now: CFTimeInterval) {
+        os_unfair_lock_lock(&stateLock)
+        let request = displayLinkFrameLocked(frameInterval: frameInterval, now: now)
+        os_unfair_lock_unlock(&stateLock)
+        if let request = request {
+            scheduleStop(request)
+        }
+    }
     /// Signed glide velocity in px/s (0 = no glide).
     var coastVelocityForTests: Double {
         os_unfair_lock_lock(&stateLock)
@@ -548,6 +578,23 @@ extension ScrollPoster {
         }
 #endif
     }
+    /// Carries out a stop the display link asked for. Main thread only.
+    ///
+    /// A request is stale when a wheel input arrived after it was made: that input belongs to
+    /// the motion now, the display link is still running, and a later frame asks again once
+    /// the motion has really ended. Wheel inputs only arrive on the main thread, so none can
+    /// slip in between this check and the reset in `stop(_:)`.
+    /// - Returns: false when the request was stale and nothing was done.
+    @discardableResult
+    func performRequestedStop(_ request: ScrollStopRequest) -> Bool {
+        assertMainThread()
+        os_unfair_lock_lock(&stateLock)
+        let isCurrent = request.inputSequence == inputSequence
+        os_unfair_lock_unlock(&stateLock)
+        guard isCurrent else { return false }
+        stop(request.phase)
+        return true
+    }
     // 重建 CVDisplayLink (带冷却期)
     @discardableResult
     func recreateDisplayLink() -> Bool {
@@ -667,16 +714,42 @@ private extension ScrollPoster {
         }
     }
 
-    // 处理滚动事件
+    // 处理滚动事件 (CVDisplayLink 线程)
     func processing(outputTime: CVTimeStamp) {
         os_unfair_lock_lock(&stateLock)
         let now = CFAbsoluteTimeGetCurrent()
         lastCallbackTime = now
-        let pendingStopPhase = processFrameLocked(frameInterval: frameIntervalLocked(outputTime), now: now)
+        let request = displayLinkFrameLocked(frameInterval: frameIntervalLocked(outputTime), now: now)
         os_unfair_lock_unlock(&stateLock)
-        if let phase = pendingStopPhase {
-            stop(phase)
-            return
+        if let request = request {
+            scheduleStop(request)
+        }
+    }
+
+    /// One display frame. When the motion has ended it returns a request to end the session
+    /// instead of ending it: the display link thread never calls `stop(_:)` itself.
+    /// Caller holds stateLock.
+    ///
+    /// `stop(_:)` belongs to the main thread, where the wheel inputs arrive:
+    /// - it reads `poster`, which the main thread replaces when it recreates the display link;
+    /// - it asks ScrollUtils whether the target is Chrome, which updates a cache that the
+    ///   scroll tap callback uses without a lock;
+    /// - it resets the state. Called from here it had to give up stateLock first, and a wheel
+    ///   tick that arrived in that gap was wiped by the reset although its event had already
+    ///   been swallowed.
+    ///
+    /// At most one request is made per wheel input: in precise mode every frame of a finished
+    /// motion asks for the stop again until the main thread has carried it out.
+    func displayLinkFrameLocked(frameInterval: Double, now: CFTimeInterval) -> ScrollStopRequest? {
+        guard let phase = processFrameLocked(frameInterval: frameInterval, now: now) else { return nil }
+        guard requestedStopSequence != inputSequence else { return nil }
+        requestedStopSequence = inputSequence
+        return ScrollStopRequest(phase: phase, inputSequence: inputSequence)
+    }
+
+    func scheduleStop(_ request: ScrollStopRequest) {
+        DispatchQueue.main.async { [weak self] in
+            self?.performRequestedStop(request)
         }
     }
 

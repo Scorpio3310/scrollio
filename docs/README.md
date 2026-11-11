@@ -1,11 +1,8 @@
-# Mos Documentation
+# Documentation
 
-This directory contains hand-written project documentation, implementation
-plans, and design notes.
+Design notes, plans and post-mortems. Most of them were written for the original
+project (Mos) and describe its state at the time: paths, commands, the website, the
+release process and the minimum system version in them may no longer exist.
 
-GitHub Pages is no longer published from this directory. The website source
-lives in `website/`, the generated static artifact is `website/out/`, and
-deployment is handled by `.github/workflows/pages.yml`.
-
-Sparkle public release sources live in `release/` and are copied into the
-GitHub Pages artifact during the website build.
+Treat everything here as history. The current rules are in `AGENTS.md`, the module map
+in `.agents/docs/code-map.md`.

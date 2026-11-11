@@ -77,12 +77,8 @@ class ToastContentView: NSView {
         effectView.state = .active
         effectView.blendingMode = .behindWindow
 
-        if #available(macOS 10.14, *) {
-            effectView.material = .hudWindow
-            effectView.appearance = NSAppearance(named: .vibrantDark)
-        } else {
-            effectView.material = .dark
-        }
+        effectView.material = .hudWindow
+        effectView.appearance = NSAppearance(named: .vibrantDark)
 
         effectView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(effectView)
@@ -241,22 +237,14 @@ class ToastContentView: NSView {
 
     /// 根据样式返回默认图标
     static func defaultIcon(for style: Toast.Style) -> NSImage? {
-        if #available(macOS 11.0, *) {
-            let symbolName: String
-            switch style {
-            case .info:    symbolName = "info.circle.fill"
-            case .success: symbolName = "checkmark.circle.fill"
-            case .warning: symbolName = "exclamationmark.triangle.fill"
-            case .error:   symbolName = "xmark.circle.fill"
-            }
-            return NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
-        }
+        let symbolName: String
         switch style {
-        case .info:    return NSImage(named: NSImage.infoName)
-        case .success: return NSImage(named: NSImage.statusAvailableName)
-        case .warning: return NSImage(named: NSImage.cautionName)
-        case .error:   return NSImage(named: NSImage.stopProgressFreestandingTemplateName)
+        case .info:    symbolName = "info.circle.fill"
+        case .success: symbolName = "checkmark.circle.fill"
+        case .warning: symbolName = "exclamationmark.triangle.fill"
+        case .error:   symbolName = "xmark.circle.fill"
         }
+        return NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
     }
 
     /// 根据样式返回强调色
