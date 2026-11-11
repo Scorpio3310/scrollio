@@ -169,10 +169,13 @@ class ScrollCore: ScrollActionPort {
 
         if shouldSmoothVertical {
             let lines = scrollEvent.Y.lineDelta
-            let spin = ScrollCore.shared.spinTracker.register(
-                lines: lines,
-                at: ScrollEventClock.seconds(fromTimestamp: event.timestamp)
-            )
+            // 转速调校 (free-spin / 加速度) 已停用, 见 ScrollSpinTracker.isTrusted
+            let spin = ScrollSpinTracker.isTrusted
+                ? ScrollCore.shared.spinTracker.register(
+                    lines: lines,
+                    at: ScrollEventClock.seconds(fromTimestamp: event.timestamp)
+                )
+                : ScrollSpinState.idle
             verticalSpin = spin
             verticalTuning = tuning.resolve(
                 speed: speed, durationTransition: duration, spin: spin, amplification: amplification

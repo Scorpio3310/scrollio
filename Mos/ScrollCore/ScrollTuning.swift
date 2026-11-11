@@ -322,6 +322,19 @@ struct ScrollSpinState: Equatable {
 /// MagSpeed wheel delivers far more. Free-spin latches until a pause or a direction change, so
 /// a wheel that slows down keeps the free-spin smoothness for the rest of its glide.
 struct ScrollSpinTracker {
+    /// Whether the scroll tap feeds the tracker at all. Off since 2026-11-11.
+    ///
+    /// The tracker reads the wheel's speed from the line count of the events, but macOS has
+    /// already accelerated that count: a quick turn of a ratcheted wheel arrives as 5 to 20
+    /// lines per event. Measured on the owner's MX Master 4: 5 events in 44 ms carrying 2141 px,
+    /// taken for a free-spin. Free-spin then replaced Duration with its own short smoothness
+    /// and skipped the filter, so every quick scroll was dumped out within ~150 ms in frames
+    /// of up to 800 px, whatever Duration said. With the tracker off, every wheel event gets
+    /// the plain rule (max(step, point delta) × speed) and the Duration that is set.
+    /// Turning it back on needs the wheel's real speed (the unaccelerated HID values), not
+    /// this line count.
+    static let isTrusted = false
+
     /// The free-spin blend ramps between these line rates (lines/s).
     static let freeSpinBlendStartRate = 20.0
     static let freeSpinEnterRate = 40.0
