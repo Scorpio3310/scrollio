@@ -2,7 +2,7 @@
 //  IntroductionViewController.swift
 //  Mos
 //  The Welcome Guide, built in code (the storyboard scene is only a shell): one window of
-//  600 × 620 pt that never changes its size, with up to four steps (Welcome, Allow
+//  600 × 680 pt (620 on a short screen) that never changes its size, with up to four steps (Welcome, Allow
 //  Accessibility, Choose how scrolling feels, Scrollio is ready). This controller owns the
 //  steps of a run (WelcomeGuideFlow), the bar under them (Back, the dots, the main button),
 //  the change from one step to the next, and everything about the permission:

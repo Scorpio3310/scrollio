@@ -674,23 +674,26 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(other.duration, 4.6)
     }
 
-    func testTheCurvesComeFromTheEngineAndDiffer() {
-        let direct = WelcomeGuideFeelButton.curvePoints(duration: ScrollFeel.direct.duration)
-        let float = WelcomeGuideFeelButton.curvePoints(duration: ScrollFeel.float.duration)
-        XCTAssertEqual(direct.count, float.count)
-        // At a quarter of the time Direct is (nearly) there, Float is not.
-        let quarter = direct.count / 4
-        XCTAssertLessThan(direct[quarter].y, float[quarter].y)
-        // Both start at the bottom and stay in the 80 × 22 box.
-        for point in direct + float {
-            XCTAssertTrue(NSRect(x: 0, y: 0, width: 80, height: 22).contains(point), "\(point)")
+    /// The picture on a card: a mark where the wheel stops and a dot where the page comes to
+    /// rest. The owner found the five curves the cards had "very alike": each card's dot now
+    /// rests clearly further from the mark than the one before. It is a rank, not a measure,
+    /// so the cards must be in the order of their glide times.
+    func testEachCardsDotRestsFurtherThanTheOneBefore() throws {
+        let feels = ScrollFeel.allCases
+        XCTAssertEqual(feels.count, 5)
+        let glideTimes = feels.map(\.duration)
+        XCTAssertEqual(glideTimes, glideTimes.sorted(), "the cards are in the order of their glide times")
+
+        let dots = feels.map { WelcomeGuideFeelButton.dotX(for: $0) }
+        for (earlier, later) in zip(dots, dots.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(later - earlier, 12, "\(dots)")
         }
-        XCTAssertEqual(direct.first?.y ?? 0, 19, accuracy: 0.01)
-        // Half a second in, each of the five is visibly further behind the one before.
-        let half = ScrollFeel.allCases.map { WelcomeGuideFeelButton.curvePoints(duration: $0.duration)[24].y }
-        for (earlier, later) in zip(half, half.dropFirst()) {
-            XCTAssertGreaterThan(later - earlier, 0.5, "\(half)")
-        }
+        let radius = WelcomeGuideFeelButton.dotRadius
+        XCTAssertGreaterThan(
+            try XCTUnwrap(dots.first) - radius, WelcomeGuideFeelButton.trailStart + 2,
+            "Direct still shows a little of the trail"
+        )
+        XCTAssertLessThanOrEqual(try XCTUnwrap(dots.last) + radius, WelcomeGuideFeelButton.pictureSize.width - 2)
     }
 
     func testWhenTheBoxIsNotSmoothedTheStepSaysWhyAndShowsTheDemo() {
@@ -1109,6 +1112,52 @@ final class IntroductionWindowTests: XCTestCase {
     /// one height, so the box that moves between them keeps its size; nothing comes closer
     /// than 16 pt to the bar.
     func testTheStepsShareOneGrid() throws {
+        XCTAssertEqual(WelcomeGuideLayout.metrics, .roomy)
+        try assertTheStepsShareOneGrid()
+    }
+
+    /// The same rules in the 620 pt window of a screen too short for the roomy one.
+    func testTheTightGridOfAShortScreenKeepsTheRules() throws {
+        WelcomeGuideLayout.metrics = .tight
+        addTeardownBlock { WelcomeGuideLayout.metrics = .roomy }
+        XCTAssertEqual(WelcomeGuideLayout.windowSize.height, 620)
+        try assertTheStepsShareOneGrid()
+    }
+
+    /// The owner found the feel step crammed in 620 pt (its parts 14 to 18 pt apart). The
+    /// window is 680 pt tall unless the screen cannot show that whole: then Continue would
+    /// lie under the Dock, and the guide keeps the 620 pt it had.
+    func testTheWindowIsRoomyUnlessTheScreenIsTooShort() {
+        typealias Metrics = WelcomeGuideLayout.Metrics
+        XCTAssertEqual(Metrics.roomy.windowHeight, 680)
+        XCTAssertEqual(Metrics.tight.windowHeight, 620)
+        XCTAssertEqual(Metrics.fitting(visibleHeight: nil), .roomy)
+        XCTAssertEqual(Metrics.fitting(visibleHeight: 838), .roomy, "a 13-inch display at its default size")
+        XCTAssertEqual(Metrics.fitting(visibleHeight: 696), .roomy)
+        XCTAssertEqual(Metrics.fitting(visibleHeight: 695), .tight)
+        XCTAssertEqual(Metrics.fitting(visibleHeight: 637), .tight, "a 13-inch display at Larger Text")
+    }
+
+    /// The air on the feel step: its sentence, cards, box and the bar stand well apart.
+    func testTheFeelStepHasAirBetweenItsParts() throws {
+        let controller = world.makeController(flow: .full)
+        _ = makeWindow(for: controller)
+        controller.go(by: try XCTUnwrap(controller.steps.firstIndex(of: .feel)) - controller.index)
+        controller.view.layoutSubtreeIfNeeded()
+        let canvas = try XCTUnwrap(controller.contentHost.superview)
+        func frame(_ view: NSView) -> NSRect {
+            return canvas.convert(view.bounds, from: view)
+        }
+        let step = controller.feelStep
+        let cards = step.feelButtons.map(frame).reduce(NSRect.null) { $0.union($1) }
+        let box = frame(step.reverseBox)
+        XCTAssertGreaterThanOrEqual(cards.minY - frame(step.textLabel).maxY, 24, "sentence to cards")
+        XCTAssertGreaterThanOrEqual(box.minY - cards.maxY, 24, "cards to box")
+        XCTAssertGreaterThanOrEqual(WelcomeGuideLayout.barFrame.minY - box.maxY, 40, "box to bar")
+        XCTAssertGreaterThanOrEqual(frame(step.titleLabel).minY - WelcomeGuideLayout.pictureFrame.maxY, 36, "picture to title")
+    }
+
+    private func assertTheStepsShareOneGrid() throws {
         world.runAfterGrant = .running
         world.mouse = .mxMaster4
         let controller = world.makeController(flow: .full)
@@ -1346,15 +1395,15 @@ final class IntroductionWindowTests: XCTestCase {
 
     /// The owner's report: "clicking a card selects it only sometimes". AppKit's radio cell
     /// took a click only on the title it would draw (47 × 16 pt left of the middle), not on
-    /// the name drawn under the curve, the curve or the edges.
+    /// the name drawn under the picture, the picture or the edges.
     func testAClickAnywhereOnAFeelCardChoosesItWhileTheDemoRuns() {
         let (controller, _) = makeFeelWindow()
         let step = controller.feelStep
         for card in step.feelButtons {
             let size = WelcomeGuideFeelButton.size
-            // The drawing: the curve at the top, the name and the word under it (top-left origin).
+            // The drawing: the picture at the top, the name and the word under it (top-left origin).
             let spots = points(in: card) + [
-                ("curve", NSPoint(x: size.width / 2 - 20, y: 18)),
+                ("picture", NSPoint(x: size.width / 2 - 20, y: 18)),
                 ("name", NSPoint(x: size.width / 2, y: 44)),
                 ("caption", NSPoint(x: size.width / 2, y: 60)),
             ]
