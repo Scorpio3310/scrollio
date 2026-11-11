@@ -97,17 +97,6 @@
         }
       }
     },
-    "categoryFunctionKeys": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Function Keys"
-          }
-        }
-      }
-    },
     "categoryLogiActions": {
       "extractionState": "manual",
       "localizations": {
@@ -2806,7 +2795,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shutdown Dialog"
+            "value": "Shut Down…"
           }
         }
       }
@@ -5276,6 +5265,102 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reads the mouse again and sends the values you set that it does not have."
+          }
+        }
+      }
+    },
+    "appExposeApps": {
+      "comment": "Action menus: the F4 key's action on macOS 26 and later, where Apps replaced Launchpad",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps"
+          }
+        }
+      }
+    },
+    "scrolling-undo-reset": {
+      "comment": "Scrolling pane and an app's page: undo action name after \"Reset to Defaults\" (Edit › Undo Reset Scrolling)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset Scrolling"
+          }
+        }
+      }
+    },
+    "scrolling-speed-value": {
+      "comment": "Scrolling pane: the value next to the Speed slider, a factor; the argument is the number in the user's locale, e.g. 6.3× or 6,3×",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@×"
+          }
+        }
+      }
+    },
+    "scrolling-glide-time-shorter": {
+      "comment": "Scrolling pane: under the left end of the Glide time slider",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shorter"
+          }
+        }
+      }
+    },
+    "scrolling-glide-time-longer": {
+      "comment": "Scrolling pane: under the right end of the Glide time slider",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Longer"
+          }
+        }
+      }
+    },
+    "scrolling-step-smaller": {
+      "comment": "Scrolling pane: under the left end of the Smallest step slider",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smaller"
+          }
+        }
+      }
+    },
+    "scrolling-step-larger": {
+      "comment": "Scrolling pane: under the right end of the Smallest step slider",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Larger"
+          }
+        }
+      }
+    },
+    "categoryMissionControlAndSpaces": {
+      "comment": "Action menus: the group with Mission Control, Apps (Launchpad), Show Desktop and Move Space Left / Right",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mission Control & Spaces"
           }
         }
       }

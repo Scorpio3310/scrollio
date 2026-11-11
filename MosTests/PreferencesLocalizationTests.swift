@@ -57,6 +57,9 @@ final class PreferencesLocalizationTests: XCTestCase {
         "scrolling-keys-header", "scrolling-key-faster", "scrolling-key-faster-hint",
         "scrolling-key-sideways", "scrolling-key-sideways-hint", "scrolling-key-pause", "scrolling-key-pause-hint",
         "scrolling-key-clear-for", "scrolling-key-none", "scrolling-reset",
+        "scrolling-undo-reset",
+        "scrolling-speed-value", "scrolling-glide-time-shorter", "scrolling-glide-time-longer",
+        "scrolling-step-smaller", "scrolling-step-larger",
     ]
 
     /// Buttons pane: the card, the list and its rows, the action menu, "Which Button Is
@@ -88,6 +91,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "categoryMosMouseScroll", "categoryLogiActions", "categoryFinderActions",
         "open-target-title", "open-target-empty-primary", "open-target-empty-secondary",
         "open-target-arguments-placeholder", "open-target-stale-warning", "open-target-cancel", "open-target-done",
+        "appExposeApps", "categoryMissionControlAndSpaces",
     ]
 
     /// Gestures pane and its gesture controls.
@@ -191,6 +195,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "mouse-readback-changed": "@",
         // Scrolling pane
         "scrolling-key-clear-for": "@",
+        "scrolling-speed-value": "@",
         // Buttons pane (ButtonTriggerNaming also names the Scrolling pane's hold keys)
         "buttons-trigger-placed": "@d",
         "buttons-trigger-number": "d",

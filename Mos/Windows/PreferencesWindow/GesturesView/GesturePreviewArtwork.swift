@@ -6,8 +6,10 @@
 //  colours of the Scrolling preview (ScrollPreviewPalette), so the two panes look alike in
 //  light and in dark.
 //
-//  The mouse is a view of its own that is moved, and only redrawn when its button changes.
-//  The desktop is redrawn when the frame changes; while the demo rests it is not redrawn.
+//  The mouse is a view of its own that is moved, and only redrawn when its button changes;
+//  the arrow ahead of it is a small view of its own too, so the device card is never
+//  redrawn by a frame. The desktop is redrawn when the frame changes; while the demo rests
+//  it is not redrawn.
 //
 
 import Cocoa
@@ -62,22 +64,36 @@ private func lerp(_ a: NSRect, _ b: NSRect, _ t: CGFloat) -> NSRect {
     return NSRect(x: lerp(a.minX, b.minX, t), y: lerp(a.minY, b.minY, t), width: lerp(a.width, b.width, t), height: lerp(a.height, b.height, t))
 }
 
-/// Base class of the artwork: top-left origin, and nothing here takes a click.
+/// Base class of the artwork: top-left origin, and nothing here takes a click. A frame of
+/// the demo redraws only the pieces that change: every piece has a layer of its own (also
+/// one that starts hidden, which otherwise draws into its parent's), and draws inside its
+/// bounds and clips to them (a view that does not, the default since macOS 14, is drawn
+/// again each time it moves, and the pieces move on every frame).
 class GesturePreviewArtworkView: NSView {
     override var isFlipped: Bool { return true }
 
     init() {
         super.init(frame: .zero)
+        drawOnlyWhatChanges()
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
+        drawOnlyWhatChanges()
+    }
+
+    private func drawOnlyWhatChanges() {
+        wantsLayer = true
+        clipsToBounds = true
     }
 }
 
 // MARK: - The device card
 
 /// The left card: the mouse, moved by the hand, and an arrow ahead of it while it moves.
+/// The card itself only draws its background: the mouse and the arrow are views of their
+/// own, so a frame of the demo moves the mouse and redraws the arrow's small rectangle,
+/// never the whole card.
 final class GesturePreviewDeviceCard: GesturePreviewArtworkView {
 
     static let cornerRadius: CGFloat = 10
@@ -86,6 +102,8 @@ final class GesturePreviewDeviceCard: GesturePreviewArtworkView {
     static let arrowLength: CGFloat = 14
 
     let mouse = GesturePreviewMouse()
+    /// The arrow, under the mouse as the card's own drawing would be.
+    let arrowView = GesturePreviewArrow()
     private var offset = CGPoint.zero
     private var arrow = 0.0
     private var direction: MouseGestureDirection?
@@ -93,6 +111,8 @@ final class GesturePreviewDeviceCard: GesturePreviewArtworkView {
 
     override init() {
         super.init()
+        arrowView.isHidden = true
+        addSubview(arrowView)
         addSubview(mouse)
         mouse.setFrameSize(GesturePreviewMouse.size)
     }
@@ -114,7 +134,6 @@ final class GesturePreviewDeviceCard: GesturePreviewArtworkView {
             guard newValue != mouse.model else { return }
             mouse.model = newValue
             placeMouse()
-            needsDisplay = true
         }
     }
 
@@ -138,7 +157,6 @@ final class GesturePreviewDeviceCard: GesturePreviewArtworkView {
         direction = frame.direction
         atRest = frame.isAtRest
         placeMouse()
-        needsDisplay = true
     }
 
     /// The body (not the thumb rest) is centred in the card, then moved by the hand. At rest
@@ -156,6 +174,17 @@ final class GesturePreviewDeviceCard: GesturePreviewArtworkView {
         if mouse.frame.origin != origin {
             mouse.setFrameOrigin(origin)
         }
+        placeArrow()
+    }
+
+    /// Puts the arrow ahead of the mouse, as strong as the frame says; hidden while there
+    /// is none.
+    private func placeArrow() {
+        guard arrow > 0.01, let segment = arrowSegment else {
+            if !arrowView.isHidden { arrowView.isHidden = true }
+            return
+        }
+        arrowView.show(from: segment.from, to: segment.to, strength: arrow)
     }
 
     /// Where the arrow starts and ends, in the card: just outside the mouse, pointing the
@@ -190,24 +219,64 @@ final class GesturePreviewDeviceCard: GesturePreviewArtworkView {
         ScrollPreviewPalette.cardEdge.setStroke()
         card.lineWidth = 1
         card.stroke()
+    }
+}
 
-        guard arrow > 0.01, let segment = arrowSegment else { return }
-        let accent = NSColor.controlAccentColor.withAlphaComponent(CGFloat(min(1, arrow)))
+/// The arrow ahead of the moving mouse, in the accent colour: a view only as large as the
+/// arrow, so drawing it never redraws the card. Its frame is on whole points, so the arrow
+/// falls on the same pixels as when the card drew it.
+final class GesturePreviewArrow: GesturePreviewArtworkView {
+
+    static let lineWidth: CGFloat = 2.5
+    /// How far the two strokes of the head reach back from the tip, and to each side.
+    static let headLength: CGFloat = 5
+
+    /// The arrow in this view, and how strongly it shows (0…1).
+    private var from = NSPoint.zero
+    private var to = NSPoint.zero
+    private var strength = 0.0
+
+    /// Shows the arrow from `from` to `to`, given in the card, at `strength`.
+    func show(from: NSPoint, to: NSPoint, strength: Double) {
+        let room = Self.lineWidth / 2 + 1
+        let frame = Self.path(from: from, to: to).bounds.insetBy(dx: -room, dy: -room).integral
+        if self.frame != frame {
+            self.frame = frame
+        }
+        let localFrom = NSPoint(x: from.x - frame.minX, y: from.y - frame.minY)
+        let localTo = NSPoint(x: to.x - frame.minX, y: to.y - frame.minY)
+        if localFrom != self.from || localTo != self.to || strength != self.strength {
+            self.from = localFrom
+            self.to = localTo
+            self.strength = strength
+            needsDisplay = true
+        }
+        if isHidden {
+            isHidden = false
+        }
+    }
+
+    /// The shaft, and the head: two strokes back from the tip.
+    static func path(from: NSPoint, to: NSPoint) -> NSBezierPath {
         let line = NSBezierPath()
-        line.move(to: segment.from)
-        line.line(to: segment.to)
-        // The head: two strokes back from the tip.
-        let dx = segment.to.x - segment.from.x, dy = segment.to.y - segment.from.y
+        line.move(to: from)
+        line.line(to: to)
+        let dx = to.x - from.x, dy = to.y - from.y
         let length = max(1, hypot(dx, dy))
         let ux = dx / length, uy = dy / length
-        let head: CGFloat = 5
-        line.move(to: NSPoint(x: segment.to.x - ux * head - uy * head, y: segment.to.y - uy * head + ux * head))
-        line.line(to: segment.to)
-        line.line(to: NSPoint(x: segment.to.x - ux * head + uy * head, y: segment.to.y - uy * head - ux * head))
-        line.lineWidth = 2.5
+        let head = headLength
+        line.move(to: NSPoint(x: to.x - ux * head - uy * head, y: to.y - uy * head + ux * head))
+        line.line(to: to)
+        line.line(to: NSPoint(x: to.x - ux * head + uy * head, y: to.y - uy * head - ux * head))
+        return line
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let line = Self.path(from: from, to: to)
+        line.lineWidth = Self.lineWidth
         line.lineCapStyle = .round
         line.lineJoinStyle = .round
-        accent.setStroke()
+        NSColor.controlAccentColor.withAlphaComponent(CGFloat(min(1, strength))).setStroke()
         line.stroke()
     }
 }

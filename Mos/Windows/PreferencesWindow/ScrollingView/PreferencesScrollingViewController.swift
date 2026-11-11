@@ -10,7 +10,8 @@
 //  the speed and the direction. Under it "While you hold a key" with the three keys, which
 //  work from the first launch, so they always show. The last box starts with "Advanced"
 //  (closed by default), which opens the exact glide time, the smallest step and
-//  trackpad-style events in that box. "Reset to defaults" sits under the boxes.
+//  trackpad-style events in that box. "Reset to defaults" sits under the boxes; Edit › Undo
+//  takes a reset back.
 //  The tab only edits scroll options: Options.shared.scroll, or the target application's own.
 //
 //  Created by Caldis on 2017/1/26.
@@ -68,6 +69,56 @@ enum ScrollHoldKey: Int, CaseIterable {
         case .sideways: scroll.toggle = hotkey
         case .pause: scroll.block = hotkey
         }
+    }
+}
+
+/// The tab's three sliders and how each shows its value. Speed writes its factor next to
+/// the slider ("6.3×"). Glide time (a scale of 1 to 5 that reads like seconds but is not)
+/// and Smallest step write no number: the words under their ends say which way is which,
+/// and VoiceOver reads where the knob is between them ("67%"). Numbers follow the user's
+/// locale ("6,3×" with a decimal comma). Display only: the stored values do not change.
+enum ScrollingSlider: CaseIterable {
+    case speed, glideTime, smallestStep
+
+    /// The range, the tick marks and the grid of the slider.
+    var setting: ScrollSliderSetting {
+        switch self {
+        case .speed: return .speed
+        case .glideTime: return .glideTime
+        case .smallestStep: return .smallestStep
+        }
+    }
+
+    /// What is written next to the slider; empty for none. A value off the grid keeps the
+    /// decimals it needs (`ScrollSliderSetting.maxDecimals`), so it is not shown as another.
+    func shownText(for value: Double, locale: Locale = .current) -> String {
+        switch self {
+        case .speed:
+            let formatter = NumberFormatter()
+            formatter.locale = locale
+            formatter.numberStyle = .decimal
+            formatter.minimumFractionDigits = setting.decimals
+            formatter.maximumFractionDigits = setting.maxDecimals
+            let number = formatter.string(from: NSNumber(value: value)) ?? ""
+            return String(format: NSLocalizedString("scrolling-speed-value", comment: ""), number)
+        case .glideTime, .smallestStep:
+            return ""
+        }
+    }
+
+    /// What VoiceOver reads as the slider's value: the text next to it, or for a slider
+    /// without one how far along its range the value lies, from the low end.
+    func spokenValue(for value: Double, locale: Locale = .current) -> String {
+        let shown = shownText(for: value, locale: locale)
+        guard shown.isEmpty else { return shown }
+        let range = setting.range
+        let span = range.upperBound - range.lowerBound
+        let fraction = span > 0 && value.isFinite ? (value - range.lowerBound) / span : 0
+        let formatter = NumberFormatter()
+        formatter.locale = locale
+        formatter.numberStyle = .percent
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: min(1, max(0, fraction)))) ?? ""
     }
 }
 
@@ -135,6 +186,9 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
 
     /// Keeps the state of "Advanced"; tests and screenshots give it a store of their own.
     var uiStateDefaults: UserDefaults = .standard
+
+    /// Takes Undo and Redo of "Reset to Defaults"; the window's when nil.
+    var paneUndoManager: UndoManager?
 
     private(set) var isAdvancedExpanded = false
 
@@ -314,14 +368,15 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// as it is, not snapped.
     private func sync(
         _ row: PreferencesSliderRow,
-        _ setting: ScrollSliderSetting,
+        _ slider: ScrollingSlider,
         value: Double,
         enabled: Bool
     ) {
         if !row.isTracking {
             row.showValue(value)
         }
-        row.valueText = setting.text(value)
+        row.valueText = slider.shownText(for: value)
+        row.slider.setAccessibilityValueDescription(slider.spokenValue(for: value))
         row.isEnabled = enabled
     }
 
@@ -491,14 +546,71 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
 
     /// Back to the scroll options of a new installation: the "Smooth" feel, the default
     /// speed and step, the three default keys, trackpad-style events off. "Advanced" stays
-    /// as it is.
+    /// as it is. One click, no question: Edit › Undo ("Undo Reset Scrolling") brings back
+    /// every value it changed.
     @objc func resetToDefaultClick(_ sender: NSButton) {
-        if let target = currentTargetApplication {
-            target.scroll = OPTIONS_SCROLL_DEFAULT()
-        } else {
-            Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+        Self.resetScrollOptions(of: currentTargetApplication, undoManager: undoTarget) { [weak self] in
+            self?.syncViewWithOptions()
         }
-        syncViewWithOptions()
+    }
+
+    // MARK: - Reset, with Undo
+
+    /// Where a reset registers its Undo: the window's undo manager while the tab (or the
+    /// app's page) is in the window. Undo and Redo stay with the manager the reset used.
+    var undoTarget: UndoManager? {
+        return paneUndoManager ?? view.window?.undoManager
+    }
+
+    /// Gives the app (nil: the Scrolling tab) new default scroll options; Undo gives back
+    /// the ones it had. The undo target is the settings, not this controller: an app's page
+    /// and its controller are gone once the list shows again, and its Undo still works.
+    private static func resetScrollOptions(
+        of application: Application?,
+        undoManager undo: UndoManager?,
+        didChange: @escaping () -> Void
+    ) {
+        let previous = replaceScrollOptions(of: application, with: OPTIONS_SCROLL_DEFAULT())
+        didChange()
+        guard let undo else { return }
+        undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+            Self.restoreScrollOptions(previous, of: application, undoManager: undo, didChange: didChange)
+        }
+        undo.setActionName(NSLocalizedString("scrolling-undo-reset", comment: ""))
+    }
+
+    /// Undo of a reset: the options from before it, every value as it was. Redo resets again.
+    private static func restoreScrollOptions(
+        _ options: OPTIONS_SCROLL_DEFAULT,
+        of application: Application?,
+        undoManager undo: UndoManager?,
+        didChange: @escaping () -> Void
+    ) {
+        replaceScrollOptions(of: application, with: options)
+        didChange()
+        guard let undo else { return }
+        undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+            Self.resetScrollOptions(of: application, undoManager: undo, didChange: didChange)
+        }
+        undo.setActionName(NSLocalizedString("scrolling-undo-reset", comment: ""))
+    }
+
+    /// Puts `options` in place of the app's (nil: the global) scroll options and returns the
+    /// ones it replaced. A reset only ever swaps the whole container, so the replaced one
+    /// keeps every value it had.
+    @discardableResult
+    private static func replaceScrollOptions(
+        of application: Application?,
+        with options: OPTIONS_SCROLL_DEFAULT
+    ) -> OPTIONS_SCROLL_DEFAULT {
+        if let application {
+            let previous = application.scroll
+            application.scroll = options
+            return previous
+        }
+        let previous = Options.shared.scroll
+        Options.shared.scroll = options
+        return previous
     }
 
     // MARK: - Rows
@@ -593,6 +705,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
             titleKey: "scrolling-glide-time-label",
             hintKey: "scrolling-glide-time-hint",
             setting: .glideTime,
+            ends: (low: text("scrolling-glide-time-shorter"), high: text("scrolling-glide-time-longer")),
             identifier: Identifier.glideTime,
             action: #selector(glideTimeSliderChange(_:))
         )
@@ -607,6 +720,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
             titleKey: "scrolling-step-label",
             hintKey: "scrolling-step-hint",
             setting: .smallestStep,
+            ends: (low: text("scrolling-step-smaller"), high: text("scrolling-step-larger")),
             identifier: Identifier.smallestStep,
             action: #selector(smallestStepSliderChange(_:))
         )
@@ -629,13 +743,14 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         return row
     }
 
-    /// A slider with its value on the right of its row and the setting's tick marks under
-    /// it. All of the tab's sliders have the same width, so they line up.
+    /// A slider with the words for its ends under it, the setting's tick marks and, on the
+    /// right, the column of its value (`ScrollingSlider`). All of the tab's sliders have the
+    /// same width and keep that column, also when they write no value, so they line up.
     private func makeSliderRow(
         titleKey: String,
         hintKey: String,
         setting: ScrollSliderSetting,
-        ends: (low: String, high: String)? = nil,
+        ends: (low: String, high: String),
         identifier: NSUserInterfaceItemIdentifier,
         action: Selector
     ) -> PreferencesSliderRow {

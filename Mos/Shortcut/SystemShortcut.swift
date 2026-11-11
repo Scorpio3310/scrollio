@@ -61,7 +61,19 @@ struct SystemShortcut {
 
         /// 获取本地化显示名称
         var localizedName: String {
-            return NSLocalizedString(identifier, comment: "")
+            let majorVersion = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+            return NSLocalizedString(Self.nameKey(of: identifier, onMacOS: majorVersion), comment: "")
+        }
+
+        /// The catalog key of an action's name on macOS `majorVersion`: its identifier, except
+        /// for the F4 key (`appExpose`), which opens Launchpad before macOS 26 and Apps, which
+        /// replaced Launchpad, from macOS 26 on. Display only: the identifier, what the action
+        /// sends and stored bindings stay the same.
+        static func nameKey(of identifier: String, onMacOS majorVersion: Int) -> String {
+            if identifier == "appExpose", majorVersion >= 26 {
+                return "appExposeApps"
+            }
+            return identifier
         }
 
         /// 获取 SF Symbol 图标名称 (macOS 11.0+)
@@ -354,14 +366,17 @@ struct SystemShortcut {
     }
 
     /// 按类别分组的快捷键 (有序数组,顺序即菜单显示顺序)
+    /// Grouped by what the actions do, not by how they are sent: "Mission Control & Spaces"
+    /// holds what moves the desktop, the other keys of Apple keyboards (Dictation, Do Not
+    /// Disturb) and Escape are under System. Only the menus' order and titles: every action
+    /// keeps its identifier, and a stored binding finds it in `allShortcuts` as before.
     /// Gesture Navigation is not a key: the action menu lists it on its own, next to "Open…".
     /// Spotlight is listed once, as ⌘Space under System ("Spotlight"): `spotlightSys`
     /// (the Spotlight key of Apple keyboards, "Spotlight (System)") is no longer offered.
     /// A binding stored with it still runs and shows under its own name (`allShortcuts`).
     static let shortcutsByCategory: [(category: String, shortcuts: [Shortcut])] = [
-        ("categoryFunctionKeys", [
-            missionControl, appExpose, dictation, doNotDisturb, showDesktop, escapeKey,
-            moveSpaceLeft, moveSpaceRight
+        ("categoryMissionControlAndSpaces", [
+            missionControl, appExpose, showDesktop, moveSpaceLeft, moveSpaceRight
         ]),
         ("categoryAppsAndWindows", [
             switchApp, switchAppReverse,
@@ -375,7 +390,8 @@ struct SystemShortcut {
             viewAsIcons, viewAsList, viewAsColumns, viewAsGallery
         ]),
         ("categorySystem", [
-            spotlight, characterViewer, forceQuit, lockScreen, logout, shutdownDialog
+            spotlight, dictation, characterViewer, doNotDisturb, escapeKey,
+            forceQuit, lockScreen, logout, shutdownDialog
         ]),
         ("categoryScreenshot", [
             screenshot, screenshotSelection, screenshotAndRecording
@@ -484,7 +500,7 @@ struct SystemShortcut {
     /// 获取分类的 SF Symbol 图标名称 (macOS 11.0+)
     static func categorySymbolName(_ categoryIdentifier: String) -> String {
         switch categoryIdentifier {
-        case "categoryFunctionKeys": return "keyboard"
+        case "categoryMissionControlAndSpaces": return "rectangle.3.group"
         case "categoryAppsAndWindows": return "macwindow.on.rectangle"
         case "categoryDocumentEditing": return "doc.text"
         case "categoryFinderActions": return "folder"

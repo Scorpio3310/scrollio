@@ -9,7 +9,7 @@ They must stay separate.
 
 | File | Scope | Keys |
 | --- | --- | --- |
-| `Mos/Localizable.xcstrings` | Strings used from Swift with `NSLocalizedString` | Readable phrases (older keys) or identifiers that mirror code constants (`appExpose`, `categoryFunctionKeys`, the identifiers of `SystemShortcut.Shortcut`, and by area `general-*`, `scrolling-*`, `buttons-*`, `mouse-*`, `gesture-*` / `gestures-*`, `apps-*`, `about-*`, `preferences-*`, `main-menu-*`, `status-menu-*` / `status-item-*`, `intro-*`, `toast-*`) |
+| `Mos/Localizable.xcstrings` | Strings used from Swift with `NSLocalizedString` | Readable phrases (older keys) or identifiers that mirror code constants (`appExpose`, `categorySystem`, the identifiers of `SystemShortcut.Shortcut`, and by area `general-*`, `scrolling-*`, `buttons-*`, `mouse-*`, `gesture-*` / `gestures-*`, `apps-*`, `about-*`, `preferences-*`, `main-menu-*`, `status-menu-*` / `status-item-*`, `intro-*`, `toast-*`) |
 | `Mos/mul.lproj/Main.xcstrings` | The storyboard | Interface Builder object ids (`2AK-Pu-mot.title`) |
 
 Rules:

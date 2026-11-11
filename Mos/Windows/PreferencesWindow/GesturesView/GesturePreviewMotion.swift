@@ -39,7 +39,8 @@ enum GesturePreviewEffect: Equatable {
         case SystemShortcut.missionControl.identifier:
             self = .missionControl
         case SystemShortcut.appExpose.identifier:
-            // Shown as "Launchpad" in the menus: the F4 key that opens the app grid.
+            // Shown as "Launchpad" (as "Apps" on macOS 26 and later) in the menus: the F4 key
+            // that opens the app grid.
             self = .appGrid
         case SystemShortcut.moveSpaceLeft.identifier:
             self = .space(.left)
