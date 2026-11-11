@@ -347,6 +347,8 @@ final class MouseGestureSettingsControls: NSObject {
             categoryItem.submenu = submenu
             menu.addItem(categoryItem)
         }
+        // macOS 27 hides menu item images unless asked: every action keeps its symbol.
+        menu.keepItemImagesVisible()
         return menu
     }
 

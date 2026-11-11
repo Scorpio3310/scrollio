@@ -469,6 +469,75 @@ final class ScrollClassicPathTests: XCTestCase {
 /// what really happened, and cost nothing per event.
 final class ScrollSystemLogTests: XCTestCase {
 
+    // MARK: Trackpad to wheel hand-over (diagnostics)
+
+    /// Events are written only around a hand-over: the other kind of event within 2.5 s.
+    func testHandoverTrace_writesOnlyAroundAHandover() {
+        var state = ScrollHandoverTrace.State()
+        // Wheel alone, trackpad alone: quiet.
+        XCTAssertEqual(state.note(takenForTrackpad: false, now: 100), .quiet)
+        XCTAssertEqual(state.note(takenForTrackpad: false, now: 100.1), .quiet)
+        XCTAssertEqual(state.note(takenForTrackpad: true, now: 110), .quiet, "10 s after the wheel")
+        XCTAssertEqual(state.note(takenForTrackpad: true, now: 110.5), .quiet)
+        // The wheel 0.4 s after the trackpad: the hand-over opens and its events are written.
+        guard case let .line(first, firstOpens) = state.note(takenForTrackpad: false, now: 110.9) else { return XCTFail("a line") }
+        XCTAssertEqual(first, 0.4, accuracy: 1e-9)
+        XCTAssertTrue(firstOpens)
+        guard case let .line(since, opens) = state.note(takenForTrackpad: true, now: 110.95) else { return XCTFail("a line") }
+        XCTAssertEqual(since, 0.05, accuracy: 1e-9, "the glide's next event, 50 ms after the wheel")
+        XCTAssertFalse(opens)
+        // Long after both: quiet again.
+        XCTAssertEqual(state.note(takenForTrackpad: false, now: 120), .quiet)
+    }
+
+    func testHandoverTrace_stopsAfterItsLinesAndOpensAgainLater() {
+        var state = ScrollHandoverTrace.State()
+        _ = state.note(takenForTrackpad: true, now: 10)
+        var lines = 0
+        var time = 10.001
+        // A flood of both kinds within one window.
+        while time < 12 {
+            if case .line = state.note(takenForTrackpad: lines % 2 == 0, now: time) { lines += 1 }
+            _ = state.note(takenForTrackpad: lines % 2 == 1, now: time + 0.0005)
+            time += 0.001
+        }
+        XCTAssertLessThanOrEqual(lines, ScrollHandoverTrace.State.maxLines)
+        XCTAssertGreaterThan(lines, 0)
+        // A new window opens once the first has passed.
+        _ = state.note(takenForTrackpad: true, now: 20)
+        guard case let .line(again, againOpens) = state.note(takenForTrackpad: false, now: 20.1) else { return XCTFail("a line") }
+        XCTAssertEqual(again, 0.1, accuracy: 1e-9)
+        XCTAssertTrue(againOpens)
+    }
+
+    func testHandoverTrace_lineSaysWhatTheEventCarried() throws {
+        let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: -3, wheel2: 0, wheel3: 0))
+        let line = ScrollHandoverTrace.describe(event, takenForTrackpad: false, sinceOther: 0.4)
+        XCTAssertTrue(line.hasPrefix("handover W +400 ms phase 0 momentum 0 count"), line)
+        XCTAssertTrue(line.contains("line -3,0"), line)
+        XCTAssertTrue(ScrollHandoverTrace.describe(event, takenForTrackpad: true, sinceOther: 0.01).hasPrefix("handover T +10 ms"), line)
+    }
+
+    /// macOS 27 hides menu item images unless asked: the action menu keeps its symbols.
+    func testActionMenuKeepsItsSymbolsVisible() {
+        let menu = NSMenu()
+        ShortcutManager.buildShortcutMenu(into: menu, target: self, action: #selector(NSObject.copy))
+        var withImage = 0
+        func check(_ menu: NSMenu) {
+            for item in menu.items {
+                if item.image != nil {
+                    withImage += 1
+                    if #available(macOS 27.0, *) {
+                        XCTAssertEqual(item.preferredImageVisibility, .visible, item.title)
+                    }
+                }
+                if let submenu = item.submenu { check(submenu) }
+            }
+        }
+        check(menu)
+        XCTAssertGreaterThan(withImage, 40, "categories and actions carry symbols")
+    }
+
     override func tearDown() {
         ScrollSystemLog.passthroughObserverForTests = nil
         ScrollSystemLog.resetPassthroughForTests()

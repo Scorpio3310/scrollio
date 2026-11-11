@@ -101,8 +101,10 @@ class ScrollCore: ScrollActionPort {
         // 无法区分 Magic Mouse, 因为其滚动特征与内置的 Trackpad 一致
         if scrollEvent.isTrackpad() {
             if hasVerticalDelta || hasHorizontalDelta { ScrollSystemLog.notePassthrough(.trackpad) }
+            ScrollHandoverTrace.note(event, takenForTrackpad: true)
             return Unmanaged.passUnretained(event)
         }
+        ScrollHandoverTrace.note(event, takenForTrackpad: false)
         // 当事件来自远程桌面，且其发送的事件 isContinuous=1.0，此时跳过本地平滑
         if ScrollUtils.shared.isRemoteSmoothedEvent(event) {
             ScrollSystemLog.notePassthrough(.remoteSmoothed)

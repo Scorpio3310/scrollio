@@ -207,6 +207,9 @@ class ShortcutManager {
         customItem.representedObject = MenuMarker.keyboardShortcut as NSString
         customItem.image = createSymbolImage("keyboard")
         menu.addItem(customItem)
+
+        // macOS 27 hides menu item images unless asked: every action keeps its symbol.
+        menu.keepItemImagesVisible()
     }
 
     /// 将一个分类添加到菜单

@@ -130,6 +130,8 @@ enum ButtonPlaceMenu {
         none.representedObject = ButtonPlaceChoice(bindingID: bindingID, part: nil)
         none.image = ButtonsMouseMiniature.image(for: .mouse(part: nil, number: model.number), mouse: model.mouse, highlighted: false)
         menu.addItem(none)
+        // macOS 27 hides menu item images unless asked: the pictures say which part an item is.
+        menu.keepItemImagesVisible()
         return menu
     }
 }

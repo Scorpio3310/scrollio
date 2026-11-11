@@ -322,6 +322,8 @@ enum StatusMenu {
         for item in items(for: state) {
             menu.addItem(makeItem(item, actions: actions))
         }
+        // macOS 27 hides menu item images unless asked: the battery lines keep their symbol.
+        menu.keepItemImagesVisible()
     }
 
     /// Updates the battery lines in place while the menu is open. A mouse that came or went

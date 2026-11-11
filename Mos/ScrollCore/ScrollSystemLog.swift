@@ -12,6 +12,7 @@
 //
 
 import Foundation
+import CoreGraphics
 import os
 
 enum ScrollSystemLog {
@@ -137,4 +138,86 @@ enum ScrollSystemLog {
         passthroughCounts = [Int](repeating: 0, count: PassthroughReason.allCases.count)
     }
 #endif
+}
+
+// MARK: - Trackpad to wheel hand-over (diagnostics)
+
+/// What arrives when the user goes from the trackpad to the wheel or back within a few
+/// seconds. The owner reported (2026-11-11) that scrolling on the trackpad and then taking
+/// over with the mouse wheel, while the trackpad's glide still runs, freezes the wheel or
+/// makes it stutter. The per-scroll line cannot show that, so this writes one line per
+/// scroll event around such a hand-over, at most `maxLines` per hand-over.
+///
+/// Away from a hand-over it costs one clock read and one comparison per scroll event.
+/// Main thread only (the scroll tap's callback).
+enum ScrollHandoverTrace {
+
+    /// The pure part: which events are worth a line.
+    struct State {
+        /// A hand-over is the other kind of event within this many seconds.
+        static let window: TimeInterval = 2.5
+        static let maxLines = 120
+
+        private var lastTrackpadAt: TimeInterval = -.infinity
+        private var lastWheelAt: TimeInterval = -.infinity
+        private var windowEndsAt: TimeInterval = -.infinity
+        private var linesLeft = 0
+
+        enum Decision: Equatable {
+            case quiet
+            /// Write the event; `opensHandover`: it is the first of a hand-over.
+            case line(sinceOther: TimeInterval, opensHandover: Bool)
+        }
+
+        mutating func note(takenForTrackpad: Bool, now: TimeInterval) -> Decision {
+            let other = takenForTrackpad ? lastWheelAt : lastTrackpadAt
+            if takenForTrackpad { lastTrackpadAt = now } else { lastWheelAt = now }
+            let sinceOther = now - other
+            guard sinceOther < Self.window else { return .quiet }
+            var opens = false
+            if now > windowEndsAt {
+                windowEndsAt = now + Self.window
+                linesLeft = Self.maxLines
+                opens = true
+            }
+            guard linesLeft > 0 else { return .quiet }
+            linesLeft -= 1
+            return .line(sinceOther: sinceOther, opensHandover: opens)
+        }
+    }
+
+    private static var state = State()
+    private static let logger = os.Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.nikklemenc.Scrollio",
+        category: "scroll"
+    )
+
+    /// One scroll event that reached the tap, and how Scrollio took it.
+    static func note(_ event: CGEvent, takenForTrackpad: Bool) {
+        let decision = state.note(takenForTrackpad: takenForTrackpad, now: ProcessInfo.processInfo.systemUptime)
+        guard case let .line(sinceOther, opens) = decision else { return }
+        if opens {
+            logger.notice("handover: trackpad and wheel within \(State.window, privacy: .public) s of each other; events follow (T = taken for trackpad, let through; W = wheel, handled)")
+        }
+        let line = describe(event, takenForTrackpad: takenForTrackpad, sinceOther: sinceOther)
+        logger.notice("\(line, privacy: .public)")
+    }
+
+    static func describe(_ event: CGEvent, takenForTrackpad: Bool, sinceOther: TimeInterval) -> String {
+        return String(
+            format: "handover %@ +%.0f ms phase %.0f momentum %.0f count %.0f continuous %.0f line %lld,%lld point %.1f,%.1f fixed %.2f pid %lld",
+            takenForTrackpad ? "T" : "W",
+            sinceOther * 1000,
+            event.getDoubleValueField(.scrollWheelEventScrollPhase),
+            event.getDoubleValueField(.scrollWheelEventMomentumPhase),
+            event.getDoubleValueField(.scrollWheelEventScrollCount),
+            event.getDoubleValueField(.scrollWheelEventIsContinuous),
+            event.getIntegerValueField(.scrollWheelEventDeltaAxis1),
+            event.getIntegerValueField(.scrollWheelEventDeltaAxis2),
+            event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1),
+            event.getDoubleValueField(.scrollWheelEventPointDeltaAxis2),
+            event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1),
+            event.getIntegerValueField(.eventSourceUnixProcessID)
+        )
+    }
 }
