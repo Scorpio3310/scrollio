@@ -102,7 +102,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-detail-inherit-on", "apps-detail-inherit-off",
     ]
 
-    /// General pane.
+    /// General pane, with what the About pane showed (the `about-*` keys).
     static let generalKeys = [
         "general-launch-at-login", "general-launch-at-login-hint", "general-launch-at-login-waiting",
         "general-login-approval", "general-open-login-items",
@@ -112,11 +112,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-accessibility-allowed", "general-accessibility-not-allowed", "general-accessibility-open-settings",
         "general-advanced", "general-scroll-monitor", "general-scroll-monitor-hint",
         "general-diagnostics", "general-diagnostics-hint", "general-open-window",
-    ]
-
-    /// About pane.
-    static let aboutKeys = [
-        "about-tab-title", "about-app-name", "about-version", "about-credit", "about-welcome-guide",
+        "about-app-name", "about-version", "about-credit", "about-welcome-guide",
         "about-welcome-guide-open", "about-welcome-guide-hint",
     ]
 
@@ -154,7 +150,7 @@ final class PreferencesLocalizationTests: XCTestCase {
     ]
 
     static let keys = mouseKeys + scrollingKeys + buttonsKeys + gesturesKeys + appsKeys
-        + generalKeys + aboutKeys + windowKeys + menuKeys + introKeys
+        + generalKeys + windowKeys + menuKeys + introKeys
 
     private static let missing = "\u{1}missing"
 

@@ -2,7 +2,9 @@
 //  PreferencesViewController.swift
 //  Mos
 //  "General" preferences pane, built in code on the grouped kit (PreferencesGroupedForm);
-//  the storyboard scene is a shell. On top, only while Scrollio is paused, "Scrollio is
+//  the storyboard scene is a shell. On top a card with the app icon, its name, version and
+//  build (GeneralHeaderView; the About pane that showed them is gone, "About Scrollio" in
+//  the app menu opens this pane). Under it, only while Scrollio is paused, "Scrollio is
 //  paused" with "Resume" (with the menu bar icon hidden there is no other way back). Then
 //  three boxes:
 //  - "Open at login" (with a row to approve it in System Settings while macOS waits for
@@ -11,6 +13,8 @@
 //    Settings when it has not;
 //  - "Advanced" (closed by default, remembered): the scroll monitor and the Logitech
 //    diagnostics windows.
+//  At the bottom a box with the Welcome Guide and one muted line with the credit for the
+//  project Scrollio is based on (the licence asks for it: it stays visible).
 //  Created by Caldis on 2017/1/15.
 //  Copyright © 2017年 Caldis. All rights reserved.
 //
@@ -44,10 +48,14 @@ class PreferencesGeneralViewController: NSViewController {
     var resume: () -> Void = { AppRunController.shared.setPaused(false) }
     /// Keeps the state of "Advanced"; tests and screenshots give it a store of their own.
     var uiStateDefaults: UserDefaults = .standard
+    /// Opens the Welcome Guide.
+    var showWelcomeGuide: () -> Void = IntroductionWindowController.showWelcomeGuide
 
     // MARK: - Views (read access for tests)
 
-    /// The box on top, shown only while Scrollio is paused.
+    /// The card on top: the app icon, its name and version.
+    private(set) var headerView: GeneralHeaderView!
+    /// The box under the card, shown only while Scrollio is paused.
     private(set) var pausedSection: PreferencesGroupSection!
     private(set) var pausedRow: PreferencesGroupRow!
     private(set) var resumeButton: NSButton!
@@ -67,6 +75,11 @@ class PreferencesGeneralViewController: NSViewController {
     private(set) var scrollMonitorButton: NSButton!
     private(set) var diagnosticsRow: PreferencesGroupRow!
     private(set) var diagnosticsButton: NSButton!
+
+    private(set) var welcomeGuideRow: PreferencesGroupRow!
+    private(set) var welcomeGuideButton: NSButton!
+    /// "Based on Mos by Caldis, …": the attribution the licence asks for.
+    private(set) var creditLabel: NSTextField!
 
     var launchOnLoginSwitch: NSSwitch! { return launchOnLoginRow?.toggle }
     var showInMenuBarSwitch: NSSwitch! { return showInMenuBarRow?.toggle }
@@ -93,6 +106,9 @@ class PreferencesGeneralViewController: NSViewController {
         content.setHuggingPriority(.defaultHigh, for: .vertical)
         let width = PreferencesGroupedForm.boxWidth(paneWidth: Self.paneWidth)
 
+        let header = GeneralHeaderView(name: text("about-app-name"), version: Self.versionText())
+        header.identifier = NSUserInterfaceItemIdentifier("general-header")
+        headerView = header
         let paused = PreferencesGroupSection(width: width, rows: [makePausedRow()])
         paused.isHidden = true
         pausedSection = paused
@@ -106,7 +122,11 @@ class PreferencesGeneralViewController: NSViewController {
             makeAdvancedRow(), makeScrollMonitorRow(), makeDiagnosticsRow(),
         ])
         advancedRow.revealedViews = [scrollMonitorRow, diagnosticsRow]
-        PreferencesGroupedForm.add([paused, startup, permissions, advanced], to: content)
+        let guide = PreferencesGroupSection(width: width, rows: [makeWelcomeGuideRow()])
+        let credit = makeCreditLabel(width: width)
+        PreferencesGroupedForm.add([header, paused, startup, permissions, advanced, guide, credit], to: content)
+        // The credit sits close under the last box, as the muted lines of the other panes.
+        content.setCustomSpacing(PreferencesGroupedForm.noteSpacing, after: guide)
 
         view = root
         // The seams are set by now (before the view loads): show the real state at once, so
@@ -259,6 +279,46 @@ class PreferencesGeneralViewController: NSViewController {
         return row
     }
 
+    /// "Welcome Guide" with "Open…": the first-launch steps again.
+    private func makeWelcomeGuideRow() -> PreferencesGroupRow {
+        let button = PreferencesGroupedForm.makePushButton(
+            title: text("about-welcome-guide-open"),
+            target: self,
+            action: #selector(welcomeGuideClicked(_:))
+        )
+        welcomeGuideButton = button
+        let row = PreferencesGroupRow(
+            title: text("about-welcome-guide"),
+            explanation: text("about-welcome-guide-hint"),
+            accessory: button
+        )
+        welcomeGuideRow = row
+        return row
+    }
+
+    /// One muted line, centred under the last box: what Scrollio is based on.
+    private func makeCreditLabel(width: CGFloat) -> NSTextField {
+        let credit = NSTextField(wrappingLabelWithString: text("about-credit"))
+        credit.identifier = NSUserInterfaceItemIdentifier("general-credit")
+        credit.font = PreferencesGroupedForm.explanationFont
+        credit.textColor = PreferencesGroupedForm.explanationColor(enabled: true)
+        credit.alignment = .center
+        credit.isSelectable = false
+        credit.preferredMaxLayoutWidth = width
+        credit.translatesAutoresizingMaskIntoConstraints = false
+        creditLabel = credit
+        return credit
+    }
+
+    // MARK: - Content
+
+    /// "Version 1.0 (1)": the version and the build number the bundle was built with.
+    static func versionText(bundle: Bundle = .main) -> String {
+        let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+        return String(format: NSLocalizedString("about-version", comment: ""), version, build)
+    }
+
     // MARK: - Lifecycle
 
     override func viewDidLoad() {
@@ -393,6 +453,12 @@ class PreferencesGeneralViewController: NSViewController {
 
     @objc func diagnosticsClicked(_ sender: NSButton) {
         openDiagnostics()
+    }
+
+    // MARK: - Welcome Guide
+
+    @objc func welcomeGuideClicked(_ sender: NSButton) {
+        showWelcomeGuide()
     }
 }
 

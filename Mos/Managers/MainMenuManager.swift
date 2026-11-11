@@ -40,7 +40,7 @@ final class MainMenuManager: NSObject {
 
     /// Opens the Preferences window, on the pane with this identifier when one is given.
     var showPreferences: (_ paneIdentifier: String?) -> Void = MainMenuManager.showPreferencesWindow
-    /// Opens the Introduction window, like the link in the About tab.
+    /// Opens the Introduction window, like the Welcome Guide row of General.
     var showWelcomeGuide: () -> Void = IntroductionWindowController.showWelcomeGuide
 
     // MARK: - Install
@@ -191,8 +191,9 @@ final class MainMenuManager: NSObject {
 
     // MARK: - Actions
 
+    /// The app's name and version are on top of General.
     @objc func showAbout(_ sender: Any?) {
-        showPreferences(AboutPreferencesViewController.tabIdentifier)
+        showPreferences(PANEL_IDENTIFIER.general)
     }
 
     @objc func showSettings(_ sender: Any?) {

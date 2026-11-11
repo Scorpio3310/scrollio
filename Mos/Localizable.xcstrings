@@ -1727,17 +1727,6 @@
         }
       }
     },
-    "about-tab-title": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "About"
-          }
-        }
-      }
-    },
     "about-app-name": {
       "extractionState": "manual",
       "localizations": {

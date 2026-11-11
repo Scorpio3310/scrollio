@@ -39,8 +39,9 @@ stale entries.
 Strings of the preference panes (all built in code), the sidebar, the main menu, the
 status-bar menu and the Welcome Guide are also listed in
 `MosTests/PreferencesLocalizationTests.swift`, one array per area (`generalKeys`,
-`scrollingKeys`, `buttonsKeys`, `gesturesKeys`, `mouseKeys`, `appsKeys`, `aboutKeys`,
-`windowKeys`, `menuKeys`, `introKeys`; `keys` is their union). Add a new key to the array
+`scrollingKeys`, `buttonsKeys`, `gesturesKeys`, `mouseKeys`, `appsKeys`,
+`windowKeys`, `menuKeys`, `introKeys`; `keys` is their union; the `about-*` keys, the
+header and the bottom of General, are in `generalKeys`). Add a new key to the array
 of its area: several keys are built from variables in code, and a missing one would only
 show up as the raw key in the UI.
 

@@ -32,7 +32,7 @@ class IntroductionWindowController: NSWindowController, NSWindowDelegate {
         WindowManager.shared.hideWindow(withIdentifier: WINDOW_IDENTIFIER.introductionWindowController, destroy: true)
     }
 
-    /// Opens the Welcome Guide by hand: About › Welcome Guide and Help › Welcome Guide.
+    /// Opens the Welcome Guide by hand: General › Welcome Guide and Help › Welcome Guide.
     static func showWelcomeGuide() {
         let identifier = WINDOW_IDENTIFIER.introductionWindowController
         let wasOpen = WindowManager.shared.refs[identifier] != nil

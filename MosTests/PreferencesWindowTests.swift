@@ -3,8 +3,8 @@
 //  MosTests
 //
 //  The Preferences window as a whole: the sidebar and its panes, how a pane is selected
-//  and hosted, the window's size, and the About pane that is built in code. Nothing is
-//  shown on screen.
+//  and hosted, and the window's size. (What the About pane showed is on top of General:
+//  PreferencesGeneralTests.) Nothing is shown on screen.
 //
 
 import XCTest
@@ -70,11 +70,11 @@ final class PreferencesSidebarTests: XCTestCase {
         let sidebar = preferences.sidebar
         XCTAssertEqual(
             sidebar.rowIdentifiers,
-            ["scrolling", "buttons", "gestures", "mouse", nil, "application", nil, "general", "about"]
+            ["scrolling", "buttons", "gestures", "mouse", nil, "application", nil, "general"]
         )
         XCTAssertEqual(
             titles(in: sidebar),
-            ["Scrolling", "Buttons", "Gestures", "Mouse", nil, "Apps", nil, "General", "About"]
+            ["Scrolling", "Buttons", "Gestures", "Mouse", nil, "Apps", nil, "General"]
         )
         let table = sidebar.tableView!
         XCTAssertEqual(table.style, .sourceList)
@@ -102,7 +102,7 @@ final class PreferencesSidebarTests: XCTestCase {
         XCTAssertTrue(preferences.controller(for: "mouse") is MousePreferencesViewController)
         XCTAssertTrue(preferences.controller(for: "application") is PreferencesApplicationViewController)
         XCTAssertTrue(preferences.controller(for: "general") is PreferencesGeneralViewController)
-        XCTAssertTrue(preferences.controller(for: "about") is AboutPreferencesViewController)
+        XCTAssertNil(preferences.controller(for: "about"), "About is part of General")
         XCTAssertNil(preferences.controller(for: "no-such-pane"))
     }
 
@@ -143,9 +143,7 @@ final class PreferencesSidebarTests: XCTestCase {
         sidebar.tableView.keyDown(with: down)
         XCTAssertEqual(preferences.selectedPaneIdentifier, "general")
         sidebar.tableView.keyDown(with: down)
-        sidebar.tableView.keyDown(with: down)
-        XCTAssertEqual(preferences.selectedPaneIdentifier, "about", "the last row stays selected")
-        sidebar.tableView.keyDown(with: up)
+        XCTAssertEqual(preferences.selectedPaneIdentifier, "general", "the last row stays selected")
         sidebar.tableView.keyDown(with: up)
         XCTAssertEqual(preferences.selectedPaneIdentifier, "application")
         sidebar.tableView.keyDown(with: up)
@@ -157,12 +155,13 @@ final class PreferencesSidebarTests: XCTestCase {
 
     func testSelectsAPaneByIdentifier() throws {
         let (window, preferences) = try makeWindow()
-        XCTAssertTrue(preferences.selectPane(withIdentifier: "about"))
-        XCTAssertEqual(preferences.sidebar.selectedIdentifier, "about")
-        XCTAssertTrue(preferences.host.currentController is AboutPreferencesViewController)
-        XCTAssertEqual(window.title, "About")
+        XCTAssertTrue(preferences.selectPane(withIdentifier: "general"))
+        XCTAssertEqual(preferences.sidebar.selectedIdentifier, "general")
+        XCTAssertTrue(preferences.host.currentController is PreferencesGeneralViewController)
+        XCTAssertEqual(window.title, "General")
         XCTAssertFalse(preferences.selectPane(withIdentifier: "toolbar"))
-        XCTAssertEqual(preferences.selectedPaneIdentifier, "about")
+        XCTAssertFalse(preferences.selectPane(withIdentifier: "about"), "no pane of its own any more")
+        XCTAssertEqual(preferences.selectedPaneIdentifier, "general")
     }
 
     func testRemembersTheLastOpenPane() throws {
@@ -192,6 +191,24 @@ final class PreferencesSidebarTests: XCTestCase {
         defaults.set("toolbar", forKey: PreferencesSplitViewController.selectedPaneDefaultsKey)
         let (_, third) = try makeWindow(defaults: defaults)
         XCTAssertEqual(third.selectedPaneIdentifier, "scrolling")
+
+        // About, left open before it became the top of General: General. What is
+        // remembered stays as it was until another pane is chosen.
+        defaults.set("about", forKey: PreferencesSplitViewController.selectedPaneDefaultsKey)
+        let (aboutWindow, fourth) = try makeWindow(defaults: defaults)
+        XCTAssertEqual(fourth.selectedPaneIdentifier, "general")
+        XCTAssertEqual(fourth.sidebar.selectedIdentifier, "general")
+        XCTAssertEqual(aboutWindow.title, "General")
+        XCTAssertEqual(defaults.string(forKey: PreferencesSplitViewController.selectedPaneDefaultsKey), "about")
+    }
+
+    func testTheInitialPaneFollowsWhatIsRemembered() {
+        let panes = PreferencesPane.all
+        XCTAssertEqual(PreferencesSplitViewController.initialPaneIdentifier(remembered: nil, panes: panes), "scrolling")
+        XCTAssertEqual(PreferencesSplitViewController.initialPaneIdentifier(remembered: "mouse", panes: panes), "mouse")
+        XCTAssertEqual(PreferencesSplitViewController.initialPaneIdentifier(remembered: "about", panes: panes), "general")
+        XCTAssertEqual(PreferencesSplitViewController.initialPaneIdentifier(remembered: "toolbar", panes: panes), "scrolling")
+        XCTAssertEqual(PreferencesSplitViewController.initialPaneIdentifier(remembered: "", panes: panes), "scrolling")
     }
 
     func testTheAppsWindowOpensOnScrollingWhenNothingIsRemembered() throws {
@@ -360,105 +377,6 @@ final class PreferencesSidebarTests: XCTestCase {
     }
 }
 
-final class PreferencesAboutTests: XCTestCase {
-
-    private func makeController() -> AboutPreferencesViewController {
-        let controller = AboutPreferencesViewController()
-        controller.showWelcomeGuide = {}
-        _ = controller.view
-        return controller
-    }
-
-    func testShowsNameVersionAndCredit() {
-        let controller = makeController()
-        XCTAssertEqual(controller.title, "About")
-        XCTAssertEqual(controller.nameLabel.stringValue, "Scrollio")
-        XCTAssertEqual(controller.creditLabel.stringValue, "Based on Mos by Caldis, licensed under CC BY-NC 4.0, with changes.")
-        XCTAssertNotNil(controller.iconView.image)
-    }
-
-    func testVersionAndBuildComeFromTheBundle() throws {
-        let version = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
-        let build = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String)
-        XCTAssertFalse(version.isEmpty)
-        XCTAssertFalse(build.isEmpty)
-        let controller = makeController()
-        XCTAssertEqual(controller.versionLabel.stringValue, "Version \(version) (\(build))")
-        XCTAssertEqual(AboutPreferencesViewController.versionText(), "Version \(version) (\(build))")
-    }
-
-    func testTheWelcomeGuideRowSaysWhatItShows() {
-        let controller = makeController()
-        XCTAssertEqual(controller.welcomeGuideRow.explanation, "Shows the first-launch steps again, including Accessibility access.")
-    }
-
-    func testTheOnlyButtonOpensTheWelcomeGuide() {
-        var opened = 0
-        let controller = makeController()
-        controller.showWelcomeGuide = { opened += 1 }
-
-        let buttons = allSubviews(of: controller.view).compactMap { $0 as? NSButton }
-        XCTAssertEqual(buttons.count, 1)
-        XCTAssertTrue(buttons.first === controller.welcomeGuideButton)
-        // A push button in a row of the grouped kit, named by the row.
-        XCTAssertEqual(controller.welcomeGuideRow.title, "Welcome Guide")
-        XCTAssertEqual(controller.welcomeGuideButton.title, "Open…", "it opens a window")
-        XCTAssertEqual(controller.welcomeGuideButton.bezelStyle, .push)
-        XCTAssertTrue(controller.welcomeGuideRow.controls.contains { $0 === controller.welcomeGuideButton })
-
-        XCTAssertTrue(controller.welcomeGuideButton.sendAction(
-            controller.welcomeGuideButton.action,
-            to: controller.welcomeGuideButton.target
-        ))
-        XCTAssertEqual(opened, 1)
-    }
-
-    func testNothingOfTheOldAboutPaneIsLeft() {
-        let controller = makeController()
-        let removed = ["Home Page", "GitHub", "Contributors", "Donate", "Feed", "Welcome Window", "Buy me a coffee"]
-        let views = allSubviews(of: controller.view)
-        let texts = views.compactMap { ($0 as? NSTextField)?.stringValue } + views.compactMap { ($0 as? NSButton)?.title }
-        for text in texts {
-            for word in removed {
-                XCTAssertFalse(text.localizedCaseInsensitiveContains(word), "'\(text)' still mentions \(word)")
-            }
-        }
-        // The help button went with them.
-        XCTAssertFalse(views.contains { ($0 as? NSButton)?.bezelStyle == .helpButton })
-    }
-
-    func testTheStoryboardNoLongerHoldsTheOldScenes() {
-        // Instantiating a missing storyboard identifier raises, so the About pane is read
-        // from the window instead: it is the controller built in code.
-        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
-        let windowController = storyboard.instantiateController(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController) as? NSWindowController
-        let preferences = windowController?.contentViewController as? PreferencesSplitViewController
-        XCTAssertTrue(preferences?.controller(for: AboutPreferencesViewController.tabIdentifier) is AboutPreferencesViewController)
-        windowController?.close()
-        for name in ["AlipayQR", "WechatpayQR", "PaypalLogo", "BuyMeACoffee", "MEOW"] {
-            XCTAssertNil(NSImage(named: name), "donation asset \(name) is still in the bundle")
-        }
-    }
-
-    func testPaneHasThePreferencesWidthAndFitsItsContent() {
-        let controller = makeController()
-        XCTAssertEqual(controller.view.frame.width, PreferencesWindowLayout.contentWidth)
-        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
-        controller.view.layoutSubtreeIfNeeded()
-        let root = controller.view
-        func frame(_ view: NSView) -> NSRect { root.convert(view.frame, from: view.superview) }
-        for label in [controller.nameLabel!, controller.versionLabel!, controller.creditLabel!] {
-            XCTAssertEqual(frame(label).midX, root.bounds.midX, accuracy: 0.5)
-            XCTAssertGreaterThanOrEqual(frame(label).minX, PreferencesGroupedForm.margin - 2)
-        }
-        XCTAssertEqual(controller.iconView.frame.size, NSSize(width: 64, height: 64))
-        XCTAssertEqual(frame(controller.iconView).midX, root.bounds.midX, accuracy: 0.5)
-        // The Welcome Guide sits in a box on the kit's margins.
-        XCTAssertEqual(frame(controller.welcomeGuideRow).minX, PreferencesGroupedForm.margin, accuracy: 0.5)
-        XCTAssertEqual(frame(controller.welcomeGuideRow).width, PreferencesGroupedForm.boxWidth(paneWidth: root.frame.width), accuracy: 0.5)
-    }
-}
-
 /// Names the redesign changed. Only what the user reads changed: every identifier that is
 /// stored in the settings or used as a key stays as it was.
 final class PreferencesNamingTests: XCTestCase {
@@ -587,8 +505,6 @@ final class PreferencesTextSizeTests: XCTestCase {
         gestures.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
         gestures.bindingSummary = { MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false) }
 
-        let about = AboutPreferencesViewController()
-
         // The Scrolling tab with "Advanced" open, so every row is looked at.
         let scrolling = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
             .instantiateController(withIdentifier: PANEL_IDENTIFIER.scrolling) as! PreferencesScrollingViewController
@@ -600,7 +516,7 @@ final class PreferencesTextSizeTests: XCTestCase {
         _ = scrolling.view
         XCTAssertTrue(scrolling.isAdvancedExpanded)
 
-        for controller in [mouse, gestures, about, scrolling] as [NSViewController] {
+        for controller in [mouse, gestures, scrolling] as [NSViewController] {
             XCTAssertEqual(smallTexts(in: controller.view), [], controller.title ?? "")
         }
     }

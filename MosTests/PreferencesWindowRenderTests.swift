@@ -176,10 +176,6 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
-    func testRenderAbout() throws {
-        try renderPane(AboutPreferencesViewController.tabIdentifier, name: "about")
-    }
-
     /// The Buttons pane: empty; with buttons; a row pointed at (its button lit); a row
     /// selected; recording; and rows with problems while the mice are asked.
     func testRenderButtons() throws {
