@@ -37,6 +37,9 @@ final class PreferencesLocalizationTests: XCTestCase {
         "mouse-haptics-strength-hint", "mouse-haptics-strength-light", "mouse-haptics-strength-strong",
         "mouse-press-force", "mouse-press-force-hint", "mouse-press-force-light", "mouse-press-force-firm",
         "mouse-value-on", "mouse-value-off",
+        "mouse-readback-sending", "mouse-readback-refused", "mouse-readback-no-answer", "mouse-readback-not-kept",
+        "mouse-readback-changed", "mouse-managed-off-note", "mouse-not-on-mouse-note", "mouse-send-again",
+        "mouse-send-again-help",
     ]
 
     /// Scrolling pane.
@@ -180,6 +183,11 @@ final class PreferencesLocalizationTests: XCTestCase {
         "mouse-pointer-speed-value": "d",
         "mouse-macos-tracking-speed-value": "dd",
         "mouse-wheel-readback-one": "@",
+        "mouse-readback-sending": "@",
+        "mouse-readback-refused": "@@",
+        "mouse-readback-no-answer": "@",
+        "mouse-readback-not-kept": "@",
+        "mouse-readback-changed": "@",
         // Scrolling pane
         "scrolling-key-clear-for": "@",
         // Buttons pane (ButtonTriggerNaming also names the Scrolling pane's hold keys)

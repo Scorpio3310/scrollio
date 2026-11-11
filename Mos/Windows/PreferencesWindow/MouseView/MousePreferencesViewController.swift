@@ -6,7 +6,10 @@
 //  user's macOS tracking speed and pointer acceleration, shown for any mouse. With a
 //  Logitech mouse the card shows its name and battery, and "Let Scrollio manage this mouse",
 //  the pointer speed, the wheel and the haptics follow. A row for something the mouse does
-//  not have, or a macOS value that could not be read, is hidden.
+//  not have, or a macOS value that could not be read, is hidden. A muted line under the
+//  switch says why the rows are greyed while it is off, and, while it is on, that a value
+//  is not on the mouse, with "Send Again" (LogiCenter reads the mice again and writes what
+//  differs, as on a reconnect).
 //
 //  The Logitech rows only edit Options.shared.logiMouse and Options.shared.logiWheel; the
 //  Logi layer sends them to the mice (LogiUsageBootstrap). What the mice report comes in
@@ -28,6 +31,9 @@ final class MousePreferencesViewController: NSViewController {
         static let trackingSpeed = NSUserInterfaceItemIdentifier("mouse-macos-tracking-speed")
         static let pointerAcceleration = NSUserInterfaceItemIdentifier("mouse-macos-pointer-acceleration")
         static let managed = NSUserInterfaceItemIdentifier("mouse-managed")
+        static let managedOffNote = NSUserInterfaceItemIdentifier("mouse-managed-off-note")
+        static let notOnTheMouseNote = NSUserInterfaceItemIdentifier("mouse-not-on-mouse-note")
+        static let sendAgain = NSUserInterfaceItemIdentifier("mouse-send-again")
         static let pointerSpeed = NSUserInterfaceItemIdentifier("mouse-pointer-speed")
         static let wheelMode = NSUserInterfaceItemIdentifier("mouse-wheel-mode")
         static let sensitivity = NSUserInterfaceItemIdentifier("mouse-wheel-sensitivity")
@@ -82,6 +88,11 @@ final class MousePreferencesViewController: NSViewController {
     private(set) var pointerSection: PreferencesGroupSection!
     private(set) var wheelSection: PreferencesGroupSection!
     private(set) var hapticsSection: PreferencesGroupSection!
+    /// The muted lines under the switch: why the rows are greyed while it is off, and "a value
+    /// is not on the mouse" with "Send Again" while it is on. At most one shows.
+    private(set) var managedOffNote: NSView!
+    private(set) var notOnTheMouseNote: NSView!
+    private(set) var sendAgainButton: NSButton!
 
     private(set) var trackingSpeedRow: PreferencesSliderRow!
     private(set) var pointerAccelerationRow: PreferencesSwitchRow!
@@ -110,7 +121,7 @@ final class MousePreferencesViewController: NSViewController {
 
     /// The boxes and the header, top to bottom, as they sit in the content stack.
     private var contentStack: NSStackView!
-    private var lastLayoutShape: [Int] = []
+    private var lastLayoutShape: [String] = []
 
     // MARK: - Lifecycle
 
@@ -146,6 +157,8 @@ final class MousePreferencesViewController: NSViewController {
             rows: [makeTrackingSpeedRow(), makePointerAccelerationRow()]
         )
         managedSection = PreferencesGroupSection(width: width, rows: [makeManagedRow()])
+        managedOffNote = makeManagedOffNote()
+        notOnTheMouseNote = makeNotOnTheMouseNote()
         pointerSection = PreferencesGroupSection(
             title: MouseText.text("mouse-pointer-header"), width: width, rows: [makePointerSpeedRow()]
         )
@@ -159,7 +172,7 @@ final class MousePreferencesViewController: NSViewController {
         )
 
         PreferencesGroupedForm.add(
-            [header, macSection, managedSection, pointerSection, wheelSection, hapticsSection],
+            [header, macSection, managedSection, managedOffNote, notOnTheMouseNote, pointerSection, wheelSection, hapticsSection],
             to: content
         )
 
@@ -280,6 +293,8 @@ final class MousePreferencesViewController: NSViewController {
         applyMacPointer(MacPointerPaneModel(macPointer))
         managedSection.isHidden = !model.hasMouse
         managedRow.isOn = model.managed
+        managedOffNote.isHidden = model.managedNote != .notManaged
+        notOnTheMouseNote.isHidden = model.managedNote != .notOnTheMouse
 
         apply(model.pointerSpeed, to: pointerSpeedRow, hint: "mouse-pointer-speed-hint")
 
@@ -348,12 +363,11 @@ final class MousePreferencesViewController: NSViewController {
         macSection.isHidden = mac.isEmpty
     }
 
-    /// What decides the pane's height: which boxes and rows show, and how many lines each
-    /// explanation has.
-    private var layoutShape: [Int] {
+    /// What decides the pane's height: which boxes, lines and rows show, and what each
+    /// explanation says (an "On the mouse" line with its reason may wrap).
+    private var layoutShape: [String] {
         let views: [NSView] = contentStack.arrangedSubviews + settingRows
-        return views.map { $0.isHidden ? 0 : 1 }
-            + settingRows.map { row in (row.explanation ?? "").filter { $0 == "\n" }.count }
+        return views.map { $0.isHidden ? "0" : "1" } + settingRows.map { $0.explanation ?? "" }
     }
 
     private func apply(_ slider: MousePaneModel.Slider?, to row: PreferencesSliderRow, hint: String) {
@@ -388,8 +402,11 @@ final class MousePreferencesViewController: NSViewController {
             // "Let Scrollio manage this mouse" starts the Logitech part: apart from the macOS box.
             let titled = (below as? PreferencesGroupSection)?.titleLabel != nil
                 || (below === managedSection && above === macSection)
+            // A muted line sits close under its box.
+            let note = below === managedOffNote || below === notOnTheMouseNote
             contentStack.setCustomSpacing(
-                titled ? PreferencesGroupedForm.sectionSpacing : PreferencesGroupedForm.boxSpacing,
+                note ? PreferencesGroupedForm.noteSpacing
+                    : titled ? PreferencesGroupedForm.sectionSpacing : PreferencesGroupedForm.boxSpacing,
                 after: above
             )
         }
@@ -496,6 +513,16 @@ final class MousePreferencesViewController: NSViewController {
         }
         noteUserChange(MouseSetting.allCases)
         syncControls()
+    }
+
+    /// "Send Again": LogiCenter reads the mice again and writes, as on a reconnect, only the
+    /// values the user set that a mouse reports differently, only while managed. The lines
+    /// wait like after a change, so the mice can answer before the pane says anything again.
+    @objc func sendAgainClicked(_ sender: NSButton) {
+        guard model.managed, model.managedNote == .notOnTheMouse else { return }
+        deviceSource.sendAgain()
+        noteUserChange(MouseSetting.allCases)
+        reloadDevices()
     }
 
     @objc func pointerSpeedChanged(_ sender: NSSlider) {
@@ -620,6 +647,82 @@ final class MousePreferencesViewController: NSViewController {
         managedRow = row
         managedSwitch = row.toggle
         return row
+    }
+
+    /// "Turn this on to change the settings below. …", under the switch at the rows' inset.
+    private func makeManagedOffNote() -> NSView {
+        let label = Self.makeNote(MouseText.managedNote(.notManaged))
+        label.identifier = Identifier.managedOffNote
+        label.preferredMaxLayoutWidth = Self.boxWidth - 2 * PreferencesGroupedForm.rowHorizontalInset
+        let holder = NSView()
+        holder.translatesAutoresizingMaskIntoConstraints = false
+        holder.isHidden = true
+        holder.addSubview(label)
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: holder.leadingAnchor, constant: inset),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: holder.trailingAnchor, constant: -inset),
+            label.topAnchor.constraint(equalTo: holder.topAnchor),
+            label.bottomAnchor.constraint(equalTo: holder.bottomAnchor),
+        ])
+        return holder
+    }
+
+    /// "Some values you set are not on the mouse." at the rows' inset, "Send Again" (small) at
+    /// the right edge of the box above, in the column of its switch: as the Gestures tab puts
+    /// "Open Mouse" under its Logitech box.
+    private func makeNotOnTheMouseNote() -> NSView {
+        let label = Self.makeNote(MouseText.managedNote(.notOnTheMouse))
+        label.identifier = Identifier.notOnTheMouseNote
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let button = PreferencesGroupedForm.makePushButton(
+            title: MouseText.text("mouse-send-again"),
+            target: self,
+            action: #selector(sendAgainClicked(_:))
+        )
+        button.controlSize = .small
+        button.font = NSFont.systemFont(ofSize: NSFont.systemFontSize(for: .small))
+        button.identifier = Identifier.sendAgain
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        button.toolTip = MouseText.text("mouse-send-again-help")
+        button.setAccessibilityHelp(MouseText.text("mouse-send-again-help"))
+        sendAgainButton = button
+
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        let spacing = PreferencesGroupedForm.controlSpacing
+        label.preferredMaxLayoutWidth = max(0, Self.boxWidth - 2 * inset - button.fittingSize.width - spacing)
+        let holder = NSView()
+        holder.translatesAutoresizingMaskIntoConstraints = false
+        holder.isHidden = true
+        holder.addSubview(label)
+        holder.addSubview(button)
+        // Both on one middle line, the line as tall as the taller of the two.
+        let middle = label.centerYAnchor.constraint(equalTo: button.centerYAnchor)
+        middle.priority = .defaultHigh
+        let hug = holder.heightAnchor.constraint(equalToConstant: 0)
+        hug.priority = .fittingSizeCompression
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: holder.leadingAnchor, constant: inset),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: button.leadingAnchor, constant: -spacing),
+            label.topAnchor.constraint(greaterThanOrEqualTo: holder.topAnchor),
+            label.bottomAnchor.constraint(lessThanOrEqualTo: holder.bottomAnchor),
+            button.trailingAnchor.constraint(equalTo: holder.trailingAnchor, constant: -inset),
+            button.centerYAnchor.constraint(equalTo: holder.centerYAnchor),
+            button.topAnchor.constraint(greaterThanOrEqualTo: holder.topAnchor),
+            button.bottomAnchor.constraint(lessThanOrEqualTo: holder.bottomAnchor),
+            middle, hug,
+        ])
+        return holder
+    }
+
+    /// A muted line under a box, in the explanations' style.
+    private static func makeNote(_ string: String) -> NSTextField {
+        let label = NSTextField(wrappingLabelWithString: string)
+        label.font = PreferencesGroupedForm.explanationFont
+        label.textColor = PreferencesGroupedForm.explanationColor(enabled: true)
+        label.isSelectable = false
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
     }
 
     private func makePointerSpeedRow() -> PreferencesGroupRow {

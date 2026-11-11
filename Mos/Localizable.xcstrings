@@ -5111,6 +5111,114 @@
           }
         }
       }
+    },
+    "mouse-readback-sending": {
+      "comment": "Mouse pane, under a setting: what the mouse reports (%@, e.g. 1000 DPI), while Scrollio is still sending the user's value",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On the mouse: %@. Still sending your value…"
+          }
+        }
+      }
+    },
+    "mouse-readback-refused": {
+      "comment": "Mouse pane, under a setting: what the mouse reports (%1$@), and the user's value the mouse answered with an error (%2$@)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On the mouse: %1$@. The mouse refused %2$@."
+          }
+        }
+      }
+    },
+    "mouse-readback-no-answer": {
+      "comment": "Mouse pane, under a setting: what the mouse reports (%@); the mouse did not answer when Scrollio sent the user's value",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On the mouse: %@. The mouse did not answer."
+          }
+        }
+      }
+    },
+    "mouse-readback-not-kept": {
+      "comment": "Mouse pane, under a setting: what the mouse reports (%@); the mouse answered the user's value but reported another one right after",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On the mouse: %@. The mouse kept its own value."
+          }
+        }
+      }
+    },
+    "mouse-readback-changed": {
+      "comment": "Mouse pane, under a setting: what the mouse reports (%@); the mouse had the user's value and later reported another one",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On the mouse: %@. It was changed on the mouse or by another app."
+          }
+        }
+      }
+    },
+    "mouse-managed-off-note": {
+      "comment": "Mouse pane, muted line under \"Let Scrollio manage this mouse\" while it is off",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn this on to change the settings below. Until then they show what the mouse reports."
+          }
+        }
+      }
+    },
+    "mouse-not-on-mouse-note": {
+      "comment": "Mouse pane, muted line under \"Let Scrollio manage this mouse\" next to the Send Again button",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some values you set are not on the mouse."
+          }
+        }
+      }
+    },
+    "mouse-send-again": {
+      "comment": "Mouse pane, small button: read the mouse again and send the user's values it does not have",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send Again"
+          }
+        }
+      }
+    },
+    "mouse-send-again-help": {
+      "comment": "Mouse pane, tooltip and VoiceOver help of the Send Again button",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reads the mouse again and sends the values you set that it does not have."
+          }
+        }
+      }
     }
   },
   "version": "1.1"
