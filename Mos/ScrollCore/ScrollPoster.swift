@@ -221,6 +221,23 @@ class ScrollPoster {
 
 // MARK: - 滚动数据更新控制
 extension ScrollPoster {
+    /// What "Trackpad-style events" come to for an app of the given kind (nil: not known, as
+    /// touch-only): whether the frames carry phases at all, as a flick or as one long touch, and
+    /// whether the switch is on but the app gets none.
+    static func trackpadStyleForm(switchOn: Bool, target: ScrollUtils.TrackpadStyleTarget?) -> (phases: Bool, flick: Bool, withheld: Bool) {
+        guard switchOn else {
+            return (phases: false, flick: false, withheld: false)
+        }
+        switch target {
+        case .plainScrolling:
+            return (phases: false, flick: false, withheld: true)
+        case .followsGlide:
+            return (phases: true, flick: true, withheld: false)
+        case .touchOnly, nil:
+            return (phases: true, flick: false, withheld: false)
+        }
+    }
+
     func update(event: CGEvent, input: ScrollPosterInput) -> Self {
         guard dispatchContext.capture(event: event) else {
             return self
@@ -977,23 +994,6 @@ private extension ScrollPoster {
             withheld: form.withheld,
             deadZone: OPTIONS_SCROLL_DEFAULT.usableDeadZone(Options.shared.scroll.deadZone)
         )
-    }
-
-    /// What "Trackpad-style events" come to for an app of the given kind (nil: not known, as
-    /// touch-only): whether the frames carry phases at all, as a flick or as one long touch, and
-    /// whether the switch is on but the app gets none.
-    static func trackpadStyleForm(switchOn: Bool, target: ScrollUtils.TrackpadStyleTarget?) -> (phases: Bool, flick: Bool, withheld: Bool) {
-        guard switchOn else {
-            return (phases: false, flick: false, withheld: false)
-        }
-        switch target {
-        case .plainScrolling:
-            return (phases: false, flick: false, withheld: true)
-        case .followsGlide:
-            return (phases: true, flick: true, withheld: false)
-        case .touchOnly, nil:
-            return (phases: true, flick: false, withheld: false)
-        }
     }
 
     /// Caller holds stateLock.
