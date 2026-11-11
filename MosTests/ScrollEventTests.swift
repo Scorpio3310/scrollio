@@ -256,4 +256,109 @@ final class ScrollEventTests: XCTestCase {
         XCTAssertFalse(data.valid)
         XCTAssertEqual(data.usableValue, 0.0)
     }
+
+    // MARK: - Trackpad or wheel (values from a trace on the owner's Mac, 2026-11-11)
+
+    private func isTrackpad(_ event: TracedScrollEvent) -> Bool {
+        return ScrollEvent.isTrackpad(
+            scrollPhase: event.phase, momentumPhase: event.momentum,
+            scrollCount: event.count, isContinuous: event.continuous
+        )
+    }
+
+    /// The regression: a wheel turned while the trackpad's glide ran carries the glide's swipe
+    /// count (1 or 2). Taken for trackpad events, these went through raw, unsmoothed and (with
+    /// "Reverse" on) the wrong way, until the count went back to 0 and the page jumped back.
+    func testWheelEventsDuringATrackpadGlide_areWheelEventsWhateverTheirCount() {
+        XCTAssertFalse(isTrackpad(.wheel(count: 1, line: -1, point: -1)))
+        XCTAssertFalse(isTrackpad(.wheel(count: 1, line: -1, point: -13)))
+        XCTAssertFalse(isTrackpad(.wheel(count: 1, line: -12, point: -130)))
+        XCTAssertFalse(isTrackpad(.wheel(count: 2, line: 1, point: 11)))
+        XCTAssertFalse(isTrackpad(.wheel(count: 2, line: 13, point: 139)))
+    }
+
+    func testOrdinaryWheelEvent_isAWheelEvent() {
+        XCTAssertFalse(isTrackpad(.wheel(count: 0, line: -9, point: -95)))
+        XCTAssertFalse(isTrackpad(.wheel(count: 0, line: 1, point: 1)))
+    }
+
+    /// Every trackpad event in the trace has a touch or a glide phase; all but the "ended"
+    /// that comes with a wheel event are continuous.
+    func testTrackpadEventsWithAPhase_areTrackpadEvents() {
+        for count in [0.0, 1, 2] {
+            for phase in [1.0, 2, 4, 8, 128] {
+                XCTAssertTrue(isTrackpad(.touch(phase, count: count, point: 22)), "phase \(phase) count \(count)")
+            }
+            XCTAssertTrue(isTrackpad(.momentum(1, count: count, point: 234)), "count \(count)")
+            XCTAssertTrue(isTrackpad(.momentum(2, count: count, point: 99)), "count \(count)")
+            XCTAssertTrue(isTrackpad(.momentum(3, count: count)), "count \(count)")
+        }
+        // The glide's "ended" that comes with the wheel's first event: not continuous.
+        XCTAssertTrue(isTrackpad(.wheelMarker(count: 2, line: 1, point: 1)))
+        XCTAssertTrue(isTrackpad(.wheelMarker(count: 0, line: 1, point: 1)))
+    }
+
+    /// The one trackpad event without a phase (at the end of a touch): continuous, count 1.
+    func testPhaseLessContinuousEventWithACount_isATrackpadEvent() {
+        XCTAssertTrue(isTrackpad(TracedScrollEvent(phase: 0, momentum: 0, count: 1, continuous: 1)))
+        // Without a count it was, and stays, a wheel event (a remote desktop's, for one).
+        XCTAssertFalse(isTrackpad(TracedScrollEvent(phase: 0, momentum: 0, count: 0, continuous: 1, line: 3, point: 30)))
+    }
+
+    /// The same rule on real events (the fields as the scroll tap reads them).
+    func testIsTrackpadWithEvent_readsTheFourFields() throws {
+        let wheel = try XCTUnwrap(TracedScrollEvent.wheel(count: 1, line: -1, point: -13).cgEvent())
+        XCTAssertEqual(wheel.getIntegerValueField(.scrollWheelEventScrollCount), 1, "the count is set")
+        XCTAssertEqual(wheel.getIntegerValueField(.scrollWheelEventIsContinuous), 0)
+        XCTAssertFalse(ScrollEvent.isTrackpad(with: wheel))
+        XCTAssertFalse(ScrollEvent(with: wheel).isTrackpad())
+
+        XCTAssertTrue(ScrollEvent.isTrackpad(with: try XCTUnwrap(TracedScrollEvent.momentum(2, count: 1, point: 99).cgEvent())))
+        XCTAssertTrue(ScrollEvent.isTrackpad(with: try XCTUnwrap(TracedScrollEvent.touch(1, point: 1).cgEvent())))
+        XCTAssertTrue(ScrollEvent.isTrackpad(with: try XCTUnwrap(TracedScrollEvent(phase: 0, momentum: 0, count: 1, continuous: 1).cgEvent())))
+        XCTAssertFalse(ScrollEvent.isTrackpad(with: try XCTUnwrap(TracedScrollEvent.wheel(count: 0, line: -9, point: -95).cgEvent())))
+    }
+}
+
+// MARK: - Trackpad and wheel together
+
+/// One scroll event with the fields the hand-over trace writes (vertical only).
+struct TracedScrollEvent {
+    var phase = 0.0
+    var momentum = 0.0
+    var count = 0.0
+    var continuous = 1.0
+    var line: Int64 = 0
+    var point = 0.0
+
+    static func touch(_ phase: Double, count: Double = 0, point: Double = 0) -> TracedScrollEvent {
+        return TracedScrollEvent(phase: phase, count: count, line: Int64(point / 10), point: point)
+    }
+    static func momentum(_ momentum: Double, count: Double = 1, point: Double = 0) -> TracedScrollEvent {
+        return TracedScrollEvent(momentum: momentum, count: count, line: Int64(point / 10), point: point)
+    }
+    /// A mouse wheel's event: no phase, not continuous.
+    static func wheel(count: Double, line: Int64, point: Double) -> TracedScrollEvent {
+        return TracedScrollEvent(count: count, continuous: 0, line: line, point: point)
+    }
+    /// The glide's "ended" that macOS sends with the wheel's first event during a glide.
+    static func wheelMarker(count: Double, line: Int64, point: Double) -> TracedScrollEvent {
+        return TracedScrollEvent(momentum: 3, count: count, continuous: 0, line: line, point: point)
+    }
+
+    var hasDelta: Bool { return line != 0 || point != 0 }
+
+    func cgEvent() -> CGEvent? {
+        guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: 0, wheel2: 0, wheel3: 0) else {
+            return nil
+        }
+        event.setDoubleValueField(.scrollWheelEventScrollPhase, value: phase)
+        event.setDoubleValueField(.scrollWheelEventMomentumPhase, value: momentum)
+        event.setIntegerValueField(.scrollWheelEventScrollCount, value: Int64(count))
+        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: Int64(continuous))
+        event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: line)
+        event.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: point)
+        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: point / 10)
+        return event
+    }
 }

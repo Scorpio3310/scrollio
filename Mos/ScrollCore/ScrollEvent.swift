@@ -51,34 +51,39 @@ class ScrollEvent {
 
 // MARK: - 工具方法
 extension ScrollEvent {
-    // 类型判断
-    static var isTrackpadCallSamplingRate = 3
-    static var isTrackpadCallCount = 2
-    static var isTrackpadCallCache = true
-    class func isTrackpad(with event: CGEvent) -> Bool {
-        ScrollEvent.isTrackpadCallCount += 1
-        if isTrackpadCallCount % isTrackpadCallSamplingRate == 0 {
-            ScrollEvent.isTrackpadCallCache = false
-            // 根据滚动特征值判定
-            if (event.getDoubleValueField(.scrollWheelEventMomentumPhase) != 0.0) || (event.getDoubleValueField(.scrollWheelEventScrollPhase) != 0.0) {
-                // MomentumPhase 或 ScrollPhase 任一不为零, 则为触控板
-                ScrollEvent.isTrackpadCallCache = true
-            } else if event.getDoubleValueField(.scrollWheelEventScrollCount) != 0.0 {
-                // 累计加速度不为零, 则为触控板
-                ScrollEvent.isTrackpadCallCache = true
-            }
-            // 根据输入事件源增强判断
-            if ScrollEvent.isTrackpadCallCache {
-                if let specialProcessID = Utils.getRunningApplicationProcessIdentifier(withBundleIdentifier: SPECIAL_EVENT_SOURCE_APPLICATION.logitechOptions)?.processIdentifier {
-                    let sourceProcessID = event.getIntegerValueField(.eventSourceUnixProcessID)
-                    if sourceProcessID == specialProcessID {
-                        ScrollEvent.isTrackpadCallCache = false
-                    }
-                }
-            }
-            ScrollEvent.isTrackpadCallCount = isTrackpadCallSamplingRate - 1 
+    /// Whether a scroll event with these fields comes from a trackpad (or a Magic Mouse)
+    /// rather than a mouse wheel. Pure.
+    ///
+    /// A trackpad's events always carry a phase: a touch (`scrollPhase`) or the glide after it
+    /// (`momentumPhase`). The one kind without a phase is continuous. `scrollCount` counts quick
+    /// successive swipes on the trackpad, and it stays set while the glide runs: the events of
+    /// a mouse wheel turned during that time carry it as well (phase-less, not continuous).
+    /// Taken for trackpad events, they went through unsmoothed and unreversed; so the count
+    /// makes an event a trackpad's only when the event is continuous.
+    static func isTrackpad(scrollPhase: Double, momentumPhase: Double, scrollCount: Double, isContinuous: Double) -> Bool {
+        if scrollPhase != 0.0 || momentumPhase != 0.0 {
+            return true
         }
-        return ScrollEvent.isTrackpadCallCache
+        return scrollCount != 0.0 && isContinuous != 0.0
+    }
+
+    /// `isTrackpad(scrollPhase:momentumPhase:scrollCount:isContinuous:)` for an event, except
+    /// that events sent by Logitech Options (its daemon) are wheel events.
+    class func isTrackpad(with event: CGEvent) -> Bool {
+        guard isTrackpad(
+            scrollPhase: event.getDoubleValueField(.scrollWheelEventScrollPhase),
+            momentumPhase: event.getDoubleValueField(.scrollWheelEventMomentumPhase),
+            scrollCount: event.getDoubleValueField(.scrollWheelEventScrollCount),
+            isContinuous: event.getDoubleValueField(.scrollWheelEventIsContinuous)
+        ) else {
+            return false
+        }
+        // 根据输入事件源增强判断
+        if let specialProcessID = Utils.getRunningApplicationProcessIdentifier(withBundleIdentifier: SPECIAL_EVENT_SOURCE_APPLICATION.logitechOptions)?.processIdentifier,
+           event.getIntegerValueField(.eventSourceUnixProcessID) == specialProcessID {
+            return false
+        }
+        return true
     }
     
     // 初始化轴数据

@@ -574,7 +574,6 @@ final class ScrollSystemLogTests: XCTestCase {
         var reasons: [ScrollSystemLog.PassthroughReason] = []
         ScrollSystemLog.passthroughObserverForTests = { reasons.append($0) }
         let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 1, wheel2: 0, wheel3: 0))
-        ScrollEvent.isTrackpadCallCount = ScrollEvent.isTrackpadCallSamplingRate - 1
 
         let result = ScrollCore.shared.scrollEventCallBack(CGEventTapProxy(bitPattern: 1)!, .scrollWheel, event, nil)
 
