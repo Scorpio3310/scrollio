@@ -91,7 +91,8 @@ extension OpenTargetPayload: Codable {
 /// shell 风格参数切分.
 ///
 /// 规则:
-/// - 按空白字符 (空格 / 制表符 / 换行) 分隔
+/// - Splits on spaces and tabs (`CharacterSet.whitespaces`); a line break does not split, it
+///   stays inside the argument
 /// - 双引号包裹的部分原样保留 (引号本身不进入结果)
 /// - 反斜杠转义紧随其后的下一个字符 (不论是否在引号内)
 /// - 末尾未闭合的引号: 视作 EOF 自动闭合, 不抛错

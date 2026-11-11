@@ -107,9 +107,4 @@ class ButtonCore {
             isActive = false
         }
     }
-    
-    // 切换状态
-    func toggle() {
-        isActive ? disable() : enable()
-    }
 }
