@@ -92,6 +92,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "gestures-behaviour-header", "gestures-logitech-header", "gestures-logitech-needs",
         "mouse-gesture-device-tracking", "mouse-gesture-device-tracking-hint", "mouse-gesture-device-tracking-unavailable",
         "mouse-gesture-haptics", "mouse-gesture-haptics-hint", "mouse-gesture-haptics-unavailable",
+        "gestures-haptics-off-under-mouse", "gestures-open-mouse",
     ]
 
     /// Apps pane and an app's page.

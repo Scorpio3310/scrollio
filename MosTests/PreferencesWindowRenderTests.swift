@@ -98,20 +98,26 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try renderMouse([], name: "mouse-no-mouse")
     }
 
+    /// The modes with and without a Logitech mouse, no gesture button, and the MX Master 4
+    /// with its haptics off because they were switched off under Mouse (the line under the
+    /// Logitech box with "Open Mouse").
     func testRenderGestures() throws {
         let master4 = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
-        let cases: [(name: String, mode: MouseGestureMode, support: MouseGestureDeviceSupport, bound: Bool)] = [
-            ("gestures-discrete-no-logitech", .discrete, .none, true),
-            ("gestures-discrete-mx-master-4", .discrete, master4, true),
-            ("gestures-follow-no-logitech", .interactive, .none, true),
-            ("gestures-follow-mx-master-4", .interactive, master4, true),
-            ("gestures-no-gesture-button", .discrete, .none, false),
+        let master4HapticsOff = MouseGestureDeviceSupport(deviceTracking: true, haptics: true, hapticsOffOnMouse: true)
+        let cases: [(name: String, mode: MouseGestureMode, support: MouseGestureDeviceSupport, bound: Bool, hapticsOnUnderMouse: Bool?)] = [
+            ("gestures-discrete-no-logitech", .discrete, .none, true, nil),
+            ("gestures-discrete-mx-master-4", .discrete, master4, true, nil),
+            ("gestures-discrete-mx-master-4-haptics-off", .discrete, master4HapticsOff, true, false),
+            ("gestures-follow-no-logitech", .interactive, .none, true, nil),
+            ("gestures-follow-mx-master-4", .interactive, master4, true, nil),
+            ("gestures-no-gesture-button", .discrete, .none, false, nil),
         ]
         for item in cases {
             var gesture = MouseGestureSettings.default
             gesture.mode = item.mode
             gesture.deviceTracking = item.support.deviceTracking
             Options.shared.gesture = gesture
+            Options.shared.logiMouse = LogiMouseSettings(hapticsOn: item.hapticsOnUnderMouse)
             // A pane of its own: "Follow the hand" is available whatever this Mac says.
             try renderPane(GesturesPreferencesViewController.tabIdentifier, name: item.name, replacement: {
                 let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })

@@ -14,6 +14,8 @@ struct MouseGestureDeviceSupport: Equatable {
     var deviceTracking: Bool
     /// The mouse has a haptic motor.
     var haptics: Bool
+    /// A connected mouse with a haptic motor reports its haptics switched off.
+    var hapticsOffOnMouse: Bool = false
 
     static let none = MouseGestureDeviceSupport(deviceTracking: false, haptics: false)
 }
@@ -29,7 +31,8 @@ struct MouseGestureDeviceSource {
         support: {
             MouseGestureDeviceSupport(
                 deviceTracking: LogiCenter.shared.supportsGestureDeviceTracking(),
-                haptics: LogiCenter.shared.supportsGestureHaptics()
+                haptics: LogiCenter.shared.supportsGestureHaptics(),
+                hapticsOffOnMouse: LogiCenter.shared.mouseDeviceStates().contains { $0.haptics?.isOn.onMouse == false }
             )
         },
         refresh: { LogiCenter.shared.refreshGestureStates() }
@@ -44,8 +47,14 @@ struct MouseGestureControlRules: Equatable {
     let deviceTrackingHintKey: String
     let hapticsEnabled: Bool
     let hapticsHintKey: String
+    /// "Haptic feedback is off under Mouse.": the mouse has its haptics off and the user
+    /// switched them off under Mouse. A gesture cue then never switches them on again, so
+    /// the pulse is skipped (Mos/Logi/Gesture); the line says where to change that.
+    let showsHapticsOffNote: Bool
 
-    init(support: MouseGestureDeviceSupport) {
+    /// - Parameter hapticsOnUnderMouse: "Haptic feedback" of the Mouse pane as the user set
+    ///   it (`Options.shared.logiMouse.hapticsOn`); nil while it was never touched.
+    init(support: MouseGestureDeviceSupport, hapticsOnUnderMouse: Bool? = nil) {
         deviceTrackingEnabled = support.deviceTracking
         deviceTrackingHintKey = support.deviceTracking
             ? "mouse-gesture-device-tracking-hint"
@@ -54,6 +63,7 @@ struct MouseGestureControlRules: Equatable {
         hapticsHintKey = support.haptics
             ? "mouse-gesture-haptics-hint"
             : "mouse-gesture-haptics-unavailable"
+        showsHapticsOffNote = support.haptics && support.hapticsOffOnMouse && hapticsOnUnderMouse == false
     }
 
     /// The tab shows the Logitech options only when a connected mouse supports at least one

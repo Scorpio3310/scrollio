@@ -4,24 +4,29 @@ import XCTest
 /// The "Logitech mouse" box of the Gestures tab: two switches bound to the shared gesture
 /// settings. The box shows when a connected mouse can do at least one of them (a switch
 /// it cannot do is disabled and says why); without such a mouse a muted line says what
-/// is needed. Capabilities come from fixtures; no HID device is touched. (The section
-/// lived in the Mouse tab before.)
+/// is needed. While the mouse has its haptics off because the user switched them off
+/// under Mouse, a muted line under the box says so and leads there. Capabilities come from
+/// fixtures; no HID device is touched. (The section lived in the Mouse tab before.)
 final class LogiGestureSectionTests: XCTestCase {
 
     private var savedGesture = MouseGestureSettings.default
+    private var savedMouse = LogiMouseSettings.default
     private var support = MouseGestureDeviceSupport.none
     private var refreshCount = 0
 
     override func setUp() {
         super.setUp()
         savedGesture = Options.shared.gesture
+        savedMouse = Options.shared.logiMouse
         Options.shared.gesture = .default
+        Options.shared.logiMouse = .default
         support = .none
         refreshCount = 0
     }
 
     override func tearDown() {
         Options.shared.gesture = savedGesture
+        Options.shared.logiMouse = savedMouse
         super.tearDown()
     }
 
@@ -132,7 +137,8 @@ final class LogiGestureSectionTests: XCTestCase {
         XCTAssertEqual(controller.deviceTrackingRow.explanation, text("mouse-gesture-device-tracking-hint"))
         XCTAssertEqual(controller.hapticsRow.explanation, text("mouse-gesture-haptics-hint"))
         XCTAssertEqual(controller.deviceTrackingRow.explanation, "Experimental: the mouse holds the pointer still and reports the movement.")
-        XCTAssertEqual(controller.hapticsRow.explanation, "A short pulse when a gesture locks in (MX Master 4).")
+        XCTAssertEqual(controller.hapticsRow.title, "Pulse when a gesture locks in")
+        XCTAssertEqual(controller.hapticsRow.explanation, "A short tap from the mouse as the gesture takes hold (MX Master 4).")
         XCTAssertEqual(controller.deviceTrackingSwitch.state, .off, "off by default")
         XCTAssertEqual(controller.hapticsSwitch.state, .on, "on by default")
         XCTAssertEqual(controller.deviceTrackingRow.title, text("mouse-gesture-device-tracking"))
@@ -241,6 +247,131 @@ final class LogiGestureSectionTests: XCTestCase {
         XCTAssertEqual(controller.logitechSection.box.rows.map(\.title), [text("mouse-gesture-device-tracking"), text("mouse-gesture-haptics")])
     }
 
+    // MARK: - Haptics off under Mouse
+
+    private let master4HapticsOff = MouseGestureDeviceSupport(deviceTracking: true, haptics: true, hapticsOffOnMouse: true)
+
+    func testTheHapticsOffRuleNeedsTheMouseOffAndTheUsersOff() {
+        let master4 = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
+        // Gesture cues are skipped only when both are off (Mos/Logi/Gesture): the mouse
+        // reports its haptics off, and the user switched them off under Mouse.
+        XCTAssertTrue(MouseGestureControlRules(support: master4HapticsOff, hapticsOnUnderMouse: false).showsHapticsOffNote)
+        // Never touched under Mouse: a cue switches the haptics on itself.
+        XCTAssertFalse(MouseGestureControlRules(support: master4HapticsOff, hapticsOnUnderMouse: nil).showsHapticsOffNote)
+        XCTAssertFalse(MouseGestureControlRules(support: master4HapticsOff, hapticsOnUnderMouse: true).showsHapticsOffNote)
+        XCTAssertFalse(MouseGestureControlRules(support: master4HapticsOff).showsHapticsOffNote)
+        // The mouse has them on (or has not said yet).
+        XCTAssertFalse(MouseGestureControlRules(support: master4, hapticsOnUnderMouse: false).showsHapticsOffNote)
+        // No haptic motor: nothing to switch.
+        let noMotor = MouseGestureDeviceSupport(deviceTracking: true, haptics: false, hapticsOffOnMouse: true)
+        XCTAssertFalse(MouseGestureControlRules(support: noMotor, hapticsOnUnderMouse: false).showsHapticsOffNote)
+        XCTAssertFalse(MouseGestureControlRules(support: .none, hapticsOnUnderMouse: false).showsHapticsOffNote)
+        // The rest of the rules do not change.
+        let off = MouseGestureControlRules(support: master4HapticsOff, hapticsOnUnderMouse: false)
+        XCTAssertTrue(off.hapticsEnabled)
+        XCTAssertEqual(off.hapticsHintKey, "mouse-gesture-haptics-hint")
+    }
+
+    func testALineUnderTheBoxSaysHapticsAreOffUnderMouse() throws {
+        support = master4HapticsOff
+        Options.shared.logiMouse.hapticsOn = false
+        let controller = makeController()
+        controller.view.layoutSubtreeIfNeeded()
+
+        XCTAssertFalse(controller.logitechSection.isHidden)
+        XCTAssertFalse(controller.hapticsOffNote.isHidden)
+        XCTAssertTrue(controller.logitechNeedsLabel.superview?.isHidden ?? false)
+        XCTAssertEqual(controller.hapticsOffLabel.stringValue, "Haptic feedback is off under Mouse.")
+        XCTAssertEqual(controller.openMouseButton.title, "Open Mouse")
+        XCTAssertEqual(controller.openMouseButton.controlSize, .small)
+        XCTAssertEqual(controller.hapticsOffLabel.textColor, PreferencesGroupedForm.explanationColor(enabled: true))
+        // The switch stays as it is: the line only says where the haptics are off.
+        XCTAssertTrue(controller.hapticsSwitch.isEnabled)
+        XCTAssertEqual(controller.hapticsSwitch.state, .on)
+        XCTAssertEqual(controller.hapticsRow.explanation, text("mouse-gesture-haptics-hint"))
+
+        // Right under the box, the line at the rows' inset and the button in the switches'
+        // column (compared by alignment rects, as Auto Layout places them).
+        func frame(_ view: NSView) -> NSRect {
+            controller.view.convert(view.alignmentRect(forFrame: view.frame), from: view.superview)
+        }
+        let box = frame(controller.logitechSection)
+        let note = frame(controller.hapticsOffNote)
+        // The root view is not flipped: lower on screen means a smaller y.
+        XCTAssertEqual(box.minY - note.maxY, GesturesPreferencesViewController.noteSpacing, accuracy: 0.5)
+        XCTAssertEqual(frame(controller.hapticsOffLabel).minX, frame(controller.hapticsRow.titleLabel).minX, accuracy: 0.5)
+        XCTAssertEqual(frame(controller.openMouseButton).maxX, frame(controller.hapticsSwitch).maxX, accuracy: 0.5)
+        XCTAssertLessThan(frame(controller.hapticsOffLabel).maxX, frame(controller.openMouseButton).minX)
+        XCTAssertEqual(frame(controller.hapticsOffLabel).midY, frame(controller.openMouseButton).midY, accuracy: 1)
+        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+        XCTAssertFalse(controller.view.hasAmbiguousLayout)
+    }
+
+    func testTheLineShowsOnlyWhenBothAreOff() {
+        // The mouse has its haptics off, but the user never switched them off here.
+        support = master4HapticsOff
+        let controller = makeController()
+        XCTAssertTrue(controller.hapticsOffNote.isHidden)
+        let without = controller.view.frame.height
+
+        Options.shared.logiMouse.hapticsOn = false
+        controller.reload()
+        XCTAssertFalse(controller.hapticsOffNote.isHidden)
+        XCTAssertGreaterThan(controller.view.frame.height, without, "the pane makes room for it")
+
+        // The mouse switched them on again (Logi Options+, or a managed mouse took the
+        // user's choice): it reports so, and the line goes.
+        support = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertTrue(controller.hapticsOffNote.isHidden)
+        XCTAssertEqual(controller.view.frame.height, without, accuracy: 0.5)
+
+        // Switched on under Mouse: no line, whatever the mouse says.
+        support = master4HapticsOff
+        Options.shared.logiMouse.hapticsOn = true
+        controller.viewWillAppear()
+        XCTAssertTrue(controller.hapticsOffNote.isHidden)
+
+        // The mouse leaves: no box, no line.
+        Options.shared.logiMouse.hapticsOn = false
+        support = .none
+        NotificationCenter.default.post(name: LogiCenter.gestureStateChanged, object: nil)
+        XCTAssertTrue(controller.logitechSection.isHidden)
+        XCTAssertTrue(controller.hapticsOffNote.isHidden)
+        XCTAssertFalse(controller.logitechNeedsLabel.superview?.isHidden ?? true)
+    }
+
+    func testOpenMouseShowsTheMousePane() throws {
+        support = master4HapticsOff
+        Options.shared.logiMouse.hapticsOn = false
+        var opened = 0
+        let controller = makeController()
+        controller.openMousePane = { opened += 1 }
+        XCTAssertTrue(controller.openMouseButton.sendAction(controller.openMouseButton.action, to: controller.openMouseButton.target))
+        XCTAssertEqual(opened, 1)
+        // Nothing is written: the line only leads to Mouse.
+        XCTAssertEqual(Options.shared.logiMouse.hapticsOn, false)
+        XCTAssertTrue(Options.shared.gesture.hapticFeedback)
+    }
+
+    func testOpenMouseSelectsTheMousePaneInTheWindow() throws {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        let preferences = PreferencesSplitViewController(storyboard: storyboard, uiStateDefaults: nil)
+        let gestures = try XCTUnwrap(preferences.controller(for: GesturesPreferencesViewController.tabIdentifier) as? GesturesPreferencesViewController)
+        gestures.deviceSource = MouseGestureDeviceSource(support: { [weak self] in self?.support ?? .none }, refresh: {})
+        gestures.bindingSummary = { MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: true) }
+        (preferences.controller(for: MousePreferencesViewController.tabIdentifier) as? MousePreferencesViewController)?
+            .deviceSource = MouseDeviceSource(deviceStates: { [] }, refresh: {}, showDiagnostics: {})
+        support = master4HapticsOff
+        Options.shared.logiMouse.hapticsOn = false
+        XCTAssertTrue(preferences.selectPane(withIdentifier: GesturesPreferencesViewController.tabIdentifier))
+        XCTAssertFalse(gestures.hapticsOffNote.isHidden)
+
+        XCTAssertTrue(gestures.openMouseButton.sendAction(gestures.openMouseButton.action, to: gestures.openMouseButton.target))
+        XCTAssertEqual(preferences.selectedPaneIdentifier, MousePreferencesViewController.tabIdentifier)
+        XCTAssertEqual(preferences.sidebar.selectedIdentifier, MousePreferencesViewController.tabIdentifier)
+    }
+
     // MARK: - Strings
 
     private static let locales = PreferencesLocalizationTests.locales
@@ -250,6 +381,7 @@ final class LogiGestureSectionTests: XCTestCase {
         "mouse-gesture-device-tracking", "mouse-gesture-device-tracking-hint",
         "mouse-gesture-device-tracking-unavailable",
         "mouse-gesture-haptics", "mouse-gesture-haptics-hint", "mouse-gesture-haptics-unavailable",
+        "gestures-haptics-off-under-mouse", "gestures-open-mouse",
     ]
 
     func testEveryLocaleTranslatesTheGestureSection() {
@@ -268,6 +400,17 @@ final class LogiGestureSectionTests: XCTestCase {
                 XCTAssertFalse(value.contains("%"), "\(locale): \(key) takes no arguments")
             }
         }
+    }
+
+    /// "Haptic feedback" is the Mouse pane's switch (the mouse's own); the Gestures switch
+    /// has a name of its own, and the line under it names the Mouse pane's switch.
+    func testOnlyTheMousePaneCallsItsSwitchHapticFeedback() {
+        XCTAssertEqual(text("mouse-haptics"), "Haptic feedback")
+        XCTAssertNotEqual(text("mouse-gesture-haptics"), text("mouse-haptics"))
+        XCTAssertFalse(text("mouse-gesture-haptics").localizedCaseInsensitiveContains("haptic feedback"))
+        XCTAssertTrue(text("gestures-haptics-off-under-mouse").hasPrefix(text("mouse-haptics")))
+        XCTAssertTrue(text("gestures-haptics-off-under-mouse").contains(text("mouse-tab-title")))
+        XCTAssertTrue(text("gestures-open-mouse").hasSuffix(text("mouse-tab-title")))
     }
 
     func testHapticHintsNameTheMouseThatHasThem() {
