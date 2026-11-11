@@ -162,15 +162,22 @@ final class PreferencesLocalizationTests: XCTestCase {
         "main-menu-welcome-guide",
     ]
 
-    /// Introduction window (Welcome Guide).
+    /// The Welcome Guide (Introduction window): its bar, the four steps and their pictures.
     static let introKeys = [
-        "intro-title", "intro-subtitle", "intro-access-heading", "intro-access-explanation",
-        "intro-step-open-settings", "intro-step-open-settings-detail", "intro-step-turn-on",
-        "intro-step-turn-on-detail", "intro-step-accessibility",
-        "intro-status-missing", "intro-status-missing-detail", "intro-status-granted",
+        "intro-title", "intro-subtitle", "intro-continue-button", "intro-back-button", "intro-step-of",
+        "intro-welcome-picture", "intro-feature-scrolling", "intro-feature-scrolling-detail",
+        "intro-feature-buttons", "intro-feature-buttons-detail", "intro-feature-gestures",
+        "intro-feature-gestures-detail",
+        "intro-access-title", "intro-access-text", "intro-access-waiting", "intro-access-waiting-detail",
+        "intro-access-starting", "intro-access-paused", "intro-access-picture", "intro-status-granted",
         "intro-status-granted-detail", "intro-status-granted-detail-hidden-icon",
-        "intro-open-settings-button", "intro-open-app-settings-button", "intro-done-button",
-        "intro-help-link", "intro-help-heading", "intro-help-text", "intro-help-finder-button",
+        "intro-open-settings-button", "intro-help-link", "intro-help-heading", "intro-help-text",
+        "intro-help-finder-button",
+        "intro-feel-title", "intro-feel-text", "intro-feel-text-watch", "intro-feel-note", "intro-feel-try",
+        "intro-feel-trackpad", "intro-feel-not-running", "intro-feel-not-in-list", "intro-feel-smoothing-off",
+        "intro-feel-try-area",
+        "intro-finish-title", "intro-finish-text", "intro-finish-picture", "intro-open-app-settings-button",
+        "intro-done-button",
     ]
 
     static let keys = mouseKeys + scrollingKeys + buttonsKeys + gesturesKeys + appsKeys
@@ -220,7 +227,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "about-version-commit": "@@@",
         "about-version-commit-date": "@@@@",
         // Welcome Guide
-        "intro-step-accessibility": "d@",
+        "intro-step-of": "dd",
         // Status-bar menu and toasts
         "status-menu-battery": "@@",
         "status-menu-battery-charging": "@@",

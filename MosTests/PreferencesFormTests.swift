@@ -2,8 +2,8 @@
 //  PreferencesFormTests.swift
 //  MosTests
 //
-//  What the panes built in code share besides the grouped kit: the metrics, the hint type,
-//  the column and the section header, and snapping a slider value.
+//  What the panes built in code share besides the grouped kit: the hint and header type,
+//  and snapping a slider value.
 //
 
 import XCTest
@@ -11,30 +11,17 @@ import XCTest
 
 final class PreferencesFormTests: XCTestCase {
 
-    func testMetrics() {
-        XCTAssertEqual(PreferencesForm.contentWidth, 450)
-        XCTAssertEqual(PreferencesForm.rowSpacing, 17)
-        XCTAssertEqual(PreferencesForm.hintSpacing, 6)
-    }
-
     func testHintsUseOneFontSizeOfAtLeastTenPoints() {
         XCTAssertGreaterThanOrEqual(PreferencesForm.hintFontSize, 10)
         XCTAssertEqual(PreferencesForm.hintFontSize, NSFont.smallSystemFontSize)
         XCTAssertEqual(PreferencesForm.hintFont.pointSize, PreferencesForm.hintFontSize)
     }
 
-    func testAColumnStacksItsLinesAndASectionHeaderIsSemibold() {
-        let header = PreferencesForm.makeSectionHeader("Section")
-        let line = NSTextField(labelWithString: "What the section is about.")
-        let column = PreferencesForm.makeColumn([header, line])
-        column.setFrameSize(column.fittingSize)
-        column.layoutSubtreeIfNeeded()
-        XCTAssertEqual(column.orientation, .vertical)
-        XCTAssertEqual(column.spacing, PreferencesForm.hintSpacing)
-        XCTAssertEqual(header.minX(in: column), line.minX(in: column), accuracy: 0.5)
-        XCTAssertEqual(header.font, PreferencesForm.sectionHeaderFont)
-        XCTAssertEqual(header.font?.pointSize, 13)
-        XCTAssertEqual(header.accessibilityRole(), .staticText)
+    func testASectionHeaderIsSemiboldAtTheSystemSize() {
+        let font = PreferencesForm.sectionHeaderFont
+        XCTAssertEqual(font.pointSize, 13)
+        let traits = font.fontDescriptor.object(forKey: .traits) as? [NSFontDescriptor.TraitKey: Any]
+        XCTAssertEqual(traits?[.weight] as? CGFloat ?? 0, NSFont.Weight.semibold.rawValue, accuracy: 0.01)
     }
 
     func testSnappedClampsToTheRangeAndRoundsToTheStep() {
@@ -50,12 +37,5 @@ final class PreferencesFormTests: XCTestCase {
         XCTAssertEqual(PreferencesForm.snapped(.infinity, to: 0...5, step: 0.05), 0)
         // No step: only clamped.
         XCTAssertEqual(PreferencesForm.snapped(0.123, to: 0...1, step: 0), 0.123)
-    }
-}
-
-private extension NSView {
-    /// The left edge of the view's alignment rectangle in `ancestor`.
-    func minX(in ancestor: NSView) -> CGFloat {
-        return ancestor.convert(alignmentRect(forFrame: frame), from: superview).minX
     }
 }

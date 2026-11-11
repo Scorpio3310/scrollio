@@ -69,6 +69,14 @@ enum ScrollFeel: Int, CaseIterable {
     static func hint(for feel: ScrollFeel?) -> String {
         return feel?.localizedHint ?? customHint
     }
+
+    /// Picks this preset: its Duration, nothing else. The Feel control of the Scrolling pane
+    /// and the feel step of the Welcome Guide.
+    func apply(to scroll: OPTIONS_SCROLL_DEFAULT) {
+        if scroll.duration != duration {
+            scroll.duration = duration
+        }
+    }
 }
 
 // MARK: - Sliders

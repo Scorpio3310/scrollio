@@ -480,7 +480,8 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// A preset is a value of Duration: picking one moves the glide time slider with it.
     @objc func feelChanged(_ sender: NSSegmentedControl) {
         guard let feel = ScrollFeel(rawValue: sender.selectedSegment) else { return }
-        setDuration(feel.duration)
+        feel.apply(to: getTargetApplicationScrollOptions())
+        syncViewWithOptions()
     }
 
     @objc func scrollSpeedSliderChange(_ sender: NSSlider) {
