@@ -539,6 +539,169 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(shortcutCount, 0)
     }
 
+    // MARK: - Gesture hold watchdog (a lost button-up)
+
+    func testDiscreteHoldWatchdogReleasesTheMotionTapAndThePointer() {
+        configureGestureBinding()
+        let executed = recordKeyboardShortcuts()
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        XCTAssertTrue(MouseInteractionSessionController.shared.isMotionTapRunning)
+        XCTAssertTrue(MouseGesturePointerLock.shared.isLocked)
+
+        // The button-up never arrives.
+        InputProcessor.shared.fireMouseGestureWatchdogsForTests()
+
+        XCTAssertFalse(MouseInteractionSessionController.shared.isMotionTapRunning)
+        XCTAssertFalse(InputProcessor.shared.hasPointerTrackedMouseGestureSessions)
+        XCTAssertFalse(MouseGesturePointerLock.shared.isLocked)
+        XCTAssertEqual(pointerAssociations, [false, true])
+
+        // Movement no longer counts towards a gesture of the abandoned hold.
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 45, deltaY: 0)
+        waitForMainQueue()
+        XCTAssertTrue(executed().isEmpty)
+    }
+
+    func testDiscreteHoldWatchdogLetsTheNextPressStartOver() {
+        configureGestureBinding()
+        let executed = recordKeyboardShortcuts()
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 20, deltaY: 0)
+        InputProcessor.shared.fireMouseGestureWatchdogsForTests()
+
+        // The next press is a fresh hold, not a swallowed "duplicate down": it starts from
+        // zero travel (the 20 pt above are gone) and fires its action like any other.
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        XCTAssertTrue(MouseInteractionSessionController.shared.isMotionTapRunning)
+        XCTAssertTrue(MouseGesturePointerLock.shared.isLocked)
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: -30, deltaY: 0)
+        waitForMainQueue()
+        XCTAssertTrue(executed().isEmpty, "30 pt is below the gesture distance")
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: -15, deltaY: 0)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        waitForMainQueue()
+
+        let expected = resolvedShortcut(SystemShortcut.moveSpaceLeft)
+        XCTAssertEqual(executed().count, 1)
+        XCTAssertEqual(executed().first?.0, expected.code)
+        XCTAssertFalse(InputProcessor.shared.hasActiveMouseGestureSessions)
+        XCTAssertFalse(MouseInteractionSessionController.shared.isMotionTapRunning)
+        XCTAssertFalse(MouseGesturePointerLock.shared.isLocked)
+    }
+
+    func testLateButtonUpAfterTheWatchdogIsSwallowedWithoutAClick() {
+        configureGestureBinding()
+        var replayCount = 0
+        ShortcutExecutor.shared.setTestingMouseEventObserver { _ in replayCount += 1 }
+        let executed = recordKeyboardShortcuts()
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        InputProcessor.shared.fireMouseGestureWatchdogsForTests()
+
+        // A hold that was merely long: its button-up still belongs to Mos, and it must not
+        // run the click action (Mission Control) ten seconds after the press.
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        waitForMainQueue()
+
+        XCTAssertTrue(executed().isEmpty)
+        XCTAssertEqual(replayCount, 0)
+        XCTAssertFalse(InputProcessor.shared.hasActiveMouseGestureSessions)
+        XCTAssertFalse(MouseInteractionSessionController.shared.isMotionTapRunning)
+    }
+
+    func testWatchdogAbandonsOnlyItsOwnHoldWhenTwoGestureButtonsAreHeld() {
+        configureGestureBinding()
+        let second = RecordedEvent(type: .mouse, code: 4, modifiers: 0, displayComponents: ["🖱5"], deviceFilter: nil)
+        Options.shared.buttons.binding.append(ButtonBinding(
+            triggerEvent: second,
+            systemShortcutName: SystemShortcut.mouseGestureNavigation.identifier,
+            isEnabled: true
+        ))
+        ButtonUtils.shared.invalidateCache()
+        let executed = recordKeyboardShortcuts()
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down, code: 3)), .consumed)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down, code: 4)), .consumed)
+        InputProcessor.shared.fireMouseGestureWatchdogsForTests(code: 3)
+
+        // Button 4 is still held: the tap and the pointer lock stay for it.
+        XCTAssertTrue(MouseInteractionSessionController.shared.isMotionTapRunning)
+        XCTAssertTrue(MouseGesturePointerLock.shared.isLocked)
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 45, deltaY: 0)
+        waitForMainQueue()
+        XCTAssertEqual(executed().count, 1, "only the live hold recognizes the movement")
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up, code: 4)), .consumed)
+        XCTAssertFalse(MouseInteractionSessionController.shared.isMotionTapRunning)
+        XCTAssertFalse(MouseGesturePointerLock.shared.isLocked)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up, code: 3)), .consumed)
+        waitForMainQueue()
+        XCTAssertEqual(executed().count, 1)
+        XCTAssertFalse(InputProcessor.shared.hasActiveMouseGestureSessions)
+    }
+
+    func testWatchdogAbandonsAHoldTheMouseTracksItself() {
+        configureGestureBinding(code: 1000)
+        let executed = recordKeyboardShortcuts()
+        let down = InputEvent(
+            type: .mouse, code: 1000, modifiers: [], phase: .down, source: .hidPP, device: nil,
+            tracksMovementOnDevice: true
+        )
+        let threshold = Int((MouseGestureRecognizer.defaultActivationDistance / MouseGestureDeviceTracking.pointsPerCount).rounded(.up)) + 1
+
+        XCTAssertEqual(InputProcessor.shared.process(down), .consumed)
+        InputProcessor.shared.fireMouseGestureWatchdogsForTests()
+        InputProcessor.shared.handleDeviceGestureMovement(code: 1000, countsX: threshold, countsY: 0)
+        waitForMainQueue()
+        XCTAssertTrue(executed().isEmpty, "raw XY of an abandoned hold is ignored")
+
+        // The next press is tracked again.
+        XCTAssertEqual(InputProcessor.shared.process(down), .consumed)
+        InputProcessor.shared.handleDeviceGestureMovement(code: 1000, countsX: threshold, countsY: 0)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up, code: 1000)), .consumed)
+        waitForMainQueue()
+        XCTAssertEqual(executed().count, 1)
+    }
+
+    /// The real timer, with a short timeout: pressing the button arms the watchdog.
+    func testDiscreteHoldWatchdogFiresByItselfAfterTheTimeout() {
+        configureGestureBinding()
+        InputProcessor.shared.setTestingMouseGestureHoldTimeout(0.05)
+        defer { InputProcessor.shared.setTestingMouseGestureHoldTimeout(nil) }
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        XCTAssertTrue(MouseInteractionSessionController.shared.isMotionTapRunning)
+
+        let abandoned = expectation(for: NSPredicate { _, _ in
+            !MouseInteractionSessionController.shared.isMotionTapRunning
+        }, evaluatedWith: nil)
+        wait(for: [abandoned], timeout: 5)
+        XCTAssertFalse(InputProcessor.shared.hasPointerTrackedMouseGestureSessions)
+        XCTAssertFalse(MouseGesturePointerLock.shared.isLocked)
+    }
+
+    /// A released hold takes its watchdog with it: the timer of an earlier press must not
+    /// abandon a later one.
+    func testWatchdogOfAReleasedHoldDoesNotTouchTheNextPress() {
+        configureGestureBinding()
+        InputProcessor.shared.setTestingMouseGestureHoldTimeout(0.05)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        InputProcessor.shared.setTestingMouseGestureHoldTimeout(nil)
+
+        // Second press with the real (10 s) timeout, held past the first press's timer.
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        let firstTimerWindowPassed = expectation(description: "the first timer would have fired")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { firstTimerWindowPassed.fulfill() }
+        wait(for: [firstTimerWindowPassed], timeout: 5)
+
+        XCTAssertTrue(MouseInteractionSessionController.shared.isMotionTapRunning)
+        XCTAssertTrue(InputProcessor.shared.hasPointerTrackedMouseGestureSessions)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+    }
+
     func testProcess_downEvent_consumedWhenBindingMatches() {
         let trigger = RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil)
         let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "custom::56:0", isEnabled: true)
