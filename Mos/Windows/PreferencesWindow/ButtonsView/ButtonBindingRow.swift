@@ -340,14 +340,14 @@ final class ButtonBindingRow: PreferencesListRow {
         applyEnabled()
     }
 
-    /// The colour of the note's sign: orange for a problem, blue for a hint.
+    /// The colour of the note's sign: orange for a problem, the accent colour for a hint.
     static func symbolColor(for tone: ButtonRowNote.Tone) -> NSColor {
-        return tone == .problem ? .systemOrange : .systemBlue
+        return tone == .problem ? .systemOrange : .controlAccentColor
     }
 
     /// The note's sign before its text, the sign in its colour and the text in the colour
-    /// of any explanation (orange or blue text is too faint on a light box to read); all
-    /// white on the selection.
+    /// of any explanation (orange or accent-coloured text is too faint on a light box to
+    /// read); all white on the selection.
     override func applyEnabled() {
         super.applyEnabled()
         applyPicture()

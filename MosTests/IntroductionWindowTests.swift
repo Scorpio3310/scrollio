@@ -2230,7 +2230,8 @@ private extension WelcomeGuideAccessState {
 /// Draws every step of the Welcome Guide off screen, light and dark, the way the window
 /// shows it (the window's appearance, the window colour standing in for the materials,
 /// which draw nothing off screen). The animated pictures are drawn at a fixed moment of
-/// their loop, or as their Reduce Motion still. Only runs when asked to:
+/// their loop, or as their Reduce Motion still. The accent colour of the drawings is the
+/// app's own purple (`ForcedAppAccent`, PreferencesWindowRenderTests). Only runs when asked to:
 /// `TEST_RUNNER_SCROLLIO_SHOTS_DIR=<folder> xcodebuild … test -only-testing:MosTests/WelcomeGuideRenderTests`.
 final class WelcomeGuideRenderTests: XCTestCase {
 
@@ -2244,9 +2245,12 @@ final class WelcomeGuideRenderTests: XCTestCase {
         }
         directory = URL(fileURLWithPath: folder, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // The drawings in the app's own purple, whatever accent this Mac's user chose.
+        try ForcedAppAccent.install()
     }
 
     override func tearDown() {
+        ForcedAppAccent.uninstall()
         worlds.forEach { $0.tearDown() }
         worlds = []
         super.tearDown()
