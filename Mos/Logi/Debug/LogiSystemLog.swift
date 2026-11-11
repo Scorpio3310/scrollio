@@ -25,21 +25,28 @@ enum LogiSystemLog {
     }
 }
 
-/// How long the HID++ writes take. Each write (`IOHIDDeviceSetReport`) is synchronous on the
-/// main thread, the thread that also serves the event taps; over Bluetooth nobody knew how
-/// long one takes. This only measures and words the lines; it decides nothing.
+/// How long the HID++ writes take, and how long the main thread is held by them. A write
+/// (`IOHIDDeviceSetReport`) returns only when the device has taken the report: 15 to 29 ms
+/// over Bluetooth. The writes run on the session's own queue (`LogiReportWriter`), so the
+/// main thread, which serves the event taps, only queues them. This only measures and words
+/// the lines; it decides nothing.
 ///
-/// - A write of `slowThreshold` or more: one line with its duration, what it asked (feature
-///   index and function, or the receiver request) and the link, at most one such line every
-///   `minimumLineInterval` with the number of slow writes and the longest since the last line.
+/// - A write of `slowThreshold` or more (a link that struggles): one line with its duration,
+///   what it asked (feature index and function, or the receiver request) and the link, at
+///   most one such line every `minimumLineInterval` with the number of slow writes and the
+///   longest since the last line.
+/// - A write the device refused: one line with the result, limited the same way.
 /// - Once per connection, when the first batch of requests is done: the number of writes,
-///   their total and the longest.
+///   their total and the longest on the write queue, and how long the main thread was held
+///   to queue them.
 ///
 /// Times are monotonic nanoseconds (`DispatchTime.uptimeNanoseconds`). One per session, main
-/// thread only, as the writes.
+/// thread only (the writer delivers its outcomes there).
 struct LogiWriteTiming {
 
-    static let slowThreshold: UInt64 = 5_000_000
+    /// A write this long means the link struggles (an ordinary Bluetooth write takes 15 to
+    /// 29 ms; it no longer holds the main thread, so it is no line's worth by itself).
+    static let slowThreshold: UInt64 = 100_000_000
     static let minimumLineInterval: UInt64 = 1_000_000_000
 
     /// What a write asked.
@@ -80,11 +87,36 @@ struct LogiWriteTiming {
     private var longestSinceLine: UInt64 = 0
     private var lastSlowLineAt: UInt64?
 
+    // Refused writes since the last line about them.
+    private var failedSinceLine = 0
+    private var lastFailureLineAt: UInt64?
+
     // The first batch.
     private(set) var setupWrites = 0
     private(set) var setupTotal: UInt64 = 0
     private(set) var setupLongest: UInt64 = 0
+    private(set) var setupMainThread: UInt64 = 0
     private(set) var setupSummarized = false
+
+    /// The main thread was held for `held` to queue one write.
+    mutating func noteQueued(mainThreadHeld held: UInt64) {
+        if !setupSummarized {
+            setupMainThread += held
+        }
+    }
+
+    /// The device refused a write (`result` is not success), at `now`.
+    /// - Returns: the line to write, if one is due.
+    mutating func recordFailure(result: Int32, now: UInt64, request: Request, link: Link) -> String? {
+        failedSinceLine += 1
+        if let last = lastFailureLineAt, now &- last < Self.minimumLineInterval {
+            return nil
+        }
+        let line = Self.failureLine(result: result, request: request, link: link, count: failedSinceLine)
+        failedSinceLine = 0
+        lastFailureLineAt = now
+        return line
+    }
 
     /// One write that took `duration`, ending at `now`.
     /// - Returns: the line to write, if one is due.
@@ -113,7 +145,8 @@ struct LogiWriteTiming {
     mutating func finishSetup(link: Link) -> String? {
         guard !setupSummarized else { return nil }
         setupSummarized = true
-        return Self.setupLine(writes: setupWrites, total: setupTotal, longest: setupLongest, link: link)
+        return Self.setupLine(writes: setupWrites, total: setupTotal, longest: setupLongest,
+                              mainThread: setupMainThread, link: link)
     }
 
     static func milliseconds(_ nanoseconds: UInt64) -> String {
@@ -122,12 +155,26 @@ struct LogiWriteTiming {
 
     static func slowLine(duration: UInt64, request: Request, link: Link, count: Int, longest: UInt64) -> String {
         return "Slow HID++ write: \(milliseconds(duration)) (\(request.text), \(link.text)); "
-            + "\(count) \(count == 1 ? "write" : "writes") of 5 ms or more since the last such line, "
+            + "\(count) \(count == 1 ? "write" : "writes") of 100 ms or more since the last such line, "
             + "longest \(milliseconds(longest))"
     }
 
-    static func setupLine(writes: Int, total: UInt64, longest: UInt64, link: Link) -> String {
-        return "HID++ writes while connecting (\(link.text)): \(writes), \(milliseconds(total)) in total, "
-            + "longest \(milliseconds(longest))"
+    static func failureLine(result: Int32, request: Request, link: Link, count: Int) -> String {
+        return String(format: "HID++ write refused: 0x%08x", UInt32(bitPattern: result))
+            + " (\(request.text), \(link.text)); "
+            + "\(count) refused \(count == 1 ? "write" : "writes") since the last such line"
+    }
+
+    static func setupLine(writes: Int, total: UInt64, longest: UInt64, mainThread: UInt64, link: Link) -> String {
+        return "HID++ writes while connecting (\(link.text)): \(writes), \(milliseconds(total)) in total "
+            + "on the write queue, longest \(milliseconds(longest)); the main thread was held "
+            + "\(milliseconds(mainThread)) to queue them"
+    }
+
+    /// The main thread waited `waited` for the queued writes before a device was let go.
+    static func drainLine(waited: UInt64, finished: Bool, reason: String) -> String {
+        return finished
+            ? "Waited \(milliseconds(waited)) for the queued HID++ writes (\(reason))"
+            : "The queued HID++ writes did not finish within \(milliseconds(waited)) (\(reason)); going on without them"
     }
 }

@@ -9,6 +9,7 @@
 //
 
 import XCTest
+import IOKit
 @testable import Mos_Debug
 
 // MARK: - getFeature answers (C)
@@ -318,32 +319,34 @@ final class BrailleSpinnerTests: XCTestCase {
 
 // MARK: - How long the HID++ writes take
 
-/// Every HID++ write is a synchronous IOHIDDeviceSetReport on the main thread. The time each
-/// one takes goes to the `logi` log when it is slow, at most once a second, and once per
-/// connection as a summary. Only the wording and the limits are tested; nothing is written.
+/// A HID++ write (IOHIDDeviceSetReport) takes 15 to 29 ms over Bluetooth. The writes run on
+/// the session's own queue; what they took goes to the `logi` log once per connection as a
+/// summary, and one by one only when the link struggles or the device refuses. Only the
+/// wording and the limits are tested here; nothing is written.
 final class LogiWriteTimingTests: XCTestCase {
 
     private let ms: UInt64 = 1_000_000
     private let second: UInt64 = 1_000_000_000
 
-    func testFastWritesWriteNoLine() {
+    /// An ordinary Bluetooth write (about 22 ms) no longer holds the main thread: no line.
+    func testOrdinaryWritesWriteNoLine() {
         var timing = LogiWriteTiming()
-        XCTAssertNil(timing.record(duration: 4 * ms, now: 10 * second, request: .feature(index: 0x05, function: 1), link: .bluetooth))
-        XCTAssertNil(timing.record(duration: 4_999_999, now: 11 * second, request: .feature(index: 0x05, function: 1), link: .bluetooth))
+        XCTAssertNil(timing.record(duration: 22 * ms, now: 10 * second, request: .feature(index: 0x05, function: 1), link: .bluetooth))
+        XCTAssertNil(timing.record(duration: 99_999_999, now: 11 * second, request: .feature(index: 0x05, function: 1), link: .bluetooth))
     }
 
     func testASlowWriteIsWrittenWithWhatItAskedAndTheLink() {
         var timing = LogiWriteTiming()
         XCTAssertEqual(
-            timing.record(duration: 12_340_000, now: 10 * second, request: .feature(index: 0x05, function: 1), link: .bluetooth),
-            "Slow HID++ write: 12.3 ms (feature index 0x05, function 1, over Bluetooth); "
-                + "1 write of 5 ms or more since the last such line, longest 12.3 ms"
+            timing.record(duration: 123_400_000, now: 10 * second, request: .feature(index: 0x05, function: 1), link: .bluetooth),
+            "Slow HID++ write: 123.4 ms (feature index 0x05, function 1, over Bluetooth); "
+                + "1 write of 100 ms or more since the last such line, longest 123.4 ms"
         )
         var receiver = LogiWriteTiming()
         XCTAssertEqual(
-            receiver.record(duration: 5 * ms, now: 10 * second, request: .ping(slot: 2), link: .receiver),
-            "Slow HID++ write: 5.0 ms (ping of slot 0x02, through a receiver); "
-                + "1 write of 5 ms or more since the last such line, longest 5.0 ms"
+            receiver.record(duration: 100 * ms, now: 10 * second, request: .ping(slot: 2), link: .receiver),
+            "Slow HID++ write: 100.0 ms (ping of slot 0x02, through a receiver); "
+                + "1 write of 100 ms or more since the last such line, longest 100.0 ms"
         )
         XCTAssertEqual(LogiWriteTiming.Request.receiverRegister(0xB5, long: true).text, "receiver register 0xB5 long read")
         XCTAssertEqual(LogiWriteTiming.Request.receiverRegister(0xB5, long: false).text, "receiver register 0xB5 read")
@@ -353,37 +356,179 @@ final class LogiWriteTimingTests: XCTestCase {
     func testAtMostOneLineASecondWithTheCountAndTheLongest() {
         var timing = LogiWriteTiming()
         let request = LogiWriteTiming.Request.feature(index: 0x0B, function: 3)
-        XCTAssertNotNil(timing.record(duration: 6 * ms, now: 10 * second, request: request, link: .bluetooth))
-        XCTAssertNil(timing.record(duration: 30 * ms, now: 10 * second + 200 * ms, request: request, link: .bluetooth))
-        XCTAssertNil(timing.record(duration: 2 * ms, now: 10 * second + 300 * ms, request: request, link: .bluetooth), "fast: not counted")
-        XCTAssertNil(timing.record(duration: 8 * ms, now: 10 * second + 999 * ms, request: request, link: .bluetooth))
+        XCTAssertNotNil(timing.record(duration: 110 * ms, now: 10 * second, request: request, link: .bluetooth))
+        XCTAssertNil(timing.record(duration: 300 * ms, now: 10 * second + 200 * ms, request: request, link: .bluetooth))
+        XCTAssertNil(timing.record(duration: 20 * ms, now: 10 * second + 300 * ms, request: request, link: .bluetooth), "ordinary: not counted")
+        XCTAssertNil(timing.record(duration: 150 * ms, now: 10 * second + 999 * ms, request: request, link: .bluetooth))
         XCTAssertEqual(
-            timing.record(duration: 7 * ms, now: 11 * second, request: request, link: .bluetooth),
-            "Slow HID++ write: 7.0 ms (feature index 0x0B, function 3, over Bluetooth); "
-                + "3 writes of 5 ms or more since the last such line, longest 30.0 ms"
+            timing.record(duration: 120 * ms, now: 11 * second, request: request, link: .bluetooth),
+            "Slow HID++ write: 120.0 ms (feature index 0x0B, function 3, over Bluetooth); "
+                + "3 writes of 100 ms or more since the last such line, longest 300.0 ms"
         )
     }
 
-    /// Once per connection: the writes of the first batch, their total and the longest.
-    func testTheSetupSummaryIsWrittenOnce() {
+    /// The summary of a connection: what the writes took on their queue, and how long the
+    /// main thread was held to queue them (the number that used to be the whole total).
+    func testTheSummaryOfAConnectionIsWrittenOnce() {
         var timing = LogiWriteTiming()
         let request = LogiWriteTiming.Request.feature(index: 0x00, function: 0)
-        _ = timing.record(duration: 1 * ms, now: 1 * second, request: request, link: .receiver)
-        _ = timing.record(duration: 2 * ms, now: 2 * second, request: request, link: .receiver)
-        _ = timing.record(duration: 9 * ms, now: 3 * second, request: request, link: .receiver)
+        for duration in [22 * ms, 15 * ms, 29 * ms] {
+            timing.noteQueued(mainThreadHeld: 20_000)
+            XCTAssertNil(timing.record(duration: duration, now: 10 * second, request: request, link: .bluetooth))
+        }
         XCTAssertEqual(
-            timing.finishSetup(link: .receiver),
-            "HID++ writes while connecting (through a receiver): 3, 12.0 ms in total, longest 9.0 ms"
+            timing.finishSetup(link: .bluetooth),
+            "HID++ writes while connecting (over Bluetooth): 3, 66.0 ms in total on the write queue, "
+                + "longest 29.0 ms; the main thread was held 0.1 ms to queue them"
         )
-        XCTAssertNil(timing.finishSetup(link: .receiver), "once per connection")
-        // Later writes are no longer added up.
-        _ = timing.record(duration: 1 * ms, now: 4 * second, request: request, link: .receiver)
+        XCTAssertNil(timing.finishSetup(link: .bluetooth), "once per connection")
+        // Later writes are not added to a summary that was written.
+        timing.noteQueued(mainThreadHeld: 20_000)
+        XCTAssertNil(timing.record(duration: 22 * ms, now: 20 * second, request: request, link: .bluetooth))
         XCTAssertEqual(timing.setupWrites, 3)
+        XCTAssertEqual(timing.setupMainThread, 60_000)
     }
 
-    func testASummaryWithoutWrites() {
+    /// A write the device refused: said once a second at most, with how many.
+    func testARefusedWriteIsWrittenAtMostOnceASecond() {
         var timing = LogiWriteTiming()
-        XCTAssertEqual(timing.finishSetup(link: .bluetooth),
-                       "HID++ writes while connecting (over Bluetooth): 0, 0.0 ms in total, longest 0.0 ms")
+        let request = LogiWriteTiming.Request.feature(index: 0x0B, function: 2)
+        let notOpen = Int32(bitPattern: 0xE00002CD)
+        XCTAssertEqual(
+            timing.recordFailure(result: notOpen, now: 10 * second, request: request, link: .bluetooth),
+            "HID++ write refused: 0xe00002cd (feature index 0x0B, function 2, over Bluetooth); 1 refused write since the last such line"
+        )
+        XCTAssertNil(timing.recordFailure(result: notOpen, now: 10 * second + 500 * ms, request: request, link: .bluetooth))
+        XCTAssertEqual(
+            timing.recordFailure(result: notOpen, now: 11 * second, request: request, link: .bluetooth),
+            "HID++ write refused: 0xe00002cd (feature index 0x0B, function 2, over Bluetooth); 2 refused writes since the last such line"
+        )
+    }
+
+    func testTheLineAboutWaitingAtTeardown() {
+        XCTAssertEqual(LogiWriteTiming.drainLine(waited: 198_300_000, finished: true, reason: "teardown"),
+                       "Waited 198.3 ms for the queued HID++ writes (teardown)")
+        XCTAssertEqual(LogiWriteTiming.drainLine(waited: 2_000_000_000, finished: false, reason: "teardown"),
+                       "The queued HID++ writes did not finish within 2000.0 ms (teardown); going on without them")
+    }
+}
+
+// MARK: - Writes off the main thread
+
+/// The writer sends a device's reports one after another, in the order given, on a queue of
+/// its own: the caller (the main thread) never waits for the device, except where it asks to.
+final class LogiReportWriterTests: XCTestCase {
+
+    /// Collects what the "device" was sent, from the writer's queue.
+    private final class Device {
+        private let lock = NSLock()
+        private var reports: [[UInt8]] = []
+        var result: IOReturn = kIOReturnSuccess
+        var delay: TimeInterval = 0
+        /// Whether a send ran on the main thread.
+        private(set) var sentOnMainThread = false
+
+        func send(_ report: [UInt8]) -> IOReturn {
+            if delay > 0 { Thread.sleep(forTimeInterval: delay) }
+            lock.lock()
+            reports.append(report)
+            if Thread.isMainThread { sentOnMainThread = true }
+            lock.unlock()
+            return result
+        }
+
+        var sent: [[UInt8]] {
+            lock.lock(); defer { lock.unlock() }
+            return reports
+        }
+    }
+
+    private func makeWriter(_ device: Device) -> LogiReportWriter {
+        return LogiReportWriter(label: "test.logi.write", send: device.send)
+    }
+
+    func testReportsGoOutInTheOrderGivenAndNeverOnTheMainThread() {
+        let device = Device()
+        device.delay = 0.01
+        let writer = makeWriter(device)
+        let reports: [[UInt8]] = (0..<20).map { [0x11, 0xFF, UInt8($0)] }
+        var outcomes: [LogiReportWriter.Outcome] = []
+        let delivered = expectation(description: "all outcomes delivered")
+        delivered.expectedFulfillmentCount = reports.count
+
+        let started = Date()
+        for report in reports {
+            writer.write(report) { outcome in
+                XCTAssertTrue(Thread.isMainThread, "outcomes come back on the main thread")
+                outcomes.append(outcome)
+                delivered.fulfill()
+            }
+        }
+        // 20 writes of 10 ms each (200 ms): the caller did not wait for them.
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.1)
+
+        wait(for: [delivered], timeout: 5)
+        XCTAssertEqual(device.sent, reports)
+        XCTAssertFalse(device.sentOnMainThread)
+        XCTAssertEqual(outcomes.count, reports.count)
+        XCTAssertTrue(outcomes.allSatisfy { $0.result == kIOReturnSuccess })
+        XCTAssertTrue(outcomes.allSatisfy { $0.duration >= 8_000_000 }, "each took the device's time")
+        XCTAssertGreaterThan(outcomes.last?.waited ?? 0, outcomes.first?.waited ?? .max, "the last one waited behind the others")
+    }
+
+    /// Teardown waits for what is queued: the requests that give the mouse its buttons back
+    /// must have gone out before the device is closed.
+    func testDrainWaitsForEverythingQueued() {
+        let device = Device()
+        device.delay = 0.005
+        let writer = makeWriter(device)
+        for index in 0..<5 {
+            writer.write([0x11, 0xFF, UInt8(index)]) { _ in }
+        }
+        XCTAssertTrue(writer.drain(timeout: 2))
+        XCTAssertEqual(device.sent.count, 5, "all five went out before drain returned")
+    }
+
+    /// A device that does not answer must not hold teardown forever.
+    func testDrainGivesUpAfterItsTimeout() {
+        let device = Device()
+        device.delay = 0.5
+        let writer = makeWriter(device)
+        writer.write([0x11, 0xFF, 0x00]) { _ in }
+        let started = Date()
+        XCTAssertFalse(writer.drain(timeout: 0.05))
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.3)
+        // Let the stuck write finish so the test leaves nothing behind.
+        XCTAssertTrue(writer.drain(timeout: 2))
+    }
+
+    func testARefusalComesBackAsTheOutcome() {
+        let device = Device()
+        device.result = kIOReturnNotOpen
+        let writer = makeWriter(device)
+        let delivered = expectation(description: "outcome")
+        writer.write([0x10, 0xFF, 0x00]) { outcome in
+            XCTAssertEqual(outcome.result, kIOReturnNotOpen)
+            delivered.fulfill()
+        }
+        wait(for: [delivered], timeout: 2)
+    }
+
+    /// The summary of a connection is written once the writes queued before it were counted.
+    func testAfterQueuedRunsOnceTheEarlierOutcomesWereDelivered() {
+        let device = Device()
+        device.delay = 0.002
+        let writer = makeWriter(device)
+        var order: [String] = []
+        let done = expectation(description: "afterQueued")
+        writer.write([1]) { _ in order.append("first") }
+        writer.write([2]) { _ in order.append("second") }
+        writer.afterQueued {
+            order.append("after")
+            done.fulfill()
+        }
+        XCTAssertTrue(order.isEmpty, "nothing ran yet: the caller did not wait")
+        wait(for: [done], timeout: 2)
+        XCTAssertEqual(order, ["first", "second", "after"])
     }
 }

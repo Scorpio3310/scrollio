@@ -1846,9 +1846,10 @@ class LogiDebugPanel: NSObject {
         let hex = report.map { String(format: "%02X", $0) }.joined(separator: " ")
         LogiDebugPanel.log(device: session.deviceInfo.name, type: .tx, message: "TX: \(hex)", rawBytes: report)
 
-        let result = IOHIDDeviceSetReport(session.hidDevice, kIOHIDReportTypeOutput, CFIndex(report[0]), report, report.count)
-        if result != kIOReturnSuccess {
-            LogiDebugPanel.log(device: session.deviceInfo.name, type: .error,
+        let deviceName = session.deviceInfo.name
+        session.writeReportForDebug(report) { result in
+            guard result != kIOReturnSuccess else { return }
+            LogiDebugPanel.log(device: deviceName, type: .error,
                                       message: "IOHIDDeviceSetReport failed: \(String(format: "0x%08X", result))")
         }
     }
@@ -1929,9 +1930,10 @@ class LogiDebugPanel: NSObject {
         let hex = report.map { String(format: "%02X", $0) }.joined(separator: " ")
         LogiDebugPanel.log(device: session.deviceInfo.name, type: .tx, message: "TX: \(hex)", rawBytes: report)
 
-        let result = IOHIDDeviceSetReport(session.hidDevice, kIOHIDReportTypeOutput, CFIndex(report[0]), report, report.count)
-        if result != kIOReturnSuccess {
-            LogiDebugPanel.log(device: session.deviceInfo.name, type: .error,
+        let deviceName = session.deviceInfo.name
+        session.writeReportForDebug(report) { result in
+            guard result != kIOReturnSuccess else { return }
+            LogiDebugPanel.log(device: deviceName, type: .error,
                                       message: "IOHIDDeviceSetReport failed: \(String(format: "0x%08X", result))")
         }
     }

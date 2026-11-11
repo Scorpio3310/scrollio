@@ -473,6 +473,9 @@ class LogiDeviceSession {
     }
 
     deinit {
+        // No write may still be on its way when the device is closed (the write queue holds
+        // the device, not the session).
+        reportWriter.drain(timeout: Self.writeDrainTimeoutAtRelease)
         if deviceOpened { IOHIDDeviceClose(hidDevice, IOOptionBits(kIOHIDOptionsTypeNone)) }
         reportBufferPtr?.deallocate()
     }
@@ -1168,6 +1171,10 @@ class LogiDeviceSession {
         // timer 已清零, 此时 isActivityInProgress 只剩 discoveryInFlight 一个分量;
         // 走 setter 让 Manager 重算聚合 busy, 防止 session 销毁后 UI spinner 卡住.
         setDiscoveryInFlight(false)
+        // The requests above that give the mouse its buttons back are queued: wait for them
+        // here, before the device is closed or the app exits. The event taps are off by now
+        // (AppRunController stops them first), so waiting holds up nobody's input.
+        drainWrites(reason: "teardown", timeout: Self.writeDrainTimeoutAtTeardown)
     }
 
     // MARK: - Input Report Callback
@@ -1202,7 +1209,6 @@ class LogiDeviceSession {
     /// functionId: 函数号 0...15 (见 hidppLongRequest)
     private func sendRequest(featureIndex: UInt8, functionId: UInt8, params: [UInt8] = []) {
         let report: [UInt8]
-        let result: IOReturn
 
         switch connectionMode {
         case .bleDirect, .receiver:
@@ -1214,12 +1220,6 @@ class LogiDeviceSession {
                 return
             }
             report = built
-            let writeStarted = DispatchTime.now().uptimeNanoseconds
-            result = IOHIDDeviceSetReport(
-                hidDevice, kIOHIDReportTypeOutput,
-                CFIndex(report[0]), report, report.count
-            )
-            noteWriteTime(since: writeStarted, .feature(index: featureIndex, function: functionId))
 
         case .unsupported:
             LogiDebugPanel.log(device: deviceInfo.name, type: .warning, message: "Cannot send: unsupported connection mode")
@@ -1227,12 +1227,29 @@ class LogiDeviceSession {
         }
 
         let hex = report.prefix(8).map { String(format: "%02X", $0) }.joined(separator: " ")
-        let resultStr = result == kIOReturnSuccess ? "OK" : String(format: "0x%08x", result)
         let decoded = decodeRequest(featureIndex: featureIndex, functionId: functionId, params: params)
-        LogiDebugPanel.log(device: deviceInfo.name, type: .tx, message: "TX: \(hex)... -> \(resultStr)", decoded: decoded)
+        LogiDebugPanel.log(device: deviceInfo.name, type: .tx, message: "TX: \(hex)...", decoded: decoded)
+        queueReport(report, .feature(index: featureIndex, function: functionId))
     }
 
-    // MARK: - Write timing (measurement only, see LogiWriteTiming)
+    // MARK: - Writes (off the main thread, see LogiReportWriter)
+
+    /// How long teardown waits for the queued writes (the requests that give the mouse its
+    /// buttons back): about ten of them at 15 to 29 ms each over Bluetooth, so this is ample
+    /// and still bounds a device that does not answer.
+    static let writeDrainTimeoutAtTeardown: TimeInterval = 2.0
+    static let writeDrainTimeoutAtRelease: TimeInterval = 1.0
+
+    /// Every output report of this session goes out through this writer, in the order it was
+    /// queued. The device call (`IOHIDDeviceSetReport`) takes 15 to 29 ms over Bluetooth and
+    /// used to run on the main thread, holding up the event taps: it runs on the writer's
+    /// queue now. The writer keeps the device; the session keeps the writer.
+    private(set) lazy var reportWriter: LogiReportWriter = {
+        let device = hidDevice
+        return LogiReportWriter(label: "com.nikklemenc.Scrollio.logi.write") { report in
+            IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, CFIndex(report[0]), report, report.count)
+        }
+    }()
 
     private var writeTiming = LogiWriteTiming()
 
@@ -1240,19 +1257,54 @@ class LogiDeviceSession {
         return connectionMode == .bleDirect ? .bluetooth : .receiver
     }
 
-    /// After a write: how long it took, to the `logi` log when it was slow.
-    private func noteWriteTime(since started: UInt64, _ request: LogiWriteTiming.Request) {
-        let now = DispatchTime.now().uptimeNanoseconds
-        guard let line = writeTiming.record(duration: now &- started, now: now, request: request, link: writeLink) else { return }
-        LogiSystemLog.note("[\(deviceInfo.name)] \(line)")
+    /// Queues an output report and returns at once. When the device has taken it (or refused
+    /// it), the time it took and a refusal go to the `logi` log, on the main thread.
+    private func queueReport(_ report: [UInt8], _ request: LogiWriteTiming.Request) {
+        let link = writeLink
+        let queueStarted = DispatchTime.now().uptimeNanoseconds
+        reportWriter.write(report) { [weak self] outcome in
+            guard let self = self else { return }
+            let now = DispatchTime.now().uptimeNanoseconds
+            if outcome.result != kIOReturnSuccess {
+                let failure = String(format: "HID++ write refused: 0x%08x (%@)", UInt32(bitPattern: outcome.result), request.text)
+                LogiDebugPanel.log(device: self.deviceInfo.name, type: .error, message: failure)
+                if let line = self.writeTiming.recordFailure(result: outcome.result, now: now, request: request, link: link) {
+                    LogiSystemLog.note("[\(self.deviceInfo.name)] \(line)")
+                }
+            }
+            if let line = self.writeTiming.record(duration: outcome.duration, now: now, request: request, link: link) {
+                LogiSystemLog.note("[\(self.deviceInfo.name)] \(line)")
+            }
+        }
+        writeTiming.noteQueued(mainThreadHeld: DispatchTime.now().uptimeNanoseconds &- queueStarted)
+    }
+
+    /// Waits for the writes still queued, and says so when that held the main thread.
+    private func drainWrites(reason: String, timeout: TimeInterval) {
+        let started = DispatchTime.now().uptimeNanoseconds
+        let finished = reportWriter.drain(timeout: timeout)
+        let waited = DispatchTime.now().uptimeNanoseconds &- started
+        guard !finished || waited >= 5_000_000 else { return }
+        LogiSystemLog.note("[\(deviceInfo.name)] \(LogiWriteTiming.drainLine(waited: waited, finished: finished, reason: reason))")
+    }
+
+    /// The diagnostics panel's own requests (Debug builds): through the same queue, so that
+    /// two writes never reach the device at once. `completion` runs on the main thread.
+    func writeReportForDebug(_ report: [UInt8], completion: @escaping (IOReturn) -> Void) {
+        reportWriter.write(report) { outcome in
+            completion(outcome.result)
+        }
     }
 
     /// The discovery ran out. The first time on this connection (for a receiver: after the
     /// last slot of its takeover sweep), the summary of the writes so far.
     private func noteSetupWritesDone() {
         guard !(receiverSweepActive && !pendingDivertSlots.isEmpty) else { return }
-        guard let line = writeTiming.finishSetup(link: writeLink) else { return }
-        LogiSystemLog.note("[\(deviceInfo.name)] \(line)")
+        // Once the writes queued so far have gone out and were counted.
+        reportWriter.afterQueued { [weak self] in
+            guard let self = self, let line = self.writeTiming.finishSetup(link: self.writeLink) else { return }
+            LogiSystemLog.note("[\(self.deviceInfo.name)] \(line)")
+        }
     }
 
     // MARK: - Feature Discovery
@@ -1763,17 +1815,10 @@ class LogiDeviceSession {
 
         pendingSlotPings.insert(slot)
 
-        let writeStarted = DispatchTime.now().uptimeNanoseconds
-        let result = IOHIDDeviceSetReport(
-            hidDevice, kIOHIDReportTypeOutput,
-            CFIndex(report[0]), report, report.count
-        )
-        noteWriteTime(since: writeStarted, .ping(slot: slot))
-
         let hex = report.map { String(format: "%02X", $0) }.joined(separator: " ")
-        let resultStr = result == kIOReturnSuccess ? "OK" : String(format: "0x%08x", result)
-        LogiDebugPanel.log(device: deviceInfo.name, type: .tx, message: "TX: \(hex) -> \(resultStr)",
+        LogiDebugPanel.log(device: deviceInfo.name, type: .tx, message: "TX: \(hex)",
                                   decoded: "IRoot.Ping(slot=\(slot))")
+        queueReport(report, .ping(slot: slot))
     }
 
     /// 查询 receiver slot 的设备信息 (register 0xB5)
@@ -1814,19 +1859,12 @@ class LogiDeviceSession {
             if 4 + i < report.count { report[4 + i] = p }
         }
 
-        let writeStarted = DispatchTime.now().uptimeNanoseconds
-        let result = IOHIDDeviceSetReport(
-            hidDevice, kIOHIDReportTypeOutput,
-            CFIndex(report[0]), report, report.count
-        )
-        noteWriteTime(since: writeStarted, .receiverRegister(register, long: isLong))
-
         let hex = report.prefix(min(report.count, 20)).map { String(format: "%02X", $0) }.joined(separator: " ")
-        let resultStr = result == kIOReturnSuccess ? "OK" : String(format: "0x%08x", result)
         let regName = register == Self.receiverPairingInfo ? "PairingInfo" : "0x\(String(format: "%02X", register))"
         let paramsHex = params.map { String(format: "%02X", $0) }.joined(separator: " ")
-        LogiDebugPanel.log(device: deviceInfo.name, type: .tx, message: "TX: \(hex) -> \(resultStr)",
+        LogiDebugPanel.log(device: deviceInfo.name, type: .tx, message: "TX: \(hex)",
                                   decoded: "\(isLong ? "GET_LONG" : "GET")_REGISTER(\(regName), [\(paramsHex)])")
+        queueReport(report, .receiverRegister(register, long: isLong))
     }
 
     // MARK: - Receiver Response Handlers

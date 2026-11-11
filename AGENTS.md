@@ -98,6 +98,10 @@ See `.agents/docs/code-map.md` for the map. The rules:
   changes, decisions and one line per scroll, never a line per event, and no string built
   per event. Use these, not `NSLog`: only they are in the subsystem the owner reads.
   Reading it: `README.md`, "Diagnostics".
+- A write to a Logitech device never runs on the main thread: `IOHIDDeviceSetReport` takes
+  15 to 29 ms over Bluetooth and the main thread serves every event tap. Send through the
+  session (`LogiReportWriter`: one serial queue per device, order kept); never call
+  `IOHIDDeviceSetReport` directly.
 - Nothing is written to a Logitech mouse unless "Let Scrollio manage this mouse"
   (`Options.shared.logiMouseManaged`) is on and the user set that value. Reading needs no
   switch.
