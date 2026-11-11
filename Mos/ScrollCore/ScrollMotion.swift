@@ -6,6 +6,7 @@
 //  - frame-rate independent smoothing (the Duration factor is defined per 60 Hz frame);
 //  - how strong ScrollFilter is;
 //  - how far the smoothed position may trail the wheel (lead cap);
+//  - whole pixels per posted frame, the fraction carried on (ScrollPixelCarry);
 //  - the mach clock of the display link's timestamps.
 //
 
@@ -48,6 +49,14 @@ enum ScrollMotion {
         return -referenceFrameInterval / log(1 - t)
     }
 
+    /// A frame's output as a speed: pixels per 60 Hz frame. The dead zone is compared with
+    /// this, not with the frame's own distance: at the same speed a 120 Hz frame carries half
+    /// the distance of a 60 Hz one, and a glide must not end sooner (or a slow scroll move
+    /// nothing at all) because the display is faster.
+    static func outputPerReferenceFrame(_ magnitude: Double, frameInterval interval: Double) -> Double {
+        return magnitude * referenceFrameInterval / clampedFrameInterval(interval)
+    }
+
     /// ScrollFilter's weight per 60 Hz frame for the Duration factor `transition`.
     ///
     /// The page answers a notch at once (the lerp moves fastest on its first frame) and then
@@ -59,6 +68,40 @@ enum ScrollMotion {
     static func filterWeight(forTransition transition: Double) -> Double {
         guard transition.isFinite else { return filterWeight }
         return min(1, max(filterWeight, transition))
+    }
+}
+
+/// Whole pixels for each posted frame, the fraction carried into the next one.
+///
+/// A posted frame is a point delta, and CoreGraphics drops its fraction: 3.7 goes out as 3.
+/// Left at that, every frame lost half a pixel on average, so a wheel click scrolled about a
+/// tenth less than it was given, and less again on a faster display (twice the frames, each
+/// losing its fraction). The fraction of a frame is added to the next frame of the same
+/// direction instead: what has gone out is the computed distance, cut to a whole pixel.
+struct ScrollPixelCarry {
+
+    /// The fraction not yet posted, per axis; it has the sign of the motion and is under a pixel.
+    private(set) var carry = (y: 0.0, x: 0.0)
+
+    mutating func reset() {
+        carry = (y: 0.0, x: 0.0)
+    }
+
+    /// Adds a frame's output and returns the whole pixels to post; the rest waits.
+    mutating func take(_ value: (y: Double, x: Double)) -> (y: Double, x: Double) {
+        return (y: Self.take(value.y, carry: &carry.y), x: Self.take(value.x, carry: &carry.x))
+    }
+
+    private static func take(_ value: Double, carry: inout Double) -> Double {
+        guard value.isFinite else { return 0 }
+        // The other way now: what was left of the old direction (under a pixel) is dropped.
+        if carry != 0, value != 0, (carry < 0) != (value < 0) {
+            carry = 0
+        }
+        let exact = value + carry
+        let whole = exact.rounded(.towardZero)
+        carry = exact - whole
+        return whole
     }
 }
 

@@ -7,7 +7,7 @@ and the tests. Rules live in `AGENTS.md`.
 
 | Folder | What it does |
 | --- | --- |
-| `ScrollCore/` | Smooth scrolling, one path: `ScrollCore` takes the wheel event (tap callback, main thread) and adds max(Step, delta) × Speed to a target; `ScrollPoster` moves toward it on every display frame (CVDisplayLink thread, under its lock) with a lerp set by Duration (`ScrollMotion`, 60 Hz reference), a lead cap (`ScrollLeadLimiter`) and a soft start (`ScrollFilter`), and posts the frames; `ScrollPhase` adds the trackpad-style phases. `ScrollSystemLog` writes one system-log line per finished scroll and rate-limited passthrough reasons. Hot path. |
+| `ScrollCore/` | Smooth scrolling, one path: `ScrollCore` takes the wheel event (tap callback, main thread) and adds max(Step, delta) × Speed to a target; `ScrollPoster` moves toward it on every display frame (CVDisplayLink thread, under its lock) with a lerp set by Duration (`ScrollMotion`, 60 Hz reference), a lead cap (`ScrollLeadLimiter`) and a soft start (`ScrollFilter`), and posts the frames in whole pixels, the fraction of each carried into the next (`ScrollPixelCarry`; frames slower than the dead zone, a speed in pixels per 60 Hz frame, are not posted); `ScrollPhase` adds the trackpad-style phases. `ScrollSystemLog` writes one system-log line per finished scroll and rate-limited passthrough reasons. Hot path. |
 | `ButtonCore/` | Event tap for mouse buttons and keys; hands events to `InputProcessor`. |
 | `InputEvent/` | The unified input event model, binding matching (`InputProcessor`), gesture navigation (recognizer, "follow the hand" session, pointer lock, dock swipe). |
 | `Shortcut/` | System shortcut definitions and the executor of actions. |

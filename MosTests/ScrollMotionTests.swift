@@ -50,6 +50,62 @@ final class ScrollMotionTests: XCTestCase {
         XCTAssertEqual(1 - (1 - t120) * (1 - t120), t, accuracy: 1e-12)
     }
 
+    // MARK: Whole pixels
+
+    func testPixelCarry_postsWholePixelsAndKeepsTheFraction() {
+        var carry = ScrollPixelCarry()
+        var posted = 0.0
+        var exact = 0.0
+        for value in [3.7, 2.9, 2.5, 2.4, 2.3, 1.8, 1.5, 1.3, 1.1] {
+            let out = carry.take((y: value, x: 0))
+            XCTAssertEqual(out.y, out.y.rounded(), "a whole pixel")
+            XCTAssertEqual(out.x, 0)
+            posted += out.y
+            exact += value
+            // What has gone out is the exact distance cut to a whole pixel: never ahead, and
+            // less than a pixel behind (it used to fall half a pixel further behind per frame).
+            XCTAssertLessThanOrEqual(posted, exact + 1e-9)
+            XCTAssertLessThan(exact - posted, 1)
+            XCTAssertEqual(carry.carry.y, exact - posted, accuracy: 1e-9)
+        }
+        XCTAssertEqual(posted, 19, "of 19.5; plain truncation gave 15")
+    }
+
+    func testPixelCarry_perAxisAndPerDirection() {
+        var carry = ScrollPixelCarry()
+        // Up the page: the fraction is negative too.
+        XCTAssertEqual(carry.take((y: -2.6, x: 0.4)).y, -2)
+        XCTAssertEqual(carry.carry.y, -0.6, accuracy: 1e-9)
+        XCTAssertEqual(carry.carry.x, 0.4, accuracy: 1e-9)
+        let second = carry.take((y: -2.6, x: 0.7))
+        XCTAssertEqual(second.y, -3, "2.6 + the 0.6 left over")
+        XCTAssertEqual(second.x, 1, "each axis keeps its own")
+        // An axis that does not move keeps what it has.
+        XCTAssertEqual(carry.take((y: 0, x: 0)).y, 0)
+        XCTAssertEqual(carry.carry.y, -0.2, accuracy: 1e-9)
+        // The other way: what was left of the old direction is dropped, not subtracted.
+        XCTAssertEqual(carry.take((y: 1.5, x: 0)).y, 1)
+        XCTAssertEqual(carry.carry.y, 0.5, accuracy: 1e-9)
+        // Not a number: nothing goes out and nothing is kept from it.
+        XCTAssertEqual(carry.take((y: .nan, x: 0)).y, 0)
+        XCTAssertEqual(carry.carry.y, 0.5, accuracy: 1e-9)
+        carry.reset()
+        XCTAssertEqual(carry.carry.y, 0)
+        XCTAssertEqual(carry.carry.x, 0)
+    }
+
+    /// The dead zone is compared with a speed, pixels per 60 Hz frame.
+    func testOutputPerReferenceFrame_isTheSameSpeedAtAnyRate() {
+        XCTAssertEqual(ScrollMotion.outputPerReferenceFrame(1, frameInterval: 1.0 / 60), 1, accuracy: 1e-12)
+        XCTAssertEqual(ScrollMotion.outputPerReferenceFrame(0.5, frameInterval: 1.0 / 120), 1, accuracy: 1e-12)
+        XCTAssertEqual(ScrollMotion.outputPerReferenceFrame(0.5, frameInterval: 1.0 / 60), 0.5, accuracy: 1e-12)
+        // A late frame carries more distance at the same speed.
+        XCTAssertEqual(ScrollMotion.outputPerReferenceFrame(2, frameInterval: 2.0 / 60), 1, accuracy: 1e-12)
+        // Intervals are clamped as the motion clamps them.
+        XCTAssertEqual(ScrollMotion.outputPerReferenceFrame(3, frameInterval: 1), 1, accuracy: 1e-12)
+        XCTAssertEqual(ScrollMotion.outputPerReferenceFrame(1, frameInterval: .nan), 1, accuracy: 1e-12)
+    }
+
     func testTransition_clampsLongAndInvalidFrames() {
         let t = transition(3.13)
         XCTAssertEqual(ScrollMotion.transition(t, frameInterval: 0.5), ScrollMotion.transition(t, frameInterval: 3.0 / 60.0))

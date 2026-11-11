@@ -101,8 +101,9 @@ The debug build logs under `com.nikklemenc.Scrollio.debug`. Nothing is logged pe
   ```
 
   The distance in is what the wheel asked for (Step and Speed applied); the distance out is
-  what was posted, short of it only by the tail under the dead zone. Duration is the one
-  that scroll used: the global one or the app's own.
+  what was posted, short of it only by the tail under the dead zone (frames go out in whole
+  pixels, the fraction of each carried into the next, so the same on any display rate).
+  Duration is the one that scroll used: the global one or the app's own.
 - Category `scroll`, at most one line per reason every 3 seconds while wheel events are
   let through unsmoothed, with how many: taken for trackpad events, remote desktop
   (already smoothed), smoothing off for this event (with the switch, scroll key, app

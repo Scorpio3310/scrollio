@@ -145,15 +145,21 @@ final class ScrollClassicPathTests: XCTestCase {
 
     /// After the largest frame the page only slows down, and once the frames have fallen under
     /// the dead zone nothing more is posted (no late kick).
+    ///
+    /// Frames are whole pixels with the fraction carried on, so a frame may be one pixel more
+    /// than the one before it (2.4 px a frame goes out as 2, 2, 3, 2, 3) but never more. On a
+    /// display faster than 60 Hz the last frames come to less than a pixel each: one goes out
+    /// every second or third frame, never further apart than a 60 Hz frame and a half.
     private func assertGlidesOut(_ rig: ScrollClassicRig, _ label: String, file: StaticString = #filePath, line: UInt = #line) {
         let frames = rig.moving.map { $0.frame.y }
         guard let peak = frames.indices.max(by: { abs(frames[$0]) < abs(frames[$1]) }) else {
             return XCTFail("nothing was posted (\(label))", file: file, line: line)
         }
         for index in (peak + 1)..<frames.count {
-            XCTAssertLessThanOrEqual(abs(frames[index]), abs(frames[index - 1]) + 1e-9, "\(label): frame \(index) after the peak", file: file, line: line)
+            XCTAssertLessThanOrEqual(abs(frames[index]), abs(frames[index - 1]) + 1, "\(label): frame \(index) after the peak", file: file, line: line)
         }
-        XCTAssertLessThan(rig.longestPause, 1.5 * rig.frameInterval, "\(label): one run of frames, nothing posted after a pause", file: file, line: line)
+        let longestAllowed = 1.5 * max(rig.frameInterval, ScrollMotion.referenceFrameInterval)
+        XCTAssertLessThan(rig.longestPause, longestAllowed, "\(label): one run of frames, nothing posted after a pause", file: file, line: line)
     }
 
     // MARK: One notch
@@ -169,14 +175,15 @@ final class ScrollClassicPathTests: XCTestCase {
             // The first display frame already moves: one lerp step, rounded off by the filter.
             let first = try XCTUnwrap(rig.moving.first, label)
             XCTAssertEqual(first.time, rig.start + rig.frameInterval, accuracy: 1e-9, label)
+            // It goes out in whole pixels; its fraction is carried into the next frame.
             let expected = rig.notch * rig.transition * ScrollMotion.filterWeight(forTransition: rig.transition)
-            XCTAssertEqual(first.frame.y, expected, accuracy: 1e-9, label)
+            XCTAssertEqual(first.frame.y, expected.rounded(.towardZero), accuracy: 1e-9, label)
             // ...and it speeds up for a few frames before it slows down.
             let frames = rig.moving.map { $0.frame.y }
             XCTAssertGreaterThan(frames[1], frames[0], label)
 
             assertGlidesOut(rig, label)
-            XCTAssertTrue(rig.moving.allSatisfy { abs($0.frame.y) > rig.deadZone }, label)
+            XCTAssertTrue(rig.moving.allSatisfy { $0.frame.y == $0.frame.y.rounded() && abs($0.frame.y) >= 1 }, "\(label): whole pixels")
             // The exponential tail under one pixel per frame is not posted.
             XCTAssertLessThan(rig.postedY, rig.notch, label)
             XCTAssertGreaterThan(rig.postedY, 0.75 * rig.notch, label)
@@ -301,8 +308,7 @@ final class ScrollClassicPathTests: XCTestCase {
     // MARK: Frame rate
 
     /// The motion takes the same time at 60 and 120 Hz, so the stop comes at the same time.
-    /// (What is posted is not quite the same: the dead zone is per frame, so at 120 Hz the
-    /// last frames fall under it a little earlier.)
+    /// (How far it goes is `testDistance_isTheSameOnFasterDisplays`.)
     func testStopTime_isTheSameAt60And120Hz() {
         let scenarios: [(String, (ScrollClassicRig) -> Void)] = [
             ("one notch", { $0.wheel(10, at: 0) }),
@@ -324,6 +330,67 @@ final class ScrollClassicPathTests: XCTestCase {
                 XCTAssertEqual(stop120, stop60, accuracy: 3.0 / 60.0, "\(name), Duration \(duration)")
                 XCTAssertGreaterThan(stop60, 0.5, "\(name), Duration \(duration)")
             }
+        }
+    }
+
+    // MARK: Distance
+
+    /// How far one input goes, per display rate: (posted px, frames that moved).
+    private func glide(of pixels: Double, duration: Double, rate: Double) -> (posted: Double, frames: Int, rig: ScrollClassicRig) {
+        let rig = ScrollClassicRig(duration: duration, rate: rate)
+        rig.input(pixels, notch: pixels, at: 0)
+        rig.run(until: 6)
+        return (rig.postedY, rig.moving.count, rig)
+    }
+
+    /// One click at the owner's settings (Smooth: Duration 3.69, Step 33.6 × Speed 6.3) on a
+    /// 60 Hz display. Each frame used to lose its fraction (CoreGraphics drops it), half a
+    /// pixel on average: 192 of the 211.68 px went out. With the fraction carried into the
+    /// next frame 205 go out, in the same 26 frames; what is missing is the tail under the
+    /// dead zone, which is not posted on purpose.
+    func testOneClick_losesOnlyTheTailUnderTheDeadZone() throws {
+        let click = 33.6 * 6.3
+        let result = glide(of: click, duration: 3.69, rate: 60)
+        XCTAssertEqual(result.posted, 205)
+        XCTAssertEqual(result.frames, 26)
+        let frames = result.rig.moving.map { $0.frame.y }
+        XCTAssertTrue(frames.allSatisfy { $0 == $0.rounded() && $0 >= 1 }, "whole pixels: \(frames)")
+        assertGlidesOut(result.rig, "one click")
+        // The log line the owner reads gives exactly what went out.
+        let session = try XCTUnwrap(result.rig.sessions.first)
+        XCTAssertEqual(session.inputDistance, click, accuracy: 1e-9)
+        XCTAssertEqual(session.postedDistance, 205)
+        XCTAssertEqual(session.frames, 26)
+    }
+
+    /// The same input goes the same distance on a faster display. It used to go less far (a
+    /// 120 Hz display has twice the frames, each losing its fraction, and the dead zone was
+    /// compared with a frame's own distance, half as long there): 179 px instead of 192 at
+    /// the owner's settings, and nothing at all for a slow scroll with a long glide.
+    func testDistance_isTheSameOnFasterDisplays() {
+        for duration in [2.0, 3.13, 3.69, 4.35, 4.6] {
+            for pixels in [33.6, 50.4, 90.72, 211.68] {
+                let at60 = glide(of: pixels, duration: duration, rate: 60)
+                XCTAssertGreaterThan(at60.posted, 0)
+                XCTAssertLessThan(at60.posted, pixels)
+                for rate in [120.0, 144.0] {
+                    let label = "Duration \(duration), \(pixels) px at \(Int(rate)) Hz"
+                    let faster = glide(of: pixels, duration: duration, rate: rate)
+                    XCTAssertEqual(faster.posted, at60.posted, accuracy: 1, label)
+                    XCTAssertTrue(faster.rig.moving.allSatisfy { $0.frame.y == $0.frame.y.rounded() && $0.frame.y >= 1 }, "\(label): whole pixels")
+                    assertGlidesOut(faster.rig, label)
+                }
+            }
+        }
+    }
+
+    /// Float (Duration 4.6) at Speed 1: every frame of a 120 Hz display is under a pixel. It
+    /// used to post nothing: the wheel event was swallowed and the page did not move.
+    func testSlowScrollWithALongGlide_stillMovesOnAFastDisplay() {
+        for rate in [120.0, 144.0] {
+            let result = glide(of: 33.6, duration: 4.6, rate: rate)
+            XCTAssertEqual(result.posted, 14, accuracy: 1, "\(Int(rate)) Hz")
+            XCTAssertEqual(result.rig.stops.count, 1, "\(Int(rate)) Hz")
         }
     }
 

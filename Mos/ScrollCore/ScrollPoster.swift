@@ -29,8 +29,9 @@ struct ScrollOutgoingFrame: Equatable {
     var scrollPhase: Double? = nil
     var momentumPhase: Double? = nil
 
-    /// Only the point delta is written (CoreGraphics drops its fraction); the line delta and
-    /// the timestamp stay those of the copied wheel event.
+    /// Only the point delta is written; the line delta and the timestamp stay those of the
+    /// copied wheel event. CoreGraphics drops the fraction of a point delta, so the frames of
+    /// a glide come here in whole pixels (ScrollPixelCarry keeps the fraction for the next).
     func write(to event: CGEvent) {
         if let scrollPhase = scrollPhase, let momentumPhase = momentumPhase {
             event.setDoubleValueField(.scrollWheelEventScrollPhase, value: scrollPhase)
@@ -84,6 +85,8 @@ class ScrollPoster {
     // 领先量限制 (buffer - current), 滚轮停下后滑行尽快结束
     private var leadLimiterY = ScrollLeadLimiter()
     private var leadLimiterX = ScrollLeadLimiter()
+    // 每帧只发整数像素, 小数部分留给下一帧 (见 ScrollPixelCarry)
+    private var pixelCarry = ScrollPixelCarry()
     // 上一帧的显示时间 (mach host time), 用于按真实帧间隔换算插值系数; 0 表示新会话
     private var lastFrameHostTime: UInt64 = 0
     // 输入节奏追踪
@@ -338,6 +341,7 @@ extension ScrollPoster {
         buffer = ( y: 0.0, x: 0.0 )
         leadLimiterY.reset()
         leadLimiterX.reset()
+        pixelCarry.reset()
         lastFrameHostTime = 0
         // 重置插值器
         filter.reset()
@@ -697,13 +701,22 @@ private extension ScrollPoster {
             }
         }
         // 发送滚动结果 - 只有当输出值超过死区阈值时才发送
-        let outputMagnitude = max(abs(shiftedValue.y), abs(shiftedValue.x))
-        if outputMagnitude > deadZone && post(shiftedValue) {
-            let moved = abs(shiftedValue.y) + abs(shiftedValue.x)
-            sessionLog.frames += 1
-            sessionLog.postedDistance += moved.rounded(.towardZero)
-            sessionLog.largestFrame = max(sessionLog.largestFrame, moved)
-            sessionLog.lastFrameAt = now
+        // The dead zone is a speed, in pixels per 60 Hz frame: a frame of a faster display
+        // carries less distance at the same speed and is judged as the same motion.
+        let outputMagnitude = ScrollMotion.outputPerReferenceFrame(
+            max(abs(shiftedValue.y), abs(shiftedValue.x)), frameInterval: frameInterval
+        )
+        if outputMagnitude > deadZone {
+            // Whole pixels go out, the fraction waits for the next frame. A frame that comes
+            // to no whole pixel yet (faster displays) posts nothing and keeps its distance.
+            let pixels = pixelCarry.take(shiftedValue)
+            if (pixels.y != 0.0 || pixels.x != 0.0) && post(pixels) {
+                let moved = abs(pixels.y) + abs(pixels.x)
+                sessionLog.frames += 1
+                sessionLog.postedDistance += moved
+                sessionLog.largestFrame = max(sessionLog.largestFrame, moved)
+                sessionLog.lastFrameAt = now
+            }
         }
 
         if let scheduled = momentumEndScheduledTime, momentumActive {
