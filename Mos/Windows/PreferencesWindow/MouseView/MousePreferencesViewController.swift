@@ -2,9 +2,11 @@
 //  MousePreferencesViewController.swift
 //  Mos
 //  "Mouse" preferences tab: hardware settings of connected Logitech mice
-//  (scroll mode, SmartShift sensitivity, scrolling force). Built in code with the
-//  same form layout as the storyboard tabs. It only edits Options.shared.logiWheel;
-//  the Logi layer writes those settings to the mice while Mos manages them.
+//  (scroll mode, SmartShift sensitivity, scrolling force) and what the mouse may do
+//  itself during Gesture Navigation (track the movement, haptic cues). Built in code
+//  with the same form layout as the storyboard tabs. It only edits
+//  Options.shared.logiWheel and two switches of Options.shared.gesture; the Logi layer
+//  applies them to the mice.
 //
 
 import Cocoa
@@ -27,6 +29,8 @@ final class MousePreferencesViewController: NSViewController {
     private static let rowSpacing: CGFloat = 17
     private static let separatorSpacing: CGFloat = 18
     private static let noteSpacing: CGFloat = 6
+    /// Between two options (checkbox + hint) of one row.
+    private static let optionSpacing: CGFloat = 12
 
     // MARK: - State
 
@@ -35,6 +39,8 @@ final class MousePreferencesViewController: NSViewController {
 
     /// Connected mice as last read from `deviceSource`.
     private(set) var devices: [LogiWheelDeviceState] = []
+    /// What those mice can do for Gesture Navigation, as last read from `deviceSource`.
+    private(set) var gestureSupport = MouseGestureDeviceSupport.none
 
     // MARK: - Views (read access for tests)
 
@@ -50,6 +56,10 @@ final class MousePreferencesViewController: NSViewController {
     private(set) var scrollForceSlider: NSSlider!
     private(set) var scrollForceValueLabel: NSTextField!
     private(set) var scrollForceReadbackLabel: NSTextField!
+    private(set) var deviceTrackingCheckbox: NSButton!
+    private(set) var deviceTrackingHintLabel: NSTextField!
+    private(set) var hapticsCheckbox: NSButton!
+    private(set) var hapticsHintLabel: NSTextField!
     private(set) var diagnosticsButton: NSButton!
 
     private var devicesRowLabel: NSTextField!
@@ -93,19 +103,25 @@ final class MousePreferencesViewController: NSViewController {
         let modeRow = makeModeRow()
         let sensitivityRow = makeSensitivityRow()
         let forceRow = makeScrollForceRow()
+        let gestureSeparator = Self.makeSeparator()
+        let gestureRow = makeGestureRow()
         let separator2 = Self.makeSeparator()
         let advancedRow = makeAdvancedRow()
 
-        let rows = [devicesRow, separator1, managedRow, modeRow, sensitivityRow, forceRow, separator2, advancedRow]
+        let rows = [
+            devicesRow, separator1, managedRow, modeRow, sensitivityRow, forceRow,
+            gestureSeparator, gestureRow, separator2, advancedRow,
+        ]
         for row in rows {
             content.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
         }
-        for separator in [separator1, separator2] {
+        for separator in [separator1, gestureSeparator, separator2] {
             content.setCustomSpacing(Self.separatorSpacing, after: separator)
         }
         content.setCustomSpacing(Self.separatorSpacing, after: devicesRow)
         content.setCustomSpacing(Self.separatorSpacing, after: forceRow)
+        content.setCustomSpacing(Self.separatorSpacing, after: gestureRow)
 
         NSLayoutConstraint.activate([
             content.topAnchor.constraint(equalTo: root.topAnchor, constant: Self.margin),
@@ -125,8 +141,15 @@ final class MousePreferencesViewController: NSViewController {
         super.viewDidLoad()
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(wheelStateDidChange(_:)),
+            selector: #selector(deviceStateDidChange(_:)),
             name: LogiCenter.wheelStateChanged,
+            object: nil
+        )
+        // A mouse that can track gestures or has haptics connected or left.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(deviceStateDidChange(_:)),
+            name: LogiCenter.gestureStateChanged,
             object: nil
         )
     }
@@ -139,7 +162,7 @@ final class MousePreferencesViewController: NSViewController {
         deviceSource.refresh()
     }
 
-    @objc private func wheelStateDidChange(_ notification: Notification) {
+    @objc private func deviceStateDidChange(_ notification: Notification) {
         if Thread.isMainThread {
             reloadDevices()
         } else {
@@ -157,6 +180,7 @@ final class MousePreferencesViewController: NSViewController {
             devices = newDevices
             rebuildDeviceList()
         }
+        gestureSupport = deviceSource.gestureSupport()
         syncControls()
         fitToContent()
     }
@@ -187,6 +211,15 @@ final class MousePreferencesViewController: NSViewController {
         Self.setNote(modeReadbackLabel, MouseWheelText.modeReadback(devices))
         Self.setNote(sensitivityReadbackLabel, MouseWheelText.sensitivityReadback(devices))
         Self.setNote(scrollForceReadbackLabel, MouseWheelText.scrollForceReadback(devices))
+
+        let gesture = Options.shared.gesture
+        let gestureRules = MouseGestureControlRules(support: gestureSupport)
+        deviceTrackingCheckbox.state = gesture.deviceTracking ? .on : .off
+        deviceTrackingCheckbox.isEnabled = gestureRules.deviceTrackingEnabled
+        deviceTrackingHintLabel.stringValue = NSLocalizedString(gestureRules.deviceTrackingHintKey, comment: "")
+        hapticsCheckbox.state = gesture.hapticFeedback ? .on : .off
+        hapticsCheckbox.isEnabled = gestureRules.hapticsEnabled
+        hapticsHintLabel.stringValue = NSLocalizedString(gestureRules.hapticsHintKey, comment: "")
     }
 
     /// Keeps the frame at the content size; when the tab is on screen the window follows.
@@ -230,6 +263,22 @@ final class MousePreferencesViewController: NSViewController {
         scrollForceValueLabel.stringValue = MouseWheelText.percent(value)
         guard !Self.isTrackingMouse else { return }
         updateSettings { $0.scrollForce = value }
+    }
+
+    @objc func deviceTrackingToggled(_ sender: NSButton) {
+        let enabled = sender.state == .on
+        if Options.shared.gesture.deviceTracking != enabled {
+            Options.shared.gesture.deviceTracking = enabled
+        }
+        syncControls()
+    }
+
+    @objc func hapticsToggled(_ sender: NSButton) {
+        let enabled = sender.state == .on
+        if Options.shared.gesture.hapticFeedback != enabled {
+            Options.shared.gesture.hapticFeedback = enabled
+        }
+        syncControls()
     }
 
     @objc func diagnosticsClicked(_ sender: NSButton) {
@@ -421,6 +470,43 @@ final class MousePreferencesViewController: NSViewController {
         column.setCustomSpacing(2, after: hint)
         let (row, label) = Self.makeRow(title: title, column: column)
         label.centerYAnchor.constraint(equalTo: slider.centerYAnchor).isActive = true
+        return row
+    }
+
+    /// Two switches of the shared gesture settings that only make sense with a mouse that
+    /// can do them. The hint under each turns into the reason when no such mouse is connected.
+    private func makeGestureRow() -> NSView {
+        let tracking = NSButton(
+            checkboxWithTitle: NSLocalizedString("mouse-gesture-device-tracking", comment: ""),
+            target: self,
+            action: #selector(deviceTrackingToggled(_:))
+        )
+        deviceTrackingCheckbox = tracking
+        deviceTrackingHintLabel = Self.makeNote(NSLocalizedString("mouse-gesture-device-tracking-hint", comment: ""))
+
+        let haptics = NSButton(
+            checkboxWithTitle: NSLocalizedString("mouse-gesture-haptics", comment: ""),
+            target: self,
+            action: #selector(hapticsToggled(_:))
+        )
+        hapticsCheckbox = haptics
+        hapticsHintLabel = Self.makeNote(NSLocalizedString("mouse-gesture-haptics-hint", comment: ""))
+
+        for checkbox in [tracking, haptics] {
+            // A long translation wraps instead of widening the tab.
+            checkbox.lineBreakMode = .byWordWrapping
+            checkbox.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            checkbox.translatesAutoresizingMaskIntoConstraints = false
+            checkbox.widthAnchor.constraint(lessThanOrEqualToConstant: Self.controlWidth).isActive = true
+        }
+
+        let column = Self.makeColumn([tracking, deviceTrackingHintLabel, haptics, hapticsHintLabel])
+        column.setCustomSpacing(Self.optionSpacing, after: deviceTrackingHintLabel)
+        let (row, label) = Self.makeRow(
+            title: NSLocalizedString("mouse-gesture-label", comment: ""),
+            column: column
+        )
+        label.firstBaselineAnchor.constraint(equalTo: tracking.firstBaselineAnchor).isActive = true
         return row
     }
 

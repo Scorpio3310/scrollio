@@ -1,9 +1,9 @@
 //
 //  MouseWheelPresentation.swift
 //  Mos
-//  Pure helpers for the Mouse tab: where device data comes from, which wheel
-//  controls are enabled and how device values are written out. Kept free of views
-//  so the rules can be unit tested.
+//  Pure helpers for the Mouse tab: where device data comes from, which wheel and
+//  gesture controls are enabled and how device values are written out. Kept free of
+//  views so the rules can be unit tested.
 //
 
 import Foundation
@@ -14,12 +14,53 @@ struct MouseWheelDeviceSource {
     var deviceStates: () -> [LogiWheelDeviceState]
     var refresh: () -> Void
     var showDiagnostics: () -> Void
+    /// What the connected mice can do for Gesture Navigation.
+    var gestureSupport: () -> MouseGestureDeviceSupport = { .none }
 
     static let live = MouseWheelDeviceSource(
         deviceStates: { LogiCenter.shared.wheelDeviceStates() },
-        refresh: { LogiCenter.shared.refreshWheelStates() },
-        showDiagnostics: { LogiCenter.shared.showDebugPanel() }
+        refresh: {
+            LogiCenter.shared.refreshWheelStates()
+            LogiCenter.shared.refreshGestureStates()
+        },
+        showDiagnostics: { LogiCenter.shared.showDebugPanel() },
+        gestureSupport: {
+            MouseGestureDeviceSupport(
+                deviceTracking: LogiCenter.shared.supportsGestureDeviceTracking(),
+                haptics: LogiCenter.shared.supportsGestureHaptics()
+            )
+        }
     )
+}
+
+/// What at least one connected mouse can do for Gesture Navigation.
+struct MouseGestureDeviceSupport: Equatable {
+    /// A button can report the movement of its hold itself (and keep the pointer still).
+    var deviceTracking: Bool
+    /// The mouse has a haptic motor.
+    var haptics: Bool
+
+    static let none = MouseGestureDeviceSupport(deviceTracking: false, haptics: false)
+}
+
+/// Which gesture options can be edited, and the hint under each. An option no connected
+/// mouse supports is disabled and says so; its stored value is kept for when one connects.
+struct MouseGestureControlRules: Equatable {
+    let deviceTrackingEnabled: Bool
+    let deviceTrackingHintKey: String
+    let hapticsEnabled: Bool
+    let hapticsHintKey: String
+
+    init(support: MouseGestureDeviceSupport) {
+        deviceTrackingEnabled = support.deviceTracking
+        deviceTrackingHintKey = support.deviceTracking
+            ? "mouse-gesture-device-tracking-hint"
+            : "mouse-gesture-device-tracking-unavailable"
+        hapticsEnabled = support.haptics
+        hapticsHintKey = support.haptics
+            ? "mouse-gesture-haptics-hint"
+            : "mouse-gesture-haptics-unavailable"
+    }
 }
 
 /// Which wheel controls can be edited.

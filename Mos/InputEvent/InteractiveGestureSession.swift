@@ -232,6 +232,29 @@ struct InteractiveGestureSession {
         return .end(velocity: recentMovement / max(elapsed, Self.minimumVelocityInterval))
     }
 
+    // MARK: - Release outcome
+
+    /// A released swipe that covered this share of one Space ...
+    static let switchProgressShare: Double = 0.5
+    /// ... or was still moving towards the next Space this fast (Spaces per second) is
+    /// expected to switch.
+    static let switchSpacesPerSecond: Double = 1
+
+    /// Whether a swipe released with `end(velocity:)` is expected to switch Spaces. Only the
+    /// haptic "commit" cue depends on it: macOS makes the real decision from the same two
+    /// values, with thresholds of its own.
+    ///
+    /// Rule: the desktop is at least halfway to the next Space, or the hand was still moving
+    /// towards it at one Space per second or more.
+    func isExpectedToSwitch(releaseVelocity: Double) -> Bool {
+        let space = configuration.maximumProgress
+        guard progress != 0, space > 0 else { return false }
+        let towardsSwitch: Double = progress > 0 ? 1 : -1
+        let share = abs(progress) / space
+        let spacesPerSecond = releaseVelocity * towardsSwitch / space
+        return share >= Self.switchProgressShare || spacesPerSecond >= Self.switchSpacesPerSecond
+    }
+
     // MARK: - Abandon
 
     private func hasExpired(at time: TimeInterval) -> Bool {

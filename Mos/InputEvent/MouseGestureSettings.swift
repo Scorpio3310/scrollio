@@ -3,8 +3,8 @@
 //  Mos
 //
 //  User settings for the Gesture Navigation action: one action per direction plus click,
-//  horizontal inversion, pointer freeze and the gesture mode. Shared by every Gesture
-//  Navigation binding.
+//  horizontal inversion, pointer freeze, the gesture mode and what a Logitech mouse may do
+//  itself (track the movement, play haptic cues). Shared by every Gesture Navigation binding.
 //
 
 import Foundation
@@ -41,6 +41,13 @@ struct MouseGestureSettings: Codable, Equatable {
     var trackingSpeed: Double {
         didSet { trackingSpeed = Self.clampedTrackingSpeed(trackingSpeed) }
     }
+    /// "Let the mouse track the gesture" (experimental, off by default): a Logitech control
+    /// that can divert raw XY reports the movement over HID++ while it is held and the mouse
+    /// keeps the pointer still itself. Anything else keeps reading pointer movement.
+    var deviceTracking: Bool
+    /// Haptic cues on mice that have them (MX Master 4): a light pulse when a gesture locks
+    /// in, a stronger one when a "follow the hand" swipe is released towards a switch.
+    var hapticFeedback: Bool
 
     static let `default` = MouseGestureSettings(
         upAction: SystemShortcut.missionControl.identifier,
@@ -61,7 +68,9 @@ struct MouseGestureSettings: Codable, Equatable {
         invertHorizontal: Bool,
         freezePointer: Bool,
         mode: MouseGestureMode = .discrete,
-        trackingSpeed: Double = MouseGestureSettings.defaultTrackingSpeed
+        trackingSpeed: Double = MouseGestureSettings.defaultTrackingSpeed,
+        deviceTracking: Bool = false,
+        hapticFeedback: Bool = true
     ) {
         self.upAction = upAction
         self.downAction = downAction
@@ -72,6 +81,8 @@ struct MouseGestureSettings: Codable, Equatable {
         self.freezePointer = freezePointer
         self.mode = mode
         self.trackingSpeed = Self.clampedTrackingSpeed(trackingSpeed)
+        self.deviceTracking = deviceTracking
+        self.hapticFeedback = hapticFeedback
     }
 
     /// Missing keys fall back to the defaults, so older or partial data still loads.
@@ -91,6 +102,11 @@ struct MouseGestureSettings: Codable, Equatable {
         mode = storedMode.flatMap(MouseGestureMode.init(rawValue:)) ?? fallback.mode
         let storedSpeed = (try? c.decodeIfPresent(Double.self, forKey: .trackingSpeed)) ?? nil
         trackingSpeed = Self.clampedTrackingSpeed(storedSpeed ?? fallback.trackingSpeed)
+        // Same rule for the two device options: data from an older build has neither key.
+        let storedTracking = (try? c.decodeIfPresent(Bool.self, forKey: .deviceTracking)) ?? nil
+        deviceTracking = storedTracking ?? fallback.deviceTracking
+        let storedHaptics = (try? c.decodeIfPresent(Bool.self, forKey: .hapticFeedback)) ?? nil
+        hapticFeedback = storedHaptics ?? fallback.hapticFeedback
     }
 
     /// Keeps the speed inside `trackingSpeedRange`; a non-finite value becomes the default.

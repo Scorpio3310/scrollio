@@ -13,6 +13,8 @@ final class FakeLogiExternalBridge: LogiExternalBridge {
     }
     var calls: [Call] = []
     var dispatchReturn: LogiDispatchResult = .unhandled
+    /// Raw XY movement, kept apart from `calls` so existing switches over `Call` stay exhaustive.
+    var gestureMovements: [(code: UInt16, deltaX: Int, deltaY: Int)] = []
 
     func dispatchLogiButtonEvent(_ event: InputEvent) -> LogiDispatchResult {
         calls.append(.dispatch(event))
@@ -23,5 +25,8 @@ final class FakeLogiExternalBridge: LogiExternalBridge {
     }
     func showLogiToast(_ message: String, severity: LogiToastSeverity) {
         calls.append(.toast(message, severity))
+    }
+    func handleLogiGestureMovement(code: UInt16, deltaX: Int, deltaY: Int) {
+        gestureMovements.append((code, deltaX, deltaY))
     }
 }

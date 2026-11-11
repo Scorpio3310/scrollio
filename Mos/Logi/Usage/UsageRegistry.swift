@@ -60,6 +60,16 @@ final class UsageRegistry {
         return aggregatedCache.isEmpty
     }
 
+    /// Re-applies the current usage to every session on the next coalesced pass. For
+    /// state the sessions read when they apply usage but that is not a usage itself
+    /// (which diverted buttons the mouse should track, see LogiCenter.setGestureTrackingCodes).
+    func scheduleReapply() {
+        #if DEBUG
+        precondition(Thread.isMainThread, "UsageRegistry is main-thread-only")
+        #endif
+        scheduleRecompute()
+    }
+
     private func scheduleRecompute() {
         if recomputeScheduled { return }
         recomputeScheduled = true

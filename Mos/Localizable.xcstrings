@@ -9998,6 +9998,671 @@
         }
       }
     },
+    "mouse-gesture-label": {
+      "extractionState": "manual",
+      "localizations": {
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesta"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesten"
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Χειρονομίες"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gestures"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gestes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ジェスチャー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제스처"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Жесты"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ท่าทาง"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hareketler"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Жести"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手势"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手勢"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手勢"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手勢"
+          }
+        }
+      }
+    },
+    "mouse-gesture-device-tracking": {
+      "extractionState": "manual",
+      "localizations": {
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesto sleduje sama myš"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maus erfasst die Geste selbst"
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Το ποντίκι ανιχνεύει τη χειρονομία"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Let the mouse track the gesture"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Laisser la souris suivre le geste"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マウス側でジェスチャーを追跡"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마우스가 제스처를 직접 추적"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Мышь сама отслеживает жест"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ให้เมาส์ติดตามท่าทางเอง"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hareketi fare izlesin"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Миша сама відстежує жест"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由鼠标跟踪手势"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由滑鼠追蹤手勢"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由滑鼠追蹤手勢"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由滑鼠追蹤手勢"
+          }
+        }
+      }
+    },
+    "mouse-gesture-device-tracking-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Experimentální. Ukazatel drží na místě sama myš."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Experimentell. Die Maus hält den Zeiger selbst an."
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Πειραματικό. Το ποντίκι κρατά τον δείκτη ακίνητο."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Experimental. The mouse keeps the pointer still itself."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expérimental. La souris immobilise elle-même le pointeur."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実験的な機能です。マウス自身がポインタを静止させます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험적 기능입니다. 마우스가 포인터를 직접 멈춰 둡니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Экспериментально. Мышь сама держит указатель."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "อยู่ในขั้นทดลอง เมาส์จะหยุดตัวชี้ไว้เอง"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deneysel. Fare, imleci kendisi sabit tutar."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Експериментально. Миша сама тримає вказівник."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实验性功能。由鼠标自行保持指针静止。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "實驗性功能。由滑鼠自行保持指標靜止。"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "實驗性功能。由滑鼠自行保持指標靜止。"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "實驗性功能。由滑鼠自行保持指標靜止。"
+          }
+        }
+      }
+    },
+    "mouse-gesture-device-tracking-unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Žádná připojená myš neumí gesta sledovat sama."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine verbundene Maus kann Gesten selbst erfassen."
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Κανένα συνδεδεμένο ποντίκι δεν το υποστηρίζει."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No connected mouse supports this."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune souris connectée ne le permet."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続中のマウスはこの機能に対応していません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결된 마우스가 이 기능을 지원하지 않습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ни одна подключённая мышь этого не умеет."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ไม่มีเมาส์ที่เชื่อมต่ออยู่รองรับฟีเจอร์นี้"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bağlı farelerin hiçbiri bunu desteklemiyor."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Жодна під’єднана миша цього не вміє."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已连接的鼠标均不支持此功能。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已連接的滑鼠均不支援此功能。"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已連接的滑鼠均不支援此功能。"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已連接的滑鼠均不支援此功能。"
+          }
+        }
+      }
+    },
+    "mouse-gesture-haptics": {
+      "extractionState": "manual",
+      "localizations": {
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haptická odezva"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haptisches Feedback"
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Απτική ανάδραση"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haptic feedback"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retour haptique"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "触覚フィードバック"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "햅틱 피드백"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Тактильный отклик"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "การตอบสนองแบบสัมผัส"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dokunsal geri bildirim"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Тактильний відгук"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "触感反馈"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "觸覺回饋"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "觸覺回饋"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "觸覺回饋"
+          }
+        }
+      }
+    },
+    "mouse-gesture-haptics-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MX Master 4: impulz, když se gesto zachytí."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MX Master 4: ein Impuls, sobald eine Geste einrastet."
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MX Master 4: ένας παλμός όταν κλειδώνει η χειρονομία."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MX Master 4: a pulse when a gesture locks in."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MX Master 4 : une impulsion quand un geste s’enclenche."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MX Master 4：ジェスチャーが確定すると振動します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MX Master 4: 제스처가 인식되면 진동합니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MX Master 4: импульс, когда жест срабатывает."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MX Master 4: สั่นเมื่อจับท่าทางได้"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MX Master 4: hareket algılandığında bir titreşim."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MX Master 4: імпульс, коли жест спрацьовує."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MX Master 4：手势触发时振动一下。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MX Master 4：手勢觸發時震動一下。"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MX Master 4：手勢觸發時震動一下。"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MX Master 4：手勢觸發時震動一下。"
+          }
+        }
+      }
+    },
+    "mouse-gesture-haptics-unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Žádná připojená myš nemá haptiku (MX Master 4)."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine verbundene Maus hat Haptik (MX Master 4)."
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Κανένα ποντίκι με απτική ανάδραση (MX Master 4)."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No connected mouse has haptics (MX Master 4)."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune souris haptique connectée (MX Master 4)."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "触覚対応マウス（MX Master 4）が未接続です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결된 마우스에 햅틱 기능이 없습니다(MX Master 4)."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет мыши с тактильным откликом (MX Master 4)."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ไม่มีเมาส์ที่เชื่อมต่ออยู่รองรับระบบสัมผัส (MX Master 4)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bağlı dokunsal fare yok (MX Master 4)."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Немає миші з тактильним відгуком (MX Master 4)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已连接的鼠标均无触感反馈（MX Master 4）。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已連接的滑鼠均無觸覺回饋（MX Master 4）。"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已連接的滑鼠均無觸覺回饋（MX Master 4）。"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已連接的滑鼠均無觸覺回饋（MX Master 4）。"
+          }
+        }
+      }
+    },
     "scroll-preset-balanced": {
       "extractionState": "manual",
       "localizations": {
