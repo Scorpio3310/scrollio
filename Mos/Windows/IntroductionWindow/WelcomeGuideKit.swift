@@ -21,8 +21,9 @@ enum WelcomeGuideLayout {
     /// The text area of a step: from under the picture to above the bar.
     static let contentTop: CGFloat = 280
     static let contentHeight: CGFloat = 284
-    /// From the top of the text area to the title.
-    static let titleTop: CGFloat = 24
+    /// From the top of the text area to the title: the same on every step (the Welcome
+    /// step's icon on the picture's edge fits above it).
+    static let titleTop: CGFloat = 36
     static let titleToText: CGFloat = 8
     /// The control under the text.
     static let textToControl: CGFloat = 18
@@ -57,8 +58,9 @@ enum WelcomeGuideText {
         return NSLocalizedString(key, comment: "")
     }
 
+    /// Semibold, as every heading of the Settings window.
     static var titleFont: NSFont {
-        return NSFont.systemFont(ofSize: 22, weight: .bold)
+        return NSFont.systemFont(ofSize: 22, weight: .semibold)
     }
 
     static var bodyFont: NSFont {
@@ -165,7 +167,7 @@ enum WelcomeGuidePalette {
     /// The box behind a choice and behind the status line.
     static let box = ink(0.045, 0.06)
     /// Over a choice while the mouse button is down on it: darker in light, lighter in dark.
-    static let pressed = ink(0.07, 0.09)
+    static let pressed = ink(0.08, 0.10)
     static let boxEdge = NSColor(name: nil) { appearance in
         let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         if PreferencesGroupedForm.isHighContrast(appearance) {

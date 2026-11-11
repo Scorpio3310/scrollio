@@ -5,6 +5,8 @@
 //  Scrollio's row, whose switch a pointer turns on (a 4.2 s loop while the access is
 //  missing), why the access is needed, a status line that follows the real permission and
 //  the start of the event taps, and "Having trouble?" with the help of a stale entry.
+//  Before the user opened System Settings the status line is a to-do ("Not allowed yet");
+//  only then does it wait, with a spinner.
 //
 //  What the button does and when the access counts are the container's
 //  (IntroductionViewController); this step only shows the state it is given.
@@ -25,7 +27,17 @@ final class WelcomeGuideAccessStep: WelcomeGuideStepView {
     private(set) var helpButton: NSButton!
 
     private(set) var state: WelcomeGuideAccessState = .missing
+    private(set) var context = Context()
     private var isShown = false
+
+    /// What the status line says besides the state.
+    struct Context: Equatable {
+        var menuBarIconHidden = false
+        /// Another step comes after this one (it says where Scrollio lives).
+        var stepFollows = false
+        /// "Open Accessibility Settings" was used in this run.
+        var settingsOpened = false
+    }
 
     init(target: AnyObject, helpAction: Selector) {
         let card = WelcomeGuideCardView(frame: NSRect(origin: .zero, size: WelcomeGuideLayout.pictureSize))
@@ -44,7 +56,7 @@ final class WelcomeGuideAccessStep: WelcomeGuideStepView {
 
         let (view, stack) = WelcomeGuideText.makeContent([title, text, status, help])
         stack.setCustomSpacing(WelcomeGuideLayout.titleToText, after: title)
-        stack.setCustomSpacing(20, after: text)
+        stack.setCustomSpacing(WelcomeGuideLayout.textToControl, after: text)
         stack.setCustomSpacing(12, after: status)
         content = view
 
@@ -52,7 +64,7 @@ final class WelcomeGuideAccessStep: WelcomeGuideStepView {
         textLabel = text
         statusBox = status
         helpButton = help
-        show(.missing, menuBarIconHidden: false)
+        show(.missing, context: Context())
     }
 
     /// The pointer loop plays only while the access is missing: once it is allowed the picture
@@ -63,35 +75,46 @@ final class WelcomeGuideAccessStep: WelcomeGuideStepView {
         statusBox.setAnimating(shown)
     }
 
-    func show(_ state: WelcomeGuideAccessState, menuBarIconHidden: Bool) {
+    func show(_ state: WelcomeGuideAccessState, context: Context) {
         self.state = state
+        self.context = context
         artwork.isAllowed = state.isGranted
         artwork.setAnimating(isShown && !state.isGranted)
         helpButton.isHidden = state.isGranted
-        statusBox.show(state, menuBarIconHidden: menuBarIconHidden)
+        statusBox.show(state, texts: Self.statusTexts(for: state, context: context), waits: Self.waits(state, context: context))
+    }
+
+    /// The spinner turns while something is under way: the user went to System Settings and
+    /// the access is still missing, or the event taps are starting.
+    static func waits(_ state: WelcomeGuideAccessState, context: Context) -> Bool {
+        return (state == .missing && context.settingsOpened) || state == .starting
     }
 
     /// The status line's title and the line under it, as shown for `state`.
-    static func statusTexts(for state: WelcomeGuideAccessState, menuBarIconHidden: Bool) -> (title: String, detail: String) {
+    static func statusTexts(for state: WelcomeGuideAccessState, context: Context) -> (title: String, detail: String) {
         let allowed = WelcomeGuideText.localized("general-accessibility-allowed")
         switch state {
+        case .missing where !context.settingsOpened:
+            return (WelcomeGuideText.localized("intro-access-todo"), WelcomeGuideText.localized("intro-access-todo-detail"))
         case .missing:
             return (WelcomeGuideText.localized("intro-access-waiting"), WelcomeGuideText.localized("intro-access-waiting-detail"))
         case .starting:
             return (allowed, WelcomeGuideText.localized("intro-access-starting"))
         case .running:
-            return (allowed, WelcomeGuideText.localized(
-                menuBarIconHidden ? "intro-status-granted-detail-hidden-icon" : "intro-status-granted-detail"
-            ))
+            // The last step says where Scrollio lives; the Accessibility step alone says it here.
+            let detail = context.stepFollows ? "intro-status-running"
+                : context.menuBarIconHidden ? "intro-status-granted-detail-hidden-icon" : "intro-status-granted-detail"
+            return (allowed, WelcomeGuideText.localized(detail))
         case .paused:
             return (allowed, WelcomeGuideText.localized("intro-access-paused"))
         case .couldNotStart:
-            return (allowed, WelcomeGuideText.localized("status-item-could-not-start"))
+            return (allowed, WelcomeGuideText.localized("intro-access-could-not-start"))
         }
     }
 }
 
-/// The status under the text: an icon, a line and the small print under it.
+/// The status under the text: an icon, a line and the small print under it, in the box
+/// of the Settings panes (an edge only with Increase Contrast).
 final class WelcomeGuideStatusBox: WelcomeGuideFlippedView {
 
     static let width = WelcomeGuideLayout.rowBoxWidth
@@ -167,14 +190,12 @@ final class WelcomeGuideStatusBox: WelcomeGuideFlippedView {
         fatalError("built in code")
     }
 
-    func show(_ state: WelcomeGuideAccessState, menuBarIconHidden: Bool) {
+    func show(_ state: WelcomeGuideAccessState, texts: (title: String, detail: String), waits: Bool) {
         self.state = state
-        let texts = WelcomeGuideAccessStep.statusTexts(for: state, menuBarIconHidden: menuBarIconHidden)
         titleLabel.stringValue = texts.title
         detailLabel.stringValue = texts.detail
         setAccessibilityLabel(texts.title + ". " + texts.detail)
 
-        let waits = state == .missing || state == .starting
         let reduce = prefersReducedMotion()
         spinner.isHidden = !waits || reduce
         iconView.isHidden = waits && !reduce
@@ -205,12 +226,12 @@ final class WelcomeGuideStatusBox: WelcomeGuideFlippedView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let box = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 10, yRadius: 10)
-        WelcomeGuidePalette.box.setFill()
-        box.fill()
-        WelcomeGuidePalette.boxEdge.setStroke()
-        box.lineWidth = 1
-        box.stroke()
+        let radius = PreferencesGroupedForm.boxCornerRadius
+        PreferencesGroupedForm.boxFillColor.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+        if PreferencesGroupedForm.isHighContrast(effectiveAppearance) {
+            PreferencesGroupedForm.drawOutline(of: bounds)
+        }
     }
 }
 
@@ -365,9 +386,13 @@ final class WelcomeGuideAccessPicture: WelcomeGuideAnimatedView {
         ])
         title.draw(at: NSPoint(x: window.minX + 98, y: window.minY + 8))
 
-        // A line of text over the list, as placeholders.
-        WelcomeGuidePalette.placeholder.setFill()
-        capsule(NSRect(x: window.minX + 16, y: window.minY + 41, width: 236, height: 6)).fill()
+        // Two lines of text over the list, as placeholders (as faint as the rows' names).
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current?.cgContext.setAlpha(0.5)
+        WelcomeGuidePalette.faint.setFill()
+        capsule(NSRect(x: window.minX + 16, y: window.minY + 38, width: 300, height: 5)).fill()
+        capsule(NSRect(x: window.minX + 16, y: window.minY + 47, width: 180, height: 5)).fill()
+        NSGraphicsContext.restoreGraphicsState()
 
         // The list.
         let list = Self.listRect

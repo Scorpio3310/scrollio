@@ -43,16 +43,23 @@ final class WelcomeGuideWelcomeStep: WelcomeGuideStepView {
         let row = NSStackView(views: featureViews)
         row.orientation = .horizontal
         row.alignment = .top
-        row.spacing = 10
+        row.spacing = WelcomeGuideFeatureView.spacing
         row.translatesAutoresizingMaskIntoConstraints = false
+        // One height for the three, so the box that moves from one to the next keeps its size.
+        for view in featureViews.dropFirst() {
+            view.heightAnchor.constraint(equalTo: featureViews[0].heightAnchor).isActive = true
+        }
 
-        let (view, stack) = WelcomeGuideText.makeContent([title, text, row], top: 44)
+        let (view, stack) = WelcomeGuideText.makeContent([title, text, row])
         stack.setCustomSpacing(WelcomeGuideLayout.titleToText, after: title)
-        stack.setCustomSpacing(22, after: text)
+        stack.setCustomSpacing(WelcomeGuideLayout.textToControl, after: text)
         content = view
 
         // The app icon sits on the lower edge of the picture.
-        let icon = NSImageView(frame: NSRect(x: (WelcomeGuideLayout.windowSize.width - 60) / 2, y: -30, width: 60, height: 60))
+        let iconSide: CGFloat = 52
+        let icon = NSImageView(frame: NSRect(
+            x: (WelcomeGuideLayout.windowSize.width - iconSide) / 2, y: -30, width: iconSide, height: iconSide
+        ))
         icon.image = NSImage(named: NSImage.applicationIconName)
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.setAccessibilityElement(false)
@@ -231,6 +238,9 @@ final class WelcomeGuideWelcomePicture: WelcomeGuideAnimatedView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        // Everything stays inside the card: the glow round the wheel would reach above it.
+        let radius = WelcomeGuideLayout.pictureCornerRadius - 1
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: radius, yRadius: radius).addClip()
         let current = shownFrame
         var drawing = WelcomeGuideMouseDrawing(model: model, unit: Self.unit, origin: Self.mouseOrigin)
         drawing.origin.x += current.slide
@@ -300,8 +310,11 @@ final class WelcomeGuideFeatureView: WelcomeGuideFlippedView {
         }
     }
 
-    static let width: CGFloat = 172
-    static let glyphSize = NSSize(width: 28, height: 38)
+    /// Three of them and two gaps are as wide as the picture (552 pt).
+    static let width: CGFloat = 176
+    static let spacing: CGFloat = 12
+    /// Wider than the mouse: room for the gesture arrow on its left.
+    static let glyphSize = NSSize(width: 38, height: 38)
 
     let kind: Kind
     private(set) var titleLabel: NSTextField!
@@ -353,8 +366,12 @@ final class WelcomeGuideFeatureView: WelcomeGuideFlippedView {
             detail.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 2),
             detail.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
             detail.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            detail.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -11),
+            // As tall as the tallest of the three (the row makes them equal), the text at the top.
+            detail.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -11),
         ])
+        let compact = heightAnchor.constraint(equalToConstant: 0)
+        compact.priority = .defaultLow
+        compact.isActive = true
         // Read as one: "Smooth scrolling, Each wheel click glides."
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
@@ -369,8 +386,13 @@ final class WelcomeGuideFeatureView: WelcomeGuideFlippedView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard isHighlighted else { return }
+        let box = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 10, yRadius: 10)
         WelcomeGuidePalette.box.setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 10, yRadius: 10).fill()
+        box.fill()
+        // The edge of the feel cards: it carries the box under Increase Contrast.
+        WelcomeGuidePalette.boxEdge.setStroke()
+        box.lineWidth = 1
+        box.stroke()
     }
 }
 
@@ -410,6 +432,8 @@ final class WelcomeGuideFeatureGlyph: WelcomeGuideFlippedView {
         switch kind {
         case .scrolling: lit = .wheel
         case .buttons: lit = .back
+        // A mouse without a gesture button: an arrow the way the mouse moves (as the big
+        // picture draws it), not the whole outline lit.
         case .gestures: lit = model.has(.gesture) ? .gesture : .body
         }
 
@@ -424,10 +448,18 @@ final class WelcomeGuideFeatureGlyph: WelcomeGuideFlippedView {
             forward.fill()
         }
         if lit == .body {
-            let outline = shapes.outline()
-            outline.lineWidth = 1.6 / unit
+            // Grid units: from the mouse's left side, 28 units out, a head 10 units deep.
+            let arrow = NSBezierPath()
+            arrow.move(to: NSPoint(x: 14, y: 60))
+            arrow.line(to: NSPoint(x: -14, y: 60))
+            arrow.move(to: NSPoint(x: -4, y: 50))
+            arrow.line(to: NSPoint(x: -14, y: 60))
+            arrow.line(to: NSPoint(x: -4, y: 70))
+            arrow.lineWidth = 2 / unit
+            arrow.lineCapStyle = .round
+            arrow.lineJoinStyle = .round
             NSColor.controlAccentColor.setStroke()
-            outline.stroke()
+            arrow.stroke()
         }
         NSGraphicsContext.restoreGraphicsState()
     }

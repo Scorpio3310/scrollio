@@ -112,7 +112,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     private(set) var isHelpShown = false
     /// "Open Accessibility Settings" was used; the help opens by itself once when the user
     /// comes back and the access is still missing.
-    private var didOpenSettings = false
+    private(set) var didOpenSettings = false
     private var didOfferHelp = false
     private var helpPopover: NSPopover?
     private var transitionGeneration = 0
@@ -159,12 +159,22 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         let step = WelcomeGuideAccessStep(target: self, helpAction: #selector(helpButtonClicked(_:)))
         step.artwork.prefersReducedMotion = reducedMotion
         step.statusBox.prefersReducedMotion = reducedMotion
-        step.show(accessState, menuBarIconHidden: isMenuBarIconHidden())
+        step.show(accessState, context: accessContext)
         return step
     }()
 
+    /// What the Accessibility step's status line depends on besides the state.
+    private var accessContext: WelcomeGuideAccessStep.Context {
+        let index = steps.firstIndex(of: .access)
+        return WelcomeGuideAccessStep.Context(
+            menuBarIconHidden: isMenuBarIconHidden(),
+            stepFollows: index.map { $0 < steps.count - 1 } ?? false,
+            settingsOpened: didOpenSettings
+        )
+    }
+
     private func showAccessState() {
-        accessStep.show(accessState, menuBarIconHidden: isMenuBarIconHidden())
+        accessStep.show(accessState, context: accessContext)
     }
 
     private(set) lazy var feelStep: WelcomeGuideFeelStep = {
@@ -180,6 +190,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     private(set) lazy var finishStep: WelcomeGuideFinishStep = {
         let step = WelcomeGuideFinishStep(
             isMenuBarIconHidden: { [weak self] in self?.isMenuBarIconHidden() ?? false },
+            isPaused: { [weak self] in self?.runState() == .paused },
             opensAtLogin: { [weak self] in self?.openAtLoginChoice ?? false },
             loginItemWaitsForApproval: { LoginItem.service.status == .requiresApproval },
             target: self, loginAction: #selector(openAtLoginClicked(_:))
@@ -598,6 +609,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         switch step {
         case .access where accessState == .missing:
             didOpenSettings = true
+            showAccessState()
             // The request puts Scrollio into the Accessibility list; the pane shows the list.
             requestAccess()
             openAccessibilitySettings()

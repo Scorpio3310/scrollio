@@ -3,10 +3,11 @@
 //  Mos
 //  The last step of the Welcome Guide: where Scrollio lives now. A drawn menu bar whose
 //  Scrollio icon pulses twice and then opens its menu (the real items of the status-bar
-//  menu); with Reduce Motion the menu is simply open. Under the text, General's "Open at
-//  login" switch: on for a new user, the system's state when the guide runs by hand. The
-//  choice is the container's, applied when the user leaves with Done or Open Settings
-//  (IntroductionViewController.applyOpenAtLogin).
+//  menu); with Reduce Motion the menu is simply open. With the menu bar icon hidden the
+//  picture shows only the empty place of the icon, and the text says how to reach Settings.
+//  Under the text, General's "Open at login" switch: on for a new user, the system's state
+//  when the guide runs by hand. The choice is the container's, applied when the user leaves
+//  the step (IntroductionViewController.applyOpenAtLogin).
 //
 
 import Cocoa
@@ -26,6 +27,8 @@ final class WelcomeGuideFinishStep: WelcomeGuideStepView {
 
     /// Whether the menu bar icon is hidden (General › Show in menu bar is off).
     var isMenuBarIconHidden: () -> Bool
+    /// "Pause Scrollio" is on.
+    var isPaused: () -> Bool
     /// What the switch shows: the choice the user leaves with.
     var opensAtLogin: () -> Bool
     /// macOS waits for the login item to be approved in System Settings.
@@ -33,11 +36,13 @@ final class WelcomeGuideFinishStep: WelcomeGuideStepView {
 
     init(
         isMenuBarIconHidden: @escaping () -> Bool,
+        isPaused: @escaping () -> Bool,
         opensAtLogin: @escaping () -> Bool,
         loginItemWaitsForApproval: @escaping () -> Bool,
         target: AnyObject, loginAction: Selector
     ) {
         self.isMenuBarIconHidden = isMenuBarIconHidden
+        self.isPaused = isPaused
         self.opensAtLogin = opensAtLogin
         self.loginItemWaitsForApproval = loginItemWaitsForApproval
         artwork = WelcomeGuideFinishPicture(frame: NSRect(origin: .zero, size: WelcomeGuideLayout.pictureSize))
@@ -62,9 +67,9 @@ final class WelcomeGuideFinishStep: WelcomeGuideStepView {
     }
 
     func refresh() {
-        textLabel.stringValue = WelcomeGuideText.localized(
-            isMenuBarIconHidden() ? "intro-status-granted-detail-hidden-icon" : "intro-finish-text"
-        )
+        let hidden = isMenuBarIconHidden()
+        textLabel.stringValue = WelcomeGuideText.localized(Self.textKey(iconHidden: hidden, paused: isPaused()))
+        artwork.isIconHidden = hidden
         loginRow.isOn = opensAtLogin()
         // As General says it: an item that waits for approval is not on yet.
         loginRow.explanation = WelcomeGuideText.localized(
@@ -75,6 +80,12 @@ final class WelcomeGuideFinishStep: WelcomeGuideStepView {
     func setShown(_ shown: Bool) {
         if shown { refresh() }
         artwork.setAnimating(shown)
+    }
+
+    /// The sentence under the title; paused, it does not claim that Scrollio runs.
+    static func textKey(iconHidden: Bool, paused: Bool) -> String {
+        guard iconHidden else { return "intro-finish-text" }
+        return paused ? "intro-finish-hidden-icon-paused" : "intro-status-granted-detail-hidden-icon"
     }
 }
 
@@ -120,6 +131,15 @@ final class WelcomeGuideFinishPicture: WelcomeGuideAnimatedView {
     }
 
     private(set) var shownFrame = Frame()
+
+    /// General › Show in menu bar is off: the icon's place stays empty, nothing opens.
+    var isIconHidden = false {
+        didSet {
+            guard isIconHidden != oldValue else { return }
+            needsDisplay = true
+            setAccessibilityLabel(WelcomeGuideText.localized(isIconHidden ? "intro-finish-picture-hidden-icon" : "intro-finish-picture"))
+        }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -194,22 +214,41 @@ final class WelcomeGuideFinishPicture: WelcomeGuideAnimatedView {
             x += width + 14
         }
         let icon = Self.iconRect
-        if frame.iconSelected {
-            WelcomeGuidePalette.menuBarSelection.setFill()
-            NSBezierPath(roundedRect: icon.insetBy(dx: -5, dy: -1), xRadius: 5, yRadius: 5).fill()
+        if isIconHidden {
+            // Where the icon would be: an empty, dashed place.
+            let place = NSBezierPath(roundedRect: icon.insetBy(dx: -5, dy: -1), xRadius: 5, yRadius: 5)
+            place.lineWidth = 1
+            place.setLineDash([3, 3], count: 2, phase: 0)
+            ink.withAlphaComponent(0.35).setStroke()
+            place.stroke()
+        } else {
+            if frame.iconSelected {
+                WelcomeGuidePalette.menuBarSelection.setFill()
+                NSBezierPath(roundedRect: icon.insetBy(dx: -5, dy: -1), xRadius: 5, yRadius: 5).fill()
+            }
+            drawStatusIcon(in: icon, colour: ink)
         }
-        drawStatusIcon(in: icon, colour: ink)
+        // The other status items and the clock: faint, so Scrollio's icon is what the eye finds.
         x = icon.maxX + 16
-        ink.withAlphaComponent(0.55).setFill()
+        ink.withAlphaComponent(0.28).setFill()
         for width in [22, 16, 14] as [CGFloat] {
             NSBezierPath(roundedRect: NSRect(x: x, y: midY - 5, width: width, height: 10), xRadius: 3, yRadius: 3).fill()
             x += width + 14
         }
         capsule(NSRect(x: bounds.width - 14 - 74, y: midY - 2.5, width: 74, height: 5)).fill()
 
+        guard !isIconHidden else {
+            NSGraphicsContext.restoreGraphicsState()
+            ScrollPreviewPalette.cardEdge.setStroke()
+            card.lineWidth = 1
+            card.stroke()
+            return
+        }
+        // The pulses grow along the menu bar, inside it.
         for index in 0..<2 where frame.rings[index] > 0 {
-            let side = 30 * frame.ringScales[index]
-            let ring = NSBezierPath(ovalIn: NSRect(x: icon.midX - side / 2, y: icon.midY - side / 2, width: side, height: side))
+            let grow = (frame.ringScales[index] - 1) / 1.3
+            let rect = icon.insetBy(dx: -5 - 14 * grow, dy: -1 - 2 * grow)
+            let ring = NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
             ring.lineWidth = 2
             NSColor.controlAccentColor.withAlphaComponent(frame.rings[index]).setStroke()
             ring.stroke()

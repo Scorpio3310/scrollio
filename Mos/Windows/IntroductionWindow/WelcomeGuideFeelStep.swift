@@ -3,8 +3,10 @@
 //  Mos
 //  Step 3 of the Welcome Guide: how scrolling feels. The five "Feel" presets of the
 //  Scrolling pane as cards, each with the path the page takes after three clicks (the scroll
-//  engine's own maths, ScrollPreviewMotion), and over them a real page to scroll: a scroll
-//  view in a drawn window, smoothed by Scrollio's engine itself, as any other window is.
+//  engine's own maths, ScrollPreviewMotion), its name and a word on how it stops; over them
+//  a real page to scroll: a scroll view in a drawn window, smoothed by Scrollio's engine
+//  itself, as any other window is. A line under the cards shows only for a glide time of
+//  the user's own (none of the five is chosen).
 //
 //  A pick applies at once and stores only the preset's glide time (`ScrollFeel.apply`, as
 //  the Scrolling pane's Feel control). Under the cards, the Scrolling pane's "Reverse wheel
@@ -14,8 +16,8 @@
 //  demo plays the chosen feel on it (three clicks there and back); while the pointer is on
 //  the page nothing animates: the scroll tap runs on the main thread too. When the page
 //  cannot be smoothed (Scrollio not running, "Limit scrolling to these apps" without
-//  Scrollio, smoothing off) the text says to watch the demo, and a line in the window
-//  says why.
+//  Scrollio, smoothing off) the text says to watch the demo (with Reduce Motion, where
+//  nothing moves, just to pick), and a line in the window says why.
 //
 
 import Cocoa
@@ -29,9 +31,11 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
     let artwork: WelcomeGuideFeelPicture
     private(set) var titleLabel: NSTextField!
     private(set) var textLabel: NSTextField!
+    /// Under the cards, only while the glide time is none of the five.
     private(set) var hintLabel: NSTextField!
-    private(set) var noteLabel: NSTextField!
     private(set) var feelButtons: [WelcomeGuideFeelButton] = []
+    private var stack: NSStackView!
+    private var row: NSStackView!
     /// "Reverse wheel direction", the row of the Scrolling pane, in a box of its own.
     private(set) var reverseRow: PreferencesSwitchRow!
     private(set) var reverseBox: PreferencesGroupBox!
@@ -71,31 +75,25 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
         row.setAccessibilityElement(true)
         row.setAccessibilityRole(.radioGroup)
         row.setAccessibilityLabel(WelcomeGuideText.localized("scrolling-feel-label"))
-        let hint = WelcomeGuideText.makeText("", font: NSFont.systemFont(ofSize: 12))
-        let note = WelcomeGuideText.makeText(
-            WelcomeGuideText.localized("intro-feel-note"), font: PreferencesForm.hintFont, color: .tertiaryLabelColor
-        )
+        let hint = WelcomeGuideText.makeText(WelcomeGuideText.localized("intro-feel-custom-hint"), font: NSFont.systemFont(ofSize: 12))
         let reverse = PreferencesSwitchRow(
             title: WelcomeGuideText.localized("scrolling-reverse"),
             explanation: WelcomeGuideText.localized("scrolling-reverse-hint"),
             target: nil, action: nil
         )
         let box = PreferencesGroupBox(width: WelcomeGuideLayout.rowBoxWidth, rows: [reverse])
-        let (view, stack) = WelcomeGuideText.makeContent([title, text, row, hint, box, note])
+        let (view, stack) = WelcomeGuideText.makeContent([title, text, row, hint, box])
         stack.setCustomSpacing(WelcomeGuideLayout.titleToText, after: title)
         stack.setCustomSpacing(WelcomeGuideLayout.textToControl, after: text)
-        stack.setCustomSpacing(8, after: row)
-        stack.setCustomSpacing(10, after: hint)
-        stack.setCustomSpacing(8, after: box)
-        // The hint changes with the pick: its height stays that of one line.
-        hint.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        stack.setCustomSpacing(Self.hintSpacing, after: hint)
         content = view
 
         super.init()
         titleLabel = title
         textLabel = text
         hintLabel = hint
-        noteLabel = note
+        self.stack = stack
+        self.row = row
         feelButtons = buttons
         reverseRow = reverse
         reverseBox = box
@@ -113,13 +111,18 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
         artwork.setAnimating(shown)
     }
 
+    /// Between the cards and the switch's box; with the line for a custom glide time, around it.
+    static let rowToBox: CGFloat = 14
+    static let hintSpacing: CGFloat = 6
+
     /// Puts the stored feel, the try area's state and the mouse on screen.
     func refresh() {
         let feel = selectedFeel
         for button in feelButtons {
             button.state = button.feel == feel ? .on : .off
         }
-        hintLabel.stringValue = ScrollFeel.hint(for: feel)
+        hintLabel.isHidden = feel != nil
+        stack.setCustomSpacing(feel == nil ? Self.hintSpacing : Self.rowToBox, after: row)
         reverseRow.isOn = scrollOptions().reversesWheel
         artwork.model = mouseSource()
         artwork.setScene(duration: scrollOptions().duration, speed: scrollOptions().speed)
@@ -132,11 +135,18 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
     func refreshTryArea() {
         let state = tryAreaState()
         tryArea = state
-        let text = WelcomeGuideText.localized(state == .smoothed ? "intro-feel-text" : "intro-feel-text-watch")
+        let text = WelcomeGuideText.localized(Self.textKey(tryArea: state, reduceMotion: artwork.prefersReducedMotion()))
         if textLabel.stringValue != text {
             textLabel.stringValue = text
         }
         artwork.tryArea = state
+    }
+
+    /// Scroll the page yourself; or, when it is not smoothed, watch the demo; or, when the
+    /// demo stands still too (Reduce Motion), just pick.
+    static func textKey(tryArea: WelcomeGuideTryArea, reduceMotion: Bool) -> String {
+        if tryArea == .smoothed { return "intro-feel-text" }
+        return reduceMotion ? "intro-feel-text-still" : "intro-feel-text-watch"
     }
 
     @objc func feelClicked(_ sender: WelcomeGuideFeelButton) {
@@ -164,9 +174,9 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
 
 // MARK: - A choice
 
-/// One preset: the path of the page over time for three clicks, and its name. A radio
-/// button: the five are one group (arrow keys move between them), VoiceOver reads the
-/// name and the line that says how it feels.
+/// One preset: the path of the page over time for three clicks, its name, and a word on how
+/// it stops. A radio button: the five are one group (arrow keys move between them),
+/// VoiceOver reads the name and that word.
 ///
 /// The card tracks the mouse itself. AppKit's radio cell takes a click only on the title
 /// it would draw beside its circle, a strip 47 × 16 pt at the left of the card's middle
@@ -177,10 +187,13 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
 /// its background).
 final class WelcomeGuideFeelButton: NSButton {
 
-    static let size = NSSize(width: 100, height: 64)
+    /// Five cards and four gaps are as wide as the picture (552 pt).
+    static let size = NSSize(width: 104, height: 76)
     static let spacing: CGFloat = 8
-    static let curveSize = NSSize(width: 80, height: 28)
+    static let curveSize = NSSize(width: 80, height: 22)
     static let cornerRadius: CGFloat = 10
+    /// The time the curve shows: the five differ most in the first second.
+    static let curveSpan = 1.0
 
     let feel: ScrollFeel
     /// Points of the curve in its 80 × 28 box (top left origin).
@@ -199,8 +212,13 @@ final class WelcomeGuideFeelButton: NSButton {
         heightAnchor.constraint(equalToConstant: Self.size.height).isActive = true
         setAccessibilityRole(.radioButton)
         setAccessibilityLabel(feel.localizedName)
-        setAccessibilityHelp(feel.localizedHint)
+        setAccessibilityHelp(caption)
         toolTip = feel.localizedHint
+    }
+
+    /// The word under the name: how the page stops.
+    var caption: String {
+        return WelcomeGuideText.localized("intro-feel-caption-\(feel.name)")
     }
 
     required init?(coder: NSCoder) {
@@ -331,22 +349,26 @@ final class WelcomeGuideFeelButton: NSButton {
         target.choose()
     }
 
-    /// Where the page is over 1.4 s after three clicks 0.15 s apart, as the engine moves it
-    /// (ScrollPreviewMotion), from 0 (bottom of the box) to the three clicks' distance (top).
+    /// The curve's baseline and the height of the full distance, in its box (top-left origin).
+    static let curveBaseline: CGFloat = 19
+    static let curveRise: CGFloat = 15
+
+    /// Where the page is over the first second after three clicks 0.15 s apart, as the engine
+    /// moves it (ScrollPreviewMotion), from 0 (bottom of the box) to the three clicks'
+    /// distance (top).
     static func curvePoints(duration: Double) -> [NSPoint] {
         var scene = ScrollPreviewView.Scene()
         scene.duration = duration
         let clicks = [0.0, 0.15, 0.3].map { ScrollPreviewMotion.Click(time: $0, turn: 1) }
         let motion = ScrollPreviewMotion(scene: scene, clicks: clicks, start: 0)
         let end = max(0.001, motion.end - motion.start)
-        let span = 1.4
         let samples = 48
         return (0...samples).map { index in
-            let time = span * Double(index) / Double(samples)
+            let time = curveSpan * Double(index) / Double(samples)
             let progress = (motion.value(at: time) - motion.start) / end
             return NSPoint(
                 x: 4 + (curveSize.width - 8) * CGFloat(index) / CGFloat(samples),
-                y: 25 - 21 * CGFloat(min(1.05, max(0, progress)))
+                y: curveBaseline - curveRise * CGFloat(min(1.05, max(0, progress)))
             )
         }
     }
@@ -372,11 +394,11 @@ final class WelcomeGuideFeelButton: NSButton {
         }
         box.stroke()
 
-        // The curve, in a box 80 × 28 centred at the top.
+        // The curve, in a box 80 × 22 centred at the top.
         let origin = NSPoint(x: ((bounds.width - Self.curveSize.width) / 2).rounded(), y: 8)
         let axis = NSBezierPath()
-        axis.move(to: NSPoint(x: origin.x + 4, y: origin.y + 25.5))
-        axis.line(to: NSPoint(x: origin.x + Self.curveSize.width - 4, y: origin.y + 25.5))
+        axis.move(to: NSPoint(x: origin.x + 4, y: origin.y + Self.curveBaseline + 0.5))
+        axis.line(to: NSPoint(x: origin.x + Self.curveSize.width - 4, y: origin.y + Self.curveBaseline + 0.5))
         axis.lineWidth = 1
         WelcomeGuidePalette.hairline.setStroke()
         axis.stroke()
@@ -393,12 +415,21 @@ final class WelcomeGuideFeelButton: NSButton {
             path.stroke()
         }
 
-        let name = NSAttributedString(string: feel.localizedName, attributes: [
+        // The name and the word under it, centred, cut short rather than overflowing.
+        let line = NSMutableParagraphStyle()
+        line.alignment = .center
+        line.lineBreakMode = .byTruncatingTail
+        let text = bounds.insetBy(dx: 6, dy: 0)
+        NSAttributedString(string: feel.localizedName, attributes: [
             .font: NSFont.systemFont(ofSize: 12, weight: selected ? .semibold : .medium),
             .foregroundColor: NSColor.labelColor,
-        ])
-        let size = name.size()
-        name.draw(at: NSPoint(x: (bounds.width - size.width) / 2, y: bounds.height - 8 - size.height))
+            .paragraphStyle: line,
+        ]).draw(in: NSRect(x: text.minX, y: 36, width: text.width, height: 16))
+        NSAttributedString(string: caption, attributes: [
+            .font: NSFont.systemFont(ofSize: 11),
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .paragraphStyle: line,
+        ]).draw(in: NSRect(x: text.minX, y: 52, width: text.width, height: 15))
     }
 
     override var focusRingMaskBounds: NSRect {
@@ -480,7 +511,7 @@ final class WelcomeGuideFeelPicture: WelcomeGuideAnimatedView {
         scrollView.contentView.scroll(to: .zero)
         addSubview(scrollView)
 
-        pill.maxWidth = window.width - 40
+        pill.maxWidth = window.width - 16
         addSubview(pill)
         pill.centreX = window.midX
         pill.bottom = window.maxY - 14
