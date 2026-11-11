@@ -92,10 +92,12 @@ class ScrollCore: ScrollActionPort {
         // 无法区分黑苹果, 因为黑苹果的触控板驱动直接模拟鼠标输入
         // 无法区分 Magic Mouse, 因为其滚动特征与内置的 Trackpad 一致
         if scrollEvent.isTrackpad() {
+            if hasVerticalDelta || hasHorizontalDelta { ScrollSystemLog.notePassthrough("taken for trackpad events") }
             return Unmanaged.passUnretained(event)
         }
         // 当事件来自远程桌面，且其发送的事件 isContinuous=1.0，此时跳过本地平滑
         if ScrollUtils.shared.isRemoteSmoothedEvent(event) {
+            ScrollSystemLog.notePassthrough("remote desktop, already smoothed")
             return Unmanaged.passUnretained(event)
         }
         // 当鼠标输入, 根据需要执行翻转方向/平滑滚动
@@ -208,6 +210,7 @@ class ScrollCore: ScrollActionPort {
         }
 
         if needsPassthrough {
+            ScrollSystemLog.notePassthrough("one axis not smoothed (vertical \(shouldSmoothVertical), horizontal \(shouldSmoothHorizontal), paused by key \(ScrollCore.shared.blockSmooth))")
             if shouldSmoothVertical {
                 ScrollEvent.clearY(scrollEvent)
             }
@@ -221,9 +224,15 @@ class ScrollCore: ScrollActionPort {
             if ScrollPoster.shared.isAvailable {
                 return nil
             } else {
+                ScrollSystemLog.notePassthrough("no display link")
                 return Unmanaged.passUnretained(event)
             }
         } else {
+            if hasVerticalDelta || hasHorizontalDelta {
+                ScrollSystemLog.notePassthrough(
+                    "smoothing off for this event (smooth \(Options.shared.scroll.smooth), paused by key \(ScrollCore.shared.blockSmooth), app rule \(ScrollCore.shared.application != nil))"
+                )
+            }
             return Unmanaged.passUnretained(event)
         }
     }

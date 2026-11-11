@@ -52,36 +52,21 @@ enum ScrollMotion {
         return -referenceFrameInterval / log(1 - t)
     }
 
-    /// Time constant of the classic filter (`filterWeight` per 60 Hz frame): ~64 ms.
-    static let classicFilterTimeConstant = -referenceFrameInterval / log(1 - filterWeight)
-    /// Two equal lags of time constant τ in a row (a critically damped response) have covered
-    /// 95% of the distance after this many τ.
-    static let landingTimeConstants = 4.744
     /// How fast the filter opens up for free-spin and closes again, per 60 Hz frame
     /// (a time constant of ~75 ms): the switch is a short blend, never a step in speed.
     static let filterOpeningRate = 0.2
 
-    /// Time constant of each of the two lags behind smooth scrolling (the lerp toward the target
-    /// and ScrollFilter) for the Duration factor `transition`.
+    /// ScrollFilter's weight per 60 Hz frame for the Duration factor `transition`.
     ///
-    /// Duration keeps its meaning, how long a scroll takes to land. Classic Mos gets there with
-    /// a lerp of time constant τ followed by a fixed 64 ms filter, about 3 τ + min(τ, 64 ms) for
-    /// 95% of the distance: the speed jumps up within the filter's 64 ms and then fades for
-    /// several τ. A long Duration is soft but floats on and on; a short one is a hop.
-    /// The same landing time is used here, split evenly over two equal lags. That is a
-    /// critically damped response: the speed rises as gently as it falls, so a scroll can be
-    /// soft without a long tail. (At Duration 4.35: 132 ms each instead of 187 ms + 64 ms.)
-    static func responseTimeConstant(forTransition transition: Double) -> Double {
-        guard transition.isFinite, transition < 1 else { return 0 }
-        let classic = timeConstant(forTransition: transition)
-        return (3 * classic + min(classic, classicFilterTimeConstant)) / landingTimeConstants
-    }
-
-    /// Per-frame factor of a lag with `timeConstant` for a frame of `interval` seconds
-    /// (1 = no lag at all).
-    static func factor(timeConstant: Double, frameInterval interval: Double) -> Double {
-        guard timeConstant.isFinite, timeConstant > 0 else { return 1 }
-        return 1 - exp(-clampedFrameInterval(interval) / timeConstant)
+    /// The page answers a notch at once (the lerp moves fastest on its first frame) and then
+    /// glides out; the filter only rounds that first step off. Its time constant is the
+    /// classic 64 ms, or the lerp's own where that is shorter, so direct settings stay direct.
+    ///
+    /// (A version with two equal lags, soft on both ends, was tried on 2026-11-11 and taken
+    /// back out: at long durations the page answered the wheel so late that it felt dead.)
+    static func filterWeight(forTransition transition: Double) -> Double {
+        guard transition.isFinite else { return filterWeight }
+        return min(1, max(filterWeight, transition))
     }
 
     /// In free-spin the events arrive about once per frame; smoothing their start would only

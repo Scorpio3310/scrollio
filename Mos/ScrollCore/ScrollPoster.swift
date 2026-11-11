@@ -112,6 +112,8 @@ class ScrollPoster {
     private var bypassFilter = false
     // 滤波器 "打开" 的程度 (0 = 完全滤波, 1 = 不滤波), 逐帧向 bypassFilter 的目标值过渡, 切换时速度不突变
     private var filterOpenness = 0.0
+    // 本次滚动的统计, 结束时写入系统日志 (ScrollSystemLog)
+    private var sessionLog = ScrollSystemLog.Session()
     // 领先量限制 (buffer - current), 滚轮停下后滑行尽快结束
     private var leadLimiterY = ScrollLeadLimiter()
     private var leadLimiterX = ScrollLeadLimiter()
@@ -207,7 +209,18 @@ extension ScrollPoster {
         defer { os_unfair_lock_unlock(&stateLock) }
         // 捕获本次手势的配置快照 (主线程读 Options/ScrollCore, CVDisplayLink 线程只读)
         captureConfigSnapshotLocked()
-        handleInputLocked(input, at: CFAbsoluteTimeGetCurrent())
+        let now = CFAbsoluteTimeGetCurrent()
+        if sessionLog.isEmpty {
+            sessionLog.startedAt = now
+            sessionLog.duration = Options.shared.scroll.duration
+        }
+        sessionLog.inputs += 1
+        sessionLog.inputDistance += abs(input.y) + abs(input.x)
+        sessionLog.lastInputAt = now
+        sessionLog.trackpadStyle = config.simTrackpadEnabled
+        if input.isFreeSpin { sessionLog.freeSpinInputs += 1 }
+        handleInputLocked(input, at: now)
+        sessionLog.precise = gesture.precise
         return self
     }
     /// 处理一次滚轮输入: 手势方式, 缓冲, 滑行与阶段 (调用方须持有 stateLock)
@@ -306,7 +319,7 @@ extension ScrollPoster {
         if filter.isAtRest {
             filterOpenness = bypassFilter ? 1.0 : 0.0
         }
-        let timeConstant = ScrollMotion.responseTimeConstant(forTransition: input.duration)
+        let timeConstant = ScrollMotion.timeConstant(forTransition: input.duration)
         // 同向累加, 反向则重新开始
         if input.y*delta.y > 0 {
             buffer.y += input.y
@@ -580,9 +593,12 @@ extension ScrollPoster {
         }
         manualInputEnded = true
         momentumActive = false
+        let finished = sessionLog
+        sessionLog = ScrollSystemLog.Session()
         // 重置参数 (不递增 generation, 保留本次收尾帧有效性)
         resetUnlocked()
         os_unfair_lock_unlock(&stateLock)
+        ScrollSystemLog.note(finished, endedWith: "\(requestedPhase)", now: CFAbsoluteTimeGetCurrent())
 #if DEBUG
         let diag = diagnosticsSnapshot()
         if diag.droppedFramesByGeneration > 0 || diag.droppedFramesByTTL > 0 || diag.updateSnapshotFailures > 0 {
@@ -887,10 +903,8 @@ private extension ScrollPoster {
 
     /// 推进一帧: 插值 current -> buffer 并经滤波 (或跳过滤波) 得到本帧输出。调用方须持有 stateLock。
     func advanceMotionLocked(frameInterval: Double, now: CFTimeInterval) -> (y: Double, x: Double) {
-        // 插值与滤波是两个时间常数相同的滞后 (临界阻尼, 见 ScrollMotion.responseTimeConstant):
-        // 起步与收尾同样柔和。按真实帧间隔换算, 不同刷新率下滚动时长一致
-        let timeConstant = ScrollMotion.responseTimeConstant(forTransition: duration)
-        let trans = ScrollMotion.factor(timeConstant: timeConstant, frameInterval: frameInterval)
+        // 按真实帧间隔换算插值系数 (以 60Hz 为参考, 不同刷新率下滚动时长一致)
+        let trans = ScrollMotion.transition(duration, frameInterval: frameInterval)
         // 计算插值
         var frame = (
             y: Interpolator.lerp(src: current.y, dest: buffer.y, trans: trans),
@@ -917,7 +931,8 @@ private extension ScrollPoster {
         // 逐渐打开 / 关闭, 其中尚未发送的距离按 trans 的比例补发, 速度不突变
         let opening = ScrollMotion.transition(ScrollMotion.filterOpeningRate, frameInterval: frameInterval)
         filterOpenness += ((bypassFilter ? 1.0 : 0.0) - filterOpenness) * opening
-        let weight = trans + (1.0 - trans) * filterOpenness
+        let filtered = ScrollMotion.transition(ScrollMotion.filterWeight(forTransition: duration), frameInterval: frameInterval)
+        let weight = filtered + (1.0 - filtered) * filterOpenness
         var output = filter.fill(with: frame, weight: weight, catchUp: trans)
         // 精确模式: 松手后速度降到落地速度时, 以该速度匀速走完剩余距离 (见 ScrollLanding)。
         // 原有模式不需要: 不足死区的帧本来就不发送, 运动在该速度处结束。
@@ -1026,6 +1041,13 @@ private extension ScrollPoster {
         }
         frame.write(to: snapshot.event)
         ScrollUtils.shared.markSyntheticSmoothEvent(snapshot.event)
+        let moved = abs(frame.y) + abs(frame.x)
+        if moved > 0 {
+            sessionLog.frames += 1
+            sessionLog.postedDistance += frame.precise ? moved : moved.rounded(.towardZero)
+            sessionLog.largestFrame = max(sessionLog.largestFrame, moved)
+            sessionLog.lastFrameAt = CFAbsoluteTimeGetCurrent()
+        }
         // 通过 CGEventPostToPid 直投目标进程:
         // 不依赖 proxy (消除崩溃), 不经过 tap 链重新路由 (动量不跟随光标)
         // ref: @shichangone MR: https://github.com/Caldis/Mos/pull/523, issue #868
