@@ -67,8 +67,11 @@ struct PreferencesPane: Equatable {
         PreferencesPane(identifier: MousePreferencesViewController.tabIdentifier, symbolName: "computermouse.fill", tileColor: Tile.gray, startsGroup: false),
         PreferencesPane(identifier: PANEL_IDENTIFIER.application, symbolName: "square.grid.2x2.fill", tileColor: Tile.indigo, startsGroup: true),
         PreferencesPane(identifier: PANEL_IDENTIFIER.general, symbolName: "gearshape.fill", tileColor: Tile.gray, startsGroup: true),
-        PreferencesPane(identifier: AboutPreferencesViewController.tabIdentifier, symbolName: "info", tileColor: Tile.teal, startsGroup: false),
     ]
+
+    /// Panes that were merged into another, by the identifier a window may still remember:
+    /// About is the card on top of General now.
+    static let mergedIdentifiers: [String: String] = ["about": PANEL_IDENTIFIER.general]
 
     /// The tile colours of System Settings.
     enum Tile {
@@ -77,7 +80,6 @@ struct PreferencesPane: Equatable {
         static let pink = NSColor(srgbRed: 1.0, green: 0.22, blue: 0.37, alpha: 1)
         static let gray = NSColor(srgbRed: 0.55, green: 0.55, blue: 0.58, alpha: 1)
         static let indigo = NSColor(srgbRed: 0.35, green: 0.34, blue: 0.84, alpha: 1)
-        static let teal = NSColor(srgbRed: 0.19, green: 0.69, blue: 0.78, alpha: 1)
     }
 
     /// A new view controller for this pane, as the toolbar tabs made them: the storyboard
@@ -88,8 +90,6 @@ struct PreferencesPane: Equatable {
             return GesturesPreferencesViewController()
         case MousePreferencesViewController.tabIdentifier:
             return MousePreferencesViewController()
-        case AboutPreferencesViewController.tabIdentifier:
-            return AboutPreferencesViewController()
         default:
             guard let controller = storyboard.instantiateController(withIdentifier: identifier) as? NSViewController else {
                 fatalError("Main.storyboard has no pane \(identifier)")
@@ -167,9 +167,15 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
 
         sidebar.delegate = self
         let remembered = uiStateDefaults?.string(forKey: Self.selectedPaneDefaultsKey)
-        let initial = remembered.flatMap { id in panes.contains { $0.identifier == id } ? id : nil }
-            ?? Self.defaultPaneIdentifier
-        show(initial, remember: false)
+        show(Self.initialPaneIdentifier(remembered: remembered, panes: panes), remember: false)
+    }
+
+    /// Where a new window opens: the pane that was open last, the pane it was merged into,
+    /// or the default when it is gone. What is remembered is not rewritten.
+    static func initialPaneIdentifier(remembered: String?, panes: [PreferencesPane]) -> String {
+        guard let remembered else { return defaultPaneIdentifier }
+        let identifier = PreferencesPane.mergedIdentifiers[remembered] ?? remembered
+        return panes.contains { $0.identifier == identifier } ? identifier : defaultPaneIdentifier
     }
 
     override func viewWillAppear() {

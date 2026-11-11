@@ -1700,7 +1700,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Haptic feedback"
+            "value": "Pulse when a gesture locks in"
           }
         }
       }
@@ -1711,7 +1711,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A short pulse when a gesture locks in (MX Master 4)."
+            "value": "A short tap from the mouse as the gesture takes hold (MX Master 4)."
           }
         }
       }
@@ -1723,17 +1723,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "No connected mouse has haptics (MX Master 4)."
-          }
-        }
-      }
-    },
-    "about-tab-title": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "About"
           }
         }
       }
@@ -4988,6 +4977,30 @@
           "stringUnit": {
             "state": "translated",
             "value": "Already in the list"
+          }
+        }
+      }
+    },
+    "gestures-haptics-off-under-mouse": {
+      "comment": "Gestures pane: muted line under \"Pulse when a gesture locks in\" while the mouse has its haptics off and the user switched them off under Mouse",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haptic feedback is off under Mouse."
+          }
+        }
+      }
+    },
+    "gestures-open-mouse": {
+      "comment": "Gestures pane: small button next to \"Haptic feedback is off under Mouse.\"; shows the Mouse pane",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Mouse"
           }
         }
       }

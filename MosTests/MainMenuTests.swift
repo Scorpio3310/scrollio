@@ -210,13 +210,14 @@ final class MainMenuTests: XCTestCase {
         }
     }
 
-    func testAboutOpensThePreferencesOnTheAboutTab() throws {
+    /// The name and version are on top of General (there is no About pane any more).
+    func testAboutOpensThePreferencesOnGeneral() throws {
         let about = try item("About Scrollio", in: try submenu(MainMenuManager.Identifier.applicationMenu))
         XCTAssertEqual(about.identifier, MainMenuManager.Identifier.about)
         XCTAssertTrue(about.target === manager)
         XCTAssertTrue(choose(about))
-        XCTAssertEqual(openedPreferences, ["about"])
-        XCTAssertEqual(AboutPreferencesViewController.tabIdentifier, "about")
+        XCTAssertEqual(openedPreferences, [PANEL_IDENTIFIER.general])
+        XCTAssertEqual(PANEL_IDENTIFIER.general, "general")
         XCTAssertEqual(openedWelcomeGuide, 0)
     }
 
@@ -344,7 +345,7 @@ final class MainMenuTests: XCTestCase {
     }
 }
 
-/// "About Scrollio" needs a way to open the Preferences on a given pane.
+/// "About Scrollio" needs a way to open the Preferences on a given pane (General).
 final class PreferencesPaneSelectionTests: XCTestCase {
 
     private func makePreferences() throws -> PreferencesSplitViewController {
@@ -362,15 +363,15 @@ final class PreferencesPaneSelectionTests: XCTestCase {
         let preferences = try makePreferences()
         XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.scrolling)
 
-        XCTAssertTrue(preferences.selectPane(withIdentifier: AboutPreferencesViewController.tabIdentifier))
-        XCTAssertEqual(preferences.selectedPaneIdentifier, AboutPreferencesViewController.tabIdentifier)
-        XCTAssertTrue(preferences.selectedController is AboutPreferencesViewController)
-        XCTAssertEqual(preferences.sidebar.selectedIdentifier, AboutPreferencesViewController.tabIdentifier)
-        XCTAssertEqual(preferences.view.window?.title, "About")
+        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.general)
+        XCTAssertTrue(preferences.selectedController is PreferencesGeneralViewController)
+        XCTAssertEqual(preferences.sidebar.selectedIdentifier, PANEL_IDENTIFIER.general)
+        XCTAssertEqual(preferences.view.window?.title, "General")
 
         // Already there: nothing changes.
-        XCTAssertTrue(preferences.selectPane(withIdentifier: AboutPreferencesViewController.tabIdentifier))
-        XCTAssertEqual(preferences.selectedPaneIdentifier, AboutPreferencesViewController.tabIdentifier)
+        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.general)
 
         XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons))
         XCTAssertEqual(preferences.view.window?.title, "Buttons")

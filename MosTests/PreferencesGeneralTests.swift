@@ -2,10 +2,12 @@
 //  PreferencesGeneralTests.swift
 //  MosTests
 //
-//  The General pane: "Scrollio is paused" with Resume, "Open at login" and its approval
-//  row, "Show in menu bar" (the stored "hide" shown the other way round), the Accessibility
-//  row and "Advanced". The login item, the permission, the pause, System Settings, the menu
-//  bar icon and the windows are replaced; nothing is shown on screen.
+//  The General pane: the card with the app's name and version (what the About pane
+//  showed), "Scrollio is paused" with Resume, "Open at login" and its approval row, "Show
+//  in menu bar" (the stored "hide" shown the other way round), the Accessibility row,
+//  "Advanced", and at the bottom the Welcome Guide and the credit line. The login item, the
+//  permission, the pause, System Settings, the menu bar icon and the windows are replaced;
+//  nothing is shown on screen.
 //
 
 import XCTest
@@ -56,6 +58,7 @@ final class PreferencesGeneralTests: XCTestCase {
         var diagnosticsOpened = 0
         var paused = false
         var resumes = 0
+        var welcomeGuidesOpened = 0
     }
 
     private var savedAutoLaunch = false
@@ -102,6 +105,7 @@ final class PreferencesGeneralTests: XCTestCase {
             world.paused = false
         }
         pane.uiStateDefaults = uiDefaults
+        pane.showWelcomeGuide = { world.welcomeGuidesOpened += 1 }
         _ = pane.view
         return pane
     }
@@ -123,6 +127,103 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertTrue(storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.general) is PreferencesGeneralViewController)
     }
 
+    // MARK: - The app (what About showed)
+
+    func testTheCardOnTopShowsTheAppItsVersionAndBuild() throws {
+        install(.notRegistered)
+        let pane = try makePane(World())
+        let header = try XCTUnwrap(pane.headerView)
+        let content = try XCTUnwrap(header.superview as? NSStackView)
+        XCTAssertTrue(content.arrangedSubviews.first === header, "on top")
+        XCTAssertEqual(header.nameLabel.stringValue, "Scrollio")
+        XCTAssertNotNil(header.iconView.image)
+        XCTAssertFalse(header.iconView.isAccessibilityElement(), "the name says the same")
+
+        let version = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+        let build = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String)
+        XCTAssertFalse(version.isEmpty)
+        XCTAssertFalse(build.isEmpty)
+        XCTAssertEqual(header.versionLabel.stringValue, "Version \(version) (\(build))")
+        XCTAssertEqual(PreferencesGeneralViewController.versionText(), "Version \(version) (\(build))")
+        XCTAssertTrue(header.versionLabel.isSelectable, "the version can be copied")
+        XCTAssertTrue(shownTexts(pane).contains("Version \(version) (\(build))"))
+        // The window keeps the pane's name.
+        XCTAssertEqual(pane.title, "General")
+    }
+
+    /// The card has the size and the look of the Mouse pane's card.
+    func testTheCardHasTheLookOfTheMouseCard() throws {
+        install(.notRegistered)
+        let pane = try makePane(World())
+        pane.view.layoutSubtreeIfNeeded()
+        let header = try XCTUnwrap(pane.headerView)
+        XCTAssertEqual(GeneralHeaderView.preferredHeight, MouseHeaderView.preferredHeight)
+        XCTAssertEqual(GeneralHeaderView.cornerRadius, MouseHeaderView.cornerRadius)
+        XCTAssertEqual(GeneralHeaderView.iconColumnWidth, MouseHeaderView.artworkColumnWidth)
+        XCTAssertEqual(header.nameLabel.font, MouseHeaderView.nameFont)
+        XCTAssertEqual(header.versionLabel.font, MouseHeaderView.detailFont)
+        XCTAssertEqual(header.frame.height, GeneralHeaderView.preferredHeight)
+        XCTAssertEqual(header.frame.width, PreferencesGroupedForm.boxWidth(paneWidth: PreferencesGeneralViewController.paneWidth))
+        XCTAssertEqual(header.iconView.frame.midX, GeneralHeaderView.iconColumnWidth / 2, accuracy: 0.5)
+        XCTAssertEqual(header.nameLabel.convert(header.nameLabel.bounds, to: header).minX, GeneralHeaderView.iconColumnWidth, accuracy: 3)
+    }
+
+    func testTheWelcomeGuideIsReachableAtTheBottom() throws {
+        install(.notRegistered)
+        let world = World()
+        let pane = try makePane(world)
+        XCTAssertEqual(pane.welcomeGuideRow.title, "Welcome Guide")
+        XCTAssertEqual(pane.welcomeGuideRow.explanation, "Shows the first-launch steps again, including Accessibility access.")
+        XCTAssertEqual(pane.welcomeGuideButton.title, "Open…", "it opens a window")
+        XCTAssertEqual(pane.welcomeGuideButton.bezelStyle, .push)
+        XCTAssertTrue(pane.welcomeGuideRow.controls.contains { $0 === pane.welcomeGuideButton })
+        XCTAssertTrue(pane.welcomeGuideButton.accessibilityTitleUIElement() as? NSTextField === pane.welcomeGuideRow.titleLabel)
+        click(pane.welcomeGuideButton)
+        XCTAssertEqual(world.welcomeGuidesOpened, 1)
+        XCTAssertEqual(world.monitorsOpened + world.diagnosticsOpened + world.accessibilitySettingsOpened, 0)
+    }
+
+    /// The licence (CC BY-NC 4.0) asks for the attribution: it is always on the pane, last.
+    func testTheCreditLineIsShownLast() throws {
+        for (paused, advanced) in [(false, false), (true, true)] {
+            install(.requiresApproval)
+            uiDefaults.set(advanced, forKey: PreferencesGeneralViewController.advancedExpandedDefaultsKey)
+            let world = World()
+            world.paused = paused
+            let pane = try makePane(world)
+            let credit = try XCTUnwrap(pane.creditLabel)
+            XCTAssertEqual(credit.stringValue, "Based on Mos by Caldis, licensed under CC BY-NC 4.0, with changes.")
+            XCTAssertTrue(isShown(credit))
+            let content = try XCTUnwrap(credit.superview as? NSStackView)
+            let shown = content.arrangedSubviews.filter { !$0.isHidden }
+            XCTAssertTrue(shown.last === credit, "the last line of the pane")
+            let guide = try XCTUnwrap(pane.welcomeGuideRow.superview?.superview?.superview)
+            XCTAssertTrue(shown.dropLast().last === guide, "right under the Welcome Guide")
+            XCTAssertEqual(credit.textColor, PreferencesGroupedForm.explanationColor(enabled: true))
+            XCTAssertGreaterThanOrEqual(credit.font?.pointSize ?? 0, 10)
+            // It fits the column and is never cut.
+            pane.view.layoutSubtreeIfNeeded()
+            XCTAssertGreaterThanOrEqual(credit.frame.height, credit.intrinsicContentSize.height - 0.5)
+        }
+    }
+
+    /// The links and donations of Mos's About pane did not come along.
+    func testNothingOfTheOldAboutPaneIsLeft() throws {
+        install(.notRegistered)
+        uiDefaults.set(true, forKey: PreferencesGeneralViewController.advancedExpandedDefaultsKey)
+        let pane = try makePane(World())
+        let removed = ["Home Page", "GitHub", "Contributors", "Donate", "Feed", "Welcome Window", "Buy me a coffee"]
+        for text in shownTexts(pane) {
+            for word in removed {
+                XCTAssertFalse(text.localizedCaseInsensitiveContains(word), "'\(text)' still mentions \(word)")
+            }
+        }
+        XCTAssertFalse(allSubviews(of: pane.view).contains { ($0 as? NSButton)?.bezelStyle == .helpButton })
+        for name in ["AlipayQR", "WechatpayQR", "PaypalLogo", "BuyMeACoffee", "MEOW"] {
+            XCTAssertNil(NSImage(named: name), "donation asset \(name) is still in the bundle")
+        }
+    }
+
     // MARK: - Paused
 
     /// "Pause Scrollio" is only in the status-bar menu: with the menu bar icon hidden, the
@@ -132,7 +233,8 @@ final class PreferencesGeneralTests: XCTestCase {
         let world = World()
         let pane = try makePane(world)
         let content = try XCTUnwrap(pane.pausedSection.superview as? NSStackView)
-        XCTAssertTrue(content.arrangedSubviews.first === pane.pausedSection, "on top")
+        XCTAssertTrue(content.arrangedSubviews.first === pane.headerView)
+        XCTAssertTrue(content.arrangedSubviews[1] === pane.pausedSection, "right under the card")
         XCTAssertTrue(pane.pausedSection.isHidden, "not while running")
         XCTAssertFalse(shownTexts(pane).contains("Scrollio is paused"))
         let runningHeight = pane.view.frame.height
@@ -393,6 +495,7 @@ final class PreferencesGeneralTests: XCTestCase {
             (pane.openAccessibilitySettingsButton!, pane.accessibilityRow!),
             (pane.scrollMonitorButton!, pane.scrollMonitorRow!),
             (pane.diagnosticsButton!, pane.diagnosticsRow!),
+            (pane.welcomeGuideButton!, pane.welcomeGuideRow!),
         ] {
             XCTAssertTrue(button.accessibilityTitleUIElement() as? NSTextField === row.titleLabel, button.title)
         }

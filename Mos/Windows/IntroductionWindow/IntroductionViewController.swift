@@ -9,7 +9,7 @@
 //    the "Having trouble?" help under it;
 //  - access granted: the status row and, when the app opened the window (at launch, or
 //    because the access is missing), "Open Settings" (the Preferences on Scrolling) next to
-//    "Done"; opened by hand (About, Help), only "Done".
+//    "Done"; opened by hand (General, Help), only "Done".
 //
 //  Created by Caldis on 15/11/2019.
 //  Copyright © 2019 Caldis. All rights reserved.
@@ -76,7 +76,7 @@ final class IntroductionViewController: NSViewController {
 
     private(set) var accessState: AccessState = .missing
     private(set) var isHelpExpanded = false
-    /// Opened by hand (About › Welcome Guide, Help › Welcome Guide), not by the app at launch.
+    /// Opened by hand (General › Welcome Guide, Help › Welcome Guide), not by the app at launch.
     private(set) var isManuallyOpened = false
     /// "Open Accessibility Settings" was used; the help opens by itself once when the user
     /// comes back and the access is still missing.
