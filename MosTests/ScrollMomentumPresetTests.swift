@@ -469,12 +469,3 @@ final class ScrollMomentumPresetTests: XCTestCase {
         return nil
     }
 }
-
-// MARK: - Test-only shim
-
-/// `ScrollMotionTests` samples the Duration the old "Trackpad-style events" lock forced (4.75)
-/// under this name. The app no longer has it; this keeps that file, which is being reworked
-/// separately, compiling. Remove it once `ScrollMotionTests` no longer refers to it.
-enum ScrollDurationLimits {
-    static let simulateTrackpadDefault: Double = 4.75
-}

@@ -301,7 +301,7 @@ final class ScrollMotionTests: XCTestCase {
     /// Steady scrolling at any rate and Duration is never cut: the buffer holds every event.
     func testLeadCap_neverCutsSteadyScrolling() {
         let notch = 33.6 * 2.7
-        for duration in [1.0, 2.0, 3.13, 4.35, ScrollDurationLimits.simulateTrackpadDefault] {
+        for duration in [1.0, 2.0, 3.13, 4.35, 4.75] {
             for interval in [0.008, 0.016, 0.033, 0.05, 0.1, 0.2] {
                 let poster = ScrollPoster()
                 let frame = 1.0 / 60.0
