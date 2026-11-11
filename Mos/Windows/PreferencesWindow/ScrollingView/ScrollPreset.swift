@@ -62,10 +62,12 @@ enum ScrollPreset: String, CaseIterable {
                 tuning: ScrollTuningSettings(freeSpinEnabled: true, freeSpinSmoothness: 2.5, freeSpinSpeed: 1.0, acceleration: 0.3)
             )
         case .magicMouse:
-            // 60 px per notch, landing within about 170 ms; a flick glides on (momentum) and
-            // apps get trackpad phases, so they bounce at the edges. Estimates to tune on hardware.
+            // 60 px per notch as one soft bump of about 300 ms (the smoothing of "Smooth"), so
+            // slow notches run into each other instead of starting and stopping; a flick glides
+            // on (momentum) and apps get trackpad phases, so they bounce at the edges.
+            // Estimates to tune on hardware.
             return ScrollPresetValues(
-                step: 33.6, speed: 1.8, duration: 2.5, simulateTrackpad: true,
+                step: 33.6, speed: 1.8, duration: 3.13, simulateTrackpad: true,
                 tuning: ScrollTuningSettings(
                     freeSpinEnabled: true, freeSpinSmoothness: 1.0, freeSpinSpeed: 1.2, acceleration: 0,
                     momentum: .default

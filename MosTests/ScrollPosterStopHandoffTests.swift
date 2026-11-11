@@ -45,7 +45,7 @@ final class ScrollPosterStopHandoffTests: XCTestCase {
         let trans = OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: 3.13)
         return ScrollPosterInput(
             y: y, x: 0, notch: (y: abs(y), x: 0), duration: trans,
-            bypassFilter: ScrollMotion.shouldBypassFilter(transition: trans, freeSpinBlend: 0),
+            bypassFilter: ScrollMotion.shouldBypassFilter(freeSpinBlend: 0),
             momentum: momentum
         )
     }
@@ -132,7 +132,8 @@ final class ScrollPosterStopHandoffTests: XCTestCase {
         // The display link is still running: it scrolls the tick and then asks again.
         let second = try XCTUnwrap(runUntilStopRequest())
         XCTAssertNotEqual(second.inputSequence, request.inputSequence)
-        XCTAssertEqual(movedY - movedBefore, 40, accuracy: 2.0)
+        // (A classic gesture does not post the frames under the dead zone: the last few pixels stay unsent.)
+        XCTAssertEqual(movedY - movedBefore, 37, accuracy: 4.0)
         XCTAssertTrue(poster.performRequestedStop(second))
         XCTAssertEqual(poster.motionStateForTests.current.y, 0)
     }

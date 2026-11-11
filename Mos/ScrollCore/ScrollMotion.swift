@@ -4,9 +4,10 @@
 //
 //  Pure maths behind ScrollPoster's per-frame motion:
 //  - frame-rate independent smoothing (the Duration factor is defined per 60 Hz frame);
-//  - when ScrollFilter is skipped;
-//  - how far the smoothed position may trail the wheel (lead cap and tail cut);
-//  - the glide after a flick (momentum) and the sub-pixel carry for posting whole pixels;
+//  - how strong ScrollFilter is and when it is skipped;
+//  - how far the smoothed position may trail the wheel (lead cap);
+//  - the glide after a flick (momentum), the landing at the end of a precise gesture and
+//    the sub-pixel carry for posting whole pixels;
 //  - converting CGEvent timestamps to seconds.
 //
 
@@ -23,12 +24,9 @@ enum ScrollMotion {
     static let minimumFrameInterval = 1.0 / 1000.0
     static let maximumFrameInterval = 3.0 / referenceFrameRate
 
-    /// ScrollFilter's per-frame weight at the reference rate.
+    /// ScrollFilter's per-frame weight at the reference rate for long durations
+    /// (a time constant of ~64 ms).
     static let filterWeight = 0.23
-    /// Above this per-frame factor the lerp alone settles in a few frames, and ScrollFilter's
-    /// extra lag (one frame plus an exponential average, ~72 ms at 60 Hz) would dominate the
-    /// latency, so the filter is skipped. Duration below ~2.55 on the slider.
-    static let filterBypassTransition = 0.3
     /// Free-spin blend from which the filter is skipped.
     static let filterBypassFreeSpinBlend = 0.5
 
@@ -54,9 +52,62 @@ enum ScrollMotion {
         return -referenceFrameInterval / log(1 - t)
     }
 
-    static func shouldBypassFilter(transition: Double, freeSpinBlend: Double) -> Bool {
-        return transition > filterBypassTransition || freeSpinBlend >= filterBypassFreeSpinBlend
+    /// ScrollFilter's weight per 60 Hz frame for the smoothing factor `transition`.
+    ///
+    /// The filter's time constant follows the lerp's but is never longer than the classic one:
+    /// - long durations (factor ≤ 0.23, Duration from ~3.1 up) keep the classic filter;
+    /// - shorter durations get a filter as fast as their lerp. Two equal lags are a critically
+    ///   damped response: a notch starts without a jump and still lands quickly, so direct
+    ///   settings stay direct. A fixed 64 ms filter would dominate their latency instead, and
+    ///   no filter at all makes every notch a jump followed by a decay, which reads as
+    ///   stop-and-go when the wheel turns slowly.
+    static func filterWeight(forTransition transition: Double) -> Double {
+        guard transition.isFinite else { return filterWeight }
+        return min(1, max(filterWeight, transition))
     }
+
+    /// In free-spin the events arrive about once per frame; smoothing their start would only
+    /// add lag, so the filter is skipped.
+    static func shouldBypassFilter(freeSpinBlend: Double) -> Bool {
+        return freeSpinBlend >= filterBypassFreeSpinBlend
+    }
+}
+
+/// The end of a precise gesture (whole-pixel posting, see ScrollPoster).
+///
+/// An exponential approach ends in a creep: below one pixel per frame the whole pixels come
+/// at irregular, growing intervals. Once the wheel has been let go and the motion has slowed
+/// to `speed`, the rest is sent at that steady speed and the motion ends exactly on target.
+/// The speed never jumps: the landing takes over where the motion falls below it.
+enum ScrollLanding {
+
+    /// px/s: one pixel per 60 Hz frame.
+    static let speed = 60.0
+
+    /// - Parameters:
+    ///   - output: the distance the smoothing produced for this frame (signed px)
+    ///   - remaining: distance still to come after this frame (lead plus what the filter holds)
+    ///   - direction: sign of the axis' last wheel input (0 = the last input was on the other axis)
+    ///   - interval: frame interval (s)
+    /// - Returns: nil while the motion is faster than the landing speed, or when it is already
+    ///   at rest; otherwise the distance to send this frame and what remains after it.
+    ///   With nothing left in the direction of travel, a leftover `output` (the filter still
+    ///   easing out) becomes 0: sending it would overshoot the target. The landing never
+    ///   moves against the direction of travel.
+    static func step(output: Double, remaining: Double, direction: Double, interval: Double) -> (output: Double, remaining: Double)? {
+        let total = output + remaining
+        let step = speed * ScrollMotion.clampedFrameInterval(interval)
+        guard total.isFinite, abs(output) < step else { return nil }
+        guard abs(total) >= negligible, total * direction > 0 else {
+            return output == 0 && abs(total) < negligible ? nil : (0, 0)
+        }
+        let magnitude = min(abs(total), step)
+        let landed = total > 0 ? magnitude : -magnitude
+        return (landed, total - landed)
+    }
+
+    /// Distances below this are rounding noise (px).
+    static let negligible = 1e-9
 }
 
 /// Bounds the lead (buffer − current: distance received from the wheel but not yet scrolled),
@@ -70,21 +121,16 @@ enum ScrollMotion {
 /// dropped. A fixed cap in notches would instead limit the top speed to cap/τ and lose
 /// distance in free-spin, where one event carries several lines.
 ///
-/// After the wheel stops, the exponential approach ends in a slow creep. Once no input has
-/// arrived for max(160 ms, 3 τ) (≥ 95% of the lead covered), the rest is finished quickly
-/// (`tailTransition` per 60 Hz frame, filter skipped) instead of creeping on; no distance is lost.
 struct ScrollLeadLimiter {
 
     static let floorNotches = 2.0
     static let minimumHorizon: TimeInterval = 0.12
     static let horizonPerTimeConstant = 1.5
-    /// Input gap that ends the input-speed run and, with no new input, starts finishing the
-    /// tail: max(minimumTailGap, tailTimeConstants × τ). Earlier notches have then decayed
-    /// below 5%, so the two-notch floor alone covers the next one.
+    /// Input gap that ends the input-speed run: max(minimumTailGap, tailTimeConstants × τ).
+    /// Earlier notches have then decayed below 5%, so the two-notch floor alone covers the
+    /// next one.
     static let minimumTailGap: TimeInterval = 0.16
     static let tailTimeConstants = 3.0
-    /// Per-frame factor (at 60 Hz) used to finish the tail.
-    static let tailTransition = 0.6
     /// Intervals shorter than this are treated as this long (coalesced or out-of-order events).
     static let minimumInterval: TimeInterval = 0.0025
     /// Number of recent intervals averaged for the input speed.
@@ -149,8 +195,7 @@ struct ScrollLeadLimiter {
         return current + (lead > 0 ? cap : -cap)
     }
 
-    /// Input gap after which the tail is finished quickly. By then an exponential follower
-    /// has covered ≥ 95% of the lead, so only the slow creep at the end is shortened.
+    /// Input gap that ends a run. By then an exponential follower has covered ≥ 95% of the lead.
     static func tailGap(timeConstant: Double) -> TimeInterval {
         return max(minimumTailGap, tailTimeConstants * max(timeConstant, 0))
     }

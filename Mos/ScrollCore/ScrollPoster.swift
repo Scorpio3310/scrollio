@@ -194,7 +194,7 @@ extension ScrollPoster {
             x: x * gain,
             notch: (y: abs(y * gain), x: abs(x * gain)),
             duration: duration,
-            bypassFilter: ScrollMotion.shouldBypassFilter(transition: duration, freeSpinBlend: 0)
+            bypassFilter: ScrollMotion.shouldBypassFilter(freeSpinBlend: 0)
         ))
     }
     func update(event: CGEvent, input: ScrollPosterInput) -> Self {
@@ -320,6 +320,12 @@ extension ScrollPoster {
         // 真正换向时 (而非该轴本次无输入) 丢弃亚像素余量, 反向的第一格不带上一方向的零头
         if input.y*delta.y < 0 || input.x*delta.x < 0 {
             resetCarriesLocked()
+        }
+        // 精确模式下换向即停: 滤波器中上一方向尚未发送的距离一并丢弃, 反向的每一格都是完整的一格。
+        // 原有模式保留滤波器状态, 速度平滑地掉头 (与之前一致)。
+        if gesture.precise {
+            if input.y*delta.y < 0 { filter.resetY() }
+            if input.x*delta.x < 0 { filter.resetX() }
         }
         // 限制领先量: 滚轮减速或停下时, 不再继续释放之前积累的距离
         if input.y != 0.0 {
@@ -871,14 +877,7 @@ private extension ScrollPoster {
     /// 推进一帧: 插值 current -> buffer 并经滤波 (或跳过滤波) 得到本帧输出。调用方须持有 stateLock。
     func advanceMotionLocked(frameInterval: Double, now: CFTimeInterval) -> (y: Double, x: Double) {
         // 按真实帧间隔换算插值系数 (以 60Hz 为参考, 不同刷新率下滚动时长一致)
-        var trans = ScrollMotion.transition(duration, frameInterval: frameInterval)
-        // 输入停顿足够久后快速走完剩余的尾巴 (指数逼近末段的缓慢蠕动), 距离不丢失
-        let timeConstant = ScrollMotion.timeConstant(forTransition: duration)
-        let finishingTail = lastManualEventTime > 0.0
-            && now - lastManualEventTime > ScrollLeadLimiter.tailGap(timeConstant: timeConstant)
-        if finishingTail {
-            trans = max(trans, ScrollMotion.transition(ScrollLeadLimiter.tailTransition, frameInterval: frameInterval))
-        }
+        let trans = ScrollMotion.transition(duration, frameInterval: frameInterval)
         // 计算插值
         var frame = (
             y: Interpolator.lerp(src: current.y, dest: buffer.y, trans: trans),
@@ -901,11 +900,45 @@ private extension ScrollPoster {
         if glide != 0.0 && (buffer.y - current.y) * glide < 0.0 {
             buffer.y = current.y
         }
-        // 平滑滚动结果; 插值本身已足够直接 (或 free-spin) 时跳过滤波, 去掉其额外延迟
-        if bypassFilter || finishingTail {
-            return filter.passThrough(with: frame, catchUp: trans)
+        // 平滑滚动结果: 滤波的时间常数跟随插值 (见 ScrollMotion.filterWeight(forTransition:));
+        // free-spin 与翻页手势跳过滤波, 去掉其额外延迟
+        var output: (y: Double, x: Double)
+        if bypassFilter {
+            output = filter.passThrough(with: frame, catchUp: trans)
+        } else {
+            let weight = ScrollMotion.transition(ScrollMotion.filterWeight(forTransition: duration), frameInterval: frameInterval)
+            output = filter.fill(with: frame, weight: weight)
         }
-        return filter.fill(with: frame, weight: ScrollMotion.transition(ScrollFilter.defaultWeight, frameInterval: frameInterval))
+        // 精确模式: 松手后速度降到落地速度时, 以该速度匀速走完剩余距离 (见 ScrollLanding)。
+        // 原有模式不需要: 不足死区的帧本来就不发送, 运动在该速度处结束。
+        if gesture.precise && !coast.isActive && !momentumActive
+            && lastManualEventTime > 0.0 && now - lastManualEventTime > releaseGap {
+            output = landLocked(output, frameInterval: frameInterval)
+        }
+        return output
+    }
+
+    /// 精确模式的收尾 (见 ScrollLanding): 每个轴各自接管其尚未发送的全部距离
+    /// (领先量加滤波器中未发送的部分)。调用方须持有 stateLock。
+    func landLocked(_ output: (y: Double, x: Double), frameInterval: Double) -> (y: Double, x: Double) {
+        var result = output
+        if let landed = ScrollLanding.step(
+            output: output.y, remaining: (buffer.y - current.y) + filter.pending.y,
+            direction: delta.y, interval: frameInterval
+        ) {
+            result.y = landed.output
+            current.y = buffer.y - landed.remaining
+            filter.settleY(at: landed.output)
+        }
+        if let landed = ScrollLanding.step(
+            output: output.x, remaining: (buffer.x - current.x) + filter.pending.x,
+            direction: delta.x, interval: frameInterval
+        ) {
+            result.x = landed.output
+            current.x = buffer.x - landed.remaining
+            filter.settleX(at: landed.output)
+        }
+        return result
     }
 
     /// 本帧与上一帧显示时间的间隔 (秒); 新会话的第一帧使用显示器标称帧间隔。调用方须持有 stateLock。

@@ -302,7 +302,7 @@ final class ScrollTuningTests: XCTestCase {
             let r = preset.settings.resolve(speed: 2.7, durationTransition: regular, spin: spinning, amplification: 5)
             XCTAssertLessThanOrEqual(r.multiplier, ScrollTuningSettings.maximumCombinedMultiplier)
             XCTAssertGreaterThan(r.durationTransition, regular, "free-spin is more direct than the regular Duration")
-            XCTAssertTrue(ScrollMotion.shouldBypassFilter(transition: r.durationTransition, freeSpinBlend: r.freeSpinBlend))
+            XCTAssertTrue(ScrollMotion.shouldBypassFilter(freeSpinBlend: r.freeSpinBlend))
         }
     }
 }

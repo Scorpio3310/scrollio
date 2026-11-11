@@ -256,10 +256,8 @@ class ScrollCore: ScrollActionPort {
             x: x * horizontal.speed,
             notch: (y: step * vertical.speed, x: step * horizontal.speed),
             duration: duration,
-            bypassFilter: ScrollMotion.shouldBypassFilter(
-                transition: duration,
-                freeSpinBlend: leading.freeSpinBlend
-            ),
+            // 翻页手势紧跟拇指滚轮, 不经滤波
+            bypassFilter: pageSwipe || ScrollMotion.shouldBypassFilter(freeSpinBlend: leading.freeSpinBlend),
             momentum: momentum,
             lineRate: spin.lineRate,
             isFreeSpin: spin.isFreeSpin,

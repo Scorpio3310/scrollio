@@ -141,6 +141,15 @@ final class ScrollMomentumRig {
     var floatTotal: Double { return finishedFloatTotal + runningFloatTotal }
     /// Time (after `start`) of the last frame that moved the page.
     var lastMovement: Double { return (moving.last?.time ?? start) - start }
+    /// Vertical pixels of every frame that moved the page vertically, with its time after `start`.
+    var movementY: [(time: Double, pixels: Double)] {
+        return recorded.filter { $0.frame.y != 0 }.map { ($0.time - start, $0.frame.y) }
+    }
+    /// Longest time between two consecutive frames with vertical movement.
+    var longestPauseY: Double {
+        let times = movementY.map { $0.time }
+        return zip(times.dropFirst(), times).map { $0 - $1 }.max() ?? 0
+    }
     func pixelsY(until time: Double) -> Double {
         return recorded.filter { $0.time <= start + time + 1e-9 }.reduce(0) { $0 + $1.frame.y }
     }
@@ -339,23 +348,40 @@ final class ScrollMomentumTests: XCTestCase {
 
     // MARK: - Single notch and slow scrolling
 
-    func testSingleNotch_landsExactly60PixelsWithin170Milliseconds() {
+    /// One notch is one soft bump: it starts below its top speed, only slows down after the
+    /// peak and lands at a steady pixel per frame instead of creeping.
+    func testSingleNotch_isOneSoftBumpOfExactly60Pixels() {
         let rig = ScrollMomentumRig()
         XCTAssertEqual(rig.notch, 60.48, accuracy: 1e-9)
         rig.wheel(lines: 1, at: 0)
         rig.run(until: 1)
 
         XCTAssertEqual(rig.pixelsY, 60, "one notch is 60 px, no glide")
-        XCTAssertEqual(rig.pixelsY(until: 0.17), 60, "landed within 170 ms")
+        XCTAssertEqual(rig.pixelsY(until: 0.36), 60, "landed within 360 ms")
         XCTAssertFalse(rig.hasMomentumPhase)
         XCTAssertEqual(rig.phaseSequence, ["began", "changed", "ended"])
         XCTAssertEqual(rig.stops.count, 1)
         XCTAssertEqual(rig.stops.first?.phase, .TrackingEnd)
-        XCTAssertLessThan(rig.stops.first?.time ?? .infinity, 0.25)
+        XCTAssertLessThan(rig.stops.first?.time ?? .infinity, 0.45)
         XCTAssertEqual(rig.poster.coastVelocityForTests, 0)
+
+        let movement = rig.movementY
+        let pixels = movement.map { $0.pixels }
+        let peak = pixels.max() ?? 0
+        XCTAssertLessThan(pixels.first ?? .infinity, peak, "starts below its top speed: no jump")
+        XCTAssertLessThanOrEqual(peak, 8, "the top speed of a 60 px bump")
+        let peakIndex = pixels.firstIndex(of: peak) ?? 0
+        for index in (peakIndex + 1)..<pixels.count {
+            // (Whole pixels: one pixel of rounding either way.)
+            XCTAssertLessThanOrEqual(pixels[index], pixels[index - 1] + 1, "frame \(index)")
+        }
+        XCTAssertLessThanOrEqual(rig.longestPauseY, rig.frameInterval * 1.5, "no frame without movement before the end")
+        XCTAssertEqual(Array(pixels.suffix(2)), [1, 1], "lands at a steady pixel per frame")
     }
 
-    func testSlowSeries_fourPerSecondIsExactWithNoGlide() {
+    /// Slow notches run into each other: the page keeps moving between them instead of
+    /// starting and stopping with every notch.
+    func testSlowSeries_fourPerSecondRunsTogetherWithNoGlide() {
         let rig = ScrollMomentumRig()
         for index in 0..<4 {
             rig.wheel(lines: 1, at: Double(index) * 0.25)
@@ -363,13 +389,12 @@ final class ScrollMomentumTests: XCTestCase {
         }
         rig.run(until: 2)
 
-        XCTAssertEqual(rig.pixelsY, 240, "4 × 60 px")
-        for index in 1...4 {
-            XCTAssertEqual(rig.pixelsY(until: Double(index) * 0.25 - 0.01), Double(index) * 60, "notch \(index) done before the next")
-        }
+        XCTAssertEqual(rig.pixelsY, 4 * 60.48, accuracy: 1, "4 × 60 px, nothing more")
         XCTAssertFalse(rig.hasMomentumPhase)
-        XCTAssertEqual(rig.stops.map { $0.phase }, [.TrackingEnd, .TrackingEnd, .TrackingEnd, .TrackingEnd])
-        XCTAssertLessThan(rig.lastMovement, 0.75 + 0.2)
+        XCTAssertEqual(rig.phaseSequence, ["began", "changed", "ended"], "one gesture")
+        XCTAssertEqual(rig.stops.map { $0.phase }, [.TrackingEnd])
+        XCTAssertLessThan(rig.lastMovement, 0.75 + 0.4)
+        XCTAssertLessThanOrEqual(rig.longestPauseY, rig.frameInterval * 3.5, "the page does not come to rest between notches")
     }
 
     /// Up to 8 lines per second nothing glides, however long the wheel turns.
@@ -379,7 +404,7 @@ final class ScrollMomentumTests: XCTestCase {
         rig.run(until: 3)
         XCTAssertEqual(rig.pixelsY, 8 * 60.48, accuracy: 1)
         XCTAssertFalse(rig.hasMomentumPhase)
-        XCTAssertLessThan(rig.lastMovement, 0.875 + 0.2)
+        XCTAssertLessThan(rig.lastMovement, 0.875 + 0.4)
     }
 
     // MARK: - Flick
@@ -471,7 +496,9 @@ final class ScrollMomentumTests: XCTestCase {
         XCTAssertEqual(rig.poster.coastVelocityForTests, 0, "the glide follows the wheel's current speed")
         rig.run(until: 2)
 
-        XCTAssertEqual(rig.pixelsY - before, 60, accuracy: 1.5)
+        // The notch, plus what the glide still eases out over (it is not cut dead).
+        XCTAssertGreaterThanOrEqual(rig.pixelsY - before, 60)
+        XCTAssertLessThan(rig.pixelsY - before, 60 + 45)
         XCTAssertEqual(rig.phaseSequence, [
             "began", "changed", "ended", "momentumBegan", "momentumChanged", "momentumEnded",
             "began", "changed", "ended",
@@ -555,7 +582,7 @@ final class ScrollMomentumTests: XCTestCase {
         XCTAssertEqual(rig.pixelsY, 5 * 60.48, accuracy: 1, "the plain distance (zooming stays exact)")
         XCTAssertFalse(rig.hasMomentumPhase)
         XCTAssertEqual(rig.phaseSequence, ["began", "changed", "ended"])
-        XCTAssertLessThan(rig.lastMovement, 0.2 + 0.2)
+        XCTAssertLessThan(rig.lastMovement, 0.2 + 0.4)
     }
 
     func testModifiers_pressedDuringAFlickEndTheGlide() {
@@ -665,7 +692,7 @@ final class ScrollMomentumTests: XCTestCase {
         XCTAssertEqual(rig.pixelsY, 0)
         XCTAssertTrue(rig.phaseSequence.isEmpty, "browsers would take phased horizontal scrolling for a back/forward swipe")
         XCTAssertTrue(rig.recorded.allSatisfy { $0.frame.scrollPhase == nil && $0.frame.momentumPhase == nil })
-        XCTAssertLessThan(rig.lastMovement, 0.21 + 0.25)
+        XCTAssertLessThan(rig.lastMovement, 0.21 + 0.45)
     }
 
     func testHorizontal_shiftedWheelGlidesWithoutPhases() {

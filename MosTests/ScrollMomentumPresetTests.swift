@@ -42,7 +42,7 @@ final class ScrollMomentumPresetTests: XCTestCase {
         let values = ScrollPreset.magicMouse.values
         XCTAssertEqual(values.step, 33.6)
         XCTAssertEqual(values.speed, 1.8)
-        XCTAssertEqual(values.duration, 2.5)
+        XCTAssertEqual(values.duration, 3.13)
         XCTAssertTrue(values.simulateTrackpad)
         XCTAssertTrue(values.tuning.freeSpinEnabled)
         XCTAssertEqual(values.tuning.freeSpinSmoothness, 1.0)
@@ -50,11 +50,10 @@ final class ScrollMomentumPresetTests: XCTestCase {
         XCTAssertEqual(values.tuning.acceleration, 0)
         XCTAssertEqual(values.tuning.momentum, .default)
         XCTAssertEqual(values.tuning.horizontalWheelAction, .scroll)
-        XCTAssertEqual(values.effectiveDuration, 2.5, "momentum provides the glide: no Duration lock")
+        XCTAssertEqual(values.effectiveDuration, 3.13, "momentum provides the glide: no Duration lock")
         XCTAssertEqual(values.step * values.speed, 60.48, accuracy: 1e-9, "60 px per notch")
-        // Duration 2.5 is direct enough to skip the filter (no extra lag on a notch).
-        let transition = OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: values.duration)
-        XCTAssertTrue(ScrollMotion.shouldBypassFilter(transition: transition, freeSpinBlend: 0))
+        // The smoothing of "Smooth": slow notches run into each other instead of starting and stopping.
+        XCTAssertEqual(values.duration, ScrollPreset.smooth.values.duration)
     }
 
     func testClassicPresets_haveNoMomentum() {
@@ -71,7 +70,7 @@ final class ScrollMomentumPresetTests: XCTestCase {
         values.tuning.momentum = nil
         XCTAssertEqual(values.effectiveDuration, locked, "simulate trackpad alone still locks Duration")
         values.simulateTrackpad = false
-        XCTAssertEqual(values.effectiveDuration, 2.5)
+        XCTAssertEqual(values.effectiveDuration, 3.13)
     }
 
     // MARK: - Apply
@@ -88,7 +87,7 @@ final class ScrollMomentumPresetTests: XCTestCase {
 
         XCTAssertTrue(scroll.smooth)
         XCTAssertTrue(scroll.smoothSimTrackpad)
-        XCTAssertEqual(scroll.duration, 2.5)
+        XCTAssertEqual(scroll.duration, 3.13)
         XCTAssertNil(scroll.durationBeforeSimTrackpadLock, "nothing is locked, so nothing to give back")
         XCTAssertEqual(scroll.step, 33.6)
         XCTAssertEqual(scroll.speed, 1.8)
@@ -137,7 +136,7 @@ final class ScrollMomentumPresetTests: XCTestCase {
 
         scroll.duration = locked
         XCTAssertNil(ScrollPreset.matching(scroll: scroll, tuning: base), "the locked Duration is not the preset's")
-        scroll.duration = 2.5
+        scroll.duration = 3.13
         scroll.smoothSimTrackpad = false
         XCTAssertNil(ScrollPreset.matching(scroll: scroll, tuning: base), "simulate trackpad off")
     }
@@ -155,7 +154,7 @@ final class ScrollMomentumPresetTests: XCTestCase {
     func testApplyGlobal_magicMouseIsTheCurrentPreset() {
         ScrollPreset.magicMouse.apply()
         XCTAssertEqual(ScrollPreset.current, .magicMouse)
-        XCTAssertEqual(Options.shared.scroll.duration, 2.5)
+        XCTAssertEqual(Options.shared.scroll.duration, 3.13)
         XCTAssertTrue(Options.shared.scroll.smoothSimTrackpad)
         XCTAssertEqual(Options.shared.scrollTuning.momentum, .default)
     }
@@ -167,9 +166,9 @@ final class ScrollMomentumPresetTests: XCTestCase {
         let controller = makeScrollingController()
         controller.syncViewWithOptions()
 
-        XCTAssertEqual(Options.shared.scroll.duration, 2.5, "sync must not write the locked 4.75 back")
+        XCTAssertEqual(Options.shared.scroll.duration, 3.13, "sync must not write the locked 4.75 back")
         XCTAssertEqual(ScrollPreset.current, .magicMouse)
-        XCTAssertEqual(controller.scrollDurationSlider.doubleValue, 2.5, accuracy: 1e-9)
+        XCTAssertEqual(controller.scrollDurationSlider.doubleValue, 3.13, accuracy: 1e-9)
         XCTAssertTrue(controller.scrollDurationSlider.isEnabled)
         XCTAssertTrue(controller.scrollDurationInput.isEnabled)
         XCTAssertFalse(controller.isDurationLocked(Options.shared.scroll))
@@ -181,7 +180,7 @@ final class ScrollMomentumPresetTests: XCTestCase {
 
     func testScrollingTab_stillLocksDurationWithoutMomentum() {
         Options.shared.scroll.smoothSimTrackpad = true
-        Options.shared.scroll.duration = 2.5
+        Options.shared.scroll.duration = 3.13
         let controller = makeScrollingController()
         controller.syncViewWithOptions()
 
@@ -250,7 +249,7 @@ final class ScrollMomentumPresetTests: XCTestCase {
         var custom = ScrollMomentumSettings.default
         custom.coastGain = 0.5
         tuning.setMomentum(custom, adjusting: scroll)
-        XCTAssertEqual(scroll.duration, 2.5)
+        XCTAssertEqual(scroll.duration, 3.13)
         XCTAssertNil(scroll.durationBeforeSimTrackpadLock)
     }
 
@@ -260,25 +259,25 @@ final class ScrollMomentumPresetTests: XCTestCase {
 
         // Momentum on: turning simulate trackpad on keeps Duration.
         Options.shared.scrollTuning.momentum = .default
-        Options.shared.scroll.duration = 2.5
+        Options.shared.scroll.duration = 3.13
         toggle.state = .on
         popover.simulateTrackpadToggle(toggle)
         XCTAssertTrue(Options.shared.scroll.smoothSimTrackpad)
-        XCTAssertEqual(Options.shared.scroll.duration, 2.5)
+        XCTAssertEqual(Options.shared.scroll.duration, 3.13)
         XCTAssertNil(Options.shared.scroll.durationBeforeSimTrackpadLock)
         toggle.state = .off
         popover.simulateTrackpadToggle(toggle)
-        XCTAssertEqual(Options.shared.scroll.duration, 2.5)
+        XCTAssertEqual(Options.shared.scroll.duration, 3.13)
 
         // Momentum off: as before, Duration is locked and remembered.
         Options.shared.scrollTuning.momentum = nil
         toggle.state = .on
         popover.simulateTrackpadToggle(toggle)
         XCTAssertEqual(Options.shared.scroll.duration, locked)
-        XCTAssertEqual(Options.shared.scroll.durationBeforeSimTrackpadLock, 2.5)
+        XCTAssertEqual(Options.shared.scroll.durationBeforeSimTrackpadLock, 3.13)
         toggle.state = .off
         popover.simulateTrackpadToggle(toggle)
-        XCTAssertEqual(Options.shared.scroll.duration, 2.5)
+        XCTAssertEqual(Options.shared.scroll.duration, 3.13)
         XCTAssertNil(Options.shared.scroll.durationBeforeSimTrackpadLock)
     }
 
@@ -306,7 +305,7 @@ final class ScrollMomentumPresetTests: XCTestCase {
 
         XCTAssertEqual(changes, 1)
         XCTAssertEqual(ScrollPreset.current, .magicMouse)
-        XCTAssertEqual(Options.shared.scroll.duration, 2.5)
+        XCTAssertEqual(Options.shared.scroll.duration, 3.13)
         XCTAssertEqual(checkbox(ID.momentum, in: view).state, .on)
         XCTAssertEqual(label(ID.presetDescription, in: view).stringValue, ScrollPreset.magicMouse.localizedDescription)
         XCTAssertEqual(slider(ID.speed, in: view).doubleValue, 1.2, accuracy: 1e-9)
@@ -344,10 +343,10 @@ final class ScrollMomentumPresetTests: XCTestCase {
         momentum.performClick(nil)
         XCTAssertNil(Options.shared.scrollTuning.momentum)
         XCTAssertEqual(Options.shared.scroll.duration, locked, "simulate trackpad without momentum locks Duration")
-        XCTAssertEqual(Options.shared.scroll.durationBeforeSimTrackpadLock, 2.5)
+        XCTAssertEqual(Options.shared.scroll.durationBeforeSimTrackpadLock, 3.13)
 
         momentum.performClick(nil)
-        XCTAssertEqual(Options.shared.scroll.duration, 2.5)
+        XCTAssertEqual(Options.shared.scroll.duration, 3.13)
         XCTAssertNil(Options.shared.scroll.durationBeforeSimTrackpadLock)
         XCTAssertEqual(ScrollPreset.current, .magicMouse)
     }
