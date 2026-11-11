@@ -1,18 +1,37 @@
 //
 //  StatusItemManager.swift
 //  Mos
-//  管理状态栏图标以及初始化
+//  The menu bar icon and its menu.
+//
+//  With Accessibility access, top to bottom: one disabled line per Logitech mouse with its
+//  battery ("MX Master 4: 75%"), "Pause Scrollio" or "Resume Scrollio", "Settings…", and
+//  "Quit Scrollio". While Option is held (always in the debug build) the diagnostic windows
+//  are added above Quit. Without the access: "Allow Accessibility Access…" (the Welcome
+//  Guide) and Quit.
+//
+//  The icon is dimmed while the event handling does not run: paused, or the access is
+//  missing (AppRunController).
+//
+//  What the menu lists is decided by `StatusMenu` from a `StatusMenu.State`, and what its
+//  items do is in `StatusMenuActions`, so both are tested without a status item.
+//
 //  Created by Caldis on 2018/3/7.
 //  Copyright © 2018年 Caldis. All rights reserved.
 //
 import Cocoa
 
 class StatusItemManager: NSMenu, NSMenuDelegate {
-    
+
     // 状态栏引用
     static let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     let item = StatusItemManager.statusItem
-    
+
+    /// What the items do.
+    let actions = StatusMenuActions()
+
+    private var isOpen = false
+    private var observers: [NSObjectProtocol] = []
+
     // 初始化
     override func awakeFromNib() {
         NSLog("Module initialized: StatusItemManager")
@@ -21,8 +40,55 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
         // 设置事件响应
         item.menu = self
         item.menu?.delegate = self
+        observers = [
+            NotificationCenter.default.addObserver(
+                forName: AppRunController.didChangeNotification,
+                object: AppRunController.shared,
+                queue: .main
+            ) { [weak self] _ in
+                self?.updateIcon()
+            },
+            // Answers to the battery read made when the menu opened.
+            NotificationCenter.default.addObserver(
+                forName: LogiCenter.mouseStateChanged,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                guard let self, self.isOpen else { return }
+                StatusMenu.updateBatteryItems(in: self, with: StatusMenu.batteries(from: LogiCenter.shared.mouseDeviceStates()))
+            },
+        ]
     }
-    
+
+    deinit {
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    /// Dims the icon while Scrollio is paused or waits for the access, and says why.
+    func updateIcon() {
+        let controller = AppRunController.shared
+        let look = StatusMenu.IconLook(coresActive: controller.coresActive, isPaused: controller.isPaused)
+        item.button?.appearsDisabled = look.appearsDisabled
+        item.button?.toolTip = look.toolTip
+    }
+
+    /// The state the menu is built from, read when it opens.
+    static func liveState() -> StatusMenu.State {
+        let hasAccess = Utils.isHadAccessibilityPermissions()
+        #if DEBUG
+        let showsDiagnostics = true
+        #else
+        let showsDiagnostics = NSEvent.modifierFlags.contains(.option)
+        #endif
+        return StatusMenu.State(
+            hasAccess: hasAccess,
+            isPaused: AppRunController.shared.isPaused,
+            showsDiagnostics: showsDiagnostics,
+            batteries: hasAccess ? StatusMenu.batteries(from: LogiCenter.shared.mouseDeviceStates()) : []
+        )
+    }
 }
 
 /**
@@ -31,89 +97,18 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
 extension StatusItemManager {
     // 打开菜单
     func menuWillOpen(_ menu: NSMenu) {
-        onMenuClick()
-    }
-    @objc func onMenuClick()  {
-        if let event = NSApp.currentEvent {
-            // 无辅助功能选项显示要求权限菜单
-            guard AXIsProcessTrusted() else {
-                buildRequireAccessibilityMenu()
-                return
-            }
-            // DEBUG: 直接弹出设置窗口
-            #if DEBUG
-            buildOptionMenu()
-            #else
-            // 当按下 option 键显示特殊菜单
-            guard !event.modifierFlags.contains(.option) else {
-                buildOptionMenu()
-                return
-            }
-            // 弹出菜单
-            buildNormalMenu()
-            #endif
+        isOpen = true
+        let state = Self.liveState()
+        StatusMenu.build(into: self, state: state, actions: actions)
+        // Ask the mice again (the battery at most every few minutes); the answers update the
+        // battery lines while the menu is open.
+        if state.hasAccess {
+            LogiCenter.shared.refreshMouseStates()
         }
     }
-}
 
-/**
- * 菜单构建
- **/
-extension StatusItemManager {
-    // 无辅助功能访问权限菜单
-    @objc func buildRequireAccessibilityMenu() {
-        if let menu = item.menu {
-            menu.removeAllItems()
-            menu.addItem(withTitle: NSLocalizedString("Needs access to Accessibility controls", comment: ""), action: #selector(accessibilityRequire), keyEquivalent: "").target = self
-            // Quit
-            Utils.addMenuItemWithSeparator(to: menu, title: NSLocalizedString("Quit", comment: ""), icon: #imageLiteral(resourceName: "SF.escape"), action: #selector(quitClick))
-        }
-    }
-    @objc func accessibilityRequire() {
-        Utils.requireAccessibilityPermissions()
-    }
-    // 按下 Option 按钮的菜单
-    @objc func buildOptionMenu() {
-        if let menu = item.menu {
-            // Reset
-            menu.removeAllItems()
-            // Monitor
-            Utils.addMenuItem(to: menu, title: "Debug: Event Monitor", action: #selector(monitorClick))
-            // HID++ Debug
-            Utils.addMenuItem(to: menu, title: "Debug: HID++", action: #selector(hidDebugClick))
-            // Toast Debug
-            Utils.addMenuItem(to: menu, title: "Debug: Toast", action: #selector(toastDebugClick))
-            // Preferences
-            Utils.addMenuItem(to: menu, title: NSLocalizedString("Preferences", comment: ""), icon: #imageLiteral(resourceName: "SF.gauge"), action: #selector(preferencesClick))
-            // Quit
-            Utils.addMenuItemWithSeparator(to: menu, title: NSLocalizedString("Quit", comment: ""), icon: #imageLiteral(resourceName: "SF.escape"), action: #selector(quitClick))
-        }
-    }
-    // 常规菜单
-    @objc func buildNormalMenu() {
-        if let menu = item.menu {
-            // Reset
-            menu.removeAllItems()
-            // Preferences
-            Utils.addMenuItem(to: menu, title: NSLocalizedString("Preferences", comment: ""), icon: #imageLiteral(resourceName: "SF.gauge"), action: #selector(preferencesClick))
-            // Quit
-            Utils.addMenuItemWithSeparator(to: menu, title: NSLocalizedString("Quit", comment: ""), icon: #imageLiteral(resourceName: "SF.escape"), action: #selector(quitClick))
-        }
-    }
-    @objc func monitorClick() {
-        WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.monitorWindowController)
-    }
-    @objc func hidDebugClick() {
-        LogiCenter.shared.showDebugPanel()
-    }
-    @objc func toastDebugClick() {
-        Toast.showTestPanel()
-    }
-    @objc func preferencesClick() {
-        WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController)
-    }
-    @objc func quitClick() {
-        NSApplication.shared.terminate(self)
+    func menuDidClose(_ menu: NSMenu) {
+        isOpen = false
     }
 }
 
@@ -129,4 +124,167 @@ extension StatusItemManager {
     class func hideStatusItem() {
         self.statusItem.isVisible = false
     }
+}
+
+// MARK: - Content
+
+/// What the status-bar menu lists, and its items. Building a menu opens nothing.
+enum StatusMenu {
+
+    /// What the menu is built from.
+    struct State: Equatable {
+        /// macOS lets Scrollio use the Accessibility API.
+        var hasAccess: Bool
+        /// Paused from this menu.
+        var isPaused: Bool
+        /// Option is held, or the debug build: the diagnostic windows are listed.
+        var showsDiagnostics: Bool
+        /// One line per Logitech mouse that reports its battery.
+        var batteries: [Battery]
+    }
+
+    /// The battery line of one mouse: "MX Master 4: 75%", "MX Master 4: 75%, charging".
+    struct Battery: Equatable {
+        let title: String
+        let symbolName: String
+    }
+
+    enum Item: Equatable {
+        case battery(Battery)
+        case separator
+        case pause
+        case resume
+        case settings
+        case scrollMonitor
+        case diagnostics
+        case testToasts
+        case allowAccess
+        case quit
+    }
+
+    /// Tag of the battery lines, so they can be updated while the menu is open.
+    static let batteryTag = 7_301
+
+    static func items(for state: State) -> [Item] {
+        guard state.hasAccess else {
+            return [.allowAccess, .separator, .quit]
+        }
+        var items: [Item] = state.batteries.map(Item.battery)
+        if !items.isEmpty {
+            items.append(.separator)
+        }
+        items += [state.isPaused ? .resume : .pause, .settings, .separator]
+        if state.showsDiagnostics {
+            items += [.scrollMonitor, .diagnostics, .testToasts, .separator]
+        }
+        items.append(.quit)
+        return items
+    }
+
+    /// The battery lines of the connected mice. A mouse that has not reported its battery
+    /// (or has none) gets no line.
+    static func batteries(from mice: [LogiMouseDeviceState]) -> [Battery] {
+        return mice.compactMap { mouse in
+            guard let battery = MousePaneModel.battery(mouse.battery) else { return nil }
+            let format = NSLocalizedString(battery.isCharging ? "status-menu-battery-charging" : "status-menu-battery", comment: "")
+            return Battery(title: String(format: format, mouse.deviceName, battery.text), symbolName: battery.symbolName)
+        }
+    }
+
+    /// Fills `menu` with the items for `state`; what they do goes to `actions`.
+    static func build(into menu: NSMenu, state: State, actions: StatusMenuActions) {
+        menu.removeAllItems()
+        for item in items(for: state) {
+            menu.addItem(makeItem(item, actions: actions))
+        }
+    }
+
+    /// Updates the battery lines in place while the menu is open. A mouse that came or went
+    /// shows the next time the menu opens.
+    static func updateBatteryItems(in menu: NSMenu, with batteries: [Battery]) {
+        let lines = menu.items.filter { $0.tag == batteryTag }
+        guard lines.count == batteries.count else { return }
+        for (line, battery) in zip(lines, batteries) {
+            line.title = battery.title
+            line.image = NSImage(systemSymbolName: battery.symbolName, accessibilityDescription: nil)
+        }
+    }
+
+    static func makeItem(_ item: Item, actions: StatusMenuActions) -> NSMenuItem {
+        func action(_ key: String, _ selector: Selector, shortcut: String = "") -> NSMenuItem {
+            let menuItem = NSMenuItem(title: NSLocalizedString(key, comment: ""), action: selector, keyEquivalent: shortcut)
+            menuItem.target = actions
+            return menuItem
+        }
+        switch item {
+        case .battery(let battery):
+            // No action: AppKit shows it disabled.
+            let line = NSMenuItem(title: battery.title, action: nil, keyEquivalent: "")
+            line.image = NSImage(systemSymbolName: battery.symbolName, accessibilityDescription: nil)
+            line.tag = batteryTag
+            return line
+        case .separator:
+            return .separator()
+        case .pause:
+            return action("status-menu-pause", #selector(StatusMenuActions.togglePauseClicked(_:)))
+        case .resume:
+            return action("status-menu-resume", #selector(StatusMenuActions.togglePauseClicked(_:)))
+        case .settings:
+            return action("main-menu-settings", #selector(StatusMenuActions.settingsClicked(_:)), shortcut: ",")
+        case .scrollMonitor:
+            return action("scroll-monitor-title", #selector(StatusMenuActions.scrollMonitorClicked(_:)))
+        case .diagnostics:
+            return action("logitech-diagnostics-title", #selector(StatusMenuActions.diagnosticsClicked(_:)))
+        case .testToasts:
+            return action("status-menu-test-toasts", #selector(StatusMenuActions.testToastsClicked(_:)))
+        case .allowAccess:
+            return action("status-menu-allow-access", #selector(StatusMenuActions.allowAccessClicked(_:)))
+        case .quit:
+            return action("main-menu-quit", #selector(StatusMenuActions.quitClicked(_:)), shortcut: "q")
+        }
+    }
+
+    /// How the menu bar icon looks.
+    struct IconLook: Equatable {
+        let appearsDisabled: Bool
+        let toolTip: String?
+
+        init(coresActive: Bool, isPaused: Bool) {
+            appearsDisabled = !coresActive
+            if isPaused {
+                toolTip = NSLocalizedString("status-item-paused", comment: "")
+            } else if !coresActive {
+                toolTip = NSLocalizedString("status-item-needs-access", comment: "")
+            } else {
+                toolTip = nil
+            }
+        }
+    }
+}
+
+/// What the items of the status-bar menu do. Tests replace the closures.
+final class StatusMenuActions: NSObject {
+
+    var showSettings: () -> Void = { MainMenuManager.showPreferencesWindow(paneIdentifier: nil) }
+    /// The Welcome Guide, as the app opens it (with "Open Settings" once the access is there).
+    var showWelcomeGuide: () -> Void = {
+        WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.introductionWindowController)
+    }
+    var togglePause: () -> Void = {
+        AppRunController.shared.setPaused(!AppRunController.shared.isPaused)
+    }
+    var showScrollMonitor: () -> Void = {
+        WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.monitorWindowController)
+    }
+    var showDiagnostics: () -> Void = { LogiCenter.shared.showDebugPanel() }
+    var showTestToasts: () -> Void = { Toast.showTestPanel() }
+    var quit: () -> Void = { NSApp.terminate(nil) }
+
+    @objc func settingsClicked(_ sender: Any?) { showSettings() }
+    @objc func allowAccessClicked(_ sender: Any?) { showWelcomeGuide() }
+    @objc func togglePauseClicked(_ sender: Any?) { togglePause() }
+    @objc func scrollMonitorClicked(_ sender: Any?) { showScrollMonitor() }
+    @objc func diagnosticsClicked(_ sender: Any?) { showDiagnostics() }
+    @objc func testToastsClicked(_ sender: Any?) { showTestToasts() }
+    @objc func quitClicked(_ sender: Any?) { quit() }
 }

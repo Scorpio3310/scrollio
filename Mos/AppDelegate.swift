@@ -45,8 +45,6 @@ enum AppRuntime {
 class AppDelegate: NSObject, NSApplicationDelegate {
     // 防抖定时器: 显示器参数变化通知
     private var screenChangeTimer: Timer?
-    // 权限恢复轮询定时器
-    private var permissionRecoveryTimer: Timer?
 
     // 运行前预处理
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -140,7 +138,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ShortcutExecutor.shared.modifierFlagsProvider = InputProcessor.shared
         LogiUsageBootstrap.installOptionsObservers()
         LogiUsageBootstrap.refreshAll()
-        startWithAccessibilityPermissionsChecker(nil)
+        BatteryWatcher.shared.start()
+        AppRunController.shared.start()
+    }
+
+    /// The window a reopened app shows (Finder, Spotlight, the Dock): the settings, or the
+    /// Welcome Guide while Accessibility access is missing. Reopening always leads somewhere,
+    /// also with the menu bar icon hidden.
+    static func windowForReopen(hasAccess: Bool) -> String {
+        return hasAccess ? WINDOW_IDENTIFIER.preferencesWindowController : WINDOW_IDENTIFIER.introductionWindowController
     }
 
     // 用户双击打开应用程序
@@ -148,9 +154,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard !flag else {
             return true
         }
-        if Utils.isHadAccessibilityPermissions() {
-            WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController)
-        }
+        let identifier = Self.windowForReopen(hasAccess: Utils.isHadAccessibilityPermissions())
+        WindowManager.shared.showWindow(withIdentifier: identifier)
         return false
     }
     
@@ -164,82 +169,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 写入尚未 flush 的脏配置组
         Options.shared.flushPendingSaves()
     }
-    
-    // 检查是否有访问 accessibility 权限, 如果有则启动滚动处理, 并结束计时器
-    // 10.14(Mojave) 后, 若无该权限会直接在创建 eventTap 时报错 (https://developer.apple.com/videos/play/wwdc2018/702/)
-    @objc func startWithAccessibilityPermissionsChecker(_ timer: Timer?) {
-        if let validTimer = timer {
-            // 开启辅助权限后, 关闭定时器, 开始处理
-            if Utils.isHadAccessibilityPermissions() {
-                validTimer.invalidate()
-                permissionRecoveryTimer = nil
-                NSLog("First Initialization (Accessibility Authorization Needed)")
-                ScrollCore.shared.enable()
-                ButtonCore.shared.enable()
-                LogiCenter.shared.start()
-            }
-        } else {
-            if Utils.isHadAccessibilityPermissions() {
-                NSLog("Regular Initialization")
-                ScrollCore.shared.enable()
-                ButtonCore.shared.enable()
-                LogiCenter.shared.start()
-            } else {
-                // 如果应用不在辅助权限列表内, 则弹出欢迎窗口
-                WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.introductionWindowController)
-                // 启动定时器检测权限, 当拥有授权时启动滚动处理
-                // 统一由 permissionRecoveryTimer 持有, 使 sessionDidResign 可取消, 避免反复休眠/切换用户时叠加
-                permissionRecoveryTimer?.invalidate()
-                permissionRecoveryTimer = Timer.scheduledTimer(
-                    timeInterval: 10.0,
-                    target: self,
-                    selector: #selector(startWithAccessibilityPermissionsChecker(_:)),
-                    userInfo: nil,
-                    repeats: true
-                )
-            }
-        }
-    }
-    
+
     /// The Introduction window saw the permission arrive. The recovery timer would notice
     /// at its next tick, up to 10 s later; this is that tick, now, so the window can say
     /// that Scrollio is running. Nothing to do when no timer is waiting.
     func accessibilityPermissionWasGranted() {
-        permissionRecoveryTimer?.fire()
+        AppRunController.shared.accessibilityPermissionWasGranted()
     }
 
-    // 在切换用户时停止滚动处理
-    @objc func sessionDidActive(notification: NSNotification){
-        startWithAccessibilityPermissionsChecker(nil)
+    // 在切换用户或休眠时停止滚动处理, 回来时再启动 (暂停中则保持暂停)
+    @objc func sessionDidActive(notification: NSNotification) {
+        AppRunController.shared.start()
     }
-    @objc func sessionDidResign(notification: NSNotification){
-        permissionRecoveryTimer?.invalidate()
-        permissionRecoveryTimer = nil
-        LogiCenter.shared.stop()
-        ScrollCore.shared.disable()
-        ButtonCore.shared.disable()
+    @objc func sessionDidResign(notification: NSNotification) {
+        AppRunController.shared.stop()
     }
     // 辅助功能权限在运行时被撤销 (可能由多个 Interceptor 同时触发, 此方法必须幂等)
     @objc func handleAccessibilityPermissionLost() {
-        // 避免多个 Interceptor 同时触发导致重复处理
-        guard ScrollCore.shared.isActive || ButtonCore.shared.isActive else { return }
-        NSLog("Accessibility permission lost at runtime, disabling cores")
-        LogiCenter.shared.stop()
-        ScrollCore.shared.disable()
-        ButtonCore.shared.disable()
-        Toast.show(
-            NSLocalizedString("Accessibility permission lost, Scrollio has been paused", comment: ""),
-            style: .warning,
-            duration: 5.0
-        )
-        // 启动定时器检测权限恢复
-        permissionRecoveryTimer?.invalidate()
-        permissionRecoveryTimer = Timer.scheduledTimer(
-            timeInterval: 2.0,
-            target: self,
-            selector: #selector(startWithAccessibilityPermissionsChecker(_:)),
-            userInfo: nil,
-            repeats: true
-        )
+        AppRunController.shared.accessWasLost()
     }
 }

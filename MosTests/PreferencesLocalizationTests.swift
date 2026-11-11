@@ -79,8 +79,13 @@ final class PreferencesLocalizationTests: XCTestCase {
 
     /// General pane.
     static let generalKeys = [
-        "general-launch-at-login", "general-launch-at-login-hint",
-        "general-hide-menu-bar-icon", "general-hide-menu-bar-icon-hint",
+        "general-launch-at-login", "general-launch-at-login-hint", "general-launch-at-login-waiting",
+        "general-login-approval", "general-open-login-items",
+        "general-show-in-menu-bar", "general-show-in-menu-bar-hint",
+        "general-permissions-header", "general-accessibility", "general-accessibility-hint",
+        "general-accessibility-allowed", "general-accessibility-not-allowed", "general-accessibility-open-settings",
+        "general-advanced", "general-scroll-monitor", "general-scroll-monitor-hint",
+        "general-diagnostics", "general-diagnostics-hint", "general-open-window",
     ]
 
     /// About pane.
@@ -94,8 +99,15 @@ final class PreferencesLocalizationTests: XCTestCase {
         "preferences-sidebar", "list-add", "list-remove",
     ]
 
-    /// Main menu and status-bar menu.
+    /// Main menu and status-bar menu, the windows they open, and the toasts of the app.
     static let menuKeys = [
+        "status-menu-pause", "status-menu-resume", "status-menu-allow-access", "status-menu-test-toasts",
+        "status-menu-battery", "status-menu-battery-charging", "status-item-paused", "status-item-needs-access",
+        "scroll-monitor-title", "logitech-diagnostics-title",
+        "toast-accessibility-lost", "toast-battery-low", "toast-battery-low-plain",
+        "toast-battery-critical", "toast-battery-critical-plain",
+        "logi_ble_hidpp_unstable_toast", "logi_ble_contention_standard_mouse_alias_toast",
+        "logi_hidpp_contention_toast", "openTargetScriptNotExecutable",
         "main-menu-application", "main-menu-about", "main-menu-settings", "main-menu-services",
         "main-menu-hide", "main-menu-hide-others", "main-menu-show-all", "main-menu-quit",
         "main-menu-edit", "main-menu-undo", "main-menu-redo", "main-menu-cut", "main-menu-copy",
@@ -111,7 +123,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "intro-step-turn-on-detail", "intro-step-accessibility",
         "intro-status-missing", "intro-status-missing-detail", "intro-status-granted",
         "intro-status-granted-detail", "intro-status-granted-detail-hidden-icon",
-        "intro-open-settings-button", "intro-get-started-button", "intro-done-button",
+        "intro-open-settings-button", "intro-open-app-settings-button", "intro-done-button",
         "intro-help-link", "intro-help-heading", "intro-help-text", "intro-help-finder-button",
     ]
 

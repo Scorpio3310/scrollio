@@ -128,8 +128,45 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
+    /// Access allowed and not, the login item waiting for approval, "Advanced" open. The
+    /// login item and the permission are fixed, nothing is asked of the system.
     func testRenderGeneral() throws {
-        try renderPane(PANEL_IDENTIFIER.general, name: "general")
+        final class FixedLoginItem: LoginItemService {
+            let status: LoginItemStatus
+            init(_ status: LoginItemStatus) { self.status = status }
+            func register() throws {}
+            func unregister() throws {}
+            func openSystemSettings() {}
+        }
+        let savedAutoLaunch = Options.shared.general.autoLaunch
+        defer {
+            LoginItem.service = InertLoginItemService()
+            Options.shared.general.autoLaunch = savedAutoLaunch
+            LoginItem.service = LoginItem.defaultService
+        }
+        let cases: [(name: String, access: Bool, login: LoginItemStatus, advanced: Bool)] = [
+            ("general", true, .enabled, false),
+            ("general-no-access", false, .notRegistered, false),
+            ("general-login-approval", true, .requiresApproval, false),
+            ("general-advanced", true, .enabled, true),
+        ]
+        for item in cases {
+            LoginItem.service = FixedLoginItem(item.login)
+            let suite = "ScrollioTests.window-render.general.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defaults.set(item.advanced, forKey: PreferencesGeneralViewController.advancedExpandedDefaultsKey)
+            addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+            try renderPane(PANEL_IDENTIFIER.general, name: item.name, prepare: { preferences in
+                guard let general = preferences.controller(for: PANEL_IDENTIFIER.general)
+                    as? PreferencesGeneralViewController else { return }
+                general.isAccessGranted = { item.access }
+                general.isMenuBarIconHidden = { false }
+                general.uiStateDefaults = defaults
+            }, afterLoad: { controller in
+                // The window calls viewWillAppear, which reads the login item.
+                controller.viewWillAppear()
+            })
+        }
     }
 
     func testRenderAbout() throws {

@@ -1231,7 +1231,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "HID++ Diagnostics…"
+            "value": "Logitech Diagnostics…"
           }
         }
       }
@@ -1814,7 +1814,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Version %@"
+            "value": "Version %1$@ (%2$@)"
           }
         }
       }
@@ -1825,7 +1825,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Based on Mos by Caldis · CC BY-NC 4.0 · modified"
+            "value": "Based on Mos by Caldis, licensed under CC BY-NC 4.0, with changes."
           }
         }
       }
@@ -2221,7 +2221,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrollio is running. Open Preferences from its menu bar icon."
+            "value": "Scrollio is running. Open Settings from its menu bar icon."
           }
         }
       }
@@ -2232,7 +2232,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrollio is running. Its menu bar icon is hidden: open Scrollio again to reach its settings."
+            "value": "Scrollio is running. Its menu bar icon is hidden: open Scrollio again to reach Settings."
           }
         }
       }
@@ -2585,7 +2585,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Script \"%@\" is not executable — run chmod +x"
+            "value": "Script \"%@\" can't run: it isn't marked as executable."
           }
         }
       }
@@ -3304,7 +3304,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ uses BLE HID++ notifications, which may be interrupted by Logi Options+. Bolt/Unifying is usually more reliable."
+            "value": "%@ may stop working while Logi Options+ runs. The receiver is more reliable."
           }
         }
       }
@@ -3315,7 +3315,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ BLE HID++ capture is being cleared by another app. Scrollio can switch this binding to the system mouse button. Bolt/Unifying is usually more stable."
+            "value": "Logi Options+ keeps taking over %@. Under Buttons you can use the standard button instead."
           }
         }
       }
@@ -3326,7 +3326,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ HID++ capture is being cleared by another app. Release it there, or use Bolt/Unifying for better stability."
+            "value": "Logi Options+ keeps taking over %@."
           }
         }
       }
@@ -3845,7 +3845,370 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The introduction from the first launch, with the Accessibility setup."
+            "value": "Shows the first-launch steps again, including Accessibility access."
+          }
+        }
+      }
+    },
+    "general-show-in-menu-bar": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in menu bar"
+          }
+        }
+      }
+    },
+    "general-show-in-menu-bar-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When it's off, open Scrollio again to reach its settings."
+          }
+        }
+      }
+    },
+    "general-launch-at-login-waiting": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for your approval in System Settings."
+          }
+        }
+      }
+    },
+    "general-login-approval": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approve in System Settings"
+          }
+        }
+      }
+    },
+    "general-open-login-items": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Login Items…"
+          }
+        }
+      }
+    },
+    "general-permissions-header": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permissions"
+          }
+        }
+      }
+    },
+    "general-accessibility": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accessibility"
+          }
+        }
+      }
+    },
+    "general-accessibility-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lets Scrollio read the mouse and keyboard to smooth scrolling and run your buttons."
+          }
+        }
+      }
+    },
+    "general-accessibility-allowed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allowed"
+          }
+        }
+      }
+    },
+    "general-accessibility-not-allowed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not allowed"
+          }
+        }
+      }
+    },
+    "general-accessibility-open-settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Settings…"
+          }
+        }
+      }
+    },
+    "general-advanced": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Advanced"
+          }
+        }
+      }
+    },
+    "general-scroll-monitor": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll monitor"
+          }
+        }
+      }
+    },
+    "general-scroll-monitor-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A live chart of wheel events. Scrolling is slower while it's open."
+          }
+        }
+      }
+    },
+    "general-diagnostics": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logitech diagnostics"
+          }
+        }
+      }
+    },
+    "general-diagnostics-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HID++ details of connected Logitech mice, for troubleshooting."
+          }
+        }
+      }
+    },
+    "general-open-window": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open…"
+          }
+        }
+      }
+    },
+    "status-menu-pause": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause Scrollio"
+          }
+        }
+      }
+    },
+    "status-menu-resume": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume Scrollio"
+          }
+        }
+      }
+    },
+    "status-menu-allow-access": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow Accessibility Access…"
+          }
+        }
+      }
+    },
+    "status-menu-test-toasts": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test Toasts"
+          }
+        }
+      }
+    },
+    "status-menu-battery": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: %2$@"
+          }
+        }
+      }
+    },
+    "status-menu-battery-charging": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: %2$@, charging"
+          }
+        }
+      }
+    },
+    "status-item-paused": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio is paused"
+          }
+        }
+      }
+    },
+    "status-item-needs-access": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio needs Accessibility access"
+          }
+        }
+      }
+    },
+    "scroll-monitor-title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll Monitor"
+          }
+        }
+      }
+    },
+    "logitech-diagnostics-title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logitech Diagnostics"
+          }
+        }
+      }
+    },
+    "toast-accessibility-lost": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio is paused: Accessibility access was turned off."
+          }
+        }
+      }
+    },
+    "toast-battery-low": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ battery is low (%2$@)."
+          }
+        }
+      }
+    },
+    "toast-battery-low-plain": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ battery is low."
+          }
+        }
+      }
+    },
+    "toast-battery-critical": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ battery is almost empty (%2$@). Charge it now."
+          }
+        }
+      }
+    },
+    "toast-battery-critical-plain": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ battery is almost empty. Charge it now."
+          }
+        }
+      }
+    },
+    "intro-open-app-settings-button": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Settings"
           }
         }
       }

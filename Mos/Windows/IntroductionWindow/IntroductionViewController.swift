@@ -7,7 +7,9 @@
 //  Two states, taken from the real permission and polled while the window is open:
 //  - access missing: two numbered steps, a status row, "Open Accessibility Settings" and
 //    the "Having trouble?" help under it;
-//  - access granted: the status row and a button that closes the window.
+//  - access granted: the status row and, when the app opened the window (at launch, or
+//    because the access is missing), "Open Settings" (the Preferences on Scrolling) next to
+//    "Done"; opened by hand (About, Help), only "Done".
 //
 //  Created by Caldis on 15/11/2019.
 //  Copyright © 2019 Caldis. All rights reserved.
@@ -41,6 +43,9 @@ final class IntroductionViewController: NSViewController {
         /// Between a row's title and the small print under it.
         static let detailSpacing: CGFloat = 3
         static let primaryButtonMinWidth: CGFloat = 230
+        /// Each of the two buttons of the granted state, side by side.
+        static let pairedButtonMinWidth: CGFloat = 150
+        static let buttonSpacing: CGFloat = 12
     }
 
     // MARK: - Seams (tests replace them: no prompt, no other app, no window)
@@ -60,8 +65,12 @@ final class IntroductionViewController: NSViewController {
     var accessWasGranted: () -> Void = {
         (NSApp.delegate as? AppDelegate)?.accessibilityPermissionWasGranted()
     }
-    /// Whether the menu bar icon is hidden (General › Hide Menu Bar Icon).
+    /// Whether the menu bar icon is hidden (General › Show in menu bar is off).
     var isMenuBarIconHidden: () -> Bool = { Options.shared.general.hideStatusItem }
+    /// Opens the Preferences window on Scrolling ("Open Settings" once the access is there).
+    var openAppSettings: () -> Void = {
+        MainMenuManager.showPreferencesWindow(paneIdentifier: PANEL_IDENTIFIER.scrolling)
+    }
 
     // MARK: - State
 
@@ -91,6 +100,10 @@ final class IntroductionViewController: NSViewController {
     private(set) var statusLabel: NSTextField!
     private(set) var statusDetailLabel: NSTextField!
     private(set) var primaryButton: NSButton!
+    /// "Done" next to "Open Settings", in the granted state of a window the app opened.
+    private(set) var secondaryButton: NSButton!
+    /// The primary and secondary buttons, centred.
+    private(set) var buttonRow: NSStackView!
     private(set) var helpButton: NSButton!
     private(set) var helpCard: NSView!
     private(set) var helpHeadingLabel: NSTextField!
@@ -99,6 +112,8 @@ final class IntroductionViewController: NSViewController {
 
     /// Rows of the access card that only make sense while the access is missing.
     private var stepsRows: [NSView] = []
+    /// The primary button's least width: alone, or paired with "Done".
+    private var primaryMinWidth: NSLayoutConstraint!
 
     // MARK: - Lifecycle
 
@@ -132,6 +147,21 @@ final class IntroductionViewController: NSViewController {
         primary.keyEquivalent = "\r"
         primaryButton = primary
 
+        let secondary = NSButton(title: text("intro-done-button"), target: self, action: #selector(secondaryButtonClicked(_:)))
+        secondary.bezelStyle = .push
+        secondary.controlSize = .large
+        secondary.keyEquivalent = "\u{1b}"
+        secondary.isHidden = true
+        secondaryButton = secondary
+
+        let buttons = NSStackView(views: [secondary, primary])
+        buttons.orientation = .horizontal
+        buttons.alignment = .centerY
+        buttons.spacing = Layout.buttonSpacing
+        buttons.detachesHiddenViews = true
+        buttons.translatesAutoresizingMaskIntoConstraints = false
+        buttonRow = buttons
+
         let help = PreferencesForm.makeLinkButton(
             title: text("intro-help-link"),
             target: self,
@@ -142,7 +172,7 @@ final class IntroductionViewController: NSViewController {
         let helpContent = makeHelpCard()
         helpCard = helpContent
 
-        let content = NSStackView(views: [icon, title, subtitle, access, primary, help, helpContent])
+        let content = NSStackView(views: [icon, title, subtitle, access, buttons, help, helpContent])
         content.orientation = .vertical
         content.alignment = .centerX
         content.detachesHiddenViews = true
@@ -151,7 +181,7 @@ final class IntroductionViewController: NSViewController {
         content.setCustomSpacing(6, after: title)
         content.setCustomSpacing(24, after: subtitle)
         content.setCustomSpacing(20, after: access)
-        content.setCustomSpacing(12, after: primary)
+        content.setCustomSpacing(12, after: buttons)
         content.setCustomSpacing(14, after: help)
         content.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(content)
@@ -161,6 +191,7 @@ final class IntroductionViewController: NSViewController {
         // Auto Layout does not resize the window as well while that change animates.
         let bottom = content.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -Layout.bottomMargin)
         bottom.priority = .defaultLow
+        primaryMinWidth = primary.widthAnchor.constraint(greaterThanOrEqualToConstant: Layout.primaryButtonMinWidth)
         NSLayoutConstraint.activate([
             root.widthAnchor.constraint(equalToConstant: Layout.width),
             content.topAnchor.constraint(equalTo: root.topAnchor, constant: Layout.topInset),
@@ -171,7 +202,8 @@ final class IntroductionViewController: NSViewController {
             icon.heightAnchor.constraint(equalToConstant: Layout.iconSize),
             access.widthAnchor.constraint(equalToConstant: Layout.cardWidth),
             helpContent.widthAnchor.constraint(equalToConstant: Layout.cardWidth),
-            primary.widthAnchor.constraint(greaterThanOrEqualToConstant: Layout.primaryButtonMinWidth),
+            primaryMinWidth,
+            secondary.widthAnchor.constraint(greaterThanOrEqualToConstant: Layout.pairedButtonMinWidth),
         ])
 
         view = root
@@ -354,7 +386,7 @@ final class IntroductionViewController: NSViewController {
 
     // MARK: - State
 
-    /// The window was opened by hand: the button that closes it says "Done".
+    /// The window was opened by hand: the only button of the granted state says "Done".
     func setManuallyOpened(_ manually: Bool) {
         isManuallyOpened = manually
         applyState(animated: false)
@@ -394,7 +426,7 @@ final class IntroductionViewController: NSViewController {
             statusDetailLabel.stringValue = text(
                 isMenuBarIconHidden() ? "intro-status-granted-detail-hidden-icon" : "intro-status-granted-detail"
             )
-            primaryButton.title = text(isManuallyOpened ? "intro-done-button" : "intro-get-started-button")
+            primaryButton.title = text(isManuallyOpened ? "intro-done-button" : "intro-open-app-settings-button")
         } else {
             statusIconView.image = NSImage(systemSymbolName: "exclamationmark.circle.fill", accessibilityDescription: nil)
             statusIconView.contentTintColor = .systemOrange
@@ -402,6 +434,10 @@ final class IntroductionViewController: NSViewController {
             statusDetailLabel.stringValue = text("intro-status-missing-detail")
             primaryButton.title = text("intro-open-settings-button")
         }
+
+        let paired = granted && !isManuallyOpened
+        secondaryButton.isHidden = !paired
+        primaryMinWidth.constant = paired ? Layout.pairedButtonMinWidth : Layout.primaryButtonMinWidth
 
         helpButton.isHidden = granted
         helpCard.isHidden = granted || !isHelpExpanded
@@ -465,8 +501,17 @@ final class IntroductionViewController: NSViewController {
             requestAccess()
             openAccessibilitySettings()
         case .granted:
+            if !isManuallyOpened {
+                // First the Preferences, then the guide closes: the app keeps its Dock icon.
+                openAppSettings()
+            }
             view.window?.close()
         }
+    }
+
+    /// "Done" next to "Open Settings".
+    @objc func secondaryButtonClicked(_ sender: Any?) {
+        view.window?.close()
     }
 
     @objc func helpButtonClicked(_ sender: Any?) {
@@ -481,7 +526,8 @@ final class IntroductionViewController: NSViewController {
     /// System Settings › Privacy & Security › Accessibility.
     static let accessibilityPaneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
 
-    private static func openAccessibilityPane() {
+    /// Also the "Open Settings…" of General › Permissions.
+    static func openAccessibilityPane() {
         NSWorkspace.shared.open(accessibilityPaneURL)
     }
 }

@@ -375,16 +375,23 @@ final class PreferencesAboutTests: XCTestCase {
         let controller = makeController()
         XCTAssertEqual(controller.title, "About")
         XCTAssertEqual(controller.nameLabel.stringValue, "Scrollio")
-        XCTAssertEqual(controller.creditLabel.stringValue, "Based on Mos by Caldis · CC BY-NC 4.0 · modified")
+        XCTAssertEqual(controller.creditLabel.stringValue, "Based on Mos by Caldis, licensed under CC BY-NC 4.0, with changes.")
         XCTAssertNotNil(controller.iconView.image)
     }
 
-    func testVersionComesFromTheBundle() throws {
+    func testVersionAndBuildComeFromTheBundle() throws {
         let version = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+        let build = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String)
         XCTAssertFalse(version.isEmpty)
+        XCTAssertFalse(build.isEmpty)
         let controller = makeController()
-        XCTAssertEqual(controller.versionLabel.stringValue, "Version \(version)")
-        XCTAssertEqual(AboutPreferencesViewController.versionText(), "Version \(version)")
+        XCTAssertEqual(controller.versionLabel.stringValue, "Version \(version) (\(build))")
+        XCTAssertEqual(AboutPreferencesViewController.versionText(), "Version \(version) (\(build))")
+    }
+
+    func testTheWelcomeGuideRowSaysWhatItShows() {
+        let controller = makeController()
+        XCTAssertEqual(controller.welcomeGuideRow.explanation, "Shows the first-launch steps again, including Accessibility access.")
     }
 
     func testTheOnlyButtonOpensTheWelcomeGuide() {
@@ -519,13 +526,14 @@ final class PreferencesNamingTests: XCTestCase {
 
     func testGeneralTabSaysMenuBar() throws {
         let general = try XCTUnwrap(instantiate(PANEL_IDENTIFIER.general) as? PreferencesGeneralViewController)
+        general.isAccessGranted = { true }
         _ = general.view
-        XCTAssertEqual(general.hideStatusBarIconRow.title, "Hide menu bar icon")
-        XCTAssertEqual(general.hideStatusBarIconSwitch.accessibilityLabel(), "Hide menu bar icon")
+        // Said the positive way; the stored "hide" is shown the other way round.
+        XCTAssertEqual(general.showInMenuBarRow.title, "Show in menu bar")
+        XCTAssertEqual(general.showInMenuBarSwitch.accessibilityLabel(), "Show in menu bar")
         XCTAssertEqual(general.launchOnLoginRow.title, "Open at login")
         let shown = texts(in: general.view)
-        // What the "?" popover said is the row's explanation now.
-        XCTAssertTrue(shown.contains("While the icon is hidden, open Scrollio again to reach its settings."))
+        XCTAssertTrue(shown.contains("When it's off, open Scrollio again to reach its settings."))
         for text in shown {
             XCTAssertFalse(text.localizedCaseInsensitiveContains("status bar"), text)
             XCTAssertFalse(text.localizedCaseInsensitiveContains("re-run"), text)
@@ -599,8 +607,9 @@ final class PreferencesTextSizeTests: XCTestCase {
     func testHintsOfTheStoryboardPanesMatchTheFormKit() throws {
         let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
         let general = try XCTUnwrap(storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.general) as? PreferencesGeneralViewController)
+        general.isAccessGranted = { true }
         _ = general.view
-        XCTAssertEqual(general.hideStatusBarIconRow.explanationLabel.font?.pointSize, PreferencesForm.hintFontSize)
+        XCTAssertEqual(general.showInMenuBarRow.explanationLabel.font?.pointSize, PreferencesForm.hintFontSize)
 
         let scrolling = try XCTUnwrap(storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)
         _ = scrolling.view
