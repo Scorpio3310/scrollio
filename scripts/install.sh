@@ -125,6 +125,16 @@ ditto "$BUILT" "${DEST}.new"
 rm -rf "$DEST"
 mv "${DEST}.new" "$DEST"
 
+# The Dock and Finder show this build's icon only when the system sees a changed app.
+# ditto keeps the built bundle's modification date, which can be older than an icon that
+# changed inside it, so the system's icon cache kept the old icon. A fresh date and a new
+# registration with LaunchServices make it read the bundle again. The Dock is not
+# restarted here.
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+touch "$DEST"
+"$LSREGISTER" -f "$DEST" \
+    || echo "install: could not register ${APP_NAME} with LaunchServices; the Dock may show the old icon" >&2
+
 open "$DEST"
 for _ in 1 2 3 4 5 6 7 8 9 10; do
     pgrep -x "$APP_NAME" > /dev/null && break

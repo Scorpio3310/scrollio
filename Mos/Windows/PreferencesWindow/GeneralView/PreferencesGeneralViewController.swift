@@ -14,8 +14,9 @@
 //    Settings when it has not.
 //  The developer tools (scroll monitor, Logitech diagnostics) are not in the pane: the
 //  status-bar menu lists them while Option is held.
-//  At the bottom a box with the Welcome Guide and one muted line with the credit for the
-//  project Scrollio is based on (the licence asks for it: it stays visible).
+//  At the bottom a box with the Welcome Guide and "Scrollio on GitHub" (the repository in the
+//  default browser), and one muted line with the credit for the project Scrollio is based on
+//  (the licence asks for it: it stays visible).
 //  Created by Caldis on 2017/1/15.
 //  Copyright © 2017年 Caldis. All rights reserved.
 //
@@ -32,6 +33,9 @@ class PreferencesGeneralViewController: NSViewController {
     /// more; a stored value is left alone, and the name stays taken (never reuse it).
     static let advancedExpandedDefaultsKey = "generalAdvancedExpanded"
 
+    /// Scrollio's repository: its source code and new versions.
+    static let gitHubURL = URL(string: "https://github.com/Scorpio3310/scrollio")!
+
     // MARK: - Seams (tests and renders replace them: no permission read, no window, no menu bar change)
 
     /// Whether macOS lets Scrollio use the Accessibility API right now.
@@ -47,6 +51,8 @@ class PreferencesGeneralViewController: NSViewController {
     var resume: () -> Void = { AppRunController.shared.setPaused(false) }
     /// Opens the Welcome Guide.
     var showWelcomeGuide: () -> Void = IntroductionWindowController.showWelcomeGuide
+    /// Opens a web page in the default browser.
+    var openURL: (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
     /// The app's Info.plist, for the version line; tests and renders give one with or
     /// without a build stamp.
     var bundleInfo: () -> [String: Any] = { Bundle.main.infoDictionary ?? [:] }
@@ -72,6 +78,8 @@ class PreferencesGeneralViewController: NSViewController {
 
     private(set) var welcomeGuideRow: PreferencesGroupRow!
     private(set) var welcomeGuideButton: NSButton!
+    private(set) var gitHubRow: PreferencesGroupRow!
+    private(set) var gitHubButton: NSButton!
     /// "Based on Mos by Caldis, …": the attribution the licence asks for.
     private(set) var creditLabel: NSTextField!
 
@@ -115,7 +123,7 @@ class PreferencesGeneralViewController: NSViewController {
         let permissions = PreferencesGroupSection(
             title: text("general-permissions-header"), width: width, rows: [makeAccessibilityRow()]
         )
-        let guide = PreferencesGroupSection(width: width, rows: [makeWelcomeGuideRow()])
+        let guide = PreferencesGroupSection(width: width, rows: [makeWelcomeGuideRow(), makeGitHubRow()])
         let credit = makeCreditLabel(width: width)
         PreferencesGroupedForm.add([header, paused, startup, permissions, guide, credit], to: content)
         // The credit sits close under the last box, as the muted lines of the other panes.
@@ -241,6 +249,26 @@ class PreferencesGeneralViewController: NSViewController {
             accessory: button
         )
         welcomeGuideRow = row
+        return row
+    }
+
+    /// "Scrollio on GitHub" with "Open": the repository in the default browser.
+    private func makeGitHubRow() -> PreferencesGroupRow {
+        let button = PreferencesGroupedForm.makePushButton(
+            title: text("about-github-open"),
+            target: self,
+            action: #selector(gitHubClicked(_:))
+        )
+        gitHubButton = button
+        let row = PreferencesGroupRow(
+            title: text("about-github"),
+            explanation: text("about-github-hint"),
+            accessory: button
+        )
+        // "Open" alone does not say where it goes; the row's title stays its title element.
+        button.setAccessibilityLabel(text("about-github-open-accessibility"))
+        button.toolTip = Self.gitHubURL.absoluteString
+        gitHubRow = row
         return row
     }
 
@@ -434,6 +462,12 @@ class PreferencesGeneralViewController: NSViewController {
 
     @objc func welcomeGuideClicked(_ sender: NSButton) {
         showWelcomeGuide()
+    }
+
+    // MARK: - GitHub
+
+    @objc func gitHubClicked(_ sender: NSButton) {
+        openURL(Self.gitHubURL)
     }
 }
 

@@ -1938,9 +1938,9 @@ final class PreferencesButtonsTests: XCTestCase {
             XCTAssertFalse(row.infoButton.isHidden, row.title)
             XCTAssertEqual(row.infoButton.accessibilityLabel(), "More Info")
         }
-        // An orange warning sign before the text, a blue light bulb before the alias hint;
-        // the text itself in the colour of any explanation (orange or blue text is too
-        // faint to read on a light box).
+        // An orange warning sign before the text, a light bulb in the accent colour before
+        // the alias hint; the text itself in the colour of any explanation (orange or
+        // accent-coloured text is too faint to read on a light box).
         let conflict = listed[0].explanationLabel.attributedStringValue
         XCTAssertTrue(conflict.string.hasSuffix("Another app may use this button."))
         XCTAssertTrue(conflict.containsAttachments(in: NSRange(location: 0, length: conflict.length)))
@@ -1948,7 +1948,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(conflict.attribute(.foregroundColor, at: conflict.length - 1, effectiveRange: nil) as? NSColor,
                        PreferencesGroupedForm.explanationColor(enabled: true))
         let hint = listed[3].explanationLabel.attributedStringValue
-        XCTAssertEqual(hint.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .systemBlue)
+        XCTAssertEqual(hint.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .controlAccentColor)
         XCTAssertEqual(hint.attribute(.foregroundColor, at: hint.length - 1, effectiveRange: nil) as? NSColor,
                        PreferencesGroupedForm.explanationColor(enabled: true))
         XCTAssertEqual(listed[0].accessibilityLabel(), "Gesture button, Another app may use this button.")

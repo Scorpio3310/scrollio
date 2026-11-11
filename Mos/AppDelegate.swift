@@ -153,6 +153,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // 运行后启动滚动处理
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         guard AppRuntime.shouldRunAppStartupSideEffects else { return }
+        // Which accent colour the user sees: the app's purple, or their own choice.
+        AppSystemLog.note(AppAccent.liveLogLine())
         // 上次运行若在手势冻结指针时退出, 先恢复指针与鼠标的关联
         MouseGesturePointerLock.shared.forceRelease()
         LogiCenter.shared.installBridge(LogiIntegrationBridge.shared)

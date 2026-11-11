@@ -19,7 +19,7 @@ class KeyPreview: NSStackView {
     enum Status {
         case normal        // 普通状态
         case recorded      // 已录制状态（绿色背景）
-        case duplicate     // 重复录制状态（蓝色背景）
+        case duplicate     // already bound: the accent colour behind it
         case recording     // 录制中状态（呼吸动画）
     }
 
@@ -240,7 +240,8 @@ private final class KeyComponentContainer: NSView {
         case .recorded:
             return NSColor.mainGreen
         case .duplicate:
-            return NSColor.mainBlue
+            // The accent colour (the app's purple, or the user's own accent).
+            return NSColor.controlAccentColor
         }
     }
 
