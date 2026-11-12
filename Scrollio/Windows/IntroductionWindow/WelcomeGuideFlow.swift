@@ -9,7 +9,8 @@
 //  - A new user (no `optionsExist` before the settings were first read) gets the whole
 //    guide at launch, until it is finished: Done, Open Settings, or the window closed once
 //    the access is allowed. Quitting half-way shows it again at the next launch.
-//  - Everyone else (an update, settings taken over from Mos) counts as finished, silently.
+//  - Everyone else (an update: the settings were there before the guide) counts as
+//    finished, silently.
 //    Without the access the app opens the Accessibility step alone.
 //  - General › Welcome Guide and Help › Welcome Guide run the whole guide, the feel the
 //    user has chosen selected.
@@ -158,7 +159,7 @@ struct WelcomeGuideProgress {
 
     /// At launch, before the settings are read for the first time. A new installation (no
     /// `optionsExist` yet) waits for the guide; settings that existed before the guide
-    /// (an update, a takeover from Mos) count as finished. A value already stored stays.
+    /// (an update) count as finished. A value already stored stays.
     func settleAtLaunch(isNewInstallation: Bool) {
         guard let defaults, defaults.object(forKey: Self.key) == nil else { return }
         defaults.set(isNewInstallation ? Self.notFinished : Self.currentVersion, forKey: Self.key)

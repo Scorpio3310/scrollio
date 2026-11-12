@@ -444,7 +444,7 @@ extension Options {
             }
         }
         if !unknown.isEmpty {
-            NSLog("Preserved \(unknown.count) unparseable button binding(s) for round-trip (likely from a newer Mos or Scrollio version)")
+            NSLog("Preserved \(unknown.count) unparseable button binding(s) for round-trip (likely from a newer Scrollio version)")
         }
         return (bindings: bindings, unknownElements: unknown)
     }

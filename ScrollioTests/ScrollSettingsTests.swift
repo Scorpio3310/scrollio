@@ -178,8 +178,8 @@ final class ScrollSettingsTests: XCTestCase {
     }
 
     func testReversesWheel_isOnWhileEitherAxisIsReversed() {
-        // Left over from the per-axis switches of older builds and from settings imported
-        // from Mos: the main flag on, only one axis on.
+        // Left over from the per-axis switches of older builds: the main flag on, only one
+        // axis on.
         let scroll = OPTIONS_SCROLL_DEFAULT()
         scroll.reverseVertical = false
         scroll.reverseHorizontal = true
@@ -196,8 +196,8 @@ final class ScrollSettingsTests: XCTestCase {
         XCTAssertTrue(scroll.reverseHorizontal)
     }
 
-    func testReversesWheel_offStopsBothAxesOfImportedSettings() {
-        // Imported from Mos: the main flag on, vertical off, horizontal on.
+    func testReversesWheel_offStopsBothAxesOfOlderSettings() {
+        // From an older build: the main flag on, vertical off, horizontal on.
         let scroll = OPTIONS_SCROLL_DEFAULT()
         scroll.reverse = true
         scroll.reverseVertical = false

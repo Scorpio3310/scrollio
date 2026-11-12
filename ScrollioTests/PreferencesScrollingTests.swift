@@ -1439,7 +1439,7 @@ final class PreferencesScrollingTests: XCTestCase {
     }
 
     /// The preview shows the vertical wheel: only the horizontal axis reversed (settings
-    /// from older builds or Mos) leaves it running the normal way, while the switch is on.
+    /// from older builds) leaves it running the normal way, while the switch is on.
     func testPreviewIsReversedOnlyWhenTheVerticalWheelIs() {
         Options.shared.scroll.reverse = true
         Options.shared.scroll.reverseVertical = false

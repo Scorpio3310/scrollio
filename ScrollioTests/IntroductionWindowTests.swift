@@ -211,7 +211,7 @@ final class IntroductionWindowTests: XCTestCase {
         let progress = WelcomeGuideProgress(defaults: defaults)
         defaults.removeObject(forKey: WelcomeGuideProgress.key)
 
-        // Settings from before the guide (an update, or taken over from Mos): finished, silently.
+        // Settings from before the guide (an update): finished, silently.
         progress.settleAtLaunch(isNewInstallation: false)
         XCTAssertEqual(defaults.object(forKey: "welcomeGuideCompletedVersion") as? Int, 1)
         XCTAssertFalse(progress.isPending)

@@ -64,9 +64,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Takeover from the original Mos: quit it if it is running and, on the first launch,
-        // copy its settings. Must come before readOptions, which seeds the defaults.
-        LegacyMosTakeover.runAtLaunch()
+        // The original Mos would handle the same mouse events: quit it if it is running.
+        LegacyMosTakeover.quitAtLaunch()
         // Its login item (or the user) can start it again later: quit it each time.
         LegacyMosTakeover.startWatchingLaunches()
 
@@ -78,7 +77,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier!)
         
         // The Welcome Guide: a new installation is one without settings before they are first
-        // read (settings taken over from Mos count as existing); it then waits for the guide.
+        // read; it then waits for the guide.
         WelcomeGuideProgress.live.settleAtLaunch(
             isNewInstallation: UserDefaults.standard.object(forKey: OptionItem.General.OptionsExist) == nil
         )

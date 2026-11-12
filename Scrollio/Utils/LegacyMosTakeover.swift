@@ -2,17 +2,18 @@
 //  LegacyMosTakeover.swift
 //  Mos
 //
-//  Scrollio replaces the original Mos on this Mac. At launch it
+//  Scrollio and the original Mos cannot run side by side: two apps that handle the same
+//  mouse events fight each other (both would smooth the same wheel). So Scrollio
 //
-//  1. quits a running Mos (two apps smoothing the same wheel fight each other),
-//  2. once only, copies Mos's settings into Scrollio's own defaults domain, so the first
-//     launch behaves like the app it replaces, and
-//  3. while it runs, quits Mos again whenever it starts (its old login item still launches
+//  1. quits a running Mos at launch, before its own event taps start, and
+//  2. while it runs, quits Mos again whenever it starts (its old login item still launches
 //     it at login, after Scrollio). Login items are never changed here.
 //
-//  Runs from AppDelegate before Options.readOptions (which seeds default values) and
-//  never under XCTest: tests must not quit other apps or read the real Mos settings.
-//  The copying itself takes its UserDefaults as parameters, so tests use throwaway suites.
+//  Nothing of Mos is read or changed: its settings stay where they are.
+//
+//  Runs from AppDelegate and never under XCTest: tests must not quit other apps. Quitting
+//  and waiting takes the apps as parameters, so tests use fakes; Utils.preventMultiRunning
+//  uses it for another running copy of Scrollio.
 //
 
 import Cocoa
@@ -33,19 +34,6 @@ enum LegacyMosTakeover {
 
     /// Bundle ids of the app this one replaces (release and debug builds).
     static let legacyBundleIdentifiers = ["com.caldis.Mos", "com.caldis.Mos.debug"]
-    /// Defaults domain the settings come from.
-    static let legacyDefaultsDomain = "com.caldis.Mos"
-    /// Set in the new domain once the copy has run (also when there was nothing to copy),
-    /// so a later launch never overwrites Scrollio's settings with Mos's again.
-    static let migrationFlagKey = "legacyMosDefaultsMigrated"
-    /// The Toast component keeps its settings in "<bundle id>.toast".
-    static let toastSuiteSuffix = ".toast"
-
-    enum MigrationResult: Equatable {
-        case alreadyDone
-        case nothingToMigrate
-        case migrated(keyCount: Int)
-    }
 
     // MARK: - Launch
 
@@ -54,20 +42,10 @@ enum LegacyMosTakeover {
         return !AppRuntime.isRunningXCTest
     }
 
-    /// Call once at launch, before the options are read and before the event taps start.
-    static func runAtLaunch() {
-        guard isAllowedToRun else { return }
+    /// Call once at launch, before the event taps start: a running copy of the old app is
+    /// asked to quit and waited for.
+    static func quitAtLaunch() {
         terminateLegacyApps()
-        let ownDomain = Bundle.main.bundleIdentifier ?? ""
-        guard !ownDomain.isEmpty, ownDomain != legacyDefaultsDomain else { return }
-        let result = migrateDefaults(
-            from: .standard,
-            legacyDomain: legacyDefaultsDomain,
-            into: .standard,
-            legacyToastDomain: legacyDefaultsDomain + toastSuiteSuffix,
-            toast: UserDefaults(suiteName: ownDomain + toastSuiteSuffix)
-        )
-        AppSystemLog.note("Settings of the old Mos app: \(result)")
     }
 
     // MARK: - Quit the old app
@@ -227,46 +205,5 @@ enum LegacyMosTakeover {
             app.forceTerminate()
         }
         return true
-    }
-
-    // MARK: - Copy the settings
-
-    /// Sparkle and update settings have no meaning here; the status item's saved
-    /// visibility would carry a hidden icon over to the new app.
-    static func shouldSkip(key: String) -> Bool {
-        if key == "updateCheckOnAppStart" || key == "updateIncludingBetaVersion" { return true }
-        if key.hasPrefix("SU") || key.hasPrefix("NSWindow Frame SU") { return true }
-        if key.hasPrefix("NSStatusItem Visible") { return true }
-        return false
-    }
-
-    /// Copies the legacy domain into `target` once, and the legacy Toast suite into `toast`.
-    /// The status-bar icon is forced visible: with a migrated "hide icon" setting the new
-    /// app would start with no way to reach it. `legacy` is only used to read the domains.
-    @discardableResult
-    static func migrateDefaults(
-        from legacy: UserDefaults,
-        legacyDomain: String,
-        into target: UserDefaults,
-        legacyToastDomain: String? = nil,
-        toast: UserDefaults? = nil
-    ) -> MigrationResult {
-        guard !target.bool(forKey: migrationFlagKey) else { return .alreadyDone }
-        defer { target.set(true, forKey: migrationFlagKey) }
-
-        let values = (legacy.persistentDomain(forName: legacyDomain) ?? [:]).filter { !shouldSkip(key: $0.key) }
-        guard !values.isEmpty else { return .nothingToMigrate }
-
-        for (key, value) in values {
-            target.set(value, forKey: key)
-        }
-        target.set(false, forKey: OptionItem.General.HideStatusItem)
-
-        if let legacyToastDomain = legacyToastDomain, let toast = toast {
-            for (key, value) in legacy.persistentDomain(forName: legacyToastDomain) ?? [:] {
-                toast.set(value, forKey: key)
-            }
-        }
-        return .migrated(keyCount: values.count)
     }
 }
