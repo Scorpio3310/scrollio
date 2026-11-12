@@ -62,6 +62,9 @@ final class ScrollActionPortTests: XCTestCase {
         defer {
             ShortcutExecutor.shared.modifierFlagsProvider = savedProvider
             ShortcutExecutor.shared.clearTestingMouseEventObserver()
+            // The button is only pressed here: without this its click session stayed in the
+            // shared controller for the rest of the run.
+            MouseInteractionSessionController.shared.clearAllSessions()
         }
 
         // mouseMiddleClick → .mouseButton(.middle) → executeMouseButton, 合成事件时取 modifierFlagsProvider
@@ -72,5 +75,33 @@ final class ScrollActionPortTests: XCTestCase {
 
         XCTAssertTrue(fake.called, "executor 应调用注入的 modifierFlagsProvider")
         XCTAssertEqual(capturedFlags, .maskShift, "合成事件 flags 应取自注入 provider 的返回值")
+    }
+
+    /// What the app connects at launch (`AppDelegate.connectParts`, which the launch code
+    /// calls and which does not run under XCTest): a button set to "Scroll faster" reaches
+    /// the scroll engine, and a click a button sends carries the modifiers the buttons
+    /// hold. Deleting the first connection made every scroll hold on a button do nothing,
+    /// with all tests passing.
+    func testTheLaunchConnectionsLetAButtonActionReachTheScrollEngine() throws {
+        let executor = ShortcutExecutor.shared
+        let savedProvider = executor.modifierFlagsProvider
+        let savedDash = ScrollCore.shared.dashScroll
+        defer {
+            executor.modifierFlagsProvider = savedProvider
+            ScrollCore.shared.dashScroll = savedDash
+        }
+        executor.scrollActionPort = nil
+        executor.modifierFlagsProvider = nil
+        ScrollCore.shared.dashScroll = false
+
+        AppDelegate.connectParts()
+
+        XCTAssertTrue(executor.scrollActionPort === ScrollCore.shared)
+        XCTAssertTrue(executor.modifierFlagsProvider === InputProcessor.shared)
+        let action = try XCTUnwrap(executor.resolveAction(named: "scrollDash"))
+        _ = executor.execute(action: action, phase: .down)
+        XCTAssertTrue(ScrollCore.shared.dashScroll, "the hold reaches the scroll engine")
+        _ = executor.execute(action: action, phase: .up)
+        XCTAssertFalse(ScrollCore.shared.dashScroll)
     }
 }

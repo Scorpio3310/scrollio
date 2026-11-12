@@ -30,11 +30,27 @@ class ButtonCore {
     var isActive = false
 
     // 拦截层
-    var dispatchInterceptor: Interceptor?
+    /// The buttons tap: an `Interceptor` in the app, a double in the tests.
+    var dispatchInterceptor: KeyEventTap?
+    /// Makes the buttons tap when the core is enabled. The seam: tests pass a double, so
+    /// the start, the stop and the restart after a timeout can be tested without a real
+    /// event tap.
+    var makeButtonsTap: (ButtonCore) throws -> KeyEventTap = { core in
+        let interceptor = try Interceptor(
+            event: core.dispatchEventMask,
+            handleBy: core.buttonEventCallBack,
+            listenOn: core.dispatchEventTapLocation,
+            placeAt: .tailAppendEventTap,
+            for: .defaultTap
+        )
+        interceptor.onRestart = {
+            InputProcessor.shared.clearActiveBindings()
+        }
+        return interceptor
+    }
     // 组合的按钮事件掩码
     let otherDown = CGEventMask(1 << CGEventType.otherMouseDown.rawValue)
     let keyDown = CGEventMask(1 << CGEventType.keyDown.rawValue)
-    let flagsChanged = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
     let otherUp = CGEventMask(1 << CGEventType.otherMouseUp.rawValue)
     let keyUp = CGEventMask(1 << CGEventType.keyUp.rawValue)
     /// The buttons tap.
@@ -53,8 +69,9 @@ class ButtonCore {
     // 未被 Mos 绑定的事件继续向下传递，由系统按原有语义消费。
     let dispatchEventTapLocation = CGEventTapLocation.cgSessionEventTap
 
-    /// The keys tap, made and paused as it is needed.
-    private(set) lazy var keyTap: OnDemandKeyTap = OnDemandKeyTap(
+    /// The keys tap, made and paused as it is needed. (Settable for the tests, which put
+    /// one in that makes doubles.)
+    lazy var keyTap: OnDemandKeyTap = OnDemandKeyTap(
         makeTap: { [unowned self] in
             let interceptor = try Interceptor(
                 event: self.keyEventMask,
@@ -114,7 +131,7 @@ class ButtonCore {
             InputProcessor.shared.clearActiveBindings()
             if type == .tapDisabledByTimeout {
                 // On again now: until the keeper's next look every button went by unhandled.
-                ButtonCore.shared.dispatchInterceptor?.restartUnlessThrottled()
+                ButtonCore.shared.dispatchInterceptor?.restartAfterTimeout()
             }
             return Unmanaged.passUnretained(event)
         }
@@ -145,16 +162,7 @@ class ButtonCore {
     func enable() {
         if !isActive {
             do {
-                dispatchInterceptor = try Interceptor(
-                    event: dispatchEventMask,
-                    handleBy: buttonEventCallBack,
-                    listenOn: dispatchEventTapLocation,
-                    placeAt: .tailAppendEventTap,
-                    for: .defaultTap
-                )
-                dispatchInterceptor?.onRestart = {
-                    InputProcessor.shared.clearActiveBindings()
-                }
+                dispatchInterceptor = try makeButtonsTap(self)
                 isActive = true
                 // The keyboard follows the bindings from here on.
                 ButtonUtils.shared.onInvalidate = { [weak self] in

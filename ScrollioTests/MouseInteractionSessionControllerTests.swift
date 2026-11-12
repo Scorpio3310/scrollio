@@ -737,3 +737,172 @@ final class OnDemandKeyTapTests: XCTestCase {
         XCTAssertFalse(ButtonCore.shared.keyTap.hasTap)
     }
 }
+
+/// ButtonCore's own part around its two event taps, on doubles: the start and the stop, and
+/// what its callbacks do when macOS turns a tap off. (What the keys tap does with its need
+/// is OnDemandKeyTapTests'; what a button or key event does is InputProcessorTests'.)
+/// Each of these was found unprotected by breaking the code: no restart after a timeout,
+/// and a stop that released nothing, both went unnoticed.
+final class ButtonCoreTapTests: XCTestCase {
+
+    private final class FakeTap: KeyEventTap {
+        var starts = 0
+        var pauses = 0
+        var stops = 0
+        var timeoutRestarts = 0
+        private var running = true
+        func start() throws { starts += 1; running = true }
+        func pause() { pauses += 1; running = false }
+        func stop() { stops += 1; running = false }
+        func isRunning() -> Bool { return running }
+        func restartAfterTimeout() { timeoutRestarts += 1 }
+    }
+
+    private struct CannotMakeTap: Error {}
+
+    private let core = ButtonCore.shared
+    private var originalMakeButtonsTap: ((ButtonCore) throws -> KeyEventTap)!
+    private var originalKeyTap: OnDemandKeyTap!
+    private var originalOnInvalidate: (() -> Void)?
+    private var originalBindings: [ButtonBinding] = []
+    private var buttonTaps: [FakeTap] = []
+    private var keyTaps: [FakeTap] = []
+    private var keyboardNeeded = false
+
+    override func setUp() {
+        super.setUp()
+        XCTAssertFalse(core.isActive, "the cores never start under XCTest")
+        originalMakeButtonsTap = core.makeButtonsTap
+        originalKeyTap = core.keyTap
+        originalOnInvalidate = ButtonUtils.shared.onInvalidate
+        originalBindings = Options.shared.buttons.binding
+        buttonTaps = []
+        keyTaps = []
+        keyboardNeeded = false
+        core.makeButtonsTap = { [unowned self] _ in
+            let tap = FakeTap()
+            self.buttonTaps.append(tap)
+            return tap
+        }
+        core.keyTap = OnDemandKeyTap(
+            makeTap: { [unowned self] in
+                let tap = FakeTap()
+                self.keyTaps.append(tap)
+                return tap
+            },
+            isNeeded: { [unowned self] in self.keyboardNeeded },
+            schedule: { $0() },
+            makeRetryTimer: nil
+        )
+        ShortcutExecutor.shared.setTestingMouseEventObserver()
+        ShortcutExecutor.shared.setTestingKeyboardShortcutObserver()
+        InputProcessor.shared.clearActiveBindings()
+    }
+
+    override func tearDown() {
+        core.disable()
+        core.dispatchInterceptor = nil
+        core.makeButtonsTap = originalMakeButtonsTap
+        core.keyTap = originalKeyTap
+        ButtonUtils.shared.onInvalidate = originalOnInvalidate
+        InputProcessor.shared.clearActiveBindings()
+        ShortcutExecutor.shared.clearTestingMouseEventObserver()
+        ShortcutExecutor.shared.clearTestingKeyboardShortcutObserver()
+        Options.shared.buttons.binding = originalBindings
+        ButtonUtils.shared.invalidateCache()
+        super.tearDown()
+    }
+
+    /// A side button that stands for Shift, held.
+    private func holdAModifierButton() {
+        let trigger = RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil)
+        Options.shared.buttons.binding = [ButtonBinding(triggerEvent: trigger, systemShortcutName: "custom::56:0", isEnabled: true)]
+        ButtonUtils.shared.invalidateCache()
+        let down = InputEvent(type: .mouse, code: 3, modifiers: .init(rawValue: 0), phase: .down, source: .hidPP, device: nil)
+        XCTAssertEqual(InputProcessor.shared.process(down), .consumed)
+        XCTAssertEqual(InputProcessor.shared.activeModifierFlags, KeyCode.getKeyMask(56).rawValue)
+    }
+
+    func testEnablingMakesTheButtonsTapAndTheKeysTapOnlyWhenTheKeyboardIsNeeded() {
+        core.enable()
+        XCTAssertTrue(core.isActive)
+        XCTAssertEqual(buttonTaps.count, 1)
+        XCTAssertTrue(core.dispatchInterceptor === buttonTaps[0])
+        XCTAssertTrue(core.keyTap.isEnabled)
+        XCTAssertTrue(keyTaps.isEmpty, "no key is bound: nothing listens to the keyboard")
+
+        core.enable()
+        XCTAssertEqual(buttonTaps.count, 1, "a second enable makes no second tap")
+
+        // A binding changes: the keys tap follows it from the moment the core runs.
+        keyboardNeeded = true
+        ButtonUtils.shared.invalidateCache()
+        XCTAssertEqual(keyTaps.count, 1)
+        XCTAssertTrue(core.keyTap.isRunning)
+    }
+
+    /// A stop releases what the buttons hold and leaves no tap behind: a modifier a side
+    /// button stood for stayed down after Pause or sleep otherwise, and "never leave a tap
+    /// installed while the cores count as stopped" is the rule of AGENTS.md.
+    func testDisablingStopsBothTapsAndReleasesWhatIsHeld() {
+        keyboardNeeded = true
+        core.enable()
+        XCTAssertEqual(keyTaps.count, 1)
+        holdAModifierButton()
+
+        core.disable()
+
+        XCTAssertFalse(core.isActive)
+        XCTAssertNil(core.dispatchInterceptor)
+        XCTAssertEqual(buttonTaps[0].stops, 1, "the buttons tap is stopped")
+        XCTAssertEqual(keyTaps[0].stops, 1, "the keys tap is stopped and let go")
+        XCTAssertFalse(core.keyTap.hasTap)
+        XCTAssertFalse(core.keyTap.isEnabled)
+        XCTAssertEqual(InputProcessor.shared.activeModifierFlags, 0, "the held modifier is released")
+
+        core.disable()
+        XCTAssertEqual(buttonTaps[0].stops, 1, "a second stop does nothing")
+    }
+
+    func testACoreWhoseTapCannotBeMadeDoesNotCountAsRunning() {
+        core.makeButtonsTap = { _ in throw CannotMakeTap() }
+        core.enable()
+        XCTAssertFalse(core.isActive)
+        XCTAssertNil(core.dispatchInterceptor)
+        XCTAssertFalse(core.keyTap.isEnabled, "no keys tap without the buttons tap")
+    }
+
+    /// macOS turns a tap off when a callback took too long. The callback that hears of it
+    /// switches the tap on again at once (through the tap's throttle) and releases what was
+    /// held; "disabled by user input" (the app's own stop) restarts nothing.
+    func testTheButtonsTapIsSwitchedOnAgainRightAfterATimeout() throws {
+        let proxy = CGEventTapProxy(bitPattern: 1)!
+        let event = try XCTUnwrap(CGEvent(source: nil))
+        core.enable()
+        holdAModifierButton()
+
+        XCTAssertNotNil(core.buttonEventCallBack(proxy, .tapDisabledByTimeout, event, nil), "the event itself passes")
+        XCTAssertEqual(buttonTaps[0].timeoutRestarts, 1)
+        XCTAssertEqual(InputProcessor.shared.activeModifierFlags, 0, "what was held is released")
+
+        holdAModifierButton()
+        XCTAssertNotNil(core.buttonEventCallBack(proxy, .tapDisabledByUserInput, event, nil))
+        XCTAssertEqual(buttonTaps[0].timeoutRestarts, 1, "the app's own stop restarts nothing")
+        XCTAssertEqual(InputProcessor.shared.activeModifierFlags, 0)
+    }
+
+    func testTheKeysTapIsSwitchedOnAgainRightAfterATimeout() throws {
+        let proxy = CGEventTapProxy(bitPattern: 1)!
+        let event = try XCTUnwrap(CGEvent(source: nil))
+        keyboardNeeded = true
+        core.enable()
+        XCTAssertEqual(keyTaps.count, 1)
+
+        XCTAssertNotNil(core.keyEventCallBack(proxy, .tapDisabledByTimeout, event, nil))
+        XCTAssertEqual(keyTaps[0].timeoutRestarts, 1)
+        XCTAssertEqual(buttonTaps[0].timeoutRestarts, 0, "each callback restarts its own tap")
+
+        XCTAssertNotNil(core.keyEventCallBack(proxy, .tapDisabledByUserInput, event, nil))
+        XCTAssertEqual(keyTaps[0].timeoutRestarts, 1, "its own pause restarts nothing")
+    }
+}

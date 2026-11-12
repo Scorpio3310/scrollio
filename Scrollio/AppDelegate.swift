@@ -94,6 +94,9 @@ enum AppLocation {
 class AppDelegate: NSObject, NSApplicationDelegate {
     // 防抖定时器: 显示器参数变化通知
     private var screenChangeTimer: Timer?
+    /// The controller that sleep, wake, a change of user and a change of the Accessibility
+    /// access lead to: the app's own. A test passes one with a fake environment.
+    lazy var runController: AppRunController = .shared
 
     // 运行前预处理
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -151,34 +154,47 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
 
+        registerObservers()
+    }
+
+    /// Follows what the Mac tells the app while it runs: another user takes the Mac or gives
+    /// it back, sleep and wake, a change of the displays, a loss or a change of the
+    /// Accessibility access, a change of the macOS keyboard shortcuts. The three centers
+    /// are parameters so that a test can post to its own and see where each one leads:
+    /// under XCTest the launch code that calls this does not run.
+    func registerObservers(
+        workspace: NotificationCenter = NSWorkspace.shared.notificationCenter,
+        app: NotificationCenter = .default,
+        distributed: NotificationCenter = DistributedNotificationCenter.default()
+    ) {
         // 监听用户切换, 在切换用户 session 时停止运行
-        NSWorkspace.shared.notificationCenter.addObserver(
+        workspace.addObserver(
             self,
             selector: #selector(AppDelegate.sessionDidActive),
             name: NSWorkspace.sessionDidBecomeActiveNotification,
             object: nil
         )
-        NSWorkspace.shared.notificationCenter.addObserver(
+        workspace.addObserver(
             self,
             selector: #selector(AppDelegate.sessionDidResign),
             name: NSWorkspace.sessionDidResignActiveNotification,
             object: nil
         )
         // 监听系统休眠/唤醒 (a wake while another user has the Mac starts nothing)
-        NSWorkspace.shared.notificationCenter.addObserver(
+        workspace.addObserver(
             self,
             selector: #selector(AppDelegate.willSleep),
             name: NSWorkspace.willSleepNotification,
             object: nil
         )
-        NSWorkspace.shared.notificationCenter.addObserver(
+        workspace.addObserver(
             self,
             selector: #selector(AppDelegate.didWake),
             name: NSWorkspace.didWakeNotification,
             object: nil
         )
         // 监听显示器参数变化 (热插拔/分辨率/显示器休眠唤醒), 延迟重建 CVDisplayLink
-        NotificationCenter.default.addObserver(
+        app.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
@@ -188,20 +204,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         // 监听辅助功能权限在运行时被撤销
-        NotificationCenter.default.addObserver(
+        app.addObserver(
             self,
             selector: #selector(handleAccessibilityPermissionLost),
             name: .scrollioAccessibilityPermissionLost,
             object: nil
         )
         // The user's System Settings shortcuts (Spaces): read again when they may have changed
-        NotificationCenter.default.addObserver(
+        app.addObserver(
             self,
             selector: #selector(reloadSystemShortcutsIfNeeded),
             name: NSApplication.didBecomeActiveNotification,
             object: nil
         )
-        NSWorkspace.shared.notificationCenter.addObserver(
+        workspace.addObserver(
             self,
             selector: #selector(reloadSystemShortcutsIfNeeded),
             name: NSWorkspace.didDeactivateApplicationNotification,
@@ -210,7 +226,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // The Accessibility list of System Settings changed (any app's entry): look at the
         // access now, not at the keepers' next look up to 5 s later. A tap of a process
         // without access is what makes keys and the wheel hang meanwhile.
-        DistributedNotificationCenter.default().addObserver(
+        distributed.addObserver(
             self,
             selector: #selector(accessibilityListDidChange),
             name: Self.accessibilityListChangedNotification,
@@ -224,8 +240,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     static let accessibilityCheckDelay: TimeInterval = 0.5
 
     @objc func accessibilityListDidChange(notification: NSNotification) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.accessibilityCheckDelay) {
-            AppRunController.shared.accessibilityListDidChange()
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.accessibilityCheckDelay) { [weak self] in
+            self?.runController.accessibilityListDidChange()
         }
     }
     // 运行后启动滚动处理
@@ -241,8 +257,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 上次运行若在手势冻结指针时退出, 先恢复指针与鼠标的关联
         MouseGesturePointerLock.shared.forceRelease()
         LogiCenter.shared.installBridge(LogiIntegrationBridge.shared)
-        ShortcutExecutor.shared.scrollActionPort = ScrollCore.shared
-        ShortcutExecutor.shared.modifierFlagsProvider = InputProcessor.shared
+        Self.connectParts()
         LogiUsageBootstrap.installOptionsObservers()
         LogiUsageBootstrap.refreshAll()
         BatteryWatcher.shared.start()
@@ -251,6 +266,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if WelcomeGuideProgress.live.isPending {
             IntroductionWindowController.showAutomatically()
         }
+    }
+
+    /// Connects the parts that know each other only through a protocol: the actions a
+    /// button runs reach the scroll engine ("Scroll faster" and the other hold functions)
+    /// and read the modifiers the buttons hold. Without the first line those actions do
+    /// nothing; a function of its own so that a test can call it and see that they arrive.
+    static func connectParts() {
+        ShortcutExecutor.shared.scrollActionPort = ScrollCore.shared
+        ShortcutExecutor.shared.modifierFlagsProvider = InputProcessor.shared
     }
 
     /// The window a reopened app shows (Finder, Spotlight, the Dock): the settings, or the
@@ -288,21 +312,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// at its next tick, up to 10 s later; this is that tick, now, so the window can say
     /// that Scrollio is running. Nothing to do when no timer is waiting.
     func accessibilityPermissionWasGranted() {
-        AppRunController.shared.accessibilityPermissionWasGranted()
+        runController.accessibilityPermissionWasGranted()
     }
 
     // 在切换用户或休眠时停止滚动处理, 回来时再启动 (暂停中则保持暂停)
     @objc func sessionDidActive(notification: NSNotification) {
-        AppRunController.shared.sessionDidBecomeActive()
+        runController.sessionDidBecomeActive()
     }
     @objc func sessionDidResign(notification: NSNotification) {
-        AppRunController.shared.sessionDidResign()
+        runController.sessionDidResign()
     }
     @objc func willSleep(notification: NSNotification) {
-        AppRunController.shared.stop(because: .sleep)
+        runController.stop(because: .sleep)
     }
     @objc func didWake(notification: NSNotification) {
-        AppRunController.shared.wake()
+        runController.wake()
     }
     @objc func reloadSystemShortcutsIfNeeded(notification: NSNotification) {
         let deactivated = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
@@ -314,6 +338,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     // 辅助功能权限在运行时被撤销 (可能由多个 Interceptor 同时触发, 此方法必须幂等)
     @objc func handleAccessibilityPermissionLost() {
-        AppRunController.shared.accessWasLost()
+        runController.accessWasLost()
     }
 }
