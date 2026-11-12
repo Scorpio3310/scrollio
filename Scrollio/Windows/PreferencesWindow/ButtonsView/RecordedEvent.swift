@@ -45,18 +45,11 @@ struct ScrollHotkey: Codable, Equatable {
         }
     }
 
-    /// 从旧版 Int 格式迁移 (向后兼容)
-    init?(legacyCode: Int?) {
-        guard let code = legacyCode else { return nil }
-        self.type = .keyboard
-        self.code = UInt16(code)
-    }
-
     // MARK: - 显示名称
     var displayName: String {
         switch type {
         case .keyboard:
-            return KeyCode.keyMap[code] ?? "Key \(code)"
+            return KeyCode.name(of: code) ?? "Key \(code)"
         case .mouse:
             if LogiCenter.shared.isLogiCode(code) {
                 return (LogiCenter.shared.name(forScrollioCode: code) ?? "")

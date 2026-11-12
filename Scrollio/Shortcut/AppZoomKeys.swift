@@ -7,6 +7,9 @@
 //  keys than on the US one (Slovenian and German QWERTZ: "-" where US has "/"): the US key
 //  codes would not zoom out there. Used by the thumb wheel's "zoom".
 //
+//  The layout seam (`KeyboardLayoutSource`) is shared with `KeyboardLayoutKeys`, which finds
+//  the keys of the listed letter shortcuts (⌘A, ⌘Z, …) and names keys the same way.
+//
 
 import Carbon.HIToolbox
 import Cocoa
@@ -19,6 +22,15 @@ protocol KeyboardLayoutSource {
     /// What each key of the layout in use types with no modifier (key code → character).
     /// Asked once per layout.
     func currentCharacters() -> [CGKeyCode: String]
+    /// The same with Command held: what an app compares a ⌘ shortcut with. Some layouts
+    /// change under Command ("Dvorak - QWERTY ⌘", and the Cyrillic, Greek or Arabic ones,
+    /// which type Latin letters then). Asked once per layout.
+    func currentCommandCharacters() -> [CGKeyCode: String]
+}
+
+extension KeyboardLayoutSource {
+    /// A layout that does not change under Command.
+    func currentCommandCharacters() -> [CGKeyCode: String] { return currentCharacters() }
 }
 
 /// The layout macOS types with now (Text Input Sources and UCKeyTranslate). Main thread: the
@@ -35,14 +47,23 @@ struct SystemKeyboardLayoutSource: KeyboardLayoutSource {
         return Self.characters(of: source)
     }
 
+    func currentCommandCharacters() -> [CGKeyCode: String] {
+        guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue() else { return [:] }
+        return Self.characters(of: source, modifierKeyState: Self.commandKeyState)
+    }
+
+    /// UCKeyTranslate's modifier state for "Command held" (the Carbon modifier bits, shifted).
+    static let commandKeyState = UInt32(cmdKey >> 8) & 0xFF
+
     static func id(of source: TISInputSource) -> String? {
         guard let raw = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else { return nil }
         return Unmanaged<CFString>.fromOpaque(raw).takeUnretainedValue() as String
     }
 
-    /// Keys 0–127 of a layout, each translated with no modifier and no dead-key state. Empty
-    /// for an input source without layout data.
-    static func characters(of source: TISInputSource) -> [CGKeyCode: String] {
+    /// Keys 0–127 of a layout, each translated with no modifier (or with `modifierKeyState`,
+    /// see `commandKeyState`) and no dead-key state. Empty for an input source without layout
+    /// data.
+    static func characters(of source: TISInputSource, modifierKeyState: UInt32 = 0) -> [CGKeyCode: String] {
         guard let raw = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return [:] }
         let data = Unmanaged<CFData>.fromOpaque(raw).takeUnretainedValue()
         guard let bytes = CFDataGetBytePtr(data) else { return [:] }
@@ -54,7 +75,7 @@ struct SystemKeyboardLayoutSource: KeyboardLayoutSource {
             var deadKeyState: UInt32 = 0
             var length = 0
             let status = UCKeyTranslate(
-                layout, code, UInt16(kUCKeyActionDown), 0, keyboardType,
+                layout, code, UInt16(kUCKeyActionDown), modifierKeyState, keyboardType,
                 OptionBits(kUCKeyTranslateNoDeadKeysMask), &deadKeyState,
                 characters.count, &length, &characters
             )
@@ -99,14 +120,16 @@ final class AppZoomKeys {
     func codes() -> Codes {
         guard let id = layout.currentLayoutID() else { return Self.usCodes }
         if let cached = cached, cached.layoutID == id { return cached.codes }
-        let codes = Self.codes(typing: layout.currentCharacters())
+        // With Command held, as the apps see the keys: on nine of macOS's layouts (Estonian,
+        // Serbian, Thai, "Dvorak - QWERTY ⌘", …) "+" and "-" are on other keys then.
+        let codes = Self.codes(typing: layout.currentCommandCharacters())
         cached = (id, codes)
         return codes
     }
 
-    /// Zoom in: the key that types "+" with no modifier, else the one that types "="; zoom
-    /// out: the key that types "-". Each falls back to the US key when the layout has none.
-    /// Pure.
+    /// Zoom in: the key that types "+" (with Command held, no Shift), else the one that types
+    /// "="; zoom out: the key that types "-". Each falls back to the US key when the layout
+    /// has none. Pure.
     static func codes(typing characters: [CGKeyCode: String]) -> Codes {
         func key(typing wanted: String) -> CGKeyCode? {
             return characters

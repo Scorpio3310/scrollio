@@ -114,19 +114,233 @@ struct MouseTapReplayContext {
     let modifiers: CGEventFlags
 }
 
+/// One start of a bound script: what runs, with what, where.
+///
+/// The script is started as a program of its own, not as Scrollio's child in the eyes of
+/// macOS's privacy checks: `posix_spawn` with the responsibility disclaimed
+/// (`responsibility_spawnattrs_setdisclaim`, the function debuggers and browsers use to
+/// start other people's programs). A child started the plain way has Scrollio as its
+/// "responsible process": it could post and read input events with the Accessibility access
+/// the user gave Scrollio, so anything able to write a binding into the settings had a way
+/// into that access; and a script that sent Apple events failed without a prompt, because
+/// Scrollio has no entitlement for them. Disclaimed, macOS judges the script by itself (its
+/// interpreter): it has none of Scrollio's permissions and is asked for its own.
+///
+/// The function is not in a public header, so it is looked up at run time; where it is
+/// missing or refuses, the script is started as a plain child, as before, and the log says so.
+struct ScriptLaunch: Equatable {
+    var executable: URL
+    var arguments: [String]
+    var environment: [String: String]
+    var workingDirectory: URL
+
+    /// How the script ended: its exit status (or the signal's number), and whether a signal
+    /// ended it.
+    typealias Ended = (_ status: Int32, _ endedBySignal: Bool) -> Void
+
+    /// A script that was started.
+    struct Started: Equatable {
+        var processIdentifier: pid_t
+        /// macOS judges it by itself; false: started as a plain child of Scrollio.
+        var isDisclaimed: Bool
+    }
+
+    /// Starts it (no shell: the arguments are passed as they are, so quotes and spaces in
+    /// them cannot run anything else). Its output is discarded. `ended` is called on a
+    /// background queue.
+    @discardableResult
+    func start(ended: @escaping Ended) throws -> Started {
+        if let setDisclaim = Self.setDisclaim {
+            if let pid = try startDisclaimed(setDisclaim, ended: ended) {
+                return Started(processIdentifier: pid, isDisclaimed: true)
+            }
+        }
+        Self.noteThatScriptsAreNotDisclaimed()
+        return Started(processIdentifier: try startAsChild(ended: ended), isDisclaimed: false)
+    }
+
+    // MARK: Disclaimed
+
+    typealias SetDisclaim = @convention(c) (UnsafeMutablePointer<posix_spawnattr_t?>, Int32) -> Int32
+
+    /// `responsibility_spawnattrs_setdisclaim` of the system library; nil where it is missing.
+    static let setDisclaim: SetDisclaim? = {
+        // RTLD_DEFAULT
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "responsibility_spawnattrs_setdisclaim") else {
+            return nil
+        }
+        return unsafeBitCast(symbol, to: SetDisclaim.self)
+    }()
+
+    /// - Returns: the process id, or nil when the responsibility could not be disclaimed
+    ///   (the caller then starts a plain child).
+    /// - Throws: when the script itself could not be started.
+    func startDisclaimed(_ setDisclaim: SetDisclaim, ended: @escaping Ended) throws -> pid_t? {
+        var attributes: posix_spawnattr_t?
+        guard posix_spawnattr_init(&attributes) == 0 else { return nil }
+        defer { posix_spawnattr_destroy(&attributes) }
+        guard setDisclaim(&attributes, 1) == 0 else { return nil }
+        // Default signal handling, no signal blocked, and none of the app's open files.
+        var allSignals = sigset_t()
+        sigfillset(&allSignals)
+        posix_spawnattr_setsigdefault(&attributes, &allSignals)
+        var noSignals = sigset_t()
+        sigemptyset(&noSignals)
+        posix_spawnattr_setsigmask(&attributes, &noSignals)
+        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_CLOEXEC_DEFAULT))
+
+        var fileActions: posix_spawn_file_actions_t?
+        guard posix_spawn_file_actions_init(&fileActions) == 0 else { return nil }
+        defer { posix_spawn_file_actions_destroy(&fileActions) }
+        posix_spawn_file_actions_addopen(&fileActions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
+        posix_spawn_file_actions_addopen(&fileActions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0)
+        posix_spawn_file_actions_addopen(&fileActions, STDERR_FILENO, "/dev/null", O_WRONLY, 0)
+        if #available(macOS 26.0, *) {
+            posix_spawn_file_actions_addchdir(&fileActions, workingDirectory.path)
+        } else {
+            posix_spawn_file_actions_addchdir_np(&fileActions, workingDirectory.path)
+        }
+
+        var argv: [UnsafeMutablePointer<CChar>?] = ([executable.path] + arguments).map { strdup($0) }
+        argv.append(nil)
+        var envp: [UnsafeMutablePointer<CChar>?] = environment.map { strdup("\($0.key)=\($0.value)") }
+        envp.append(nil)
+        defer {
+            argv.forEach { free($0) }
+            envp.forEach { free($0) }
+        }
+
+        var pid: pid_t = 0
+        let result = posix_spawn(&pid, executable.path, &fileActions, &attributes, argv, envp)
+        guard result == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(result))
+        }
+        Self.watchExit(of: pid, ended: ended)
+        return pid
+    }
+
+    // MARK: The end of a disclaimed script
+
+    private static let exitQueue = DispatchQueue(label: "com.nikklemenc.Scrollio.scriptExit", qos: .utility)
+    /// One source per running script, until it ended. Only touched on `exitQueue`.
+    private static var exitSources: [pid_t: DispatchSourceProcess] = [:]
+
+    private static func watchExit(of pid: pid_t, ended: @escaping Ended) {
+        exitQueue.async {
+            let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: exitQueue)
+            exitSources[pid] = source
+            source.setEventHandler {
+                // It is ending: the wait returns at once.
+                collectExit(of: pid, waiting: true, ended: ended)
+            }
+            source.resume()
+            // Already over before anyone watched (a script that fails at once).
+            collectExit(of: pid, waiting: false, ended: ended)
+        }
+    }
+
+    /// Collects the script's exit status once (so no dead process is left behind) and
+    /// reports it. On `exitQueue`.
+    private static func collectExit(of pid: pid_t, waiting: Bool, ended: Ended) {
+        guard let source = exitSources[pid] else { return }
+        var status: Int32 = 0
+        var result: pid_t
+        repeat {
+            result = waitpid(pid, &status, waiting ? 0 : WNOHANG)
+        } while result == -1 && errno == EINTR
+        // 0: still running (only when not waiting). -1: nothing to collect any more.
+        guard result != 0 else { return }
+        source.cancel()
+        exitSources[pid] = nil
+        guard result == pid else { return }
+        let outcome = outcome(ofWaitStatus: status)
+        ended(outcome.status, outcome.endedBySignal)
+    }
+
+    /// What `waitpid` says about how a process ended: its exit status, or the number of the
+    /// signal that ended it. Pure.
+    static func outcome(ofWaitStatus status: Int32) -> (status: Int32, endedBySignal: Bool) {
+        let signal = status & 0x7f
+        if signal == 0 {
+            return ((status >> 8) & 0xff, false)
+        }
+        return (signal, true)
+    }
+
+    // MARK: A plain child (the fallback)
+
+    private static var didNoteNotDisclaimed = false
+    private static let noteLock = NSLock()
+
+    /// Once per run.
+    private static func noteThatScriptsAreNotDisclaimed() {
+        noteLock.lock()
+        let first = !didNoteNotDisclaimed
+        didNoteNotDisclaimed = true
+        noteLock.unlock()
+        guard first else { return }
+        AppSystemLog.problem("Scripts: this macOS cannot start a script as a program of its own "
+            + "(responsibility_spawnattrs_setdisclaim is missing or refused); bound scripts run as "
+            + "Scrollio's child, with Scrollio's permissions")
+    }
+
+    /// Starts it as a child process of Scrollio, which macOS then holds responsible for it.
+    func startAsChild(ended: @escaping Ended) throws -> pid_t {
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = arguments
+        process.environment = environment
+        process.currentDirectoryURL = workingDirectory
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { process in
+            ended(process.terminationStatus, process.terminationReason == .uncaughtSignal)
+        }
+        try process.run()
+        return process.processIdentifier
+    }
+}
+
 class ShortcutExecutor {
 
     // 单例
     static let shared = ShortcutExecutor()
-    init() {
-        NSLog("Module initialized: ShortcutExecutor")
-    }
+    init() {}
 
     /// Mos 滚动动作端口 (启动期注入 ScrollCore.shared)。weak: 端口为永生单例, 避免强引用环。
     weak var scrollActionPort: ScrollActionPort?
 
     /// 修饰键 provider (启动期注入 InputProcessor.shared)。weak: provider 为永生单例。
     weak var modifierFlagsProvider: ModifierFlagsProviding?
+
+    /// Runs one of the "Logitech Mouse" actions by its identifier (`logiSmartShiftToggle`,
+    /// `logiHost2`, …): `LogiCenter` in the app. The seam for tests.
+    var logiActionPerformer: (String) -> Void = { LogiCenter.shared.executeAction(named: $0) }
+
+    /// Starts a bound script and calls `ended` (on any queue) when it ended: the seam for
+    /// tests, `ScriptLaunch.start` in the app.
+    var scriptLauncher: (ScriptLaunch, @escaping ScriptLaunch.Ended) throws -> Void = { launch, ended in
+        try launch.start(ended: ended)
+    }
+
+    /// Tells the user that a Spaces action did nothing because its shortcut is switched off
+    /// in System Settings (the action's name is passed). Tests replace it.
+    var switchedOffNotice: (String) -> Void = { name in
+        Toast.show(
+            String(format: NSLocalizedString("toast-system-shortcut-off", comment: "Toast: a Spaces action needs its System Settings shortcut"), name),
+            style: .warning,
+            duration: 8.0
+        )
+    }
+
+    /// Posts one event into the Mac's event stream: every key, modifier and click the
+    /// executor sends goes through here. Under XCTest it does nothing, whatever a test
+    /// forgets to replace: the tests used to post real modifier events (a held Shift or
+    /// Option for the time of a test) whenever the debug app had Accessibility access.
+    var post: (CGEvent) -> Void = AppRuntime.isRunningXCTest
+        ? { _ in }
+        : { $0.post(tap: .cghidEventTap) }
 
     private var testingMouseEventObserver: ((CGEvent) -> Void)?
     private var testingKeyboardShortcutObserver: ((CGKeyCode, UInt64, Bool) -> Void)?
@@ -157,13 +371,13 @@ class ShortcutExecutor {
         // 发送按键按下事件
         if let keyDown = Self.shortcutKeyEvent(code: code, flags: flags, keyDown: true,
                                                preserveFlagsOnKeyUp: preserveFlagsOnKeyUp, source: source) {
-            keyDown.post(tap: .cghidEventTap)
+            post(keyDown)
         }
 
         // 发送按键抬起事件
         if let keyUp = Self.shortcutKeyEvent(code: code, flags: flags, keyDown: false,
                                              preserveFlagsOnKeyUp: preserveFlagsOnKeyUp, source: source) {
-            keyUp.post(tap: .cghidEventTap)
+            post(keyUp)
         }
     }
 
@@ -184,9 +398,16 @@ class ShortcutExecutor {
     }
 
     /// 执行系统快捷键 (从SystemShortcut.Shortcut对象)
+    /// A letter shortcut (⌘A, ⇧⌘Z) is sent with the key that types its letter on the keyboard
+    /// layout in use, not with the US key: apps match a shortcut by the character, and on a
+    /// French keyboard the US key of "Select All" is ⌘Q (`KeyboardLayoutKeys`).
     /// - Parameter shortcut: SystemShortcut.Shortcut对象
     func execute(_ shortcut: SystemShortcut.Shortcut) {
-        execute(code: shortcut.code, flags: UInt64(shortcut.modifiers.rawValue), preserveFlagsOnKeyUp: shortcut.preserveFlagsOnKeyUp)
+        execute(
+            code: KeyboardLayoutKeys.shared.keyCode(for: shortcut),
+            flags: UInt64(shortcut.modifiers.rawValue),
+            preserveFlagsOnKeyUp: shortcut.preserveFlagsOnKeyUp
+        )
     }
 
     /// 执行系统快捷键 (从名称解析, 支持动态读取系统配置)
@@ -283,14 +504,28 @@ class ShortcutExecutor {
         if shortcutName == SystemShortcut.mouseGestureNavigation.identifier {
             return nil
         }
+        // An action this version does not know (settings of a newer version, a renamed
+        // action) is no action: it used to count as a shortcut, which took the button (the
+        // press and the release were swallowed) and sent nothing.
+        guard SystemShortcut.getShortcut(named: shortcutName) != nil else { return nil }
         if shortcutName.hasPrefix("logi") {
             return .logiAction(identifier: shortcutName)
         }
-        guard !shortcutName.isEmpty else { return nil }
         return .systemShortcut(identifier: shortcutName)
     }
 
     private func executeResolvedSystemShortcut(named shortcutName: String) {
+        // A retired action ("Shut Down…") sends nothing.
+        guard !SystemShortcut.isRetired(shortcutName) else { return }
+        // "Move left a space" and "Move right a space" work through the user's shortcut for
+        // them. Switched off in System Settings, the standard keys (⌃← / ⌃→) used to be sent
+        // anyway: no Space changed and the app in front got them (the text cursor jumped a
+        // word). Nothing is sent now, and a toast says where to switch the shortcut on.
+        if SystemShortcut.isSwitchedOffInSystemSettings(shortcutName) {
+            let name = SystemShortcut.getShortcut(named: shortcutName)?.localizedName ?? shortcutName
+            switchedOffNotice(name)
+            return
+        }
         // 优先使用系统实际配置 (对于Mission Control相关快捷键)
         if let resolved = SystemShortcut.resolveSystemShortcut(shortcutName) {
             execute(code: resolved.code, flags: resolved.modifiers)
@@ -327,14 +562,14 @@ class ShortcutExecutor {
             }
             // 标记为 Mos 合成事件, 避免被 ScrollCore/ButtonCore/KeyRecorder 误处理
             event.setIntegerValueField(.eventSourceUserData, value: ScrollioEventMarker.syntheticCustom)
-            event.post(tap: .cghidEventTap)
+            post(event)
         } else {
             // 普通键: 使用 keyDown/keyUp
             guard let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: phase == .down) else { return }
             event.flags = CGEventFlags(rawValue: modifiers)
             // 标记为 Mos 合成事件
             event.setIntegerValueField(.eventSourceUserData, value: ScrollioEventMarker.syntheticCustom)
-            event.post(tap: .cghidEventTap)
+            post(event)
         }
     }
 
@@ -579,17 +814,13 @@ class ShortcutExecutor {
     // MARK: - Logi HID++ Actions
 
     /// 执行 Logitech HID++ 动作
+    /// Every "Logitech Mouse" action goes to the one entry point of `LogiCenter`, which runs
+    /// it on the connected mouse. Only three of the ten were known here: a gesture or a
+    /// standard button set to "Switch to Computer 2", "Toggle Hi-Res Scrolling" and the like
+    /// did nothing (a Logitech button bound directly never came this way: its own session
+    /// runs the action).
     private func executeLogiAction(_ name: String) {
-        switch name {
-        case "logiSmartShiftToggle":
-            LogiCenter.shared.executeSmartShiftToggle()
-        case "logiDPICycleUp":
-            LogiCenter.shared.executeDPICycle(direction: .up)
-        case "logiDPICycleDown":
-            LogiCenter.shared.executeDPICycle(direction: .down)
-        default:
-            break
-        }
+        logiActionPerformer(name)
     }
 
     // MARK: - Open Target Actions
@@ -627,7 +858,9 @@ class ShortcutExecutor {
                 String(format: NSLocalizedString("openTargetFileNotFound", comment: ""), fileName),
                 style: .error
             )
-            NSLog("OpenTarget: file not found: \(payload.path)")
+            // The log never names the file: its path holds the user's name, and the app's
+            // log is public. The toast tells the user which one.
+            AppSystemLog.problem("Open App or File: the file to open is gone")
             return
         }
 
@@ -636,21 +869,34 @@ class ShortcutExecutor {
                 String(format: NSLocalizedString("openTargetFileFailed", comment: ""), fileName),
                 style: .error
             )
-            NSLog("OpenTarget: NSWorkspace.open returned false for: \(payload.path)")
+            AppSystemLog.problem("Open App or File: macOS could not open the file")
         }
+    }
+
+    /// The app a stored target opens: the one at the stored path while it is there, and
+    /// only when it is gone (moved, renamed) whatever app macOS knows by the stored bundle
+    /// identifier. The identifier used to come first: a button set to
+    /// /Applications/Xcode-beta.app opened /Applications/Xcode.app, the copy macOS prefers
+    /// for the identifier the two share. Pure: the file system and Launch Services are the
+    /// two closures.
+    static func applicationURL(
+        for payload: OpenTargetPayload,
+        fileExists: (String) -> Bool,
+        urlForBundleIdentifier: (String) -> URL?
+    ) -> URL? {
+        if fileExists(payload.path) {
+            return URL(fileURLWithPath: payload.path)
+        }
+        return payload.bundleID.flatMap(urlForBundleIdentifier)
     }
 
     private func launchApplication(_ payload: OpenTargetPayload) {
         let workspace = NSWorkspace.shared
-        // Bundle ID 优先 (即便 .app 被移动到别的目录也能找到), 其次绝对路径.
-        let resolvedURL: URL? = {
-            if let bundleID = payload.bundleID,
-               let url = workspace.urlForApplication(withBundleIdentifier: bundleID) {
-                return url
-            }
-            let url = URL(fileURLWithPath: payload.path)
-            return FileManager.default.fileExists(atPath: url.path) ? url : nil
-        }()
+        let resolvedURL = Self.applicationURL(
+            for: payload,
+            fileExists: { FileManager.default.fileExists(atPath: $0) },
+            urlForBundleIdentifier: { workspace.urlForApplication(withBundleIdentifier: $0) }
+        )
 
         guard let resolvedURL else {
             let appName = (payload.path as NSString).lastPathComponent
@@ -658,7 +904,7 @@ class ShortcutExecutor {
                 String(format: NSLocalizedString("openTargetAppNotFound", comment: ""), appName),
                 style: .error
             )
-            NSLog("OpenTarget: cannot resolve application path=\(payload.path) bundleID=\(payload.bundleID ?? "-")")
+            AppSystemLog.problem("Open App or File: the app to open is gone (not at its path, and macOS knows no app with its identifier)")
             return
         }
 
@@ -678,7 +924,7 @@ class ShortcutExecutor {
                     String(format: NSLocalizedString("openTargetAppLaunchFailed", comment: ""), appName),
                     style: .error
                 )
-                NSLog("OpenTarget: NSWorkspace.openApplication failed: \(error.localizedDescription)")
+                AppSystemLog.problem("Open App or File: macOS could not open the app (\(Self.logText(of: error)))")
             }
         }
     }
@@ -738,6 +984,50 @@ class ShortcutExecutor {
         return false
     }
 
+    // MARK: - Scripts
+
+    /// A script that ends with an error within this time gets a toast: the press that
+    /// started it is still in mind. One that fails later (a long-running tool that is quit)
+    /// says nothing.
+    static let scriptFailureFeedbackWindow: TimeInterval = 5
+
+    /// The folders of tools installed by the user (Homebrew on Apple silicon and on Intel).
+    static let userToolFolders = ["/opt/homebrew/bin", "/usr/local/bin"]
+
+    /// What a bound script is started with: the app's environment without the keys a
+    /// debugger injects (`filterEnvironment`), and with the folders of the user's tools at
+    /// the end of PATH when they exist. An app started from Finder or at login has the bare
+    /// PATH of the system (/usr/bin:/bin:/usr/sbin:/sbin), so a script beginning with
+    /// `#!/usr/bin/env node`, or one that calls anything from Homebrew, could not run. At
+    /// the end: nothing there can stand in for a system tool. Pure.
+    static func scriptEnvironment(
+        from environment: [String: String],
+        existingFolders: (String) -> Bool
+    ) -> [String: String] {
+        var result = filterEnvironment(environment)
+        var folders = (result["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
+            .split(separator: ":").map(String.init)
+        for folder in userToolFolders where !folders.contains(folder) && existingFolders(folder) {
+            folders.append(folder)
+        }
+        result["PATH"] = folders.joined(separator: ":")
+        return result
+    }
+
+    /// Whether a script that ended gets the "ended with an error" toast: it ended by itself
+    /// with a status other than 0, soon after its start. A script ended by a signal (the
+    /// user quit it) and a late failure get none. Pure.
+    static func showsScriptFailure(status: Int32, endedBySignal: Bool, elapsed: TimeInterval) -> Bool {
+        return !endedBySignal && status != 0 && elapsed <= scriptFailureFeedbackWindow
+    }
+
+    /// An error for the log without the paths its description may carry: where it comes
+    /// from and its number.
+    static func logText(of error: Error) -> String {
+        let error = error as NSError
+        return "\(error.domain) \(error.code)"
+    }
+
     private func runScript(_ payload: OpenTargetPayload) {
         let url = URL(fileURLWithPath: payload.path)
         let scriptName = url.lastPathComponent
@@ -747,7 +1037,7 @@ class ShortcutExecutor {
                 String(format: NSLocalizedString("openTargetScriptNotFound", comment: ""), scriptName),
                 style: .error
             )
-            NSLog("OpenTarget: script not found: \(payload.path)")
+            AppSystemLog.problem("Open App or File: the script to run is gone")
             return
         }
 
@@ -756,22 +1046,38 @@ class ShortcutExecutor {
                 String(format: NSLocalizedString("openTargetScriptNotExecutable", comment: ""), scriptName),
                 style: .warning
             )
-            NSLog("OpenTarget: script not executable: \(payload.path)")
+            AppSystemLog.problem("Open App or File: the script to run is not marked as executable")
             return
         }
 
-        let process = Process()
-        process.executableURL = url
-        process.arguments = ArgumentSplitter.split(payload.arguments)
-        process.environment = Self.sanitizedSubprocessEnvironment()
+        let launch = ScriptLaunch(
+            executable: url,
+            arguments: ArgumentSplitter.split(payload.arguments),
+            environment: Self.scriptEnvironment(
+                from: ProcessInfo.processInfo.environment,
+                existingFolders: { FileManager.default.fileExists(atPath: $0) }
+            ),
+            // The script's own folder, so it finds the files next to it; it was "/".
+            workingDirectory: url.deletingLastPathComponent()
+        )
+        let started = ProcessInfo.processInfo.systemUptime
         do {
-            try process.run()
+            try scriptLauncher(launch) { status, endedBySignal in
+                let elapsed = ProcessInfo.processInfo.systemUptime - started
+                guard Self.showsScriptFailure(status: status, endedBySignal: endedBySignal, elapsed: elapsed) else { return }
+                Toast.show(
+                    String(format: NSLocalizedString("openTargetScriptExitedWithError", comment: ""), scriptName, Int(status)),
+                    style: .warning
+                )
+                AppSystemLog.problem("Open App or File: the script ended with exit code \(status) after "
+                    + String(format: "%.1f s", elapsed))
+            }
         } catch {
             Toast.show(
                 String(format: NSLocalizedString("openTargetScriptFailed", comment: ""), scriptName),
                 style: .error
             )
-            NSLog("OpenTarget: script execution failed: \(error.localizedDescription)")
+            AppSystemLog.problem("Open App or File: the script could not be started (\(Self.logText(of: error)))")
         }
     }
 
@@ -780,6 +1086,6 @@ class ShortcutExecutor {
             testingMouseEventObserver(event)
             return
         }
-        event.post(tap: .cghidEventTap)
+        post(event)
     }
 }

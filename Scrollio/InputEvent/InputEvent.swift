@@ -139,7 +139,8 @@ struct InputEvent {
         }
         switch type {
         case .keyboard:
-            components.append(KeyCode.keyMap[code] ?? "Key(\(code))")
+            // Named by the keyboard layout in use (KeyCode.name).
+            components.append(KeyCode.name(of: code, modifiers: modifiers.rawValue) ?? "Key(\(code))")
         case .mouse:
             if LogiCenter.shared.isLogiCode(code) {
                 components.append((LogiCenter.shared.name(forScrollioCode: code) ?? ""))
@@ -171,7 +172,10 @@ struct InputEvent {
             return true
         case .mouse:
             if LogiCenter.shared.isLogiCode(code) { return true }
-            if KeyCode.mouseMainKeys.contains(code) { return hasModifiers }
+            // The left and right buttons are never a trigger, with or without a modifier:
+            // no event tap of the app sees them (ButtonCore leaves them out on purpose).
+            // "⌥ + left click" could be recorded, got a row and an action, and never ran.
+            if KeyCode.mouseMainKeys.contains(code) { return false }
             return true
         }
     }

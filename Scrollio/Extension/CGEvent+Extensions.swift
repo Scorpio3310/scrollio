@@ -37,18 +37,29 @@ extension CGEvent {
     }
 
     /// 键盘键码 (如果没值就是0)
+    /// CoreGraphics keeps the key code in 16 bits, so the field always fits; truncating
+    /// instead of trapping costs nothing and this runs for every key in the button tap.
     var keyCode: UInt16 {
-        return UInt16(getIntegerValueField(.keyboardEventKeycode))
+        return UInt16(truncatingIfNeeded: getIntegerValueField(.keyboardEventKeycode))
     }
 
-    /// 键盘键码名称
+    /// 键盘键码名称 (on the keyboard layout in use: KeyCode.name)
     var keyCodeName: String {
-        return KeyCode.keyMap[keyCode] ?? "Key(\(keyCode))"
+        return KeyCode.name(of: keyCode, modifiers: flags.rawValue) ?? "Key(\(keyCode))"
     }
 
     /// 鼠标键码 (如果没值就是0, 会和鼠标主键冲突, 因此取值之前需要先判断 isMouseEvent)
+    /// CoreGraphics keeps a mouse event's button number in 8 bits and reads it back signed:
+    /// the numbers 128…255 come back as -128…-1. `UInt16(_:)` trapped on those, in the button
+    /// tap's callback, for any other-button event another program made up with such a
+    /// number. The low 8 bits are the number that was set (200 reads back as -56).
     var mouseCode: UInt16 {
-        return UInt16(getIntegerValueField(.mouseEventButtonNumber))
+        return Self.mouseButtonCode(fromField: getIntegerValueField(.mouseEventButtonNumber))
+    }
+
+    /// The button number of `mouseEventButtonNumber` as read back: its low 8 bits.
+    static func mouseButtonCode(fromField value: Int64) -> UInt16 {
+        return UInt16(UInt8(truncatingIfNeeded: value))
     }
 
     var mouseCodeName: String {
