@@ -8,6 +8,12 @@ it for the people who use the app, and give the version its part before you tag 
 `## Unreleased` collects what the next version brings; it becomes that version's part
 (the heading gets the version) before the tag.
 
+## 1.0.3
+
+- **About Scrollio** now opens the About window every Mac app has: the icon, the version,
+  what Scrollio is, where it lives and the copyright. Before, it opened Settings on
+  General; the same lines are still on top of General.
+
 ## 1.0.2
 
 - **Trackpad-style scrolling is now Experimental** (it was Beta) and says where it works.

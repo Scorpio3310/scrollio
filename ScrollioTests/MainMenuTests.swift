@@ -50,6 +50,7 @@ final class MainMenuTests: XCTestCase {
     private var menus: MainMenuManager.Menus!
     private var openedPreferences: [String?] = []
     private var openedWelcomeGuide = 0
+    private var shownAboutPanels: [[NSApplication.AboutPanelOptionKey: Any]] = []
     private var updateStatus = UpdateStatus()
     private var updateChecks = 0
 
@@ -61,6 +62,8 @@ final class MainMenuTests: XCTestCase {
         manager = MainMenuManager()
         manager.showPreferences = { [unowned self] tab in self.openedPreferences.append(tab) }
         manager.showWelcomeGuide = { [unowned self] in self.openedWelcomeGuide += 1 }
+        shownAboutPanels = []
+        manager.showAboutPanel = { [unowned self] options in self.shownAboutPanels.append(options) }
         updateStatus = UpdateStatus()
         updateChecks = 0
         manager.updateStatus = { [unowned self] in self.updateStatus }
@@ -217,15 +220,32 @@ final class MainMenuTests: XCTestCase {
         }
     }
 
-    /// The name and version are on top of General (there is no About pane any more).
-    func testAboutOpensThePreferencesOnGeneral() throws {
+    /// "About Scrollio" shows the About panel every Mac app shows, not Settings: the
+    /// bundle gives the icon, the name, the version and the copyright; Scrollio adds what
+    /// it is in one line and where it lives.
+    func testAboutShowsTheStandardAboutPanel() throws {
         let about = try item("About Scrollio", in: try submenu(MainMenuManager.Identifier.applicationMenu))
         XCTAssertEqual(about.identifier, MainMenuManager.Identifier.about)
         XCTAssertTrue(about.target === manager)
         XCTAssertTrue(choose(about))
-        XCTAssertEqual(openedPreferences, [PANEL_IDENTIFIER.general])
-        XCTAssertEqual(PANEL_IDENTIFIER.general, "general")
+        XCTAssertEqual(openedPreferences, [], "no Settings window")
         XCTAssertEqual(openedWelcomeGuide, 0)
+        XCTAssertEqual(shownAboutPanels.count, 1)
+
+        let options = try XCTUnwrap(shownAboutPanels.first)
+        XCTAssertEqual(Array(options.keys), [.credits], "version, name, icon and copyright are the bundle's own")
+        let credits = try XCTUnwrap(options[.credits] as? NSAttributedString)
+        XCTAssertEqual(credits.string, "Smooth, trackpad-like scrolling for any mouse.\ngithub.com/Scorpio3310/scrollio")
+        let linkStart = (credits.string as NSString).range(of: "github.com").location
+        XCTAssertEqual(
+            credits.attribute(.link, at: linkStart, effectiveRange: nil) as? URL,
+            URL(string: "https://github.com/Scorpio3310/scrollio")
+        )
+        XCTAssertNil(credits.attribute(.link, at: 0, effectiveRange: nil), "the line of words is no link")
+        // The bundle's own lines, which the panel shows without being told.
+        let info = Bundle(for: AppDelegate.self).infoDictionary ?? [:]
+        XCTAssertNotNil(info["CFBundleShortVersionString"] as? String)
+        XCTAssertTrue((info["NSHumanReadableCopyright"] as? String ?? "").contains("Caldis (Mos)"))
     }
 
     func testSettingsOpensThePreferencesAsTheyAre() throws {
@@ -389,7 +409,7 @@ final class MainMenuTests: XCTestCase {
     }
 }
 
-/// "About Scrollio" needs a way to open the Preferences on a given pane (General).
+/// The Preferences can be opened on a given pane (the Dock icon and the update rows use it).
 final class PreferencesPaneSelectionTests: XCTestCase {
 
     private func makePreferences() throws -> PreferencesSplitViewController {

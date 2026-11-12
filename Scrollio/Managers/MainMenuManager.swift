@@ -41,6 +41,8 @@ final class MainMenuManager: NSObject {
 
     /// Opens the Preferences window, on the pane with this identifier when one is given.
     var showPreferences: (_ paneIdentifier: String?) -> Void = MainMenuManager.showPreferencesWindow
+    /// Shows the standard About panel with these options.
+    var showAboutPanel: (_ options: [NSApplication.AboutPanelOptionKey: Any]) -> Void = MainMenuManager.orderFrontAboutPanel
     /// Opens the Introduction window, like the Welcome Guide row of General.
     var showWelcomeGuide: () -> Void = IntroductionWindowController.showWelcomeGuide
     /// The updater: whether this copy updates itself and can check now, and the check.
@@ -199,9 +201,44 @@ final class MainMenuManager: NSObject {
 
     // MARK: - Actions
 
-    /// The app's name and version are on top of General.
+    /// The About panel every Mac app shows: icon, name, version, a few lines, the copyright
+    /// (the owner's example: Messages). Until 1.0.2 this opened Settings on General.
     @objc func showAbout(_ sender: Any?) {
-        showPreferences(PANEL_IDENTIFIER.general)
+        showAboutPanel(MainMenuManager.aboutPanelOptions())
+    }
+
+    /// What the standard panel is given beyond what it reads from the bundle itself (the
+    /// icon, the name, "Version 1.0.3 (1730)" and the copyright line of Info.plist): what
+    /// Scrollio is in one line, and where it lives. Pure.
+    static func aboutPanelOptions() -> [NSApplication.AboutPanelOptionKey: Any] {
+        let centred = NSMutableParagraphStyle()
+        centred.alignment = .center
+        centred.paragraphSpacing = 6
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: centred,
+        ]
+        let credits = NSMutableAttributedString(
+            string: NSLocalizedString("about-tagline", comment: "") + "\n",
+            attributes: attributes
+        )
+        var link = attributes
+        link[.link] = PreferencesGeneralViewController.gitHubURL
+        credits.append(NSAttributedString(string: aboutPanelLinkText, attributes: link))
+        return [.credits: credits]
+    }
+
+    /// The repository as the panel shows it: the address without its scheme.
+    static let aboutPanelLinkText: String = {
+        let url = PreferencesGeneralViewController.gitHubURL
+        return (url.host ?? "") + url.path
+    }()
+
+    /// Scrollio is a menu bar app and may not be in front: the panel comes forward with it.
+    static func orderFrontAboutPanel(_ options: [NSApplication.AboutPanelOptionKey: Any]) {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(options: options)
     }
 
     @objc func showSettings(_ sender: Any?) {

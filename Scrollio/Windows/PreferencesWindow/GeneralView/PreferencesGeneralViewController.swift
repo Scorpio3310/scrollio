@@ -4,8 +4,8 @@
 //  "General" preferences pane, built in code on the grouped kit (PreferencesGroupedForm);
 //  the storyboard scene is a shell. On top a card with the app icon, its name, version and
 //  build, and for a build installed by scripts/install.sh its commit and date
-//  (GeneralHeaderView; the About pane that showed them is gone, "About Scrollio" in the app
-//  menu opens this pane). Under it, only while Scrollio is paused, "Scrollio is
+//  (GeneralHeaderView; the About pane that showed them is gone, and "About Scrollio" in the
+//  app menu shows the standard About panel). Under it, only while Scrollio is paused, "Scrollio is
 //  paused" with "Resume" (with the menu bar icon hidden there is no other way back). Then
 //  two boxes:
 //  - "Open at login" (with a row to approve it in System Settings while macOS waits for

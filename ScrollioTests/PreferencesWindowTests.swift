@@ -416,7 +416,7 @@ final class PreferencesSidebarTests: XCTestCase {
         XCTAssertGreaterThan(host.scrollView.contentView.bounds.minY, 0)
         XCTAssertFalse(host.titlebarSeparator.isHidden)
 
-        // "About Scrollio" while General is open, or any other way to the pane on show.
+        // A way to a pane while that pane is open (the Dock icon to General, an update row).
         XCTAssertTrue(preferences.selectPane(withIdentifier: "scrolling"))
 
         XCTAssertEqual(host.scrollView.contentView.bounds.minY, 0)
