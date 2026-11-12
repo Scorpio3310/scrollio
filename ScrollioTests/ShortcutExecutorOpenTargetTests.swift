@@ -531,14 +531,15 @@ final class ShortcutExecutorFixesTests: XCTestCase {
 
     // MARK: Logitech actions
 
-    /// Seven of the ten did nothing when a gesture or a standard button ran them: only
-    /// three names were known here.
+    /// Four of the seven did nothing when a gesture or a standard button ran them: only
+    /// three names were known here. (Ten were offered once; the three toggles that left the
+    /// mouse changed were removed from the list.)
     func testEveryLogitechActionReachesTheMouse() {
         let executor = ShortcutExecutor()
         var performed: [String] = []
         executor.logiActionPerformer = { performed.append($0) }
         let identifiers = SystemShortcut.logiActionsCategory.shortcuts.map(\.identifier)
-        XCTAssertEqual(identifiers.count, 10)
+        XCTAssertEqual(identifiers.count, 7)
         for identifier in identifiers {
             guard let action = executor.resolveAction(named: identifier), case .logiAction = action else {
                 XCTFail("\(identifier) is a Logitech action")
