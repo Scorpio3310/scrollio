@@ -583,13 +583,14 @@ final class PreferencesSidebarTests: XCTestCase {
         let scrolling = try XCTUnwrap(preferences.selectedController as? PreferencesScrollingViewController)
         let host = preferences.host
         // The keys and the thumb wheel always show, so the pane with "Advanced" closed is
-        // taller than the default window. Its budget: at most 1000 pt. A fixed window whose
-        // column (under the title bar) holds the budget fits it, and not the open pane.
-        let budget: CGFloat = 1000
+        // taller than the default window. Its budget: at most 1060 pt (1000 until "Scroll
+        // slower" became the fourth key row, 53 pt). A fixed window whose column (under the
+        // title bar) holds the budget fits it, and not the open pane.
+        let budget: CGFloat = 1060
         let closedHeight = scrolling.view.fittingSize.height
         XCTAssertLessThanOrEqual(closedHeight, budget, "the tab with Advanced closed stays within its budget")
         let width = window.contentRect(forFrameRect: window.frame).width
-        window.setContentSize(NSSize(width: width, height: 1060))
+        window.setContentSize(NSSize(width: width, height: 1120))
         window.contentView?.layoutSubtreeIfNeeded()
         let frame = window.frame
         let visible = host.scrollView.contentSize.height
@@ -621,7 +622,7 @@ final class PreferencesSidebarTests: XCTestCase {
 
         // A taller window shows more of the pane; the pane does not stretch.
         let height = scrolling.view.frame.height
-        window.setContentSize(NSSize(width: width, height: 1200))
+        window.setContentSize(NSSize(width: width, height: 1260))
         window.contentView?.layoutSubtreeIfNeeded()
         XCTAssertEqual(scrolling.view.frame.height, height)
         XCTAssertEqual(host.documentView.frame.height, host.scrollView.contentSize.height)
