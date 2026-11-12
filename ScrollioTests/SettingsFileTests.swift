@@ -127,7 +127,8 @@ final class SettingsFileFormatTests: XCTestCase {
     func testTheTwoListsAreFrozen() {
         XCTAssertEqual(SettingsFile.exportedKeys.map(\.name), [
             "smooth", "reverse", "reverseVertical", "reverseHorizontal", "step", "speed", "duration", "deadZone",
-            "smoothSimTrackpad", "smoothVertical", "smoothHorizontal", "dash", "toggle", "block",
+            "smoothSimTrackpad", "trackpadStyleInBrowsers", "trackpadStyleInMacApps",
+            "smoothVertical", "smoothHorizontal", "dash", "toggle", "block",
             "thumbWheelSettings", "allowlist", "applications", "buttonBindings", "mouseGestureSettings",
             "logiWheelSettings", "logiMouseSettings", "hideStatusItem",
         ])
@@ -249,6 +250,8 @@ final class SettingsFileFormatTests: XCTestCase {
         "duration": 3.69,
         "deadZone": 1.0,
         "smoothSimTrackpad": false,
+        "trackpadStyleInBrowsers": true,
+        "trackpadStyleInMacApps": false,
         "smoothVertical": true,
         "smoothHorizontal": true,
         "dash": {
@@ -350,6 +353,35 @@ final class SettingsFileFormatTests: XCTestCase {
     }
 
     """
+
+    /// Where "Trackpad-style scrolling (Beta)" works is in the file. A file from before the
+    /// two switches (1.0.1) leaves them as a new store has them: browsers on, Mac apps off.
+    func testWhereTrackpadStyleWorks_isInTheFile_andAFileWithoutItGivesTheDefaults() throws {
+        let source = makeSource()
+        source.options.trackpadStyleInBrowsers = false
+        source.options.trackpadStyleInMacApps = true
+        let data = try SettingsFile.export(from: source.options, now: Self.moment).get()
+
+        let target = OwnSettings(for: self)
+        target.options.readOptions()
+        XCTAssertTrue(target.options.trackpadStyleInBrowsers, "a store without the key: on")
+        XCTAssertFalse(target.options.trackpadStyleInMacApps, "a store without the key: off")
+        XCTAssertTrue(SettingsFile.apply(try SettingsFile.read(data).get(), to: target.options))
+        XCTAssertFalse(target.options.trackpadStyleInBrowsers)
+        XCTAssertTrue(target.options.trackpadStyleInMacApps)
+
+        var file = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var settings = try XCTUnwrap(file["settings"] as? [String: Any])
+        XCTAssertEqual(settings["trackpadStyleInBrowsers"] as? Bool, false)
+        XCTAssertEqual(settings["trackpadStyleInMacApps"] as? Bool, true)
+        settings["trackpadStyleInBrowsers"] = nil
+        settings["trackpadStyleInMacApps"] = nil
+        file["settings"] = settings
+        let older = try JSONSerialization.data(withJSONObject: file)
+        XCTAssertTrue(SettingsFile.apply(try SettingsFile.read(older).get(), to: target.options))
+        XCTAssertTrue(target.options.trackpadStyleInBrowsers, "on unless it was turned off")
+        XCTAssertFalse(target.options.trackpadStyleInMacApps, "off unless it was turned on")
+    }
 
     /// A file read back gives the settings it was made from, on another Mac's settings.
     func testAFileGivesBackTheSettingsItWasMadeFrom() throws {
@@ -616,6 +648,7 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertEqual(contents.scrollSwitches, [
             "smooth": true, "reverse": true, "reverseVertical": true, "reverseHorizontal": true,
             "smoothSimTrackpad": false, "smoothVertical": true, "smoothHorizontal": true,
+            "trackpadStyleInBrowsers": true, "trackpadStyleInMacApps": false,
         ])
         XCTAssertEqual(contents.scrollNumbers, ["step": 33.6, "speed": 4.5, "duration": 3.69, "deadZone": 1.0])
         XCTAssertEqual(contents.scrollHotkeys, [

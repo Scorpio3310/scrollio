@@ -22,6 +22,9 @@ struct ScrollEndReading: Equatable {
     /// Which scroll bar a look found: the same number for the same element, another for
     /// another (the reader compares the elements). 0: not said.
     var bar: UInt64 = 0
+    /// A look that asks no roles (a native shell around Chromium): what it found out about
+    /// the element under the pointer.
+    var shell: ScrollEndShellFacts?
 
     static func notSeen(_ failedAt: String, roles: [String] = [], milliseconds: Double = 0) -> ScrollEndReading {
         return ScrollEndReading(value: nil, failedAt: failedAt, roles: roles, milliseconds: milliseconds)
@@ -64,6 +67,86 @@ protocol ScrollEndElements {
     func isEnabled(_ bar: Element) -> Bool?
     /// The bar's value as a number from 0 to 1; nil for anything else.
     func value(of bar: Element) -> Double?
+    /// How many children the element has (0: none); nil: the app did not answer.
+    func childCount(of element: Element) -> Int?
+    /// The element's frame on the screen.
+    func frame(of element: Element) -> CGRect?
+    /// The window the element is in.
+    func window(of element: Element) -> Element?
+    /// The element under another point: a second hit test.
+    func hit(at point: CGPoint) -> Element?
+    func isSame(_ one: Element, _ other: Element) -> Bool
+}
+
+/// What a look that asks no roles found out about the element under the pointer, in
+/// numbers only: enough to tell the view that holds a web page from everything else in an
+/// app that is a native shell around Chromium (Dia, Arc).
+///
+/// The page's view, while Chromium's accessibility is off (the normal case), read in
+/// Chromium's `render_widget_host_view_cocoa.mm`: a hit test anywhere over the page
+/// answers with that one view, and it has no children. So it is the page when the element
+/// has no children, is large, and a second hit test some tens of points away gives the same
+/// element. A row of a list is small or has children, and the next row is another element.
+/// All of these questions are safe to ask the page's view (run against AppKit's own server
+/// entry on macOS 27.2: its children ask it for its children only, its frame and its
+/// window ask it nothing or for its parent; only its role asks for the role).
+///
+/// What a wrong guess costs: "the page" for something native (a list drawn as one large
+/// view without children, at least a third of the window wide) leaves that list with the
+/// flick, which stops short there; "not the page" for a page (Chromium's accessibility is
+/// on, so a hit test answers with the page's own elements; or a page narrower than a third
+/// of its window) scrolls that page plain: the right distance, no bounce.
+struct ScrollEndShellFacts: Equatable {
+    /// The elements passed on the way up, the one under the pointer included.
+    var passed = 0
+    /// The way up ended at the application: the last element passed is a window.
+    var reachedTheWindow = false
+    /// How many children the element under the pointer has; nil: not asked, or no answer.
+    var children: Int?
+    var width: Double?
+    var height: Double?
+    /// The width of the element's window, where it was asked and answered.
+    var windowWidth: Double?
+    /// Whether a second hit test gave the same element; nil: not made, or no answer.
+    var sameAtSecondPoint: Bool?
+    var hitMilliseconds = 0.0
+    var climbMilliseconds = 0.0
+    var factsMilliseconds = 0.0
+    var secondHitMilliseconds = 0.0
+
+    static let leastPageWidth = 300.0
+    static let leastPageHeight = 200.0
+    /// A page is at least this share of its window's width (two pages side by side are; a
+    /// sidebar is not).
+    static let leastShareOfWindow = 1.0 / 3.0
+
+    /// nil: the frame is not known.
+    var isLarge: Bool? {
+        guard let width = width, let height = height else { return nil }
+        guard width >= Self.leastPageWidth, height >= Self.leastPageHeight else { return false }
+        if let window = windowWidth, width < window * Self.leastShareOfWindow { return false }
+        return true
+    }
+
+    /// Whether the element under the pointer is the view that holds a web page. nil: it
+    /// cannot be told (something was not answered).
+    var isThePage: Bool? {
+        if isLarge == false { return false }
+        if let children = children, children > 0 { return false }
+        guard children != nil, isLarge != nil, let same = sameAtSecondPoint else { return nil }
+        return same
+    }
+
+    /// For the scroll log: numbers only.
+    var line: String {
+        func whole(_ value: Double?) -> String { return value.map { String(Int($0.rounded())) } ?? "?" }
+        var parts = ["\(passed) elements up" + (reachedTheWindow ? " to the window" : ", not to the window")]
+        parts.append("children " + (children.map { String($0) } ?? "?"))
+        parts.append("frame \(whole(width)) x \(whole(height))" + (windowWidth == nil ? "" : " in a window \(whole(windowWidth)) wide"))
+        parts.append("second hit " + (sameAtSecondPoint.map { $0 ? "the same element" : "another element" } ?? "not made"))
+        parts.append(String(format: "hit %.1f ms, way up %.1f, facts %.1f, second hit %.1f", hitMilliseconds, climbMilliseconds, factsMilliseconds, secondHitMilliseconds))
+        return parts.joined(separator: ", ")
+    }
 }
 
 enum ScrollEndBar<Element> {
@@ -134,7 +217,7 @@ enum ScrollEndClimb {
                     roles.append(source.role(of: element) ?? notAsked)
                     return read(bar, in: source, roles: roles)
                 case .unanswered(let code):
-                    return (.notSeen("the app did not answer (\(code))", roles: roles), nil)
+                    return (.notSeen("\(appDidNotAnswer) (\(code))", roles: roles), nil)
                 case .none, .unread:
                     roles.append(notAsked)
                 }
@@ -145,6 +228,52 @@ enum ScrollEndClimb {
             element = parent
         }
         return (.notSeen("no scroll area within \(AccessibilityScrollEndWatch.deepestClimb) parents", roles: roles), nil)
+    }
+
+    /// How far from the pointer the second hit test is made, toward the middle of the
+    /// element's frame (so that it stays inside it).
+    static let secondHitDistance: CGFloat = 40
+    static let appDidNotAnswer = "the app did not answer"
+
+    static func secondPoint(from point: CGPoint, in frame: CGRect) -> CGPoint {
+        let toMiddle = CGPoint(x: frame.midX - point.x, y: frame.midY - point.y)
+        let distance = hypot(toMiddle.x, toMiddle.y)
+        guard distance > secondHitDistance else { return CGPoint(x: frame.midX, y: frame.midY) }
+        return CGPoint(x: point.x + toMiddle.x / distance * secondHitDistance, y: point.y + toMiddle.y / distance * secondHitDistance)
+    }
+
+    /// The look for an app that is a native shell around Chromium: the way up without
+    /// roles, and, where no bar was seen, the facts that tell the page's view from the
+    /// rest. No element is asked for its role before it has shown a vertical scroll bar.
+    /// `clock`: milliseconds, for the log.
+    static func carefulLook<Source: ScrollEndElements>(from hit: Source.Element, at point: CGPoint, in source: Source, clock: () -> Double) -> (reading: ScrollEndReading, bar: Source.Element?) {
+        let began = clock()
+        var found = look(from: hit, in: source, readsRoles: false)
+        var facts = ScrollEndShellFacts()
+        facts.passed = found.reading.roles.count
+        facts.reachedTheWindow = found.reading.failedAt == belowTheWindow
+        facts.climbMilliseconds = clock() - began
+        // (Nothing more is asked of an app that has just not answered, and nothing more is
+        // needed where a bar was seen.)
+        if found.bar == nil && !found.reading.failedAt.hasPrefix(appDidNotAnswer) {
+            let asked = clock()
+            facts.children = source.childCount(of: hit)
+            let frame = source.frame(of: hit)
+            facts.width = frame.map { Double($0.width) }
+            facts.height = frame.map { Double($0.height) }
+            if facts.children == 0, facts.isLarge == true {
+                // (The window's width only where it can still decide.)
+                facts.windowWidth = source.window(of: hit).flatMap { source.frame(of: $0) }.map { Double($0.width) }
+            }
+            facts.factsMilliseconds = clock() - asked
+            if let frame = frame, facts.children == 0, facts.isLarge == true {
+                let again = clock()
+                facts.sameAtSecondPoint = source.hit(at: secondPoint(from: point, in: frame)).map { source.isSame($0, hit) }
+                facts.secondHitMilliseconds = clock() - again
+            }
+        }
+        found.reading.shell = facts
+        return found
     }
 
     private static func read<Source: ScrollEndElements>(_ bar: Source.Element, in source: Source, roles: [String]) -> (reading: ScrollEndReading, bar: Source.Element?) {
@@ -283,6 +412,7 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
         guard pid != getpid() else { return .notSeen(Self.ownWindow) }
         let application = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(application, Self.messagingTimeout)
+        let beganLook = DispatchTime.now().uptimeNanoseconds
         var hit: AXUIElement?
         // The one thing the application's own element is ever asked: the hit test.
         let hitError = AXUIElementCopyElementAtPosition(application, Float(point.x), Float(point.y), &hit)
@@ -290,7 +420,17 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
             return .notSeen("no element under the pointer (\(hitError.rawValue))")
         }
         AXUIElementSetMessagingTimeout(element, Self.messagingTimeout)
-        let found = ScrollEndClimb.look(from: element, in: Elements(application: application), readsRoles: readsRoles)
+        let elements = Elements(application: application)
+        var found: (reading: ScrollEndReading, bar: AXUIElement?)
+        if readsRoles {
+            found = ScrollEndClimb.look(from: element, in: elements, readsRoles: true)
+        } else {
+            let afterHit = DispatchTime.now().uptimeNanoseconds
+            found = ScrollEndClimb.carefulLook(from: element, at: point, in: elements) {
+                Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000
+            }
+            found.reading.shell?.hitMilliseconds = Double(afterHit - beganLook) / 1_000_000
+        }
         guard let scrollBar = found.bar else { return found.reading }
         bar = scrollBar
         // Which bar: the same number as long as looks find the same element.
@@ -351,6 +491,42 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
 
         func value(of bar: AXUIElement) -> Double? {
             return AccessibilityScrollEndWatch.value(of: bar)
+        }
+
+        func childCount(of element: AXUIElement) -> Int? {
+            var value: CFTypeRef?
+            let error = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
+            if error == .success { return (value as? [AnyObject])?.count ?? 0 }
+            // (An element without children says "no value"; anything else is no answer.)
+            return error == .noValue || error == .attributeUnsupported ? 0 : nil
+        }
+
+        func frame(of element: AXUIElement) -> CGRect? {
+            guard let position = AccessibilityScrollEndWatch.copy(element, kAXPositionAttribute), CFGetTypeID(position) == AXValueGetTypeID(),
+                  let size = AccessibilityScrollEndWatch.copy(element, kAXSizeAttribute), CFGetTypeID(size) == AXValueGetTypeID() else { return nil }
+            var origin = CGPoint.zero
+            var extent = CGSize.zero
+            // swiftlint:disable:next force_cast
+            guard AXValueGetValue(position as! AXValue, .cgPoint, &origin), AXValueGetValue(size as! AXValue, .cgSize, &extent) else { return nil }
+            return CGRect(origin: origin, size: extent)
+        }
+
+        func window(of element: AXUIElement) -> AXUIElement? {
+            guard let window = AccessibilityScrollEndWatch.copy(element, kAXWindowAttribute), CFGetTypeID(window) == AXUIElementGetTypeID() else { return nil }
+            // swiftlint:disable:next force_cast
+            let element = window as! AXUIElement
+            AXUIElementSetMessagingTimeout(element, AccessibilityScrollEndWatch.messagingTimeout)
+            return element
+        }
+
+        func hit(at point: CGPoint) -> AXUIElement? {
+            var hit: AXUIElement?
+            guard AXUIElementCopyElementAtPosition(application, Float(point.x), Float(point.y), &hit) == .success else { return nil }
+            return hit
+        }
+
+        func isSame(_ one: AXUIElement, _ other: AXUIElement) -> Bool {
+            return CFEqual(one, other)
         }
     }
 
@@ -413,6 +589,8 @@ struct ScrollEndWatchLog: Equatable {
     /// What "not seen" means for the scroll: plain frames for a one touch; for the look a
     /// flick makes in an app with a native shell, that the flick goes on.
     var otherwise = "plain"
+    /// A native shell: what the last look found out about the element under the pointer.
+    var shell: ScrollEndShellFacts?
 
     mutating func add(_ what: String) {
         if did.count < Self.mostDid {
@@ -430,6 +608,7 @@ struct ScrollEndWatchLog: Equatable {
             // (A role is whatever string the app answers: a dozen at most, each cut short.)
             roles = reading.roles.prefix(AccessibilityScrollEndWatch.deepestClimb).map { String($0.prefix(40)) }
             failedAt = reading.failedAt
+            shell = reading.shell ?? shell
         } else if reading.value == nil {
             seen = false
             failedAt = reading.failedAt
@@ -451,6 +630,9 @@ struct ScrollEndWatchLog: Equatable {
         }
         if !roles.isEmpty {
             parts.append("roles " + roles.joined(separator: " > "))
+        }
+        if let shell = shell {
+            parts.append("shell look: " + shell.line)
         }
         if let first = firstValue, let last = lastValue {
             parts.append(String(format: "value %.6f -> %.6f", first, last))

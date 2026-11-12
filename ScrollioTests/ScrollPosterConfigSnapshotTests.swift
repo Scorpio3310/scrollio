@@ -26,6 +26,11 @@ final class ScrollPosterConfigSnapshotTests: XCTestCase {
         ScrollCore.shared.application = nil
         Options.shared.scroll.smoothSimTrackpad = true
         Options.shared.scroll.deadZone = 7.0
+        // (The app's own poster reads where trackpad-style works: without an event the
+        // scroll counts as a Mac app's, and that switch is off unless chosen.)
+        let inMacApps = Options.shared.trackpadStyleInMacApps
+        Options.shared.trackpadStyleInMacApps = true
+        defer { Options.shared.trackpadStyleInMacApps = inMacApps }
 
         ScrollPoster.shared.captureConfigSnapshotForTests()
 

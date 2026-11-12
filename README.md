@@ -116,22 +116,42 @@ Off by default. With it on, a wheel scroll up or down reaches an app in the form
 trackpad's scroll has: a touch, and for some apps a glide after it. Apps then treat the
 wheel like a trackpad and bounce at the ends of a page. Scrollio sends the same motion as
 with it off (to a Chromium-based app, at the Direct feel, a click now and then comes out a
-pixel apart); only the form differs, and apps do not all read it the same way, so it is
-sent in one of three ways:
+pixel apart); only the form differs, and apps do not all read it the same way.
+
+While it is on, two more switches stand under it in Scrolling › Advanced and say where it
+works:
+
+- **In browsers** (on at first): web pages in Safari, in Chrome-like browsers and in
+  Firefox, and apps built like them (VS Code, Slack). The first way below. With it off
+  these apps scroll as with the main switch off, and Scrollio asks them nothing.
+- **In Mac apps** (off at first): lists and documents in every other app, the second
+  way below. For this Scrollio reads the position of the scroll bar under the pointer
+  (see [Permissions](#-permissions)). It is good in Finder; in some apps scrolling gets
+  worse with it (seen in Messages, whose list of conversations says "at the end" when it
+  is not, and in Calendar), which is why you choose it. With it off these apps scroll as
+  with the main switch off, and Scrollio asks them nothing through Accessibility.
+
+Both are settings of the whole of Scrollio. An app with its own settings in the Apps pane
+still has its own main switch, and the two apply where that is on.
+
+The form is sent in one of three ways:
 
 - Chrome, Brave, Arc, Dia and the other browsers and apps built on Chromium (Electron
   apps such as VS Code and Slack, Spotify, a web app installed from such a browser), and
   Firefox and the other apps built on its engine (Thunderbird, Zotero): a short touch and
   then its glide. These apps move the page by every step they are sent, in the touch and
   in the glide, and bounce at a page's end by the glide's speed.
-  Dia and Arc are Chromium inside a program of their own, and a list that program draws
+  Dia and Arc are Chromium inside a program of their own, and what that program draws
   itself (the sidebar of tabs) is not a web page: under this form it stopped in
-  mid-scroll (seen in Dia). In such an app Scrollio looks at what is under the pointer,
-  as it does in "every other app" below but more carefully (see
-  [Permissions](#-permissions)): where it sees a scroll bar of the program's own, the
-  scroll goes on in the form for every other app from the next step of the wheel; over a
-  web page nothing changes. (Built from Chromium's code and from what macOS answers;
-  seen on no screen yet.)
+  mid-scroll (seen in Dia). In such an app Scrollio looks at what is under the pointer
+  (see [Permissions](#-permissions)) and tells the view that holds a web page from
+  everything else, without asking it what it is: that view has no parts of its own, is
+  large, and is the same view some points further on. The page keeps this form.
+  Everything else there scrolls as with the main switch off, the right distance without
+  a bounce (Dia's sidebar shows no scroll bar to read: seen in its log); where it does
+  show one, and "In Mac apps" is on, it scrolls in the form for every other app. (Built
+  from Chromium's code and from what macOS answers; the new rule is seen on no screen
+  yet.)
 - Every other app: one touch that lasts until the scroll has run out, with no glide
   after it. These apps follow a touch to its end, and after a touch that ends at speed
   they add a glide of their own. So that they add nothing, the touch ends a fifth of a
@@ -191,9 +211,14 @@ Its limits:
 
 - A list that macOS draws inside the windows of an app that runs Chromium as its
   application (Chrome's print dialog, a native panel in an Electron app) gets that app's
-  form, and may scroll shorter than the same list in Finder. In Dia and Arc the first
-  step of the wheel over such a list still has that form, and so has every step of a
-  wheel that is turned one step at a time with more than a minute between them. An Open
+  form, and may scroll shorter than the same list in Finder. In Dia and Arc a scroll
+  over such a list, at a place Scrollio has not looked at in the last minute, still has
+  that form for its first frames, until the look has answered (a few milliseconds; while
+  the app is busy, up to a few tenths of a second). And the look can guess wrong: a list
+  drawn as one large view without parts, a third of the window wide or more, is taken for
+  a page and stops short; a page is taken for something else while Chromium's
+  accessibility support is on (VoiceOver, for one), or where three pages stand side by
+  side, and then scrolls without its bounce. An Open
   or Save dialog is drawn by a process of macOS's own: it is
   treated as "every other app", and an app's own settings in the Apps pane do not reach
   it. (From how macOS builds these dialogs; not checked on a screen.)
@@ -569,10 +594,16 @@ not looked at before Scrollio knows whether it is built on Chromium.
 
 Dia and Arc (Chromium inside a program of their own; Scrollio knows such an app by the
 engine in its bundle and the missing application class in its `Info.plist`) are read
-too, once per place the wheel is used at and for the scrolls over their own lists, with
-one more rule: no element is asked what it is before it has shown a vertical scroll bar.
-The view that holds a web page would switch on Chromium's accessibility support at that
-question; it is asked only whether it has such a bar (it has none) and for its parent.
+too, with "In browsers" on: once per place the wheel is used at, and for the scrolls
+over what is not a page. There is one more rule for them: no element is asked what it is
+before it has shown a vertical scroll bar. The view that holds a web page would switch
+on Chromium's accessibility support at that question. It is asked whether it has such a
+bar (it has none), for its parent, how many children it has, where it is and how large,
+and which window it is in; and the app is asked once more which element is 40 points
+away. The scroll log keeps these as numbers.
+
+With "In Mac apps" off, an app that is no browser is asked nothing at all; with "In
+browsers" off, neither is a browser, Dia and Arc included.
 
 "Open at login" registers Scrollio as a login item; macOS may ask you to approve it in
 System Settings under Login Items.

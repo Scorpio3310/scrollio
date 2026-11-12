@@ -145,6 +145,8 @@ enum SettingsFile {
         Key(name: OptionItem.Scroll.Duration, group: .scroll, kind: .number),
         Key(name: OptionItem.Scroll.DeadZone, group: .scroll, kind: .number),
         Key(name: OptionItem.Scroll.SmoothSimTrackpad, group: .scroll, kind: .bool),
+        Key(name: OptionItem.Scroll.TrackpadStyleInBrowsers, group: .scroll, kind: .bool),
+        Key(name: OptionItem.Scroll.TrackpadStyleInMacApps, group: .scroll, kind: .bool),
         Key(name: OptionItem.Scroll.SmoothVertical, group: .scroll, kind: .bool),
         Key(name: OptionItem.Scroll.SmoothHorizontal, group: .scroll, kind: .bool),
         Key(name: OptionItem.Scroll.Dash, group: .scroll, kind: .hotkey),

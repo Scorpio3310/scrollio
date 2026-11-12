@@ -7422,6 +7422,50 @@
           }
         }
       }
+    },
+    "scrolling-trackpad-browsers": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In browsers"
+          }
+        }
+      }
+    },
+    "scrolling-trackpad-browsers-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Web pages in Safari, Chrome-like browsers and Firefox, and apps built like them (VS Code, Slack). Pages bounce at their ends. Firefox is new and less tried."
+          }
+        }
+      }
+    },
+    "scrolling-trackpad-mac-apps": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In Mac apps"
+          }
+        }
+      }
+    },
+    "scrolling-trackpad-mac-apps-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lists and documents in apps such as Finder. To end a scroll at a page's end, Scrollio reads the position of the scroll bar under the pointer. In some apps (Messages, Calendar) scrolling can get worse: turn this off, or turn the Beta off for that app under Apps."
+          }
+        }
+      }
     }
   },
   "version": "1.1"
