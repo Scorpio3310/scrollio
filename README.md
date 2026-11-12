@@ -123,6 +123,14 @@ sent in one of three ways:
   Firefox and the other apps built on its engine (Thunderbird, Zotero): a short touch and
   then its glide. These apps move the page by every step they are sent, in the touch and
   in the glide, and bounce at a page's end by the glide's speed.
+  Dia and Arc are Chromium inside a program of their own, and a list that program draws
+  itself (the sidebar of tabs) is not a web page: under this form it stopped in
+  mid-scroll (seen in Dia). In such an app Scrollio looks at what is under the pointer,
+  as it does in "every other app" below but more carefully (see
+  [Permissions](#-permissions)): where it sees a scroll bar of the program's own, the
+  scroll goes on in the form for every other app from the next step of the wheel; over a
+  web page nothing changes. (Built from Chromium's code and from what macOS answers;
+  seen on no screen yet.)
 - Every other app: one touch that lasts until the scroll has run out, with no glide
   after it. These apps follow a touch to its end, and after a touch that ends at speed
   they add a glide of their own. So that they add nothing, the touch ends a fifth of a
@@ -180,14 +188,22 @@ log.
 
 Its limits:
 
-- A list that macOS draws inside the windows of a Chromium-based app (the sidebar of Dia
-  or Arc, Chrome's print dialog) gets that app's form, and may scroll shorter than the
-  same list in Finder. An Open or Save dialog is drawn by a process of macOS's own: it is
+- A list that macOS draws inside the windows of an app that runs Chromium as its
+  application (Chrome's print dialog, a native panel in an Electron app) gets that app's
+  form, and may scroll shorter than the same list in Finder. In Dia and Arc the first
+  step of the wheel over such a list still has that form, and so has every step of a
+  wheel that is turned one step at a time with more than a minute between them. An Open
+  or Save dialog is drawn by a process of macOS's own: it is
   treated as "every other app", and an app's own settings in the Apps pane do not reach
   it. (From how macOS builds these dialogs; not checked on a screen.)
 - An app outside the Applications folders is treated as "every other app", also when it
   is built on Chromium or on Firefox's engine: Scrollio looks into no bundle elsewhere
-  (see [Privacy](#-privacy)).
+  (see [Privacy](#-privacy)). In a Chromium-based app this has a price: the look at
+  what is under the pointer asks the view that holds a web page what it is, and at that
+  question Chromium switches on its accessibility support for web content, which makes
+  the app slower until it is quit (read in Chromium's code, where it sits behind one of
+  Chromium's own switches; not measured). Move such an app to Applications, or turn
+  "Trackpad-style scrolling (Beta)" off for it in the Apps pane.
 - An app that tells a mouse from a trackpad by these events takes the wheel for a
   trackpad. In some 3D and design apps the wheel may then pan where it used to zoom. The
   ones Scrollio knows by name are left alone (above); Autodesk Fusion and Rhino are
@@ -232,9 +248,11 @@ Its limits:
 - Some views in an app that gets this form still scroll as with the switch off, because
   the first scroll area above the pointer has no vertical scroll bar that can be read:
   the text of a message in Mail (over the message's header the form is there), a sideways
-  shelf inside an up-down page (App Store, Music, TV), a view whose content fits, and
-  apps made with Qt or Flutter. (Derived from where the look stops and from how these
-  views are built; seen on no screen. The scroll log names the step that failed.)
+  shelf inside an up-down page (App Store, Music, TV), and apps made with Qt or Flutter.
+  (Derived from where the look stops and from how these views are built; seen on no
+  screen. The scroll log names the step that failed.) So does a view whose content fits:
+  it has no bar, or a disabled one (what macOS answers for such a view was run against
+  macOS 27.2 without a screen).
 - What the reading costs the app that is read: about ten questions for the look at the
   start of a scroll, and one per display frame while a touch is open. The first look at a
   web view inside such an app (a message in Mail, a help window) switches on that web
@@ -486,10 +504,23 @@ is not one of the apps left alone by name. (An Electron app is no browser and is
 read; a WebKit browser other than those two, Orion for one, is read like any other app.)
 While such a scroll runs, and for each wheel event it takes in at a page's end, Scrollio
 asks that app which kind of element is under the pointer, which kinds its containers are
-up to the first scroll area, and where that area's vertical scroll bar stands. Only a
-bar that counts from 0 to 1 is used: its maximum, where the app tells one, and every
-value are checked. It reads no title, no text and no other value. It never asks macOS
-for the permission by itself for this: where the access is missing, nothing is read.
+up to the first scroll area (never further than the window), and where that area's
+vertical scroll bar stands. Only a bar that counts from 0 to 1 and is not disabled is
+used: its maximum, where the app tells one, whether it is enabled, and every value are
+checked. It reads no title, no text and no other value. It never asks macOS for the
+permission by itself for this: where the access is missing, nothing is read.
+
+The app itself (its application element) is asked one thing only: which element is under
+the pointer. Chrome and Electron apps switch on their accessibility support when the
+application is asked what it is, so Scrollio never asks that, in any app. And an app is
+not looked at before Scrollio knows whether it is built on Chromium.
+
+Dia and Arc (Chromium inside a program of their own; Scrollio knows such an app by the
+engine in its bundle and the missing application class in its `Info.plist`) are read
+too, once per place the wheel is used at and for the scrolls over their own lists, with
+one more rule: no element is asked what it is before it has shown a vertical scroll bar.
+The view that holds a web page would switch on Chromium's accessibility support at that
+question; it is asked only whether it has such a bar (it has none) and for its parent.
 
 "Open at login" registers Scrollio as a login item; macOS may ask you to approve it in
 System Settings under Login Items.
@@ -538,8 +569,10 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](SECURIT
     With "Trackpad-style scrolling (Beta)" on it also looks once into the
     bundle of each app that comes to the front or that you scroll in, to see whether the
     app is built on Chromium or on Firefox's engine (the names in `Contents/Frameworks`,
-    and whether `Contents/MacOS` holds a browser's app loader or Firefox's engine); only
-    apps in the Applications folders and in /System are looked into;
+    and whether `Contents/MacOS` holds a browser's app loader or Firefox's engine), and
+    for an app built on Chromium whether its `Info.plist` names an application class
+    (`NSPrincipalClass`; nothing else of that file is used); only apps in the
+    Applications folders and in /System are looked into;
   - the running apps, with their names and icons, to offer them in the Apps pane;
   - the macOS pointer settings, which it shows, and changes only as described under
     [Logitech MX mice](#logitech-mx-mice).

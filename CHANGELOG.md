@@ -30,6 +30,16 @@ it for the people who use the app, and give the version its part before you tag 
   scroll bar cannot be read, that view scrolls as with the switch off (the README lists
   the views known to be such). Seen on one Mac, in Finder; in the tests this part runs
   against a stand-in, because a test may not read another app.
+- **Trackpad-style scrolling (Beta)** in Dia and Arc: the sidebar of tabs (a list the
+  browser draws itself, not a web page) stopped in mid-scroll. Scrollio now looks at
+  what is under the pointer in these two, and scrolls such a list as it scrolls Finder,
+  from the second step of the wheel on; web pages scroll as before. Built from Chromium's
+  code and from what macOS answers; not seen on a screen yet.
+- **Trackpad-style scrolling (Beta)** is more careful with what it asks an app. It never
+  asks the app itself what it is (Chrome and Electron apps switch on their accessibility
+  support at that question, and get slower), it does not look at an app before it knows
+  whether the app is built on Chromium, and a view whose content fits is no longer taken
+  for a page at its top.
 - **Trackpad-style scrolling (Beta)** now works in Safari on macOS 27: Safari scrolls and
   bounces like Chrome does with it (seen on one Mac: smooth). Before, Safari was left as it
   was, because with the wheel's hardware event on what it is sent it did not scroll
