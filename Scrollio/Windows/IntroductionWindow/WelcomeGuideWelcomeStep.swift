@@ -135,6 +135,9 @@ final class WelcomeGuideWelcomePicture: WelcomeGuideAnimatedView {
         var arrow: CGFloat = 0
         /// From the last part's glow to this one's (0...1).
         var glowTravel: CGFloat = 1
+        /// How far the mouse has turned to its view from the thumb side (0...1), where the
+        /// phase's parts light there; a mouse drawn from above only stays at 0.
+        var turn: CGFloat = 0
     }
 
     var model: MouseArtworkModel = .generic {
@@ -180,6 +183,23 @@ final class WelcomeGuideWelcomePicture: WelcomeGuideAnimatedView {
         }
     }
 
+    /// The view of the drawing a phase's parts light in.
+    func viewpoint(ofPhase phase: Int) -> MouseArtworkViewpoint {
+        return model.viewpoint(lighting: parts(ofPhase: phase).first)
+    }
+
+    /// The still of a mouse drawn in two views shows both, everything lit, each part in
+    /// its view: the view from above this far left of the middle and the one from the
+    /// thumb side this far right (points).
+    static let stillSpread: (above: CGFloat, side: CGFloat) = (92, 78)
+
+    /// Where the gesture's arrow starts from: left of the mouse, by the gesture button
+    /// (the drawing's grid).
+    func arrowAnchor(in viewpoint: MouseArtworkViewpoint) -> NSPoint {
+        guard model.hasSideView else { return NSPoint(x: 0, y: 49) }
+        return viewpoint == .thumbSide ? NSPoint(x: -18, y: 64) : NSPoint(x: 0, y: 66)
+    }
+
     /// The moment `time` seconds into the loop.
     func frame(at time: TimeInterval) -> Frame {
         let length = Self.phaseLength * Double(phaseCount)
@@ -189,6 +209,14 @@ final class WelcomeGuideWelcomePicture: WelcomeGuideAnimatedView {
         let local = loop - Double(phase) * Self.phaseLength
         var result = Frame(phase: phase)
         result.glowTravel = CGFloat(Self.easeOut(local / 0.45))
+        // The mouse turns to the view the phase's parts light in, from the one before's
+        // (the loop's very first phase has none before it).
+        let end = MouseArtworkTurn.progress(showing: viewpoint(ofPhase: phase))
+        let isFirstEver = time.isFinite && time >= 0 && time < Self.phaseLength
+        result.turn = isFirstEver ? end : MouseArtworkTurn.progress(
+            from: MouseArtworkTurn.progress(showing: viewpoint(ofPhase: (phase + phaseCount - 1) % phaseCount)),
+            to: end, elapsed: local
+        )
         switch phase {
         case 0:
             for click in [0.3, 0.45, 0.6] where local >= click {
@@ -244,6 +272,9 @@ final class WelcomeGuideWelcomePicture: WelcomeGuideAnimatedView {
         let current = shownFrame
         var drawing = WelcomeGuideMouseDrawing(model: model, unit: Self.unit, origin: Self.mouseOrigin)
         drawing.origin.x += current.slide
+        drawing.turn = current.turn
+        // The still of a mouse drawn in two views: both, side by side.
+        let showsBothViews = current.phase == nil && model.hasSideView
 
         // The soft accent glow behind the lit part; it travels to the next one.
         let to = glowCentre(ofPhase: current.phase, drawing: drawing)
@@ -268,11 +299,18 @@ final class WelcomeGuideWelcomePicture: WelcomeGuideAnimatedView {
         drawing.pressed = current.pressed
         drawing.wheelTurn = current.wheelTurn
         drawing.pulse = current.pulse
+        if showsBothViews {
+            var side = drawing
+            side.turn = 1
+            side.origin.x += Self.stillSpread.side
+            side.draw()
+            drawing.origin.x -= Self.stillSpread.above
+        }
         drawing.draw()
 
         // The gesture: an arrow the way the mouse moves.
         if current.arrow > 0, model.has(.gesture) {
-            let left = drawing.point(NSPoint(x: 0, y: 49))
+            let left = drawing.point(arrowAnchor(in: drawing.turn >= 0.5 ? .thumbSide : .above))
             let arrow = NSBezierPath()
             let start = NSPoint(x: left.x + 6, y: left.y)
             let end = NSPoint(x: left.x - 16, y: left.y)
@@ -419,7 +457,6 @@ final class WelcomeGuideFeatureGlyph: WelcomeGuideFlippedView {
     override func draw(_ dirtyRect: NSRect) {
         let grid = MouseArtworkShapes.grid
         let unit = bounds.height / grid.height
-        let shapes = MouseArtworkShapes(model: model, schematic: true)
         var ink = MouseArtworkInk.card
         ink.outlineWidth = 1.1
         ink.seamWidth = 0.7
@@ -436,6 +473,9 @@ final class WelcomeGuideFeatureGlyph: WelcomeGuideFlippedView {
         // picture draws it), not the whole outline lit.
         case .gestures: lit = model.has(.gesture) ? .gesture : .body
         }
+        // In the view its part lights in: a mouse drawn in two views lies across for the
+        // parts of its thumb side.
+        let shapes = MouseArtworkShapes(model: model, schematic: true, lighting: lit)
 
         NSGraphicsContext.saveGraphicsState()
         let transform = NSAffineTransform()

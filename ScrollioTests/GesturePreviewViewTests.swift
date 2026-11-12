@@ -461,6 +461,48 @@ final class GesturePreviewViewTests: XCTestCase {
         XCTAssertLessThan(distance(pressed, accent), 0.3)
     }
 
+    /// A mouse whose gesture button is on its thumb side (the MX Master 4) turns to the view
+    /// from there for the hold and back afterwards, as the loop says (`sideTurn`); under
+    /// Reduce Motion the still shows it turned, the button held. The other mice do not turn.
+    func testTheMasterFourTurnsToItsThumbSideForTheHold() {
+        let view = makeView(mouse: .mxMaster4)
+        let card = view.deviceCard
+        let mouse = card.mouse
+        let loop = view.loop
+        let press = loop.legs[0].pressTime, release = loop.legs[0].releaseTime
+        card.show(loop.frame(at: 0))
+        XCTAssertEqual(mouse.turn, 0)
+        XCTAssertEqual(mouse.viewpoint, .above, "at rest: from above")
+        card.show(loop.frame(at: press - MouseArtworkTurn.duration / 2))
+        XCTAssertGreaterThan(mouse.turn, 0)
+        XCTAssertLessThan(mouse.turn, 1, "turning right before the button goes down")
+        card.show(loop.frame(at: press + Loop.buttonTravel))
+        XCTAssertEqual(mouse.turn, 1, "from the thumb side while the button is held")
+        XCTAssertEqual(mouse.viewpoint, .thumbSide)
+        card.show(loop.frame(at: (press + release) / 2))
+        XCTAssertEqual(mouse.turn, 1)
+        // The arrow is placed by the drawing that shows.
+        let outline = mouse.outlineRect.offsetBy(dx: mouse.frame.minX, dy: mouse.frame.minY)
+        if let arrow = card.arrowSegment {
+            XCTAssertFalse(outline.insetBy(dx: 1, dy: 1).contains(arrow.from), "the arrow starts outside the mouse")
+        }
+        XCTAssertTrue(card.bounds.contains(outline), "the mouse on its side stays in the card")
+        card.show(loop.frame(at: release + Loop.buttonTravel + MouseArtworkTurn.duration))
+        XCTAssertEqual(mouse.turn, 0, "back from above once the button is up")
+        XCTAssertEqual(mouse.viewpoint, .above)
+
+        XCTAssertEqual(loop.stillFrame.sideTurn, 1, "Reduce Motion: the still shows the button held")
+        card.show(loop.stillFrame)
+        XCTAssertEqual(mouse.viewpoint, .thumbSide)
+
+        for model in [MouseArtworkModel.mxMaster3, .generic] {
+            let other = makeView(mouse: model)
+            other.deviceCard.show(other.loop.frame(at: (press + release) / 2))
+            XCTAssertEqual(other.deviceCard.mouse.turn, 0, "\(model) has one view")
+            XCTAssertEqual(other.deviceCard.mouse.viewpoint, .above)
+        }
+    }
+
     /// The mouse is the connected one's drawing and follows a mouse coming and going; the
     /// button held is where the model has its gesture button (the plain mouse: Back).
     func testTheMouseFollowsTheConnectedModel() throws {
@@ -470,15 +512,23 @@ final class GesturePreviewViewTests: XCTestCase {
         view.reloadMouse()
         let mouse = view.deviceCard.mouse
         XCTAssertEqual(mouse.model, .mxMaster4)
+        // The MX Master 4's gesture button is on its thumb side: in the drawing from there.
+        XCTAssertEqual(mouse.buttonViewpoint, .thumbSide)
         let four = mouse.buttonRect
-        XCTAssertLessThan(four.maxX, mouse.bodyRect.minX + 6, "on the side of the body")
-        XCTAssertTrue(mouse.outlineRect.contains(four))
+        XCTAssertEqual(mouse.viewpoint, .above, "at rest the mouse is seen from above")
+        mouse.show(buttonDepth: 1, pressPulse: 0, turn: 1)
+        XCTAssertEqual(mouse.viewpoint, .thumbSide)
+        XCTAssertTrue(mouse.outlineRect.contains(four), "on the mouse seen from its thumb side")
+        XCTAssertTrue(mouse.bounds.contains(mouse.outlineRect), "the view holds the drawing from the side")
+        XCTAssertEqual(mouse.outlineRect.midX, mouse.bodyRect.midX, accuracy: 1, "turned in the place of the body")
+        mouse.show(buttonDepth: 0, pressPulse: 0, turn: 0)
 
         connected = .mxMaster3
         NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
         XCTAssertEqual(mouse.model, .mxMaster3)
         XCTAssertNotEqual(mouse.buttonRect, four)
-        XCTAssertLessThan(mouse.buttonRect.minX, four.minX, "in the thumb rest, below the side buttons")
+        XCTAssertEqual(mouse.buttonViewpoint, .above)
+        XCTAssertLessThan(mouse.buttonRect.maxX, mouse.bodyRect.minX + 6, "in the thumb rest, on the side of the body")
 
         connected = .generic
         NotificationCenter.default.post(name: LogiCenter.sessionChanged, object: nil)

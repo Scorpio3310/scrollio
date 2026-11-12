@@ -111,6 +111,41 @@ final class GesturePreviewMotionTests: XCTestCase {
         XCTAssertEqual(cycle.legs.map(\.effect), [.space(.right), .space(.left)])
     }
 
+    // MARK: - The turn to the button's side
+
+    /// A mouse drawn in two views turns to the side its held button is on: the turn ends as
+    /// the button goes down and the turn back begins when it is up, a quarter of a second
+    /// each; the picture is not at rest while it turns.
+    func testTheMouseTurnsToTheButtonsSideForEveryHold() {
+        let turn = MouseArtworkTurn.duration
+        let scenes = [scene(focus: .up), scene(focus: .click), scene(mode: .interactive, focus: .left), scene()]
+        for scene in scenes {
+            let loop = Loop(scene: scene)
+            for (index, leg) in loop.legs.enumerated() {
+                let start = loop.starts[index]
+                let message = "\(String(describing: scene.focus)) leg \(index)"
+                XCTAssertGreaterThanOrEqual(leg.pressTime, turn, "there is time to turn before the press")
+                XCTAssertEqual(loop.frame(at: start).sideTurn, 0, message)
+                XCTAssertEqual(loop.frame(at: start + leg.pressTime - turn).sideTurn, 0, accuracy: 1e-9, message)
+                let turning = loop.frame(at: start + leg.pressTime - turn / 2)
+                XCTAssertEqual(turning.sideTurn, 0.5, accuracy: 1e-9, message)
+                XCTAssertFalse(turning.isAtRest, "not at rest while it turns: \(message)")
+                XCTAssertEqual(turning.buttonDepth, 0, accuracy: 1e-9, "the button is still up: \(message)")
+                XCTAssertEqual(loop.frame(at: start + leg.pressTime).sideTurn, 1, accuracy: 1e-9, "turned when the button goes down: \(message)")
+                for time in stride(from: leg.pressTime, through: leg.releaseTime + Loop.buttonTravel, by: 0.02) {
+                    XCTAssertEqual(loop.frame(at: start + time).sideTurn, 1, accuracy: 1e-9, "turned for the whole hold: \(message)")
+                }
+                let back = loop.frame(at: start + leg.releaseTime + Loop.buttonTravel + turn / 2)
+                XCTAssertEqual(back.sideTurn, 0.5, accuracy: 1e-9, message)
+                XCTAssertFalse(back.isAtRest, message)
+                XCTAssertEqual(loop.frame(at: start + leg.releaseTime + Loop.buttonTravel + turn).sideTurn, 0, accuracy: 1e-9, message)
+                XCTAssertLessThanOrEqual(leg.releaseTime + Loop.buttonTravel + turn, leg.length, "back before the next hold: \(message)")
+                XCTAssertEqual(loop.frame(at: start + leg.length - 0.001).sideTurn, 0, accuracy: 1e-9, message)
+            }
+            XCTAssertEqual(loop.stillFrame.sideTurn, 1, "the still holds the button, turned")
+        }
+    }
+
     // MARK: - Follow the hand
 
     func testFollowProgressIsProportionalToTheMouseMovement() {

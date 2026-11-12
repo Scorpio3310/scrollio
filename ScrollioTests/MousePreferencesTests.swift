@@ -1289,8 +1289,14 @@ final class MousePreferencesViewControllerTests: XCTestCase {
             for candidate in MouseArtworkPart.allCases {
                 XCTAssertEqual(header.artwork.highlights[candidate]?.alphaValue, candidate == part.artworkPart ? 1 : 0)
             }
+            // The MX Master 4's thumb panel lights in its view from the thumb side: the
+            // drawing turns there, and back from above for the other parts and for none.
+            XCTAssertEqual(header.artwork.viewpoint, part == .thumbPanel ? .thumbSide : .above, "\(part)")
+            XCTAssertEqual(header.artwork.turn, part == .thumbPanel ? 1 : 0, "\(part)")
             controller.rowHoverChanged(part, inside: false)
             XCTAssertNil(header.emphasis)
+            XCTAssertEqual(header.artwork.viewpoint, .above)
+            XCTAssertEqual(header.artwork.turn, 0)
         }
 
         let focused: [(NSView, MousePart?)] = [

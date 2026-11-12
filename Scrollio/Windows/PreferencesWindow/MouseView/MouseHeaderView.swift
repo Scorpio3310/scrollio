@@ -3,7 +3,8 @@
 //  Mos
 //  The card at the top of the Mouse tab: on the left the mouse seen from above, on the
 //  right its name, that it is connected and its battery. The part of the mouse the setting
-//  under the pointer (or with the keyboard focus) is about lights up in the accent colour.
+//  under the pointer (or with the keyboard focus) is about lights up in the accent colour;
+//  for a part on the thumb side of a mouse drawn in two views, the drawing turns to it.
 //  The drawing is the connected mouse's (MouseArtworkModel); without a Logitech mouse the
 //  card shows a plain mouse and says that the app works with any mouse. The card has the
 //  look of the Scrolling tab's preview cards (ScrollPreviewPalette).
@@ -169,9 +170,10 @@ final class MouseHeaderView: NSView {
 
 // MARK: - The mouse
 
-/// The connected mouse seen from above in line art (MouseArtwork.swift: one drawing per
-/// model). Each part that can light up has a layer of its own above the drawing, faded in
-/// and out.
+/// The connected mouse in line art (MouseArtwork.swift: one drawing per model), seen from
+/// above. Each part that can light up has a layer of its own above the drawing, faded in
+/// and out. A mouse drawn in two views turns to the view from the thumb side while a part
+/// that lights there is lit, and back from above when another part or none is.
 final class MouseArtworkView: NSView {
 
     /// Which mouse is drawn; the lit part stays lit in the new drawing, if it has it.
@@ -181,19 +183,48 @@ final class MouseArtworkView: NSView {
             for highlight in highlights.values {
                 highlight.model = model
             }
+            show(model.viewpoint(lighting: emphasis), animated: false)
             needsDisplay = true
         }
     }
 
     /// The drawing's grid is drawn this many points per unit: the body 111 points tall.
     static let unit: CGFloat = 111 / MouseArtworkShapes.grid.height
-    /// Room above and below the body for its shadow and the glow of a lit part.
+    /// Room around the drawing for its shadow and the glow of a lit part.
     static let margin: CGFloat = 9
-    static let size = NSSize(width: 100, height: MouseArtworkShapes.grid.height * unit + 2 * margin)
+    /// Wide enough for the view from the side, which lies across (MouseArtworkShapes.canvas);
+    /// a whole, even number of points, so the grid's middle falls where it does in a
+    /// narrower view centred on the same point.
+    static let size = NSSize(
+        width: 2 * (MouseArtworkShapes.canvas.width * unit / 2 + margin).rounded(.up),
+        height: MouseArtworkShapes.grid.height * unit + 2 * margin
+    )
     static let fadeDuration: TimeInterval = 0.18
 
     private(set) var emphasis: MouseArtworkPart?
     private(set) var highlights: [MouseArtworkPart: MouseArtworkHighlight] = [:]
+
+    /// The view that shows, or the one the drawing is turning to.
+    private(set) var viewpoint: MouseArtworkViewpoint = .above
+    /// How far the drawing has turned: 0 from above, 1 from the thumb side (MouseArtworkTurn).
+    private(set) var turn: CGFloat = 0 {
+        didSet {
+            guard turn != oldValue else { return }
+            for highlight in highlights.values {
+                highlight.turn = turn
+            }
+            needsDisplay = true
+        }
+    }
+    /// A turn that is under way: where it began, where it ends, and when it began.
+    private var turning: (from: CGFloat, to: CGFloat, since: TimeInterval)?
+    private var turnTimer: Timer?
+    /// The time a turn runs by.
+    var clock: () -> TimeInterval = { CACurrentMediaTime() }
+
+    var isTurning: Bool {
+        return turning != nil
+    }
 
     init() {
         super.init(frame: NSRect(origin: .zero, size: Self.size))
@@ -212,6 +243,10 @@ final class MouseArtworkView: NSView {
         fatalError("MouseArtworkView is built in code")
     }
 
+    deinit {
+        turnTimer?.invalidate()
+    }
+
     override var isFlipped: Bool { return true }
 
     override var intrinsicContentSize: NSSize { return Self.size }
@@ -220,10 +255,19 @@ final class MouseArtworkView: NSView {
         return nil
     }
 
-    /// Lights `part` up and puts out the others. A part this mouse does not have lights
-    /// nothing.
+    /// A turn does not go on off screen: the drawing is then where it was turning to.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            show(viewpoint, animated: false)
+        }
+    }
+
+    /// Lights `part` up and puts out the others, and turns the drawing to the view `part`
+    /// lights in (from above for none). A part this mouse does not have lights nothing.
     func setEmphasis(_ part: MouseArtworkPart?, animated: Bool) {
         emphasis = part
+        show(model.viewpoint(lighting: part), animated: animated)
         let change = {
             for (candidate, highlight) in self.highlights {
                 let alpha: CGFloat = candidate == part ? 1 : 0
@@ -242,6 +286,40 @@ final class MouseArtworkView: NSView {
         }
     }
 
+    // MARK: Turning
+
+    /// Shows the drawing from `target`: at once, or turning there (MouseArtworkTurn).
+    private func show(_ target: MouseArtworkViewpoint, animated: Bool) {
+        viewpoint = target
+        let end = MouseArtworkTurn.progress(showing: target)
+        guard animated, turn != end else {
+            turning = nil
+            turnTimer?.invalidate()
+            turnTimer = nil
+            turn = end
+            return
+        }
+        guard turning?.to != end else { return }
+        turning = (turn, end, clock())
+        guard turnTimer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            self?.advanceTurn()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        turnTimer = timer
+    }
+
+    /// One step of a turn that is under way, by the clock.
+    func advanceTurn() {
+        guard let turning else { return }
+        turn = MouseArtworkTurn.progress(from: turning.from, to: turning.to, elapsed: clock() - turning.since)
+        if turn == turning.to {
+            self.turning = nil
+            turnTimer?.invalidate()
+            turnTimer = nil
+        }
+    }
+
     // MARK: Geometry (view coordinates)
 
     /// From the drawing's grid to the view: the grid centred across, `margin` from the top.
@@ -257,9 +335,10 @@ final class MouseArtworkView: NSView {
         return placement.transform(gridPoint)
     }
 
-    /// The shape of `part` in the view; nil when `model` does not have it.
+    /// The shape of `part` in the view, in the drawing that lights it; nil when `model`
+    /// does not have it.
     static func shape(of part: MouseArtworkPart, model: MouseArtworkModel) -> NSBezierPath? {
-        guard let path = MouseArtworkShapes(model: model).shape(of: part) else { return nil }
+        guard let path = MouseArtworkShapes(model: model, lighting: part).shape(of: part) else { return nil }
         path.transform(using: placement)
         return path
     }
@@ -267,20 +346,30 @@ final class MouseArtworkView: NSView {
     // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        NSGraphicsContext.saveGraphicsState()
-        (Self.placement as NSAffineTransform).concat()
-        MouseArtworkPainter.draw(MouseArtworkShapes(model: model), ink: .card, unit: Self.unit)
-        NSGraphicsContext.restoreGraphicsState()
+        for face in MouseArtworkTurn.faces(at: turn) where model.viewpoints.contains(face.viewpoint) {
+            MouseArtworkTurn.draw(face, placement: Self.placement) {
+                MouseArtworkPainter.draw(
+                    MouseArtworkShapes(model: model, viewpoint: face.viewpoint), ink: .card, unit: Self.unit
+                )
+            }
+        }
     }
 }
 
-/// One part of the mouse in the accent colour, with a glow. Lies on top of the drawing.
+/// One part of the mouse in the accent colour, with a glow. Lies on top of the drawing, in
+/// the view its part lights in, and turns with it.
 final class MouseArtworkHighlight: NSView {
 
     let part: MouseArtworkPart
     var model: MouseArtworkModel {
         didSet {
             if model != oldValue { needsDisplay = true }
+        }
+    }
+    /// How far the drawing has turned (MouseArtworkView.turn).
+    var turn: CGFloat = 0 {
+        didSet {
+            if turn != oldValue { needsDisplay = true }
         }
     }
 
@@ -301,10 +390,13 @@ final class MouseArtworkHighlight: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSGraphicsContext.saveGraphicsState()
-        (MouseArtworkView.placement as NSAffineTransform).concat()
-        MouseArtworkPainter.drawHighlight(part, shapes: MouseArtworkShapes(model: model), unit: MouseArtworkView.unit)
-        NSGraphicsContext.restoreGraphicsState()
+        let viewpoint = model.viewpoint(lighting: part)
+        guard let face = MouseArtworkTurn.face(of: viewpoint, at: turn) else { return }
+        MouseArtworkTurn.draw(face, placement: MouseArtworkView.placement) {
+            MouseArtworkPainter.drawHighlight(
+                part, shapes: MouseArtworkShapes(model: model, viewpoint: viewpoint), unit: MouseArtworkView.unit
+            )
+        }
     }
 }
 

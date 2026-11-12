@@ -2136,6 +2136,29 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(picture.frame(at: 4.8).phase, 2)
         XCTAssertLessThan(picture.frame(at: 4.8).slide, 0)
         XCTAssertEqual(picture.frame(at: 6.5).phase, 0, "a 6 s loop")
+        // The MX Master 4 is drawn in two views: it turns to its thumb side for the side
+        // buttons, stays there for the gesture button and turns back for the wheel.
+        XCTAssertEqual(picture.viewpoint(ofPhase: 0), .above)
+        XCTAssertEqual(picture.viewpoint(ofPhase: 1), .thumbSide)
+        XCTAssertEqual(picture.viewpoint(ofPhase: 2), .thumbSide)
+        XCTAssertEqual(picture.frame(at: 0).turn, 0, "it begins from above, without a turn")
+        XCTAssertEqual(picture.frame(at: 0.1).turn, 0)
+        XCTAssertEqual(picture.frame(at: 1.9).turn, 0)
+        XCTAssertGreaterThan(picture.frame(at: 2.1).turn, 0)
+        XCTAssertLessThan(picture.frame(at: 2.1).turn, 1, "turning as the side buttons' turn begins")
+        XCTAssertEqual(picture.frame(at: 2 + MouseArtworkTurn.duration).turn, 1)
+        XCTAssertEqual(picture.frame(at: 2.4).turn, 1)
+        XCTAssertEqual(picture.frame(at: 4.05).turn, 1, "no turn between two phases of one view")
+        XCTAssertEqual(picture.frame(at: 4.8).turn, 1)
+        XCTAssertGreaterThan(picture.frame(at: 6.1).turn, 0, "the loop goes round: back from above")
+        XCTAssertLessThan(picture.frame(at: 6.1).turn, 1)
+        XCTAssertEqual(picture.frame(at: 6.5).turn, 0)
+        XCTAssertEqual(picture.stillFrame.turn, 0, "the still shows both views side by side instead")
+        // Where the lit parts are, in the view that lights them.
+        let drawing = WelcomeGuideMouseDrawing(model: .mxMaster4, unit: 1, origin: .zero)
+        XCTAssertNotNil(drawing.centre(of: [.wheel]))
+        XCTAssertNotNil(drawing.centre(of: [.forward, .back]))
+        XCTAssertNotNil(drawing.centre(of: [.gesture]))
         // The features follow the lit part.
         picture.show(time: 2.4)
         XCTAssertEqual(controller.welcomeStep.features.map(\.isHighlighted), [false, true, false])
@@ -2144,6 +2167,14 @@ final class IntroductionWindowTests: XCTestCase {
         picture.model = .generic
         XCTAssertEqual(picture.phaseCount, 2)
         XCTAssertEqual(picture.frame(at: 4.5).phase, 0)
+        // A mouse drawn from above only never turns.
+        for model in [MouseArtworkModel.generic, .mxMaster3] {
+            picture.model = model
+            for time in stride(from: 0.0, through: 13, by: 0.1) {
+                XCTAssertEqual(picture.frame(at: time).turn, 0, "\(model) at \(time)")
+            }
+        }
+        picture.model = .generic
 
         // Reduce Motion: everything lit, nothing boxed.
         picture.showStill()

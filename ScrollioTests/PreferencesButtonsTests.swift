@@ -1142,6 +1142,62 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(header.artwork.highlights[.left]?.alphaValue, 1)
     }
 
+    /// The card of an MX Master 4 turns its drawing to the thumb side for a row whose part
+    /// lights there (a side button, the thumb panel, the thumb wheel) and back from above
+    /// for the others and for none: with a turn, and at once under Reduce Motion.
+    func testTheCardTurnsTheDrawingToTheRowsPart() {
+        let header = ButtonsHeaderView(frame: NSRect(x: 0, y: 0, width: 480, height: ButtonsHeaderView.preferredHeight))
+        let window = NSWindow(contentRect: header.frame, styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = header
+        addTeardownBlock { window.close() }
+        header.mouse = .mxMaster4
+        let base = header.artwork.base
+        var now: TimeInterval = 10
+        base.clock = { now }
+
+        header.prefersReducedMotion = { false }
+        header.content = ButtonsHeaderContent(title: "Back button", subtitle: "Copy", part: .back)
+        XCTAssertEqual(base.viewpoint, .thumbSide)
+        XCTAssertTrue(base.isTurning, "it turns")
+        XCTAssertEqual(base.turn, 0)
+        now += MouseArtworkTurn.duration
+        base.advanceTurn()
+        XCTAssertEqual(base.turn, 1)
+        XCTAssertFalse(base.isTurning)
+        header.content = ButtonsHeaderContent(title: "Thumb wheel", subtitle: "Default", part: nil, lightsThumbWheel: true)
+        XCTAssertEqual(base.viewpoint, .thumbSide, "the thumb wheel lights from the thumb side too")
+        XCTAssertFalse(base.isTurning, "no turn between two parts of one view")
+        header.content = ButtonsHeaderContent(title: "Middle button", subtitle: "Copy", part: .middle)
+        XCTAssertEqual(base.viewpoint, .above, "a part of the top turns it back")
+        XCTAssertTrue(base.isTurning)
+        now += MouseArtworkTurn.duration
+        base.advanceTurn()
+        XCTAssertEqual(base.turn, 0)
+
+        header.prefersReducedMotion = { true }
+        for (content, viewpoint) in [
+            (ButtonsHeaderContent(title: "Gesture button", subtitle: "Copy", part: .gesture), MouseArtworkViewpoint.thumbSide),
+            (ButtonsHeaderContent(title: "Left button", subtitle: "Copy", part: .left), .above),
+            (ButtonsHeaderContent(title: "Thumb panel", subtitle: "Copy", part: .thumbPanel), .thumbSide),
+            (ButtonsHeaderContent(title: "Forward button", subtitle: "Copy", part: .forward), .thumbSide),
+            (ButtonsHeaderContent(title: "MX Master 4", subtitle: "1 button has an action.", part: nil), .above),
+        ] {
+            header.content = content
+            XCTAssertEqual(base.viewpoint, viewpoint, content.title)
+            XCTAssertEqual(base.turn, viewpoint == .thumbSide ? 1 : 0, "at once under Reduce Motion: \(content.title)")
+            XCTAssertFalse(base.isTurning, "no animation under Reduce Motion: \(content.title)")
+        }
+
+        // An MX Master 3S: its side buttons are in its one view.
+        header.prefersReducedMotion = { false }
+        header.mouse = .mxMaster3
+        header.content = ButtonsHeaderContent(title: "Back button", subtitle: "Copy", part: .back)
+        XCTAssertEqual(base.viewpoint, .above)
+        XCTAssertFalse(base.isTurning)
+        XCTAssertEqual(header.artwork.highlights[.back]?.alphaValue ?? 0, 1, accuracy: 1, "lit as before")
+    }
+
     func testLogiCenterTellsTheRoleOfAControl() {
         let center = LogiCenter.shared
         XCTAssertEqual(center.controlRole(forScrollioCode: 1000), .gesture)
@@ -1381,7 +1437,7 @@ final class PreferencesButtonsTests: XCTestCase {
             let unlit = try pixels(of: .mouse(part: nil, number: nil), appearance: appearance)
             for part in ButtonsMousePart.allCases {
                 let bounds = try XCTUnwrap(ButtonsMouseMiniature.shape(of: part, mouse: .mxMaster4, in: frame)).bounds
-                // The thumb rest's middle is under a side button: a point of the rest's own.
+                // The thumb panel is not a box: a point well inside it.
                 let middle = part == .thumbPanel
                     ? NSPoint(x: bounds.minX + bounds.width * 0.3, y: bounds.midY + bounds.height * 0.25)
                     : NSPoint(x: bounds.midX, y: bounds.midY)
@@ -1390,8 +1446,8 @@ final class PreferencesButtonsTests: XCTestCase {
                 if accent.saturationComponent > 0.3 {
                     XCTAssertGreaterThan(distance(unlit(middle), accent), 0.2, "\(part) not lit in \(name.rawValue)")
                 }
-                XCTAssertTrue(ButtonsMouseMiniature.bodyPath(of: .mxMaster4, in: frame).contains(middle),
-                              "\(part) is on the mouse")
+                XCTAssertTrue(ButtonsMouseMiniature.bodyPath(of: .mxMaster4, lighting: part, in: frame).contains(middle),
+                              "\(part) is on the mouse, in the view that lights it")
             }
         }
     }
