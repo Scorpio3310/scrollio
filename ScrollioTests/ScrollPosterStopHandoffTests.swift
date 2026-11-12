@@ -827,9 +827,9 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
 
         XCTAssertEqual(ended, [.settingChanged])
         let after = Array(postedSoFar().dropFirst(touch.count))
-        XCTAssertEqual(after.first?.scroll, 4, "the touch got its \"ended\" first")
-        XCTAssertGreaterThan(after.count, 3)
-        XCTAssertTrue(after.dropFirst().allSatisfy { $0.scroll == 0 && $0.momentum == 0 }, "then frames without phases: \(after)")
+        XCTAssertEqual(after.prefix(3).map(\.scroll), [4, 128, 8], "the touch got its \"ended\" first, and the tap that follows a forced end")
+        XCTAssertGreaterThan(after.count, 5)
+        XCTAssertTrue(after.dropFirst(3).allSatisfy { $0.scroll == 0 && $0.momentum == 0 }, "then frames without phases: \(after)")
         XCTAssertEqual(poster.sessionLogForTests.inputs, 1, "a scroll of its own")
         XCTAssertEqual(poster.motionStateForTests.buffer.y, 211.68, accuracy: 1e-9)
         XCTAssertEqual(display.made.last?.isRunning, true, "the display link runs for it")
@@ -884,7 +884,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         lock.lock()
         let phases = posted
         lock.unlock()
-        XCTAssertEqual(phases.last, 4, "the closing \"ended\" is out when stop() returns: \(phases)")
+        XCTAssertEqual(Array(phases.suffix(3)), [4, 128, 8], "the closing \"ended\" and its tap are out when stop() returns: \(phases)")
         XCTAssertEqual(phases.first, 1)
         XCTAssertEqual(waits, 1)
 
@@ -1029,7 +1029,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             lock.lock()
             let all = posted
             lock.unlock()
-            XCTAssertEqual(all, [1, 4, 1, 4], "two whole touches")
+            XCTAssertEqual(all, [1, 4, 128, 8, 1, 4, 128, 8], "two whole touches, each ended by a click: its tap follows")
         }
     }
 
@@ -1279,6 +1279,8 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         private var nextFrame = 5_000.0 + 1.0 / 60.0
         /// When each posted event was handed over (seconds after the start), event by event.
         private(set) var postedAt: [Double] = []
+        /// The Duration (the feel) of the wheel events.
+        var duration = OPTIONS_SCROLL_DEFAULT().duration
 
         init(over kind: ScrollUtils.TrackpadStyleTarget, oldLongTouch: Bool = false, display: (ScrollPoster) -> Void) {
             let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
@@ -1346,7 +1348,8 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             event.setIntegerValueField(.eventTargetUnixProcessID, value: pid)
             event.location = CGPoint(x: pointerX, y: 300)
             event.timestamp = 1_000_000_000
-            let input = ScrollPosterInput(y: y, x: x, notch: max(abs(y), abs(x)), duration: OPTIONS_SCROLL_DEFAULT().durationTransition)
+            let input = ScrollPosterInput(y: y, x: x, notch: max(abs(y), abs(x)),
+                                          duration: OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: duration))
             let taken = poster.smooth(event: event, input: input)
             context.waitForPostQueueForTests()
             return taken
@@ -1380,7 +1383,9 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             "": ["began"],
             "began": ["changed", "ended"],
             "changed": ["changed", "ended"],
-            "ended": ["momentumBegan", "began"],
+            "ended": ["momentumBegan", "began", "mayBegin"],
+            "mayBegin": ["cancelled"],
+            "cancelled": ["began"],
             "momentumBegan": ["momentumChanged", "momentumEnded"],
             "momentumChanged": ["momentumChanged", "momentumEnded"],
             "momentumEnded": ["began"],
@@ -1392,7 +1397,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             }
             last = frame.name
         }
-        return last == "" || last == "ended" || last == "momentumEnded" ? nil : "ends with \"\(last)\""
+        return last == "" || last == "ended" || last == "momentumEnded" || last == "cancelled" ? nil : "ends with \"\(last)\""
     }
 
     private static let phasedForms: [(name: String, kind: ScrollUtils.TrackpadStyleTarget, oldLongTouch: Bool)] = [
@@ -1536,6 +1541,121 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
 
     private func poster(_ run: RealRun) -> ScrollPoster { return run.poster }
 
+    // MARK: The one touch's end, as posted
+
+    /// A scroll that runs out by itself, through the real path: the posted "ended" carries
+    /// a time 0.2 s or more after the last "changed", it is handed over that long after it,
+    /// nothing follows it, and the scroll's line in the log comes after it.
+    func testTheRealPath_oneTouch_endedComesAFifthOfASecondAfterTheLastFrame() throws {
+        try withSettings(switchOn: true) {
+            let run = realRun(over: .touchOnly)
+            XCTAssertTrue(try run.wheel(at: 0))
+            run.run(until: 0.6)
+            XCTAssertTrue(run.poster.isGliding, "the scroll stays up while the touch rests")
+            XCTAssertEqual(run.frames.last?.name, "changed", "no \"ended\" yet: the last frame went out at 0.433 s")
+            XCTAssertTrue(run.sessions.isEmpty)
+            run.run(until: 3)
+            let at = run.postedAt
+            let frames = run.finish()
+            XCTAssertEqual(phaseRuns(frames), ["began ×1", "changed ×26", "ended ×1"])
+            let ended = try XCTUnwrap(frames.last)
+            let lastChanged = try XCTUnwrap(frames.last { $0.y != 0 })
+            XCTAssertGreaterThanOrEqual(Double(ended.timestamp - lastChanged.timestamp) / 1e9, 0.2005 - 1e-9)
+            XCTAssertLessThan(Double(ended.timestamp - lastChanged.timestamp) / 1e9, 0.2005 + 1.0 / 60.0)
+            XCTAssertGreaterThanOrEqual(try XCTUnwrap(at.last) - at[at.count - 2], 0.2)
+            XCTAssertEqual(run.sessions.map(\.reason), [.glidedOut])
+            XCTAssertFalse(run.poster.isGliding)
+        }
+    }
+
+    /// A wheel event that comes while the touch rests, through the real path, at every
+    /// moment of the rest and after it, at three feels: what moves the page is what moves it
+    /// with the switch off, frame for frame (the scroll under the touch may have ended in
+    /// between: with the switch off the second click then begins a scroll of its own). In
+    /// the rest it is one touch and one scroll; after the "ended" a second touch.
+    func testTheRealPath_oneTouch_aWheelEventInTheRestMovesThePageAsWithTheSwitchOff() throws {
+        func posted(switchOn: Bool, second: Double, duration: Double) throws -> (frames: [PostedFrame], at: [Double], scrolls: Int) {
+            var result: ([PostedFrame], [Double], Int) = ([], [], 0)
+            try withSettings(switchOn: switchOn) {
+                let run = realRun(over: .touchOnly)
+                run.duration = duration
+                XCTAssertTrue(try run.wheel(at: 0))
+                XCTAssertTrue(try run.wheel(at: second))
+                run.run(until: second + 6)
+                let at = run.postedAt
+                let frames = run.finish()
+                result = (frames, at, run.sessions.count)
+            }
+            return result
+        }
+        var inTheRest = 0, after = 0
+        for duration in [2.0, 3.69, 4.35] {
+            for second in stride(from: 0.20, through: 1.3, by: 0.0235) {
+                let label = "Duration \(duration), a second click at \(Int((second * 1000).rounded())) ms"
+                let on = try posted(switchOn: true, second: second, duration: duration)
+                let off = try posted(switchOn: false, second: second, duration: duration)
+                let moving = zip(on.frames, on.at).filter { $0.0.y != 0 }
+                let movingOff = zip(off.frames, off.at).filter { $0.0.y != 0 }
+                XCTAssertEqual(moving.map { $0.0.y }, movingOff.map { $0.0.y }, "\(label): the motion")
+                XCTAssertEqual(moving.map { $0.1 }, movingOff.map { $0.1 }, "\(label): its times")
+                XCTAssertNil(brokenGesture(in: on.frames), label)
+                XCTAssertFalse(on.frames.contains { $0.scroll == 128 || $0.scroll == 8 }, "\(label): no tap, nothing was forced")
+                let touches = on.frames.filter { $0.scroll == 1 }.count
+                if touches == 1 {
+                    inTheRest += 1
+                    XCTAssertEqual(on.scrolls, 1, label)
+                } else {
+                    after += 1
+                    XCTAssertEqual(touches, 2, label)
+                }
+            }
+        }
+        XCTAssertGreaterThan(inTheRest, 30)
+        XCTAssertGreaterThan(after, 30)
+    }
+
+    /// A click in mid-scroll, through the real path: what the app reads on the three
+    /// closing events. "Ended", then scroll phase 128 and 8, none with a momentum phase or a
+    /// distance in any delta field, each with a time of its own, none with the wheel's
+    /// hardware record, all to the app that had the touch, and all out when the stop returns.
+    func testTheRealPath_oneTouch_aClickPostsEndedAndTheTwoFingerTap() throws {
+        try withSettings(switchOn: true) {
+            let run = realRun(over: .touchOnly)
+            XCTAssertTrue(try run.wheel(at: 0))
+            run.run(until: 0.1)
+            let before = run.frames.count
+            run.poster.stop(reason: .leftClick)
+            // (`frames` lets the queue catch up; the wait of the stop itself is held by
+            // `testAStopReturnsAfterItsClosingFrameWentOut`.)
+            let closing = Array(run.frames.dropFirst(before))
+            XCTAssertEqual(closing.map(\.scroll), [4, 128, 8])
+            XCTAssertTrue(closing.allSatisfy { $0.momentum == 0 && $0.y == 0 && $0.x == 0 && $0.lines == 0 && $0.fixedLines == 0 })
+            XCTAssertTrue(closing.allSatisfy { $0.pid == 4242 && $0.isContinuous == 1 && $0.scrollCount == 0 })
+            XCTAssertEqual(closing.map(\.timestamp), closing.map(\.timestamp).sorted())
+            XCTAssertEqual(Set(closing.map(\.timestamp)).count, 3)
+            XCTAssertGreaterThan(closing[0].timestamp, run.frames[before - 1].timestamp)
+            if ScrollHardwareRecord.comesOff {
+                XCTAssertTrue(closing.allSatisfy { $0.hasRecord == false })
+            }
+            run.run(until: 2)
+            let frames = run.finish()
+            XCTAssertEqual(frames.count, before + 3, "nothing after the tap")
+            XCTAssertNil(brokenGesture(in: frames))
+            XCTAssertEqual(run.sessions.map(\.reason), [.leftClick])
+            XCTAssertEqual(try XCTUnwrap(NSEvent(cgEvent: try tapEvent(phase: 128))).phase, .mayBegin, "128 is \"may begin\" to AppKit")
+            XCTAssertEqual(try XCTUnwrap(NSEvent(cgEvent: try tapEvent(phase: 8))).phase, .cancelled, "8 is \"cancelled\"")
+        }
+    }
+
+    /// An event written as a frame of the tap is, to AppKit, the phase it says.
+    private func tapEvent(phase: Double) throws -> CGEvent {
+        let event = try wheelEvent()
+        var frame = ScrollOutgoingFrame(y: 0, x: 0, scrollPhase: phase, momentumPhase: 0)
+        frame.isTrackpadStyle = true
+        frame.write(to: event)
+        return event
+    }
+
     /// Gives an event a hardware record as a wheel's event has one. Skips the test on a
     /// macOS where the record cannot be made or read (the functions are private).
     private func attachHardwareRecord(to event: CGEvent) throws {
@@ -1674,7 +1794,9 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             lock.unlock()
             let ended = try XCTUnwrap(all.firstIndex { $0.scroll == 4 })
             XCTAssertEqual(all[ended].x, 400, "the touch ended at its own place")
-            let after = Array(all.dropFirst(ended + 1))
+            XCTAssertEqual(all.dropFirst(ended + 1).prefix(2).map(\.scroll), [128, 8], "the tap after the forced end")
+            XCTAssertTrue(all.dropFirst(ended + 1).prefix(2).allSatisfy { $0.x == 400 }, "at the touch's own place")
+            let after = Array(all.dropFirst(ended + 3))
             XCTAssertEqual(after.map(\.scroll), [1, 2], "\"began\", then that frame as the new touch's \"changed\"")
             XCTAssertTrue(after.allSatisfy { $0.x == 900 })
             XCTAssertGreaterThan(after.last?.y ?? 0, 0, "its distance went out")
@@ -1752,9 +1874,11 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             XCTAssertEqual(all.filter { $0.scroll == 1 }.map(\.x), [400, 900], "two touches: the first place and the far one")
             XCTAssertEqual(all.filter { $0.scroll == 4 }.map(\.x), [410, 900], "each ended where it was")
             let firstEnded = try XCTUnwrap(all.firstIndex { $0.scroll == 4 })
-            XCTAssertEqual(all.dropFirst(firstEnded + 1).first?.scroll, 1, "the new touch begins right after")
-            XCTAssertTrue(all.prefix(firstEnded).allSatisfy { $0.x == 400 || $0.x == 410 })
-            XCTAssertTrue(all.dropFirst(firstEnded + 1).allSatisfy { $0.x == 900 })
+            XCTAssertEqual(all.dropFirst(firstEnded + 1).prefix(3).map(\.scroll), [128, 8, 1], "the tap of the forced end, and the new touch begins right after")
+            XCTAssertEqual(all.filter { $0.scroll == 128 }.map(\.x), [410, 900], "each tap where its touch was")
+            XCTAssertEqual(all.filter { $0.scroll == 8 }.map(\.x), [410, 900])
+            XCTAssertTrue(all.prefix(firstEnded + 3).allSatisfy { $0.x == 400 || $0.x == 410 })
+            XCTAssertTrue(all.dropFirst(firstEnded + 3).allSatisfy { $0.x == 900 })
         }
     }
 

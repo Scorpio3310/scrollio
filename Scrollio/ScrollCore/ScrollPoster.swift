@@ -62,9 +62,11 @@ struct ScrollOutgoingFrame: Equatable {
     }
 
     /// Whether the frame opens or closes a gesture for the app: "began", "ended", "momentum
-    /// began", "momentum ended". Never a frame without phases.
+    /// began", "momentum ended", and the two frames of the tap after a forced end ("may
+    /// begin", "cancelled": `ScrollPoster.twoFingerTap`). Never a frame without phases.
     var opensOrClosesGesture: Bool {
-        return scrollPhase == 1.0 || scrollPhase == 4.0 || momentumPhase == 1.0 || momentumPhase == 3.0
+        return scrollPhase == 1.0 || scrollPhase == 4.0 || scrollPhase == 128.0 || scrollPhase == 8.0
+            || momentumPhase == 1.0 || momentumPhase == 3.0
     }
 
     /// Pixels in a line, as macOS counts them for a scroll event.
@@ -198,8 +200,24 @@ class ScrollPoster {
     //   The one touch is laid over the scroll as it runs with the switch off: the phase machine
     //   runs exactly as it does then (it only times the scroll; nothing of it is posted), and
     //   what the app gets is "began" with the first wheel event, "changed" on every frame that
-    //   moves the page, "ended" after the last one (`oneTouchIsOpen`). So the motion and the
-    //   end of a one-touch scroll are the switch-off scroll's, frame for frame.
+    //   moves the page, "ended" after the last one (`oneTouchIsOpen`). So the motion of a
+    //   one-touch scroll is the switch-off scroll's, frame for frame.
+    //   How the touch ends:
+    //   - A scroll that runs out by itself: "ended" goes out `oneTouchRest` (0.2 s) after the
+    //     touch's last frame, with a time that far after it. AppKit adds a glide of its own
+    //     after "ended", sized from the speed of the touch's frames by their times, and takes
+    //     that speed for stale (0) when "ended" comes 0.2 s after the last one (read from
+    //     AppKit 27.2: `NSScrollViewScrollVelocityZeroingTimeout`). An "ended" right after
+    //     the last frame finds the last frames' speed (about 155 pt/s for a click at Smooth:
+    //     13 pt more, a soft landing of AppKit's own; much more for a scroll cut short). A
+    //     wheel event during the rest goes on with the open touch. The scroll's own end
+    //     can come before the rest is over: then the motion is put back to nothing, as its
+    //     stop would (`restMotionLocked`), and the scroll stays up until "ended" is out.
+    //   - A forced end (a click, a finger on the trackpad, the wheel going on 30 pt away or
+    //     over another app, Pause, a restart of the tap, the switch): "ended" at once, and
+    //     right after it a "two-finger tap" (`twoFingerTap`): the pair a trackpad sends when
+    //     two fingers touch it and lift without scrolling. It is what stops an app that
+    //     glides on by itself (Mac Mouse Fix and LinearMouse send it for that).
     //   (Before, the touch lasted while the wheel turned, until it had been still for
     //   `manualContinuationThreshold`, and the rest went out as momentum: 70 of a click's
     //   205 px at Smooth, 136 at Float, which such views never followed. That form is still
@@ -253,6 +271,16 @@ class ScrollPoster {
     private var lastInputPlace: ScrollInputPlace?
     /// One touch to the end: the app has got "began" and not yet "ended".
     private var oneTouchIsOpen = false
+    /// One touch: how long after the touch's last frame its "ended" goes out when the scroll
+    /// has run out by itself, as the time between the two frames' timestamps (ns): AppKit's
+    /// 0.2 s, and half a millisecond so that no display rate lands on the limit itself.
+    static let oneTouchRest: UInt64 = 200_500_000
+    /// One touch: the scroll itself is over (the machine asked for its stop) while the
+    /// app's touch still rests. The stop is asked for once "ended" has gone out.
+    private var oneTouchStopIsHeld = false
+    /// What follows a forced "ended": scroll phase 128 ("may begin"), then 8 ("cancelled"),
+    /// both without distance and without a momentum phase.
+    static let twoFingerTap: [(scroll: Double, momentum: Double)] = [(scroll: 128.0, momentum: 0.0), (scroll: 8.0, momentum: 0.0)]
     /// The scroll that runs is sent as one touch: the phase machine runs as with the switch
     /// off and nothing of it is posted. Kept with the scroll, not read from the config: the
     /// form of the next wheel event can be another (the look into a Chromium-based app answers
@@ -586,7 +614,7 @@ extension ScrollPoster {
         let isFar = place.pid != began.pid
             || hypot(place.pointer.x - began.pointer.x, place.pointer.y - began.pointer.y) > trackpadStylePointerSlack
         guard isFar else { return }
-        endOneTouchLocked()
+        endOneTouchLocked(forced: true)
     }
     /// One touch: "began", unless the touch is open. Caller holds stateLock.
     private func beginOneTouchLocked(at place: ScrollInputPlace?) {
@@ -597,10 +625,16 @@ extension ScrollPoster {
         post((y: 0.0, x: 0.0), phaseOverride: phaseValues(for: .TrackingBegin), fallbackToCurrentPhase: false, advancesPhase: false)
     }
     /// One touch: "ended", if the touch is open. Caller holds stateLock.
-    private func endOneTouchLocked() {
+    /// `forced`: the touch does not end by itself after its rest. Then the two-finger tap
+    /// follows the "ended" at once, so that an app that would glide on by itself stops.
+    private func endOneTouchLocked(forced: Bool) {
         guard oneTouchIsOpen else { return }
         oneTouchIsOpen = false
         post((y: 0.0, x: 0.0), phaseOverride: phaseValues(for: .TrackingEnd), fallbackToCurrentPhase: false, advancesPhase: false)
+        guard forced else { return }
+        for phase in Self.twoFingerTap {
+            post((y: 0.0, x: 0.0), phaseOverride: phase, fallbackToCurrentPhase: false, advancesPhase: false)
+        }
     }
     /// A scroll that ran as one touch goes on in a form the phase machine posts itself: the
     /// app's kind was found in mid-scroll (Chromium-based: a flick). The app's touch is ended,
@@ -608,7 +642,7 @@ extension ScrollPoster {
     /// event begins a gesture of the new form. (The other way round does not happen: a kind
     /// only changes from not known to Chromium-based.) Caller holds stateLock.
     private func leaveOneTouchLocked() {
-        endOneTouchLocked()
+        endOneTouchLocked(forced: true)
         scrollIsOneTouch = false
         phases.reset()
         manualInputEnded = true
@@ -632,6 +666,8 @@ extension ScrollPoster {
         sessionLog.trackpadStyleSideways = config.sideways
         lastActivityTime = now
         inputSequence &+= 1
+        // (One touch: a stop that waited for the touch's rest is off; the scroll goes on.)
+        oneTouchStopIsHeld = false
         if scrollIsOneTouch != config.oneTouch {
             if config.oneTouch {
                 scrollIsOneTouch = true
@@ -928,13 +964,31 @@ extension ScrollPoster {
     private func resetUnlocked() {
         // 重置数值
         dispatchContext.clearContext()
+        resetMotionLocked()
+        lastFrameHostTime = 0
+        touchPlace = nil
+        lastInputPlace = nil
+        oneTouchIsOpen = false
+        scrollIsOneTouch = false
+        oneTouchStopIsHeld = false
+        frameStamp = 0
+        frameStampStep = 0
+        lastPhasedStamp = 0
+        lineCarry.reset()
+    }
+
+    /// The motion and the phase machine back to nothing, as a stop leaves them. Without what
+    /// belongs to the app's gesture and to the posting: the event to copy, the open touch
+    /// and its place, the frames' times. `stop` does both; a one touch that still rests
+    /// when its scroll is over does this alone (`processFrameLocked`), so that a wheel event
+    /// in the rest meets what it would meet after the stop. Caller holds stateLock.
+    private func resetMotionLocked() {
         current = ( y: 0.0, x: 0.0 )
         delta = ( y: 0.0, x: 0.0 )
         buffer = ( y: 0.0, x: 0.0 )
         leadLimiterY.reset()
         leadLimiterX.reset()
         pixelCarry.reset()
-        lastFrameHostTime = 0
         // 重置插值器
         filter.reset()
         phases.reset()
@@ -946,16 +1000,8 @@ extension ScrollPoster {
         endedWaitsForGlide = false
         touchWaitsForTurn = false
         glideDelta = ( y: 0.0, x: 0.0 )
-        touchPlace = nil
-        lastInputPlace = nil
-        oneTouchIsOpen = false
-        scrollIsOneTouch = false
         momentumEndScheduledTime = nil
         trackingEndScheduledTime = nil
-        frameStamp = 0
-        frameStampStep = 0
-        lastPhasedStamp = 0
-        lineCarry.reset()
     }
 }
 
@@ -1093,8 +1139,8 @@ extension ScrollPoster {
         if enableSimTrackpad {
             if scrollIsOneTouch {
                 // What the app has is the touch, not the machine's phases: it is ended, if
-                // it is still open.
-                endOneTouchLocked()
+                // it is still open. A touch that is open at a stop did not end by itself.
+                endOneTouchLocked(forced: true)
             } else {
                 // A flick's "ended" that waited for a glide of which no frame came: alone.
                 flushHeldEndedLocked()
@@ -1491,7 +1537,7 @@ private extension ScrollPoster {
     func processFrameLocked(frameInterval: Double, now: CFTimeInterval) -> Phase? {
         var pendingStopPhase: Phase?
         if config.simTrackpadEnabled {
-            advanceFrameStampLocked(frameInterval: frameInterval)
+            advanceFrameStampLocked(frameInterval: frameInterval, now: now)
             isInDisplayFrame = true
         }
         defer { isInDisplayFrame = false }
@@ -1572,8 +1618,10 @@ private extension ScrollPoster {
                 lastActivityTime = now
             }
         }
-        if oneTouchIsOpen && oneTouchHasRunOutLocked(now: now, outputMagnitude: outputMagnitude, residualMagnitude: residualMagnitude, speedDeadZone: speedDeadZone) {
-            endOneTouchLocked()
+        if oneTouchIsOpen && oneTouchHasRunOutLocked(now: now, outputMagnitude: outputMagnitude, residualMagnitude: residualMagnitude, speedDeadZone: speedDeadZone)
+            && oneTouchHasRestedLocked() {
+            // By itself: "ended" alone, its time `oneTouchRest` after the touch's last frame.
+            endOneTouchLocked(forced: false)
         }
 
         if let scheduled = momentumEndScheduledTime, momentumActive {
@@ -1592,6 +1640,20 @@ private extension ScrollPoster {
             }
         } else {
             trackingEndScheduledTime = nil
+        }
+        if scrollIsOneTouch {
+            if pendingStopPhase != nil && oneTouchIsOpen {
+                // The scroll is over, as it would be with the switch off, but the app's touch
+                // still rests. The motion is put back to nothing, as the stop would leave it,
+                // and the stop itself waits until "ended" has gone out. A wheel event until
+                // then goes on with the open touch.
+                resetMotionLocked()
+                oneTouchStopIsHeld = true
+                pendingStopPhase = nil
+            } else if oneTouchStopIsHeld && !oneTouchIsOpen {
+                oneTouchStopIsHeld = false
+                pendingStopPhase = .TrackingEnd
+            }
         }
         return pendingStopPhase
     }
@@ -1681,9 +1743,10 @@ private extension ScrollPoster {
     /// at the clock's time and then steps by the display's own interval, the value the
     /// frame's distance was computed with, whenever the callback ran. When that has come
     /// more than a frame away from the clock (the link stalled; a frame was skipped), it
-    /// starts again from the clock. Caller holds stateLock.
-    func advanceFrameStampLocked(frameInterval: Double) {
-        let now = eventTimestamp()
+    /// starts again from the clock. `now`: the display frame's own reading of the clock
+    /// (`monotonicNow`, the event clock in seconds). Caller holds stateLock.
+    func advanceFrameStampLocked(frameInterval: Double, now seconds: CFTimeInterval) {
+        let now = seconds.isFinite && seconds > 0 ? UInt64((seconds * 1_000_000_000).rounded()) : eventTimestamp()
         let step = frameInterval.isFinite && frameInterval > 0 ? UInt64((frameInterval * 1_000_000_000).rounded()) : 0
         frameStampStep = step
         guard frameStamp != 0 else {
@@ -1693,6 +1756,15 @@ private extension ScrollPoster {
         let next = frameStamp &+ step
         let away = next > now ? next - now : now - next
         frameStamp = away > step ? now : next
+    }
+
+    /// One touch: whether the open touch has rested, so that its "ended" can go out with this
+    /// display frame: the time that "ended" would carry is `oneTouchRest` or more after the
+    /// time of the touch's last frame (its last "changed", or its "began"). Counted in the
+    /// frames' own times, which is what the app compares. Caller holds stateLock.
+    func oneTouchHasRestedLocked() -> Bool {
+        guard isInDisplayFrame, frameStamp != 0, lastPhasedStamp != 0 else { return false }
+        return nextStampLocked(moves: false) >= lastPhasedStamp &+ Self.oneTouchRest
     }
 
     /// Trackpad-style: the time for the next frame with phases.
@@ -1706,6 +1778,13 @@ private extension ScrollPoster {
     ///   clock's time.
     /// Never the same time twice and never backward (`leastStampStep`). Caller holds stateLock.
     func stampLocked(moves: Bool) -> UInt64 {
+        let stamp = nextStampLocked(moves: moves)
+        lastPhasedStamp = stamp
+        return stamp
+    }
+
+    /// The time `stampLocked` would give, without taking it. Caller holds stateLock.
+    func nextStampLocked(moves: Bool) -> UInt64 {
         var stamp: UInt64
         if isInDisplayFrame && frameStamp != 0 {
             stamp = moves || frameStamp <= frameStampStep ? frameStamp : frameStamp - frameStampStep + Self.leastStampStep
@@ -1715,7 +1794,6 @@ private extension ScrollPoster {
         if lastPhasedStamp != 0 && stamp < lastPhasedStamp &+ Self.leastStampStep {
             stamp = lastPhasedStamp &+ Self.leastStampStep
         }
-        lastPhasedStamp = stamp
         return stamp
     }
 
