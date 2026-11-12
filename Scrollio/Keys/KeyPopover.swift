@@ -10,8 +10,9 @@ import Cocoa
 
 /// The recorder's popover. From the moment it opens it says what to press (the waiting
 /// hint), shows the key slot that fills in with what is held and then recorded, and under
-/// it a small line: "Press Esc to cancel", replaced by why a press was refused. It grows
-/// to fit its texts, and VoiceOver hears the waiting hint when it opens.
+/// it a small line: "Press Esc to cancel", replaced by why a press was refused, and gone
+/// (its room kept) once a press is recorded: nothing is left to cancel then. It grows to fit
+/// its texts, and VoiceOver hears the waiting hint when it opens.
 class KeyPopover: NSObject {
     private enum RecordingHint {
         case escape
@@ -45,7 +46,9 @@ class KeyPopover: NSObject {
     static let maxTextWidth: CGFloat = 260
     private static let minWidth: CGFloat = 165
     private static let insets = NSEdgeInsets(top: 12, left: 16, bottom: 10, right: 16)
-    private static let hintFontSize: CGFloat = 10
+    /// The small line under the keys: the small system font (11 pt), as every hint of the
+    /// panes. At 10 pt in the secondary colour it was too faint to read.
+    private static let hintFontSize: CGFloat = NSFont.smallSystemFontSize
 
     /// One spoken sentence from the popover's lines: line breaks become spaces, and a line
     /// without its own end mark ends with a full stop before the next.
@@ -92,6 +95,16 @@ class KeyPopover: NSObject {
     /// A refused event: `reason` (already localized), or "Duplicate key" when nil.
     func showRefusalHint(_ reason: String?) {
         showHint(reason.map { .refused($0) } ?? .duplicate)
+    }
+
+    /// The key slot shows a recorded press (green): the line under it goes, since
+    /// "Press Esc to cancel" no longer holds. It keeps its room, so the popover does not
+    /// jump in the moment it stays open. Any other status shows the line again.
+    private func keyStatusDidChange(_ status: KeyPreview.Status) {
+        guard let label = hintLabel else { return }
+        let hidden = status == .recorded
+        label.alphaValue = hidden ? 0 : 1
+        label.setAccessibilityElement(!hidden)
     }
 
     /// The line under the key slot says `hint`; a new text grows the popover to fit and is
@@ -185,6 +198,9 @@ class KeyPopover: NSObject {
         self.waitingLabel = waitingLabel
         // 创建按键显示组件
         keyPreview = KeyPreview()
+        keyPreview.onStatusChange = { [weak self] status in
+            self?.keyStatusDidChange(status)
+        }
         // 录制提示: "Press Esc to cancel" from the start, then why a press was refused
         let hintLabel = Self.makeLabel(RecordingHint.escape.localizedText, fontSize: Self.hintFontSize, color: .secondaryLabelColor)
         self.hintLabel = hintLabel

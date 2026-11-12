@@ -1149,7 +1149,8 @@ final class ButtonBindingTests: XCTestCase {
             popover.testingHintText,
             NSLocalizedString("button-recording-duplicate-hint", comment: "")
         )
-        XCTAssertEqual(popover.testingHintFontPointSize, 10)
+        XCTAssertEqual(popover.testingHintText, "Already has an action", "not \"Duplicate key\": it may be a button")
+        XCTAssertEqual(popover.testingHintFontPointSize, NSFont.smallSystemFontSize, "the hint size of the panes (it was 10 pt)")
         XCTAssertEqual(popover.testingHintAlignment, NSTextAlignment.center)
         XCTAssertTrue(popover.testingHintIsVisible)
 
@@ -1255,13 +1256,13 @@ final class ButtonBindingTests: XCTestCase {
     }
 
     /// A refusal the delegate gives a reason for shows that reason in the hint's place;
-    /// without one it is "Duplicate key", as before.
+    /// without one it is "Already has an action".
     func testKeyPopoverRefusalHintSaysWhyOrDuplicate() {
         let reasoned = KeyPopover()
         reasoned.testingPrepareContent()
         reasoned.showRefusalHint("Gestures need a mouse button")
         XCTAssertEqual(reasoned.testingHintText, "Gestures need a mouse button")
-        XCTAssertEqual(reasoned.testingHintFontPointSize, 10)
+        XCTAssertEqual(reasoned.testingHintFontPointSize, 11)
         reasoned.hide()
 
         let duplicate = KeyPopover()
@@ -1269,6 +1270,65 @@ final class ButtonBindingTests: XCTestCase {
         duplicate.showRefusalHint(nil)
         XCTAssertEqual(duplicate.testingHintText, NSLocalizedString("button-recording-duplicate-hint", comment: ""))
         duplicate.hide()
+    }
+
+    /// A recorded press (green) takes "Press Esc to cancel" away: nothing is left to cancel.
+    /// The line keeps its room, so the popover does not jump while it stays open a moment.
+    func testKeyPopoverDropsTheEscLineOnceAPressIsRecorded() throws {
+        let popover = KeyPopover()
+        popover.announce = { _ in }
+        popover.testingPrepareContent(waitingHint: KeyRecordingMode.combination.waitingHint)
+        defer { popover.hide() }
+        let content = try XCTUnwrap(popover.testingContentView)
+        let waiting = content.fittingSize
+        XCTAssertTrue(popover.testingHintIsVisible)
+
+        popover.keyPreview.updateForRecording(modifiers: .maskCommand)
+        XCTAssertTrue(popover.testingHintIsVisible, "still waiting: Esc still cancels")
+
+        popover.keyPreview.update(from: ["⌥", "Back button"], status: .recorded)
+        XCTAssertFalse(popover.testingHintIsVisible, "\"Press Esc to cancel\" under a recorded shortcut")
+        XCTAssertGreaterThanOrEqual(content.fittingSize.height, waiting.height, "the line keeps its room")
+
+        // A refused press shows its reason.
+        popover.keyPreview.update(from: ["⌘", "C"], status: .duplicate)
+        popover.showRefusalHint(nil)
+        XCTAssertTrue(popover.testingHintIsVisible)
+        XCTAssertEqual(popover.testingHintText, "Already has an action")
+    }
+
+    /// A refused press is orange with dark text (the accent colour means "selected"
+    /// elsewhere); a recorded one stays green with white text.
+    func testKeyPreviewColoursARefusedPressOrange() {
+        XCTAssertEqual(KeyPreview.backgroundColor(for: .duplicate, in: nil), .systemOrange)
+        XCTAssertNotEqual(KeyPreview.backgroundColor(for: .duplicate, in: nil), .controlAccentColor)
+        XCTAssertEqual(KeyPreview.backgroundColor(for: .recorded, in: nil), .mainGreen)
+        XCTAssertEqual(KeyPreview.textColor(for: .recorded), .white)
+        XCTAssertEqual(KeyPreview.textColor(for: .recording), .labelColor)
+        let dark = KeyPreview.textColor(for: .duplicate).usingColorSpace(.deviceGray)
+        XCTAssertLessThan(dark?.whiteComponent ?? 1, 0.2, "near black on orange: white there is too faint")
+    }
+
+    /// With Reduce Motion the "?" does not pulse and a refused press does not shake.
+    func testKeyPreviewHonoursReduceMotion() throws {
+        let original = KeyPreview.prefersReducedMotion
+        defer { KeyPreview.prefersReducedMotion = original }
+        func waitingLayer(_ preview: KeyPreview) throws -> CALayer {
+            return try XCTUnwrap(preview.arrangedSubviews.last?.layer)
+        }
+
+        KeyPreview.prefersReducedMotion = { false }
+        let moving = KeyPreview()
+        XCTAssertNotNil(try waitingLayer(moving).animation(forKey: "breathingAnimation"), "the \"?\" pulses")
+        moving.shakeWarning()
+        XCTAssertNotNil(try waitingLayer(moving).animation(forKey: "shakeWarning"))
+
+        KeyPreview.prefersReducedMotion = { true }
+        let still = KeyPreview()
+        XCTAssertNil(try waitingLayer(still).animation(forKey: "breathingAnimation"), "it stands still")
+        still.shakeWarning()
+        XCTAssertNil(try waitingLayer(still).animation(forKey: "shakeWarning"), "no shake")
+        XCTAssertNotNil(try waitingLayer(still).animation(forKey: "colorWarning"), "the colour alone says refused")
     }
 
     func testKeyRecorderDuplicateFeedbackDelayIsLongerThanRecordedFeedback() {

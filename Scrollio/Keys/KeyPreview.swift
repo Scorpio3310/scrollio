@@ -19,8 +19,43 @@ class KeyPreview: NSStackView {
     enum Status {
         case normal        // 普通状态
         case recorded      // 已录制状态（绿色背景）
-        case duplicate     // already bound: the accent colour behind it
+        case duplicate     // refused (already has an action, or not allowed here): orange behind it
         case recording     // 录制中状态（呼吸动画）
+    }
+
+    /// Reduce Motion in System Settings › Accessibility: the "?" then stands still instead of
+    /// pulsing, and a refused press only flashes its colour, without the shake. Tests replace it.
+    static var prefersReducedMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    /// Called when `update(from:status:)` shows another status (the popover's line under the
+    /// keys follows it).
+    var onStatusChange: ((Status) -> Void)?
+
+    /// What stands behind the keys of `status`. A refused press is orange, the colour of the
+    /// app's warnings: the accent colour, which it had, means "selected" everywhere else.
+    static func backgroundColor(for status: Status, in view: NSView?) -> NSColor {
+        switch status {
+        case .normal, .recording:
+            return NSColor.getMainLightBlack(for: view)
+        case .recorded:
+            return NSColor.mainGreen
+        case .duplicate:
+            return NSColor.systemOrange
+        }
+    }
+
+    /// The colour of a key's name on `backgroundColor(for:in:)`: white on the green of a
+    /// recorded press, near black on the orange of a refused one (white on orange is too
+    /// faint to read), the label colour otherwise.
+    static func textColor(for status: Status) -> NSColor {
+        switch status {
+        case .normal, .recording:
+            return NSColor.labelColor
+        case .recorded:
+            return NSColor.white
+        case .duplicate:
+            return NSColor(white: 0.1, alpha: 1)
+        }
     }
 
     // MARK: - Private Properties
@@ -56,6 +91,10 @@ class KeyPreview: NSStackView {
 
     /// 更新显示的按键组合
     func update(from components: [String], status: Status = .normal) {
+        let statusChanged = status != self.status
+        defer {
+            if statusChanged { onStatusChange?(status) }
+        }
         self.keyComponents = components
         self.status = status
 
@@ -162,7 +201,7 @@ class KeyPreview: NSStackView {
         // 按键名标签
         let label = NSTextField(labelWithString: text)
         label.font = NSFont.systemFont(ofSize: KeyPreview.FONT_SIZE, weight: .medium)
-        label.textColor = (status == .recorded || status == .duplicate) ? NSColor.white : NSColor.labelColor
+        label.textColor = KeyPreview.textColor(for: status)
         label.alignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(label)
@@ -185,7 +224,7 @@ class KeyPreview: NSStackView {
         // 创建文本标签
         let label = NSTextField(labelWithString: text)
         label.font = NSFont.systemFont(ofSize: KeyPreview.FONT_SIZE, weight: .medium)
-        label.textColor = (status == .recorded || status == .duplicate) ? NSColor.white : NSColor.labelColor
+        label.textColor = KeyPreview.textColor(for: status)
         label.alignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
         // The "?" slot is not read out: the popover's waiting hint says what to press.
@@ -234,19 +273,13 @@ private final class KeyComponentContainer: NSView {
     }
 
     private func getBackgroundColor() -> NSColor {
-        switch keyStatus {
-        case .normal, .recording:
-            return NSColor.getMainLightBlack(for: self)
-        case .recorded:
-            return NSColor.mainGreen
-        case .duplicate:
-            // The accent colour (the app's purple, or the user's own accent).
-            return NSColor.controlAccentColor
-        }
+        return KeyPreview.backgroundColor(for: keyStatus, in: self)
     }
 
     // MARK: - Animation Management
+    /// The "?" pulses while it waits; with Reduce Motion it stands still.
     private func startBreathingAnimation() {
+        guard !KeyPreview.prefersReducedMotion() else { return }
         let animation = CABasicAnimation(keyPath: "opacity")
         animation.fromValue = 1.0
         animation.toValue = 0.5
@@ -264,7 +297,8 @@ private final class KeyComponentContainer: NSView {
         layer.removeAnimation(forKey: "breathingAnimation")
         layer.opacity = 1.0
 
-        // 1. 晃动动画
+        // 1. 晃动动画 (not with Reduce Motion: the colour below alone says "refused")
+        let reduceMotion = KeyPreview.prefersReducedMotion()
         let shakeAnimation = CAKeyframeAnimation(keyPath: "transform.translation.x")
         shakeAnimation.values = [0, -8, 8, -8, 8, -4, 4, 0]
         shakeAnimation.duration = 0.4
@@ -279,7 +313,9 @@ private final class KeyComponentContainer: NSView {
         colorAnimation.timingFunction = CAMediaTimingFunction(name: .easeOut)
 
         // 执行动画
-        layer.add(shakeAnimation, forKey: "shakeWarning")
+        if !reduceMotion {
+            layer.add(shakeAnimation, forKey: "shakeWarning")
+        }
         layer.add(colorAnimation, forKey: "colorWarning")
 
         // 动画结束后恢复呼吸动画
