@@ -18,6 +18,12 @@
 //    a row with "Check Now" and the time of the last check, which says "Scrollio 1.1.0 is
 //    available" with "Update…" while a found update waits. In every other copy one line
 //    that says why it does not update itself.
+//  - "Settings file": "Export…" writes all settings to a file the user names, "Import…"
+//    reads such a file, says in a sheet what it holds and asks before anything changes
+//    (SettingsFile, SettingsFileCenter, SettingsImportSheet). Under it, once an import
+//    was made, "Settings from before the last import" with "Restore…": the backup the
+//    import wrote, through the same sheet. The panels and the sheet are sheets on the
+//    settings window, opened from the click; nothing here is modal for the app.
 //  The developer tools (scroll monitor, Logitech diagnostics) are not in the pane: the
 //  status-bar menu lists them while Option is held.
 //  At the bottom a box with the Welcome Guide and "Scrollio on GitHub" (the repository in the
@@ -28,6 +34,7 @@
 //
 
 import Cocoa
+import UniformTypeIdentifiers
 
 class PreferencesGeneralViewController: NSViewController {
 
@@ -67,6 +74,56 @@ class PreferencesGeneralViewController: NSViewController {
     var checkForUpdates: () -> Void = { UpdateCenter.shared.checkForUpdates() }
     var setChecksForUpdates: (Bool) -> Void = { UpdateCenter.shared.setChecksAutomatically($0) }
     var setInstallsUpdates: (Bool) -> Void = { UpdateCenter.shared.setInstallsAutomatically($0) }
+    /// Export, reading a file, import and the backups: the app's settings, or under XCTest
+    /// what a test hands in (the app's own are closed to settings files there).
+    var settingsFiles: SettingsFileCenter = .live
+    /// Asks where the exported file goes, as a sheet on the window, with the name offered;
+    /// nil when cancelled. Under XCTest nothing is asked unless a test answers.
+    var chooseExportFile: (NSWindow?, String, @escaping (URL?) -> Void) -> Void = AppRuntime.isRunningXCTest
+        ? { _, _, completion in completion(nil) }
+        : { window, name, completion in
+            let panel = PreferencesGeneralViewController.makeExportPanel(name: name)
+            let finish: (NSApplication.ModalResponse) -> Void = { response in
+                // The panel's sheet goes before a notice or another sheet comes.
+                panel.orderOut(nil)
+                completion(response == .OK ? panel.url : nil)
+            }
+            if let window {
+                panel.beginSheetModal(for: window, completionHandler: finish)
+            } else {
+                panel.begin(completionHandler: finish)
+            }
+        }
+    /// Asks for the file to import, as a sheet on the window; nil when cancelled. Under
+    /// XCTest nothing is asked unless a test answers.
+    var chooseImportFile: (NSWindow?, @escaping (URL?) -> Void) -> Void = AppRuntime.isRunningXCTest
+        ? { _, completion in completion(nil) }
+        : { window, completion in
+            let panel = PreferencesGeneralViewController.makeImportPanel()
+            let finish: (NSApplication.ModalResponse) -> Void = { response in
+                // The panel's sheet goes before the sheet about the file comes.
+                panel.orderOut(nil)
+                completion(response == .OK ? panel.url : nil)
+            }
+            if let window {
+                panel.beginSheetModal(for: window, completionHandler: finish)
+            } else {
+                panel.begin(completionHandler: finish)
+            }
+        }
+    /// Shows the sheet about a file (what it holds, or why it cannot be used) on the
+    /// pane's window, and takes it away again.
+    var presentSettingsSheet: (SettingsImportSheetViewController, NSViewController) -> Void = { sheet, pane in
+        guard pane.view.window != nil else { return }
+        pane.presentAsSheet(sheet)
+    }
+    var dismissSettingsSheet: (SettingsImportSheetViewController) -> Void = { sheet in
+        sheet.presentingViewController?.dismiss(sheet)
+    }
+    /// One of Scrollio's notices: an export or an import is done. Nothing under XCTest.
+    var showNotice: (String, Toast.Style) -> Void = AppRuntime.isRunningXCTest ? { _, _ in } : { text, style in
+        Toast.show(text, style: style)
+    }
 
     // MARK: - Views (read access for tests)
 
@@ -95,6 +152,17 @@ class PreferencesGeneralViewController: NSViewController {
     private(set) var updatesCheckButton: NSButton!
     /// Shown alone in a copy that does not update itself: why not.
     private(set) var updatesUnavailableRow: PreferencesGroupRow!
+
+    private(set) var settingsFileSection: PreferencesGroupSection!
+    /// "Settings file" with "Export…" and "Import…".
+    private(set) var settingsFileRow: PreferencesGroupRow!
+    private(set) var exportSettingsButton: NSButton!
+    private(set) var importSettingsButton: NSButton!
+    /// "Settings from before the last import" with "Restore…"; shown while a backup is there.
+    private(set) var previousSettingsRow: PreferencesGroupRow!
+    private(set) var restoreSettingsButton: NSButton!
+    /// The sheet about a file while it is up.
+    private(set) var settingsSheet: SettingsImportSheetViewController?
 
     private(set) var welcomeGuideRow: PreferencesGroupRow!
     private(set) var welcomeGuideButton: NSButton!
@@ -149,9 +217,11 @@ class PreferencesGeneralViewController: NSViewController {
             ]
         )
         updatesSection = updates
+        let settingsFile = PreferencesGroupSection(width: width, rows: [makeSettingsFileRow(), makePreviousSettingsRow()])
+        settingsFileSection = settingsFile
         let guide = PreferencesGroupSection(width: width, rows: [makeWelcomeGuideRow(), makeGitHubRow()])
         let credit = makeCreditLabel(width: width)
-        PreferencesGroupedForm.add([header, paused, startup, permissions, updates, guide, credit], to: content)
+        PreferencesGroupedForm.add([header, paused, startup, permissions, updates, settingsFile, guide, credit], to: content)
         // The credit sits close under the last box, as the muted lines of the other panes.
         content.setCustomSpacing(PreferencesGroupedForm.noteSpacing, after: guide)
 
@@ -162,6 +232,7 @@ class PreferencesGeneralViewController: NSViewController {
         refreshAccessState()
         refreshPauseState()
         refreshUpdateState()
+        refreshSettingsFileState()
         root.setFrameSize(root.fittingSize)
     }
 
@@ -313,6 +384,52 @@ class PreferencesGeneralViewController: NSViewController {
         return row
     }
 
+    /// "Settings file" with "Export…" and "Import…". Both lead to a panel, hence the "…".
+    private func makeSettingsFileRow() -> PreferencesGroupRow {
+        let export = PreferencesGroupedForm.makePushButton(
+            title: text("general-settings-file-export"),
+            target: self,
+            action: #selector(exportSettingsClicked(_:))
+        )
+        exportSettingsButton = export
+        let importButton = PreferencesGroupedForm.makePushButton(
+            title: text("general-settings-file-import"),
+            target: self,
+            action: #selector(importSettingsClicked(_:))
+        )
+        importSettingsButton = importButton
+        let buttons = NSStackView(views: [export, importButton])
+        buttons.orientation = .horizontal
+        buttons.alignment = .centerY
+        buttons.spacing = 8
+        let row = PreferencesGroupRow(
+            title: text("general-settings-file"),
+            explanation: text("general-settings-file-hint"),
+            accessory: buttons,
+            controls: [export, importButton]
+        )
+        settingsFileRow = row
+        return row
+    }
+
+    /// "Settings from before the last import" with "Restore…": the backup an import wrote.
+    private func makePreviousSettingsRow() -> PreferencesGroupRow {
+        let button = PreferencesGroupedForm.makePushButton(
+            title: text("general-settings-file-restore"),
+            target: self,
+            action: #selector(restoreSettingsClicked(_:))
+        )
+        restoreSettingsButton = button
+        let row = PreferencesGroupRow(
+            title: text("general-settings-file-previous"),
+            explanation: "",
+            accessory: button
+        )
+        row.isHidden = true
+        previousSettingsRow = row
+        return row
+    }
+
     /// "Welcome Guide" with "Open": the first-launch steps again.
     private func makeWelcomeGuideRow() -> PreferencesGroupRow {
         let button = PreferencesGroupedForm.makePushButton(
@@ -456,6 +573,7 @@ class PreferencesGeneralViewController: NSViewController {
         refreshAccessState()
         refreshPauseState()
         refreshUpdateState()
+        refreshSettingsFileState()
     }
 
     // MARK: - Updates
@@ -614,6 +732,136 @@ class PreferencesGeneralViewController: NSViewController {
 
     @objc func openAccessibilitySettingsClicked(_ sender: NSButton) {
         openAccessibilitySettings()
+    }
+
+    // MARK: - Settings file
+
+    /// The save panel for an export: a JSON file, the name offered, the extension in sight.
+    static func makeExportPanel(name: String) -> NSSavePanel {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = name
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.prompt = NSLocalizedString("general-settings-file-export-prompt", comment: "")
+        return panel
+    }
+
+    /// The open panel for an import: one JSON file. Its button does not say "Import":
+    /// nothing is imported before the sheet about the file was answered.
+    static func makeImportPanel() -> NSOpenPanel {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = NSLocalizedString("general-settings-file-import-message", comment: "")
+        panel.prompt = NSLocalizedString("general-settings-file-import-prompt", comment: "")
+        return panel
+    }
+
+    /// Shows "Settings from before the last import" while a backup is there, with its time.
+    func refreshSettingsFileState() {
+        guard isViewLoaded else { return }
+        let backup = settingsFiles.latestBackup()
+        if let backup {
+            previousSettingsRow.explanation = String(
+                format: text("general-settings-file-previous-hint"), SettingsFileText.moment(backup.date)
+            )
+        }
+        guard previousSettingsRow.isHidden == (backup != nil) else { return }
+        previousSettingsRow.isHidden = backup == nil
+        PreferencesForm.fitToContent(self)
+    }
+
+    @objc func exportSettingsClicked(_ sender: NSButton) {
+        chooseExportFile(view.window, SettingsFile.defaultFileName()) { [weak self] url in
+            guard let self, let url else { return }
+            if let problem = self.settingsFiles.export(to: url) {
+                self.showSettingsSheet(.problem(
+                    title: self.text("general-settings-problem-export-title"),
+                    text: SettingsFileText.explanation(of: problem)
+                ))
+            } else {
+                self.showNotice(
+                    String(format: self.text("general-settings-file-exported"), SettingsFileText.visible(url.lastPathComponent)),
+                    .success
+                )
+            }
+        }
+    }
+
+    @objc func importSettingsClicked(_ sender: NSButton) {
+        chooseImportFile(view.window) { [weak self] url in
+            guard let self, let url else { return }
+            self.offerImport(of: url)
+        }
+    }
+
+    @objc func restoreSettingsClicked(_ sender: NSButton) {
+        guard let backup = settingsFiles.latestBackup() else {
+            refreshSettingsFileState()
+            return
+        }
+        offerImport(of: backup.url)
+    }
+
+    /// Reads the file and shows the sheet about it: what it holds, with "Import", or why
+    /// it cannot be used. Nothing changes before "Import" is clicked there.
+    func offerImport(of url: URL) {
+        switch settingsFiles.read(url) {
+        case .failure(let problem):
+            showSettingsSheet(.problem(
+                title: text("general-settings-problem-import-title"),
+                text: SettingsFileText.explanation(of: problem) + " " + text("general-settings-problem-unchanged")
+            ))
+        case .success(let contents):
+            let sheet = showSettingsSheet(.confirm(contents, fileName: url.lastPathComponent))
+            sheet.onImport = { [weak self] in
+                self?.importConfirmed(contents)
+            }
+        }
+    }
+
+    @discardableResult
+    private func showSettingsSheet(_ content: SettingsImportSheetViewController.Content) -> SettingsImportSheetViewController {
+        closeSettingsSheet()
+        let sheet = SettingsImportSheetViewController(content: content)
+        sheet.onClose = { [weak self] in
+            self?.closeSettingsSheet()
+        }
+        settingsSheet = sheet
+        presentSettingsSheet(sheet, self)
+        return sheet
+    }
+
+    private func closeSettingsSheet() {
+        guard let sheet = settingsSheet else { return }
+        settingsSheet = nil
+        dismissSettingsSheet(sheet)
+    }
+
+    /// "Import" of the sheet: the current settings are saved, then the file's are in
+    /// effect everywhere. What the pane itself shows follows here; the other panes read
+    /// the settings when they are shown.
+    private func importConfirmed(_ contents: SettingsFile.Contents) {
+        switch settingsFiles.importSettings(contents) {
+        case .failure(let problem):
+            // The same sheet says why; "OK" closes it.
+            settingsSheet?.onImport = nil
+            settingsSheet?.show(.problem(
+                title: text("general-settings-problem-import-title"),
+                text: SettingsFileText.explanation(of: problem)
+            ))
+        case .success:
+            closeSettingsSheet()
+            // An Undo of "Remove Button" or "Remove App" would put an entry of the old
+            // settings into the new ones.
+            view.window?.undoManager?.removeAllActions()
+            syncViewWithOptions()
+            refreshSettingsFileState()
+            showNotice(text("general-settings-file-imported"), .success)
+        }
     }
 
     // MARK: - Welcome Guide
