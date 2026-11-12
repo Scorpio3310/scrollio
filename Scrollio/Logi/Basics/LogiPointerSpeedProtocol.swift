@@ -20,7 +20,7 @@
 //                             valid); 0x0000 ends the list and is absent when the answer
 //                             is full. MX Master class: 00C8 E032 1F40 0000 would be
 //                             200...8000 in steps of 50 (ASSUMPTION: the actual bytes of
-//                             the owner's mice were never seen).
+//                             a real mouse were never read for this).
 //    fn2 getSensorDpi      <- params  [sensor, 0, 0]
 //                          -> payload [sensor, current(2), default(2)]
 //                             default is 0 when the mouse has none; a current of 0 means

@@ -716,7 +716,7 @@ final class IntroductionWindowTests: XCTestCase {
     }
 
     /// The picture on a card: a mark where the wheel stops and a dot where the page comes to
-    /// rest. The owner found the five curves the cards had "very alike": each card's dot now
+    /// rest. The five curves the cards had before looked "very alike": each card's dot now
     /// rests clearly further from the mark than the one before. It is a rank, not a measure,
     /// so the cards must be in the order of their glide times.
     func testEachCardsDotRestsFurtherThanTheOneBefore() throws {
@@ -1244,7 +1244,7 @@ final class IntroductionWindowTests: XCTestCase {
         try assertTheStepsShareOneGrid()
     }
 
-    /// The owner found the feel step crammed in 620 pt (its parts 14 to 18 pt apart). The
+    /// The feel step looked crammed in 620 pt (its parts 14 to 18 pt apart). The
     /// window is 680 pt tall unless the screen cannot show that whole: then Continue would
     /// lie under the Dock, and the guide keeps the 620 pt it had.
     func testTheWindowIsRoomyUnlessTheScreenIsTooShort() {
@@ -1526,7 +1526,7 @@ final class IntroductionWindowTests: XCTestCase {
         return step.feelButtons.filter { $0.state == .on }.map(\.feel)
     }
 
-    /// The owner's report: "clicking a card selects it only sometimes". AppKit's radio cell
+    /// A report from use: "clicking a card selects it only sometimes". AppKit's radio cell
     /// took a click only on the title it would draw (47 × 16 pt left of the middle), not on
     /// the name drawn under the picture, the picture or the edges.
     func testAClickAnywhereOnAFeelCardChoosesItWhileTheDemoRuns() {

@@ -10,8 +10,8 @@ final class LogiHapticSettingsProtocolTests: XCTestCase {
         return bytes
     }
 
-    func testOwnerMouseState() {
-        // The owner's MX Master 4: 11 FF 0B 11 00 64 00 00 ...
+    func testTheStateAnMXMaster4Reports() {
+        // Read from an MX Master 4 over Bluetooth (2026-11): 11 FF 0B 11 00 64 00 00 ...
         let state = LogiHapticSettingsProtocol.parseState(stateReport([0x00, 0x64, 0x00]))
         XCTAssertEqual(state, LogiHapticSettingsProtocol.State(flags: 0x00, strength: 100, levelsByte: 0x00))
         XCTAssertEqual(state?.isOn, false)

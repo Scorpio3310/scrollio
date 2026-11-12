@@ -11,7 +11,7 @@
 //
 //  Sources: OpenLogi openlogi-hidpp/src/feature/haptic_feedback.rs and
 //  openlogi-device/src/write/haptic.rs, Solaar settings_templates.py (Haptic*),
-//  the owner's MX Master 4 (system log, 2026-11).
+//  an MX Master 4 over Bluetooth (its answers in the system log, 2026-11).
 //
 //  Layouts (report = [reportId, devIdx, featureIdx, fn<<4 | swid, payload...]):
 //
@@ -22,7 +22,7 @@
 //                     levels: ASSUMPTION. Solaar: bit0 = "only four levels" (offer
 //                     25/50/75/100). OpenLogi: high nibble step, low nibble count. Both
 //                     read 0x00 as "no fixed steps". Kept in `hasFewLevels` only.
-//                     Owner's MX Master 4: 11 FF 0B 11 00 64 00 ... = off, 100, levels 0x00.
+//                     Read from an MX Master 4: 11 FF 0B 11 00 64 00 ... = off, 100, levels 0x00.
 //    fn2 setState  <- params  [flags, strength, 0], built from the last read state: only
 //                     bit0 changes, so power save and the unknown bits survive, and
 //                     switching off keeps the strength.
@@ -75,7 +75,7 @@ enum LogiHapticSettingsProtocol {
     }
 
     /// ASSUMPTION (Solaar's reading): bit0 of the levels byte = only a few strength levels.
-    /// The one place to change when the owner's mouse settles the question.
+    /// The one place to change when a mouse that reports another value settles the question.
     static func hasFewLevels(levelsByte: UInt8?) -> Bool? {
         guard let levelsByte else { return nil }
         return levelsByte & 0x01 != 0

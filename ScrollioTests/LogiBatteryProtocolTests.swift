@@ -27,7 +27,7 @@ final class LogiBatteryProtocolTests: XCTestCase {
 
     // MARK: - 0x1004
 
-    func testUnifiedStatus_ownerLikeBytes() {
+    func testUnifiedStatus_bytesAsAnMXMaster4SendsThem() {
         // 11 FF 09 11 2D 04 00: 45 %, good, discharging
         let battery = LogiBatteryProtocol.unifiedStatus(report(0x09, 0x11, [0x2D, 0x04, 0x00]))
         XCTAssertEqual(battery, LogiMouseDeviceState.Battery(percent: 45, level: .good, charging: .discharging, isApproximate: false))

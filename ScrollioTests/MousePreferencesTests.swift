@@ -16,7 +16,7 @@ import XCTest
 @testable import Scrollio_Debug
 
 /// What the mice report, as LogiCenter would hand it to the tab. The MX Master 4 values are
-/// the owner's mouse on 2026-11-11.
+/// what an MX Master 4 over Bluetooth reported on 2026-11-11.
 enum MouseDeviceFixtures {
 
     static let dpiChoices = Array(stride(from: 200, through: 8000, by: 50))
@@ -2007,7 +2007,7 @@ final class MousePreferencesRenderTests: XCTestCase {
         }
         let master4 = MouseDeviceFixtures.mxMaster4()
 
-        // The owner's mouse as it reports now, Scrollio managing it with nothing changed yet.
+        // An MX Master 4 as it reports, Scrollio managing it with nothing changed yet.
         Options.shared.logiMouse = .default
         Options.shared.logiWheel = LogiWheelSettings(managedByScrollio: true)
         let managed = tab([master4])
@@ -2033,7 +2033,7 @@ final class MousePreferencesRenderTests: XCTestCase {
         try render(tab([master4]).view, name: "mx-master-4-not-managed", into: directory)
         try render(tab([MouseDeviceFixtures.mxMaster3S()]).view, name: "mx-master-3s", into: directory)
 
-        // Any mouse: the macOS settings as on the owner's Mac (fastest, acceleration on), then
+        // Any mouse: the macOS settings at their fastest with acceleration on, then
         // a slow linear one, then values macOS did not give.
         let owner = FakeMacPointer()
         owner.trackingSpeed = 3

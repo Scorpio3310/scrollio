@@ -19,7 +19,7 @@ public enum Direction { case up, down }
 /// reference internal Logi symbols by design.
 internal class LogiSessionManager {
     internal static let shared = LogiSessionManager()
-    init() { NSLog("Module initialized: LogiSessionManager") }
+    init() {}
 
     // MARK: - Constants
     static let logitechVendorId: Int = 0x046D

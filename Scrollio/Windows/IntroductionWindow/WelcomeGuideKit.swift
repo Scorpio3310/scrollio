@@ -17,7 +17,7 @@ enum WelcomeGuideLayout {
 
     /// How tall the window is and how much air its parts get. The feel step holds the most
     /// (a sentence of two lines, five cards, a box): in 620 pt its parts sat 14 to 18 pt
-    /// apart and the owner found it crammed. Roomy unless the screen is too short for it.
+    /// apart, which looked crammed. Roomy unless the screen is too short for it.
     struct Metrics: Equatable {
         let windowHeight: CGFloat
         /// From the top of the text area to the title: the same on every step (the Welcome

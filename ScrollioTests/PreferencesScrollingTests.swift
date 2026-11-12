@@ -532,7 +532,7 @@ final class PreferencesScrollingTests: XCTestCase {
 
     // MARK: - Values off the grid
 
-    /// The owner tuned Speed and Duration by feel; the new steps must not move them.
+    /// Speed and Duration tuned by feel (values off the sliders' steps): the steps must not move them.
     func testStoredValuesOffTheGridAreShownAndNeverRewritten() throws {
         let scroll = Options.shared.scroll
         scroll.speed = 6.31

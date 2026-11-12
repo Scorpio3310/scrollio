@@ -8,7 +8,7 @@ final class LogiMouseBasicsControllerTests: XCTestCase {
 
     typealias Basic = LogiMouseDeviceState.Basic
 
-    // Feature indices as on the owner's MX Master 4 (Solaar dump).
+    // Feature indices as on an MX Master 4 (a Solaar dump, 2026-11).
     static let batteryIndex: UInt8 = 0x09
     static let dpiIndex: UInt8 = 0x14
     static let hapticIndex: UInt8 = 0x0B
@@ -35,7 +35,7 @@ final class LogiMouseBasicsControllerTests: XCTestCase {
         var dpiList: [UInt8] = [0x00, 0x00, 0xC8, 0xE0, 0x32, 0x1F, 0x40, 0x00, 0x00]  // 200...8000 / 50
         var dpi = 1000
         var defaultDPI = 1000
-        var hapticFlags: UInt8 = 0x00                                    // the owner's: off, 100
+        var hapticFlags: UInt8 = 0x00                                    // as an MX Master 4 reported: off, 100
         var hapticStrength: UInt8 = 100
         var hapticLevels: UInt8 = 0x00
         var pressInfo: [UInt8] = [0x00, 0x01, 0x13, 0xE1, 0x1A, 0x70, 0x0F, 0xE7]  // changeable 4071...6768, 5089
@@ -397,7 +397,7 @@ final class LogiMouseBasicsControllerTests: XCTestCase {
     }
 
     func testHapticStrengthOnlyLeavesTheMouseOff() {
-        // The owner's mouse: 00 64 00 (off, 100).
+        // As an MX Master 4 reported: 00 64 00 (off, 100).
         _ = started(LogiMouseSettings(hapticStrength: 30), managed: true)
         XCTAssertEqual(writes, [Sent(index: Self.hapticIndex, functionId: 2, params: [0x00, 30, 0])])
     }
@@ -442,7 +442,7 @@ final class LogiMouseBasicsControllerTests: XCTestCase {
     }
 
     func testSamplePulseIsSkippedWhileHapticsAreOff() {
-        let controller = started(.default, managed: true)   // owner's mouse: off
+        let controller = started(.default, managed: true)   // the mouse's haptics: off
         let before = sent.count
         controller.playSample()
         answerAll(controller)

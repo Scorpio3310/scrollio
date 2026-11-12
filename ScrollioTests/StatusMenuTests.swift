@@ -1318,7 +1318,7 @@ final class BatteryWatcherTests: XCTestCase {
         watcher.check()
     }
 
-    func testTheOwnersMouseIsFine() {
+    func testAMouseAtThreeQuartersIsFine() {
         report(MouseDeviceFixtures.battery(75))
         XCTAssertEqual(toasts, [])
     }

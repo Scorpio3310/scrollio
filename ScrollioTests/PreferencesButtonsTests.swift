@@ -1310,8 +1310,8 @@ final class PreferencesButtonsTests: XCTestCase {
                        "still the button the Mac knows as Button 6")
     }
 
-    /// The owner's MX Master 4 over Bluetooth: Gesture Navigation on Button 6, a shortcut on
-    /// Button 5, a screenshot on the mode shift button.
+    /// An MX Master 4 over Bluetooth as its user set it up: Gesture Navigation on Button 6, a
+    /// shortcut on Button 5, a screenshot on the mode shift button.
     func testEveryRowShowsWhereItsButtonIs() throws {
         let custom = "custom::21:\(UInt64(CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue))"
         let bindings = [
@@ -1628,8 +1628,9 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(Options.shared.buttons.binding.map(\.triggerEvent.mousePart), [.thumbPanel, nil], "the answer is kept")
     }
 
-    /// The owner's MX Master 4 over Bluetooth: Gesture Navigation on Button 6, a shortcut on
-    /// Button 5, a screenshot on the mode shift button.
+    /// An MX Master 4 over Bluetooth as its user set it up (the bindings of the Mac the
+    /// pane was made on): Gesture Navigation on Button 6, a shortcut on Button 5, a
+    /// screenshot on the mode shift button.
     private func ownerBindings() -> [ButtonBinding] {
         let custom = "custom::21:\(UInt64(CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue))"
         return [
@@ -1839,7 +1840,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(Set(trigger.keys), ["type", "code", "modifiers"])
     }
 
-    /// The owner's bindings with the ids and dates of `stored`.
+    /// Those bindings (`ownerBindings`) with the ids and dates of `stored`.
     private func ownerBindingsWithIDs(of stored: [ButtonBinding]) -> [ButtonBinding] {
         return zip(ownerBindings(), stored).map { owner, stored in
             ButtonBinding(id: stored.id, triggerEvent: owner.triggerEvent, systemShortcutName: owner.systemShortcutName,

@@ -54,7 +54,7 @@ final class ScrollSettingsTests: XCTestCase {
             XCTAssertNil(ScrollFeel.matching(duration: feel.duration + 0.04), "two slider steps away is custom")
             XCTAssertNil(ScrollFeel.matching(duration: feel.duration - 0.04))
         }
-        // The owner's Duration, tuned by feel, still reads as Smooth.
+        // A Duration tuned by feel, next to the card's own, still reads as Smooth.
         XCTAssertEqual(ScrollFeel.matching(duration: 3.687), .smooth)
         XCTAssertEqual(ScrollFeel.matching(duration: 3.15), .quick)
         XCTAssertEqual(ScrollFeel.matching(duration: 3.7), .smooth)

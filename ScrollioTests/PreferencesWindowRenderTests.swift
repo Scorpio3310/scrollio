@@ -329,7 +329,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try renderRowPictures()
     }
 
-    /// Which button is which: the owner's MX Master 4 over Bluetooth (Gesture Navigation on
+    /// Which button is which: an MX Master 4 over Bluetooth as its user set it up (Gesture Navigation on
     /// Button 6, a shortcut on Button 5, a screenshot on the mode shift button), a row of
     /// every part the drawing knows and a key, numbered buttons, and the card's answer
     /// after "+" ("That's …").
@@ -386,7 +386,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
-    /// "Which button is this?" on the owner's bindings (Gesture Navigation on Button 6, a
+    /// "Which button is this?" on the same bindings (Gesture Navigation on Button 6, a
     /// shortcut on Button 5, a screenshot on the mode shift button): before, with the
     /// picture under the pointer, and after Button 6 was said to be the gesture button and
     /// Button 5 the thumb panel (the rows, the card, "That's …", the Gestures pane's line),

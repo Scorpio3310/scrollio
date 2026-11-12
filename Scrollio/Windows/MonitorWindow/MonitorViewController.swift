@@ -88,16 +88,9 @@ class MonitorViewController: NSViewController, ChartViewDelegate {
             let momentumPhase = Double(event.getIntegerValueField(.scrollWheelEventMomentumPhase))
             data.appendEntry(ChartDataEntry(x: lineChartCount, y: momentumPhase), toDataSet: 5)
 
-            // Logs
-            if prevScrollWheelEventScrollPhase != scrollPhase || prevScrollWheelEventMomentumPhase != momentumPhase {
-                if prevScrollWheelEventScrollPhase != scrollPhase {
-                    prevScrollWheelEventScrollPhase = scrollPhase
-                }
-                if prevScrollWheelEventMomentumPhase != momentumPhase {
-                    prevScrollWheelEventMomentumPhase = momentumPhase
-                }
-                NSLog("Phase updated -> prevScrollWheelEventScrollPhase: \(scrollPhase), prevScrollWheelEventMomentumPhase: \(momentumPhase)")
-            }
+            // The phases as they were last.
+            prevScrollWheelEventScrollPhase = scrollPhase
+            prevScrollWheelEventMomentumPhase = momentumPhase
 
             lineChart.setVisibleXRange(minXRange: 1.0, maxXRange: 100.0)
             lineChart.moveViewToX(lineChartCount)
@@ -125,7 +118,7 @@ class MonitorViewController: NSViewController, ChartViewDelegate {
                 for: .listenOnly
             )
         } catch {
-            NSLog("[MonitorView] Create scroll interceptor failure: \(error)")
+            AppSystemLog.problem("Scroll Monitor: could not start its scroll event tap (\(error))")
         }
     }
     // 停止
@@ -207,7 +200,7 @@ class MonitorViewController: NSViewController, ChartViewDelegate {
                 for: .listenOnly
             )
         } catch {
-            NSLog("[MonitorView] Create button interceptor failure: \(error)")
+            AppSystemLog.problem("Scroll Monitor: could not start its button event tap (\(error))")
         }
     }
     // 停止
@@ -247,7 +240,9 @@ class MonitorViewController: NSViewController, ChartViewDelegate {
             do {
                 try output.write(to: url, atomically: true, encoding: .utf8)
             } catch {
-                NSLog("[MonitorView] Export button event log failure: \(error)")
+                // Never the error's own text: it carries the chosen file's path.
+                let error = error as NSError
+                AppSystemLog.problem("Scroll Monitor: the button event log could not be saved (\(error.domain) \(error.code))")
             }
         }
     }
@@ -255,7 +250,7 @@ class MonitorViewController: NSViewController, ChartViewDelegate {
     // MARK: - 按键事件处理
     func setupShortcutMenu() {
         guard shortcutMenu != nil else {
-            NSLog("[MonitorView] shortcutMenu 未连接，无法构建菜单")
+            AppSystemLog.problem("Scroll Monitor: the shortcut menu is not connected in the storyboard; it stays empty")
             return
         }
 
@@ -271,7 +266,7 @@ class MonitorViewController: NSViewController, ChartViewDelegate {
     }
     @objc func onShortcutMenuItemSelected(_ sender: NSMenuItem) {
         guard let shortcut = sender.representedObject as? SystemShortcut.Shortcut else {
-            NSLog("[MonitorView] 无法获取快捷键信息")
+            AppSystemLog.problem("Scroll Monitor: a shortcut menu item carries no shortcut")
             return
         }
         // 使用 ShortcutExecutor 触发快捷键

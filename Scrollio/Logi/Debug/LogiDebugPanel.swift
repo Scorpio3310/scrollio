@@ -546,7 +546,9 @@ class LogiDebugPanel: NSObject {
                     try append(line, to: sessionURL)
                 }
             } catch {
-                NSLog("LogiDebugPanel: failed to write auto log: \(error)")
+                // Never the error's own text: it carries the file's path.
+                let error = error as NSError
+                LogiSystemLog.note("Logitech Diagnostics: its log file could not be written (\(error.domain) \(error.code))")
             }
         }
     }
