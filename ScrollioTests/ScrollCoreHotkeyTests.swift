@@ -23,6 +23,8 @@ final class ScrollCoreHotkeyTests: XCTestCase {
         ScrollCore.shared.toggleScroll = false
         ScrollCore.shared.blockSmooth = false
         ScrollCore.shared.dashKeyHeld = false
+        ScrollCore.shared.slowKeyHeld = false
+        ScrollCore.shared.slowScroll = false
         ScrollCore.shared.toggleKeyHeld = false
         ScrollCore.shared.blockKeyHeld = false
     }
@@ -34,6 +36,8 @@ final class ScrollCoreHotkeyTests: XCTestCase {
         ScrollCore.shared.toggleScroll = false
         ScrollCore.shared.blockSmooth = false
         ScrollCore.shared.dashKeyHeld = false
+        ScrollCore.shared.slowKeyHeld = false
+        ScrollCore.shared.slowScroll = false
         ScrollCore.shared.toggleKeyHeld = false
         ScrollCore.shared.blockKeyHeld = false
         super.tearDown()
@@ -267,5 +271,211 @@ final class ScrollCoreHotkeyTests: XCTestCase {
         other.setIntegerValueField(.mouseEventButtonNumber, value: 255)
         _ = ScrollCore.shared.hotkeyEventCallBack(CGEventTapProxy(bitPattern: 1)!, .otherMouseUp, other, nil)
         XCTAssertTrue(ScrollCore.shared.dashKeyHeld)
+    }
+}
+
+/// "Scroll slower": the hold key that makes a scroll go a fifth as far, the mirror of
+/// "Scroll faster". The wheel goes through the scroll tap's callback as the tap runs it;
+/// nothing is posted: what the poster would get goes to `posterInputObserverForTests`.
+final class ScrollSlowerKeyTests: XCTestCase {
+
+    private var inputs: [ScrollPosterInput] = []
+    private var savedScroll: OPTIONS_SCROLL_DEFAULT!
+    private var savedAllowlist = false
+    private var savedApplication: Application?
+    private var savedCurrentApplication: Application?
+
+    override func setUp() {
+        super.setUp()
+        savedScroll = Options.shared.scroll
+        savedAllowlist = Options.shared.application.allowlist
+        savedApplication = ScrollCore.shared.application
+        savedCurrentApplication = ScrollCore.shared.currentApplication
+        // The settings of a new installation, with a mouse button for each of the two keys.
+        let scroll = OPTIONS_SCROLL_DEFAULT()
+        scroll.reverse = false
+        scroll.dash = ScrollHotkey(type: .mouse, code: 50)
+        scroll.slow = ScrollHotkey(type: .mouse, code: 51)
+        Options.shared.scroll = scroll
+        Options.shared.application.allowlist = false
+        ScrollCore.shared.application = nil
+        ScrollCore.shared.currentApplication = nil
+        ScrollCore.shared.handover = ScrollHandover()
+        ScrollCore.shared.toggleScroll = false
+        ScrollCore.shared.blockSmooth = false
+        ScrollUtils.shared.treatAsRemoteForTests(sourcePID: nil)
+        releaseBoth()
+        inputs = []
+        ScrollCore.posterInputObserverForTests = { [unowned self] input in self.inputs.append(input) }
+    }
+
+    override func tearDown() {
+        ScrollCore.posterInputObserverForTests = nil
+        releaseBoth()
+        ScrollCore.shared.handover = ScrollHandover()
+        ScrollCore.shared.application = savedApplication
+        ScrollCore.shared.currentApplication = savedCurrentApplication
+        Options.shared.scroll = savedScroll
+        Options.shared.application.allowlist = savedAllowlist
+        ScrollSystemLog.resetPassthroughForTests()
+        super.tearDown()
+    }
+
+    private func releaseBoth() {
+        ScrollCore.shared.handleScrollHotkey(code: 50, isDown: false)
+        ScrollCore.shared.handleScrollHotkey(code: 51, isDown: false)
+        ScrollCore.shared.dashKeyHeld = false
+        ScrollCore.shared.slowKeyHeld = false
+        ScrollCore.shared.dashScroll = false
+        ScrollCore.shared.slowScroll = false
+        ScrollCore.shared.dashAmplification = 1.0
+    }
+
+    private func hold(faster: Bool, slower: Bool) {
+        ScrollCore.shared.handleScrollHotkey(code: 50, isDown: faster)
+        ScrollCore.shared.handleScrollHotkey(code: 51, isDown: slower)
+    }
+
+    /// What the poster gets for one click of the main wheel, aimed at no app (pid 1).
+    private func click(point: Double) throws -> ScrollPosterInput {
+        let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: 0, wheel2: 0, wheel3: 0))
+        event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: point < 0 ? -1 : 1)
+        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: point < 0 ? -1 : 1)
+        event.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: point)
+        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 0)
+        event.setIntegerValueField(.eventSourceUnixProcessID, value: 0)
+        event.setIntegerValueField(.eventTargetUnixProcessID, value: 1)
+        inputs = []
+        _ = ScrollCore.shared.scrollEventCallBack(CGEventTapProxy(bitPattern: 1)!, .scrollWheel, event, nil)
+        XCTAssertEqual(inputs.count, 1, "one smoothed event")
+        return try XCTUnwrap(inputs.last)
+    }
+
+    /// With the key held a click goes a fifth as far: a fast one, and a slow one that is
+    /// under "Smallest step" and so goes the least distance, which is a fifth too. The
+    /// glide is the same one.
+    func testWithTheKeyHeld_aClickGoesAFifthAsFar() throws {
+        let step = Options.shared.scroll.step
+        let speed = Options.shared.scroll.speed
+        for point in [-120.0, 120.0, -10.0, 3.0] {
+            hold(faster: false, slower: false)
+            let plain = try click(point: point)
+            hold(faster: false, slower: true)
+            XCTAssertTrue(ScrollCore.shared.slowScroll)
+            let slow = try click(point: point)
+
+            // The plain click, written out: at least one step, times the speed.
+            let distance = max(step, abs(point)) * speed
+            XCTAssertEqual(abs(plain.y), distance, accuracy: 1e-9, "\(point)")
+            XCTAssertEqual(slow.y, plain.y / 5, accuracy: 1e-9, "\(point): a fifth, the same way")
+            XCTAssertEqual(slow.notch, plain.notch / 5, accuracy: 1e-9, "\(point): the notch with it")
+            XCTAssertEqual(slow.x, 0)
+            XCTAssertEqual(slow.duration, plain.duration, "\(point): the same glide")
+        }
+        // A slow click moves one step × speed; with the key a fifth of that.
+        hold(faster: false, slower: true)
+        XCTAssertEqual(abs(try click(point: -10).y), step * speed / 5, accuracy: 1e-9)
+    }
+
+    /// "Scroll faster" and "Scroll slower" held together cancel: the plain distance, to the
+    /// last bit. Each alone is five times and a fifth.
+    func testBothKeysHeld_giveThePlainDistance() throws {
+        let plain = try click(point: -120)
+        hold(faster: true, slower: true)
+        XCTAssertTrue(ScrollCore.shared.dashScroll)
+        XCTAssertTrue(ScrollCore.shared.slowScroll)
+        let both = try click(point: -120)
+        XCTAssertEqual(both.y, plain.y)
+        XCTAssertEqual(both.notch, plain.notch)
+
+        hold(faster: true, slower: false)
+        XCTAssertEqual(try click(point: -120).y, plain.y * 5, accuracy: 1e-9)
+        hold(faster: false, slower: false)
+        XCTAssertEqual(try click(point: -120).y, plain.y)
+
+        XCTAssertEqual(ScrollCore.amplification(faster: false, slower: false), 1.0)
+        XCTAssertEqual(ScrollCore.amplification(faster: true, slower: false), 5.0)
+        XCTAssertEqual(ScrollCore.amplification(faster: false, slower: true), 0.2)
+        XCTAssertEqual(ScrollCore.amplification(faster: true, slower: true), 1.0)
+    }
+
+    /// With no key recorded (as installed) nothing holds it: every button and key leaves
+    /// the distance alone.
+    func testWithoutAKey_nothingSlowsTheScroll() throws {
+        Options.shared.scroll.slow = nil
+        let plain = try click(point: -120)
+        XCTAssertFalse(ScrollCore.shared.handleScrollHotkey(code: 51, isDown: true), "no key of Scrollio's")
+        XCTAssertFalse(ScrollCore.shared.slowScroll)
+        XCTAssertEqual(try click(point: -120).y, plain.y)
+    }
+
+    /// A modifier recorded as the key, through the hold-key tap: down while the modifier's
+    /// flag is set, up when it is gone.
+    func testAModifierAsTheKey_isHeldWhileItsFlagIsSet() throws {
+        Options.shared.scroll.slow = ScrollHotkey(type: .keyboard, code: KeyCode.controlR)
+        func flagsChanged(_ flags: CGEventFlags) throws {
+            let event = try XCTUnwrap(CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(KeyCode.controlR), keyDown: true))
+            event.type = .flagsChanged
+            event.flags = flags
+            _ = ScrollCore.shared.hotkeyEventCallBack(CGEventTapProxy(bitPattern: 1)!, .flagsChanged, event, nil)
+        }
+        try flagsChanged(.maskControl)
+        XCTAssertTrue(ScrollCore.shared.slowScroll)
+        XCTAssertEqual(ScrollCore.shared.dashAmplification, 0.2)
+        XCTAssertFalse(ScrollCore.shared.dashScroll, "not the \"Scroll faster\" key")
+        try flagsChanged([])
+        XCTAssertFalse(ScrollCore.shared.slowScroll)
+        XCTAssertEqual(ScrollCore.shared.dashAmplification, 1.0)
+    }
+
+    /// A button that is the key is a scroll key to the rest of the app, as its neighbours
+    /// are: the Buttons pane says so on a row of that button, and a Logitech button recorded
+    /// for it (globally or for an app with its own settings) is one Scrollio asks the mouse
+    /// for.
+    func testTheButtonsPaneAndTheMouseKnowTheKey() {
+        let pane = PreferencesButtonsViewController()
+        XCTAssertTrue(pane.scrollHoldKeys().contains(ScrollHotkey(type: .mouse, code: 51)))
+        let onTheKey = ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 51, modifiers: 0, deviceFilter: nil), systemShortcutName: "copy"
+        )
+        XCTAssertEqual(
+            ButtonRowNote.make(for: onTheKey, captureStatus: .normal, scrollHoldKeys: pane.scrollHoldKeys())?.kind, .alsoScrollKey
+        )
+
+        Options.shared.scroll.slow = ScrollHotkey(type: .mouse, code: 1006)
+        XCTAssertEqual(LogiUsageBootstrap.globalScrollCodes(role: .slow), [1006])
+        XCTAssertEqual(LogiUsageBootstrap.globalScrollCodes(role: .dash), [], "its own role, not another's")
+        let app = Application(path: "/Applications/A.app")
+        app.scroll.slow = ScrollHotkey(type: .mouse, code: 1008)
+        XCTAssertEqual(LogiUsageBootstrap.appScrollCodes(app: app, role: .slow), [], "an app that follows Scrolling has none of its own")
+        app.inherit = false
+        XCTAssertEqual(LogiUsageBootstrap.appScrollCodes(app: app, role: .slow), [1008])
+        XCTAssertEqual(ScrollUtils.shared.optionsSlowKey(application: app), ScrollHotkey(type: .mouse, code: 1008))
+        XCTAssertEqual(ScrollUtils.shared.optionsSlowKey(application: nil), ScrollHotkey(type: .mouse, code: 1006))
+    }
+
+    /// The key is forgotten when the core stops (sleep, Pause: its release is never seen),
+    /// and the action of a button ("Scroll Slower" in the Buttons pane) holds it too.
+    func testTheKeyIsForgottenWhenTheCoreStops_andAButtonActionHoldsIt() {
+        let core = ScrollCore()
+        XCTAssertTrue(core.handleScrollHotkey(code: 51, isDown: true))
+        XCTAssertEqual(core.dashAmplification, 0.2)
+        core.isActive = true   // as after enable(); no event tap is created here
+        core.disable()
+        XCTAssertFalse(core.slowScroll)
+        XCTAssertFalse(core.slowKeyHeld)
+        XCTAssertEqual(core.dashAmplification, 1.0)
+        XCTAssertFalse(core.handleScrollHotkey(code: 51, isDown: false), "the release after the wake finds nothing held")
+
+        XCTAssertEqual(ScrollActionKind(shortcutIdentifier: "scrollSlow")?.role, .slow)
+        core.handleScrollAction(role: .slow, isDown: true)
+        XCTAssertTrue(core.slowScroll)
+        XCTAssertEqual(core.dashAmplification, 0.2)
+        core.handleScrollAction(role: .dash, isDown: true)
+        XCTAssertEqual(core.dashAmplification, 1.0, "both held: they cancel")
+        core.handleScrollAction(role: .dash, isDown: false)
+        core.handleScrollAction(role: .slow, isDown: false)
+        XCTAssertFalse(core.slowScroll)
+        XCTAssertEqual(core.dashAmplification, 1.0)
     }
 }

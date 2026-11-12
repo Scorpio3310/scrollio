@@ -150,6 +150,7 @@ enum SettingsFile {
         Key(name: OptionItem.Scroll.SmoothVertical, group: .scroll, kind: .bool),
         Key(name: OptionItem.Scroll.SmoothHorizontal, group: .scroll, kind: .bool),
         Key(name: OptionItem.Scroll.Dash, group: .scroll, kind: .hotkey),
+        Key(name: OptionItem.Scroll.Slow, group: .scroll, kind: .hotkey),
         Key(name: OptionItem.Scroll.Toggle, group: .scroll, kind: .hotkey),
         Key(name: OptionItem.Scroll.Block, group: .scroll, kind: .hotkey),
         // The thumb wheel
@@ -196,6 +197,7 @@ enum SettingsFile {
     static let leftOut: [LeftOut] = [
         LeftOut(OptionItem.General.OptionsExist, "marks that settings were saved once; the app writes it itself"),
         LeftOut(OptionItem.General.WelcomeGuideCompletedVersion, "the Welcome Guide's progress on this Mac"),
+        LeftOut(AppsLeftToMacOS.offeredKey, "which apps were once put on the list by Scrollio itself on this Mac; the list of apps is in the file"),
         LeftOut("preferencesSelectedPane", "window state: the pane that was open last"),
         LeftOut("scrollingAdvancedExpanded", "window state: whether Advanced is open"),
         LeftOut("generalAdvancedExpanded", "retired window state; nothing reads it"),

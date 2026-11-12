@@ -621,7 +621,7 @@ final class ButtonBindingTests: XCTestCase {
         let scrollItems = menu.items[scrollIndex].submenu?.items.compactMap {
             ($0.representedObject as? SystemShortcut.Shortcut)?.identifier
         }
-        XCTAssertEqual(scrollItems, ["scrollDash", "scrollToggle", "scrollBlock"])
+        XCTAssertEqual(scrollItems, ["scrollDash", "scrollSlow", "scrollToggle", "scrollBlock"])
     }
 
     func testBuildShortcutMenu_includesOpenTargetEntryAboveCustom() {

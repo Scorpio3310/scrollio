@@ -153,6 +153,7 @@ struct SystemShortcut {
                 case "mouseGestureNavigation": return "arrow.up.and.down.and.arrow.left.and.right"
                 // Mos 鼠标滚动
                 case "scrollDash": return "speedometer"
+                case "scrollSlow": return "tortoise"
                 case "scrollToggle": return "arrow.left.arrow.right"
                 case "scrollBlock": return "hand.raised"
                 // 修饰键
@@ -351,6 +352,7 @@ struct SystemShortcut {
         "mouseForwardClick": mouseForwardClick, "mouseGestureNavigation": mouseGestureNavigation,
         // Mos 鼠标滚动
         "scrollDash": scrollDash,
+        "scrollSlow": scrollSlow,
         "scrollToggle": scrollToggle,
         "scrollBlock": scrollBlock,
         // 修饰键
@@ -443,6 +445,7 @@ struct SystemShortcut {
     static let scrollDash = Shortcut("scrollDash", 0xFFFC, NSEvent.ModifierFlags(rawValue: 0), executionMode: .stateful)
     static let scrollToggle = Shortcut("scrollToggle", 0xFFFC, NSEvent.ModifierFlags(rawValue: 1), executionMode: .stateful)
     static let scrollBlock = Shortcut("scrollBlock", 0xFFFC, NSEvent.ModifierFlags(rawValue: 2), executionMode: .stateful)
+    static let scrollSlow = Shortcut("scrollSlow", 0xFFFC, NSEvent.ModifierFlags(rawValue: 3), executionMode: .stateful)
 
     // MARK: - Modifier Key Actions
     // 预定义单修饰键动作 (复用 custom modifier 的 stateful 执行语义)
@@ -488,7 +491,7 @@ struct SystemShortcut {
     /// Mos 鼠标滚动动作分类
     static let mouseScrollCategory: (category: String, shortcuts: [Shortcut]) = (
         "categoryMouseScroll", [
-            scrollDash, scrollToggle, scrollBlock
+            scrollDash, scrollSlow, scrollToggle, scrollBlock
         ]
     )
 

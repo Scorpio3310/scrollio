@@ -13,8 +13,9 @@
 //  page of the app it added; "−" and Delete remove (Edit › Undo brings the
 //  app back with its settings; when it was added again meanwhile, its settings go onto
 //  that entry, and Redo takes them off again). Double-click, Return or the chevron open the
-//  app's page (ApplicationDetailViewController) in place of the list; "‹ Apps", Esc and ⌘[
-//  come back, and leaving the pane always comes back to the list.
+//  app's page (ApplicationDetailViewController) in place of the list; the back button of
+//  the window's title bar, Esc and ⌘[ come back (`PreferencesPaneWithSubpage`), and leaving
+//  the pane always comes back to the list.
 //
 //  The pane edits Options.shared.application: the allowlist switch and the list of apps.
 //  What is stored and how is unchanged: running apps are stored by their program's path,
@@ -116,6 +117,8 @@ class PreferencesApplicationViewController: NSViewController {
     private(set) var listPage: NSView!
     /// The page of the app that is open; nil while the list shows.
     private(set) var detailController: ApplicationDetailViewController?
+    /// An app's page was opened or left: the window's title and its back button follow.
+    var onSubpageChange: (() -> Void)?
     /// The app of each row, by the row's id: the app's stored path. An app stored twice
     /// under one path (earlier builds let Finder add it again) gets "#2" after the path.
     private(set) var rowApplications: [String: Application] = [:]
@@ -527,6 +530,7 @@ class PreferencesApplicationViewController: NSViewController {
         contentHeightDidChange()
         scrollToTop()
         view.window?.makeFirstResponder(detail.view)
+        onSubpageChange?()
     }
 
     /// Back from an app's page to the list, with that app selected.
@@ -541,6 +545,7 @@ class PreferencesApplicationViewController: NSViewController {
         if shouldFocus {
             focusList()
         }
+        onSubpageChange?()
     }
 
     private func closeDetail(_ detail: ApplicationDetailViewController) {
@@ -656,5 +661,18 @@ final class ApplicationListRow: PreferencesListRow {
         guard let chevronView else { return false }
         let outset = Self.chevronHitOutset
         return chevronView.frame.insetBy(dx: -outset, dy: -outset).contains(point)
+    }
+}
+
+// MARK: - The app's page as the window sees it
+
+extension PreferencesApplicationViewController: PreferencesPaneWithSubpage {
+    /// The open app's name; nil while the list shows.
+    var subpageTitle: String? {
+        return detailController?.title
+    }
+
+    func leaveSubpage() {
+        showList(focusList: true)
     }
 }

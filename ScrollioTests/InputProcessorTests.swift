@@ -1095,7 +1095,7 @@ final class InputProcessorTests: XCTestCase {
     }
 
     func testResolveAction_scrollActionsAreStateful() {
-        for identifier in ["scrollDash", "scrollToggle", "scrollBlock"] {
+        for identifier in ["scrollDash", "scrollSlow", "scrollToggle", "scrollBlock"] {
             guard let action = ShortcutExecutor.shared.resolveAction(named: identifier) else {
                 return XCTFail("Expected \(identifier) action to resolve")
             }

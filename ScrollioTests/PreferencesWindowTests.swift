@@ -500,7 +500,8 @@ final class PreferencesSidebarTests: XCTestCase {
         let content = window.contentRect(forFrameRect: window.frame).size
         XCTAssertEqual(content, NSSize(width: width, height: PreferencesWindowLayout.defaultContentHeight))
 
-        // No tabs in the toolbar any more: only the separator that puts the title next to the sidebar.
+        // No tabs in the toolbar any more: only the separator that puts the title next to the
+        // sidebar (and, on an app's page under Apps, the back button after it).
         let toolbar = try XCTUnwrap(window.toolbar)
         XCTAssertEqual(toolbar.items.map(\.itemIdentifier), [.sidebarTrackingSeparator])
         XCTAssertTrue(toolbar.items.first is NSTrackingSeparatorToolbarItem)
@@ -535,6 +536,10 @@ final class PreferencesSidebarTests: XCTestCase {
             XCTAssertEqual(view.frame.minY, 0, pane.identifier)
             XCTAssertEqual(document.frame.width, preferences.host.scrollView.contentSize.width, pane.identifier)
             XCTAssertGreaterThan(view.frame.height, 50, pane.identifier)
+            // The title bar: the pane's name, and no back button (that is for an app's page).
+            XCTAssertEqual(window.title, preferences.selectedController?.title, pane.identifier)
+            XCTAssertEqual(window.toolbar?.items.map(\.itemIdentifier), [.sidebarTrackingSeparator], pane.identifier)
+            XCTAssertFalse(preferences.canGoBack, pane.identifier)
         }
         // Every pane fills the 520 pt column, so their boxes and tables share its margins.
         for pane in preferences.panes {
@@ -583,13 +588,14 @@ final class PreferencesSidebarTests: XCTestCase {
         let scrolling = try XCTUnwrap(preferences.selectedController as? PreferencesScrollingViewController)
         let host = preferences.host
         // The keys and the thumb wheel always show, so the pane with "Advanced" closed is
-        // taller than the default window. Its budget: at most 1000 pt. A fixed window whose
-        // column (under the title bar) holds the budget fits it, and not the open pane.
-        let budget: CGFloat = 1000
+        // taller than the default window. Its budget: at most 1060 pt (1000 until "Scroll
+        // slower" became the fourth key row, 53 pt). A fixed window whose column (under the
+        // title bar) holds the budget fits it, and not the open pane.
+        let budget: CGFloat = 1060
         let closedHeight = scrolling.view.fittingSize.height
         XCTAssertLessThanOrEqual(closedHeight, budget, "the tab with Advanced closed stays within its budget")
         let width = window.contentRect(forFrameRect: window.frame).width
-        window.setContentSize(NSSize(width: width, height: 1060))
+        window.setContentSize(NSSize(width: width, height: 1120))
         window.contentView?.layoutSubtreeIfNeeded()
         let frame = window.frame
         let visible = host.scrollView.contentSize.height
@@ -621,7 +627,7 @@ final class PreferencesSidebarTests: XCTestCase {
 
         // A taller window shows more of the pane; the pane does not stretch.
         let height = scrolling.view.frame.height
-        window.setContentSize(NSSize(width: width, height: 1200))
+        window.setContentSize(NSSize(width: width, height: 1260))
         window.contentView?.layoutSubtreeIfNeeded()
         XCTAssertEqual(scrolling.view.frame.height, height)
         XCTAssertEqual(host.documentView.frame.height, host.scrollView.contentSize.height)
@@ -673,7 +679,7 @@ final class PreferencesNamingTests: XCTestCase {
         // Scrolling tab (built in code): what holding the key does, in plain words.
         let scrolling = try XCTUnwrap(instantiate(PANEL_IDENTIFIER.scrolling))
         let shown = texts(in: scrolling.view)
-        for name in ["Scroll faster", "Scroll sideways", "Pause smoothing"] {
+        for name in ["Scroll faster", "Scroll slower", "Scroll sideways", "Pause smoothing"] {
             XCTAssertTrue(shown.contains(name), "\(name) is not in the Scrolling tab")
         }
         for old in ["Dash Key", "Toggle Key", "Block Key"] {
@@ -683,17 +689,19 @@ final class PreferencesNamingTests: XCTestCase {
         // Button actions (code): the same three names as the Scrolling tab, in the Title
         // Case of menu items.
         XCTAssertEqual(SystemShortcut.scrollDash.localizedName, "Scroll Faster")
+        XCTAssertEqual(SystemShortcut.scrollSlow.localizedName, "Scroll Slower")
         XCTAssertEqual(SystemShortcut.scrollToggle.localizedName, "Scroll Sideways")
         XCTAssertEqual(SystemShortcut.scrollBlock.localizedName, "Pause Smoothing")
     }
 
     func testScrollActionIdentifiersAreFrozen() {
         XCTAssertEqual(SystemShortcut.scrollDash.identifier, "scrollDash")
+        XCTAssertEqual(SystemShortcut.scrollSlow.identifier, "scrollSlow")
         XCTAssertEqual(SystemShortcut.scrollToggle.identifier, "scrollToggle")
         XCTAssertEqual(SystemShortcut.scrollBlock.identifier, "scrollBlock")
         XCTAssertEqual(
             SystemShortcut.mouseScrollCategory.shortcuts.map(\.identifier),
-            ["scrollDash", "scrollToggle", "scrollBlock"]
+            ["scrollDash", "scrollSlow", "scrollToggle", "scrollBlock"]
         )
     }
 

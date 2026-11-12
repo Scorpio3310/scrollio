@@ -69,6 +69,7 @@ enum LogiUsageBootstrap {
         let hotkey: ScrollHotkey? = {
             switch role {
             case .dash:   return Options.shared.scroll.dash
+            case .slow:   return Options.shared.scroll.slow
             case .toggle: return Options.shared.scroll.toggle
             case .block:  return Options.shared.scroll.block
             }
@@ -82,6 +83,7 @@ enum LogiUsageBootstrap {
         let hotkey: ScrollHotkey? = {
             switch role {
             case .dash:   return app.scroll.dash
+            case .slow:   return app.scroll.slow
             case .toggle: return app.scroll.toggle
             case .block:  return app.scroll.block
             }

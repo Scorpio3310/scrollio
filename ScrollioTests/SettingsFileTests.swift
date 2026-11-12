@@ -128,12 +128,12 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertEqual(SettingsFile.exportedKeys.map(\.name), [
             "smooth", "reverse", "reverseVertical", "reverseHorizontal", "step", "speed", "duration", "deadZone",
             "smoothSimTrackpad", "trackpadStyleInBrowsers", "trackpadStyleInMacApps",
-            "smoothVertical", "smoothHorizontal", "dash", "toggle", "block",
+            "smoothVertical", "smoothHorizontal", "dash", "slow", "toggle", "block",
             "thumbWheelSettings", "allowlist", "applications", "buttonBindings", "mouseGestureSettings",
             "logiWheelSettings", "logiMouseSettings", "hideStatusItem",
         ])
         XCTAssertEqual(SettingsFile.leftOut.map { $0.key + ($0.isPrefix ? "*" : "") }, [
-            "optionsExist", "welcomeGuideCompletedVersion", "preferencesSelectedPane", "scrollingAdvancedExpanded",
+            "optionsExist", "welcomeGuideCompletedVersion", "appsLeftToMacOSOffered", "preferencesSelectedPane", "scrollingAdvancedExpanded",
             "generalAdvancedExpanded", "durationForOtherTrackpadState", "scrollTuning", "logitechFeatureCache",
             "Logi*", "SU*", "NSStatusItem *", "NSWindow Frame *", "NSSplitView Subview Frames *",
             "NSNav*", "NSOSPLastRootDirectory",
@@ -161,6 +161,9 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertNotNil(own.options.scroll.dash)
         XCTAssertNotNil(own.options.scroll.toggle)
         XCTAssertNotNil(own.options.scroll.block)
+        // "Scroll slower" has no key by default, and a hold key without a key is not stored.
+        XCTAssertNil(own.options.scroll.slow)
+        own.options.scroll.slow = ScrollHotkey(type: .keyboard, code: KeyCode.controlR)
         own.options.saveOptions()
 
         let saved = Set(own.stored.keys)
@@ -168,7 +171,7 @@ final class SettingsFileFormatTests: XCTestCase {
                        "what the app saves: every setting of a file, and the mark that settings exist")
         // What the rest of the app and macOS keep in the same preferences.
         let others = [
-            WelcomeGuideProgress.key, PreferencesSplitViewController.selectedPaneDefaultsKey,
+            WelcomeGuideProgress.key, AppsLeftToMacOS.offeredKey, PreferencesSplitViewController.selectedPaneDefaultsKey,
             PreferencesScrollingViewController.advancedExpandedDefaultsKey,
             PreferencesGeneralViewController.advancedExpandedDefaultsKey,
             LogiDeviceSession.featureCacheKeyForTests, "LogiVerboseTraceEnabled",
@@ -392,6 +395,9 @@ final class SettingsFileFormatTests: XCTestCase {
         source.options.scroll.step = 44.5
         source.options.scroll.smoothSimTrackpad = true
         source.options.scroll.dash = ScrollHotkey(type: .mouse, code: 4)
+        source.options.scroll.slow = ScrollHotkey(type: .keyboard, code: KeyCode.controlR)
+        // An app's own settings have a "Scroll slower" key of their own.
+        try XCTUnwrap(source.options.application.applications.get(by: "/Applications/Notes.app")).scroll.slow = ScrollHotkey(type: .mouse, code: 5)
         source.options.application.allowlist = true
         var gesture = MouseGestureSettings.default
         gesture.invertHorizontal = true
@@ -411,6 +417,7 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertTrue(SettingsFile.apply(contents, to: target.options))
 
         XCTAssertTrue(target.options.scroll == source.options.scroll)
+        XCTAssertEqual(target.options.scroll.slow, ScrollHotkey(type: .keyboard, code: KeyCode.controlR), "the \"Scroll slower\" key travels with the file")
         XCTAssertNil(target.options.scroll.toggle, "a hold key that was removed is none in the file and after it")
         XCTAssertEqual(target.options.thumbWheel, source.options.thumbWheel)
         XCTAssertEqual(target.options.buttons.binding, source.options.buttons.binding)
@@ -420,6 +427,7 @@ final class SettingsFileFormatTests: XCTestCase {
         let notes = try XCTUnwrap(target.options.application.applications.get(by: "/Applications/Notes.app"))
         XCTAssertFalse(notes.inherit)
         XCTAssertEqual(notes.scroll.speed, 2.5)
+        XCTAssertEqual(notes.scroll.slow, ScrollHotkey(type: .mouse, code: 5), "the app's own key, not the one of Scrolling")
         XCTAssertEqual(target.options.gesture, gesture)
         XCTAssertEqual(target.options.logiMouse, source.options.logiMouse)
         XCTAssertEqual(target.options.logiWheel.mode, .freeSpin)
@@ -493,7 +501,9 @@ final class SettingsFileFormatTests: XCTestCase {
         for name in settings.keys {
             XCTAssertTrue(SettingsFile.isExported(name), name)
         }
-        XCTAssertEqual(settings.count, SettingsFile.exportedKeys.count - 1, "everything but the hold key that is none")
+        XCTAssertEqual(settings.count, SettingsFile.exportedKeys.count - 2,
+                       "everything but the hold keys that are none: the one removed, and \"Scroll slower\", which has none until recorded")
+        XCTAssertNil(settings["slow"])
         let text = String(decoding: data, as: UTF8.self)
         for word in ["welcomeGuide", "optionsExist", "SUEnable", "SUFeedURL", "FeatureCache", "preferencesSelectedPane", "NSWindow", "autoLaunch"] {
             XCTAssertFalse(text.contains(word), word)
@@ -2788,5 +2798,202 @@ final class PreferencesGeneralSettingsFileTests: XCTestCase {
         XCTAssertFalse(open.canChooseDirectories)
         XCTAssertEqual(open.prompt, "Choose", "nothing is imported by the panel's button")
         XCTAssertEqual(open.message, "Choose a settings file that Scrollio exported.")
+    }
+}
+
+// MARK: - Apps left to macOS by default
+
+/// Calendar is left to macOS unless the user says otherwise (`AppsLeftToMacOS`): an
+/// ordinary entry of the per-app list with smoothing off, made once. No app of this Mac is
+/// looked for: each test says where Calendar is.
+final class AppsLeftToMacOSTests: XCTestCase {
+
+    private static let calendar = AppsLeftToMacOS.Location(
+        bundlePath: "/System/Applications/Calendar.app",
+        executablePath: "/System/Applications/Calendar.app/Contents/MacOS/Calendar"
+    )
+    private static let front = AppSmoothing.App(
+        name: "Calendar", bundlePath: calendar.bundlePath, executablePath: calendar.executablePath
+    )
+    /// The ids the offer looked for.
+    private var asked: [String] = []
+
+    private func makeSettings() -> OwnSettings {
+        let own = OwnSettings(for: self)
+        own.options.readOptions()
+        return own
+    }
+
+    @discardableResult
+    private func offer(_ options: Options, installed: Bool = true, guideIsPending: Bool = false) -> [Application] {
+        return AppsLeftToMacOS.offer(to: options, guideIsPending: guideIsPending) { [unowned self] identifier in
+            self.asked.append(identifier)
+            return installed && identifier == "com.apple.iCal" ? Self.calendar : nil
+        }
+    }
+
+    private func entry(in options: Options) -> Application? {
+        return AppSmoothing.entry(for: Self.front, in: options.application.applications)
+    }
+
+    private func offered(_ own: OwnSettings) -> [String]? {
+        return own.store.defaults.stringArray(forKey: "appsLeftToMacOSOffered")
+    }
+
+    /// The same store read again, as at the next launch.
+    private func nextLaunch(of own: OwnSettings) -> Options {
+        own.options.saveOptions()
+        let options = Options()
+        options.defaults = own.store.defaults
+        options.readOptions()
+        return options
+    }
+
+    /// One app, and the name the mark is stored under.
+    func testTheListIsCalendarAlone() {
+        XCTAssertEqual(AppsLeftToMacOS.bundleIdentifiers, ["com.apple.iCal"], "no app goes in without having been seen to need it")
+        XCTAssertEqual(AppsLeftToMacOS.offeredKey, "appsLeftToMacOSOffered")
+    }
+
+    /// A fresh store gets the entry, once: stored under the bundle's path with its own
+    /// settings, which are those of Scrolling with smoothing off (the wheel's direction
+    /// stays as elsewhere). The engine does not smooth it, and the menu's "Smooth Scrolling
+    /// in Calendar" is unchecked and turns it on again.
+    func testAFreshStoreGetsTheEntryOnce() throws {
+        let own = makeSettings()
+        own.options.scroll.speed = 4.5
+        own.options.scroll.reversesWheel = false
+
+        XCTAssertEqual(offer(own.options).map(\.path), [Self.calendar.bundlePath])
+        let calendar = try XCTUnwrap(entry(in: own.options))
+        XCTAssertEqual(own.options.application.applications.count, 1)
+        XCTAssertFalse(calendar.inherit, "its own settings")
+        XCTAssertFalse(calendar.scroll.smooth)
+        XCTAssertFalse(calendar.isSmooth(false), "the engine leaves its wheel as macOS sends it")
+        XCTAssertEqual(calendar.scroll.speed, 4.5, "a copy of the Scrolling settings")
+        XCTAssertFalse(calendar.scroll.reversesWheel, "the wheel's direction as in every other app")
+        XCTAssertEqual(
+            AppSmoothing.decision(for: Self.front, list: own.options.application, scrolling: own.options.scroll),
+            AppSmoothing.Decision(isSmoothed: false, change: .setOwnSmoothing(true))
+        )
+        XCTAssertEqual(offered(own), ["com.apple.iCal"])
+
+        // Once: a second launch adds nothing and does not even look for the app.
+        asked = []
+        XCTAssertTrue(offer(own.options).isEmpty)
+        XCTAssertEqual(asked, [])
+        let next = nextLaunch(of: own)
+        XCTAssertEqual(entry(in: next)?.scroll.smooth, false, "stored as any entry of the list")
+        XCTAssertTrue(offer(next).isEmpty)
+        XCTAssertEqual(next.application.applications.count, 1)
+    }
+
+    /// The user removes the entry: it does not come back, at this launch or a later one.
+    func testRemovingTheEntryKeepsItGone() throws {
+        let own = makeSettings()
+        offer(own.options)
+        own.options.application.applications.remove(from: Self.calendar.bundlePath)
+        XCTAssertNil(entry(in: own.options))
+
+        XCTAssertTrue(offer(own.options).isEmpty)
+        XCTAssertNil(entry(in: own.options))
+        let next = nextLaunch(of: own)
+        XCTAssertTrue(offer(next).isEmpty)
+        XCTAssertEqual(next.application.applications.count, 0)
+    }
+
+    /// The user switches it back: the entry is his and stays as he set it.
+    func testSwitchedBackItStaysSwitchedBack() throws {
+        let own = makeSettings()
+        offer(own.options)
+        try XCTUnwrap(entry(in: own.options)).setUsesScrollingSettings(true, scrolling: own.options.scroll)
+        let next = nextLaunch(of: own)
+        XCTAssertTrue(offer(next).isEmpty)
+        XCTAssertEqual(entry(in: next)?.inherit, true, "smoothed again, as he chose")
+    }
+
+    /// Someone who has Calendar on his list already, under the bundle's path ("Choose in
+    /// Finder…") or the program's ("+" for a running app), keeps what he chose; the app
+    /// counts as offered, so removing his entry later brings no other.
+    func testAnExistingEntryForCalendarIsLeftAlone() throws {
+        for path in [Self.calendar.bundlePath, try XCTUnwrap(Self.calendar.executablePath)] {
+            let own = makeSettings()
+            let mine = Application(path: path)
+            own.options.application.applications.append(mine)
+
+            XCTAssertTrue(offer(own.options).isEmpty, path)
+            XCTAssertEqual(own.options.application.applications.count, 1, path)
+            XCTAssertTrue(mine.inherit, "\(path): still follows Scrolling")
+            XCTAssertTrue(mine.scroll == OPTIONS_SCROLL_DEFAULT(), path)
+            XCTAssertEqual(offered(own), ["com.apple.iCal"], path)
+
+            own.options.application.applications.remove(from: path)
+            XCTAssertTrue(offer(own.options).isEmpty, path)
+            XCTAssertEqual(own.options.application.applications.count, 0, path)
+        }
+    }
+
+    /// An app that is not installed is not added, and is tried again at a later launch.
+    func testAnAppThatIsNotInstalledIsNotAdded() {
+        let own = makeSettings()
+        XCTAssertTrue(offer(own.options, installed: false).isEmpty)
+        XCTAssertEqual(asked, ["com.apple.iCal"])
+        XCTAssertEqual(own.options.application.applications.count, 0)
+        XCTAssertNil(offered(own), "not offered yet")
+
+        XCTAssertEqual(offer(own.options).count, 1, "installed by the next launch")
+        XCTAssertEqual(offered(own), ["com.apple.iCal"])
+    }
+
+    /// With "Change scrolling only in these apps" on, an app that is not on the list is
+    /// left to macOS already, and an entry would start reversing its wheel: nothing is
+    /// added (the menu's item is off for it, as for every app not on the list), and it is
+    /// tried again at a later launch.
+    func testWhileScrollingIsLimitedToTheListedApps_nothingIsAdded() {
+        let own = makeSettings()
+        own.options.application.allowlist = true
+        XCTAssertTrue(offer(own.options).isEmpty)
+        XCTAssertEqual(own.options.application.applications.count, 0)
+        XCTAssertNil(offered(own))
+        XCTAssertEqual(
+            AppSmoothing.decision(for: Self.front, list: own.options.application, scrolling: own.options.scroll),
+            AppSmoothing.Decision(isSmoothed: false, change: nil)
+        )
+
+        own.options.application.allowlist = false
+        XCTAssertEqual(offer(own.options).count, 1)
+    }
+
+    /// A new user gets the entry when the Welcome Guide is finished, not before: the
+    /// guide sets the wheel's direction, and the entry keeps a copy of it.
+    func testANewUserGetsTheEntryWhenTheWelcomeGuideIsFinished() throws {
+        let own = makeSettings()
+        XCTAssertTrue(offer(own.options, guideIsPending: true).isEmpty)
+        XCTAssertEqual(asked, [])
+        XCTAssertNil(offered(own))
+
+        own.options.scroll.reversesWheel = false   // chosen in the guide
+        XCTAssertEqual(offer(own.options).count, 1)
+        XCTAssertFalse(try XCTUnwrap(entry(in: own.options)).scroll.reversesWheel)
+    }
+
+    /// The settings file carries the entry as it carries every app of the list; the mark
+    /// that it was offered stays on the Mac that made it.
+    func testTheSettingsFileExportsAndImportsTheListWithIt() throws {
+        let source = makeSettings()
+        offer(source.options)
+        let data = try SettingsFile.export(from: source.options, now: Date(timeIntervalSince1970: 1_794_476_527)).get()
+        let text = String(decoding: data, as: UTF8.self)
+        XCTAssertTrue(text.contains("/System/Applications/Calendar.app"))
+        XCTAssertFalse(text.contains("appsLeftToMacOSOffered"))
+
+        let target = makeSettings()
+        XCTAssertTrue(SettingsFile.apply(try SettingsFile.read(data).get(), to: target.options))
+        let imported = try XCTUnwrap(entry(in: target.options))
+        XCTAssertFalse(imported.inherit)
+        XCTAssertFalse(imported.scroll.smooth)
+        // On the Mac that imported it the entry is one the user has: left alone.
+        XCTAssertTrue(offer(target.options).isEmpty)
+        XCTAssertEqual(target.options.application.applications.count, 1)
     }
 }

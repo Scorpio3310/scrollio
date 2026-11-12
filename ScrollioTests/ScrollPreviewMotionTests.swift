@@ -265,6 +265,10 @@ final class ScrollPreviewMotionTests: XCTestCase {
         let plain = Motion(scene: scene(), clicks: one)
         let faster = Motion(scene: scene(.faster), clicks: one)
         XCTAssertEqual(faster.end, 5 * plain.end, accuracy: 1e-9)
+        // "Scroll slower" is its mirror: a fifth, and like it only on smoothed scrolling.
+        let slower = Motion(scene: scene(.slower), clicks: one)
+        XCTAssertEqual(slower.end, plain.end / 5, accuracy: 1e-9)
+        XCTAssertEqual(Motion(scene: scene(.slower, smoothing: false), clicks: one).end, plain.end, accuracy: 1e-9)
 
         // A whole burst is five times as far at every speed of the slider: the page never
         // stops at its end first, so "faster" is always a clear five times "normal" (at the

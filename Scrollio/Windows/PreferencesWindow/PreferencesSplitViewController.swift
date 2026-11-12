@@ -111,6 +111,18 @@ struct PreferencesPane: Equatable {
     }
 }
 
+/// A pane that can show a page of its own in place of its first one: Apps shows an app's
+/// page in place of the list. While it does, the window is named after that page and its
+/// title bar has a back button, as in System Settings.
+protocol PreferencesPaneWithSubpage: AnyObject {
+    /// The name of the page on show; nil while the pane shows its first page.
+    var subpageTitle: String? { get }
+    /// Back to the pane's first page.
+    func leaveSubpage()
+    /// The pane calls it when a page was opened or left.
+    var onSubpageChange: (() -> Void)? { get set }
+}
+
 final class PreferencesSplitViewController: NSSplitViewController, PreferencesSidebarDelegate {
 
     /// UserDefaults key of the pane that was open last.
@@ -148,6 +160,9 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
         self.sidebar = PreferencesSidebarViewController(panes: panes, titles: panes.map { controllers[$0.identifier]?.title ?? "" })
         self.host = PreferencesPaneHostViewController(liesUnderSidebar: paneLiesUnderSidebar)
         super.init(nibName: nil, bundle: nil)
+        for case let pane as PreferencesPaneWithSubpage in controllers.values {
+            pane.onSubpageChange = { [weak self] in self?.updateWindowTitle() }
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -276,10 +291,36 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
         window.makeFirstResponder(sidebar.tableView)
     }
 
-    /// The window is named after the pane it shows, as in System Settings; the title bar
-    /// shows that name next to the sidebar.
+    /// The page of the pane on show that one goes back from (an app's page under Apps);
+    /// nil while the pane shows its first page. Another pane's open page does not count:
+    /// the sidebar leaves it.
+    private var subpagePane: PreferencesPaneWithSubpage? {
+        guard let pane = selectedController as? PreferencesPaneWithSubpage, pane.subpageTitle != nil else { return nil }
+        return pane
+    }
+
+    /// Whether the window's title bar offers the way back.
+    var canGoBack: Bool {
+        return subpagePane != nil
+    }
+
+    /// The back button of the title bar: back to the pane's first page.
+    func goBack() {
+        subpagePane?.leaveSubpage()
+    }
+
+    /// Called when the pane on show, or the page inside it, changed: the window's toolbar
+    /// follows (`PreferencesWindowController.syncBackItem`).
+    var onNavigationChange: (() -> Void)?
+
+    /// The window is named after the pane it shows, as in System Settings, or after the
+    /// page open inside that pane (an app's name); the title bar shows that name next to
+    /// the sidebar, after the back button when there is one.
     func updateWindowTitle() {
-        guard let window = view.window, let title = selectedController?.title, !title.isEmpty else { return }
-        window.title = title
+        guard isViewLoaded, let window = view.window else { return }
+        if let title = subpagePane?.subpageTitle ?? selectedController?.title, !title.isEmpty {
+            window.title = title
+        }
+        onNavigationChange?()
     }
 }

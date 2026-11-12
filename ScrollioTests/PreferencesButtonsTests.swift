@@ -2558,7 +2558,7 @@ final class PreferencesButtonsTests: XCTestCase {
             XCTAssertTrue(image.isTemplate, "\(item.title): an SF Symbol")
         }
         let scrolling = try XCTUnwrap(menu.items.first { $0.title == "Scrolling" }?.submenu)
-        XCTAssertEqual(scrolling.items.map(\.title), ["Scroll Faster", "Scroll Sideways", "Pause Smoothing"])
+        XCTAssertEqual(scrolling.items.map(\.title), ["Scroll Faster", "Scroll Slower", "Scroll Sideways", "Pause Smoothing"])
         let logitech = try XCTUnwrap(menu.items.first { $0.title == "Logitech Mouse" }?.submenu)
         XCTAssertEqual(logitech.items.map(\.title), [
             "Switch Wheel Mode", "Increase Pointer Speed", "Decrease Pointer Speed",

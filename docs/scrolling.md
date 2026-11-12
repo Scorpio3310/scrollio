@@ -10,14 +10,25 @@
   the ends of a page. Sideways scrolling stays as it is. What it does in which app, and
   its limits:
   [Trackpad-style scrolling (Experimental)](#trackpad-style-scrolling-experimental).
-- While you hold a key: "Scroll faster" (5 × the distance), "Scroll sideways" and "Pause
-  smoothing" (exact steps, for example to zoom with ⌘). A mouse button can hold them
-  too. These keys work while Smooth scrolling is on.
+- While you hold a key: "Scroll faster" (5 × the distance), "Scroll slower" (a fifth of
+  the distance, for fine work), "Scroll sideways" and "Pause smoothing" (exact steps, for
+  example to zoom with ⌘). "Scroll slower" has no key until you record one: ⌥, ⇧ and ⌘
+  are the other three, and ⌃ with the wheel is the screen zoom of macOS for those who
+  turned that on. Held together, "Scroll faster" and "Scroll slower" cancel. A mouse
+  button can hold them too. These keys work while Smooth scrolling is on.
 - "Reset to Defaults" can be taken back: for a few seconds the button reads "Undo Reset".
 - Per app (the Apps pane): an app uses the Scrolling settings or keeps its own. "Change
   scrolling only in these apps" leaves every other app to macOS; buttons and gestures
   still work everywhere. "Smooth Scrolling in …" in the menu bar menu turns smoothing on
   or off for the app in front.
+- Calendar is on the list of apps from the start, with its own settings and Smooth
+  scrolling off: its month view aligns itself to weeks, and from a smoothed wheel a small
+  turn barely moves it and a little more runs away. The wheel's direction stays as in
+  every other app. It is an entry like any other: turn "Use settings from Scrolling" on
+  for it to have it smoothed again, or remove it; Scrollio does not put it back. It is
+  added once, when Calendar is not on your list yet (after the Welcome Guide for a new
+  user), and not while "Change scrolling only in these apps" is on, which leaves Calendar
+  to macOS anyway.
 - Trackpads and the Magic Mouse are left alone. With several displays, the motion is
   timed to the display under the pointer.
 

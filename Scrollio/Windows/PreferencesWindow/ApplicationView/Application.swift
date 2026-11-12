@@ -132,6 +132,7 @@ extension Application {
         own.reverseVertical = global.reverseVertical
         own.reverseHorizontal = global.reverseHorizontal
         own.dash = global.dash
+        own.slow = global.slow
         own.toggle = global.toggle
         own.block = global.block
         own.step = global.step

@@ -3073,30 +3073,6 @@
         }
       }
     },
-    "apps-back": {
-      "comment": "App page: borderless button at the top left that goes back to the list",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Apps"
-          }
-        }
-      }
-    },
-    "apps-back-accessibility": {
-      "comment": "App page: accessibility label and tooltip of the back button",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Back to Apps"
-          }
-        }
-      }
-    },
     "apps-detail-inherit": {
       "comment": "App page: switch; on, the app uses the settings of the Scrolling pane",
       "extractionState": "manual",
@@ -7452,6 +7428,50 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lists and documents in apps such as Finder. An app bounces at a page's end where Scrollio can read its scroll bar, or can see the content under the pointer move with the wheel; elsewhere it scrolls as usual. In some apps (Messages, Calendar) scrolling can get worse: turn this off, or turn Trackpad-style scrolling off for that app under Apps."
+          }
+        }
+      }
+    },
+    "scrolling-key-slower": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll slower"
+          }
+        }
+      }
+    },
+    "scrolling-key-slower-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For fine work: a fifth of the distance."
+          }
+        }
+      }
+    },
+    "scrollSlow": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll Slower"
+          }
+        }
+      }
+    },
+    "preferences-back": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back"
           }
         }
       }

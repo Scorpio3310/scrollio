@@ -52,6 +52,7 @@ enum MouseButtonActionKind {
 
 enum ScrollActionKind {
     case dash
+    case slow
     case toggle
     case block
 
@@ -59,6 +60,8 @@ enum ScrollActionKind {
         switch shortcutIdentifier {
         case "scrollDash":
             self = .dash
+        case "scrollSlow":
+            self = .slow
         case "scrollToggle":
             self = .toggle
         case "scrollBlock":
@@ -72,6 +75,8 @@ enum ScrollActionKind {
         switch self {
         case .dash:
             return .dash
+        case .slow:
+            return .slow
         case .toggle:
             return .toggle
         case .block:
