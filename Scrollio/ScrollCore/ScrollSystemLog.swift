@@ -48,6 +48,8 @@ enum ScrollSystemLog {
         var trackpadStyleWithheld = false
         /// The switch is on, but the scroll is mainly sideways and carries no phases.
         var trackpadStyleSideways = false
+        /// One touch: what the end watch met and did (`ScrollEndWatch.swift`).
+        var endWatch = ScrollEndWatchLog()
         /// How many touches ("began") the scroll was sent as, and how many of its wheel events
         /// went on with a glide instead of beginning a touch (a flick only).
         var touches = 0
@@ -129,7 +131,23 @@ enum ScrollSystemLog {
 #endif
         let message = message(for: session, ended: reason)
         logger.notice("\(message, privacy: .public)")
+        // One touch: a second line with what the end watch met (roles and numbers only).
+        if let line = session.endWatch.line {
+            logger.notice("\(line, privacy: .public)")
+        }
     }
+
+    /// One touch: a hold at a page's end is over. One line with how many wheel events it
+    /// took in (nothing was sent for them).
+    static func notePageEnd(taken: Int) {
+#if DEBUG
+        pageEndObserverForTests?(taken)
+#endif
+        logger.notice("scroll end watch: took in \(taken, privacy: .public) wheel events at the page's end")
+    }
+#if DEBUG
+    static var pageEndObserverForTests: ((Int) -> Void)?
+#endif
 
     // MARK: - Wheel events let through unsmoothed
 
