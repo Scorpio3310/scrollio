@@ -6,10 +6,12 @@
 //  the Info.plist, not from a disk image), what the app's Info.plist says, what Scrollio
 //  shows while a found update waits (the Dock icon, its badge), the lines of the `app` log,
 //  that Sparkle finds the delegate methods under the names it calls, that only the Update
-//  folder knows Sparkle, and that the release script and the app agree on the feed.
+//  folder knows Sparkle, that the release script and the app agree on the feed, and that
+//  Sparkle's alerts ("You're up to date!") open so that the main queue keeps running.
 //
 //  No updater is started here: every start is one that must refuse, so nothing asks the
-//  network. The Dock is replaced by counters.
+//  network. The Dock is replaced by counters, and no alert opens: what an open alert is
+//  to the main thread, a run loop in the modal panel mode, is run without a window.
 //
 
 import XCTest
@@ -349,7 +351,7 @@ final class UpdateCenterTests: XCTestCase {
         XCTAssertTrue(center.conforms(to: try! XCTUnwrap(NSProtocolFromString("SPUStandardUserDriverDelegate"))))
     }
 
-    // MARK: - Sparkle's windows, without its modal alerts
+    // MARK: - Sparkle's windows, with its alerts opened from the run loop
 
     /// Everything Sparkle asks of its windows is answered by `UpdateWindows`, under the
     /// names Sparkle calls (the last one is optional: without it "Update to Scrollio …"
@@ -379,53 +381,211 @@ final class UpdateCenterTests: XCTestCase {
         XCTAssertTrue(UpdateWindows.conforms(to: try! XCTUnwrap(NSProtocolFromString("SPUUserDriver"))))
     }
 
-    /// Sparkle's alerts for "nothing newer", "failed" and "installed" are modal for the
-    /// whole app and open inside a block of the main queue: while one is open no other
-    /// block of that queue runs, and with it stand still the button actions, the gesture
-    /// follow-ups and the timeout that frees a held pointer. `UpdateWindows` says these
-    /// three itself and never hands them to Sparkle's windows; the updater gets them and
-    /// nothing else.
-    func testTheThreeModalAlertsNeverReachSparklesWindows() throws {
-        let source = try String(contentsOf: repositoryRoot.appendingPathComponent("Scrollio/Update/UpdateCenter.swift"), encoding: .utf8)
-        XCTAssertFalse(source.contains("standard.showUpdateNotFoundWithError("))
-        XCTAssertFalse(source.contains("standard.showUpdaterError("))
-        // "Installed" goes on only in the case in which Sparkle shows no alert: the app was started again.
-        XCTAssertEqual(source.components(separatedBy: "standard.showUpdateInstalledAndRelaunched(").count - 1, 1)
-        XCTAssertTrue(source.contains("standard.showUpdateInstalledAndRelaunched(true, acknowledgement: acknowledgement)"))
+    /// Sparkle says "nothing newer", "failed" and "installed" with an alert that is modal
+    /// for the whole app. The updater calls its windows inside a block of the main queue,
+    /// and an alert opened there stops that queue until it is closed (the test after the
+    /// next shows it). `UpdateWindows` hands each of the three to Sparkle's windows from
+    /// the run loop and nowhere else, and the updater gets `UpdateWindows` and nothing
+    /// else.
+    func testTheThreeAlertsReachSparklesWindowsOnlyFromTheRunLoop() throws {
+        let code = try codeOfUpdateCenter()
+        for call in [
+            "showUpdateNotFoundWithError(error, acknowledgement: acknowledgement)",
+            "showUpdaterError(error, acknowledgement: acknowledgement)",
+            "showUpdateInstalledAndRelaunched(relaunched, acknowledgement: acknowledgement)",
+        ] {
+            let name = String(call.prefix { $0 != "(" })
+            let handedOver = "Self.fromTheRunLoop { [standard] in\n            standard.\(call)\n        }"
+            XCTAssertEqual(code.components(separatedBy: handedOver).count - 1, 1, "\(name) is not handed to Sparkle's windows from the run loop")
+            XCTAssertEqual(code.components(separatedBy: "standard.\(name)(").count - 1, 1, "\(name) reaches Sparkle's windows a second way")
+        }
+        // The way from the run loop is a timer in the common modes, and nothing in
+        // UpdateWindows goes through the main queue.
+        let windows = try XCTUnwrap(code.range(of: "final class UpdateWindows").flatMap { start in
+            code.range(of: "final class UpdateCenter", range: start.upperBound..<code.endIndex).map { String(code[start.lowerBound..<$0.lowerBound]) }
+        })
+        XCTAssertTrue(windows.contains("_ = CommonModesTimer.scheduled(withTimeInterval: 0, repeats: false) { _ in work() }"))
+        XCTAssertFalse(windows.contains("DispatchQueue"), "a block of the main queue is where an alert must not open")
         // The updater is given UpdateWindows, not Sparkle's own windows.
-        XCTAssertTrue(source.contains("SPUUpdater(hostBundle: .main, applicationBundle: .main, userDriver: windows, delegate: self)"))
-        XCTAssertEqual(source.components(separatedBy: "SPUUpdater(hostBundle:").count - 1, 1)
-        XCTAssertFalse(source.contains("runModal"))
-        XCTAssertFalse(source.contains("SPUStandardUpdaterController("), "it would hand Sparkle's windows to the updater directly")
+        XCTAssertTrue(code.contains("SPUUpdater(hostBundle: .main, applicationBundle: .main, userDriver: windows, delegate: self)"))
+        XCTAssertEqual(code.components(separatedBy: "SPUUpdater(hostBundle:").count - 1, 1)
+        XCTAssertFalse(code.contains("SPUStandardUpdaterController("), "it would hand Sparkle's windows to the updater directly")
+        // No alert of Scrollio's own in this file.
+        XCTAssertFalse(code.contains("runModal"))
     }
 
-    func testANoticeSaysWhatSparkleWouldHavePutInItsAlert() {
-        let upToDate = NSError(domain: UpdateCenter.sparkleErrorDomain, code: UpdateCenter.noUpdateErrorCode, userInfo: [
-            NSLocalizedDescriptionKey: "You’re up to date!",
-            NSLocalizedRecoverySuggestionErrorKey: "Scrollio 1.0.1 is currently the newest version available.",
-        ])
-        XCTAssertEqual(UpdateNotice.text(of: upToDate), "You’re up to date! Scrollio 1.0.1 is currently the newest version available.")
-        let offline = NSError(domain: UpdateCenter.sparkleErrorDomain, code: 2001, userInfo: [
-            NSLocalizedDescriptionKey: " An error occurred in retrieving update information. Please try again later.\n",
-        ])
-        XCTAssertEqual(UpdateNotice.text(of: offline), "An error occurred in retrieving update information. Please try again later.")
-        // A suggestion that only repeats the description is said once.
-        let twice = NSError(domain: "x", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed.", NSLocalizedRecoverySuggestionErrorKey: "Failed."])
-        XCTAssertEqual(UpdateNotice.text(of: twice), "Failed.")
-        XCTAssertEqual(UpdateCenter.toastStyle(for: .nothingNewer), .success)
-        XCTAssertEqual(UpdateCenter.toastStyle(for: .installed), .success)
-        XCTAssertEqual(UpdateCenter.toastStyle(for: .failed), .warning)
-        XCTAssertEqual(NSLocalizedString("update-notice-installed", comment: ""), "Scrollio was updated.")
+    /// UpdateCenter.swift without its comment lines: a comment may name what the code must not do.
+    private func codeOfUpdateCenter() throws -> String {
+        return try String(contentsOf: repositoryRoot.appendingPathComponent("Scrollio/Update/UpdateCenter.swift"), encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { !$0.drop(while: { $0 == " " || $0 == "\t" }).hasPrefix("//") }
+            .joined(separator: "\n")
     }
 
-    /// Under tests the center shows no notice, also when a test forgot the seam.
-    func testTheAppsOwnCenterShowsNoNoticeUnderTests() {
-        let center = UpdateCenter()
-        center.showNotice(UpdateNotice(kind: .failed, text: "This text must not appear on screen during a test run."))
-        let shown = expectation(description: "the main queue ran")
-        DispatchQueue.main.async { shown.fulfill() }
-        wait(for: [shown], timeout: 2)
-        XCTAssertFalse(ToastManager.shared.testingToasts.contains { $0.message.contains("This text must not appear") })
+    // MARK: - An alert leaves the main queue running
+
+    /// When a piece of work ran, seen from an alert.
+    private enum Moment: String {
+        case beforeItOpened, whileItWasOpen, afterItWasClosed
+    }
+
+    /// What an open alert is to the main thread. `NSAlert.runModal` runs the main run loop
+    /// in the modal panel mode until the alert is closed; this does the same and shows
+    /// nothing. (The real alert was measured with a throwaway app on 2026-11-12, macOS
+    /// 27.2: opened through `UpdateWindows`, a block queued on the main queue when it
+    /// opened ran at once; opened by Sparkle's windows directly, 1.5 s later, after the
+    /// alert was closed.)
+    private final class AlertStandIn {
+        private var isOpen = false
+        private var wasClosed = false
+
+        var moment: Moment {
+            if wasClosed { return .afterItWasClosed }
+            return isOpen ? .whileItWasOpen : .beforeItOpened
+        }
+
+        /// Stays open until `done` says so, at most `limit` seconds.
+        func runModal(until done: () -> Bool, limit: TimeInterval = 5, opened: () -> Void) {
+            isOpen = true
+            opened()
+            let mode = CFRunLoopMode(RunLoop.Mode.modalPanel.rawValue as CFString)
+            let end = CFAbsoluteTimeGetCurrent() + limit
+            while !done() && CFAbsoluteTimeGetCurrent() < end {
+                CFRunLoopRunInMode(mode, 0.01, true)
+            }
+            isOpen = false
+            wasClosed = true
+        }
+    }
+
+    /// A mach port source on the main run loop in the common modes: what an event tap is
+    /// to the run loop (`Interceptor` adds its tap's source there). `send` is an event
+    /// that arrives, from another thread as the system's do.
+    private final class PortSource {
+        var served: () -> Void = {}
+        private var port: CFMachPort?
+        private var source: CFRunLoopSource?
+
+        init() {
+            var context = CFMachPortContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
+            port = CFMachPortCreate(nil, { _, _, _, info in
+                guard let info else { return }
+                Unmanaged<PortSource>.fromOpaque(info).takeUnretainedValue().served()
+            }, &context, nil)
+            source = port.flatMap { CFMachPortCreateRunLoopSource(nil, $0, 0) }
+            if let source {
+                CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+            }
+        }
+
+        func send() {
+            guard let port else { return }
+            let name = CFMachPortGetPort(port)
+            DispatchQueue.global().async {
+                var message = mach_msg_header_t()
+                message.msgh_bits = UInt32(MACH_MSG_TYPE_MAKE_SEND)
+                message.msgh_size = mach_msg_size_t(MemoryLayout<mach_msg_header_t>.size)
+                message.msgh_remote_port = name
+                message.msgh_local_port = mach_port_t(MACH_PORT_NULL)
+                mach_msg(&message, MACH_SEND_MSG, message.msgh_size, 0, mach_port_t(MACH_PORT_NULL), MACH_MSG_TIMEOUT_NONE, mach_port_t(MACH_PORT_NULL))
+            }
+        }
+
+        func remove() {
+            if let source {
+                CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+            }
+            if let port {
+                CFMachPortInvalidate(port)
+            }
+            source = nil
+            port = nil
+        }
+    }
+
+    /// Lets the main queue run what waits in it.
+    private func drainTheMainQueue() {
+        let drained = expectation(description: "the main queue ran")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { drained.fulfill() }
+        wait(for: [drained], timeout: 5)
+    }
+
+    /// The rule the update dialogs must keep: while one is open, the main queue keeps
+    /// running and the event taps keep being served. An alert opened the way
+    /// `UpdateWindows` opens Sparkle's holds nothing back: not the blocks of the main
+    /// queue (button actions, gesture follow-ups, the thumb wheel, the Logitech answers),
+    /// not the timers in the common modes (the timeout that frees a held pointer, the
+    /// keepers of the event taps), not a port source like an event tap's, and not the
+    /// work that was queued in the same turn of the run loop.
+    func testAnAlertOpenedFromTheRunLoopLeavesTheMainQueueRunning() throws {
+        let alert = AlertStandIn()
+        let port = PortSource()
+        defer { port.remove() }
+        var ran: [String: Moment] = [:]
+        port.served = { ran["an event tap's source"] = alert.moment }
+        let whileOpen = ["a block of the main queue", "a later block of the main queue", "a timer in the common modes", "an event tap's source"]
+        let closed = expectation(description: "the alert was closed")
+
+        UpdateWindows.fromTheRunLoop {
+            alert.runModal(until: { whileOpen.allSatisfy { ran[$0] != nil } }, opened: {
+                DispatchQueue.main.async { ran["a block of the main queue"] = alert.moment }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { ran["a later block of the main queue"] = alert.moment }
+                _ = CommonModesTimer.scheduled(withTimeInterval: 0.05, repeats: false) { _ in ran["a timer in the common modes"] = alert.moment }
+                port.send()
+            })
+            closed.fulfill()
+        }
+        XCTAssertEqual(alert.moment, .beforeItOpened, "the call returns at once; the alert opens in a later turn of the run loop")
+        // Queued in the same turn, behind the alert.
+        let sameTurn = ["a block of the main queue, same turn", "a timer, same turn", "a block of the run loop, same turn"]
+        DispatchQueue.main.async { ran["a block of the main queue, same turn"] = alert.moment }
+        _ = CommonModesTimer.scheduled(withTimeInterval: 0, repeats: false) { _ in ran["a timer, same turn"] = alert.moment }
+        RunLoop.main.perform(inModes: [.common]) { ran["a block of the run loop, same turn"] = alert.moment }
+
+        wait(for: [closed], timeout: 10)
+        drainTheMainQueue()
+        for work in whileOpen {
+            XCTAssertEqual(ran[work], .whileItWasOpen, "\(work) waited for the alert")
+        }
+        for work in sameTurn {
+            let moment = try XCTUnwrap(ran[work], "\(work) never ran")
+            XCTAssertNotEqual(moment, .afterItWasClosed, "\(work) waited for the alert")
+        }
+        // The event taps' sources are in the common modes, as the port source above.
+        let interceptor = try String(contentsOf: repositoryRoot.appendingPathComponent("Scrollio/Utils/Interceptor.swift"), encoding: .utf8)
+        XCTAssertTrue(interceptor.contains("CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)"))
+    }
+
+    /// The trap itself, so that the test above cannot pass by accident. The same alert
+    /// opened inside a block of the main queue, which is where the updater calls its
+    /// windows, holds every other block of that queue until it is closed; timers and
+    /// event taps go on. (Should a later macOS serve the queue there, this test fails and
+    /// the detour through the run loop is no longer needed.)
+    func testAnAlertOpenedInsideABlockOfTheMainQueueHoldsTheQueue() {
+        let alert = AlertStandIn()
+        let port = PortSource()
+        defer { port.remove() }
+        var ran: [String: Moment] = [:]
+        port.served = { ran["an event tap's source"] = alert.moment }
+        let closed = expectation(description: "the alert was closed")
+
+        DispatchQueue.main.async {
+            // Open for as long as the queue would need many times over.
+            let end = CFAbsoluteTimeGetCurrent() + 0.4
+            alert.runModal(until: { CFAbsoluteTimeGetCurrent() >= end }, opened: {
+                DispatchQueue.main.async { ran["a block of the main queue"] = alert.moment }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { ran["a later block of the main queue"] = alert.moment }
+                _ = CommonModesTimer.scheduled(withTimeInterval: 0.05, repeats: false) { _ in ran["a timer in the common modes"] = alert.moment }
+                port.send()
+            })
+            closed.fulfill()
+        }
+        wait(for: [closed], timeout: 10)
+        drainTheMainQueue()
+        XCTAssertEqual(ran["a block of the main queue"], .afterItWasClosed)
+        XCTAssertEqual(ran["a later block of the main queue"], .afterItWasClosed)
+        XCTAssertEqual(ran["a timer in the common modes"], .whileItWasOpen)
+        XCTAssertEqual(ran["an event tap's source"], .whileItWasOpen)
     }
 
     /// Only the Update folder imports Sparkle; the rest of the app sees UpdateStatus.

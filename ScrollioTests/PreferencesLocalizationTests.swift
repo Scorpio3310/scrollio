@@ -214,7 +214,6 @@ final class PreferencesLocalizationTests: XCTestCase {
         "main-menu-paste", "main-menu-select-all", "main-menu-window", "main-menu-minimize",
         "main-menu-zoom", "main-menu-close", "main-menu-bring-all-to-front", "main-menu-help",
         "main-menu-welcome-guide", "main-menu-check-for-updates", "status-menu-update-waiting",
-        "update-notice-installed",
     ]
 
     /// The Welcome Guide (Introduction window): its bar, the four steps and their pictures.

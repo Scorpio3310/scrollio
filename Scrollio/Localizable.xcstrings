@@ -6675,17 +6675,6 @@
         }
       }
     },
-    "update-notice-installed": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scrollio was updated."
-          }
-        }
-      }
-    },
     "general-settings-file": {
       "extractionState": "manual",
       "localizations": {

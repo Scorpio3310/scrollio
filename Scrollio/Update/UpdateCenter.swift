@@ -28,8 +28,9 @@
 //  - on the second launch Sparkle asks once whether to check automatically (its own
 //    window); General has the two switches and "Check Now" afterwards;
 //  - "Check for Updates…" in the menu bar menu and in the Scrollio menu; "nothing newer"
-//    and "the check failed" come as one of Scrollio's notices, not as Sparkle's alerts
-//    (`UpdateWindows` says why);
+//    and "the check failed" come as the alert every Mac app with Sparkle shows ("You're
+//    up to date!", "Update Error!"), opened so that nothing in Scrollio waits for it
+//    (`UpdateWindows` says how);
 //  - when a scheduled check finds a version, Sparkle shows its window: in front only
 //    right after Scrollio started or the user touched the updater (the first seconds),
 //    otherwise behind what the user is doing, or, while a settings window is open, the
@@ -97,75 +98,75 @@ struct UpdateReminder: Equatable {
     }
 }
 
-/// What a check the user asked for ended with, when there is nothing to install: said as
-/// one of Scrollio's notices.
-struct UpdateNotice: Equatable {
-    enum Kind: Equatable {
-        /// Nothing newer (or nothing this Mac can run).
-        case nothingNewer
-        /// The check, the download or the installation failed.
-        case failed
-        /// Installed without a relaunch.
-        case installed
-    }
-    let kind: Kind
-    let text: String
-
-    /// Sparkle's own words for an outcome: its description and, when it has one, the
-    /// sentence it would put under it ("You're up to date!" "Scrollio 1.0.1 is currently
-    /// the newest version available."). Pure.
-    static func text(of error: NSError) -> String {
-        let description = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-        let suggestion = (error.localizedRecoverySuggestion ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !suggestion.isEmpty, suggestion != description else { return description }
-        return description + " " + suggestion
-    }
-}
-
 /// Sparkle's own windows (its question about automatic checks, "Checking for updates…",
-/// the window of a found update, the progress of a download), without its alerts.
+/// the window of a found update, the progress of a download, its alerts), with the alerts
+/// opened from the run loop.
 ///
 /// Sparkle's standard windows say "You're up to date!", "Update Error!" and "Update
-/// Installed" with an alert that is modal for the whole app, and they open it from inside
-/// a block of the main dispatch queue. While such an alert is open, macOS runs no other
-/// block of that queue. Scrollio's event taps would still be served, but everything they
-/// hand to the main queue would wait until the alert is closed: actions of buttons,
-/// follow-ups of gestures, the timeout that frees a held pointer, the thumb wheel, the
-/// Logitech answers. So these three outcomes are taken here and said as a notice, which
-/// blocks nothing; everything else goes to Sparkle's windows unchanged. Do not hand the
-/// three back to `standard`.
+/// Installed" with an alert that is modal for the whole app (`NSAlert.runModal`). The
+/// updater calls its windows from inside a block of the main dispatch queue, and an alert
+/// opened there stops that queue: a run loop started inside a block of the main queue does
+/// not serve the queue, so until the alert is closed macOS runs no other block of it.
+/// Scrollio's event taps would still be served, but everything they hand to the main
+/// queue would wait for a click on "OK": actions of buttons, follow-ups of gestures, the
+/// timeout that frees a held pointer, the thumb wheel, the Logitech answers.
+///
+/// So these three calls return at once and reach Sparkle's windows a moment later from
+/// the main run loop itself (`fromTheRunLoop`). The alert is the same one, with Sparkle's
+/// icon, words and buttons; behind it the main queue, the timers and the event taps go
+/// on, because an alert's run loop runs in the modal panel mode, one of the common modes,
+/// and serves the queue when it was not started from it. Everything else goes to
+/// Sparkle's windows unchanged.
+///
+/// Version 1.0.1 said the three as toasts, for the same reason. Never hand one of them to
+/// `standard` directly, and never give the updater Sparkle's windows without this class.
 final class UpdateWindows: NSObject, SPUUserDriver {
 
     private let standard: SPUStandardUserDriver
-    private let notice: (UpdateNotice) -> Void
 
-    init(standard: SPUStandardUserDriver, notice: @escaping (UpdateNotice) -> Void) {
+    init(standard: SPUStandardUserDriver) {
         self.standard = standard
-        self.notice = notice
     }
 
-    // MARK: Taken over: what Sparkle would say with a modal alert
+    /// Runs `work` on the main thread a moment later, called by the main run loop itself
+    /// and not from a block of the main dispatch queue: a timer in the common modes (an
+    /// open menu and a modal panel are among them, so neither holds an alert up). Call it
+    /// on the main thread.
+    ///
+    /// Why a timer and not `CFRunLoopPerformBlock` or `RunLoop.perform(inModes:)`: the run
+    /// loop takes all the blocks that wait and runs them one after the other, so a block
+    /// that stays (an open alert) holds back the blocks queued in the same turn until it
+    /// returns. A timer that stays holds back nothing: the alert's run loop serves the
+    /// other timers, the sources, the blocks and the main queue. (Measured on macOS 27.2;
+    /// `UpdateCenterTests` holds it.)
+    static func fromTheRunLoop(_ work: @escaping () -> Void) {
+        _ = CommonModesTimer.scheduled(withTimeInterval: 0, repeats: false) { _ in work() }
+    }
 
-    /// "You're up to date!" The updater ends the session after the acknowledgement, and
-    /// that closes Sparkle's "Checking for updates…" window (`dismissUpdateInstallation`).
+    // MARK: Sparkle's alerts, opened from the run loop
+
+    /// "You're up to date!" Sparkle's windows close "Checking for updates…" first; the
+    /// updater ends the session after the acknowledgement, which comes when the alert was
+    /// closed.
     func showUpdateNotFoundWithError(_ error: Error, acknowledgement: @escaping () -> Void) {
-        notice(UpdateNotice(kind: .nothingNewer, text: UpdateNotice.text(of: error as NSError)))
-        acknowledgement()
-    }
-
-    func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) {
-        notice(UpdateNotice(kind: .failed, text: UpdateNotice.text(of: error as NSError)))
-        acknowledgement()
-    }
-
-    /// Sparkle shows an alert only when the app was not started again; Scrollio always is.
-    func showUpdateInstalledAndRelaunched(_ relaunched: Bool, acknowledgement: @escaping () -> Void) {
-        guard !relaunched else {
-            standard.showUpdateInstalledAndRelaunched(true, acknowledgement: acknowledgement)
-            return
+        Self.fromTheRunLoop { [standard] in
+            standard.showUpdateNotFoundWithError(error, acknowledgement: acknowledgement)
         }
-        notice(UpdateNotice(kind: .installed, text: NSLocalizedString("update-notice-installed", comment: "")))
-        acknowledgement()
+    }
+
+    /// "Update Error!"
+    func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) {
+        Self.fromTheRunLoop { [standard] in
+            standard.showUpdaterError(error, acknowledgement: acknowledgement)
+        }
+    }
+
+    /// "Update Installed": Sparkle shows the alert only when the app was not started
+    /// again (Scrollio always is).
+    func showUpdateInstalledAndRelaunched(_ relaunched: Bool, acknowledgement: @escaping () -> Void) {
+        Self.fromTheRunLoop { [standard] in
+            standard.showUpdateInstalledAndRelaunched(relaunched, acknowledgement: acknowledgement)
+        }
     }
 
     // MARK: Sparkle's windows, unchanged
@@ -269,10 +270,6 @@ final class UpdateCenter: NSObject {
     var setDockBadge: (String?) -> Void = AppRuntime.isRunningXCTest ? { _ in } : { NSApp.dockTile.badgeLabel = $0 }
     var activateApp: () -> Void = AppRuntime.isRunningXCTest ? {} : { NSApp.activate(ignoringOtherApps: true) }
     var log: (String) -> Void = { AppSystemLog.note($0) }
-    /// Says what a check the user asked for ended with: a notice, never a modal alert.
-    var showNotice: (UpdateNotice) -> Void = AppRuntime.isRunningXCTest ? { _ in } : { notice in
-        Toast.show(notice.text, style: UpdateCenter.toastStyle(for: notice.kind))
-    }
     /// Whether an updater may start at all. Never under XCTest: a started updater asks
     /// the network, whatever feed a test hands in.
     var mayStart: () -> Bool = { !AppRuntime.isRunningXCTest }
@@ -327,9 +324,7 @@ final class UpdateCenter: NSObject {
         }
         self.configuration = configuration
         let standard = SPUStandardUserDriver(hostBundle: .main, delegate: self)
-        let windows = UpdateWindows(standard: standard) { [weak self] notice in
-            self?.showNotice(notice)
-        }
+        let windows = UpdateWindows(standard: standard)
         let updater = SPUUpdater(hostBundle: .main, applicationBundle: .main, userDriver: windows, delegate: self)
         do {
             try updater.start()
@@ -365,15 +360,6 @@ final class UpdateCenter: NSObject {
 
     private func statusDidChange() {
         NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
-    }
-
-    /// How a notice looks: a check mark for "nothing newer" and "installed", a warning for
-    /// a failure.
-    static func toastStyle(for kind: UpdateNotice.Kind) -> Toast.Style {
-        switch kind {
-        case .nothingNewer, .installed: return .success
-        case .failed: return .warning
-        }
     }
 
     // MARK: - What the app asks
