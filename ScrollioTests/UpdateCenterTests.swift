@@ -414,6 +414,16 @@ final class UpdateCenterTests: XCTestCase {
         XCTAssertFalse(code.contains("SPUStandardUpdaterController("), "it would hand Sparkle's windows to the updater directly")
         // No alert of Scrollio's own in this file.
         XCTAssertFalse(code.contains("runModal"))
+        // Which calls open an alert was read in the Sparkle the project pins: in 2.10.1
+        // `runModal` stands in one place of its windows (SPUStandardUserDriver.m,
+        // `showAlert:`), reached from these three calls only.
+        let pins = try String(contentsOf: repositoryRoot.appendingPathComponent("Scrollio.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"), encoding: .utf8)
+        let sparkle = try XCTUnwrap(pins.range(of: "\"identity\" : \"sparkle\""))
+        XCTAssertNotNil(
+            pins.range(of: "\"version\" : \"2.10.1\"", range: sparkle.upperBound..<pins.endIndex),
+            "Another Sparkle: read SPUStandardUserDriver.m again for calls that open a modal alert (runModal), "
+                + "hand a new one on from the run loop in UpdateWindows, then name the version here"
+        )
     }
 
     /// UpdateCenter.swift without its comment lines: a comment may name what the code must not do.
