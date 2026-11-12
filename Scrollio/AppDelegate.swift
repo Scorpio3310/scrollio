@@ -65,9 +65,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // The original Mos would handle the same mouse events: quit it if it is running.
-        LegacyMosTakeover.quitAtLaunch()
+        LegacyAppQuitter.quitAtLaunch()
         // Its login item (or the user) can start it again later: quit it each time.
-        LegacyMosTakeover.startWatchingLaunches()
+        LegacyAppQuitter.startWatchingLaunches()
 
         // 禁止重复运行, 结束正在运行的实例: another copy is asked to quit and waited for (at
         // most 3 s, then force-quit) before this one starts any event tap or Logitech session.

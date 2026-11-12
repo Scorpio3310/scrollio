@@ -28,7 +28,7 @@
 		7E57CE0E0000000000000102 /* ScrollioTests/CGEventTimestampTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E57CE0E0000000000000101 /* ScrollioTests/CGEventTimestampTests.swift */; };
 		9D5E7AB20000000000000102 /* ScrollioTests/MainMenuTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D5E7AB20000000000000101 /* ScrollioTests/MainMenuTests.swift */; };
 		9D5E7AB10000000000000302 /* ScrollioTests/PreferencesGesturesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D5E7AB10000000000000301 /* ScrollioTests/PreferencesGesturesTests.swift */; };
-		1A5E00000000000000000602 /* ScrollioTests/LegacyMosTakeoverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5E00000000000000000601 /* ScrollioTests/LegacyMosTakeoverTests.swift */; };
+		1A5E00000000000000000602 /* ScrollioTests/LegacyAppQuitterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5E00000000000000000601 /* ScrollioTests/LegacyAppQuitterTests.swift */; };
 		C0DE4EA10000000000000502 /* ScrollioTests/ScrollPosterStopHandoffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE4EA10000000000000501 /* ScrollioTests/ScrollPosterStopHandoffTests.swift */; };
 		C0DE4EA10000000000000402 /* ScrollioTests/LoginItemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE4EA10000000000000401 /* ScrollioTests/LoginItemTests.swift */; };
 		C0DE4EA10000000000000302 /* ScrollioTests/ScrollCoreEnableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE4EA10000000000000301 /* ScrollioTests/ScrollCoreEnableTests.swift */; };
@@ -144,7 +144,7 @@
 		7E57CE0E0000000000000101 /* ScrollioTests/CGEventTimestampTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/CGEventTimestampTests.swift; sourceTree = SOURCE_ROOT; };
 		9D5E7AB20000000000000101 /* ScrollioTests/MainMenuTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/MainMenuTests.swift; sourceTree = SOURCE_ROOT; };
 		9D5E7AB10000000000000301 /* ScrollioTests/PreferencesGesturesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/PreferencesGesturesTests.swift; sourceTree = SOURCE_ROOT; };
-		1A5E00000000000000000601 /* ScrollioTests/LegacyMosTakeoverTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LegacyMosTakeoverTests.swift; sourceTree = SOURCE_ROOT; };
+		1A5E00000000000000000601 /* ScrollioTests/LegacyAppQuitterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LegacyAppQuitterTests.swift; sourceTree = SOURCE_ROOT; };
 		C0DE4EA10000000000000501 /* ScrollioTests/ScrollPosterStopHandoffTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ScrollPosterStopHandoffTests.swift; sourceTree = SOURCE_ROOT; };
 		C0DE4EA10000000000000401 /* ScrollioTests/LoginItemTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LoginItemTests.swift; sourceTree = SOURCE_ROOT; };
 		C0DE4EA10000000000000301 /* ScrollioTests/ScrollCoreEnableTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ScrollCoreEnableTests.swift; sourceTree = SOURCE_ROOT; };
@@ -295,7 +295,7 @@
 				7E57CE0E0000000000000101 /* ScrollioTests/CGEventTimestampTests.swift */,
 				9D5E7AB20000000000000101 /* ScrollioTests/MainMenuTests.swift */,
 				9D5E7AB10000000000000301 /* ScrollioTests/PreferencesGesturesTests.swift */,
-				1A5E00000000000000000601 /* ScrollioTests/LegacyMosTakeoverTests.swift */,
+				1A5E00000000000000000601 /* ScrollioTests/LegacyAppQuitterTests.swift */,
 				C0DE4EA10000000000000501 /* ScrollioTests/ScrollPosterStopHandoffTests.swift */,
 				C0DE4EA10000000000000401 /* ScrollioTests/LoginItemTests.swift */,
 				C0DE4EA10000000000000301 /* ScrollioTests/ScrollCoreEnableTests.swift */,
@@ -548,7 +548,7 @@
 				7E57CE0E0000000000000102 /* ScrollioTests/CGEventTimestampTests.swift in Sources */,
 				9D5E7AB20000000000000102 /* ScrollioTests/MainMenuTests.swift in Sources */,
 				9D5E7AB10000000000000302 /* ScrollioTests/PreferencesGesturesTests.swift in Sources */,
-				1A5E00000000000000000602 /* ScrollioTests/LegacyMosTakeoverTests.swift in Sources */,
+				1A5E00000000000000000602 /* ScrollioTests/LegacyAppQuitterTests.swift in Sources */,
 				C0DE4EA10000000000000502 /* ScrollioTests/ScrollPosterStopHandoffTests.swift in Sources */,
 				C0DE4EA10000000000000402 /* ScrollioTests/LoginItemTests.swift in Sources */,
 				C0DE4EA10000000000000302 /* ScrollioTests/ScrollCoreEnableTests.swift in Sources */,

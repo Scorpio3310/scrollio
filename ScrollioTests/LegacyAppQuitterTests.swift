@@ -4,23 +4,23 @@ import XCTest
 /// The original Mos must not run next to Scrollio: a running copy is asked to quit at launch
 /// and whenever it starts later. The same quit-and-wait replaces another copy of Scrollio.
 /// Every test works on fakes: no real app is asked to quit here.
-final class LegacyMosTakeoverTests: XCTestCase {
+final class LegacyAppQuitterTests: XCTestCase {
 
     // MARK: - Old app instances
 
     func testOnlyOtherProcessesOfTheOldAppAreLegacyInstances() {
         let own: pid_t = 100
-        XCTAssertTrue(LegacyMosTakeover.isLegacyInstance(bundleIdentifier: "com.caldis.Mos", processIdentifier: 200, ownProcessIdentifier: own))
-        XCTAssertTrue(LegacyMosTakeover.isLegacyInstance(bundleIdentifier: "com.caldis.Mos.debug", processIdentifier: 200, ownProcessIdentifier: own))
+        XCTAssertTrue(LegacyAppQuitter.isLegacyInstance(bundleIdentifier: "com.caldis.Mos", processIdentifier: 200, ownProcessIdentifier: own))
+        XCTAssertTrue(LegacyAppQuitter.isLegacyInstance(bundleIdentifier: "com.caldis.Mos.debug", processIdentifier: 200, ownProcessIdentifier: own))
         // Never itself, even when it carries an old bundle id.
-        XCTAssertFalse(LegacyMosTakeover.isLegacyInstance(bundleIdentifier: "com.caldis.Mos", processIdentifier: own, ownProcessIdentifier: own))
-        XCTAssertFalse(LegacyMosTakeover.isLegacyInstance(bundleIdentifier: "com.caldis.Mos.debug", processIdentifier: own, ownProcessIdentifier: own))
+        XCTAssertFalse(LegacyAppQuitter.isLegacyInstance(bundleIdentifier: "com.caldis.Mos", processIdentifier: own, ownProcessIdentifier: own))
+        XCTAssertFalse(LegacyAppQuitter.isLegacyInstance(bundleIdentifier: "com.caldis.Mos.debug", processIdentifier: own, ownProcessIdentifier: own))
         // Other apps, including other copies of the new one, are left alone.
-        XCTAssertFalse(LegacyMosTakeover.isLegacyInstance(bundleIdentifier: "com.nikklemenc.Scrollio", processIdentifier: 200, ownProcessIdentifier: own))
-        XCTAssertFalse(LegacyMosTakeover.isLegacyInstance(bundleIdentifier: "com.nikklemenc.Scrollio.debug", processIdentifier: 200, ownProcessIdentifier: own))
-        XCTAssertFalse(LegacyMosTakeover.isLegacyInstance(bundleIdentifier: "com.caldis.MosHelper", processIdentifier: 200, ownProcessIdentifier: own))
-        XCTAssertFalse(LegacyMosTakeover.isLegacyInstance(bundleIdentifier: "com.apple.finder", processIdentifier: 200, ownProcessIdentifier: own))
-        XCTAssertFalse(LegacyMosTakeover.isLegacyInstance(bundleIdentifier: nil, processIdentifier: 200, ownProcessIdentifier: own))
+        XCTAssertFalse(LegacyAppQuitter.isLegacyInstance(bundleIdentifier: "com.nikklemenc.Scrollio", processIdentifier: 200, ownProcessIdentifier: own))
+        XCTAssertFalse(LegacyAppQuitter.isLegacyInstance(bundleIdentifier: "com.nikklemenc.Scrollio.debug", processIdentifier: 200, ownProcessIdentifier: own))
+        XCTAssertFalse(LegacyAppQuitter.isLegacyInstance(bundleIdentifier: "com.caldis.MosHelper", processIdentifier: 200, ownProcessIdentifier: own))
+        XCTAssertFalse(LegacyAppQuitter.isLegacyInstance(bundleIdentifier: "com.apple.finder", processIdentifier: 200, ownProcessIdentifier: own))
+        XCTAssertFalse(LegacyAppQuitter.isLegacyInstance(bundleIdentifier: nil, processIdentifier: 200, ownProcessIdentifier: own))
     }
 
     // MARK: - The old app started later (its login item)
@@ -53,9 +53,9 @@ final class LegacyMosTakeoverTests: XCTestCase {
     }
 
     func testALaterLaunchOfTheOldAppIsQuit() {
-        for identifier in LegacyMosTakeover.legacyBundleIdentifiers {
+        for identifier in LegacyAppQuitter.legacyBundleIdentifiers {
             let app = FakeApp(identifier, pid: 200)
-            XCTAssertTrue(LegacyMosTakeover.handleLaunch(of: app, isAllowed: true, ownProcessIdentifier: 100))
+            XCTAssertTrue(LegacyAppQuitter.handleLaunch(of: app, isAllowed: true, ownProcessIdentifier: 100))
             XCTAssertEqual(app.terminateCalls, 1, identifier)
         }
     }
@@ -69,7 +69,7 @@ final class LegacyMosTakeoverTests: XCTestCase {
             FakeApp(nil, pid: 200),
         ]
         for app in apps {
-            XCTAssertFalse(LegacyMosTakeover.handleLaunch(of: app, isAllowed: true, ownProcessIdentifier: 100))
+            XCTAssertFalse(LegacyAppQuitter.handleLaunch(of: app, isAllowed: true, ownProcessIdentifier: 100))
             XCTAssertEqual(app.terminateCalls, 0, app.bundleIdentifier ?? "nil")
         }
     }
@@ -77,8 +77,8 @@ final class LegacyMosTakeoverTests: XCTestCase {
     func testAnOldAppThatIgnoresTheRequestIsForceQuitLater() {
         let stubborn = FakeApp("com.caldis.Mos", quitsWhenAsked: false)
         let polite = FakeApp("com.caldis.Mos")
-        LegacyMosTakeover.handleLaunch(of: stubborn, isAllowed: true, forceQuitDelay: 0.05)
-        LegacyMosTakeover.handleLaunch(of: polite, isAllowed: true, forceQuitDelay: 0.05)
+        LegacyAppQuitter.handleLaunch(of: stubborn, isAllowed: true, forceQuitDelay: 0.05)
+        LegacyAppQuitter.handleLaunch(of: polite, isAllowed: true, forceQuitDelay: 0.05)
         // Nothing waits: the force-quit comes later on the main queue.
         XCTAssertEqual(stubborn.forceTerminateCalls, 0)
 
@@ -89,9 +89,9 @@ final class LegacyMosTakeoverTests: XCTestCase {
 
     func testTheLaunchObserverQuitsTheOldApp() {
         let center = NotificationCenter()
-        LegacyMosTakeover.startWatchingLaunches(center: center, isAllowed: true)
-        defer { LegacyMosTakeover.stopWatchingLaunches() }
-        XCTAssertTrue(LegacyMosTakeover.isWatchingLaunches)
+        LegacyAppQuitter.startWatchingLaunches(center: center, isAllowed: true)
+        defer { LegacyAppQuitter.stopWatchingLaunches() }
+        XCTAssertTrue(LegacyAppQuitter.isWatchingLaunches)
 
         let mos = FakeApp("com.caldis.Mos")
         let other = FakeApp("com.apple.TextEdit")
@@ -106,8 +106,8 @@ final class LegacyMosTakeoverTests: XCTestCase {
         wait(for: [quit], timeout: 5)
         XCTAssertEqual(other.terminateCalls, 0)
 
-        LegacyMosTakeover.stopWatchingLaunches()
-        XCTAssertFalse(LegacyMosTakeover.isWatchingLaunches)
+        LegacyAppQuitter.stopWatchingLaunches()
+        XCTAssertFalse(LegacyAppQuitter.isWatchingLaunches)
         center.post(
             name: NSWorkspace.didLaunchApplicationNotification,
             object: nil,
@@ -126,7 +126,7 @@ final class LegacyMosTakeoverTests: XCTestCase {
 
     func testAnAppThatQuitsWhenAskedIsNotForced() {
         let polite = FakeApp("com.nikklemenc.Scrollio", pid: 200)
-        let outcome = LegacyMosTakeover.quitAndWait([polite], timeout: 3, isAlive: fakeIsAlive)
+        let outcome = LegacyAppQuitter.quitAndWait([polite], timeout: 3, isAlive: fakeIsAlive)
         XCTAssertEqual(outcome.quit, [200])
         XCTAssertEqual(outcome.forced, [])
         XCTAssertEqual(outcome.stillRunning, [])
@@ -138,7 +138,7 @@ final class LegacyMosTakeoverTests: XCTestCase {
     func testAnAppThatIgnoresTheRequestIsForcedAfterTheWait() {
         let stubborn = FakeApp("com.nikklemenc.Scrollio", pid: 200, quitsWhenAsked: false)
         let polite = FakeApp("com.nikklemenc.Scrollio", pid: 300)
-        let outcome = LegacyMosTakeover.quitAndWait([stubborn, polite], timeout: 0.1, forceTimeout: 0.1, isAlive: fakeIsAlive)
+        let outcome = LegacyAppQuitter.quitAndWait([stubborn, polite], timeout: 0.1, forceTimeout: 0.1, isAlive: fakeIsAlive)
         XCTAssertEqual(outcome.quit, [300])
         XCTAssertEqual(outcome.forced, [200])
         XCTAssertEqual(outcome.stillRunning, [])
@@ -149,14 +149,14 @@ final class LegacyMosTakeoverTests: XCTestCase {
 
     func testAnAppThatSurvivesTheForceQuitIsReported() {
         let zombie = FakeApp("com.nikklemenc.Scrollio", pid: 200, quitsWhenAsked: false)
-        let outcome = LegacyMosTakeover.quitAndWait([zombie], timeout: 0.05, forceTimeout: 0.05, isAlive: { _ in true })
+        let outcome = LegacyAppQuitter.quitAndWait([zombie], timeout: 0.05, forceTimeout: 0.05, isAlive: { _ in true })
         XCTAssertEqual(outcome.quit, [])
         XCTAssertEqual(outcome.forced, [])
         XCTAssertEqual(outcome.stillRunning, [200])
     }
 
     func testNothingToQuitWaitsForNothing() {
-        XCTAssertEqual(LegacyMosTakeover.quitAndWait([], isAlive: fakeIsAlive), LegacyMosTakeover.QuitOutcome())
+        XCTAssertEqual(LegacyAppQuitter.quitAndWait([], isAlive: fakeIsAlive), LegacyAppQuitter.QuitOutcome())
     }
 
     /// Another copy of Scrollio is waited for before this one starts its taps; this process
@@ -169,18 +169,18 @@ final class LegacyMosTakeoverTests: XCTestCase {
         XCTAssertEqual(other.terminateCalls, 1)
         XCTAssertEqual(outcome.forced, [200])
 
-        XCTAssertEqual(Utils.quitOtherInstances([own], own: 100, isAlive: fakeIsAlive), LegacyMosTakeover.QuitOutcome())
+        XCTAssertEqual(Utils.quitOtherInstances([own], own: 100, isAlive: fakeIsAlive), LegacyAppQuitter.QuitOutcome())
         XCTAssertEqual(own.terminateCalls, 0)
     }
 
     func testWhatTheLogSaysAboutTheOtherCopy() {
-        var outcome = LegacyMosTakeover.QuitOutcome()
+        var outcome = LegacyAppQuitter.QuitOutcome()
         outcome.quit = [200]
         outcome.waited = 0.42
         XCTAssertEqual(Utils.otherInstanceLines(outcome, timeout: 3), [
             "Another copy of Scrollio was running (pid 200): it quit when asked, after 0.4 s; this one starts now",
         ])
-        outcome = LegacyMosTakeover.QuitOutcome(quit: [], forced: [200], stillRunning: [300], waited: 4.04)
+        outcome = LegacyAppQuitter.QuitOutcome(quit: [], forced: [200], stillRunning: [300], waited: 4.04)
         XCTAssertEqual(Utils.otherInstanceLines(outcome, timeout: 3), [
             "Another copy of Scrollio (pid 200) did not quit within 3 s: forced it to quit (4.0 s in all); this one starts now",
             "Another copy of Scrollio (pid 300) still runs after it was forced to quit (4.0 s); this one starts anyway",
@@ -189,18 +189,18 @@ final class LegacyMosTakeoverTests: XCTestCase {
 
     // MARK: - XCTest
 
-    func testTakeoverIsNeverAllowedUnderXCTest() {
+    func testQuittingIsNeverAllowedUnderXCTest() {
         XCTAssertTrue(AppRuntime.isRunningXCTest)
-        XCTAssertFalse(LegacyMosTakeover.isAllowedToRun)
+        XCTAssertFalse(LegacyAppQuitter.isAllowedToRun)
     }
 
     func testTheLaunchWatcherNeverRunsUnderXCTestByDefault() {
         let mos = FakeApp("com.caldis.Mos")
-        XCTAssertFalse(LegacyMosTakeover.handleLaunch(of: mos))
+        XCTAssertFalse(LegacyAppQuitter.handleLaunch(of: mos))
         XCTAssertEqual(mos.terminateCalls, 0)
 
-        LegacyMosTakeover.startWatchingLaunches()
-        XCTAssertFalse(LegacyMosTakeover.isWatchingLaunches)
+        LegacyAppQuitter.startWatchingLaunches()
+        XCTAssertFalse(LegacyAppQuitter.isWatchingLaunches)
     }
 
     // MARK: - Identity
@@ -208,6 +208,6 @@ final class LegacyMosTakeoverTests: XCTestCase {
     func testTheAppDoesNotCarryALegacyIdentity() {
         let identifier = Bundle(for: AppDelegate.self).bundleIdentifier ?? ""
         XCTAssertTrue(identifier.hasPrefix("com.nikklemenc.Scrollio"), identifier)
-        XCTAssertFalse(LegacyMosTakeover.legacyBundleIdentifiers.contains(identifier))
+        XCTAssertFalse(LegacyAppQuitter.legacyBundleIdentifiers.contains(identifier))
     }
 }

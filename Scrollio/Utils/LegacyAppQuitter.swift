@@ -1,5 +1,5 @@
 //
-//  LegacyMosTakeover.swift
+//  LegacyAppQuitter.swift
 //  Mos
 //
 //  Scrollio and the original Mos cannot run side by side: two apps that handle the same
@@ -18,7 +18,7 @@
 
 import Cocoa
 
-/// A running app as the takeover sees it: NSRunningApplication in the app, fakes in tests.
+/// A running app as the quitter sees it: NSRunningApplication in the app, fakes in tests.
 /// Also another copy of Scrollio (Utils.preventMultiRunning), which is replaced the same way.
 protocol LegacyAppHandle: AnyObject {
     var bundleIdentifier: String? { get }
@@ -30,7 +30,7 @@ protocol LegacyAppHandle: AnyObject {
 
 extension NSRunningApplication: LegacyAppHandle {}
 
-enum LegacyMosTakeover {
+enum LegacyAppQuitter {
 
     /// Bundle ids of the app this one replaces (release and debug builds).
     static let legacyBundleIdentifiers = ["com.caldis.Mos", "com.caldis.Mos.debug"]

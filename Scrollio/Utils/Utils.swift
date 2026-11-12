@@ -59,7 +59,7 @@ public class Utils {
     // 禁止重复运行
     // killExist = true 则杀掉已有进程, 否则自杀
     /// With `killExist`, another running copy of this app is asked to quit and waited for (at
-    /// most `timeout`, then force-quit), the way LegacyMosTakeover quits the old Mos: until it
+    /// most `timeout`, then force-quit), the way LegacyAppQuitter quits the old Mos: until it
     /// is gone both copies would run event taps and Logitech sessions, bound actions could fire
     /// twice and the old copy's answers to its teardown writes would confuse this one. Call it
     /// before any event tap or Logitech session starts; it blocks the main thread meanwhile.
@@ -84,22 +84,22 @@ public class Utils {
         }
     }
 
-    /// Asks the other copies in `running` to quit and waits for them (LegacyMosTakeover's
+    /// Asks the other copies in `running` to quit and waits for them (LegacyAppQuitter's
     /// quitAndWait). Never this process.
     class func quitOtherInstances(
         _ running: [LegacyAppHandle],
         own: pid_t,
         timeout: TimeInterval = 3.0,
         forceTimeout: TimeInterval = 1.0,
-        isAlive: (LegacyAppHandle) -> Bool = { LegacyMosTakeover.isProcessAlive($0.processIdentifier) }
-    ) -> LegacyMosTakeover.QuitOutcome {
+        isAlive: (LegacyAppHandle) -> Bool = { LegacyAppQuitter.isProcessAlive($0.processIdentifier) }
+    ) -> LegacyAppQuitter.QuitOutcome {
         let others = otherInstanceProcessIdentifiers(running: running.map { $0.processIdentifier }, own: own)
         let targets = running.filter { others.contains($0.processIdentifier) }
-        return LegacyMosTakeover.quitAndWait(targets, timeout: timeout, forceTimeout: forceTimeout, isAlive: isAlive)
+        return LegacyAppQuitter.quitAndWait(targets, timeout: timeout, forceTimeout: forceTimeout, isAlive: isAlive)
     }
 
     /// What the log says about replacing the other copies.
-    class func otherInstanceLines(_ outcome: LegacyMosTakeover.QuitOutcome, timeout: TimeInterval) -> [String] {
+    class func otherInstanceLines(_ outcome: LegacyAppQuitter.QuitOutcome, timeout: TimeInterval) -> [String] {
         let waited = String(format: "%.1f s", outcome.waited)
         var lines: [String] = []
         for pid in outcome.quit {
