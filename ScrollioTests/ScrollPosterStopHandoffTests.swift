@@ -827,9 +827,9 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
 
         XCTAssertEqual(ended, [.settingChanged])
         let after = Array(postedSoFar().dropFirst(touch.count))
-        XCTAssertEqual(after.first?.scroll, 4, "the touch got its \"ended\" first")
-        XCTAssertGreaterThan(after.count, 3)
-        XCTAssertTrue(after.dropFirst().allSatisfy { $0.scroll == 0 && $0.momentum == 0 }, "then frames without phases: \(after)")
+        XCTAssertEqual(after.prefix(3).map(\.scroll), [4, 128, 8], "the touch got its \"ended\" first, and the tap that follows a forced end")
+        XCTAssertGreaterThan(after.count, 5)
+        XCTAssertTrue(after.dropFirst(3).allSatisfy { $0.scroll == 0 && $0.momentum == 0 }, "then frames without phases: \(after)")
         XCTAssertEqual(poster.sessionLogForTests.inputs, 1, "a scroll of its own")
         XCTAssertEqual(poster.motionStateForTests.buffer.y, 211.68, accuracy: 1e-9)
         XCTAssertEqual(display.made.last?.isRunning, true, "the display link runs for it")
@@ -884,7 +884,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         lock.lock()
         let phases = posted
         lock.unlock()
-        XCTAssertEqual(phases.last, 4, "the closing \"ended\" is out when stop() returns: \(phases)")
+        XCTAssertEqual(Array(phases.suffix(3)), [4, 128, 8], "the closing \"ended\" and its tap are out when stop() returns: \(phases)")
         XCTAssertEqual(phases.first, 1)
         XCTAssertEqual(waits, 1)
 
@@ -1029,8 +1029,62 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             lock.lock()
             let all = posted
             lock.unlock()
-            XCTAssertEqual(all, [1, 4, 1, 4], "two whole touches")
+            XCTAssertEqual(all, [1, 4, 128, 8, 1, 4, 128, 8], "two whole touches, each ended by a click: its tap follows")
         }
+    }
+
+    /// The same over Chrome, the one app whose stop posts a frame with the switch off (its
+    /// "ended"). That frame is queued behind the post that does not return, and the stop
+    /// still does not wait: the wait is for a scroll with trackpad phases only.
+    func testAStopOverChromeWithoutPhasesDoesNotWaitForTheQueue() throws {
+        let savedApplication = ScrollCore.shared.application
+        let savedSwitch = Options.shared.scroll.smoothSimTrackpad
+        ScrollCore.shared.application = nil
+        Options.shared.scroll.smoothSimTrackpad = false
+        defer {
+            ScrollCore.shared.application = savedApplication
+            Options.shared.scroll.smoothSimTrackpad = savedSwitch
+        }
+        let context = ScrollDispatchContext()
+        let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+        poster.isEventTargetingChrome = { _ in true }
+        _ = FakeDisplay(for: poster)
+        let gate = DispatchSemaphore(value: 0)
+        let entered = DispatchSemaphore(value: 0)
+        var enteredOnce = false
+        var phases: [Double] = []
+        let lock = NSLock()
+        context.postObserverForTests = { event, _ in
+            lock.lock()
+            phases.append(event.getDoubleValueField(.scrollWheelEventScrollPhase))
+            let first = !enteredOnce
+            enteredOnce = true
+            lock.unlock()
+            if first { entered.signal() }
+            gate.wait()
+        }
+        var waits = 0
+        context.waitObserverForTests = { waits += 1 }
+
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        var now = ScrollPoster.monotonicNow()
+        for _ in 0..<3 {
+            now += 1.0 / 60.0
+            poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: now)
+        }
+        XCTAssertEqual(entered.wait(timeout: .now() + 5), .success, "a post is under way and does not return")
+
+        let before = ProcessInfo.processInfo.systemUptime
+        poster.stop(reason: .leftClick)
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - before, 0.03, "the stop came back at once")
+
+        XCTAssertEqual(waits, 0, "no wait, although Chrome's \"ended\" is queued")
+        XCTAssertFalse(poster.isGliding)
+        for _ in 0..<64 { gate.signal() }
+        context.waitForPostQueueForTests()
+        lock.lock()
+        XCTAssertEqual(phases.last, 4, "Chrome's \"ended\" went out, in its turn")
+        lock.unlock()
     }
 
     // MARK: - Frames that open or close a gesture are not dropped by a stop
@@ -1158,6 +1212,14 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         var timestamp: UInt64
         var pid: pid_t
         var isContinuous: Int64
+        var lines: Int64 = 0
+        var fixedLines: Double = 0
+        var scrollCount: Int64 = 0
+        /// Whether the event carries a hardware record (nil: this macOS cannot be asked).
+        var hasRecord: Bool?
+        /// The sideways point delta, and where the pointer was (global x).
+        var x: Int64 = 0
+        var pointerX: CGFloat = 0
         var name: String { return ScrollClassicRig.phaseName(scroll: scroll, momentum: momentum) }
         var hasPhase: Bool { return scroll != 0 || momentum != 0 }
     }
@@ -1165,6 +1227,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
     /// The wheel event's own time, and where the clock of the frames' own times starts.
     private static let wheelTime: UInt64 = 1_000_000_000
     private static let firstFrameTime: UInt64 = 5_000_000_000
+    private static let wheelScrollCount: Int64 = 3
 
     /// The default click: every frame that moves the page, with the switch off (pinned by
     /// `ScrollClassicPathTests.testTheDefaultClick_isWhatItWas`). No form changes it.
@@ -1177,11 +1240,21 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
     /// app's kind as given, display frames until the scroll has ended by itself. Returns the
     /// events that would be posted, the scroll's log entry, and how often the kind was asked.
     /// `oldLongTouch`: the evaluation switch (`ScrollPoster.usesOldLongTouch`).
-    private func oneClick(over kind: ScrollUtils.TrackpadStyleTarget, oldLongTouch: Bool = false,
+    /// `chrome`: whether the app counts as Chrome itself (it gets an "ended" at a stop with
+    /// the switch off).
+    /// `takesRecordOff`: what the launch's self-test found (nil: this Mac's own answer).
+    /// `safariFlick`: the evaluation switch for Safari (`ScrollPoster.usesSafariFlick`).
+    private func oneClick(over kind: ScrollUtils.TrackpadStyleTarget, oldLongTouch: Bool = false, chrome: Bool = false,
+                          takesRecordOff: Bool? = nil, safariFlick: Bool = false,
                           file: StaticString = #filePath, line: UInt = #line) throws -> (frames: [PostedFrame], session: ScrollSystemLog.Session?, asked: Int) {
         let context = ScrollDispatchContext()
         let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
         poster.usesOldLongTouch = oldLongTouch
+        if let takesRecordOff = takesRecordOff {
+            poster.hardwareRecordComesOff = { takesRecordOff }
+        }
+        poster.usesSafariFlick = safariFlick
+        poster.isEventTargetingChrome = { _ in chrome }
         var asked = 0
         poster.trackpadStyleTarget = { _ in
             asked += 1
@@ -1190,7 +1263,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         _ = FakeDisplay(for: poster)
         var clock = Self.firstFrameTime
         poster.eventClockForTests = {
-            clock += 16_000_000
+            clock += 16_666_667
             return clock
         }
         var posted: [PostedFrame] = []
@@ -1203,7 +1276,11 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
                 y: event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1),
                 timestamp: event.timestamp,
                 pid: pid,
-                isContinuous: event.getIntegerValueField(.scrollWheelEventIsContinuous)
+                isContinuous: event.getIntegerValueField(.scrollWheelEventIsContinuous),
+                lines: event.getIntegerValueField(.scrollWheelEventDeltaAxis1),
+                fixedLines: event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1),
+                scrollCount: event.getIntegerValueField(.scrollWheelEventScrollCount),
+                hasRecord: ScrollHardwareRecord.isCarried(by: event)
             ))
             lock.unlock()
         }
@@ -1213,6 +1290,11 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
 
         let wheel = try wheelEvent(targetPID: 4242)
         wheel.timestamp = Self.wheelTime
+        // A wheel event that counts as the third of a row of fast ones: AppKit would
+        // multiply the deltas of a precise event that carries this count.
+        wheel.setIntegerValueField(.scrollWheelEventScrollCount, value: Self.wheelScrollCount)
+        // A real wheel event carries a hardware record (its own time, one notch).
+        try attachHardwareRecord(to: wheel)
         XCTAssertTrue(poster.smooth(event: wheel, input: input()), file: file, line: line)
         var now = ScrollPoster.monotonicNow()
         for _ in 0..<240 {
@@ -1233,6 +1315,625 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         XCTAssertTrue(posted.allSatisfy { $0.isContinuous == 1 }, file: file, line: line)
         XCTAssertEqual(posted.filter { $0.y != 0 }.map(\.y), Self.defaultClick, "the motion is the default click's in every form", file: file, line: line)
         return (posted, sessions.last, asked)
+    }
+
+    // MARK: A run through the real path on a simulated clock
+
+    /// Wheel events as the scroll tap hands them over (CGEvents with a target, through
+    /// `smooth(event:input:)`: the switch read from the settings, the form decided per
+    /// event) and display frames at 60 Hz between them, all on one simulated clock. What
+    /// would be posted is collected as the app would read it.
+    private final class RealRun {
+        let context = ScrollDispatchContext()
+        let poster: ScrollPoster
+        private(set) var asked = 0
+        private(set) var sessions: [(session: ScrollSystemLog.Session, reason: ScrollSystemLog.EndReason)] = []
+        private var posted: [PostedFrame] = []
+        private let lock = NSLock()
+        private let base = 5_000.0
+        private var now = 5_000.0
+        private var nextFrame = 5_000.0 + 1.0 / 60.0
+        /// When each posted event was handed over (seconds after the start), event by event.
+        private(set) var postedAt: [Double] = []
+        /// The Duration (the feel) of the wheel events.
+        var duration = OPTIONS_SCROLL_DEFAULT().duration
+
+        init(over kind: ScrollUtils.TrackpadStyleTarget, oldLongTouch: Bool = false, display: (ScrollPoster) -> Void) {
+            let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+            self.poster = poster
+            poster.usesOldLongTouch = oldLongTouch
+            poster.isEventTargetingChrome = { _ in false }
+            poster.trackpadStyleTarget = { [unowned self] _ in
+                self.asked += 1
+                return kind
+            }
+            display(poster)
+            poster.eventClockForTests = { [unowned self] in UInt64((self.now * 1e9).rounded()) }
+            poster.inputClockForTests = { [unowned self] in self.now }
+            context.postObserverForTests = { [unowned self] event, pid in
+                self.lock.lock()
+                self.posted.append(PostedFrame(
+                    scroll: event.getDoubleValueField(.scrollWheelEventScrollPhase),
+                    momentum: event.getDoubleValueField(.scrollWheelEventMomentumPhase),
+                    y: event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1),
+                    timestamp: event.timestamp,
+                    pid: pid,
+                    isContinuous: event.getIntegerValueField(.scrollWheelEventIsContinuous),
+                    lines: event.getIntegerValueField(.scrollWheelEventDeltaAxis1),
+                    fixedLines: event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1),
+                    scrollCount: event.getIntegerValueField(.scrollWheelEventScrollCount),
+                    hasRecord: ScrollHardwareRecord.isCarried(by: event),
+                    x: event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2),
+                    pointerX: event.location.x
+                ))
+                self.postedAt.append(self.now - self.base)
+                self.lock.unlock()
+            }
+            ScrollSystemLog.sessionObserverForTests = { [weak self] session, reason in
+                self?.sessions.append((session, reason))
+            }
+        }
+
+        /// Seconds after the start.
+        var time: Double { return now - base }
+
+        /// Runs the display frames due up to `time` (seconds after the start). After each
+        /// frame the post queue catches up: the frames come here without real time between
+        /// them, and a stop drops what still waits from before it.
+        func run(until time: Double) {
+            let target = base + time
+            while nextFrame <= target + 1e-9 {
+                now = nextFrame
+                nextFrame += 1.0 / 60.0
+                guard poster.isGliding else { continue }
+                let request = poster.displayLinkFrameForTests(frameInterval: 1.0 / 60.0, now: now)
+                context.waitForPostQueueForTests()
+                if let request = request {
+                    poster.performRequestedStop(request)
+                    context.waitForPostQueueForTests()
+                }
+            }
+            now = max(now, target)
+        }
+
+        /// One wheel event at `time`: `y` and `x` are the distances ScrollCore resolved.
+        @discardableResult
+        func wheel(at time: Double, y: Double = 211.68, x: Double = 0, pid: Int64 = 4242, pointerX: CGFloat = 400) throws -> Bool {
+            run(until: time)
+            let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 1, wheel2: 0, wheel3: 0))
+            event.setIntegerValueField(.eventTargetUnixProcessID, value: pid)
+            event.location = CGPoint(x: pointerX, y: 300)
+            event.timestamp = 1_000_000_000
+            let input = ScrollPosterInput(y: y, x: x, notch: max(abs(y), abs(x)),
+                                          duration: OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: duration))
+            let taken = poster.smooth(event: event, input: input)
+            context.waitForPostQueueForTests()
+            return taken
+        }
+
+        /// What was posted so far.
+        var frames: [PostedFrame] {
+            context.waitForPostQueueForTests()
+            lock.lock()
+            defer { lock.unlock() }
+            return posted
+        }
+
+        /// Ends the run: the observer of the scroll log is taken down.
+        func finish() -> [PostedFrame] {
+            let all = frames
+            ScrollSystemLog.sessionObserverForTests = nil
+            return all
+        }
+    }
+
+    /// The run's observer of the scroll log is taken down when the test ends, however it
+    /// ends: a test that threw before `finish()` left it pointing at the run, and the next
+    /// test that ended a scroll crashed the host.
+    private func realRun(over kind: ScrollUtils.TrackpadStyleTarget, oldLongTouch: Bool = false) -> RealRun {
+        addTeardownBlock { ScrollSystemLog.sessionObserverForTests = nil }
+        return RealRun(over: kind, oldLongTouch: oldLongTouch) { _ = FakeDisplay(for: $0) }
+    }
+
+    /// What breaks the rule in a stream of posted events, or nil: every "began" gets its
+    /// "ended", a glide follows a touch or nothing does, each gesture is closed before the
+    /// next one opens. Events without phases are left out.
+    private func brokenGesture(in frames: [PostedFrame]) -> String? {
+        let allowed: [String: Set<String>] = [
+            "": ["began"],
+            "began": ["changed", "ended"],
+            "changed": ["changed", "ended"],
+            "ended": ["momentumBegan", "began", "mayBegin"],
+            "mayBegin": ["cancelled"],
+            "cancelled": ["began"],
+            "momentumBegan": ["momentumChanged", "momentumEnded"],
+            "momentumChanged": ["momentumChanged", "momentumEnded"],
+            "momentumEnded": ["began"],
+        ]
+        var last = ""
+        for (index, frame) in frames.enumerated() where frame.hasPhase {
+            if allowed[last]?.contains(frame.name) != true {
+                return "\"\(frame.name)\" after \"\(last)\" (event \(index))"
+            }
+            last = frame.name
+        }
+        return last == "" || last == "ended" || last == "momentumEnded" || last == "cancelled" ? nil : "ends with \"\(last)\""
+    }
+
+    private static let phasedForms: [(name: String, kind: ScrollUtils.TrackpadStyleTarget, oldLongTouch: Bool)] = [
+        ("flick", .followsGlide, false), ("one touch", .touchOnly, false), ("old long touch", .touchOnly, true),
+    ]
+
+    // MARK: A sideways scroll carries no phases
+
+    /// What counts as mainly sideways: more distance sideways than up-down, or an up-down
+    /// event while Scrollio's "scroll sideways" key turns the frames sideways.
+    func testIsMainlySideways() {
+        XCTAssertTrue(ScrollPoster.isMainlySideways(y: 0, x: 212, sidewaysKey: false), "the thumb wheel, Shift")
+        XCTAssertTrue(ScrollPoster.isMainlySideways(y: 0, x: -212, sidewaysKey: false))
+        XCTAssertTrue(ScrollPoster.isMainlySideways(y: 40, x: -212, sidewaysKey: false))
+        XCTAssertFalse(ScrollPoster.isMainlySideways(y: 212, x: 0, sidewaysKey: false))
+        XCTAssertFalse(ScrollPoster.isMainlySideways(y: -212, x: 40, sidewaysKey: false))
+        XCTAssertFalse(ScrollPoster.isMainlySideways(y: 212, x: 212, sidewaysKey: false), "as far both ways: not mainly sideways")
+        XCTAssertTrue(ScrollPoster.isMainlySideways(y: 212, x: 0, sidewaysKey: true), "the key turns an up-down event sideways")
+        XCTAssertFalse(ScrollPoster.isMainlySideways(y: 212, x: 40, sidewaysKey: true), "an event with both is posted as it is")
+        XCTAssertFalse(ScrollPoster.isMainlySideways(y: 0, x: 0, sidewaysKey: true))
+
+        // While a scroll runs, an event with both deltas keeps its kind unless the other
+        // axis leads two to one.
+        XCTAssertFalse(ScrollPoster.isMainlySideways(y: 190, x: 212, sidewaysKey: false, running: false), "an up-down scroll runs: it stays one")
+        XCTAssertFalse(ScrollPoster.isMainlySideways(y: 100, x: 200, sidewaysKey: false, running: false))
+        XCTAssertTrue(ScrollPoster.isMainlySideways(y: 100, x: 201, sidewaysKey: false, running: false), "more than two to one: it turns")
+        XCTAssertTrue(ScrollPoster.isMainlySideways(y: 212, x: 190, sidewaysKey: false, running: true), "a sideways scroll runs: it stays one")
+        XCTAssertTrue(ScrollPoster.isMainlySideways(y: 200, x: 101, sidewaysKey: false, running: true))
+        XCTAssertFalse(ScrollPoster.isMainlySideways(y: 200, x: 100, sidewaysKey: false, running: true), "two to one: it turns")
+        // An event with one delta (an ordinary wheel, the thumb wheel, Shift) is judged the
+        // same whatever runs.
+        for running in [Bool?.none, true, false] {
+            XCTAssertTrue(ScrollPoster.isMainlySideways(y: 0, x: 212, sidewaysKey: false, running: running))
+            XCTAssertTrue(ScrollPoster.isMainlySideways(y: 0, x: -1, sidewaysKey: false, running: running))
+            XCTAssertFalse(ScrollPoster.isMainlySideways(y: 212, x: 0, sidewaysKey: false, running: running))
+            XCTAssertFalse(ScrollPoster.isMainlySideways(y: -1, x: 0, sidewaysKey: false, running: running))
+            XCTAssertTrue(ScrollPoster.isMainlySideways(y: 212, x: 0, sidewaysKey: true, running: running))
+            XCTAssertFalse(ScrollPoster.isMainlySideways(y: 0, x: 0, sidewaysKey: false, running: running))
+        }
+    }
+
+    /// A device whose events carry both deltas and wobble about the diagonal (a trackball,
+    /// a wheel that tilts while it turns): twelve events 25 ms apart, alternately a little
+    /// more up-down and a little more sideways. Decided anew at every event, each flip ended
+    /// the scroll with what was left of it (316 of 2,410 px arrived, in 12 scrolls). An
+    /// event with both deltas now keeps the running scroll's kind unless the other axis
+    /// leads two to one: one scroll, and the page moves exactly as with the switch off.
+    func testTheRealPath_aDeviceThatWobblesAboutTheDiagonalKeepsItsScroll() throws {
+        func run(switchOn: Bool, over kind: ScrollUtils.TrackpadStyleTarget, firstSideways: Bool) throws -> (frames: [PostedFrame], reasons: [ScrollSystemLog.EndReason]) {
+            var result: ([PostedFrame], [ScrollSystemLog.EndReason]) = ([], [])
+            try withSettings(switchOn: switchOn) {
+                let run = realRun(over: kind)
+                for index in 0..<12 {
+                    let moreSideways = (index % 2 == 0) == firstSideways
+                    XCTAssertTrue(try run.wheel(at: Double(index) * 0.025, y: moreSideways ? 190 : 211.68, x: moreSideways ? 211.68 : 190))
+                }
+                run.run(until: 5)
+                let frames = run.finish()
+                result = (frames, run.sessions.map(\.reason))
+            }
+            return result
+        }
+        for firstSideways in [false, true] {
+            let off = try run(switchOn: false, over: .touchOnly, firstSideways: firstSideways)
+            let offY = off.frames.reduce(0) { $0 + $1.y }, offX = off.frames.reduce(0) { $0 + $1.x }
+            XCTAssertGreaterThan(offY, 2_300)
+            XCTAssertGreaterThan(offX, 2_300)
+            for form in Self.phasedForms where !form.oldLongTouch {
+                let on = try run(switchOn: true, over: form.kind, firstSideways: firstSideways)
+                let label = "\(form.name), the first event more \(firstSideways ? "sideways" : "up-down")"
+                XCTAssertEqual(on.reasons, [.glidedOut], "\(label): one scroll, not one per flip")
+                XCTAssertEqual(on.frames.reduce(0) { $0 + $1.y }, offY, "\(label): as far up-down as with the switch off")
+                XCTAssertEqual(on.frames.reduce(0) { $0 + $1.x }, offX, "\(label): and sideways")
+                XCTAssertNil(brokenGesture(in: on.frames), label)
+                // The scroll keeps the kind of its first event to the end.
+                XCTAssertEqual(on.frames.contains { $0.hasPhase }, !firstSideways, label)
+            }
+        }
+    }
+
+    /// One sideways click, over every kind of app, with the switch on: no posted event
+    /// carries a phase, every one keeps the wheel event's time, line delta and hardware
+    /// record (the switch-off stream), the app's kind is not even asked, and the log says
+    /// why. (With phases a sideways scroll is a swipe to the app: back a page in Chrome and
+    /// Firefox, the next tab in iTerm2.)
+    func testTheRealPath_aSidewaysScrollCarriesNoPhases() throws {
+        try withSettings(switchOn: true) {
+            for form in Self.phasedForms {
+                let run = realRun(over: form.kind, oldLongTouch: form.oldLongTouch)
+                XCTAssertTrue(try run.wheel(at: 0, y: 0, x: 211.68))
+                run.run(until: 3)
+                let frames = run.finish()
+                XCTAssertEqual(frames.filter { $0.x != 0 }.map(\.x), Self.defaultClick, "\(form.name): the default click, sideways")
+                XCTAssertTrue(frames.allSatisfy { $0.y == 0 }, form.name)
+                XCTAssertFalse(frames.contains { $0.hasPhase }, "\(form.name): no phase")
+                XCTAssertTrue(frames.allSatisfy { $0.timestamp == 1_000_000_000 && $0.lines == 1 }, "\(form.name): the wheel event's fields")
+                XCTAssertEqual(run.asked, 0, "\(form.name): the kind of the app is not asked")
+                XCTAssertEqual(run.sessions.count, 1, form.name)
+                XCTAssertEqual(run.sessions.first?.session.trackpadStyle, false, form.name)
+                XCTAssertEqual(run.sessions.first?.session.trackpadStyleSideways, true, form.name)
+                XCTAssertEqual(run.sessions.first?.session.trackpadStyleWithheld, false, form.name)
+            }
+            // Scrollio's own "scroll sideways" key: an up-down event whose frames go out sideways.
+            let run = realRun(over: .touchOnly)
+            run.poster.updateShifting(enable: true)
+            XCTAssertTrue(try run.wheel(at: 0))
+            run.run(until: 3)
+            let frames = run.finish()
+            XCTAssertEqual(frames.filter { $0.x != 0 }.map(\.x), Self.defaultClick)
+            XCTAssertFalse(frames.contains { $0.hasPhase || $0.y != 0 })
+            XCTAssertEqual(run.sessions.first?.session.trackpadStyleSideways, true)
+        }
+        // With the switch off nothing is new: the log does not call the scroll sideways.
+        try withSettings(switchOn: false) {
+            let run = realRun(over: .touchOnly)
+            XCTAssertTrue(try run.wheel(at: 0, y: 0, x: 211.68))
+            run.run(until: 3)
+            let frames = run.finish()
+            XCTAssertEqual(frames.filter { $0.x != 0 }.map(\.x), Self.defaultClick)
+            XCTAssertEqual(run.sessions.first?.session.trackpadStyleSideways, false)
+            XCTAssertEqual(ScrollSystemLog.message(for: try XCTUnwrap(run.sessions.first?.session), ended: .glidedOut).contains("trackpad-style off,"), true)
+        }
+    }
+
+    /// The wheel turns from up-down to sideways and back in mid-scroll (the thumb wheel
+    /// during the main wheel's glide, Shift pressed between two clicks), at every moment, in
+    /// every form: no event that moves the page sideways carries a phase, every gesture the
+    /// app got is whole, and the scroll that was running is closed before the other begins.
+    func testTheRealPath_turningSidewaysAndBackLeavesWholeGesturesAndNoSidewaysPhase() throws {
+        try withSettings(switchOn: true) {
+            var runs = 0
+            for form in Self.phasedForms {
+                for gap in stride(from: 0.01, through: 0.9, by: 0.03) {
+                    for upDownFirst in [true, false] {
+                        let run = realRun(over: form.kind, oldLongTouch: form.oldLongTouch)
+                        let label = "\(form.name), \(upDownFirst ? "up-down first" : "sideways first"), \(Int((gap * 1000).rounded())) ms apart"
+                        var time = 0.0
+                        for index in 0..<4 {
+                            let sideways = (index % 2 == 0) != upDownFirst
+                            XCTAssertTrue(try run.wheel(at: time, y: sideways ? 0 : 211.68, x: sideways ? 211.68 : 0), label)
+                            time += gap
+                        }
+                        run.run(until: time + 3)
+                        let frames = run.finish()
+                        runs += 1
+                        if let broken = brokenGesture(in: frames) {
+                            XCTFail("\(label): \(broken)")
+                        }
+                        XCTAssertFalse(frames.contains { $0.x != 0 && $0.hasPhase }, "\(label): a sideways event with a phase")
+                        XCTAssertFalse(frames.contains { $0.x != 0 && $0.y != 0 }, "\(label): one scroll at a time")
+                        // (10 ms apart, an up-down scroll can be over before a display frame moved it.)
+                        if gap > 0.02 || !upDownFirst {
+                            XCTAssertTrue(frames.contains { $0.y != 0 && $0.hasPhase }, "\(label): the up-down scroll has its phases")
+                        }
+                        XCTAssertFalse(frames.contains { $0.y != 0 && !$0.hasPhase }, "\(label): an up-down event without a phase")
+                        XCTAssertFalse(poster(run).isGliding, label)
+                        let turned = run.sessions.filter { $0.reason == .axisChanged }.count
+                        XCTAssertEqual(turned + run.sessions.filter { $0.reason == .glidedOut }.count, run.sessions.count, "\(label): \(run.sessions.map(\.reason))")
+                        XCTAssertFalse(run.sessions.contains { $0.reason == .settingChanged }, label)
+                    }
+                }
+            }
+            XCTAssertEqual(runs, 3 * 30 * 2)
+        }
+    }
+
+    /// The "scroll sideways" key goes down while a scroll with phases glides on, without a
+    /// wheel event: its frames would turn sideways with their phases on. The scroll is ended
+    /// (its gesture closed) and nothing follows. A scroll without phases goes on, as always.
+    func testTheRealPath_theSidewaysKeyInMidScrollEndsAScrollWithPhases() throws {
+        try withSettings(switchOn: true) {
+            for form in Self.phasedForms {
+                let run = realRun(over: form.kind, oldLongTouch: form.oldLongTouch)
+                XCTAssertTrue(try run.wheel(at: 0))
+                run.run(until: 0.1)
+                XCTAssertTrue(run.poster.isGliding, form.name)
+                run.poster.updateShifting(enable: true)
+                XCTAssertFalse(run.poster.isGliding, "\(form.name): ended")
+                run.run(until: 2)
+                let frames = run.finish()
+                XCTAssertNil(brokenGesture(in: frames), form.name)
+                XCTAssertFalse(frames.contains { $0.x != 0 }, "\(form.name): nothing went out sideways")
+                XCTAssertEqual(run.sessions.map(\.reason), [.axisChanged], form.name)
+            }
+        }
+        try withSettings(switchOn: false) {
+            let run = realRun(over: .touchOnly)
+            XCTAssertTrue(try run.wheel(at: 0))
+            run.run(until: 0.1)
+            run.poster.updateShifting(enable: true)
+            XCTAssertTrue(run.poster.isGliding, "off: the scroll goes on, its frames now sideways")
+            run.run(until: 2)
+            let frames = run.finish()
+            XCTAssertEqual(frames.reduce(0) { $0 + $1.y + $1.x }, 205)
+            XCTAssertTrue(frames.contains { $0.x != 0 })
+            XCTAssertEqual(run.sessions.map(\.reason), [.glidedOut])
+        }
+    }
+
+    private func poster(_ run: RealRun) -> ScrollPoster { return run.poster }
+
+    // MARK: The flick's held "ended", as posted
+
+    /// A flick whose glide's first frame comes late (a scroll of a few pixels at the longest
+    /// glide time): its "ended" waits for that frame. When the wheel then goes on over
+    /// another pane, the "ended" goes out first, at the place of the touch it ends, and the
+    /// new touch begins at the new place. When the wheel goes on where it was, the "ended"
+    /// goes on waiting and goes out with "momentum began".
+    func testTheRealPath_flick_aHeldEndedGoesOutAtItsOwnPlace() throws {
+        try withSettings(switchOn: true) {
+            func untilTheEndedIsHeld(_ run: RealRun) throws -> Double {
+                run.duration = 5.0
+                XCTAssertTrue(try run.wheel(at: 0, y: 12, pointerX: 400))
+                var time = 0.0
+                while !run.poster.endedWaitsForGlideForTests && time < 3 {
+                    time += 1.0 / 60.0
+                    run.run(until: time)
+                }
+                XCTAssertTrue(run.poster.endedWaitsForGlideForTests, "the touch is over and the glide's first frame has not come")
+                XCTAssertEqual(run.frames.map(\.name).filter { $0 == "ended" || $0 == "momentumBegan" }, [], "nothing of the end is out yet")
+                return time
+            }
+            let far = realRun(over: .followsGlide)
+            var time = try untilTheEndedIsHeld(far)
+            let before = far.frames.count
+            XCTAssertTrue(try far.wheel(at: time + 0.004, y: 12, pointerX: 900))
+            let closing = try XCTUnwrap(far.frames.dropFirst(before).first)
+            XCTAssertEqual(closing.name, "ended")
+            XCTAssertEqual(closing.pointerX, 400, "at the place of the touch it ends")
+            far.run(until: time + 6)
+            let all = far.finish()
+            XCTAssertNil(brokenGesture(in: all))
+            XCTAssertEqual(all.filter { $0.scroll == 1 }.map(\.pointerX), [400, 900], "two touches, each begun at its place")
+            XCTAssertEqual(all.filter { $0.scroll == 4 }.first?.pointerX, 400)
+
+            let near = realRun(over: .followsGlide)
+            time = try untilTheEndedIsHeld(near)
+            let count = near.frames.count
+            XCTAssertTrue(try near.wheel(at: time + 0.004, y: 12, pointerX: 405))
+            XCTAssertEqual(near.frames.count, count, "the same place: the \"ended\" goes on waiting")
+            near.run(until: time + 6)
+            let stream = near.finish()
+            XCTAssertNil(brokenGesture(in: stream))
+            XCTAssertEqual(stream.filter { $0.scroll == 1 }.count, 1, "one touch")
+            let ended = try XCTUnwrap(stream.firstIndex { $0.name == "ended" })
+            XCTAssertEqual(stream[ended + 1].name, "momentumBegan", "and goes out with the glide's first frame")
+        }
+    }
+
+    /// A flick's closing frames go out at the place of the gesture they close, whatever
+    /// the wheel does next in the same app. Three cases, each with the next wheel event
+    /// 500 pt away:
+    /// - while the glide runs (scroll, move to another pane or window, scroll again):
+    ///   "momentum ended" used to be a copy of the new event, at the new place;
+    /// - while the touch is still open (a scroll of a few pixels at a long glide time: the
+    ///   touch lasts until two frames have moved the page): no new touch began, and the
+    ///   rest of the first gesture went out at the new place;
+    /// - before the first frame has moved the page: "began" goes out at the second place,
+    ///   and a later wheel event there adds to the glide (the touch's place was left the
+    ///   first one's, so it began a touch of its own).
+    func testTheRealPath_flick_closingFramesGoOutAtTheirOwnPlace() throws {
+        try withSettings(switchOn: true) {
+            // In the glide.
+            let glide = realRun(over: .followsGlide)
+            XCTAssertTrue(try glide.wheel(at: 0, pointerX: 400))
+            glide.run(until: 0.25)
+            XCTAssertEqual(glide.frames.last?.name, "momentumChanged")
+            var before = glide.frames.count
+            XCTAssertTrue(try glide.wheel(at: 0.254, pointerX: 900))
+            XCTAssertEqual(glide.frames.dropFirst(before).map(\.name), ["momentumEnded"])
+            XCTAssertEqual(glide.frames.dropFirst(before).first?.pointerX, 400, "the glide ends where it ran")
+            glide.run(until: 4)
+            var all = glide.finish()
+            XCTAssertNil(brokenGesture(in: all))
+            XCTAssertTrue(all.prefix(before + 1).allSatisfy { $0.pointerX == 400 })
+            XCTAssertTrue(all.dropFirst(before + 1).allSatisfy { $0.pointerX == 900 }, "the new gesture, whole, at the new place")
+            XCTAssertEqual(all.dropFirst(before + 1).first?.name, "began")
+            let moved = all.filter { $0.y != 0 }.map(\.y)
+            try withSettings(switchOn: false) {
+                let off = realRun(over: .followsGlide)
+                XCTAssertTrue(try off.wheel(at: 0, pointerX: 400))
+                off.run(until: 0.25)
+                XCTAssertTrue(try off.wheel(at: 0.254, pointerX: 900))
+                off.run(until: 4)
+                XCTAssertEqual(moved, off.finish().filter { $0.y != 0 }.map(\.y), "the motion goes on as with the switch off")
+            }
+
+            // In the touch.
+            let touch = realRun(over: .followsGlide)
+            touch.duration = 5.0
+            XCTAssertTrue(try touch.wheel(at: 0, y: 12, pointerX: 400))
+            var time = 0.0
+            while touch.frames.count < 1 && time < 3 {
+                time += 1.0 / 60.0
+                touch.run(until: time)
+            }
+            XCTAssertEqual(touch.frames.map(\.name), ["began"], "the touch is open: one frame has moved the page")
+            XCTAssertFalse(touch.poster.endedWaitsForGlideForTests)
+            before = touch.frames.count
+            XCTAssertTrue(try touch.wheel(at: time + 0.004, y: 12, pointerX: 900))
+            XCTAssertEqual(touch.frames.dropFirst(before).map(\.name), ["ended"])
+            XCTAssertEqual(touch.frames.dropFirst(before).first?.pointerX, 400, "the touch ends where it began")
+            touch.run(until: time + 8)
+            all = touch.finish()
+            XCTAssertNil(brokenGesture(in: all))
+            XCTAssertEqual(all.filter { $0.scroll == 1 }.map(\.pointerX), [400, 900], "and a touch of its own begins at the new place")
+            XCTAssertTrue(all.dropFirst(before + 1).allSatisfy { $0.pointerX == 900 })
+
+            // Before the first frame.
+            let early = realRun(over: .followsGlide)
+            XCTAssertTrue(try early.wheel(at: 0, pointerX: 400))
+            XCTAssertTrue(try early.wheel(at: 0.004, pointerX: 900))
+            XCTAssertTrue(early.frames.isEmpty, "nothing of the first touch went out, so nothing is closed")
+            early.run(until: 0.3)
+            XCTAssertTrue(try early.wheel(at: 0.304, pointerX: 900))
+            early.run(until: 5)
+            all = early.finish()
+            XCTAssertNil(brokenGesture(in: all))
+            XCTAssertEqual(all.filter { $0.scroll == 1 }.map(\.pointerX), [900], "one touch, at the second place")
+            XCTAssertEqual(all.filter { $0.momentum == 3 }.count, 1, "and one glide: the third wheel event added to it")
+            XCTAssertEqual(early.sessions.last?.session.glideInputs, 1)
+        }
+    }
+
+    // MARK: The one touch's end, as posted
+
+    /// What ends a one touch by itself is a display frame: the first one 0.2 s after the
+    /// touch's last frame. When no frame comes in that rest (a display link that runs but
+    /// does not call: suspected for a display that goes to sleep), the touch stays open
+    /// until the keeper's look finds a link with nothing posted and no wheel event for 5 s.
+    /// The keeper then ends the scroll: "ended" and the tap go out, and the scroll's line
+    /// says who ended it.
+    func testTheRealPath_oneTouch_withoutFramesInTheRestTheKeeperEndsItAndTheLogSaysSo() throws {
+        try withSettings(switchOn: true) {
+            let run = realRun(over: .touchOnly)
+            XCTAssertTrue(try run.wheel(at: 0))
+            run.run(until: 0.45)
+            XCTAssertEqual(run.frames.last?.name, "changed", "the last frame has gone out, the touch rests")
+            let before = run.frames.count
+            // No display frame from here on. The keeper looks 3 s later: too soon.
+            run.poster.healthCheckForTests(now: 5_000 + 0.45 + 3)
+            XCTAssertEqual(run.frames.count, before)
+            XCTAssertTrue(run.poster.isGliding, "the touch is still open")
+            run.poster.healthCheckForTests(now: 5_000 + 0.45 + 5.1)
+            XCTAssertFalse(run.poster.isGliding)
+            let frames = run.finish()
+            XCTAssertEqual(frames.dropFirst(before).map(\.name), ["ended", "mayBegin", "cancelled"])
+            XCTAssertNil(brokenGesture(in: frames))
+            XCTAssertEqual(run.sessions.map(\.reason), [.keeper])
+            let line = ScrollSystemLog.message(for: try XCTUnwrap(run.sessions.first?.session), ended: .keeper)
+            XCTAssertTrue(line.hasSuffix("trackpad-style on (one touch: 1 touches), ended: ended by the keeper"), line)
+            XCTAssertTrue(run.poster.healthLinesForTests.contains { $0.contains("the keeper stopped a display link") }, "and the app log says why")
+        }
+    }
+
+    /// A scroll that runs out by itself, through the real path: the posted "ended" carries
+    /// a time 0.2 s or more after the last "changed", it is handed over that long after it,
+    /// nothing follows it, and the scroll's line in the log comes after it.
+    func testTheRealPath_oneTouch_endedComesAFifthOfASecondAfterTheLastFrame() throws {
+        try withSettings(switchOn: true) {
+            let run = realRun(over: .touchOnly)
+            XCTAssertTrue(try run.wheel(at: 0))
+            run.run(until: 0.6)
+            XCTAssertTrue(run.poster.isGliding, "the scroll stays up while the touch rests")
+            XCTAssertEqual(run.frames.last?.name, "changed", "no \"ended\" yet: the last frame went out at 0.433 s")
+            XCTAssertTrue(run.sessions.isEmpty)
+            run.run(until: 3)
+            let at = run.postedAt
+            let frames = run.finish()
+            XCTAssertEqual(phaseRuns(frames), ["began ×1", "changed ×26", "ended ×1"])
+            let ended = try XCTUnwrap(frames.last)
+            let lastChanged = try XCTUnwrap(frames.last { $0.y != 0 })
+            XCTAssertGreaterThanOrEqual(Double(ended.timestamp - lastChanged.timestamp) / 1e9, 0.2005 - 1e-9)
+            XCTAssertLessThan(Double(ended.timestamp - lastChanged.timestamp) / 1e9, 0.2005 + 1.0 / 60.0)
+            XCTAssertGreaterThanOrEqual(try XCTUnwrap(at.last) - at[at.count - 2], 0.2)
+            XCTAssertEqual(run.sessions.map(\.reason), [.glidedOut])
+            XCTAssertFalse(run.poster.isGliding)
+        }
+    }
+
+    /// A wheel event that comes while the touch rests, through the real path, at every
+    /// moment of the rest and after it, at three feels: what moves the page is what moves it
+    /// with the switch off, frame for frame (the scroll under the touch may have ended in
+    /// between: with the switch off the second click then begins a scroll of its own). In
+    /// the rest it is one touch and one scroll; after the "ended" a second touch.
+    func testTheRealPath_oneTouch_aWheelEventInTheRestMovesThePageAsWithTheSwitchOff() throws {
+        func posted(switchOn: Bool, second: Double, duration: Double) throws -> (frames: [PostedFrame], at: [Double], scrolls: Int) {
+            var result: ([PostedFrame], [Double], Int) = ([], [], 0)
+            try withSettings(switchOn: switchOn) {
+                let run = realRun(over: .touchOnly)
+                run.duration = duration
+                XCTAssertTrue(try run.wheel(at: 0))
+                XCTAssertTrue(try run.wheel(at: second))
+                run.run(until: second + 6)
+                let at = run.postedAt
+                let frames = run.finish()
+                result = (frames, at, run.sessions.count)
+            }
+            return result
+        }
+        var inTheRest = 0, after = 0
+        for duration in [2.0, 3.69, 4.35] {
+            for second in stride(from: 0.20, through: 1.3, by: 0.0235) {
+                let label = "Duration \(duration), a second click at \(Int((second * 1000).rounded())) ms"
+                let on = try posted(switchOn: true, second: second, duration: duration)
+                let off = try posted(switchOn: false, second: second, duration: duration)
+                let moving = zip(on.frames, on.at).filter { $0.0.y != 0 }
+                let movingOff = zip(off.frames, off.at).filter { $0.0.y != 0 }
+                XCTAssertEqual(moving.map { $0.0.y }, movingOff.map { $0.0.y }, "\(label): the motion")
+                XCTAssertEqual(moving.map { $0.1 }, movingOff.map { $0.1 }, "\(label): its times")
+                XCTAssertNil(brokenGesture(in: on.frames), label)
+                XCTAssertFalse(on.frames.contains { $0.scroll == 128 || $0.scroll == 8 }, "\(label): no tap, nothing was forced")
+                let touches = on.frames.filter { $0.scroll == 1 }.count
+                if touches == 1 {
+                    inTheRest += 1
+                    XCTAssertEqual(on.scrolls, 1, label)
+                } else {
+                    after += 1
+                    XCTAssertEqual(touches, 2, label)
+                }
+            }
+        }
+        XCTAssertGreaterThan(inTheRest, 30)
+        XCTAssertGreaterThan(after, 30)
+    }
+
+    /// A click in mid-scroll, through the real path: what the app reads on the three
+    /// closing events. "Ended", then scroll phase 128 and 8, none with a momentum phase or a
+    /// distance in any delta field, each with a time of its own, none with the wheel's
+    /// hardware record, all to the app that had the touch, and all out when the stop returns.
+    func testTheRealPath_oneTouch_aClickPostsEndedAndTheTwoFingerTap() throws {
+        try withSettings(switchOn: true) {
+            let run = realRun(over: .touchOnly)
+            XCTAssertTrue(try run.wheel(at: 0))
+            run.run(until: 0.1)
+            let before = run.frames.count
+            run.poster.stop(reason: .leftClick)
+            // (`frames` lets the queue catch up; the wait of the stop itself is held by
+            // `testAStopReturnsAfterItsClosingFrameWentOut`.)
+            let closing = Array(run.frames.dropFirst(before))
+            XCTAssertEqual(closing.map(\.scroll), [4, 128, 8])
+            XCTAssertTrue(closing.allSatisfy { $0.momentum == 0 && $0.y == 0 && $0.x == 0 && $0.lines == 0 && $0.fixedLines == 0 })
+            XCTAssertTrue(closing.allSatisfy { $0.pid == 4242 && $0.isContinuous == 1 && $0.scrollCount == 0 })
+            XCTAssertEqual(closing.map(\.timestamp), closing.map(\.timestamp).sorted())
+            XCTAssertEqual(Set(closing.map(\.timestamp)).count, 3)
+            XCTAssertGreaterThan(closing[0].timestamp, run.frames[before - 1].timestamp)
+            if ScrollHardwareRecord.comesOff {
+                XCTAssertTrue(closing.allSatisfy { $0.hasRecord == false })
+            }
+            run.run(until: 2)
+            let frames = run.finish()
+            XCTAssertEqual(frames.count, before + 3, "nothing after the tap")
+            XCTAssertNil(brokenGesture(in: frames))
+            XCTAssertEqual(run.sessions.map(\.reason), [.leftClick])
+            XCTAssertEqual(try XCTUnwrap(NSEvent(cgEvent: try tapEvent(phase: 128))).phase, .mayBegin, "128 is \"may begin\" to AppKit")
+            XCTAssertEqual(try XCTUnwrap(NSEvent(cgEvent: try tapEvent(phase: 8))).phase, .cancelled, "8 is \"cancelled\"")
+        }
+    }
+
+    /// An event written as a frame of the tap is, to AppKit, the phase it says.
+    private func tapEvent(phase: Double) throws -> CGEvent {
+        let event = try wheelEvent()
+        var frame = ScrollOutgoingFrame(y: 0, x: 0, scrollPhase: phase, momentumPhase: 0)
+        frame.isTrackpadStyle = true
+        frame.write(to: event)
+        return event
+    }
+
+    /// Gives an event a hardware record as a wheel's event has one. Skips the test on a
+    /// macOS where the record cannot be made or read (the functions are private).
+    private func attachHardwareRecord(to event: CGEvent) throws {
+        let calls = try XCTUnwrap(ScrollHardwareRecord.readingCalls, "this macOS has the three functions")
+        let record = try XCTUnwrap(calls.createScroll(nil, mach_absolute_time(), 0, 1, 0, 0))
+        calls.set(event, record)
+        Unmanaged<AnyObject>.fromOpaque(record).release()
+        XCTAssertEqual(ScrollHardwareRecord.isCarried(by: event), true)
     }
 
     /// Sets the Scrolling pane's switch and the entry of the app under the pointer for one
@@ -1265,12 +1966,10 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         try withSettings(switchOn: true) {
             let result = try oneClick(over: .followsGlide)
             XCTAssertEqual(phaseRuns(result.frames), [
-                "began ×1", "changed ×2", "ended ×1", "momentumBegan ×1", "momentumChanged ×23", "momentumEnded ×1",
+                "began ×1", "changed ×1", "ended ×1", "momentumBegan ×1", "momentumChanged ×23", "momentumEnded ×1",
             ])
-            let times = result.frames.map(\.timestamp)
-            XCTAssertTrue(times.allSatisfy { $0 > Self.firstFrameTime }, "every frame its own time")
-            XCTAssertEqual(times, times.sorted())
-            XCTAssertEqual(Set(times).count, times.count, "no two frames the same time")
+            XCTAssertEqual(result.frames.first?.y, 7, "\"began\" is the first frame that moves the page")
+            try assertOwnFields(result.frames)
             XCTAssertEqual(result.asked, 1, "the app's kind is asked once per wheel event")
             XCTAssertEqual(result.session?.trackpadStyle, true)
             XCTAssertEqual(result.session?.flick, true)
@@ -1278,15 +1977,31 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         }
     }
 
+    /// What every posted event of "Trackpad-style scrolling" reads, in every form: a time of
+    /// its own (not the wheel event's, later than the event before it), its own line delta
+    /// and fixed-point delta (a tenth of its pixels; the wheel event's said one line on every
+    /// frame), and a scroll count of 0 (the wheel event's was 3).
+    private func assertOwnFields(_ frames: [PostedFrame], file: StaticString = #filePath, line: UInt = #line) throws {
+        XCTAssertFalse(frames.isEmpty, file: file, line: line)
+        let times = frames.map(\.timestamp)
+        XCTAssertTrue(times.allSatisfy { $0 > Self.firstFrameTime }, "every frame its own time, none the wheel event's", file: file, line: line)
+        XCTAssertEqual(times, times.sorted(), file: file, line: line)
+        XCTAssertEqual(Set(times).count, times.count, "no two frames the same time", file: file, line: line)
+        XCTAssertTrue(frames.allSatisfy { $0.scrollCount == 0 }, "scroll count 0", file: file, line: line)
+        XCTAssertTrue(frames.allSatisfy { abs($0.fixedLines - Double($0.y) / 10) < 0.001 }, "the fixed-point delta is the frame's", file: file, line: line)
+        XCTAssertTrue(frames.allSatisfy { abs(Double($0.lines) - Double($0.y) / 10) < 1 }, "the line delta is the frame's", file: file, line: line)
+        XCTAssertEqual(Double(frames.reduce(0) { $0 + $1.lines }), Double(frames.reduce(0) { $0 + $1.y }) / 10, accuracy: 1, file: file, line: line)
+    }
+
     /// Over any other app (AppKit, a web view, an app that is not known): one touch until the
     /// scroll has run out. Every frame of the click is a "changed", "ended" follows the last
-    /// one, no event carries a glide phase, and every one keeps the wheel event's time.
+    /// one, no event carries a glide phase, and every one has its own time and line delta.
     func testTheRealPath_overAnyOtherApp_postsOneTouchToTheEnd() throws {
         try withSettings(switchOn: true) {
             let result = try oneClick(over: .touchOnly)
             XCTAssertEqual(phaseRuns(result.frames), ["began ×1", "changed ×26", "ended ×1"])
             XCTAssertFalse(result.frames.contains { $0.momentum != 0 }, "no glide event")
-            XCTAssertTrue(result.frames.allSatisfy { $0.timestamp == Self.wheelTime }, "the wheel event's time on every frame")
+            try assertOwnFields(result.frames)
             XCTAssertEqual(result.frames.filter { $0.scroll == 2 }.reduce(0) { $0 + $1.y }, 205, "the touch carries the whole click")
             XCTAssertEqual(result.session?.trackpadStyle, true)
             XCTAssertEqual(result.session?.flick, false)
@@ -1349,7 +2064,9 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             lock.unlock()
             let ended = try XCTUnwrap(all.firstIndex { $0.scroll == 4 })
             XCTAssertEqual(all[ended].x, 400, "the touch ended at its own place")
-            let after = Array(all.dropFirst(ended + 1))
+            XCTAssertEqual(all.dropFirst(ended + 1).prefix(2).map(\.scroll), [128, 8], "the tap after the forced end")
+            XCTAssertTrue(all.dropFirst(ended + 1).prefix(2).allSatisfy { $0.x == 400 }, "at the touch's own place")
+            let after = Array(all.dropFirst(ended + 3))
             XCTAssertEqual(after.map(\.scroll), [1, 2], "\"began\", then that frame as the new touch's \"changed\"")
             XCTAssertTrue(after.allSatisfy { $0.x == 900 })
             XCTAssertGreaterThan(after.last?.y ?? 0, 0, "its distance went out")
@@ -1367,7 +2084,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             XCTAssertEqual(phaseRuns(result.frames), [
                 "began ×1", "changed ×10", "ended ×1", "momentumBegan ×1", "momentumChanged ×15", "momentumEnded ×1",
             ])
-            XCTAssertTrue(result.frames.allSatisfy { $0.timestamp == Self.wheelTime }, "the wheel event's time on every frame")
+            try assertOwnFields(result.frames)
             XCTAssertEqual(result.frames.filter { $0.scroll == 2 }.reduce(0) { $0 + $1.y }, 135, "what the touch carries of the 205 px")
             XCTAssertEqual(result.session?.trackpadStyle, true)
             XCTAssertEqual(result.session?.flick, false)
@@ -1375,7 +2092,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
 
             let flick = try oneClick(over: .followsGlide, oldLongTouch: true)
             XCTAssertEqual(flick.session?.flick, true)
-            XCTAssertEqual(phaseRuns(flick.frames).prefix(4), ["began ×1", "changed ×2", "ended ×1", "momentumBegan ×1"])
+            XCTAssertEqual(phaseRuns(flick.frames).prefix(4), ["began ×1", "changed ×1", "ended ×1", "momentumBegan ×1"])
         }
     }
 
@@ -1427,9 +2144,11 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             XCTAssertEqual(all.filter { $0.scroll == 1 }.map(\.x), [400, 900], "two touches: the first place and the far one")
             XCTAssertEqual(all.filter { $0.scroll == 4 }.map(\.x), [410, 900], "each ended where it was")
             let firstEnded = try XCTUnwrap(all.firstIndex { $0.scroll == 4 })
-            XCTAssertEqual(all.dropFirst(firstEnded + 1).first?.scroll, 1, "the new touch begins right after")
-            XCTAssertTrue(all.prefix(firstEnded).allSatisfy { $0.x == 400 || $0.x == 410 })
-            XCTAssertTrue(all.dropFirst(firstEnded + 1).allSatisfy { $0.x == 900 })
+            XCTAssertEqual(all.dropFirst(firstEnded + 1).prefix(3).map(\.scroll), [128, 8, 1], "the tap of the forced end, and the new touch begins right after")
+            XCTAssertEqual(all.filter { $0.scroll == 128 }.map(\.x), [410, 900], "each tap where its touch was")
+            XCTAssertEqual(all.filter { $0.scroll == 8 }.map(\.x), [410, 900])
+            XCTAssertTrue(all.prefix(firstEnded + 3).allSatisfy { $0.x == 400 || $0.x == 410 })
+            XCTAssertTrue(all.dropFirst(firstEnded + 3).allSatisfy { $0.x == 900 })
         }
     }
 
@@ -1440,6 +2159,8 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             let result = try oneClick(over: .plainScrolling)
             XCTAssertFalse(result.frames.contains { $0.hasPhase })
             XCTAssertTrue(result.frames.allSatisfy { $0.timestamp == Self.wheelTime })
+            XCTAssertTrue(result.frames.allSatisfy { $0.scrollCount == Self.wheelScrollCount }, "without phases: the wheel event's scroll count")
+            XCTAssertTrue(result.frames.allSatisfy { $0.lines == 1 }, "and its line delta")
             XCTAssertEqual(result.session?.trackpadStyle, false)
             XCTAssertEqual(result.session?.trackpadStyleWithheld, true)
         }
@@ -1448,9 +2169,144 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             let off = try oneClick(over: .followsGlide)
             XCTAssertFalse(off.frames.contains { $0.hasPhase })
             XCTAssertTrue(off.frames.allSatisfy { $0.timestamp == Self.wheelTime })
+            XCTAssertTrue(off.frames.allSatisfy { $0.scrollCount == Self.wheelScrollCount && $0.lines == 1 }, "off: the wheel event's fields stay")
             XCTAssertEqual(off.asked, 0, "asked only while the switch is on")
             XCTAssertEqual(off.session?.trackpadStyle, false)
             XCTAssertEqual(off.session?.trackpadStyleWithheld, false)
+        }
+    }
+
+    /// No posted event of "Trackpad-style scrolling" carries the wheel event's hardware
+    /// record, in any form: WebKit makes a glide of its own from the record on "momentum
+    /// began" and drops the glide it is sent (36 of a flick's 205 px arrived in a WKWebView,
+    /// 146 of the old long touch's). Without phases every frame keeps the record, as always.
+    /// Where the launch's self-test did not pass, the frames keep it too.
+    func testTheRealPath_noFrameWithPhasesCarriesTheWheelsHardwareRecord() throws {
+        try XCTSkipUnless(ScrollHardwareRecord.comesOff, "the record is not taken off on this macOS (\(ScrollHardwareRecord.system.outcome))")
+        try withSettings(switchOn: true) {
+            for (kind, oldLongTouch) in [(ScrollUtils.TrackpadStyleTarget.followsGlide, false), (.touchOnly, false), (.touchOnly, true)] {
+                let result = try oneClick(over: kind, oldLongTouch: oldLongTouch)
+                XCTAssertTrue(result.frames.allSatisfy { $0.hasPhase }, "\(kind)")
+                XCTAssertTrue(result.frames.allSatisfy { $0.hasRecord == false }, "\(kind), old long touch \(oldLongTouch): no frame carries a record")
+            }
+            let safari = try oneClick(over: .plainScrolling)
+            XCTAssertTrue(safari.frames.allSatisfy { $0.hasRecord == true }, "no phases: the wheel event's record stays")
+
+            // The self-test did not pass: as before, every frame keeps the record.
+            for kind in [ScrollUtils.TrackpadStyleTarget.followsGlide, .touchOnly] {
+                let kept = try oneClick(over: kind, takesRecordOff: false)
+                XCTAssertTrue(kept.frames.allSatisfy { $0.hasRecord == true }, "\(kind)")
+            }
+        }
+        try withSettings(switchOn: false) {
+            let off = try oneClick(over: .followsGlide, chrome: true)
+            XCTAssertEqual(off.frames.last?.name, "ended")
+            XCTAssertTrue(off.frames.allSatisfy { $0.hasRecord == true }, "off: every frame keeps the record, Chrome's \"ended\" too")
+        }
+    }
+
+    /// EVALUATION SWITCH (goes with `TrackpadStyleEvaluation`). Over Safari with it: the
+    /// flick, as a Chromium-based app gets it, and no posted event carries the wheel
+    /// event's hardware record ("momentum began" least of all: with a record on it WebKit
+    /// replaces the glide by its own). Where the record does not come off, the switch does
+    /// nothing: Safari gets no phases. Without the switch Safari gets no phases; the
+    /// DuckDuckGo browser and the apps where a wheel stays a wheel never get any.
+    func testTheRealPath_overSafariWithItsSwitch_postsAFlickWithoutTheHardwareRecord() throws {
+        try withSettings(switchOn: true) {
+            if ScrollHardwareRecord.comesOff {
+                let result = try oneClick(over: .safari, safariFlick: true)
+                XCTAssertEqual(phaseRuns(result.frames), [
+                    "began ×1", "changed ×1", "ended ×1", "momentumBegan ×1", "momentumChanged ×23", "momentumEnded ×1",
+                ])
+                XCTAssertTrue(result.frames.allSatisfy { $0.hasRecord == false }, "no event of it carries a record")
+                XCTAssertEqual(result.frames.first { $0.name == "momentumBegan" }?.hasRecord, false)
+                try assertOwnFields(result.frames)
+                XCTAssertEqual(result.session?.flick, true)
+            }
+            let noRemoval = try oneClick(over: .safari, takesRecordOff: false, safariFlick: true)
+            XCTAssertFalse(noRemoval.frames.contains { $0.hasPhase }, "the record does not come off: no phases, whatever the switch says")
+            XCTAssertEqual(noRemoval.session?.trackpadStyleWithheld, true)
+
+            let withoutTheSwitch = try oneClick(over: .safari)
+            XCTAssertFalse(withoutTheSwitch.frames.contains { $0.hasPhase })
+            XCTAssertEqual(withoutTheSwitch.session?.trackpadStyleWithheld, true)
+
+            let otherPlainApp = try oneClick(over: .plainScrolling, safariFlick: true)
+            XCTAssertFalse(otherPlainApp.frames.contains { $0.hasPhase }, "the switch is Safari's alone")
+        }
+    }
+
+    /// The hardware record's self-test is a private call. For a user who has "Trackpad-style
+    /// scrolling" off it never runs: nobody asks whether the record comes off, not a wheel
+    /// event, not a display frame, not a stop (over Chrome either), through the poster as
+    /// the app makes it. With the switch on it is not asked either where no frame carries
+    /// phases: over Safari and the other apps that are left alone, and for a sideways
+    /// scroll. The first wheel event whose frames carry phases asks.
+    func testTheRealPath_switchOff_nobodyAsksWhetherTheHardwareRecordComesOff() throws {
+        func asked(_ body: () throws -> Void) rethrows -> Int {
+            let before = ScrollHardwareRecord.timesAskedForTests
+            try body()
+            return ScrollHardwareRecord.timesAskedForTests - before
+        }
+        try withSettings(switchOn: false) {
+            XCTAssertEqual(try asked { _ = try oneClick(over: .touchOnly) }, 0, "off")
+            XCTAssertEqual(try asked { _ = try oneClick(over: .followsGlide, chrome: true) }, 0, "off, over Chrome, with its \"ended\" at the stop")
+            XCTAssertEqual(try asked { _ = try oneClick(over: .safari, safariFlick: true) }, 0, "off, also with Safari's evaluation switch set")
+            XCTAssertEqual(try asked {
+                let run = realRun(over: .touchOnly)
+                XCTAssertTrue(try run.wheel(at: 0, y: 0, x: 211.68))
+                XCTAssertTrue(try run.wheel(at: 0.1))
+                run.run(until: 2)
+                run.poster.updateShifting(enable: true)
+                run.poster.stop(reason: .leftClick)
+                _ = run.finish()
+            }, 0, "off: several wheel events, both axes, the sideways key, a click")
+        }
+        try withSettings(switchOn: true) {
+            XCTAssertEqual(try asked { _ = try oneClick(over: .plainScrolling) }, 0, "on, an app that is left alone")
+            XCTAssertEqual(try asked { _ = try oneClick(over: .safari) }, 0, "on, Safari without its switch")
+            XCTAssertEqual(try asked {
+                let run = realRun(over: .touchOnly)
+                XCTAssertTrue(try run.wheel(at: 0, y: 0, x: 211.68))
+                run.run(until: 2)
+                _ = run.finish()
+            }, 0, "on, a sideways scroll")
+            XCTAssertGreaterThan(try asked { _ = try oneClick(over: .touchOnly) }, 0, "on, frames with phases: asked")
+            XCTAssertGreaterThan(try asked { _ = try oneClick(over: .safari, safariFlick: true) }, 0, "on, Safari with its switch: asked")
+        }
+        let own = Application(path: "/Applications/Editor.app")
+        own.inherit = false
+        own.scroll.smoothSimTrackpad = true
+        let inherits = Application(path: "/Applications/Other.app")
+        inherits.inherit = true
+        inherits.scroll.smoothSimTrackpad = true
+        var global = OPTIONS_SCROLL_DEFAULT()
+        global.smoothSimTrackpad = false
+        // What decides whether the self-test runs at launch.
+        XCTAssertFalse(ScrollPoster.trackpadStyleIsOnSomewhere(global: global, applications: []), "off everywhere: not at launch")
+        XCTAssertFalse(ScrollPoster.trackpadStyleIsOnSomewhere(global: global, applications: [inherits]), "an app that uses the Scrolling pane's settings does not count")
+        XCTAssertTrue(ScrollPoster.trackpadStyleIsOnSomewhere(global: global, applications: [inherits, own]), "on for one app")
+        global.smoothSimTrackpad = true
+        XCTAssertTrue(ScrollPoster.trackpadStyleIsOnSomewhere(global: global, applications: []), "on in the Scrolling pane")
+    }
+
+    /// With the switch off Chrome gets an "ended" at every stop (from Mos: "only [4, 0] lets
+    /// Chrome recover"). It is the one frame with a phase on that path, and it is written as
+    /// it always was: the wheel event's time, line delta and scroll count. Nothing of
+    /// "Trackpad-style scrolling" is on it.
+    func testTheRealPath_switchOff_chromesEndedIsWhatItWas() throws {
+        try withSettings(switchOn: false) {
+            let result = try oneClick(over: .followsGlide, chrome: true)
+            let last = try XCTUnwrap(result.frames.last)
+            XCTAssertEqual(last.name, "ended")
+            XCTAssertEqual(last.y, 0)
+            XCTAssertFalse(result.frames.dropLast().contains { $0.hasPhase }, "no other frame has a phase")
+            XCTAssertTrue(result.frames.allSatisfy { $0.timestamp == Self.wheelTime }, "the wheel event's time, on the \"ended\" too")
+            XCTAssertTrue(result.frames.allSatisfy { $0.scrollCount == Self.wheelScrollCount && $0.lines == 1 }, "and its scroll count and line delta")
+            XCTAssertEqual(result.asked, 0)
+
+            let other = try oneClick(over: .followsGlide)
+            XCTAssertFalse(other.frames.contains { $0.hasPhase }, "any other app: no \"ended\"")
         }
     }
 
@@ -1549,6 +2405,152 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
 // MARK: - A stand-in for the display
 
 /// A display link that is none: it runs when started, and counts what was asked of it.
+// MARK: - The hardware record of a frame
+
+/// What the stand-in functions of `testASelfTestThatFails_keepsTheRecord` remember (a C
+/// function pointer cannot capture).
+private enum ScrollHardwareRecordStandIns {
+    static var firstRead: CGEvent?
+    static var attachedTo: CGEvent?
+}
+
+/// Offline: events are built and read, nothing is posted.
+final class ScrollHardwareRecordTests: XCTestCase {
+
+    /// On the macOS the removal was run on, the launch's self-test passes; on an older one
+    /// it is not tried.
+    func testThisMac_passesTheSelfTestOrDoesNotTry() {
+        let major = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        if major >= ScrollHardwareRecord.testedFromMacOS {
+            XCTAssertEqual(ScrollHardwareRecord.system.outcome, .comesOff)
+            XCTAssertTrue(ScrollHardwareRecord.comesOff)
+        } else {
+            XCTAssertEqual(ScrollHardwareRecord.system.outcome, .notTried(macOS: major))
+            XCTAssertFalse(ScrollHardwareRecord.comesOff)
+        }
+    }
+
+    /// The record comes off a copy; the event it was copied from keeps its own (copies share
+    /// one record object, so it is never changed in place).
+    func testTheRecordComesOffACopyAndStaysOnTheOriginal() throws {
+        try XCTSkipUnless(ScrollHardwareRecord.comesOff, "\(ScrollHardwareRecord.system.outcome)")
+        let calls = try XCTUnwrap(ScrollHardwareRecord.readingCalls)
+        let wheel = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 1, wheel2: 0, wheel3: 0))
+        XCTAssertEqual(ScrollHardwareRecord.isCarried(by: wheel), false, "a made event has none")
+        let record = try XCTUnwrap(calls.createScroll(nil, mach_absolute_time(), 0, 1, 0, 0))
+        calls.set(wheel, record)
+        Unmanaged<AnyObject>.fromOpaque(record).release()
+        let frame = try XCTUnwrap(wheel.copy())
+        XCTAssertEqual(ScrollHardwareRecord.isCarried(by: frame), true, "a copy carries the record")
+
+        ScrollHardwareRecord.remove(from: frame)
+        XCTAssertEqual(ScrollHardwareRecord.isCarried(by: frame), false)
+        XCTAssertEqual(ScrollHardwareRecord.isCarried(by: wheel), true, "the wheel event keeps its own")
+        XCTAssertEqual(frame.getIntegerValueField(.scrollWheelEventDeltaAxis1), 1, "nothing else of the event changes")
+        XCTAssertEqual(frame.timestamp, wheel.timestamp)
+    }
+
+    /// A macOS older than the one it was run on: nothing is looked up or called.
+    func testAnOlderMacOS_isNotTried() {
+        var looked = 0
+        let found = ScrollHardwareRecord.prepare(macOSMajor: 26) {
+            looked += 1
+            return ScrollHardwareRecord.load()
+        }
+        XCTAssertEqual(found.outcome, .notTried(macOS: 26))
+        XCTAssertNil(found.calls)
+        XCTAssertEqual(looked, 0)
+    }
+
+    /// A function that is missing: named, and nothing is used.
+    func testAMissingFunction_isNamed() {
+        let loaded = ScrollHardwareRecord.load { library, name in
+            name == "CGEventCopyIOHIDEvent" ? nil : ScrollHardwareRecord.systemResolver(library, name)
+        }
+        XCTAssertNil(loaded.calls)
+        XCTAssertEqual(loaded.missing, "CGEventCopyIOHIDEvent")
+        let found = ScrollHardwareRecord.prepare(macOSMajor: 27) { loaded }
+        XCTAssertEqual(found.outcome, .missing("CGEventCopyIOHIDEvent"))
+        XCTAssertNil(found.calls)
+    }
+
+    /// A step of the self-test that fails: the removal is not used. (A setter that does not
+    /// take a record off, as an older macOS might: the record stays.)
+    func testASelfTestThatFails_keepsTheRecord() throws {
+        let real = try XCTUnwrap(ScrollHardwareRecord.load().calls)
+        let ignoresNULL: ScrollHardwareRecord.SetRecord = { event, record in
+            guard let record = record else { return }
+            ScrollHardwareRecord.load().calls?.set(event, record)
+        }
+        let stays = ScrollHardwareRecord.Calls(set: ignoresNULL, copy: real.copy, createScroll: real.createScroll)
+        XCTAssertEqual(ScrollHardwareRecord.check(stays), .failed("the record stayed on the event it was taken off"))
+        let found = ScrollHardwareRecord.prepare(macOSMajor: 27) { (stays, nil) }
+        XCTAssertNil(found.calls, "not used")
+
+        let readsNothing: ScrollHardwareRecord.CopyRecord = { _ in nil }
+        let blind = ScrollHardwareRecord.Calls(set: real.set, copy: readsNothing, createScroll: real.createScroll)
+        XCTAssertEqual(ScrollHardwareRecord.check(blind), .failed("a record attached to an event could not be read back"))
+
+        // A copy that does not carry the record of the event it was copied from: the
+        // reader answers for the first event it is asked about, and for no other.
+        ScrollHardwareRecordStandIns.firstRead = nil
+        let readsTheOriginalOnly: ScrollHardwareRecord.CopyRecord = { event in
+            if ScrollHardwareRecordStandIns.firstRead == nil { ScrollHardwareRecordStandIns.firstRead = event }
+            guard ScrollHardwareRecordStandIns.firstRead === event else { return nil }
+            return ScrollHardwareRecord.load().calls?.copy(event)
+        }
+        let notOnACopy = ScrollHardwareRecord.Calls(set: real.set, copy: readsTheOriginalOnly, createScroll: real.createScroll)
+        XCTAssertEqual(ScrollHardwareRecord.check(notOnACopy), .failed("a copy of the event did not carry its record"))
+        ScrollHardwareRecordStandIns.firstRead = nil
+
+        // A setter that takes the record off the original too (it changes the shared
+        // record in place): the step that guards "the wheel event keeps its own".
+        ScrollHardwareRecordStandIns.attachedTo = nil
+        let stripsTheOriginalToo: ScrollHardwareRecord.SetRecord = { event, record in
+            guard let calls = ScrollHardwareRecord.load().calls else { return }
+            if record != nil {
+                ScrollHardwareRecordStandIns.attachedTo = event
+                calls.set(event, record)
+            } else {
+                calls.set(event, nil)
+                if let original = ScrollHardwareRecordStandIns.attachedTo { calls.set(original, nil) }
+            }
+        }
+        let inPlace = ScrollHardwareRecord.Calls(set: stripsTheOriginalToo, copy: real.copy, createScroll: real.createScroll)
+        XCTAssertEqual(ScrollHardwareRecord.check(inPlace), .failed("taking the record off a copy took it off the event it was copied from"))
+        XCTAssertNil(ScrollHardwareRecord.prepare(macOSMajor: 27) { (inPlace, nil) }.calls, "not used")
+        ScrollHardwareRecordStandIns.attachedTo = nil
+
+        let makesNothing: ScrollHardwareRecord.CreateScrollRecord = { _, _, _, _, _, _ in nil }
+        let empty = ScrollHardwareRecord.Calls(set: real.set, copy: real.copy, createScroll: makesNothing)
+        XCTAssertEqual(ScrollHardwareRecord.check(empty), .failed("no hardware record could be made"))
+    }
+
+    /// The `app` log says once what the launch found; every outcome but a pass is a problem line.
+    func testTheLaunchLine_saysWhatWasFound() {
+        let passed = ScrollHardwareRecord.launchLine(.comesOff)
+        XCTAssertFalse(passed.isProblem)
+        XCTAssertTrue(passed.text.contains("is taken off every frame that carries phases"))
+        for outcome in [ScrollHardwareRecord.Outcome.notTried(macOS: 15), .missing("SLEventSetIOHIDEvent"), .failed("a step")] {
+            let line = ScrollHardwareRecord.launchLine(outcome)
+            // Not tried on an older macOS is by design, no fault: a note. The other two are problems.
+            XCTAssertEqual(line.isProblem, outcome != .notTried(macOS: 15), "\(outcome)")
+            XCTAssertTrue(line.text.contains("keep the wheel event's hardware record, as before"), line.text)
+            var notes: [String] = [], problems: [String] = []
+            ScrollHardwareRecord.announce(outcome, note: { notes.append($0) }, problem: { problems.append($0) })
+            XCTAssertEqual(notes, line.isProblem ? [] : [line.text], "\(outcome)")
+            XCTAssertEqual(problems, line.isProblem ? [line.text] : [], "\(outcome)")
+        }
+        var notes: [String] = [], problems: [String] = []
+        ScrollHardwareRecord.announce(.comesOff, note: { notes.append($0) }, problem: { problems.append($0) })
+        XCTAssertEqual(notes, [passed.text])
+        XCTAssertEqual(problems, [])
+        XCTAssertTrue(ScrollHardwareRecord.launchLine(.notTried(macOS: 15)).text.contains("on macOS 15 it is not tried"))
+        XCTAssertTrue(ScrollHardwareRecord.launchLine(.missing("SLEventSetIOHIDEvent")).text.contains("macOS has no SLEventSetIOHIDEvent here"))
+        XCTAssertTrue(ScrollHardwareRecord.launchLine(.failed("a step")).text.contains("failed (a step)"))
+    }
+}
+
 final class FakeScrollDisplayLink: ScrollDisplayLink {
     var isRunning = false
     var startResult: CVReturn = kCVReturnSuccess

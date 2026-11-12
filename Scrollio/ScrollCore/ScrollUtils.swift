@@ -51,31 +51,43 @@ class ScrollUtils {
         /// AppKit and UIKit scroll views, and anything not known: they follow the touch only and
         /// compute the glide themselves. One touch until the scroll has run out.
         case touchOnly
-        /// The Chromium engine (Chrome, Dia, Arc, Edge, Electron and CEF apps) scrolls by the
-        /// glide's events: a flick.
+        /// The Chromium engine (Chrome, Dia, Arc, Edge, Electron and CEF apps) and the Gecko
+        /// engine (Firefox and its rebuilds, Thunderbird) scroll by the glide's events and make
+        /// no glide of their own: a flick.
         case followsGlide
-        /// Safari: no trackpad-style events at all, the frames go out as with the switch off.
-        /// With phases Safari does not scroll smoothly (owner, build 1521; the frames went out as
-        /// always). WebKit reads, on every scroll event that has a phase, the record of the
-        /// hardware event the frame still carries as a copy of the wheel event: its time (the
-        /// same for every frame of a tick) and the wheel's raw delta, for a glide of its own.
-        /// Frames made anew without that record did not scroll Safari at all (build 1538).
-        /// Also the other apps whose whole window is WebKit's and that are known by name
-        /// (`getsPlainScrolling`): Safari's web apps, the DuckDuckGo browser.
+        /// No trackpad-style events at all, the frames go out as with the switch off: the
+        /// DuckDuckGo browser (WebKit draws its whole window, as Safari's), and the apps where
+        /// a wheel has to stay a wheel (`wheelOnlyBundleIdentifiers`): Maps, Find My, Calendar,
+        /// iPhone Mirroring, Blender, the Godot editor.
         case plainScrolling
+        /// Safari, Safari Technology Preview and Safari's web apps (every id that begins
+        /// with `com.apple.Safari`): no trackpad-style events either, as `plainScrolling`.
+        /// With phases Safari did not scroll smoothly (owner, build 1521: the old long touch,
+        /// every frame with the wheel event's hardware record). What is known since: when the
+        /// "momentum began" frame carries a hardware record, WebKit runs a glide of its own
+        /// from the record's raw delta and drops the glide it is sent; without a record it
+        /// follows every frame (measured in a WKWebView). And the frames made anew that did
+        /// not scroll Safari at all (build 1538) probably never arrived: an event made anew
+        /// has no window number, so the delivery is suspected, not WebKit (suspected only:
+        /// it rests on a log line that is absent, and a web view did scroll by such events
+        /// when they were handed to it in-process).
+        /// A case of its own because of an EVALUATION SWITCH (`TrackpadStyleEvaluation`,
+        /// `ScrollPoster.usesSafariFlick`): with it Safari gets the flick without the record.
+        case safari
     }
 
     /// Bundle path -> answer. Main thread.
     private var trackpadStyleTargetByBundlePath: [String: TrackpadStyleTarget] = [:]
+    /// The bundles of apps seen without a bundle id that were looked into already. Main thread.
+    private var bundlesLookedIntoWithoutIdentifier: Set<String> = []
 
     /// Looks into an app's bundle off the main thread and calls back on the main queue with
-    /// whether it is Chromium-based. Tests put their own in its place (no disk).
+    /// whether it scrolls by a glide's events (Chromium-based or Gecko-based). Tests put
+    /// their own in its place (no disk).
     var inspectBundle: (_ bundleURL: URL, _ completion: @escaping (Bool) -> Void) -> Void = { bundleURL, completion in
         ScrollUtils.bundleInspectionQueue.async {
-            // The folder an alias in Applications points to is judged again: never outside.
-            let resolved = bundleURL.resolvingSymlinksInPath()
-            let isChromium = ScrollUtils.mayLookIntoBundle(atPath: resolved.path) && ScrollUtils.isChromiumBased(bundleURL: resolved)
-            DispatchQueue.main.async { completion(isChromium) }
+            let followsGlide = ScrollUtils.lookFindsGlideFollower(bundleURL: bundleURL)
+            DispatchQueue.main.async { completion(followsGlide) }
         }
     }
     private static let bundleInspectionQueue = DispatchQueue(label: "com.nikklemenc.Scrollio.bundle-inspection", qos: .utility)
@@ -106,16 +118,29 @@ class ScrollUtils {
             return known
         }
         if let identifier = bundleIdentifier, Self.getsPlainScrolling(bundleIdentifier: identifier) {
-            trackpadStyleTargetByBundlePath[path] = .plainScrolling
-            return .plainScrolling
+            let target: TrackpadStyleTarget = identifier.hasPrefix(Self.safariBundleIdentifierPrefix) ? .safari : .plainScrolling
+            trackpadStyleTargetByBundlePath[path] = target
+            return target
         }
-        // Stored at once: one look per app, however many wheel events come before its answer.
-        trackpadStyleTargetByBundlePath[path] = .touchOnly
+        if bundleIdentifier != nil {
+            // Stored at once: one look per app, however many wheel events come before its answer.
+            trackpadStyleTargetByBundlePath[path] = .touchOnly
+        } else {
+            // An app seen without its bundle id is not written down as touch-only: once its
+            // id is known it may be Safari or a listed app, and a stored answer is never
+            // asked again in this run. (Whether macOS ever gives a running app with an
+            // Info.plist no id is not known; a process that is still starting is the
+            // suspected case.) It is touch-only for this event and asked again at the next
+            // one; its bundle is still looked into once.
+            guard bundlesLookedIntoWithoutIdentifier.insert(path).inserted else {
+                return .touchOnly
+            }
+        }
         guard Self.mayLookIntoBundle(atPath: path) else {
             return .touchOnly
         }
-        inspectBundle(bundleURL) { [weak self] isChromium in
-            if isChromium {
+        inspectBundle(bundleURL) { [weak self] followsGlide in
+            if followsGlide {
                 self?.trackpadStyleTargetByBundlePath[path] = .followsGlide
             }
         }
@@ -138,7 +163,8 @@ class ScrollUtils {
     private static let homeDirectory = NSHomeDirectory()
 
     /// Whether an app gets no trackpad-style events at all (`TrackpadStyleTarget
-    /// .plainScrolling`): a browser whose pages WebKit draws, known by its bundle id.
+    /// .plainScrolling`, or `.safari` for Safari's ids), known by its bundle id: a browser whose pages WebKit draws, or an
+    /// app where a wheel has to stay a wheel.
     ///
     /// - Safari: every id that begins with `com.apple.Safari`. That is Safari itself, Safari
     ///   Technology Preview, and the web apps made with "Add to Dock"
@@ -149,16 +175,49 @@ class ScrollUtils {
     ///   (the download) and `macOS/Configuration/AppStore.xcconfig` (the Mac App Store build).
     ///
     /// An id goes in here only from a source that can be named. (Orion is WebKit too; its id
-    /// could not be confirmed from Kagi's own material, so it is not listed.) Firefox, and web
-    /// views inside other apps, count as touch-only: not checked on screen, and a web view
-    /// cannot be told from the app's own lists.
+    /// could not be confirmed from Kagi's own material, so it is not listed.) A web view
+    /// inside another app counts as touch-only: it cannot be told from the app's own lists.
+    /// (Firefox is known by its engine: `isGeckoBased`.)
+    ///
+    /// And the apps where a wheel has to stay a wheel (`wheelOnlyBundleIdentifiers`).
     static func getsPlainScrolling(bundleIdentifier: String) -> Bool {
         return bundleIdentifier.hasPrefix(safariBundleIdentifierPrefix)
             || webKitBrowserBundleIdentifiers.contains(bundleIdentifier)
+            || wheelOnlyBundleIdentifiers.contains(bundleIdentifier)
     }
     static let safariBundleIdentifierPrefix = "com.apple.Safari"
     static let webKitBrowserBundleIdentifiers: Set<String> = [
         "com.duckduckgo.macos.browser", "com.duckduckgo.mobile.ios",
+    ]
+    /// Apps where a wheel has to stay a wheel: they tell a mouse from a trackpad by the
+    /// phase on a scroll event and do something else with a trackpad's scroll, or do not
+    /// follow phased events that do not come from a trackpad. Known from the trackers of
+    /// other mouse tools (Mac Mouse Fix, LinearMouse, Mos), where people report it for a
+    /// wheel that is sent with phases; none of it was seen with Scrollio on a screen.
+    ///
+    /// - Maps `com.apple.Maps`: the wheel pans the map instead of zooming (Mac Mouse Fix
+    ///   #436, #610).
+    /// - Find My `com.apple.findmy`: the same (LinearMouse #1503, on macOS 27.2).
+    /// - Calendar `com.apple.iCal`: the month view does not scroll by phased scroll events
+    ///   alone, or stutters and runs backwards (LinearMouse #1217, #1290).
+    /// - iPhone Mirroring `com.apple.ScreenContinuity`: phased events that do not come from
+    ///   a trackpad are not followed (Mos #1045, Mac Mouse Fix #1015).
+    /// - Blender `org.blenderfoundation.blender`: the wheel orbits the view instead of
+    ///   zooming (Mac Mouse Fix #523).
+    /// - The Godot editor `org.godotengine.godot`: the wheel pans instead of zooming (it
+    ///   reads the phase to tell the devices apart).
+    ///
+    /// Where each id comes from: the four Apple apps from their own `Info.plist` on macOS
+    /// 27.2 (`/System/Applications/…`); Blender from its source, blender/blender
+    /// `release/darwin/Blender.app/Contents/Info.plist`; Godot from godotengine/godot
+    /// `misc/dist/macos_tools.app/Contents/Info.plist` (the editor: a game made with Godot
+    /// has an id of its own). Autodesk Fusion and Rhino are reported the same way (Mac
+    /// Mouse Fix #868, LinearMouse #1502), but their ids could not be confirmed from a
+    /// source that can be named, so they are not listed: such an app gets one touch until
+    /// its user gives it its own settings in the Apps pane with the switch off.
+    static let wheelOnlyBundleIdentifiers: Set<String> = [
+        "com.apple.Maps", "com.apple.findmy", "com.apple.iCal", "com.apple.ScreenContinuity",
+        "org.blenderfoundation.blender", "org.godotengine.godot",
     ]
 
     /// An app came to the front. With trackpad-style events on for it, its kind is asked for
@@ -171,6 +230,41 @@ class ScrollUtils {
     func applicationCameToFront(bundleIdentifier: String?, bundleURL: URL?, trackpadStyleOn: Bool) {
         guard trackpadStyleOn, let bundleURL = bundleURL else { return }
         _ = trackpadStyleTarget(bundleIdentifier: bundleIdentifier, bundleURL: bundleURL)
+    }
+
+    /// The look into a bundle, as it runs off the main thread: whether the app scrolls by a
+    /// glide's events. The folder an alias in Applications points to is judged again: never
+    /// outside the folders that may be looked into.
+    static func lookFindsGlideFollower(bundleURL: URL, homeDirectory: String = ScrollUtils.homeDirectory) -> Bool {
+#if DEBUG
+        lookThreadObserverForTests?(Thread.isMainThread)
+#endif
+        let resolved = bundleURL.resolvingSymlinksInPath()
+        return mayLookIntoBundle(atPath: resolved.path, homeDirectory: homeDirectory) && scrollsByGlideEvents(bundleURL: resolved)
+    }
+
+#if DEBUG
+    /// Tests: called by every look into a bundle with whether it runs on the main thread.
+    static var lookThreadObserverForTests: ((Bool) -> Void)?
+#endif
+
+    /// Whether an app scrolls by the events of a glide and makes none of its own: the
+    /// Chromium engine or the Gecko engine. One look into the bundle: reads the disk, so
+    /// never on the main thread (`inspectBundle`).
+    static func scrollsByGlideEvents(bundleURL: URL, fileManager: FileManager = .default) -> Bool {
+        return isChromiumBased(bundleURL: bundleURL, fileManager: fileManager)
+            || isGeckoBased(bundleURL: bundleURL, fileManager: fileManager)
+    }
+
+    /// A Gecko-based app carries the engine as one library beside its program:
+    /// `Contents/MacOS/XUL` (mozilla-central, `toolkit/library/moz.build`: on macOS the
+    /// shared library's name is "XUL"). That is every build of the engine without a list of
+    /// names: Firefox and its channels, rebuilds such as LibreWolf, Zen, Tor Browser and
+    /// Waterfox, Thunderbird, Zotero. Gecko follows every delta it is sent, touch and glide
+    /// alike, and makes no glide of its own (read in its source at two revisions; not seen
+    /// on a screen), so it gets the flick as Chromium does.
+    static func isGeckoBased(bundleURL: URL, fileManager: FileManager = .default) -> Bool {
+        return fileManager.fileExists(atPath: bundleURL.appendingPathComponent("Contents/MacOS/XUL").path)
     }
 
     /// A Chromium-based app carries the engine's resources (`resources.pak`) in one of its

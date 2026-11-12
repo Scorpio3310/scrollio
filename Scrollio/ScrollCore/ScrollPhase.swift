@@ -58,8 +58,8 @@ import Cocoa
  */
 
 /// The phases a wheel scroll is sent in. (A trackpad has two more, listed above: Hold and
-/// Leave, a finger that rests on it without scrolling. A wheel has no such state, so they are
-/// never sent and are not kept here: scroll phase 128 and 8.)
+/// Leave, fingers that rest on it without scrolling: scroll phase 128 "may begin" and 8
+/// "cancelled". A wheel has no such state, so the machine does not keep them.)
 enum Phase {
     case Idle
     case TrackingBegin
@@ -107,6 +107,13 @@ class ScrollPhase {
     /// went out is not ended. Off, no phase reaches an app and the phases run as they always
     /// did (a glide's first frame that posts nothing loses its "momentum began").
     var holdsWaitingMomentumBegan = false
+    /// As a flick (ScrollPoster, `config.flick`): "began" is not a frame of its own. It waits
+    /// for the first frame that moves the page and goes out on it, with that frame's distance
+    /// (`beganIsWaiting`). Until then the app has nothing of the touch: a wheel event that
+    /// comes meanwhile goes on with the touch that waits, and a touch of which nothing went
+    /// out is not ended. Off, "began" goes out with the wheel event, without distance, as it
+    /// always did.
+    var holdsWaitingBegan = false
     
     // 记录在开始新的 Tracking 前是否需要补发额外阶段 (比如在惯性中断时时补发 MomentumEnd)
     struct TransitionPlan {
@@ -137,6 +144,10 @@ class ScrollPhase {
     
     /// 每次检测到鼠标滚轮输入时调用, 根据是否被视为独立滚动返回阶段序列
     func onManualInputDetected(isSeparated: Bool) -> TransitionPlan {
+        if holdsWaitingBegan && beganIsWaiting {
+            // The touch that waits for its first frame takes this wheel event too.
+            return plan()
+        }
         if phase == .MomentumBegin || phase == .MomentumOngoing {
             if isSeparated {
                 return plan(extra: [(Phase.MomentumEnd, Phase.Idle), (Phase.TrackingBegin, Phase.TrackingOngoing)])
@@ -158,6 +169,11 @@ class ScrollPhase {
     
     /// 在滚轮输入停止后调用, 将阶段切到 TrackingEnd
     func onManualInputEnded() -> TransitionPlan {
+        if holdsWaitingBegan && beganIsWaiting {
+            // Nothing of the touch went out: there is nothing to end. "Began" goes on
+            // waiting, should a frame still come.
+            return plan()
+        }
         switch phase {
         case .TrackingBegin, .TrackingOngoing:
             return plan(target: (.TrackingEnd, nil))
@@ -188,6 +204,11 @@ class ScrollPhase {
         }
     }
 
+    /// Whether a touch was begun of which no frame has gone out yet: its "began" waits for the
+    /// first frame that is posted (`holdsWaitingBegan`).
+    var beganIsWaiting: Bool {
+        return phase == .TrackingBegin && pendingPhaseAfterDelivery != nil
+    }
     /// Whether a glide was begun of which no frame has gone out yet: its "momentum began" waits.
     var momentumBeganIsWaiting: Bool {
         return phase == .MomentumBegin && pendingPhaseAfterDelivery != nil
@@ -224,6 +245,11 @@ class ScrollPhase {
             }
             return plan(target: (.MomentumEnd, .Idle))
         case .TrackingBegin, .TrackingOngoing:
+            if holdsWaitingBegan && beganIsWaiting {
+                // A touch whose "began" never went out: the app has nothing to end.
+                transition(to: .Idle)
+                return plan()
+            }
             return plan(target: (.TrackingEnd, .Idle))
         default:
             // (Also in TrackingEnd: the touch's "ended" has gone out. A stop from outside
