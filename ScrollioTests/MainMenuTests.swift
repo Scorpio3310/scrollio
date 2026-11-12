@@ -50,6 +50,8 @@ final class MainMenuTests: XCTestCase {
     private var menus: MainMenuManager.Menus!
     private var openedPreferences: [String?] = []
     private var openedWelcomeGuide = 0
+    private var updateStatus = UpdateStatus()
+    private var updateChecks = 0
 
     override func setUp() {
         super.setUp()
@@ -59,6 +61,10 @@ final class MainMenuTests: XCTestCase {
         manager = MainMenuManager()
         manager.showPreferences = { [unowned self] tab in self.openedPreferences.append(tab) }
         manager.showWelcomeGuide = { [unowned self] in self.openedWelcomeGuide += 1 }
+        updateStatus = UpdateStatus()
+        updateChecks = 0
+        manager.updateStatus = { [unowned self] in self.updateStatus }
+        manager.checkForUpdates = { [unowned self] in self.updateChecks += 1 }
         menus = manager.makeMenus()
     }
 
@@ -110,6 +116,7 @@ final class MainMenuTests: XCTestCase {
         let menu = try submenu(MainMenuManager.Identifier.applicationMenu)
         XCTAssertEqual(rows(menu), [
             Row(title: "About Scrollio"),
+            Row(title: "Check for Updates…"),
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
             Row(title: "Services"),
@@ -242,10 +249,47 @@ final class MainMenuTests: XCTestCase {
         // AppKit enables an item when its target implements the action.
         // (An item with a submenu has AppKit's own target and action: opening the submenu.)
         let targeted = allItems(of: menus.main).filter { $0.target != nil && !$0.hasSubmenu }
-        XCTAssertEqual(targeted.map(\.title), ["About Scrollio", "Settings…", "Welcome Guide"])
+        XCTAssertEqual(targeted.map(\.title), ["About Scrollio", "Check for Updates…", "Settings…", "Welcome Guide"])
         for item in targeted {
             XCTAssertTrue(item.target === manager, item.title)
             XCTAssertTrue(item.action.map { manager.responds(to: $0) } ?? false, item.title)
+        }
+    }
+
+    // MARK: - Updates
+
+    /// "Check for Updates…" is there only in a copy that updates itself (a released one),
+    /// and enabled while a check can start. AppKit asks when the menu opens.
+    func testCheckForUpdatesFollowsTheUpdater() throws {
+        let menu = try submenu(MainMenuManager.Identifier.applicationMenu)
+        let check = try XCTUnwrap(menu.items.first { $0.identifier == MainMenuManager.Identifier.checkForUpdates })
+        XCTAssertEqual(menu.items.firstIndex(of: check), 1, "right under About, where a Mac app has it")
+
+        // Built from source, from a disk image, or the updater did not start: no item.
+        for availability in [UpdateAvailability.builtFromSource, .wrongPlace, .failed] {
+            updateStatus = UpdateStatus(availability: availability, canCheck: true)
+            XCTAssertFalse(manager.validateMenuItem(check), "\(availability)")
+            XCTAssertTrue(check.isHidden, "\(availability)")
+        }
+
+        updateStatus = UpdateStatus(availability: .available, canCheck: true)
+        XCTAssertTrue(manager.validateMenuItem(check))
+        XCTAssertFalse(check.isHidden)
+        XCTAssertTrue(choose(check))
+        XCTAssertEqual(updateChecks, 1)
+        XCTAssertEqual(openedPreferences, [])
+
+        // A check runs in the background: shown, dimmed.
+        updateStatus = UpdateStatus(availability: .available, canCheck: false)
+        XCTAssertFalse(manager.validateMenuItem(check))
+        XCTAssertFalse(check.isHidden)
+    }
+
+    func testTheOtherItemsOfTheManagerAreAlwaysEnabled() throws {
+        updateStatus = UpdateStatus()
+        for item in allItems(of: menus.main) where item.target === manager && item.identifier != MainMenuManager.Identifier.checkForUpdates {
+            XCTAssertTrue(manager.validateMenuItem(item), item.title)
+            XCTAssertFalse(item.isHidden, item.title)
         }
     }
 

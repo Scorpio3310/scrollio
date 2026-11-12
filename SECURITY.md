@@ -26,8 +26,12 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
   while a button you hold stands for a modifier, or while you record a key in Settings.
   Otherwise it only listens to them, for the keys under Scrolling › While you hold a key,
   and cannot delay them. It keeps no record of what you type.
-- It makes no network connection: there is no networking code in it, no updater, no
-  analytics and no crash reporter.
+- A released copy updates itself with [Sparkle](https://sparkle-project.org), and that
+  is its only use of the network: it asks GitHub for the file `appcast.xml` of the
+  newest release (once a day if the user allowed it, and on "Check for Updates…") and
+  downloads the disk image of an update from GitHub. There is no analytics and no crash
+  reporter, and Sparkle's system profile is off. A copy built from source has no update
+  feed and makes no network request.
 - It talks to Logitech mice over HID++ (a Logitech receiver or Bluetooth). What it reads
   and what it writes is in the README, under "Logitech MX mice".
 - The released app is signed with a Developer ID, notarized by Apple, runs with the
@@ -36,6 +40,32 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
 - "Follow the hand" uses private macOS interfaces, looked up while the app runs. Where
   they are missing the mode is not available. Starting a script (see below) uses one
   more function that is in no public header.
+
+## How an update is trusted
+
+- The feed (`appcast.xml`) only says which version is the newest and where its disk
+  image is. The image must carry an EdDSA signature made with Scrollio's update key,
+  whose public half is in the app (`SUPublicEDKey`), and it is checked before the image
+  is opened (`SUVerifyUpdateBeforeExtraction`). Whoever controls the feed or the
+  download, GitHub's account included, cannot make an installed copy install something
+  else, and cannot make it go back to an older version.
+- In place of that signature Sparkle also accepts a disk image signed with the same
+  Developer ID as the installed app: that is how a lost update key is replaced. So the
+  two things to guard are the update key and the Developer ID certificate, both on the
+  author's Mac; neither is in this repository.
+- The address of the feed is the one in the app's Info.plist. A `SUFeedURL` written into
+  the preferences file is not used.
+- The feed itself is not signed. What whoever controls it can do: keep an update away;
+  show other release notes in the update window (Scrollio's own are Markdown, but a
+  feed can also send HTML or point to a page: scripts in it do not run, pictures and
+  styles from the web do load); put a link in that window that opens a web page in the
+  browser; call an update critical; and offer an older release that was properly
+  signed, to copies older than it.
+- With a check Sparkle can send a profile of the Mac. It is off, and Scrollio hands
+  Sparkle an empty list of what such a profile may hold, so a switch planted in the
+  preferences file sends nothing either.
+- The app in an update is signed with the Developer ID and notarized like a download,
+  and Sparkle's helper programs inside the app carry the same signature.
 
 ## What to know before you rely on it
 
@@ -60,4 +90,5 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
 ## Checking a download
 
 A release is signed by team `8C592KLVN6` and notarized. The README, under "Download and
-first launch", has the commands that show it.
+first launch", has the commands that show it. An update that Scrollio installs itself is
+checked as described above; nothing has to be compared by hand.

@@ -18,8 +18,8 @@ these rules anywhere.
 
 ## The project
 
-- Scrollio is a macOS menu-bar app: Swift 5, AppKit, an Xcode project, one Swift package
-  (DGCharts). It is a non-commercial fork of Mos by Caldis (CC BY-NC 4.0). The attribution
+- Scrollio is a macOS menu-bar app: Swift 5, AppKit, an Xcode project, two Swift packages
+  (DGCharts and Sparkle). It is a non-commercial fork of Mos by Caldis (CC BY-NC 4.0). The attribution
   stays wherever it is: the notices at the top of `LICENSE`, "Licence and credits" in
   `README.md`, `NSHumanReadableCopyright` in `Scrollio/Info.plist`, the credit line in
   General, the file headers. `Scrollio/Acknowledgements.txt` ships inside the app and on
@@ -49,7 +49,22 @@ these rules anywhere.
   precedent.
 - Deployment target: macOS 14.0 for every target. Do not write fallbacks for older
   systems. Gate only APIs newer than 14.0 (the existing `macOS 26` checks stay).
-- There is no updater. A release is made by hand with `scripts/release.sh` (see Commands)
+- A released copy updates itself with Sparkle (`Scrollio/Update/UpdateCenter.swift`, the
+  only file that imports it; `UpdateCenterTests` holds that line). Only
+  `scripts/release.sh` gives a build its update feed (`SUFeedURL`, through the build
+  setting `SCROLLIO_UPDATE_FEED`): every other build starts no updater and makes no
+  network request, and must stay that way (a development build is signed differently, so
+  an update would cost the Accessibility permission). The feed is the file `appcast.xml`
+  of the newest GitHub release; an update is accepted for its EdDSA signature
+  (`SUPublicEDKey` in `Info.plist`, the update key's public half), checked before the
+  image is opened. Do not change `SUPublicEDKey`, the feed address or the Sparkle
+  settings in `Info.plist` without the owner: installed copies depend on them. The
+  update key's private half is in the owner's keychain and nowhere in the repository:
+  never run `scripts/update-key.sh create`, `export` or `import`, and never run Sparkle's
+  `sign_update` or `generate_keys` against the keychain (macOS then asks the owner for
+  the key). `CHANGELOG.md` has one part per released version; the update window and the
+  release notes show it.
+- A release is made by hand with `scripts/release.sh` (see Commands)
   and published by the owner, from a commit that carries the tag `v<version>` (`v1.0.0`);
   the version of a release is its tag's. Never create, move, delete or push a tag unless
   the owner asked for exactly that, and never `git push --tags`: a clone can also hold
@@ -70,7 +85,8 @@ scripts/qa/lint-logi-boundary.sh
 scripts/install.sh --check     # release build + signature, entitlement and binary checks
 scripts/install.sh             # the same, then install to /Applications and start it
 scripts/release.sh --check     # universal build signed with Developer ID + checks; nothing is notarized
-scripts/release.sh             # the same, then notarized by Apple and packed into build/release/Scrollio-<version>.dmg
+scripts/release.sh             # the same, then notarized by Apple, packed into build/release/Scrollio-<version>.dmg and signed as an update (appcast.xml)
+scripts/update-key.sh          # shows whether the update key in the keychain is the app's (the owner's to run)
 ```
 
 - Always use the shared scheme `Debug`. Never build with `-target Scrollio`.
@@ -81,7 +97,11 @@ scripts/release.sh             # the same, then notarized by Apple and packed in
   of the copy in `/Applications`, so that copy would be asked for Accessibility again.
   What it checks and what it leaves behind: `README.md`, "Making a release". A check in
   either script never pipes a tool into `grep -q` (under `pipefail` a match then reads as
-  no match): the output goes to a variable or a file first.
+  no match): the output goes to a variable or a file first. The parts that can be tried
+  without the Developer ID (signing Sparkle's helper programs, looking at every program's
+  signature, writing the appcast) are functions in `scripts/release-lib.sh`: try a change
+  there on a copy of a built app with the "Apple Development" certificate, never by
+  running `release.sh`.
 - Install the release app with `scripts/install.sh`, not by copying a build by hand: it
   refuses a build whose signature differs from the installed app's (see the next point),
   one that carries `get-task-allow`, and one instrumented for code coverage (the test
@@ -119,7 +139,8 @@ scripts/release.sh             # the same, then notarized by Apple and packed in
   `Scrollio.xcodeproj/project.pbxproj` (file reference, group entry, build file, Sources
   phase of the `ScrollioTests` target). A file that is only created is not compiled.
 - After adding, moving or deleting Swift files, build or run the related tests.
-- Outside the targets: `scripts/` (`install.sh`, `release.sh` and the boundary lint),
+- Outside the targets: `scripts/` (`install.sh`, `release.sh` with `release-lib.sh`,
+  `update-key.sh` and the boundary lint), `CHANGELOG.md`,
   `tools/` (hand-run HID++ probes and a toast harness; read `tools/README.md` before
   running a probe), `assets/readme/` (the README's pictures, made by the render tests),
   and the documents a visitor reads first: `README.md`, `LICENSE`, `SECURITY.md`,
@@ -137,6 +158,21 @@ See `.agents/docs/code-map.md` for the map. The rules:
   `Scrollio/Integration/`. It knows a Logitech type by its `Logi` prefix: give a new
   top-level type in `Scrollio/Logi/` that prefix, or add its name to `LOGI_SYMBOL` in the
   lint.
+- Sparkle stays inside `Scrollio/Update/`: `UpdateCenter` is the only file that imports
+  it, and the rest of the app sees `UpdateStatus` and its calls. Nothing else in the app
+  makes a network request. Sparkle's delegate methods are optional, so one written under
+  a slightly different name compiles and is never called: `UpdateCenterTests` lists the
+  names Sparkle calls, add a new one there.
+- Never let Sparkle show an alert that is modal for the app. Its standard windows say
+  "You're up to date!", "Update Error!" and "Update Installed" with `NSAlert.runModal`
+  from inside a block of the main dispatch queue, and while such an alert is open macOS
+  runs no other block of that queue: button actions, gesture follow-ups, the timeout
+  that frees a held pointer, the thumb wheel and the Logitech answers would all wait for
+  a click. `UpdateWindows` (in `UpdateCenter.swift`) stands between the updater and
+  Sparkle's windows, says these three as a notice and passes everything else on: keep
+  the updater on it (never `SPUStandardUpdaterController`, never Sparkle's windows
+  directly), and treat every new modal alert in the app the same way: `runModal` from a
+  main-queue block is the trap, from a click it is not.
 - `Scrollio/ScrollCore/`, input event handling and HID callbacks are hot paths: no
   avoidable allocations, no synchronous I/O, no heavy logging, no notifications, no UI or
   persistence work in them.
@@ -231,6 +267,7 @@ Choose by risk, and run it: reading the code is not verification.
 | Preferences panes | the pane's `Preferences*Tests` / `MousePreferencesTests`, `PreferencesWindowTests` | by hand: look at the pane (its render test can draw it); previews stop when it is hidden |
 | UI text | catalogs in sync, `PreferencesLocalizationTests` | long text, dark mode |
 | `scripts/`, licence and notices, `Acknowledgements.txt`, the DGCharts exclusion | `ReleaseReadinessTests`, `bash -n` on the script, `scripts/install.sh --check` | a Release build; `scripts/release.sh --check` when the owner asked (it signs with the Developer ID) |
+| The updater (`Scrollio/Update/`, the Sparkle keys of `Info.plist`, `scripts/release-lib.sh`) | `UpdateCenterTests`, `PreferencesGeneralTests`, `StatusMenuTests`, `MainMenuTests`, `ReleaseReadinessTests` | the library's functions on a copy of a Release build with the "Apple Development" certificate; a real update can only be seen with a released copy and a newer release |
 
 - A bug fix gets a regression test that covers the old failure. If it cannot be automated,
   say why, what was checked by hand or by reading, and what still has to be confirmed by
@@ -261,7 +298,9 @@ Do these only when the user asked for them explicitly:
   input events, launching the app while an installed copy runs, anything that depends on
   the Accessibility permission.
 - Changes to signing, entitlements or notarization. Creating, moving, deleting or pushing
-  a tag.
+  a tag. Anything with the update key (`scripts/update-key.sh create`, `export`,
+  `import`; Sparkle's `sign_update` or `generate_keys` against the keychain), and changes
+  to `SUPublicEDKey`, the update feed or the Sparkle settings in `Info.plist`.
 - Changes to how existing settings are read, to persistence formats or to permission
   prompts.
 - Pushing, publishing, or anything visible outside this machine.

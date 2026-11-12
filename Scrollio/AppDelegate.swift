@@ -262,6 +262,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         LogiUsageBootstrap.refreshAll()
         BatteryWatcher.shared.start()
         AppRunController.shared.start()
+        // New versions: only a released copy has an update feed and starts the updater.
+        UpdateCenter.shared.start()
         // A new user meets the Welcome Guide (without the access AppRunController opened it).
         if WelcomeGuideProgress.live.isPending {
             IntroductionWindowController.showAutomatically()

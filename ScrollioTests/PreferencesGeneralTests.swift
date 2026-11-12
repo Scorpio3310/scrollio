@@ -5,9 +5,11 @@
 //  The General pane: the card with the app's name and version (what the About pane
 //  showed), "Scrollio is paused" with Resume, "Open at login" and its approval row, "Show
 //  in menu bar" (the stored "hide" shown the other way round), the Accessibility row, no
-//  developer tools, and at the bottom the Welcome Guide, Scrollio on GitHub and the credit
-//  line. The login item, the permission, the pause, System Settings, the menu bar icon, the
-//  windows and the browser are replaced; nothing is shown on screen and no page is opened.
+//  developer tools, "Updates" (the two switches and "Check Now" in a copy that updates
+//  itself, one line that says why in every other), and at the bottom the Welcome Guide,
+//  Scrollio on GitHub and the credit line. The login item, the permission, the pause,
+//  System Settings, the menu bar icon, the windows, the browser and the updater are
+//  replaced; nothing is shown on screen, no page is opened and nothing asks the network.
 //
 
 import XCTest
@@ -58,6 +60,11 @@ final class PreferencesGeneralTests: XCTestCase {
         var resumes = 0
         var welcomeGuidesOpened = 0
         var openedURLs: [URL] = []
+        /// The updater: a copy built from source unless a test says otherwise.
+        var updates = UpdateStatus()
+        var updateChecks = 0
+        var automaticChecksSet: [Bool] = []
+        var automaticInstallSet: [Bool] = []
     }
 
     private var savedAutoLaunch = false
@@ -98,6 +105,17 @@ final class PreferencesGeneralTests: XCTestCase {
         }
         pane.showWelcomeGuide = { world.welcomeGuidesOpened += 1 }
         pane.openURL = { world.openedURLs.append($0) }
+        pane.updateStatus = { world.updates }
+        pane.checkForUpdates = { world.updateChecks += 1 }
+        pane.setChecksForUpdates = {
+            world.automaticChecksSet.append($0)
+            world.updates.checksAutomatically = $0
+            world.updates.canInstallAutomatically = $0
+        }
+        pane.setInstallsUpdates = {
+            world.automaticInstallSet.append($0)
+            world.updates.installsAutomatically = $0
+        }
         _ = pane.view
         return pane
     }
@@ -552,12 +570,203 @@ final class PreferencesGeneralTests: XCTestCase {
         }
         XCTAssertFalse(allSubviews(of: pane.view).contains { $0 is PreferencesDisclosureRow })
         XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
-        // The boxes: the card, (paused), startup, permissions, the Welcome Guide, the credit.
+        // The boxes: the card, (paused), startup, permissions, updates, the Welcome Guide, the credit.
         let content = try XCTUnwrap(pane.headerView.superview as? NSStackView)
-        XCTAssertEqual(content.arrangedSubviews.filter { $0 is PreferencesGroupSection }.count, 4)
+        XCTAssertEqual(content.arrangedSubviews.filter { $0 is PreferencesGroupSection }.count, 5)
         for removed in ["general-advanced", "general-scroll-monitor", "general-diagnostics", "general-open-window"] {
             XCTAssertEqual(NSLocalizedString(removed, comment: ""), removed, "\(removed) left the catalog")
         }
+    }
+
+    // MARK: - Updates
+
+    /// A released copy, as the updater reports it.
+    private func updating(
+        checks: Bool = true, installs: Bool = false, canCheck: Bool = true,
+        lastCheck: Date? = nil, waiting: String? = nil
+    ) -> UpdateStatus {
+        return UpdateStatus(
+            availability: .available, canCheck: canCheck, checksAutomatically: checks,
+            installsAutomatically: installs, canInstallAutomatically: checks,
+            lastCheck: lastCheck, waitingVersion: waiting
+        )
+    }
+
+    private func shownRows(of section: PreferencesGroupSection) -> [PreferencesGroupRow] {
+        return allSubviews(of: section).compactMap { $0 as? PreferencesGroupRow }.filter(isShown)
+    }
+
+    /// Built from source (scripts/install.sh, Xcode): one line, no control, nothing to switch.
+    func testACopyBuiltFromSourceSaysItDoesNotUpdateItself() throws {
+        install(.notRegistered)
+        let world = World()
+        let pane = try makePane(world)
+        let section = try XCTUnwrap(pane.updatesSection)
+        XCTAssertTrue(isShown(section))
+        XCTAssertEqual(shownRows(of: section).map(\.title), ["Automatic updates"])
+        XCTAssertEqual(pane.updatesUnavailableRow.explanation, "This copy was built from source, so it does not update itself.")
+        XCTAssertTrue(pane.updatesUnavailableRow.controls.isEmpty)
+        for hidden in [pane.updatesAutomaticRow!, pane.updatesInstallRow!, pane.updatesCheckRow!] {
+            XCTAssertFalse(isShown(hidden), hidden.title)
+        }
+        XCTAssertFalse(shownTexts(pane).contains("Check Now"))
+        XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
+        // Between the permissions and the Welcome Guide.
+        let content = try XCTUnwrap(pane.headerView.superview as? NSStackView)
+        let sections = content.arrangedSubviews.filter { $0 is PreferencesGroupSection && !$0.isHidden }
+        XCTAssertTrue(sections.dropLast().last === section)
+    }
+
+    func testFromADiskImageOrAfterAFailedStartItSaysWhy() throws {
+        install(.notRegistered)
+        let world = World()
+        world.updates = UpdateStatus(availability: .wrongPlace)
+        var pane = try makePane(world)
+        XCTAssertEqual(
+            pane.updatesUnavailableRow.explanation,
+            "Scrollio cannot update itself while it runs from a disk image. Move it to the Applications folder and open it from there."
+        )
+        world.updates = UpdateStatus(availability: .failed)
+        pane = try makePane(world)
+        XCTAssertEqual(pane.updatesUnavailableRow.explanation, "The updater could not start. New versions are on Scrollio's GitHub page.")
+        XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
+    }
+
+    /// A released copy: the two switches and the check.
+    func testAReleasedCopyHasTheSwitchesAndTheCheck() throws {
+        install(.notRegistered)
+        let world = World()
+        world.updates = updating(checks: true, installs: false)
+        let pane = try makePane(world)
+        XCTAssertEqual(
+            shownRows(of: pane.updatesSection).map(\.title),
+            ["Check for updates automatically", "Install updates automatically", "Check for updates"]
+        )
+        XCTAssertFalse(isShown(pane.updatesUnavailableRow))
+        XCTAssertEqual(
+            pane.updatesAutomaticRow.explanation,
+            "Once a day Scrollio asks GitHub whether there is a newer version. None of your settings or data is sent."
+        )
+        XCTAssertEqual(
+            pane.updatesInstallRow.explanation,
+            "A new version is downloaded in the background and installed the next time Scrollio quits, for example when your Mac restarts."
+        )
+        XCTAssertTrue(pane.updatesAutomaticRow.isOn)
+        XCTAssertFalse(pane.updatesInstallRow.isOn)
+        XCTAssertTrue(pane.updatesInstallRow.isEnabled)
+        XCTAssertEqual(pane.updatesCheckRow.explanation, "Not checked yet.")
+        XCTAssertEqual(pane.updatesCheckButton.title, "Check Now")
+        XCTAssertEqual(pane.updatesCheckButton.bezelStyle, .push)
+        XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
+        pane.view.layoutSubtreeIfNeeded()
+        XCTAssertFalse(pane.view.hasAmbiguousLayout)
+
+        click(pane.updatesCheckButton)
+        XCTAssertEqual(world.updateChecks, 1)
+        XCTAssertEqual(world.openedURLs, [])
+        XCTAssertEqual(world.automaticChecksSet, [])
+    }
+
+    /// The switches go to the updater, which stores them; the pane shows what it then says.
+    func testTheSwitchesGoToTheUpdater() throws {
+        install(.notRegistered)
+        let world = World()
+        world.updates = updating(checks: true, installs: false)
+        let pane = try makePane(world)
+
+        pane.updatesInstallRow.toggle.state = .on
+        XCTAssertTrue(pane.updatesInstallRow.toggle.sendAction(pane.updatesInstallRow.toggle.action, to: pane.updatesInstallRow.toggle.target))
+        XCTAssertEqual(world.automaticInstallSet, [true])
+        XCTAssertTrue(pane.updatesInstallRow.isOn)
+
+        // Without the automatic checks nothing can install itself: the second switch dims.
+        pane.updatesAutomaticRow.toggle.state = .off
+        XCTAssertTrue(pane.updatesAutomaticRow.toggle.sendAction(pane.updatesAutomaticRow.toggle.action, to: pane.updatesAutomaticRow.toggle.target))
+        XCTAssertEqual(world.automaticChecksSet, [false])
+        XCTAssertFalse(pane.updatesAutomaticRow.isOn)
+        XCTAssertFalse(pane.updatesInstallRow.isEnabled)
+        // "Check Now" stays: asking by hand needs no switch.
+        XCTAssertTrue(pane.updatesCheckButton.isEnabled)
+        XCTAssertEqual(world.updateChecks, 0)
+    }
+
+    func testTheCheckRowSaysWhenScrollioLastAsked() throws {
+        install(.notRegistered)
+        let world = World()
+        var components = DateComponents()
+        components.calendar = Calendar(identifier: .gregorian)
+        components.timeZone = TimeZone(identifier: "UTC")
+        (components.year, components.month, components.day, components.hour, components.minute) = (2026, 11, 12, 8, 12)
+        let date = try XCTUnwrap(components.date)
+        let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        XCTAssertEqual(
+            PreferencesGeneralViewController.lastCheckText(date, locale: Locale(identifier: "en_GB"), timeZone: utc),
+            "Last checked 12 Nov 2026 at 08:12."
+        )
+        XCTAssertEqual(PreferencesGeneralViewController.lastCheckText(nil), "Not checked yet.")
+
+        world.updates = updating(lastCheck: date)
+        let pane = try makePane(world)
+        XCTAssertEqual(pane.updatesCheckRow.explanation, PreferencesGeneralViewController.lastCheckText(date))
+        XCTAssertTrue(pane.updatesCheckRow.explanation?.hasPrefix("Last checked ") ?? false)
+    }
+
+    /// While a check runs in the background another cannot start.
+    func testCheckNowIsDimmedWhileACheckRuns() throws {
+        install(.notRegistered)
+        let world = World()
+        world.updates = updating(canCheck: false)
+        let pane = try makePane(world)
+        XCTAssertFalse(pane.updatesCheckButton.isEnabled)
+        XCTAssertTrue(isShown(pane.updatesCheckButton))
+    }
+
+    /// A found update that waits: the row names the version and leads to Sparkle's window.
+    func testAWaitingUpdateIsNamedAndOpened() throws {
+        install(.notRegistered)
+        let world = World()
+        world.updates = updating(waiting: "1.1.0")
+        let pane = try makePane(world)
+        XCTAssertEqual(pane.updatesCheckRow.title, "Scrollio 1.1.0 is available")
+        XCTAssertEqual(pane.updatesCheckRow.explanation, "See what is new and install it.")
+        XCTAssertEqual(pane.updatesCheckButton.title, "Update…")
+        XCTAssertTrue(pane.updatesCheckButton.accessibilityTitleUIElement() as? NSTextField === pane.updatesCheckRow.titleLabel)
+        click(pane.updatesCheckButton)
+        XCTAssertEqual(world.updateChecks, 1)
+        XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
+    }
+
+    /// What the updater changes by itself reaches an open pane: a check that ended, an
+    /// update that was found or answered, the answer to Sparkle's own question.
+    func testThePaneFollowsTheUpdater() throws {
+        install(.notRegistered)
+        let world = World()
+        world.updates = updating(checks: false)
+        let pane = try makePane(world)
+        XCTAssertFalse(pane.updatesAutomaticRow.isOn)
+        XCTAssertEqual(pane.updatesCheckRow.title, "Check for updates")
+
+        world.updates = updating(checks: true, waiting: "1.2.0")
+        NotificationCenter.default.post(name: UpdateCenter.didChangeNotification, object: nil)
+        XCTAssertTrue(pane.updatesAutomaticRow.isOn)
+        XCTAssertEqual(pane.updatesCheckRow.title, "Scrollio 1.2.0 is available")
+
+        world.updates = updating(checks: true)
+        NotificationCenter.default.post(name: UpdateCenter.didChangeNotification, object: nil)
+        XCTAssertEqual(pane.updatesCheckRow.title, "Check for updates")
+        XCTAssertEqual(pane.updatesCheckButton.title, "Check Now")
+        XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
+    }
+
+    func testTheUpdateControlsAreNamedByTheirRows() throws {
+        install(.notRegistered)
+        let world = World()
+        world.updates = updating()
+        let pane = try makePane(world)
+        XCTAssertEqual(pane.updatesAutomaticRow.toggle.accessibilityLabel(), "Check for updates automatically")
+        XCTAssertEqual(pane.updatesInstallRow.toggle.accessibilityLabel(), "Install updates automatically")
+        XCTAssertTrue(pane.updatesCheckButton.accessibilityTitleUIElement() as? NSTextField === pane.updatesCheckRow.titleLabel)
+        XCTAssertEqual(pane.updatesAutomaticRow.toggle.controlSize, PreferencesGroupedForm.switchControlSize)
     }
 
     // MARK: - Kit and wording

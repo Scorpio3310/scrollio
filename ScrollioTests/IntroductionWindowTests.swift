@@ -370,7 +370,7 @@ final class IntroductionWindowTests: XCTestCase {
         let step = controller.accessStep
         XCTAssertEqual(controller.accessState, .missing)
         XCTAssertEqual(step.titleLabel.stringValue, "Allow Accessibility access")
-        XCTAssertEqual(step.textLabel.stringValue, "Scrollio needs this permission to smooth scrolling and run your buttons and gestures. Nothing leaves your Mac.")
+        XCTAssertEqual(step.textLabel.stringValue, "Scrollio needs this permission to smooth scrolling and run your buttons and gestures. Nothing you type or click leaves your Mac.")
         // Nothing is under way yet: a to-do, no spinner.
         XCTAssertEqual(step.statusBox.titleLabel.stringValue, "Not allowed yet")
         XCTAssertEqual(step.statusBox.detailLabel.stringValue, "Click Open Accessibility Settings, then turn on Scrollio in the list.")

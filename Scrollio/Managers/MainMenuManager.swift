@@ -24,6 +24,7 @@ final class MainMenuManager: NSObject {
         static let helpMenu = NSUserInterfaceItemIdentifier("mainMenu.help")
         static let servicesMenu = NSUserInterfaceItemIdentifier("mainMenu.services")
         static let about = NSUserInterfaceItemIdentifier("mainMenu.about")
+        static let checkForUpdates = NSUserInterfaceItemIdentifier("mainMenu.checkForUpdates")
         static let settings = NSUserInterfaceItemIdentifier("mainMenu.settings")
         static let welcomeGuide = NSUserInterfaceItemIdentifier("mainMenu.welcomeGuide")
     }
@@ -42,6 +43,9 @@ final class MainMenuManager: NSObject {
     var showPreferences: (_ paneIdentifier: String?) -> Void = MainMenuManager.showPreferencesWindow
     /// Opens the Introduction window, like the Welcome Guide row of General.
     var showWelcomeGuide: () -> Void = IntroductionWindowController.showWelcomeGuide
+    /// The updater: whether this copy updates itself and can check now, and the check.
+    var updateStatus: () -> UpdateStatus = { UpdateCenter.shared.status }
+    var checkForUpdates: () -> Void = { UpdateCenter.shared.checkForUpdates() }
 
     // MARK: - Install
 
@@ -128,6 +132,10 @@ final class MainMenuManager: NSObject {
         let about = item("main-menu-about", #selector(showAbout(_:)), target: self)
         about.identifier = Identifier.about
         menu.addItem(about)
+        // Hidden in a copy that does not update itself (`validateMenuItem`).
+        let updates = item("main-menu-check-for-updates", #selector(checkForUpdatesFromMenu(_:)), target: self)
+        updates.identifier = Identifier.checkForUpdates
+        menu.addItem(updates)
         let settings = item("main-menu-settings", #selector(showSettings(_:)), key: ",", target: self)
         settings.identifier = Identifier.settings
         menu.addItem(settings)
@@ -204,6 +212,10 @@ final class MainMenuManager: NSObject {
         showWelcomeGuide()
     }
 
+    @objc func checkForUpdatesFromMenu(_ sender: Any?) {
+        checkForUpdates()
+    }
+
     /// Opens the Preferences window, on the pane `paneIdentifier` when one is given. Also
     /// used by the status-bar menu and the Welcome Guide.
     static func showPreferencesWindow(paneIdentifier: String?) {
@@ -242,5 +254,18 @@ final class MainMenuManager: NSObject {
         let item = NSMenuItem(title: submenu.title, action: nil, keyEquivalent: "")
         item.submenu = submenu
         main.addItem(item)
+    }
+}
+
+// MARK: - Validation
+
+extension MainMenuManager: NSMenuItemValidation {
+    /// "Check for Updates…" is there only in a copy that updates itself, and enabled
+    /// while a check can start. The other items of this target are always enabled.
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard menuItem.identifier == Identifier.checkForUpdates else { return true }
+        let status = updateStatus()
+        menuItem.isHidden = !status.isAvailable
+        return status.isAvailable && status.canCheck
     }
 }

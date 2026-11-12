@@ -14,8 +14,9 @@ It may not be used for commercial purposes. It is provided as-is, without
 warranties of any kind: see Section 5 of the licence. Caldis and the
 contributors to Mos do not endorse Scrollio.
 
-What Scrollio owes to other projects, and the licence of the one library its
-debug build links, is in Scrollio/Acknowledgements.txt.
+What Scrollio owes to other projects, and the licences of the two libraries it
+is built with (Sparkle, which is part of the released app, and Charts, which
+only the debug build links), is in Scrollio/Acknowledgements.txt.
 
 The full text of the licence follows, unchanged, as published at
 https://creativecommons.org/licenses/by-nc/4.0/legalcode.txt
