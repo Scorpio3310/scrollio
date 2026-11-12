@@ -92,6 +92,7 @@
 		D1A2B3C4E5F6A7B8C9D0121B /* ScrollioTests/LogiBridgeDeviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D0121C /* ScrollioTests/LogiBridgeDeviceTests.swift */; };
 		D1A2B3C4E5F6A7B8C9D0121D /* ScrollioTests/LogiFeatureActionDeviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D0121E /* ScrollioTests/LogiFeatureActionDeviceTests.swift */; };
 		D1A2B3C4E5F6A7B8C9D0121F /* ScrollioTests/LogiBoundaryEnforcementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01220 /* ScrollioTests/LogiBoundaryEnforcementTests.swift */; };
+		5CD0C0DE0000000000000102 /* ScrollioTests/ReleaseReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CD0C0DE0000000000000101 /* ScrollioTests/ReleaseReadinessTests.swift */; };
 		D1A2B3C4E5F6A7B8C9D01300 /* ScrollioTests/LogiControlReportingPacketTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01301 /* ScrollioTests/LogiControlReportingPacketTests.swift */; };
 		D1A2B3C4E5F6A7B8C9D01302 /* ScrollioTests/LogiReportingResponseRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01303 /* ScrollioTests/LogiReportingResponseRoutingTests.swift */; };
 		D1A2B3C4E5F6A7B8C9D01304 /* ScrollioTests/LogiDivertReconciliationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01305 /* ScrollioTests/LogiDivertReconciliationTests.swift */; };
@@ -208,6 +209,7 @@
 		D1A2B3C4E5F6A7B8C9D0121C /* ScrollioTests/LogiBridgeDeviceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiBridgeDeviceTests.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D0121E /* ScrollioTests/LogiFeatureActionDeviceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiFeatureActionDeviceTests.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01220 /* ScrollioTests/LogiBoundaryEnforcementTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiBoundaryEnforcementTests.swift; sourceTree = SOURCE_ROOT; };
+		5CD0C0DE0000000000000101 /* ScrollioTests/ReleaseReadinessTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ReleaseReadinessTests.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01301 /* ScrollioTests/LogiControlReportingPacketTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiControlReportingPacketTests.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01303 /* ScrollioTests/LogiReportingResponseRoutingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiReportingResponseRoutingTests.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01305 /* ScrollioTests/LogiDivertReconciliationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiDivertReconciliationTests.swift; sourceTree = SOURCE_ROOT; };
@@ -341,6 +343,7 @@
 				D1A2B3C4E5F6A7B8C9D0121C /* ScrollioTests/LogiBridgeDeviceTests.swift */,
 				D1A2B3C4E5F6A7B8C9D0121E /* ScrollioTests/LogiFeatureActionDeviceTests.swift */,
 				D1A2B3C4E5F6A7B8C9D01220 /* ScrollioTests/LogiBoundaryEnforcementTests.swift */,
+				5CD0C0DE0000000000000101 /* ScrollioTests/ReleaseReadinessTests.swift */,
 				D1A2B3C4E5F6A7B8C9D01301 /* ScrollioTests/LogiControlReportingPacketTests.swift */,
 				D1A2B3C4E5F6A7B8C9D01303 /* ScrollioTests/LogiReportingResponseRoutingTests.swift */,
 				D1A2B3C4E5F6A7B8C9D01305 /* ScrollioTests/LogiDivertReconciliationTests.swift */,
@@ -454,15 +457,11 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastSwiftUpdateCheck = 0930;
 				LastUpgradeCheck = 2630;
-				ORGANIZATIONNAME = Caldis;
 				TargetAttributes = {
 					22142D9F1E25344E00E4BFBF = {
 						CreatedOnToolsVersion = 8.2.1;
 						LastSwiftMigration = 1020;
 						SystemCapabilities = {
-							com.apple.HardenedRuntime = {
-								enabled = 0;
-							};
 							com.apple.Sandbox = {
 								enabled = 0;
 							};
@@ -595,6 +594,7 @@
 				D1A2B3C4E5F6A7B8C9D0121B /* ScrollioTests/LogiBridgeDeviceTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D0121D /* ScrollioTests/LogiFeatureActionDeviceTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D0121F /* ScrollioTests/LogiBoundaryEnforcementTests.swift in Sources */,
+				5CD0C0DE0000000000000102 /* ScrollioTests/ReleaseReadinessTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D01300 /* ScrollioTests/LogiControlReportingPacketTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D01302 /* ScrollioTests/LogiReportingResponseRoutingTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D01304 /* ScrollioTests/LogiDivertReconciliationTests.swift in Sources */,
@@ -854,6 +854,7 @@
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 8C592KLVN6;
 				ENABLE_HARDENED_RUNTIME = YES;
+				EXCLUDED_SOURCE_FILE_NAMES = "DGCharts*";
 				GCC_OPTIMIZATION_LEVEL = fast;
 				INFOPLIST_FILE = Scrollio/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Scrollio;

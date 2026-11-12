@@ -3,6 +3,9 @@
 //  Mos
 //
 
+// Debug builds only: the Scroll Monitor's button log (see MonitorViewController.swift).
+#if DEBUG
+
 import Foundation
 
 enum MonitorLogChannel: String, CaseIterable {
@@ -52,3 +55,5 @@ final class MonitorLogStore {
         linesByChannel[channel] = []
     }
 }
+
+#endif

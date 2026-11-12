@@ -6,6 +6,9 @@
 //  Copyright © 2018年 Caldis. All rights reserved.
 //
 
+// Debug builds only: the texts of the Scroll Monitor (see MonitorViewController.swift).
+#if DEBUG
+
 import Cocoa
 
 class Logger {
@@ -137,3 +140,5 @@ class Logger {
     }
     
 }
+
+#endif
