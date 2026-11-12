@@ -2407,6 +2407,7 @@ final class ScrollSystemLogTests: XCTestCase {
         let reasons: [ScrollSystemLog.EndReason: String] = [
             .glidedOut: "glided out", .leftClick: "left click", .fingerOnTrackpad: "a finger on the trackpad",
             .anotherApp: "the wheel went on in another app", .settingChanged: "trackpad-style was switched",
+            .axisChanged: "the wheel turned between up-down and sideways",
             .tapRestarted: "the scroll tap was restarted", .keeper: "ended by the keeper", .stopped: "stopped",
         ]
         for (reason, text) in reasons {

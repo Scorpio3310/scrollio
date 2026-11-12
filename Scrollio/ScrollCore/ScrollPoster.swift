@@ -282,6 +282,12 @@ class ScrollPoster {
     /// `stop`. A wheel event compares its own form with it. (It used to compare under
     /// stateLock: two more lock rounds for every wheel event, with the switch off as well.)
     private var runningScrollHasPhases: Bool?
+    /// Whether the scroll that runs is a sideways one that for that reason carries no phases
+    /// (`ConfigSnapshot.sideways`). Main thread, as `runningScrollHasPhases`.
+    private var runningScrollIsSideways = false
+    /// The "scroll sideways" key is held: the main thread's own copy of `shifting`, read
+    /// without the lock when a wheel event's form is decided (`updateShifting`).
+    private var sidewaysKeyIsDown = false
     /// When the line about closing frames that still waited was last written. Main thread.
     private var lastClosingFramesStillWaitLine: CFTimeInterval = -.infinity
     // 状态锁和投递上下文
@@ -302,6 +308,9 @@ class ScrollPoster {
         /// has run out, no glide events. (false with phases and without `flick`: the old long
         /// touch of the evaluation switch.)
         var oneTouch = false
+        /// The switch is on, but this scroll is mainly sideways and carries no phases
+        /// (`isMainlySideways`); `simTrackpadEnabled` is false then.
+        var sideways = false
         /// The frames go out without the wheel event's hardware record
         /// (`takesHardwareRecordOff`, with trackpad-style only).
         var takesRecordOff = false
@@ -316,6 +325,10 @@ class ScrollPoster {
     var targetRecorderForTests: ((ScrollOutgoingFrame, pid_t) -> Void)?
     /// Tests: the clock of the frames' timestamps (`ScrollEventClock.uptimeNanoseconds` otherwise).
     var eventClockForTests: (() -> UInt64)?
+    /// Tests: the clock a wheel event's time is read from in `smooth(event:input:)`
+    /// (`monotonicNow` otherwise), so that a run through the real path can have its wheel
+    /// events and display frames on one simulated clock.
+    var inputClockForTests: (() -> CFTimeInterval)?
     /// Tests: how often a wheel event asked, under the lock, whether an open touch has to end
     /// (`endOneTouchLocked(unlessAt:)`). Never with the switch off.
     var touchChecksForTests = 0
@@ -400,6 +413,25 @@ extension ScrollPoster {
         }
     }
 
+    /// Whether a wheel event scrolls mainly sideways: the thumb wheel, Shift (macOS and some
+    /// drivers then send the main wheel's turns as sideways events), Scrollio's own "scroll
+    /// sideways" key (`sidewaysKey`: the frames of a vertical event are turned sideways when
+    /// they are posted, `shift(with:)`), a tilt.
+    ///
+    /// Such a scroll carries no phases, in any app: a sideways scroll with a touch phase is
+    /// a swipe to the app. Chrome and Firefox take it for a Magic Mouse's and go back or
+    /// forward a page when the page cannot scroll sideways (Chrome from 160 at 200 pt of
+    /// touch; Firefox when "began" is sideways), iTerm2 switches tabs, and AppKit asks the
+    /// responders above a scroll view whether one wants the gesture as a swipe. A frame
+    /// without phases cannot start any of that and scrolls as far. What it costs: no bounce
+    /// at the sideways end of a list.
+    static func isMainlySideways(y: Double, x: Double, sidewaysKey: Bool) -> Bool {
+        if sidewaysKey && y != 0.0 && x == 0.0 {
+            return true
+        }
+        return abs(x) > abs(y)
+    }
+
     /// Whether "Trackpad-style scrolling" is on for an app: its own setting when it keeps its
     /// own (`application` is its entry in the Apps pane, nil when it has none), else the
     /// Scrolling pane's.
@@ -424,7 +456,8 @@ extension ScrollPoster {
     ///   (`endScroll(unlessFor:)`).
     /// - its scroll carries trackpad phases and the scroll that runs has none, or the other
     ///   way round (the switch, the app's own setting or "Reset to Defaults" changed in
-    ///   mid-scroll): that scroll is ended first, in the form it was sent in
+    ///   mid-scroll; or the wheel turned from up-down to sideways or back, and a sideways
+    ///   scroll carries no phases): that scroll is ended first, in the form it was sent in
     ///   (`endScroll(unlessPhasesStay:)`).
     /// - it comes far from where the one touch that is open began (another pane of the same
     ///   app): that touch is ended first, at its own place (`endOneTouchLocked(unlessAt:)`),
@@ -441,10 +474,11 @@ extension ScrollPoster {
         var formReadBefore: ConfigSnapshot?
         var bothCarryPhases = false
         if let runsWithPhases = runningScrollHasPhases {
-            let form = configSnapshot(for: event)
+            let form = configSnapshot(for: event, input: input)
             formReadBefore = form
             if form.simTrackpadEnabled != runsWithPhases {
-                endScroll(unlessPhasesStay: form.simTrackpadEnabled)
+                endScroll(unlessPhasesStay: form.simTrackpadEnabled,
+                          reason: form.sideways != runningScrollIsSideways ? .axisChanged : .settingChanged)
             } else {
                 bothCarryPhases = runsWithPhases
             }
@@ -468,14 +502,19 @@ extension ScrollPoster {
             // Without phases, and for the first event of a scroll: as it always was.
             guard dispatchContext.capture(event: event) else { return false }
             // 捕获本次手势的配置快照 (主线程读 Options/ScrollCore, CVDisplayLink 线程只读)
-            snapshot = formReadBefore ?? configSnapshot(for: event)
+            snapshot = formReadBefore ?? configSnapshot(for: event, input: input)
             os_unfair_lock_lock(&stateLock)
         }
         defer { os_unfair_lock_unlock(&stateLock) }
         applyConfigLocked(snapshot)
         let place = (config.flick || config.oneTouch) ? ScrollInputPlace(pid: target, pointer: event.location) : nil
+#if DEBUG
+        handleInputLocked(input, at: inputClockForTests?() ?? Self.monotonicNow(), place: place)
+#else
         handleInputLocked(input, at: Self.monotonicNow(), place: place)
+#endif
         runningScrollHasPhases = snapshot.simTrackpadEnabled
+        runningScrollIsSideways = snapshot.sideways
         return true
     }
     /// Ends the scroll that runs when the next wheel event goes to another process, before
@@ -499,9 +538,9 @@ extension ScrollPoster {
     /// The two forms that carry phases pass into each other without an end: the first scroll
     /// over a Chromium-based app begins as one touch and goes on as a flick.
     /// Main thread; no lock (`runningScrollHasPhases`).
-    private func endScroll(unlessPhasesStay phases: Bool) {
+    private func endScroll(unlessPhasesStay phases: Bool, reason: ScrollSystemLog.EndReason = .settingChanged) {
         guard let running = runningScrollHasPhases, running != phases else { return }
-        stop(reason: .settingChanged)
+        stop(reason: reason)
     }
     /// One touch to the end: the wheel goes on more than `trackpadStylePointerSlack` from where
     /// the open touch began, in the same process (another pane, another window; for another
@@ -567,6 +606,7 @@ extension ScrollPoster {
         sessionLog.flick = config.flick
         sessionLog.oneTouch = config.oneTouch
         sessionLog.trackpadStyleWithheld = config.withheld
+        sessionLog.trackpadStyleSideways = config.sideways
         lastActivityTime = now
         inputSequence &+= 1
         if scrollIsOneTouch != config.oneTouch {
@@ -706,7 +746,16 @@ extension ScrollPoster {
         }
         delta = (y: input.y, x: input.x)
     }
+    /// The "scroll sideways" key went down or up. Main thread.
     func updateShifting(enable: Bool) {
+        if enable != sidewaysKeyIsDown && runningScrollHasPhases == true {
+            // The frames of the scroll that runs would turn sideways (or back) with their
+            // phases on: a sideways gesture is a swipe to the app (`isMainlySideways`). The
+            // scroll is ended, as when the wheel itself turns sideways. Never with the
+            // switch off, and never for a scroll without phases.
+            stop(reason: .axisChanged)
+        }
+        sidewaysKeyIsDown = enable
         os_unfair_lock_lock(&stateLock)
         shifting = enable
         os_unfair_lock_unlock(&stateLock)
@@ -980,6 +1029,7 @@ extension ScrollPoster {
     ///   - reason: why, for the scroll's line in the log.
     func stop(_ requestedPhase: Phase = Phase.MomentumEnd, reason: ScrollSystemLog.EndReason = .stopped) {
         runningScrollHasPhases = nil
+        runningScrollIsSideways = false
         // 停止循环, 然后准备发送最后一次事件
         let wasRunning = poster?.isRunning ?? false
         poster?.stop()
@@ -1537,8 +1587,11 @@ private extension ScrollPoster {
 
     /// The settings of a scroll: the global ones or the app's own, and whether the app the event
     /// goes to gets a flick. Main thread (Options, ScrollCore, ScrollUtils); needs no lock.
-    private func configSnapshot(for event: CGEvent?) -> ConfigSnapshot {
-        let simTrackpad = Self.trackpadStyleIsOn(application: ScrollCore.shared.application, global: Options.shared.scroll)
+    private func configSnapshot(for event: CGEvent?, input: ScrollPosterInput? = nil) -> ConfigSnapshot {
+        let switchOn = Self.trackpadStyleIsOn(application: ScrollCore.shared.application, global: Options.shared.scroll)
+        // With the switch on only: a scroll that is mainly sideways carries no phases.
+        let sideways = switchOn && (input.map { Self.isMainlySideways(y: $0.y, x: $0.x, sidewaysKey: sidewaysKeyIsDown) } ?? false)
+        let simTrackpad = switchOn && !sideways
         // Asked with trackpad-style events only. It never reads the disk here: an app seen
         // for the first time counts as touch-only until its bundle was looked into, off this
         // thread (`ScrollUtils.trackpadStyleTarget`).
@@ -1549,6 +1602,7 @@ private extension ScrollPoster {
             flick: form.flick,
             withheld: form.withheld,
             oneTouch: form.oneTouch,
+            sideways: sideways,
             takesRecordOff: form.phases && takesHardwareRecordOff,
             deadZone: OPTIONS_SCROLL_DEFAULT.usableDeadZone(Options.shared.scroll.deadZone)
         )

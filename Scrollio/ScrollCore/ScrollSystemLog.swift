@@ -46,6 +46,8 @@ enum ScrollSystemLog {
         var oneTouch = false
         /// The switch is on, but the app under the pointer gets no trackpad-style events (Safari).
         var trackpadStyleWithheld = false
+        /// The switch is on, but the scroll is mainly sideways and carries no phases.
+        var trackpadStyleSideways = false
         /// How many touches ("began") the scroll was sent as, and how many of its wheel events
         /// went on with a glide instead of beginning a touch (a flick only).
         var touches = 0
@@ -76,6 +78,10 @@ enum ScrollSystemLog {
         /// "Trackpad-style scrolling" (or the app's own setting) was switched on or off while
         /// the scroll ran: it was closed in the form it was sent in.
         case settingChanged = "trackpad-style was switched"
+        /// With "Trackpad-style scrolling": the wheel turned from up-down to sideways or back
+        /// (another wheel, Shift, the "scroll sideways" key) while the scroll ran. A sideways
+        /// scroll carries no phases, so the running one was closed first.
+        case axisChanged = "the wheel turned between up-down and sideways"
         /// macOS turned the scroll tap off, or the tap was restarted.
         case tapRestarted = "the scroll tap was restarted"
         /// The keeper ended it (`ScrollPoster.healthCheck`; the `app` log says why).
@@ -88,7 +94,11 @@ enum ScrollSystemLog {
         let tau = ScrollMotion.timeConstant(forTransition: session.transition)
         let trackpadStyle: String
         if !session.trackpadStyle {
-            trackpadStyle = session.trackpadStyleWithheld ? "off (not sent to this app)" : "off"
+            if session.trackpadStyleSideways {
+                trackpadStyle = "off (a sideways scroll)"
+            } else {
+                trackpadStyle = session.trackpadStyleWithheld ? "off (not sent to this app)" : "off"
+            }
         } else if session.flick {
             trackpadStyle = "on (flick: \(session.touches) touches, \(session.glideInputs) wheel events into a glide)"
         } else if session.oneTouch {
