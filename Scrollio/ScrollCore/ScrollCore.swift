@@ -34,6 +34,10 @@ class ScrollCore: ScrollActionPort {
     var handover = ScrollHandover()
     /// The sideways wheel's functions and its log line. Main thread (scroll tap, main queue).
     var thumbWheelEngine = ThumbWheelEngine()
+    /// Tells when an app comes to the front, while the core runs (`watchFrontApplication`).
+    private var frontApplicationObserver: NSObjectProtocol?
+    /// What is done for an app that came to the front. Tests put their own in its place.
+    var applicationCameToFront: (NSRunningApplication?) -> Void = { ScrollCore.prepareTrackpadStyle(for: $0) }
 #if DEBUG
     /// Tests: receives what a smoothed wheel event would give the poster, instead of the
     /// poster (nothing glides, nothing is posted).
@@ -605,6 +609,42 @@ class ScrollCore: ScrollActionPort {
         return true
     }
     
+    // MARK: - The app in front
+
+    /// With "Trackpad-style scrolling" on for an app, its kind (Chromium-based or not) is
+    /// asked for when it comes to the front, so that the first scroll in it is already sent
+    /// in the right form (`ScrollUtils.applicationCameToFront`). Nothing is asked while the
+    /// switch is off for that app. Main thread.
+    static func prepareTrackpadStyle(for application: NSRunningApplication?, utils: ScrollUtils = .shared) {
+        guard let application = application else { return }
+        let rule = utils.getTargetApplication(from: application)
+        utils.applicationCameToFront(
+            bundleIdentifier: application.bundleIdentifier,
+            bundleURL: application.bundleURL,
+            trackpadStyleOn: ScrollPoster.trackpadStyleIsOn(application: rule, global: Options.shared.scroll)
+        )
+    }
+
+    /// Starts telling `applicationCameToFront` about each app that comes to the front, the
+    /// one in front now first. While the core runs (`enable`, `disable`).
+    func watchFrontApplication(center: NotificationCenter = NSWorkspace.shared.notificationCenter,
+                               frontmost: NSRunningApplication? = NSWorkspace.shared.frontmostApplication) {
+        stopWatchingFrontApplication(center: center)
+        frontApplicationObserver = center.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            self?.applicationCameToFront(note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)
+        }
+        applicationCameToFront(frontmost)
+    }
+
+    func stopWatchingFrontApplication(center: NotificationCenter = NSWorkspace.shared.notificationCenter) {
+        if let observer = frontApplicationObserver {
+            center.removeObserver(observer)
+            frontApplicationObserver = nil
+        }
+    }
+
     // MARK: - 事件运行管理
     // 启动
     func enable() {
@@ -622,6 +662,7 @@ class ScrollCore: ScrollActionPort {
             // 初始化滚动事件发送器
             ScrollPoster.shared.create()
             ScrollPoster.shared.startKeeper()
+            watchFrontApplication()
         } catch {
             AppSystemLog.problem("ScrollCore: could not start its event taps: \(error)")
             // Roll back: without its taps the core must not count as active, or every later
@@ -640,6 +681,7 @@ class ScrollCore: ScrollActionPort {
         // 停止滚动事件发送器
         ScrollPoster.shared.stop()
         ScrollPoster.shared.stopKeeper()
+        stopWatchingFrontApplication()
         // 停止截取事件
         scrollEventInterceptor?.stop()
         hotkeyEventInterceptor?.stop()

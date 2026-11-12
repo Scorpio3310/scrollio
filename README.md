@@ -380,9 +380,10 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](SECURIT
     setting for natural scrolling (for "Follow the hand");
   - which app is under the pointer or in front, for the per-app settings and "Smooth
     Scrolling in …". With "Trackpad-style scrolling" on it also looks once into the
-    bundle of each app you scroll in, to see whether the app is built on Chromium (the
-    names in `Contents/Frameworks`); only apps in the Applications folders and in
-    /System are looked into;
+    bundle of each app that comes to the front or that you scroll in, to see whether the
+    app is built on Chromium (the names in `Contents/Frameworks`, and whether
+    `Contents/MacOS` holds a browser's app loader); only apps in the Applications folders
+    and in /System are looked into;
   - the running apps, with their names and icons, to offer them in the Apps pane;
   - the macOS pointer settings, which it shows, and changes only as described under
     [Logitech MX mice](#logitech-mx-mice).

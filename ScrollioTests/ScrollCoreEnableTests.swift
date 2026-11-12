@@ -67,6 +67,65 @@ final class ScrollCoreEnableTests: XCTestCase {
         XCTAssertEqual(factoryCalls.count, 1)
     }
 
+    // MARK: - The app in front
+
+    /// C2: while the core runs it is told about the app in front, at once and whenever
+    /// another one comes to the front, so that app's kind is known before its first scroll;
+    /// after `disable()` no more.
+    func testTheCoreIsToldAboutTheAppInFrontWhileItWatches() {
+        let core = ScrollCore()
+        let center = NotificationCenter()
+        var told: [pid_t?] = []
+        core.applicationCameToFront = { told.append($0?.processIdentifier) }
+        let me = NSRunningApplication.current
+
+        core.watchFrontApplication(center: center, frontmost: me)
+        XCTAssertEqual(told, [me.processIdentifier], "the app in front now")
+
+        center.post(name: NSWorkspace.didActivateApplicationNotification, object: nil,
+                    userInfo: [NSWorkspace.applicationUserInfoKey: me])
+        XCTAssertEqual(told, [me.processIdentifier, me.processIdentifier])
+
+        // Watching again does not tell twice per app.
+        core.watchFrontApplication(center: center, frontmost: nil)
+        center.post(name: NSWorkspace.didActivateApplicationNotification, object: nil,
+                    userInfo: [NSWorkspace.applicationUserInfoKey: me])
+        XCTAssertEqual(told.count, 4)
+
+        core.stopWatchingFrontApplication(center: center)
+        center.post(name: NSWorkspace.didActivateApplicationNotification, object: nil,
+                    userInfo: [NSWorkspace.applicationUserInfoKey: me])
+        XCTAssertEqual(told.count, 4, "not after the core stopped")
+    }
+
+    /// What the core does for an app that came to the front: it hands the app and whether
+    /// "Trackpad-style scrolling" is on for it to ScrollUtils, which asks for the app's kind
+    /// only while it is on.
+    func testPreparingTrackpadStyleHandsOverTheAppAndItsSetting() {
+        final class Recorder: ScrollUtils {
+            var calls: [(identifier: String?, url: URL?, isOn: Bool)] = []
+            override func applicationCameToFront(bundleIdentifier: String?, bundleURL: URL?, trackpadStyleOn: Bool) {
+                calls.append((bundleIdentifier, bundleURL, trackpadStyleOn))
+            }
+        }
+        let saved = Options.shared.scroll.smoothSimTrackpad
+        defer { Options.shared.scroll.smoothSimTrackpad = saved }
+        let utils = Recorder()
+        let me = NSRunningApplication.current
+
+        ScrollCore.prepareTrackpadStyle(for: nil, utils: utils)
+        XCTAssertTrue(utils.calls.isEmpty, "no app, nothing to ask")
+
+        Options.shared.scroll.smoothSimTrackpad = false
+        ScrollCore.prepareTrackpadStyle(for: me, utils: utils)
+        Options.shared.scroll.smoothSimTrackpad = true
+        ScrollCore.prepareTrackpadStyle(for: me, utils: utils)
+
+        XCTAssertEqual(utils.calls.map(\.isOn), [false, true])
+        XCTAssertEqual(utils.calls.map(\.identifier), [me.bundleIdentifier, me.bundleIdentifier])
+        XCTAssertEqual(utils.calls.map(\.url), [me.bundleURL, me.bundleURL])
+    }
+
     // MARK: - Scroll keys held while the core stops
 
     /// Sleep, Pause or lost Accessibility access while a scroll key was held: without the

@@ -287,6 +287,16 @@ extension ScrollPoster {
         }
     }
 
+    /// Whether "Trackpad-style scrolling" is on for an app: its own setting when it keeps its
+    /// own (`application` is its entry in the Apps pane, nil when it has none), else the
+    /// Scrolling pane's.
+    static func trackpadStyleIsOn(application: Application?, global: OPTIONS_SCROLL_DEFAULT) -> Bool {
+        if let application = application, !application.inherit {
+            return application.scroll.smoothSimTrackpad
+        }
+        return global.smoothSimTrackpad
+    }
+
     /// One wheel event to smooth. Main thread (the scroll tap's callback).
     ///
     /// "Can this event be smoothed now?" is asked before anything of it is stored:
@@ -1236,12 +1246,7 @@ private extension ScrollPoster {
     /// The settings of a scroll: the global ones or the app's own, and whether the app the event
     /// goes to gets a flick. Main thread (Options, ScrollCore, ScrollUtils); needs no lock.
     private func configSnapshot(for event: CGEvent?) -> ConfigSnapshot {
-        let simTrackpad: Bool
-        if let application = ScrollCore.shared.application, !application.inherit {
-            simTrackpad = application.scroll.smoothSimTrackpad
-        } else {
-            simTrackpad = Options.shared.scroll.smoothSimTrackpad
-        }
+        let simTrackpad = Self.trackpadStyleIsOn(application: ScrollCore.shared.application, global: Options.shared.scroll)
         // Asked with trackpad-style events only. It never reads the disk here: an app seen
         // for the first time counts as touch-only until its bundle was looked into, off this
         // thread (`ScrollUtils.trackpadStyleTarget`).

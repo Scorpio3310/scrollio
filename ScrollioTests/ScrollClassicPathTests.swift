@@ -1417,6 +1417,18 @@ final class ScrollGlideFollowerTests: XCTestCase {
         XCTAssertTrue(ScrollUtils.isChromiumBased(bundleURL: chrome))
     }
 
+    /// C1: a web app installed from a Chromium browser ("Install as app") is a bundle of its
+    /// own with the browser's loader as its program and no frameworks; its windows live in
+    /// that process. It used to count as touch-only.
+    func testABrowsersWebApp_isFoundByItsLoader() throws {
+        let webApp = try app("Mail.app", files: ["Contents/MacOS/app_mode_loader", "Contents/Resources/app.icns"])
+        XCTAssertTrue(ScrollUtils.isChromiumBased(bundleURL: webApp))
+        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "com.brave.Browser.app.abcdef", bundleURL: webApp), .followsGlide)
+        // Another program in that place is not one.
+        let other = try app("Other.app", files: ["Contents/MacOS/Other", "Contents/Resources/app_mode_loader"])
+        XCTAssertFalse(ScrollUtils.isChromiumBased(bundleURL: other))
+    }
+
     func testOtherApps_areNotTakenForChromium() throws {
         let plain = try app("Plain.app", files: ["Contents/MacOS/Plain"])
         let native = try app("Native.app", files: [
@@ -1508,6 +1520,76 @@ final class ScrollGlideFollowerTests: XCTestCase {
         XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.apple.Safari", bundleURL: safari), .plainScrolling)
         XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.apple.SafariTechnologyPreview", bundleURL: URL(fileURLWithPath: "/Applications/Safari Technology Preview.app")), .plainScrolling)
         XCTAssertEqual(looks.asked.count, 0)
+    }
+
+    /// A2: every bundle id that begins with `com.apple.Safari` is Safari. A web app made with
+    /// "Add to Dock" (`com.apple.Safari.WebApp.<id>`, in the user's Applications folder) is
+    /// WebKit in its whole window; it used to count as touch-only and got the form Safari
+    /// could not scroll with. The DuckDuckGo browser is WebKit too (ids from its own
+    /// repository). No look into any of them.
+    func testSafarisWebAppsAndWebKitBrowsers_getPlainScrolling() {
+        let utils = ScrollUtils()
+        let looks = Looks()
+        looks.install(on: utils)
+        let plain: [(String, String)] = [
+            ("com.apple.Safari.WebApp.5E0C8F6A-0000-4000-8000-1234567890AB", "/Users/someone/Applications/Notes on the web.app"),
+            ("com.apple.SafariTechnologyPreview", "/Applications/Safari Technology Preview.app"),
+            ("com.duckduckgo.macos.browser", "/Applications/DuckDuckGo.app"),
+            ("com.duckduckgo.mobile.ios", "/Applications/DuckDuckGo App Store.app"),
+        ]
+        for (identifier, path) in plain {
+            XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: identifier, bundleURL: URL(fileURLWithPath: path)), .plainScrolling, identifier)
+            XCTAssertTrue(ScrollUtils.getsPlainScrolling(bundleIdentifier: identifier), identifier)
+        }
+        XCTAssertEqual(looks.asked.count, 0)
+        // Not by a name that only contains Safari's, and no other Apple app.
+        for identifier in ["com.example.com.apple.Safari", "com.apple.mail", "com.apple.finder", "com.duckduckgo.macos.vpn", "org.mozilla.firefox"] {
+            XCTAssertFalse(ScrollUtils.getsPlainScrolling(bundleIdentifier: identifier), identifier)
+        }
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.apple.mail", bundleURL: URL(fileURLWithPath: "/System/Applications/Mail.app")), .touchOnly)
+        XCTAssertEqual(looks.asked.count, 1)
+    }
+
+    /// C2: an app that comes to the front is asked for then, so the first scroll in it
+    /// already knows. The first scroll over a Chromium-based app used to go out as for an app
+    /// that is not known, until the look had answered. Nothing is asked while trackpad-style
+    /// events are off for the app.
+    func testAnAppThatComesToTheFront_isKnownBeforeItsFirstScroll() {
+        let utils = ScrollUtils()
+        let looks = Looks()
+        looks.install(on: utils)
+        let editor = URL(fileURLWithPath: "/Applications/Editor.app")
+
+        utils.applicationCameToFront(bundleIdentifier: "com.example.editor", bundleURL: editor, trackpadStyleOn: false)
+        utils.applicationCameToFront(bundleIdentifier: "com.example.editor", bundleURL: nil, trackpadStyleOn: true)
+        XCTAssertEqual(looks.asked.count, 0, "off for this app, or no bundle: nothing is looked into")
+
+        utils.applicationCameToFront(bundleIdentifier: "com.example.editor", bundleURL: editor, trackpadStyleOn: true)
+        XCTAssertEqual(looks.asked.map(\.url), [editor])
+        looks.asked.first?.answer(true)
+
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.editor", bundleURL: editor), .followsGlide, "the first scroll is a flick")
+        utils.applicationCameToFront(bundleIdentifier: "com.example.editor", bundleURL: editor, trackpadStyleOn: true)
+        XCTAssertEqual(looks.asked.count, 1, "one look per app, however often it comes to the front")
+    }
+
+    /// Whether trackpad-style events are on for an app: its own setting when it keeps its own.
+    func testTrackpadStyleIsOn_isTheAppsOwnSettingOrTheGlobalOne() {
+        let global = OPTIONS_SCROLL_DEFAULT()
+        let app = Application(path: "/Applications/Editor.app")
+        for (globalOn, inherit, ownOn, expected) in [
+            (true, true, false, true), (false, true, true, false),
+            (true, false, false, false), (false, false, true, true),
+        ] {
+            global.smoothSimTrackpad = globalOn
+            app.inherit = inherit
+            app.scroll.smoothSimTrackpad = ownOn
+            XCTAssertEqual(ScrollPoster.trackpadStyleIsOn(application: app, global: global), expected, "global \(globalOn), inherit \(inherit), own \(ownOn)")
+        }
+        global.smoothSimTrackpad = true
+        XCTAssertTrue(ScrollPoster.trackpadStyleIsOn(application: nil, global: global))
+        global.smoothSimTrackpad = false
+        XCTAssertFalse(ScrollPoster.trackpadStyleIsOn(application: nil, global: global))
     }
 
     /// A bundle outside the Applications folders and /System is never looked into: macOS
