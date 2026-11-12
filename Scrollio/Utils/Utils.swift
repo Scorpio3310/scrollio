@@ -174,13 +174,18 @@ public class Utils {
         }
     }
     /// Something besides the app's own windows needs the Dock icon: the updater, while a
-    /// found update waits for the user's answer. A test replaces it.
+    /// found update waits for the user's answer.
     static var dockIconIsHeld: () -> Bool = { UpdateCenter.shared.holdsDockIcon }
     class func hideDockIcon() {
-        if WindowManager.shared.refs.count == 1 && !dockIconIsHeld() {
+        if closingWindowLeavesDock(managedWindows: WindowManager.shared.refs.count, heldByUpdater: dockIconIsHeld()) {
             NSApp.setActivationPolicy(NSApplication.ActivationPolicy.accessory)
             isDockIconVisible = false
         }
+    }
+    /// Whether the window that is closing takes Scrollio out of the Dock: it is the last
+    /// of the app's own windows, and no update waits for an answer. Pure.
+    static func closingWindowLeavesDock(managedWindows: Int, heldByUpdater: Bool) -> Bool {
+        return managedWindows == 1 && !heldByUpdater
     }
     /// The updater no longer needs the Dock icon: Scrollio leaves the Dock, unless one of
     /// its own windows is open (its closing does that then).

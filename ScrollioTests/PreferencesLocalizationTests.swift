@@ -151,6 +151,12 @@ final class PreferencesLocalizationTests: XCTestCase {
         "about-welcome-guide-open", "about-welcome-guide-hint",
         "about-github", "about-github-hint", "about-github-open", "about-github-open-accessibility",
         "about-version-commit", "about-version-commit-date",
+        "general-updates-header", "general-updates-automatic", "general-updates-automatic-hint",
+        "general-updates-install", "general-updates-install-hint",
+        "general-updates-check", "general-updates-check-now", "general-updates-last-checked",
+        "general-updates-never-checked", "general-updates-waiting", "general-updates-waiting-hint",
+        "general-updates-show", "general-updates-unavailable", "general-updates-unavailable-source",
+        "general-updates-unavailable-place", "general-updates-unavailable-failed",
     ]
 
     /// The window and the kit: the sidebar, the + and − under a list.
@@ -176,7 +182,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "main-menu-edit", "main-menu-undo", "main-menu-redo", "main-menu-cut", "main-menu-copy",
         "main-menu-paste", "main-menu-select-all", "main-menu-window", "main-menu-minimize",
         "main-menu-zoom", "main-menu-close", "main-menu-bring-all-to-front", "main-menu-help",
-        "main-menu-welcome-guide",
+        "main-menu-welcome-guide", "main-menu-check-for-updates", "status-menu-update-waiting",
+        "update-notice-installed",
     ]
 
     /// The Welcome Guide (Introduction window): its bar, the four steps and their pictures.
@@ -247,12 +254,15 @@ final class PreferencesLocalizationTests: XCTestCase {
         "about-version": "@@",
         "about-version-commit": "@@@",
         "about-version-commit-date": "@@@@",
+        "general-updates-last-checked": "@",
+        "general-updates-waiting": "@",
         // Welcome Guide
         "intro-step-of": "dd",
         // Status-bar menu and toasts
         "status-menu-battery": "@@",
         "status-menu-battery-charging": "@@",
         "status-menu-app-smoothing": "@",
+        "status-menu-update-waiting": "@",
         "status-item-accessibility-battery": "@",
         "toast-battery-low": "@@",
         "toast-battery-low-plain": "@",

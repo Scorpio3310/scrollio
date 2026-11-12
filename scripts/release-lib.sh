@@ -17,11 +17,12 @@
 three_part() { awk -F. '{ printf "%d.%d.%d\n", $1, $2, $3 }' <<< "$1"; }
 
 # The part of CHANGELOG.md under "## <version>" (up to the next "## "), without the empty
-# lines around it. Prints nothing when the file or the part is missing.
+# lines around it. Prints nothing when the file or the part is missing. (The versions are
+# compared as texts: as numbers, awk takes "1.10" and "1.1" for the same.)
 changelog_section() {
     [ -f "$REPO/CHANGELOG.md" ] || return 0
     awk -v version="$1" '
-        /^## / { on = ($2 == version); next }
+        /^## / { on = (($2 "") == (version "")); next }
         on { lines[n++] = $0 }
         END {
             first = 0

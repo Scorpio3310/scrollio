@@ -133,6 +133,10 @@ if [ -n "$(git status --porcelain)" ]; then
     [ "$CHECK_ONLY" = 1 ] || fail "there are uncommitted changes: a release is made from a commit (--check still runs)"
     COMMIT="${COMMIT}+"
 fi
+# The build number is the number of commits. An installed copy takes a release as newer
+# only when this number is larger than its own, so it has to be the whole history's.
+[ "$(git rev-parse --is-shallow-repository)" = "false" ] \
+    || fail "this is a shallow clone: the build number is the number of commits, and here it would be too small. Fetch the whole history first"
 COUNT="$(git rev-list --count HEAD)"
 DATE="$(date +%Y-%m-%d)"
 
@@ -167,6 +171,16 @@ release: this commit has no version tag, and a release is made from a tagged com
 EOF
     exit 1
 fi
+
+# Every release before this one must have a smaller build number, or its copies would
+# say they are up to date: a release is made from a later commit than each one before.
+while IFS= read -r tag; do
+    [ -n "$tag" ] || continue
+    if grep -qxF -- "$tag" <<< "$TAGS"; then continue; fi
+    OLDER="$(git rev-list --count "$tag")"
+    [ "$OLDER" -lt "$COUNT" ] \
+        || fail "the tag $tag is on a commit with build number $OLDER, and this commit's is $COUNT: a copy of $tag would not take this release as newer. Release from a commit that comes after every earlier release"
+done <<< "$(git tag --list 'v[0-9]*')"
 
 mkdir -p "$DERIVED"
 : > "$LOG"
@@ -300,6 +314,9 @@ if [ -n "$VERSION" ]; then
     [ "$BUILT_VERSION" = "$VERSION" ] || fail "the built app says version $BUILT_VERSION, the tag says $VERSION"
 fi
 VERSION="$BUILT_VERSION"
+# The number the installed copies compare, as the app itself says it.
+BUILT_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$BUILT/Contents/Info.plist")"
+[ "$BUILT_BUILD" = "$COUNT" ] || fail "the built app says build $BUILT_BUILD, the number of commits is $COUNT"
 
 grep -q '^Authority=Developer ID Application: ' <<< "$SIGNATURE" \
     || fail "the build is not signed with the Developer ID certificate"
@@ -390,7 +407,7 @@ changelog_section "$VERSION" > "$NOTES"
 
 if [ "$CHECK_ONLY" = 1 ]; then
     # The appcast as a release would write it, to see that it can be written.
-    write_appcast "$DERIVED/appcast-check.xml" "$VERSION" "$COUNT" "$MINIMUM_SYSTEM" "$PROBE_SIGNATURE" 0 "$NOTES"
+    write_appcast "$DERIVED/appcast-check.xml" "$VERSION" "$BUILT_BUILD" "$MINIMUM_SYSTEM" "$PROBE_SIGNATURE" 0 "$NOTES"
     rm -f "$DERIVED/appcast-check.xml" "$NOTES"
     echo "release: --check: nothing was notarized ($BUILT)"
     exit 0
@@ -474,7 +491,7 @@ ED_SIGNATURE="$("$SPARKLE_BIN/sign_update" --account "$KEY_ACCOUNT" -p "$UNFINIS
 "$SPARKLE_BIN/sign_update" --account "$KEY_ACCOUNT" --verify "$UNFINISHED_DMG" "$ED_SIGNATURE" >> "$LOG" 2>&1 \
     || fail "the update signature of the disk image does not verify (log: $LOG)"
 APPCAST="$DERIVED/appcast.xml"
-write_appcast "$WORK/appcast.xml" "$VERSION" "$COUNT" "$MINIMUM_SYSTEM" "$ED_SIGNATURE" "$(stat -f %z "$UNFINISHED_DMG")" "$NOTES"
+write_appcast "$WORK/appcast.xml" "$VERSION" "$BUILT_BUILD" "$MINIMUM_SYSTEM" "$ED_SIGNATURE" "$(stat -f %z "$UNFINISHED_DMG")" "$NOTES"
 
 # The text for the GitHub release: what is new, and the sum the README tells a reader to
 # compare a download with.

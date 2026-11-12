@@ -212,6 +212,109 @@ final class ReleaseReadinessTests: XCTestCase {
         }
     }
 
+    /// The build number is the number of commits, and an installed copy takes a release
+    /// only when that number is larger than its own.
+    func testTheReleaseScriptRefusesABuildNumberThatDidNotGrow() throws {
+        let script = try text("scripts/release.sh")
+        func position(_ needle: String, file: StaticString = #filePath, line: UInt = #line) throws -> String.Index {
+            return try XCTUnwrap(script.range(of: needle), "scripts/release.sh no longer has: \(needle)", file: file, line: line).lowerBound
+        }
+        // A shallow clone counts too few commits.
+        let shallow = try position("[ \"$(git rev-parse --is-shallow-repository)\" = \"false\" ]")
+        let count = try position("COUNT=\"$(git rev-list --count HEAD)\"")
+        // Every other release's commit must come before this one.
+        let older = try position("[ \"$OLDER\" -lt \"$COUNT\" ]")
+        let build = try position("SCROLLIO_UPDATE_FEED=\"$UPDATE_FEED\"")
+        XCTAssertTrue(shallow < count && count < older && older < build)
+        XCTAssertTrue(script.contains("if grep -qxF -- \"$tag\" <<< \"$TAGS\"; then continue; fi"), "the tags on this commit are not \"earlier releases\"")
+        // The appcast carries the number the built app says, and that is the commit count.
+        XCTAssertTrue(script.contains("[ \"$BUILT_BUILD\" = \"$COUNT\" ]"))
+        XCTAssertTrue(script.contains("write_appcast \"$WORK/appcast.xml\" \"$VERSION\" \"$BUILT_BUILD\""))
+    }
+
+    /// The functions of scripts/release-lib.sh that only write text, run for real: the
+    /// changelog part of a version, the three-part macOS version, and the appcast.
+    func testTheReleaseLibraryWritesTheChangelogPartAndTheAppcast() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ScrollioReleaseLib-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let changelog = "# Changelog\n\nIntro.\n\n## 1.10\n\n- ten\n\n## 1.1 (2026-11-12)\n\n\n- one, with ]]> in it\n- and <b>markup</b> & more\n\n\n## 1.0.0\n\nFirst.\n"
+        try changelog.write(to: folder.appendingPathComponent("CHANGELOG.md"), atomically: true, encoding: .utf8)
+        let program = """
+        set -euo pipefail
+        fail() { echo "FAIL: $*" >&2; exit 1; }
+        REPO="$1"; LOG="$1/log.txt"; APP_NAME="Scrollio"; RELEASES_URL="https://github.com/Scorpio3310/scrollio/releases"
+        . "$2"
+        echo "three_part: $(three_part 14.0) $(three_part 15) $(three_part 14.2.1)"
+        echo "--- 1.1"; changelog_section 1.1
+        echo "--- 1.10"; changelog_section 1.10
+        echo "--- 1.0.0"; changelog_section 1.0.0
+        echo "--- 9.9"; changelog_section 9.9
+        echo "--- end"
+        changelog_section 1.1 > "$1/notes.md"
+        : > "$1/empty.md"
+        write_appcast "$1/appcast.xml" 1.1 1650 14.0.0 "c2lnbmF0dXJl+/==" 5590100 "$1/notes.md"
+        write_appcast "$1/appcast-plain.xml" 1.0.1 1700 14.0.0 "c2ln" 42 "$1/empty.md"
+        """
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-c", program, "bash", folder.path, Self.root.appendingPathComponent("scripts/release-lib.sh").path]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try process.run()
+        process.waitUntilExit()
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        XCTAssertEqual(process.terminationStatus, 0, output)
+
+        XCTAssertTrue(output.contains("three_part: 14.0.0 15.0.0 14.2.1\n"), output)
+        // A version's part: its own lines only ("1.1" is not "1.10"), without the empty lines around them.
+        XCTAssertTrue(output.contains("--- 1.1\n- one, with ]]> in it\n- and <b>markup</b> & more\n--- 1.10\n- ten\n--- 1.0.0\nFirst.\n--- 9.9\n--- end\n"), output)
+
+        // The appcast is XML a parser reads back, with every value where Sparkle looks for it.
+        let sparkle = "http://www.andymatuschak.org/xml-namespaces/sparkle"
+        let document = try XMLDocument(contentsOf: folder.appendingPathComponent("appcast.xml"), options: [])
+        func first(_ path: String) throws -> XMLNode { return try XCTUnwrap(try document.nodes(forXPath: path).first, path) }
+        XCTAssertEqual(try first("/rss/channel/item/title").stringValue, "Scrollio 1.1")
+        XCTAssertEqual(try first("/rss/channel/item/link").stringValue, "https://github.com/Scorpio3310/scrollio/releases/tag/v1.1")
+        let item = try XCTUnwrap(try first("/rss/channel/item") as? XMLElement)
+        func value(_ name: String) throws -> String? {
+            return try XCTUnwrap(item.elements(forLocalName: name, uri: sparkle).first, name).stringValue
+        }
+        XCTAssertEqual(try value("version"), "1650")
+        XCTAssertEqual(try value("shortVersionString"), "1.1")
+        XCTAssertEqual(try value("minimumSystemVersion"), "14.0.0")
+        XCTAssertEqual(try value("fullReleaseNotesLink"), "https://github.com/Scorpio3310/scrollio/releases")
+        let notes = try XCTUnwrap(item.elements(forName: "description").first)
+        XCTAssertEqual(notes.attribute(forLocalName: "format", uri: sparkle)?.stringValue, "markdown")
+        XCTAssertEqual(notes.stringValue, "- one, with ]]> in it\n- and <b>markup</b> & more\n", "the notes arrive as they were written")
+        let enclosure = try XCTUnwrap(item.elements(forName: "enclosure").first)
+        XCTAssertEqual(enclosure.attribute(forName: "url")?.stringValue, "https://github.com/Scorpio3310/scrollio/releases/download/v1.1/Scrollio-1.1.dmg")
+        XCTAssertEqual(enclosure.attribute(forLocalName: "edSignature", uri: sparkle)?.stringValue, "c2lnbmF0dXJl+/==")
+        XCTAssertEqual(enclosure.attribute(forName: "length")?.stringValue, "5590100")
+        XCTAssertEqual(try document.nodes(forXPath: "/rss/channel/item").count, 1)
+        XCTAssertNotNil(try first("/rss/channel/item/pubDate").stringValue)
+
+        // Without notes the item has no description at all.
+        let plain = try XMLDocument(contentsOf: folder.appendingPathComponent("appcast-plain.xml"), options: [])
+        XCTAssertTrue(try plain.nodes(forXPath: "/rss/channel/item/description").isEmpty)
+        XCTAssertEqual(try plain.nodes(forXPath: "/rss/channel/item/enclosure/@url").first?.stringValue,
+                       "https://github.com/Scorpio3310/scrollio/releases/download/v1.0.1/Scrollio-1.0.1.dmg")
+    }
+
+    /// The key helper never writes the private key into the repository.
+    func testTheKeyHelperKeepsTheKeyFileOutOfTheRepository() throws {
+        let script = try text("scripts/update-key.sh")
+        let callerDir = try XCTUnwrap(script.range(of: "CALLER_DIR=\"$PWD\""))
+        let cd = try XCTUnwrap(script.range(of: "cd \"$(dirname \"$0\")/..\""))
+        XCTAssertTrue(callerDir.lowerBound < cd.lowerBound, "the caller's folder is remembered before the script changes folder")
+        XCTAssertTrue(script.contains("is inside the repository: keep the private key out of it"))
+        XCTAssertTrue(script.contains("FILE=\"$(key_file \"$2\")\""))
+        XCTAssertEqual(script.components(separatedBy: "FILE=\"$(key_file \"$2\")\"").count - 1, 2, "export and import")
+        XCTAssertFalse(commands(of: script).contains { $0.contains("generate_keys") && ($0.contains("-x \"$2\"") || $0.contains("-f \"$2\"")) })
+        XCTAssertTrue(script.contains("umask 077"))
+    }
+
     /// What makes a release an update, and what keeps a wrong one from going out.
     func testTheReleaseScriptMakesTheReleaseAnUpdate() throws {
         let script = try text("scripts/release.sh")
@@ -277,9 +380,10 @@ final class ReleaseReadinessTests: XCTestCase {
         let messageEnd = try XCTUnwrap(script.range(of: "\nEOF\n", range: message.upperBound..<script.endIndex))
         let withoutMessage = String(script[..<message.lowerBound]) + String(script[messageEnd.upperBound...])
         let gitCommands = commands(of: withoutMessage).filter { $0.contains("git ") }
-        XCTAssertEqual(gitCommands.count, 4, "rev-parse, status, rev-list and tag --points-at: \(gitCommands)")
+        XCTAssertEqual(gitCommands.count, 7, "rev-parse (twice), status, rev-list (twice), tag --points-at and tag --list: \(gitCommands)")
         for command in gitCommands {
-            let reads = ["git rev-parse --short HEAD", "git status --porcelain", "git rev-list --count HEAD", "git tag --points-at HEAD"]
+            let reads = ["git rev-parse --short HEAD", "git status --porcelain", "git rev-list --count HEAD", "git tag --points-at HEAD",
+                         "git rev-parse --is-shallow-repository", "git rev-list --count \"$tag\"", "git tag --list 'v[0-9]*'"]
             XCTAssertTrue(reads.contains { command.contains($0) },
                           "the release script must only read from git, never tag, fetch or push: \(command)")
         }

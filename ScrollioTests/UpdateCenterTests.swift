@@ -247,12 +247,48 @@ final class UpdateCenterTests: XCTestCase {
 
     // MARK: - The Dock icon
 
+    /// A window that says what the test wants about itself; it is never shown.
+    private final class FakeWindow: NSWindow {
+        var shown = false
+        var minimized = false
+        override var isVisible: Bool { return shown }
+        override var isMiniaturized: Bool { return minimized }
+    }
+
+    private func makeWindow(shown: Bool = false, minimized: Bool = false) -> FakeWindow {
+        let window = FakeWindow(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10), styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.shown = shown
+        window.minimized = minimized
+        return window
+    }
+
+    /// When the updater lets the Dock icon go, an open settings window keeps it.
     func testAnOpenOrMinimizedWindowKeepsTheDockIcon() {
         XCTAssertFalse(Utils.hasOpenWindow([]))
         XCTAssertFalse(Utils.hasOpenWindow([nil]))
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10), styleMask: [.titled], backing: .buffered, defer: true)
-        window.isReleasedWhenClosed = false
-        XCTAssertFalse(Utils.hasOpenWindow([window, nil]), "a window that was never shown")
+        XCTAssertFalse(Utils.hasOpenWindow([makeWindow(), nil]), "a window that was closed, or never shown")
+        XCTAssertTrue(Utils.hasOpenWindow([makeWindow(shown: true)]))
+        XCTAssertTrue(Utils.hasOpenWindow([nil, makeWindow(), makeWindow(minimized: true)]), "a minimized window is still open")
+    }
+
+    /// The last settings window that closes takes Scrollio out of the Dock, unless an
+    /// update waits: its window must stay reachable with ⌘Tab.
+    func testTheLastWindowLeavesTheDockOnlyWhenNoUpdateWaits() {
+        XCTAssertTrue(Utils.closingWindowLeavesDock(managedWindows: 1, heldByUpdater: false))
+        XCTAssertFalse(Utils.closingWindowLeavesDock(managedWindows: 1, heldByUpdater: true))
+        XCTAssertFalse(Utils.closingWindowLeavesDock(managedWindows: 2, heldByUpdater: false), "another window of the app is open")
+        XCTAssertFalse(Utils.closingWindowLeavesDock(managedWindows: 2, heldByUpdater: true))
+        // What the app asks: the test host has no update waiting.
+        XCTAssertFalse(Utils.dockIconIsHeld())
+        let center = makeCenter(World())
+        XCTAssertFalse(center.holdsDockIcon)
+        center.updateWillBeShown(version: "1.0.2", userInitiated: true)
+        XCTAssertTrue(center.holdsDockIcon)
+        center.updateGotAttention()
+        XCTAssertTrue(center.holdsDockIcon, "until the update is answered")
+        center.updateSessionEnded()
+        XCTAssertFalse(center.holdsDockIcon)
     }
 
     // MARK: - The log
@@ -292,6 +328,7 @@ final class UpdateCenterTests: XCTestCase {
         for name in [
             // SPUUpdaterDelegate
             "feedURLStringForUpdater:",
+            "allowedSystemProfileKeysForUpdater:",
             "updater:didFindValidUpdate:",
             "updater:willInstallUpdate:",
             "updaterWillRelaunchApplication:",
@@ -305,8 +342,90 @@ final class UpdateCenterTests: XCTestCase {
             XCTAssertTrue(center.responds(to: NSSelectorFromString(name)), name)
         }
         XCTAssertEqual(center.value(forKey: "supportsGentleScheduledUpdateReminders") as? Bool, true)
+        // Nothing of Sparkle's system profile may be sent, whatever the preferences say.
+        let profileKeys = center.perform(NSSelectorFromString("allowedSystemProfileKeysForUpdater:"), with: nil)?.takeUnretainedValue() as? [String]
+        XCTAssertEqual(profileKeys, [])
         XCTAssertTrue(center.conforms(to: try! XCTUnwrap(NSProtocolFromString("SPUUpdaterDelegate"))))
         XCTAssertTrue(center.conforms(to: try! XCTUnwrap(NSProtocolFromString("SPUStandardUserDriverDelegate"))))
+    }
+
+    // MARK: - Sparkle's windows, without its modal alerts
+
+    /// Everything Sparkle asks of its windows is answered by `UpdateWindows`, under the
+    /// names Sparkle calls (the last one is optional: without it "Update to Scrollio …"
+    /// could not bring a waiting update's window to the front).
+    func testUpdateWindowsAnswersEverythingSparkleAsksOfItsWindows() {
+        for name in [
+            "showUpdatePermissionRequest:reply:",
+            "showUserInitiatedUpdateCheckWithCancellation:",
+            "showUpdateFoundWithAppcastItem:state:reply:",
+            "showUpdateReleaseNotesWithDownloadData:",
+            "showUpdateReleaseNotesFailedToDownloadWithError:",
+            "showUpdateNotFoundWithError:acknowledgement:",
+            "showUpdaterError:acknowledgement:",
+            "showDownloadInitiatedWithCancellation:",
+            "showDownloadDidReceiveExpectedContentLength:",
+            "showDownloadDidReceiveDataOfLength:",
+            "showDownloadDidStartExtractingUpdate",
+            "showExtractionReceivedProgress:",
+            "showReadyToInstallAndRelaunch:",
+            "showInstallingUpdateWithApplicationTerminated:retryTerminatingApplication:",
+            "showUpdateInstalledAndRelaunched:acknowledgement:",
+            "dismissUpdateInstallation",
+            "showUpdateInFocus",
+        ] {
+            XCTAssertTrue(UpdateWindows.instancesRespond(to: NSSelectorFromString(name)), name)
+        }
+        XCTAssertTrue(UpdateWindows.conforms(to: try! XCTUnwrap(NSProtocolFromString("SPUUserDriver"))))
+    }
+
+    /// Sparkle's alerts for "nothing newer", "failed" and "installed" are modal for the
+    /// whole app and open inside a block of the main queue: while one is open no other
+    /// block of that queue runs, and with it stand still the button actions, the gesture
+    /// follow-ups and the timeout that frees a held pointer. `UpdateWindows` says these
+    /// three itself and never hands them to Sparkle's windows; the updater gets them and
+    /// nothing else.
+    func testTheThreeModalAlertsNeverReachSparklesWindows() throws {
+        let source = try String(contentsOf: repositoryRoot.appendingPathComponent("Scrollio/Update/UpdateCenter.swift"), encoding: .utf8)
+        XCTAssertFalse(source.contains("standard.showUpdateNotFoundWithError("))
+        XCTAssertFalse(source.contains("standard.showUpdaterError("))
+        // "Installed" goes on only in the case in which Sparkle shows no alert: the app was started again.
+        XCTAssertEqual(source.components(separatedBy: "standard.showUpdateInstalledAndRelaunched(").count - 1, 1)
+        XCTAssertTrue(source.contains("standard.showUpdateInstalledAndRelaunched(true, acknowledgement: acknowledgement)"))
+        // The updater is given UpdateWindows, not Sparkle's own windows.
+        XCTAssertTrue(source.contains("SPUUpdater(hostBundle: .main, applicationBundle: .main, userDriver: windows, delegate: self)"))
+        XCTAssertEqual(source.components(separatedBy: "SPUUpdater(hostBundle:").count - 1, 1)
+        XCTAssertFalse(source.contains("runModal"))
+        XCTAssertFalse(source.contains("SPUStandardUpdaterController("), "it would hand Sparkle's windows to the updater directly")
+    }
+
+    func testANoticeSaysWhatSparkleWouldHavePutInItsAlert() {
+        let upToDate = NSError(domain: UpdateCenter.sparkleErrorDomain, code: UpdateCenter.noUpdateErrorCode, userInfo: [
+            NSLocalizedDescriptionKey: "You’re up to date!",
+            NSLocalizedRecoverySuggestionErrorKey: "Scrollio 1.0.1 is currently the newest version available.",
+        ])
+        XCTAssertEqual(UpdateNotice.text(of: upToDate), "You’re up to date! Scrollio 1.0.1 is currently the newest version available.")
+        let offline = NSError(domain: UpdateCenter.sparkleErrorDomain, code: 2001, userInfo: [
+            NSLocalizedDescriptionKey: " An error occurred in retrieving update information. Please try again later.\n",
+        ])
+        XCTAssertEqual(UpdateNotice.text(of: offline), "An error occurred in retrieving update information. Please try again later.")
+        // A suggestion that only repeats the description is said once.
+        let twice = NSError(domain: "x", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed.", NSLocalizedRecoverySuggestionErrorKey: "Failed."])
+        XCTAssertEqual(UpdateNotice.text(of: twice), "Failed.")
+        XCTAssertEqual(UpdateCenter.toastStyle(for: .nothingNewer), .success)
+        XCTAssertEqual(UpdateCenter.toastStyle(for: .installed), .success)
+        XCTAssertEqual(UpdateCenter.toastStyle(for: .failed), .warning)
+        XCTAssertEqual(NSLocalizedString("update-notice-installed", comment: ""), "Scrollio was updated.")
+    }
+
+    /// Under tests the center shows no notice, also when a test forgot the seam.
+    func testTheAppsOwnCenterShowsNoNoticeUnderTests() {
+        let center = UpdateCenter()
+        center.showNotice(UpdateNotice(kind: .failed, text: "This text must not appear on screen during a test run."))
+        let shown = expectation(description: "the main queue ran")
+        DispatchQueue.main.async { shown.fulfill() }
+        wait(for: [shown], timeout: 2)
+        XCTAssertFalse(ToastManager.shared.testingToasts.contains { $0.message.contains("This text must not appear") })
     }
 
     /// Only the Update folder imports Sparkle; the rest of the app sees UpdateStatus.

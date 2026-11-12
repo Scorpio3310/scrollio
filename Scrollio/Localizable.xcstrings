@@ -5698,7 +5698,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrollio needs this permission to smooth scrolling and run your buttons and gestures. Nothing leaves your Mac."
+            "value": "Scrollio needs this permission to smooth scrolling and run your buttons and gestures. Nothing you type or click leaves your Mac."
           }
         }
       }
@@ -6527,7 +6527,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Once a day Scrollio asks GitHub whether there is a newer version. Nothing about you or your settings is sent."
+            "value": "Once a day Scrollio asks GitHub whether there is a newer version. None of your settings or data is sent."
           }
         }
       }
@@ -6671,6 +6671,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "The updater could not start. New versions are on Scrollio's GitHub page."
+          }
+        }
+      }
+    },
+    "update-notice-installed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio was updated."
           }
         }
       }

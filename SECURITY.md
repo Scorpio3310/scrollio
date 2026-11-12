@@ -47,16 +47,23 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
   image is. The image must carry an EdDSA signature made with Scrollio's update key,
   whose public half is in the app (`SUPublicEDKey`), and it is checked before the image
   is opened (`SUVerifyUpdateBeforeExtraction`). Whoever controls the feed or the
-  download, GitHub's account included, can keep an update away from an installed copy
-  or show it other release notes, but cannot make it install something else.
+  download, GitHub's account included, cannot make an installed copy install something
+  else, and cannot make it go back to an older version.
 - In place of that signature Sparkle also accepts a disk image signed with the same
   Developer ID as the installed app: that is how a lost update key is replaced. So the
   two things to guard are the update key and the Developer ID certificate, both on the
   author's Mac; neither is in this repository.
 - The address of the feed is the one in the app's Info.plist. A `SUFeedURL` written into
   the preferences file is not used.
-- The feed itself is not signed. Release notes shown in the update window come from it;
-  they are shown as text (Markdown), scripts in them do not run.
+- The feed itself is not signed. What whoever controls it can do: keep an update away;
+  show other release notes in the update window (Scrollio's own are Markdown, but a
+  feed can also send HTML or point to a page: scripts in it do not run, pictures and
+  styles from the web do load); put a link in that window that opens a web page in the
+  browser; call an update critical; and offer an older release that was properly
+  signed, to copies older than it.
+- With a check Sparkle can send a profile of the Mac. It is off, and Scrollio hands
+  Sparkle an empty list of what such a profile may hold, so a switch planted in the
+  preferences file sends nothing either.
 - The app in an update is signed with the Developer ID and notarized like a download,
   and Sparkle's helper programs inside the app carry the same signature.
 

@@ -645,7 +645,7 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertFalse(isShown(pane.updatesUnavailableRow))
         XCTAssertEqual(
             pane.updatesAutomaticRow.explanation,
-            "Once a day Scrollio asks GitHub whether there is a newer version. Nothing about you or your settings is sent."
+            "Once a day Scrollio asks GitHub whether there is a newer version. None of your settings or data is sent."
         )
         XCTAssertEqual(
             pane.updatesInstallRow.explanation,

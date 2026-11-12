@@ -163,6 +163,16 @@ See `.agents/docs/code-map.md` for the map. The rules:
   makes a network request. Sparkle's delegate methods are optional, so one written under
   a slightly different name compiles and is never called: `UpdateCenterTests` lists the
   names Sparkle calls, add a new one there.
+- Never let Sparkle show an alert that is modal for the app. Its standard windows say
+  "You're up to date!", "Update Error!" and "Update Installed" with `NSAlert.runModal`
+  from inside a block of the main dispatch queue, and while such an alert is open macOS
+  runs no other block of that queue: button actions, gesture follow-ups, the timeout
+  that frees a held pointer, the thumb wheel and the Logitech answers would all wait for
+  a click. `UpdateWindows` (in `UpdateCenter.swift`) stands between the updater and
+  Sparkle's windows, says these three as a notice and passes everything else on: keep
+  the updater on it (never `SPUStandardUpdaterController`, never Sparkle's windows
+  directly), and treat every new modal alert in the app the same way: `runModal` from a
+  main-queue block is the trap, from a click it is not.
 - `Scrollio/ScrollCore/`, input event handling and HID callbacks are hot paths: no
   avoidable allocations, no synchronous I/O, no heavy logging, no notifications, no UI or
   persistence work in them.

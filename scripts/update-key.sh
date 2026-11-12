@@ -27,12 +27,30 @@ set -euo pipefail
 APP_NAME="Scrollio"
 ACCOUNT="${SCROLLIO_UPDATE_KEY_ACCOUNT:-scrollio}"
 
+# A <file> is meant against the folder the script was called from, not the repository's.
+CALLER_DIR="$PWD"
 cd "$(dirname "$0")/.."
 REPO="$PWD"
 DERIVED="${SCROLLIO_RELEASE_DIR:-$REPO/build/release}"
 INFO="$REPO/${APP_NAME}/Info.plist"
 
 fail() { echo "update-key: $*" >&2; exit 1; }
+
+# The key file as the caller named it, as a full path. It may not be inside the
+# repository: an unprotected private key there is one "git add" away from being published.
+key_file() {
+    local file="$1" folder repository
+    case "$file" in
+        /*) ;;
+        *) file="$CALLER_DIR/$file" ;;
+    esac
+    folder="$(cd "$(dirname "$file")" 2>/dev/null && pwd -P)" || fail "no folder $(dirname "$file")"
+    repository="$(pwd -P)"
+    case "$folder/" in
+        "$repository"/*) fail "$file is inside the repository: keep the private key out of it (name a file somewhere else)" ;;
+    esac
+    printf '%s/%s\n' "$folder" "$(basename "$file")"
+}
 
 # Sparkle's tools come with its package (the version Package.resolved pins).
 BIN="$DERIVED/SourcePackages/artifacts/sparkle/Sparkle/bin"
@@ -92,16 +110,18 @@ case "${1:-show}" in
         ;;
     export)
         [ $# -eq 2 ] || fail "usage: scripts/update-key.sh export <file>"
-        [ ! -e "$2" ] || fail "$2 exists: name a new file"
-        ( umask 077; "$BIN/generate_keys" --account "$ACCOUNT" -x "$2" ) \
+        FILE="$(key_file "$2")"
+        [ ! -e "$FILE" ] || fail "$FILE exists: name a new file"
+        ( umask 077; "$BIN/generate_keys" --account "$ACCOUNT" -x "$FILE" ) \
             || fail "the key could not be written"
-        echo "update-key: the private key is in $2 (readable by you only)."
+        echo "update-key: the private key is in $FILE (readable by you only)."
         echo "update-key: move it into your password manager and delete the file: it is the key itself, unprotected."
         ;;
     import)
         [ $# -eq 2 ] || fail "usage: scripts/update-key.sh import <file>"
-        [ -f "$2" ] || fail "no file $2"
-        "$BIN/generate_keys" --account "$ACCOUNT" -f "$2" \
+        FILE="$(key_file "$2")"
+        [ -f "$FILE" ] || fail "no file $FILE"
+        "$BIN/generate_keys" --account "$ACCOUNT" -f "$FILE" \
             || fail "the key could not be put into the keychain"
         KEY="$(keychain_key)"
         [ -n "$KEY" ] || fail "the key was imported but cannot be read back from the keychain"

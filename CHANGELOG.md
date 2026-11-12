@@ -6,7 +6,7 @@ The part under a version's heading is what the update window shows to people who
 older version, and what the GitHub release says: `scripts/release.sh` reads it. So write
 it for the people who use the app, and give the version its part before you tag it.
 
-## 1.1.0
+## 1.0.1
 
 - **Scrollio updates itself.** If you allow it, Scrollio asks GitHub once a day whether
   there is a newer version, shows what is new and installs it. General has the two

@@ -228,15 +228,19 @@ get the next version by hand, once.
   for updates automatically" (once a day) and "Install updates automatically" (a new
   version is downloaded in the background and installed the next time Scrollio quits,
   for example when the Mac restarts). "Check Now" there, and "Check for Updates…" in
-  the menu bar menu and in the Scrollio menu, ask at once.
-- When a check finds a version, a window says what is new and offers to install it. It
-  opens behind what you are doing and does not take the keyboard away. Until you answer
-  it, Scrollio sits in the Dock with a badge, its menu bar menu starts with "Update to
-  Scrollio …" and General names the version.
+  the menu bar menu and in the Scrollio menu, ask at once; when there is nothing newer,
+  or the check failed, one of Scrollio's notices says so.
+- When a check finds a version, a window says what is new and offers to install it.
+  Right after Scrollio started, or after you touched the update switches, it opens in
+  front; at any other time it waits behind what you are doing, or, while Scrollio's
+  settings are open, until Scrollio is next in front. Until you answer it, Scrollio sits
+  in the Dock with a badge, its menu bar menu starts with "Update to Scrollio …" and
+  General names the version.
 - An update is installed only when its disk image carries a signature made with
-  Scrollio's update key, and that is checked before the image is opened. The app in it
-  is signed with the same Developer ID as the download and notarized. macOS keeps the
-  Accessibility permission across an update.
+  Scrollio's update key (or, should that key ever be replaced, the signature of the
+  same Developer ID as the installed app), and that is checked before the image is
+  opened. The app in it is signed with that Developer ID and notarized, like the
+  download. macOS keeps the Accessibility permission across an update.
 - A check asks GitHub for one small file that names the newest version. What that
   request shows is under [Privacy](#-privacy).
 - A copy built from source does not update itself and asks nobody; neither does a copy
@@ -358,10 +362,11 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](SECURIT
   while "Check for updates automatically" is on, and when you choose "Check for
   Updates…" or "Check Now"), and it downloads the disk image from GitHub when an update
   is installed. Such a request shows GitHub what every web request shows, your IP
-  address, and names the app and its version (`Scrollio/1.1.0 Sparkle/2.10.1`). Nothing
-  about you, your Mac or your settings is added: Sparkle's system profile is off. With
-  the switch off and no check asked for, a released copy makes no request either; a
-  copy built from source never makes one.
+  address, and carries two things more: the app and its version
+  (`Scrollio/1.0.1 Sparkle/2.10.1`) and the languages you prefer, which macOS adds to a
+  web request. Nothing about your Mac or your settings is added: Sparkle's system
+  profile is off and empty. With the switch off and no check asked for, a released copy
+  makes no request either; a copy built from source never makes one.
 - There is no analytics and no crash reporter. The "Open" button next to "Scrollio on
   GitHub" (General) hands the page to your web browser.
 - Nothing else leaves your Mac. The settings are kept in Scrollio's preferences (the
@@ -613,9 +618,9 @@ A build for other people's Macs is made with `scripts/release.sh`, from a tagged
 ```bash
 scripts/update-key.sh                   # the update key is in the keychain and is the app's
 scripts/release.sh --check              # build, sign and check; nothing is uploaded (needs no tag)
-git tag -a v1.1.0 -m "Scrollio 1.1.0"   # the version being released
+git tag -a v1.0.1 -m "Scrollio 1.0.1"   # the version being released
 scripts/release.sh                      # the same, then notarized by Apple, packed and signed as an update
-git push origin v1.1.0                  # that one tag, by name
+git push origin v1.0.1                  # that one tag, by name
 ```
 
 Then publish the GitHub release for that tag with **both** files of `build/release`:
@@ -625,7 +630,7 @@ without that file means their check fails, and no copy learns of the version.
 `Scrollio-<version>-notes.md` is the text for the release.
 
 - **Before the tag.** Give the version its part in [CHANGELOG.md](CHANGELOG.md)
-  (`## 1.1.0`) and commit it: the update window shows that part to people with an older
+  (`## 1.0.1`) and commit it: the update window shows that part to people with an older
   version, and the release notes start with it. Without it the script goes on and says
   that the window will not tell what is new.
 

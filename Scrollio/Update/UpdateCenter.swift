@@ -20,16 +20,22 @@
 //  (SUVerifyUpdateBeforeExtraction). So whoever controls the feed or the download can
 //  keep an update away, but cannot make Scrollio install something else. The feed's
 //  address is always the one of the Info.plist: a value planted in the preferences file
-//  is not used (`feedURLString(for:)`).
+//  is not used (`feedURLString(for:)`). Nothing about the Mac is sent with a check: the
+//  system profile is off in the Info.plist, and should the preferences file say
+//  otherwise, the profile is empty (`allowedSystemProfileKeys(for:)`).
 //
 //  What the user meets:
 //  - on the second launch Sparkle asks once whether to check automatically (its own
 //    window); General has the two switches and "Check Now" afterwards;
-//  - "Check for Updates…" in the menu bar menu and in the Scrollio menu;
-//  - when a scheduled check finds a version, Sparkle's window opens behind what the user
-//    is doing (it never takes the keyboard away), and until it is answered Scrollio sits
-//    in the Dock with a badge, the menu bar menu starts with "Update to Scrollio 1.1.0…"
-//    and General says so (`UpdateReminder`).
+//  - "Check for Updates…" in the menu bar menu and in the Scrollio menu; "nothing newer"
+//    and "the check failed" come as one of Scrollio's notices, not as Sparkle's alerts
+//    (`UpdateWindows` says why);
+//  - when a scheduled check finds a version, Sparkle shows its window: in front only
+//    right after Scrollio started or the user touched the updater (the first seconds),
+//    otherwise behind what the user is doing, or, while a settings window is open, the
+//    next time Scrollio comes to the front. Until it is answered Scrollio sits in the
+//    Dock with a badge, the menu bar menu starts with "Update to Scrollio 1.1.0…" and
+//    General says so (`UpdateReminder`).
 //
 
 import Cocoa
@@ -91,6 +97,137 @@ struct UpdateReminder: Equatable {
     }
 }
 
+/// What a check the user asked for ended with, when there is nothing to install: said as
+/// one of Scrollio's notices.
+struct UpdateNotice: Equatable {
+    enum Kind: Equatable {
+        /// Nothing newer (or nothing this Mac can run).
+        case nothingNewer
+        /// The check, the download or the installation failed.
+        case failed
+        /// Installed without a relaunch.
+        case installed
+    }
+    let kind: Kind
+    let text: String
+
+    /// Sparkle's own words for an outcome: its description and, when it has one, the
+    /// sentence it would put under it ("You're up to date!" "Scrollio 1.0.1 is currently
+    /// the newest version available."). Pure.
+    static func text(of error: NSError) -> String {
+        let description = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        let suggestion = (error.localizedRecoverySuggestion ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !suggestion.isEmpty, suggestion != description else { return description }
+        return description + " " + suggestion
+    }
+}
+
+/// Sparkle's own windows (its question about automatic checks, "Checking for updates…",
+/// the window of a found update, the progress of a download), without its alerts.
+///
+/// Sparkle's standard windows say "You're up to date!", "Update Error!" and "Update
+/// Installed" with an alert that is modal for the whole app, and they open it from inside
+/// a block of the main dispatch queue. While such an alert is open, macOS runs no other
+/// block of that queue. Scrollio's event taps would still be served, but everything they
+/// hand to the main queue would wait until the alert is closed: actions of buttons,
+/// follow-ups of gestures, the timeout that frees a held pointer, the thumb wheel, the
+/// Logitech answers. So these three outcomes are taken here and said as a notice, which
+/// blocks nothing; everything else goes to Sparkle's windows unchanged. Do not hand the
+/// three back to `standard`.
+final class UpdateWindows: NSObject, SPUUserDriver {
+
+    private let standard: SPUStandardUserDriver
+    private let notice: (UpdateNotice) -> Void
+
+    init(standard: SPUStandardUserDriver, notice: @escaping (UpdateNotice) -> Void) {
+        self.standard = standard
+        self.notice = notice
+    }
+
+    // MARK: Taken over: what Sparkle would say with a modal alert
+
+    /// "You're up to date!" The updater ends the session after the acknowledgement, and
+    /// that closes Sparkle's "Checking for updates…" window (`dismissUpdateInstallation`).
+    func showUpdateNotFoundWithError(_ error: Error, acknowledgement: @escaping () -> Void) {
+        notice(UpdateNotice(kind: .nothingNewer, text: UpdateNotice.text(of: error as NSError)))
+        acknowledgement()
+    }
+
+    func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) {
+        notice(UpdateNotice(kind: .failed, text: UpdateNotice.text(of: error as NSError)))
+        acknowledgement()
+    }
+
+    /// Sparkle shows an alert only when the app was not started again; Scrollio always is.
+    func showUpdateInstalledAndRelaunched(_ relaunched: Bool, acknowledgement: @escaping () -> Void) {
+        guard !relaunched else {
+            standard.showUpdateInstalledAndRelaunched(true, acknowledgement: acknowledgement)
+            return
+        }
+        notice(UpdateNotice(kind: .installed, text: NSLocalizedString("update-notice-installed", comment: "")))
+        acknowledgement()
+    }
+
+    // MARK: Sparkle's windows, unchanged
+
+    func show(_ request: SPUUpdatePermissionRequest, reply: @escaping (SUUpdatePermissionResponse) -> Void) {
+        standard.show(request, reply: reply)
+    }
+
+    func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {
+        standard.showUserInitiatedUpdateCheck(cancellation: cancellation)
+    }
+
+    func showUpdateFound(with appcastItem: SUAppcastItem, state: SPUUserUpdateState, reply: @escaping (SPUUserUpdateChoice) -> Void) {
+        standard.showUpdateFound(with: appcastItem, state: state, reply: reply)
+    }
+
+    func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {
+        standard.showUpdateReleaseNotes(with: downloadData)
+    }
+
+    func showUpdateReleaseNotesFailedToDownloadWithError(_ error: Error) {
+        standard.showUpdateReleaseNotesFailedToDownloadWithError(error)
+    }
+
+    func showDownloadInitiated(cancellation: @escaping () -> Void) {
+        standard.showDownloadInitiated(cancellation: cancellation)
+    }
+
+    func showDownloadDidReceiveExpectedContentLength(_ expectedContentLength: UInt64) {
+        standard.showDownloadDidReceiveExpectedContentLength(expectedContentLength)
+    }
+
+    func showDownloadDidReceiveData(ofLength length: UInt64) {
+        standard.showDownloadDidReceiveData(ofLength: length)
+    }
+
+    func showDownloadDidStartExtractingUpdate() {
+        standard.showDownloadDidStartExtractingUpdate()
+    }
+
+    func showExtractionReceivedProgress(_ progress: Double) {
+        standard.showExtractionReceivedProgress(progress)
+    }
+
+    func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
+        standard.showReady(toInstallAndRelaunch: reply)
+    }
+
+    func showInstallingUpdate(withApplicationTerminated applicationTerminated: Bool, retryTerminatingApplication: @escaping () -> Void) {
+        standard.showInstallingUpdate(withApplicationTerminated: applicationTerminated, retryTerminatingApplication: retryTerminatingApplication)
+    }
+
+    func dismissUpdateInstallation() {
+        standard.dismissUpdateInstallation()
+    }
+
+    /// Brings the window of a waiting update (or of a running check) to the front.
+    func showUpdateInFocus() {
+        standard.showUpdateInFocus()
+    }
+}
+
 final class UpdateCenter: NSObject {
 
     static let shared = UpdateCenter()
@@ -132,6 +269,10 @@ final class UpdateCenter: NSObject {
     var setDockBadge: (String?) -> Void = AppRuntime.isRunningXCTest ? { _ in } : { NSApp.dockTile.badgeLabel = $0 }
     var activateApp: () -> Void = AppRuntime.isRunningXCTest ? {} : { NSApp.activate(ignoringOtherApps: true) }
     var log: (String) -> Void = { AppSystemLog.note($0) }
+    /// Says what a check the user asked for ended with: a notice, never a modal alert.
+    var showNotice: (UpdateNotice) -> Void = AppRuntime.isRunningXCTest ? { _ in } : { notice in
+        Toast.show(notice.text, style: UpdateCenter.toastStyle(for: notice.kind))
+    }
     /// Whether an updater may start at all. Never under XCTest: a started updater asks
     /// the network, whatever feed a test hands in.
     var mayStart: () -> Bool = { !AppRuntime.isRunningXCTest }
@@ -143,8 +284,9 @@ final class UpdateCenter: NSObject {
     private(set) var reminder = UpdateReminder()
 
     private var updater: SPUUpdater?
-    /// Sparkle's own windows. The updater does not keep it alive.
-    private var userDriver: SPUStandardUserDriver?
+    /// Sparkle's own windows, and what stands between them and the updater.
+    private var standardWindows: SPUStandardUserDriver?
+    private var windows: UpdateWindows?
     private var observations: [NSKeyValueObservation] = []
 
     /// The Dock icon stays while an update waits, also when the last settings window closes.
@@ -184,8 +326,11 @@ final class UpdateCenter: NSObject {
             return
         }
         self.configuration = configuration
-        let driver = SPUStandardUserDriver(hostBundle: .main, delegate: self)
-        let updater = SPUUpdater(hostBundle: .main, applicationBundle: .main, userDriver: driver, delegate: self)
+        let standard = SPUStandardUserDriver(hostBundle: .main, delegate: self)
+        let windows = UpdateWindows(standard: standard) { [weak self] notice in
+            self?.showNotice(notice)
+        }
+        let updater = SPUUpdater(hostBundle: .main, applicationBundle: .main, userDriver: windows, delegate: self)
         do {
             try updater.start()
         } catch {
@@ -194,7 +339,8 @@ final class UpdateCenter: NSObject {
             log("Updates: off, Sparkle did not start: \(error.localizedDescription)")
             return
         }
-        self.userDriver = driver
+        self.standardWindows = standard
+        self.windows = windows
         self.updater = updater
         availability = .available
         observe(updater)
@@ -219,6 +365,15 @@ final class UpdateCenter: NSObject {
 
     private func statusDidChange() {
         NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
+    }
+
+    /// How a notice looks: a check mark for "nothing newer" and "installed", a warning for
+    /// a failure.
+    static func toastStyle(for kind: UpdateNotice.Kind) -> Toast.Style {
+        switch kind {
+        case .nothingNewer, .installed: return .success
+        case .failed: return .warning
+        }
     }
 
     // MARK: - What the app asks
@@ -300,6 +455,13 @@ extension UpdateCenter: SPUUpdaterDelegate {
         return configuration?.feedURL.absoluteString
     }
 
+    /// No part of Sparkle's system profile (the Mac's model, its macOS, its language…)
+    /// may be sent. The profile is off in the Info.plist, but Sparkle reads that switch
+    /// from the preferences file first; an empty list holds whatever is written there.
+    func allowedSystemProfileKeys(for updater: SPUUpdater) -> [String]? {
+        return []
+    }
+
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
         log("Updates: found \(item.displayVersionString) (\(item.versionString))")
     }
@@ -369,8 +531,9 @@ extension UpdateCenter: SPUUpdaterDelegate {
 extension UpdateCenter: SPUStandardUserDriverDelegate {
 
     /// Scrollio adds its own reminders (the Dock, the menus, General). Sparkle still shows
-    /// its window when it wants to; for an app without a Dock icon that is at once, behind
-    /// what the user is doing.
+    /// its window when it wants to: for an app without a Dock icon at once, behind what
+    /// the user is doing (in front only in the first seconds after the updater started
+    /// or its settings changed); for one in the Dock, when it next comes to the front.
     var supportsGentleScheduledUpdateReminders: Bool {
         return true
     }
