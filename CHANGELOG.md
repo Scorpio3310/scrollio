@@ -10,6 +10,13 @@ it for the people who use the app, and give the version its part before you tag 
 
 ## Unreleased
 
+- **Trackpad-style scrolling (Beta)** now says where it works. While it is on, two
+  switches stand under it in Scrolling › Advanced. "In browsers" (on): web pages in
+  Safari, Chrome-like browsers and Firefox, and apps built like them. "In Mac apps"
+  (off): lists and documents in every other app, for which Scrollio reads the scroll bar
+  under the pointer; good in Finder, worse than without it in some apps (Messages,
+  Calendar). **If you had the Beta on in 1.0.1: Mac apps now need their own switch**, and
+  scroll as without the Beta until you turn it on. Both are in the settings file.
 - **Trackpad-style scrolling (Beta)** in apps that are not browsers (Finder, Notes, a
   message in Mail): the whole scroll is now sent as one touch, which ends a fifth of a
   second after the page last moved. Before, the end of a scroll was sent as a glide. By
@@ -32,11 +39,13 @@ it for the people who use the app, and give the version its part before you tag 
   scroll bar cannot be read, that view scrolls as with the switch off (the README lists
   the views known to be such). Seen on one Mac, in Finder; in the tests this part runs
   against a stand-in, because a test may not read another app.
-- **Trackpad-style scrolling (Beta)** in Dia and Arc: the sidebar of tabs (a list the
-  browser draws itself, not a web page) stopped in mid-scroll. Scrollio now looks at
-  what is under the pointer in these two, and scrolls such a list as it scrolls Finder,
-  from the second step of the wheel on; web pages scroll as before. Built from Chromium's
-  code and from what macOS answers; not seen on a screen yet.
+- **Trackpad-style scrolling (Beta)** in Dia and Arc: the sidebar of tabs (drawn by the
+  browser itself, not a web page) stopped in mid-scroll. Scrollio now looks at what is
+  under the pointer in these two and tells a web page from everything else without
+  asking the page's view what it is. A page scrolls as before; everything else scrolls
+  as without the Beta, the right distance without a bounce. Built from Chromium's code,
+  from what macOS answers and from one log of Dia; the new rule is not seen on a screen
+  yet.
 - **Trackpad-style scrolling (Beta)** is more careful with what it asks an app. It never
   asks the app itself what it is (Chrome and Electron apps switch on their accessibility
   support at that question, and get slower), it does not look at an app before it knows
