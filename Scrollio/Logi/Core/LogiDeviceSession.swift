@@ -287,11 +287,6 @@ class LogiDeviceSession {
         var name: String = ""
         var lastError: String? = nil
 
-        var protocolVersion: String {
-            guard isConnected else { return "--" }
-            return "\(protocolMajor).\(protocolMinor)"
-        }
-
         var deviceTypeName: String {
             switch deviceType {
             case 0x01: return "Keyboard"
@@ -430,7 +425,6 @@ class LogiDeviceSession {
     }
 
     // MARK: - HID++ Constants
-    private static let featureIRoot: UInt16 = 0x0000
     private static let featureReprogV4: UInt16 = 0x1B04
     private static let featureHiResWheel: UInt16 = 0x2121
     private static let featurePointerSpeed: UInt16 = 0x2205
@@ -3417,8 +3411,6 @@ class LogiDeviceSession {
     private var wheelRefreshWorkItems: [UInt8: DispatchWorkItem] = [:]
     /// ratchetSwitch 事件合并窗口: 连续切换只重读一次
     private static let wheelRefreshDelay: TimeInterval = 0.3
-
-    var hasWheelControllers: Bool { !wheelControllers.isEmpty }
 
     /// 按 slot 已发现的 feature index 建立/保留滚轮控制器. 0x2111 优先 (MX Master 4 只有它).
     private func resolveWheelController(slot: UInt8) {

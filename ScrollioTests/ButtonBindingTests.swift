@@ -1143,7 +1143,7 @@ final class ButtonBindingTests: XCTestCase {
         let popover = KeyPopover()
         popover.testingPrepareContent()
 
-        popover.showDuplicateHint()
+        popover.showRefusalHint(nil)   // a duplicate, as the recorder reports one
 
         XCTAssertEqual(
             popover.testingHintText,

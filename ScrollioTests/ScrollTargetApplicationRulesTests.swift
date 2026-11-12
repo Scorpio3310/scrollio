@@ -69,8 +69,7 @@ final class ScrollTargetApplicationRulesTests: XCTestCase {
         let application = makeApplication(inherit: false)
         application.scroll.reverse = true
 
-        XCTAssertTrue(application.isReverse(), "per-app reverse=ON must apply when global reverse is OFF (#1011)")
-        XCTAssertTrue(application.isReverseVertical(), "per-app axis reverse must not be gated by global axis switches")
+        XCTAssertTrue(application.isReverseVertical(), "per-app reverse=ON must apply when global reverse is OFF (#1011)")
         XCTAssertTrue(application.isReverseHorizontal(), "per-app axis reverse must not be gated by global axis switches")
     }
 

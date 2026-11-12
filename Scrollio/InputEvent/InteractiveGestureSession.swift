@@ -117,8 +117,8 @@ struct InteractiveGestureSession {
         }
     }
 
-    /// The button was released. `pendingDelta` is movement that arrived after the last
-    /// `move`. While swiping it only informs the end / cancel decision and the velocity:
+    /// The button was released. `pendingDeltaX` / `pendingDeltaY` is movement that arrived
+    /// after the last `move`. While swiping it only informs the end / cancel decision and the velocity:
     /// the terminal event follows at once, so it is not sent as one more update.
     mutating func release(pendingDeltaX: CGFloat = 0, pendingDeltaY: CGFloat = 0, at time: TimeInterval) -> [Command] {
         guard phase != .finished else { return [] }

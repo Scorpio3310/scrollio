@@ -216,11 +216,6 @@ internal class LogiSessionManager {
 
     // MARK: - Query
 
-    /// 获取当前已连接的 Logitech 设备列表
-    var connectedDevices: [InputDevice] {
-        return sessions.values.map { $0.deviceInfo }
-    }
-
     /// Debug: 暴露活跃的设备会话
     var activeSessions: [LogiDeviceSession] {
         return Array(sessions.values)

@@ -1,11 +1,9 @@
 import XCTest
 @testable import Scrollio_Debug
 
-/// Which Logitech interfaces get a session. (The synthetic `.up` that teardown,
-/// setTargetSlot, rediscoverFeatures and LogiCenter.stop send before clearing per-session
-/// state needs a LogiDeviceSession, which needs a real IOHIDDevice: it is covered by the
-/// real-device test LogiBridgeDeviceTests, not here.)
-final class LogiTeardownTests: XCTestCase {
+/// Which Logitech interfaces get a session (`LogiSessionManager.shouldAttachSession`).
+/// These three tests were the whole of "LogiTeardownTests" and test nothing of teardown.
+final class LogiSessionAttachTests: XCTestCase {
 
     // MARK: - Keyboard interface skip (issue #948)
 
@@ -39,6 +37,14 @@ final class LogiTeardownTests: XCTestCase {
         XCTAssertTrue(LogiSessionManager.shouldAttachSession(usagePage: 0x0001, usage: 0x0001),
                       "Pointer (Generic Desktop) must still attach")
     }
+}
+
+/// What ends the Logitech sessions when the process is ended from outside. (The give-back
+/// itself, the synthetic `.up` that teardown, setTargetSlot, rediscoverFeatures and
+/// LogiCenter.stop send before clearing per-session state, needs a LogiDeviceSession,
+/// which needs a real IOHIDDevice: the rules of what is given back are
+/// LogiDivertReconciliationTests', the rest is the real-device test LogiBridgeDeviceTests'.)
+final class LogiTeardownTests: XCTestCase {
 
     // MARK: - Ending Scrollio with a signal
 

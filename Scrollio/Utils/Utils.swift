@@ -45,16 +45,6 @@ public class Utils {
         headHandler()
         groupAnimatorContainer(group, completionHandler: completionHandler)
     }
-    // https://nyrra33.com/2017/12/21/rotating-a-view-is-not-easy/
-    class func groupAnimatorRotate(with view: NSView, angle: CGFloat) {
-        if let layer = view.layer, let animatorLayer = view.animator().layer {
-            // 设定中心点
-            layer.position = CGPoint(x: layer.frame.midX, y: layer.frame.midY)
-            layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-            // 用 CATransform3DMakeRotation 才能保证按中心旋转
-            animatorLayer.transform = CATransform3DMakeRotation(angle, 0, 0, 1)
-        }
-    }
     
     // 禁止重复运行
     // killExist = true 则杀掉已有进程, 否则自杀
@@ -189,13 +179,6 @@ public class Utils {
             isDockIconVisible = false
         }
     }
-    class func toggleDockIcon() {
-        if isDockIconVisible {
-            hideDockIcon()
-        } else {
-            showDockIcon()
-        }
-    }
     
     // 匹配字符
     class func extractRegexMatches(target: String = "", pattern: String) -> String {
@@ -287,23 +270,6 @@ public class Utils {
             runningApplicationDetectTime[bundleIdentifier] = now
         }
         return runningApplicationCache[bundleIdentifier] ?? nil
-    }
-    
-    class func debounce(delay: Int, action: @escaping (() -> Void)) -> () -> Void {
-        var lastFireTime = DispatchTime.now()
-        let dispatchDelay = DispatchTimeInterval.milliseconds(delay)
-
-        return {
-            lastFireTime = DispatchTime.now()
-            let dispatchTime: DispatchTime = DispatchTime.now() + dispatchDelay
-            DispatchQueue.main.asyncAfter(deadline: dispatchTime) {
-                let when: DispatchTime = lastFireTime + dispatchDelay
-                let now = DispatchTime.now()
-                if now.rawValue >= when.rawValue {
-                    action()
-                }
-            }
-        }
     }
 }
 

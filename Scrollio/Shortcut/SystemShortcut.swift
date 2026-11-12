@@ -25,7 +25,6 @@ struct SystemShortcut {
         let code: UInt16
         let modifiers: NSEvent.ModifierFlags
         let executionMode: ActionExecutionMode
-        let minimumVersion: OperatingSystemVersion?  // 最低系统版本要求(可选)
         let preserveFlagsOnKeyUp: Bool  // KeyUp 时是否保留修饰键 flags (用于 Command+Tab 等需要保持修饰键的快捷键)
         let descriptionKey: String?  // 菜单描述文本的本地化键 (仅 Logi 动作使用)
 
@@ -34,7 +33,6 @@ struct SystemShortcut {
             _ code: UInt16,
             _ modifiers: NSEvent.ModifierFlags,
             executionMode: ActionExecutionMode = .trigger,
-            minimumVersion: OperatingSystemVersion? = nil,
             preserveFlagsOnKeyUp: Bool = false,
             descriptionKey: String? = nil
         ) {
@@ -42,7 +40,6 @@ struct SystemShortcut {
             self.code = code
             self.modifiers = modifiers
             self.executionMode = executionMode
-            self.minimumVersion = minimumVersion
             self.preserveFlagsOnKeyUp = preserveFlagsOnKeyUp
             self.descriptionKey = descriptionKey
         }
@@ -60,12 +57,6 @@ struct SystemShortcut {
         var localizedDescription: String? {
             guard let key = descriptionKey else { return nil }
             return NSLocalizedString(key, comment: "")
-        }
-
-        /// 检查当前系统是否支持此快捷键
-        var isAvailable: Bool {
-            guard let minVersion = minimumVersion else { return true }
-            return ProcessInfo.processInfo.isOperatingSystemAtLeast(minVersion)
         }
 
         /// 获取本地化显示名称
@@ -289,7 +280,7 @@ struct SystemShortcut {
     static let shutdownDialog = Shortcut("shutdownDialog", 6, .control)
     static let screenshot = Shortcut("screenshot", 20, [.command, .shift])  // Command-Shift-3
     static let screenshotSelection = Shortcut("screenshotSelection", 21, [.command, .shift])  // Command-Shift-4
-    static let screenshotAndRecording = Shortcut("screenshotAndRecording", 23, [.command, .shift], minimumVersion: OperatingSystemVersion(majorVersion: 10, minorVersion: 14, patchVersion: 0))  // Command-Shift-5 (macOS 10.14+)
+    static let screenshotAndRecording = Shortcut("screenshotAndRecording", 23, [.command, .shift])  // Command-Shift-5
     static let moveSpaceLeft = Shortcut("moveSpaceLeft", 123, [.control, .function])  // Fn-Control-Left
     static let moveSpaceRight = Shortcut("moveSpaceRight", 124, [.control, .function])  // Fn-Control-Right
 
@@ -424,9 +415,9 @@ struct SystemShortcut {
         ("categoryNavigation", [
             navigateBack, navigateForward, previousTab, nextTab, switchTabLeft, switchTabRight
         ]),
-        // ("categoryAccessibility", [  // 暂时不提供, 有问题
-        //     invertColors, zoomIn, zoomOut
-        // ]),
+        // Not offered: the Accessibility shortcuts (`invertColors`, `zoomIn`, `zoomOut`),
+        // which did not work reliably. A binding stored with one of them still runs and
+        // shows under its own name (`allShortcuts`).
     ]
 
     // MARK: - Mouse Button Actions

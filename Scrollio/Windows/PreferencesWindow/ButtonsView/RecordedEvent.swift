@@ -110,11 +110,6 @@ struct RecordedEvent: Codable, Equatable {
         return NSEvent.ModifierFlags(rawValue: modifiers)
     }
 
-    /// 转换为 ScrollHotkey (丢弃修饰键信息)
-    var asScrollHotkey: ScrollHotkey {
-        return ScrollHotkey(type: type, code: code)
-    }
-
     /// 展示用名称组件按当前命名规则动态计算, 不写入持久化配置.
     var displayComponents: [String] {
         let event = InputEvent(
@@ -217,21 +212,6 @@ struct RecordedEvent: Codable, Equatable {
                 // 匹配 code
                 return code == Int(event.getIntegerValueField(.mouseEventButtonNumber))
         }
-    }
-    /// 匹配 InputEvent (供 InputProcessor 使用)
-    func matchesInput(_ event: InputEvent) -> Bool {
-        guard UInt(event.modifiers.rawValue) == modifiers else { return false }
-        guard event.type == type else { return false }
-        switch type {
-        case .keyboard:
-            guard code == event.code else { return false }
-        case .mouse:
-            guard code == event.code else { return false }
-        }
-        if let filter = deviceFilter {
-            guard filter.matches(event.device) else { return false }
-        }
-        return true
     }
 
     /// 匹配优先级:
@@ -448,11 +428,6 @@ struct ButtonBinding: Codable, Equatable {
             code: event.code,
             modifiers: UInt64(event.modifiers.rawValue)
         )
-    }
-
-    static func normalizedCustomBindingPayload(from customBindingName: String) -> (code: UInt16, modifiers: UInt64)? {
-        guard let payload = normalizedCustomBindingDescriptor(from: customBindingName) else { return nil }
-        return (payload.code, payload.modifiers)
     }
 
     static func normalizedCustomBindingDescriptor(from customBindingName: String) -> (type: EventType, code: UInt16, modifiers: UInt64)? {

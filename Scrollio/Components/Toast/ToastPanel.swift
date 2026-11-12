@@ -63,27 +63,6 @@ class ToastPanel: NSObject {
         )
     }
 
-    // MARK: - Menu Item
-
-    /// 创建可直接加入菜单的 MenuItem
-    func createMenuItem() -> NSMenuItem {
-        let item = NSMenuItem(
-            title: NSLocalizedString("Toast Debug", comment: "Toast debug panel menu item"),
-            action: #selector(menuItemClicked),
-            keyEquivalent: ""
-        )
-        item.target = self
-        if let img = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: nil) {
-            img.isTemplate = true
-            item.image = img
-        }
-        return item
-    }
-
-    @objc private func menuItemClicked() {
-        show()
-    }
-
     // MARK: - Show
 
     func show() {

@@ -1946,9 +1946,7 @@ final class PreferencesButtonsTests: XCTestCase {
         let plain = RecordedEvent(type: .mouse, code: 6, modifiers: option, deviceFilter: nil)
         let answered = plain.placed(at: .gestureButton)
         XCTAssertEqual(answered, plain)
-        XCTAssertEqual(answered.asScrollHotkey, plain.asScrollHotkey)
         for event in [mouseEvent(6), mouseEvent(6, modifiers: .maskAlternate), mouseEvent(6, modifiers: [.maskAlternate, .maskCommand]), mouseEvent(5, modifiers: .maskAlternate)] {
-            XCTAssertEqual(answered.matchesInput(event), plain.matchesInput(event))
             XCTAssertEqual(answered.matchPriority(for: event), plain.matchPriority(for: event))
         }
         let binding = ButtonBinding(triggerEvent: plain, systemShortcutName: "copy")

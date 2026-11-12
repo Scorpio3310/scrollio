@@ -91,9 +91,6 @@ extension Application {
         if block { return false }
         return resolvedScrollOptions().smooth
     }
-    func isReverse() -> Bool {
-        return resolvedScrollOptions().reverse
-    }
     func isReverseVertical() -> Bool {
         let target = resolvedScrollOptions()
         return target.reverse && target.reverseVertical

@@ -67,7 +67,6 @@ class ToastWindow {
 
 enum ToastLayoutConstants {
     static let spacing: CGFloat = 8
-    static let containerWidth: CGFloat = 360
     static let cornerRadius: CGFloat = 10
 }
 

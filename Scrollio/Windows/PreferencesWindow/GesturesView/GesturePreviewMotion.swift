@@ -199,7 +199,7 @@ struct GesturePreviewLoop {
     static let moveReturnStart: TimeInterval = 1.5
     static let moveReturnEnd: TimeInterval = 1.9
     /// The action runs this far into the movement: the mouse has then passed the
-    /// recognizer's activation distance, drawn as `activationShare` of the way.
+    /// recognizer's activation distance, drawn as this share of the way.
     static let activationFraction = 0.6
     /// How far the mouse moves in a discrete hold (points of the device card).
     static let horizontalReach: CGFloat = 22

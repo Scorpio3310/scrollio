@@ -106,9 +106,6 @@ final class LogiCenter {
     func conflictStatus(forScrollioCode code: UInt16) -> ConflictStatus {
         return manager.conflictStatus(forScrollioCode: code)
     }
-    func isDeliveryContended(forScrollioCode code: UInt16) -> Bool {
-        return manager.deliveryMode(forScrollioCode: code) == .contended
-    }
     func showBLEHIDPPUnstableToast(forScrollioCode code: UInt16) {
         guard let cid = LogiCIDDirectory.toCID(code) else { return }
         let message = LogiToastText.buttonToast(
@@ -306,7 +303,6 @@ final class LogiCenter {
 
     // MARK: - Namespaced notifications
     static let sessionChanged        = LogiSessionManager.sessionChangedNotification
-    static let discoveryStateChanged = LogiSessionManager.discoveryStateDidChangeNotification
     static let reportingDidComplete  = LogiSessionManager.reportingQueryDidCompleteNotification
     static let activityChanged       = LogiSessionManager.activityStateDidChangeNotification
     static let conflictChanged       = LogiSessionManager.conflictChangedNotification

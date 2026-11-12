@@ -87,11 +87,6 @@ class KeyPopover: NSObject {
         showHint(.escape)
     }
 
-    /// 显示重复录制提示
-    func showDuplicateHint() {
-        showHint(.duplicate)
-    }
-
     /// A refused event: `reason` (already localized), or "Duplicate key" when nil.
     func showRefusalHint(_ reason: String?) {
         showHint(reason.map { .refused($0) } ?? .duplicate)

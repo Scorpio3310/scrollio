@@ -44,7 +44,6 @@ final class LogiCenterPublicSurfaceTests: XCTestCase {
 
     func testNotificationNamesNonEmpty() {
         XCTAssertFalse(LogiCenter.sessionChanged.rawValue.isEmpty)
-        XCTAssertFalse(LogiCenter.discoveryStateChanged.rawValue.isEmpty)
         XCTAssertFalse(LogiCenter.reportingDidComplete.rawValue.isEmpty)
         XCTAssertFalse(LogiCenter.activityChanged.rawValue.isEmpty)
         XCTAssertFalse(LogiCenter.conflictChanged.rawValue.isEmpty)
