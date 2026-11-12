@@ -1530,18 +1530,20 @@ final class SettingsFileCenterTests: XCTestCase {
     /// The last five backups are kept; nothing else in the folder is touched.
     func testOnlyTheLastFiveBackupsAreKept() throws {
         let folder = try temporaryFolder(for: self)
-        let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
-        let backups = SettingsBackups(directory: folder, timeZone: utc)
-        let other = ["notes.txt", "Scrollio Settings Backup of mine.json", "Scrollio Settings Backup 2026-11-12 09.42.07.txt"]
+        let backups = SettingsBackups(directory: folder)
+        let other = ["notes.txt", "Scrollio Settings Backup of mine.json", "Scrollio Settings Backup 2026-11-12 09.42.07 UTC.txt",
+                     "Scrollio Settings Backup 2026-11-12 09.42.07.json", "Scrollio Settings Backup 2026-13-45 99.99.99 UTC.json"]
         for name in other {
             try Data("mine".utf8).write(to: folder.appendingPathComponent(name))
         }
+        XCTAssertTrue(backups.entries().isEmpty, "none of these is a backup")
         let start = Date(timeIntervalSince1970: 1_794_476_527)
         var written: [String] = []
         for index in 0..<7 {
             written.append(try backups.write(Data("\(index)".utf8), now: start.addingTimeInterval(Double(index) * 90)).lastPathComponent)
         }
-        XCTAssertEqual(written.first, "Scrollio Settings Backup 2026-11-12 09.42.07.json")
+        XCTAssertEqual(written.first, "Scrollio Settings Backup 2026-11-12 09.42.07 UTC.json")
+        XCTAssertEqual(SettingsBackups.name(for: start), written.first)
         XCTAssertEqual(SettingsBackups.keepCount, 5)
         let entries = backups.entries()
         XCTAssertEqual(entries.map(\.url.lastPathComponent), Array(written.suffix(5).reversed()), "the newest five, newest first")
@@ -1551,21 +1553,50 @@ final class SettingsFileCenterTests: XCTestCase {
         XCTAssertEqual(names(in: folder), (other + written.suffix(5)).sorted(), "what is not a backup stays")
     }
 
-    /// Two imports in one second: two backups, in the order they were written.
-    func testBackupsOfOneSecondAreKeptApartAndInOrder() throws {
+    /// A backup's name only goes forward. Named by the wall clock, a backup written after
+    /// the clock had gone back (set by hand, or the hour that summer time returns) sorted
+    /// as the oldest of the folder: with five others there, the write that made it
+    /// deleted it, the import went on, and the settings from before it were gone.
+    func testABackupIsNamedAfterTheNewestThereIsAndIsNeverDeletedByItsOwnWrite() throws {
+        let own = OwnSettings(for: self)
+        own.options.readOptions()
+        own.options.scroll.speed = 7.5
+        let base = Date(timeIntervalSince1970: 1_794_476_527)
+        // Five backups from an hour "later" than now: the clock was ahead then.
+        for index in 1...5 {
+            try own.center.backups.write(Data("{}".utf8), now: base.addingTimeInterval(3600 + Double(index) * 10))
+        }
+        let newestBefore = try XCTUnwrap(own.center.backups.latest)
+        own.center.now = { base }
+
+        let backup = try own.center.importSettings(try Fixture.contents(#""speed":3"#)).get()
+
+        XCTAssertEqual(own.options.scroll.speed, 3)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backup.path), "the backup of this import is there")
+        XCTAssertEqual(try own.center.read(backup).get().scrollNumbers["speed"], 7.5, "and holds the settings from before")
+        let latest = try XCTUnwrap(own.center.backups.latest)
+        XCTAssertEqual(latest.url.lastPathComponent, backup.lastPathComponent, "it is the newest")
+        XCTAssertEqual(latest.date, newestBefore.date.addingTimeInterval(1), "one second after the newest there was")
+        XCTAssertEqual(backup.lastPathComponent, "Scrollio Settings Backup 2026-11-12 10.42.58 UTC.json")
+        XCTAssertEqual(own.center.backups.entries().count, 5, "the oldest of the six went, not the new one")
+        XCTAssertFalse(own.center.backups.entries().contains { $0.date == base.addingTimeInterval(3610) })
+
+        // The name is UTC: where the Mac is, and whether its hour was set back, changes nothing.
         let folder = try temporaryFolder(for: self)
-        let backups = SettingsBackups(directory: folder, timeZone: try XCTUnwrap(TimeZone(identifier: "UTC")))
-        let now = Date(timeIntervalSince1970: 1_794_476_527)
-        let first = try backups.write(Data("first".utf8), now: now)
-        let second = try backups.write(Data("second".utf8), now: now)
-        let third = try backups.write(Data("third".utf8), now: now)
-        XCTAssertEqual([first, second, third].map(\.lastPathComponent), [
-            "Scrollio Settings Backup 2026-11-12 09.42.07.json",
-            "Scrollio Settings Backup 2026-11-12 09.42.07 (2).json",
-            "Scrollio Settings Backup 2026-11-12 09.42.07 (3).json",
+        let backups = SettingsBackups(directory: folder)
+        let first = try backups.write(Data("first".utf8), now: base)
+        let second = try backups.write(Data("second".utf8), now: base.addingTimeInterval(-1800))   // half an hour "earlier"
+        let third = try backups.write(Data("third".utf8), now: base.addingTimeInterval(-1800))     // the same second again
+        let fourth = try backups.write(Data("fourth".utf8), now: base.addingTimeInterval(3 * 3600 + 0.9))
+        XCTAssertEqual([first, second, third, fourth].map(\.lastPathComponent), [
+            "Scrollio Settings Backup 2026-11-12 09.42.07 UTC.json",
+            "Scrollio Settings Backup 2026-11-12 09.42.08 UTC.json",
+            "Scrollio Settings Backup 2026-11-12 09.42.09 UTC.json",
+            "Scrollio Settings Backup 2026-11-12 12.42.07 UTC.json",
         ])
-        XCTAssertEqual(backups.entries().map(\.url.lastPathComponent), [third, second, first].map(\.lastPathComponent))
-        XCTAssertEqual(try String(contentsOf: first, encoding: .utf8), "first", "an earlier backup is never overwritten")
+        XCTAssertEqual(backups.entries().map(\.url.lastPathComponent), [fourth, third, second, first].map(\.lastPathComponent))
+        XCTAssertEqual(try String(contentsOf: first, encoding: .utf8), "first", "an earlier backup is never written over")
+        XCTAssertEqual(backups.moment(for: base), base.addingTimeInterval(3 * 3600 + 1))
         // No folder: nothing to list, and a write says so.
         let nowhere = SettingsBackups(directory: nil)
         XCTAssertTrue(nowhere.entries().isEmpty)

@@ -8,8 +8,8 @@
 //  the file's are put in effect. A backup that cannot be written stops the import.
 //
 //  The backups (`SettingsBackups`) are settings files like any other, kept in
-//  ~/Library/Application Support/<bundle id>/Settings Backups: the last five, older ones
-//  are deleted. General offers the newest ("Restore…"); it goes through the same import,
+//  ~/Library/Application Support/<bundle id>/Settings Backups, named by the moment (UTC)
+//  they were written: the last five, older ones are deleted. General offers the newest ("Restore…"); it goes through the same import,
 //  with the same sheet before it, so going back can be undone the same way.
 //
 //  Under XCTest nothing real is touched unless a test hands it in: the app's preferences
@@ -26,17 +26,23 @@ struct SettingsBackups {
 
     /// How many are kept.
     static let keepCount = 5
-    /// A backup's name is this, its moment and the extension: "Scrollio Settings Backup
-    /// 2026-11-12 10.42.07.json". The name is how the folder's backups are told from
-    /// anything else in it and put in order, so it is the same in every language and
+    /// A backup's name is this, its moment in UTC and the extension: "Scrollio Settings
+    /// Backup 2026-11-12 09.42.07 UTC.json". The name is how the folder's backups are told
+    /// from anything else in it and put in order, so it is the same in every language and
     /// never changes.
+    ///
+    /// Names only go forward. They are UTC, so a journey west or the hour that summer
+    /// time gives back does not put a new backup before an old one; and when the clock
+    /// itself went back, a new backup is named one second after the newest there is
+    /// (`moment(for:)`). A backup named by the wall clock could sort as the oldest of the
+    /// folder and be deleted by the very write that made it.
     static let namePrefix = "Scrollio Settings Backup "
+    static let nameSuffix = " UTC"
     private static let stampFormat = "yyyy-MM-dd HH.mm.ss"
 
     /// Where the backups are; nil: nowhere, every write fails.
     let directory: URL?
     var fileManager: FileManager = .default
-    var timeZone: TimeZone = .current
 
     /// ~/Library/Application Support/<bundle id>/Settings Backups in the app; no folder
     /// under XCTest.
@@ -53,39 +59,58 @@ struct SettingsBackups {
 
     struct Entry: Equatable {
         let url: URL
-        /// When it was written, from its name.
+        /// The moment in its name: when it was written (or a second after the backup
+        /// before it, when the clock had gone back).
         let date: Date
-        /// Told apart from another of the same second.
-        fileprivate let counter: Int
     }
 
     enum Failure: Error {
         case noFolder
     }
 
-    private var stampFormatter: DateFormatter {
+    private static let stampFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = timeZone
-        formatter.dateFormat = Self.stampFormat
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = stampFormat
         return formatter
+    }()
+
+    /// "Scrollio Settings Backup 2026-11-12 09.42.07 UTC.json".
+    static func name(for moment: Date) -> String {
+        return namePrefix + stampFormatter.string(from: moment) + nameSuffix + "." + SettingsFile.fileExtension
     }
 
-    /// Writes `data` as the backup of `now`, then deletes all but the newest `keepCount`.
-    /// Throws when the folder or the file cannot be made; nothing else is touched then.
+    /// The moment a backup written at `now` is named by: `now` to the second, or one
+    /// second after the newest backup there is, whichever is later.
+    func moment(for now: Date) -> Date {
+        let second = Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.down))
+        guard let newest = entries().first else { return second }
+        return max(second, newest.date.addingTimeInterval(1))
+    }
+
+    /// Writes `data` as the newest backup, then deletes all but the newest `keepCount`
+    /// (never the one just written). Throws when the folder or the file cannot be made;
+    /// nothing else is touched then.
     @discardableResult
     func write(_ data: Data, now: Date = Date()) throws -> URL {
         guard let directory else { throw Failure.noFolder }
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let stamp = stampFormatter.string(from: now)
-        var url = directory.appendingPathComponent(Self.namePrefix + stamp + "." + SettingsFile.fileExtension)
-        var counter = 1
-        while fileManager.fileExists(atPath: url.path) {
-            counter += 1
-            url = directory.appendingPathComponent(Self.namePrefix + stamp + " (\(counter))." + SettingsFile.fileExtension)
-        }
+        let url = freeURL(in: directory, from: moment(for: now))
         try data.write(to: url, options: .atomic)
-        prune()
+        prune(keeping: url)
+        return url
+    }
+
+    /// The first name from `moment` on that no file has. (After `moment(for:)` it is that
+    /// moment's; an earlier file is never written over, whatever is in the folder.)
+    private func freeURL(in directory: URL, from moment: Date) -> URL {
+        var moment = moment
+        var url = directory.appendingPathComponent(Self.name(for: moment))
+        while fileManager.fileExists(atPath: url.path) {
+            moment += 1
+            url = directory.appendingPathComponent(Self.name(for: moment))
+        }
         return url
     }
 
@@ -93,31 +118,26 @@ struct SettingsBackups {
     func entries() -> [Entry] {
         guard let directory,
               let names = try? fileManager.contentsOfDirectory(atPath: directory.path) else { return [] }
-        let formatter = stampFormatter
+        let ending = Self.nameSuffix + "." + SettingsFile.fileExtension
         let entries: [Entry] = names.compactMap { name in
-            guard name.hasPrefix(Self.namePrefix), name.hasSuffix("." + SettingsFile.fileExtension) else { return nil }
-            var rest = String(name.dropFirst(Self.namePrefix.count).dropLast(SettingsFile.fileExtension.count + 1))
-            var counter = 1
-            // "… (2)": the second of one second.
-            if rest.hasSuffix(")"), let open = rest.range(of: " (", options: .backwards),
-               let number = Int(rest[open.upperBound...].dropLast()) {
-                counter = number
-                rest = String(rest[..<open.lowerBound])
-            }
-            guard rest.count == Self.stampFormat.count, let date = formatter.date(from: rest) else { return nil }
-            return Entry(url: directory.appendingPathComponent(name), date: date, counter: counter)
+            guard name.hasPrefix(Self.namePrefix), name.hasSuffix(ending) else { return nil }
+            let stamp = String(name.dropFirst(Self.namePrefix.count).dropLast(ending.count))
+            guard stamp.count == Self.stampFormat.count, let date = Self.stampFormatter.date(from: stamp),
+                  Self.name(for: date) == name else { return nil }
+            return Entry(url: directory.appendingPathComponent(name), date: date)
         }
-        return entries.sorted { ($0.date, $0.counter) > ($1.date, $1.counter) }
+        return entries.sorted { $0.date > $1.date }
     }
 
-    /// The newest backup: what "Restore…" offers.
+    /// The newest backup.
     var latest: Entry? {
         return entries().first
     }
 
-    /// Deletes the backups beyond the newest `keepCount`. Nothing else in the folder.
-    private func prune() {
-        for entry in entries().dropFirst(Self.keepCount) {
+    /// Deletes the backups beyond the newest `keepCount`, and never `written`. Nothing
+    /// else in the folder.
+    private func prune(keeping written: URL) {
+        for entry in entries().dropFirst(Self.keepCount) where entry.url.lastPathComponent != written.lastPathComponent {
             try? fileManager.removeItem(at: entry.url)
         }
     }
