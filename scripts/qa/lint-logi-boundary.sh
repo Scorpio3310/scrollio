@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # scripts/qa/lint-logi-boundary.sh
 #
-# Enforces the Mos/Logi/ module boundary because same-target `internal` is
+# Enforces the Scrollio/Logi/ module boundary because same-target `internal` is
 # not enough. Two zones, two allowlists:
 #
-#   Zone A: outside Mos/Logi/ AND Mos/Integration/ (the rest of the app).
+#   Zone A: outside Scrollio/Logi/ AND Scrollio/Integration/ (the rest of the app).
 #     Only public-surface + bootstrap-wiring symbols may appear.
-#   Zone B: inside Mos/Integration/ (the bridge implementation).
+#   Zone B: inside Scrollio/Integration/ (the bridge implementation).
 #     Public symbols + the internal bridge protocol/enums.
-#   Inside Mos/Logi/: no restriction.
+#   Inside Scrollio/Logi/: no restriction.
 #
 # Spec §4.7 listed the public allowlist; LogiIntegrationBridge and
 # LogiUsageBootstrap added because AppDelegate legitimately wires both
 # at launch (Tasks 3.10 + 4.2).
 #
-# Tests under MosTests/ are exempt — Tier 1/2 unit tests legitimately
+# Tests under ScrollioTests/ are exempt — Tier 1/2 unit tests legitimately
 # reference internal Logi symbols (canary, divert planner, etc.).
 
 set -euo pipefail
@@ -88,17 +88,17 @@ scan_zone() {
 VIOLATIONS_FILE=$(mktemp)
 trap 'rm -f "$VIOLATIONS_FILE"' EXIT
 
-# Zone A scan: Mos/ outside Logi/ + Integration/
-ZONE_A_FILES=$(find Mos -type f -name '*.swift' -not -path 'Mos/Logi/*' -not -path 'Mos/Integration/*')
+# Zone A scan: Scrollio/ outside Logi/ + Integration/
+ZONE_A_FILES=$(find Scrollio -type f -name '*.swift' -not -path 'Scrollio/Logi/*' -not -path 'Scrollio/Integration/*')
 {
     for f in $ZONE_A_FILES; do
         grep -nE '\b(Logi[A-Z]|Logitech[A-Z])' "$f" 2>/dev/null | sed "s|^|$f:|" || true
     done
 } | scan_zone "A" "${ZONE_A_ALLOW[@]}" >> "$VIOLATIONS_FILE"
 
-# Zone B scan: Mos/Integration/
+# Zone B scan: Scrollio/Integration/
 ZONE_B_ALLOW=("${ZONE_A_ALLOW[@]}" "${ZONE_B_ADDITIONAL[@]}")
-ZONE_B_FILES=$(find Mos/Integration -type f -name '*.swift' 2>/dev/null || true)
+ZONE_B_FILES=$(find Scrollio/Integration -type f -name '*.swift' 2>/dev/null || true)
 {
     for f in $ZONE_B_FILES; do
         grep -nE '\b(Logi[A-Z]|Logitech[A-Z])' "$f" 2>/dev/null | sed "s|^|$f:|" || true

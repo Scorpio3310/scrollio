@@ -16,7 +16,7 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "22142D9F1E25344E00E4BFBF"
                BuildableName = "Scrollio.app"
-               BlueprintName = "Mos"
+               BlueprintName = "Scrollio"
                ReferencedContainer = "container:Scrollio.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -46,7 +46,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "22142D9F1E25344E00E4BFBF"
             BuildableName = "Scrollio.app"
-            BlueprintName = "Mos"
+            BlueprintName = "Scrollio"
             ReferencedContainer = "container:Scrollio.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -63,7 +63,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "22142D9F1E25344E00E4BFBF"
             BuildableName = "Scrollio.app"
-            BlueprintName = "Mos"
+            BlueprintName = "Scrollio"
             ReferencedContainer = "container:Scrollio.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

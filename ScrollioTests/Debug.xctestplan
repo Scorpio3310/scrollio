@@ -1,0 +1,30 @@
+{
+  "configurations" : [
+    {
+      "id" : "29A03558-E39E-457B-B97C-8497DEE3152B",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "codeCoverage" : false,
+    "performanceAntipatternCheckerEnabled" : true,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:Scrollio.xcodeproj",
+      "identifier" : "22142D9F1E25344E00E4BFBF",
+      "name" : "Scrollio"
+    }
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:Scrollio.xcodeproj",
+        "identifier" : "62CD1674CBD9855CE2042C81",
+        "name" : "ScrollioTests"
+      }
+    }
+  ],
+  "version" : 1
+}
