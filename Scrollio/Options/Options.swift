@@ -152,6 +152,16 @@ class Options {
         defer { readingOptionsLock = false }
         body()
     }
+    /// Tests: how many observers there are, and a way to take the newest ones away again.
+    /// The app's observers stay for its life; a test that installs the launch's own on
+    /// the shared settings (to see a change travel through them) must not leave them
+    /// there for every test that runs after it.
+    var observerCountForTests: Int {
+        return observers.count
+    }
+    func removeNewestObserversForTests(_ count: Int) {
+        observers.removeLast(min(max(0, count), observers.count))
+    }
     #endif
 }
 

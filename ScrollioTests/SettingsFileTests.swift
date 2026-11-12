@@ -1027,10 +1027,13 @@ final class SettingsFileFormatTests: XCTestCase {
 
     // MARK: Importing runs nothing
 
-    /// Nothing in the code of the settings file can open an app or start anything: it
-    /// names no executor, no workspace and no process. (Under XCTest opening is off
-    /// anyway; this is about the app.)
-    func testTheSettingsFileCodeCanStartNothing() throws {
+    /// A search for words, no more: the two files of the settings file name no workspace,
+    /// no process, no script, no modal alert and not the executor. It keeps somebody from
+    /// adding such a call to these files without meeting this test; it does not prove that
+    /// nothing is started, because code they call could do it (`StoredAction` asks the
+    /// executor to look an action up, which starts nothing). That an import starts
+    /// nothing is shown by running one: SettingsFileImportTests.testAnImportStartsNothing.
+    func testTheSettingsFileSourcesNameNoCallThatStartsSomething() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         for file in ["Scrollio/Options/SettingsFile.swift", "Scrollio/Options/SettingsFileCenter.swift"] {
             let code = try String(contentsOf: root.appendingPathComponent(file), encoding: .utf8)
@@ -1220,7 +1223,8 @@ final class SettingsFileImportTests: XCTestCase {
         XCTAssertEqual(ScrollUtils.shared.optionsDashKey(application: nil), ScrollHotkey(type: .mouse, code: 1006))
         XCTAssertNil(ScrollUtils.shared.optionsToggleKey(application: nil), "not in the file: none")
         XCTAssertEqual(ScrollUtils.shared.optionsBlockKey(application: nil), ScrollHotkey(type: .keyboard, code: 61))
-        // What the observer installed at launch does on a change of this group.
+        // What the observer installed at launch does on a change of this group, called by
+        // hand here (the observers themselves: testTheObserversOfTheLaunchCarry…).
         XCTAssertEqual(LogiUsageBootstrap.globalScrollCodes(role: .dash), [1006])
         LogiUsageBootstrap.refreshAll()
         XCTAssertTrue(LogiCenter.shared.usages(of: 1006).contains(.globalScroll(.dash)))
@@ -1349,7 +1353,8 @@ final class SettingsFileImportTests: XCTestCase {
         XCTAssertEqual(Options.shared.logiWheel, LogiWheelSettings(managedByScrollio: false, mode: .freeSpin, smartShiftSensitivity: 40))
         XCTAssertEqual(Options.shared.logiMouse, LogiMouseSettings(pointerDPI: 1600, hapticsOn: false))
         XCTAssertEqual(shared.heard, [.logiWheel, .logiMouse])
-        // What the observers installed at launch hand to the Logitech layer.
+        // What the observers installed at launch hand to the Logitech layer, called by hand
+        // here (the observers themselves: testTheObserversOfTheLaunchCarry…).
         LogiCenter.shared.applyWheelSettings(Options.shared.logiWheel)
         LogiUsageBootstrap.pushMouseSettings()
         XCTAssertFalse(LogiSessionManager.shared.wheelSettings.managedByScrollio)
@@ -1383,6 +1388,101 @@ final class SettingsFileImportTests: XCTestCase {
         XCTAssertEqual(shared.statusItem.calls.last, true, "shown again")
         Options.shared.flushPendingSaves()
         XCTAssertEqual(shared.store.defaults.object(forKey: "hideStatusItem") as? Bool, false)
+    }
+
+    /// The whole way, through the observers the launch installs
+    /// (`LogiUsageBootstrap.installOptionsObservers`): an import and nothing else, and
+    /// the Logitech layer has the file's buttons, hold keys, tracked gesture button and,
+    /// after the observers' settle time, its wheel and mouse values, with this Mac's "not
+    /// managed". The tests above call by hand what those observers call; this one does
+    /// not. The observers are taken away again when it ends (Options keeps observers for
+    /// good, and left there they would answer every change of every later test). No mouse
+    /// is touched: under XCTest the Logitech layer has no session.
+    func testTheObserversOfTheLaunchCarryAnImportToTheLogitechLayer() throws {
+        // What registers an observer of its own at first use has done so before the count.
+        _ = ButtonUtils.shared
+        ThumbWheelSettingsChange.removeObserver(ThumbWheelSettingsChange.addObserver {})
+        let before = Options.shared.observerCountForTests
+        LogiUsageBootstrap.installOptionsObservers()
+        let installed = Options.shared.observerCountForTests - before
+        defer { Options.shared.removeNewestObserversForTests(installed) }
+        XCTAssertEqual(installed, 4, "buttons, hold keys and apps; the wheel; the mouse; gestures")
+        XCTAssertFalse(Options.shared.logiMouseManaged)
+        XCTAssertFalse(LogiCenter.shared.usages(of: 1006).contains(.buttonBinding))
+
+        let gestureButton = Fixture.logiBinding
+            .replacingOccurrences(of: "44444444", with: "55555555")
+            .replacingOccurrences(of: #""code":1006"#, with: #""code":1007"#)
+            .replacingOccurrences(of: #""copy""#, with: #""mouseGestureNavigation""#)
+        XCTAssertTrue(LogiCenter.shared.isLogiCode(1007))
+        try shared.importFile(
+            #""buttonBindings":["# + Fixture.logiBinding + "," + gestureButton + "],"
+                + #""dash":{"type":"mouse","code":1008},"speed":4,"#
+                + #""mouseGestureSettings":{"deviceTracking":true},"#
+                + #""logiWheelSettings":{"managedByScrollio":true,"mode":"freeSpin","smartShiftSensitivity":40},"#
+                + #""logiMouseSettings":{"pointerDPI":1600,"hapticsOn":false}"#
+        )
+
+        // At once: these observers run inside the change.
+        XCTAssertTrue(LogiCenter.shared.usages(of: 1006).contains(.buttonBinding))
+        XCTAssertTrue(LogiCenter.shared.usages(of: 1007).contains(.buttonBinding))
+        XCTAssertTrue(LogiCenter.shared.usages(of: 1008).contains(.globalScroll(.dash)))
+        XCTAssertEqual(LogiSessionManager.shared.gestureTrackingCodes, [1007], "the mouse tracks the gesture button, and only it")
+        // After the settle time of the wheel's and the mouse's observers.
+        let settled = expectation(description: "the wheel and mouse values were handed over")
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(LogiUsageBootstrap.wheelApplyDelay, LogiUsageBootstrap.mouseApplyDelay) + 0.15) {
+            settled.fulfill()
+        }
+        wait(for: [settled], timeout: 5)
+        XCTAssertEqual(LogiSessionManager.shared.wheelSettings, LogiWheelSettings(managedByScrollio: false, mode: .freeSpin, smartShiftSensitivity: 40))
+        XCTAssertEqual(LogiSessionManager.shared.mouseSettings, LogiMouseSettings(pointerDPI: 1600, hapticsOn: false))
+        XCTAssertFalse(LogiSessionManager.shared.mouseManaged, "the file said managed; this Mac says not, and that is what arrives")
+    }
+
+    /// An import starts nothing. A script the file gives a key is stored, and is run when
+    /// the key's action is run, not before. The launcher (the one place a script is
+    /// started from) is the test's own, so nothing is run on this Mac either way.
+    func testAnImportStartsNothing() throws {
+        let folder = try temporaryFolder(for: self)
+        let script = folder.appendingPathComponent("never run.sh")
+        try "#!/bin/sh\nexit 0\n".write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        let executor = ShortcutExecutor.shared
+        let savedLauncher = executor.scriptLauncher
+        let savedOpens = executor.opensTargets
+        let lock = NSLock()
+        var started: [String] = []
+        executor.scriptLauncher = { launch, _ in
+            lock.lock()
+            started.append(launch.executable.lastPathComponent)
+            lock.unlock()
+        }
+        // Opening is switched on: an import that started the script would arrive at the launcher.
+        executor.opensTargets = true
+        defer {
+            executor.scriptLauncher = savedLauncher
+            executor.opensTargets = savedOpens
+        }
+        func startedNow() -> [String] {
+            lock.lock()
+            defer { lock.unlock() }
+            return started
+        }
+
+        let binding = Fixture.scriptBinding.replacingOccurrences(of: "/Users/someone/bin/sync.sh", with: script.path)
+        try shared.importFile(#""buttonBindings":["# + binding + "]")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+        XCTAssertEqual(startedNow(), [], "the import started the script")
+        let payload = try XCTUnwrap(Options.shared.buttons.binding.first?.openTarget)
+        XCTAssertEqual(payload.path, script.path, "it is stored")
+
+        // The launcher is where a start arrives: the action, run as a press runs it, gets there.
+        _ = executor.execute(action: .openTarget(payload: payload), phase: .down)
+        let deadline = Date().addingTimeInterval(5)
+        while startedNow().isEmpty, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertEqual(startedNow(), ["never run.sh"])
     }
 
     /// What follows no observer: the scroll engine's memory of the app scrolled in last and
@@ -1601,6 +1701,40 @@ final class SettingsFileCenterTests: XCTestCase {
         let nowhere = SettingsBackups(directory: nil)
         XCTAssertTrue(nowhere.entries().isEmpty)
         XCTAssertThrowsError(try nowhere.write(Data()))
+    }
+
+    /// Entries a newer version of Scrollio stored (the launch keeps them for that version)
+    /// are not kept by an import of their group, and "Restore…" does not bring them back:
+    /// an import takes only what this version understands, from a backup as from any
+    /// file. The sheet of the Restore says how many it leaves out.
+    func testEntriesOfANewerVersionDoNotComeBackWithRestore() throws {
+        let own = OwnSettings(for: self)
+        let future = #"{"id":"99999999-9999-9999-9999-999999999999","futureTrigger":{"kind":"chord"},"run":"later"}"#
+        own.store.defaults.set("optionsExist", forKey: "optionsExist")
+        own.store.defaults.set(Data(("[" + Fixture.copyBinding + "," + future + "]").utf8), forKey: "buttonBindings")
+        own.options.readOptions()
+        var moment = Date(timeIntervalSince1970: 1_794_476_527)
+        own.center.now = { moment }
+        func storedBindings() throws -> Int {
+            own.options.saveOptions()
+            let data = try XCTUnwrap(own.store.defaults.data(forKey: "buttonBindings"))
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [Any]).count
+        }
+        XCTAssertEqual(try storedBindings(), 2, "the launch keeps the entry it cannot read")
+
+        let backup = try own.center.importSettings(try Fixture.contents(#""buttonBindings":[]"#)).get()
+        XCTAssertEqual(try storedBindings(), 0)
+        moment += 60
+        // The backup holds both, as they were stored.
+        let restored = try own.center.read(backup).get()
+        XCTAssertEqual(restored.bindings?.map(\.systemShortcutName), ["copy"])
+        XCTAssertEqual(restored.leftOutCount, 1)
+        let sheet = SettingsImportSheetViewController(content: .confirm(restored, fileName: backup.lastPathComponent))
+        _ = sheet.view
+        XCTAssertEqual(sheet.unreadableLabel?.stringValue, "1 entry this version of Scrollio does not know is left out.")
+        _ = try own.center.importSettings(restored).get()
+        XCTAssertEqual(try storedBindings(), 1, "the entry of the newer version did not come back")
+        XCTAssertEqual(own.options.buttons.binding.map(\.systemShortcutName), ["copy"])
     }
 
     /// No two backups hold the same settings. Going back and forth between two states
