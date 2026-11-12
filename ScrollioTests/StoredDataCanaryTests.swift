@@ -46,9 +46,9 @@ final class StoredDataCanaryTests: XCTestCase {
     /// It is the only thing the guide stores (its feel step goes through the Scrolling
     /// pane's own path); `readOptions` and the saves never read or write it.
     func testTheWelcomeGuideStoresOneIntUnderAFrozenKey() throws {
-        let suite = "ScrollioTests.canary.welcomeGuide.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = TestDefaults.makeStore(for: self)
+        let defaults = store.defaults
+        let suite = store.suiteName
         let progress = WelcomeGuideProgress(defaults: defaults)
 
         progress.settleAtLaunch(isNewInstallation: true)
@@ -215,5 +215,168 @@ final class StoredDataCanaryTests: XCTestCase {
         store.insert(c, at: 7)
         store.insert(b, at: -1)
         XCTAssertEqual((0..<store.count).compactMap { store.get(by: $0)?.path }, [b.path, a.path, c.path])
+    }
+}
+
+/// The saving of the settings, into a store of the test's own (`Options.defaults`): what
+/// each value is written under, and that what this version cannot read survives a save.
+/// The keys below are frozen literals, never taken from production code.
+final class StoredSettingsSaveTests: XCTestCase {
+
+    private func makeOptions() -> (Options, UserDefaults) {
+        let defaults = TestDefaults.make(for: self)
+        let options = Options()
+        options.defaults = defaults
+        return (options, defaults)
+    }
+
+    /// Every scroll setting under its own key (speed and step saved under each other's key
+    /// went unnoticed by every test), and read back as it was saved.
+    func testEveryScrollSettingIsSavedUnderItsOwnKeyAndReadBack() throws {
+        let (options, defaults) = makeOptions()
+        options.scroll.smooth = false
+        options.scroll.reverse = false
+        options.scroll.reverseVertical = false
+        options.scroll.reverseHorizontal = false
+        options.scroll.dash = ScrollHotkey(type: .keyboard, code: 61)
+        options.scroll.toggle = nil
+        options.scroll.block = ScrollHotkey(type: .mouse, code: 4)
+        options.scroll.step = 44.5
+        options.scroll.speed = 7.25
+        options.scroll.duration = 2.75
+        options.scroll.deadZone = 1.5
+        options.scroll.smoothSimTrackpad = true
+
+        options.saveOptions()
+
+        XCTAssertEqual(defaults.string(forKey: "optionsExist"), "optionsExist")
+        XCTAssertEqual(defaults.object(forKey: "smooth") as? Bool, false)
+        XCTAssertEqual(defaults.object(forKey: "reverse") as? Bool, false)
+        XCTAssertEqual(defaults.object(forKey: "reverseVertical") as? Bool, false)
+        XCTAssertEqual(defaults.object(forKey: "reverseHorizontal") as? Bool, false)
+        XCTAssertEqual(defaults.object(forKey: "step") as? Double, 44.5)
+        XCTAssertEqual(defaults.object(forKey: "speed") as? Double, 7.25)
+        XCTAssertEqual(defaults.object(forKey: "duration") as? Double, 2.75)
+        XCTAssertEqual(defaults.object(forKey: "deadZone") as? Double, 1.5)
+        XCTAssertEqual(defaults.object(forKey: "smoothSimTrackpad") as? Bool, true)
+        XCTAssertEqual(defaults.object(forKey: "smoothVertical") as? Bool, true)
+        XCTAssertEqual(defaults.object(forKey: "smoothHorizontal") as? Bool, true)
+        let dash = try JSONDecoder().decode(ScrollHotkey.self, from: try XCTUnwrap(defaults.data(forKey: "dash")))
+        XCTAssertEqual(dash, ScrollHotkey(type: .keyboard, code: 61))
+        XCTAssertNil(defaults.object(forKey: "toggle"), "a key the user removed is stored as no key")
+        let block = try JSONDecoder().decode(ScrollHotkey.self, from: try XCTUnwrap(defaults.data(forKey: "block")))
+        XCTAssertEqual(block, ScrollHotkey(type: .mouse, code: 4))
+
+        let read = Options()
+        read.defaults = defaults
+        read.readOptions()
+        XCTAssertFalse(read.scroll.smooth)
+        XCTAssertFalse(read.scroll.reverse)
+        XCTAssertFalse(read.scroll.reverseVertical)
+        XCTAssertFalse(read.scroll.reverseHorizontal)
+        XCTAssertEqual(read.scroll.dash, ScrollHotkey(type: .keyboard, code: 61))
+        XCTAssertNil(read.scroll.toggle)
+        XCTAssertEqual(read.scroll.block, ScrollHotkey(type: .mouse, code: 4))
+        XCTAssertEqual(read.scroll.step, 44.5)
+        XCTAssertEqual(read.scroll.speed, 7.25)
+        XCTAssertEqual(read.scroll.duration, 2.75)
+        XCTAssertEqual(read.scroll.deadZone, 1.5)
+        XCTAssertTrue(read.scroll.smoothSimTrackpad)
+    }
+
+    /// The other groups, each under its own key, and read back.
+    func testTheOtherGroupsAreSavedUnderTheirOwnKeysAndReadBack() throws {
+        let (options, defaults) = makeOptions()
+        options.application.allowlist = true
+        var gesture = MouseGestureSettings.default
+        gesture.invertHorizontal.toggle()
+        gesture.trackingSpeed = 2.5
+        options.gesture = gesture
+        var wheel = LogiWheelSettings.default
+        wheel.managedByScrollio = true
+        wheel.smartShiftSensitivity = 37
+        options.logiWheel = wheel
+        var thumbWheel = ThumbWheelSettings.default
+        thumbWheel.function = .zoom
+        thumbWheel.speed = 2
+        thumbWheel.swapsDirection = true
+        options.thumbWheel = thumbWheel
+
+        options.saveOptions()
+
+        XCTAssertEqual(defaults.object(forKey: "allowlist") as? Bool, true)
+        XCTAssertEqual(try JSONDecoder().decode(MouseGestureSettings.self, from: try XCTUnwrap(defaults.data(forKey: "mouseGestureSettings"))), gesture)
+        XCTAssertEqual(try JSONDecoder().decode(LogiWheelSettings.self, from: try XCTUnwrap(defaults.data(forKey: "logiWheelSettings"))), wheel)
+        XCTAssertEqual(try JSONDecoder().decode(ThumbWheelSettings.self, from: try XCTUnwrap(defaults.data(forKey: "thumbWheelSettings"))), thumbWheel)
+        XCTAssertNotNil(defaults.data(forKey: "logiMouseSettings"))
+        XCTAssertNotNil(defaults.data(forKey: "buttonBindings"))
+        XCTAssertNotNil(defaults.data(forKey: "applications"))
+
+        let read = Options()
+        read.defaults = defaults
+        read.readOptions()
+        XCTAssertTrue(read.application.allowlist)
+        XCTAssertEqual(read.gesture, gesture)
+        XCTAssertEqual(read.logiWheel, wheel)
+        XCTAssertTrue(read.logiMouseManaged)
+        XCTAssertEqual(read.thumbWheel, thumbWheel)
+        XCTAssertEqual(read.logiMouse, options.logiMouse)
+    }
+
+    /// Bindings and per-app entries that a newer version stored and this one cannot read
+    /// are written back at a save (dropping them went unnoticed by every test): a user who
+    /// goes back to an older version and forward again keeps them.
+    func testWhatThisVersionCannotReadSurvivesASave() throws {
+        let (options, defaults) = makeOptions()
+        let known = #"{"id":"11111111-1111-1111-1111-111111111111","triggerEvent":{"type":"mouse","code":3,"modifiers":0,"#
+            + #""displayComponents":["🖱4"],"deviceFilter":null},"systemShortcutName":"copy","isEnabled":true,"createdAt":0}"#
+        let future = #"{"id":"22222222-2222-2222-2222-222222222222","futureTrigger":{"kind":"chord","keys":[1,2]},"schema":9}"#
+        defaults.set("optionsExist", forKey: "optionsExist")
+        defaults.set(Data(("[" + known + "," + future + "]").utf8), forKey: "buttonBindings")
+        defaults.set(Data(("[" + StoredDataCanaryTests.readableApp + "," + StoredDataCanaryTests.unreadableApp + "]").utf8), forKey: "applications")
+
+        options.readOptions()
+        XCTAssertEqual(options.buttons.binding.map(\.systemShortcutName), ["copy"])
+        XCTAssertEqual(options.application.applications.count, 1)
+
+        // The user adds a binding, and everything is saved.
+        let trigger = RecordedEvent(type: .mouse, code: 4, modifiers: 0, displayComponents: ["🖱5"], deviceFilter: nil)
+        options.buttons.binding.append(ButtonBinding(triggerEvent: trigger, systemShortcutName: "paste", isEnabled: true))
+        options.saveOptions()
+
+        let bindings = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(defaults.data(forKey: "buttonBindings"))) as? [[String: Any]])
+        XCTAssertEqual(bindings.count, 3)
+        XCTAssertEqual(bindings.compactMap { $0["systemShortcutName"] as? String }, ["copy", "paste"])
+        let kept = try XCTUnwrap(bindings.last)
+        let stored = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(future.utf8)) as? [String: Any])
+        XCTAssertEqual(kept as NSDictionary, stored as NSDictionary, "the binding of a newer version, as it was stored")
+
+        let apps = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(defaults.data(forKey: "applications"))) as? [[String: Any]])
+        XCTAssertEqual(apps.compactMap { $0["path"] as? String }, ["/Applications/A.app", "/Applications/B.app"])
+        XCTAssertEqual(apps.last?["future"] as? [Int], [1, 2])
+    }
+
+    /// The way the app saves while it runs: a change marks its group, and the next flush
+    /// writes that group and no other.
+    func testAChangeIsWrittenAtTheNextFlushAndOnlyItsGroup() {
+        let defaults = TestDefaults.make(for: self)
+        let options = Options.shared
+        options.flushPendingSaves()   // what earlier tests left pending goes nowhere
+        let speed = options.scroll.speed
+        options.defaults = defaults
+        defer {
+            options.defaults = .standard
+            options.scroll.speed = speed
+        }
+
+        options.scroll.speed = 3.25
+        XCTAssertNil(defaults.object(forKey: "speed"), "not before the flush")
+        options.flushPendingSaves()
+
+        XCTAssertEqual(defaults.object(forKey: "speed") as? Double, 3.25)
+        XCTAssertEqual(defaults.string(forKey: "optionsExist"), "optionsExist")
+        XCTAssertNil(defaults.object(forKey: "buttonBindings"), "a group that did not change is not written")
+        XCTAssertNil(defaults.object(forKey: "applications"))
+        XCTAssertNil(defaults.object(forKey: "mouseGestureSettings"))
     }
 }

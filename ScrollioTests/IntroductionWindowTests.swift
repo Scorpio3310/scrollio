@@ -57,8 +57,10 @@ private final class GuideWorld {
     var announcements: [String] = []
     var presentedHelp: [NSPopover] = []
 
-    let defaultsSuite = "ScrollioTests.welcomeGuide.\(UUID().uuidString)"
-    lazy var defaults = UserDefaults(suiteName: defaultsSuite)!
+    /// The guide's stored value, in a store of this world's own (a temporary folder that
+    /// goes with the world).
+    private let store = TestDefaults()
+    var defaults: UserDefaults { return store.defaults }
     lazy var progress = WelcomeGuideProgress(defaults: defaults)
 
     func makeController(flow: WelcomeGuideFlow? = nil, finished: Bool = false) -> IntroductionViewController {
@@ -99,7 +101,7 @@ private final class GuideWorld {
     }
 
     func tearDown() {
-        UserDefaults().removePersistentDomain(forName: defaultsSuite)
+        store.remove()
     }
 }
 
@@ -976,6 +978,85 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(controller.currentStep, .finish)
     }
 
+    /// The end of a step change comes from an animation's completion handler. When that
+    /// call never comes (seen with no display awake), the step still arrives a little after
+    /// the animations should have ended: Continue and Back used to stay dead until the
+    /// window was reopened.
+    func testAStepChangeWhoseAnimationNeverReportsItsEndStillArrives() {
+        world.accessGranted = true
+        world.run = .running
+        for reduceMotion in [false, true] {
+            world.reduceMotion = reduceMotion
+            let controller = world.makeController(flow: .full)
+            _ = makeEventWindow(for: controller)
+            // The changes are made; no completion handler is ever called.
+            controller.runAnimation = { changes, _ in
+                NSAnimationContext.runAnimationGroup { context in changes(context) }
+            }
+            controller.stepArrivalGrace = 0.05
+            let primary = controller.primaryButton!
+            realClick(primary, at: middle(of: primary))
+            XCTAssertEqual(controller.currentStep, .feel)
+            XCTAssertTrue(controller.isChangingStep)
+            realClick(primary, at: middle(of: primary))
+            XCTAssertEqual(controller.currentStep, .feel, "no press while the steps change")
+
+            let animations = reduceMotion
+                ? IntroductionViewController.crossfadeDuration
+                : IntroductionViewController.textOutDuration + IntroductionViewController.textInDuration
+            settle(animations + controller.stepArrivalGrace + 0.25)
+            XCTAssertFalse(controller.isChangingStep, "reduce motion \(reduceMotion)")
+            // The step that came is all there, the one that went is gone.
+            XCTAssertEqual(controller.feelStep.content.alphaValue, 1)
+            XCTAssertEqual(controller.feelStep.picture.alphaValue, 1)
+            XCTAssertEqual(controller.feelStep.content.frame.origin, .zero)
+            XCTAssertNil(controller.welcomeStep.content.superview)
+            XCTAssertNil(controller.welcomeStep.picture.superview)
+            realClick(primary, at: middle(of: primary))
+            XCTAssertEqual(controller.currentStep, .finish, "Continue works again, reduce motion \(reduceMotion)")
+        }
+    }
+
+    /// The safety timer belongs to one step change: another change that begins meanwhile
+    /// cancels it and gets its own, and a change that arrived leaves none.
+    func testTheSafetyTimerOfAStepChangeGoesWithIt() throws {
+        world.accessGranted = true
+        world.run = .running
+        let controller = world.makeController(flow: .full)
+        _ = makeEventWindow(for: controller)
+        controller.runAnimation = { changes, _ in
+            NSAnimationContext.runAnimationGroup { context in changes(context) }
+        }
+        XCTAssertNil(controller.stepArrivalTimer, "no change, no timer")
+        controller.go(by: 1)
+        let first = try XCTUnwrap(controller.stepArrivalTimer)
+        XCTAssertTrue(first.isValid)
+        let length = IntroductionViewController.textOutDuration + IntroductionViewController.textInDuration
+        XCTAssertEqual(first.fireDate.timeIntervalSinceNow, length + controller.stepArrivalGrace, accuracy: 0.2)
+
+        controller.go(by: 1)
+        XCTAssertEqual(controller.currentStep, .finish)
+        XCTAssertFalse(first.isValid, "the abandoned change's timer is cancelled")
+        let second = try XCTUnwrap(controller.stepArrivalTimer)
+        XCTAssertFalse(second === first)
+        XCTAssertTrue(controller.isChangingStep)
+
+        second.fire()
+        XCTAssertFalse(controller.isChangingStep)
+        XCTAssertNil(controller.stepArrivalTimer)
+        XCTAssertEqual(controller.finishStep.content.alphaValue, 1)
+        XCTAssertNil(controller.feelStep.content.superview)
+
+        // A change whose animations do report their end leaves no timer either.
+        controller.runAnimation = { changes, completion in
+            NSAnimationContext.runAnimationGroup { context in changes(context) }
+            completion()
+        }
+        controller.go(by: -1)
+        XCTAssertFalse(controller.isChangingStep)
+        XCTAssertNil(controller.stepArrivalTimer)
+    }
+
     /// The poll runs while the window shows; AppRunController's change is heard only then.
     func testThePollAndTheRunStateFollowTheWindow() {
         world.accessGranted = true
@@ -1259,6 +1340,19 @@ final class IntroductionWindowTests: XCTestCase {
         IntroductionWindowController.style(window)
         // Pressed with the events that come out of the application's queue.
         controller.currentEvent = { NSApp.currentEvent }
+        // A step change's animations end by a timer here, not by AppKit's display link:
+        // with no display awake (a night run, a headless Mac) AppKit does not call an
+        // animation's completion handler in time, and the tests of presses during a change
+        // failed for that reason alone. The changes are still made inside an animation group.
+        controller.runAnimation = { changes, completion in
+            var duration: TimeInterval = 0
+            NSAnimationContext.runAnimationGroup { context in
+                changes(context)
+                duration = context.duration
+            }
+            let timer = Timer(timeInterval: duration, repeats: false) { _ in completion() }
+            RunLoop.main.add(timer, forMode: .common)
+        }
         window.contentViewController = controller
         window.putOutOfSight()
         addTeardownBlock {

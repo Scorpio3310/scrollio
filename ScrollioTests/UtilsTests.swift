@@ -145,9 +145,7 @@ final class UtilsTests: XCTestCase {
 
     /// A stored switch that is missing is its default, not "off".
     func testAStoredSwitchThatIsMissingIsItsDefault() throws {
-        let suite = "ScrollioTests.storedBool.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = TestDefaults.make(for: self)
         XCTAssertTrue(Options.storedBool(forKey: "smooth", default: true, in: defaults))
         XCTAssertFalse(Options.storedBool(forKey: "smooth", default: false, in: defaults))
         defaults.set(false, forKey: "smooth")

@@ -93,6 +93,7 @@
 		D1A2B3C4E5F6A7B8C9D0121D /* ScrollioTests/LogiFeatureActionDeviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D0121E /* ScrollioTests/LogiFeatureActionDeviceTests.swift */; };
 		D1A2B3C4E5F6A7B8C9D0121F /* ScrollioTests/LogiBoundaryEnforcementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01220 /* ScrollioTests/LogiBoundaryEnforcementTests.swift */; };
 		5CD0C0DE0000000000000102 /* ScrollioTests/ReleaseReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CD0C0DE0000000000000101 /* ScrollioTests/ReleaseReadinessTests.swift */; };
+		5CD0C0DE0000000000000202 /* ScrollioTests/TestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CD0C0DE0000000000000201 /* ScrollioTests/TestSupport.swift */; };
 		D1A2B3C4E5F6A7B8C9D01300 /* ScrollioTests/LogiControlReportingPacketTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01301 /* ScrollioTests/LogiControlReportingPacketTests.swift */; };
 		D1A2B3C4E5F6A7B8C9D01302 /* ScrollioTests/LogiReportingResponseRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01303 /* ScrollioTests/LogiReportingResponseRoutingTests.swift */; };
 		D1A2B3C4E5F6A7B8C9D01304 /* ScrollioTests/LogiDivertReconciliationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01305 /* ScrollioTests/LogiDivertReconciliationTests.swift */; };
@@ -210,6 +211,7 @@
 		D1A2B3C4E5F6A7B8C9D0121E /* ScrollioTests/LogiFeatureActionDeviceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiFeatureActionDeviceTests.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01220 /* ScrollioTests/LogiBoundaryEnforcementTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiBoundaryEnforcementTests.swift; sourceTree = SOURCE_ROOT; };
 		5CD0C0DE0000000000000101 /* ScrollioTests/ReleaseReadinessTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ReleaseReadinessTests.swift; sourceTree = SOURCE_ROOT; };
+		5CD0C0DE0000000000000201 /* ScrollioTests/TestSupport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/TestSupport.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01301 /* ScrollioTests/LogiControlReportingPacketTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiControlReportingPacketTests.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01303 /* ScrollioTests/LogiReportingResponseRoutingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiReportingResponseRoutingTests.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01305 /* ScrollioTests/LogiDivertReconciliationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiDivertReconciliationTests.swift; sourceTree = SOURCE_ROOT; };
@@ -344,6 +346,7 @@
 				D1A2B3C4E5F6A7B8C9D0121E /* ScrollioTests/LogiFeatureActionDeviceTests.swift */,
 				D1A2B3C4E5F6A7B8C9D01220 /* ScrollioTests/LogiBoundaryEnforcementTests.swift */,
 				5CD0C0DE0000000000000101 /* ScrollioTests/ReleaseReadinessTests.swift */,
+				5CD0C0DE0000000000000201 /* ScrollioTests/TestSupport.swift */,
 				D1A2B3C4E5F6A7B8C9D01301 /* ScrollioTests/LogiControlReportingPacketTests.swift */,
 				D1A2B3C4E5F6A7B8C9D01303 /* ScrollioTests/LogiReportingResponseRoutingTests.swift */,
 				D1A2B3C4E5F6A7B8C9D01305 /* ScrollioTests/LogiDivertReconciliationTests.swift */,
@@ -595,6 +598,7 @@
 				D1A2B3C4E5F6A7B8C9D0121D /* ScrollioTests/LogiFeatureActionDeviceTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D0121F /* ScrollioTests/LogiBoundaryEnforcementTests.swift in Sources */,
 				5CD0C0DE0000000000000102 /* ScrollioTests/ReleaseReadinessTests.swift in Sources */,
+				5CD0C0DE0000000000000202 /* ScrollioTests/TestSupport.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D01300 /* ScrollioTests/LogiControlReportingPacketTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D01302 /* ScrollioTests/LogiReportingResponseRoutingTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D01304 /* ScrollioTests/LogiDivertReconciliationTests.swift in Sources */,

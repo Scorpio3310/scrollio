@@ -383,9 +383,7 @@ final class PreferencesGesturesTests: XCTestCase {
         let scrolling = try XCTUnwrap(
             storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController
         )
-        let suite = "ScrollioTests.gestures.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = TestDefaults.make(for: self)
         defaults.set(true, forKey: PreferencesScrollingViewController.advancedExpandedDefaultsKey)
         scrolling.uiStateDefaults = defaults
         _ = scrolling.view

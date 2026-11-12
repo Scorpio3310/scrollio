@@ -621,9 +621,7 @@ final class PreferencesButtonsTests: XCTestCase {
 
         let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesScrollingViewController.self))
         let scrolling = try XCTUnwrap(storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)
-        let suite = "ScrollioTests.buttons-off-grid.\(UUID().uuidString)"
-        let uiDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        addTeardownBlock { uiDefaults.removePersistentDomain(forName: suite) }
+        let uiDefaults = TestDefaults.make(for: self)
         scrolling.uiStateDefaults = uiDefaults
         _ = scrolling.view
         scrolling.viewWillAppear()
@@ -643,9 +641,7 @@ final class PreferencesButtonsTests: XCTestCase {
         let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesScrollingViewController.self))
         let scrolling = try XCTUnwrap(storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)
         // Its UI state ("Advanced") in a store of the test's own.
-        let suite = "ScrollioTests.buttons-thumb-wheel.\(UUID().uuidString)"
-        let uiDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        addTeardownBlock { uiDefaults.removePersistentDomain(forName: suite) }
+        let uiDefaults = TestDefaults.make(for: self)
         scrolling.uiStateDefaults = uiDefaults
         _ = scrolling.view
         var changes = 0

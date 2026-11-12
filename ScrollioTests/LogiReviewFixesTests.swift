@@ -202,17 +202,14 @@ final class LogiReceiverSweepRebuildTests: XCTestCase {
 
 final class LogiFeatureCacheInvalidationTests: XCTestCase {
 
-    private var suite: String!
     private var defaults: UserDefaults!
 
     override func setUpWithError() throws {
         try super.setUpWithError()
-        suite = "LogiFeatureCacheInvalidationTests-\(UUID().uuidString)"
-        defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defaults = TestDefaults.make(for: self)
     }
 
     override func tearDown() {
-        defaults.removePersistentDomain(forName: suite)
         defaults = nil
         super.tearDown()
     }

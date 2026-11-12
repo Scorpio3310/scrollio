@@ -72,6 +72,15 @@ class Options {
     static let shared = Options()
     init() {}
 
+    /// Where the settings are read from and written to: the app's preferences. A test
+    /// passes a store of its own (`TestDefaults`), and must put this one back.
+    var defaults: UserDefaults = .standard
+    /// Whether changes are written at all. Under XCTest never to the app's real
+    /// preferences, whatever a test changes or forgets; only to a store a test passed in.
+    private var writesToDefaults: Bool {
+        return !AppRuntime.isRunningXCTest || defaults !== UserDefaults.standard
+    }
+
     // 读取锁, 防止冲突
     private var readingOptionsLock = false
     // JSON 编解码工具
@@ -192,8 +201,8 @@ extension Options {
         #if DEBUG
         onFlushForTests?(groups)
         #endif
-        guard !AppRuntime.isRunningXCTest else { return }
-        UserDefaults.standard.set("optionsExist", forKey: OptionItem.General.OptionsExist)
+        guard writesToDefaults else { return }
+        defaults.set("optionsExist", forKey: OptionItem.General.OptionsExist)
         for group in groups { save(group: group) }
     }
 }
@@ -206,84 +215,84 @@ extension Options {
     // 从 UserDefaults 中读取到 currentOptions
     func readOptions() {
         // 配置项如果不存在则尝试用当前设置(默认设置)保存一次
-        if UserDefaults.standard.object(forKey: OptionItem.General.OptionsExist) == nil { saveOptions() }
+        if defaults.object(forKey: OptionItem.General.OptionsExist) == nil { saveOptions() }
         // 锁定
         readingOptionsLock = true
         // 常规
         // The login item lives in the system, not in UserDefaults. Assigning the value that
         // was just read makes the property's observer a no-op (LoginItem.setEnabled).
         general.autoLaunch = LoginItem.isEnabled
-        general.hideStatusItem = UserDefaults.standard.bool(forKey: OptionItem.General.HideStatusItem)
+        general.hideStatusItem = defaults.bool(forKey: OptionItem.General.HideStatusItem)
         // 滚动
         // A missing key is the default (on), as for the keys below: `bool(forKey:)` reads a
         // missing key as off, so a settings file without "smooth" switched smoothing off.
-        scroll.smooth = Self.storedBool(forKey: OptionItem.Scroll.Smooth, default: OPTIONS_SCROLL_DEFAULT().smooth)
-        scroll.reverse = Self.storedBool(forKey: OptionItem.Scroll.Reverse, default: OPTIONS_SCROLL_DEFAULT().reverse)
-        if UserDefaults.standard.object(forKey: OptionItem.Scroll.ReverseVertical) == nil {
+        scroll.smooth = Self.storedBool(forKey: OptionItem.Scroll.Smooth, default: OPTIONS_SCROLL_DEFAULT().smooth, in: defaults)
+        scroll.reverse = Self.storedBool(forKey: OptionItem.Scroll.Reverse, default: OPTIONS_SCROLL_DEFAULT().reverse, in: defaults)
+        if defaults.object(forKey: OptionItem.Scroll.ReverseVertical) == nil {
             scroll.reverseVertical = true
         } else {
-            scroll.reverseVertical = UserDefaults.standard.bool(forKey: OptionItem.Scroll.ReverseVertical)
+            scroll.reverseVertical = defaults.bool(forKey: OptionItem.Scroll.ReverseVertical)
         }
-        if UserDefaults.standard.object(forKey: OptionItem.Scroll.ReverseHorizontal) == nil {
+        if defaults.object(forKey: OptionItem.Scroll.ReverseHorizontal) == nil {
             scroll.reverseHorizontal = true
         } else {
-            scroll.reverseHorizontal = UserDefaults.standard.bool(forKey: OptionItem.Scroll.ReverseHorizontal)
+            scroll.reverseHorizontal = defaults.bool(forKey: OptionItem.Scroll.ReverseHorizontal)
         }
         scroll.dash = loadScrollHotkey(forKey: OptionItem.Scroll.Dash, default: OPTIONS_SCROLL_DEFAULT().dash)
         scroll.toggle = loadScrollHotkey(forKey: OptionItem.Scroll.Toggle, default: OPTIONS_SCROLL_DEFAULT().toggle)
         scroll.block = loadScrollHotkey(forKey: OptionItem.Scroll.Block, default: OPTIONS_SCROLL_DEFAULT().block)
-        if let storedStep = UserDefaults.standard.object(forKey: OptionItem.Scroll.Step) as? Double {
+        if let storedStep = defaults.object(forKey: OptionItem.Scroll.Step) as? Double {
             scroll.step = storedStep
         } else {
             scroll.step = OPTIONS_SCROLL_DEFAULT().step
         }
-        if let storedSpeed = UserDefaults.standard.object(forKey: OptionItem.Scroll.Speed) as? Double {
+        if let storedSpeed = defaults.object(forKey: OptionItem.Scroll.Speed) as? Double {
             scroll.speed = storedSpeed
         } else {
             scroll.speed = OPTIONS_SCROLL_DEFAULT().speed
         }
-        if let storedDuration = UserDefaults.standard.object(forKey: OptionItem.Scroll.Duration) as? Double {
+        if let storedDuration = defaults.object(forKey: OptionItem.Scroll.Duration) as? Double {
             scroll.duration = storedDuration
         } else {
             scroll.duration = OPTIONS_SCROLL_DEFAULT().duration
         }
-        if let storedDeadZone = UserDefaults.standard.object(forKey: OptionItem.Scroll.DeadZone) as? Double {
+        if let storedDeadZone = defaults.object(forKey: OptionItem.Scroll.DeadZone) as? Double {
             scroll.deadZone = storedDeadZone
         } else {
             scroll.deadZone = OPTIONS_SCROLL_DEFAULT().deadZone
         }
-        scroll.smoothSimTrackpad = UserDefaults.standard.bool(forKey: OptionItem.Scroll.SmoothSimTrackpad)
-        if UserDefaults.standard.object(forKey: OptionItem.Scroll.SmoothVertical) == nil {
+        scroll.smoothSimTrackpad = defaults.bool(forKey: OptionItem.Scroll.SmoothSimTrackpad)
+        if defaults.object(forKey: OptionItem.Scroll.SmoothVertical) == nil {
             scroll.smoothVertical = true
         } else {
-            scroll.smoothVertical = UserDefaults.standard.bool(forKey: OptionItem.Scroll.SmoothVertical)
+            scroll.smoothVertical = defaults.bool(forKey: OptionItem.Scroll.SmoothVertical)
         }
-        if UserDefaults.standard.object(forKey: OptionItem.Scroll.SmoothHorizontal) == nil {
+        if defaults.object(forKey: OptionItem.Scroll.SmoothHorizontal) == nil {
             scroll.smoothHorizontal = true
         } else {
-            scroll.smoothHorizontal = UserDefaults.standard.bool(forKey: OptionItem.Scroll.SmoothHorizontal)
+            scroll.smoothHorizontal = defaults.bool(forKey: OptionItem.Scroll.SmoothHorizontal)
         }
         // 按钮绑定
         buttons.binding = loadButtonsData()
         ButtonUtils.shared.invalidateCache()
         // 应用
-        application.allowlist = UserDefaults.standard.bool(forKey: OptionItem.Application.Allowlist)
+        application.allowlist = defaults.bool(forKey: OptionItem.Application.Allowlist)
         application.applications = loadApplicationsData()
         // 手势导航
         gesture = loadGestureSettings()
         // Logitech 滚轮
-        logiWheel = Self.decodeLogiWheelSettings(UserDefaults.standard.data(forKey: OptionItem.MouseWheel.Settings))
+        logiWheel = Self.decodeLogiWheelSettings(defaults.data(forKey: OptionItem.MouseWheel.Settings))
         // Logitech basic mouse settings
-        logiMouse = Self.decodeLogiMouseSettings(UserDefaults.standard.data(forKey: OptionItem.MouseBasics.Settings))
+        logiMouse = Self.decodeLogiMouseSettings(defaults.data(forKey: OptionItem.MouseBasics.Settings))
         // The sideways wheel
-        thumbWheel = Self.decodeThumbWheelSettings(UserDefaults.standard.data(forKey: OptionItem.ThumbWheel.Settings))
+        thumbWheel = Self.decodeThumbWheelSettings(defaults.data(forKey: OptionItem.ThumbWheel.Settings))
         // What the Scrolling tab can no longer show is brought in line (global and per app),
         // and the keys of retired settings are removed. Still inside the lock: nothing is
         // notified or saved, the next save writes it.
         ScrollSettingsCleanup.run(
             global: scroll,
             applications: (0..<application.applications.count).compactMap { application.applications.get(by: $0) },
-            defaults: AppRuntime.isRunningXCTest ? nil : UserDefaults.standard
+            defaults: writesToDefaults ? defaults : nil
         )
         // 解锁
         readingOptionsLock = false
@@ -297,11 +306,11 @@ extension Options {
 
     // 同步写入全部配置 (首启播种与遗留路径; 常规变更走 markChanged 的脏组合并写入)
     func saveOptions() {
-        guard !AppRuntime.isRunningXCTest else { return }
+        guard writesToDefaults else { return }
 
         if !readingOptionsLock {
             // 标识配置项存在
-            UserDefaults.standard.set("optionsExist", forKey: OptionItem.General.OptionsExist)
+            defaults.set("optionsExist", forKey: OptionItem.General.OptionsExist)
             for group in OptionsGroup.allCases { save(group: group) }
         }
     }
@@ -310,55 +319,55 @@ extension Options {
     private func save(group: OptionsGroup) {
         switch group {
         case .general:
-            UserDefaults.standard.set(general.hideStatusItem, forKey: OptionItem.General.HideStatusItem)
+            defaults.set(general.hideStatusItem, forKey: OptionItem.General.HideStatusItem)
         case .scroll:
-            UserDefaults.standard.set(scroll.smooth, forKey: OptionItem.Scroll.Smooth)
-            UserDefaults.standard.set(scroll.reverse, forKey: OptionItem.Scroll.Reverse)
-            UserDefaults.standard.set(scroll.reverseVertical, forKey: OptionItem.Scroll.ReverseVertical)
-            UserDefaults.standard.set(scroll.reverseHorizontal, forKey: OptionItem.Scroll.ReverseHorizontal)
+            defaults.set(scroll.smooth, forKey: OptionItem.Scroll.Smooth)
+            defaults.set(scroll.reverse, forKey: OptionItem.Scroll.Reverse)
+            defaults.set(scroll.reverseVertical, forKey: OptionItem.Scroll.ReverseVertical)
+            defaults.set(scroll.reverseHorizontal, forKey: OptionItem.Scroll.ReverseHorizontal)
             saveScrollHotkey(scroll.dash, forKey: OptionItem.Scroll.Dash)
             saveScrollHotkey(scroll.toggle, forKey: OptionItem.Scroll.Toggle)
             saveScrollHotkey(scroll.block, forKey: OptionItem.Scroll.Block)
-            UserDefaults.standard.set(scroll.step, forKey: OptionItem.Scroll.Step)
-            UserDefaults.standard.set(scroll.speed, forKey: OptionItem.Scroll.Speed)
-            UserDefaults.standard.set(scroll.duration, forKey: OptionItem.Scroll.Duration)
-            UserDefaults.standard.set(scroll.deadZone, forKey: OptionItem.Scroll.DeadZone)
-            UserDefaults.standard.set(scroll.smoothSimTrackpad, forKey: OptionItem.Scroll.SmoothSimTrackpad)
-            UserDefaults.standard.set(scroll.smoothVertical, forKey: OptionItem.Scroll.SmoothVertical)
-            UserDefaults.standard.set(scroll.smoothHorizontal, forKey: OptionItem.Scroll.SmoothHorizontal)
+            defaults.set(scroll.step, forKey: OptionItem.Scroll.Step)
+            defaults.set(scroll.speed, forKey: OptionItem.Scroll.Speed)
+            defaults.set(scroll.duration, forKey: OptionItem.Scroll.Duration)
+            defaults.set(scroll.deadZone, forKey: OptionItem.Scroll.DeadZone)
+            defaults.set(scroll.smoothSimTrackpad, forKey: OptionItem.Scroll.SmoothSimTrackpad)
+            defaults.set(scroll.smoothVertical, forKey: OptionItem.Scroll.SmoothVertical)
+            defaults.set(scroll.smoothHorizontal, forKey: OptionItem.Scroll.SmoothHorizontal)
         case .buttons:
             saveButtonBindingsData()
         case .application:
-            UserDefaults.standard.set(application.allowlist, forKey: OptionItem.Application.Allowlist)
+            defaults.set(application.allowlist, forKey: OptionItem.Application.Allowlist)
             if let applicationsData = Self.applicationsDataForSaving(
                 known: application.applications.json(),
                 preservedUnknown: preservedUnknownApplications
             ) {
-                UserDefaults.standard.set(applicationsData, forKey: OptionItem.Application.Applications)
+                defaults.set(applicationsData, forKey: OptionItem.Application.Applications)
             } else {
                 AppSystemLog.problem("Settings: the list of apps could not be written; the stored list stays as it was")
             }
         case .gesture:
             if let data = try? encoder.encode(gesture) {
-                UserDefaults.standard.set(data, forKey: OptionItem.Gesture.Settings)
+                defaults.set(data, forKey: OptionItem.Gesture.Settings)
             } else {
                 AppSystemLog.problem("Settings: the gesture settings could not be written")
             }
         case .logiWheel:
             if let data = try? encoder.encode(logiWheel) {
-                UserDefaults.standard.set(data, forKey: OptionItem.MouseWheel.Settings)
+                defaults.set(data, forKey: OptionItem.MouseWheel.Settings)
             } else {
                 AppSystemLog.problem("Settings: the Logitech wheel settings could not be written")
             }
         case .logiMouse:
             if let data = try? encoder.encode(logiMouse) {
-                UserDefaults.standard.set(data, forKey: OptionItem.MouseBasics.Settings)
+                defaults.set(data, forKey: OptionItem.MouseBasics.Settings)
             } else {
                 AppSystemLog.problem("Settings: the Logitech mouse settings could not be written")
             }
         case .thumbWheel:
             if let data = try? encoder.encode(thumbWheel) {
-                UserDefaults.standard.set(data, forKey: OptionItem.ThumbWheel.Settings)
+                defaults.set(data, forKey: OptionItem.ThumbWheel.Settings)
             } else {
                 AppSystemLog.problem("Settings: the thumb wheel settings could not be written")
             }
@@ -399,7 +408,7 @@ extension Options {
 
     // 手势导航设置; 缺失或损坏时回退默认值
     private func loadGestureSettings() -> MouseGestureSettings {
-        guard let data = UserDefaults.standard.data(forKey: OptionItem.Gesture.Settings),
+        guard let data = defaults.data(forKey: OptionItem.Gesture.Settings),
               let settings = try? decoder.decode(MouseGestureSettings.self, from: data) else {
             return .default
         }
@@ -408,12 +417,12 @@ extension Options {
 
     // 安全加载按钮绑定数据
     private func loadButtonsData() -> [ButtonBinding] {
-        let rawValue = UserDefaults.standard.object(forKey: OptionItem.Button.Bindings)
+        let rawValue = defaults.object(forKey: OptionItem.Button.Bindings)
         guard let data = rawValue as? Data else {
             if rawValue != nil {
                 // The one place where stored bindings are thrown away: it leaves a trace.
                 AppSystemLog.problem("Settings: the stored button bindings are not data (a wrong type): removed them")
-                UserDefaults.standard.removeObject(forKey: OptionItem.Button.Bindings)
+                defaults.removeObject(forKey: OptionItem.Button.Bindings)
             }
             preservedUnknownBindings = []
             return []
@@ -475,7 +484,7 @@ extension Options {
             // 把保留的未知元素拼回去 (放在末尾, 不影响已知 bindings 顺序)
             merged.append(contentsOf: preservedUnknownBindings)
             let mergedData = try JSONSerialization.data(withJSONObject: merged)
-            UserDefaults.standard.set(mergedData, forKey: OptionItem.Button.Bindings)
+            defaults.set(mergedData, forKey: OptionItem.Button.Bindings)
         } catch {
             AppSystemLog.problem("Settings: the button bindings could not be written (\(type(of: error))); "
                 + "the stored ones stay as they were")
@@ -488,7 +497,7 @@ extension Options {
     /// key code, the form of the original app before 2026, was converted here: 0, its
     /// "Disabled", became the A key. Scrollio never wrote that form and no longer reads it.)
     private func loadScrollHotkey(forKey key: String, default defaultValue: ScrollHotkey?) -> ScrollHotkey? {
-        let rawValue = UserDefaults.standard.object(forKey: key)
+        let rawValue = defaults.object(forKey: key)
 
         if let data = rawValue as? Data {
             do {
@@ -506,19 +515,19 @@ extension Options {
         // 无值时: 检查配置是否已存在
         // 如果配置已存在但该键无值，说明用户主动删除了它，返回 nil
         // 如果配置不存在（首次启动），返回默认值
-        let optionsExist = UserDefaults.standard.object(forKey: OptionItem.General.OptionsExist) != nil
+        let optionsExist = defaults.object(forKey: OptionItem.General.OptionsExist) != nil
         return optionsExist ? nil : defaultValue
     }
 
     // 保存滚动热键
     private func saveScrollHotkey(_ hotkey: ScrollHotkey?, forKey key: String) {
         guard let hotkey = hotkey else {
-            UserDefaults.standard.removeObject(forKey: key)
+            defaults.removeObject(forKey: key)
             return
         }
         do {
             let data = try encoder.encode(hotkey)
-            UserDefaults.standard.set(data, forKey: key)
+            defaults.set(data, forKey: key)
         } catch {
             AppSystemLog.problem("Settings: the scroll key \"\(key)\" could not be written (\(type(of: error)))")
         }
@@ -532,12 +541,12 @@ extension Options {
         )
 
         // 检查 UserDefaults 中的值类型
-        let rawValue = UserDefaults.standard.object(forKey: OptionItem.Application.Applications)
+        let rawValue = defaults.object(forKey: OptionItem.Application.Applications)
         preservedUnknownApplications = []
         guard let data = rawValue as? Data else {
             if rawValue != nil {
                 AppSystemLog.problem("Settings: the stored list of apps is not data (a wrong type): removed it")
-                UserDefaults.standard.removeObject(forKey: OptionItem.Application.Applications)
+                defaults.removeObject(forKey: OptionItem.Application.Applications)
             }
             return defaultArray
         }
@@ -554,7 +563,7 @@ extension Options {
             // its own: the readable ones load, the others are kept as stored.
             guard let result = Self.decodeApplicationsWithUnknowns(from: data) else {
                 AppSystemLog.problem("Settings: the stored list of apps cannot be read (not a list): removed it")
-                UserDefaults.standard.removeObject(forKey: OptionItem.Application.Applications)
+                defaults.removeObject(forKey: OptionItem.Application.Applications)
                 return defaultArray
             }
             preservedUnknownApplications = result.unknownElements

@@ -1329,10 +1329,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
     // MARK: - Helpers
 
     private func uiDefaults(advanced: Bool) -> UserDefaults {
-        let suite = "ScrollioTests.window-render.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
+        let defaults = TestDefaults.make(for: self)
         defaults.set(advanced, forKey: PreferencesScrollingViewController.advancedExpandedDefaultsKey)
-        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         return defaults
     }
 

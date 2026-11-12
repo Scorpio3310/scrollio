@@ -20,7 +20,6 @@ final class PreferencesScrollingTests: XCTestCase {
     private var originalScroll: OPTIONS_SCROLL_DEFAULT!
     private var originalThumbWheel = ThumbWheelSettings.default
     private var uiDefaults: UserDefaults!
-    private var uiDefaultsSuite = ""
 
     override func setUp() {
         super.setUp()
@@ -29,15 +28,13 @@ final class PreferencesScrollingTests: XCTestCase {
         // A fresh container, so the tests never edit the one they restore.
         Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
         Options.shared.thumbWheel = .default
-        uiDefaultsSuite = "ScrollioTests.scrolling.\(UUID().uuidString)"
-        uiDefaults = UserDefaults(suiteName: uiDefaultsSuite)
+        uiDefaults = TestDefaults.make(for: self)
     }
 
     override func tearDown() {
         Options.shared.scroll = originalScroll
         Options.shared.thumbWheel = originalThumbWheel
         originalScroll = nil
-        uiDefaults.removePersistentDomain(forName: uiDefaultsSuite)
         uiDefaults = nil
         super.tearDown()
     }
@@ -2007,20 +2004,17 @@ final class PreferencesScrollingRenderTests: XCTestCase {
 
     private var originalScroll: OPTIONS_SCROLL_DEFAULT!
     private var uiDefaults: UserDefaults!
-    private var uiDefaultsSuite = ""
 
     override func setUp() {
         super.setUp()
         originalScroll = Options.shared.scroll
         Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
-        uiDefaultsSuite = "ScrollioTests.scrolling-render.\(UUID().uuidString)"
-        uiDefaults = UserDefaults(suiteName: uiDefaultsSuite)
+        uiDefaults = TestDefaults.make(for: self)
     }
 
     override func tearDown() {
         Options.shared.scroll = originalScroll
         originalScroll = nil
-        uiDefaults.removePersistentDomain(forName: uiDefaultsSuite)
         uiDefaults = nil
         super.tearDown()
     }

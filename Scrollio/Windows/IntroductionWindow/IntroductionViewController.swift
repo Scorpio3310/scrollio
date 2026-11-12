@@ -105,6 +105,16 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     /// How long after a step change the bar takes no press: the second click of a
     /// double-click lands on the button that now means the next step.
     static let pressSettleTime: TimeInterval = 0.4
+    /// Runs one animation of a step change: `changes` inside an animation group, then
+    /// `completion` when the group has finished. AppKit calls the completion from its
+    /// display link, so with no display awake (a night run, a headless Mac) it does not
+    /// come in time; tests replace this with one that is driven by a timer.
+    var runAnimation: (_ changes: @escaping (NSAnimationContext) -> Void, _ completion: @escaping () -> Void) -> Void = { changes, completion in
+        NSAnimationContext.runAnimationGroup(changes, completionHandler: completion)
+    }
+    /// How long after the animations of a step change should have ended the step counts as
+    /// arrived anyway (see `show(stepAt:direction:animated:)`).
+    var stepArrivalGrace: TimeInterval = 0.5
 
     // MARK: - State
 
@@ -121,6 +131,8 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     private var didOfferHelp = false
     private var helpPopover: NSPopover?
     private var transitionGeneration = 0
+    /// Ends a step change whose animations never reported their end.
+    private(set) var stepArrivalTimer: Timer?
     /// The grant was reported to the app in this run (`accessWasGranted`).
     private var didReportGrant = false
     /// `refreshAccessState` is running: reporting the grant comes back into it.
@@ -364,6 +376,8 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         transitionGeneration += 1
         let generation = transitionGeneration
         isChangingStep = false
+        stepArrivalTimer?.invalidate()
+        stepArrivalTimer = nil
 
         // What an unfinished change left behind goes now.
         for host in [pictureHost!, contentHost!] {
@@ -414,17 +428,39 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         let arrived = { [weak self] in
             guard let self, generation == self.transitionGeneration else { return }
             self.isChangingStep = false
+            self.stepArrivalTimer?.invalidate()
+            self.stepArrivalTimer = nil
+        }
+        // The safety net: `arrived` comes from the last animation's completion handler,
+        // which AppKit calls from its display link. If that call never comes, Continue and
+        // Back would stay dead until the window is reopened. So a timer puts the step in
+        // its final state a little after the animations should have ended. In ordinary use
+        // the completion comes first and cancels it.
+        let arriveAnyway = { [weak self] (length: TimeInterval) in
+            guard let self else { return }
+            self.stepArrivalTimer = CommonModesTimer.scheduled(
+                withTimeInterval: length + self.stepArrivalGrace, repeats: false
+            ) { [weak self] _ in
+                guard let self, generation == self.transitionGeneration, self.isChangingStep else { return }
+                removePicture()
+                removeContent()
+                next.picture.alphaValue = 1
+                next.content.alphaValue = 1
+                next.content.setFrameOrigin(.zero)
+                arrived()
+            }
         }
         if prefersReducedMotion() {
             next.picture.alphaValue = 0
             next.content.alphaValue = 0
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.2
+            arriveAnyway(Self.crossfadeDuration)
+            runAnimation({ context in
+                context.duration = Self.crossfadeDuration
                 next.picture.animator().alphaValue = 1
                 next.content.animator().alphaValue = 1
                 previous.picture.animator().alphaValue = 0
                 previous.content.animator().alphaValue = 0
-            }, completionHandler: {
+            }, {
                 removePicture()
                 removeContent()
                 arrived()
@@ -436,28 +472,35 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         next.picture.alphaValue = 0
         next.content.alphaValue = 0
         next.content.setFrameOrigin(NSPoint(x: 24 * direction, y: 0))
-        NSAnimationContext.runAnimationGroup({ context in
+        arriveAnyway(Self.textOutDuration + Self.textInDuration)
+        runAnimation({ context in
             context.duration = 0.25
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             next.picture.animator().alphaValue = 1
             previous.picture.animator().alphaValue = 0
-        }, completionHandler: removePicture)
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.18
+        }, removePicture)
+        runAnimation({ context in
+            context.duration = Self.textOutDuration
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 1, 1)
             previous.content.animator().alphaValue = 0
             previous.content.animator().setFrameOrigin(NSPoint(x: -24 * direction, y: 0))
-        }, completionHandler: { [weak self] in
+        }, { [weak self] in
             guard let self, generation == self.transitionGeneration else { return }
             removeContent()
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.3
+            self.runAnimation({ context in
+                context.duration = Self.textInDuration
                 context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1)
                 next.content.animator().alphaValue = 1
                 next.content.animator().setFrameOrigin(.zero)
-            }, completionHandler: arrived)
+            }, arrived)
         })
     }
+
+    /// The lengths of a step change: the crossfade with Reduce Motion; without it the old
+    /// text leaves, then the new one comes in.
+    static let crossfadeDuration: TimeInterval = 0.2
+    static let textOutDuration: TimeInterval = 0.18
+    static let textInDuration: TimeInterval = 0.3
 
     /// Back, the dots and the buttons for the step on screen.
     private func updateBar() {

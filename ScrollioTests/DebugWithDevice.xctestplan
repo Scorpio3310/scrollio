@@ -15,12 +15,14 @@
   ],
   "defaultOptions" : {
     "codeCoverage" : false,
+    "defaultTestExecutionTimeAllowance" : 60,
     "performanceAntipatternCheckerEnabled" : true,
     "targetForVariableExpansion" : {
       "containerPath" : "container:Scrollio.xcodeproj",
       "identifier" : "22142D9F1E25344E00E4BFBF",
       "name" : "Scrollio"
-    }
+    },
+    "testTimeoutsEnabled" : true
   },
   "testTargets" : [
     {

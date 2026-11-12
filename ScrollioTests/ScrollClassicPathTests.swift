@@ -974,6 +974,13 @@ final class ScrollTrackpadStyleScrollViewTests: XCTestCase {
     /// (measured 356 px of 600); as a short touch and a glide it stretches it a few pixels, and the
     /// page comes back to the edge without a jump.
     func testFastSpinAtTheTop_stretchesThePageLittleAndItComesBackSmoothly() throws {
+        // What is measured is AppKit's own rubber band, and that moves only with a display
+        // link: with no display awake (a night run, a headless Mac) the page does not
+        // stretch at all, whatever is fed to it.
+        var link: CVDisplayLink?
+        guard CVDisplayLinkCreateWithActiveCGDisplays(&link) == kCVReturnSuccess, link != nil else {
+            throw XCTSkip("no display is awake: AppKit's rubber band, which this test measures, does not move without a display link")
+        }
         let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
         for (pixels, time) in ScrollClassicPathTests.spin { rig.input(pixels, notch: 33.6 * 6.3, at: time) }
         rig.run(until: 2)

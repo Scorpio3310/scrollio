@@ -306,9 +306,7 @@ final class ScrollSettingsTests: XCTestCase {
     func testRun_removesTheRetiredKeys() throws {
         // Canary: the stored names of retired settings (never reuse them for something else).
         XCTAssertEqual(ScrollSettingsCleanup.retiredDefaultsKeys, ["durationForOtherTrackpadState", "scrollTuning"])
-        let suite = "ScrollioTests.cleanup.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = TestDefaults.make(for: self)
         defaults.set(4.5, forKey: "durationForOtherTrackpadState")
         // The fast-scroll tuning as the last build that had it stored it.
         let tuning = #"{"freeSpinEnabled":true,"freeSpinSmoothness":1.5,"freeSpinSpeed":1,"acceleration":0}"#
@@ -354,40 +352,35 @@ final class ScrollSettingsTests: XCTestCase {
 }
 
 /// `Options.readOptions()` runs the clean-up on what it has just read, for the global
-/// options and for each app's own.
+/// options and for each app's own. The settings come from a store of the test's own
+/// (`Options.defaults`), never from the debug app's real preferences.
 final class ScrollSettingsLoadTests: XCTestCase {
 
-    private let defaults = UserDefaults.standard
-    private var defaultsSnapshots: [(key: String, original: Any?)] = []
+    private var defaults: UserDefaults!
     private var originalScroll: OPTIONS_SCROLL_DEFAULT!
-    private var originalApplications: EnhanceArray<Application>!
+    private var otherSettings: OptionsSnapshot!
 
     override func setUp() {
         super.setUp()
         originalScroll = Options.shared.scroll
-        originalApplications = Options.shared.application.applications
+        otherSettings = OptionsSnapshot()
         // A fresh container, so loading never edits the one that is restored.
         Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+        defaults = TestDefaults.make(for: self)
+        Options.shared.defaults = defaults
     }
 
     override func tearDown() {
-        for snapshot in defaultsSnapshots {
-            if let original = snapshot.original {
-                defaults.set(original, forKey: snapshot.key)
-            } else {
-                defaults.removeObject(forKey: snapshot.key)
-            }
-        }
-        defaultsSnapshots.removeAll()
+        Options.shared.defaults = .standard
+        defaults = nil
         Options.shared.scroll = originalScroll
-        Options.shared.application.applications = originalApplications
+        otherSettings.restore()
         originalScroll = nil
-        originalApplications = nil
+        otherSettings = nil
         super.tearDown()
     }
 
     private func store(_ value: Any, forKey key: String) {
-        defaultsSnapshots.append((key: key, original: defaults.object(forKey: key)))
         defaults.set(value, forKey: key)
     }
 
@@ -464,9 +457,7 @@ final class ScrollSettingsLoadTests: XCTestCase {
     func testReadOptions_aMissingSmoothOrReverseIsTheDefault() {
         store("optionsExist", forKey: OptionItem.General.OptionsExist)
         for key in [OptionItem.Scroll.Smooth, OptionItem.Scroll.Reverse] {
-            // Remembered first, so tearDown puts back what the test host had.
-            defaultsSnapshots.append((key: key, original: defaults.object(forKey: key)))
-            defaults.removeObject(forKey: key)
+            XCTAssertNil(defaults.object(forKey: key), "the test's own store has neither")
         }
 
         Options.shared.readOptions()
