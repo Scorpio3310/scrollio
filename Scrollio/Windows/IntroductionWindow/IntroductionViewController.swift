@@ -686,7 +686,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     /// approval, which must stay in front.
     @objc func secondaryButtonClicked(_ sender: Any?) {
         guard takesPress else { return }
-        progress.markFinished()
+        markGuideFinished()
         openAppSettings()
         applyOpenAtLogin()
         view.window?.close()
@@ -729,8 +729,16 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         setHelpShown(!isHelpShown)
     }
 
-    private func finish() {
+    /// The guide is finished. The apps that are left to macOS by default are offered now,
+    /// with the wheel direction and the feel the guide left (`AppsLeftToMacOS`: nothing is
+    /// offered to a new user before).
+    private func markGuideFinished() {
         progress.markFinished()
+        AppsLeftToMacOS.offerLive()
+    }
+
+    private func finish() {
+        markGuideFinished()
         applyOpenAtLogin()
         view.window?.close()
     }
@@ -741,7 +749,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     func windowWillClose() {
         applyOpenAtLogin()
         if isAccessGranted() {
-            progress.markFinished()
+            markGuideFinished()
         }
         setHelpShown(false)
         stopPolling()

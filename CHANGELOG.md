@@ -15,6 +15,13 @@ it for the people who use the app, and give the version its part before you tag 
   no key until you record one (⌥, ⇧ and ⌘ belong to the other three); a mouse button can
   hold it too ("Scroll Slower" in the Buttons pane), and an app with its own scroll
   settings has its own key.
+- **Calendar is no longer smoothed** unless you say so. Its month view aligns itself to
+  weeks and took a smoothed wheel badly: a small turn barely moved it and a little more
+  ran away. If you update, Calendar appears once in Settings › Apps as an app with its
+  own settings and Smooth scrolling off; the wheel's direction stays as it is. To have it
+  as before, turn "Use settings from Scrolling" on for it or remove it from the list:
+  Scrollio does not add it again. Nothing changes if Calendar is on your list already, or
+  while "Change scrolling only in these apps" is on.
 
 ## 1.0.3
 
