@@ -384,16 +384,21 @@ final class GesturePreviewMouse: GesturePreviewArtworkView {
 
     private var buttonDepth = 0.0
     private var pressPulse = 0.0
-    /// How far the drawing has turned to the button's side (0…1); a mouse drawn from above
-    /// only does not turn.
-    private(set) var turn: CGFloat = 0
+    /// How far the frame shown says the drawing has turned to the button's side (0…1).
+    private var frameTurn: CGFloat = 0
+
+    /// How far the drawing has turned to the button's side: what the frame says for a mouse
+    /// whose button is in its view from the side, 0 for any other (it does not turn).
+    var turn: CGFloat {
+        return buttonViewpoint == .above ? 0 : frameTurn
+    }
 
     func show(buttonDepth: Double, pressPulse: Double, turn: Double = 0) {
-        let turn = model.hasSideView && buttonViewpoint != .above ? CGFloat(min(1, max(0, turn))) : 0
-        guard buttonDepth != self.buttonDepth || pressPulse != self.pressPulse || turn != self.turn else { return }
+        let turn = CGFloat(min(1, max(0, turn)))
+        guard buttonDepth != self.buttonDepth || pressPulse != self.pressPulse || turn != frameTurn else { return }
         self.buttonDepth = buttonDepth
         self.pressPulse = pressPulse
-        self.turn = turn
+        frameTurn = turn
         needsDisplay = true
     }
 

@@ -1426,6 +1426,29 @@ final class PreferencesButtonsTests: XCTestCase {
         ])
     }
 
+    /// A row's picture of an MX Master 4 is the view its part lights in: the mouse upright,
+    /// seen from above, for the buttons and the wheel; lying across, seen from its thumb
+    /// side, for the side buttons, the thumb panel and the thumb wheel. Both fit the
+    /// picture. The other mice are always seen from above.
+    func testTheRowsPictureIsTheViewItsPartLightsIn() throws {
+        let frame = NSRect(origin: .zero, size: ButtonsMouseMiniature.size)
+        let side: Set<ButtonsMousePart> = [.back, .forward, .gesture, .thumbPanel]
+        for part in ButtonsMousePart.allCases {
+            let body = ButtonsMouseMiniature.bodyPath(of: .mxMaster4, lighting: part, in: frame).bounds
+            XCTAssertEqual(body.width > body.height, side.contains(part), "\(part)")
+            XCTAssertTrue(frame.contains(body), "\(part): the mouse fits the picture")
+            let shape = try XCTUnwrap(ButtonsMouseMiniature.shape(of: part, mouse: .mxMaster4, in: frame)).bounds
+            XCTAssertTrue(body.insetBy(dx: -1, dy: -1).contains(shape), "\(part) is on the mouse")
+            for mouse in [MouseArtworkModel.mxMaster3, .generic] {
+                let other = ButtonsMouseMiniature.bodyPath(of: mouse, lighting: part, in: frame).bounds
+                XCTAssertGreaterThan(other.height, other.width, "\(mouse) \(part): from above")
+            }
+        }
+        XCTAssertGreaterThan(ButtonsMouseMiniature.bodyPath(of: .mxMaster4, in: frame).bounds.height, frame.height / 2,
+                             "nothing lit: from above")
+        XCTAssertEqual(MouseArtworkModel.mxMaster4.viewpoint(lighting: .thumbWheel), .thumbSide, "the thumb wheel's row too")
+    }
+
     /// The picture fills the row's part in the accent colour, in light and in dark, and
     /// lights nothing for a button it cannot show.
     func testThePictureFillsTheRowsPartInTheAccentColour() throws {

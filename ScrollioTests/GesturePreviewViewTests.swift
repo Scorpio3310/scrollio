@@ -501,6 +501,19 @@ final class GesturePreviewViewTests: XCTestCase {
             XCTAssertEqual(other.deviceCard.mouse.turn, 0, "\(model) has one view")
             XCTAssertEqual(other.deviceCard.mouse.viewpoint, .above)
         }
+
+        // A mouse that connects while the frame shows: turned as the frame says, at once.
+        var connected = MouseArtworkModel.generic
+        let late = makeView(reduceMotion: true, mouse: .generic)
+        late.mouseSource = { connected }
+        late.reloadMouse()
+        late.deviceCard.show(late.loop.stillFrame)
+        XCTAssertEqual(late.deviceCard.mouse.viewpoint, .above)
+        connected = .mxMaster4
+        late.reloadMouse()
+        XCTAssertEqual(late.deviceCard.mouse.model, .mxMaster4)
+        XCTAssertEqual(late.deviceCard.mouse.turn, 1)
+        XCTAssertEqual(late.deviceCard.mouse.viewpoint, .thumbSide, "the still shows the held button's side")
     }
 
     /// The mouse is the connected one's drawing and follows a mouse coming and going; the

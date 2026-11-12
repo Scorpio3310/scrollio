@@ -156,6 +156,13 @@ final class MouseArtworkTests: XCTestCase {
             XCTAssertLessThan(gesture.bounds.midX, thumbWheel.bounds.minX, "in front of the thumb wheel, not under it")
             for (first, second) in [(gesture, forward), (forward, back), (gesture, back)] {
                 XCTAssertTrue(first.cgPath.intersection(second.cgPath).isEmpty, "the three buttons are apart")
+                // In a row's small picture front, middle and rear can be told apart: their
+                // middles are at least three points from each other there.
+                if schematic {
+                    let unit = ButtonsMouseMiniature.mouseHeight / MouseArtworkShapes.grid.height
+                    let distance = hypot(first.bounds.midX - second.bounds.midX, first.bounds.midY - second.bounds.midY) * unit
+                    XCTAssertGreaterThanOrEqual(distance, 3, "apart in the small pictures")
+                }
             }
             for button in [gesture, forward, back] {
                 XCTAssertGreaterThan(panel.bounds.midY, button.bounds.midY, "the thumb panel beneath")
