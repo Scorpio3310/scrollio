@@ -103,6 +103,9 @@ final class PreferencesLocalizationTests: XCTestCase {
         "open-target-arguments-placeholder", "open-target-stale-warning", "open-target-cancel", "open-target-done",
         "appExposeApps", "categoryMissionControlAndSpaces",
         "key-recorder-waiting-combination", "key-recorder-waiting-adaptive", "buttons-recorder-waiting-gesture",
+        "key-recorder-left-right-refused", "key-recorder-left-refused", "key-recorder-secure-input",
+        "open-target-mode-label", "open-target-mode-open", "open-target-mode-open-tooltip",
+        "open-target-mode-run", "open-target-mode-run-tooltip",
         "Press ESC to cancel recording", "button-recording-duplicate-hint",
         "buttons-default", "buttons-default-back", "buttons-default-forward", "buttons-default-middle",
         "buttons-default-mode-shift", "buttons-default-own", "buttons-list-other",
@@ -165,6 +168,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "toast-battery-critical", "toast-battery-critical-plain",
         "logi_ble_hidpp_unstable_toast", "logi_ble_contention_standard_mouse_alias_toast",
         "logi_hidpp_contention_toast", "openTargetScriptNotExecutable",
+        "openTargetScriptExitedWithError", "toast-mos-quit", "toast-system-shortcut-off",
+        "launch-location-title", "launch-location-message", "launch-location-quit", "launch-location-continue",
         "main-menu-application", "main-menu-about", "main-menu-settings", "main-menu-services",
         "main-menu-hide", "main-menu-hide-others", "main-menu-show-all", "main-menu-quit",
         "main-menu-edit", "main-menu-undo", "main-menu-redo", "main-menu-cut", "main-menu-copy",
@@ -260,6 +265,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "openTargetScriptNotFound": "@",
         "openTargetScriptNotExecutable": "@",
         "openTargetScriptFailed": "@",
+        "openTargetScriptExitedWithError": "@d",
+        "toast-system-shortcut-off": "@",
     ]
 
     /// The arguments `format` reads, in argument order: "%2$d of %1$@" -> "@d"; "@" an

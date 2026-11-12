@@ -6,6 +6,27 @@ import XCTest
 /// Every test works on fakes: no real app is asked to quit here.
 final class LegacyAppQuitterTests: XCTestCase {
 
+    /// How often the user was told that Mos was quit (the toast, replaced here).
+    private var announcements = 0
+    private var originalAnnounce: (() -> Void)!
+    private var originalIsActive: (() -> Bool)!
+
+    override func setUp() {
+        super.setUp()
+        announcements = 0
+        originalAnnounce = LegacyAppQuitter.announceQuit
+        originalIsActive = LegacyAppQuitter.scrollioHandlesEvents
+        LegacyAppQuitter.announceQuit = { [weak self] in self?.announcements += 1 }
+        // Scrollio's event taps run, unless a test says otherwise.
+        LegacyAppQuitter.scrollioHandlesEvents = { true }
+    }
+
+    override func tearDown() {
+        LegacyAppQuitter.announceQuit = originalAnnounce
+        LegacyAppQuitter.scrollioHandlesEvents = originalIsActive
+        super.tearDown()
+    }
+
     // MARK: - Old app instances
 
     func testOnlyOtherProcessesOfTheOldAppAreLegacyInstances() {
@@ -185,6 +206,69 @@ final class LegacyAppQuitterTests: XCTestCase {
             "Another copy of Scrollio (pid 200) did not quit within 3 s: forced it to quit (4.0 s in all); this one starts now",
             "Another copy of Scrollio (pid 300) still runs after it was forced to quit (4.0 s); this one starts anyway",
         ])
+    }
+
+    // MARK: - Only while Scrollio handles the mouse, and never silently
+
+    /// Mos was quit whenever it started, also while Scrollio was paused or still waited for
+    /// the Accessibility access, and nothing said why it vanished.
+    func testTheOldAppIsLeftAloneWhileScrollioDoesNothing() {
+        LegacyAppQuitter.scrollioHandlesEvents = { false }
+        let mos = FakeApp("com.caldis.Mos", pid: 200)
+        XCTAssertFalse(LegacyAppQuitter.handleLaunch(of: mos, isAllowed: true, ownProcessIdentifier: 100))
+        XCTAssertEqual(mos.terminateCalls, 0)
+        XCTAssertEqual(announcements, 0)
+
+        LegacyAppQuitter.scrollioHandlesEvents = { true }
+        XCTAssertTrue(LegacyAppQuitter.handleLaunch(of: mos, isAllowed: true, ownProcessIdentifier: 100))
+        XCTAssertEqual(mos.terminateCalls, 1)
+    }
+
+    func testTheUserIsToldEachTimeTheOldAppIsQuit() {
+        let mos = FakeApp("com.caldis.Mos", pid: 200)
+        LegacyAppQuitter.handleLaunch(of: mos, isAllowed: true, ownProcessIdentifier: 100)
+        XCTAssertEqual(announcements, 1)
+        // Another app, or this one: nothing is said.
+        LegacyAppQuitter.handleLaunch(of: FakeApp("com.apple.finder", pid: 300), isAllowed: true, ownProcessIdentifier: 100)
+        LegacyAppQuitter.handleLaunch(of: FakeApp("com.caldis.Mos", pid: 100), isAllowed: true, ownProcessIdentifier: 100)
+        XCTAssertEqual(announcements, 1)
+        // The toast's text is there and names both apps.
+        let text = NSLocalizedString("toast-mos-quit", comment: "")
+        XCTAssertTrue(text.contains("Mos") && text.contains("Scrollio"), text)
+    }
+
+    // MARK: - Two copies that start together
+
+    /// Each of two copies asked the other to quit and waited with a blocked main thread:
+    /// neither could answer. Exactly one of the two replaces the other.
+    func testOnlyTheCopyThatStartedLaterReplacesTheOther() {
+        let early = Date(timeIntervalSinceReferenceDate: 1_000)
+        let late = early.addingTimeInterval(0.4)
+        // By the launch time.
+        XCTAssertTrue(Utils.startedEarlier(other: (pid: 500, launched: early), thanOwn: (pid: 400, launched: late)))
+        XCTAssertFalse(Utils.startedEarlier(other: (pid: 400, launched: late), thanOwn: (pid: 500, launched: early)))
+        // The same moment, or a time that is not known: the lower process id is the earlier.
+        for (a, b) in [(early, early), (nil, early), (early, nil), (nil, nil)] as [(Date?, Date?)] {
+            XCTAssertTrue(Utils.startedEarlier(other: (pid: 400, launched: a), thanOwn: (pid: 500, launched: b)))
+            XCTAssertFalse(Utils.startedEarlier(other: (pid: 500, launched: b), thanOwn: (pid: 400, launched: a)))
+        }
+    }
+
+    // MARK: - Where the app runs from
+
+    func testACopyOnADiskImageOrATranslocatedCopyShouldBeMoved() {
+        XCTAssertTrue(AppLocation.shouldBeMoved(bundlePath: "/Volumes/Scrollio 1.0/Scrollio.app", volumeIsReadOnly: true))
+        XCTAssertTrue(AppLocation.shouldBeMoved(
+            bundlePath: "/private/var/folders/ab/cd/T/AppTranslocation/0A1B2C3D/d/Scrollio.app", volumeIsReadOnly: true))
+        XCTAssertTrue(AppLocation.shouldBeMoved(
+            bundlePath: "/private/var/folders/ab/cd/T/AppTranslocation/0A1B2C3D/d/Scrollio.app", volumeIsReadOnly: false))
+        // Installed: in Applications, in the user's own, on an external disk that can be written.
+        XCTAssertFalse(AppLocation.shouldBeMoved(bundlePath: "/Applications/Scrollio.app", volumeIsReadOnly: false))
+        XCTAssertFalse(AppLocation.shouldBeMoved(bundlePath: "/Users/someone/Applications/Scrollio.app", volumeIsReadOnly: false))
+        XCTAssertFalse(AppLocation.shouldBeMoved(bundlePath: "/Volumes/External/Applications/Scrollio.app", volumeIsReadOnly: false))
+        // The system volume is read-only too, and is no disk image.
+        XCTAssertFalse(AppLocation.shouldBeMoved(bundlePath: "/Applications/Scrollio.app", volumeIsReadOnly: true))
+        XCTAssertFalse(AppLocation.runningCopyShouldBeMoved, "the test host runs from its build folder")
     }
 
     // MARK: - XCTest

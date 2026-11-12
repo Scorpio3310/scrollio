@@ -170,4 +170,23 @@ final class OpenTargetPayloadTests: XCTestCase {
     func testArgumentSplitter_consecutiveWhitespace() {
         XCTAssertEqual(ArgumentSplitter.split("a    b"), ["a", "b"])
     }
+
+    /// The field says "Put quotes around an argument with spaces", and single quotes were
+    /// taken as ordinary characters: `--name='My File'` became two arguments with the quotes
+    /// in them.
+    func testArgumentSplitter_singleQuotedGroups() {
+        XCTAssertEqual(ArgumentSplitter.split("--name='My File' -v"), ["--name=My File", "-v"])
+        XCTAssertEqual(ArgumentSplitter.split("'one two' \"three four\""), ["one two", "three four"])
+        // Between single quotes everything is taken as it is, as in a shell.
+        XCTAssertEqual(ArgumentSplitter.split(#"'a \ "b"'"#), [#"a \ "b""#])
+        // Inside double quotes a single quote is an ordinary character.
+        XCTAssertEqual(ArgumentSplitter.split("\"it's here\""), ["it's here"])
+    }
+
+    /// A single quote without a partner stays what it is: an apostrophe.
+    func testArgumentSplitter_aLoneSingleQuoteIsAnApostrophe() {
+        XCTAssertEqual(ArgumentSplitter.split("--title=Nik's notes"), ["--title=Nik's", "notes"])
+        XCTAssertEqual(ArgumentSplitter.split("it's"), ["it's"])
+        XCTAssertEqual(ArgumentSplitter.split("'"), ["'"])
+    }
 }

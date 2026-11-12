@@ -2320,6 +2320,17 @@
         }
       }
     },
+    "openTargetScriptExitedWithError": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Script \"%1$@\" ended with an error (exit code %2$d)."
+          }
+        }
+      }
+    },
     "openTargetScriptNotExecutable": {
       "extractionState": "manual",
       "localizations": {
@@ -2459,6 +2470,64 @@
           "stringUnit": {
             "state": "translated",
             "value": "Click to choose a different one."
+          }
+        }
+      }
+    },
+    "open-target-mode-label": {
+      "comment": "Open App or File popover: label of the choice between opening and running a file that can run",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When pressed:"
+          }
+        }
+      }
+    },
+    "open-target-mode-open": {
+      "comment": "Open App or File popover: the file is opened with its default app",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open"
+          }
+        }
+      }
+    },
+    "open-target-mode-open-tooltip": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opens the file with its default app."
+          }
+        }
+      }
+    },
+    "open-target-mode-run": {
+      "comment": "Open App or File popover: the file is run as a program or script",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run"
+          }
+        }
+      }
+    },
+    "open-target-mode-run-tooltip": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runs the file as a program or script, with the arguments below."
           }
         }
       }
@@ -4524,6 +4593,78 @@
         }
       }
     },
+    "toast-mos-quit": {
+      "comment": "Toast: Scrollio asked the original Mos app to quit",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio quit Mos: the two cannot handle the same mouse together. To use Mos, pause or quit Scrollio."
+          }
+        }
+      }
+    },
+    "toast-system-shortcut-off": {
+      "comment": "Toast: a Spaces action (its name) was run while its shortcut is switched off in System Settings",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\"%@\" needs its keyboard shortcut, which is switched off. Switch it on in System Settings › Keyboard › Keyboard Shortcuts › Mission Control."
+          }
+        }
+      }
+    },
+    "launch-location-title": {
+      "comment": "Alert at launch from a disk image or a translocated copy: title",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move Scrollio to the Applications folder first"
+          }
+        }
+      }
+    },
+    "launch-location-message": {
+      "comment": "Alert at launch from a disk image or a translocated copy: what to do and why",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This copy runs from its disk image, or from a temporary place macOS uses for an app that was not moved after the download. Quit, drag Scrollio to the Applications folder and open it from there. Otherwise \"Open at login\" points at a copy that will be gone, and the disk image cannot be ejected."
+          }
+        }
+      }
+    },
+    "launch-location-quit": {
+      "comment": "Alert at launch from a disk image: the default button",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit"
+          }
+        }
+      }
+    },
+    "launch-location-continue": {
+      "comment": "Alert at launch from a disk image: the other button",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Anyway"
+          }
+        }
+      }
+    },
     "toast-battery-low": {
       "extractionState": "manual",
       "localizations": {
@@ -5649,6 +5790,42 @@
           "stringUnit": {
             "state": "translated",
             "value": "Press a mouse button,\nor a key with ⌘, ⌥, ⌃ or ⇧"
+          }
+        }
+      }
+    },
+    "key-recorder-left-right-refused": {
+      "comment": "Key recorder popover: a left or right click was pressed where a trigger is recorded",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The left and right buttons cannot be used"
+          }
+        }
+      }
+    },
+    "key-recorder-left-refused": {
+      "comment": "Key recorder popover: a left click with a modifier where a shortcut to send is recorded",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The left button cannot be used"
+          }
+        }
+      }
+    },
+    "key-recorder-secure-input": {
+      "comment": "Key recorder popover: no key can arrive while another app has secure keyboard entry on (a password field)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Another app has secure keyboard entry on:\nkeys cannot be recorded now"
           }
         }
       }

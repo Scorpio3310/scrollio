@@ -114,4 +114,45 @@ final class UtilsTests: XCTestCase {
         let luminance = 0.2126 * linear(rgb.redComponent) + 0.7152 * linear(rgb.greenComponent) + 0.0722 * linear(rgb.blueComponent)
         return 1.05 / (luminance + 0.05)
     }
+    // MARK: - A mouse button number that does not fit
+
+    /// CoreGraphics keeps a mouse event's button number in 8 bits and reads it back signed:
+    /// 128 to 255 come back negative (200 as -56). `UInt16(_:)` trapped on that, in the
+    /// button tap's callback, for any such event another program made up.
+    func testAButtonNumberAbove127DoesNotTrapAndIsTheNumberThatWasSet() throws {
+        for number in [Int64(2), 31, 127, 128, 200, 255] {
+            let event = try XCTUnwrap(CGEvent(
+                mouseEventSource: nil, mouseType: .otherMouseDown, mouseCursorPosition: .zero, mouseButton: .center
+            ))
+            event.setIntegerValueField(.mouseEventButtonNumber, value: number)
+            XCTAssertEqual(event.mouseCode, UInt16(number), "button \(number)")
+            // The whole path of the button tap: the event becomes an input event, unbound.
+            let input = InputEvent(fromCGEvent: event)
+            XCTAssertEqual(input.type, .mouse)
+            XCTAssertEqual(input.code, UInt16(number))
+            XCTAssertFalse(LogiCenter.shared.isLogiCode(input.code), "never mistaken for a Logitech control")
+        }
+        let event = try XCTUnwrap(CGEvent(
+            mouseEventSource: nil, mouseType: .otherMouseDown, mouseCursorPosition: .zero, mouseButton: .center
+        ))
+        event.setIntegerValueField(.mouseEventButtonNumber, value: 200)
+        XCTAssertLessThan(event.getIntegerValueField(.mouseEventButtonNumber), 0, "what CoreGraphics gives back for 200")
+        XCTAssertEqual(CGEvent.mouseButtonCode(fromField: -56), 200)
+        XCTAssertEqual(CGEvent.mouseButtonCode(fromField: -128), 128)
+        XCTAssertEqual(CGEvent.mouseButtonCode(fromField: -1), 255)
+        XCTAssertEqual(CGEvent.mouseButtonCode(fromField: 3), 3)
+    }
+
+    /// A stored switch that is missing is its default, not "off".
+    func testAStoredSwitchThatIsMissingIsItsDefault() throws {
+        let suite = "ScrollioTests.storedBool.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertTrue(Options.storedBool(forKey: "smooth", default: true, in: defaults))
+        XCTAssertFalse(Options.storedBool(forKey: "smooth", default: false, in: defaults))
+        defaults.set(false, forKey: "smooth")
+        XCTAssertFalse(Options.storedBool(forKey: "smooth", default: true, in: defaults))
+        defaults.set(true, forKey: "smooth")
+        XCTAssertTrue(Options.storedBool(forKey: "smooth", default: false, in: defaults))
+    }
 }
