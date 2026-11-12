@@ -520,13 +520,107 @@ final class SettingsFileFormatTests: XCTestCase {
         guard case .failure(.tooLarge) = SettingsFile.read(contentsOf: large) else {
             return XCTFail("a file over the limit was read")
         }
-        for url in [folder, folder.appendingPathComponent("missing.json")] {
-            guard case .failure(.cannotRead(let reason)) = SettingsFile.read(contentsOf: url) else {
-                XCTFail("\(url.lastPathComponent) was read")
-                continue
-            }
-            XCTAssertFalse(reason.isEmpty)
+        guard case .failure(.cannotRead(let reason)) = SettingsFile.read(contentsOf: folder.appendingPathComponent("missing.json")) else {
+            return XCTFail("a file that is not there was read")
         }
+        XCTAssertFalse(reason.isEmpty)
+        // A file whose size says it is too large is refused before it is read: it is
+        // sparse here, so there is nothing in it to read.
+        let sparse = folder.appendingPathComponent("sparse.json")
+        XCTAssertTrue(FileManager.default.createFile(atPath: sparse.path, contents: nil))
+        let handle = try FileHandle(forWritingTo: sparse)
+        try handle.truncate(atOffset: UInt64(SettingsFile.maximumFileSize) + 1)
+        try handle.close()
+        guard case .failure(.tooLarge) = SettingsFile.read(contentsOf: sparse) else {
+            return XCTFail("a file over the limit was opened for reading")
+        }
+    }
+
+    /// Only a regular file is read. A folder is no settings file; a named pipe called
+    /// "settings.json" held the read (on the main thread, in the app) until somebody wrote
+    /// to it, and is now refused at once.
+    func testWhatIsNotARegularFileIsRefusedWithoutWaiting() throws {
+        let folder = try temporaryFolder(for: self)
+        guard case .failure(.notASettingsFile) = SettingsFile.read(contentsOf: folder) else {
+            return XCTFail("a folder was read")
+        }
+        let pipe = folder.appendingPathComponent("settings.json")
+        XCTAssertEqual(mkfifo(pipe.path, 0o600), 0)
+        let returned = expectation(description: "the read of a named pipe returned")
+        var result: Result<SettingsFile.Contents, SettingsFile.Problem>?
+        DispatchQueue.global().async {
+            let outcome = SettingsFile.read(contentsOf: pipe)
+            DispatchQueue.main.async {
+                result = outcome
+                returned.fulfill()
+            }
+        }
+        let outcome = XCTWaiter().wait(for: [returned], timeout: 5)
+        if outcome != .completed {
+            // Let the read go, so that the thread does not stay behind for the rest of the run.
+            let writer = open(pipe.path, O_WRONLY | O_NONBLOCK)
+            if writer >= 0 { close(writer) }
+            return XCTFail("the read of a named pipe was still waiting after five seconds")
+        }
+        guard case .failure(.notASettingsFile)? = result else {
+            return XCTFail("a named pipe was read: \(String(describing: result))")
+        }
+        // A link to a settings file is the file.
+        let real = folder.appendingPathComponent("real.json")
+        try Fixture.file(#""speed":3"#).write(to: real)
+        let link = folder.appendingPathComponent("link.json")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+        XCTAssertEqual(try SettingsFile.read(contentsOf: link).get().scrollNumbers, ["speed": 3])
+    }
+
+    /// The frozen text, read: what a file of this shape gives. (The test above only says
+    /// that an export writes this text; this one says that this text is understood, so a
+    /// file written today stays readable.)
+    func testTheFrozenFileReadsAsTheSettingsItHolds() throws {
+        let contents = try SettingsFile.read(Data(Self.frozenFile.utf8)).get()
+        XCTAssertEqual(contents.groups, Set(OptionsGroup.allCases))
+        XCTAssertEqual(contents.header, SettingsFile.Header(appVersion: "1.2.3", appBuild: "456", exported: Self.moment))
+        XCTAssertEqual(contents.unreadableEntries, 0)
+        // Scrolling
+        XCTAssertEqual(contents.scrollSwitches, [
+            "smooth": true, "reverse": true, "reverseVertical": true, "reverseHorizontal": true,
+            "smoothSimTrackpad": false, "smoothVertical": true, "smoothHorizontal": true,
+        ])
+        XCTAssertEqual(contents.scrollNumbers, ["step": 33.6, "speed": 4.5, "duration": 3.69, "deadZone": 1.0])
+        XCTAssertEqual(contents.scrollHotkeys, [
+            "dash": ScrollHotkey(type: .keyboard, code: 58), "block": ScrollHotkey(type: .keyboard, code: 55),
+        ], "no \"toggle\": that hold key is none")
+        XCTAssertEqual(contents.thumbWheel, ThumbWheelSettings(function: .zoom, speed: 1.5, swapsDirection: true))
+        // Apps
+        XCTAssertEqual(contents.allowlist, false)
+        XCTAssertEqual(contents.applications?.count, 1)
+        let app = try XCTUnwrap(contents.applications?.first)
+        XCTAssertEqual(app.path, "/Applications/Notes.app")
+        XCTAssertEqual(app.displayName, "")
+        XCTAssertFalse(app.inherit)
+        XCTAssertNil(app.buttons)
+        XCTAssertEqual(app.scroll.speed, 2.5)
+        XCTAssertEqual(app.scroll.step, 33.6)
+        XCTAssertEqual(app.scroll.duration, 3.69)
+        XCTAssertEqual(app.scroll.deadZone, 1)
+        XCTAssertEqual(app.scroll.toggle, ScrollHotkey(type: .keyboard, code: 56))
+        XCTAssertTrue(app.scroll.smooth)
+        // Buttons and keys
+        let bindings = try XCTUnwrap(contents.bindings)
+        XCTAssertEqual(bindings.map(\.id.uuidString), ["11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"])
+        XCTAssertEqual(bindings.map(\.systemShortcutName), ["missionControl", "openTarget"])
+        XCTAssertEqual(bindings.map(\.isEnabled), [true, true])
+        XCTAssertEqual(bindings.map(\.createdAt), [Date(timeIntervalSinceReferenceDate: 700_000_000), Date(timeIntervalSinceReferenceDate: 700_000_001)])
+        XCTAssertEqual(bindings[0].triggerEvent, RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil))
+        XCTAssertNil(bindings[0].openTarget)
+        XCTAssertEqual(bindings[1].triggerEvent, RecordedEvent(type: .keyboard, code: 96, modifiers: 524_288, deviceFilter: nil))
+        XCTAssertEqual(bindings[1].openTarget, OpenTargetPayload(path: "/Users/someone/bin/sync.sh", bundleID: nil, arguments: "--all", kind: .script))
+        XCTAssertEqual(contents.launchActions.map(\.target.path), ["/Users/someone/bin/sync.sh"])
+        // Gestures, Logitech, General
+        XCTAssertEqual(contents.gesture, MouseGestureSettings.default)
+        XCTAssertEqual(contents.logiWheel, LogiWheelSettings(managedByScrollio: false, mode: .ratchet), "the switch is not in a file")
+        XCTAssertEqual(contents.logiMouse, LogiMouseSettings(pointerDPI: 1600))
+        XCTAssertEqual(contents.hidesMenuBarIcon, false)
     }
 
     /// Each name on the allow-list is checked for its type; a wrong one refuses the file

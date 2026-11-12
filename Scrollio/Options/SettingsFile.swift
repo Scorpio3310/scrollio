@@ -300,12 +300,26 @@ enum SettingsFile {
 
     // MARK: - Reading
 
-    /// Reads the file at `url`: never more than `maximumFileSize` bytes of it.
+    /// Reads the file at `url`: only a regular file, and never more than
+    /// `maximumFileSize` bytes of it.
+    ///
+    /// It is opened without waiting and then asked what it is, on the opened file itself
+    /// (so it cannot be swapped between the question and the read). A named pipe called
+    /// "settings.json" held a plain open, on the main thread, until somebody wrote to it;
+    /// a device would be read without end. A file's size is known before a byte is read.
     static func read(contentsOf url: URL) -> Result<Contents, Problem> {
+        func systemReason() -> String {
+            return NSError(domain: NSPOSIXErrorDomain, code: Int(errno)).localizedDescription
+        }
+        let descriptor = open(url.path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
+        guard descriptor >= 0 else { return .failure(.cannotRead(systemReason())) }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        var info = stat()
+        guard fstat(descriptor, &info) == 0 else { return .failure(.cannotRead(systemReason())) }
+        guard info.st_mode & S_IFMT == S_IFREG else { return .failure(.notASettingsFile) }
+        guard info.st_size <= off_t(maximumFileSize) else { return .failure(.tooLarge) }
         let data: Data
         do {
-            let handle = try FileHandle(forReadingFrom: url)
-            defer { try? handle.close() }
             data = try handle.read(upToCount: maximumFileSize + 1) ?? Data()
         } catch {
             return .failure(.cannotRead(error.localizedDescription))
