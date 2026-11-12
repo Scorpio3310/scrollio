@@ -32,6 +32,7 @@ to check it, is under [Download and first launch](#-download-and-first-launch). 
 - ✅ **Thumb wheel actions** – the sideways wheel can scroll, zoom, switch tabs or desktops, go back and forward, or set the volume.
 - ✅ **Logitech MX settings** – battery, pointer speed, wheel mode and haptics of a Logitech MX mouse.
 - ✅ **Menu bar item** – battery, Pause, and smoothing on or off for the app in front; the icon can be hidden.
+- ✅ **Settings in a file** – export all your settings to one file and import them on another Mac; an import shows first what the file holds and keeps your settings from before.
 - ✅ **Updates itself** – a released Scrollio asks GitHub once a day for a newer version, if you allow it, and installs only what carries the author's signature.
 - ✅ **No tracking** – no analytics, no crash reporter. The update check is the only network request, and you can switch it off.
 
@@ -205,8 +206,8 @@ those controls.
   not start and tries again; its tooltip says which.
 - The icon can be hidden (General › Show in menu bar). Opening Scrollio again then shows
   its settings, or the Welcome Guide while Accessibility access is missing.
-- General also has "Open at login", the state of the Accessibility access and the
-  [updates](#updates).
+- General also has "Open at login", the state of the Accessibility access, the
+  [updates](#updates) and the [settings file](#settings-file).
 - Scrollio stops while the Mac sleeps or another user has it, and starts again when you
   are back.
 - When its event handling starts (at launch once Accessibility access is there, on
@@ -216,6 +217,40 @@ those controls.
   read.
 - Scrollio's notices stay on screen as long as their text takes to read (3 to 10
   seconds) and wait while the pointer is over them.
+
+### Settings file
+
+General › Settings file saves all your settings to one file and loads them from one: to
+move to another Mac, to keep a copy, or to pass a setup on.
+
+- "Export…" writes one JSON file ("Scrollio Settings 2026-11-12.json") that any text
+  editor opens. It holds what you set in Scrollio's panes: the scroll settings and the
+  thumb wheel, the buttons and keys with their actions, the gestures, the apps with
+  their own settings and "Change scrolling only in these apps", the Logitech values, and
+  "Show in menu bar".
+- It does not hold, and an import never changes: "Let Scrollio manage this mouse" (it
+  stays as it is on each Mac: the Logitech values of a file are imported, but they are
+  written to a mouse only where that switch is on), "Open at login", the Welcome Guide's
+  progress, the update switches, and the two macOS settings of the Mouse pane
+  ("Tracking speed" and "Pointer acceleration" are macOS's own).
+- What Scrollio asks of a Logitech mouse whatever that switch says (see
+  [Logitech MX mice](#logitech-mx-mice)) follows the imported settings as it follows
+  yours: a Logitech button that has an action in the file is asked of the mouse.
+- "Import…" reads a file and shows what it holds before anything changes: which
+  settings, how many apps and how many button and key actions. When buttons or keys in
+  it open an app or a file, or run a script, the sheet lists every one of them with its
+  button or key and its whole path, and Return presses "Cancel". Read that list when the
+  file is not your own: such an action starts at a press of its button. Importing itself
+  starts nothing.
+- An import replaces the kinds of settings the file holds and leaves the others as they
+  are; a file made by "Export…" holds them all. The new settings are in effect at once.
+- The settings from before are kept: "Restore…" appears under the row and brings them
+  back, through the same sheet. The last five such backups are settings files in
+  `~/Library/Application Support/com.nikklemenc.Scrollio/Settings Backups`.
+- A file that is not a Scrollio settings file, is damaged, is larger than 2 MB, or was
+  saved in a newer format than this version reads, changes nothing; the sheet says
+  which. In a file that is read, entries this version does not know are left out, and
+  the sheet says how many.
 
 ### Updates
 
@@ -323,6 +358,13 @@ codesign -dv --verbose=2 /Applications/Scrollio.app 2>&1 | grep -E "Authority|Te
    rm -rf ~/Library/Caches/com.nikklemenc.Scrollio ~/Library/HTTPStorages/com.nikklemenc.Scrollio
    ```
 
+6. Delete the settings from before an import, if you ever imported a settings file (the
+   folder is only there then). Settings files you exported are where you saved them.
+
+   ```bash
+   rm -rf ~/Library/Application\ Support/com.nikklemenc.Scrollio
+   ```
+
 What stays, because it was never Scrollio's to keep:
 
 - Values written to a Logitech mouse (pointer speed, wheel mode, haptics and so on)
@@ -372,6 +414,11 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](SECURIT
 - Nothing else leaves your Mac. The settings are kept in Scrollio's preferences (the
   updater's own among them: your two choices and the time of the last check), and its
   log goes to the macOS system log on the Mac (see [Diagnostics](#-diagnostics)).
+- A [settings file](#settings-file) is written only where you save it, and the settings
+  from before an import only into Scrollio's folder in Application Support; neither is
+  sent anywhere. Such a file holds the paths of the apps on your list and of the apps,
+  files and scripts your buttons open, and a path usually contains your account name:
+  look at a file before you pass it on.
 - Scrollio keeps no record of what you type. When key presses pass through it at all is
   under [Permissions](#-permissions); what it logs is under [Diagnostics](#-diagnostics).
 - Besides its own settings, Scrollio reads:
@@ -630,8 +677,9 @@ without that file means their check fails, and no copy learns of the version.
 `Scrollio-<version>-notes.md` is the text for the release.
 
 - **Before the tag.** Give the version its part in [CHANGELOG.md](CHANGELOG.md)
-  (`## 1.0.1`) and commit it: the update window shows that part to people with an older
-  version, and the release notes start with it. Without it the script goes on and says
+  (`## 1.0.1`; what stands under `## Unreleased` becomes that part) and commit it: the
+  update window shows that part to people with an older version, and the release notes
+  start with it. Without it the script goes on and says
   that the window will not tell what is new.
 
 - **Tags.** A release's version is its tag's: the commit must carry `v<version>`

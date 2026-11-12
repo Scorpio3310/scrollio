@@ -83,6 +83,36 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
   does not check a script before it runs it. A planted binding cannot hang on ordinary
   typing or clicking: a key runs an action only with ⌘, ⌥, ⌃ or ⇧ held or when it is an
   F-key, and the left and right mouse buttons never do.
+- **A settings file can give a button a script.** General › Settings file › Import…
+  takes a JSON file that can hold everything the panes can set, also buttons and keys
+  that open an app or a file or run a script. What Scrollio does about it:
+  - It reads at most 2 MB, takes only the settings on its list (anything else in the
+    file is ignored) and only entries this version understands (the others are left out,
+    not kept for a later version). What is imported is what was understood, written by
+    Scrollio's own code.
+  - Before anything changes, a sheet shows what the file holds. When it holds actions
+    that open or run something, it says how many and lists every one with its button or
+    key, its whole path and its arguments; characters that draw nothing or turn the text
+    around are written out, so a path cannot look like another. Return then presses
+    "Cancel".
+  - Importing starts nothing. An imported action runs like any other, at a press of its
+    button or key, under the rule above (a key only with ⌘, ⌥, ⌃ or ⇧ or as an F-key,
+    never the left or right button), and a script is started as described above.
+  - A file cannot switch on "Let Scrollio manage this mouse" or "Open at login", and
+    cannot touch the updater's settings: none of them is read from a file. So a file's
+    Logitech values reach a mouse only where the user had already allowed Scrollio to
+    write its settings. (Giving a Logitech button an action makes Scrollio ask the
+    mouse for that button, with or without that switch, as it does for an action set
+    by hand.)
+  - An import only starts from that button in Settings. Scrollio registers no file type
+    and opens no file by itself, so nothing outside Scrollio can start one.
+
+  So: do not import a file from someone you do not trust without reading that list. The
+  settings from before an import are kept, and "Restore…" brings them back.
+- The settings from before an import are files in
+  `~/Library/Application Support/com.nikklemenc.Scrollio/Settings Backups`. Like the
+  preferences file, any program that runs as you can change them; "Restore…" shows the
+  same sheet, with the same list, before one of them is put in effect.
 - The debug build (`Scrollio Debug.app`) is a developer's tool. Its Scroll Monitor shows
   every scroll, button, pointer and modifier-key event while it is open. Do not hand a
   debug build to anyone as "Scrollio".
