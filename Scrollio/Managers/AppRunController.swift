@@ -121,7 +121,13 @@ final class AppRunController {
             )
             return Environment(
                 hasAccess: { Utils.isHadAccessibilityPermissions() },
-                startCores: cores.start,
+                startCores: {
+                    // The original Mos handles the same mouse events: it is asked to quit
+                    // (and waited for) right before Scrollio's taps start, each time they
+                    // start. Not at launch as such: while Scrollio does nothing, Mos stays.
+                    LegacyAppQuitter.quitBeforeStarting()
+                    return cores.start()
+                },
                 stopCores: cores.stop,
                 showWelcomeGuide: { IntroductionWindowController.showAutomatically() },
                 showAccessLostToast: {
@@ -271,6 +277,20 @@ final class AppRunController {
     /// can say that Scrollio is running. Nothing happens when no timer is waiting.
     func accessibilityPermissionWasGranted() {
         recoveryTimer?.fire()
+    }
+
+    /// macOS said that the Accessibility list changed (AppDelegate, a moment after the
+    /// notification). While the cores run and the access is gone: the same as an event tap
+    /// finding it gone, only up to 5 s sooner. While they wait for the access: the timer's
+    /// next look, now. Anything else: nothing.
+    func accessibilityListDidChange() {
+        if coresActive {
+            if !environment.hasAccess() {
+                accessWasLost()
+            }
+        } else {
+            recoveryTimer?.fire()
+        }
     }
 
     // MARK: - Private

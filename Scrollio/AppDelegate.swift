@@ -8,22 +8,36 @@
 
 import Cocoa
 
+/// Whether the app runs as the host of its tests. Only the debug build can be that: the
+/// tests run inside `Scrollio Debug.app`. In the release build both answers are constants and
+/// the check is not compiled in. It used to be: any environment variable beginning with
+/// "XCTest" (`launchctl setenv XCTestFoo 1`, which any process of the user may do) made the
+/// released app start nothing, save no settings and say nothing.
 enum AppRuntime {
     static var isRunningXCTest: Bool {
-        isRunningXCTest(environment: ProcessInfo.processInfo.environment) || isXCTestLoaded
+        #if DEBUG
+        return isRunningXCTest(environment: ProcessInfo.processInfo.environment) || isXCTestLoaded
+        #else
+        return false
+        #endif
     }
 
+    static var shouldRunAppStartupSideEffects: Bool {
+        #if DEBUG
+        return shouldRunAppStartupSideEffects(
+            environment: ProcessInfo.processInfo.environment,
+            isXCTestLoaded: isXCTestLoaded
+        )
+        #else
+        return true
+        #endif
+    }
+
+    #if DEBUG
     static func isRunningXCTest(environment: [String: String]) -> Bool {
         environment["XCTestConfigurationFilePath"] != nil ||
         environment["XCTestBundlePath"] != nil ||
         environment.keys.contains { $0.hasPrefix("XCTest") }
-    }
-
-    static var shouldRunAppStartupSideEffects: Bool {
-        shouldRunAppStartupSideEffects(
-            environment: ProcessInfo.processInfo.environment,
-            isXCTestLoaded: isXCTestLoaded
-        )
     }
 
     static func shouldRunAppStartupSideEffects(
@@ -38,6 +52,41 @@ enum AppRuntime {
     private static var isXCTestLoaded: Bool {
         NSClassFromString("XCTestCase") != nil ||
         NSClassFromString("XCTest.XCTestCase") != nil
+    }
+    #endif
+}
+
+/// Where the app runs from. Opened straight from its disk image, or from Downloads without
+/// having been moved (macOS then runs a copy from a random read-only place, "translocated"),
+/// everything seems to work, but "Open at login" registers a copy that is gone after the
+/// next restart, "Show in Finder" opens a temporary folder and the disk image cannot be
+/// ejected. One alert at launch says so.
+enum AppLocation {
+    /// Whether the app at `bundlePath` should be moved before it is used: a translocated
+    /// copy, or one on a volume that cannot be written (a mounted disk image). An app on an
+    /// ordinary external disk is left alone. Pure.
+    static func shouldBeMoved(bundlePath: String, volumeIsReadOnly: Bool) -> Bool {
+        if bundlePath.contains("/AppTranslocation/") { return true }
+        return bundlePath.hasPrefix("/Volumes/") && volumeIsReadOnly
+    }
+
+    /// The same for the running app.
+    static var runningCopyShouldBeMoved: Bool {
+        let url = Bundle.main.bundleURL
+        let readOnly = (try? url.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?.volumeIsReadOnly ?? false
+        return shouldBeMoved(bundlePath: url.path, volumeIsReadOnly: readOnly)
+    }
+
+    /// Shows the alert. Returns true when the user chose to quit.
+    static func askToMoveFirst() -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = NSLocalizedString("launch-location-title", comment: "Alert at launch from a disk image: title")
+        alert.informativeText = NSLocalizedString("launch-location-message", comment: "Alert at launch from a disk image: what to do and why")
+        alert.addButton(withTitle: NSLocalizedString("launch-location-quit", comment: "Alert at launch from a disk image: quit (the default)"))
+        alert.addButton(withTitle: NSLocalizedString("launch-location-continue", comment: "Alert at launch from a disk image: go on anyway"))
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn
     }
 }
 
@@ -60,13 +109,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         MainMenuManager.shared.install()
 
         guard AppRuntime.shouldRunAppStartupSideEffects else {
-            NSLog("Running under XCTest; skipping app startup side effects")
             return
         }
 
-        // The original Mos would handle the same mouse events: quit it if it is running.
-        LegacyAppQuitter.quitAtLaunch()
-        // Its login item (or the user) can start it again later: quit it each time.
+        // From a disk image or a translocated copy: say so first, before anything else of
+        // the app starts (no event tap runs yet, so the modal alert blocks nothing).
+        if AppLocation.runningCopyShouldBeMoved {
+            AppSystemLog.note("Running from a disk image or a translocated copy: asking to move the app to Applications first")
+            if AppLocation.askToMoveFirst() {
+                NSApp.terminate(nil)
+                return
+            }
+        }
+
+        // The original Mos would handle the same mouse events. It is quit when Scrollio's
+        // event taps start (AppRunController's cores), not here: while Scrollio does nothing
+        // (no Accessibility access yet, paused) Mos is left alone. Its login item (or the
+        // user) can start it later: it is quit then too, while the taps run.
         LegacyAppQuitter.startWatchingLaunches()
 
         // 禁止重复运行, 结束正在运行的实例: another copy is asked to quit and waited for (at
@@ -148,12 +207,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSWorkspace.didDeactivateApplicationNotification,
             object: nil
         )
+        // The Accessibility list of System Settings changed (any app's entry): look at the
+        // access now, not at the keepers' next look up to 5 s later. A tap of a process
+        // without access is what makes keys and the wheel hang meanwhile.
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(accessibilityListDidChange),
+            name: Self.accessibilityListChangedNotification,
+            object: nil
+        )
+    }
+
+    /// Posted by macOS (to every process) when the Accessibility list changes.
+    static let accessibilityListChangedNotification = Notification.Name("com.apple.accessibility.api")
+    /// The answer of `AXIsProcessTrusted` follows the notification with a short delay.
+    static let accessibilityCheckDelay: TimeInterval = 0.5
+
+    @objc func accessibilityListDidChange(notification: NSNotification) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.accessibilityCheckDelay) {
+            AppRunController.shared.accessibilityListDidChange()
+        }
     }
     // 运行后启动滚动处理
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         guard AppRuntime.shouldRunAppStartupSideEffects else { return }
         // Which accent colour the user sees: the app's purple, or their own choice.
         AppSystemLog.note(AppAccent.liveLogLine())
+        // Read now what the first press of a button would otherwise read inside the button
+        // tap's callback: the user's Spaces shortcuts (another app's preferences) and the
+        // keys of the keyboard layout in use.
+        SystemShortcut.reloadSystemShortcuts()
+        KeyboardLayoutKeys.shared.warmUp()
         // 上次运行若在手势冻结指针时退出, 先恢复指针与鼠标的关联
         MouseGesturePointerLock.shared.forceRelease()
         LogiCenter.shared.installBridge(LogiIntegrationBridge.shared)

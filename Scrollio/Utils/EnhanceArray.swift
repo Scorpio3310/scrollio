@@ -84,7 +84,7 @@ extension EnhanceArray {
         do {
             return try encoder.encode(array)
         } catch {
-            NSLog("Failed to encode array to JSON: \(error)")
+            AppSystemLog.problem("Settings: a list could not be written as JSON (\(type(of: error)))")
             return nil
         }
     }
