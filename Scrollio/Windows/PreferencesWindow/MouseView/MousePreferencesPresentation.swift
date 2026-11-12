@@ -328,8 +328,11 @@ struct MousePaneModel: Equatable {
     // MARK: - Scales
 
     /// The pointer speeds the slider offers, a tick each: each rung becomes the nearest DPI
-    /// the mouse accepts (`pointerRungs`).
-    static let pointerLadder = [400, 600, 800, 1000, 1200, 1600, 2000, 2400, 3200, 4000, 6000, 8000]
+    /// the mouse accepts (`pointerRungs`). Every 200 from 400 to 4000: the owner found 6000
+    /// and 8000 of no use on a desk and wanted the steps between (1400, 1800) to choose from.
+    /// A mouse that stands above 4000 is shown at the top and is not changed until the
+    /// slider is moved.
+    static let pointerLadder = Array(stride(from: 400, through: 4000, by: 200))
 
     /// SmartShift sensitivity and click firmness: a tick every 10 % from 0 to 100, the knob
     /// stops only there. The lowest tick writes the setting's least value (1 %).

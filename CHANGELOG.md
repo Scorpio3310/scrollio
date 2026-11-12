@@ -99,6 +99,12 @@ it for the people who use the app, and give the version its part before you tag 
   cannot contradict each other: the last place switched off switches the Beta off, and the
   Beta switched on with both off comes on in browsers.
 - The purple of the app's switches, selection and buttons is a little darker.
+- A new install starts at Speed 6.5, a tick of the slider (it was 6.3). If you never
+  moved Speed, Smallest step or the feel, your scroll is 3 % longer per click from now on;
+  set Speed to 6.3 to have it as before.
+- Mouse › Pointer speed: the slider now has a step every 200 DPI from 400 to 4000 (it had
+  fewer steps and went to 8000). A mouse set higher is shown at the top and left alone
+  until you move the slider.
 
 ## 1.0.1
 

@@ -29,7 +29,7 @@ final class ScrollSettingsTests: XCTestCase {
     func testFeel_smoothIsTheDefaultOfTheModel() {
         XCTAssertEqual(ScrollFeel.default, .smooth)
         XCTAssertEqual(OPTIONS_SCROLL_DEFAULT().duration, 3.69)
-        XCTAssertEqual(OPTIONS_SCROLL_DEFAULT().speed, 6.3)
+        XCTAssertEqual(OPTIONS_SCROLL_DEFAULT().speed, 6.5)
         XCTAssertEqual(OPTIONS_SCROLL_DEFAULT().step, 33.6)
         XCTAssertEqual(OPTIONS_SCROLL_DEFAULT().duration, ScrollFeel.default.duration)
     }
@@ -226,7 +226,7 @@ final class ScrollSettingsTests: XCTestCase {
     func testNormalize_keepsSpeedInsideTheSlider() {
         let cases: [(stored: Double, expected: Double)] = [
             (6.5, 6.5), (1, 1), (10, 10), (2.73, 2.73),
-            (0.4, 1), (0, 1), (-3, 1), (12, 10), (.infinity, 6.3), (.nan, 6.3),
+            (0.4, 1), (0, 1), (-3, 1), (12, 10), (.infinity, 6.5), (.nan, 6.5),
         ]
         for (stored, expected) in cases {
             let scroll = OPTIONS_SCROLL_DEFAULT()

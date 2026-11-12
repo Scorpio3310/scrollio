@@ -112,7 +112,7 @@ class OPTIONS_SCROLL_DEFAULT: Codable {
     var step = 33.6 {
         didSet {Options.shared.markChanged(scrollContainer: self)}
     }
-    var speed = 6.30 {
+    var speed = 6.50 {
         didSet {Options.shared.markChanged(scrollContainer: self)}
     }
     // The "Smooth" feel (ScrollFeel.default)

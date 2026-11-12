@@ -85,7 +85,7 @@ final class ScrollPreviewMotionTests: XCTestCase {
         XCTAssertEqual(scene.duration, options.duration)
         XCTAssertEqual(scene.speed, options.speed)
         XCTAssertEqual(scene.duration, 3.69)
-        XCTAssertEqual(scene.speed, 6.3)
+        XCTAssertEqual(scene.speed, 6.5)
         XCTAssertFalse(scene.reversed)
         XCTAssertEqual(scene.emphasis, .wheel)
     }

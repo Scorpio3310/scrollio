@@ -286,19 +286,19 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         let controller = makeController([Fixtures.mxMaster4()])
         let slider = try XCTUnwrap(controller.pointerSpeedSlider as? PreferencesSlider)
         let ladder = MousePaneModel.pointerLadder
-        XCTAssertEqual(ladder, [400, 600, 800, 1000, 1200, 1600, 2000, 2400, 3200, 4000, 6000, 8000])
+        XCTAssertEqual(ladder, Array(stride(from: 400, through: 4000, by: 200)), "every 200 from 400 to 4000")
         XCTAssertEqual(controller.model.pointerChoices, ladder, "200…8000 in steps of 50 has every rung")
         XCTAssertEqual(slider.minValue, 0)
-        XCTAssertEqual(slider.maxValue, 11)
-        XCTAssertEqual(slider.numberOfTickMarks, 12)
+        XCTAssertEqual(slider.maxValue, 18)
+        XCTAssertEqual(slider.numberOfTickMarks, 19)
         XCTAssertEqual(slider.tickMarkPosition, .below)
         XCTAssertTrue(slider.allowsTickMarkValuesOnly)
         XCTAssertEqual(slider.doubleValue, 3, "1000 DPI")
         XCTAssertEqual(controller.pointerSpeedRow.valueText, "1000 DPI")
 
         drag(slider, to: 5.3)
-        XCTAssertEqual(Options.shared.logiMouse.pointerDPI, 1600)
-        XCTAssertEqual(controller.pointerSpeedRow.valueText, "1600 DPI")
+        XCTAssertEqual(Options.shared.logiMouse.pointerDPI, 1400)
+        XCTAssertEqual(controller.pointerSpeedRow.valueText, "1400 DPI")
         XCTAssertEqual(slider.doubleValue, 5, "the knob stops on the rung")
 
         for (index, dpi) in ladder.enumerated() {
@@ -308,11 +308,11 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         }
 
         // Arrow keys move one rung.
-        XCTAssertFalse(slider.moveKnob(by: 1), "already at 8000")
+        XCTAssertFalse(slider.moveKnob(by: 1), "already at 4000")
         XCTAssertTrue(slider.moveKnob(by: -1))
-        XCTAssertEqual(Options.shared.logiMouse.pointerDPI, 6000)
+        XCTAssertEqual(Options.shared.logiMouse.pointerDPI, 3800)
         XCTAssertTrue(slider.moveKnob(by: -1))
-        XCTAssertEqual(Options.shared.logiMouse.pointerDPI, 4000)
+        XCTAssertEqual(Options.shared.logiMouse.pointerDPI, 3600)
     }
 
     func testAMouseWithAShortDPIListGetsTheRungsItHas() throws {
@@ -338,10 +338,12 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         let ladder = MousePaneModel.pointerLadder
         XCTAssertEqual(MousePaneModel.pointerRungs(offered: Fixtures.dpiChoices), ladder)
         XCTAssertEqual(MousePaneModel.pointerRungs(offered: [400, 800, 1600, 3200]), [400, 800, 1600, 3200])
-        // MX Master 3 stops at 4000: the two top rungs become 4000 once.
+        // MX Master 3 stops at 4000, as the ladder does: every rung is its own.
+        XCTAssertEqual(MousePaneModel.pointerRungs(offered: Array(stride(from: 200, through: 4000, by: 50))), ladder)
+        // A mouse that stops lower: the rungs above its top become its top once.
         XCTAssertEqual(
-            MousePaneModel.pointerRungs(offered: Array(stride(from: 200, through: 4000, by: 50))),
-            [400, 600, 800, 1000, 1200, 1600, 2000, 2400, 3200, 4000]
+            MousePaneModel.pointerRungs(offered: Array(stride(from: 200, through: 1600, by: 50))),
+            [400, 600, 800, 1000, 1200, 1400, 1600]
         )
         // Each rung becomes the nearest the mouse offers (the lower one on a tie).
         XCTAssertEqual(MousePaneModel.pointerRungs(offered: [500, 1000, 2000, 4000]), [500, 1000, 2000, 4000])
@@ -357,7 +359,7 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         Options.shared.logiMouse.pointerDPI = 1750
         let controller = makeController([Fixtures.mxMaster4(dpi: 1750)])
         let slider = try XCTUnwrap(controller.pointerSpeedSlider as? PreferencesSlider)
-        XCTAssertEqual(slider.doubleValue, 5, "1600 is nearer than 2000")
+        XCTAssertEqual(slider.doubleValue, 7, "1800 is nearer than 1600")
         XCTAssertEqual(controller.pointerSpeedRow.valueText, "1750 DPI")
         XCTAssertNil(controller.pointerSpeedRow.explanation?.components(separatedBy: "\n").dropFirst().first)
 
@@ -373,7 +375,7 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         manage(false)
         Options.shared.logiMouse = .default
         let other = makeController([Fixtures.mxMaster4(dpi: 2300)])
-        XCTAssertEqual(other.pointerSpeedSlider.doubleValue, 7, "2400")
+        XCTAssertEqual(other.pointerSpeedSlider.doubleValue, 9, "2200: as near as 2400, and the lower of the two is shown")
         XCTAssertEqual(other.pointerSpeedRow.valueText, "2300 DPI")
         XCTAssertNil(Options.shared.logiMouse.pointerDPI)
     }
@@ -651,8 +653,8 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertTrue(controller.hapticsSection.isHidden)
         XCTAssertTrue(controller.firmnessRow.isHidden)
         XCTAssertFalse(controller.pointerSpeedRow.isHidden)
-        XCTAssertEqual(controller.pointerSpeedSlider.maxValue, 9, "ten rungs up to 4000 DPI")
-        XCTAssertEqual(controller.pointerSpeedSlider.numberOfTickMarks, 10)
+        XCTAssertEqual(controller.pointerSpeedSlider.maxValue, 18, "nineteen rungs up to 4000 DPI")
+        XCTAssertEqual(controller.pointerSpeedSlider.numberOfTickMarks, 19)
         XCTAssertEqual(
             controller.headerView.batteryLabel.stringValue,
             String(format: text("mouse-battery-about"), MouseText.percent(50))

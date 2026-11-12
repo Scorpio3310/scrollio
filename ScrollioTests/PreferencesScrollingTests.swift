@@ -450,11 +450,11 @@ final class PreferencesScrollingTests: XCTestCase {
         let controller = makeController()
         let slider = controller.scrollSpeedSlider!
         XCTAssertEqual(slider.minValue, 1)
-        XCTAssertEqual(slider.maxValue, 10, "the old range: the default of 6.3 lies above 5")
-        XCTAssertEqual(slider.doubleValue, 6.3, accuracy: 1e-9)
-        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, speedText(6.3))
-        XCTAssertTrue(speedText(6.3).hasSuffix("×"), "a factor")
-        XCTAssertEqual(slider.accessibilityValueDescription(), speedText(6.3))
+        XCTAssertEqual(slider.maxValue, 10, "the old range: the default of 6.5 lies above 5")
+        XCTAssertEqual(slider.doubleValue, 6.5, accuracy: 1e-9)
+        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, speedText(6.5))
+        XCTAssertTrue(speedText(6.5).hasSuffix("×"), "a factor")
+        XCTAssertEqual(slider.accessibilityValueDescription(), speedText(6.5))
         XCTAssertEqual(slider.accessibilityLabel(), "Speed")
         // A tick at every whole number; the value moves in halves between them.
         XCTAssertEqual(slider.numberOfTickMarks, 10)
@@ -500,7 +500,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(slider.accessibilityValueDescription(), ScrollingSlider.smallestStep.spokenValue(for: 0.01))
         drag(slider, to: 12)
         XCTAssertEqual(Options.shared.scroll.duration, 3.69, "nothing else moves")
-        XCTAssertEqual(Options.shared.scroll.speed, 6.3)
+        XCTAssertEqual(Options.shared.scroll.speed, 6.5)
     }
 
     /// Speed shows its factor in the user's locale; Glide time and Smallest step show no
@@ -1357,11 +1357,11 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(reset, OPTIONS_SCROLL_DEFAULT())
         XCTAssertTrue(reset.smooth)
         XCTAssertEqual(reset.duration, 3.69)
-        XCTAssertEqual(reset.speed, 6.3)
+        XCTAssertEqual(reset.speed, 6.5)
         XCTAssertEqual(reset.step, 33.6)
         XCTAssertFalse(reset.smoothSimTrackpad)
         XCTAssertEqual(controller.feelControl.selectedSegment, ScrollFeel.smooth.rawValue)
-        XCTAssertEqual(controller.scrollSpeedSlider.doubleValue, 6.3, accuracy: 1e-9)
+        XCTAssertEqual(controller.scrollSpeedSlider.doubleValue, 6.5, accuracy: 1e-9)
         XCTAssertEqual(controller.smallestStepSlider.doubleValue, 33.6, accuracy: 1e-9)
         XCTAssertEqual(controller.trackpadEventsSwitch.state, .off)
         XCTAssertEqual(controller.reverseSwitch.state, .on)
@@ -1491,7 +1491,7 @@ final class PreferencesScrollingTests: XCTestCase {
         var expected = ScrollPreviewView.Scene()
         expected.smoothing = true
         expected.duration = 3.69
-        expected.speed = 6.3
+        expected.speed = 6.5
         expected.reversed = true
         expected.emphasis = .wheel
         XCTAssertEqual(controller.previewView.scene, expected)
@@ -1756,7 +1756,7 @@ final class PreferencesScrollingTests: XCTestCase {
         page.inheritClick(page.inheritSwitch)
         XCTAssertTrue(application.inherit)
         XCTAssertFalse(tab.scrollSpeedSlider.isEnabled)
-        XCTAssertEqual(tab.scrollSpeedSlider.doubleValue, 6.3, accuracy: 1e-9, "the global value")
+        XCTAssertEqual(tab.scrollSpeedSlider.doubleValue, 6.5, accuracy: 1e-9, "the global value")
     }
 
     // MARK: - Layout
@@ -1939,14 +1939,14 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(button.title, "Reset to Defaults")
         XCTAssertTrue(button.isEnabled)
         click()
-        XCTAssertEqual(Options.shared.scroll.speed, 6.3, "a reset")
+        XCTAssertEqual(Options.shared.scroll.speed, 6.5, "a reset")
         XCTAssertTrue(controller.offersUndoOfReset)
 
         // A setting changed behind the pane's back (the menu bar, another pane): the click
         // still resets.
         Options.shared.scroll.speed = 3
         click()
-        XCTAssertEqual(Options.shared.scroll.speed, 6.3, "a reset, not an Undo of the one before")
+        XCTAssertEqual(Options.shared.scroll.speed, 6.5, "a reset, not an Undo of the one before")
 
         // The pane goes away: the offer goes with it.
         XCTAssertTrue(controller.offersUndoOfReset)

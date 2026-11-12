@@ -2369,17 +2369,19 @@ final class ScrollClassicPathTests: XCTestCase {
 
     // MARK: The dead zone by Duration
 
-    /// The default click, frame by frame: Feel "Smooth" (Duration 3.69), Step 33.6, Speed 6.3,
-    /// dead zone 1, trackpad-style events off. The owner tuned this by hand; a change to the
-    /// engine must leave every value of it alone, the time of the stop included.
+    /// The click the owner tuned by hand, frame by frame: Feel "Smooth" (Duration 3.69),
+    /// Step 33.6, Speed 6.3, dead zone 1, trackpad-style events off. A change to the engine
+    /// must leave every value of it alone, the time of the stop included. (Speed 6.3 was the
+    /// default until 1.0.2; a new install now starts at 6.5, a tick of the slider, which is
+    /// the same engine with a click of 212 px. The pin stays on the tuned click.)
     func testTheDefaultClick_isWhatItWas() throws {
         let defaults = OPTIONS_SCROLL_DEFAULT()
         XCTAssertEqual(defaults.duration, 3.69)
         XCTAssertEqual(defaults.step, 33.6)
-        XCTAssertEqual(defaults.speed, 6.3)
+        XCTAssertEqual(defaults.speed, 6.5)
         XCTAssertEqual(defaults.deadZone, 1)
         XCTAssertFalse(defaults.smoothSimTrackpad)
-        let click = defaults.step * defaults.speed
+        let click = defaults.step * 6.3
 
         let at60 = glide(of: click, duration: defaults.duration, rate: 60)
         XCTAssertEqual(at60.rig.moving.map { $0.frame.y }, [
