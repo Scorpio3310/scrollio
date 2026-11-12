@@ -71,18 +71,14 @@ enum TrackpadStyleEvaluation {
         return "Trackpad-style scrolling, apps that are not Chromium-based or Gecko-based: \(form) (evaluation switch \(defaultsKey): \(state))"
     }
 
-    /// The line about Safari for the `app` log at launch. `recordComesOff`: whether the
-    /// wheel event's hardware record can be taken off a frame here; without that Safari
-    /// gets no phases whatever the switch says.
-    static func safariLaunchLine(usesSafariFlick: Bool, recordComesOff: Bool) -> String {
-        let form: String
-        if !usesSafariFlick {
-            form = "no phases, as with the switch off"
-        } else if recordComesOff {
-            form = "the flick, without the hardware record"
-        } else {
-            form = "no phases: the flick was asked for, but the hardware record does not come off a frame here"
-        }
+    /// The line about Safari for the `app` log at launch. It does not ask whether the
+    /// hardware record comes off (that would run the self-test at every launch): where it
+    /// does not, Safari gets no phases whatever the switch says, and the line about the
+    /// hardware record says which it is.
+    static func safariLaunchLine(usesSafariFlick: Bool) -> String {
+        let form = usesSafariFlick
+            ? "the flick, without the hardware record (no phases where the record does not come off a frame: the line about the hardware record says which)"
+            : "no phases, as with the switch off"
         let state = usesSafariFlick ? "YES" : "not set"
         return "Trackpad-style scrolling, Safari: \(form) (evaluation switch \(safariFlickDefaultsKey): \(state))"
     }

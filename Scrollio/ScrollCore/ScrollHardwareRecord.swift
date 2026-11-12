@@ -25,10 +25,19 @@ import Cocoa
 /// of an event share one record object, so it is never changed in place: it is taken off the
 /// frame's own copy and the wheel event keeps its own.
 ///
-/// It is used only when a self-test at launch has passed (`check`): attach a record to an
-/// event, read it back, take it off a copy, read nil there and the record still on the
-/// original. Where a function is missing or a step fails, frames keep the record as they
-/// always did and the `app` log says so once.
+/// It is used only when a self-test has passed (`check`): attach a record to an event,
+/// read it back, take it off a copy, read nil there and the record still on the original.
+/// Where a function is missing or a step fails, frames keep the record as they always did
+/// and the `app` log says so once.
+///
+/// The self-test runs once, the first time somebody asks whether the record comes off
+/// (`comesOff`), and never for a user who has "Trackpad-style scrolling" off: nobody asks
+/// then, at launch or at a wheel event. It is asked at launch when the switch is on in the
+/// Scrolling pane or in some app's own settings (`ScrollPoster.trackpadStyleIsOnSomewhere`),
+/// and otherwise by the first wheel event whose frames would carry phases (the switch was
+/// turned on in this run): about 30 microseconds, once. So a macOS on which the private
+/// call misbehaves reaches only a user who has the Beta on, and he can still start the app
+/// and switch it off. The `app` log line is written when the self-test runs.
 ///
 /// The self-test passes NULL to a private function in this process. That was run on macOS
 /// 27.2 only; whether macOS 14, 15 and 26 accept NULL there is not known, and a crash in the
@@ -141,15 +150,38 @@ enum ScrollHardwareRecord {
         return (outcome, outcome == .comesOff ? calls : nil)
     }
 
-    /// This launch: looked up and tested once, at first use (the launch line asks for it,
-    /// on the main thread, before any scroll).
-    static let system: (outcome: Outcome, calls: Calls?) = prepare(
-        macOSMajor: ProcessInfo.processInfo.operatingSystemVersion.majorVersion
-    )
+    /// This run: looked up and tested once, the first time it is asked for, and the `app`
+    /// log told what was found. A `static let`: once, whichever thread asks first.
+    static let system: (outcome: Outcome, calls: Calls?) = {
+        let found = prepare(macOSMajor: ProcessInfo.processInfo.operatingSystemVersion.majorVersion)
+        announce(found.outcome, note: AppSystemLog.note, problem: AppSystemLog.problem)
+        return found
+    }()
 
-    /// Whether frames go out without the record.
+    /// Whether frames go out without the record. The first call runs the self-test. Asked
+    /// only where "Trackpad-style scrolling" is on: at launch, or by a wheel event whose
+    /// frames would carry phases. Main thread.
     static var comesOff: Bool {
+#if DEBUG
+        timesAskedForTests += 1
+#endif
         return system.calls != nil
+    }
+#if DEBUG
+    /// Tests: how often `comesOff` was asked in this process.
+    static var timesAskedForTests = 0
+#endif
+
+    /// Writes what the self-test found to the `app` log: a note when the record comes off
+    /// and when this macOS is not tried (that is by design, no fault), a problem when a
+    /// function is missing or a step failed.
+    static func announce(_ outcome: Outcome, note: (String) -> Void, problem: (String) -> Void) {
+        let line = launchLine(outcome)
+        if line.isProblem {
+            problem(line.text)
+        } else {
+            note(line.text)
+        }
     }
 
     /// Takes the record off an event Scrollio owns (a frame's own copy). Nothing happens
@@ -169,14 +201,14 @@ enum ScrollHardwareRecord {
     /// The functions for reading only (`isCarried`), also where the removal is not used.
     static let readingCalls: Calls? = system.calls ?? load().calls
 
-    /// The line for the `app` log at launch, and whether it reports a problem.
+    /// The line for the `app` log, and whether it reports a problem.
     static func launchLine(_ outcome: Outcome) -> (text: String, isProblem: Bool) {
         let kept = "the frames of Trackpad-style scrolling keep the wheel event's hardware record, as before"
         switch outcome {
         case .comesOff:
             return ("Trackpad-style scrolling: the wheel event's hardware record is taken off every frame that carries phases (self-test passed)", false)
         case .notTried(let macOS):
-            return ("Trackpad-style scrolling: taking the hardware record off a frame was only run on macOS \(testedFromMacOS) and later; on macOS \(macOS) it is not tried, and \(kept)", true)
+            return ("Trackpad-style scrolling: taking the hardware record off a frame was only run on macOS \(testedFromMacOS) and later; on macOS \(macOS) it is not tried, and \(kept)", false)
         case .missing(let name):
             return ("Trackpad-style scrolling: macOS has no \(name) here; \(kept)", true)
         case .failed(let step):

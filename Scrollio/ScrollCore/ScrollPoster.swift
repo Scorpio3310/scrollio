@@ -311,15 +311,17 @@ class ScrollPoster {
     /// farther away ends it and begins a new one (`endOneTouchLocked(unlessAt:)`).
     private let trackpadStylePointerSlack: CGFloat = 30
     /// Whether the wheel event's hardware record is taken off a trackpad-style frame: the
-    /// launch's self-test passed (`ScrollHardwareRecord`). Tests set it. Main thread.
-    var takesHardwareRecordOff = ScrollHardwareRecord.comesOff
+    /// self-test passed (`ScrollHardwareRecord.comesOff`; its first call runs the self-test).
+    /// Asked only for a wheel event whose frames carry phases (`configSnapshot`), so never
+    /// with the switch off. Tests answer here. Main thread.
+    var hardwareRecordComesOff: () -> Bool = { ScrollHardwareRecord.comesOff }
     /// EVALUATION SWITCH, removed before the one-touch form is released: apps that are not
     /// Chromium-based get the old long touch (`TrackpadStyleEvaluation`). Read once at launch;
     /// tests set it. Main thread.
     var usesOldLongTouch = TrackpadStyleEvaluation.usesOldLongTouch
     /// EVALUATION SWITCH, removed before this is released: Safari gets the flick, without
     /// the wheel event's hardware record, instead of no phases (`TrackpadStyleEvaluation`).
-    /// It counts only where the record comes off (`takesHardwareRecordOff`). Read once at
+    /// It counts only where the record comes off (`hardwareRecordComesOff`). Read once at
     /// launch; tests set it. Main thread.
     var usesSafariFlick = TrackpadStyleEvaluation.usesSafariFlick
     // Ending a session from the display link (see `displayLinkFrameLocked`)
@@ -387,7 +389,7 @@ class ScrollPoster {
         /// (`isMainlySideways`); `simTrackpadEnabled` is false then.
         var sideways = false
         /// The frames go out without the wheel event's hardware record
-        /// (`takesHardwareRecordOff`, with trackpad-style only).
+        /// (`hardwareRecordComesOff`, with trackpad-style only).
         var takesRecordOff = false
         var deadZone: Double
     }
@@ -481,7 +483,7 @@ extension ScrollPoster {
     /// `oldLongTouch`: the evaluation switch (`usesOldLongTouch`). `oneTouch` is the form of
     /// every app that gets phases and no flick, unless that switch asks for the old one.
     /// `safariFlick`: the other evaluation switch, and only where the wheel event's hardware
-    /// record comes off a frame (`usesSafariFlick && takesHardwareRecordOff`): Safari then
+    /// record comes off a frame (`usesSafariFlick && hardwareRecordComesOff()`): Safari then
     /// gets the flick. A glide whose "momentum began" carries a record never goes to an app
     /// known as WebKit's: WebKit would replace it by a glide of its own.
     static func trackpadStyleForm(switchOn: Bool, target: ScrollUtils.TrackpadStyleTarget?, oldLongTouch: Bool = false, safariFlick: Bool = false) -> (phases: Bool, flick: Bool, withheld: Bool, oneTouch: Bool) {
@@ -519,6 +521,14 @@ extension ScrollPoster {
             return true
         }
         return abs(x) > abs(y)
+    }
+
+    /// Whether "Trackpad-style scrolling" is on anywhere: in the Scrolling pane, or in the
+    /// own settings of some app in the Apps pane. At launch this decides whether the
+    /// hardware record's self-test runs then (`ScrollHardwareRecord`): for a user who has it
+    /// off everywhere, nothing of it runs.
+    static func trackpadStyleIsOnSomewhere(global: OPTIONS_SCROLL_DEFAULT, applications: [Application]) -> Bool {
+        return global.smoothSimTrackpad || applications.contains { !$0.inherit && $0.scroll.smoothSimTrackpad }
     }
 
     /// Whether "Trackpad-style scrolling" is on for an app: its own setting when it keeps its
@@ -1802,15 +1812,18 @@ private extension ScrollPoster {
         // for the first time counts as touch-only until its bundle was looked into, off this
         // thread (`ScrollUtils.trackpadStyleTarget`).
         let target = simTrackpad ? event.map { trackpadStyleTarget($0) } : nil
+        // Whether the record comes off is asked only where the answer is needed: over Safari
+        // with its evaluation switch, and for frames that carry phases. With the switch off
+        // (and for an app that gets no phases) nobody asks, and the self-test does not run.
         let form = Self.trackpadStyleForm(switchOn: simTrackpad, target: target, oldLongTouch: usesOldLongTouch,
-                                          safariFlick: usesSafariFlick && takesHardwareRecordOff)
+                                          safariFlick: simTrackpad && usesSafariFlick && target == .safari && hardwareRecordComesOff())
         return ConfigSnapshot(
             simTrackpadEnabled: form.phases,
             flick: form.flick,
             withheld: form.withheld,
             oneTouch: form.oneTouch,
             sideways: sideways,
-            takesRecordOff: form.phases && takesHardwareRecordOff,
+            takesRecordOff: form.phases && hardwareRecordComesOff(),
             deadZone: OPTIONS_SCROLL_DEFAULT.usableDeadZone(Options.shared.scroll.deadZone)
         )
     }

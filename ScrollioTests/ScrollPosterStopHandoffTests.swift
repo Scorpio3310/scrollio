@@ -1251,7 +1251,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
         poster.usesOldLongTouch = oldLongTouch
         if let takesRecordOff = takesRecordOff {
-            poster.takesHardwareRecordOff = takesRecordOff
+            poster.hardwareRecordComesOff = { takesRecordOff }
         }
         poster.usesSafariFlick = safariFlick
         poster.isEventTargetingChrome = { _ in chrome }
@@ -2178,6 +2178,60 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         }
     }
 
+    /// The hardware record's self-test is a private call. For a user who has "Trackpad-style
+    /// scrolling" off it never runs: nobody asks whether the record comes off, not a wheel
+    /// event, not a display frame, not a stop (over Chrome either), through the poster as
+    /// the app makes it. With the switch on it is not asked either where no frame carries
+    /// phases: over Safari and the other apps that are left alone, and for a sideways
+    /// scroll. The first wheel event whose frames carry phases asks.
+    func testTheRealPath_switchOff_nobodyAsksWhetherTheHardwareRecordComesOff() throws {
+        func asked(_ body: () throws -> Void) rethrows -> Int {
+            let before = ScrollHardwareRecord.timesAskedForTests
+            try body()
+            return ScrollHardwareRecord.timesAskedForTests - before
+        }
+        try withSettings(switchOn: false) {
+            XCTAssertEqual(try asked { _ = try oneClick(over: .touchOnly) }, 0, "off")
+            XCTAssertEqual(try asked { _ = try oneClick(over: .followsGlide, chrome: true) }, 0, "off, over Chrome, with its \"ended\" at the stop")
+            XCTAssertEqual(try asked { _ = try oneClick(over: .safari, safariFlick: true) }, 0, "off, also with Safari's evaluation switch set")
+            XCTAssertEqual(try asked {
+                let run = realRun(over: .touchOnly)
+                XCTAssertTrue(try run.wheel(at: 0, y: 0, x: 211.68))
+                XCTAssertTrue(try run.wheel(at: 0.1))
+                run.run(until: 2)
+                run.poster.updateShifting(enable: true)
+                run.poster.stop(reason: .leftClick)
+                _ = run.finish()
+            }, 0, "off: several wheel events, both axes, the sideways key, a click")
+        }
+        try withSettings(switchOn: true) {
+            XCTAssertEqual(try asked { _ = try oneClick(over: .plainScrolling) }, 0, "on, an app that is left alone")
+            XCTAssertEqual(try asked { _ = try oneClick(over: .safari) }, 0, "on, Safari without its switch")
+            XCTAssertEqual(try asked {
+                let run = realRun(over: .touchOnly)
+                XCTAssertTrue(try run.wheel(at: 0, y: 0, x: 211.68))
+                run.run(until: 2)
+                _ = run.finish()
+            }, 0, "on, a sideways scroll")
+            XCTAssertGreaterThan(try asked { _ = try oneClick(over: .touchOnly) }, 0, "on, frames with phases: asked")
+            XCTAssertGreaterThan(try asked { _ = try oneClick(over: .safari, safariFlick: true) }, 0, "on, Safari with its switch: asked")
+        }
+        let own = Application(path: "/Applications/Editor.app")
+        own.inherit = false
+        own.scroll.smoothSimTrackpad = true
+        let inherits = Application(path: "/Applications/Other.app")
+        inherits.inherit = true
+        inherits.scroll.smoothSimTrackpad = true
+        var global = OPTIONS_SCROLL_DEFAULT()
+        global.smoothSimTrackpad = false
+        // What decides whether the self-test runs at launch.
+        XCTAssertFalse(ScrollPoster.trackpadStyleIsOnSomewhere(global: global, applications: []), "off everywhere: not at launch")
+        XCTAssertFalse(ScrollPoster.trackpadStyleIsOnSomewhere(global: global, applications: [inherits]), "an app that uses the Scrolling pane's settings does not count")
+        XCTAssertTrue(ScrollPoster.trackpadStyleIsOnSomewhere(global: global, applications: [inherits, own]), "on for one app")
+        global.smoothSimTrackpad = true
+        XCTAssertTrue(ScrollPoster.trackpadStyleIsOnSomewhere(global: global, applications: []), "on in the Scrolling pane")
+    }
+
     /// With the switch off Chrome gets an "ended" at every stop (from Mos: "only [4, 0] lets
     /// Chrome recover"). It is the one frame with a phase on that path, and it is written as
     /// it always was: the wheel event's time, line delta and scroll count. Nothing of
@@ -2384,9 +2438,18 @@ final class ScrollHardwareRecordTests: XCTestCase {
         XCTAssertTrue(passed.text.contains("is taken off every frame that carries phases"))
         for outcome in [ScrollHardwareRecord.Outcome.notTried(macOS: 15), .missing("SLEventSetIOHIDEvent"), .failed("a step")] {
             let line = ScrollHardwareRecord.launchLine(outcome)
-            XCTAssertTrue(line.isProblem, "\(outcome)")
+            // Not tried on an older macOS is by design, no fault: a note. The other two are problems.
+            XCTAssertEqual(line.isProblem, outcome != .notTried(macOS: 15), "\(outcome)")
             XCTAssertTrue(line.text.contains("keep the wheel event's hardware record, as before"), line.text)
+            var notes: [String] = [], problems: [String] = []
+            ScrollHardwareRecord.announce(outcome, note: { notes.append($0) }, problem: { problems.append($0) })
+            XCTAssertEqual(notes, line.isProblem ? [] : [line.text], "\(outcome)")
+            XCTAssertEqual(problems, line.isProblem ? [line.text] : [], "\(outcome)")
         }
+        var notes: [String] = [], problems: [String] = []
+        ScrollHardwareRecord.announce(.comesOff, note: { notes.append($0) }, problem: { problems.append($0) })
+        XCTAssertEqual(notes, [passed.text])
+        XCTAssertEqual(problems, [])
         XCTAssertTrue(ScrollHardwareRecord.launchLine(.notTried(macOS: 15)).text.contains("on macOS 15 it is not tried"))
         XCTAssertTrue(ScrollHardwareRecord.launchLine(.missing("SLEventSetIOHIDEvent")).text.contains("macOS has no SLEventSetIOHIDEvent here"))
         XCTAssertTrue(ScrollHardwareRecord.launchLine(.failed("a step")).text.contains("failed (a step)"))

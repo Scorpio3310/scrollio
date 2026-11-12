@@ -3376,16 +3376,12 @@ final class TrackpadStyleEvaluationTests: XCTestCase {
             "Trackpad-style scrolling, apps that are not Chromium-based or Gecko-based: the old long touch (a touch while the wheel turns, then its glide) (evaluation switch trackpadStyleEvaluationOldLongTouch: YES)"
         )
         XCTAssertEqual(
-            TrackpadStyleEvaluation.safariLaunchLine(usesSafariFlick: false, recordComesOff: true),
+            TrackpadStyleEvaluation.safariLaunchLine(usesSafariFlick: false),
             "Trackpad-style scrolling, Safari: no phases, as with the switch off (evaluation switch trackpadStyleEvaluationSafariFlick: not set)"
         )
         XCTAssertEqual(
-            TrackpadStyleEvaluation.safariLaunchLine(usesSafariFlick: true, recordComesOff: true),
-            "Trackpad-style scrolling, Safari: the flick, without the hardware record (evaluation switch trackpadStyleEvaluationSafariFlick: YES)"
-        )
-        XCTAssertEqual(
-            TrackpadStyleEvaluation.safariLaunchLine(usesSafariFlick: true, recordComesOff: false),
-            "Trackpad-style scrolling, Safari: no phases: the flick was asked for, but the hardware record does not come off a frame here (evaluation switch trackpadStyleEvaluationSafariFlick: YES)"
+            TrackpadStyleEvaluation.safariLaunchLine(usesSafariFlick: true),
+            "Trackpad-style scrolling, Safari: the flick, without the hardware record (no phases where the record does not come off a frame: the line about the hardware record says which) (evaluation switch trackpadStyleEvaluationSafariFlick: YES)"
         )
     }
 

@@ -253,17 +253,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // "Trackpad-style scrolling" apps that are not Chromium-based get in this run.
         AppSystemLog.note(TrackpadStyleEvaluation.launchLine(usesOldLongTouch: TrackpadStyleEvaluation.usesOldLongTouch))
         // The self-test for taking the wheel event's hardware record off a trackpad-style
-        // frame runs here, once, before any scroll; the log says what it found.
-        let hardwareRecord = ScrollHardwareRecord.launchLine(ScrollHardwareRecord.system.outcome)
-        if hardwareRecord.isProblem {
-            AppSystemLog.problem(hardwareRecord.text)
-        } else {
-            AppSystemLog.note(hardwareRecord.text)
+        // frame (a private call) runs here, with its line in the log, only for a user who
+        // has "Trackpad-style scrolling" on, in the Scrolling pane or for some app. With it
+        // off everywhere nothing asks for it, here or at a wheel event; switched on later,
+        // the first wheel event with phases asks.
+        let applications = Options.shared.application.applications
+        if ScrollPoster.trackpadStyleIsOnSomewhere(
+            global: Options.shared.scroll,
+            applications: (0..<applications.count).compactMap { applications.get(by: $0) }
+        ) {
+            _ = ScrollHardwareRecord.comesOff
         }
         // EVALUATION SWITCH (removed with `TrackpadStyleEvaluation`): what Safari gets.
-        AppSystemLog.note(TrackpadStyleEvaluation.safariLaunchLine(
-            usesSafariFlick: TrackpadStyleEvaluation.usesSafariFlick, recordComesOff: ScrollHardwareRecord.comesOff
-        ))
+        AppSystemLog.note(TrackpadStyleEvaluation.safariLaunchLine(usesSafariFlick: TrackpadStyleEvaluation.usesSafariFlick))
         // Read now what the first press of a button would otherwise read inside the button
         // tap's callback: the user's Spaces shortcuts (another app's preferences) and the
         // keys of the keyboard layout in use.
