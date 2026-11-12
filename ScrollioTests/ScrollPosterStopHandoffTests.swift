@@ -1476,6 +1476,8 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         private(set) var kept: [(isLook: Bool, answer: (ScrollEndReading) -> Void)] = []
         private(set) var looks = 0
         private(set) var reads = 0
+        /// The looks that were allowed to ask for roles.
+        private(set) var looksWithRoles = 0
         private var waiting: [() -> Void] = []
         private var late: [(due: Double, work: () -> Void)] = []
         /// A page stops at its ends: what was sent past one is not owed back.
@@ -1506,8 +1508,9 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             clampedOffset = min(range, max(0, (clampedOffset ?? offset) + pixels))
         }
 
-        func look(pid: pid_t, at point: CGPoint, answer: @escaping (ScrollEndReading) -> Void) {
+        func look(pid: pid_t, at point: CGPoint, readsRoles: Bool, answer: @escaping (ScrollEndReading) -> Void) {
             looks += 1
+            if readsRoles { looksWithRoles += 1 }
             if keepsAnswers {
                 kept.append((true, answer))
                 return
@@ -1924,7 +1927,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         }
         let reader = AccessibilityScrollEndWatch(isTrusted: { true })
         let answered = expectation(description: "answered")
-        reader.look(pid: getpid(), at: CGPoint(x: 10, y: 10)) { reading in
+        reader.look(pid: getpid(), at: CGPoint(x: 10, y: 10), readsRoles: true) { reading in
             XCTAssertNil(reading.value)
             XCTAssertEqual(reading.failedAt, "Scrollio's own window")
             XCTAssertEqual(reading.roles, [], "nothing was asked")
@@ -2211,7 +2214,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         let looked = expectation(description: "the look answered")
         let read = expectation(description: "the read answered")
         var returned = false
-        reader.look(pid: ProcessInfo.processInfo.processIdentifier, at: CGPoint(x: 10, y: 10)) { reading in
+        reader.look(pid: ProcessInfo.processInfo.processIdentifier, at: CGPoint(x: 10, y: 10), readsRoles: true) { reading in
             XCTAssertFalse(Thread.isMainThread)
             XCTAssertNil(reading.value)
             XCTAssertEqual(reading.failedAt, "Scrollio is not trusted for Accessibility")
@@ -2251,11 +2254,11 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         let first = expectation(description: "the slow look answered")
         let second = expectation(description: "the look behind it answered")
         let own = ProcessInfo.processInfo.processIdentifier
-        reader.look(pid: own, at: .zero) { reading in
+        reader.look(pid: own, at: .zero, readsRoles: true) { reading in
             XCTAssertEqual(reading.failedAt, AccessibilityScrollEndWatch.notTrusted)
             first.fulfill()
         }
-        reader.look(pid: own, at: .zero) { reading in
+        reader.look(pid: own, at: .zero, readsRoles: true) { reading in
             XCTAssertNil(reading.value)
             XCTAssertEqual(reading.failedAt, AccessibilityScrollEndWatch.askedTooLongAgo)
             XCTAssertLessThan(reading.milliseconds, 50, "nothing was asked")
@@ -2289,11 +2292,11 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             wait(for: [answered], timeout: 5)
             return result
         }
-        XCTAssertEqual(answer { reader.look(pid: own, at: .zero, answer: $0) }?.failedAt, AccessibilityScrollEndWatch.notTrusted)
+        XCTAssertEqual(answer { reader.look(pid: own, at: .zero, readsRoles: true, answer: $0) }?.failedAt, AccessibilityScrollEndWatch.notTrusted)
         XCTAssertEqual(timeouts, [], "not trusted: nothing is set")
         trusted = true
-        XCTAssertEqual(answer { reader.look(pid: own, at: .zero, answer: $0) }?.failedAt, AccessibilityScrollEndWatch.ownWindow)
-        XCTAssertEqual(answer { reader.look(pid: own, at: .zero, answer: $0) }?.failedAt, AccessibilityScrollEndWatch.ownWindow)
+        XCTAssertEqual(answer { reader.look(pid: own, at: .zero, readsRoles: true, answer: $0) }?.failedAt, AccessibilityScrollEndWatch.ownWindow)
+        XCTAssertEqual(answer { reader.look(pid: own, at: .zero, readsRoles: true, answer: $0) }?.failedAt, AccessibilityScrollEndWatch.ownWindow)
         XCTAssertEqual(timeouts, [AccessibilityScrollEndWatch.processTimeout], "set once")
         XCTAssertLessThan(AccessibilityScrollEndWatch.processTimeout, 1.5)
         XCTAssertGreaterThanOrEqual(AccessibilityScrollEndWatch.processTimeout, AccessibilityScrollEndWatch.messagingTimeout)
@@ -2580,6 +2583,283 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
                 XCTAssertNil(brokenGesture(in: run.finish()), "\(gap)")
             }
         }
+    }
+
+    /// The end watch does not look into an app whose kind is not known yet: between an
+    /// app's first sight and the answer of the look into its bundle. Such an app counts as
+    /// touch-only, and the look used to be made at once: over a Chromium app's web page it
+    /// asks the page's container for its role, the question at which Chromium switches on
+    /// the page's accessibility support. The frames are plain until the kind is known.
+    func testEndWatch_doesNotLookBeforeTheAppsKindIsKnown() throws {
+        let utils = ScrollUtils()
+        var answers: [(Bool) -> Void] = []
+        utils.inspectBundle = { _, completion in answers.append(completion) }
+        let app = URL(fileURLWithPath: "/Applications/Editor.app")
+        XCTAssertTrue(utils.trackpadStyleKindIsKnown(bundleURL: app), "never seen: nothing is on its way")
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.editor", bundleURL: app), .touchOnly)
+        XCTAssertFalse(utils.trackpadStyleKindIsKnown(bundleURL: app), "its bundle is being looked into")
+        answers.first?(true)
+        XCTAssertTrue(utils.trackpadStyleKindIsKnown(bundleURL: app))
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.editor", bundleURL: app), .followsGlide)
+        // An app that is never looked into (outside the Applications folders) is known at once.
+        let elsewhere = URL(fileURLWithPath: "/Users/someone/Downloads/Tool.app")
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.tool", bundleURL: elsewhere), .touchOnly)
+        XCTAssertTrue(utils.trackpadStyleKindIsKnown(bundleURL: elsewhere))
+        XCTAssertEqual(answers.count, 1)
+
+        try withSettings(switchOn: true) {
+            let watch = PageWatch(offset: 30_000, range: 60_000)
+            let run = realRun(over: .touchOnly, watch: watch)
+            var known = false
+            run.poster.appKindIsKnown = { _ in known }
+            for index in 0..<4 { XCTAssertTrue(try run.wheel(at: Double(index) * 0.02, y: -211.68)) }
+            run.run(until: 0.1)
+            XCTAssertEqual(watch.looks + watch.reads, 0, "no look while the kind is not known")
+            XCTAssertFalse(run.frames.isEmpty)
+            XCTAssertFalse(run.frames.contains { $0.hasPhase }, "plain meanwhile")
+            known = true
+            XCTAssertTrue(try run.wheel(at: 0.1, y: -211.68))
+            XCTAssertEqual(watch.looks, 1, "asked with the first wheel event after the answer")
+            run.run(until: 0.2)
+            XCTAssertEqual(run.frames.first { $0.hasPhase }?.name, "began")
+            run.run(until: 4)
+            XCTAssertNil(brokenGesture(in: run.finish()))
+        }
+    }
+
+    // MARK: A native shell around Chromium (Dia, Arc): the flick for its pages, the one touch for its own lists
+
+    /// The wheel events of a scroll, as a run's posted frames in a form that compares.
+    private func stream(_ run: RealRun) -> [String] {
+        return run.frames.map { "\($0.name) \($0.y) \($0.x) \($0.timestamp)" }
+    }
+
+    /// Over a web page nothing changes: where the look sees no native scroll bar (a
+    /// scroll area without one, nothing at all, an answer that comes late, no answer) the
+    /// scroll is the flick, frame for frame as in any Chromium app. One look per place,
+    /// and it asks no roles.
+    func testNativeShell_overAPage_isTheFlickFrameForFrame_withOneLookPerPlace() throws {
+        try withSettings(switchOn: true) {
+            func wheels(_ run: RealRun) throws {
+                for index in 0..<6 { XCTAssertTrue(try run.wheel(at: Double(index) * 0.03, y: -211.68)) }
+                XCTAssertTrue(try run.wheel(at: 0.5, y: 211.68))
+                XCTAssertTrue(try run.wheel(at: 0.9, y: -211.68, pointerX: 420))
+                run.run(until: 4)
+            }
+            let chromium = realRun(over: .followsGlide, watch: PageWatch(offset: 30_000, range: 60_000))
+            try wheels(chromium)
+            let flick = stream(chromium)
+            XCTAssertTrue(flick.contains { $0.hasPrefix("momentumBegan") })
+            _ = chromium.finish()
+
+            let ways: [(String, (PageWatch) -> Void, Int)] = [
+                ("no bar", { $0.seesTheBar = false }, 1),
+                ("no answer", { $0.neverAnswers = true }, 1),
+                ("a late answer", {
+                    $0.seesTheBar = false
+                    $0.delay = 0.2
+                }, 1),
+                ("a bar that does not count from 0 to 1", { $0.valueInstead = { _ in 4_000 } }, 1),
+            ]
+            for (name, change, looks) in ways {
+                let watch = PageWatch(offset: 30_000, range: 60_000)
+                change(watch)
+                let run = realRun(over: .nativeShell, watch: watch)
+                try wheels(run)
+                XCTAssertEqual(stream(run), flick, "\(name): frame for frame the flick")
+                XCTAssertEqual(watch.looks, looks, "\(name): one look for the place, none per wheel event")
+                XCTAssertEqual(watch.looksWithRoles, 0, "\(name): no look asks for roles in such an app")
+                XCTAssertEqual(watch.reads, 0, name)
+                if name == "no bar" {
+                    let line = run.sessions.first?.session.endWatch.line ?? ""
+                    XCTAssertTrue(line.contains("not seen (a scroll area without a vertical scroll bar): the flick goes on"), line)
+                }
+                _ = run.finish()
+            }
+
+            // The verdict "a page" lasts while the wheel is used there: the same place again
+            // within 2 s asks nothing; after a longer pause, or 31 pt away, one look more.
+            let watch = PageWatch(offset: 30_000, range: 60_000)
+            watch.seesTheBar = false
+            let run = realRun(over: .nativeShell, watch: watch)
+            XCTAssertTrue(try run.wheel(at: 0, y: -211.68))
+            XCTAssertTrue(try run.wheel(at: 1.5, y: -211.68))
+            XCTAssertTrue(try run.wheel(at: 3.0, y: -211.68))
+            XCTAssertEqual(watch.looks, 1)
+            XCTAssertTrue(try run.wheel(at: 3.2, y: -211.68, pointerX: 431))
+            XCTAssertEqual(watch.looks, 2, "another place")
+            XCTAssertTrue(try run.wheel(at: 3.2 + ScrollPoster.shellWebVerdictLife + 0.5, y: -211.68, pointerX: 431))
+            XCTAssertEqual(watch.looks, 3, "after a pause the place is looked at again")
+            run.run(until: 12)
+            XCTAssertNil(brokenGesture(in: run.finish()))
+        }
+    }
+
+    /// Over a list the shell draws itself the look sees a native scroll bar: from the next
+    /// wheel event the scroll is a one touch with its end watch, as in a native app, and
+    /// what the app had of the flick is closed first. It was a flick to its end: an AppKit
+    /// view ignores the glide's events, so the list stopped in mid-scroll (the owner, Dia's
+    /// sidebar). Every look in such an app asks no roles.
+    func testNativeShell_overANativeList_becomesAOneTouchWithItsEndWatch() throws {
+        try withSettings(switchOn: true) {
+            let watch = PageWatch(offset: 30_000, range: 60_000)
+            let run = realRun(over: .nativeShell, watch: watch)
+            for index in 0..<6 { XCTAssertTrue(try run.wheel(at: Double(index) * 0.03, y: -211.68)) }
+            run.run(until: 3)
+            var frames = run.frames
+            XCTAssertNil(brokenGesture(in: frames))
+            XCTAssertFalse(frames.contains { $0.name.hasPrefix("momentum") && $0.y != 0 }, "no glide carries the scroll: \(phaseRuns(frames))")
+            XCTAssertGreaterThan(-Double(frames.reduce(0) { $0 + $1.y }), 6 * 211.68 * 0.9, "the whole way goes out")
+            XCTAssertEqual(frames.last?.name, "ended")
+            XCTAssertGreaterThan(watch.reads, 10, "the end watch runs")
+            XCTAssertEqual(watch.looksWithRoles, 0)
+            let last = run.sessions.last?.session
+            XCTAssertEqual(last?.oneTouch, true)
+            XCTAssertTrue(run.sessions.contains { ($0.session.endWatch.line ?? "").contains("a native scroll bar under the pointer: one touch from the next wheel event") },
+                          "\(run.sessions.map { $0.session.endWatch.line ?? "-" })")
+
+            // The next scroll there is a one touch from its first wheel event: no flick first.
+            let before = frames.count
+            for index in 0..<4 { XCTAssertTrue(try run.wheel(at: 5 + Double(index) * 0.03, y: -211.68)) }
+            run.run(until: 8)
+            frames = Array(run.frames.dropFirst(before))
+            XCTAssertEqual(phaseRuns(frames).first, "began ×1")
+            XCTAssertFalse(frames.contains { $0.name.hasPrefix("momentum") }, "\(phaseRuns(frames))")
+            XCTAssertEqual(frames.last?.name, "ended")
+
+            // With answers that take a while (an app that is busy: 10 ms, and Finder's 80 ms)
+            // the flick has sent more by the time the verdict counts, a glide even: it is
+            // closed, and the scroll still ends as a one touch with its whole way sent.
+            for delay in [0.01, 0.08] {
+                let slow = PageWatch(offset: 30_000, range: 60_000)
+                slow.delay = delay
+                let late = realRun(over: .nativeShell, watch: slow)
+                for index in 0..<6 { XCTAssertTrue(try late.wheel(at: Double(index) * 0.03, y: -211.68)) }
+                late.run(until: 3)
+                let sent = late.finish()
+                XCTAssertNil(brokenGesture(in: sent), "\(delay)")
+                XCTAssertGreaterThan(-Double(sent.reduce(0) { $0 + $1.y }), 6 * 211.68 * 0.9, "\(delay): the whole way goes out")
+                XCTAssertEqual(Array(phaseRuns(sent).suffix(3).map { $0.components(separatedBy: " ").first ?? "" }), ["began", "changed", "ended"], "\(delay): \(phaseRuns(sent))")
+                XCTAssertEqual(late.sessions.last?.session.oneTouch, true, "\(delay)")
+                XCTAssertGreaterThan(slow.reads, 2, "\(delay)")
+                XCTAssertEqual(slow.looksWithRoles, 0)
+            }
+
+            // The pointer moves on to the page (the same app, 100 pt away): the flick again.
+            watch.seesTheBar = false
+            let onPage = run.frames.count
+            for index in 0..<4 { XCTAssertTrue(try run.wheel(at: 10 + Double(index) * 0.03, y: -211.68, pointerX: 500)) }
+            run.run(until: 13)
+            frames = Array(run.frames.dropFirst(onPage))
+            XCTAssertTrue(frames.contains { $0.name == "momentumBegan" }, "\(phaseRuns(frames))")
+            XCTAssertEqual(watch.looksWithRoles, 0)
+            XCTAssertNil(brokenGesture(in: run.finish()))
+        }
+    }
+
+    /// At the list's end the one touch does what it does in a native app: "ended" at once
+    /// when the page arrives, and the wheel that still turns into the end is taken in.
+    func testNativeShell_atTheEndOfANativeList_theTouchEndsAtOnce() throws {
+        try withSettings(switchOn: true) {
+            let watch = PageWatch(offset: 59_000, range: 60_000)
+            let run = realRun(over: .nativeShell, watch: watch)
+            var time = 0.0
+            while (run.frames.last?.name != "ended" || run.poster.isGliding) && time < 2 {
+                _ = try run.wheel(at: time, y: -211.68)
+                time += 0.02
+            }
+            XCTAssertLessThan(time, 1)
+            let count = run.frames.count
+            for index in 0..<10 { XCTAssertTrue(try run.wheel(at: time + Double(index) * 0.02, y: -211.68), "taken in") }
+            XCTAssertEqual(run.frames.count, count, "nothing is sent while the wheel turns into the end")
+            XCTAssertTrue(run.sessions.contains { ($0.session.endWatch.line ?? "").contains("reached the end and ended at once") })
+            XCTAssertEqual(watch.looksWithRoles, 0, "the hold's looks ask no roles either")
+            run.run(until: time + 3)
+            XCTAssertNil(brokenGesture(in: run.finish()))
+        }
+    }
+
+    /// A one touch there that finds the pointer over the page after all (its own look sees
+    /// no bar) is plain for that wheel event and a flick from the next.
+    func testNativeShell_aOneTouchThatSeesNoBar_goesOnAsAFlick() throws {
+        try withSettings(switchOn: true) {
+            let watch = PageWatch(offset: 30_000, range: 60_000)
+            let run = realRun(over: .nativeShell, watch: watch)
+            XCTAssertTrue(try run.wheel(at: 0, y: -211.68))
+            run.run(until: 2)
+            // The verdict here is "native". Now the page is under the pointer at this place.
+            watch.seesTheBar = false
+            let before = run.frames.count
+            for index in 0..<5 { XCTAssertTrue(try run.wheel(at: 3 + Double(index) * 0.03, y: -211.68)) }
+            run.run(until: 6)
+            let frames = Array(run.frames.dropFirst(before))
+            XCTAssertTrue(frames.contains { $0.name == "momentumBegan" }, "\(phaseRuns(frames))")
+            XCTAssertGreaterThan(-Double(frames.reduce(0) { $0 + $1.y }), 5 * 211.68 * 0.9)
+            XCTAssertEqual(watch.looksWithRoles, 0)
+            XCTAssertNil(brokenGesture(in: run.finish()))
+        }
+    }
+
+    /// Who is never looked at: an app that runs Chromium as its application, a Gecko app
+    /// (both `followsGlide`), and anything with the switch off. And which bundle is a
+    /// native shell: Chromium's frameworks without an application class of the app's own.
+    func testNativeShell_whoIsOne_andWhoIsNeverLookedAt() throws {
+        for (switchOn, kind) in [(true, ScrollUtils.TrackpadStyleTarget.followsGlide), (false, .followsGlide), (false, .nativeShell), (false, .touchOnly)] {
+            try withSettings(switchOn: switchOn) {
+                let watch = PageWatch(offset: 30_000, range: 60_000)
+                let run = realRun(over: kind, watch: watch)
+                for index in 0..<6 { XCTAssertTrue(try run.wheel(at: Double(index) * 0.05, y: -211.68)) }
+                run.run(until: 3)
+                _ = run.finish()
+                XCTAssertEqual(watch.looks + watch.reads, 0, "\(kind), switch on: \(switchOn)")
+            }
+        }
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("scrollio-shell-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func app(_ name: String, files: [String], principal: String?) throws -> URL {
+            let bundle = root.appendingPathComponent("Applications/\(name).app", isDirectory: true)
+            for file in files {
+                let url = bundle.appendingPathComponent(file)
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data().write(to: url)
+            }
+            var info: [String: Any] = ["CFBundleIdentifier": "com.example.\(name)"]
+            if let principal = principal { info["NSPrincipalClass"] = principal }
+            try FileManager.default.createDirectory(at: bundle.appendingPathComponent("Contents"), withIntermediateDirectories: true)
+            XCTAssertTrue((info as NSDictionary).write(to: bundle.appendingPathComponent("Contents/Info.plist"), atomically: true))
+            return bundle
+        }
+        let engine = "Contents/Frameworks/Engine.framework/Versions/Current/Resources/resources.pak"
+        let home = root.resolvingSymlinksInPath().path
+        func isShell(_ url: URL) -> Bool { return ScrollUtils.lookFindsNativeShell(bundleURL: url, homeDirectory: home) }
+        XCTAssertTrue(isShell(try app("Shell", files: [engine], principal: nil)), "no application class of its own: Dia")
+        XCTAssertTrue(isShell(try app("Plain", files: [engine], principal: "NSApplication")))
+        XCTAssertFalse(isShell(try app("Electron", files: [engine], principal: "AtomApplication")))
+        XCTAssertFalse(isShell(try app("Chrome", files: [engine], principal: "BrowserCrApplication")))
+        XCTAssertFalse(isShell(try app("WebApp", files: ["Contents/MacOS/app_mode_loader"], principal: nil)), "a web app installed from a browser")
+        XCTAssertFalse(isShell(try app("Fox", files: ["Contents/MacOS/XUL", engine], principal: nil)), "Gecko")
+        XCTAssertFalse(isShell(try app("Native", files: ["Contents/MacOS/Native"], principal: nil)))
+        let elsewhere = root.appendingPathComponent("Documents/Shell.app", isDirectory: true)
+        try FileManager.default.createDirectory(at: elsewhere.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: root.appendingPathComponent("Applications/Shell.app"), to: elsewhere)
+        XCTAssertFalse(isShell(elsewhere), "outside the Applications folders nothing is looked into")
+
+        // The kind an app gets: the flick at the first answer, a native shell at the second.
+        let utils = ScrollUtils()
+        var shellAnswers: [(Bool) -> Void] = []
+        utils.inspectBundle = { _, completion in completion(true) }
+        utils.inspectShell = { _, completion in shellAnswers.append(completion) }
+        let dia = URL(fileURLWithPath: "/Applications/Shell.app")
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.shell", bundleURL: dia), .touchOnly)
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.shell", bundleURL: dia), .followsGlide)
+        XCTAssertEqual(shellAnswers.count, 1, "asked once")
+        shellAnswers.first?(true)
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.shell", bundleURL: dia), .nativeShell)
+        let chrome = URL(fileURLWithPath: "/Applications/Chrome.app")
+        _ = utils.trackpadStyleTarget(bundleIdentifier: "com.example.chrome", bundleURL: chrome)
+        shellAnswers.last?(false)
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.chrome", bundleURL: chrome), .followsGlide)
     }
 
     /// What breaks the rule in a stream of posted events, or nil: every "began" gets its
@@ -3689,5 +3969,236 @@ final class FakeDisplay {
             self.made.append(link)
             return (link, kCVReturnSuccess)
         }
+    }
+}
+
+/// The way up from the element under the pointer (`ScrollEndClimb`), run over a tree of the
+/// test's own that writes down what each element was asked. (The real reader asks an app
+/// through Accessibility, which a test may not do.)
+final class ScrollEndClimbTests: XCTestCase {
+
+    private final class Node {
+        let role: String?
+        let parent: Node?
+        var bar: Node?
+        var barAnswer: ScrollEndBar<Node>?
+        var maximum: Double?
+        var enabled: Bool?
+        var value: Double?
+        var isApplication = false
+        var asked: [String] = []
+
+        init(_ role: String?, in parent: Node?) {
+            self.role = role
+            self.parent = parent
+        }
+    }
+
+    private struct Tree: ScrollEndElements {
+        // (Whether an element is the application is decided without asking: not written down.)
+        func isApplication(_ element: Node) -> Bool { return element.isApplication }
+        func role(of element: Node) -> String? {
+            element.asked.append("role")
+            return element.role
+        }
+        func parent(of element: Node) -> Node? {
+            element.asked.append("parent")
+            return element.parent
+        }
+        func verticalBar(of element: Node) -> ScrollEndBar<Node> {
+            element.asked.append("bar")
+            if let answer = element.barAnswer { return answer }
+            return element.bar.map { .bar($0) } ?? .none
+        }
+        func maximum(of bar: Node) -> Double? {
+            bar.asked.append("maximum")
+            return bar.maximum
+        }
+        func isEnabled(_ bar: Node) -> Bool? {
+            bar.asked.append("enabled")
+            return bar.enabled
+        }
+        func value(of bar: Node) -> Double? {
+            bar.asked.append("value")
+            return bar.value
+        }
+    }
+
+    /// An application, a window, and the roles below it, the last one under the pointer.
+    private func window(_ roles: [String?]) -> (application: Node, window: Node, below: [Node]) {
+        let application = Node("AXApplication", in: nil)
+        application.isApplication = true
+        let window = Node("AXWindow", in: application)
+        var below: [Node] = []
+        var parent = window
+        for role in roles {
+            let node = Node(role, in: parent)
+            below.append(node)
+            parent = node
+        }
+        return (application, window, below)
+    }
+
+    private func scrollBar(at value: Double?) -> Node {
+        let bar = Node("AXScrollBar", in: nil)
+        bar.value = value
+        return bar
+    }
+
+    private func look(from node: Node, readsRoles: Bool = true) -> (reading: ScrollEndReading, bar: Node?) {
+        return ScrollEndClimb.look(from: node, in: Tree(), readsRoles: readsRoles)
+    }
+
+    /// As it was: up through the roles to the first scroll area, its bar, the bar's value.
+    func testWithRoles_theFirstScrollAreaAndItsBar() throws {
+        let tree = window(["AXScrollArea", "AXOutline", "AXRow", "AXCell"])
+        let bar = scrollBar(at: 0.25)
+        tree.below[0].bar = bar
+        let found = look(from: tree.below[3])
+        XCTAssertEqual(found.reading.value, 0.25)
+        XCTAssertEqual(found.reading.roles, ["AXCell", "AXRow", "AXOutline", "AXScrollArea"])
+        XCTAssertTrue(found.bar === bar)
+        XCTAssertEqual(tree.below[3].asked, ["role", "parent"])
+        XCTAssertEqual(tree.below[0].asked, ["role", "bar"], "the climb ends at the scroll area")
+        XCTAssertEqual(bar.asked, ["maximum", "enabled", "value"])
+        XCTAssertEqual(tree.window.asked, [])
+        XCTAssertEqual(tree.application.asked, [])
+
+        // A scroll area without a vertical bar ends the climb: the one around it is not looked for.
+        let nested = window(["AXScrollArea", "AXGroup", "AXScrollArea", "AXStaticText"])
+        nested.below[0].bar = scrollBar(at: 0.5)
+        let inner = look(from: nested.below[3])
+        XCTAssertNil(inner.reading.value)
+        XCTAssertEqual(inner.reading.failedAt, "a scroll area without a vertical scroll bar")
+        XCTAssertEqual(nested.below[0].asked, [])
+        nested.below[2].barAnswer = .unanswered(-25204)
+        nested.below[3].asked = []
+        XCTAssertEqual(look(from: nested.below[3]).reading.failedAt, "the scroll area's vertical scroll bar could not be read (-25204)")
+    }
+
+    /// The application's element is asked nothing, whatever is under the pointer: Chrome
+    /// and Electron switch on their accessibility support when the application is asked for
+    /// its role. The climb used to go on from the window to the application and ask it.
+    func testTheApplicationIsNeverAsked_theClimbStopsAtTheWindow() {
+        for readsRoles in [true, false] {
+            // A button in a toolbar: no scroll area on the way up.
+            let tree = window(["AXToolbar", "AXGroup", "AXButton"])
+            let found = look(from: tree.below[2], readsRoles: readsRoles)
+            XCTAssertNil(found.reading.value)
+            XCTAssertEqual(found.reading.failedAt, ScrollEndClimb.belowTheWindow)
+            XCTAssertEqual(tree.application.asked, [], "readsRoles \(readsRoles)")
+            if readsRoles {
+                XCTAssertEqual(found.reading.roles, ["AXButton", "AXGroup", "AXToolbar", "AXWindow"])
+                XCTAssertEqual(tree.window.asked, ["role"], "the window says what it is, and is not asked for its parent")
+            } else {
+                XCTAssertEqual(tree.window.asked, ["bar", "parent"])
+            }
+
+            // The menu bar's parent is the application too.
+            let application = Node("AXApplication", in: nil)
+            application.isApplication = true
+            let menuBar = Node("AXMenuBar", in: application)
+            let item = Node("AXMenuBarItem", in: menuBar)
+            XCTAssertEqual(look(from: item, readsRoles: readsRoles).reading.failedAt, ScrollEndClimb.belowTheWindow)
+            XCTAssertEqual(application.asked, [], "readsRoles \(readsRoles)")
+            if readsRoles { XCTAssertEqual(menuBar.asked, ["role"]) }
+
+            // Something of another kind whose parent is the application: known by the element, not by a role.
+            let other = Node("AXGroup", in: application)
+            XCTAssertEqual(look(from: other, readsRoles: readsRoles).reading.failedAt, ScrollEndClimb.belowTheWindow)
+            XCTAssertEqual(application.asked, [], "readsRoles \(readsRoles)")
+
+            // The hit test hands back the application itself.
+            XCTAssertEqual(look(from: application, readsRoles: readsRoles).reading.failedAt, ScrollEndClimb.belowTheWindow)
+            XCTAssertEqual(application.asked, [], "readsRoles \(readsRoles)")
+        }
+    }
+
+    /// Without roles (for an app that may hold Chromium's web content): no element is asked
+    /// for its role before it has shown a vertical scroll bar. Chromium's container for a
+    /// web page calls itself a scroll area, has no such bar, and switches on the web
+    /// content's accessibility when it is asked for its role.
+    func testWithoutRoles_noRoleIsAskedBeforeABarIsSeen() {
+        // Over a web page: the container, the shell's views, the window.
+        let page = window(["AXSplitGroup", "AXGroup", "AXScrollArea"])
+        let container = page.below[2]
+        let overPage = look(from: container, readsRoles: false)
+        XCTAssertNil(overPage.reading.value)
+        XCTAssertEqual(overPage.reading.failedAt, ScrollEndClimb.belowTheWindow)
+        XCTAssertEqual(overPage.reading.roles, ["-", "-", "-", "-"], "nobody was asked what it is")
+        XCTAssertEqual(container.asked, ["bar", "parent"])
+        for node in page.below + [page.window, page.application] {
+            XCTAssertFalse(node.asked.contains("role"))
+        }
+        XCTAssertEqual(page.application.asked, [])
+        // (With roles the container is asked for its role: what this form of the look is for.)
+        container.asked = []
+        XCTAssertEqual(look(from: container, readsRoles: true).reading.failedAt, "a scroll area without a vertical scroll bar")
+        XCTAssertEqual(container.asked, ["role", "bar"])
+
+        // Over a native list beside it: the first element that has a bar, and only it says what it is.
+        let list = window(["AXSplitGroup", "AXScrollArea", "AXOutline", "AXRow", "AXCell"])
+        let bar = scrollBar(at: 0.4)
+        list.below[1].bar = bar
+        let overList = look(from: list.below[4], readsRoles: false)
+        XCTAssertEqual(overList.reading.value, 0.4)
+        XCTAssertEqual(overList.reading.roles, ["-", "-", "-", "AXScrollArea"])
+        XCTAssertTrue(overList.bar === bar)
+        XCTAssertEqual(list.below[4].asked, ["bar", "parent"])
+        XCTAssertEqual(list.below[1].asked, ["bar", "role"])
+        XCTAssertEqual(list.below[0].asked, [])
+
+        // An app that does not answer in time ends the look; any other error is "no bar here".
+        let silent = window(["AXGroup", "AXGroup"])
+        silent.below[1].barAnswer = .unanswered(-25204)
+        XCTAssertEqual(look(from: silent.below[1], readsRoles: false).reading.failedAt, "the app did not answer (-25204)")
+        XCTAssertEqual(silent.below[1].asked, ["bar"])
+        silent.below[1].barAnswer = .unread(-25200)
+        XCTAssertEqual(look(from: silent.below[1], readsRoles: false).reading.failedAt, ScrollEndClimb.belowTheWindow)
+    }
+
+    /// The bar: only one that counts from 0 to 1, is not disabled, and has a value.
+    func testTheBar_countsFromZeroToOne_andIsNotDisabled() {
+        func reading(_ change: (Node) -> Void) -> (ScrollEndReading, [String]) {
+            let tree = window(["AXScrollArea", "AXTextArea"])
+            let bar = scrollBar(at: 0.75)
+            change(bar)
+            tree.below[0].bar = bar
+            return (look(from: tree.below[1]).reading, bar.asked)
+        }
+        // AppKit's scroller tells no maximum and says it is enabled.
+        XCTAssertEqual(reading { $0.enabled = true }.0.value, 0.75)
+        XCTAssertEqual(reading { _ in }.0.value, 0.75, "a bar that says neither")
+        XCTAssertEqual(reading { $0.maximum = 1 }.0.value, 0.75)
+        // A bar that counts in pixels.
+        let pixels = reading { $0.maximum = 4_000 }
+        XCTAssertEqual(pixels.0.failedAt, AccessibilityScrollEndWatch.notFromZeroToOne)
+        XCTAssertEqual(pixels.1, ["maximum"], "its value is not asked")
+        // A view whose content fits: AppKit gives a disabled bar at 0. It used to be "seen"
+        // at 0: a touch over a view that cannot scroll, held open while the frames came.
+        let fits = reading {
+            $0.enabled = false
+            $0.value = 0
+        }
+        XCTAssertNil(fits.0.value)
+        XCTAssertEqual(fits.0.failedAt, ScrollEndClimb.fits)
+        XCTAssertEqual(fits.1, ["maximum", "enabled"])
+        XCTAssertEqual(reading { $0.value = nil }.0.failedAt, "a scroll bar without a value from 0 to 1")
+    }
+
+    /// The ways a climb ends without a scroll area.
+    func testTheClimbEnds_withoutARole_withoutAParent_afterADozen() {
+        let deep = window(Array(repeating: "AXGroup", count: 20))
+        let found = look(from: deep.below[19])
+        XCTAssertEqual(found.reading.failedAt, "no scroll area within 12 parents")
+        XCTAssertEqual(found.reading.roles.count, 12)
+        XCTAssertEqual(deep.below[7].asked, [], "a dozen elements at most")
+
+        let unnamed = window(["AXGroup", nil])
+        XCTAssertEqual(look(from: unnamed.below[1]).reading.failedAt, "an element without a role")
+        XCTAssertEqual(unnamed.below[0].asked, [])
+
+        let orphan = Node("AXGroup", in: nil)
+        XCTAssertEqual(look(from: orphan).reading.failedAt, "no scroll area above the element under the pointer")
     }
 }

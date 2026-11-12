@@ -55,6 +55,15 @@ class ScrollUtils {
         /// engine (Firefox and its rebuilds, Thunderbird) scroll by the glide's events and make
         /// no glide of their own: a flick.
         case followsGlide
+        /// A Chromium-based app whose windows are its own program's: it does not run
+        /// Chromium as its application (no application class of its own in `Info.plist`;
+        /// Dia and Arc: a Swift program around the engine). Its web pages scroll as
+        /// `followsGlide`, but a list the program draws itself (the sidebar of tabs) is an
+        /// AppKit view that ignores a glide's events: under a flick it stopped in
+        /// mid-scroll (the owner, Dia). Which of the two is under the pointer, a look says
+        /// (`ScrollPoster`, the shell's verdict): a flick until a native scroll bar is seen
+        /// there, one touch after that.
+        case nativeShell
         /// No trackpad-style events at all, the frames go out as with the switch off: the apps
         /// where a wheel has to stay a wheel (`wheelOnlyBundleIdentifiers`): Maps, Find My,
         /// Calendar, iPhone Mirroring, Blender, the Godot editor.
@@ -80,6 +89,20 @@ class ScrollUtils {
     private var trackpadStyleTargetByBundlePath: [String: TrackpadStyleTarget] = [:]
     /// The bundles of apps seen without a bundle id that were looked into already. Main thread.
     private var bundlesLookedIntoWithoutIdentifier: Set<String> = []
+    /// The bundles whose look is on its way: until its answer the app's kind is not known
+    /// (it counts as touch-only meanwhile). Main thread.
+    private var bundlesBeingLookedInto: Set<String> = []
+
+    /// Whether the kind of the app a wheel event goes to is known: false only between an
+    /// app's first sight and the answer of the look into its bundle. Main thread; no disk.
+    func trackpadStyleKindIsKnown(of event: CGEvent) -> Bool {
+        guard let bundleURL = getRunningApplication(from: event)?.bundleURL else { return true }
+        return trackpadStyleKindIsKnown(bundleURL: bundleURL)
+    }
+
+    func trackpadStyleKindIsKnown(bundleURL: URL) -> Bool {
+        return !bundlesBeingLookedInto.contains(bundleURL.path)
+    }
 
     /// Looks into an app's bundle off the main thread and calls back on the main queue with
     /// whether it scrolls by a glide's events (Chromium-based or Gecko-based). Tests put
@@ -88,6 +111,15 @@ class ScrollUtils {
         ScrollUtils.bundleInspectionQueue.async {
             let followsGlide = ScrollUtils.lookFindsGlideFollower(bundleURL: bundleURL)
             DispatchQueue.main.async { completion(followsGlide) }
+        }
+    }
+    /// For an app that follows the glide: whether it is a native shell around Chromium
+    /// (`TrackpadStyleTarget.nativeShell`). A second look into the bundle, off the main
+    /// thread as the first; tests put their own in its place.
+    var inspectShell: (_ bundleURL: URL, _ completion: @escaping (Bool) -> Void) -> Void = { bundleURL, completion in
+        ScrollUtils.bundleInspectionQueue.async {
+            let isShell = ScrollUtils.lookFindsNativeShell(bundleURL: bundleURL)
+            DispatchQueue.main.async { completion(isShell) }
         }
     }
     private static let bundleInspectionQueue = DispatchQueue(label: "com.nikklemenc.Scrollio.bundle-inspection", qos: .utility)
@@ -140,9 +172,18 @@ class ScrollUtils {
         guard Self.mayLookIntoBundle(atPath: path) else {
             return .touchOnly
         }
+        bundlesBeingLookedInto.insert(path)
         inspectBundle(bundleURL) { [weak self] followsGlide in
+            self?.bundlesBeingLookedInto.remove(path)
             if followsGlide {
+                // The flick at once (it asks the app nothing); whether the app is a native
+                // shell is answered a moment later.
                 self?.trackpadStyleTargetByBundlePath[path] = .followsGlide
+                self?.inspectShell(bundleURL) { isShell in
+                    if isShell {
+                        self?.trackpadStyleTargetByBundlePath[path] = .nativeShell
+                    }
+                }
             }
         }
         return .touchOnly
@@ -242,6 +283,43 @@ class ScrollUtils {
 #endif
         let resolved = bundleURL.resolvingSymlinksInPath()
         return mayLookIntoBundle(atPath: resolved.path, homeDirectory: homeDirectory) && scrollsByGlideEvents(bundleURL: resolved)
+    }
+
+    /// The second look, for an app that follows the glide: Chromium's frameworks in the
+    /// bundle, and no application class of its own. Never outside the folders that may be
+    /// looked into.
+    static func lookFindsNativeShell(bundleURL: URL, homeDirectory: String = ScrollUtils.homeDirectory) -> Bool {
+#if DEBUG
+        lookThreadObserverForTests?(Thread.isMainThread)
+#endif
+        let resolved = bundleURL.resolvingSymlinksInPath()
+        return mayLookIntoBundle(atPath: resolved.path, homeDirectory: homeDirectory) && isNativeShellAroundChromium(bundleURL: resolved)
+    }
+
+    /// A native shell around Chromium: the engine's frameworks are in the bundle, and the
+    /// app does not run Chromium as its application.
+    ///
+    /// Every app that does names an application class of its own as `NSPrincipalClass` in
+    /// its `Info.plist`: `BrowserCrApplication` (Chrome, Brave, Edge), `AtomApplication`
+    /// (every Electron app), a class of the app's own for CEF (Spotify:
+    /// `SPTClientApplication`). Read on this Mac in 11 such apps, 2026-11-12; Dia has none
+    /// and links the engine from a Swift program. A web app installed from a browser
+    /// (`app_mode_loader`) and a Gecko-based app are never one: their windows are the
+    /// engine's. An app wrongly taken for a shell only gets the look that asks no roles,
+    /// and the flick wherever that look sees no native scroll bar.
+    /// Reads `Contents/Info.plist`, `Contents/MacOS` and `Contents/Frameworks`: never on
+    /// the main thread (`inspectShell`).
+    static func isNativeShellAroundChromium(bundleURL: URL, fileManager: FileManager = .default) -> Bool {
+        if fileManager.fileExists(atPath: bundleURL.appendingPathComponent("Contents/MacOS/app_mode_loader").path) {
+            return false
+        }
+        guard !isGeckoBased(bundleURL: bundleURL, fileManager: fileManager),
+              isChromiumBased(bundleURL: bundleURL, fileManager: fileManager) else {
+            return false
+        }
+        let info = NSDictionary(contentsOf: bundleURL.appendingPathComponent("Contents/Info.plist"))
+        let principal = (info?["NSPrincipalClass"] as? String) ?? ""
+        return principal.isEmpty || principal == "NSApplication"
     }
 
 #if DEBUG
