@@ -16,9 +16,10 @@ It is based on [Mos](https://github.com/Caldis/Mos) by Caldis, may be used only 
 non-commercial purposes, and is not affiliated with Apple or Logitech. See
 [Licence and credits](#-licence-and-credits).
 
-There is no ready-made download yet. To use Scrollio now, build it from source: see
-[Build from source](#-build-from-source). What a download will be, and how to check one,
-is under [Download and first launch](#-download-and-first-launch).
+Download the latest disk image from the
+[Releases page](https://github.com/Scorpio3310/scrollio/releases); what is in it, and how
+to check it, is under [Download and first launch](#-download-and-first-launch). Or
+[build it from source](#-build-from-source).
 
 ---
 
@@ -227,9 +228,9 @@ those controls.
 
 ## 📥 Download and first launch
 
-There is no ready-made download yet. Until a release is on the
-[Releases page](https://github.com/Scorpio3310/scrollio/releases), the way to get
-Scrollio is to [build it from source](#-build-from-source).
+Get the latest `Scrollio-<version>.dmg` from the
+[Releases page](https://github.com/Scorpio3310/scrollio/releases). (The other way to get
+Scrollio is to [build it from source](#-build-from-source).)
 
 A release is one disk image, `Scrollio-<version>.dmg`, for Apple silicon and Intel
 Macs. The app in it and the image itself are signed with the author's Developer ID
