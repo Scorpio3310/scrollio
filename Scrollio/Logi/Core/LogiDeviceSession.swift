@@ -41,6 +41,28 @@ struct LogiButtonStateTracker {
     }
 }
 
+/// One Logitech HID interface that speaks HID++: a mouse over Bluetooth, or a receiver with
+/// up to six devices behind it (one slot each).
+///
+/// What this session writes to a mouse, and when. Everything else it sends is a read.
+///
+/// - **Buttons** (SetControlReporting, feature 0x1B04). A button is diverted for a binding
+///   and while a button is being recorded, and every button Scrollio diverted is given back
+///   when Scrollio pauses or quits. The writes come from a usage pass (`applyUsage`: the
+///   bindings, or the recording set), from the gesture controller for the raw XY bit of a
+///   button that is diverted anyway, and from `teardown`. `LogiDivertLedger` keeps what is
+///   believed diverted, per slot. The left and the right button are never diverted. On a
+///   receiver only a slot that is a mouse is written to (`slotIsMouse`).
+/// - **Settings** (wheel mode, SmartShift sensitivity, wheel force, pointer speed, haptics,
+///   press force). Only `LogiWheelController` and `LogiMouseBasicsController` write them,
+///   and only when "Let Scrollio manage this mouse" is on, the user set that value, and the
+///   value freshly read from the mouse differs.
+/// - **Button actions** (`LogiButtonAction`: SmartShift toggle, pointer speed up and down,
+///   Easy-Switch, next pointer speed). The user pressed a button for exactly that, so they
+///   write whatever the switch says; each write is one line in the system log.
+/// - **A haptic pulse** for a gesture cue, and switching the haptics on for it after a
+///   fresh read of their state, unless the user switched them off (`LogiGestureController`).
+/// - **The diagnostics window** writes in Debug builds only (`diagnosticsMayWrite`).
 class LogiDeviceSession {
 
     // MARK: - Public
@@ -112,6 +134,11 @@ class LogiDeviceSession {
     /// 已探测过可选功能的 slot: 面板巡检切换时每 slot 只探一次, 避免每次切都重探(拖慢/撞在飞探测).
     /// slot 重新发现(sweep / setTargetSlot)时清除, 以便重探.
     private var receiverOptionalProbedSlots: Set<UInt8> = []
+    /// Slots whose discovery showed a device that is not a mouse (a keyboard, a numpad: no
+    /// left and right click among its controls). Nothing is written to such a slot, and it
+    /// is not discovered again each time the device wakes up and reconnects. Kept until the
+    /// session ends or the slot is targeted by hand in the diagnostics window.
+    private var receiverNonMouseSlots: Set<UInt8> = []
 
     // MARK: - Receiver Enumeration State
     private(set) var receiverPairedDevices: [ReceiverPairedDevice] = []
@@ -132,7 +159,15 @@ class LogiDeviceSession {
     private var pendingDiscovery = LogiFeatureDiscoveryQueue(softwareId: LogiDeviceSession.hidppSoftwareId)
     private var discoveryTimers: [Int: Timer] = [:]
     private static let discoveryTimeout: TimeInterval = 5.0
-    private var pendingCacheValidation: UInt8? = nil  // 等待 ping 响应验证缓存
+    /// GetControlCount sent and not answered yet: the slot it went to and how often it was
+    /// sent. It has a timeout of its own (`controlCountTimer`).
+    private var pendingControlCount: (slot: UInt8, attempt: Int)?
+    private var controlCountTimer: Timer?
+    /// How long the mouse has to answer GetControlCount. It is the first request after the
+    /// feature look-up, and the first write after an idle time took up to 0.7 s over Bluetooth.
+    static let controlCountTimeout: TimeInterval = 2.0
+    /// GetControlCount is sent this often before the discovery ends without buttons.
+    static let controlCountAttempts = 2
 
     // MARK: - Query Timeouts (防止 Bolt receiver 上 HID++ 响应丢包 / 错误导致 query 链路卡死)
     private var controlInfoQueryTimer: Timer?
@@ -146,14 +181,15 @@ class LogiDeviceSession {
     // 下列计算属性透明路由到该游标 slot 的状态; BLE 直连用 0xFF slot, 单目标语义与拆分前一致.
     struct PerSlotState {
         var featureIndex: [UInt16: UInt8] = [:]
-        var divertedCIDs: Set<UInt16> = []
+        /// What Scrollio believes is diverted on this slot, and the echoes it waits for
+        /// (`divertedCIDs`, `lastApplied` and the pending acknowledgements route here).
+        var ledger = LogiDivertLedger()
         var discoveredControls: [ControlInfo] = []
         var reprogInitComplete: Bool = false  // init 完成后, function 0 = button event 而非 GetControlCount
         var reprogControlCount: Int = 0
         var reprogQueryIndex: Int = 0
         var reportingQueryIndex: Int = 0      // GetControlReporting 逐按键查询进度
         var controlInfoRetryCounts: [Int: Int] = [:]
-        var lastApplied: Set<UInt16> = []     // divert 对账缓存: 上次下发的 divert 目标集
         // 按键按下/抬起状态跟踪: 必须按 slot 独立, 否则同型号两只鼠标 (CID 相同) 的
         // 交错报文会互相污染 press/release delta.
         var buttonStateTracker = LogiButtonStateTracker()
@@ -171,8 +207,13 @@ class LogiDeviceSession {
         set { slotStates[deviceIndex, default: PerSlotState()].featureIndex = newValue }
     }
     private var divertedCIDs: Set<UInt16> {
-        get { slotStates[deviceIndex]?.divertedCIDs ?? [] }
-        set { slotStates[deviceIndex, default: PerSlotState()].divertedCIDs = newValue }
+        get { slotStates[deviceIndex]?.ledger.diverted ?? [] }
+        set { slotStates[deviceIndex, default: PerSlotState()].ledger.diverted = newValue }
+    }
+    /// The divert bookkeeping of the cursor slot (see LogiDivertLedger).
+    private var divertLedger: LogiDivertLedger {
+        get { slotStates[deviceIndex]?.ledger ?? LogiDivertLedger() }
+        set { slotStates[deviceIndex, default: PerSlotState()].ledger = newValue }
     }
     private var discoveredControls: [ControlInfo] {
         get { slotStates[deviceIndex]?.discoveredControls ?? [] }
@@ -214,7 +255,10 @@ class LogiDeviceSession {
         let flags: UInt16
         let isDivertable: Bool
         // GetControlReporting 查询结果
-        var reportingFlags: UInt8 = 0   // bit0=tmpDivert, bit1=persistDivert, bit2=tmpRemap, bit3=persistRemap
+        // As GetControlReporting answers (Solaar MAPPING_FLAG): bit0 diverted (until the
+        // mouse is switched off), bit2 persistently diverted, bit4 raw XY diverted, bit6 raw
+        // XY forced. Bits 1, 3 and 5 are the "valid" bits of a set request and read as 0.
+        var reportingFlags: UInt8 = 0
         var targetCID: UInt16 = 0       // remap 目标 CID (0 = 自映射)
         var reportingQueried: Bool = false
     }
@@ -382,14 +426,13 @@ class LogiDeviceSession {
         Self.removeCachedFeatureIndex(for: deviceInfo.productId)
         let message = String(format: "Feature index cache dropped: error 0x%02X on cached index 0x%02X; the next connect looks the features up again", errorCode, index)
         LogiDebugPanel.log("[\(deviceInfo.name)] \(message)")
-        LogiSystemLog.note("[\(deviceInfo.name)] \(message)")
+        LogiSystemLog.note("\(sessionLogTag) \(message)")
     }
 
     // MARK: - HID++ Constants
     private static let featureIRoot: UInt16 = 0x0000
     private static let featureReprogV4: UInt16 = 0x1B04
     private static let featureHiResWheel: UInt16 = 0x2121
-    private static let featureThumbWheel: UInt16 = 0x2150
     private static let featurePointerSpeed: UInt16 = 0x2205
     /// Haptic feedback (MX Master 4 等). internal: Debug 面板需要引用同一常量.
     static let featureHaptic: UInt16 = 0x19B0
@@ -443,18 +486,11 @@ class LogiDeviceSession {
         var temporaryDivertEnabled: Bool { (flagsByte & 0x01) != 0 }
     }
 
-    private struct PendingSetControlReportingAck {
-        let flagsByte: UInt8
-        let targetCID: UInt16
-        let expiresAt: Date
-    }
-
     private struct PendingControlReportingQuery {
         let sentAt: Date
         let expiresAt: Date
     }
 
-    private static let pendingSetControlReportingAckTTL: TimeInterval = 2.0
     private static let controlReportingQueryTTL: TimeInterval = 2.0
     private static let divertReassertionDelay: TimeInterval = 0.05
 
@@ -473,31 +509,57 @@ class LogiDeviceSession {
     }
 
     deinit {
+        removeInputReportCallback()
+        let device = hidDevice
+        let opened = deviceOpened
+        let buffer = reportBufferPtr
+        if tornDownWithDeviceGone {
+            // The device was removed: a write still on its way to it can block for seconds,
+            // and the main thread (which serves the event taps) must not wait for it. The
+            // device is closed and the buffer freed once the write queue has run empty; the
+            // queue lives on until then.
+            reportWriter.afterQueued {
+                if opened { IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeNone)) }
+                buffer?.deallocate()
+            }
+            return
+        }
         // No write may still be on its way when the device is closed (the write queue holds
         // the device, not the session).
         reportWriter.drain(timeout: Self.writeDrainTimeoutAtRelease)
-        if deviceOpened { IOHIDDeviceClose(hidDevice, IOOptionBits(kIOHIDOptionsTypeNone)) }
-        reportBufferPtr?.deallocate()
+        if opened { IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeNone)) }
+        buffer?.deallocate()
     }
+
+    /// Set by `teardown(deviceGone: true)`: `deinit` then does not wait for the write queue.
+    private var tornDownWithDeviceGone = false
 
     /// 是否为 HID++ 候选接口
     var isHIDPPCandidate: Bool {
-        // USB: 只有 vendor-specific usage page 支持 HID++
-        if !isBLE {
-            return usagePage == 0xFF00 || usagePage == 0xFF43 || usagePage == 0xFFC0
+        return Self.isHIDPPCandidate(isBLE: isBLE, usagePage: usagePage, usage: usage, productId: deviceInfo.productId)
+    }
+
+    /// Whether Scrollio talks HID++ to an interface (anything else of Logitech's is left
+    /// alone: no session traffic, no report callback).
+    /// - Bluetooth: the mouse interface (HID++ shares it).
+    /// - USB: a vendor-specific interface of a receiver. Only of a receiver: every USB
+    ///   interface of Logitech with such a usage page used to be taken for one and got six
+    ///   slot pings at every start (a headset, a webcam, a light, a wired keyboard or mouse).
+    static func isHIDPPCandidate(isBLE: Bool, usagePage: Int, usage: Int, productId: UInt16) -> Bool {
+        if isBLE {
+            return usagePage == 0x0001 && usage == 0x0002
         }
-        // BLE: HID++ 复用标准 mouse interface
-        return usagePage == 0x0001 && usage == 0x0002
+        let vendorPage = usagePage == 0xFF00 || usagePage == 0xFF43 || usagePage == 0xFFC0
+        return vendorPage && LogiReceiverCatalog.isReceiver(pid: productId)
     }
 
     /// CID set last passed to setControlReporting. Diffed against next applyUsage's
     /// projection so we only emit setControlReporting for state changes.
     /// 按 slot 拆分 (存 PerSlotState), 计算属性路由到当前巡检游标 slot.
     internal var lastApplied: Set<UInt16> {
-        get { slotStates[deviceIndex]?.lastApplied ?? [] }
-        set { slotStates[deviceIndex, default: PerSlotState()].lastApplied = newValue }
+        get { slotStates[deviceIndex]?.ledger.lastApplied ?? [] }
+        set { slotStates[deviceIndex, default: PerSlotState()].ledger.lastApplied = newValue }
     }
-    private var pendingSetControlReportingAcks: [UInt16: PendingSetControlReportingAck] = [:]
     private var divertReassertionWorkItem: DispatchWorkItem?
     private let bleStandardButtonUndivertPlanner = LogiBLEStandardButtonUndivertPlanner()
     private var bleStandardUndivertGuardWorkItem: DispatchWorkItem?
@@ -507,9 +569,10 @@ class LogiDeviceSession {
     /// The reporting query that runs follows a discovery (a connection, or features found
     /// again), not a refresh for the UI. Only after a discovery are leftover diverts looked for.
     private var reportingQueryFollowsDiscovery = false
-    /// Set by `divertBoundControls` around the prime that follows a discovery: that
-    /// `applyUsage` also gives back leftover diverts (`staleDivertDecision`).
-    private var staleDivertCheckDue = false
+    /// Set by `divertBoundControls` around the prime that follows a discovery, to the slot
+    /// that was discovered: the pass for that slot also gives back leftover diverts
+    /// (`staleDivertDecision`).
+    private var staleDivertCheckSlot: UInt8?
 
     struct RecordingDivertPlan: Equatable {
         let desired: Set<UInt16>
@@ -525,9 +588,45 @@ class LogiDeviceSession {
         LogiCenter.shared.registry.primeSession(self)
     }
 
+    /// The slots whose buttons Scrollio handles: over Bluetooth the mouse itself; on a
+    /// receiver every mouse it took over, and the slot the cursor is on (the slot whose
+    /// discovery just ended is not in `receiverManagedSlots` yet). A pass over a slot that is
+    /// not ready, not connected or not a mouse does nothing (the guards of the pass).
+    private var usageSlots: [UInt8] {
+        return Self.usageSlots(connectionMode: connectionMode, cursor: deviceIndex, managedSlots: receiverManagedSlots)
+    }
+
+    static func usageSlots(connectionMode: ConnectionMode, cursor: UInt8, managedSlots: Set<UInt8>) -> [UInt8] {
+        guard connectionMode == .receiver else { return [cursor] }
+        return managedSlots.union([cursor]).sorted()
+    }
+
+    /// Runs `body` once per slot with the cursor on it, and puts the cursor back. Everything
+    /// that reads or writes per-slot state (the computed properties, `sendRequest`) follows
+    /// the cursor, so this is how one call reaches every mouse of a receiver.
+    private func forEachSlot(_ slots: [UInt8], _ body: () -> Void) {
+        let saved = deviceIndex
+        defer { deviceIndex = saved }
+        for slot in slots {
+            deviceIndex = slot
+            body()
+        }
+    }
+
+    /// One usage pass over every mouse of this session (see `usageSlots`): the buttons with
+    /// a binding are diverted and the others Scrollio diverted are given back, or, while a
+    /// button is being recorded, every button that can be diverted stays diverted.
     internal func applyUsage(_ aggregateScrollioCodes: Set<UInt16>) {
         #if DEBUG
         precondition(Thread.isMainThread, "applyUsage main-thread-only")
+        #endif
+        forEachSlot(usageSlots) {
+            applyUsageToCursorSlot(aggregateScrollioCodes)
+        }
+    }
+
+    private func applyUsageToCursorSlot(_ aggregateScrollioCodes: Set<UInt16>) {
+        #if DEBUG
         LogiTrace.log(
             "[Session] applyUsage enter device=\(deviceInfo.name) mode=\(connectionMode) connected=\(currentReceiverTargetIsConnected) reprogInit=\(reprogInitComplete) aggregate=\(LogiTrace.codes(aggregateScrollioCodes)) lastApplied=\(LogiTrace.cids(lastApplied)) diverted=\(LogiTrace.cids(divertedCIDs))",
             device: deviceInfo.name
@@ -552,6 +651,22 @@ class LogiDeviceSession {
             #if DEBUG
             LogiTrace.log("[Session] applyUsage skipped: receiver target disconnected", device: deviceInfo.name)
             #endif
+            return
+        }
+        // Buttons are diverted on mice only. (The cursor can rest on a keyboard of the
+        // receiver after its row was picked in the diagnostics window.)
+        guard slotIsMouse(deviceIndex) else {
+            #if DEBUG
+            LogiTrace.log("[Session] applyUsage skipped: the slot is not a mouse", device: deviceInfo.name)
+            #endif
+            return
+        }
+        // While a button is being recorded every pass keeps the recording set, whoever
+        // asked for it: the end of a re-read of the buttons' state (divertBoundControls),
+        // the registry after a change, a reassertion. A pass for the bindings here used to
+        // give the unbound buttons back while the recorder still waited for a press.
+        if LogiDivertLedger.pass(whileRecording: LogiCenter.shared.isRecording) == .everyControl {
+            temporarilyDivertAllOnCursorSlot()
             return
         }
         // Project ScrollioCodes -> CIDs, drop unmapped, intersect with divertable CIDs.
@@ -592,10 +707,10 @@ class LogiDeviceSession {
         )
         let toDivert = targetCIDs.subtracting(self.lastApplied)
         var toUndivert = self.lastApplied.subtracting(targetCIDs).union(nativeFirstCIDs)
-        if staleDivertCheckDue {
+        if staleDivertCheckSlot == deviceIndex {
             // Once per discovery: controls the mouse still has diverted from an earlier run.
             // Nothing stale, nothing added: the writes below are the usual ones.
-            staleDivertCheckDue = false
+            staleDivertCheckSlot = nil
             let stale = Self.staleDivertDecision(
                 queriedControls: queriedControlStates,
                 wanted: targetCIDs,
@@ -605,7 +720,7 @@ class LogiDeviceSession {
             )
             toUndivert.formUnion(stale.giveBack)
             if let line = Self.staleDivertLine(stale, name: LogiCIDDirectory.name(forCID:)) {
-                LogiSystemLog.note("[\(deviceName(slot: deviceIndex)) slot \(String(format: "0x%02X", deviceIndex))] \(line)")
+                LogiSystemLog.note("\(logTag(slot: deviceIndex)) \(line)")
             }
         }
         #if DEBUG
@@ -636,6 +751,7 @@ class LogiDeviceSession {
         policy: LogiButtonDeliveryPolicy,
         deliveryModeForCID: (UInt16) -> LogiButtonDeliveryMode
     ) -> Set<UInt16> {
+        let divertableCIDs = LogiButtonDeliveryPolicy.divertCandidates(divertableCIDs)
         return aggregateScrollioCodes.reduce(into: Set<UInt16>()) { acc, code in
             guard let cid = LogiCIDDirectory.toCID(code),
                   divertableCIDs.contains(cid),
@@ -654,6 +770,7 @@ class LogiDeviceSession {
         phase: LogiButtonDeliveryPhase,
         policy: LogiButtonDeliveryPolicy
     ) -> Set<UInt16> {
+        let divertableCIDs = LogiButtonDeliveryPolicy.divertCandidates(divertableCIDs)
         return aggregateScrollioCodes.reduce(into: Set<UInt16>()) { acc, code in
             guard let cid = LogiCIDDirectory.toCID(code) ?? LogiCIDDirectory.cid(forNativeMouseButton: code),
                   divertableCIDs.contains(cid),
@@ -679,6 +796,8 @@ class LogiDeviceSession {
         transport: LogiTransportIdentity,
         policy: LogiButtonDeliveryPolicy
     ) -> RecordingDivertPlan {
+        // Never the left or the right button: see LogiButtonDeliveryPolicy.primaryClickCIDs.
+        let divertableCIDs = LogiButtonDeliveryPolicy.divertCandidates(divertableCIDs)
         let desired = divertableCIDs.filter { cid in
             policy.shouldUseHIDPPDelivery(
                 transport: transport,
@@ -843,6 +962,7 @@ class LogiDeviceSession {
                 functionId: probe.functionId,
                 params: probe.params
             )
+            divertLedger.noteQuerySent(cid: probe.targetCID)
         }
     }
 
@@ -1003,8 +1123,8 @@ class LogiDeviceSession {
     /// and the managed wheel and basic values need the slot without any Logitech button
     /// binding. Bindings only decide what is diverted (applyUsage diverts nothing for an
     /// empty aggregate).
-    static func receiverSlotIsTakeoverCandidate(connected: Bool, deviceType: UInt8) -> Bool {
-        return connected && !receiverNonDivertDeviceTypes.contains(deviceType)
+    static func receiverSlotIsTakeoverCandidate(connected: Bool, deviceType: UInt8, knownNotAMouse: Bool = false) -> Bool {
+        return connected && !knownNotAMouse && !receiverNonDivertDeviceTypes.contains(deviceType)
     }
 
     /// 接管集合: 启动时需要各自 discovery 常驻接管的 slot (receiverSlotIsTakeoverCandidate), 按 slot 升序.
@@ -1090,7 +1210,8 @@ class LogiDeviceSession {
         if isBLE {
             connectionMode = .bleDirect
             deviceIndex = 0xFF
-        } else if usagePage == 0xFF00 || usagePage == 0xFF43 || usagePage == 0xFFC0 {
+        } else if isHIDPPCandidate {
+            // A vendor-specific interface of a receiver (isHIDPPCandidate).
             connectionMode = .receiver
             deviceIndex = 0x01  // 临时值, 枚举后会自动更新到实际在线 slot
         } else {
@@ -1102,9 +1223,11 @@ class LogiDeviceSession {
 
         // 只对 HID++ 候选接口进行协议通信
         guard isHIDPPCandidate else {
+            // No input-report callback either: nothing in it applies to such an interface
+            // (it only parses HID++ reports against features this session discovered), and
+            // on the ordinary mouse interface of a receiver or a wired mouse it woke the main
+            // run loop, which also serves the event taps, for every movement report.
             LogiDebugPanel.log("\(tag) Skipping: not a HID++ candidate interface")
-            // 仍然注册 input report 回调以捕获广播通知 (如 SmartShift)
-            setupInputReportCallback()
             return
         }
 
@@ -1132,13 +1255,8 @@ class LogiDeviceSession {
 
         // BLE / 直连模式: 直接 Feature Discovery (尝试缓存, 失败则完整 discovery)
         if let cached = Self.loadCachedFeatureIndex(for: deviceInfo.productId),
-           let reprogIdx = cached[Self.featureReprogV4] {
-            LogiDebugPanel.log("\(tag) Using cached feature index: REPROG at 0x\(String(format: "%02X", reprogIdx))")
-            self.featureIndex = cached.reduce(into: [UInt16: UInt8]()) { $0[$1.key] = $1.value }
-            featureIndicesFromCache = Set(cached.values)
-            // 用 ping 验证缓存是否有效 (IRoot.GetProtocolVersion)
-            sendRequest(featureIndex: 0x00, functionId: 1)
-            pendingCacheValidation = reprogIdx
+           cached[Self.featureReprogV4] != nil {
+            validateCachedFeatureIndex(cached, tag: tag)
         } else {
             LogiDebugPanel.log("\(tag) Starting feature discovery for REPROG_CONTROLS_V4 (0x1B04)")
             startFreshDiscovery(tag: tag)
@@ -1152,17 +1270,40 @@ class LogiDeviceSession {
         IOHIDDeviceRegisterInputReportCallback(
             hidDevice, reportBufferPtr!, Self.reportBufferSize, Self.inputReportCallback, context
         )
+        inputReportCallbackRegistered = true
     }
 
-    func teardown() {
-        LogiDebugPanel.log("[\(deviceInfo.name)] Teardown")
+    private var inputReportCallbackRegistered = false
+
+    /// Takes the callback off the device (a nil callback unregisters). The callback holds the
+    /// session unretained and writes into `reportBufferPtr`: a report delivered after the
+    /// session was freed would have used freed memory.
+    private func removeInputReportCallback() {
+        guard inputReportCallbackRegistered, let buffer = reportBufferPtr else { return }
+        inputReportCallbackRegistered = false
+        IOHIDDeviceRegisterInputReportCallback(hidDevice, buffer, Self.reportBufferSize, nil, nil)
+    }
+
+    /// Lets go of the device: every button Scrollio diverted, on every slot, is given back
+    /// (and raw XY switched off), then the session forgets everything it knew.
+    ///
+    /// - Parameter deviceGone: the device was removed (switched off, out of range, the
+    ///   receiver unplugged). Nothing can be given back then, and a write to a device that
+    ///   is gone can block for seconds: nothing is queued and nothing is waited for. The
+    ///   event taps run during a removal, so a wait here would hold up the input of the
+    ///   whole system.
+    func teardown(deviceGone: Bool = false) {
+        LogiDebugPanel.log("[\(deviceInfo.name)] Teardown\(deviceGone ? " (device removed)" : "")")
+        tornDownWithDeviceGone = deviceGone
         pendingInitialTargetSelection = false
         pendingDeviceInfoSlots.removeAll()
+        let managedSlots = receiverManagedSlots
         receiverManagedSlots.removeAll()
         pendingDivertSlots.removeAll()
         receiverInspectionSlot = nil
         receiverSweptSlots.removeAll()
         receiverOptionalProbedSlots.removeAll()
+        receiverNonMouseSlots.removeAll()
         receiverTakeoverDebounce.values.forEach { $0.cancel() }
         receiverTakeoverDebounce.removeAll()
         dropAllWheelControllers()
@@ -1172,31 +1313,53 @@ class LogiDeviceSession {
         controlInfoQueryTimer = nil
         reportingQueryTimer?.invalidate()
         reportingQueryTimer = nil
-        controlInfoRetryCounts.removeAll()
+        cancelControlCountWait()
+        deviceNameReads.removeAll()
+        pendingActions.cancelAll()
         cancelDivertReassertion()
         cancelBLEStandardUndivertGuard()
-        releaseAllActiveButtonState(reason: "teardown")
+        // Every slot with state, not only the one the cursor is on: on a receiver with two
+        // mice (or with the cursor left on a keyboard by the diagnostics window) the other
+        // mouse used to keep its buttons diverted after Pause and Quit.
+        let slots = Self.teardownSlots(known: Set(slotStates.keys), managed: managedSlots, cursor: deviceIndex)
+        forEachSlot(slots) {
+            releaseAllActiveButtonState(reason: "teardown")
+        }
         // Raw XY first, on every slot: a control left armed would keep freezing the pointer
         // while it is held, with nobody listening to its movement.
-        disarmAllGestureControllers()
-        if let reprogIdx = featureIndex[Self.featureReprogV4] {
-            for cid in divertedCIDs {
-                setControlReporting(featureIndex: reprogIdx, cid: cid, divert: false)
+        if !deviceGone {
+            disarmAllGestureControllers()
+        }
+        forEachSlot(slots) {
+            if !deviceGone, let reprogIdx = featureIndex[Self.featureReprogV4] {
+                for cid in divertLedger.toGiveBack.sorted() {
+                    setControlReporting(featureIndex: reprogIdx, cid: cid, divert: false)
+                }
             }
+            controlInfoRetryCounts.removeAll()
+            divertLedger = LogiDivertLedger()
+            discoveredControls.removeAll()
         }
         dropAllGestureControllers()
         cancelDivertReassertion()
-        pendingSetControlReportingAcks.removeAll()
-        lastApplied.removeAll()
-        divertedCIDs.removeAll()
-        discoveredControls.removeAll()
         // timer 已清零, 此时 isActivityInProgress 只剩 discoveryInFlight 一个分量;
         // 走 setter 让 Manager 重算聚合 busy, 防止 session 销毁后 UI spinner 卡住.
         setDiscoveryInFlight(false)
+        // No report may reach this session any more: the callback holds it unretained, and
+        // a session that was torn down is never used again.
+        removeInputReportCallback()
+        guard !deviceGone else { return }
         // The requests above that give the mouse its buttons back are queued: wait for them
-        // here, before the device is closed or the app exits. The event taps are off by now
-        // (AppRunController stops them first), so waiting holds up nobody's input.
+        // here, before the device is closed or the app exits. On this path (Pause, Quit,
+        // sleep: LogiSessionManager.stop) the event taps are off by now (AppRunController
+        // stops them first), so waiting holds up nobody's input.
         drainWrites(reason: "teardown", timeout: Self.writeDrainTimeoutAtTeardown)
+    }
+
+    /// The slots teardown visits: every slot it has state for, every slot it took over, and
+    /// the cursor slot.
+    static func teardownSlots(known: Set<UInt8>, managed: Set<UInt8>, cursor: UInt8) -> [UInt8] {
+        return known.union(managed).union([cursor]).sorted()
     }
 
     // MARK: - Input Report Callback
@@ -1291,11 +1454,11 @@ class LogiDeviceSession {
                 let failure = String(format: "HID++ write refused: 0x%08x (%@)", UInt32(bitPattern: outcome.result), request.text)
                 LogiDebugPanel.log(device: self.deviceInfo.name, type: .error, message: failure)
                 if let line = self.writeTiming.recordFailure(result: outcome.result, now: now, request: request, link: link) {
-                    LogiSystemLog.note("[\(self.deviceInfo.name)] \(line)")
+                    LogiSystemLog.note("\(self.sessionLogTag) \(line)")
                 }
             }
             if let line = self.writeTiming.record(duration: outcome.duration, now: now, request: request, link: link) {
-                LogiSystemLog.note("[\(self.deviceInfo.name)] \(line)")
+                LogiSystemLog.note("\(self.sessionLogTag) \(line)")
             }
         }
         writeTiming.noteQueued(mainThreadHeld: DispatchTime.now().uptimeNanoseconds &- queueStarted)
@@ -1307,7 +1470,7 @@ class LogiDeviceSession {
         let finished = reportWriter.drain(timeout: timeout)
         let waited = DispatchTime.now().uptimeNanoseconds &- started
         guard !finished || waited >= 5_000_000 else { return }
-        LogiSystemLog.note("[\(deviceInfo.name)] \(LogiWriteTiming.drainLine(waited: waited, finished: finished, reason: reason))")
+        LogiSystemLog.note("\(sessionLogTag) \(LogiWriteTiming.drainLine(waited: waited, finished: finished, reason: reason))")
     }
 
     /// The diagnostics panel's own requests (Debug builds): through the same queue, so that
@@ -1325,11 +1488,69 @@ class LogiDeviceSession {
         // Once the writes queued so far have gone out and were counted.
         reportWriter.afterQueued { [weak self] in
             guard let self = self, let line = self.writeTiming.finishSetup(link: self.writeLink) else { return }
-            LogiSystemLog.note("[\(self.deviceInfo.name)] \(line)")
+            LogiSystemLog.note("\(self.sessionLogTag) \(line)")
         }
     }
 
     // MARK: - Feature Discovery
+
+    /// The look-ups that show whether a saved feature table still fits the mouse: the
+    /// buttons feature (0x1B04) and the saved feature with the highest index, each with the
+    /// index the mouse has to answer. The table is saved per product id, and a mouse of
+    /// that product with another firmware (an update, a second mouse of the model) can have
+    /// a feature more or less; the table is in the order of the feature ids, so that moves
+    /// every later index, the last one included. A ping, which the saved table used to be
+    /// trusted after, says nothing about that.
+    static func featureCacheProbes(_ cached: [UInt16: UInt8]) -> [(featureId: UInt16, index: UInt8)] {
+        guard let reprogIndex = cached[featureReprogV4] else { return [] }
+        var probes = [(featureId: featureReprogV4, index: reprogIndex)]
+        // The highest index; of two features saved with the same index (a broken table) the
+        // lower id, so that the choice does not depend on the order of the dictionary.
+        if let last = cached.max(by: { ($0.value, $1.key) < ($1.value, $0.key) }), last.key != featureReprogV4 {
+            probes.append((featureId: last.key, index: last.value))
+        }
+        return probes
+    }
+
+    /// Uses the saved feature table only when the mouse confirms it (`featureCacheProbes`);
+    /// otherwise the entry is dropped and the features are looked up afresh. Until then no
+    /// saved index is in use: nothing is sent to an index the mouse did not just confirm.
+    /// Each look-up has the getFeature timeout, so a lost answer ends in a fresh discovery
+    /// instead of a session that stays "initializing".
+    private func validateCachedFeatureIndex(_ cached: [UInt16: UInt8], tag: String) {
+        let probes = Self.featureCacheProbes(cached)
+        LogiDebugPanel.log("\(tag) Checking the saved feature table (\(cached.count) features) with \(probes.count) look-up(s)")
+        checkNextCacheProbe(probes[...], cached: cached, tag: tag)
+    }
+
+    private func checkNextCacheProbe(
+        _ remaining: ArraySlice<(featureId: UInt16, index: UInt8)>,
+        cached: [UInt16: UInt8],
+        tag: String
+    ) {
+        guard let probe = remaining.first else {
+            LogiDebugPanel.log("\(tag) Saved feature table confirmed")
+            featureIndex = cached
+            featureIndicesFromCache = Set(cached.values)
+            if let reprogIdx = cached[Self.featureReprogV4] {
+                sendGetControlCount(featureIndex: reprogIdx)
+            }
+            return
+        }
+        discoverFeature(featureId: probe.featureId) { [weak self] index in
+            guard let self = self else { return }
+            guard index == probe.index else {
+                let found = index.map { String(format: "0x%02X", $0) } ?? "no answer or not present"
+                let message = String(format: "Saved feature table dropped: feature 0x%04X was saved at index 0x%02X, the mouse says %@; looking the features up afresh", probe.featureId, probe.index, found)
+                LogiDebugPanel.log("\(tag) \(message)")
+                LogiSystemLog.note("\(self.logTag(slot: self.deviceIndex)) \(message)")
+                Self.removeCachedFeatureIndex(for: self.deviceInfo.productId)
+                self.startFreshDiscovery(tag: tag)
+                return
+            }
+            self.checkNextCacheProbe(remaining.dropFirst(), cached: cached, tag: tag)
+        }
+    }
 
     private func startFreshDiscovery(tag: String) {
         discoverFeature(featureId: Self.featureReprogV4) { [weak self] index in
@@ -1432,9 +1653,56 @@ class LogiDeviceSession {
 
     // MARK: - REPROG_CONTROLS_V4 Flow
 
-    private func sendGetControlCount(featureIndex: UInt8) {
-        LogiDebugPanel.log("[\(deviceInfo.name)] Sending GetControlCount")
+    private func sendGetControlCount(featureIndex: UInt8, attempt: Int = 1) {
+        LogiDebugPanel.log("[\(deviceInfo.name)] Sending GetControlCount\(attempt > 1 ? " (attempt \(attempt))" : "")")
         sendRequest(featureIndex: featureIndex, functionId: 0)
+        let slot = deviceIndex
+        pendingControlCount = (slot, attempt)
+        controlCountTimer?.invalidate()
+        controlCountTimer = Timer.scheduledTimer(withTimeInterval: Self.controlCountTimeout, repeats: false) { [weak self] _ in
+            self?.controlCountDidFail(slot: slot, reason: "no answer")
+        }
+    }
+
+    private func cancelControlCountWait() {
+        controlCountTimer?.invalidate()
+        controlCountTimer = nil
+        pendingControlCount = nil
+    }
+
+    /// What a GetControlCount without an answer (or with an error for an answer) leads to.
+    enum ControlCountFailureStep: Equatable {
+        case sendAgain(attempt: Int)
+        case endDiscovery
+    }
+
+    static func controlCountFailureStep(attempt: Int) -> ControlCountFailureStep {
+        return attempt < controlCountAttempts ? .sendAgain(attempt: attempt + 1) : .endDiscovery
+    }
+
+    /// GetControlCount was not answered in time, or the mouse refused it. Sent once more;
+    /// then the discovery ends like "no buttons feature": the session is no longer
+    /// "initializing" (the Buttons pane stops saying "Checking buttons…") and a receiver
+    /// goes on to its next slot. It used to wait for the answer for the whole connection.
+    private func controlCountDidFail(slot: UInt8, reason: String) {
+        guard let pending = pendingControlCount, pending.slot == slot else { return }
+        cancelControlCountWait()
+        // A slot is discovered with the cursor on it. If the cursor is elsewhere, that
+        // discovery was replaced (a slot picked in the diagnostics window): nothing to end.
+        guard deviceIndex == slot else { return }
+        if case .sendAgain(let attempt) = Self.controlCountFailureStep(attempt: pending.attempt),
+           let idx = featureIndex[Self.featureReprogV4] {
+            LogiDebugPanel.log(device: deviceInfo.name, type: .warning, message: "GetControlCount: \(reason), asking again")
+            sendGetControlCount(featureIndex: idx, attempt: attempt)
+            return
+        }
+        let message = "GetControlCount: \(reason); this connection goes on without the mouse's Logitech buttons (they work as plain buttons) until it reconnects"
+        LogiDebugPanel.log(device: deviceInfo.name, type: .warning, message: message)
+        LogiSystemLog.note("\(logTag(slot: slot)) \(message)")
+        markHandshakeComplete()
+        NotificationCenter.default.post(name: LogiSessionManager.reportingQueryDidCompleteNotification, object: nil)
+        LogiSessionManager.shared.recomputeAndNotifyActivityState()
+        receiverSlotDiscoveryDidFinish(didDivert: false)
     }
 
     private func sendGetControlInfo(featureIndex: UInt8, index: Int) {
@@ -1479,10 +1747,52 @@ class LogiDeviceSession {
         reprogQueryIndex += 1
         if reprogQueryIndex < reprogControlCount, let idx = featureIndex[Self.featureReprogV4] {
             sendGetControlInfo(featureIndex: idx, index: reprogQueryIndex)
+        } else if !slotIsMouse(deviceIndex) {
+            // Not a mouse (a keyboard on the receiver): its discovery ends here.
+            finishDiscoveryOfNonMouseSlot()
         } else {
             // ControlInfo 全部获取完毕, 开始逐个查询 reporting 状态
             startReportingQuery()
         }
+    }
+
+    /// Whether Scrollio treats a slot as a mouse: over Bluetooth always (only the mouse
+    /// interface gets a session), on a receiver when its controls have a left and a right
+    /// click (`controlsLookLikeMouse`: the receiver is not asked what its devices are).
+    private func slotIsMouse(_ slot: UInt8) -> Bool {
+        return connectionMode != .receiver || slotLooksLikeMouse(slot)
+    }
+
+    /// A receiver slot whose controls show that it is not a mouse. "Let Scrollio manage this
+    /// mouse" and the bindings are about mice: nothing is written to this device. Its
+    /// reporting state is not even read (that halves the requests a keyboard gets), no
+    /// divert is set or cleared on it (the leftover check used to clear the diverts another
+    /// app holds on a keyboard), and it gets no wheel, haptic or settings controller.
+    private func finishDiscoveryOfNonMouseSlot() {
+        let slot = deviceIndex
+        // Remembered only when every control answered: a mouse whose left or right click got
+        // lost on the way is looked at again when it reconnects.
+        if Self.nonMouseSlotIsRemembered(controlsFound: discoveredControls.count, controlsReported: reprogControlCount) {
+            receiverNonMouseSlots.insert(slot)
+        }
+        divertLedger.forgetDiverts()
+        reprogInitComplete = false
+        handshakeComplete = true
+        setDiscoveryInFlight(false)
+        LogiDebugPanel.log("[\(deviceInfo.name)] Slot \(slot) is not a mouse (no left and right click among its \(discoveredControls.count) controls): left alone")
+        NotificationCenter.default.post(name: LogiSessionManager.reportingQueryDidCompleteNotification, object: nil)
+        LogiSessionManager.shared.recomputeAndNotifyActivityState()
+        if receiverSweepActive {
+            receiverSlotDiscoveryDidFinish(didDivert: false)
+        } else {
+            // The diagnostics window asked for this slot: its features are listed (read only).
+            probeOptionalFeatures()
+            pumpPendingDivertQueue()
+        }
+    }
+
+    static func nonMouseSlotIsRemembered(controlsFound: Int, controlsReported: Int) -> Bool {
+        return controlsReported > 0 && controlsFound >= controlsReported
     }
 
     private func setControlReporting(featureIndex: UInt8, cid: UInt16, divert: Bool) {
@@ -1515,9 +1825,10 @@ class LogiDeviceSession {
         recordPendingSetControlReportingAck(cid: cid, params: params)
         sendRequest(featureIndex: featureIndex, functionId: 3,
                          params: params)
-        if updateLocalState {
-            if divert { divertedCIDs.insert(cid) } else { divertedCIDs.remove(cid) }
-        }
+        // The ledger learns of every write: what is diverted, and that whatever
+        // GetControlReporting said about this control (or is about to say, for a query
+        // already on its way) is older than this write.
+        divertLedger.noteWrite(cid: cid, divert: divert, countsAsDiverted: updateLocalState)
         // 方案 B: 不再本地改写 reportingFlags.
         // reportingFlags 永远反映 "GetControlReporting 响应的真值" (设备层状态, Mos 接管前).
         // Mos 自己的 divert 视角由 divertedCIDs 集合唯一表达, 避免污染冲突判定的依据.
@@ -1533,11 +1844,9 @@ class LogiDeviceSession {
     private func recordPendingSetControlReportingAck(cid: UInt16, params: [UInt8]) {
         guard params.count >= 5 else { return }
         let targetCID = (UInt16(params[3]) << 8) | UInt16(params[4])
-        pendingSetControlReportingAcks[cid] = PendingSetControlReportingAck(
-            flagsByte: params[2],
-            targetCID: targetCID,
-            expiresAt: Date().addingTimeInterval(Self.pendingSetControlReportingAckTTL)
-        )
+        // A list per control (LogiPendingReportingAcks): "give back" and "divert" for one
+        // control can both be on their way.
+        divertLedger.expectAck(cid: cid, flags: params[2], targetCID: targetCID, now: Date())
         #if DEBUG
         LogiTrace.log(
             "[Session] pending SetReporting ACK cid=\(String(format: "0x%04X", cid)) flags=\(String(format: "0x%02X", params[2])) target=\(String(format: "0x%04X", targetCID))",
@@ -1547,43 +1856,14 @@ class LogiDeviceSession {
     }
 
     private func consumePendingSetControlReportingAck(_ ack: SetControlReportingAck) -> Bool {
-        guard let pending = pendingSetControlReportingAcks[ack.cid] else {
-            #if DEBUG
-            LogiTrace.log(
-                "[Session] SetReporting ACK no pending cid=\(String(format: "0x%04X", ack.cid)) flags=\(String(format: "0x%02X", ack.flagsByte)) target=\(String(format: "0x%04X", ack.targetCID))",
-                device: deviceInfo.name
-            )
-            #endif
-            return false
-        }
-        guard Date() <= pending.expiresAt else {
-            pendingSetControlReportingAcks.removeValue(forKey: ack.cid)
-            #if DEBUG
-            LogiTrace.log(
-                "[Session] SetReporting ACK pending expired cid=\(String(format: "0x%04X", ack.cid))",
-                device: deviceInfo.name
-            )
-            #endif
-            return false
-        }
-        guard pending.flagsByte == ack.flagsByte,
-              pending.targetCID == ack.targetCID else {
-            #if DEBUG
-            LogiTrace.log(
-                "[Session] SetReporting ACK pending mismatch cid=\(String(format: "0x%04X", ack.cid)) pendingFlags=\(String(format: "0x%02X", pending.flagsByte)) ackFlags=\(String(format: "0x%02X", ack.flagsByte)) pendingTarget=\(String(format: "0x%04X", pending.targetCID)) ackTarget=\(String(format: "0x%04X", ack.targetCID))",
-                device: deviceInfo.name
-            )
-            #endif
-            return false
-        }
-        pendingSetControlReportingAcks.removeValue(forKey: ack.cid)
+        let own = divertLedger.consumeAck(cid: ack.cid, flags: ack.flagsByte, targetCID: ack.targetCID, now: Date())
         #if DEBUG
         LogiTrace.log(
-            "[Session] SetReporting ACK consumed cid=\(String(format: "0x%04X", ack.cid)) flags=\(String(format: "0x%02X", ack.flagsByte)) target=\(String(format: "0x%04X", ack.targetCID))",
+            "[Session] SetReporting ACK \(own ? "consumed" : "not ours") cid=\(String(format: "0x%04X", ack.cid)) flags=\(String(format: "0x%02X", ack.flagsByte)) target=\(String(format: "0x%04X", ack.targetCID))",
             device: deviceInfo.name
         )
         #endif
-        return true
+        return own
     }
 
     private static func controlReportingParams(
@@ -1660,11 +1940,17 @@ class LogiDeviceSession {
         dropAllPendingDiscoveries()
         controlInfoQueryTimer?.invalidate(); controlInfoQueryTimer = nil
         reportingQueryTimer?.invalidate(); reportingQueryTimer = nil
-        pendingCacheValidation = nil
+        cancelControlCountWait()
         controlInfoRetryCounts.removeAll()
         cancelDivertReassertion()
         cancelBLEStandardUndivertGuard()
-        pendingSetControlReportingAcks.removeAll()
+        forgetPendingAcksOnEverySlot()
+    }
+
+    private func forgetPendingAcksOnEverySlot() {
+        for slot in Array(slotStates.keys) {
+            slotStates[slot]?.ledger.forgetPendingAcks()
+        }
     }
 
     private func cancelDivertReassertion() {
@@ -1685,7 +1971,16 @@ class LogiDeviceSession {
         pendingBLEUndivertGuardQueries.removeAll()
     }
 
+    /// The writes below this line that only the diagnostics window asks for (its sliders,
+    /// "Play Waveform", "Divert", "Re-Divert", "Undivert All") are refused in a build that
+    /// does not offer device writes: a Release build of the window reads and shows.
+    private var diagnosticsMayWrite: Bool {
+        return HIDPPFeatureActions.offersDeviceWrites
+    }
+
     func redivertAllControls() {
+        // The diagnostics window's own write: never in a Release build (diagnosticsMayWrite).
+        guard diagnosticsMayWrite else { return }
         releaseAllActiveButtonState(reason: "redivert")
         cancelBLEStandardUndivertGuard()
         reprogInitComplete = true
@@ -1696,6 +1991,8 @@ class LogiDeviceSession {
     }
 
     func undivertAllControls() {
+        // The diagnostics window's own write: never in a Release build (diagnosticsMayWrite).
+        guard diagnosticsMayWrite else { return }
         releaseAllActiveButtonState(reason: "undivert all")
         cancelBLEStandardUndivertGuard()
         guard currentReceiverTargetIsConnected else {
@@ -1720,6 +2017,8 @@ class LogiDeviceSession {
     }
 
     func toggleDivert(cid: UInt16) {
+        // The diagnostics window's own write: never in a Release build (diagnosticsMayWrite).
+        guard diagnosticsMayWrite else { return }
         guard let idx = featureIndex[Self.featureReprogV4] else { return }
         guard currentReceiverTargetIsConnected else { return }
         let currentlyDiverted = divertedCIDs.contains(cid)
@@ -1737,6 +2036,7 @@ class LogiDeviceSession {
         cancelInflightDiscovery()
         deviceIndex = slot
         receiverOptionalProbedSlots.remove(slot)  // 完整重发现 -> 可选功能允许重探
+        receiverNonMouseSlots.remove(slot)        // picked by hand: looked at again
         // 重置 feature 状态, 等待新一轮 discovery
         featureIndex.removeAll()
         resetOptionalProbeState()  // 新 slot 是另一台设备, 探测守卫与所有缓存状态必须清零
@@ -1790,6 +2090,32 @@ class LogiDeviceSession {
         }
         LogiDebugPanel.log("[\(deviceInfo.name)] Inspecting slot \(slot) (cached, no REPROG rediscover)")
         NotificationCenter.default.post(name: LogiSessionManager.sessionChangedNotification, object: nil)
+    }
+
+    /// The diagnostics window was closed. If it left the cursor on a device that is not a
+    /// mouse (a keyboard's row was picked), the cursor goes back to a mouse: what follows
+    /// the cursor (the re-read of the buttons' state, an action a gesture runs) is about
+    /// the mouse. Nothing is sent.
+    func endSlotInspection() {
+        let idle = !receiverSweepActive && pendingDiscovery.isEmpty && pendingControlCount == nil
+            && controlInfoQueryTimer == nil && reportingQueryTimer == nil
+        guard connectionMode == .receiver,
+              let slot = Self.cursorAfterInspection(
+                  cursor: deviceIndex,
+                  cursorIsMouse: slotIsMouse(deviceIndex),
+                  mouseSlots: receiverManagedSlots.sorted().filter { slotLooksLikeMouse($0) },
+                  idle: idle
+              ) else { return }
+        deviceIndex = slot
+        LogiDebugPanel.log("[\(deviceInfo.name)] Diagnostics closed: cursor back on the mouse in slot \(slot)")
+    }
+
+    /// Where the cursor goes when the diagnostics window closes; nil: it stays. It only
+    /// moves off a device that is not a mouse, onto the lowest slot that holds one, and
+    /// never in the middle of a discovery (a slot is discovered with the cursor on it).
+    static func cursorAfterInspection(cursor: UInt8, cursorIsMouse: Bool, mouseSlots: [UInt8], idle: Bool) -> UInt8? {
+        guard idle, !cursorIsMouse, let mouse = mouseSlots.min(), mouse != cursor else { return nil }
+        return mouse
     }
 
     // MARK: - Receiver Device Enumeration
@@ -1914,6 +2240,14 @@ class LogiDeviceSession {
             checkPingPhaseComplete()
         }
 
+        // GetControlCount of this app refused for the slot being discovered (the device went
+        // out of range): the same as no answer, without waiting for the timeout.
+        if report.count > 4, pendingControlCount?.slot == devIdx,
+           let reprogIdx = slotStates[devIdx]?.featureIndex[Self.featureReprogV4],
+           report[3] == reprogIdx, report[4] == Self.hidppSoftwareId {
+            controlCountDidFail(slot: devIdx, reason: "HID++ 1.0 error \(errorName)")
+        }
+
         // A getFeature of this app refused for this slot (e.g. the device is out of range):
         // only the oldest request to that slot fails. Errors for other requests (the slot
         // pings, the receiver's own registers at 0xFF) leave the discoveries alone.
@@ -1968,6 +2302,15 @@ class LogiDeviceSession {
             return
         }
 
+        // Left as it was, because no receiver was at hand to try a change on: these requests
+        // very likely do not have the format a Unifying or a Bolt receiver reads (the
+        // review of 2026-11-12 found in Solaar one parameter byte, 0x20 + n - 1 or 0x50 + n;
+        // these ask for sub-registers 0x00 to 0x05), so the kind and the name of a device
+        // probably never arrive and the selection below waits its 1.5 s. Nothing depends on
+        // the answers any more: what a slot holds is told from its controls
+        // (controlsLookLikeMouse) and a mouse's name is read from the mouse itself (feature
+        // 0x0005, requestDeviceNameIfNeeded). With a receiver on the desk: if the diagnostics
+        // log never shows "Slot N info", delete the requests and the wait.
         // 查询已连接设备的详细信息 (register 0xB5, 可能在 Bolt receiver 上失败).
         // 巡检游标默认选择需要 deviceType 才能 prefer-mouse, 因此推迟到 device-info 到齐
         // (或超时) 后再选一次, 避免像旧逻辑那样锁到编号最低的 slot (可能是键盘/另一只鼠标).
@@ -2133,12 +2476,18 @@ class LogiDeviceSession {
         deviceIndex = mouseSlot ?? receiverInspectionSlot ?? deviceIndex
         // 在最终巡检的那台(鼠标)探测可选功能(haptic/scrollForce 等). 移到此处(而非逐 slot)
         // 才能只探测巡检的鼠标而非 sweep 最后一个 slot. probeOptionalFeatures 自带 once 守卫.
-        receiverOptionalProbedSlots.insert(deviceIndex)  // 巡检游标那台已探, inspectSlot 不重探
         let probeAlreadyRan = optionalProbeSent
         let sweptSlots = receiverSweptSlots
         receiverSweptSlots.removeAll()
-        probeOptionalFeatures()
-        if let slot = Self.receiverSweepRebuildSlot(
+        // Only a mouse is asked for its optional features here. With no mouse on the
+        // receiver the cursor rests on another device (a keyboard): that one is asked only
+        // when the user picks it in the diagnostics window (inspectSlot).
+        let cursorIsMouse = slotIsMouse(deviceIndex)
+        if cursorIsMouse {
+            receiverOptionalProbedSlots.insert(deviceIndex)  // 巡检游标那台已探, inspectSlot 不重探
+            probeOptionalFeatures()
+        }
+        if cursorIsMouse, let slot = Self.receiverSweepRebuildSlot(
             cursor: deviceIndex, sweptSlots: sweptSlots, probeAlreadyRan: probeAlreadyRan
         ) {
             // 热插拔重连: 探测链不会再跑 (once 守卫), 但该 slot 的 featureIndex 已被清空.
@@ -2159,6 +2508,12 @@ class LogiDeviceSession {
         pumpPendingDivertQueue()
     }
 
+    /// The slot (1...6) a pairing-information answer names by its 0-based index; nil for
+    /// anything else.
+    static func pairingInfoSlot(entityIndex: UInt8) -> UInt8? {
+        return entityIndex < 6 ? entityIndex + 1 : nil
+    }
+
     /// 处理 receiver register 响应
     private func handleReceiverRegisterResponse(_ report: UnsafeBufferPointer<UInt8>) {
         let register = report[3]
@@ -2166,7 +2521,10 @@ class LogiDeviceSession {
         if register == Self.receiverPairingInfo {
             let entityIdx = report[4]  // 0-based
             let infoType = report[5]
-            let slot = entityIdx + 1
+            // A byte of the report: checked before it is counted with. 0xFF + 1 trapped
+            // here, and any program that reads this register (Solaar, Logi Options+) can
+            // make the receiver send such an answer.
+            guard let slot = Self.pairingInfoSlot(entityIndex: entityIdx) else { return }
 
             guard let idx = receiverPairedDevices.firstIndex(where: { $0.slot == slot }) else { return }
 
@@ -2223,7 +2581,8 @@ class LogiDeviceSession {
             // Taken over whatever the bindings say (they only decide what applyUsage diverts).
             let dev = receiverPairedDevices.first(where: { $0.slot == devIdx })
             let isDivertCandidate = Self.receiverSlotIsTakeoverCandidate(
-                connected: connected, deviceType: dev?.deviceType ?? 0
+                connected: connected, deviceType: dev?.deviceType ?? 0,
+                knownNotAMouse: receiverNonMouseSlots.contains(devIdx)
             )
             let action = Self.receiverSlotConnectionAction(
                 slot: devIdx,
@@ -2262,7 +2621,8 @@ class LogiDeviceSession {
 
         let device = receiverPairedDevices.first(where: { $0.slot == slot })
         let isDivertCandidate = Self.receiverSlotIsTakeoverCandidate(
-            connected: true, deviceType: device?.deviceType ?? 0
+            connected: true, deviceType: device?.deviceType ?? 0,
+            knownNotAMouse: receiverNonMouseSlots.contains(slot)
         )
         let action = Self.receiverPeripheralActivityAction(
             slot: slot,
@@ -2401,6 +2761,19 @@ class LogiDeviceSession {
         return "Feature[0x\(String(format: "%02X", featureIndex))].func\(functionId)"
     }
 
+    /// The flags of a GetControlReporting answer in words, for the diagnostics log. Bit 2
+    /// is the persistent divert and bit 4 raw XY (they used to be shown as "tmpRemap" and
+    /// not at all); a bit without a known meaning is shown by its value.
+    static func reportingFlagNames(_ flags: UInt8) -> [String] {
+        let names: [(UInt8, String)] = [
+            (0x01, "divert"), (0x04, "persistDivert"), (0x10, "rawXY"), (0x40, "forceRawXY"),
+        ]
+        var parts = names.filter { flags & $0.0 != 0 }.map { $0.1 }
+        let unknown = flags & ~names.reduce(0) { $0 | $1.0 }
+        if unknown != 0 { parts.append(String(format: "0x%02X", unknown)) }
+        return parts
+    }
+
     /// ", rawXY=ON/OFF" when the flags byte states the raw XY bit, else nothing.
     private static func rawXYDescription(flagsByte: UInt8) -> String {
         guard flagsByte & LogiGestureProtocol.flagRawXYValid != 0 else { return "" }
@@ -2496,11 +2869,7 @@ class LogiDeviceSession {
                 let rFlags = report[6]
                 let tCID = (UInt16(report[7]) << 8) | UInt16(report[8])
                 let cidName = LogiCIDDirectory.name(forCID: cid)
-                var parts: [String] = []
-                if rFlags & 0x01 != 0 { parts.append("tmpDvrt") }
-                if rFlags & 0x02 != 0 { parts.append("pstDvrt") }
-                if rFlags & 0x04 != 0 { parts.append("tmpRemap") }
-                if rFlags & 0x08 != 0 { parts.append("pstRemap") }
+                let parts = Self.reportingFlagNames(rFlags)
                 let fStr = parts.isEmpty ? "none" : parts.joined(separator: ",")
                 let tStr = tCID != cid && tCID != 0 ? " -> \(LogiCIDDirectory.name(forCID: tCID))" : ""
                 return "REPROG.GetReporting(\(cidName)): \(fStr)\(tStr)"
@@ -2590,10 +2959,9 @@ class LogiDeviceSession {
     private var pendingDPICycle: (featureIndex: UInt8, direction: Direction)? = nil
     private var pendingDPIListQuery: (featureIndex: UInt8, direction: Direction)? = nil
     private var dpiSteps: [UInt16] = []  // 从设备查询, 不硬编码 (LogiPointerSpeedProtocol.parseDPIList)
-    private var pendingHiResScrollToggle = false
-    private var pendingScrollInvertToggle = false
-    private var pendingThumbWheelToggle = false
-    private var pendingPointerSpeedCycle = false
+    /// The button actions that read before they write, and until when each may still run
+    /// (LogiPendingActions): an answer that comes later than that runs nothing.
+    private var pendingActions = LogiPendingActions()
 
     /// SmartShift 切换 (free-spin <-> ratchet, 保留阈值与 torque).
     /// 走滚轮控制器: 0x2111 (MX Master 4 只有它) 读 fn1 写 fn2, 0x2110 读 fn0 写 fn1.
@@ -2639,11 +3007,13 @@ class LogiDeviceSession {
             // 如果 dpiStep == 0: 列表中的每个值都是一个档位
             sendRequest(featureIndex: featureIndex, functionId: 1, params: [0x00])
             pendingDPIListQuery = (featureIndex, direction)
+            pendingActions.arm(.dpiList, now: Date())
         } else {
             // 已有 DPI 列表, 直接查询当前值并切换
             // getSensorDpi: function 2, param sensorIdx=0
             sendRequest(featureIndex: featureIndex, functionId: 2, params: [0x00])
             pendingDPICycle = (featureIndex, direction)
+            pendingActions.arm(.dpiCurrent, now: Date())
         }
     }
 
@@ -2671,7 +3041,7 @@ class LogiDeviceSession {
     /// like the SmartShift Toggle, which the wheel controller logs.
     private func noteActionWrite(_ what: String) {
         let managed = LogiSessionManager.shared.mouseManaged ? "on" : "off"
-        LogiSystemLog.note("[\(deviceName(slot: deviceIndex)) slot \(String(format: "0x%02X", deviceIndex))] Button action: \(what) (manage switch \(managed))")
+        LogiSystemLog.note("\(logTag(slot: deviceIndex)) Button action: \(what) (manage switch \(managed))")
     }
 
     private func switchToHost(featureIndex: UInt8, hostIndex: UInt8) {
@@ -2682,91 +3052,28 @@ class LogiDeviceSession {
         // 注意: 切换后设备会断开连接, session 会被清理
     }
 
-    // MARK: - HiResWheel / ScrollInvert / ThumbWheel / PointerSpeed Actions
-
-    /// 0x2121 getWheelMode byte 0: bit1 high resolution, bit2 inverted (bit0 target, bit3
-    /// analytics are kept as read).
-    static let hiResWheelResolutionBit: UInt8 = 0x02
-    static let hiResWheelInvertBit: UInt8 = 0x04
-
-    /// setWheelMode (0x2121 fn2) parameters from a getWheelMode answer: `bit` of the mode
-    /// byte flipped, every other bit and bytes 1-2 ("priority", "rate" in OpenLogi) sent back
-    /// as read. Sending only the mode byte used to zero bytes 1-2. nil for a short answer.
-    static func hiResWheelModeParams<Bytes: RandomAccessCollection>(toggling bit: UInt8, in report: Bytes) -> [UInt8]?
-    where Bytes.Element == UInt8, Bytes.Index == Int {
-        guard report.count >= 7 else { return nil }
-        let base = report.startIndex
-        return [report[base + 4] ^ bit, report[base + 5], report[base + 6]]
-    }
-
-    /// Hi-Res 滚轮模式切换
-    private func executeHiResScrollToggle() {
-        if let idx = featureIndex[Self.featureHiResWheel] {
-            pendingHiResScrollToggle = true
-            // getWheelMode (fn1)
-            sendRequest(featureIndex: idx, functionId: 1, params: [])
-        } else {
-            discoverFeature(featureId: Self.featureHiResWheel) { [weak self] idx in
-                guard let self = self, let idx = idx else {
-                    self?.showFeatureNotAvailable("Hi-Res Scroll")
-                    return
-                }
-                self.featureIndex[Self.featureHiResWheel] = idx
-                self.pendingHiResScrollToggle = true
-                self.sendRequest(featureIndex: idx, functionId: 1, params: [])
-            }
-        }
-    }
-
-    /// 滚轮方向反转切换
-    private func executeScrollInvertToggle() {
-        if let idx = featureIndex[Self.featureHiResWheel] {
-            pendingScrollInvertToggle = true
-            sendRequest(featureIndex: idx, functionId: 1, params: [])  // getWheelMode
-        } else {
-            discoverFeature(featureId: Self.featureHiResWheel) { [weak self] idx in
-                guard let self = self, let idx = idx else {
-                    self?.showFeatureNotAvailable("Scroll Invert")
-                    return
-                }
-                self.featureIndex[Self.featureHiResWheel] = idx
-                self.pendingScrollInvertToggle = true
-                self.sendRequest(featureIndex: idx, functionId: 1, params: [])
-            }
-        }
-    }
-
-    /// 拇指轮模式切换
-    private func executeThumbWheelToggle() {
-        if let idx = featureIndex[Self.featureThumbWheel] {
-            pendingThumbWheelToggle = true
-            sendRequest(featureIndex: idx, functionId: 1, params: [])  // getThumbwheelStatus
-        } else {
-            discoverFeature(featureId: Self.featureThumbWheel) { [weak self] idx in
-                guard let self = self, let idx = idx else {
-                    self?.showFeatureNotAvailable("Thumb Wheel")
-                    return
-                }
-                self.featureIndex[Self.featureThumbWheel] = idx
-                self.pendingThumbWheelToggle = true
-                self.sendRequest(featureIndex: idx, functionId: 1, params: [])
-            }
-        }
-    }
+    // MARK: - Pointer Speed Action
+    //
+    // "Toggle Hi-Res Scrolling", "Invert Scrolling" and "Toggle Thumb Wheel" are gone
+    // (LogiButtonAction). Each flipped a state of the mouse (0x2121 wheel mode, 0x2150 thumb
+    // wheel reporting) that nothing in Scrollio showed, and nothing put it back when
+    // Scrollio paused or quit: "Toggle Thumb Wheel" diverted the thumb wheel to HID++,
+    // where nobody listens, so the wheel stayed dead until the mouse was switched off and
+    // on. A stored binding that names one of them does nothing.
 
     /// 指针速度循环 (0.5x → 1x → 1.5x → 2x → 0.5x)
     private func executePointerSpeedCycle() {
         if let idx = featureIndex[Self.featurePointerSpeed] {
-            pendingPointerSpeedCycle = true
+            pendingActions.arm(.pointerSpeed, now: Date())
             sendRequest(featureIndex: idx, functionId: 0, params: [])  // getPointerSpeed
         } else {
             discoverFeature(featureId: Self.featurePointerSpeed) { [weak self] idx in
                 guard let self = self, let idx = idx else {
-                    self?.showFeatureNotAvailable("Pointer Speed")
+                    self?.showFeatureNotAvailable(.pointerSpeed)
                     return
                 }
                 self.featureIndex[Self.featurePointerSpeed] = idx
-                self.pendingPointerSpeedCycle = true
+                self.pendingActions.arm(.pointerSpeed, now: Date())
                 self.sendRequest(featureIndex: idx, functionId: 0, params: [])
             }
         }
@@ -2849,7 +3156,10 @@ class LogiDeviceSession {
             if featureIndex[fid] != nil {
                 // 缓存已含: 无需探测, 直接发对应通知让 UI 补行/建 context, 继续下一个
                 postOptionalFeatureNotification(fid)
-                if fid == Self.featureDeviceNameType { requestDeviceTypeIfNeeded() }
+                if fid == Self.featureDeviceNameType {
+                    requestDeviceTypeIfNeeded()
+                    requestDeviceNameIfNeeded()
+                }
                 continue
             }
             discoverFeature(featureId: fid) { [weak self] idx in
@@ -2859,7 +3169,10 @@ class LogiDeviceSession {
                     self.saveFeatureIndexCache()
                     LogiDebugPanel.log("[\(self.deviceInfo.name)] feature \(String(format: "0x%04X", fid)) at index \(String(format: "0x%02X", idx))")
                     self.postOptionalFeatureNotification(fid)
-                    if fid == Self.featureDeviceNameType { self.requestDeviceTypeIfNeeded() }
+                    if fid == Self.featureDeviceNameType {
+                        self.requestDeviceTypeIfNeeded()
+                        self.requestDeviceNameIfNeeded()
+                    }
                 }
                 self.probeNextOptionalFeature()  // 串行: 本次 discovery 完成后再发下一个
             }
@@ -2867,9 +3180,13 @@ class LogiDeviceSession {
         }
         // 可选功能探测链走完(pendingDiscovery 此刻已空): 建立滚轮控制器 (读状态, 托管时写入).
         // 放在链尾而非发现 0x2111 时: 避免滚轮读写与后续 getFeature 交错.
-        resolveWheelController(slot: deviceIndex)
-        resolveGestureHaptics(slot: deviceIndex)
-        resolveMouseBasicsController(slot: deviceIndex)
+        // Only for a mouse: a keyboard that is alone on a receiver has a battery feature too,
+        // and used to appear in the Mouse pane and the menu as a mouse.
+        if slotIsMouse(deviceIndex) {
+            resolveWheelController(slot: deviceIndex)
+            resolveGestureHaptics(slot: deviceIndex)
+            resolveMouseBasicsController(slot: deviceIndex)
+        }
         // 排空热插拔期间入队的 slot.
         // 探测链较长(~18 个 feature, 含超时), 期间设备重连很常见, 必须在此排空避免搁置.
         pumpPendingDivertQueue()
@@ -2917,6 +3234,8 @@ class LogiDeviceSession {
 
     /// 播放固件预置波形 (fn4). 波形内容 (时长/频率) 由固件内置, 协议无参数可调.
     func hapticPlay(waveformId: UInt8) {
+        // The diagnostics window's own write: never in a Release build (diagnosticsMayWrite).
+        guard diagnosticsMayWrite else { return }
         withHapticFeature { [weak self] idx in
             self?.sendRequest(featureIndex: idx, functionId: 4, params: [waveformId])
         }
@@ -2928,6 +3247,8 @@ class LogiDeviceSession {
     /// [0x01, level] / [0x00, 0x32], which cleared power saving and reset the strength.)
     /// Without a state read nothing is written: the state is read instead. Read back after.
     func hapticSetLevel(_ level: UInt8) {
+        // The diagnostics window's own write: never in a Release build (diagnosticsMayWrite).
+        guard diagnosticsMayWrite else { return }
         guard let current = hapticRawState else {
             LogiDebugPanel.log("[\(deviceInfo.name)] HAPTIC: state unknown, reading it before any write")
             hapticRefreshInfo()
@@ -2984,7 +3305,7 @@ class LogiDeviceSession {
         } else {
             discoverFeature(featureId: Self.featureHaptic) { [weak self] idx in
                 guard let self = self, let idx = idx else {
-                    self?.showFeatureNotAvailable("Haptic")
+                    self?.showFeatureNotAvailable(.haptics)
                     return
                 }
                 self.featureIndex[Self.featureHaptic] = idx
@@ -2994,11 +3315,11 @@ class LogiDeviceSession {
         }
     }
 
-    /// 显示设备不支持某功能的 Toast 提示
-    private func showFeatureNotAvailable(_ featureName: String) {
-        let message = String(format: NSLocalizedString("featureNotAvailable", comment: ""),
-                            deviceInfo.name, featureName)
-        LogiDebugPanel.log("[\(deviceInfo.name)] \(featureName): feature not available")
+    /// The toast "<mouse> does not support <what>.", with the mouse's own name (not the
+    /// receiver's) and the feature in the words of the panes (LogiToastText).
+    private func showFeatureNotAvailable(_ feature: LogiToastText.MissingFeature) {
+        let message = LogiToastText.featureNotAvailable(mouse: deviceName(slot: deviceIndex), feature: feature)
+        LogiDebugPanel.log("[\(deviceInfo.name)] \(feature): feature not available")
         LogiCenter.shared.externalBridge.showLogiToast(message, severity: .warning)
     }
 
@@ -3031,6 +3352,8 @@ class LogiDeviceSession {
     /// 设置齿感力度 (fn2 SetState). 只改 torque, mode/autoDisengage 用 0=不变;
     /// MX Master 4 需带回当前 mode 才生效, 故取最近读到的 mode. 写后回读 fn1 校准 UI.
     func scrollForceSetTorque(_ torque: UInt8) {
+        // The diagnostics window's own write: never in a Release build (diagnosticsMayWrite).
+        guard diagnosticsMayWrite else { return }
         let mode = scrollForceStatus?.mode ?? 0
         let params = Self.scrollForceSetTorqueParams(torque: torque, mode: mode)
         withScrollForceFeature { [weak self] idx in
@@ -3073,7 +3396,7 @@ class LogiDeviceSession {
         } else {
             discoverFeature(featureId: Self.featureSmartShiftEnhanced) { [weak self] idx in
                 guard let self = self, let idx = idx else {
-                    self?.showFeatureNotAvailable("Scroll Force")
+                    self?.showFeatureNotAvailable(.wheelForce)
                     return
                 }
                 self.featureIndex[Self.featureSmartShiftEnhanced] = idx
@@ -3118,7 +3441,6 @@ class LogiDeviceSession {
             return
         }
         let name = deviceInfo.name
-        let mouseName = deviceName(slot: slot)
         let slotText = String(format: "0x%02X", slot)
         let controller = LogiWheelController(
             feature: feature,
@@ -3132,9 +3454,9 @@ class LogiDeviceSession {
             onChange: {
                 LogiSessionManager.shared.notifyWheelStateChanged()
             },
-            log: { message in
+            log: { [weak self] message in
                 LogiDebugPanel.log(device: name, type: .info, message: "[Wheel slot \(slotText)] \(message)")
-                LogiSystemLog.note("[\(mouseName) slot \(slotText)] Wheel: \(message)")
+                LogiSystemLog.note("\(self?.logTag(slot: slot) ?? "[Logitech mouse]") Wheel: \(message)")
             }
         )
         wheelControllers[slot] = controller
@@ -3248,6 +3570,20 @@ class LogiDeviceSession {
         return wheel.deviceState(id: deviceId(slot: slot), deviceName: deviceName(slot: slot))
     }
 
+    /// Tells two units of one model apart, the same at every connection: the serial number
+    /// macOS has for the device (over Bluetooth its address), else its location id. Only
+    /// used to order twins (LogiSessionManager.orderedForDisambiguation); it is never shown,
+    /// stored or logged.
+    private(set) lazy var twinOrderKey: String = {
+        if let serial = IOHIDDeviceGetProperty(hidDevice, kIOHIDSerialNumberKey as CFString) as? String, !serial.isEmpty {
+            return serial
+        }
+        if let location = IOHIDDeviceGetProperty(hidDevice, kIOHIDLocationIDKey as CFString) as? Int {
+            return String(format: "%08X", location)
+        }
+        return ""
+    }()
+
     /// 稳定 id: BLE = VID:PID; receiver = VID:receiverPID:slot:wirelessPID. 跨重连不变,
     /// 同型号重复时由 LogiSessionManager 追加序号. Wheel and mouse states share it.
     private func deviceId(slot: UInt8) -> String {
@@ -3258,12 +3594,108 @@ class LogiDeviceSession {
         return String(format: "%04X:%04X", deviceInfo.vendorId, deviceInfo.productId)
     }
 
+    /// What the interface calls the mouse. Through a receiver: the name the receiver has
+    /// for it if it gave one, else the name read from the mouse itself (feature 0x0005),
+    /// and the receiver's own name only until one of those arrived (a mouse on a receiver
+    /// used to be shown as "USB Receiver"). Over Bluetooth: the name macOS has for it (what
+    /// the user sees in the Bluetooth settings).
     private func deviceName(slot: UInt8) -> String {
-        if connectionMode == .receiver,
-           let paired = receiverPairedDevices.first(where: { $0.slot == slot }), !paired.name.isEmpty {
-            return paired.name
+        return Self.displayName(
+            connectionMode: connectionMode,
+            pairingName: receiverPairedDevices.first(where: { $0.slot == slot })?.name,
+            modelName: modelNames[slot],
+            interfaceName: deviceInfo.name
+        )
+    }
+
+    static func displayName(connectionMode: ConnectionMode, pairingName: String? = nil, modelName: String?, interfaceName: String) -> String {
+        guard connectionMode == .receiver else { return interfaceName }
+        if let pairingName = pairingName, !pairingName.isEmpty { return pairingName }
+        if let modelName = modelName, !modelName.isEmpty { return modelName }
+        return interfaceName
+    }
+
+    // MARK: - The device's own name (feature 0x0005)
+
+    /// The model name each slot's device reported (LogiDeviceNameRead); absent until read.
+    private var modelNames: [UInt8: String] = [:]
+    /// Name reads under way, per slot.
+    private var deviceNameReads: [UInt8: LogiDeviceNameRead] = [:]
+
+    /// Starts reading the cursor slot's name from the device (function 0, then function 1
+    /// in pieces). Reading only; the answers come in through handleDeviceNameResponse.
+    private func requestDeviceNameIfNeeded() {
+        let slot = deviceIndex
+        guard modelNames[slot] == nil, deviceNameReads[slot] == nil,
+              currentReceiverTargetIsConnected,
+              let idx = featureIndex[Self.featureDeviceNameType] else { return }
+        deviceNameReads[slot] = LogiDeviceNameRead()
+        sendRequest(featureIndex: idx, functionId: LogiDeviceNameRead.lengthFunction)
+    }
+
+    /// An answer of this app on feature 0x0005, function 0 or 1, for the cursor slot.
+    private func handleDeviceNameResponse(functionId: UInt8, report: UnsafeBufferPointer<UInt8>) {
+        let slot = deviceIndex
+        guard var read = deviceNameReads[slot], let idx = featureIndex[Self.featureDeviceNameType] else { return }
+        let step = functionId == LogiDeviceNameRead.lengthFunction ? read.handleLength(report) : read.handlePiece(report)
+        switch step {
+        case .requestPiece(let index):
+            deviceNameReads[slot] = read
+            sendRequest(featureIndex: idx, functionId: LogiDeviceNameRead.nameFunction, params: [index])
+        case .finished(let name):
+            deviceNameReads[slot] = nil
+            modelNames[slot] = name
+            // The diagnostics window lists the slot under this name too, unless the
+            // receiver gave one.
+            if let pairedIndex = receiverPairedDevices.firstIndex(where: { $0.slot == slot }),
+               receiverPairedDevices[pairedIndex].name.isEmpty {
+                receiverPairedDevices[pairedIndex].name = name
+            }
+            LogiDebugPanel.log(device: deviceInfo.name, type: .info, message: "Slot \(String(format: "0x%02X", slot)) name from the device: \"\(name)\"")
+            // The Mouse pane, the menu and the diagnostics window show the name.
+            NotificationCenter.default.post(name: LogiSessionManager.sessionChangedNotification, object: nil)
+            LogiSessionManager.shared.notifyWheelStateChanged()
+        case .failed:
+            deviceNameReads[slot] = nil
+            LogiDebugPanel.log(device: deviceInfo.name, type: .warning, message: "Slot \(String(format: "0x%02X", slot)): the device's name could not be read")
         }
-        return deviceInfo.name
+    }
+
+    // MARK: - Names in the system log
+
+    /// The name a `logi` line of the system log carries for a slot: the model name the
+    /// device reports, and a neutral label until that was read. Never the name macOS has for
+    /// a Bluetooth device: the user can change that one ("Anna's MX Anywhere"), and a log
+    /// pasted into a bug report would publish it.
+    static func logName(connectionMode: ConnectionMode, modelName: String?, interfaceName: String, productId: UInt16) -> String {
+        if let modelName = modelName, !modelName.isEmpty { return modelName }
+        switch connectionMode {
+        case .bleDirect:
+            return String(format: "Logitech mouse %04X", productId)
+        case .receiver, .unsupported:
+            // A receiver's own product name comes from its USB descriptor.
+            return interfaceName
+        }
+    }
+
+    private func logName(slot: UInt8) -> String {
+        return Self.logName(
+            connectionMode: connectionMode,
+            modelName: modelNames[slot],
+            interfaceName: deviceInfo.name,
+            productId: deviceInfo.productId
+        )
+    }
+
+    /// "[MX Master 4 slot 0xFF]": what a system-log line about one mouse starts with.
+    private func logTag(slot: UInt8) -> String {
+        return "[\(logName(slot: slot)) slot \(String(format: "0x%02X", slot))]"
+    }
+
+    /// What a system-log line about the link (the writes of this session) starts with: the
+    /// mouse over Bluetooth, the receiver otherwise.
+    private var sessionLogTag: String {
+        return "[\(logName(slot: connectionMode == .receiver ? 0x00 : deviceIndex))]"
     }
 
     // MARK: - Gesture Navigation (raw XY 0x1B04 + haptic cues 0x19B0)
@@ -3298,9 +3730,9 @@ class LogiDeviceSession {
             onChange: {
                 LogiSessionManager.shared.notifyGestureStateChanged()
             },
-            log: { message in
+            log: { [weak self] message in
                 LogiDebugPanel.log(device: name, type: .info, message: "[Gesture slot \(String(format: "0x%02X", slot))] \(message)")
-                LogiSystemLog.note("[\(name) slot \(String(format: "0x%02X", slot))] \(message)")
+                LogiSystemLog.note("\(self?.logTag(slot: slot) ?? "[Logitech mouse]") \(message)")
             },
             // Once the user switched haptics off in the Mouse settings, a cue never switches
             // them back on; while that setting was never touched, cues switch them on as before.
@@ -3438,7 +3870,7 @@ class LogiDeviceSession {
     @discardableResult
     func playGestureHaptic(_ cue: MouseGestureHapticCue, slot: UInt8) -> Bool {
         guard let controller = gestureControllers[slot] else {
-            LogiSystemLog.note("[\(deviceInfo.name)] Haptic cue \(cue) skipped: nothing known about slot \(String(format: "0x%02X", slot)) (known: \(gestureControllers.keys.sorted().map { String(format: "0x%02X", $0) }))")
+            LogiSystemLog.note("\(sessionLogTag) Haptic cue \(cue) skipped: nothing known about slot \(String(format: "0x%02X", slot)) (known: \(gestureControllers.keys.sorted().map { String(format: "0x%02X", $0) }))")
             return false
         }
         return controller.play(cue)
@@ -3491,9 +3923,9 @@ class LogiDeviceSession {
             onChange: {
                 LogiSessionManager.shared.notifyMouseStateChanged()
             },
-            log: { message in
+            log: { [weak self] message in
                 LogiDebugPanel.log(device: name, type: .info, message: "[Basics slot \(slotText)] \(message)")
-                LogiSystemLog.note("[\(name) slot \(slotText)] \(message)")
+                LogiSystemLog.note("\(self?.logTag(slot: slot) ?? "[Logitech mouse]") \(message)")
             }
         )
         basicsControllers[slot] = controller
@@ -3643,6 +4075,8 @@ class LogiDeviceSession {
 
     /// 设置按压激活阈值 (fn3 SetButtonConfig). clamp 到设备上报的 min/max, 写后回读 fn2 校准 UI.
     func forceSensingSetCurrent(_ value: UInt16) {
+        // The diagnostics window's own write: never in a Release build (diagnosticsMayWrite).
+        guard diagnosticsMayWrite else { return }
         let clamped = Self.forceSensingClamp(value, info: forceSensingInfo)
         let params = Self.forceSensingSetCurrentParams(number: Self.forceSensingButtonNumber, current: clamped)
         withForceSensingFeature { [weak self] idx in
@@ -3684,7 +4118,7 @@ class LogiDeviceSession {
         } else {
             discoverFeature(featureId: Self.featureForceSensing) { [weak self] idx in
                 guard let self = self, let idx = idx else {
-                    self?.showFeatureNotAvailable("Force Sensing")
+                    self?.showFeatureNotAvailable(.pressForce)
                     return
                 }
                 self.featureIndex[Self.featureForceSensing] = idx
@@ -4137,6 +4571,8 @@ class LogiDeviceSession {
             let originalFeatureIdx = fields?.featureIndex ?? 0
             let originalFuncId = fields?.functionId ?? 0
             let errorCode = fields?.errorCode ?? 0
+            // Byte 4 of an error is function << 4 | software id of the refused request.
+            let isOwnErrorRequest = report.count > 4 && report[4] & 0x0F == Self.hidppSoftwareId
             LogiDebugPanel.log("[\(deviceInfo.name)] HID++ Error: feat=\(String(format: "0x%02X", originalFeatureIdx)) func=\(originalFuncId) err=\(String(format: "0x%02X", errorCode))")
 
             // A cached index the mouse does not know (firmware update): drop the product's
@@ -4177,6 +4613,8 @@ class LogiDeviceSession {
             if let reprogIdx = featureIndex[Self.featureReprogV4],
                originalFeatureIdx == reprogIdx {
                 switch originalFuncId {
+                case 0 where pendingControlCount?.slot == deviceIndex && isOwnErrorRequest && scopedSlotRestore == nil:  // GetControlCount
+                    controlCountDidFail(slot: deviceIndex, reason: String(format: "error 0x%02X", errorCode))
                 case 1 where !reprogInitComplete:  // GetControlInfo
                     LogiDebugPanel.log("[\(deviceInfo.name)] GetControlInfo[\(reprogQueryIndex)] returned error, skipping")
                     advanceControlInfoQuery()
@@ -4194,13 +4632,6 @@ class LogiDeviceSession {
 
         // IRoot response
         if featureIdx == 0x00 {
-            // 缓存验证: ping 响应 (function 1) 确认设备在线, 直接用缓存的 feature index
-            if let reprogIdx = pendingCacheValidation, functionId == 1 {
-                pendingCacheValidation = nil
-                LogiDebugPanel.log("[\(deviceInfo.name)] Cache validated (protocol \(report[4]).\(report[5])), using cached index 0x\(String(format: "%02X", reprogIdx))")
-                sendGetControlCount(featureIndex: reprogIdx)
-                return
-            }
             // Only fn0 with this app's software id answers a getFeature (a late ping answer
             // is fn1, another client's answer has its own id); see LogiFeatureDiscoveryQueue.
             if let (entry, discoveredIndex) = pendingDiscovery.takeAnswer(report) {
@@ -4279,6 +4710,11 @@ class LogiDeviceSession {
 
         // DeviceNameType (0x0005) fn2 getDeviceType 响应: report[4] = 权威设备类型枚举.
         // 纯显示用: 存到当前 slot 的 hidppDeviceType, 刷新 sidebar. (deviceIndex 此刻已 scoped 到该 slot.)
+        if isOwnResponse, let dntIdx = featureIndex[Self.featureDeviceNameType], featureIdx == dntIdx,
+           functionId == LogiDeviceNameRead.lengthFunction || functionId == LogiDeviceNameRead.nameFunction {
+            handleDeviceNameResponse(functionId: functionId, report: report)
+            return
+        }
         if let dntIdx = featureIndex[Self.featureDeviceNameType], featureIdx == dntIdx, functionId == 2 {
             if report.count > 4,
                let devIdx = receiverPairedDevices.firstIndex(where: { $0.slot == deviceIndex }) {
@@ -4386,8 +4822,12 @@ class LogiDeviceSession {
         }
 
         // DPI list response (getSensorDpiList, function 1)
-        if let listQuery = pendingDPIListQuery, featureIdx == listQuery.featureIndex && functionId == 1 {
+        if isOwnResponse, let listQuery = pendingDPIListQuery, featureIdx == listQuery.featureIndex && functionId == 1 {
             pendingDPIListQuery = nil
+            guard pendingActions.take(.dpiList, now: Date()) else {
+                LogiDebugPanel.log("[\(deviceInfo.name)] DPI list arrived too late for the button press; DPI cycle skipped")
+                return
+            }
             // Same parser as the pointer speed setting: ranges with a step, plain lists and a
             // mix of both (the inline parser here handled only one range or one plain list).
             if let list = LogiPointerSpeedProtocol.parseDPIList(Array(report)) {
@@ -4402,12 +4842,19 @@ class LogiDeviceSession {
             // 继续: 查询当前 DPI 并执行切换
             sendRequest(featureIndex: listQuery.featureIndex, functionId: 2, params: [0x00])
             pendingDPICycle = (listQuery.featureIndex, listQuery.direction)
+            pendingActions.arm(.dpiCurrent, now: Date())
             return
         }
 
         // DPI response (pending cycle)
-        if let dpiInfo = pendingDPICycle, featureIdx == dpiInfo.featureIndex && functionId == 2 {
+        if isOwnResponse, let dpiInfo = pendingDPICycle, featureIdx == dpiInfo.featureIndex && functionId == 2 {
             pendingDPICycle = nil
+            // An answer that comes long after the press (the mouse did not answer then, and
+            // now another read of the DPI is answered) must not change the pointer speed.
+            guard pendingActions.take(.dpiCurrent, now: Date()) else {
+                LogiDebugPanel.log("[\(deviceInfo.name)] DPI arrived too late for the button press; DPI cycle skipped")
+                return
+            }
             // byte[4]=sensorIdx, byte[5-6]=currentDPI, byte[7-8]=default (big-endian; 0 = default)
             guard let parsed = LogiPointerSpeedProtocol.parseCurrent(Array(report)),
                   let curDPI = UInt16(exactly: parsed.current) else {
@@ -4415,14 +4862,13 @@ class LogiDeviceSession {
                 return
             }
 
-            // Find next/prev DPI step
-            let sortedSteps = dpiSteps.sorted()
-            let newDPI: UInt16
-            if dpiInfo.direction == .up {
-                newDPI = sortedSteps.first(where: { $0 > curDPI }) ?? sortedSteps.last ?? curDPI
-            } else {
-                newDPI = sortedSteps.last(where: { $0 < curDPI }) ?? sortedSteps.first ?? curDPI
-            }
+            // The next stop (LogiPointerSpeedProtocol.cycleTarget), not the next value of
+            // the mouse's list: an MX Master lists 200...8000 in steps of 50, and one press
+            // from 1600 to 1650 cannot be felt.
+            let target = LogiPointerSpeedProtocol.cycleTarget(
+                from: Int(curDPI), up: dpiInfo.direction == .up, choices: dpiSteps.map(Int.init)
+            )
+            let newDPI = target.flatMap { UInt16(exactly: $0) } ?? curDPI
 
             if newDPI != curDPI {
                 LogiDebugPanel.log("[\(deviceInfo.name)] DPI: \(curDPI) -> \(newDPI)")
@@ -4437,43 +4883,9 @@ class LogiDeviceSession {
             return
         }
 
-        // HiResWheel response (pending HiRes toggle or ScrollInvert toggle)
-        if let hiresIdx = featureIndex[Self.featureHiResWheel], featureIdx == hiresIdx {
-            if pendingHiResScrollToggle && functionId == 1 && isOwnResponse {  // getWheelMode (fn1) 响应
-                pendingHiResScrollToggle = false
-                guard let params = Self.hiResWheelModeParams(toggling: Self.hiResWheelResolutionBit, in: report) else { return }
-                sendRequest(featureIndex: hiresIdx, functionId: 2, params: params)  // setWheelMode (fn2)
-                LogiDebugPanel.log("[\(deviceInfo.name)] HiResScroll: \((params[0] & Self.hiResWheelResolutionBit) != 0 ? "ON" : "OFF")")
-                noteActionWrite("high-resolution scrolling \((params[0] & Self.hiResWheelResolutionBit) != 0 ? "on" : "off")")
-                return
-            }
-            if pendingScrollInvertToggle && functionId == 1 && isOwnResponse {  // getWheelMode (fn1) 响应
-                pendingScrollInvertToggle = false
-                guard let params = Self.hiResWheelModeParams(toggling: Self.hiResWheelInvertBit, in: report) else { return }
-                sendRequest(featureIndex: hiresIdx, functionId: 2, params: params)  // setWheelMode (fn2)
-                LogiDebugPanel.log("[\(deviceInfo.name)] ScrollInvert: \((params[0] & Self.hiResWheelInvertBit) != 0 ? "ON" : "OFF")")
-                noteActionWrite("wheel direction \((params[0] & Self.hiResWheelInvertBit) != 0 ? "inverted" : "normal")")
-                return
-            }
-        }
-
-        // ThumbWheel response
-        if let thumbIdx = featureIndex[Self.featureThumbWheel], featureIdx == thumbIdx {
-            if pendingThumbWheelToggle && functionId == 1 && isOwnResponse {  // getThumbwheelStatus (fn1) 响应
-                let byte1 = report[4]
-                let byte2 = report[5]
-                let newByte1 = byte1 ^ 0x01  // Toggle bit 0 (divert mode)
-                sendRequest(featureIndex: thumbIdx, functionId: 2, params: [newByte1, byte2])  // setThumbwheelReporting (fn2)
-                pendingThumbWheelToggle = false
-                LogiDebugPanel.log("[\(deviceInfo.name)] ThumbWheel: \((newByte1 & 0x01) != 0 ? "DIVERT" : "NORMAL")")
-                noteActionWrite("thumb wheel \((newByte1 & 0x01) != 0 ? "diverted" : "normal")")
-                return
-            }
-        }
-
         // PointerSpeed response
         if let speedIdx = featureIndex[Self.featurePointerSpeed], featureIdx == speedIdx {
-            if pendingPointerSpeedCycle && functionId == 0 && isOwnResponse {  // getPointerSpeed (fn0) 响应
+            if functionId == 0 && isOwnResponse && pendingActions.take(.pointerSpeed, now: Date()) {  // getPointerSpeed (fn0) 响应
                 let currentHi = report[4]
                 let currentLo = report[5]
                 let currentSpeed = (UInt16(currentHi) << 8) | UInt16(currentLo)
@@ -4489,7 +4901,6 @@ class LogiDeviceSession {
 
                 sendRequest(featureIndex: speedIdx, functionId: 1,  // setPointerSpeed (fn1)
                             params: [UInt8(nextSpeed >> 8), UInt8(nextSpeed & 0xFF)])
-                pendingPointerSpeedCycle = false
                 let speedStr = String(format: "%.1fx", Double(nextSpeed) / 256.0)
                 LogiDebugPanel.log("[\(deviceInfo.name)] PointerSpeed: \(speedStr)")
                 noteActionWrite("pointer speed \(String(format: "0x%04X", currentSpeed)) -> \(speedStr)")
@@ -4499,6 +4910,13 @@ class LogiDeviceSession {
     }
 
     private func handleGetControlCountResponse(_ report: UnsafeBufferPointer<UInt8>) {
+        // Only the answer this slot waits for: a second answer (the first request's, late,
+        // after it was sent again) would restart the control queries in the middle.
+        guard pendingControlCount?.slot == deviceIndex else {
+            LogiDebugPanel.log(device: deviceInfo.name, type: .warning, message: "GetControlCount answer nobody waits for ignored")
+            return
+        }
+        cancelControlCountWait()
         reprogControlCount = Int(report[4])
         reprogQueryIndex = 0
         controlInfoRetryCounts.removeAll()
@@ -4555,6 +4973,9 @@ class LogiDeviceSession {
               currentReceiverTargetIsConnected,
               !discoveredControls.isEmpty,
               featureIndex[Self.featureReprogV4] != nil else { return }
+        // Only a mouse: the re-read ends in a usage pass (divertBoundControls), and with the
+        // cursor resting on a keyboard it used to mark that keyboard as ready for diverts.
+        guard slotIsMouse(deviceIndex) else { return }
         if reportingQueryTimer != nil { return }
         LogiDebugPanel.log("[\(deviceInfo.name)] Refreshing reporting state (throttled)")
         startReportingQuery(afterDiscovery: false)
@@ -4590,6 +5011,7 @@ class LogiDeviceSession {
         // GetControlReporting: function 2, params: CID(2)
         sendRequest(featureIndex: featureIndex, functionId: 2,
                     params: [UInt8(cid >> 8), UInt8(cid & 0xFF)])
+        divertLedger.noteQuerySent(cid: cid)
         scheduleReportingTimeout(index: controlIndex)
     }
 
@@ -4630,12 +5052,7 @@ class LogiDeviceSession {
         updateDiscoveredControlReportingState(response, markQueried: matchesExpectedCID)
 
         let cidName = LogiCIDDirectory.name(forCID: response.cid)
-        let flagParts: [String] = [
-            (response.reportingFlags & 0x01) != 0 ? "tmpDivert" : nil,
-            (response.reportingFlags & 0x02) != 0 ? "persistDivert" : nil,
-            (response.reportingFlags & 0x04) != 0 ? "tmpRemap" : nil,
-            (response.reportingFlags & 0x08) != 0 ? "persistRemap" : nil,
-        ].compactMap { $0 }
+        let flagParts = Self.reportingFlagNames(response.reportingFlags)
         let flagStr = flagParts.isEmpty ? "none" : flagParts.joined(separator: ",")
         let targetStr = response.targetCID != response.cid && response.targetCID != 0
             ? " -> \(String(format: "0x%04X", response.targetCID))(\(LogiCIDDirectory.name(forCID: response.targetCID)))"
@@ -4746,26 +5163,12 @@ class LogiDeviceSession {
     }
 
     private func reassertDesiredDiverts() {
-        guard reprogInitComplete,
-              currentReceiverTargetIsConnected,
-              featureIndex[Self.featureReprogV4] != nil else {
-            #if DEBUG
-            LogiTrace.log(
-                "[Session] reassertDesiredDiverts skipped reprogInit=\(reprogInitComplete) connected=\(currentReceiverTargetIsConnected) hasReprog=\(featureIndex[Self.featureReprogV4] != nil)",
-                device: deviceInfo.name
-            )
-            #endif
-            return
-        }
-
         #if DEBUG
         LogiTrace.log("[Session] reassertDesiredDiverts recording=\(LogiCenter.shared.isRecording)", device: deviceInfo.name)
         #endif
-        if LogiCenter.shared.isRecording {
-            temporarilyDivertAll()
-        } else {
-            primeFromRegistry()
-        }
+        // One pass over every mouse of this session; the pass itself skips a slot that is
+        // not ready or not connected, and keeps the recording set while a button is recorded.
+        primeFromRegistry()
     }
 
     /// 初始化完成后: 按 binding 状态 divert 对应按键.
@@ -4777,7 +5180,18 @@ class LogiDeviceSession {
     /// but only while "Let Scrollio manage this mouse" is on: that switch tells the user not
     /// to run Logi Options+ at the same time, so such a divert is a leftover. While it is off
     /// they are left alone and logged (`staleDivertDecision`).
+    /// The left and the right button are the exception: found diverted, they are given back
+    /// whatever the switch says (Scrollio never diverts them, and a diverted click that no
+    /// program handles is a dead button).
+    /// While a button is being recorded the prime keeps the recording set instead
+    /// (`applyUsageToCursorSlot`).
     private func divertBoundControls() {
+        // Never for a slot that is not a mouse (its discovery ends before the reporting
+        // query; this is the second lock on the same door).
+        guard slotIsMouse(deviceIndex) else {
+            finishDiscoveryOfNonMouseSlot()
+            return
+        }
         reconcileAppliedDivertsWithQueriedState()
         reprogInitComplete = true
         handshakeComplete = true
@@ -4785,10 +5199,10 @@ class LogiDeviceSession {
         #if DEBUG
         LogiTrace.log("[Session] divertBoundControls prime registry discovered=\(discoveredControls.count)", device: deviceInfo.name)
         #endif
-        staleDivertCheckDue = reportingQueryFollowsDiscovery
+        staleDivertCheckSlot = reportingQueryFollowsDiscovery ? deviceIndex : nil
         reportingQueryFollowsDiscovery = false
         primeFromRegistry()
-        staleDivertCheckDue = false
+        staleDivertCheckSlot = nil
         LogiDebugPanel.log("[\(deviceInfo.name)] Init complete, listening for button events")
         // 正常 init 终点直接赋值 handshakeComplete, 不经过 markHandshakeComplete.
         // sweep 中: 由 receiverSlotDiscoveryDidFinish 决定推进下一个 slot 还是(巡检 slot)探测可选功能;
@@ -4813,17 +5227,17 @@ class LogiDeviceSession {
     }
 
     private func reconcileAppliedDivertsWithQueriedState() {
-        let result = Self.reconciledDivertState(
-            lastApplied: lastApplied,
-            divertedCIDs: divertedCIDs,
-            queriedControls: queriedControlStates
-        )
-        guard !result.lostCIDs.isEmpty else { return }
+        // Only an answer newer than Scrollio's last write for a control can show that the
+        // mouse dropped its divert (LogiDivertLedger.dropLost). Answers from before a write
+        // (a recording that began while the buttons' state was being re-read) used to make
+        // Scrollio forget buttons it had just diverted; nothing gave those back any more.
+        var ledger = divertLedger
+        let lostCIDs = ledger.dropLost(queriedControls: queriedControlStates)
+        guard !lostCIDs.isEmpty else { return }
 
-        releaseActiveButtonState(for: result.lostCIDs, reason: "divert lost")
-        lastApplied = result.lastApplied
-        divertedCIDs = result.divertedCIDs
-        for cid in result.lostCIDs.sorted() {
+        releaseActiveButtonState(for: lostCIDs, reason: "divert lost")
+        divertLedger = ledger
+        for cid in lostCIDs.sorted() {
             gestureControllers[deviceIndex]?.forget(cid: cid)
             let mode = LogiSessionManager.shared.recordExternalClear(for: ownershipKey(forCID: cid))
             LogiDebugPanel.log(
@@ -4837,20 +5251,11 @@ class LogiDeviceSession {
         divertedCIDs: Set<UInt16>,
         queriedControls: [QueriedControlState]
     ) -> (lastApplied: Set<UInt16>, divertedCIDs: Set<UInt16>, lostCIDs: Set<UInt16>) {
-        let lostCIDs = Set(queriedControls.compactMap { control -> UInt16? in
-            guard lastApplied.contains(control.cid),
-                  control.reportingQueried,
-                  (control.reportingFlags & 0x01) == 0 else {
-                return nil
-            }
-            return control.cid
-        })
-
-        return (
-            lastApplied: lastApplied.subtracting(lostCIDs),
-            divertedCIDs: divertedCIDs.subtracting(lostCIDs),
-            lostCIDs: lostCIDs
-        )
+        var ledger = LogiDivertLedger()
+        ledger.lastApplied = lastApplied
+        ledger.diverted = divertedCIDs
+        let lostCIDs = ledger.dropLost(queriedControls: queriedControls)
+        return (lastApplied: ledger.lastApplied, divertedCIDs: ledger.diverted, lostCIDs: lostCIDs)
     }
 
     /// What one discovery does with the controls the mouse reports diverted although Scrollio
@@ -4873,7 +5278,6 @@ class LogiDeviceSession {
         managed: Bool,
         recording: Bool
     ) -> StaleDivertDecision {
-        guard !recording else { return StaleDivertDecision() }
         let temporaryDivert: UInt8 = 0x01
         let stale = Set(queriedControls.compactMap { control -> UInt16? in
             guard control.reportingQueried,
@@ -4884,7 +5288,14 @@ class LogiDeviceSession {
             }
             return control.cid
         })
-        return managed ? StaleDivertDecision(giveBack: stale) : StaleDivertDecision(leftAlone: stale)
+        // The left and the right button are given back whatever the switch says and also
+        // while a button is recorded: Scrollio never diverts them (LogiButtonDeliveryPolicy
+        // .primaryClickCIDs), and a diverted click that no program handles is a dead button.
+        let primary = stale.intersection(LogiButtonDeliveryPolicy.primaryClickCIDs)
+        guard !recording else { return StaleDivertDecision(giveBack: primary) }
+        return managed
+            ? StaleDivertDecision(giveBack: stale)
+            : StaleDivertDecision(giveBack: primary, leftAlone: stale.subtracting(primary))
     }
 
     /// The one `logi` line of a discovery that found stale diverts; nil when it found none.
@@ -4895,17 +5306,22 @@ class LogiDeviceSession {
         func names(_ cids: Set<UInt16>) -> String {
             return cids.sorted().map { String(format: "0x%04X ", $0) + name($0) }.joined(separator: ", ")
         }
+        var parts: [String] = []
         if !decision.giveBack.isEmpty {
             let cids = decision.giveBack
-            return "Gave back \(count(cids)) the mouse still had diverted from an earlier run "
-                + "(Scrollio does not use \(cids.count == 1 ? "it" : "them"); manage switch on): \(names(cids))"
+            // With the switch off only the left and the right button are ever given back.
+            let reason = cids.isSubset(of: LogiButtonDeliveryPolicy.primaryClickCIDs)
+                ? "the left and the right button are given back whatever the switch says"
+                : "manage switch on"
+            parts.append("Gave back \(count(cids)) the mouse still had diverted from an earlier run "
+                + "(Scrollio does not use \(cids.count == 1 ? "it" : "them"); \(reason)): \(names(cids))")
         }
         if !decision.leftAlone.isEmpty {
             let cids = decision.leftAlone
-            return "Left \(count(cids)) diverted that Scrollio does not use (manage switch off: another app may "
-                + "use \(cids.count == 1 ? "it" : "them"); a leftover is freed by switching the mouse off and on): \(names(cids))"
+            parts.append("Left \(count(cids)) diverted that Scrollio does not use (manage switch off: another app may "
+                + "use \(cids.count == 1 ? "it" : "them"); a leftover is freed by switching the mouse off and on): \(names(cids))")
         }
-        return nil
+        return parts.isEmpty ? nil : parts.joined(separator: ". ")
     }
 
     #if DEBUG
@@ -4923,10 +5339,23 @@ class LogiDeviceSession {
     }
     #endif
 
-    /// 录制模式: 临时 divert 所有 divertable 按键
+    /// Recording: every button that can be diverted is diverted, on every mouse of this
+    /// session (see `usageSlots`).
     func temporarilyDivertAll() {
+        forEachSlot(usageSlots) {
+            temporarilyDivertAllOnCursorSlot()
+        }
+    }
+
+    private func temporarilyDivertAllOnCursorSlot() {
+        // A slot whose controls are not all known yet gets its recording set when its
+        // discovery ends (divertBoundControls primes, and the pass sees the recording). A
+        // slot that is not a mouse never gets here with `reprogInitComplete` set.
+        guard reprogInitComplete else { return }
         guard let idx = featureIndex[Self.featureReprogV4] else { return }
         guard currentReceiverTargetIsConnected else { return }
+        // Recording never diverts the keys of a device that is not a mouse.
+        guard slotIsMouse(deviceIndex) else { return }
         let divertable = Set(discoveredControls.filter { $0.isDivertable }.map { $0.cid })
         let plan = Self.recordingDivertPlan(
             divertableCIDs: divertable,
@@ -4954,7 +5383,8 @@ class LogiDeviceSession {
         LogiDebugPanel.log("[\(deviceInfo.name)] Temporarily diverted \(plan.desired.count)/\(divertable.count) controls (recording mode; re-asserted \(plan.toAssert.subtracting(plan.toDivert).count) already-applied)")
     }
 
-    /// 录制结束: 恢复到只 divert 有绑定的状态
+    /// Recording ended (the manager cleared its flag first): back to the buttons that have
+    /// a binding, on every mouse of this session.
     func restoreDivertToBindings() {
         #if DEBUG
         LogiTrace.log("[Session] restoreDivertToBindings via registry", device: deviceInfo.name)
@@ -5127,29 +5557,26 @@ class LogiDeviceSession {
 
     /// 在当前 session 上执行 Logi 动作
     private func executeLogiAction(_ name: String) {
-        switch name {
-        case "logiSmartShiftToggle":
+        guard let action = LogiButtonAction(name: name) else {
+            // Unknown, or one of the actions that were removed: the binding does nothing.
+            let removed = LogiButtonAction.removedNames.contains(name)
+            LogiDebugPanel.log("[\(deviceInfo.name)] \(removed ? "Removed" : "Unknown") Logi action: \(name)")
+            if removed {
+                LogiSystemLog.note("\(logTag(slot: deviceIndex)) Button action \(name) was removed from Scrollio: the binding does nothing")
+            }
+            return
+        }
+        switch action {
+        case .smartShiftToggle:
             executeSmartShiftToggle()
-        case "logiDPICycleUp":
+        case .dpiCycleUp:
             executeDPICycle(direction: .up)
-        case "logiDPICycleDown":
+        case .dpiCycleDown:
             executeDPICycle(direction: .down)
-        case "logiHost1":
-            executeChangeHost(hostIndex: 0)
-        case "logiHost2":
-            executeChangeHost(hostIndex: 1)
-        case "logiHost3":
-            executeChangeHost(hostIndex: 2)
-        case "logiHiResScrollToggle":
-            executeHiResScrollToggle()
-        case "logiScrollInvertToggle":
-            executeScrollInvertToggle()
-        case "logiThumbWheelToggle":
-            executeThumbWheelToggle()
-        case "logiPointerSpeedCycle":
+        case .host(let index):
+            executeChangeHost(hostIndex: index)
+        case .pointerSpeedCycle:
             executePointerSpeedCycle()
-        default:
-            LogiDebugPanel.log("[\(deviceInfo.name)] Unknown Logi action: \(name)")
         }
     }
 }

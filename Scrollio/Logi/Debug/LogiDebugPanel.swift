@@ -190,8 +190,9 @@ struct HIDPPFeatureAction {
 struct HIDPPFeatureActions {
 
     /// Whether the panel offers requests that change a device: the "Set…" buttons, the
-    /// "Func 0…15" buttons of features it has no list for, "Divert" and the raw sender.
-    /// Debug builds only.
+    /// "Func 0…15" buttons of features it has no list for, "Divert", the raw sender, the
+    /// sliders and "Play Waveform" of the haptics, wheel force and press force pages, and
+    /// "Re-Divert", "Undivert All" and "Enumerate". Debug builds only.
     ///
     /// The panel ships in Release builds too (General › Advanced, the status menu with
     /// Option), and there these were one click from harm with no question asked:
@@ -199,13 +200,43 @@ struct HIDPPFeatureActions {
     /// reaching macOS until the mouse is switched off and on), "Func 0" on Device Reset
     /// (0x1802), Persistent Remap (0x1C00) or Onboard Profiles (0x8100) can reconfigure a
     /// mouse for good, and the raw sender takes any bytes, a receiver's registers included.
-    /// A Release build reads, shows and exports; it does not write from here.
+    /// A Release build reads, shows and exports; it does not write from here. (The three
+    /// feature pages and the buttons under them were built without this gate until
+    /// 2026-11-12: a slider in a Release build changed the wheel force or the press force
+    /// in the mouse's memory with "Let Scrollio manage this mouse" off, and "Undivert All"
+    /// left every Logitech button binding dead.)
     static var offersDeviceWrites: Bool {
         #if DEBUG
         return true
         #else
         return false
         #endif
+    }
+
+    /// One of the buttons under the feature and control lists.
+    enum GlobalAction: String, CaseIterable {
+        case rediscover = "Re-Discover"
+        case redivert = "Re-Divert"
+        case undivertAll = "Undivert All"
+        case enumerate = "Enumerate"
+        case clearLog = "Clear Log"
+
+        /// Whether the button changes a device or what Scrollio believes about it:
+        /// "Re-Divert" and "Undivert All" write the diverts (and "Undivert All" stops
+        /// every Logitech button binding until the next discovery), "Enumerate" starts the
+        /// receiver's slot pings and its whole discovery again.
+        var changesDevice: Bool {
+            switch self {
+            case .redivert, .undivertAll, .enumerate: return true
+            case .rediscover, .clearLog: return false
+            }
+        }
+    }
+
+    /// The buttons the panel shows: all of them where writes are offered, otherwise only the
+    /// ones that read ("Re-Discover" looks the features up again) or are local ("Clear Log").
+    static func globalActions(offeringWrites: Bool = offersDeviceWrites) -> [GlobalAction] {
+        return GlobalAction.allCases.filter { offeringWrites || !$0.changesDevice }
     }
 
     static let knownActions: [UInt16: [HIDPPFeatureAction]] = [
@@ -666,6 +697,8 @@ class LogiDebugPanel: NSObject {
         ) { [weak self] _ in
             self?.stopObserving()
             self?.releaseSessions()
+            // A slot picked here moved the receiver's cursor; put it back on a mouse.
+            LogiSessionManager.shared.endSlotInspection()
         }
 
         return panel
@@ -1046,7 +1079,8 @@ class LogiDebugPanel: NSObject {
         globalC.translatesAutoresizingMaskIntoConstraints = false
         parent.addSubview(globalC)
 
-        let globalH: CGFloat = CGFloat(5) * L.btnH + CGFloat(4) * L.btnGap + L.pad
+        let globalActions = HIDPPFeatureActions.globalActions()
+        let globalH: CGFloat = CGFloat(globalActions.count) * L.btnH + CGFloat(max(globalActions.count - 1, 0)) * L.btnGap + L.pad
 
         NSLayoutConstraint.activate([
             bg.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
@@ -1078,12 +1112,16 @@ class LogiDebugPanel: NSObject {
 
         let btnW = L.actionsWidth - L.pad * 2
         var by: CGFloat = 0
-        for (title, action) in [("Re-Discover", #selector(rediscoverClicked)),
-                                 ("Re-Divert", #selector(redivertClicked)),
-                                 ("Undivert All", #selector(undivertClicked)),
-                                 ("Enumerate", #selector(enumerateClicked)),
-                                 ("Clear Log", #selector(clearLogClicked))] {
-            let btn = makeActionBtn(title: title, action: action)
+        for globalAction in globalActions {
+            let action: Selector
+            switch globalAction {
+            case .rediscover: action = #selector(rediscoverClicked)
+            case .redivert: action = #selector(redivertClicked)
+            case .undivertAll: action = #selector(undivertClicked)
+            case .enumerate: action = #selector(enumerateClicked)
+            case .clearLog: action = #selector(clearLogClicked)
+            }
+            let btn = makeActionBtn(title: globalAction.rawValue, action: action)
             btn.frame = NSRect(x: L.pad, y: by, width: btnW, height: L.btnH)
             globalC.addSubview(btn)
             by += L.btnH + L.btnGap
@@ -1465,10 +1503,14 @@ class LogiDebugPanel: NSObject {
         self.hapticWaveformPopup = popup
         by += L.btnH + L.btnGap
 
-        let playBtn = makeActionBtn(title: "Play Waveform", action: #selector(hapticPlayClicked))
-        playBtn.frame = NSRect(x: L.pad, y: by, width: w, height: L.btnH)
-        container.addSubview(playBtn)
-        by += L.btnH + L.btnGap + 4
+        // Playing a waveform is a request to the mouse: only where writes are offered.
+        if HIDPPFeatureActions.offersDeviceWrites {
+            let playBtn = makeActionBtn(title: "Play Waveform", action: #selector(hapticPlayClicked))
+            playBtn.frame = NSRect(x: L.pad, y: by, width: w, height: L.btnH)
+            container.addSubview(playBtn)
+            by += L.btnH + L.btnGap
+        }
+        by += 4
 
         let sep = makeSep()
         sep.frame = NSRect(x: L.pad, y: by, width: w, height: 1)
@@ -1498,7 +1540,8 @@ class LogiDebugPanel: NSObject {
                               target: self, action: #selector(hapticLevelChanged(_:)))
         slider.controlSize = .small
         slider.isContinuous = true
-        slider.isEnabled = state != nil
+        // Read-only without writes: the slider shows the strength and cannot be moved.
+        slider.isEnabled = state != nil && HIDPPFeatureActions.offersDeviceWrites
         if state?.fourLevelsOnly == true {
             slider.numberOfTickMarks = 5
             slider.allowsTickMarkValuesOnly = true
@@ -1525,6 +1568,7 @@ class LogiDebugPanel: NSObject {
     }
 
     @objc private func hapticPlayClicked() {
+        guard HIDPPFeatureActions.offersDeviceWrites else { return }
         currentSession?.hapticPlay(waveformId: hapticSelectedWaveformId)
     }
 
@@ -1533,7 +1577,7 @@ class LogiDebugPanel: NSObject {
         hapticLevelValueLabel?.stringValue = v == 0 ? "Off" : "\(v)"
         // 拖动过程中只联动数字; 松手 / 点击 / 键盘调整时才真正下发
         let eventType = NSApp.currentEvent?.type
-        if eventType != .leftMouseDragged && eventType != .leftMouseDown {
+        if HIDPPFeatureActions.offersDeviceWrites, eventType != .leftMouseDragged && eventType != .leftMouseDown {
             currentSession?.hapticSetLevel(v)
         }
     }
@@ -1592,7 +1636,7 @@ class LogiDebugPanel: NSObject {
         slider.controlSize = .small
         slider.isContinuous = true
         // 支持且已读到当前值才可拖动; 值到达前拖动会写入陈旧默认
-        slider.isEnabled = torqueSupported && status != nil
+        slider.isEnabled = torqueSupported && status != nil && HIDPPFeatureActions.offersDeviceWrites
         slider.frame = NSRect(x: L.pad, y: by, width: w, height: 18)
         container.addSubview(slider)
         self.scrollForceSlider = slider
@@ -1624,6 +1668,7 @@ class LogiDebugPanel: NSObject {
     /// torque 写入去抖: 去掉重复值 + 80ms trailing, 保证一串快速变更只落一次 HID 写.
     /// 始终发送最终值 (trailing 而非 leading), 不会丢用户停下时的目标力度.
     private func scheduleScrollForceSend(_ torque: UInt8) {
+        guard HIDPPFeatureActions.offersDeviceWrites else { return }
         guard torque != scrollForceLastSentTorque else { return }
         scrollForcePendingTorque = torque
         scrollForceSendWork?.cancel()
@@ -1691,7 +1736,7 @@ class LogiDebugPanel: NSObject {
                               target: self, action: #selector(forceSensingChanged(_:)))
         slider.controlSize = .small
         slider.isContinuous = true
-        slider.isEnabled = changeable && hasData
+        slider.isEnabled = changeable && hasData && HIDPPFeatureActions.offersDeviceWrites
         slider.frame = NSRect(x: L.pad, y: by, width: w, height: 18)
         container.addSubview(slider)
         self.forceSensingSlider = slider
@@ -1727,6 +1772,7 @@ class LogiDebugPanel: NSObject {
 
     /// 阈值写入去抖: 去重 + 80ms trailing, 与 scroll force 同构, 防 HID 洪泛
     private func scheduleForceSensingSend(_ value: UInt16) {
+        guard HIDPPFeatureActions.offersDeviceWrites else { return }
         guard value != forceSensingLastSentValue else { return }
         forceSensingPendingValue = value
         forceSensingSendWork?.cancel()
@@ -1765,16 +1811,19 @@ class LogiDebugPanel: NSObject {
     }
 
     @objc private func redivertClicked() {
+        guard HIDPPFeatureActions.offersDeviceWrites else { return }
         currentSession?.redivertAllControls()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.refreshControls() }
     }
 
     @objc private func undivertClicked() {
+        guard HIDPPFeatureActions.offersDeviceWrites else { return }
         currentSession?.undivertAllControls()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.refreshControls() }
     }
 
     @objc private func enumerateClicked() {
+        guard HIDPPFeatureActions.offersDeviceWrites else { return }
         currentSession?.enumerateReceiverDevices()
         DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
             self?.refreshSidebar()

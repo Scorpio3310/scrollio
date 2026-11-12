@@ -15,6 +15,10 @@ struct LogiButtonDeliveryPolicy {
     let standardButtonUndivertGuardEnabled: Bool
     let standardButtonUndivertGuardInterval: TimeInterval
 
+    /// The shortest time between two rounds of the standard-button guard: each round sends
+    /// requests to the mouse.
+    static let minimumGuardInterval: TimeInterval = 0.5
+
     init(
         standardMouseButtonsUseNativeEvents: Bool,
         standardButtonUndivertGuardEnabled: Bool = false,
@@ -22,15 +26,27 @@ struct LogiButtonDeliveryPolicy {
     ) {
         self.standardMouseButtonsUseNativeEvents = standardMouseButtonsUseNativeEvents
         self.standardButtonUndivertGuardEnabled = standardButtonUndivertGuardEnabled
-        self.standardButtonUndivertGuardInterval = standardButtonUndivertGuardInterval
+        self.standardButtonUndivertGuardInterval = max(standardButtonUndivertGuardInterval, Self.minimumGuardInterval)
     }
 
-    static var `default`: LogiButtonDeliveryPolicy {
-        return LogiButtonDeliveryPolicy(
-            standardMouseButtonsUseNativeEvents: boolDefaultingTrue(forKey: "LogiBLEStandardButtonsNativeFirst"),
-            standardButtonUndivertGuardEnabled: boolDefaultingFalse(forKey: "LogiBLEStandardUndivertGuardEnabled"),
-            standardButtonUndivertGuardInterval: intervalDefaultingTwoSeconds(forKey: "LogiBLEStandardUndivertGuardInterval")
-        )
+    /// What the app uses: over Bluetooth the middle, back and forward buttons arrive as
+    /// ordinary mouse buttons (they are not diverted), and the guard that keeps re-reading
+    /// them is off. These used to be read from three preference keys nothing documented
+    /// (LogiBLEStandardButtonsNativeFirst, LogiBLEStandardUndivertGuardEnabled,
+    /// LogiBLEStandardUndivertGuardInterval): a hidden value changed what was written to the
+    /// mouse, and an interval of 0.001 made a write every millisecond. They are no longer read.
+    static let `default` = LogiButtonDeliveryPolicy(standardMouseButtonsUseNativeEvents: true)
+
+    /// The left and the right button (controls 0x0050 and 0x0051). They are never diverted,
+    /// not for a binding and not while a button is recorded: a diverted click reaches no
+    /// program but Scrollio, so one binding of it (recorded by the click that closes the
+    /// recorder) would take the click away for good. On most mice they cannot be diverted
+    /// anyway; a mouse that allows it must not be trusted with it.
+    static let primaryClickCIDs: Set<UInt16> = [0x0050, 0x0051]
+
+    /// The controls of `divertableCIDs` Scrollio may divert at all.
+    static func divertCandidates(_ divertableCIDs: Set<UInt16>) -> Set<UInt16> {
+        return divertableCIDs.subtracting(primaryClickCIDs)
     }
 
     func shouldUseHIDPPDelivery(
@@ -50,21 +66,5 @@ struct LogiButtonDeliveryPolicy {
             }
             return true
         }
-    }
-
-    private static func boolDefaultingTrue(forKey key: String) -> Bool {
-        guard UserDefaults.standard.object(forKey: key) != nil else { return true }
-        return UserDefaults.standard.bool(forKey: key)
-    }
-
-    private static func boolDefaultingFalse(forKey key: String) -> Bool {
-        guard UserDefaults.standard.object(forKey: key) != nil else { return false }
-        return UserDefaults.standard.bool(forKey: key)
-    }
-
-    private static func intervalDefaultingTwoSeconds(forKey key: String) -> TimeInterval {
-        guard UserDefaults.standard.object(forKey: key) != nil else { return 2.0 }
-        let value = UserDefaults.standard.double(forKey: key)
-        return value > 0 ? value : 2.0
     }
 }

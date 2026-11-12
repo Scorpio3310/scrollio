@@ -47,6 +47,11 @@ final class LogiCenter {
         #if DEBUG
         precondition(Thread.isMainThread, "LogiCenter is main-thread-only")
         #endif
+        // `kill` and `killall Scrollio` quit the ordinary way from now on, so that the mice
+        // get their buttons back (LogiTerminationSignal). Not in the test host.
+        if !AppRuntime.isRunningXCTest {
+            LogiTerminationSignal.shared.install()
+        }
         manager.start()
     }
     func stop() {
@@ -106,12 +111,17 @@ final class LogiCenter {
     }
     func showBLEHIDPPUnstableToast(forScrollioCode code: UInt16) {
         guard let cid = LogiCIDDirectory.toCID(code) else { return }
-        let controlName = LogiCIDDirectory.name(forCID: cid)
-        let message = String(
-            format: NSLocalizedString("logi_ble_hidpp_unstable_toast", comment: ""),
-            controlName
+        let message = LogiToastText.buttonToast(
+            formatKey: "logi_ble_hidpp_unstable_toast",
+            buttonName: toastButtonName(forCID: cid)
         )
         externalBridge.showLogiToast(message, severity: .warning)
+    }
+
+    /// What a toast calls a control: the Buttons pane's name for it (through the bridge), nil
+    /// for a control without one (the toast then says "a button").
+    func toastButtonName(forCID cid: UInt16) -> String? {
+        return LogiToastText.buttonName(forCID: cid, paneName: externalBridge.logiButtonName(forScrollioCode:))
     }
 
     // MARK: - Recording

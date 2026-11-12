@@ -130,4 +130,28 @@ final class LogiMouseBasicsManagerTests: XCTestCase {
         LogiUsageBootstrap.pushMouseSettings()
         XCTAssertFalse(manager.mouseManaged)
     }
+
+    // MARK: - Two mice of one model
+
+    /// Two mice of one model over Bluetooth have the same name and id; the second gets
+    /// "#2". Which one is "the second" follows a key of the unit, not the order of a
+    /// dictionary: it used to change when either mouse reconnected, and the low-battery
+    /// notice of one mouse then repeated for the other.
+    func testTwinsKeepTheirIdsWhateverOrderTheyComeIn() {
+        func mouse(managed: Bool) -> LogiMouseDeviceState {
+            return LogiMouseDeviceState(
+                id: "046D:B034", deviceName: "MX Master 3S", supported: [], managed: managed,
+                battery: nil, pointerSpeed: nil, haptics: nil, pressForce: nil, wheel: nil
+            )
+        }
+        // `managed` only tells the two units apart in this test.
+        let first = (state: mouse(managed: true), twinOrder: "AA-11")
+        let second = (state: mouse(managed: false), twinOrder: "BB-22")
+
+        for order in [[first, second], [second, first]] {
+            let states = LogiSessionManager.disambiguatedMouseStates(LogiSessionManager.orderedForDisambiguation(order))
+            XCTAssertEqual(states.map(\.id), ["046D:B034", "046D:B034#2"])
+            XCTAssertEqual(states.map(\.managed), [true, false], "the unit AA-11 is always the first")
+        }
+    }
 }

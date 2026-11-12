@@ -161,6 +161,15 @@ final class LogiButtonDeliveryModeStore {
         return nil
     }
 
+    /// Forgets every mode and every count. Returns whether any control was "contended".
+    @discardableResult
+    func removeAll() -> Bool {
+        let hadContended = modes.values.contains(.contended)
+        modes.removeAll()
+        clearWindows.removeAll()
+        return hadContended
+    }
+
     func removeModes(forDeviceNamed name: String, productId: UInt16) {
         modes = modes.filter { $0.key.name != name || $0.key.productId != productId }
         clearWindows = clearWindows.filter { $0.key.name != name || $0.key.productId != productId }

@@ -34,10 +34,12 @@ extension LogiSessionManager {
     }
 
     func wheelDeviceStates() -> [LogiWheelDeviceState] {
+        // Twins in the order of their units, as in mouseDeviceStates.
         let states = activeSessions
             .filter { $0.isHIDPPCandidate }
-            .flatMap { $0.wheelDeviceStates() }
-            .sorted { ($0.deviceName, $0.id) < ($1.deviceName, $1.id) }
+            .flatMap { session in session.wheelDeviceStates().map { (state: $0, twinOrder: session.twinOrderKey) } }
+            .sorted { ($0.state.deviceName, $0.state.id, $0.twinOrder) < ($1.state.deviceName, $1.state.id, $1.twinOrder) }
+            .map { $0.state }
         return Self.disambiguatedWheelStates(states)
     }
 

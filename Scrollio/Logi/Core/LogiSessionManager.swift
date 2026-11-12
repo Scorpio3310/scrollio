@@ -127,9 +127,18 @@ internal class LogiSessionManager {
         isActive = false
         // sessions 被清空后重算一次, 把 lastKnownBusy 归位并让 UI 同步关闭 spinner.
         recomputeAndNotifyActivityState()
+        // Whoever lists the sessions (the Buttons pane, the diagnostics window) must drop
+        // them now: the window used to keep showing the stopped ones, device still open.
+        NotificationCenter.default.post(name: Self.sessionChangedNotification, object: nil)
         notifyWheelStateChanged()
         gestureHoldOwners.removeAll()
         notifyGestureStateChanged()
+        // "Taken over by another app" is a finding about one connection. It used to outlive
+        // Pause and sleep, so one wrong count kept a button undiverted until the mouse was
+        // switched off and on.
+        if deliveryModes.removeAll() {
+            notifyConflictChanged()
+        }
         LogiDebugPanel.log("[LogitechHID] Stopped")
     }
 
@@ -195,7 +204,9 @@ internal class LogiSessionManager {
         guard let session = sessions.removeValue(forKey: device) else { return }
         LogiDebugPanel.log("[LogitechHID] Device disconnected: \(session.deviceInfo.name)")
         deliveryModes.removeModes(forDeviceNamed: session.deviceInfo.name, productId: session.deviceInfo.productId)
-        session.teardown()
+        // The device is gone: nothing can be given back, and nothing is waited for (the
+        // event taps are running; see LogiDeviceSession.teardown).
+        session.teardown(deviceGone: true)
         NotificationCenter.default.post(name: Self.sessionChangedNotification, object: nil)
         notifyWheelStateChanged()
         notifyGestureStateChanged()
@@ -275,6 +286,15 @@ internal class LogiSessionManager {
     /// 同步返回, 不阻塞 UI — 实际 HID++ 请求在各自 session 的 input-report 回调里
     /// 异步处理, 完成后通过 `reportingQueryDidCompleteNotification` 刷新 indicator.
     func refreshReportingStates() {
+        // Not while a button is being recorded: the recorder holds every button diverted,
+        // and the re-read is only for the conflict marks of the pane (it is asked for again
+        // the next time the pane or the window comes to the front).
+        guard Self.reportingRefreshMayStart(recording: isRecording) else {
+            #if DEBUG
+            LogiTrace.log("[Manager] refreshReportingStates skipped: recording")
+            #endif
+            return
+        }
         if let last = lastReportingRefresh,
            Date().timeIntervalSince(last) < Self.reportingRefreshMinInterval {
             #if DEBUG
@@ -289,6 +309,10 @@ internal class LogiSessionManager {
         for session in sessions.values where session.isHIDPPCandidate {
             session.refreshReportingState()
         }
+    }
+
+    static func reportingRefreshMayStart(recording: Bool) -> Bool {
+        return !recording
     }
 
     /// 查询某 Logi ScrollioCode 当前是否被第三方 (如 Logitech Options+) 接管.
@@ -418,8 +442,10 @@ internal class LogiSessionManager {
         } else {
             messageKey = "logi_hidpp_contention_toast"
         }
-        let controlName = LogiCIDDirectory.name(forCID: key.cid)
-        let message = String(format: NSLocalizedString(messageKey, comment: ""), controlName)
+        let message = LogiToastText.buttonToast(
+            formatKey: messageKey,
+            buttonName: LogiCenter.shared.toastButtonName(forCID: key.cid)
+        )
         LogiCenter.shared.externalBridge.showLogiToast(message, severity: .warning)
     }
 
@@ -447,6 +473,14 @@ internal class LogiSessionManager {
         #endif
         for (_, session) in sessions where session.isHIDPPCandidate {
             session.restoreDivertToBindings()
+        }
+    }
+
+    /// The diagnostics window was closed: every receiver's cursor goes back to a mouse
+    /// (LogiDeviceSession.endSlotInspection).
+    func endSlotInspection() {
+        for session in sessions.values where session.isHIDPPCandidate {
+            session.endSlotInspection()
         }
     }
 
