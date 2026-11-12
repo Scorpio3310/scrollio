@@ -33,11 +33,18 @@ Tests are in `ScrollioTests/`; Logitech test doubles in `ScrollioTests/LogiTestD
   `v<version>`; it also makes the release an update: the feed in the build, Sparkle's
   helper programs signed, the image signed with the update key, `appcast.xml` and the
   release notes from `CHANGELOG.md`), `scripts/release-lib.sh` (its functions that can be
-  tried with a development certificate), `scripts/update-key.sh` (the update key: show,
-  create, export, import), `scripts/qa/lint-logi-boundary.sh` (the Logi boundary lint,
-  also run by a test). `ReleaseReadinessTests` reads the scripts, `LICENSE`, the README's
-  acknowledgements and `Scrollio/Acknowledgements.txt` (in the app bundle and on the disk
-  image) and fails when they drift apart.
+  tried with a development certificate; `stage_disk_image` is the one place that fills
+  the disk image's folder, `make_disk_image` packs it), `scripts/dmg/` (the image's
+  window: `background.tiff` with `draw-background.swift`, which draws it, and `DS_Store`,
+  the layout Finder reads as `.DS_Store`, with `write-layout.swift`, which writes it, so
+  that no run scripts Finder; `preview.sh` builds a sample image to look at, without a
+  release; `scripts/README.md` says how to change either), `scripts/update-key.sh` (the
+  update key: show, create, export, import), `scripts/qa/lint-logi-boundary.sh` (the Logi
+  boundary lint, also run by a test). `ReleaseReadinessTests` reads the scripts,
+  `LICENSE`, the README's acknowledgements and `Scrollio/Acknowledgements.txt` (in the app
+  bundle and on the disk image) and fails when they drift apart; it also fills an image's
+  folder for real and reads the layout back (the window's size, the icons' places, the
+  names).
 - `tools/`: hand-run HID++ probes and a standalone regression harness. Not part of any
   target; `tools/README.md` says when a probe may run.
 - `assets/`: the README's pictures (`assets/README.md`). Run-time images belong in

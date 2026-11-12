@@ -93,6 +93,8 @@ it for the people who use the app, and give the version its part before you tag 
 - An update that the daily check finds no longer opens a window by itself. Scrollio
   shows in the Dock with a badge, and the window opens when you come to Scrollio or
   choose "Update to Scrollio …" in its menu.
+- The disk image opens as a window that shows what to do: Scrollio's icon, an arrow and
+  the Applications folder.
 
 ## 1.0.1
 
