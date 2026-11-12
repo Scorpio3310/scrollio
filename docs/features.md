@@ -13,9 +13,11 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   keyboard layout, and keys are named as your keyboard names them.
 - To record a button or a key, click + and press it. Esc, a left click, closing the
   popover or switching to another app ends the recording.
-- A drawing of the mouse lights the button each row is about. With an MX Master, its
-  buttons are listed in the order they sit on the mouse, and any other buttons and keys
-  under them:
+- A drawing of the mouse lights the button each row is about. The MX Master 4 is drawn
+  from above and from its thumb side, where the thumb wheel, the side buttons and the
+  thumb panel are: the drawing turns to the side the row's button is on. With an MX
+  Master, its buttons are listed in the order they sit on the mouse, and any other
+  buttons and keys under them:
   - MX Master 4: Middle button, Mode shift button, Thumb wheel, Gesture button, Forward
     button, Back button, Thumb panel.
   - MX Master 3 and 3S: Middle button, Mode shift button, Thumb wheel, Forward button,

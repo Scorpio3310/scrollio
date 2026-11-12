@@ -9,6 +9,11 @@
 //  drawing, the rows' small pictures (a schematic variant whose small buttons are drawn
 //  larger and further apart) and the Gestures preview.
 //
+//  A model can have a second view, from the thumb side (MouseArtworkViewpoint): what the
+//  thumb works is hidden under the body's overhang from above. The MX Master 4 has one
+//  (its two views are in MouseArtworkMaster4.swift); a part lights in one view, and the
+//  panes turn the drawing to it (MouseArtworkTurn).
+//
 //  An illustration, not a product render: no logo, no brand marks.
 //
 
@@ -18,8 +23,9 @@ import Cocoa
 
 /// Which drawing the panes show.
 enum MouseArtworkModel: CaseIterable {
-    /// Logitech MX Master 4: three side buttons (gesture, forward, back) under the thumb
-    /// wheel, and the thumb rest that clicks and pulses (the haptic sense panel).
+    /// Logitech MX Master 4: on its thumb side the thumb wheel, under it Forward and Back
+    /// in a row with the gesture button in front of them, and beneath them the thumb rest
+    /// that clicks and pulses (the haptic sense panel). Drawn in two views.
     case mxMaster4
     /// Logitech MX Master 3, 3S and 3 for Mac: two side buttons under the thumb wheel, the
     /// gesture button hidden in the thumb rest.
@@ -62,6 +68,42 @@ enum MouseArtworkModel: CaseIterable {
     var gesturePreviewPart: MouseArtworkPart {
         return has(.gesture) ? .gesture : .back
     }
+
+    // MARK: Views
+
+    /// The views this mouse is drawn in: from above always, and from the thumb side where
+    /// the drawing has that view.
+    var viewpoints: [MouseArtworkViewpoint] {
+        return self == .mxMaster4 ? [.above, .thumbSide] : [.above]
+    }
+
+    var hasSideView: Bool {
+        return viewpoints.contains(.thumbSide)
+    }
+
+    /// The parts that light in the view from the thumb side: what the thumb works. From
+    /// above they are under the body's overhang (the side buttons do not show there at
+    /// all; the thumb wheel and the thumb panel show, small and partly covered). Empty for
+    /// a mouse drawn from above only.
+    var sideParts: Set<MouseArtworkPart> {
+        return self == .mxMaster4 ? [.thumbWheel, .forward, .back, .gesture, .thumbPanel] : []
+    }
+
+    /// The view `part` lights in. From above for everything the fingers work, for the
+    /// whole mouse, for nothing (nil) and for a part this mouse does not have.
+    func viewpoint(lighting part: MouseArtworkPart?) -> MouseArtworkViewpoint {
+        guard let part, has(part), sideParts.contains(part) else { return .above }
+        return .thumbSide
+    }
+}
+
+/// From where a drawing shows the mouse.
+enum MouseArtworkViewpoint: Int, CaseIterable {
+    /// From above: the front at the top, the thumb side on the left. Every model has it;
+    /// it is the view at rest.
+    case above
+    /// From the thumb side: the front to the left, the mouse standing on its base.
+    case thumbSide
 }
 
 /// The parts of the drawings that can light up.
@@ -87,12 +129,21 @@ enum MouseArtworkPart: Int, CaseIterable {
 
 // MARK: - The shapes
 
-/// The shapes of one model's drawing on the design grid (`grid`, top-left origin, the front
-/// at the top, the thumb side on the left). A painter scales them to the size it draws at.
+/// The shapes of one view of one model's drawing on the design grid (`grid`, top-left
+/// origin; from above the front at the top and the thumb side on the left). A painter
+/// scales them to the size it draws at.
 struct MouseArtworkShapes {
 
-    /// Every drawing fits this grid; the MX Master fills it, the plain mouse is narrower.
+    /// Every drawing from above fits this grid; the MX Master fills it, the plain mouse is
+    /// narrower.
     static let grid = NSSize(width: 88, height: 120)
+    /// The grid widened for a view from the side, where the mouse lies across: as long as
+    /// it is from above (the two views are the same mouse at the same size) and centred on
+    /// the grid's middle, so a drawing can turn from one view to the other in place. Every
+    /// drawing of every view fits it.
+    static let canvas = NSRect(x: -16, y: 0, width: 120, height: 120)
+    /// The middle of both: what a drawing turns about.
+    static let centre = NSPoint(x: grid.width / 2, y: grid.height / 2)
     /// The clear rim along the MX Master 4's buttons.
     static let rimWidth: CGFloat = 3.5
 
@@ -101,10 +152,29 @@ struct MouseArtworkShapes {
     /// behind the wheel larger and further apart (not to scale), so front, middle and rear
     /// can be told apart at 20 points.
     var schematic = false
+    /// From where the mouse is seen. A model without the view asked for is seen from above.
+    let viewpoint: MouseArtworkViewpoint
 
-    init(model: MouseArtworkModel, schematic: Bool = false) {
+    init(model: MouseArtworkModel, schematic: Bool = false, viewpoint: MouseArtworkViewpoint = .above) {
         self.model = model
         self.schematic = schematic
+        self.viewpoint = model.viewpoints.contains(viewpoint) ? viewpoint : .above
+    }
+
+    /// The view `part` lights in; from above for nil.
+    init(model: MouseArtworkModel, schematic: Bool = false, lighting part: MouseArtworkPart?) {
+        self.init(model: model, schematic: schematic, viewpoint: model.viewpoint(lighting: part))
+    }
+
+    /// `part` lights in this view: the mouse has it, and this is the view it lights in.
+    func lights(_ part: MouseArtworkPart) -> Bool {
+        return model.has(part) && model.viewpoint(lighting: part) == viewpoint
+    }
+
+    /// The MX Master 4's drawing, which has shapes of its own in both views; nil for the
+    /// other models, whose shapes are below.
+    var master4: MouseArtworkMaster4? {
+        return model == .mxMaster4 ? MouseArtworkMaster4(viewpoint: viewpoint, schematic: schematic) : nil
     }
 
     private var isMaster: Bool {
@@ -117,6 +187,7 @@ struct MouseArtworkShapes {
     /// further forward than the right), the right side one long curve, the thumb wing
     /// flaring out low on the left. The plain mouse: symmetric, rounder at the back.
     func outline() -> NSBezierPath {
+        if let master4 { return master4.outline() }
         let path = NSBezierPath()
         if isMaster {
             path.move(to: p(38, 2.5))
@@ -146,12 +217,14 @@ struct MouseArtworkShapes {
 
     /// The body without the thumb wing, for centring the drawing.
     var mainBody: NSRect {
+        if let master4 { return master4.mainBody }
         return isMaster ? NSRect(x: 18, y: 2, width: 69, height: 117) : NSRect(x: 10.5, y: 2, width: 67, height: 117)
     }
 
     /// Where the two buttons end (a curve across the body) and the split between them; the
     /// painter clips them to the outline.
     func seams() -> NSBezierPath {
+        if let master4 { return master4.seams() }
         let path = NSBezierPath()
         if isMaster {
             path.move(to: p(18.8, 49.5))
@@ -168,9 +241,9 @@ struct MouseArtworkShapes {
     }
 
     /// The line where the thumb rest meets the side of the body, behind the side buttons
-    /// (MX Master).
+    /// (MX Master 3; the MX Master 4 has it among its seams).
     func shoulder() -> NSBezierPath? {
-        guard isMaster else { return nil }
+        guard model == .mxMaster3 else { return nil }
         let path = NSBezierPath()
         path.move(to: p(18.6, 41))
         path.curve(to: p(21.2, 82), controlPoint1: p(18.2, 55), controlPoint2: p(18.8, 70))
@@ -213,20 +286,25 @@ struct MouseArtworkShapes {
     // MARK: Wheel
 
     var wheelRect: NSRect {
+        if let master4 { return master4.wheelRect }
         let rect = isMaster ? NSRect(x: 45.5, y: 10, width: 9.5, height: 25) : NSRect(x: 39.5, y: 11, width: 9, height: 24)
         return schematic ? grown(rect, width: 1.5, height: 1) : rect
     }
 
     /// The slot the wheel turns in.
     var wellRect: NSRect {
+        if let master4 { return master4.wellRect }
         return wheelRect.insetBy(dx: -3, dy: -3)
     }
 
     // MARK: Parts
 
-    /// The shape of `part` in this drawing; nil when this mouse does not have it.
+    /// The shape of `part` in this view of the drawing; nil when this mouse does not have
+    /// it, or when it does not show from here (the MX Master 4's side buttons from above,
+    /// its two buttons and the wheel from the side).
     func shape(of part: MouseArtworkPart) -> NSBezierPath? {
         guard model.has(part) else { return nil }
+        if let master4 { return master4.shape(of: part) }
         switch part {
         case .body:
             return outline()
@@ -247,30 +325,22 @@ struct MouseArtworkShapes {
         case .back, .forward:
             return sideButton(part)
         case .gesture:
-            return model == .mxMaster4 ? sideButton(part) : gesturePad()
+            return gesturePad()
         case .thumbPanel:
-            return thumbRest()
+            // Only the MX Master 4 has one, and its shapes are its own.
+            return nil
         }
     }
 
     /// The side buttons, front to back, on the side of the body under the thumb wheel (the
-    /// MX Master) or on the left edge (the plain mouse).
+    /// MX Master 3) or on the left edge (the plain mouse).
     private func sideButton(_ part: MouseArtworkPart) -> NSBezierPath? {
         typealias Button = (from: NSPoint, to: NSPoint, width: CGFloat)
         let buttons: [MouseArtworkPart: Button]
         switch (model, schematic) {
-        case (.mxMaster4, false):
-            buttons = [
-                .gesture: (p(19.5, 46.5), p(19.3, 49.5), 5.4),
-                .forward: (p(19.2, 56.3), p(19.3, 63.3), 5.6),
-                .back: (p(19.5, 70.2), p(20.3, 77.2), 5.6),
-            ]
-        case (.mxMaster4, true):
-            buttons = [
-                .gesture: (p(16.8, 45.5), p(16.4, 48), 10),
-                .forward: (p(16, 61.5), p(15.8, 66.5), 10),
-                .back: (p(16, 80), p(16.8, 85), 10),
-            ]
+        case (.mxMaster4, _):
+            // Its side buttons are in its view from the thumb side.
+            return nil
         case (.mxMaster3, false):
             buttons = [
                 .forward: (p(19.4, 47.6), p(19.2, 57.0), 5.6),
@@ -294,21 +364,6 @@ struct MouseArtworkShapes {
         }
         guard let button = buttons[part] else { return nil }
         return capsule(from: button.from, to: button.to, width: button.width)
-    }
-
-    /// The thumb rest of the MX Master: the wing between the outline and the shoulder line,
-    /// behind the side buttons. On the MX Master 4 it is the haptic panel.
-    private func thumbRest() -> NSBezierPath {
-        let path = NSBezierPath()
-        path.move(to: p(18.6, 45))
-        path.curve(to: p(21.2, 82), controlPoint1: p(18.2, 57), controlPoint2: p(18.8, 70))
-        path.curve(to: p(32, 109), controlPoint1: p(23, 94), controlPoint2: p(27.5, 104))
-        path.curve(to: p(6.5, 88.5), controlPoint1: p(21, 105.5), controlPoint2: p(8.5, 97.5))
-        path.curve(to: p(4.2, 68.5), controlPoint1: p(4.6, 81), controlPoint2: p(3.7, 74))
-        path.curve(to: p(11.8, 51), controlPoint1: p(4.8, 61.5), controlPoint2: p(7.8, 55))
-        path.curve(to: p(18.6, 45), controlPoint1: p(14.2, 48.5), controlPoint2: p(16.6, 46))
-        path.close()
-        return path
     }
 
     /// The gesture button of the MX Master 3: the front of the thumb rest, pressed down with
@@ -336,6 +391,7 @@ struct MouseArtworkShapes {
 
     /// Where the badge of a button the drawing cannot show sits: on the right edge, low.
     var badgeCentre: NSPoint {
+        if let master4 { return master4.badgeCentre }
         return isMaster ? p(80, 96) : p(72, 98)
     }
 
@@ -440,7 +496,14 @@ enum MouseArtworkPainter {
 
     /// The whole mouse, `lit` in the ink's lit colour (the small pictures light a part in
     /// the drawing itself; the cards lay `drawHighlight` over it).
+    ///
+    /// The drawing is the one view `shapes` is of; a part that does not light in that view
+    /// is drawn unlit.
     static func draw(_ shapes: MouseArtworkShapes, ink: MouseArtworkInk, lit: MouseArtworkPart? = nil, unit: CGFloat) {
+        if let master4 = shapes.master4 {
+            let lit = lit.flatMap { shapes.lights($0) ? $0 : nil }
+            return drawMaster4(master4, shapes: shapes, ink: ink, lit: lit, unit: unit)
+        }
         let outline = shapes.outline()
         if ink.shadow {
             drawShadow(of: outline)
@@ -449,22 +512,8 @@ enum MouseArtworkPainter {
         outline.fill()
 
         // The thumb rest, under everything else on it.
-        if shapes.model == .mxMaster4, let rest = shapes.shape(of: .thumbPanel) {
-            drawPart(rest, lit: lit == .thumbPanel, fill: ink.panel, opaque: false, ink: ink, unit: unit)
-        } else if shapes.model == .mxMaster3, let pad = shapes.shape(of: .gesture) {
+        if shapes.model == .mxMaster3, let pad = shapes.shape(of: .gesture) {
             drawPart(pad, lit: lit == .gesture, fill: ink.panel, opaque: false, ink: ink, unit: unit)
-        }
-        // The MX Master 4's buttons have a clear rim along their edge.
-        if shapes.model == .mxMaster4 && ink.fillsParts {
-            let rim = outline.copy() as! NSBezierPath
-            rim.lineWidth = 2 * MouseArtworkShapes.rimWidth
-            for left in [true, false] {
-                NSGraphicsContext.saveGraphicsState()
-                shapes.buttonArea(left: left).addClip()
-                ink.panel.setStroke()
-                rim.stroke()
-                NSGraphicsContext.restoreGraphicsState()
-            }
         }
         if lit == .left || lit == .right, let area = shapes.shape(of: lit!) {
             ink.lit.setFill()
@@ -508,9 +557,13 @@ enum MouseArtworkPainter {
     }
 
     /// `part` in the accent colour with a glow, as the cards light it over the drawing;
-    /// on a lit button the parts in it stay as they are.
+    /// on a lit button the parts in it stay as they are. Nothing when `part` does not
+    /// light in the view `shapes` is of.
     static func drawHighlight(_ part: MouseArtworkPart, shapes: MouseArtworkShapes, unit: CGFloat) {
-        guard let shape = shapes.shape(of: part) else { return }
+        guard shapes.lights(part), let shape = shapes.shape(of: part) else { return }
+        if let master4 = shapes.master4 {
+            return drawMaster4Highlight(part, of: master4, shapes: shapes, unit: unit)
+        }
         let accent = NSColor.controlAccentColor
         NSGraphicsContext.saveGraphicsState()
         let glow = NSShadow()
@@ -540,7 +593,7 @@ enum MouseArtworkPainter {
         case .thumbWheel:
             drawRidges(along: shape, shapes: shapes, color: MouseArtworkPalette.litRidge, unit: unit)
         case .thumbPanel:
-            drawSideButtons(on: shapes, ink: ink, unit: unit)
+            break
         case .gesture:
             // The MX Master 3's: the pad in the thumb rest, under the side buttons' edge.
             if let ridge = shapes.gestureRidge() {
@@ -555,9 +608,9 @@ enum MouseArtworkPainter {
         }
     }
 
-    /// The side buttons, unlit, over a lit thumb rest whose edge they sit on.
+    /// The side buttons, unlit, over a lit thumb rest whose edge they sit on (MX Master 3).
     static func drawSideButtons(on shapes: MouseArtworkShapes, ink: MouseArtworkInk, unit: CGFloat) {
-        for button in [MouseArtworkPart.forward, .back] + (shapes.model == .mxMaster4 ? [.gesture] : []) {
+        for button in [MouseArtworkPart.forward, .back] {
             guard let path = shapes.shape(of: button) else { continue }
             drawPart(path, lit: false, fill: ink.well, opaque: true, ink: ink, unit: unit, edge: ink.outline)
         }
@@ -565,7 +618,7 @@ enum MouseArtworkPainter {
 
     /// A soft shadow under the mouse, cast by a copy of `outline` moved down and then
     /// covered by the body.
-    private static func drawShadow(of outline: NSBezierPath) {
+    static func drawShadow(of outline: NSBezierPath) {
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
         shadow.shadowColor = ScrollPreviewPalette.mouseShadow
@@ -580,7 +633,7 @@ enum MouseArtworkPainter {
     }
 
     /// A small part: lit, or in `fill` (over the body's colour when `opaque`) with a fine edge.
-    private static func drawPart(
+    static func drawPart(
         _ shape: NSBezierPath, lit: Bool, fill: NSColor, opaque: Bool, ink: MouseArtworkInk, unit: CGFloat,
         edge: NSColor? = nil
     ) {
@@ -607,7 +660,7 @@ enum MouseArtworkPainter {
     }
 
     /// The wheel in its slot.
-    private static func drawWheel(_ shapes: MouseArtworkShapes, ink: MouseArtworkInk, lit: Bool, unit: CGFloat) {
+    static func drawWheel(_ shapes: MouseArtworkShapes, ink: MouseArtworkInk, lit: Bool, unit: CGFloat) {
         if ink.drawsWell {
             let well = shapes.capsule(shapes.wellRect)
             if ink.fillsParts {
@@ -660,7 +713,7 @@ enum MouseArtworkPainter {
     }
 
     /// Ridges across the wheel, closer together towards its ends.
-    private static func drawRidges(in rect: NSRect, color: NSColor, unit: CGFloat) {
+    static func drawRidges(in rect: NSRect, color: NSColor, unit: CGFloat) {
         let body = NSBezierPath(roundedRect: rect, xRadius: rect.width / 2, yRadius: rect.width / 2)
         NSGraphicsContext.saveGraphicsState()
         body.addClip()
@@ -714,5 +767,101 @@ extension MouseArtworkShapes {
         return schematic
             ? (NSPoint(x: 24, y: 15.5), NSPoint(x: 20.5, y: 32), 9)
             : (NSPoint(x: 22.6, y: 21.5), NSPoint(x: 19.6, y: 37.5), 6.5)
+    }
+}
+
+// MARK: - Turning between the views
+
+/// How a drawing turns from one of its views to the other: the two cross-fade while each
+/// is turned a little the way the mouse's front swings, from pointing up (seen from above)
+/// to pointing left (seen from the thumb side). `progress` runs from 0, from above, to 1,
+/// from the thumb side. Pure: the views that turn a drawing and their tests share it.
+enum MouseArtworkTurn {
+
+    /// A whole turn, in seconds.
+    static let duration: TimeInterval = 0.25
+    /// How far a view is turned when it has faded out (radians).
+    static let angle: CGFloat = 16 * .pi / 180
+    /// The view that leaves is gone after this share of the turn, and the one that comes
+    /// shows from one minus it on: in between both show faintly.
+    static let fadeShare: CGFloat = 0.7
+
+    /// One view at one moment of a turn.
+    struct Face: Equatable {
+        var viewpoint: MouseArtworkViewpoint
+        /// 0…1.
+        var alpha: CGFloat
+        /// Radians; positive turns the view clockwise in a flipped view.
+        var rotation: CGFloat
+    }
+
+    /// The views that show at `progress`, with how strongly and how far turned: the one
+    /// from above alone at 0, the one from the thumb side alone at 1.
+    static func faces(at progress: CGFloat) -> [Face] {
+        let p = min(1, max(0, progress))
+        var faces: [Face] = []
+        let above = 1 - smoothstep(p / fadeShare)
+        if above > 0 {
+            faces.append(Face(viewpoint: .above, alpha: above, rotation: -angle * p))
+        }
+        let side = smoothstep((p - (1 - fadeShare)) / fadeShare)
+        if side > 0 {
+            faces.append(Face(viewpoint: .thumbSide, alpha: side, rotation: angle * (1 - p)))
+        }
+        return faces
+    }
+
+    /// `viewpoint` at `progress`; nil while it does not show.
+    static func face(of viewpoint: MouseArtworkViewpoint, at progress: CGFloat) -> Face? {
+        return faces(at: progress).first { $0.viewpoint == viewpoint }
+    }
+
+    /// Where a view shows whole.
+    static func progress(showing viewpoint: MouseArtworkViewpoint) -> CGFloat {
+        return viewpoint == .thumbSide ? 1 : 0
+    }
+
+    /// Where a turn from `start` to `end` stands `elapsed` seconds after it began: eased,
+    /// `duration` for the whole way and in proportion for the rest of an interrupted one.
+    static func progress(from start: CGFloat, to end: CGFloat, elapsed: TimeInterval) -> CGFloat {
+        let distance = abs(end - start)
+        guard distance > 0, elapsed < duration * Double(distance) else { return end }
+        let share = max(0, elapsed) / (duration * Double(distance))
+        return start + (end - start) * smoothstep(CGFloat(share))
+    }
+
+    /// From the drawing's grid to where `face` is drawn: `placement` (the grid in the view),
+    /// turned about the drawing's middle.
+    static func transform(for face: Face, placement: AffineTransform) -> AffineTransform {
+        // A view at rest is drawn through the placement itself, to the last bit.
+        guard face.rotation != 0 else { return placement }
+        let pivot = MouseArtworkShapes.centre
+        var transform = placement
+        transform.translate(x: pivot.x, y: pivot.y)
+        transform.rotate(byRadians: face.rotation)
+        transform.translate(x: -pivot.x, y: -pivot.y)
+        return transform
+    }
+
+    /// Runs `body` with the current context set up for `face`: its grid placed, turned and
+    /// faded (the whole of what `body` draws fades as one picture).
+    static func draw(_ face: Face, placement: AffineTransform, _ body: () -> Void) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        NSGraphicsContext.saveGraphicsState()
+        (transform(for: face, placement: placement) as NSAffineTransform).concat()
+        if face.alpha < 1 {
+            context.setAlpha(face.alpha)
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
+        }
+        body()
+        if face.alpha < 1 {
+            context.endTransparencyLayer()
+        }
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private static func smoothstep(_ value: CGFloat) -> CGFloat {
+        let t = min(1, max(0, value))
+        return t * t * (3 - 2 * t)
     }
 }

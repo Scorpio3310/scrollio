@@ -1348,6 +1348,210 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try renderMiniatureSheet()
     }
 
+    /// A drawing that has two views, for looking at before it is merged
+    /// (`views-<mouse>-sheet-<appearance>.png`, at three times the cards' size): each view
+    /// plain, then each part lit in the view it lights in, as the cards light it. And its
+    /// rows' pictures at four times their size, every part lit and the thumb wheel, on the
+    /// list's box and on the selection, dark over light (`views-<mouse>-rows.png`).
+    ///
+    /// For a comparison with the drawing as it was, render it first with
+    /// `testRenderMouseArtwork` and leave those pictures in a folder `before` inside the
+    /// folder of this run: the sheet then starts with `before/art-<mouse>-plain-…`, and the
+    /// rows' sheet has `before/art-miniatures-…`'s rows of that mouse above the new ones
+    /// (and `before/row-thumb-wheel-…` and `before/row-thumb-wheel-selected-…`, the thumb
+    /// wheel's row picture as it was, which that sheet does not have: 24 pt, no background).
+    func testRenderMouseTwoViewsSheets() throws {
+        for model in MouseArtworkModel.allCases where model.hasSideView {
+            try renderViewsSheet(of: model)
+            try renderViewsRows(of: model)
+        }
+    }
+
+    private func renderViewsSheet(of model: MouseArtworkModel) throws {
+        let name = Self.shortName(of: model)
+        let unit = MouseArtworkView.unit
+        let tile = NSSize(width: 136, height: 150)
+        let caption: CGFloat = 22
+        var tiles: [(title: String, viewpoint: MouseArtworkViewpoint?, lit: MouseArtworkPart?)] = [
+            ("as it was", nil, nil),
+            ("from above", .above, nil),
+            ("from the thumb side", .thumbSide, nil),
+        ]
+        let order: [MouseArtworkPart] = [.wheel, .modeShift, .left, .thumbWheel, .gesture, .forward, .back, .thumbPanel, .right]
+        for part in order where model.has(part) {
+            tiles.append(("\(part)", model.viewpoint(lighting: part), part))
+        }
+        let columns = 4
+        let rows = (tiles.count + columns - 1) / columns
+        let bounds = NSRect(x: 0, y: 0, width: tile.width * CGFloat(columns), height: tile.height * CGFloat(rows))
+        for (suffix, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            let old = NSImage(contentsOf: directory.appendingPathComponent("before/art-\(name)-plain-\(suffix).png"))
+            try renderSheet(bounds: bounds, scale: 3, appearance: appearance, to: "views-\(name)-sheet-\(suffix).png") {
+                NSColor.windowBackgroundColor.setFill()
+                bounds.fill()
+                ScrollPreviewPalette.cardFill.setFill()
+                bounds.fill()
+                for (index, entry) in tiles.enumerated() {
+                    let frame = NSRect(
+                        x: CGFloat(index % columns) * tile.width, y: CGFloat(index / columns) * tile.height,
+                        width: tile.width, height: tile.height
+                    )
+                    NSAttributedString(string: entry.title, attributes: [
+                        .font: NSFont.systemFont(ofSize: 10, weight: .medium), .foregroundColor: NSColor.secondaryLabelColor,
+                    ]).draw(at: NSPoint(x: frame.minX + 8, y: frame.minY + 5))
+                    let art = NSRect(x: frame.minX, y: frame.minY + caption, width: frame.width, height: frame.height - caption)
+                    guard let viewpoint = entry.viewpoint else {
+                        // The picture of the old drawing: the card's view on the card's colour.
+                        if let old {
+                            let height = MouseArtworkShapes.grid.height * unit + 2 * MouseArtworkView.margin
+                            let width = height * old.size.width / old.size.height
+                            old.draw(
+                                in: NSRect(x: art.midX - width / 2, y: art.midY - height / 2, width: width, height: height),
+                                from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil
+                            )
+                        }
+                        continue
+                    }
+                    let shapes = MouseArtworkShapes(model: model, viewpoint: viewpoint)
+                    NSGraphicsContext.saveGraphicsState()
+                    let transform = NSAffineTransform()
+                    transform.translateX(
+                        by: art.midX - MouseArtworkShapes.centre.x * unit, yBy: art.midY - MouseArtworkShapes.centre.y * unit
+                    )
+                    transform.scale(by: unit)
+                    transform.concat()
+                    MouseArtworkPainter.draw(shapes, ink: .card, unit: unit)
+                    if let lit = entry.lit {
+                        MouseArtworkPainter.drawHighlight(lit, shapes: shapes, unit: unit)
+                    }
+                    NSGraphicsContext.restoreGraphicsState()
+                }
+            }
+        }
+    }
+
+    private func renderViewsRows(of model: MouseArtworkModel) throws {
+        let name = Self.shortName(of: model)
+        let cell: CGFloat = 32
+        let label: CGFloat = 64
+        let size = ButtonsMouseMiniature.size
+        let parts = ButtonsMousePart.allCases
+        // Each part, the thumb wheel, nothing lit, a numbered button.
+        let columns = parts.count + 3
+        let appearances: [(String, NSAppearance.Name)] = [("dark", .darkAqua), ("light", .aqua)]
+        let band = cell * 4 + 18 * 2
+        let bounds = NSRect(x: 0, y: 0, width: label + cell * CGFloat(columns), height: band * CGFloat(appearances.count))
+        let canvas = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: Int(bounds.width * 4), pixelsHigh: Int(bounds.height * 4),
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        canvas.size = bounds.size
+        let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: canvas))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context.cgContext, flipped: true)
+        context.cgContext.translateBy(x: 0, y: bounds.height)
+        context.cgContext.scaleBy(x: 1, y: -1)
+        for (index, (suffix, appearanceName)) in appearances.enumerated() {
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            let old = NSImage(contentsOf: directory.appendingPathComponent("before/art-miniatures-\(suffix).png"))
+            let top = CGFloat(index) * band
+            appearance.performAsCurrentDrawingAppearance {
+                NSColor.windowBackgroundColor.setFill()
+                NSRect(x: 0, y: top, width: bounds.width, height: band).fill()
+                let captionAttributes: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 10, weight: .medium), .foregroundColor: NSColor.secondaryLabelColor,
+                ]
+                // As it was: the rows of this mouse in the earlier sheet (two rows per mouse,
+                // a label column, then a cell per part, nothing lit and a numbered button),
+                // its last two cells moved one to the right, under the new sheet's.
+                NSAttributedString(string: "as it was", attributes: captionAttributes).draw(at: NSPoint(x: 6, y: top + 3))
+                if let old, let position = MouseArtworkModel.allCases.firstIndex(of: model) {
+                    let bottom = old.size.height - CGFloat(position * 2 + 2) * cell
+                    let partsWidth = CGFloat(parts.count) * cell
+                    for (from, to) in [(label, label), (label + partsWidth, label + partsWidth + cell)] {
+                        let width = from == label ? partsWidth : 2 * cell
+                        old.draw(
+                            in: NSRect(x: to, y: top + 18, width: width, height: 2 * cell),
+                            from: NSRect(x: from, y: bottom, width: width, height: 2 * cell),
+                            operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil
+                        )
+                    }
+                    PreferencesGroupedForm.boxFillColor.setFill()
+                    NSRect(x: label + partsWidth, y: top + 18, width: cell, height: cell).fill()
+                    NSColor.controlAccentColor.setFill()
+                    NSRect(x: label + partsWidth, y: top + 18 + cell, width: cell, height: cell).fill()
+                    // The thumb wheel's old picture, where there is one.
+                    for (row, selected) in ["", "-selected"].enumerated() {
+                        let file = directory.appendingPathComponent("before/row-thumb-wheel\(selected)-\(suffix).png")
+                        guard let wheel = NSImage(contentsOf: file) else { continue }
+                        wheel.draw(
+                            in: NSRect(
+                                x: label + partsWidth + (cell - size.width) / 2,
+                                y: top + 18 + CGFloat(row) * cell + (cell - size.height) / 2,
+                                width: size.width, height: size.height
+                            ),
+                            from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil
+                        )
+                    }
+                }
+                let newTop = top + 18 + 2 * cell
+                NSAttributedString(string: "new", attributes: captionAttributes).draw(at: NSPoint(x: 6, y: newTop + 3))
+                let names: [ButtonsMousePart: String] = [.middle: "wheel", .modeShift: "mode shift", .thumbPanel: "panel"]
+                for (column, name) in (parts.map { names[$0] ?? "\($0)" } + ["thumb wheel", "nothing lit", "numbered"]).enumerated() {
+                    let text = NSAttributedString(string: name, attributes: [
+                        .font: NSFont.systemFont(ofSize: 5, weight: .medium), .foregroundColor: NSColor.secondaryLabelColor,
+                    ])
+                    text.draw(at: NSPoint(x: label + (CGFloat(column) + 0.5) * cell - text.size().width / 2, y: newTop + 8))
+                }
+                for (row, highlighted) in [(0, false), (1, true)] {
+                    let y = newTop + 18 + CGFloat(row) * cell
+                    (highlighted ? NSColor.controlAccentColor : PreferencesGroupedForm.boxFillColor).setFill()
+                    NSRect(x: label, y: y, width: bounds.width - label, height: cell).fill()
+                    func frame(_ column: Int) -> NSRect {
+                        return NSRect(
+                            x: label + CGFloat(column) * cell + (cell - size.width) / 2,
+                            y: y + (cell - size.height) / 2, width: size.width, height: size.height
+                        )
+                    }
+                    for (column, part) in parts.enumerated() {
+                        let picture: ButtonTriggerPicture = model.has(part.artworkPart)
+                            ? .mouse(part: part, number: nil) : .mouse(part: nil, number: 5)
+                        ButtonsMouseMiniature.draw(picture, mouse: model, in: frame(column), highlighted: highlighted)
+                    }
+                    ButtonsMouseMiniature.image(lighting: .thumbWheel, mouse: model, highlighted: highlighted)
+                        .draw(in: frame(parts.count))
+                    ButtonsMouseMiniature.draw(.mouse(part: nil, number: nil), mouse: model, in: frame(parts.count + 1), highlighted: highlighted)
+                    ButtonsMouseMiniature.draw(.mouse(part: nil, number: 6), mouse: model, in: frame(parts.count + 2), highlighted: highlighted)
+                }
+            }
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        let png = try XCTUnwrap(canvas.representation(using: .png, properties: [:]))
+        try png.write(to: directory.appendingPathComponent("views-\(name)-rows.png"))
+    }
+
+    /// `draw`, in a flipped context `bounds` large and in `appearance`, written at `scale`
+    /// pixels per point.
+    private func renderSheet(bounds: NSRect, scale: CGFloat, appearance: NSAppearance, to file: String, draw: () -> Void) throws {
+        let canvas = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: Int(bounds.width * scale), pixelsHigh: Int(bounds.height * scale),
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        canvas.size = bounds.size
+        let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: canvas))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context.cgContext, flipped: true)
+        context.cgContext.translateBy(x: 0, y: bounds.height)
+        context.cgContext.scaleBy(x: 1, y: -1)
+        appearance.performAsCurrentDrawingAppearance(draw)
+        NSGraphicsContext.restoreGraphicsState()
+        let png = try XCTUnwrap(canvas.representation(using: .png, properties: [:]))
+        try png.write(to: directory.appendingPathComponent(file))
+    }
+
     private static func shortName(of model: MouseArtworkModel) -> String {
         switch model {
         case .mxMaster4: return "mx4"

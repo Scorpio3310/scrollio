@@ -267,6 +267,10 @@ struct GesturePreviewLoop {
         var actionsFired: Int
         /// Nothing moves: the picture can sit on whole pixels.
         var isAtRest: Bool
+        /// 0: the mouse is seen from above; 1: from the side its held button is on. A mouse
+        /// drawn in two views turns there right before the button goes down and back once
+        /// it is up (MouseArtworkTurn); for any other mouse the number means nothing.
+        var sideTurn: Double = 0
     }
 
     let scene: GesturePreviewScene
@@ -353,6 +357,7 @@ struct GesturePreviewLoop {
         let hand = self.frame(at: leg.holdTime)
         frame.mouseOffset = hand.mouseOffset
         frame.buttonDepth = hand.buttonDepth
+        frame.sideTurn = hand.sideTurn
         frame.arrow = hand.arrow
         frame.pointerOffset = hand.pointerOffset
         frame.pressPulse = 0
@@ -441,7 +446,13 @@ struct GesturePreviewLoop {
         case .click:
             mouseMoving = false
         }
-        frame.isAtRest = !(buttonMoving || settling || mouseMoving || effectRunning || pressPulse > 0)
+        // The turn to the button's side ends as the button goes down, and the turn back
+        // begins when it is up.
+        let turn = MouseArtworkTurn.duration
+        frame.sideTurn = Self.smoothstep((t - (leg.pressTime - turn)) / turn)
+            - Self.smoothstep((t - (leg.releaseTime + Self.buttonTravel)) / turn)
+        let turning = frame.sideTurn > 0 && frame.sideTurn < 1
+        frame.isAtRest = !(buttonMoving || settling || mouseMoving || effectRunning || pressPulse > 0 || turning)
         return frame
     }
 

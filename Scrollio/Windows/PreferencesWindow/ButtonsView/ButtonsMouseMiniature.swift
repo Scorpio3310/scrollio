@@ -9,6 +9,9 @@
 //  seams and the two buttons are the card's; the side buttons, the thumb wheel, the wheel
 //  and the button behind it are the schematic variant's, larger and further apart than on
 //  the card, so the front, middle and rear side buttons can be told apart at this size.
+//  A mouse drawn in two views (the MX Master 4) is shown in the view the row's part lights
+//  in: from above for the buttons and the wheel, from the thumb side, lying across the
+//  picture, for the thumb wheel, the side buttons and the thumb panel.
 //
 
 import Cocoa
@@ -69,17 +72,19 @@ enum ButtonsMouseMiniature {
 
     // MARK: - Geometry
 
-    /// The shape of `part` in a picture of `mouse` drawn in `rect` (flipped); nil when the
-    /// mouse does not have it.
+    /// The shape of `part` in the picture of `mouse` that lights it, drawn in `rect`
+    /// (flipped); nil when the mouse does not have it.
     static func shape(of part: ButtonsMousePart, mouse: MouseArtworkModel, in rect: NSRect) -> NSBezierPath? {
-        guard let path = MouseArtworkShapes(model: mouse, schematic: true).shape(of: part.artworkPart) else { return nil }
+        let shapes = MouseArtworkShapes(model: mouse, schematic: true, lighting: part.artworkPart)
+        guard let path = shapes.shape(of: part.artworkPart) else { return nil }
         path.transform(using: transform(in: rect))
         return path
     }
 
-    /// The mouse's outline in a picture drawn in `rect` (flipped).
-    static func bodyPath(of mouse: MouseArtworkModel, in rect: NSRect) -> NSBezierPath {
-        let path = MouseArtworkShapes(model: mouse, schematic: true).outline()
+    /// The mouse's outline in a picture drawn in `rect` (flipped): the picture that lights
+    /// `part`, or the one with nothing lit (from above).
+    static func bodyPath(of mouse: MouseArtworkModel, lighting part: ButtonsMousePart? = nil, in rect: NSRect) -> NSBezierPath {
+        let path = MouseArtworkShapes(model: mouse, schematic: true, lighting: part?.artworkPart).outline()
         path.transform(using: transform(in: rect))
         return path
     }
@@ -108,7 +113,7 @@ enum ButtonsMouseMiniature {
         defer { NSGraphicsContext.restoreGraphicsState() }
         (transform(in: rect) as NSAffineTransform).concat()
         MouseArtworkPainter.draw(
-            MouseArtworkShapes(model: mouse, schematic: true),
+            MouseArtworkShapes(model: mouse, schematic: true, lighting: lit),
             ink: ink(highlighted: highlighted), lit: lit, unit: unit
         )
     }

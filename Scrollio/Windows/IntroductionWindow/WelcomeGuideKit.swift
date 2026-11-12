@@ -440,7 +440,11 @@ struct WelcomeGuideMouseDrawing {
     var wheelTurn: Double = 0
     /// 1 at a click, falling to 0: a ring round the wheel.
     var pulse: Double = 0
+    /// How far the drawing has turned from the view from above (0) to the one from the
+    /// thumb side (1); a mouse drawn from above only does not turn.
+    var turn: CGFloat = 0
 
+    /// The drawing from above.
     var shapes: MouseArtworkShapes {
         return MouseArtworkShapes(model: model)
     }
@@ -454,8 +458,10 @@ struct WelcomeGuideMouseDrawing {
         return NSPoint(x: origin.x + grid.x * unit, y: origin.y + grid.y * unit)
     }
 
-    /// The middle of a part, in the view; nil when the mouse does not have it.
+    /// The middle of the parts in the view of the drawing that lights them (the first's);
+    /// nil when the mouse does not have them.
     func centre(of parts: [MouseArtworkPart]) -> NSPoint? {
+        let shapes = MouseArtworkShapes(model: model, lighting: parts.first)
         let rects = parts.compactMap { shapes.shape(of: $0)?.bounds }
         guard var union = rects.first else { return nil }
         for rect in rects.dropFirst() {
@@ -464,26 +470,27 @@ struct WelcomeGuideMouseDrawing {
         return point(NSPoint(x: union.midX, y: union.midY))
     }
 
+    /// The view (or, in a turn, the two) the drawing shows, each with the lit parts that
+    /// light in it.
     func draw() {
-        let shapes = self.shapes
-        NSGraphicsContext.saveGraphicsState()
-        let transform = NSAffineTransform()
-        transform.translateX(by: origin.x, yBy: origin.y)
-        transform.scale(by: unit)
-        transform.concat()
-
-        MouseArtworkPainter.draw(shapes, ink: .card, unit: unit)
-        for part in MouseArtworkPart.allCases where lit.contains(part) && model.has(part) {
-            MouseArtworkPainter.drawHighlight(part, shapes: shapes, unit: unit)
-            if pressed.contains(part), let shape = shapes.shape(of: part) {
-                NSColor.black.withAlphaComponent(0.22).setFill()
-                shape.fill()
+        var placement = AffineTransform(translationByX: origin.x, byY: origin.y)
+        placement.scale(unit)
+        for face in MouseArtworkTurn.faces(at: turn) where model.viewpoints.contains(face.viewpoint) {
+            let shapes = MouseArtworkShapes(model: model, viewpoint: face.viewpoint)
+            MouseArtworkTurn.draw(face, placement: placement) {
+                MouseArtworkPainter.draw(shapes, ink: .card, unit: unit)
+                for part in MouseArtworkPart.allCases where lit.contains(part) && shapes.lights(part) {
+                    MouseArtworkPainter.drawHighlight(part, shapes: shapes, unit: unit)
+                    if pressed.contains(part), let shape = shapes.shape(of: part) {
+                        NSColor.black.withAlphaComponent(0.22).setFill()
+                        shape.fill()
+                    }
+                }
+                if lit.contains(.wheel), shapes.lights(.wheel) {
+                    drawTurningWheel(shapes.wheelRect)
+                }
             }
         }
-        if lit.contains(.wheel) {
-            drawTurningWheel(shapes.wheelRect)
-        }
-        NSGraphicsContext.restoreGraphicsState()
     }
 
     /// The lit wheel with its ridges where the turn has carried them, and the flash of a
