@@ -107,6 +107,86 @@ final class MouseArtworkTests: XCTestCase {
         XCTAssertEqual(MouseArtworkShapes(model: .generic).wheelRect.midX, outline.midX, accuracy: 0.5)
     }
 
+    // MARK: - The drawings that did not change
+
+    /// The MX Master 3's and the plain mouse's drawings are pinned: every shape of theirs,
+    /// at the card's size and in the small pictures, as a fingerprint of its points. Taken
+    /// before the MX Master 4 got its second view; it fails when one of their shapes moves.
+    func testTheOtherDrawingsHaveNotMoved() {
+        let pinned: [(MouseArtworkModel, Bool, String)] = [
+            (.mxMaster3, false, "0f082beac6cf3272"),
+            (.mxMaster3, true, "d87f54a795d3ebbf"),
+            (.generic, false, "3d0e0b56666d7899"),
+            (.generic, true, "2c9df290e9faecaf"),
+        ]
+        for (model, schematic, fingerprint) in pinned {
+            XCTAssertEqual(
+                Self.fingerprint(of: MouseArtworkShapes(model: model, schematic: schematic)), fingerprint,
+                "\(model), schematic: \(schematic)"
+            )
+        }
+    }
+
+    /// Every shape of a drawing, written out point by point (hundredths of a grid unit) and
+    /// hashed (FNV-1a, 64 bits). The two buttons are cut out of the outline by Core
+    /// Graphics, so only their bounds are taken (tenths).
+    private static func fingerprint(of shapes: MouseArtworkShapes) -> String {
+        func number(_ value: CGFloat, _ digits: Int = 2) -> String {
+            let rounded = (Double(value) * pow(10, Double(digits))).rounded() / pow(10, Double(digits))
+            return String(format: "%.\(digits)f", rounded == 0 ? 0 : rounded)
+        }
+        func rect(_ rect: NSRect, _ digits: Int = 2) -> String {
+            return [rect.minX, rect.minY, rect.width, rect.height].map { number($0, digits) }.joined(separator: ",")
+        }
+        func points(of path: NSBezierPath?) -> String {
+            guard let path else { return "none" }
+            var text = ""
+            var points = [NSPoint](repeating: .zero, count: 3)
+            for index in 0..<path.elementCount {
+                let kind = path.element(at: index, associatedPoints: &points)
+                let count: Int
+                switch kind {
+                case .moveTo: text += "M"; count = 1
+                case .lineTo: text += "L"; count = 1
+                case .curveTo, .cubicCurveTo: text += "C"; count = 3
+                case .closePath: text += "Z"; count = 0
+                case .quadraticCurveTo: text += "Q"; count = 2
+                @unknown default: text += "?"; count = 0
+                }
+                text += points.prefix(count).map { number($0.x) + "," + number($0.y) }.joined(separator: " ") + ";"
+            }
+            return text
+        }
+        var lines = [
+            "outline " + points(of: shapes.outline()),
+            "seams " + points(of: shapes.seams()),
+            "shoulder " + points(of: shapes.shoulder()),
+            "ridge " + points(of: shapes.gestureRidge()),
+            "body " + rect(shapes.mainBody),
+            "wheel " + rect(shapes.wheelRect),
+            "well " + rect(shapes.wellRect),
+            "badge " + number(shapes.badgeCentre.x) + "," + number(shapes.badgeCentre.y),
+        ]
+        for part in MouseArtworkPart.allCases {
+            let shape = shapes.shape(of: part)
+            if part == .left || part == .right {
+                lines.append("\(part) " + (shape.map { rect($0.bounds, 1) } ?? "none"))
+            } else {
+                lines.append("\(part) " + points(of: shape))
+            }
+        }
+        if shapes.model.has(.thumbWheel) {
+            let axis = shapes.thumbWheelAxis
+            lines.append("axis " + [axis.start.x, axis.start.y, axis.end.x, axis.end.y, axis.width].map { number($0) }.joined(separator: ","))
+        }
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in lines.joined(separator: "\n").utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x0000_0100_0000_01b3
+        }
+        return String(format: "%016llx", hash)
+    }
+
     // MARK: - A part the shown mouse does not have
 
     private func trigger(_ code: UInt16, placed part: PlacedMousePart? = nil) -> RecordedEvent {
