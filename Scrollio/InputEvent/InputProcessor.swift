@@ -157,6 +157,7 @@ class InputProcessor: ModifierFlagsProviding {
     // - A key: only while another app has secure keyboard entry on, since only then can its
     //   key-up not arrive; up when macOS says the key is up (the state of the keyboards and
     //   of the keys other programs post, so a key another program holds counts as held).
+    // In both cases "up" needs every way of asking to agree (`HeldInputProbe.system`).
 
     /// What holds an action on the hardware.
     enum PhysicalHold: Equatable {
@@ -170,9 +171,20 @@ class InputProcessor: ModifierFlagsProviding {
         var isKeyDown: (UInt16) -> Bool
         var isSecureInputOn: () -> Bool
 
+        /// "Up" only when every way of asking says so (AppKit, the session's state with
+        /// what other programs post, the hardware alone): a hold is never released on one
+        /// source's word. A button number macOS has no state for counts as down.
         static let system = HeldInputProbe(
-            isMouseButtonDown: { InputProcessor.isMouseButtonPressed($0) },
-            isKeyDown: { CGEventSource.keyState(.combinedSessionState, key: CGKeyCode($0)) },
+            isMouseButtonDown: { number in
+                guard number >= 0, number < 32, let button = CGMouseButton(rawValue: UInt32(number)) else { return true }
+                return InputProcessor.isMouseButtonPressed(number)
+                    || CGEventSource.buttonState(.combinedSessionState, button: button)
+                    || CGEventSource.buttonState(.hidSystemState, button: button)
+            },
+            isKeyDown: { code in
+                return CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(code))
+                    || CGEventSource.keyState(.hidSystemState, key: CGKeyCode(code))
+            },
             isSecureInputOn: { IsSecureEventInputEnabled() }
         )
     }
