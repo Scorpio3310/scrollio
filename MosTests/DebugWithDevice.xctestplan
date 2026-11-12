@@ -17,7 +17,7 @@
     "codeCoverage" : false,
     "performanceAntipatternCheckerEnabled" : true,
     "targetForVariableExpansion" : {
-      "containerPath" : "container:Mos.xcodeproj",
+      "containerPath" : "container:Scrollio.xcodeproj",
       "identifier" : "22142D9F1E25344E00E4BFBF",
       "name" : "Mos"
     }
@@ -25,7 +25,7 @@
   "testTargets" : [
     {
       "target" : {
-        "containerPath" : "container:Mos.xcodeproj",
+        "containerPath" : "container:Scrollio.xcodeproj",
         "identifier" : "62CD1674CBD9855CE2042C81",
         "name" : "MosTests"
       }

@@ -470,7 +470,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 22142D9B1E25344E00E4BFBF /* Build configuration list for PBXProject "Mos" */;
+			buildConfigurationList = 22142D9B1E25344E00E4BFBF /* Build configuration list for PBXProject "Scrollio" */;
 			compatibilityVersion = "Xcode 8.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -903,7 +903,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		22142D9B1E25344E00E4BFBF /* Build configuration list for PBXProject "Mos" */ = {
+		22142D9B1E25344E00E4BFBF /* Build configuration list for PBXProject "Scrollio" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				22142DC31E25344F00E4BFBF /* Debug */,
