@@ -16,6 +16,12 @@
 #
 # Tests under ScrollioTests/ are exempt — Tier 1/2 unit tests legitimately
 # reference internal Logi symbols (canary, divert planner, etc.).
+#
+# What counts as a Logi symbol: every name that starts with Logi or Logitech,
+# and the top-level types of Scrollio/Logi/ whose names do not (LOGI_SYMBOL
+# below). When a new top-level type in Scrollio/Logi/ gets a name without the
+# Logi prefix, add it there. `Step` (the self-test's) is left out on purpose:
+# the name is too common to tell whose it is.
 
 set -euo pipefail
 
@@ -50,6 +56,9 @@ ZONE_B_ADDITIONAL=(
     LogiNoOpBridge
 )
 
+# One alternation, used to find the lines and then the names on them.
+LOGI_SYMBOL='Logi[A-Z][a-zA-Z0-9]*|Logitech[A-Z][a-zA-Z0-9]*|HIDPP[A-Z][a-zA-Z0-9]*|UsageRegistry|LogEntryType|LogEntry|BrailleSpinner|DetectedConnection|StepKind|StepOutcome|WaitCondition'
+
 VIOLATIONS=0
 
 # Writes one VIOLATION line per offending symbol to stdout.
@@ -71,7 +80,7 @@ scan_zone() {
         local line_num="${rest%%:*}"
         local line="${rest#*:}"
 
-        for symbol in $(echo "$line" | grep -oE '\b(Logi[A-Z][a-zA-Z]*|Logitech[A-Z][a-zA-Z]*)\b' | sort -u); do
+        for symbol in $(echo "$line" | grep -oE "\\b(${LOGI_SYMBOL})\\b" | sort -u); do
             local allowed=false
             for allow in "${allowlist[@]}"; do
                 if [[ "$symbol" == "$allow" ]]; then allowed=true; break; fi
@@ -88,22 +97,23 @@ scan_zone() {
 VIOLATIONS_FILE=$(mktemp)
 trap 'rm -f "$VIOLATIONS_FILE"' EXIT
 
-# Zone A scan: Scrollio/ outside Logi/ + Integration/
-ZONE_A_FILES=$(find Scrollio -type f -name '*.swift' -not -path 'Scrollio/Logi/*' -not -path 'Scrollio/Integration/*')
-{
-    for f in $ZONE_A_FILES; do
-        grep -nE '\b(Logi[A-Z]|Logitech[A-Z])' "$f" 2>/dev/null | sed "s|^|$f:|" || true
+# Prints "file:line:text" for every line of the listed files that names a Logi
+# symbol. The file list arrives NUL-separated, so a path with a space is one file.
+matching_lines() {
+    local f
+    while IFS= read -r -d '' f; do
+        grep -nE "\\b(${LOGI_SYMBOL})\\b" "$f" 2>/dev/null | sed "s|^|$f:|" || true
     done
-} | scan_zone "A" "${ZONE_A_ALLOW[@]}" >> "$VIOLATIONS_FILE"
+}
+
+# Zone A scan: Scrollio/ outside Logi/ + Integration/
+find Scrollio -type f -name '*.swift' -not -path 'Scrollio/Logi/*' -not -path 'Scrollio/Integration/*' -print0 \
+    | matching_lines | scan_zone "A" "${ZONE_A_ALLOW[@]}" >> "$VIOLATIONS_FILE"
 
 # Zone B scan: Scrollio/Integration/
 ZONE_B_ALLOW=("${ZONE_A_ALLOW[@]}" "${ZONE_B_ADDITIONAL[@]}")
-ZONE_B_FILES=$(find Scrollio/Integration -type f -name '*.swift' 2>/dev/null || true)
-{
-    for f in $ZONE_B_FILES; do
-        grep -nE '\b(Logi[A-Z]|Logitech[A-Z])' "$f" 2>/dev/null | sed "s|^|$f:|" || true
-    done
-} | scan_zone "B" "${ZONE_B_ALLOW[@]}" >> "$VIOLATIONS_FILE"
+{ find Scrollio/Integration -type f -name '*.swift' -print0 2>/dev/null || true; } \
+    | matching_lines | scan_zone "B" "${ZONE_B_ALLOW[@]}" >> "$VIOLATIONS_FILE"
 
 if [[ -s "$VIOLATIONS_FILE" ]]; then
     cat "$VIOLATIONS_FILE"
