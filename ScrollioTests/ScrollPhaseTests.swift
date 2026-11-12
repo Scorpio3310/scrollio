@@ -348,4 +348,35 @@ final class ScrollPhaseTests: XCTestCase {
         sut.didDeliverFrame()
         XCTAssertEqual(sut.phase, .TrackingOngoing)
     }
+
+    // MARK: - A stop after the touch has ended
+
+    /// In TrackingEnd the touch's "ended" has gone out: a stop then sends nothing more. It
+    /// used to plan a second "ended" ("began, ended, ended" for the app).
+    func testMomentumFinish_fromTrackingEnd_sendsNothing() {
+        sut.apply(phase: .TrackingEnd)
+        let plan = sut.onMomentumFinish()
+        XCTAssertNil(plan.target)
+        XCTAssertTrue(plan.queue.isEmpty)
+        // While the touch lasts, a stop still ends it.
+        sut.apply(phase: .TrackingBegin, autoAdvance: .TrackingOngoing)
+        XCTAssertEqual(sut.onMomentumFinish().target?.0, .TrackingEnd)
+    }
+
+    /// A glide of which nothing went out is not ended, in both forms of trackpad-style
+    /// events (`holdsWaitingMomentumBegan`); with it off the phases run as they always did.
+    func testMomentumFinish_whileMomentumBeganWaits() {
+        sut.holdsWaitingMomentumBegan = true
+        sut.apply(phase: .MomentumBegin, autoAdvance: .MomentumOngoing)
+        XCTAssertTrue(sut.momentumBeganIsWaiting)
+        XCTAssertNil(sut.onMomentumFinish().target, "no \"momentum ended\" without its \"began\"")
+        XCTAssertNil(sut.onMomentumOngoing().target, "\"momentum began\" waits for the frame that carries it")
+        sut.didDeliverFrame()
+        XCTAssertEqual(sut.onMomentumFinish().target?.0, .MomentumEnd)
+
+        sut.holdsWaitingMomentumBegan = false
+        sut.apply(phase: .MomentumBegin, autoAdvance: .MomentumOngoing)
+        XCTAssertEqual(sut.onMomentumFinish().target?.0, .MomentumEnd)
+        XCTAssertEqual(sut.onMomentumOngoing().target?.0, .MomentumOngoing)
+    }
 }

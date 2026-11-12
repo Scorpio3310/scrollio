@@ -98,16 +98,17 @@ class ScrollPhase {
     
     // 单例
     static let shared = ScrollPhase()
-    init() { NSLog("Module initialized: ScrollPhase") }
+    init() {}
     
     private(set) var phase: Phase = .Idle
     
     // 下一帧发送完毕后自动切换到的阶段
     private var pendingPhaseAfterDelivery: Phase? = nil
 
-    /// A flick (ScrollPoster, `config.flick`): "momentum began" waits for the frame that carries
-    /// it, and a glide of which nothing went out is not ended. Off, the phases run as they
-    /// always did (a glide's first frame that posts nothing loses its "momentum began").
+    /// With trackpad-style events, in both forms (ScrollPoster, `config.simTrackpadEnabled`):
+    /// "momentum began" waits for the frame that carries it, and a glide of which nothing
+    /// went out is not ended. Off, no phase reaches an app and the phases run as they always
+    /// did (a glide's first frame that posts nothing loses its "momentum began").
     var holdsWaitingMomentumBegan = false
     
     // 记录在开始新的 Tracking 前是否需要补发额外阶段 (比如在惯性中断时时补发 MomentumEnd)
@@ -225,9 +226,12 @@ class ScrollPhase {
                 return plan()
             }
             return plan(target: (.MomentumEnd, .Idle))
-        case .TrackingBegin, .TrackingOngoing, .TrackingEnd:
+        case .TrackingBegin, .TrackingOngoing:
             return plan(target: (.TrackingEnd, .Idle))
         default:
+            // (Also in TrackingEnd: the touch's "ended" has gone out. A stop from outside
+            // (a left click, a finger on the trackpad, Pause) in the moment after a touch
+            // that left no glide sent it a second time: "began, ended, ended".)
             return plan()
         }
     }

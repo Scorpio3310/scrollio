@@ -1,4 +1,5 @@
 import XCTest
+import os
 @testable import Scrollio_Debug
 
 /// How a scroll session ends. The display link thread finds the motion finished, but it
@@ -140,7 +141,9 @@ final class ScrollPosterStopHandoffTests: XCTestCase {
     // MARK: - A stop from the main thread in between
 
     /// A click or a tap restart stops the session directly. The request that is still on its
-    /// way then repeats a stop on an idle session, which must change and post nothing.
+    /// way is stale then: nothing is left to stop, and it must change and post nothing.
+    /// (It used to run a second stop on the idle session, which moved the dispatch generation
+    /// once more and could drop the closing frame the first stop had just queued.)
     func testARequestAfterADirectStopIsHarmless() throws {
         poster.setConfigForTests(simTrackpadEnabled: true)
         wheel(40)
@@ -148,7 +151,7 @@ final class ScrollPosterStopHandoffTests: XCTestCase {
         poster.stop()
         let framesAfterDirectStop = frames.count
 
-        XCTAssertTrue(poster.performRequestedStop(request))
+        XCTAssertFalse(poster.performRequestedStop(request), "stale: the scroll was ended meanwhile")
         XCTAssertEqual(frames.count, framesAfterDirectStop)
         XCTAssertEqual(phases.phase, .Idle)
         XCTAssertEqual(poster.motionStateForTests.current.y, 0)
@@ -335,7 +338,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         XCTAssertTrue(poster.displayLinkForTests !== replaced)
         XCTAssertTrue(poster.isDisplayLinkRunningForTests)
         if let replaced = replaced {
-            XCTAssertFalse(CVDisplayLinkIsRunning(replaced), "the replaced link is stopped")
+            XCTAssertFalse(replaced.isRunning, "the replaced link is stopped")
         }
 
         poster.stop()
@@ -357,9 +360,474 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         try requireDisplayLink()
         let startedByTheWheelEvent = poster.isDisplayLinkRunningForTests
         if !startedByTheWheelEvent, let link = poster.displayLinkForTests,
-           CVDisplayLinkStart(link) != kCVReturnSuccess {
+           link.start() != kCVReturnSuccess {
             throw XCTSkip("the display link cannot be started here")
         }
         XCTAssertTrue(startedByTheWheelEvent)
+    }
+
+    // MARK: - With a stand-in for the display (these run with the display off too)
+
+    private func wheelEvent(targetPID: Int64 = 4242) throws -> CGEvent {
+        let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 1, wheel2: 0, wheel3: 0))
+        event.setIntegerValueField(.eventTargetUnixProcessID, value: targetPID)
+        return event
+    }
+
+    private func input(_ y: Double = 211.68) -> ScrollPosterInput {
+        return ScrollPosterInput(y: y, x: 0, notch: abs(y), duration: OPTIONS_SCROLL_DEFAULT().durationTransition)
+    }
+
+    /// `stop()` ends the display link. (The test with a real link is skipped while the
+    /// display is off, and a `stop()` that left the link running went unnoticed there.)
+    func testStopEndsTheDisplayLink() throws {
+        let display = FakeDisplay(for: poster)
+        XCTAssertTrue(poster.create())
+        let link = try XCTUnwrap(display.made.first)
+        XCTAssertFalse(link.isRunning, "made, not started")
+        XCTAssertTrue(poster.tryStart())
+        XCTAssertTrue(link.isRunning)
+        XCTAssertEqual(link.follows, 1, "tied to the display under the pointer before it runs")
+
+        poster.stop()
+
+        XCTAssertFalse(link.isRunning)
+        XCTAssertFalse(poster.isDisplayLinkRunningForTests)
+        XCTAssertTrue(poster.isAvailable, "stopped, not thrown away")
+        XCTAssertTrue(poster.displayLinkForTests === link)
+    }
+
+    /// B5: the new link is made first. When none can be made (the display went off) the link
+    /// in use stays, running if it ran. It used to be released before the try.
+    func testALinkInUseStaysWhenNoNewOneCanBeMade() throws {
+        let display = FakeDisplay(for: poster)
+        poster.create()
+        poster.tryStart()
+        let inUse = try XCTUnwrap(display.made.first)
+        XCTAssertTrue(inUse.isRunning)
+
+        display.isOn = false
+        poster.clearRecreateCooldownForTests()
+        XCTAssertTrue(poster.recreateDisplayLink(), "the cooldown let it try")
+
+        XCTAssertTrue(poster.displayLinkForTests === inUse, "the link in use is still there")
+        XCTAssertTrue(inUse.isRunning, "and still runs")
+        XCTAssertEqual(inUse.stops, 0)
+        XCTAssertTrue(poster.isAvailable)
+
+        // The display is back: the next try replaces it, and the replaced one is stopped.
+        display.isOn = true
+        poster.clearRecreateCooldownForTests()
+        XCTAssertTrue(poster.recreateDisplayLink())
+        let replacement = try XCTUnwrap(display.made.last)
+        XCTAssertTrue(poster.displayLinkForTests === replacement)
+        XCTAssertFalse(inUse.isRunning)
+        XCTAssertTrue(replacement.isRunning, "a glide goes on with the new link")
+    }
+
+    /// B5: with the display off every try fails. The log gets the first failure and the
+    /// first success after it: it used to get an error line per try, one every 5 s.
+    func testADisplayLinkThatCannotBeMadeIsLoggedOnceAndOnceWhenItWorksAgain() {
+        let display = FakeDisplay(for: poster)
+        display.isOn = false
+
+        XCTAssertFalse(poster.create())
+        XCTAssertFalse(poster.create())
+        XCTAssertFalse(poster.create())
+        XCTAssertEqual(display.tries, 3)
+        XCTAssertEqual(poster.healthLinesForTests, [
+            ScrollPoster.displayLinkFailureLine(result: -6661, keepsTheLinkInUse: false),
+        ])
+        XCTAssertTrue(poster.healthLinesForTests[0].contains("wheel events go through unsmoothed"))
+        XCTAssertFalse(poster.isAvailable)
+
+        display.isOn = true
+        XCTAssertTrue(poster.create())
+        XCTAssertTrue(poster.create())
+        XCTAssertEqual(poster.healthLinesForTests.count, 2)
+        XCTAssertEqual(poster.healthLinesForTests.last, "ScrollPoster: a display link could be made again, after 3 failed tries")
+
+        // And a new line the next time it fails.
+        display.isOn = false
+        XCTAssertFalse(poster.create())
+        XCTAssertEqual(poster.healthLinesForTests.count, 3)
+        XCTAssertTrue(poster.healthLinesForTests[2].contains("the link in use stays"))
+    }
+
+    /// B5: while no link can be made the keeper tries less and less often (it tried every
+    /// 5 s for as long as the display was off).
+    func testTheKeeperBacksOffWhileNoLinkCanBeMade() {
+        let display = FakeDisplay(for: poster)
+        display.isOn = false
+        var triedAt: [Double] = []
+        // The keeper looks every 5 s, for five minutes.
+        for look in 0...60 {
+            let before = display.tries
+            poster.healthCheckForTests(now: 1_000 + Double(look) * ScrollPoster.keeperInterval)
+            if display.tries > before { triedAt.append(Double(look) * ScrollPoster.keeperInterval) }
+        }
+        XCTAssertEqual(triedAt, [0, 5, 15, 35, 75, 135, 195, 255], "5, 10, 20, 40, then every 60 s")
+        XCTAssertEqual(poster.healthLinesForTests.count, 1, "one line for all of them")
+
+        // A display wakes: tried at once, whatever the keeper's wait. Made, not started.
+        display.isOn = true
+        let before = display.tries
+        poster.screensDidWake()
+        XCTAssertEqual(display.tries, before + 1)
+        XCTAssertTrue(poster.isAvailable)
+        XCTAssertFalse(poster.isDisplayLinkRunningForTests, "the next wheel event starts it")
+        XCTAssertEqual(poster.healthLinesForTests.count, 2)
+
+        // With a link in place a display that wakes changes nothing.
+        poster.screensDidWake()
+        XCTAssertEqual(display.tries, before + 1)
+    }
+
+    /// B5: a wheel event tries at once after the keeper's failed try (it used to be refused
+    /// for 3 s and went through unsmoothed), and wheel events themselves try once per cooldown.
+    func testAWheelEventTriesAtOnceAfterTheKeepersFailedTry() {
+        let display = FakeDisplay(for: poster)
+        display.isOn = false
+        poster.healthCheckForTests(now: 1_000)
+        XCTAssertEqual(display.tries, 1)
+
+        display.isOn = true
+        XCTAssertTrue(poster.tryStart(), "the wheel event's own try is not refused")
+        XCTAssertEqual(display.tries, 2)
+        XCTAssertTrue(poster.isDisplayLinkRunningForTests)
+    }
+
+    func testWheelEventsTryOncePerCooldownWhileNoLinkCanBeMade() {
+        let display = FakeDisplay(for: poster)
+        display.isOn = false
+        for _ in 0..<50 {
+            XCTAssertFalse(poster.tryStart())
+        }
+        XCTAssertEqual(display.tries, 1, "not one try per wheel event")
+    }
+
+    /// C1: a wheel event that finds no display link is not taken, and nothing of the poster
+    /// is touched. It used to be fed first: the scroll counted as open, with trackpad-style
+    /// events a "began" went out that never got its "ended", and the distance waited in the
+    /// buffer while the event went through as well.
+    func testAWheelEventWithoutADisplayLinkIsNotTakenAndLeavesNothingBehind() throws {
+        let display = FakeDisplay(for: poster)
+        display.isOn = false
+        var frames: [ScrollOutgoingFrame] = []
+        poster.frameRecorderForTests = { frames.append($0) }
+        poster.setConfigForTests(simTrackpadEnabled: true)
+
+        XCTAssertFalse(poster.smooth(event: try wheelEvent(), input: input()))
+        XCTAssertFalse(poster.smooth(event: try wheelEvent(), input: input()))
+
+        XCTAssertFalse(poster.isGliding, "no scroll was opened")
+        XCTAssertTrue(poster.sessionLogForTests.isEmpty)
+        XCTAssertEqual(poster.motionStateForTests.buffer.y, 0, "no distance waits for a link")
+        XCTAssertEqual(frames, [], "no \"began\" without its \"ended\"")
+
+        // The display is back: the next event is smoothed, and only its own distance.
+        display.isOn = true
+        poster.clearRecreateCooldownForTests()
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        XCTAssertTrue(poster.isGliding)
+        XCTAssertEqual(poster.motionStateForTests.buffer.y, 211.68, accuracy: 1e-9)
+        XCTAssertTrue(poster.isDisplayLinkRunningForTests)
+    }
+
+    /// C2: a link that exists but cannot be started (its display is gone) and cannot be
+    /// replaced does not take the event either. It used to count as "available": the event
+    /// was swallowed and nothing was posted.
+    func testALinkThatCannotBeStartedDoesNotTakeTheWheelEvent() throws {
+        let display = FakeDisplay(for: poster)
+        poster.create()
+        display.startResult = kCVReturnDisplayLinkNotRunning
+        display.made.first?.startResult = kCVReturnDisplayLinkNotRunning
+
+        XCTAssertFalse(poster.smooth(event: try wheelEvent(), input: input()))
+
+        XCTAssertTrue(poster.isAvailable, "a link exists")
+        XCTAssertFalse(poster.isDisplayLinkRunningForTests)
+        XCTAssertFalse(poster.isGliding)
+        XCTAssertEqual(poster.motionStateForTests.buffer.y, 0)
+
+        // A link that starts again takes the next event.
+        display.startResult = kCVReturnSuccess
+        poster.clearRecreateCooldownForTests()
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        XCTAssertTrue(poster.isDisplayLinkRunningForTests)
+    }
+
+    /// C6: a distance that is no finite number (a stored Step of 1e308 times Speed) is not
+    /// taken. It used to be taken: no frame could move toward it, the scroll never ended and
+    /// the display link ran on.
+    func testAnInputThatIsNotAFiniteNumberIsNotTaken() throws {
+        let display = FakeDisplay(for: poster)
+        for bad in [Double.infinity, -.infinity, .nan] {
+            XCTAssertFalse(ScrollPosterInput(y: bad, x: 0, notch: 211.68, duration: 0.158).isUsable)
+            XCTAssertFalse(ScrollPosterInput(y: 10, x: bad, notch: 211.68, duration: 0.158).isUsable)
+            XCTAssertFalse(ScrollPosterInput(y: 10, x: 0, notch: bad, duration: 0.158).isUsable)
+            XCTAssertFalse(poster.smooth(event: try wheelEvent(), input: ScrollPosterInput(y: bad, x: 0, notch: 211.68, duration: 0.158)))
+        }
+        XCTAssertTrue(ScrollPosterInput(y: 10, x: -3, notch: 211.68, duration: 0.158).isUsable)
+        XCTAssertFalse(poster.isGliding)
+        XCTAssertEqual(display.tries, 0, "not even a display link was asked for")
+    }
+
+    /// The safety net: a display link that runs on with nothing posted and no wheel event is
+    /// stopped by the keeper, whatever kept it running, and an open scroll is ended.
+    func testTheKeeperStopsADisplayLinkThatRunsOnWithNothingToDo() throws {
+        let display = FakeDisplay(for: poster)
+        var ended: [ScrollSystemLog.EndReason] = []
+        ScrollSystemLog.sessionObserverForTests = { ended.append($1) }
+        defer { ScrollSystemLog.sessionObserverForTests = nil }
+        poster.frameRecorderForTests = { _ in }
+        poster.setConfigForTests(simTrackpadEnabled: false)
+        let start = ScrollPoster.monotonicNow()
+        XCTAssertTrue(poster.tryStart())
+        let link = try XCTUnwrap(display.made.first)
+        // A scroll that can never end: the display link runs, and its frames find nothing to post.
+        poster.inputForTests(ScrollPosterInput(y: 0.2, x: 0, notch: 0.2, duration: 0.158), at: start)
+        XCTAssertTrue(poster.isGliding)
+
+        // Frames keep coming (the link is not stuck), the last wheel event was 4 s ago: left alone.
+        poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: start + 3.9)
+        poster.healthCheckForTests(now: start + 4)
+        XCTAssertTrue(link.isRunning)
+        XCTAssertEqual(display.tries, 1)
+
+        // Still nothing 9 s after it: stopped, the scroll ended, one line in the log.
+        poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: start + 8.9)
+        poster.healthCheckForTests(now: start + 9)
+        XCTAssertFalse(link.isRunning, "the app idles again")
+        XCTAssertFalse(poster.isGliding)
+        XCTAssertEqual(ended, [.keeper])
+        XCTAssertEqual(poster.healthLinesForTests.count, 1)
+        XCTAssertTrue(poster.healthLinesForTests[0].contains("with nothing posted and no wheel event"), poster.healthLinesForTests[0])
+        XCTAssertEqual(display.tries, 1, "stopped, not replaced")
+    }
+
+    /// A scroll that posts frames or gets wheel events is never taken for idle.
+    func testTheKeeperLeavesAScrollThatPostsAlone() throws {
+        let display = FakeDisplay(for: poster)
+        poster.frameRecorderForTests = { _ in }
+        poster.setConfigForTests(simTrackpadEnabled: false)
+        let start = ScrollPoster.monotonicNow()
+        XCTAssertTrue(poster.tryStart())
+        let link = try XCTUnwrap(display.made.first)
+        var now = start
+        // A wheel that turns for 20 s, a click every 0.3 s, the keeper looking every 5 s.
+        var nextClick = start
+        var nextLook = start + ScrollPoster.keeperInterval
+        while now < start + 20 {
+            now += 1.0 / 60.0
+            if now >= nextClick {
+                poster.inputForTests(input(), at: now)
+                nextClick += 0.3
+            }
+            poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: now)
+            if now >= nextLook {
+                poster.healthCheckForTests(now: now)
+                nextLook += ScrollPoster.keeperInterval
+            }
+        }
+        XCTAssertTrue(link.isRunning)
+        XCTAssertTrue(poster.isGliding)
+        XCTAssertEqual(poster.healthLinesForTests, [])
+        XCTAssertEqual(display.tries, 1)
+    }
+
+    /// The keeper's older rule still holds: a link that runs and sends no frame is replaced.
+    func testTheKeeperReplacesALinkThatIsStuck() throws {
+        let display = FakeDisplay(for: poster)
+        let start = ScrollPoster.monotonicNow()
+        XCTAssertTrue(poster.tryStart())
+        let stuck = try XCTUnwrap(display.made.first)
+        poster.clearRecreateCooldownForTests()
+
+        poster.healthCheckForTests(now: start + 3)
+
+        XCTAssertEqual(display.made.count, 2)
+        XCTAssertFalse(stuck.isRunning)
+        XCTAssertTrue(display.made[1].isRunning, "the replacement runs: the replaced one did")
+        XCTAssertTrue(poster.healthLinesForTests.first?.contains("stuck") ?? false)
+
+        // Still no frame and nobody scrolls: the next look stops it for good, instead of
+        // putting a new running link in its place every 5 s.
+        poster.clearRecreateCooldownForTests()
+        poster.healthCheckForTests(now: ScrollPoster.monotonicNow() + 8)
+        XCTAssertEqual(display.made.count, 2, "not replaced again")
+        XCTAssertFalse(display.made[1].isRunning)
+        XCTAssertFalse(poster.isDisplayLinkRunningForTests)
+    }
+
+    /// A scroll that is open while its display link does not run gets no frame and never
+    /// ends by itself: the keeper ends it.
+    func testTheKeeperEndsAScrollWhoseDisplayLinkDoesNotRun() throws {
+        let display = FakeDisplay(for: poster)
+        poster.frameRecorderForTests = { _ in }
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        let link = try XCTUnwrap(display.made.first)
+        link.isRunning = false   // as a replaced link that could not be started
+
+        poster.healthCheckForTests()
+
+        XCTAssertFalse(poster.isGliding)
+        XCTAssertTrue(poster.healthLinesForTests.first?.contains("does not run") ?? false)
+    }
+
+    /// C5: two stops in a row. The second finds nothing to end and must not move the
+    /// dispatch generation again: it could drop the closing frame the first had just queued.
+    func testASecondStopInARowLeavesTheClosingFrameOfTheFirstAlone() throws {
+        let context = ScrollDispatchContext()
+        let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+        let display = FakeDisplay(for: poster)
+        var posted: [(phase: Double, pid: pid_t)] = []
+        let lock = NSLock()
+        context.postObserverForTests = { event, pid in
+            lock.lock()
+            posted.append((event.getDoubleValueField(.scrollWheelEventScrollPhase), pid))
+            lock.unlock()
+        }
+        func generation() throws -> UInt64 {
+            context.capture(event: try wheelEvent())
+            defer { context.clearContext() }
+            return try XCTUnwrap(context.preparePostingSnapshot()).generation
+        }
+        let before = try generation()
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        poster.setConfigForTests(simTrackpadEnabled: true, flick: false)
+        // A frame: the touch has begun, and what was posted so far has reached the app.
+        poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: ScrollPoster.monotonicNow())
+        context.waitForPostQueueForTests()
+
+        poster.stop(.TrackingEnd, reason: .tapRestarted)   // the tap's restart
+        poster.stop(.TrackingEnd, reason: .tapRestarted)   // and its "disabled" event, in the same turn
+        poster.stop()
+
+        XCTAssertEqual(try generation(), before + 1, "one scroll ended: one step")
+        context.waitForPostQueueForTests()
+        lock.lock()
+        let phases = posted.map(\.phase)
+        lock.unlock()
+        XCTAssertEqual(phases.last, 4, "the closing \"ended\" was posted, not dropped")
+        XCTAssertEqual(phases.filter { $0 == 4 }.count, 1)
+        XCTAssertEqual(context.diagnosticsSnapshot().droppedFramesByGeneration, 0)
+        XCTAssertEqual(display.made.first?.isRunning, false)
+    }
+
+    // MARK: - The app's own display link class, on a real CVDisplayLink
+
+    private final class FrameCounter {
+        private var lock = os_unfair_lock_s()
+        private var frames = 0
+        func add() {
+            os_unfair_lock_lock(&lock)
+            frames += 1
+            os_unfair_lock_unlock(&lock)
+        }
+        var count: Int {
+            os_unfair_lock_lock(&lock)
+            defer { os_unfair_lock_unlock(&lock) }
+            return frames
+        }
+    }
+
+    /// `ScrollCVDisplayLink` starts, runs and stops a real link. A link for the main display
+    /// can be made while the display sleeps (one for the active displays cannot), so this
+    /// runs then too: it is the one test of the real class in a run with the display off.
+    func testTheRealLinkClassStartsRunsAndStops() throws {
+        var made: CVDisplayLink?
+        guard CVDisplayLinkCreateWithCGDisplay(CGMainDisplayID(), &made) == kCVReturnSuccess, let cvLink = made else {
+            throw XCTSkip("no display link can be made here")
+        }
+        let counter = FrameCounter()
+        CVDisplayLinkSetOutputCallback(cvLink, { _, _, _, _, _, context in
+            if let context = context {
+                Unmanaged<FrameCounter>.fromOpaque(context).takeUnretainedValue().add()
+            }
+            return kCVReturnSuccess
+        }, Unmanaged.passUnretained(counter).toOpaque())
+        let link = ScrollCVDisplayLink(cvLink)
+        defer { link.stop() }
+
+        XCTAssertFalse(link.isRunning)
+        link.followDisplayUnderPointer()
+        guard link.start() == kCVReturnSuccess else {
+            throw XCTSkip("the display link cannot be started here")
+        }
+        XCTAssertTrue(link.isRunning)
+        let deadline = Date().addingTimeInterval(3)
+        while counter.count < 3 && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        XCTAssertGreaterThanOrEqual(counter.count, 3, "its callback gets the frames")
+        XCTAssertGreaterThan(link.nominalHz, 1)
+
+        link.stop()
+        XCTAssertFalse(link.isRunning)
+        let afterTheStop = counter.count
+        Thread.sleep(forTimeInterval: 0.1)
+        XCTAssertEqual(counter.count, afterTheStop, "no frame after the stop")
+    }
+
+    /// The link the app makes: for the active displays, or none with CoreVideo's result.
+    func testTheRealLinkIsMadeForTheActiveDisplays_orNotAtAll() {
+        let made = ScrollCVDisplayLink.make(output: { _, _, _, _, _, _ in kCVReturnSuccess })
+        if let link = made.link {
+            XCTAssertEqual(made.result, kCVReturnSuccess)
+            XCTAssertFalse(link.isRunning, "made, not started")
+        } else {
+            XCTAssertNotEqual(made.result, kCVReturnSuccess, "the display is off: -6661")
+        }
+    }
+}
+
+// MARK: - A stand-in for the display
+
+/// A display link that is none: it runs when started, and counts what was asked of it.
+final class FakeScrollDisplayLink: ScrollDisplayLink {
+    var isRunning = false
+    var startResult: CVReturn = kCVReturnSuccess
+    private(set) var starts = 0
+    private(set) var stops = 0
+    private(set) var follows = 0
+    var nominalHz = 60.0
+    var followedDisplayHz = 60.0
+
+    func start() -> CVReturn {
+        starts += 1
+        if startResult == kCVReturnSuccess { isRunning = true }
+        return startResult
+    }
+
+    func stop() {
+        stops += 1
+        isRunning = false
+    }
+
+    func followDisplayUnderPointer() {
+        follows += 1
+    }
+}
+
+/// Makes the display links of a poster. `isOn` false: none can be made, as while the display
+/// is off (CoreVideo's -6661).
+final class FakeDisplay {
+    var isOn = true
+    /// What a link made from now on answers to `start()`.
+    var startResult: CVReturn = kCVReturnSuccess
+    private(set) var made: [FakeScrollDisplayLink] = []
+    private(set) var tries = 0
+
+    init(for poster: ScrollPoster) {
+        // The poster keeps its display alive.
+        poster.makeDisplayLink = { [self] in
+            self.tries += 1
+            guard self.isOn else { return (nil, -6661) }
+            let link = FakeScrollDisplayLink()
+            link.startResult = self.startResult
+            self.made.append(link)
+            return (link, kCVReturnSuccess)
+        }
     }
 }

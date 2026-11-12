@@ -12,7 +12,7 @@ class ScrollCore: ScrollActionPort {
 
     // 单例
     static let shared = ScrollCore()
-    init() { NSLog("Module initialized: ScrollCore") }
+    init() {}
     
     // 执行状态
     var isActive = false
@@ -74,15 +74,15 @@ class ScrollCore: ScrollActionPort {
         // Tap 被系统禁用或重启边界时，强制清理 poster 上下文并失效历史异步帧
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             EventTapDisableLog.note(.scroll, type)
-            // After a timeout the tap goes on again now: until the keeper's next look the wheel
-            // went by raw (and the other way round with "reverse" on). The restart ends the
-            // scroll session itself (onRestart), so it is not ended here as well: two stops in
-            // a row moved the dispatch generation twice, and the second could drop the
-            // end-of-scroll frame the first had just queued (a "began" without its "ended").
+            // After a timeout the tap is restarted from here: it goes on again half a second
+            // later (`Interceptor.restart`), not at the keeper's next look up to 5 s later.
+            // Until it is on the wheel goes by raw (and the other way round with "reverse"
+            // on). The restart ends the scroll session itself (onRestart), so it is not ended
+            // here as well.
             let restarted = type == .tapDisabledByTimeout
                 && (ScrollCore.shared.scrollEventInterceptor?.restartUnlessThrottled() ?? false)
             if !restarted {
-                ScrollPoster.shared.stop(.TrackingEnd)
+                ScrollPoster.shared.stop(.TrackingEnd, reason: .tapRestarted)
             }
             return Unmanaged.passUnretained(event)
         }
@@ -126,6 +126,17 @@ class ScrollCore: ScrollActionPort {
                 ScrollSystemLog.noteWheelTookOverGlide(droppedMomentumEvents: dropped)
             case .letThrough:
                 break
+            }
+            if ScrollHandover.carriesTheWheelsDelta(
+                momentumPhase: event.getDoubleValueField(.scrollWheelEventMomentumPhase),
+                isContinuous: event.getDoubleValueField(.scrollWheelEventIsContinuous),
+                hasDelta: hasVerticalDelta || hasHorizontalDelta
+            ) {
+                // The glide's "ended" that comes with a wheel event: the app gets it to close
+                // the glide, without the wheel's delta (that arrives with the wheel event).
+                ScrollEvent.clearY(scrollEvent)
+                ScrollEvent.clearX(scrollEvent)
+                return Unmanaged.passUnretained(event)
             }
             if hasVerticalDelta || hasHorizontalDelta { ScrollSystemLog.notePassthrough(.trackpad) }
             return Unmanaged.passUnretained(event)
@@ -263,6 +274,10 @@ class ScrollCore: ScrollActionPort {
         let needsPassthrough = needVerticalPassthrough || needHorizontalPassthrough
         let shouldSmoothAny = (smoothedY != 0.0) || (smoothedX != 0.0)
 
+        // Whether the poster took the event: it then posts the smoothed axes itself. When it
+        // could not (`notTaken` says why), the event goes on as it came, with those axes.
+        var taken = false
+        var notTaken = ScrollSystemLog.PassthroughReason.noDisplayLink
         if shouldSmoothAny {
             // 每个事件的距离: max(step, |point delta|) × 速度 × 冲刺倍率; 一格为 step × 速度 × 冲刺倍率
             // The sideways wheel scrolls at its own speed on top (1 at the default: the same).
@@ -272,15 +287,20 @@ class ScrollCore: ScrollActionPort {
                 sidewaysSpeed: sideways ? thumbWheel.speed : 1.0,
                 duration: duration
             )
-#if DEBUG
-            if let observe = ScrollCore.posterInputObserverForTests {
-                observe(input)
+            if !input.isUsable {
+                notTaken = .unusableSettings
             } else {
-                ScrollPoster.shared.update(event: event, input: input).tryStart()
-            }
+#if DEBUG
+                if let observe = ScrollCore.posterInputObserverForTests {
+                    observe(input)
+                    taken = true
+                } else {
+                    taken = ScrollPoster.shared.smooth(event: event, input: input)
+                }
 #else
-            ScrollPoster.shared.update(event: event, input: input).tryStart()
+                taken = ScrollPoster.shared.smooth(event: event, input: input)
 #endif
+            }
         }
 
         if needsPassthrough {
@@ -295,20 +315,25 @@ class ScrollCore: ScrollActionPort {
                     appRule: ScrollCore.shared.application != nil
                 )
             }
-            if shouldSmoothVertical {
+            // An axis the poster took leaves the event; one it could not take stays in it
+            // (cleared all the same, its distance was lost).
+            if shouldSmoothVertical && taken {
                 ScrollEvent.clearY(scrollEvent)
             }
-            if shouldSmoothHorizontal {
+            if shouldSmoothHorizontal && taken {
                 ScrollEvent.clearX(scrollEvent)
+            }
+            if shouldSmoothAny && !taken {
+                ScrollSystemLog.notePassthrough(notTaken)
             }
             return Unmanaged.passUnretained(event)
         }
 
         if shouldSmoothAny {
-            if ScrollPoster.shared.isAvailable {
+            if taken {
                 return nil
             } else {
-                ScrollSystemLog.notePassthrough(.noDisplayLink)
+                ScrollSystemLog.notePassthrough(notTaken)
                 return Unmanaged.passUnretained(event)
             }
         } else {
@@ -475,7 +500,7 @@ class ScrollCore: ScrollActionPort {
         }
 
         let keyCode = event.keyCode
-        let mouseButton = UInt16(event.getIntegerValueField(.mouseEventButtonNumber))
+        let mouseButton = ScrollCore.mouseButtonNumber(fromField: event.getIntegerValueField(.mouseEventButtonNumber))
 
         // 判断事件类型
         let isMouseEvent = (type == .otherMouseDown || type == .otherMouseUp)
@@ -545,6 +570,15 @@ class ScrollCore: ScrollActionPort {
         return nil
     }
 
+    /// The button number of a mouse event from its `mouseEventButtonNumber` field: 0...255.
+    /// CoreGraphics keeps the number in 8 bits and reads it back signed, so 128...255 come
+    /// back as -128...-1, and `UInt16(_:)` of a negative number traps: an other-button event
+    /// that another program made up with such a number crashed the app, each time. The low
+    /// 8 bits are the number that was set (200 reads back as -56).
+    static func mouseButtonNumber(fromField value: Int64) -> UInt16 {
+        return UInt16(UInt8(truncatingIfNeeded: value))
+    }
+
     private func shouldDeferToScrollActionButtonBinding(_ event: CGEvent) -> Bool {
         let inputEvent = InputEvent(fromCGEvent: event)
         return ButtonUtils.shared.getBestMatchingBinding(
@@ -556,7 +590,7 @@ class ScrollCore: ScrollActionPort {
     // MARK: - 鼠标事件处理
     let mouseLeftEventCallBack: CGEventTapCallBack = { (proxy, type, event, refcon) in
         // 如果点击左键则停止滚动
-        ScrollPoster.shared.stop()
+        ScrollPoster.shared.stop(reason: .leftClick)
         return nil
     }
 
@@ -567,7 +601,7 @@ class ScrollCore: ScrollActionPort {
     @discardableResult
     static func stopWheelGlide(forTrackpadScrollPhase scrollPhase: Double, poster: ScrollPoster = .shared) -> Bool {
         guard ScrollHandover.fingerTakesOver(scrollPhase: scrollPhase), poster.isGliding else { return false }
-        poster.stop()
+        poster.stop(reason: .fingerOnTrackpad)
         return true
     }
     
@@ -581,7 +615,7 @@ class ScrollCore: ScrollActionPort {
         do {
             scrollEventInterceptor = try makeInterceptor(scrollEventMask, scrollEventCallBack, .defaultTap)
             scrollEventInterceptor?.onRestart = {
-                ScrollPoster.shared.stop(.TrackingEnd)
+                ScrollPoster.shared.stop(.TrackingEnd, reason: .tapRestarted)
             }
             hotkeyEventInterceptor = try makeInterceptor(hotkeyEventMask, hotkeyEventCallBack, .listenOnly)
             mouseEventInterceptor = try makeInterceptor(mouseLeftEventMask, mouseLeftEventCallBack, .listenOnly)

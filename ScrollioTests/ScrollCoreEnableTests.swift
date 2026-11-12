@@ -142,4 +142,118 @@ final class ScrollCoreEnableTests: XCTestCase {
         XCTAssertFalse(core.dashScroll)
         XCTAssertEqual(core.dashAmplification, 1.0)
     }
+
+    // MARK: - With taps that are no taps (FakeEventTapSystem) and a display that is none
+
+    /// The shared poster with a stand-in for the display, for a test that starts a core;
+    /// call the result to put everything back.
+    private func standInForTheDisplay() -> (display: FakeDisplay, restore: () -> Void) {
+        let poster = ScrollPoster.shared
+        let savedFactory = poster.makeDisplayLink
+        poster.stop()
+        poster.dropDisplayLinkForTests()
+        poster.clearRecreateCooldownForTests()
+        let display = FakeDisplay(for: poster)
+        return (display, {
+            poster.stop()
+            poster.stopKeeper()
+            poster.dropDisplayLinkForTests()
+            poster.makeDisplayLink = savedFactory
+            poster.clearRecreateCooldownForTests()
+        })
+    }
+
+    /// enable() makes the three taps and the display link; disable() switches every tap off
+    /// and lets go of it. (A disable() that left the taps running went unnoticed: an active
+    /// tap nobody services freezes the wheel.)
+    func testEnableStartsTheThreeTapsAndDisableSwitchesThemOff() {
+        let (display, restore) = standInForTheDisplay()
+        defer { restore() }
+        var systems: [FakeEventTapSystem] = []
+        var made: [(interceptor: Interceptor, options: CGEventTapOptions)] = []
+        let core = ScrollCore()
+        core.makeInterceptor = { mask, callback, options in
+            let system = FakeEventTapSystem()
+            systems.append(system)
+            let interceptor = try system.makeInterceptor(mask: mask, callback: callback, options: options)
+            made.append((interceptor, options))
+            return interceptor
+        }
+
+        core.enable()
+
+        XCTAssertTrue(core.isActive)
+        XCTAssertEqual(made.map(\.options), [.defaultTap, .listenOnly, .listenOnly])
+        XCTAssertEqual(made.map { $0.interceptor.kind }, [.scroll, .scrollKeys, .leftClick])
+        XCTAssertTrue(made.allSatisfy { $0.interceptor.isRunning() })
+        XCTAssertTrue(core.scrollEventInterceptor === made[0].interceptor)
+        XCTAssertEqual(display.made.count, 1, "the display link is made")
+        XCTAssertEqual(display.made.first?.isRunning, false, "and waits for the first wheel event")
+
+        core.disable()
+
+        XCTAssertFalse(core.isActive)
+        XCTAssertTrue(made.allSatisfy { !$0.interceptor.isRunning() }, "every tap is switched off")
+        XCTAssertEqual(systems.map(\.switches), [[true, false], [true, false], [true, false]])
+        XCTAssertNil(core.scrollEventInterceptor)
+        XCTAssertNil(core.hotkeyEventInterceptor)
+        XCTAssertNil(core.mouseEventInterceptor)
+    }
+
+    /// The second or third tap cannot be started (the access went in between): the taps
+    /// already made are switched off again, none is left running behind a core that is off.
+    func testATapThatFailsLater_leavesNoEarlierTapRunning() {
+        let (_, restore) = standInForTheDisplay()
+        defer { restore() }
+        var systems: [FakeEventTapSystem] = []
+        let core = ScrollCore()
+        core.makeInterceptor = { mask, callback, options in
+            let system = FakeEventTapSystem()
+            system.isTrusted = systems.count < 2   // the third finds the access gone
+            systems.append(system)
+            return try system.makeInterceptor(mask: mask, callback: callback, options: options)
+        }
+
+        core.enable()
+
+        XCTAssertFalse(core.isActive)
+        XCTAssertEqual(systems.count, 3)
+        XCTAssertEqual(systems.map(\.isOn), [false, false, false])
+        XCTAssertNil(core.scrollEventInterceptor)
+    }
+
+    /// macOS turned the scroll tap off after a timeout: the tap's own callback restarts it
+    /// (it goes on again `Interceptor.restartDelay` later), instead of leaving the wheel raw
+    /// until the keeper's next look. Without this the wheel stayed unsmoothed for up to 5 s.
+    func testATimeoutOfTheScrollTapRestartsIt() throws {
+        let (_, restore) = standInForTheDisplay()
+        defer { restore() }
+        let saved = ScrollCore.shared.scrollEventInterceptor
+        defer { ScrollCore.shared.scrollEventInterceptor = saved }
+        let system = FakeEventTapSystem()
+        let tap = try system.makeInterceptor(options: .defaultTap)
+        var cleanedUp = 0
+        tap.onRestart = { cleanedUp += 1 }
+        ScrollCore.shared.scrollEventInterceptor = tap
+        defer { tap.stop() }
+        let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 1, wheel2: 0, wheel3: 0))
+
+        system.turnOffAsMacOSDoes()
+        let result = ScrollCore.shared.scrollEventCallBack(CGEventTapProxy(bitPattern: 1)!, .tapDisabledByTimeout, event, nil)
+
+        XCTAssertTrue(result?.takeUnretainedValue() === event)
+        XCTAssertEqual(cleanedUp, 1, "the restart ends the scroll session through the tap's owner")
+        XCTAssertFalse(tap.isRunning(), "off until the restart's timer fires")
+        let deadline = Date().addingTimeInterval(3)
+        while !tap.isRunning() && Date() < deadline {
+            _ = RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertTrue(tap.isRunning(), "on again")
+
+        // Switched off by the user's input (secure input and the like): no restart from here.
+        let switchesBefore = system.switches.count
+        _ = ScrollCore.shared.scrollEventCallBack(CGEventTapProxy(bitPattern: 1)!, .tapDisabledByUserInput, event, nil)
+        XCTAssertEqual(system.switches.count, switchesBefore)
+        XCTAssertEqual(cleanedUp, 1)
+    }
 }

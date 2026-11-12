@@ -574,6 +574,48 @@ final class ScrollHandoverTests: XCTestCase {
             "handover: a finger on the trackpad took over: the wheel's glide stopped"
         )
     }
+
+    // MARK: The glide's "ended" that carries the wheel's delta
+
+    /// C9: when the wheel turns during a trackpad glide, macOS sends a momentum "ended" that
+    /// carries the wheel's delta, then the wheel event itself. The first went through as it
+    /// came, the second was smoothed: the delta reached the app twice, the first time raw and
+    /// unreversed. The "ended" still goes on (it closes the glide), without the delta.
+    func testTheEndedThatComesWithTheWheel_goesOnWithoutTheWheelsDelta() throws {
+        defer { ScrollCore.shared.handover = ScrollHandover() }
+        ScrollCore.shared.handover = ScrollHandover()
+        var reasons: [ScrollSystemLog.PassthroughReason] = []
+        ScrollSystemLog.passthroughObserverForTests = { reasons.append($0) }
+        defer { ScrollSystemLog.passthroughObserverForTests = nil }
+
+        // As in the trace (1 line, 1 px) and with the wheel already spinning (13 lines, 133 px).
+        for (line, point) in [(Int64(-1), -1.0), (-13, -133)] {
+            let marker = try XCTUnwrap(TracedScrollEvent.wheelMarker(count: 1, line: line, point: point).cgEvent())
+            let result = ScrollCore.shared.scrollEventCallBack(CGEventTapProxy(bitPattern: 1)!, .scrollWheel, marker, nil)
+            XCTAssertTrue(result?.takeUnretainedValue() === marker, "it goes on: the app closes the glide")
+            XCTAssertEqual(marker.getDoubleValueField(.scrollWheelEventMomentumPhase), 3)
+            XCTAssertEqual(marker.getIntegerValueField(.scrollWheelEventDeltaAxis1), 0)
+            XCTAssertEqual(marker.getDoubleValueField(.scrollWheelEventPointDeltaAxis1), 0)
+            XCTAssertEqual(marker.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1), 0)
+        }
+        XCTAssertEqual(reasons, [], "not a trackpad event that moved the page")
+
+        // A trackpad's own events are continuous: their deltas are never touched.
+        for traced in [TracedScrollEvent.momentum(3, point: 4), .momentum(2, point: 22), .touch(2, point: 30)] {
+            let event = try XCTUnwrap(traced.cgEvent())
+            let result = ScrollCore.shared.scrollEventCallBack(CGEventTapProxy(bitPattern: 1)!, .scrollWheel, event, nil)
+            XCTAssertNotNil(result)
+            XCTAssertEqual(event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1), traced.point)
+        }
+    }
+
+    func testCarriesTheWheelsDelta_isOnlyTheEndedThatIsNotContinuous() {
+        XCTAssertTrue(ScrollHandover.carriesTheWheelsDelta(momentumPhase: 3, isContinuous: 0, hasDelta: true))
+        XCTAssertFalse(ScrollHandover.carriesTheWheelsDelta(momentumPhase: 3, isContinuous: 1, hasDelta: true), "a trackpad's own")
+        XCTAssertFalse(ScrollHandover.carriesTheWheelsDelta(momentumPhase: 3, isContinuous: 0, hasDelta: false), "the real end of the glide")
+        XCTAssertFalse(ScrollHandover.carriesTheWheelsDelta(momentumPhase: 2, isContinuous: 0, hasDelta: true))
+        XCTAssertFalse(ScrollHandover.carriesTheWheelsDelta(momentumPhase: 0, isContinuous: 0, hasDelta: true), "a wheel event")
+    }
 }
 
 // MARK: - The sideways wheel (thumb wheel)

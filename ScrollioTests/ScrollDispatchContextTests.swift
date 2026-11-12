@@ -260,4 +260,55 @@ final class ScrollDispatchContextTests: XCTestCase {
         XCTAssertEqual(snap1?.generation, snap2?.generation)
         XCTAssertEqual(snap1?.targetPID, snap2?.targetPID)
     }
+
+    // MARK: - C4: the limit counts from when a frame was made
+
+    /// A frame is too old when it waited too long on the post queue. The limit used to count
+    /// from the last wheel event: at glide time 5.0 the last frames of a long scroll, and the
+    /// "momentum ended" that closes it, come more than 5 s after that event and were dropped.
+    func testAFrameMadeLongAfterTheLastWheelEvent_isPosted() throws {
+        let event = try XCTUnwrap(makeScrollEvent())
+        var posted: [pid_t] = []
+        let lock = NSLock()
+        sut.postObserverForTests = { _, pid in
+            lock.lock()
+            posted.append(pid)
+            lock.unlock()
+        }
+        sut.eventTTL = 0.05
+        sut.capture(event: event)
+        // Longer after the wheel event than the limit: a frame made now is new.
+        Thread.sleep(forTimeInterval: 0.12)
+        sut.resetDiagnostics()
+
+        sut.enqueue(try XCTUnwrap(sut.preparePostingSnapshot()))
+        sut.waitForPostQueueForTests()
+
+        let diag = sut.diagnosticsSnapshot()
+        XCTAssertEqual(diag.droppedFramesByTTL, 0)
+        XCTAssertEqual(diag.postedFrames, 1)
+        lock.lock()
+        XCTAssertEqual(posted, [ProcessInfo.processInfo.processIdentifier])
+        lock.unlock()
+
+        // A frame that then waits longer than the limit before its turn is still dropped.
+        let stale = try XCTUnwrap(sut.preparePostingSnapshot())
+        Thread.sleep(forTimeInterval: 0.12)
+        sut.enqueue(stale)
+        sut.waitForPostQueueForTests()
+        XCTAssertEqual(sut.diagnosticsSnapshot().droppedFramesByTTL, 1)
+    }
+
+    /// The process the frames go to: the last captured event's, none after a stop.
+    func testTargetPID_isTheCapturedEventsTarget() throws {
+        XCTAssertNil(sut.targetPID)
+        let event = try XCTUnwrap(makeScrollEvent())
+        sut.capture(event: event)
+        XCTAssertEqual(sut.targetPID, ProcessInfo.processInfo.processIdentifier)
+        event.setIntegerValueField(.eventTargetUnixProcessID, value: 777)
+        sut.capture(event: event)
+        XCTAssertEqual(sut.targetPID, 777)
+        sut.clearContext()
+        XCTAssertNil(sut.targetPID)
+    }
 }
