@@ -964,10 +964,12 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
     /// `smooth(event:input:)`, the switch read from the settings (the caller sets them), the
     /// app's kind as given, display frames until the scroll has ended by itself. Returns the
     /// events that would be posted, the scroll's log entry, and how often the kind was asked.
-    private func oneClick(over kind: ScrollUtils.TrackpadStyleTarget,
+    /// `oldLongTouch`: the evaluation switch (`ScrollPoster.usesOldLongTouch`).
+    private func oneClick(over kind: ScrollUtils.TrackpadStyleTarget, oldLongTouch: Bool = false,
                           file: StaticString = #filePath, line: UInt = #line) throws -> (frames: [PostedFrame], session: ScrollSystemLog.Session?, asked: Int) {
         let context = ScrollDispatchContext()
         let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+        poster.usesOldLongTouch = oldLongTouch
         var asked = 0
         poster.trackpadStyleTarget = { _ in
             asked += 1
@@ -1064,12 +1066,29 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         }
     }
 
-    /// Over any other app (AppKit, a web view, an app that is not known): one long touch, and
-    /// its glide after the wheel has been still for 0.18 s. Every frame keeps the wheel
-    /// event's time.
-    func testTheRealPath_overAnyOtherApp_postsTheLongTouchWithTheWheelEventsTime() throws {
+    /// Over any other app (AppKit, a web view, an app that is not known): one touch until the
+    /// scroll has run out. Every frame of the click is a "changed", "ended" follows the last
+    /// one, no event carries a glide phase, and every one keeps the wheel event's time.
+    func testTheRealPath_overAnyOtherApp_postsOneTouchToTheEnd() throws {
         try withSettings(switchOn: true) {
             let result = try oneClick(over: .touchOnly)
+            XCTAssertEqual(phaseRuns(result.frames), ["began ×1", "changed ×26", "ended ×1"])
+            XCTAssertFalse(result.frames.contains { $0.momentum != 0 }, "no glide event")
+            XCTAssertTrue(result.frames.allSatisfy { $0.timestamp == Self.wheelTime }, "the wheel event's time on every frame")
+            XCTAssertEqual(result.frames.filter { $0.scroll == 2 }.reduce(0) { $0 + $1.y }, 205, "the touch carries the whole click")
+            XCTAssertEqual(result.session?.trackpadStyle, true)
+            XCTAssertEqual(result.session?.flick, false)
+            XCTAssertEqual(result.session?.oneTouch, true)
+            XCTAssertEqual(result.session?.touches, 1)
+        }
+    }
+
+    /// EVALUATION SWITCH: with it the same apps get the old long touch, a touch until the
+    /// wheel has been still for 0.18 s and the rest as its glide: 135 of the click's 205 px
+    /// in the touch. Nothing else changes with it: a Chromium app still gets the flick.
+    func testTheRealPath_withTheEvaluationSwitch_postsTheOldLongTouch() throws {
+        try withSettings(switchOn: true) {
+            let result = try oneClick(over: .touchOnly, oldLongTouch: true)
             XCTAssertEqual(phaseRuns(result.frames), [
                 "began ×1", "changed ×10", "ended ×1", "momentumBegan ×1", "momentumChanged ×15", "momentumEnded ×1",
             ])
@@ -1077,6 +1096,65 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             XCTAssertEqual(result.frames.filter { $0.scroll == 2 }.reduce(0) { $0 + $1.y }, 135, "what the touch carries of the 205 px")
             XCTAssertEqual(result.session?.trackpadStyle, true)
             XCTAssertEqual(result.session?.flick, false)
+            XCTAssertEqual(result.session?.oneTouch, false)
+
+            let flick = try oneClick(over: .followsGlide, oldLongTouch: true)
+            XCTAssertEqual(flick.session?.flick, true)
+            XCTAssertEqual(phaseRuns(flick.frames).prefix(4), ["began ×1", "changed ×2", "ended ×1", "momentumBegan ×1"])
+        }
+    }
+
+    /// The one touch ends at its own place. The wheel goes on over another pane of the same
+    /// app: the "ended" of the open touch is a copy of the last event at the first place, and
+    /// the "began" that follows is the new event's. (Ended after the new event was stored, it
+    /// would carry the second pane's place, for a touch that pane never saw begin.)
+    func testTheRealPath_theOneTouchEndsAtItsOwnPlace() throws {
+        try withSettings(switchOn: true) {
+            let context = ScrollDispatchContext()
+            let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+            poster.trackpadStyleTarget = { _ in .touchOnly }
+            _ = FakeDisplay(for: poster)
+            var posted: [(scroll: Double, x: CGFloat)] = []
+            let lock = NSLock()
+            context.postObserverForTests = { event, _ in
+                lock.lock()
+                posted.append((event.getDoubleValueField(.scrollWheelEventScrollPhase), event.location.x))
+                lock.unlock()
+            }
+            func wheel(atX x: CGFloat) throws -> CGEvent {
+                let event = try wheelEvent()
+                event.location = CGPoint(x: x, y: 300)
+                return event
+            }
+            var now = ScrollPoster.monotonicNow()
+            func frames(_ count: Int) {
+                for _ in 0..<count {
+                    now += 1.0 / 60.0
+                    poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: now)
+                }
+            }
+
+            XCTAssertTrue(poster.smooth(event: try wheel(atX: 400), input: input()))
+            frames(3)
+            XCTAssertTrue(poster.smooth(event: try wheel(atX: 410), input: input()))   // the hand moved a little
+            frames(3)
+            XCTAssertTrue(poster.smooth(event: try wheel(atX: 900), input: input()))   // another pane
+            frames(3)
+            // (The frames come here without the 16 ms between them: the post queue catches
+            // up before the stop, which drops what still waits from before it.)
+            context.waitForPostQueueForTests()
+            poster.stop()
+
+            context.waitForPostQueueForTests()
+            lock.lock()
+            let all = posted
+            lock.unlock()
+            XCTAssertEqual(all.filter { $0.scroll == 1 }.map(\.x), [400, 900], "two touches: the first place and the far one")
+            XCTAssertEqual(all.filter { $0.scroll == 4 }.map(\.x), [410, 900], "each ended where it was")
+            let firstEnded = try XCTUnwrap(all.firstIndex { $0.scroll == 4 })
+            XCTAssertEqual(all.dropFirst(firstEnded + 1).first?.scroll, 1, "the new touch begins right after")
+            XCTAssertTrue(all.prefix(firstEnded).allSatisfy { $0.x == 400 || $0.x == 410 })
+            XCTAssertTrue(all.dropFirst(firstEnded + 1).allSatisfy { $0.x == 900 })
         }
     }
 

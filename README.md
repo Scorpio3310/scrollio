@@ -118,8 +118,8 @@ apps do not all read it the same way, so it is sent in one of three ways:
 - Chrome, Brave, Arc, Dia and the other browsers and apps built on Chromium (Electron
   apps such as VS Code and Slack, Spotify, a web app installed from such a browser): a
   short touch and then its glide.
-- Every other app: one long touch for as long as the wheel turns, and the rest of the
-  scroll as its glide.
+- Every other app: one touch that lasts until the scroll has run out, with no glide
+  after it. These apps follow a touch to its end, and make what they will of a glide.
 - Safari, the web apps made with its "Add to Dock" and the DuckDuckGo browser: nothing
   changes. With trackpad-style events they do not scroll smoothly.
 
@@ -133,8 +133,8 @@ Its limits:
   trackpad. In some 3D and design apps the wheel may then pan where it used to zoom.
 - Scrolling sideways (with Shift, "Scroll sideways" or the thumb wheel) can be taken for
   a two-finger swipe, and go back or forward a page in an app that does that.
-- In apps that are not browsers (Finder, Notes, a message in Mail) the end of a scroll
-  can be cut short, the more the longer the glide time.
+- At the end of a page, an app that is not a browser can keep the page stretched until
+  the scroll has run out: about half a second after a click at Smooth, a second at Float.
 
 If one app scrolls oddly with it, give that app its own settings in the Apps pane and
 turn it off there.
@@ -508,7 +508,7 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   ```
 
   `trackpad-style` says in which form the scroll was sent: `off`; `on (flick: 1 touches,
-  2 wheel events into a glide)` for a Chromium-based app; `on (long touch: 1 touches)`
+  2 wheel events into a glide)` for a Chromium-based app; `on (one touch: 1 touches)`
   for any other app; `off (not sent to this app)` for Safari while the switch is on.
   The line ends with why the scroll ended: glided out, left click, a finger on the
   trackpad, the wheel went on in another app, trackpad-style was switched, the scroll tap

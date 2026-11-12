@@ -8,6 +8,11 @@ it for the people who use the app, and give the version its part before you tag 
 
 ## Unreleased
 
+- **Trackpad-style scrolling (Beta)** in apps that are not browsers (Finder, Notes, a
+  message in Mail): the whole scroll is now sent as one touch, the form these apps follow
+  to its end. Before, the end of a scroll was sent as a glide, which they do not follow: a
+  click could stop short, more so with a long glide time. At the end of a page the page
+  can stay stretched a little longer for it.
 - **Trackpad-style scrolling (Beta)** knows more apps. Web apps made with Safari's "Add to
   Dock" and the DuckDuckGo browser are left as they are, like Safari. A web app installed
   from Chrome, Brave or Edge scrolls and bounces like its browser.

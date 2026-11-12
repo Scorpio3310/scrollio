@@ -249,6 +249,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard AppRuntime.shouldRunAppStartupSideEffects else { return }
         // Which accent colour the user sees: the app's purple, or their own choice.
         AppSystemLog.note(AppAccent.liveLogLine())
+        // EVALUATION SWITCH (removed with `TrackpadStyleEvaluation`): which form of
+        // "Trackpad-style scrolling" apps that are not Chromium-based get in this run.
+        AppSystemLog.note(TrackpadStyleEvaluation.launchLine(usesOldLongTouch: TrackpadStyleEvaluation.usesOldLongTouch))
         // Read now what the first press of a button would otherwise read inside the button
         // tap's callback: the user's Spaces shortcuts (another app's preferences) and the
         // keys of the keyboard layout in use.
