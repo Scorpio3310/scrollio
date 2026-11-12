@@ -4,7 +4,8 @@
 //
 //  The updater's own rules (UpdateCenter): which copy updates itself (a feed and a key in
 //  the Info.plist, not from a disk image), what the app's Info.plist says, what Scrollio
-//  shows while a found update waits (the Dock icon, its badge), the lines of the `app` log,
+//  shows while a found update waits (the Dock icon, its badge) and in which order its
+//  window and the Dock icon come, the lines of the `app` log,
 //  that Sparkle finds the delegate methods under the names it calls, that only the Update
 //  folder knows Sparkle, that the release script and the app agree on the feed, and that
 //  Sparkle's alerts ("You're up to date!") open so that the main queue keeps running.
@@ -30,14 +31,37 @@ final class UpdateCenterTests: XCTestCase {
         var badges: [String?] = []
         var activations = 0
         var log: [String] = []
+        /// Everything the center asked of the Dock, the front and Sparkle, in order.
+        var asked: [String] = []
+        /// Scrollio is the app in front.
+        var isInFront = false
+        /// Sparkle's updater takes a request.
+        var updaterIsReady = true
+        /// What the center put off for a moment.
+        var later: [() -> Void] = []
+
+        /// The moment has passed.
+        func aMomentPasses() {
+            let work = later
+            later = []
+            work.forEach { $0() }
+        }
     }
 
-    private func makeCenter(_ world: World) -> UpdateCenter {
+    /// A center whose effects are counted. `withUpdater`: a stand-in for Sparkle's
+    /// updater is connected, as `start` connects the real one in a released copy.
+    private func makeCenter(_ world: World, withUpdater: Bool = false) -> UpdateCenter {
         let center = UpdateCenter()
-        center.showDockIcon = { world.dockShown += 1 }
-        center.releaseDockIcon = { world.dockReleased += 1 }
-        center.setDockBadge = { world.badges.append($0) }
-        center.activateApp = { world.activations += 1 }
+        center.showDockIcon = { world.dockShown += 1; world.asked.append("Dock icon on") }
+        center.releaseDockIcon = { world.dockReleased += 1; world.asked.append("Dock icon off") }
+        center.setDockBadge = { world.badges.append($0); world.asked.append($0 == nil ? "no badge" : "badge \($0!)") }
+        center.activateApp = { world.activations += 1; world.asked.append("come to the front") }
+        center.appIsActive = { world.isInFront }
+        if withUpdater {
+            center.updaterIsReady = { world.updaterIsReady }
+            center.askUpdater = { world.asked.append("Sparkle: the window in front") }
+        }
+        center.afterAMoment = { world.later.append($0) }
         center.log = { world.log.append($0) }
         return center
     }
@@ -142,6 +166,13 @@ final class UpdateCenterTests: XCTestCase {
         center.updateSessionEnded()
         XCTAssertEqual(NSApp.activationPolicy(), policy)
         XCTAssertFalse(center.mayStart())
+        // Without an updater its calls ask nobody, whatever comes and goes.
+        center.updateWillBeShown(version: "9.9.9", userInitiated: false)
+        center.appResignedActive()
+        center.checkForUpdates()
+        XCTAssertFalse(center.reminder.windowWasShown)
+        XCTAssertEqual(NSApp.activationPolicy(), policy)
+        center.updateSessionEnded()
     }
 
     // MARK: - The app's Info.plist
@@ -212,14 +243,59 @@ final class UpdateCenterTests: XCTestCase {
         XCTAssertEqual(changes, 2)
     }
 
-    func testAnUpdateTheUserAskedForGetsNoBadge() {
+    /// An update the user asked about opens its window where he is, over a full-screen
+    /// app too. That takes a menu bar app: a menu bar app that becomes a Dock app right
+    /// before it opens a window gets the window on the desktop Space (version 1.0.1 did
+    /// that, and asked for from a full-screen app the window was not on screen). So the
+    /// find of an asked-for check switches nothing on. The Dock icon comes when that
+    /// update starts to wait: Scrollio has left the front with it unanswered.
+    func testAnAskedForUpdateOpensItsWindowFirstAndGetsTheDockIconWhenItWaits() {
         let world = World()
-        let center = makeCenter(world)
+        let center = makeCenter(world, withUpdater: true)
+        world.isInFront = true
         center.updateWillBeShown(version: "2.0.0", userInitiated: true)
+        XCTAssertEqual(world.asked, ["no badge"], "Sparkle opens the window right after this call: no Dock icon before it")
         XCTAssertEqual(center.reminder.waitingVersion, "2.0.0")
+        XCTAssertTrue(center.reminder.windowWasShown)
         XCTAssertFalse(center.reminder.showsBadge)
-        XCTAssertEqual(world.dockShown, 1, "the window can be reached with ⌘Tab")
-        XCTAssertEqual(world.badges, [nil])
+        // He looks elsewhere for an instant and is back: it does not wait yet.
+        world.isInFront = false
+        center.appResignedActive()
+        XCTAssertEqual(world.asked, ["no badge"], "decided a moment later")
+        world.isInFront = true
+        world.aMomentPasses()
+        XCTAssertEqual(world.asked, ["no badge"])
+
+        // He leaves it unanswered: now it waits, and is in the Dock, without a badge.
+        world.isInFront = false
+        center.appResignedActive()
+        world.aMomentPasses()
+        XCTAssertEqual(world.asked, ["no badge", "Dock icon on"])
+        XCTAssertTrue(center.holdsDockIcon)
+
+        // Asked for again from the menu: the window has its place and is brought forward
+        // as it is; the Dock icon is not touched.
+        center.checkForUpdates()
+        XCTAssertEqual(world.asked, ["no badge", "Dock icon on", "no badge", "come to the front", "Sparkle: the window in front"])
+
+        center.updateSessionEnded()
+        XCTAssertEqual(world.asked.suffix(2), ["no badge", "Dock icon off"])
+    }
+
+    /// "Remind Me Later" closes the window, and a menu bar app whose window closed leaves
+    /// the front, a moment before Sparkle says that the session ended. That is not an
+    /// update that waits: no Dock icon flashes up.
+    func testAnAnsweredUpdateDoesNotGetTheDockIcon() {
+        let world = World()
+        let center = makeCenter(world, withUpdater: true)
+        world.isInFront = true
+        center.updateWillBeShown(version: "2.0.0", userInitiated: true)
+        world.isInFront = false
+        center.appResignedActive()
+        center.updateSessionEnded()
+        world.aMomentPasses()
+        XCTAssertEqual(world.dockShown, 0)
+        XCTAssertEqual(world.dockReleased, 1, "the session's end lets the icon go whether or not it was on")
     }
 
     /// A check that found nothing, or one that failed, also ends a session: the Dock icon
@@ -243,8 +319,15 @@ final class UpdateCenterTests: XCTestCase {
         reminder.willShow(version: "1.3", userInitiated: false)
         XCTAssertEqual(reminder.waitingVersion, "1.3", "the newest one found")
         XCTAssertTrue(reminder.showsBadge)
+        XCTAssertFalse(reminder.windowWasShown, "a scheduled find opens no window")
+        reminder.userLooked()
+        XCTAssertFalse(reminder.showsBadge)
+        XCTAssertTrue(reminder.windowWasShown)
         reminder.sessionEnded()
         XCTAssertEqual(reminder, UpdateReminder())
+        reminder.willShow(version: "1.4", userInitiated: true)
+        XCTAssertFalse(reminder.showsBadge)
+        XCTAssertTrue(reminder.windowWasShown, "an asked-for find opens its window at once")
     }
 
     // MARK: - The Dock icon
@@ -618,7 +701,7 @@ final class UpdateCenterTests: XCTestCase {
         XCTAssertFalse(center.holdsDockIcon)
         XCTAssertEqual(center.reminder, UpdateReminder())
         // While an update waits, its Dock icon stays through an alert (a failed download).
-        center.updateWillBeShown(version: "1.0.2", userInitiated: true)
+        center.updateWillBeShown(version: "1.0.2", userInitiated: false)
         center.alertWillOpen()
         XCTAssertTrue(center.holdsDockIcon)
         XCTAssertEqual(world.dockShown, 1)

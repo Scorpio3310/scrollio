@@ -31,6 +31,11 @@
 //    and "the check failed" come as the alert every Mac app with Sparkle shows ("You're
 //    up to date!", "Update Error!"), opened so that nothing in Scrollio waits for it
 //    (`UpdateWindows` says how);
+//  - when a check the user asked for finds a version, Sparkle's window opens where the
+//    user is, over a full-screen app too: Scrollio is a menu bar app at that moment, not
+//    yet in the Dock. The download and "Ready to Install" follow in the same place. The
+//    Dock icon comes when that update starts to wait: Scrollio left the front with it
+//    unanswered;
 //  - when a scheduled check finds a version, Sparkle shows its window: in front only
 //    right after Scrollio started or the user touched the updater (the first seconds),
 //    otherwise behind what the user is doing, or, while a settings window is open, the
@@ -74,22 +79,27 @@ struct UpdateStatus: Equatable {
 /// What Scrollio shows while a found update waits for the user's answer. Pure: the Dock
 /// and the menus read it.
 struct UpdateReminder: Equatable {
-    /// The version in Sparkle's window ("1.1.0"); nil: no update waits.
+    /// The version of the found update ("1.1.0"); nil: no update waits.
     private(set) var waitingVersion: String?
     /// The Dock icon carries a badge: the update came from a scheduled check and the user
     /// has not looked at it yet.
     private(set) var showsBadge = false
+    /// The update's window has been in front of the user: he asked for the check, or
+    /// looked at the window of a scheduled find.
+    private(set) var windowWasShown = false
 
-    /// Sparkle is about to show `version`. `userInitiated`: the user asked for the check,
-    /// so the window opens in front of them and needs no badge.
+    /// A check found `version`. `userInitiated`: the user asked for the check, so the
+    /// window opens in front of them and needs no badge.
     mutating func willShow(version: String, userInitiated: Bool) {
         waitingVersion = version
         showsBadge = !userInitiated
+        windowWasShown = userInitiated
     }
 
-    /// The user brought the window to the front or answered it.
+    /// The user has the window in front or answered it.
     mutating func userLooked() {
         showsBadge = false
+        windowWasShown = waitingVersion != nil
     }
 
     /// Installed, skipped, postponed or failed: Sparkle's window is gone.
@@ -269,6 +279,17 @@ final class UpdateCenter: NSObject {
     var releaseDockIcon: () -> Void = AppRuntime.isRunningXCTest ? {} : { Utils.releaseDockIcon() }
     var setDockBadge: (String?) -> Void = AppRuntime.isRunningXCTest ? { _ in } : { NSApp.dockTile.badgeLabel = $0 }
     var activateApp: () -> Void = AppRuntime.isRunningXCTest ? {} : { NSApp.activate(ignoringOtherApps: true) }
+    /// Whether Scrollio is the app in front.
+    var appIsActive: () -> Bool = AppRuntime.isRunningXCTest ? { false } : { NSApp.isActive }
+    /// Sparkle's updater as the center uses it (set by `start`; a test stands in for
+    /// Sparkle): whether it takes a request now, and the request: a check, or, while a
+    /// found update waits, its window in front of the user.
+    var updaterIsReady: () -> Bool = { false }
+    var askUpdater: () -> Void = {}
+    /// Runs `work` a moment later: `leaveDelay` after Scrollio left the front.
+    var afterAMoment: (@escaping () -> Void) -> Void = { work in
+        DispatchQueue.main.asyncAfter(deadline: .now() + UpdateCenter.leaveDelay, execute: work)
+    }
     var log: (String) -> Void = { AppSystemLog.note($0) }
     /// Whether an updater may start at all. Never under XCTest: a started updater asks
     /// the network, whatever feed a test hands in.
@@ -285,6 +306,12 @@ final class UpdateCenter: NSObject {
     private var standardWindows: SPUStandardUserDriver?
     private var windows: UpdateWindows?
     private var observations: [NSKeyValueObservation] = []
+    private var activityObservers: [NSObjectProtocol] = []
+
+    /// How long Scrollio must be behind another app before an update its user was shown
+    /// counts as waiting. Closing the update's window also takes a menu bar app out of
+    /// the front, a moment before Sparkle says that the session ended.
+    static let leaveDelay: TimeInterval = 0.5
 
     /// The Dock icon stays while an update waits, also when the last settings window closes.
     var holdsDockIcon: Bool { return reminder.waitingVersion != nil }
@@ -338,7 +365,10 @@ final class UpdateCenter: NSObject {
         self.windows = windows
         self.updater = updater
         availability = .available
+        updaterIsReady = { [weak updater] in updater?.canCheckForUpdates ?? false }
+        askUpdater = { [weak updater] in updater?.checkForUpdates() }
         observe(updater)
+        observeAppActivity()
         log("Updates: on, automatic checks \(updater.automaticallyChecksForUpdates ? "on" : "off"), "
             + "automatic install \(updater.automaticallyDownloadsUpdates ? "on" : "off"), feed at \(configuration.feedURL.host ?? "?")")
         statusDidChange()
@@ -355,6 +385,16 @@ final class UpdateCenter: NSObject {
             updater.observe(\.automaticallyChecksForUpdates) { _, _ in changed() },
             updater.observe(\.automaticallyDownloadsUpdates) { _, _ in changed() },
             updater.observe(\.allowsAutomaticUpdates) { _, _ in changed() },
+        ]
+    }
+
+    /// Scrollio leaving the front decides when a found update's Dock icon appears.
+    private func observeAppActivity() {
+        let notes = NotificationCenter.default
+        activityObservers = [
+            notes.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: nil) { [weak self] _ in
+                self?.appResignedActive()
+            },
         ]
     }
 
@@ -380,12 +420,16 @@ final class UpdateCenter: NSObject {
     }
 
     /// "Check for Updates…": asks now and says what it found, in Sparkle's windows. While
-    /// an update already waits, this brings its window to the front.
+    /// an update already waits ("Update to Scrollio 1.1.0…", "Update…" in General), this
+    /// puts its window in front of the user.
     func checkForUpdates() {
-        guard let updater, updater.canCheckForUpdates else { return }
+        guard updaterIsReady() else { return }
+        if reminder.waitingVersion != nil {
+            updateGotAttention()
+        }
         // A menu bar app is not in front when its menu was used.
         activateApp()
-        updater.checkForUpdates()
+        askUpdater()
     }
 
     /// The switch in General. Sparkle stores it (in the app's preferences) and plans the
@@ -404,19 +448,45 @@ final class UpdateCenter: NSObject {
 
     // MARK: - The reminder
 
-    /// Sparkle is about to show a found update.
+    /// A check found an update.
+    ///
+    /// The user asked for the check: Sparkle opens its window right after this call, and
+    /// the Dock icon must not be switched on before that. A menu bar app that becomes a
+    /// Dock app right before it opens a window gets that window on the desktop Space of
+    /// the display: asked for from a full-screen app, the window was not on screen at all
+    /// (measured on macOS 27.2; this was 1.0.1). As a menu bar app Scrollio opens it on
+    /// the Space in use, over the full-screen app, and the download and "Ready to
+    /// Install" follow there. The Dock icon comes when the update starts to wait
+    /// (`appResignedActive`).
+    ///
+    /// A scheduled check found it: the update waits from the start, and Scrollio goes
+    /// into the Dock with a badge, where ⌘Tab and a click find it.
     func updateWillBeShown(version: String, userInitiated: Bool) {
         reminder.willShow(version: version, userInitiated: userInitiated)
-        // In the Dock the window can be reached with ⌘Tab and by a click on the icon.
-        showDockIcon()
+        if !userInitiated {
+            showDockIcon()
+        }
         setDockBadge(reminder.showsBadge ? "1" : nil)
         statusDidChange()
     }
 
-    /// The user looked at Sparkle's window.
+    /// The user has the update's window in front.
     func updateGotAttention() {
         reminder.userLooked()
         setDockBadge(nil)
+    }
+
+    /// Scrollio left the front. An update whose window the user has seen and not answered
+    /// waits from now on, and an update that waits is in the Dock: there ⌘Tab and a click
+    /// on the icon find its window again. Decided a moment later (`leaveDelay`), and only
+    /// if Scrollio is still behind: a window that closes takes a menu bar app out of the
+    /// front too.
+    func appResignedActive() {
+        guard reminder.waitingVersion != nil, reminder.windowWasShown else { return }
+        afterAMoment { [weak self] in
+            guard let self, self.reminder.waitingVersion != nil, self.reminder.windowWasShown, !self.appIsActive() else { return }
+            self.showDockIcon()
+        }
     }
 
     /// Sparkle's window is gone.
@@ -436,11 +506,11 @@ final class UpdateCenter: NSObject {
     /// The check took a moment and Scrollio may be behind another app by now: it comes to
     /// the front, and the alert with it (above Scrollio's own windows it is by its level).
     ///
-    /// For an alert the Dock icon is not shown (for a found update it is). A menu bar app
-    /// that becomes a Dock app at that moment gets the alert on the desktop Space of the
-    /// display: someone who works in a full-screen app would not see it, and it would
-    /// have the keyboard all the same. As a menu bar app Scrollio opens the alert on the
-    /// Space in use, over a full-screen app too. (Measured on macOS 27.2.)
+    /// The Dock icon is not shown for an alert. A menu bar app that becomes a Dock app at
+    /// that moment gets the alert on the desktop Space of the display: someone who works
+    /// in a full-screen app would not see it, and it would have the keyboard all the
+    /// same. As a menu bar app Scrollio opens the alert on the Space in use, over a
+    /// full-screen app too. (Measured on macOS 27.2.)
     func alertWillOpen() {
         activateApp()
     }
