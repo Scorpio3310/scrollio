@@ -94,7 +94,8 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
         queue.async { [self] in
             let began = DispatchTime.now().uptimeNanoseconds
             var reading: ScrollEndReading
-            if let bar = bar, isTrusted() {
+            // (A bar is only ever kept from a look that found Scrollio trusted.)
+            if let bar = bar {
                 reading = Self.value(of: bar).map { ScrollEndReading(value: $0) } ?? .notSeen("the bar's value could not be read again")
             } else {
                 reading = .notSeen("no bar to read again")
