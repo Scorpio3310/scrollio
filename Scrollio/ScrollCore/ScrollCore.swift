@@ -655,6 +655,20 @@ class ScrollCore: ScrollActionPort {
         thumbWheelEngine.reset()
     }
 
+    /// The settings were replaced as a whole (a settings file was imported). Everything
+    /// else here reads the settings at each event; two things are remembered between
+    /// events and may no longer be true: the per-app entry of the app scrolled in last
+    /// (the list was replaced, that object is gone from it) and the hold keys that are
+    /// down (they may be other keys now, whose release would not be seen as theirs). Both
+    /// are forgotten, and steps of the thumb wheel not yet run are dropped; the next
+    /// wheel event looks the app up again. Not on the event path. Main thread.
+    func settingsWereReplaced() {
+        assertMainThread()
+        application = nil
+        releaseHeldScrollKeys()
+        thumbWheelEngine.reset()
+    }
+
     /// Forgets every scroll key held down (the keyboard and mouse keys of the Scrolling tab,
     /// and those that arrive over HID++). Without the taps their release is never seen: sleep,
     /// Pause or lost Accessibility access while such a key was down left fast scrolling on,
