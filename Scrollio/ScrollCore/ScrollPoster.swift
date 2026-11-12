@@ -169,6 +169,11 @@ class ScrollPoster {
     var trackpadStyleTarget: (CGEvent) -> ScrollUtils.TrackpadStyleTarget = {
         ScrollUtils.shared.trackpadStyleTarget(of: $0)
     }
+    /// Whether that kind is known already: false while the look into the app's bundle is on
+    /// its way (asked only for a one touch). Until it is, the end watch does not look.
+    var appKindIsKnown: (CGEvent) -> Bool = {
+        ScrollUtils.shared.trackpadStyleKindIsKnown(of: $0)
+    }
     /// Whether an event goes to Chrome, for the "ended" Chrome gets at a stop with the switch
     /// off (`stop`). Tests answer here: no running app is looked up.
     var isEventTargetingChrome: (CGEvent) -> Bool = {
@@ -559,6 +564,12 @@ class ScrollPoster {
         /// The frames go out without the wheel event's hardware record
         /// (`hardwareRecordComesOff`, with trackpad-style only).
         var takesRecordOff = false
+        /// One touch, in an app whose kind is not known yet (the look into its bundle is on
+        /// its way): the end watch does not look. An app that turns out to be Chromium's
+        /// would be asked for the role of the view that holds its web page, and Chromium
+        /// switches on the page's accessibility support at that question (`ScrollEndClimb`).
+        /// The frames are plain meanwhile, as before any look's answer.
+        var looksWait = false
         var deadZone: Double
     }
     private var config = ConfigSnapshot(simTrackpadEnabled: false, flick: false, deadZone: 1.0)
@@ -966,6 +977,12 @@ extension ScrollPoster {
                 moved = false
             }
             if watchSeen == nil || (watchSeen == false && !moved) { return }
+        }
+        if config.looksWait {
+            // Asked at the next wheel event, when the app's kind is known (and the app is
+            // still one that gets the one touch).
+            watchAsked = false
+            return
         }
         touchPlace = place
         askForALookLocked(now: now, isRetry: false)
@@ -2492,6 +2509,7 @@ private extension ScrollPoster {
             oneTouch: form.oneTouch,
             sideways: sideways,
             takesRecordOff: form.phases && hardwareRecordComesOff(),
+            looksWait: form.oneTouch && !(event.map { appKindIsKnown($0) } ?? true),
             deadZone: OPTIONS_SCROLL_DEFAULT.usableDeadZone(Options.shared.scroll.deadZone)
         )
     }

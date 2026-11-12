@@ -2582,6 +2582,48 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         }
     }
 
+    /// The end watch does not look into an app whose kind is not known yet: between an
+    /// app's first sight and the answer of the look into its bundle. Such an app counts as
+    /// touch-only, and the look used to be made at once: over a Chromium app's web page it
+    /// asks the page's container for its role, the question at which Chromium switches on
+    /// the page's accessibility support. The frames are plain until the kind is known.
+    func testEndWatch_doesNotLookBeforeTheAppsKindIsKnown() throws {
+        let utils = ScrollUtils()
+        var answers: [(Bool) -> Void] = []
+        utils.inspectBundle = { _, completion in answers.append(completion) }
+        let app = URL(fileURLWithPath: "/Applications/Editor.app")
+        XCTAssertTrue(utils.trackpadStyleKindIsKnown(bundleURL: app), "never seen: nothing is on its way")
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.editor", bundleURL: app), .touchOnly)
+        XCTAssertFalse(utils.trackpadStyleKindIsKnown(bundleURL: app), "its bundle is being looked into")
+        answers.first?(true)
+        XCTAssertTrue(utils.trackpadStyleKindIsKnown(bundleURL: app))
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.editor", bundleURL: app), .followsGlide)
+        // An app that is never looked into (outside the Applications folders) is known at once.
+        let elsewhere = URL(fileURLWithPath: "/Users/someone/Downloads/Tool.app")
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.tool", bundleURL: elsewhere), .touchOnly)
+        XCTAssertTrue(utils.trackpadStyleKindIsKnown(bundleURL: elsewhere))
+        XCTAssertEqual(answers.count, 1)
+
+        try withSettings(switchOn: true) {
+            let watch = PageWatch(offset: 30_000, range: 60_000)
+            let run = realRun(over: .touchOnly, watch: watch)
+            var known = false
+            run.poster.appKindIsKnown = { _ in known }
+            for index in 0..<4 { XCTAssertTrue(try run.wheel(at: Double(index) * 0.02, y: -211.68)) }
+            run.run(until: 0.1)
+            XCTAssertEqual(watch.looks + watch.reads, 0, "no look while the kind is not known")
+            XCTAssertFalse(run.frames.isEmpty)
+            XCTAssertFalse(run.frames.contains { $0.hasPhase }, "plain meanwhile")
+            known = true
+            XCTAssertTrue(try run.wheel(at: 0.1, y: -211.68))
+            XCTAssertEqual(watch.looks, 1, "asked with the first wheel event after the answer")
+            run.run(until: 0.2)
+            XCTAssertEqual(run.frames.first { $0.hasPhase }?.name, "began")
+            run.run(until: 4)
+            XCTAssertNil(brokenGesture(in: run.finish()))
+        }
+    }
+
     /// What breaks the rule in a stream of posted events, or nil: every "began" gets its
     /// "ended", a glide follows a touch or nothing does, each gesture is closed before the
     /// next one opens. Events without phases are left out.

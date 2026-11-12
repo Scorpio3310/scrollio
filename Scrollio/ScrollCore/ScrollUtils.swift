@@ -80,6 +80,20 @@ class ScrollUtils {
     private var trackpadStyleTargetByBundlePath: [String: TrackpadStyleTarget] = [:]
     /// The bundles of apps seen without a bundle id that were looked into already. Main thread.
     private var bundlesLookedIntoWithoutIdentifier: Set<String> = []
+    /// The bundles whose look is on its way: until its answer the app's kind is not known
+    /// (it counts as touch-only meanwhile). Main thread.
+    private var bundlesBeingLookedInto: Set<String> = []
+
+    /// Whether the kind of the app a wheel event goes to is known: false only between an
+    /// app's first sight and the answer of the look into its bundle. Main thread; no disk.
+    func trackpadStyleKindIsKnown(of event: CGEvent) -> Bool {
+        guard let bundleURL = getRunningApplication(from: event)?.bundleURL else { return true }
+        return trackpadStyleKindIsKnown(bundleURL: bundleURL)
+    }
+
+    func trackpadStyleKindIsKnown(bundleURL: URL) -> Bool {
+        return !bundlesBeingLookedInto.contains(bundleURL.path)
+    }
 
     /// Looks into an app's bundle off the main thread and calls back on the main queue with
     /// whether it scrolls by a glide's events (Chromium-based or Gecko-based). Tests put
@@ -140,7 +154,9 @@ class ScrollUtils {
         guard Self.mayLookIntoBundle(atPath: path) else {
             return .touchOnly
         }
+        bundlesBeingLookedInto.insert(path)
         inspectBundle(bundleURL) { [weak self] followsGlide in
+            self?.bundlesBeingLookedInto.remove(path)
             if followsGlide {
                 self?.trackpadStyleTargetByBundlePath[path] = .followsGlide
             }
