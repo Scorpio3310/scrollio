@@ -412,7 +412,7 @@ final class GesturePreviewViewTests: XCTestCase {
     }
 
     /// The accent colour as a picture rendered in that appearance draws it: the app's
-    /// accent has a lighter shade in dark (#BF62D9) than in light (#9B44B3).
+    /// accent has a lighter shade in dark (#7F62D9) than in light (#5F44B3).
     private func accent(dark: Bool) throws -> NSColor {
         var resolved: NSColor?
         try XCTUnwrap(NSAppearance(named: dark ? .darkAqua : .aqua)).performAsCurrentDrawingAppearance {
