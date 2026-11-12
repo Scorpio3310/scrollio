@@ -174,18 +174,26 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
         show(Self.initialPaneIdentifier(remembered: remembered, panes: panes), remember: false)
     }
 
-    /// The view under the sidebar on macOS 26 and later; nil on older systems.
+    /// The material under the split view on macOS 26 and later; nil on older systems.
     private(set) var sidebarBackdrop: NSVisualEffectView?
 
     static let sidebarBackdropIdentifier = NSUserInterfaceItemIdentifier("preferences-sidebar-backdrop")
 
-    /// Puts the panes' own background material under the sidebar's column.
+    /// Puts the panes' own background material under the whole split view.
     ///
     /// Since macOS 26 the sidebar is a pane of glass that floats above whatever lies under
     /// it, and under it lay only the window's plain background: the sidebar came out
     /// almost white next to the translucent grey of the pane beside it. With the same
     /// material under it (and under the margin around it, and the traffic lights) both
     /// halves of the window are one surface again.
+    ///
+    /// The backdrop fills the window, it is not measured to the sidebar: how wide the
+    /// sidebar's column is, is the system's to say. macOS 27 makes it as wide as the
+    /// sidebar item (200 pt); macOS 26 sets the glass 8 pt in from the window's edge and
+    /// starts the pane at 208 pt. A backdrop of 200 pt left those 8 pt to the window's
+    /// own background: a line from the top of the window to its bottom (1.0.1). Behind a
+    /// pane the backdrop lies under the pane's own background, the same material: two of
+    /// them look like one (a pane already sits on its column's).
     ///
     /// The backdrop is a sibling of the split view, under it: on these systems the split
     /// view controller's view is a plain container that holds the split view. Where the
@@ -201,9 +209,9 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
         view.addSubview(backdrop, positioned: .below, relativeTo: splitView)
         NSLayoutConstraint.activate([
             backdrop.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            backdrop.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             backdrop.topAnchor.constraint(equalTo: view.topAnchor),
             backdrop.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            backdrop.widthAnchor.constraint(equalToConstant: PreferencesWindowLayout.sidebarWidth),
         ])
         sidebarBackdrop = backdrop
     }

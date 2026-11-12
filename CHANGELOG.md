@@ -8,6 +8,10 @@ it for the people who use the app, and give the version its part before you tag 
 `## Unreleased` collects what the next version brings; it becomes that version's part
 (the heading gets the version) before the tag.
 
+## Unreleased
+
+- On macOS 26 the line between the sidebar and the settings in the Settings window is gone.
+
 ## 1.0.1
 
 - **Scrollio updates itself.** If you allow it, Scrollio asks GitHub once a day whether
