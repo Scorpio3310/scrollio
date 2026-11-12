@@ -165,9 +165,47 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
         contentItem.maximumThickness = PreferencesWindowLayout.contentWidth
         addSplitViewItem(contentItem)
 
+        if #available(macOS 26.0, *) {
+            installSidebarBackdrop()
+        }
+
         sidebar.delegate = self
         let remembered = uiStateDefaults?.string(forKey: Self.selectedPaneDefaultsKey)
         show(Self.initialPaneIdentifier(remembered: remembered, panes: panes), remember: false)
+    }
+
+    /// The view under the sidebar on macOS 26 and later; nil on older systems.
+    private(set) var sidebarBackdrop: NSVisualEffectView?
+
+    static let sidebarBackdropIdentifier = NSUserInterfaceItemIdentifier("preferences-sidebar-backdrop")
+
+    /// Puts the panes' own background material under the sidebar's column.
+    ///
+    /// Since macOS 26 the sidebar is a pane of glass that floats above whatever lies under
+    /// it, and under it lay only the window's plain background: the sidebar came out
+    /// almost white next to the translucent grey of the pane beside it. With the same
+    /// material under it (and under the margin around it, and the traffic lights) both
+    /// halves of the window are one surface again.
+    ///
+    /// The backdrop is a sibling of the split view, under it: on these systems the split
+    /// view controller's view is a plain container that holds the split view. Where the
+    /// split view is the root view itself there is nothing to put under it, and nothing
+    /// is added. The split view's own layout, and with it the window's width, is untouched.
+    private func installSidebarBackdrop() {
+        guard sidebarBackdrop == nil, view !== splitView, splitView.superview === view else { return }
+        let backdrop = PreferencesForm.makeBackground(plainContent: false)
+        backdrop.identifier = Self.sidebarBackdropIdentifier
+        backdrop.translatesAutoresizingMaskIntoConstraints = false
+        // Decoration only: nothing in it to read or to reach.
+        backdrop.setAccessibilityElement(false)
+        view.addSubview(backdrop, positioned: .below, relativeTo: splitView)
+        NSLayoutConstraint.activate([
+            backdrop.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            backdrop.topAnchor.constraint(equalTo: view.topAnchor),
+            backdrop.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            backdrop.widthAnchor.constraint(equalToConstant: PreferencesWindowLayout.sidebarWidth),
+        ])
+        sidebarBackdrop = backdrop
     }
 
     /// Where a new window opens: the pane that was open last, the pane it was merged into,
