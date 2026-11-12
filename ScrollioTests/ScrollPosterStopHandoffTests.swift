@@ -1004,6 +1004,9 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         for _ in 0..<240 {
             now += 1.0 / 60.0
             if let request = poster.displayLinkFrameForTests(frameInterval: 1.0 / 60.0, now: now) {
+                // The frames come here without the 16 ms between them: let the post queue
+                // catch up before the stop (it drops what still waits from before it).
+                context.waitForPostQueueForTests()
                 XCTAssertTrue(poster.performRequestedStop(request), file: file, line: line)
                 break
             }
