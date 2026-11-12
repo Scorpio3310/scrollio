@@ -1,0 +1,18 @@
+// Local.xcconfig.example
+//
+// The Xcode project signs for its author's team. To build Scrollio with your own team,
+// copy this file to Local.xcconfig (git ignores that name) and put your Team ID below.
+// No tracked file changes, so the build is not stamped as modified.
+//
+//   scripts/install.sh                          reads Local.xcconfig by itself
+//   xcodebuild … -xcconfig Local.xcconfig …     for a plain build or the tests
+//
+// The Team ID is ten characters. A paid account shows it at developer.apple.com/account
+// under Membership details. With a free Apple account, add the account in Xcode (Settings ›
+// Accounts) and let it create an "Apple Development" certificate; the Team ID is that
+// certificate's "Organisational Unit" in Keychain Access.
+//
+// Keep signing on: macOS ties the Accessibility permission to the code signature (README,
+// "Build from source"). A setting here overrides the project's for every target.
+
+DEVELOPMENT_TEAM = XXXXXXXXXX

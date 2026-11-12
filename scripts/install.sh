@@ -14,6 +14,13 @@
 #
 # The build is stamped with the commit it was made from (CFBundleVersion = number of
 # commits, ScrollioBuildCommit, ScrollioBuildDate), shown under General in Settings.
+#
+# The project signs for its author's team. To build with your own, do not edit the project:
+# copy Local.xcconfig.example to Local.xcconfig (ignored by git) and put your team there.
+# This script passes that file to the build when it exists.
+#
+# Environment:
+#   SCROLLIO_DERIVED_DATA       where it builds (default: build/install)
 
 set -euo pipefail
 
@@ -51,10 +58,22 @@ COUNT="$(git rev-list --count HEAD)"
 DATE="$(date +%Y-%m-%d)"
 
 # --- Build ---------------------------------------------------------------------------
+# Local.xcconfig: this Mac's own build settings (the signing team of someone who is not the
+# author). Its settings override the project's. Without the file nothing is passed.
+LOCAL_SETTINGS=()
+if [ -f "$REPO/Local.xcconfig" ]; then
+    LOCAL_SETTINGS=(-xcconfig "$REPO/Local.xcconfig")
+    echo "install: using the build settings in Local.xcconfig"
+fi
+
 mkdir -p "$DERIVED"
 echo "install: building ${APP_NAME} ${COMMIT} (build ${COUNT})…"
-if ! xcodebuild -scheme Debug -configuration Release -destination 'platform=macOS' \
+# The project is named: a second .xcodeproj in the folder (a leftover of an older name)
+# would otherwise stop xcodebuild.
+if ! xcodebuild -project "${APP_NAME}.xcodeproj" -scheme Debug -configuration Release \
+        -destination 'platform=macOS' \
         -derivedDataPath "$DERIVED" \
+        ${LOCAL_SETTINGS[@]+"${LOCAL_SETTINGS[@]}"} \
         CURRENT_PROJECT_VERSION="$COUNT" \
         SCROLLIO_BUILD_COMMIT="$COMMIT" \
         SCROLLIO_BUILD_DATE="$DATE" \
@@ -65,6 +84,9 @@ fi
 [ -d "$BUILT" ] || fail "no app at $BUILT"
 
 # --- Checks --------------------------------------------------------------------------
+# No check here pipes a tool into "grep -q": grep leaves at the first match, the tool is
+# then ended by the closed pipe, and under pipefail the test reads as "no match". The
+# tool's output goes to a variable or a file first.
 BINARY="$BUILT/Contents/MacOS/${APP_NAME}"
 
 codesign --verify --deep --strict "$BUILT" 2>/dev/null \
@@ -88,11 +110,15 @@ if [ -d "$DEST" ]; then
     fi
 fi
 
-if codesign -d --entitlements - "$BUILT" 2>/dev/null | grep -q "get-task-allow"; then
-    fail "the build carries get-task-allow (a debugger could attach): is CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO still set for Release?"
-fi
+ENTITLEMENTS="$(codesign -d --entitlements - "$BUILT" 2>/dev/null || true)"
+case "$ENTITLEMENTS" in
+    *get-task-allow*)
+        fail "the build carries get-task-allow (a debugger could attach): is CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO still set for Release?" ;;
+esac
 
-if otool -l "$BINARY" | grep -q -e "__llvm_prf" -e "__LLVM_COV"; then
+LOAD_COMMANDS="$DERIVED/load-commands.txt"
+otool -l "$BINARY" > "$LOAD_COMMANDS" || fail "otool cannot read the binary"
+if grep -q -e "__llvm_prf" -e "__LLVM_COV" "$LOAD_COMMANDS"; then
     fail "the build is instrumented for code coverage (slower scroll path): are the test plans' codeCoverage options still false?"
 fi
 
