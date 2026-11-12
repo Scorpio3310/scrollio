@@ -314,7 +314,7 @@ class ScrollPoster {
 // MARK: - 滚动数据更新控制
 extension ScrollPoster {
     /// What "Trackpad-style events" come to for an app of the given kind (nil: not known, as
-    /// touch-only): whether the frames carry phases at all, as a flick or as one long touch, and
+    /// touch-only): whether the frames carry phases at all, as a flick or as one touch, and
     /// whether the switch is on but the app gets none.
     /// `oldLongTouch`: the evaluation switch (`usesOldLongTouch`). `oneTouch` is the form of
     /// every app that gets phases and no flick, unless that switch asks for the old one.
@@ -540,7 +540,7 @@ extension ScrollPoster {
             return
         }
         if config.simTrackpadEnabled && !scrollIsOneTouch {
-            // (The forms the machine posts. As one long touch the glide's "momentum ended"
+            // (The forms the machine posts. As the old long touch the glide's "momentum ended"
             // went out here although its "momentum began" had not: no frame of the glide had
             // been posted.)
             phases.dropWaitingMomentumBegan()
@@ -975,7 +975,8 @@ extension ScrollPoster {
         // A frame that closes the gesture can also wait from before this stop: the one
         // touch's "ended" is queued by the display link's thread (it is kept, see `enqueue`).
         if closingFrameQueued || (enableSimTrackpad && dispatchContext.hasWaitingGestureFrames) {
-            // The closing frames ("ended", "momentum ended") are out before this returns.
+            // The closing frames ("ended", "momentum ended") are out before this returns,
+            // unless a post takes longer than the wait's deadline (50 ms).
             // They are posted from the post queue, and what ended the scroll is often an
             // event on its own way to the same app: a finger that begins to scroll on the
             // trackpad (the tap's callback lets that "began" through right after this), a
@@ -1290,9 +1291,9 @@ private extension ScrollPoster {
     /// part reaches the app as momentum. A touch that leaves no glide (what remains is under the
     /// dead zone) lasts until its last frame has gone out: a frame posted after "ended" and
     /// before "momentum began" would carry "ended" again, with a distance. That holds for both
-    /// forms of trackpad-style events: as one long touch, too, the touch ends when the wheel
-    /// has been still for `manualContinuationThreshold` and either a glide follows or the
-    /// last frame has gone out.
+    /// forms the machine posts: as the old long touch (the evaluation switch), too, the touch
+    /// ends when the wheel has been still for `manualContinuationThreshold` and either a
+    /// glide follows or the last frame has gone out.
     /// As one touch to the end nothing of this reaches the app either: the machine runs as
     /// with the switch off, and the app's touch ends by a rule of its own
     /// (`oneTouchHasRunOutLocked`). Caller holds stateLock.

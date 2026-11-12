@@ -708,9 +708,9 @@ final class ScrollClassicPathTests: XCTestCase {
     /// And a touch that leaves no glide ends after its last frame (frames after "ended" carried
     /// "ended" again, with a distance); a glide of which no frame went out sends nothing at all.
     ///
-    /// For both forms: the flick, and the one long touch every app that is not Chromium-based
-    /// gets. The long touch used to be left out here, and broke the rule in about one run of
-    /// six: a frame with a distance that carried "ended" after the "ended" (short Durations),
+    /// For every form: the flick, the one touch every app that is not Chromium-based gets,
+    /// and the old long touch. The long touch used to be left out here, and broke the rule in
+    /// about one run of six: a frame with a distance that carried "ended" after the "ended" (short Durations),
     /// "momentum changed" without a "momentum began", a "momentum ended" for a glide whose
     /// "began" never went out.
     func testTrackpadStyle_phasesAlwaysMakeWholeGestures() {

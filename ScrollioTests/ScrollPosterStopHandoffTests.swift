@@ -836,7 +836,8 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         poster.stop()
     }
 
-    /// B2: `stop()` returns only after its closing frames went out. A finger begins to
+    /// B2: `stop()` waits until its closing frames went out (for its deadline at most; here
+    /// the deadline is out of the way). A finger begins to
     /// scroll on the trackpad while the wheel's touch is open: the tap's callback ends the
     /// wheel's scroll and then lets the trackpad's "began" through. The closing "ended" used
     /// to be posted from another queue some time after `stop()` had returned, so nothing
