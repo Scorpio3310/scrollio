@@ -1,6 +1,12 @@
 # Scrollio
 
-Smooth, trackpad-like scrolling for any mouse.
+![Licence: CC BY-NC 4.0](https://img.shields.io/badge/licence-CC%20BY--NC%204.0-lightgrey.svg)
+![macOS 14 or later](https://img.shields.io/badge/macOS-14%2B-blue.svg)
+![Swift 5](https://img.shields.io/badge/Swift-5-orange.svg)
+
+<img src="assets/readme/app-icon.png" alt="Scrollio's icon: a white mouse on a purple tile" width="128" height="128">
+
+**Smooth, trackpad-like scrolling for any mouse.**
 
 Scrollio is a menu bar app for macOS. It makes a mouse's scroll wheel glide like a
 trackpad, lets mouse buttons and keys run actions, adds mouse gestures and settings for
@@ -8,12 +14,71 @@ the sideways (thumb) wheel, and can manage the settings of Logitech MX mice.
 
 It is based on [Mos](https://github.com/Caldis/Mos) by Caldis, may be used only for
 non-commercial purposes, and is not affiliated with Logitech. See
-[Licence and credits](#licence-and-credits).
+[Licence and credits](#-licence-and-credits).
 
 There is no ready-made download yet. To use Scrollio now, build it from source: see
-[Build and install from source](#build-and-install-from-source).
+[Build from source](#-build-from-source).
 
-## What it does
+---
+
+## ✨ Features
+
+- ✅ **Smooth scrolling** – each click of the wheel glides out like a trackpad, in five feels from Direct to Float.
+- ✅ **Per-app settings** – an app follows the Scrolling settings or keeps its own, or is left to macOS.
+- ✅ **Buttons and keys** – give a mouse button, or a key with modifiers, a shortcut, a system action or an app to open.
+- ✅ **Mouse gestures** – hold a button and move the mouse to switch desktops, open Mission Control and more.
+- ✅ **Thumb wheel actions** – the sideways wheel can scroll, zoom, switch tabs or desktops, go back and forward, or set the volume.
+- ✅ **Logitech MX settings** – battery, pointer speed, wheel mode and haptics of a Logitech MX mouse.
+- ✅ **Menu bar item** – battery, Pause, and smoothing on or off for the app in front; the icon can be hidden.
+- ✅ **No network** – no analytics, no crash reporter, no updater: nothing leaves your Mac.
+
+---
+
+## 📸 Screenshots
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/scrolling-dark.png">
+  <img src="assets/readme/scrolling-light.png" width="520" alt="The Scrolling pane: smooth scrolling on, the Smooth feel chosen, the speed slider and Reverse wheel direction">
+</picture>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/readme/buttons-dark.png">
+        <img src="assets/readme/buttons-light.png" width="400" alt="The Buttons pane with an MX Master 4: a drawing of the mouse with the gesture button lit, and the mouse's buttons in the order they sit, each with its action">
+      </picture>
+      <p><b>Buttons</b>: an MX Master 4's buttons in the order they sit on the mouse.</p>
+    </td>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/readme/mouse-dark.png">
+        <img src="assets/readme/mouse-light.png" width="400" alt="The Mouse pane with an MX Master 4: battery, tracking speed, Let Scrollio manage this mouse, pointer speed in DPI and the scroll wheel's mode">
+      </picture>
+      <p><b>Mouse</b>: the settings of a Logitech MX mouse.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/readme/gestures-dark.png">
+        <img src="assets/readme/gestures-light.png" width="400" alt="The Gestures pane: a moving preview, the gesture button, the mode, and an action for each direction">
+      </picture>
+      <p><b>Gestures</b>: an action for each direction.</p>
+    </td>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/readme/welcome-guide-dark.png">
+        <img src="assets/readme/welcome-guide-light.png" width="400" alt="The Welcome Guide: choose how scrolling feels, from Direct to Float">
+      </picture>
+      <p><b>Welcome Guide</b>: choose how scrolling feels.</p>
+    </td>
+  </tr>
+</table>
+
+---
+
+## 🔍 In detail
 
 Settings are in one window with a sidebar: Scrolling, Buttons, Gestures, Mouse, Apps and
 General. On the first launch a Welcome Guide leads through Accessibility access, the feel
@@ -21,8 +86,7 @@ of scrolling and the menu bar icon.
 
 ### Smooth scrolling
 
-- Each click of the wheel becomes an even movement that glides out, as on a trackpad.
-  Five feels (Direct, Quick, Smooth, Glide and Float) set how long the page glides on;
+- Five feels (Direct, Quick, Smooth, Glide and Float) set how long the page glides on;
   Speed sets how far one click moves it. A moving preview in the Scrolling pane shows the
   feel.
 - Reverse wheel direction (the wheel only, not the trackpad).
@@ -32,19 +96,19 @@ of scrolling and the menu bar icon.
 - While you hold a key: "Scroll faster" (5 × the distance), "Scroll sideways" and "Pause
   smoothing" (exact steps, for example to zoom with ⌘). A mouse button can hold them
   too.
-- Per-app settings (the Apps pane): an app uses the Scrolling settings or keeps its own.
-  "Limit scrolling to these apps" leaves every other app to macOS; buttons and gestures
-  still work everywhere. "Smooth Scrolling in …" in the menu bar menu turns smoothing on
-  or off for the app in front.
-- Trackpads and the Magic Mouse are left alone.
-- With several displays, the motion is timed to the display under the pointer.
+- Per app (the Apps pane): an app uses the Scrolling settings or keeps its own. "Limit
+  scrolling to these apps" leaves every other app to macOS; buttons and gestures still
+  work everywhere. "Smooth Scrolling in …" in the menu bar menu turns smoothing on or off
+  for the app in front.
+- Trackpads and the Magic Mouse are left alone. With several displays, the motion is
+  timed to the display under the pointer.
 
 ### Buttons and keys
 
-- Give a mouse button, or a key with modifiers, an action: a system shortcut (Mission
-  Control and Spaces, apps and windows, editing, Finder, screenshots, navigation and
-  more), a keyboard shortcut you record, a modifier key, another mouse button, one of the
-  scroll keys, Gesture Navigation, or opening an app, a file or a script.
+- The actions: a system shortcut (Mission Control and Spaces, apps and windows, editing,
+  Finder, screenshots, navigation and more), a keyboard shortcut you record, a modifier
+  key, another mouse button, one of the scroll keys, Gesture Navigation, or opening an
+  app, a file or a script.
 - A drawing of the mouse lights the button each row is about. With an MX Master, its
   buttons are listed in the order they sit on the mouse, and any other buttons and keys
   under them:
@@ -127,14 +191,18 @@ those controls.
   are back.
 - At launch it quits a running Mos and, on its first launch, copies Mos's settings.
 
-## Requirements
+---
+
+## 💻 Requirements
 
 - macOS 14 or later.
 - Any mouse for scrolling, buttons and gestures. The Mouse pane's settings, the button
   list in mouse order and the mouse drawings are for Logitech MX mice (the drawings: MX
   Master 4, MX Master 3 and 3S, and a generic mouse).
 
-## Permissions
+---
+
+## 🔐 Permissions
 
 Scrollio asks for one permission: **Accessibility** (System Settings › Privacy &
 Security › Accessibility). It needs it to receive the mouse's and the keyboard's events,
@@ -145,18 +213,22 @@ Welcome Guide leads you to the switch.
 "Open at login" registers Scrollio as a login item; macOS may ask you to approve it in
 System Settings under Login Items.
 
-## Privacy
+---
+
+## 🔒 Privacy
 
 - Scrollio makes no network connections: there is no networking code in it, no
   analytics, no crash reporter and no updater. The "Open" button next to "Scrollio on
   GitHub" (General) hands the page to your web browser.
 - Nothing leaves your Mac. The settings are kept in Scrollio's preferences, and its log
-  goes to the macOS system log on the Mac (see [Diagnostics](#diagnostics)).
+  goes to the macOS system log on the Mac (see [Diagnostics](#-diagnostics)).
 - Besides its own settings, Scrollio reads the macOS keyboard shortcuts for Spaces (to
   run them), reads Mos's settings once if Mos was installed, and changes the macOS
   pointer settings only as described under [Logitech MX mice](#logitech-mx-mice).
 
-## Build and install from source
+---
+
+## 🔨 Build from source
 
 You need a Mac with macOS 14 or later, Xcode 26 or later (the app icon is an Icon
 Composer file) and an Apple Development signing identity. The project is set to the
@@ -194,7 +266,9 @@ The debug build is a separate app, `Scrollio Debug.app` (`com.nikklemenc.Scrolli
 The project, its targets and its Swift modules keep the name Mos (`Mos.xcodeproj`, `Mos`,
 `Mos_Debug`, `MosTests`).
 
-## Diagnostics
+---
+
+## 🩺 Diagnostics
 
 Scrollio writes what it did to the macOS system log, subsystem `com.nikklemenc.Scrollio`
 (`com.nikklemenc.Scrollio.debug` for the debug build), in three categories. Nothing is
@@ -233,7 +307,9 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   Started (the Mac woke up): the event taps and the Logitech sessions run
   ```
 
-## Licence and credits
+---
+
+## 📄 Licence and credits
 
 Scrollio is based on **[Mos](https://github.com/Caldis/Mos)** by **Caldis** and its
 contributors. Mos is licensed under the
@@ -247,7 +323,9 @@ scroll settings; the "Follow the hand" gesture mode; the thumb wheel's actions; 
 for Logitech MX mice (pointer speed, wheel, haptics, press force) and gestures tracked by
 the mouse; the Mouse and Gestures panes, a battery in the menu bar, a main menu and a new
 Welcome Guide; English as the only language; no Sparkle updater, website or release
-tooling; macOS 14 as the minimum.
+tooling; macOS 14 as the minimum. The history of Mos up to the fork is in its own
+repository, in its [changelog](https://github.com/Caldis/Mos/blob/master/CHANGELOG.md)
+and its git history.
 
 **Non-commercial use only.** Neither Scrollio nor anything derived from it may be used
 for commercial purposes.
@@ -266,7 +344,9 @@ warranty.
 - [Smoothscroll for websites](https://github.com/galambalazs/smoothscroll-for-websites),
   credited by Mos for its smoothing approach.
 
-## For developers
+---
+
+## 🧑‍💻 For developers
 
 ```bash
 pgrep -fl "Scrollio Debug.app"     # must print nothing: quit a running debug app first
@@ -292,9 +372,6 @@ LOGI_REAL_DEVICE=1 xcodebuild -scheme Debug -testPlan DebugWithDevice -destinati
 | `MosTests/` | Unit tests (XCTest) |
 | `Mos.xcodeproj/` | The Xcode project, schemes `Debug` and `Profile` |
 | `scripts/` | `install.sh`, and in `qa/` the Logitech boundary lint (also run by a test) |
-| `tools/` | Hand-run HID++ probes and a small regression harness |
-| `docs/` | Design notes and plans, mostly from the original project |
-| `assets/` | Images and source artwork |
-| `AGENTS.md` | Rules for coding agents working in this repository |
-| `LOCALIZATION.md` | How the string catalogs work |
-| `CHANGELOG.md` | History of the original project up to the fork |
+| `tools/` | Hand-run HID++ probes and a small regression harness (see its README before running a probe) |
+| `assets/` | The pictures of this README |
+| `AGENTS.md` | Rules for coding agents and contributors: build, tests, signing, module boundaries, strings |

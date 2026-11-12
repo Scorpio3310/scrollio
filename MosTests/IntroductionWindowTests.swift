@@ -2451,6 +2451,21 @@ final class WelcomeGuideRenderTests: XCTestCase {
         }
     }
 
+    /// The README's picture (`readme-welcome-guide-<appearance>.png`, copied by hand to
+    /// `assets/readme/`): the feel step with an MX Master 4, Smooth chosen. Rendered with
+    /// the README's other pictures (`PreferencesWindowRenderTests.testRenderReadmePictures`).
+    func testRenderReadmePicture() throws {
+        try render("readme-welcome-guide", configure: {
+            $0.accessGranted = true
+            $0.run = .running
+            $0.mouse = .mxMaster4
+        }) { controller, _ in
+            self.toStep(.feel, in: controller)
+            controller.feelStep.choose(.smooth)
+            controller.feelStep.artwork.show(time: 0.75)
+        }
+    }
+
     /// Draws `view` at 2x over the window colour (the materials draw nothing off screen).
     private func write(
         _ view: NSView, rect: NSRect? = nil, appearance: NSAppearance, focused: NSView? = nil, to url: URL
@@ -2493,8 +2508,11 @@ final class WelcomeGuideRenderTests: XCTestCase {
     }
 }
 
-/// Counts as the key and main window, so the default button draws in the accent colour.
+/// Counts as the key and main window of the active app, so the default button, the switches
+/// and the window's buttons draw as on screen (`hasKeyAppearance`: see `RenderWindow` in
+/// PreferencesWindowRenderTests).
 private final class RenderGuideWindow: NSWindow {
     override var isKeyWindow: Bool { return true }
     override var isMainWindow: Bool { return true }
+    @objc(hasKeyAppearance) func renderHasKeyAppearance() -> Bool { return true }
 }

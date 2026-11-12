@@ -11,9 +11,11 @@
 //  is never shown.
 //
 //  Off screen the behind-window materials draw nothing, so the window colour stands in
-//  for them; vibrant text would not be blended by the window server (the panes draw
-//  without vibrancy, see PreferencesBackgroundView); and the app is not active, so the
-//  controls show their inactive grey instead of the accent colour.
+//  for them, and vibrant text would not be blended by the window server (the panes draw
+//  without vibrancy, see PreferencesBackgroundView; the sidebar, a glass material with
+//  vibrant names, draws almost nothing, so it is never written). The app is not active,
+//  so `RenderWindow` answers AppKit's `hasKeyAppearance`: the controls of a key window draw
+//  in the accent colour, as in the front window of the active app.
 //
 //  The accent colour of the app's own drawings (the lit parts of the mouse, the previews,
 //  the number on a lit button, a key that is already bound) is the app's purple whatever
@@ -665,9 +667,10 @@ final class PreferencesWindowRenderTests: XCTestCase {
         scrollKeys: [ScrollHotkey] = [],
         key: Bool = true,
         windowHeight: CGFloat? = nil,
+        titled: TitledCut? = nil,
         then change: @escaping (PreferencesButtonsViewController) -> Void = { _ in }
     ) throws {
-        try renderPane(PANEL_IDENTIFIER.buttons, name: name, key: key, windowHeight: windowHeight, prepare: { preferences in
+        try renderPane(PANEL_IDENTIFIER.buttons, name: name, key: key, windowHeight: windowHeight, titled: titled, prepare: { preferences in
             guard let buttons = preferences.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController else { return }
             buttons.deviceSource = source
             buttons.scrollHoldKeys = { scrollKeys }
@@ -1000,6 +1003,69 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try png.write(to: directory.appendingPathComponent("status-item-sheet.png"))
     }
 
+    // MARK: - README
+
+    /// The pictures of the README (`readme-<pane>-<appearance>.png`, copied by hand to
+    /// `assets/readme/`): Scrolling at its defaults; Buttons with an MX Master 4, a few
+    /// buttons and keys set up and the gesture button's row selected; Gestures with an MX
+    /// Master 4; the Mouse pane of an MX Master 4 that Scrollio manages, down to its scroll
+    /// wheel. Each is the window's column under the pane's title, cut below a box of the pane.
+    /// Numbers follow the region of the test run: for "6.3×" rather than "6,3×", give the
+    /// test plan's configuration the options `"language": "en", "region": "US"` while you
+    /// render (xcodebuild's `-testRegion` does not reach a scheme with test plans), then:
+    /// `TEST_RUNNER_SCROLLIO_SHOTS_DIR=<folder> xcodebuild … test -only-testing:MosTests/PreferencesWindowRenderTests/testRenderReadmePictures -only-testing:MosTests/WelcomeGuideRenderTests/testRenderReadmePicture`.
+    /// The Welcome Guide's picture: `WelcomeGuideRenderTests.testRenderReadmePicture`.
+    func testRenderReadmePictures() throws {
+        Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+        Options.shared.thumbWheel = .default
+        try renderPane(PANEL_IDENTIFIER.scrolling, name: "readme-scrolling", titled: TitledCut(boxes: 1), prepare: { preferences in
+            (preferences.controller(for: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)?
+                .uiStateDefaults = self.uiDefaults(advanced: false)
+        })
+
+        let mxMaster4 = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { "MX Master 4" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+        let controlOption = UInt(CGEventFlags.maskControl.rawValue | CGEventFlags.maskAlternate.rawValue)
+        Options.shared.buttons.binding = [
+            binding(1000, SystemShortcut.mouseGestureNavigation.identifier),
+            binding(3, SystemShortcut.missionControl.identifier),
+            binding(2000 + 0x01A0, SystemShortcut.copy.identifier),
+            ButtonBinding(
+                triggerEvent: RecordedEvent(type: .keyboard, code: 40, modifiers: controlOption, deviceFilter: nil),
+                systemShortcutName: SystemShortcut.screenshotSelection.identifier
+            ),
+            binding(7, SystemShortcut.paste.identifier),
+        ]
+        try renderButtons(name: "readme-buttons", source: mxMaster4, titled: TitledCut(boxes: 1)) { buttons in
+            buttons.list.select(self.rowID(buttons, binding: 0))
+        }
+
+        var gesture = MouseGestureSettings.default
+        gesture.mode = .discrete
+        gesture.deviceTracking = true
+        Options.shared.gesture = gesture
+        Options.shared.logiMouse = LogiMouseSettings()
+        try renderPane(GesturesPreferencesViewController.tabIdentifier, name: "readme-gestures", titled: TitledCut(boxes: 2), replacement: {
+            let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+            gestures.deviceSource = MouseGestureDeviceSource(support: { MouseGestureDeviceSupport(deviceTracking: true, haptics: true) }, refresh: {})
+            gestures.bindingSummary = {
+                MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: true, buttonTitles: ["Gesture button"])
+            }
+            return gestures
+        }, afterLoad: { controller in
+            guard let gestures = controller as? GesturesPreferencesViewController else { return }
+            gestures.previewView.prefersReducedMotion = { true }
+            gestures.previewView.reduceMotionDidChange()
+            gestures.previewView.mouseSource = { .mxMaster4 }
+            gestures.previewView.reloadMouse()
+        })
+
+        // The values are the mouse's own: nothing set here that it does not have.
+        Options.shared.logiMouse = .default
+        Options.shared.logiWheel = LogiWheelSettings(managedByMos: true)
+        let master4 = MouseDeviceFixtures.mxMaster4(dpi: 1600, hapticsOn: true, strength: 60, pressForce: 5167)
+        try renderMouse([master4], name: "readme-mouse", titled: TitledCut(boxes: 4))
+    }
+
     // MARK: - Kit
 
     /// The kit's list in a pane: four rows (symbol and app icons, explanations, a pull-down,
@@ -1273,8 +1339,10 @@ final class PreferencesWindowRenderTests: XCTestCase {
         return ButtonBinding(triggerEvent: trigger, systemShortcutName: action, isEnabled: !action.isEmpty)
     }
 
-    private func renderMouse(_ devices: [LogiMouseDeviceState], name: String, windowHeight: CGFloat? = nil, lit: MousePart? = nil) throws {
-        try renderPane(MousePreferencesViewController.tabIdentifier, name: name, windowHeight: windowHeight, prepare: { preferences in
+    private func renderMouse(
+        _ devices: [LogiMouseDeviceState], name: String, windowHeight: CGFloat? = nil, lit: MousePart? = nil, titled: TitledCut? = nil
+    ) throws {
+        try renderPane(MousePreferencesViewController.tabIdentifier, name: name, windowHeight: windowHeight, titled: titled, prepare: { preferences in
             guard let mouse = preferences.controller(for: MousePreferencesViewController.tabIdentifier)
                 as? MousePreferencesViewController else { return }
             mouse.deviceSource = MouseDeviceSource(deviceStates: { devices }, refresh: {})
@@ -1323,12 +1391,14 @@ final class PreferencesWindowRenderTests: XCTestCase {
     /// Writes `<name>-light.png` and `<name>-dark.png`: the pane's column (520 pt) as tall as
     /// the pane, cut from the whole window. (The sidebar's source list draws nothing off
     /// screen, so only the column is written.) `replacement` puts a controller of the
-    /// test's own in the column instead of the pane's.
+    /// test's own in the column instead of the pane's. With `titled`, the column is cut from
+    /// the window's frame, so the pane's title above it is drawn too (see `TitledCut`).
     private func renderPane(
         _ identifier: String,
         name: String,
         key: Bool = true,
         windowHeight: CGFloat? = nil,
+        titled: TitledCut? = nil,
         prepare: @escaping (PreferencesSplitViewController) -> Void = { _ in },
         replacement: (() -> NSViewController)? = nil,
         afterLoad: @escaping (NSViewController) -> Void = { _ in }
@@ -1349,9 +1419,16 @@ final class PreferencesWindowRenderTests: XCTestCase {
             window.setContentSize(NSSize(width: content.frame.width, height: height))
             content.layoutSubtreeIfNeeded()
             let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            let scroll = preferences.host.scrollView!
+            if let titled {
+                let frameView = content.superview ?? content
+                frameView.layoutSubtreeIfNeeded()
+                let rect = titled.rect(column: scroll, pane: controller.view, in: frameView)
+                try write(frameView, rect: rect, appearance: appearance, to: directory.appendingPathComponent("\(name)-\(suffix).png"))
+                continue
+            }
             // At a given window height: the column as the window shows it, the title bar's
             // strip included, so a pane that does not fit shows where it is cut.
-            let scroll = preferences.host.scrollView!
             let column = windowHeight == nil
                 ? scroll.convert(scroll.bounds, to: content)
                 : NSRect(x: scroll.convert(scroll.bounds, to: content).minX, y: 0, width: scroll.frame.width, height: content.frame.height)
@@ -1420,11 +1497,53 @@ final class PreferencesWindowRenderTests: XCTestCase {
 }
 
 /// Counts as the key and main window, so controls draw as in the window the user works in;
-/// or, with `isKey` off, as a window behind another.
+/// or, with `isKey` off, as a window behind another. AppKit draws its controls (switches,
+/// sliders, segmented controls, a list's selection) in the accent colour only while their
+/// window has the key appearance, which it otherwise gives a window only while the app is
+/// active: the test host never is. `hasKeyAppearance` is what the controls ask (AppKit's
+/// own method, not in the SDK's headers); answering it here draws them as in the front
+/// window of the active app. Were it renamed, the controls would draw grey again, nothing
+/// else.
 private final class RenderWindow: NSWindow {
     var isKey = true
     override var isKeyWindow: Bool { return isKey }
     override var isMainWindow: Bool { return isKey }
+    @objc(hasKeyAppearance) func renderHasKeyAppearance() -> Bool { return isKey }
+}
+
+/// How a picture with the pane's title is cut from the window's frame: the pane's column
+/// from the top of the window (the title bar's strip, with the title) down to `margin`
+/// below the `boxes`-th box of the pane counted from the top (a rounded box or a list), or
+/// to the bottom of the column when nil. The line at the column's leading edge (the
+/// sidebar's border) is left out.
+private struct TitledCut {
+    var boxes: Int?
+    var margin: CGFloat = 20
+
+    func rect(column scroll: NSScrollView, pane: NSView, in frameView: NSView) -> NSRect {
+        let column = scroll.convert(scroll.bounds, to: frameView)
+        let flipped = frameView.isFlipped
+        var bottom = flipped ? column.maxY : column.minY
+        if let boxes, boxes > 0 {
+            let frames = Self.boxes(in: pane).map { $0.convert($0.bounds, to: frameView) }
+            let fromTop = flipped ? frames.sorted { $0.minY < $1.minY } : frames.sorted { $0.maxY > $1.maxY }
+            if fromTop.count >= boxes {
+                let box = fromTop[boxes - 1]
+                bottom = flipped ? min(column.maxY, box.maxY + margin) : max(column.minY, box.minY - margin)
+            }
+        }
+        let leading = column.minX + 1
+        let top = flipped ? frameView.bounds.minY : frameView.bounds.maxY
+        return NSRect(x: leading, y: min(top, bottom), width: column.maxX - leading, height: abs(top - bottom))
+    }
+
+    /// The pane's boxes, the outermost only.
+    private static func boxes(in view: NSView) -> [NSView] {
+        if view is PreferencesGroupBox || view is PreferencesListBox {
+            return [view]
+        }
+        return view.subviews.flatMap { boxes(in: $0) }
+    }
 }
 
 /// A pane with the kit's list, as the Buttons and Apps panes build theirs.
