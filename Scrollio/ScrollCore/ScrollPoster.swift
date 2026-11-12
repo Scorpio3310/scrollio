@@ -389,6 +389,12 @@ class ScrollPoster {
     /// (`monotonicNow` otherwise), so that a run through the real path can have its wheel
     /// events and display frames on one simulated clock.
     var inputClockForTests: (() -> CFTimeInterval)?
+    /// Tests: a flick's "ended" waits for its glide's first frame.
+    var endedWaitsForGlideForTests: Bool {
+        os_unfair_lock_lock(&stateLock)
+        defer { os_unfair_lock_unlock(&stateLock) }
+        return endedWaitsForGlide
+    }
     /// Tests: how often a wheel event asked, under the lock, whether an open touch has to end
     /// (`endOneTouchLocked(unlessAt:)`). Never with the switch off.
     var touchChecksForTests = 0
@@ -561,6 +567,14 @@ extension ScrollPoster {
             // ran between them found no touch to belong to, and its distance was lost.)
             os_unfair_lock_lock(&stateLock)
             endOneTouchLocked(unlessAt: { ScrollInputPlace(pid: target, pointer: event.location) })
+            if endedWaitsForGlide, !staysAtTouchPlaceLocked(ScrollInputPlace(pid: target, pointer: event.location)) {
+                // A flick's "ended" that still waits for its glide, and the wheel goes on far
+                // from where that touch began: it goes out now, as a copy of the event stored
+                // until here, at the touch's own place. (Flushed after the new event is
+                // stored, it would carry the new place: an "ended" in a pane that never got
+                // the "began".)
+                flushHeldEndedLocked()
+            }
             guard dispatchContext.capture(event: event) else {
                 os_unfair_lock_unlock(&stateLock)
                 return false

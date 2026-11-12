@@ -1543,6 +1543,54 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
 
     private func poster(_ run: RealRun) -> ScrollPoster { return run.poster }
 
+    // MARK: The flick's held "ended", as posted
+
+    /// A flick whose glide's first frame comes late (a scroll of a few pixels at the longest
+    /// glide time): its "ended" waits for that frame. When the wheel then goes on over
+    /// another pane, the "ended" goes out first, at the place of the touch it ends, and the
+    /// new touch begins at the new place. When the wheel goes on where it was, the "ended"
+    /// goes on waiting and goes out with "momentum began".
+    func testTheRealPath_flick_aHeldEndedGoesOutAtItsOwnPlace() throws {
+        try withSettings(switchOn: true) {
+            func untilTheEndedIsHeld(_ run: RealRun) throws -> Double {
+                run.duration = 5.0
+                XCTAssertTrue(try run.wheel(at: 0, y: 12, pointerX: 400))
+                var time = 0.0
+                while !run.poster.endedWaitsForGlideForTests && time < 3 {
+                    time += 1.0 / 60.0
+                    run.run(until: time)
+                }
+                XCTAssertTrue(run.poster.endedWaitsForGlideForTests, "the touch is over and the glide's first frame has not come")
+                XCTAssertEqual(run.frames.map(\.name).filter { $0 == "ended" || $0 == "momentumBegan" }, [], "nothing of the end is out yet")
+                return time
+            }
+            let far = realRun(over: .followsGlide)
+            var time = try untilTheEndedIsHeld(far)
+            let before = far.frames.count
+            XCTAssertTrue(try far.wheel(at: time + 0.004, y: 12, pointerX: 900))
+            let closing = try XCTUnwrap(far.frames.dropFirst(before).first)
+            XCTAssertEqual(closing.name, "ended")
+            XCTAssertEqual(closing.pointerX, 400, "at the place of the touch it ends")
+            far.run(until: time + 6)
+            let all = far.finish()
+            XCTAssertNil(brokenGesture(in: all))
+            XCTAssertEqual(all.filter { $0.scroll == 1 }.map(\.pointerX), [400, 900], "two touches, each begun at its place")
+            XCTAssertEqual(all.filter { $0.scroll == 4 }.first?.pointerX, 400)
+
+            let near = realRun(over: .followsGlide)
+            time = try untilTheEndedIsHeld(near)
+            let count = near.frames.count
+            XCTAssertTrue(try near.wheel(at: time + 0.004, y: 12, pointerX: 405))
+            XCTAssertEqual(near.frames.count, count, "the same place: the \"ended\" goes on waiting")
+            near.run(until: time + 6)
+            let stream = near.finish()
+            XCTAssertNil(brokenGesture(in: stream))
+            XCTAssertEqual(stream.filter { $0.scroll == 1 }.count, 1, "one touch")
+            let ended = try XCTUnwrap(stream.firstIndex { $0.name == "ended" })
+            XCTAssertEqual(stream[ended + 1].name, "momentumBegan", "and goes out with the glide's first frame")
+        }
+    }
+
     // MARK: The one touch's end, as posted
 
     /// A scroll that runs out by itself, through the real path: the posted "ended" carries
