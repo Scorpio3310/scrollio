@@ -2020,11 +2020,7 @@ final class PreferencesScrollingRenderTests: XCTestCase {
     }
 
     func testRenderTheTab() throws {
-        guard let folder = ProcessInfo.processInfo.environment["SCROLLIO_SHOTS_DIR"], !folder.isEmpty else {
-            throw XCTSkip("set TEST_RUNNER_SCROLLIO_SHOTS_DIR to render the Scrolling tab")
-        }
-        let directory = URL(fileURLWithPath: folder, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let directory = try RenderShots.directory(for: "the Scrolling tab")
         let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesScrollingViewController.self))
         let key = PreferencesScrollingViewController.advancedExpandedDefaultsKey
 

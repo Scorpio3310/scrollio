@@ -1994,11 +1994,7 @@ final class MousePreferencesRenderTests: XCTestCase {
     }
 
     func testRenderTheTab() throws {
-        guard let folder = ProcessInfo.processInfo.environment["SCROLLIO_SHOTS_DIR"], !folder.isEmpty else {
-            throw XCTSkip("set TEST_RUNNER_SCROLLIO_SHOTS_DIR to render the Mouse tab")
-        }
-        let directory = URL(fileURLWithPath: folder, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let directory = try RenderShots.directory(for: "the Mouse tab")
 
         func tab(_ devices: [LogiMouseDeviceState], mac: FakeMacPointer = FakeMacPointer()) -> MousePreferencesViewController {
             let controller = MousePreferencesViewController()

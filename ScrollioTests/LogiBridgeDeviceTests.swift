@@ -7,12 +7,14 @@ import XCTest
 /// Default timeout is short so the test SKIPS gracefully in unattended runs.
 final class LogiBridgeDeviceTests: LogiDeviceIntegrationBase {
 
-    /// Interactive test: requires a Back button press within `pressWindow`.
-    /// Set `LOGI_INTERACTIVE_PRESS=1` to actually wait and validate; otherwise
-    /// the test SKIPS so unattended LOGI_REAL_DEVICE=1 runs don't hang.
+    /// Interactive test: requires a press of the Back button within 30 seconds.
+    /// It waits and validates only when asked to, with
+    /// `TEST_RUNNER_LOGI_INTERACTIVE_PRESS=1 xcodebuild … -testPlan DebugWithDevice …`
+    /// (xcodebuild hands a variable to the tests only with that prefix, and strips it);
+    /// otherwise it skips, so unattended runs of the device plan do not hang.
     func testRealButtonPressTriggersRawEvent() throws {
         let interactive = ProcessInfo.processInfo.environment["LOGI_INTERACTIVE_PRESS"] == "1"
-        try XCTSkipUnless(interactive, "Set LOGI_INTERACTIVE_PRESS=1 and press Back button when prompted")
+        try XCTSkipUnless(interactive, "set TEST_RUNNER_LOGI_INTERACTIVE_PRESS=1 on the xcodebuild command line and press the Back button when prompted")
 
         // Ensure the bridge is wired (controller's AppDelegate did this for the
         // app process, but tests run in a separate executable — install here).

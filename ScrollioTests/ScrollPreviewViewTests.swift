@@ -7,9 +7,9 @@
 //  that it draws off screen in light and dark. Nothing is shown on screen: windows are
 //  created but never ordered in, and frames are asked for by loop time, not waited for.
 //
-//  With SCROLL_PREVIEW_SHOTS set to a directory, `testContactSheets` also writes contact
-//  sheets of the demo there, for a look at the artwork:
-//  TEST_RUNNER_SCROLL_PREVIEW_SHOTS=/some/dir xcodebuild … test -only-testing:ScrollioTests/ScrollPreviewViewTests/testContactSheets
+//  With the render tests' switch set (`RenderShots`), `testContactSheets` also writes contact
+//  sheets of the demo into `scroll-preview` in that folder, for a look at the artwork:
+//  TEST_RUNNER_SCROLLIO_SHOTS_DIR=/some/dir xcodebuild … test -only-testing:ScrollioTests/ScrollPreviewViewTests/testContactSheets
 //
 
 import XCTest
@@ -532,13 +532,9 @@ final class ScrollPreviewViewTests: XCTestCase {
 
     // MARK: - Contact sheets
 
-    /// Writes contact sheets of the demo when SCROLL_PREVIEW_SHOTS names a directory.
+    /// Writes contact sheets of the demo when the render tests are asked for (`RenderShots`).
     func testContactSheets() throws {
-        guard let path = ProcessInfo.processInfo.environment["SCROLL_PREVIEW_SHOTS"], !path.isEmpty else {
-            throw XCTSkip("SCROLL_PREVIEW_SHOTS is not set")
-        }
-        let directory = URL(fileURLWithPath: path, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let directory = try RenderShots.directory(for: "the scroll demo's contact sheets", subfolder: "scroll-preview")
 
         func write(_ name: String, _ scene: ScrollPreviewView.Scene, dark: Bool, size: NSSize? = nil) throws {
             let sheet = try contactSheet(title: name, scene: scene, dark: dark, size: size ?? self.size)

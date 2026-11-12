@@ -133,3 +133,34 @@ final class TestDefaultsTests: XCTestCase {
         XCTAssertNil(UserDefaults.standard.persistentDomain(forName: first.suiteName)?["other"])
     }
 }
+
+/// The one switch of the render tests. They draw panes, the Welcome Guide and the two
+/// demos off screen and write PNG files for a look at them; they only run when asked to:
+///
+///     TEST_RUNNER_SCROLLIO_SHOTS_DIR=<folder> xcodebuild … test -only-testing:ScrollioTests/<Class>
+///
+/// xcodebuild hands a variable to the tests only when its name begins with `TEST_RUNNER_`,
+/// and strips that prefix: inside the tests it is `SCROLLIO_SHOTS_DIR`. (There were four
+/// different names, two of them documented without the prefix.)
+enum RenderShots {
+
+    /// The variable as the test process sees it.
+    static let variable = "SCROLLIO_SHOTS_DIR"
+
+    /// The folder the pictures go to (made if needed), or a skip that says how to ask.
+    /// - Parameters:
+    ///   - what: what would be rendered, for the skip's text ("the Mouse tab").
+    ///   - subfolder: a folder of its own inside it, for tests whose file names are plain
+    ///     words that another test might use too.
+    static func directory(for what: String, subfolder: String? = nil) throws -> URL {
+        guard let folder = ProcessInfo.processInfo.environment[variable], !folder.isEmpty else {
+            throw XCTSkip("set TEST_RUNNER_\(variable) to a folder to render \(what)")
+        }
+        var directory = URL(fileURLWithPath: folder, isDirectory: true)
+        if let subfolder {
+            directory.appendPathComponent(subfolder, isDirectory: true)
+        }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+}

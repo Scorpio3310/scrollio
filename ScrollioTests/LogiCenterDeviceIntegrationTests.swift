@@ -1,12 +1,16 @@
 import XCTest
 @testable import Scrollio_Debug
 
+/// Tests that talk to a real Logitech mouse. They run only in the test plan
+/// `DebugWithDevice` (`xcodebuild … -testPlan DebugWithDevice …`), which sets
+/// `LOGI_REAL_DEVICE=1` for the tests itself. Setting that variable in the shell does
+/// nothing: xcodebuild does not pass the shell's environment on to the tests.
 class LogiDeviceIntegrationBase: XCTestCase {
     static var hasDevice: Bool {
         ProcessInfo.processInfo.environment["LOGI_REAL_DEVICE"] == "1"
     }
     override func setUpWithError() throws {
-        try XCTSkipUnless(Self.hasDevice, "requires LOGI_REAL_DEVICE=1")
+        try XCTSkipUnless(Self.hasDevice, "needs a real Logitech mouse: run with -testPlan DebugWithDevice")
     }
 }
 

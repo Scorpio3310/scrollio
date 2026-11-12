@@ -117,6 +117,11 @@ final class PreferencesButtonsTests: XCTestCase {
         window.isReleasedWhenClosed = false
         let container = NSView(frame: NSRect(x: 0, y: 0, width: PreferencesWindowLayout.contentWidth, height: 600))
         window.contentView = container
+        // The pane fills the container, as it fills the window in the app: at the height it
+        // comes with (270) two rows do not fit under the header, and each layout pass
+        // printed "Unable to simultaneously satisfy constraints".
+        pane.view.frame = container.bounds
+        pane.view.autoresizingMask = [.width, .height]
         container.addSubview(pane.view)
         pane.view.layoutSubtreeIfNeeded()
         addTeardownBlock { window.close() }
@@ -2242,13 +2247,18 @@ final class PreferencesButtonsTests: XCTestCase {
 
     /// The recorder gives more time while a modifier is held: the pane waits for the
     /// recorder however long it takes, and "Set Up…"'s Gesture Navigation waits with it.
+    /// (The pane once ended the recording itself, a second after the recorder's timeout.
+    /// The recorder's own `timeout` is the only place that time can be read from, so a
+    /// short one here shows the same in 1.5 s; the test used to wait 11.5 s.)
     func testTheRecordingLastsUntilTheRecorderEndsAndKeepsTheActionOfSetUp() throws {
         let pane = makePane()
         let recorder = KeyRecorder()
+        XCTAssertEqual(recorder.timeout, 10, "the app's own")
+        recorder.timeout = 0.25
         pane.beginAddingBinding(action: SystemShortcut.mouseGestureNavigation)
         pane.onRecordingStarted(recorder)
 
-        flush(KeyRecorder.TIMEOUT + 1.5)
+        flush(recorder.timeout + 1.25)
         XCTAssertTrue(pane.isRecording, "still recording: only the recorder ends it")
         XCTAssertTrue(pane.isRecorderOpen)
         XCTAssertEqual(pane.headerView.content.title, "Press a button")

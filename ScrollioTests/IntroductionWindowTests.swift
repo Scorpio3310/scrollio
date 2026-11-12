@@ -2413,11 +2413,7 @@ final class WelcomeGuideRenderTests: XCTestCase {
 
     override func setUpWithError() throws {
         try super.setUpWithError()
-        guard let folder = ProcessInfo.processInfo.environment["SCROLLIO_SHOTS_DIR"], !folder.isEmpty else {
-            throw XCTSkip("set TEST_RUNNER_SCROLLIO_SHOTS_DIR to render the Welcome Guide")
-        }
-        directory = URL(fileURLWithPath: folder, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        directory = try RenderShots.directory(for: "the Welcome Guide")
         // The drawings in the app's own purple, whatever accent this Mac's user chose.
         try ForcedAppAccent.install()
     }

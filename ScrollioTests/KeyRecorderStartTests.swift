@@ -92,7 +92,7 @@ final class KeyRecorderStartTests: XCTestCase {
     private func startRecording(
         mode: KeyRecordingMode = .combination,
         secureInput: @escaping () -> Bool = { false },
-        timeout: TimeInterval = KeyRecorder.TIMEOUT
+        timeout: TimeInterval = KeyRecorder().timeout
     ) throws -> Recording {
         let recorder = KeyRecorder()
         let delegate = Delegate()

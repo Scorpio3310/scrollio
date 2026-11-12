@@ -422,10 +422,21 @@ final class LogiReportWriterTests: XCTestCase {
         private var reports: [[UInt8]] = []
         var result: IOReturn = kIOReturnSuccess
         var delay: TimeInterval = 0
+        /// A device that does not answer: while a gate is set and closed, every send waits
+        /// in front of it. `open()` lets them through, one after another.
+        var gate: DispatchSemaphore?
         /// Whether a send ran on the main thread.
         private(set) var sentOnMainThread = false
 
+        func open() {
+            gate?.signal()
+        }
+
         func send(_ report: [UInt8]) -> IOReturn {
+            if let gate {
+                gate.wait()
+                gate.signal()
+            }
             if delay > 0 { Thread.sleep(forTimeInterval: delay) }
             lock.lock()
             reports.append(report)
@@ -447,13 +458,14 @@ final class LogiReportWriterTests: XCTestCase {
     func testReportsGoOutInTheOrderGivenAndNeverOnTheMainThread() {
         let device = Device()
         device.delay = 0.01
+        // The device takes nothing until the test says so.
+        device.gate = DispatchSemaphore(value: 0)
         let writer = makeWriter(device)
         let reports: [[UInt8]] = (0..<20).map { [0x11, 0xFF, UInt8($0)] }
         var outcomes: [LogiReportWriter.Outcome] = []
         let delivered = expectation(description: "all outcomes delivered")
         delivered.expectedFulfillmentCount = reports.count
 
-        let started = Date()
         for report in reports {
             writer.write(report) { outcome in
                 XCTAssertTrue(Thread.isMainThread, "outcomes come back on the main thread")
@@ -461,8 +473,10 @@ final class LogiReportWriterTests: XCTestCase {
                 delivered.fulfill()
             }
         }
-        // 20 writes of 10 ms each (200 ms): the caller did not wait for them.
-        XCTAssertLessThan(Date().timeIntervalSince(started), 0.1)
+        // All twenty are queued and the device has taken none: the caller did not wait for
+        // it. (Not a measured time: that depended on how busy the Mac was.)
+        XCTAssertEqual(device.sent, [])
+        device.open()
 
         wait(for: [delivered], timeout: 5)
         XCTAssertEqual(device.sent, reports)
@@ -489,14 +503,18 @@ final class LogiReportWriterTests: XCTestCase {
     /// A device that does not answer must not hold teardown forever.
     func testDrainGivesUpAfterItsTimeout() {
         let device = Device()
-        device.delay = 0.5
+        device.gate = DispatchSemaphore(value: 0)
         let writer = makeWriter(device)
         writer.write([0x11, 0xFF, 0x00]) { _ in }
-        let started = Date()
+        // The write cannot finish before the gate opens, so a drain that comes back at all
+        // has given up (one that waited for the device would hang here, and the test plan's
+        // time limit would end it). Not a measured time: that depended on the Mac.
         XCTAssertFalse(writer.drain(timeout: 0.05))
-        XCTAssertLessThan(Date().timeIntervalSince(started), 0.3)
+        XCTAssertEqual(device.sent, [], "the device still has not answered")
         // Let the stuck write finish so the test leaves nothing behind.
-        XCTAssertTrue(writer.drain(timeout: 2))
+        device.open()
+        XCTAssertTrue(writer.drain(timeout: 5))
+        XCTAssertEqual(device.sent.count, 1)
     }
 
     func testARefusalComesBackAsTheOutcome() {
