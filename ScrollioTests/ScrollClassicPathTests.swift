@@ -698,6 +698,38 @@ final class ScrollClassicPathTests: XCTestCase {
         XCTAssertTrue(failures.isEmpty, "\(failures.count) broken:\n" + failures.prefix(40).joined(separator: "\n"))
     }
 
+    /// The first scroll over a Chromium-based app after Scrollio started: the app counts as
+    /// touch-only until its bundle was looked into (off the main thread, a moment), so the
+    /// scroll begins as one long touch and goes on as a flick from the wheel event after the
+    /// answer. Whenever the answer comes, the app still gets whole gestures.
+    func testTrackpadStyle_theFormChangingDuringAScrollLeavesWholeGestures() {
+        var failures: [String] = []
+        let place = ScrollInputPlace(pid: 100, pointer: CGPoint(x: 400, y: 300))
+        for duration in [2.0, 3.69, 5.0] {
+            for rate in [60.0, 120.0] {
+                for (name, inputs) in Self.gestureScenarios {
+                    // The answer arrives before wheel event number `answerBefore`.
+                    for answerBefore in 1..<max(2, min(inputs.count, 6)) {
+                        let rig = ScrollClassicRig(duration: duration, rate: rate, trackpadStyle: true, flick: false)
+                        let notch = 33.6 * 6.3
+                        for (index, (notches, time)) in inputs.enumerated() {
+                            if index == answerBefore {
+                                rig.run(until: time)
+                                rig.poster.setConfigForTests(simTrackpadEnabled: true, flick: true)
+                            }
+                            rig.input(notches * notch, notch: notch, at: time, place: index >= answerBefore ? place : nil, targetPID: 100)
+                        }
+                        rig.run(until: 30)
+                        if let broken = Self.brokenGesture(in: rig, mayBeEmpty: false) {
+                            failures.append("\(name), Duration \(duration), \(Int(rate)) Hz, flick from wheel event \(answerBefore + 1): \(broken)")
+                        }
+                    }
+                }
+            }
+        }
+        XCTAssertTrue(failures.isEmpty, "\(failures.count) broken:\n" + failures.prefix(40).joined(separator: "\n"))
+    }
+
     /// Wheel turns as (notches, seconds), for the whole-gesture checks.
     private static let gestureScenarios: [(String, [(Double, Double)])] = {
         var spin: [(Double, Double)] = []
