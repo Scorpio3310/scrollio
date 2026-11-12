@@ -257,6 +257,98 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 controller.viewWillAppear()
             })
         }
+
+        // After an import: "Settings from before the last import" with "Restore…" under
+        // the settings file's row (`general-settings-restore-<appearance>.png`).
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ScrollioTests-render-backups-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        let center = SettingsFileCenter()
+        center.backups = SettingsBackups(directory: folder)
+        try center.backups.write(Data("{}".utf8), now: Date(timeIntervalSince1970: 1_794_476_527))
+        LoginItem.service = FixedLoginItem(.enabled)
+        try renderPane(PANEL_IDENTIFIER.general, name: "general-settings-restore", prepare: { preferences in
+            guard let general = preferences.controller(for: PANEL_IDENTIFIER.general)
+                as? PreferencesGeneralViewController else { return }
+            general.isAccessGranted = { true }
+            general.isPaused = { false }
+            general.isMenuBarIconHidden = { false }
+            general.bundleInfo = { plain }
+            general.settingsFiles = center
+        }, afterLoad: { controller in
+            controller.viewWillAppear()
+        })
+    }
+
+    /// The sheet before an import (`settings-import-<case>-<appearance>.png`): a file as an
+    /// export makes it; one whose buttons open an app and run scripts (the box that lists
+    /// them, a long path wrapped); one with so many that the list scrolls; and the sheet
+    /// that says why a file cannot be used. Drawn as views, no window and no sheet is shown.
+    func testRenderSettingsImportSheet() throws {
+        func binding(_ id: Int, _ trigger: String, _ target: String?) -> String {
+            let action = target == nil ? #""systemShortcutName":"missionControl""# : #""systemShortcutName":"openTarget","openTarget":"# + target!
+            return #"{"id":"00000000-0000-0000-0000-"# + String(format: "%012d", id) + #"","triggerEvent":"# + trigger
+                + #","isEnabled":true,"createdAt":0,"# + action + "}"
+        }
+        func file(_ settings: String, header: String = "") -> Data {
+            return Data((#"{"format":"scrollio-settings","formatVersion":1"# + header + #","settings":{"# + settings + "}}").utf8)
+        }
+        let button = #"{"type":"mouse","code":4,"modifiers":0}"#
+        let key = #"{"type":"keyboard","code":96,"modifiers":524288}"#
+        let header = #","appVersion":"1.0.1","appBuild":"1612","exported":"2026-11-12T09:42:07Z""#
+        let app = #"{"displayName":"","inherit":false,"path":"/Applications/Notes.app","scroll":{"deadZone":1,"duration":3.69,"reverse":true,"#
+            + #""reverseHorizontal":true,"reverseVertical":true,"smooth":true,"smoothHorizontal":true,"smoothSimTrackpad":false,"#
+            + #""smoothVertical":true,"speed":2.5,"step":33.6}}"#
+        let everything = #""speed":3,"thumbWheelSettings":{},"mouseGestureSettings":{},"logiWheelSettings":{},"logiMouseSettings":{},"#
+            + #""allowlist":false,"applications":["# + [app, app, app, app].joined(separator: ",") + #"],"hideStatusItem":false,"#
+        let plainButtons = (0..<12).map { binding($0, button, nil) }.joined(separator: ",")
+        let script = #"{"path":"/Users/someone/Library/Application Support/Sync Tools/bin/sync-everything-to-the-server.sh","arguments":"--all --quiet","kind":"script"}"#
+        let notes = #"{"path":"/Applications/Notes.app","bundleID":"com.apple.Notes","arguments":"","kind":"application"}"#
+        let command = #"{"path":"/Users/someone/Desktop/start.command","arguments":"","kind":"file"}"#
+        let withActions = [binding(1, key, script), binding(2, button, notes), binding(3, button, command), binding(4, button, nil)].joined(separator: ",")
+        let many = (0..<40).map { index in
+            binding(index, key, #"{"path":"/Users/someone/bin/script-number-"# + "\(index)" + #".sh","arguments":"","kind":"script"}"#)
+        }.joined(separator: ",")
+
+        let cases: [(name: String, content: () throws -> SettingsImportSheetViewController.Content)] = [
+            ("plain", {
+                .confirm(try SettingsFile.read(file(everything + #""buttonBindings":["# + plainButtons + "]", header: header)).get(),
+                         fileName: "Scrollio Settings 2026-11-12.json")
+            }),
+            ("actions", {
+                .confirm(try SettingsFile.read(file(everything + #""buttonBindings":["# + withActions + ",{}]", header: header)).get(),
+                         fileName: "Scrollio Settings 2026-11-12.json")
+            }),
+            ("many-actions", {
+                .confirm(try SettingsFile.read(file(#""buttonBindings":["# + many + "]")).get(), fileName: "From a forum.json")
+            }),
+            ("problem", {
+                .problem(
+                    title: NSLocalizedString("general-settings-problem-import-title", comment: ""),
+                    text: SettingsFileText.explanation(of: .newerFormat) + " " + NSLocalizedString("general-settings-problem-unchanged", comment: "")
+                )
+            }),
+        ]
+        for item in cases {
+            for (suffix, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+                let sheet = SettingsImportSheetViewController(content: try item.content())
+                let view = sheet.view
+                // A sheet is a window of its own: its content stands on the window colour.
+                let window = NSBox(frame: view.frame)
+                window.boxType = .custom
+                window.borderWidth = 0
+                window.cornerRadius = 0
+                window.contentViewMargins = .zero
+                window.fillColor = .windowBackgroundColor
+                window.appearance = appearance
+                window.addSubview(view)
+                view.setFrameOrigin(.zero)
+                window.layoutSubtreeIfNeeded()
+                try write(window, appearance: appearance, to: directory.appendingPathComponent("settings-import-\(item.name)-\(suffix).png"))
+                view.removeFromSuperview()
+            }
+        }
     }
 
     /// The Buttons pane: empty; with buttons; a row pointed at (its button lit); a row
