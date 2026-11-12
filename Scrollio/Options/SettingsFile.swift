@@ -384,9 +384,16 @@ enum SettingsFile {
     }
 
     /// A JSON object of the file as the model's own decoder reads it (the decoder the
-    /// preferences are read with at launch). Nil: not an object, or the decoder refused it.
+    /// preferences are read with at launch). Nil: not an object, not one that can be
+    /// written as JSON again, or the decoder refused it.
+    ///
+    /// `isValidJSONObject` is not a formality: JSONSerialization reads a number such as
+    /// -1e999 as negative infinity, and writing that back raises an Objective-C
+    /// exception, which `try?` does not catch. The launch has the same guard
+    /// (`Options.decodeButtonBindingsWithUnknowns`).
     private static func decoded<Value: Decodable>(_ value: Any) -> Value? {
         guard let object = value as? [String: Any],
+              JSONSerialization.isValidJSONObject(object),
               let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }
         return try? JSONDecoder().decode(Value.self, from: data)
     }

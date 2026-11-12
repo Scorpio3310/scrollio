@@ -583,6 +583,40 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertEqual(own.options.scroll.speed, ScrollSliderSetting.speed.range.upperBound)
     }
 
+    /// A number too large to be one (-1e999) inside what the preferences keep as JSON.
+    /// JSONSerialization reads it as negative infinity, and writing that back raised an
+    /// exception that nothing caught: reading such a file ended the app. The part is
+    /// refused as damaged; in the two lists the entry is left out like any other that
+    /// cannot be read. (Without the fix this test does not fail, it ends the run.)
+    func testANumberTooLargeToBeOneIsRefusedNotThrown() throws {
+        func problem(_ settings: String) -> SettingsFile.Problem? {
+            if case .failure(let problem) = SettingsFile.read(Fixture.file(settings)) { return problem }
+            return nil
+        }
+        XCTAssertEqual(problem(#""thumbWheelSettings":{"speed":-1e999}"#), .damaged("thumbWheelSettings"))
+        XCTAssertEqual(problem(#""dash":{"type":"keyboard","code":-1e999}"#), .damaged("dash"))
+        XCTAssertEqual(problem(#""toggle":{"type":"keyboard","code":58,"extra":[-1e999]}"#), .damaged("toggle"))
+        XCTAssertEqual(problem(#""mouseGestureSettings":{"trackingSpeed":-1e999}"#), .damaged("mouseGestureSettings"))
+        XCTAssertEqual(problem(#""logiWheelSettings":{"smartShiftSensitivity":-1e999}"#), .damaged("logiWheelSettings"))
+        XCTAssertEqual(problem(#""logiMouseSettings":{"pointerDPI":-1e400}"#), .damaged("logiMouseSettings"))
+        XCTAssertEqual(problem(#""speed":-1e999"#), .damaged("speed"), "as a number of its own it was refused before, too")
+        // The other way JSONSerialization refuses the number itself: no settings file.
+        XCTAssertEqual(problem(#""thumbWheelSettings":{"speed":1e999}"#), .notASettingsFile)
+
+        // A binding and an app with such a number: left out, the others stay.
+        let binding = Fixture.copyBinding.replacingOccurrences(of: #""createdAt":700000000"#, with: #""createdAt":-1e999"#)
+        let nested = Fixture.scriptBinding.replacingOccurrences(of: #""modifiers":524288"#, with: #""modifiers":-1e999"#)
+        let app = StoredDataCanaryTests.readableApp.replacingOccurrences(of: #""speed":2.5"#, with: #""speed":-1e999"#)
+        XCTAssertNotEqual(app, StoredDataCanaryTests.readableApp)
+        let contents = try Fixture.contents(
+            #""buttonBindings":["# + [binding, nested, Fixture.logiBinding].joined(separator: ",") + "],"
+                + #""applications":["# + app + "," + StoredDataCanaryTests.readableApp + "]"
+        )
+        XCTAssertEqual(contents.bindings?.map(\.triggerEvent.code), [1006])
+        XCTAssertEqual(contents.applications?.map(\.path), ["/Applications/A.app"])
+        XCTAssertEqual(contents.unreadableEntries, 3)
+    }
+
     /// A name the allow-list does not have is ignored, in the file's top level and among
     /// the settings, and nothing of it reaches the store: not the updater's keys, not the
     /// Welcome Guide's, not a cache.
