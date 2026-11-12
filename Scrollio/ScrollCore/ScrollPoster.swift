@@ -328,14 +328,15 @@ class ScrollPoster {
     //    (right after the last moving frame: the app holds the page's real speed and makes
     //    its own bounce from it), no tap, and the rest of the motion is dropped.
     // 4. A wheel event that heads further into the end the page is at is taken in and nothing
-    //    is sent (`endHold`), while a read no older than `endHoldFreshness` still says "at
-    //    that end", in the same app within 30 pt, in the same direction. Anything else
-    //    (stale, a failed read, the value left the end, another place, the other way) ends
-    //    the hold and the event scrolls as usual.
+    //    is sent (`endHold`), while a look at the pointer no older than `endHoldFreshness`
+    //    still finds the same bar at that end, in the same app within 30 pt, in the same
+    //    direction, and for `endHoldLongestLife` at most. Anything else (stale, a look that
+    //    fails or finds another bar, the value left the end, another place, the other way,
+    //    too long) ends the hold and the event scrolls as usual.
     // 5. A scroll that starts with the page already at the end it heads for: a short touch
     //    ("began", two moving frames, "ended" at once after the second), so the app makes
-    //    one small bounce. Then, where this place was proven (an arrival was seen there):
-    //    the rest is dropped and held as in 4; where it was not: the rest goes out plain,
+    //    one small bounce. Then, where the bar the look found is proven (an arrival was
+    //    seen on it): the rest is dropped and held as in 4; where it is not: the rest goes out plain,
     //    and nothing is ever taken in. One bounce per fresh start: "fresh" is a wheel that
     //    paused for `endHoldFreshness`.
     /// Reads where the page under the pointer is. nil: nothing is read and nothing is ever
@@ -353,7 +354,7 @@ class ScrollPoster {
     /// A call to the watch that is made once the lock is let go (`takeWatchCallLocked`).
     private var watchCall: WatchCall?
     private enum WatchCall {
-        case look(token: UInt64, epoch: UInt64, pid: pid_t, point: CGPoint)
+        case look(token: UInt64, epoch: UInt64, pid: pid_t, point: CGPoint, forHold: Bool)
         case read(token: UInt64, epoch: UInt64, askedAt: CFTimeInterval)
     }
     // The watch's judgement is not for the whole scroll. A wheel that goes up and down
@@ -414,18 +415,35 @@ class ScrollPoster {
     /// The touch ended by itself after its rest: what still comes out over the dead zone by
     /// itself is left out, until the next wheel event.
     private var oneTouchLeavesFramesOut = false
-    /// Where an arrival at a page's end was seen: there the bar is proven to follow
-    /// Scrollio's frames, and only there wheel events are ever taken in.
-    private var provenPlace: ScrollInputPlace?
-    /// Rule 4: the page is at an end and the wheel still turns into it.
+    /// The bar on which an arrival at a page's end was seen: it is proven to follow
+    /// Scrollio's frames, and only over it wheel events are ever taken in.
+    /// It is the BAR that is proven, not the place: the scroll bar (as the reader numbers
+    /// the elements it finds) whose value followed Scrollio's frames into an end. A place
+    /// (an app, 30 pt) could hold another view tomorrow, or 20 pt further on.
+    private var provenBar: UInt64?
+    /// The bar this scroll's look found (`ScrollEndReading.bar`).
+    private var watchBar: UInt64 = 0
+    /// Rule 4: the page is at an end and the wheel still turns into it. The most careful
+    /// part of the watch, because it sends nothing for a wheel event: every wheel event it
+    /// takes in asks for a LOOK at the pointer (not a read of the old bar), and the hold
+    /// lives only while such a look, no older than `endHoldFreshness`, finds the same bar
+    /// at that end; and it has a longest life.
     private struct EndHold {
         var token: UInt64
         var place: ScrollInputPlace
+        var bar: UInt64
         var towardBottom: Bool
-        /// When a read last said "at that end".
+        /// When a look last said "that bar, at that end".
         var lastAtEnd: CFTimeInterval
+        var startedAt: CFTimeInterval
         var taken = 0
     }
+    /// However fresh its looks: a hold ends after this long, and its bar is no longer
+    /// proven (the next start there gets its short touch and then plain frames, which move
+    /// whatever can move). The owner's longest free spin was 3.3 s.
+    static let endHoldLongestLife: CFTimeInterval = 4.0
+    /// A check that ends a hold which only went stale is on its way (main queue).
+    private var holdExpiryIsScheduled = false
     private var endHold: EndHold?
     /// Main thread's own note that a hold may be up, so that a wheel event asks under the
     /// lock only then. Set where a scroll stops; a wheel event that finds none clears it.
@@ -434,7 +452,10 @@ class ScrollPoster {
     /// start (a short touch and one bounce, rule 5).
     static let endHoldFreshness: CFTimeInterval = 0.3
     /// How close to 0 or 1 the bar's value counts as "at the end".
-    static let pageEndSlack = 0.0001
+    /// AppKit's scroller gives exactly 0 and 1 at the ends (the owner's log: 0.0000 and
+    /// 1.0000). A wider slack ended the touch early in a long document: 0.0001 of
+    /// 3,000,000 px is 300 px. This is 3 px there and nothing in a short page.
+    static let pageEndSlack = 0.000_001
     /// A value that has moved this far against the frames since the touch began is not the
     /// scrolled view's (or the page grew under it): not seen.
     static let wrongWaySlack = 0.05
@@ -823,24 +844,30 @@ extension ScrollPoster {
     }
 
     /// Rule 4: a wheel event that heads further into the end the page is at is taken in,
-    /// while a fresh read says the page is still there. Anything else ends the hold. Caller
-    /// holds stateLock; main thread.
+    /// while a fresh look says its bar is still there, at that end. Anything else ends the
+    /// hold. Caller holds stateLock; main thread.
     private func holdTakesLocked(form: ConfigSnapshot, place: ScrollInputPlace, input: ScrollPosterInput) -> Bool {
         guard var hold = endHold else { return false }
         let isFresh = inputClock() - hold.lastAtEnd <= Self.endHoldFreshness
         let isThere = form.oneTouch && place.pid == hold.place.pid
             && hypot(place.pointer.x - hold.place.pointer.x, place.pointer.y - hold.place.pointer.y) <= trackpadStylePointerSlack
         let headsIn = input.y != 0.0 && (input.y < 0) == hold.towardBottom
-        guard isFresh && isThere && headsIn else {
+        let isYoung = inputClock() - hold.startedAt <= Self.endHoldLongestLife
+        guard isFresh && isThere && headsIn && isYoung else {
+            if !isYoung {
+                provenBar = nil
+            }
             endHoldEndsLocked()
             return false
         }
         hold.taken += 1
         endHold = hold
         if !watchReadInFlight && watchCall == nil {
+            // A look at where the pointer is now: is it still that bar, still at that end?
             watchReadInFlight = true
-            watchCall = .read(token: hold.token, epoch: watchEpoch, askedAt: inputClock())
+            watchCall = .look(token: hold.token, epoch: watchEpoch, pid: place.pid, point: place.pointer, forHold: true)
         }
+        scheduleHoldExpiryLocked()
         return true
     }
 
@@ -851,6 +878,36 @@ extension ScrollPoster {
         if hold.taken > 0 {
             ScrollSystemLog.notePageEnd(taken: hold.taken)
         }
+    }
+
+    /// A hold that only goes stale (the wheel stopped) is ended by the next wheel event, and
+    /// only then did the log get its line. A check on the main queue ends it a moment after
+    /// it has gone stale, so the line is there when the wheel has stopped. Caller holds stateLock.
+    private func scheduleHoldExpiryLocked() {
+#if DEBUG
+        // (A test's clock is not the main queue's: a test calls `endHoldIfStale` itself.)
+        if inputClockForTests != nil || eventClockForTests != nil { return }
+#endif
+        guard !holdExpiryIsScheduled else { return }
+        holdExpiryIsScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.endHoldFreshness + 0.05) { [weak self] in
+            self?.endHoldIfStale()
+        }
+    }
+
+    /// Main thread.
+    func endHoldIfStale() {
+        os_unfair_lock_lock(&stateLock)
+        holdExpiryIsScheduled = false
+        if let hold = endHold {
+            if inputClock() - hold.lastAtEnd > Self.endHoldFreshness {
+                endHoldEndsLocked()
+                endHoldHint = false
+            } else {
+                scheduleHoldExpiryLocked()
+            }
+        }
+        os_unfair_lock_unlock(&stateLock)
     }
 
     /// The call to the watch that waits, to be made once the lock is let go. Caller holds stateLock.
@@ -865,10 +922,10 @@ extension ScrollPoster {
     private func make(_ call: WatchCall?) {
         guard let call = call, let watch = endWatch else { return }
         switch call {
-        case .look(let token, let epoch, let pid, let point):
-            watch.look(pid: pid, at: point) { [weak self] in self?.endWatchAnswered($0, token: token, epoch: epoch, askedAt: 0, isLook: true) }
+        case .look(let token, let epoch, let pid, let point, let forHold):
+            watch.look(pid: pid, at: point) { [weak self] in self?.endWatchAnswered($0, token: token, epoch: epoch, askedAt: 0, isLook: true, forHold: forHold) }
         case .read(let token, let epoch, let askedAt):
-            watch.read { [weak self] in self?.endWatchAnswered($0, token: token, epoch: epoch, askedAt: askedAt, isLook: false) }
+            watch.read { [weak self] in self?.endWatchAnswered($0, token: token, epoch: epoch, askedAt: askedAt, isLook: false, forHold: false) }
         }
     }
 
@@ -928,6 +985,7 @@ extension ScrollPoster {
         watchReadFailures = 0
         watchRetryAt = nil
         watchLookIsRetry = isRetry
+        watchBar = 0
         oneTouchIsShort = false
         sessionLog.endWatch.looks += 1
         if isRetry {
@@ -945,7 +1003,7 @@ extension ScrollPoster {
             sessionLog.endWatch.note(.notSeen(AccessibilityScrollEndWatch.ownWindow), isLook: true)
             return
         }
-        watchCall = .look(token: watchToken, epoch: watchEpoch, pid: touchPlace?.pid ?? 0, point: touchPlace?.pointer ?? .zero)
+        watchCall = .look(token: watchToken, epoch: watchEpoch, pid: touchPlace?.pid ?? 0, point: touchPlace?.pointer ?? .zero, forHold: false)
     }
 
     /// The scroll goes on plain: the bar is not seen. An open touch is ended by force.
@@ -962,9 +1020,9 @@ extension ScrollPoster {
     /// while this lock is held. A late answer (another look has been asked for, the scroll
     /// is over) is thrown away. `epoch`: the count of the wheel's turns the request was
     /// made under; `askedAt`: when a read was asked.
-    private func endWatchAnswered(_ reading: ScrollEndReading, token: UInt64, epoch: UInt64, askedAt: CFTimeInterval, isLook: Bool) {
+    private func endWatchAnswered(_ reading: ScrollEndReading, token: UInt64, epoch: UInt64, askedAt: CFTimeInterval, isLook: Bool, forHold: Bool) {
         os_unfair_lock_lock(&stateLock)
-        judgeLocked(reading, token: token, epoch: epoch, askedAt: askedAt, isLook: isLook)
+        judgeLocked(reading, token: token, epoch: epoch, askedAt: askedAt, isLook: isLook, forHold: forHold)
         // An answer that took longer than a display frame (an app that is busy scrolling:
         // Finder took 60 to 100 ms) is followed by the next read at once, not at the next
         // display frame: with answers that slow every read counts. An answer that came
@@ -980,7 +1038,7 @@ extension ScrollPoster {
     }
 
     /// What an answer of the watch means for the scroll. Caller holds stateLock.
-    private func judgeLocked(_ answer: ScrollEndReading, token: UInt64, epoch: UInt64, askedAt: CFTimeInterval, isLook: Bool) {
+    private func judgeLocked(_ answer: ScrollEndReading, token: UInt64, epoch: UInt64, askedAt: CFTimeInterval, isLook: Bool, forHold: Bool) {
         // A second fence behind the reader's: a value that is no number from 0 to 1 is no
         // reading of where the page is.
         var reading = answer
@@ -991,22 +1049,24 @@ extension ScrollPoster {
                 reading = .notSeen(AccessibilityScrollEndWatch.notFromZeroToOne, roles: answer.roles, milliseconds: answer.milliseconds)
             }
         }
-        if !isLook {
+        if !isLook || forHold {
             watchReadInFlight = false
         }
-        // Rule 4: the hold lives by reads that still say "at that end".
-        if !isLook, var hold = endHold, hold.token == token {
-            if let value = reading.value, Self.isAtEnd(value, towardBottom: hold.towardBottom) {
+        // Rule 4: the hold lives by looks that still find its bar at that end.
+        if forHold {
+            guard var hold = endHold, hold.token == token else { return }
+            if let value = reading.value, reading.bar == hold.bar, Self.isAtEnd(value, towardBottom: hold.towardBottom) {
                 hold.lastAtEnd = watchClockLocked()
                 endHold = hold
             } else {
                 if reading.value == nil {
-                    // The bar is gone: the place is not proven any more. A fresh start
-                    // there gets its short touch and plain frames, and nothing is taken in.
-                    provenPlace = nil
+                    // The bar is gone: it is not proven any more. A fresh start there gets
+                    // its short touch and plain frames, and nothing is taken in.
+                    provenBar = nil
                 }
                 endHoldEndsLocked()
             }
+            return
         }
         guard token == watchToken, scrollIsOneTouch, !sessionLog.isEmpty else { return }
         sessionLog.endWatch.note(reading, isLook: isLook)
@@ -1015,7 +1075,7 @@ extension ScrollPoster {
             if isLook {
                 // No bar seen: plain, and another look in a while.
                 guard watchSeen == nil else { return }
-                provenPlace = nil
+                provenBar = nil
                 goPlainLocked(retry: true, now: now)
             } else if oneTouchIsOpen {
                 // One read that fails is asked again with the next display frame; the
@@ -1024,7 +1084,7 @@ extension ScrollPoster {
                 if watchReadFailures >= 2 {
                     sessionLog.endWatch.lost += 1
                     sessionLog.endWatch.add("lost the bar: ended the touch, plain until it is seen again")
-                    provenPlace = nil
+                    provenBar = nil
                     goPlainLocked(retry: true, now: now)
                 }
             }
@@ -1042,6 +1102,7 @@ extension ScrollPoster {
                 return
             }
             watchSeen = true
+            watchBar = reading.bar
             watchLastAnswerAt = now
             watchFollowed = false
             // (A look asked before the wheel's last turn opens the touch; the first value
@@ -1077,7 +1138,7 @@ extension ScrollPoster {
             watchJudgedValue = value
             if watchWrongWayReads >= Self.wrongWayReadsInARow && watchWrongWayMoved >= Self.wrongWaySlack {
                 sessionLog.endWatch.add("the value went against the frames over \(watchWrongWayReads) reads: ended the touch, plain until the wheel turns")
-                provenPlace = nil
+                provenBar = nil
                 goPlainLocked(retry: false, now: now)
                 return
             }
@@ -1123,9 +1184,11 @@ extension ScrollPoster {
 
     /// The rest of the scroll's motion is dropped and the hold is up. Caller holds stateLock.
     private func holdAtPageEndLocked() {
-        provenPlace = touchPlace
-        if let place = touchPlace {
-            endHold = EndHold(token: watchToken, place: place, towardBottom: watchHeadsToBottom ?? (delta.y < 0), lastAtEnd: watchClockLocked())
+        provenBar = watchBar != 0 ? watchBar : nil
+        if let place = touchPlace, watchBar != 0 {
+            let now = watchClockLocked()
+            endHold = EndHold(token: watchToken, place: place, bar: watchBar, towardBottom: watchHeadsToBottom ?? (delta.y < 0), lastAtEnd: now, startedAt: now)
+            scheduleHoldExpiryLocked()
         }
         resetMotionLocked()
         oneTouchStopIsHeld = true
@@ -1133,26 +1196,21 @@ extension ScrollPoster {
 
     /// Rule 5: the short touch of a scroll that started at the end has had its two moving
     /// frames. "Ended" right after the second, with its real time, so the app makes one
-    /// small bounce. Where the place is proven the rest is dropped and held; where it is
+    /// small bounce. Where the bar is proven the rest is dropped and held; where it is
     /// not, the rest of this scroll goes out plain and nothing is taken in. Caller holds
     /// stateLock.
     private func endShortTouchLocked() {
         oneTouchIsShort = false
         endOneTouchLocked(forced: false)
-        let isProven: Bool
-        if let place = touchPlace, let proven = provenPlace {
-            isProven = place.pid == proven.pid
-                && hypot(place.pointer.x - proven.pointer.x, place.pointer.y - proven.pointer.y) <= trackpadStylePointerSlack
-        } else {
-            isProven = false
-        }
+        // Proven is the bar this look found, not the place it was found at.
+        let isProven = watchBar != 0 && provenBar == watchBar
         if isProven {
             sessionLog.endWatch.add("the rest dropped")
             holdAtPageEndLocked()
         } else {
             // Plain for now, not for the rest of the scroll: a look is asked again in a
             // while, and at once when the wheel turns.
-            sessionLog.endWatch.add("the rest plain (this place is not proven)")
+            sessionLog.endWatch.add("the rest plain (this bar is not proven)")
             watchSeen = false
             watchRetryAt = latestNow + Self.watchRetryInterval
         }
@@ -1619,7 +1677,7 @@ extension ScrollPoster {
         scrollIsOneTouch = false
         oneTouchStopIsHeld = false
         // The end watch: answers still on their way belong to no scroll now. (A hold at a
-        // page's end and the proven place outlive the scroll.)
+        // page's end and the proven bar outlive the scroll.)
         watchToken &+= 1
         watchAsked = false
         watchSeen = nil
