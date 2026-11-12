@@ -5,9 +5,18 @@
 xcuserdata
 *.xcuserstate
 *.xcuserdated
+*.xcresult
+DerivedData/
+.swiftpm/
 
-# Build output (xcodebuild without -derivedDataPath)
+# Build output (scripts/install.sh and scripts/release.sh build into /build)
 /build
+*.dmg
+*.dSYM
+*.dSYM.zip
+
+# Build settings of one Mac (see Local.xcconfig.example)
+/Local.xcconfig
 
 # Agent tooling
 .superpowers/
@@ -15,6 +24,7 @@ xcuserdata
 /.agents/scheduled_tasks.lock
 /.claude/worktrees
 /.claude/scheduled_tasks.lock
+.claude/settings.local.json
 /.codex-archives
 
 # Browser-automation artifacts (screenshots, snapshots, logs)

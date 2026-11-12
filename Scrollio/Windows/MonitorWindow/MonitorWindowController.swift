@@ -6,6 +6,9 @@
 //  Copyright © 2017年 Caldis. All rights reserved.
 //
 
+// Debug builds only, like the Scroll Monitor it holds (see MonitorViewController.swift).
+#if DEBUG
+
 import Cocoa
 
 class MonitorWindowController: NSWindowController, NSWindowDelegate {
@@ -23,3 +26,5 @@ class MonitorWindowController: NSWindowController, NSWindowDelegate {
     }
     
 }
+
+#endif

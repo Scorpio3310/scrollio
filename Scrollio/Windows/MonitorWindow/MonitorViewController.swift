@@ -6,6 +6,11 @@
 //  Copyright © 2017年 Caldis. All rights reserved.
 //
 
+// Debug builds only. The Scroll Monitor is a developer window: it listens to every scroll,
+// button, pointer and modifier event and draws them with DGCharts. The release app does not
+// offer it (`StatusMenu.diagnosticItems`), so its code is left out of that build as well.
+#if DEBUG
+
 import Cocoa
 import DGCharts
 import UniformTypeIdentifiers
@@ -350,3 +355,5 @@ class MonitorViewController: NSViewController, ChartViewDelegate {
         buttonEventLogTextField?.string = ""
     }
 }
+
+#endif

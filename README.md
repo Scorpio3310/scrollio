@@ -13,11 +13,12 @@ trackpad, lets mouse buttons and keys run actions, adds mouse gestures and setti
 the sideways (thumb) wheel, and can manage the settings of Logitech MX mice.
 
 It is based on [Mos](https://github.com/Caldis/Mos) by Caldis, may be used only for
-non-commercial purposes, and is not affiliated with Logitech. See
+non-commercial purposes, and is not affiliated with Apple or Logitech. See
 [Licence and credits](#-licence-and-credits).
 
 There is no ready-made download yet. To use Scrollio now, build it from source: see
-[Build from source](#-build-from-source).
+[Build from source](#-build-from-source). What a download will be, and how to check one,
+is under [Download and first launch](#-download-and-first-launch).
 
 ---
 
@@ -162,10 +163,22 @@ is on, and then only the values you set that the mouse does not already have, ag
 time it connects. While the switch is off, the pane shows what the mouse reports. Do not
 run Logi Options+ at the same time.
 
-Apart from those settings: for a Logitech-only button that has an action, Scrollio asks
-the mouse to send that button to Scrollio (and gives it back when Scrollio pauses or
-quits); a Logitech action you give a button changes the mouse when you press it; and the
-gesture pulse can switch the mouse's haptics on, unless Haptic feedback is turned off.
+Apart from those settings, and whatever that switch says:
+
+- For a Logitech-only button that has an action, and for a gesture button the mouse
+  tracks itself, Scrollio asks the mouse to send that button to Scrollio, and gives it
+  back when Scrollio pauses or quits.
+- While you record a button in the Buttons pane, Scrollio asks the mouse for all of its
+  buttons, so that it can tell which one you press, and gives them back when the
+  recording ends.
+- A Logitech action you give a button changes the mouse when you press it.
+- The gesture pulse plays on the mouse and can switch its haptics on, unless Haptic
+  feedback is turned off.
+- Logitech Diagnostics (see [Menu bar](#menu-bar)) is a developer window: what you
+  change there is sent to the mouse.
+
+A value written to the mouse is stored in the mouse: it stays after Scrollio quits or is
+removed.
 
 Logitech mice work over a Logitech receiver (Bolt or Unifying) or Bluetooth. A low
 battery gets one notice at 10 % and one at 5 %, and its percentage stands next to the
@@ -203,6 +216,73 @@ those controls.
 
 ---
 
+## 📥 Download and first launch
+
+There is no ready-made download yet. Until a release is on the
+[Releases page](https://github.com/Scorpio3310/scrollio/releases), the way to get
+Scrollio is to [build it from source](#-build-from-source).
+
+A release is one disk image, `Scrollio-<version>.dmg`, for Apple silicon and Intel
+Macs. The app in it and the image itself are signed with the author's Developer ID
+(team `8C592KLVN6`) and notarized by Apple. A download from anywhere else, or one signed
+by anyone else, is not an official build.
+
+1. Open the disk image and drag Scrollio to the Applications folder. Open it from there,
+   not from the disk image.
+2. macOS asks once whether to open an app that was downloaded from the internet.
+3. The Welcome Guide opens. "Open Accessibility Settings" takes you to System Settings ›
+   Privacy & Security › Accessibility: turn on Scrollio in the list. Until you do,
+   Scrollio changes no scroll, button or key event.
+4. Choose how scrolling feels, and whether Scrollio opens at login. It then runs in the
+   menu bar; click its icon for Settings, Pause and Quit.
+
+If Mos is running, Scrollio quits it (see [Menu bar](#menu-bar)): quit Scrollio before you
+go back to Mos.
+
+To check a download before you open it:
+
+```bash
+# the same sum as in the release notes
+shasum -a 256 ~/Downloads/Scrollio-<version>.dmg
+# "accepted", "source=Notarized Developer ID"
+spctl -a -vv -t open --context context:primary-signature ~/Downloads/Scrollio-<version>.dmg
+```
+
+And the app, once it is in Applications:
+
+```bash
+# "accepted", "source=Notarized Developer ID"
+spctl -a -vv /Applications/Scrollio.app
+# "TeamIdentifier=8C592KLVN6"
+codesign -dv --verbose=2 /Applications/Scrollio.app 2>&1 | grep -E "Authority|TeamIdentifier"
+```
+
+---
+
+## 🧹 Uninstall
+
+1. Quit Scrollio: "Quit Scrollio" in its menu bar menu, or ⌘Q while its Settings window is
+   in front. Quitting gives a Logitech mouse its buttons back.
+2. Move Scrollio from the Applications folder to the Trash.
+3. In System Settings › Privacy & Security › Accessibility, select Scrollio and remove it
+   with the minus button. In System Settings › General › Login Items, remove Scrollio if
+   it is listed.
+4. Delete its settings:
+
+   ```bash
+   defaults delete com.nikklemenc.Scrollio
+   defaults delete com.nikklemenc.Scrollio.toast
+   ```
+
+What stays, because it was never Scrollio's to keep:
+
+- Values written to a Logitech mouse (pointer speed, wheel mode, haptics and so on)
+  are stored in the mouse. Change them with Logi Options+, or with Scrollio before you
+  remove it.
+- "Tracking speed" and "Pointer acceleration" are macOS settings: System Settings › Mouse.
+
+---
+
 ## 🔐 Permissions
 
 Scrollio asks for one permission: **Accessibility** (System Settings › Privacy &
@@ -214,6 +294,11 @@ Welcome Guide leads you to the switch.
 "Open at login" registers Scrollio as a login item; macOS may ask you to approve it in
 System Settings under Login Items.
 
+A script you bind to a button or a key runs with Scrollio's permissions, Accessibility
+included: macOS counts it as part of Scrollio. It cannot send Apple events (a script that
+tells another app to do something fails), because Scrollio has no permission for them.
+Bind only scripts you trust; [SECURITY.md](SECURITY.md) says why.
+
 ---
 
 ## 🔒 Privacy
@@ -223,18 +308,40 @@ System Settings under Login Items.
   GitHub" (General) hands the page to your web browser.
 - Nothing leaves your Mac. The settings are kept in Scrollio's preferences, and its log
   goes to the macOS system log on the Mac (see [Diagnostics](#-diagnostics)).
-- Besides its own settings, Scrollio reads the macOS keyboard shortcuts for Spaces (to
-  run them), and changes the macOS pointer settings only as described under
-  [Logitech MX mice](#logitech-mx-mice).
+- With Accessibility access, the scroll, mouse button and key events of your session pass
+  through Scrollio while it runs. A key or button is compared with your bindings and
+  passed on; Scrollio keeps no record of what you type. What it does log is listed under
+  [Diagnostics](#-diagnostics).
+- Besides its own settings, Scrollio reads:
+  - the macOS keyboard shortcuts for Spaces (to run them) and the macOS setting for
+    natural scrolling (for "Follow the hand");
+  - which app is under the pointer or in front, for the per-app settings and "Smooth
+    Scrolling in …", and whether that app is built on Chromium (one look for a file
+    inside the app, for "Trackpad-style events");
+  - the running apps, with their names and icons, to offer them in the Apps pane;
+  - the macOS pointer settings, which it shows, and changes only as described under
+    [Logitech MX mice](#logitech-mx-mice).
 
 ---
 
 ## 🔨 Build from source
 
 You need a Mac with macOS 14 or later, Xcode 26 or later (the app icon is an Icon
-Composer file) and an Apple Development signing identity. The project is set to the
-author's team: set `DEVELOPMENT_TEAM` to your own in the target's Signing settings. Do
-not turn signing off: macOS ties the Accessibility permission to the code signature.
+Composer file) and an Apple Development signing identity; a free Apple account gives
+one. Do not turn signing off: macOS ties the Accessibility permission to the code
+signature.
+
+The project signs for the author's team. To sign with yours, do not edit the project:
+
+```bash
+cp Local.xcconfig.example Local.xcconfig    # then put your Team ID into Local.xcconfig
+```
+
+`Local.xcconfig` is ignored by git, so the tree stays clean. `scripts/install.sh` passes
+it to its build when it exists; for the plain `xcodebuild` commands below, add
+`-xcconfig Local.xcconfig`. (In Xcode itself, choose your team under Signing &
+Capabilities instead, and do not commit that change.) Without the file nothing is
+different: the project's own settings are used.
 
 To build the release app and install it in `/Applications`:
 
@@ -248,7 +355,8 @@ with its commit and date (shown under General). It installs a build only when:
 
 - its signature verifies, is made with a certificate (not ad hoc) and has the same
   designated requirement as the installed app (a differently signed build would be asked
-  for the Accessibility permission again);
+  for the Accessibility permission again; so a downloaded Scrollio has to be removed
+  before a build of your own goes in its place, and the permission given again);
 - its bundle identifier is `com.nikklemenc.Scrollio`;
 - it carries no debugger entitlement (`get-task-allow`) and no code-coverage
   instrumentation.
@@ -264,14 +372,18 @@ xcodebuild -scheme Debug -configuration Release -destination 'platform=macOS' bu
 ```
 
 The debug build is a separate app, `Scrollio Debug.app` (`com.nikklemenc.Scrollio.debug`).
+It has two developer windows more (Scroll Monitor and Test Toasts, in the menu bar menu
+with Option held) and links [Charts](https://github.com/danielgindi/Charts) for the
+Scroll Monitor's graph; the release app is built without both.
 
 ---
 
 ## 🩺 Diagnostics
 
 Scrollio writes what it did to the macOS system log, subsystem `com.nikklemenc.Scrollio`
-(`com.nikklemenc.Scrollio.debug` for the debug build), in three categories. Nothing is
-logged per event.
+(`com.nikklemenc.Scrollio.debug` for the debug build), in three categories. They stay
+small: no line is written per wheel or pointer event, and no line says which key was
+pressed.
 
 ```bash
 # the last ten minutes
@@ -295,7 +407,9 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
 - `logi`: what a Logitech mouse reported (battery, pointer speed, haptics, press force,
   wheel settings), each decision to write a value or not and why, the read-back after a
   write, requests the mouse refused or did not answer, gesture haptic cues, and slow
-  writes.
+  writes. A gesture button that the mouse tracks itself writes one line per press
+  (`raw XY: CID 0x01A0 released after 14 samples`). Every `logi` line begins with the
+  mouse's name as the Mac knows it.
 - `app`: Scrollio's own health: each start and stop with its cause (launch, sleep and
   wake, another user, Pause, Accessibility access lost or back, quit), event taps that
   could not be created or that macOS turned off, restarts, and at launch which accent
@@ -306,15 +420,28 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   Started (the Mac woke up): the event taps and the Logitech sessions run
   ```
 
+Some older parts of the code still write with `NSLog`, outside these categories: among
+them notes at launch, the steps of the button recorder (one line per modifier key while it
+records), and a failure to open an app or a file or to run a script, with its path.
+Current macOS stores the text of such lines as `<private>`.
+
+Before you paste a log into an issue, read it: the `logi` lines carry the name of your
+mouse, and a Bluetooth name can be a person's name.
+
 ---
 
 ## 📄 Licence and credits
 
-Scrollio is based on **[Mos](https://github.com/Caldis/Mos)** by **Caldis** and its
-contributors. Mos is licensed under the
+Scrollio is a modified version of **[Mos](https://github.com/Caldis/Mos)** by **Caldis**
+and its contributors.
+
+- Mos: Copyright © 2017–2026 Caldis and contributors.
+- Scrollio's changes: Copyright © 2026 Nik Klemenc.
+
+Mos is licensed under the
 [Creative Commons Attribution-NonCommercial 4.0 International licence (CC BY-NC 4.0)](https://creativecommons.org/licenses/by-nc/4.0/),
-and so is Scrollio. A summary of the licence is in [LICENSE](LICENSE); the full text is at
-<https://creativecommons.org/licenses/by-nc/4.0/legalcode>.
+and so is Scrollio. [LICENSE](LICENSE) holds these notices and the full text of the
+licence.
 
 **This work has been modified.** Scrollio is not the original Mos. Among the changes: a
 new name, icon and bundle identifier; a reworked smooth-scrolling engine and simpler
@@ -330,18 +457,54 @@ the fork is in its own repository, in its
 for commercial purposes.
 
 Caldis and the contributors to Mos do not endorse Scrollio and are not responsible for
-it. Scrollio is not affiliated with or endorsed by Logitech. It comes with no
-warranty.
+it. Scrollio comes with no warranty.
+
+Scrollio is not affiliated with or endorsed by Apple or Logitech. Apple, Mac and macOS
+are trademarks of Apple Inc.; Logitech, MX Master, Logi Options+ and the other Logitech
+product names used here are trademarks of Logitech.
 
 ### Acknowledgements
 
 - [Mos](https://github.com/Caldis/Mos), the project Scrollio is built on.
-- [Charts](https://github.com/danielgindi/Charts) (DGCharts), used by the debug build's
-  scroll monitor window.
+- [Mac Mouse Fix](https://github.com/noah-nuebling/mac-mouse-fix) by Noah Nübling, the
+  reference for the events behind "Follow the hand". Scrollio's code for it is its own,
+  written from what Mac Mouse Fix's source shows, and so derived from it: the layout of
+  the Dock swipe events (the event fields, and the HID event the Dock reads on macOS 27),
+  the empty event that follows each of them, the 63 pt gap the Dock draws between two
+  desktops, how a swipe's progress scales with the number of desktops, sending the final
+  event again after 0.2 and 0.5 seconds, the travel after which a hold locks to a
+  direction, and the pointer's late jump after it is moved back on macOS 27.
+- [InstantSpaceSwitcher](https://github.com/jurplel/InstantSpaceSwitcher), a second
+  reference for the format of the same events and its pitfalls (MIT licence).
 - [Solaar](https://github.com/pwr-Solaar/Solaar), a reference for the Logitech HID++
-  protocol.
+  protocol: battery, pointer speed, the wheel, haptics, press force and the flags of a
+  button's reporting. The names of the Logitech controls and the list of Logitech
+  receivers are Solaar's tables (`special_keys.py` and `base_usb.py`), taken over with
+  Mos. Solaar is licensed under the GNU General Public License, version 2.
+- [OpenLogi](https://github.com/AprilNEA/OpenLogi), a reference for the same HID++
+  features (pointer speed, battery, haptic feedback, press force, SmartShift), for the
+  layout of an error answer, and for gestures tracked by the mouse: the haptic waveforms
+  that are played and the jump in the first movement sample.
+- [logiops](https://github.com/PixlOne/logiops), a reference for gestures tracked by the
+  mouse (a button's raw movement and the haptic pulses).
+- [Mouser](https://github.com/TomBadash/Mouser), a reference for battery, press force,
+  the wheel and gestures tracked by the mouse.
 - [Smoothscroll for websites](https://github.com/galambalazs/smoothscroll-for-websites),
-  credited by Mos for its smoothing approach.
+  credited by Mos for its approach to smoothing.
+- [Charts](https://github.com/danielgindi/Charts) (DGCharts, Apache License 2.0) draws
+  the graph of the debug build's Scroll Monitor. The release app is built without it.
+
+The same list, with the licence of Charts, is in
+[Scrollio/Acknowledgements.txt](Scrollio/Acknowledgements.txt), which is part of the app
+and of the disk image.
+
+---
+
+## 🤝 Contributing and security
+
+Scrollio is one person's project. Issues are welcome; pull requests are read, but may
+wait, and not every one will be merged: [CONTRIBUTING.md](CONTRIBUTING.md). A security
+problem is reported privately, not in an issue: [SECURITY.md](SECURITY.md).
 
 ---
 
@@ -358,27 +521,55 @@ The tests run inside `Scrollio Debug.app` with its startup side effects switched
 the event taps and Logitech sessions are not started, the real settings are not written
 and no login item is registered. Never add `CODE_SIGNING_ALLOWED=NO`: it re-signs the
 debug app ad hoc, macOS then asks for the Accessibility permission again, and with a
-running instance that prompt can freeze mouse and keyboard input. Tests that talk to a
-real Logitech mouse run only when asked for:
+running instance that prompt can freeze mouse and keyboard input. With a team of your
+own, add `-xcconfig Local.xcconfig` to these commands too (see
+[Build from source](#-build-from-source)). Tests that talk to a real Logitech mouse run
+only when asked for:
 
 ```bash
 LOGI_REAL_DEVICE=1 xcodebuild -scheme Debug -testPlan DebugWithDevice -destination 'platform=macOS' test
 ```
 
-A build for other people's Macs is made with `scripts/release.sh`:
+### Making a release
+
+A build for other people's Macs is made with `scripts/release.sh`, from a tagged commit:
 
 ```bash
-scripts/release.sh --check    # universal build signed with Developer ID, and its checks; nothing is notarized
-scripts/release.sh            # the same, then notarized by Apple and packed into a disk image
+scripts/release.sh --check              # build, sign and check; nothing is uploaded (needs no tag)
+git tag -a v1.0.0 -m "Scrollio 1.0.0"   # the version being released
+scripts/release.sh                      # the same, then notarized by Apple and packed into a disk image
+git push origin v1.0.0                  # that one tag, by name
 ```
 
-It builds a universal Release app (Apple silicon and Intel) signed with the Developer ID
-certificate, has Apple notarize the app and the disk image, and writes
-`build/release/Scrollio-<version>.dmg`. It needs a Developer ID Application certificate
-in the keychain and notarization credentials stored as the keychain profile
-`scrollio-notary` (`xcrun notarytool store-credentials "scrollio-notary" --team-id <team id>`).
+- **Tags.** A release's version is its tag's: the commit must carry `v<version>`
+  (`v1.0.0`), and the script refuses to release without it. The app and the image get
+  that version; `MARKETING_VERSION` in the project is only what other builds show. Push
+  the tag by name and never with `git push --tags`: a clone that also fetched the
+  original project holds Mos's own tags (`1.0`, `1.0.0` and so on, without a `v`), which
+  must not reach Scrollio's repository.
+- **What it builds.** A universal Release app (Apple silicon and Intel) from an empty
+  build folder, signed with the Developer ID certificate and stripped: an unstripped
+  binary names the folders it was compiled in. Apple notarizes the app and the disk
+  image.
+- **What it checks** before anything is uploaded: the signature (Developer ID, team,
+  hardened runtime, secure timestamp, no `get-task-allow`), both architectures, no
+  code-coverage instrumentation, no debug map and no path of the build Mac anywhere in
+  the app, debug symbols that belong to the binary, no Charts in the app, and the
+  Logitech boundary lint. After the notarization: Gatekeeper's verdict on the app and on
+  the image.
+- **What it leaves** in `build/release`: `Scrollio-<version>.dmg` (the app, a link to
+  Applications, `LICENSE.txt` and `Acknowledgements.txt`) and
+  `Scrollio-<version>.dSYM.zip`. The image gets its name only after the last check, so a
+  run that fails leaves no image. Keep the `.dSYM.zip` and do not publish it: a crash
+  report of that build cannot be read without it, and it holds the paths of the Mac it
+  was built on. The script prints the image's SHA-256: put it into the release notes.
+- **What it needs**: a Developer ID Application certificate in the keychain, and
+  notarization credentials stored as the keychain profile `scrollio-notary`
+  (`xcrun notarytool store-credentials "scrollio-notary" --team-id <team id>`).
+
 It installs nothing and leaves the project's signing settings as they are: the release
-signature is not the development signature of the copy in `/Applications`.
+signature is not the development signature of the copy in `/Applications`. Before a
+release is announced, open the image once on a Mac that never had Scrollio.
 
 | Path | Contents |
 | --- | --- |
@@ -389,3 +580,6 @@ signature is not the development signature of the copy in `/Applications`.
 | `tools/` | Hand-run HID++ probes and a small regression harness (see its README before running a probe) |
 | `assets/` | The pictures of this README |
 | `AGENTS.md` | Rules for coding agents and contributors: build, tests, signing, module boundaries, strings |
+| `CONTRIBUTING.md`, `SECURITY.md` | What to expect of issues and pull requests; how to report a security problem |
+| `LICENSE`, `Scrollio/Acknowledgements.txt` | The licence with its notices; what Scrollio owes to other projects |
+| `Local.xcconfig.example` | The template of `Local.xcconfig`, a Mac's own signing team |
