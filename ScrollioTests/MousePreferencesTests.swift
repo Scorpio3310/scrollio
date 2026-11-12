@@ -1888,6 +1888,47 @@ final class MacPointerSettingsTests: XCTestCase {
         XCTAssertFalse(inert.writePointerAcceleration(false))
         XCTAssertEqual(inert.read(), MacPointerState(trackingSpeed: 0.6875, pointerAcceleration: true))
     }
+
+    // MARK: - Pointer acceleration with a negative tracking speed
+
+    /// `com.apple.mouse.scaling = -1` is the old way to switch acceleration off: macOS then
+    /// has none whatever the "linear" setting says. Turning the switch on used to write
+    /// only "linear = false", read back "still off" and jump back; the pane offered no way
+    /// out (the speed row is hidden in that state). Now a real speed is written too.
+    func testTurningAccelerationOnWithANegativeSpeedAlsoWritesTheDefaultSpeed() {
+        let mac = FakeMacPointer()
+        mac.trackingSpeed = -1
+        mac.pointerAcceleration = true
+        XCTAssertEqual(mac.settings.read(), MacPointerState(trackingSpeed: nil, pointerAcceleration: false))
+
+        XCTAssertTrue(mac.settings.setPointerAcceleration(true))
+        XCTAssertEqual(mac.accelerationWrites, [true])
+        XCTAssertEqual(mac.trackingSpeedWrites, [MacPointerSettings.defaultTrackingSpeed])
+        XCTAssertEqual(mac.settings.read(), MacPointerState(trackingSpeed: 0.6875, pointerAcceleration: true))
+    }
+
+    func testTheSwitchLeavesAnOrdinarySpeedAlone() {
+        let mac = FakeMacPointer()
+        mac.trackingSpeed = 1.5
+        mac.pointerAcceleration = false
+        XCTAssertTrue(mac.settings.setPointerAcceleration(true))
+        XCTAssertTrue(mac.settings.setPointerAcceleration(false))
+        XCTAssertEqual(mac.accelerationWrites, [true, false])
+        XCTAssertEqual(mac.trackingSpeedWrites, [], "the speed is the user's")
+
+        // Off with a negative speed: nothing but the switch.
+        mac.trackingSpeed = -1
+        XCTAssertTrue(mac.settings.setPointerAcceleration(false))
+        XCTAssertEqual(mac.trackingSpeedWrites, [])
+    }
+
+    func testAWriteMacOSRefusesIsReported() {
+        let mac = FakeMacPointer()
+        mac.trackingSpeed = -1
+        mac.accepts = false
+        XCTAssertFalse(mac.settings.setPointerAcceleration(true))
+        XCTAssertEqual(mac.trackingSpeedWrites, [], "the speed is not written when the switch was refused")
+    }
 }
 
 final class MousePreferencesTabPlacementTests: XCTestCase {

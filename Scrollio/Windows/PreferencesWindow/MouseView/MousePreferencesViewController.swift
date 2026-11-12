@@ -499,7 +499,7 @@ final class MousePreferencesViewController: NSViewController {
     @objc func pointerAccelerationToggled(_ sender: NSSwitch) {
         let on = sender.state == .on
         guard on != macPointer.pointerAcceleration else { return }
-        _ = pointerSettings.writePointerAcceleration(on)
+        _ = pointerSettings.setPointerAcceleration(on)
         reloadMacPointerSettings()
     }
 
