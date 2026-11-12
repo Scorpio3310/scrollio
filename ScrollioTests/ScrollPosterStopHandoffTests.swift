@@ -1158,6 +1158,9 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         var timestamp: UInt64
         var pid: pid_t
         var isContinuous: Int64
+        var lines: Int64 = 0
+        var fixedLines: Double = 0
+        var scrollCount: Int64 = 0
         var name: String { return ScrollClassicRig.phaseName(scroll: scroll, momentum: momentum) }
         var hasPhase: Bool { return scroll != 0 || momentum != 0 }
     }
@@ -1165,6 +1168,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
     /// The wheel event's own time, and where the clock of the frames' own times starts.
     private static let wheelTime: UInt64 = 1_000_000_000
     private static let firstFrameTime: UInt64 = 5_000_000_000
+    private static let wheelScrollCount: Int64 = 3
 
     /// The default click: every frame that moves the page, with the switch off (pinned by
     /// `ScrollClassicPathTests.testTheDefaultClick_isWhatItWas`). No form changes it.
@@ -1177,11 +1181,14 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
     /// app's kind as given, display frames until the scroll has ended by itself. Returns the
     /// events that would be posted, the scroll's log entry, and how often the kind was asked.
     /// `oldLongTouch`: the evaluation switch (`ScrollPoster.usesOldLongTouch`).
-    private func oneClick(over kind: ScrollUtils.TrackpadStyleTarget, oldLongTouch: Bool = false,
+    /// `chrome`: whether the app counts as Chrome itself (it gets an "ended" at a stop with
+    /// the switch off).
+    private func oneClick(over kind: ScrollUtils.TrackpadStyleTarget, oldLongTouch: Bool = false, chrome: Bool = false,
                           file: StaticString = #filePath, line: UInt = #line) throws -> (frames: [PostedFrame], session: ScrollSystemLog.Session?, asked: Int) {
         let context = ScrollDispatchContext()
         let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
         poster.usesOldLongTouch = oldLongTouch
+        poster.isEventTargetingChrome = { _ in chrome }
         var asked = 0
         poster.trackpadStyleTarget = { _ in
             asked += 1
@@ -1190,7 +1197,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         _ = FakeDisplay(for: poster)
         var clock = Self.firstFrameTime
         poster.eventClockForTests = {
-            clock += 16_000_000
+            clock += 16_666_667
             return clock
         }
         var posted: [PostedFrame] = []
@@ -1203,7 +1210,10 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
                 y: event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1),
                 timestamp: event.timestamp,
                 pid: pid,
-                isContinuous: event.getIntegerValueField(.scrollWheelEventIsContinuous)
+                isContinuous: event.getIntegerValueField(.scrollWheelEventIsContinuous),
+                lines: event.getIntegerValueField(.scrollWheelEventDeltaAxis1),
+                fixedLines: event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1),
+                scrollCount: event.getIntegerValueField(.scrollWheelEventScrollCount)
             ))
             lock.unlock()
         }
@@ -1213,6 +1223,9 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
 
         let wheel = try wheelEvent(targetPID: 4242)
         wheel.timestamp = Self.wheelTime
+        // A wheel event that counts as the third of a row of fast ones: AppKit would
+        // multiply the deltas of a precise event that carries this count.
+        wheel.setIntegerValueField(.scrollWheelEventScrollCount, value: Self.wheelScrollCount)
         XCTAssertTrue(poster.smooth(event: wheel, input: input()), file: file, line: line)
         var now = ScrollPoster.monotonicNow()
         for _ in 0..<240 {
@@ -1267,10 +1280,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             XCTAssertEqual(phaseRuns(result.frames), [
                 "began ×1", "changed ×2", "ended ×1", "momentumBegan ×1", "momentumChanged ×23", "momentumEnded ×1",
             ])
-            let times = result.frames.map(\.timestamp)
-            XCTAssertTrue(times.allSatisfy { $0 > Self.firstFrameTime }, "every frame its own time")
-            XCTAssertEqual(times, times.sorted())
-            XCTAssertEqual(Set(times).count, times.count, "no two frames the same time")
+            try assertOwnFields(result.frames)
             XCTAssertEqual(result.asked, 1, "the app's kind is asked once per wheel event")
             XCTAssertEqual(result.session?.trackpadStyle, true)
             XCTAssertEqual(result.session?.flick, true)
@@ -1278,15 +1288,31 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         }
     }
 
+    /// What every posted event of "Trackpad-style scrolling" reads, in every form: a time of
+    /// its own (not the wheel event's, later than the event before it), its own line delta
+    /// and fixed-point delta (a tenth of its pixels; the wheel event's said one line on every
+    /// frame), and a scroll count of 0 (the wheel event's was 3).
+    private func assertOwnFields(_ frames: [PostedFrame], file: StaticString = #filePath, line: UInt = #line) throws {
+        XCTAssertFalse(frames.isEmpty, file: file, line: line)
+        let times = frames.map(\.timestamp)
+        XCTAssertTrue(times.allSatisfy { $0 > Self.firstFrameTime }, "every frame its own time, none the wheel event's", file: file, line: line)
+        XCTAssertEqual(times, times.sorted(), file: file, line: line)
+        XCTAssertEqual(Set(times).count, times.count, "no two frames the same time", file: file, line: line)
+        XCTAssertTrue(frames.allSatisfy { $0.scrollCount == 0 }, "scroll count 0", file: file, line: line)
+        XCTAssertTrue(frames.allSatisfy { abs($0.fixedLines - Double($0.y) / 10) < 0.001 }, "the fixed-point delta is the frame's", file: file, line: line)
+        XCTAssertTrue(frames.allSatisfy { abs(Double($0.lines) - Double($0.y) / 10) < 1 }, "the line delta is the frame's", file: file, line: line)
+        XCTAssertEqual(Double(frames.reduce(0) { $0 + $1.lines }), Double(frames.reduce(0) { $0 + $1.y }) / 10, accuracy: 1, file: file, line: line)
+    }
+
     /// Over any other app (AppKit, a web view, an app that is not known): one touch until the
     /// scroll has run out. Every frame of the click is a "changed", "ended" follows the last
-    /// one, no event carries a glide phase, and every one keeps the wheel event's time.
+    /// one, no event carries a glide phase, and every one has its own time and line delta.
     func testTheRealPath_overAnyOtherApp_postsOneTouchToTheEnd() throws {
         try withSettings(switchOn: true) {
             let result = try oneClick(over: .touchOnly)
             XCTAssertEqual(phaseRuns(result.frames), ["began ×1", "changed ×26", "ended ×1"])
             XCTAssertFalse(result.frames.contains { $0.momentum != 0 }, "no glide event")
-            XCTAssertTrue(result.frames.allSatisfy { $0.timestamp == Self.wheelTime }, "the wheel event's time on every frame")
+            try assertOwnFields(result.frames)
             XCTAssertEqual(result.frames.filter { $0.scroll == 2 }.reduce(0) { $0 + $1.y }, 205, "the touch carries the whole click")
             XCTAssertEqual(result.session?.trackpadStyle, true)
             XCTAssertEqual(result.session?.flick, false)
@@ -1367,7 +1393,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             XCTAssertEqual(phaseRuns(result.frames), [
                 "began ×1", "changed ×10", "ended ×1", "momentumBegan ×1", "momentumChanged ×15", "momentumEnded ×1",
             ])
-            XCTAssertTrue(result.frames.allSatisfy { $0.timestamp == Self.wheelTime }, "the wheel event's time on every frame")
+            try assertOwnFields(result.frames)
             XCTAssertEqual(result.frames.filter { $0.scroll == 2 }.reduce(0) { $0 + $1.y }, 135, "what the touch carries of the 205 px")
             XCTAssertEqual(result.session?.trackpadStyle, true)
             XCTAssertEqual(result.session?.flick, false)
@@ -1440,6 +1466,8 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             let result = try oneClick(over: .plainScrolling)
             XCTAssertFalse(result.frames.contains { $0.hasPhase })
             XCTAssertTrue(result.frames.allSatisfy { $0.timestamp == Self.wheelTime })
+            XCTAssertTrue(result.frames.allSatisfy { $0.scrollCount == Self.wheelScrollCount }, "without phases: the wheel event's scroll count")
+            XCTAssertTrue(result.frames.allSatisfy { $0.lines == 1 }, "and its line delta")
             XCTAssertEqual(result.session?.trackpadStyle, false)
             XCTAssertEqual(result.session?.trackpadStyleWithheld, true)
         }
@@ -1448,9 +1476,30 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             let off = try oneClick(over: .followsGlide)
             XCTAssertFalse(off.frames.contains { $0.hasPhase })
             XCTAssertTrue(off.frames.allSatisfy { $0.timestamp == Self.wheelTime })
+            XCTAssertTrue(off.frames.allSatisfy { $0.scrollCount == Self.wheelScrollCount && $0.lines == 1 }, "off: the wheel event's fields stay")
             XCTAssertEqual(off.asked, 0, "asked only while the switch is on")
             XCTAssertEqual(off.session?.trackpadStyle, false)
             XCTAssertEqual(off.session?.trackpadStyleWithheld, false)
+        }
+    }
+
+    /// With the switch off Chrome gets an "ended" at every stop (from Mos: "only [4, 0] lets
+    /// Chrome recover"). It is the one frame with a phase on that path, and it is written as
+    /// it always was: the wheel event's time, line delta and scroll count. Nothing of
+    /// "Trackpad-style scrolling" is on it.
+    func testTheRealPath_switchOff_chromesEndedIsWhatItWas() throws {
+        try withSettings(switchOn: false) {
+            let result = try oneClick(over: .followsGlide, chrome: true)
+            let last = try XCTUnwrap(result.frames.last)
+            XCTAssertEqual(last.name, "ended")
+            XCTAssertEqual(last.y, 0)
+            XCTAssertFalse(result.frames.dropLast().contains { $0.hasPhase }, "no other frame has a phase")
+            XCTAssertTrue(result.frames.allSatisfy { $0.timestamp == Self.wheelTime }, "the wheel event's time, on the \"ended\" too")
+            XCTAssertTrue(result.frames.allSatisfy { $0.scrollCount == Self.wheelScrollCount && $0.lines == 1 }, "and its scroll count and line delta")
+            XCTAssertEqual(result.asked, 0)
+
+            let other = try oneClick(over: .followsGlide)
+            XCTAssertFalse(other.frames.contains { $0.hasPhase }, "any other app: no \"ended\"")
         }
     }
 

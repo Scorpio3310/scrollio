@@ -164,6 +164,12 @@ final class ScrollDispatchContext {
             guard validGeneration && validTTL else { return }
             if !currentGeneration {
                 // Its scroll was stopped: the gesture is opened or closed, the page is not moved.
+                // (Line first: writing it rewrites the other two. Such a frame carries phases,
+                // so its line and fixed-point deltas are its own: `ScrollOutgoingFrame.write`.)
+                snapshot.event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: 0)
+                snapshot.event.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: 0)
+                snapshot.event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: 0.0)
+                snapshot.event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: 0.0)
                 snapshot.event.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: 0.0)
                 snapshot.event.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: 0.0)
             }

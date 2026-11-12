@@ -43,9 +43,23 @@ struct ScrollOutgoingFrame: Equatable {
     var scrollPhase: Double? = nil
     var momentumPhase: Double? = nil
     /// Event timestamp (`ScrollEventClock.uptimeNanoseconds`); nil keeps the copied wheel event's.
-    /// Given with "Trackpad-style events" only: apps take the speed of a gesture from the time
-    /// between its events, and every frame of a wheel tick used to carry that tick's time.
+    /// Given on every frame that carries phases ("Trackpad-style scrolling"): apps take the
+    /// speed of a gesture from the time between its events (`ScrollPoster.stampLocked`).
     var timestamp: UInt64? = nil
+    /// A frame of "Trackpad-style scrolling": it carries phases and is written as a
+    /// trackpad's event, with a time, line deltas and a scroll count of its own. (The one
+    /// frame with a phase that is not: the "ended" Chrome gets at a stop with the switch off,
+    /// written as it always was.)
+    var isTrackpadStyle = false
+    /// The frame's own line deltas (whole lines: a tenth of the pixels, the fraction carried
+    /// on to the next frame). Written on a trackpad-style frame only.
+    var lineY: Int64 = 0
+    var lineX: Int64 = 0
+
+    /// Whether the frame carries phases at all.
+    var carriesPhases: Bool {
+        return scrollPhase != nil && momentumPhase != nil
+    }
 
     /// Whether the frame opens or closes a gesture for the app: "began", "ended", "momentum
     /// began", "momentum ended". Never a frame without phases.
@@ -53,11 +67,33 @@ struct ScrollOutgoingFrame: Equatable {
         return scrollPhase == 1.0 || scrollPhase == 4.0 || momentumPhase == 1.0 || momentumPhase == 3.0
     }
 
-    /// Only the point delta is written; the line delta stays that of the copied wheel event,
-    /// and so does the timestamp unless one is given. CoreGraphics drops the fraction of a point
-    /// delta, so the frames of a glide come here in whole pixels (ScrollPixelCarry keeps the
-    /// fraction for the next).
+    /// Pixels in a line, as macOS counts them for a scroll event.
+    static let pixelsPerLine = 10.0
+
+    /// Without phases only the point delta is written: the line delta, the fixed-point delta,
+    /// the scroll count and the timestamp stay those of the copied wheel event, as they
+    /// always did. CoreGraphics drops the fraction of a point delta, so the frames of a glide
+    /// come here in whole pixels (ScrollPixelCarry keeps the fraction for the next).
+    ///
+    /// A trackpad-style frame is a trackpad's event to the app, and what it copied was a
+    /// wheel's:
+    /// - the scroll count (field 100) is set to 0. AppKit multiplies the delta of a precise
+    ///   event by 1 + count / 100 from a count of 3 (its "third fast flick" acceleration), and
+    ///   every frame carried whatever the wheel event did;
+    /// - the line delta and the fixed-point delta are the frame's own (a tenth of its
+    ///   pixels). Every frame of a wheel event carried that event's whole line delta: 26
+    ///   frames of one click each said "one line". The line delta is written first: writing
+    ///   it rewrites the other two fields;
+    /// - never a touch phase and a momentum phase together (`ScrollPhase.swift`,
+    ///   `PhaseValueMapping`): Chromium asserts on such an event.
     func write(to event: CGEvent) {
+        if isTrackpadStyle {
+            event.setIntegerValueField(.scrollWheelEventScrollCount, value: 0)
+            event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: lineY)
+            event.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: lineX)
+            event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: y / Self.pixelsPerLine)
+            event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: x / Self.pixelsPerLine)
+        }
         if let scrollPhase = scrollPhase, let momentumPhase = momentumPhase {
             event.setDoubleValueField(.scrollWheelEventScrollPhase, value: scrollPhase)
             event.setDoubleValueField(.scrollWheelEventMomentumPhase, value: momentumPhase)
@@ -108,6 +144,11 @@ class ScrollPoster {
     /// (asked only while that is on). Tests say the kind here: no running app is looked up.
     var trackpadStyleTarget: (CGEvent) -> ScrollUtils.TrackpadStyleTarget = {
         ScrollUtils.shared.trackpadStyleTarget(of: $0)
+    }
+    /// Whether an event goes to Chrome, for the "ended" Chrome gets at a stop with the switch
+    /// off (`stop`). Tests answer here: no running app is looked up.
+    var isEventTargetingChrome: (CGEvent) -> Bool = {
+        ScrollUtils.shared.isEventTargetingChrome($0)
     }
     /// Seconds on a clock that is never set back or forward (the wall clock was used here:
     /// set back by a time sync, it refused every new display link and kept a touch open for
@@ -209,6 +250,27 @@ class ScrollPoster {
     private var inputSequence: UInt64 = 0
     /// Input sequence of the stop request already handed to the main thread; nil = none yet.
     private var requestedStopSequence: UInt64?
+    // Trackpad-style: the time each frame carries. An app takes a gesture's speed from the
+    // time between its events: AppKit for the glide it adds after "ended", WebKit, Chromium
+    // and Gecko for the bounce at a page end, all as delta / (this event's time − the last
+    // one's). So the times have to step as evenly as the display's frames do. They used to be
+    // the wheel event's (one touch, long touch: every frame of a wheel event the same time)
+    // or the moment the frame was made (flick: uneven by whatever the callback was late).
+    /// The time of the display frame that runs, on an even grid: the frame before it plus the
+    /// display's interval; the clock's time only for the first frame of a scroll and after a
+    /// stall. Nanoseconds of the event clock; 0: no display frame yet in this scroll.
+    private var frameStamp: UInt64 = 0
+    /// The interval of that frame (ns).
+    private var frameStampStep: UInt64 = 0
+    /// The time the last frame with phases was given; 0: none yet in this scroll.
+    private var lastPhasedStamp: UInt64 = 0
+    /// A display frame is being worked off (`processFrameLocked`).
+    private var isInDisplayFrame = false
+    /// Two frames never carry the same time, or times in the wrong order: the later one is
+    /// at least this much after (ns). An app's speed is 0 for a step of 0.
+    static let leastStampStep: UInt64 = 1_000_000
+    /// The fraction of a line not yet written into a frame's line delta (`ScrollOutgoingFrame`).
+    private var lineCarry = ScrollPixelCarry()
     /// Counts the frames handed to the post queue (`post`), so that `stop(_:)` knows whether
     /// it queued a closing frame. Guarded by stateLock.
     private var queuedFrames: UInt64 = 0
@@ -804,6 +866,10 @@ extension ScrollPoster {
         scrollIsOneTouch = false
         momentumEndScheduledTime = nil
         trackingEndScheduledTime = nil
+        frameStamp = 0
+        frameStampStep = 0
+        lastPhasedStamp = 0
+        lineCarry.reset()
     }
 }
 
@@ -952,7 +1018,7 @@ extension ScrollPoster {
             // what Chrome gets at the default settings, and whether Chrome still needs it (or
             // the other Chromium apps want it too) can only be seen on screen.
             if let snapshot = dispatchContext.preparePostingSnapshot(),
-               ScrollUtils.shared.isEventTargetingChrome(snapshot.event),
+               isEventTargetingChrome(snapshot.event),
                let phaseValues = phaseValues(for: .TrackingEnd) {
                 _ = post(
                     (y: 0.0, x: 0.0),
@@ -1322,6 +1388,11 @@ private extension ScrollPoster {
     /// 处理一帧, 返回需要以哪个阶段结束会话 (nil 表示继续)。调用方须持有 stateLock。
     func processFrameLocked(frameInterval: Double, now: CFTimeInterval) -> Phase? {
         var pendingStopPhase: Phase?
+        if config.simTrackpadEnabled {
+            advanceFrameStampLocked(frameInterval: frameInterval)
+            isInDisplayFrame = true
+        }
+        defer { isInDisplayFrame = false }
         // 插值并平滑 (按真实帧间隔)
         let filledValue = advanceMotionLocked(frameInterval: frameInterval)
         // 变换滚动结果，将滤波后的插值映射到当前姿态（考虑灵敏度、方向等因素）
@@ -1485,6 +1556,48 @@ private extension ScrollPoster {
         phases.holdsWaitingMomentumBegan = snapshot.simTrackpadEnabled && !snapshot.oneTouch
     }
 
+    /// Trackpad-style: moves the frames' time grid on by one display frame. The grid starts
+    /// at the clock's time and then steps by the display's own interval, the value the
+    /// frame's distance was computed with, whenever the callback ran. When that has come
+    /// more than a frame away from the clock (the link stalled; a frame was skipped), it
+    /// starts again from the clock. Caller holds stateLock.
+    func advanceFrameStampLocked(frameInterval: Double) {
+        let now = eventTimestamp()
+        let step = frameInterval.isFinite && frameInterval > 0 ? UInt64((frameInterval * 1_000_000_000).rounded()) : 0
+        frameStampStep = step
+        guard frameStamp != 0 else {
+            frameStamp = now
+            return
+        }
+        let next = frameStamp &+ step
+        let away = next > now ? next - now : now - next
+        frameStamp = away > step ? now : next
+    }
+
+    /// Trackpad-style: the time for the next frame with phases.
+    /// - A frame that moves the page, from a display frame: that frame's time on the grid, so
+    ///   two such frames are exactly as far apart as their display frames.
+    /// - A frame without distance from a display frame ("ended", "momentum ended"): just
+    ///   after the display frame before. It can be followed in the same display frame by one
+    ///   that moves the page ("ended", then "momentum began" with its distance), and that one
+    ///   keeps its place on the grid.
+    /// - A frame from the main thread ("began" at a wheel event, the frames of a stop): the
+    ///   clock's time.
+    /// Never the same time twice and never backward (`leastStampStep`). Caller holds stateLock.
+    func stampLocked(moves: Bool) -> UInt64 {
+        var stamp: UInt64
+        if isInDisplayFrame && frameStamp != 0 {
+            stamp = moves || frameStamp <= frameStampStep ? frameStamp : frameStamp - frameStampStep + Self.leastStampStep
+        } else {
+            stamp = eventTimestamp()
+        }
+        if lastPhasedStamp != 0 && stamp < lastPhasedStamp &+ Self.leastStampStep {
+            stamp = lastPhasedStamp &+ Self.leastStampStep
+        }
+        lastPhasedStamp = stamp
+        return stamp
+    }
+
     func eventTimestamp() -> UInt64 {
 #if DEBUG
         if let clock = eventClockForTests {
@@ -1514,9 +1627,14 @@ private extension ScrollPoster {
             phaseValues = scrollIsOneTouch ? self.phaseValues(for: .TrackingOngoing) : self.phaseValues(for: phases.phase)
         }
         var frame = ScrollOutgoingFrame(y: v.y, x: v.x, scrollPhase: phaseValues?.scroll, momentumPhase: phaseValues?.momentum)
-        if config.flick {
-            // The time of this frame, so that an app finds the glide's real speed when it bounces.
-            frame.timestamp = eventTimestamp()
+        if config.simTrackpadEnabled && frame.carriesPhases {
+            // Its own time and its own line delta (`ScrollOutgoingFrame.write`). Not the
+            // "ended" Chrome gets at a stop with the switch off: that one stays as it was.
+            frame.isTrackpadStyle = true
+            frame.timestamp = stampLocked(moves: v.y != 0.0 || v.x != 0.0)
+            let lines = lineCarry.take((y: v.y / ScrollOutgoingFrame.pixelsPerLine, x: v.x / ScrollOutgoingFrame.pixelsPerLine))
+            frame.lineY = Int64(lines.y)
+            frame.lineX = Int64(lines.x)
         }
 #if DEBUG
         if let recorder = frameRecorderForTests {
