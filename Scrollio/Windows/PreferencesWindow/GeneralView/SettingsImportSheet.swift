@@ -197,20 +197,94 @@ enum SettingsFileText {
         return reason.isEmpty ? sentence : sentence + " " + reason
     }
 
-    /// `text` with every character that draws nothing, breaks the line or turns the
-    /// writing direction around written out as "\u{…}". A path or an argument of a file
-    /// is shown through this, so it cannot hide a part of itself or look like another.
+    /// `text` with every character that draws nothing, draws only space, breaks the line
+    /// or turns the writing direction around written out as "\u{…}". A path, an argument
+    /// or a name from a file is shown through this, so that no part of it is out of sight.
+    ///
+    /// What is written out (`isWrittenOut`): every space but the ordinary one (a no-break
+    /// space looks like a space, and the arguments of an action are split at it too),
+    /// controls and line breaks, the characters that format or are ignored by default
+    /// (zero width, direction marks, variation selectors, the Hangul fillers), blank
+    /// glyphs, and what has no character.
+    ///
+    /// A run of such characters is one mark with its length ("\u{A0}×3000"), and so is
+    /// a run of four or more ordinary spaces ("\u{20}×40"): three thousand no-break
+    /// spaces between two arguments showed a harmless first line and forty blank ones,
+    /// the second argument far below. However long a run is, what stands for it is short.
+    /// Ordinary spaces at the very start or end are written out too. Letters that look
+    /// like other letters are not told apart.
     static func visible(_ text: String) -> String {
+        let scalars = Array(text.unicodeScalars)
         var out = ""
-        for scalar in text.unicodeScalars {
-            switch scalar.properties.generalCategory {
-            case .control, .format, .lineSeparator, .paragraphSeparator, .surrogate, .privateUse, .unassigned:
-                out += "\\u{" + String(scalar.value, radix: 16, uppercase: true) + "}"
-            default:
-                out.unicodeScalars.append(scalar)
+        var index = 0
+        while index < scalars.count {
+            guard isBlank(scalars[index]) else {
+                out.unicodeScalars.append(scalars[index])
+                index += 1
+                continue
             }
+            var end = index
+            while end < scalars.count, isBlank(scalars[end]) {
+                end += 1
+            }
+            out += mark(for: scalars[index..<end], atAnEdge: index == 0 || end == scalars.count)
+            index = end
         }
         return out
+    }
+
+    /// Glyphs that are blank although their character is a symbol: the Braille pattern
+    /// without dots, and the object replacement character.
+    static let blankGlyphs: Set<UInt32> = [0x2800, 0xFFFC]
+
+    /// Whether `scalar` is shown as "\u{…}" and not as itself.
+    static func isWrittenOut(_ scalar: Unicode.Scalar) -> Bool {
+        if scalar == " " {
+            return false
+        }
+        switch scalar.properties.generalCategory {
+        case .control, .format, .lineSeparator, .paragraphSeparator, .spaceSeparator, .surrogate, .privateUse, .unassigned:
+            return true
+        default:
+            return scalar.properties.isDefaultIgnorableCodePoint || blankGlyphs.contains(scalar.value)
+        }
+    }
+
+    private static func isBlank(_ scalar: Unicode.Scalar) -> Bool {
+        return scalar == " " || isWrittenOut(scalar)
+    }
+
+    private static func written(_ scalar: Unicode.Scalar) -> String {
+        return "\\u{" + String(scalar.value, radix: 16, uppercase: true) + "}"
+    }
+
+    /// What stands for a run of blank characters: each kind with how many of it in a
+    /// row, or, when the kinds change more than four times, one mark for all of it (its
+    /// first kinds and the length). Up to three ordinary spaces stay spaces, unless they
+    /// stand at an edge of the text.
+    private static func mark(for run: ArraySlice<Unicode.Scalar>, atAnEdge: Bool) -> String {
+        var groups: [(scalar: Unicode.Scalar, count: Int)] = []
+        for scalar in run {
+            if let last = groups.last, last.scalar == scalar {
+                groups[groups.count - 1].count += 1
+            } else {
+                groups.append((scalar, 1))
+            }
+        }
+        guard groups.count <= 4 else {
+            var kinds: [Unicode.Scalar] = []
+            for group in groups where !kinds.contains(group.scalar) {
+                kinds.append(group.scalar)
+                if kinds.count > 4 { break }
+            }
+            return kinds.prefix(4).map(written).joined() + (kinds.count > 4 ? "…" : "") + "×\(run.count)"
+        }
+        return groups.map { group -> String in
+            if group.scalar == " ", group.count < 4, !atAnEdge {
+                return String(repeating: " ", count: group.count)
+            }
+            return written(group.scalar) + (group.count > 1 ? "×\(group.count)" : "")
+        }.joined()
     }
 }
 
