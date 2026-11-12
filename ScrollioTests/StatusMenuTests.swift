@@ -71,6 +71,7 @@ final class StatusMenuTests: XCTestCase {
         actions.showScrollMonitor = { calls.log.append("monitor") }
         actions.showDiagnostics = { calls.log.append("diagnostics") }
         actions.showTestToasts = { calls.log.append("toasts") }
+        actions.checkForUpdates = { calls.log.append("updates") }
         actions.quit = { calls.log.append("quit") }
         self.actions = actions
     }
@@ -93,11 +94,12 @@ final class StatusMenuTests: XCTestCase {
 
     private func state(
         access: Bool = true, paused: Bool = false, diagnostics: Bool = false,
-        batteries: [StatusMenu.Battery] = [], appSmoothing: StatusMenu.AppSmoothingItem? = nil
+        batteries: [StatusMenu.Battery] = [], appSmoothing: StatusMenu.AppSmoothingItem? = nil,
+        updates: StatusMenu.Updates = .none
     ) -> StatusMenu.State {
         return StatusMenu.State(
             hasAccess: access, isPaused: paused, showsDiagnostics: diagnostics, batteries: batteries,
-            appSmoothing: appSmoothing
+            appSmoothing: appSmoothing, updates: updates
         )
     }
 
@@ -135,6 +137,83 @@ final class StatusMenuTests: XCTestCase {
             .separator,
             Row(title: "Quit Scrollio", shortcut: "⌘Q"),
         ])
+    }
+
+    // MARK: - Updates
+
+    /// A copy that updates itself offers the check under Settings.
+    func testCheckForUpdatesFollowsSettings() throws {
+        XCTAssertEqual(rows(state(updates: .check(enabled: true))), [
+            Row(title: "Pause Scrollio"),
+            Row(title: "Settings…", shortcut: "⌘,"),
+            Row(title: "Check for Updates…"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+        try choose("Check for Updates…", in: menu(state(updates: .check(enabled: true))))
+        XCTAssertEqual(calls.log, ["updates"])
+    }
+
+    /// While a check runs in the background the item is dimmed.
+    func testCheckForUpdatesIsDimmedWhileACheckRuns() {
+        XCTAssertEqual(rows(state(updates: .check(enabled: false))), [
+            Row(title: "Pause Scrollio"),
+            Row(title: "Settings…", shortcut: "⌘,"),
+            Row(title: "Check for Updates…", enabled: false),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+    }
+
+    /// A found update that waits for an answer is the first thing in the menu, above the
+    /// batteries; it takes the place of "Check for Updates…".
+    func testAWaitingUpdateLeadsTheMenu() throws {
+        let battery = StatusMenu.Battery(title: "MX Master 4: 75%", symbolName: "battery.75percent")
+        let waiting = state(batteries: [battery], updates: .waiting(version: "1.1.0"))
+        XCTAssertEqual(rows(waiting), [
+            Row(title: "Update to Scrollio 1.1.0…"),
+            .separator,
+            Row(title: "MX Master 4: 75%", enabled: false),
+            .separator,
+            Row(title: "Pause Scrollio"),
+            Row(title: "Settings…", shortcut: "⌘,"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+        try choose("Update to Scrollio 1.1.0…", in: menu(waiting))
+        XCTAssertEqual(calls.log, ["updates"], "the same call brings the updater's window to the front")
+    }
+
+    /// An update may be what a copy without the access needs.
+    func testWithoutAccessTheUpdaterIsStillThere() {
+        XCTAssertEqual(rows(state(access: false, updates: .check(enabled: true))), [
+            Row(title: "Allow Accessibility Access…"),
+            .separator,
+            Row(title: "Check for Updates…"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+        XCTAssertEqual(rows(state(access: false, updates: .waiting(version: "2.0"))), [
+            Row(title: "Update to Scrollio 2.0…"),
+            .separator,
+            Row(title: "Allow Accessibility Access…"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+    }
+
+    func testTheMenuReadsTheUpdaterLikeThis() {
+        XCTAssertEqual(StatusMenu.updates(from: UpdateStatus()), .none)
+        XCTAssertEqual(StatusMenu.updates(from: UpdateStatus(availability: .wrongPlace, canCheck: true)), .none)
+        XCTAssertEqual(StatusMenu.updates(from: UpdateStatus(availability: .failed, canCheck: true)), .none)
+        XCTAssertEqual(StatusMenu.updates(from: UpdateStatus(availability: .available, canCheck: true)), .check(enabled: true))
+        XCTAssertEqual(StatusMenu.updates(from: UpdateStatus(availability: .available, canCheck: false)), .check(enabled: false))
+        XCTAssertEqual(
+            StatusMenu.updates(from: UpdateStatus(availability: .available, canCheck: true, waitingVersion: "1.1.0")),
+            .waiting(version: "1.1.0")
+        )
+        // The test host was not built by the release script: its live menu has no updater.
+        XCTAssertEqual(StatusItemManager.liveState().updates, .none)
     }
 
     func testPaused() {

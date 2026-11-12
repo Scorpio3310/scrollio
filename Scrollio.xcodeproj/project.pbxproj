@@ -34,11 +34,13 @@
 		C0DE4EA10000000000000302 /* ScrollioTests/ScrollCoreEnableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE4EA10000000000000301 /* ScrollioTests/ScrollCoreEnableTests.swift */; };
 		C0DE4EA10000000000000202 /* ScrollioTests/LogiDebugPanelTimestampTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE4EA10000000000000201 /* ScrollioTests/LogiDebugPanelTimestampTests.swift */; };
 		C0DE4EA10000000000000102 /* ScrollioTests/UtilsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE4EA10000000000000101 /* ScrollioTests/UtilsTests.swift */; };
+		5BA2C1E00000000000000B02 /* ScrollioTests/UpdateCenterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BA2C1E00000000000000B01 /* ScrollioTests/UpdateCenterTests.swift */; };
 		1A5E00000000000000000502 /* ScrollioTests/MouseGestureInteractiveModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5E00000000000000000501 /* ScrollioTests/MouseGestureInteractiveModeTests.swift */; };
 		1A5E00000000000000000302 /* ScrollioTests/InteractiveGestureSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5E00000000000000000301 /* ScrollioTests/InteractiveGestureSessionTests.swift */; };
 		1A5E00000000000000000402 /* ScrollioTests/DockSwipeSynthesizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5E00000000000000000401 /* ScrollioTests/DockSwipeSynthesizerTests.swift */; };
 		1A5E00000000000000000202 /* ScrollioTests/PreferencesLocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5E00000000000000000201 /* ScrollioTests/PreferencesLocalizationTests.swift */; };
 		0BE5A296253A119C006D61C0 /* DGCharts in Frameworks */ = {isa = PBXBuildFile; productRef = 0BE5A295253A119C006D61C0 /* DGCharts */; };
+		5BA2C1E00000000000000A02 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 5BA2C1E00000000000000A01 /* Sparkle */; };
 		AA1011FB00000000000000B2 /* ScrollioTests/ScrollTargetApplicationRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1011FA00000000000000B1 /* ScrollioTests/ScrollTargetApplicationRulesTests.swift */; };
 		0E590C87FC41F66FF48D518F /* ScrollioTests/ScrollDispatchContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25DD10CB06A5D177E3BD0845 /* ScrollioTests/ScrollDispatchContextTests.swift */; };
 		296126EA068FF77D423ACAA9 /* ScrollioTests/ScrollEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B8B50E951D72C6195DBA3A /* ScrollioTests/ScrollEventTests.swift */; };
@@ -151,6 +153,7 @@
 		C0DE4EA10000000000000301 /* ScrollioTests/ScrollCoreEnableTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ScrollCoreEnableTests.swift; sourceTree = SOURCE_ROOT; };
 		C0DE4EA10000000000000201 /* ScrollioTests/LogiDebugPanelTimestampTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiDebugPanelTimestampTests.swift; sourceTree = SOURCE_ROOT; };
 		C0DE4EA10000000000000101 /* ScrollioTests/UtilsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/UtilsTests.swift; sourceTree = SOURCE_ROOT; };
+		5BA2C1E00000000000000B01 /* ScrollioTests/UpdateCenterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/UpdateCenterTests.swift; sourceTree = SOURCE_ROOT; };
 		1A5E00000000000000000501 /* ScrollioTests/MouseGestureInteractiveModeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/MouseGestureInteractiveModeTests.swift; sourceTree = SOURCE_ROOT; };
 		1A5E00000000000000000301 /* ScrollioTests/InteractiveGestureSessionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/InteractiveGestureSessionTests.swift; sourceTree = SOURCE_ROOT; };
 		1A5E00000000000000000401 /* ScrollioTests/DockSwipeSynthesizerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/DockSwipeSynthesizerTests.swift; sourceTree = SOURCE_ROOT; };
@@ -253,6 +256,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0BE5A296253A119C006D61C0 /* DGCharts in Frameworks */,
+				5BA2C1E00000000000000A02 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -303,6 +307,7 @@
 				C0DE4EA10000000000000301 /* ScrollioTests/ScrollCoreEnableTests.swift */,
 				C0DE4EA10000000000000201 /* ScrollioTests/LogiDebugPanelTimestampTests.swift */,
 				C0DE4EA10000000000000101 /* ScrollioTests/UtilsTests.swift */,
+				5BA2C1E00000000000000B01 /* ScrollioTests/UpdateCenterTests.swift */,
 				1A5E00000000000000000501 /* ScrollioTests/MouseGestureInteractiveModeTests.swift */,
 				1A5E00000000000000000301 /* ScrollioTests/InteractiveGestureSessionTests.swift */,
 				1A5E00000000000000000401 /* ScrollioTests/DockSwipeSynthesizerTests.swift */,
@@ -425,6 +430,7 @@
 			name = Scrollio;
 			packageProductDependencies = (
 				0BE5A295253A119C006D61C0 /* DGCharts */,
+				5BA2C1E00000000000000A01 /* Sparkle */,
 			);
 			productName = Scrollio;
 			productReference = 22142DA01E25344E00E4BFBF /* Scrollio Debug.app */;
@@ -479,6 +485,7 @@
 			mainGroup = 22142D971E25344E00E4BFBF;
 			packageReferences = (
 				0BE5A294253A119C006D61C0 /* XCRemoteSwiftPackageReference "Charts" */,
+				5BA2C1E00000000000000A00 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			productRefGroup = 22142DA11E25344E00E4BFBF /* Products */;
 			projectDirPath = "";
@@ -552,6 +559,7 @@
 				C0DE4EA10000000000000302 /* ScrollioTests/ScrollCoreEnableTests.swift in Sources */,
 				C0DE4EA10000000000000202 /* ScrollioTests/LogiDebugPanelTimestampTests.swift in Sources */,
 				C0DE4EA10000000000000102 /* ScrollioTests/UtilsTests.swift in Sources */,
+				5BA2C1E00000000000000B02 /* ScrollioTests/UpdateCenterTests.swift in Sources */,
 				1A5E00000000000000000502 /* ScrollioTests/MouseGestureInteractiveModeTests.swift in Sources */,
 				1A5E00000000000000000302 /* ScrollioTests/InteractiveGestureSessionTests.swift in Sources */,
 				1A5E00000000000000000402 /* ScrollioTests/DockSwipeSynthesizerTests.swift in Sources */,
@@ -911,6 +919,14 @@
 				version = 5.1.0;
 			};
 		};
+		5BA2C1E00000000000000A00 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = exactVersion;
+				version = 2.10.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -918,6 +934,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0BE5A294253A119C006D61C0 /* XCRemoteSwiftPackageReference "Charts" */;
 			productName = DGCharts;
+		};
+		5BA2C1E00000000000000A01 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5BA2C1E00000000000000A00 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

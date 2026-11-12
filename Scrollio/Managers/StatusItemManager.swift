@@ -11,6 +11,11 @@
 //  Toasts only in the debug build. Without the access: "Allow Accessibility Access…" (the
 //  Welcome Guide) and Quit.
 //
+//  In a copy that updates itself (UpdateCenter) "Check for Updates…" follows "Settings…";
+//  while a found update waits for an answer, the menu starts with "Update to Scrollio
+//  1.1.0…" instead, which brings the updater's window to the front. Both are there
+//  without the access too: an update may be what is needed.
+//
 //  The icon is dimmed while the event handling does not run: paused, the access is missing,
 //  or the access is there but an event tap could not be created or stays off because its
 //  restarts are throttled (AppRunController, Interceptor). Its tooltip says which.
@@ -128,7 +133,8 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
             isPaused: AppRunController.shared.isPaused,
             showsDiagnostics: showsDiagnostics,
             batteries: hasAccess ? StatusMenu.batteries(from: LogiCenter.shared.mouseDeviceStates()) : [],
-            appSmoothing: hasAccess ? liveAppSmoothingItem() : nil
+            appSmoothing: hasAccess ? liveAppSmoothingItem() : nil,
+            updates: StatusMenu.updates(from: UpdateCenter.shared.status)
         )
     }
 
@@ -213,6 +219,8 @@ enum StatusMenu {
         var batteries: [Battery]
         /// "Smooth Scrolling in Safari" for the app in front; nil: no such item.
         var appSmoothing: AppSmoothingItem? = nil
+        /// What the menu offers of the updater.
+        var updates: Updates = .none
         /// The developer tools (Scroll Monitor, Test Toasts) are offered only in the debug build.
         var isDebugBuild: Bool = StatusMenu.isDebugBuild
     }
@@ -230,6 +238,25 @@ enum StatusMenu {
     /// build, the developer tools only in the debug build.
     static func diagnosticItems(isDebugBuild: Bool) -> [Item] {
         return isDebugBuild ? [.scrollMonitor, .diagnostics, .testToasts] : [.diagnostics]
+    }
+
+    /// What the menu offers of the updater.
+    enum Updates: Equatable {
+        /// This copy does not update itself: nothing.
+        case none
+        /// "Check for Updates…"; disabled while a check runs in the background.
+        case check(enabled: Bool)
+        /// "Update to Scrollio 1.1.0…": a found update waits for the user's answer.
+        case waiting(version: String)
+    }
+
+    /// The updater's state as the menu shows it.
+    static func updates(from status: UpdateStatus) -> Updates {
+        guard status.isAvailable else { return .none }
+        if let version = status.waitingVersion {
+            return .waiting(version: version)
+        }
+        return .check(enabled: status.canCheck)
     }
 
     /// The battery line of one mouse: "MX Master 4: 75%", "MX Master 4: 75%, charging".
@@ -280,6 +307,8 @@ enum StatusMenu {
         case diagnostics
         case testToasts
         case allowAccess
+        case checkForUpdates(enabled: Bool)
+        case updateWaiting(version: String)
         case quit
     }
 
@@ -287,17 +316,24 @@ enum StatusMenu {
     static let batteryTag = 7_301
 
     static func items(for state: State) -> [Item] {
-        guard state.hasAccess else {
-            return [.allowAccess, .separator, .quit]
+        var waiting: [Item] = []
+        var check: [Item] = []
+        switch state.updates {
+        case .none: break
+        case .check(let enabled): check = [.checkForUpdates(enabled: enabled)]
+        case .waiting(let version): waiting = [.updateWaiting(version: version), .separator]
         }
-        var items: [Item] = state.batteries.map(Item.battery)
-        if !items.isEmpty {
+        guard state.hasAccess else {
+            return waiting + [.allowAccess, .separator] + (check.isEmpty ? [] : check + [.separator]) + [.quit]
+        }
+        var items: [Item] = waiting + state.batteries.map(Item.battery)
+        if !state.batteries.isEmpty {
             items.append(.separator)
         }
         if let appSmoothing = state.appSmoothing {
             items += [.appSmoothing(appSmoothing), .separator]
         }
-        items += [state.isPaused ? .resume : .pause, .settings, .separator]
+        items += [state.isPaused ? .resume : .pause, .settings] + check + [.separator]
         if state.showsDiagnostics {
             items += diagnosticItems(isDebugBuild: state.isDebugBuild) + [.separator]
         }
@@ -377,6 +413,17 @@ enum StatusMenu {
             return action("status-menu-test-toasts", #selector(StatusMenuActions.testToastsClicked(_:)))
         case .allowAccess:
             return action("status-menu-allow-access", #selector(StatusMenuActions.allowAccessClicked(_:)))
+        case .checkForUpdates(let enabled):
+            // Without an action AppKit shows it disabled.
+            let check = action("main-menu-check-for-updates", #selector(StatusMenuActions.checkForUpdatesClicked(_:)))
+            if !enabled {
+                check.action = nil
+            }
+            return check
+        case .updateWaiting(let version):
+            let update = action("status-menu-update-waiting", #selector(StatusMenuActions.checkForUpdatesClicked(_:)))
+            update.title = String(format: NSLocalizedString("status-menu-update-waiting", comment: ""), version)
+            return update
         case .quit:
             return action("main-menu-quit", #selector(StatusMenuActions.quitClicked(_:)), shortcut: "q")
         }
@@ -479,6 +526,9 @@ final class StatusMenuActions: NSObject {
     }
     var showDiagnostics: () -> Void = { LogiCenter.shared.showDebugPanel() }
     var showTestToasts: () -> Void = { Toast.showTestPanel() }
+    /// "Check for Updates…", and "Update to Scrollio …" (the same call brings a waiting
+    /// update's window to the front).
+    var checkForUpdates: () -> Void = { UpdateCenter.shared.checkForUpdates() }
     var quit: () -> Void = { NSApp.terminate(nil) }
 
     @objc func settingsClicked(_ sender: Any?) { showSettings() }
@@ -491,5 +541,6 @@ final class StatusMenuActions: NSObject {
     @objc func scrollMonitorClicked(_ sender: Any?) { showScrollMonitor() }
     @objc func diagnosticsClicked(_ sender: Any?) { showDiagnostics() }
     @objc func testToastsClicked(_ sender: Any?) { showTestToasts() }
+    @objc func checkForUpdatesClicked(_ sender: Any?) { checkForUpdates() }
     @objc func quitClicked(_ sender: Any?) { quit() }
 }

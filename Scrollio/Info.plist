@@ -32,6 +32,14 @@
 	<string>$(SCROLLIO_BUILD_COMMIT)</string>
 	<key>ScrollioBuildDate</key>
 	<string>$(SCROLLIO_BUILD_DATE)</string>
+	<key>SUFeedURL</key>
+	<string>$(SCROLLIO_UPDATE_FEED)</string>
+	<key>SUPublicEDKey</key>
+	<string>2JQXhKochYZpPMRDfYFBzXa9qBTMpKwdj0QLhZKBEhQ=</string>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2017–2026 Caldis (Mos). Changes © 2026 Nik Klemenc. CC BY-NC 4.0.</string>
 	<key>NSMainStoryboardFile</key>

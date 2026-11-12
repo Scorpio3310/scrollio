@@ -173,10 +173,27 @@ public class Utils {
             isDockIconVisible = true
         }
     }
+    /// Something besides the app's own windows needs the Dock icon: the updater, while a
+    /// found update waits for the user's answer. A test replaces it.
+    static var dockIconIsHeld: () -> Bool = { UpdateCenter.shared.holdsDockIcon }
     class func hideDockIcon() {
-        if WindowManager.shared.refs.count == 1 {
+        if WindowManager.shared.refs.count == 1 && !dockIconIsHeld() {
             NSApp.setActivationPolicy(NSApplication.ActivationPolicy.accessory)
             isDockIconVisible = false
+        }
+    }
+    /// The updater no longer needs the Dock icon: Scrollio leaves the Dock, unless one of
+    /// its own windows is open (its closing does that then).
+    class func releaseDockIcon() {
+        guard isDockIconVisible, !hasOpenWindow(WindowManager.shared.refs.values.map { $0.window }) else { return }
+        NSApp.setActivationPolicy(NSApplication.ActivationPolicy.accessory)
+        isDockIconVisible = false
+    }
+    /// One of these windows is on screen (a minimized one counts). Pure.
+    static func hasOpenWindow(_ windows: [NSWindow?]) -> Bool {
+        return windows.contains { window in
+            guard let window else { return false }
+            return window.isVisible || window.isMiniaturized
         }
     }
     

@@ -13,6 +13,11 @@
 //  - "Permissions": whether Scrollio has Accessibility access, with a way to System
 //    Settings when it has not (the row then says "Not allowed." in its line under the
 //    title, so the orange sign and the button leave that line room for two lines).
+//  - "Updates": in a copy that updates itself (a released one, UpdateCenter) the two
+//    switches "Check for updates automatically" and "Install updates automatically", and
+//    a row with "Check Now" and the time of the last check, which says "Scrollio 1.1.0 is
+//    available" with "Update…" while a found update waits. In every other copy one line
+//    that says why it does not update itself.
 //  The developer tools (scroll monitor, Logitech diagnostics) are not in the pane: the
 //  status-bar menu lists them while Option is held.
 //  At the bottom a box with the Welcome Guide and "Scrollio on GitHub" (the repository in the
@@ -57,6 +62,11 @@ class PreferencesGeneralViewController: NSViewController {
     /// The app's Info.plist, for the version line; tests and renders give one with or
     /// without a build stamp.
     var bundleInfo: () -> [String: Any] = { Bundle.main.infoDictionary ?? [:] }
+    /// The updater as the pane shows it, and what its controls do.
+    var updateStatus: () -> UpdateStatus = { UpdateCenter.shared.status }
+    var checkForUpdates: () -> Void = { UpdateCenter.shared.checkForUpdates() }
+    var setChecksForUpdates: (Bool) -> Void = { UpdateCenter.shared.setChecksAutomatically($0) }
+    var setInstallsUpdates: (Bool) -> Void = { UpdateCenter.shared.setInstallsAutomatically($0) }
 
     // MARK: - Views (read access for tests)
 
@@ -76,6 +86,15 @@ class PreferencesGeneralViewController: NSViewController {
     private(set) var accessibilityStatusIcon: NSImageView!
     private(set) var accessibilityStatusLabel: NSTextField!
     private(set) var openAccessibilitySettingsButton: NSButton!
+
+    private(set) var updatesSection: PreferencesGroupSection!
+    private(set) var updatesAutomaticRow: PreferencesSwitchRow!
+    private(set) var updatesInstallRow: PreferencesSwitchRow!
+    /// "Check for updates" with "Check Now"; "Scrollio 1.1.0 is available" with "Update…".
+    private(set) var updatesCheckRow: PreferencesGroupRow!
+    private(set) var updatesCheckButton: NSButton!
+    /// Shown alone in a copy that does not update itself: why not.
+    private(set) var updatesUnavailableRow: PreferencesGroupRow!
 
     private(set) var welcomeGuideRow: PreferencesGroupRow!
     private(set) var welcomeGuideButton: NSButton!
@@ -124,9 +143,15 @@ class PreferencesGeneralViewController: NSViewController {
         let permissions = PreferencesGroupSection(
             title: text("general-permissions-header"), width: width, rows: [makeAccessibilityRow()]
         )
+        let updates = PreferencesGroupSection(
+            title: text("general-updates-header"), width: width, rows: [
+                makeUpdatesAutomaticRow(), makeUpdatesInstallRow(), makeUpdatesCheckRow(), makeUpdatesUnavailableRow(),
+            ]
+        )
+        updatesSection = updates
         let guide = PreferencesGroupSection(width: width, rows: [makeWelcomeGuideRow(), makeGitHubRow()])
         let credit = makeCreditLabel(width: width)
-        PreferencesGroupedForm.add([header, paused, startup, permissions, guide, credit], to: content)
+        PreferencesGroupedForm.add([header, paused, startup, permissions, updates, guide, credit], to: content)
         // The credit sits close under the last box, as the muted lines of the other panes.
         content.setCustomSpacing(PreferencesGroupedForm.noteSpacing, after: guide)
 
@@ -136,6 +161,7 @@ class PreferencesGeneralViewController: NSViewController {
         syncViewWithOptions()
         refreshAccessState()
         refreshPauseState()
+        refreshUpdateState()
         root.setFrameSize(root.fittingSize)
     }
 
@@ -234,6 +260,56 @@ class PreferencesGeneralViewController: NSViewController {
             controls: [button]
         )
         accessibilityRow = row
+        return row
+    }
+
+    private func makeUpdatesAutomaticRow() -> PreferencesGroupRow {
+        let row = PreferencesSwitchRow(
+            title: text("general-updates-automatic"),
+            explanation: text("general-updates-automatic-hint"),
+            target: self,
+            action: #selector(updatesAutomaticClicked(_:))
+        )
+        updatesAutomaticRow = row
+        return row
+    }
+
+    private func makeUpdatesInstallRow() -> PreferencesGroupRow {
+        let row = PreferencesSwitchRow(
+            title: text("general-updates-install"),
+            explanation: text("general-updates-install-hint"),
+            target: self,
+            action: #selector(updatesInstallClicked(_:))
+        )
+        updatesInstallRow = row
+        return row
+    }
+
+    /// "Check for updates" with "Check Now" and the time of the last check; while a found
+    /// update waits, its version with "Update…".
+    private func makeUpdatesCheckRow() -> PreferencesGroupRow {
+        let button = PreferencesGroupedForm.makePushButton(
+            title: text("general-updates-check-now"),
+            target: self,
+            action: #selector(checkForUpdatesClicked(_:))
+        )
+        updatesCheckButton = button
+        let row = PreferencesGroupRow(
+            title: text("general-updates-check"),
+            explanation: text("general-updates-never-checked"),
+            accessory: button
+        )
+        updatesCheckRow = row
+        return row
+    }
+
+    /// One line for a copy that does not update itself.
+    private func makeUpdatesUnavailableRow() -> PreferencesGroupRow {
+        let row = PreferencesGroupRow(
+            title: text("general-updates-unavailable"),
+            explanation: text("general-updates-unavailable-source")
+        )
+        updatesUnavailableRow = row
         return row
     }
 
@@ -360,6 +436,11 @@ class PreferencesGeneralViewController: NSViewController {
                 self?.refreshAccessState()
                 self?.refreshPauseState()
             },
+            // A check started or ended, an update was found or answered, or Sparkle's own
+            // question about automatic checks was answered.
+            center.addObserver(forName: UpdateCenter.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.refreshUpdateState()
+            },
         ]
     }
 
@@ -374,6 +455,75 @@ class PreferencesGeneralViewController: NSViewController {
         refreshLaunchAtLoginState()
         refreshAccessState()
         refreshPauseState()
+        refreshUpdateState()
+    }
+
+    // MARK: - Updates
+
+    /// Shows the updater as it is: the switches, the time of the last check or the update
+    /// that waits; in a copy that does not update itself, the one line that says why.
+    func refreshUpdateState() {
+        guard isViewLoaded else { return }
+        let status = updateStatus()
+        let available = status.isAvailable
+        updatesAutomaticRow.isHidden = !available
+        updatesInstallRow.isHidden = !available
+        updatesCheckRow.isHidden = !available
+        updatesUnavailableRow.isHidden = available
+        if available {
+            updatesAutomaticRow.isOn = status.checksAutomatically
+            updatesInstallRow.isOn = status.installsAutomatically
+            updatesInstallRow.isEnabled = status.canInstallAutomatically
+            if let version = status.waitingVersion {
+                updatesCheckRow.title = String(format: text("general-updates-waiting"), version)
+                updatesCheckRow.explanation = text("general-updates-waiting-hint")
+                updatesCheckButton.title = text("general-updates-show")
+            } else {
+                updatesCheckRow.title = text("general-updates-check")
+                updatesCheckRow.explanation = Self.lastCheckText(status.lastCheck)
+                updatesCheckButton.title = text("general-updates-check-now")
+            }
+            updatesCheckButton.isEnabled = status.canCheck
+        } else {
+            updatesUnavailableRow.explanation = text(Self.unavailableTextKey(for: status.availability))
+        }
+        PreferencesForm.fitToContent(self)
+    }
+
+    /// The line of a copy that does not update itself.
+    static func unavailableTextKey(for availability: UpdateAvailability) -> String {
+        switch availability {
+        case .wrongPlace: return "general-updates-unavailable-place"
+        case .failed: return "general-updates-unavailable-failed"
+        case .available, .builtFromSource: return "general-updates-unavailable-source"
+        }
+    }
+
+    /// "Last checked 12 Nov 2026 at 08:12." in `locale`'s format; "Not checked yet." Pure.
+    static func lastCheckText(_ date: Date?, locale: Locale = .current, timeZone: TimeZone = .current) -> String {
+        guard let date else {
+            return NSLocalizedString("general-updates-never-checked", comment: "")
+        }
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = timeZone
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return String(format: NSLocalizedString("general-updates-last-checked", comment: ""), formatter.string(from: date))
+    }
+
+    @objc func updatesAutomaticClicked(_ sender: NSSwitch) {
+        setChecksForUpdates(sender.state == .on)
+        refreshUpdateState()
+    }
+
+    @objc func updatesInstallClicked(_ sender: NSSwitch) {
+        setInstallsUpdates(sender.state == .on)
+        refreshUpdateState()
+    }
+
+    @objc func checkForUpdatesClicked(_ sender: NSButton) {
+        checkForUpdates()
     }
 
     // MARK: - Pause

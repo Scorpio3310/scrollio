@@ -24,24 +24,47 @@
 # and so on up to 4.x). Those must never reach Scrollio's repository, and no release may
 # be made from one. --check runs without a tag; it then uses the project's version.
 #
+# Updates. A released app updates itself (Sparkle, Scrollio/Update/UpdateCenter.swift): it
+# asks for the file appcast.xml of the newest release on GitHub, which names the version
+# and its disk image, and installs the image only when it carries an EdDSA signature made
+# with the update key. So this script also
+#   - gives the build its feed (SUFeedURL; no other build has one, so no other build asks),
+#   - signs Sparkle's own helper programs with the Developer ID (they come signed ad hoc,
+#     which Apple does not notarize),
+#   - signs the finished image with the update key and writes appcast.xml for it.
+# The update key is a key pair made once with scripts/update-key.sh: the private half
+# lives in the login keychain, the public half is SUPublicEDKey in Scrollio/Info.plist.
+# The script refuses to go on when the keychain's key is not the one in the Info.plist:
+# no installed copy would accept such an update.
+#
 # Needed once per Mac:
 #   - a "Developer ID Application" certificate, with its private key, in the keychain
 #   - notarization credentials, stored as a keychain profile:
 #       xcrun notarytool store-credentials "scrollio-notary" --team-id <team id>
+#   - the update key in the keychain (scripts/update-key.sh import <file>, on a second Mac)
+# macOS asks once per tool whether it may use the update key: choose "Always Allow".
 #
 # Environment:
 #   SCROLLIO_SIGN_IDENTITY      which Developer ID certificate, when the keychain has several
 #   SCROLLIO_NOTARY_PROFILE     the keychain profile (default: scrollio-notary)
 #   SCROLLIO_RELEASE_DIR        where everything is built (default: build/release)
 #   SCROLLIO_VERSION            which version, when the commit carries several v tags (1.0.0)
+#   SCROLLIO_UPDATE_KEY_ACCOUNT the keychain account of the update key (default: scrollio)
 #
 # What a release leaves in build/release (or SCROLLIO_RELEASE_DIR):
 #   Scrollio-<version>.dmg        the image to publish: the app, a link to Applications,
 #                                 LICENSE.txt and Acknowledgements.txt
+#   appcast.xml                   what the installed copies read: publish it with the
+#                                 image, in the same GitHub release, under this name.
+#                                 Without it no copy learns of the new version.
+#   Scrollio-<version>-notes.md   the release notes to paste into the GitHub release:
+#                                 the version's part of CHANGELOG.md and the image's
+#                                 SHA-256
 #   Scrollio-<version>.dSYM.zip   the debug symbols of exactly this build. Keep it and do
 #                                 not publish it: a crash report cannot be read without
 #                                 it, and it holds the paths of the Mac it was built on.
-# The image gets its name only after the last check: a run that fails leaves no image.
+# The image and the appcast get their names only after the last check: a run that fails
+# leaves neither.
 #
 # The build is stamped like scripts/install.sh stamps it (CFBundleVersion = number of
 # commits, ScrollioBuildCommit, ScrollioBuildDate). A release is made from a commit: with
@@ -52,6 +75,10 @@ set -euo pipefail
 APP_NAME="Scrollio"
 BUNDLE_ID="com.nikklemenc.Scrollio"
 PROFILE="${SCROLLIO_NOTARY_PROFILE:-scrollio-notary}"
+# Where a released app asks for new versions: the file appcast.xml of the newest release.
+UPDATE_FEED="https://github.com/Scorpio3310/scrollio/releases/latest/download/appcast.xml"
+RELEASES_URL="https://github.com/Scorpio3310/scrollio/releases"
+KEY_ACCOUNT="${SCROLLIO_UPDATE_KEY_ACCOUNT:-scrollio}"
 
 cd "$(dirname "$0")/.."
 REPO="$PWD"
@@ -73,6 +100,11 @@ case "${1:-}" in
 esac
 
 fail() { echo "release: $*" >&2; exit 1; }
+
+# The parts that can be tried without the Developer ID (signing Sparkle's helpers, looking
+# at every program's signature, writing the appcast) are functions of their own.
+# shellcheck source=scripts/release-lib.sh
+. "$REPO/scripts/release-lib.sh"
 
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
@@ -142,10 +174,50 @@ mkdir -p "$DERIVED"
 scripts/qa/lint-logi-boundary.sh >> "$LOG" 2>&1 \
     || fail "the Logitech boundary lint fails: scripts/qa/lint-logi-boundary.sh (log: $LOG)"
 
+# --- The update key --------------------------------------------------------------------
+# Sparkle's tools come with its package (the version Package.resolved pins), next to the
+# framework the app embeds.
+SPARKLE_BIN="$DERIVED/SourcePackages/artifacts/sparkle/Sparkle/bin"
+if [ ! -x "$SPARKLE_BIN/sign_update" ] || [ ! -x "$SPARKLE_BIN/generate_keys" ]; then
+    echo "release: fetching the packages (Sparkle's tools sign the update)…"
+    xcodebuild -resolvePackageDependencies -project "${APP_NAME}.xcodeproj" -scheme Debug \
+        -derivedDataPath "$DERIVED" -disableAutomaticPackageResolution >> "$LOG" 2>&1 \
+        || fail "could not fetch the packages (log: $LOG)"
+fi
+[ -x "$SPARKLE_BIN/sign_update" ] && [ -x "$SPARKLE_BIN/generate_keys" ] \
+    || fail "Sparkle's tools are not at $SPARKLE_BIN"
+
+# The key the installed copies check an update with, and the key this Mac signs with.
+APP_PUBLIC_KEY="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$REPO/${APP_NAME}/Info.plist" 2>/dev/null || true)"
+[ -n "$APP_PUBLIC_KEY" ] || fail "${APP_NAME}/Info.plist has no SUPublicEDKey"
+# (Without a key the tool prints an error on its standard output and fails: only what has
+# the shape of a public key, 32 bytes in base64, counts.)
+KEYCHAIN_PUBLIC_KEY="$("$SPARKLE_BIN/generate_keys" --account "$KEY_ACCOUNT" -p 2>> "$LOG" || true)"
+grep -Eq '^[A-Za-z0-9+/]{43}=$' <<< "$KEYCHAIN_PUBLIC_KEY" || KEYCHAIN_PUBLIC_KEY=""
+[ -n "$KEYCHAIN_PUBLIC_KEY" ] \
+    || fail "no update key in the keychain (account \"$KEY_ACCOUNT\"): bring it to this Mac with scripts/update-key.sh import <file>"
+[ "$KEYCHAIN_PUBLIC_KEY" = "$APP_PUBLIC_KEY" ] \
+    || fail "the update key in the keychain is not the one in ${APP_NAME}/Info.plist (SUPublicEDKey): no installed copy would accept this release"
+
+# Sign something now: macOS asks here, not after the long build, whether sign_update may
+# use the key ("Always Allow"), and a key that cannot sign stops the run at once.
+PROBE="$DERIVED/update-key-probe"
+printf '%s' "$APP_NAME" > "$PROBE"
+PROBE_SIGNATURE="$("$SPARKLE_BIN/sign_update" --account "$KEY_ACCOUNT" -p "$PROBE" 2>> "$LOG")" \
+    || fail "could not sign with the update key (log: $LOG)"
+"$SPARKLE_BIN/sign_update" --account "$KEY_ACCOUNT" --verify "$PROBE" "$PROBE_SIGNATURE" >> "$LOG" 2>&1 \
+    || fail "a signature made with the update key does not verify (log: $LOG)"
+rm -f "$PROBE"
+
 if [ "$CHECK_ONLY" = 0 ]; then
     # An image of this version from an earlier run goes first: if this run fails, nothing
     # may be left that looks like its result.
-    rm -f "$DERIVED/${APP_NAME}-${VERSION}.dmg" "$DERIVED/${APP_NAME}-${VERSION}.dSYM.zip"
+    rm -f "$DERIVED/${APP_NAME}-${VERSION}.dmg" "$DERIVED/${APP_NAME}-${VERSION}.dSYM.zip" \
+        "$DERIVED/${APP_NAME}-${VERSION}-notes.md" "$DERIVED/appcast.xml"
+
+    if [ -z "$(changelog_section "$VERSION")" ]; then
+        echo "release: note: CHANGELOG.md has no part \"## ${VERSION}\": the update window will not say what is new"
+    fi
 
     # Ask for the credentials before the long build, not after it.
     xcrun notarytool history --keychain-profile "$PROFILE" >> "$LOG" 2>&1 \
@@ -195,11 +267,17 @@ if ! xcodebuild -project "${APP_NAME}.xcodeproj" -scheme Debug -configuration Re
         CURRENT_PROJECT_VERSION="$COUNT" \
         SCROLLIO_BUILD_COMMIT="$COMMIT" \
         SCROLLIO_BUILD_DATE="$DATE" \
+        SCROLLIO_UPDATE_FEED="$UPDATE_FEED" \
         build >> "$LOG" 2>&1; then
     grep -E "error:|\*\* BUILD" "$LOG" | tail -20 >&2 || true
     fail "the build failed (log: $LOG)"
 fi
 [ -d "$BUILT" ] || fail "no app at $BUILT"
+
+# --- Sparkle's helpers ---------------------------------------------------------------
+# The build signs the framework it embeds, but not the programs inside it. Apple
+# notarizes only what the Developer ID signed (release-lib.sh says how they are signed).
+sign_sparkle_helpers "$BUILT"
 
 # --- Checks --------------------------------------------------------------------------
 # No check here pipes a tool into "grep -q": grep leaves at the first match, the tool is
@@ -231,6 +309,22 @@ grep -Eq '^CodeDirectory .*flags=0x[0-9a-f]+\([a-z,-]*runtime' <<< "$SIGNATURE" 
     || fail "the hardened runtime is off: Apple does not notarize such a build"
 grep -q '^Timestamp=' <<< "$SIGNATURE" \
     || fail "the signature has no secure timestamp: Apple does not notarize such a build"
+
+# Every program in the app, not only the app's own: Apple refuses the whole app for one
+# helper without the Developer ID, the hardened runtime or a timestamp, and
+# "codesign --verify --deep" is content with a helper signed ad hoc.
+check_programs "$BUILT" "Developer ID Application" "$TEAM"
+# The app, Sparkle, and its four helpers.
+[ "$PROGRAMS" -ge 6 ] || fail "only $PROGRAMS programs found in the app: Sparkle's helpers are missing"
+
+# The update settings of the build: where it asks, and the key it trusts.
+BUILT_FEED="$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$BUILT/Contents/Info.plist" 2>/dev/null || true)"
+[ "$BUILT_FEED" = "$UPDATE_FEED" ] || fail "the built app's update feed is \"$BUILT_FEED\", expected $UPDATE_FEED"
+BUILT_KEY="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$BUILT/Contents/Info.plist" 2>/dev/null || true)"
+[ "$BUILT_KEY" = "$KEYCHAIN_PUBLIC_KEY" ] || fail "the built app's update key is not the one in the keychain"
+BUILT_VERIFIES="$(/usr/libexec/PlistBuddy -c 'Print :SUVerifyUpdateBeforeExtraction' "$BUILT/Contents/Info.plist" 2>/dev/null || true)"
+[ "$BUILT_VERIFIES" = "true" ] || fail "the built app does not check an update before it opens it (SUVerifyUpdateBeforeExtraction)"
+MINIMUM_SYSTEM="$(three_part "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$BUILT/Contents/Info.plist")")"
 
 ENTITLEMENTS="$(codesign -d --entitlements - "$BUILT" 2>/dev/null || true)"
 case "$ENTITLEMENTS" in
@@ -288,8 +382,16 @@ ACKNOWLEDGEMENTS="$BUILT/Contents/Resources/Acknowledgements.txt"
 [ -s "$REPO/LICENSE" ] || fail "no LICENSE in the repository"
 
 echo "release: built ${APP_NAME} ${VERSION} (${COUNT}) ${COMMIT}, ${DATE}: Developer ID signature, hardened runtime, timestamp, both architectures and a stripped binary are in order"
+echo "release: all ${PROGRAMS} programs in the app (Sparkle's helpers too) carry the Developer ID; the update key in the keychain is the app's"
+
+# What the update window will say is new.
+NOTES="$DERIVED/release-notes-part.md"
+changelog_section "$VERSION" > "$NOTES"
 
 if [ "$CHECK_ONLY" = 1 ]; then
+    # The appcast as a release would write it, to see that it can be written.
+    write_appcast "$DERIVED/appcast-check.xml" "$VERSION" "$COUNT" "$MINIMUM_SYSTEM" "$PROBE_SIGNATURE" 0 "$NOTES"
+    rm -f "$DERIVED/appcast-check.xml" "$NOTES"
     echo "release: --check: nothing was notarized ($BUILT)"
     exit 0
 fi
@@ -365,15 +467,49 @@ spctl --assess --type open --context context:primary-signature -vv "$UNFINISHED_
 xcrun stapler validate "$UNFINISHED_DMG" >> "$LOG" 2>&1 \
     || fail "the disk image's ticket does not validate (log: $LOG)"
 
-# --- Done: the symbols, then the image under its name --------------------------------
+# --- The update ----------------------------------------------------------------------
+# Signed last: stapling changed the image, and the signature is over its exact bytes.
+ED_SIGNATURE="$("$SPARKLE_BIN/sign_update" --account "$KEY_ACCOUNT" -p "$UNFINISHED_DMG" 2>> "$LOG")" \
+    || fail "could not sign the disk image with the update key (log: $LOG)"
+"$SPARKLE_BIN/sign_update" --account "$KEY_ACCOUNT" --verify "$UNFINISHED_DMG" "$ED_SIGNATURE" >> "$LOG" 2>&1 \
+    || fail "the update signature of the disk image does not verify (log: $LOG)"
+APPCAST="$DERIVED/appcast.xml"
+write_appcast "$WORK/appcast.xml" "$VERSION" "$COUNT" "$MINIMUM_SYSTEM" "$ED_SIGNATURE" "$(stat -f %z "$UNFINISHED_DMG")" "$NOTES"
+
+# The text for the GitHub release: what is new, and the sum the README tells a reader to
+# compare a download with.
+SHA="$(shasum -a 256 "$UNFINISHED_DMG" | cut -d' ' -f1)"
+RELEASE_NOTES="$DERIVED/${APP_NAME}-${VERSION}-notes.md"
+{
+    if [ -s "$NOTES" ]; then
+        cat "$NOTES"
+        echo
+    fi
+    echo "One disk image for Apple silicon and Intel Macs, signed with the author's Developer ID (team \`${TEAM}\`) and notarized by Apple."
+    echo
+    echo "**SHA-256** of \`${APP_NAME}-${VERSION}.dmg\`:"
+    echo
+    echo '```'
+    echo "$SHA"
+    echo '```'
+    echo
+    echo "How to install it and how to check the download: see [Download and first launch](https://github.com/Scorpio3310/scrollio#-download-and-first-launch) in the README."
+} > "$WORK/notes.md"
+rm -f "$NOTES"
+
+# --- Done: the symbols, then the image and the appcast under their names --------------
 ditto -c -k --keepParent "$DSYM" "$WORK/symbols.zip" \
     || fail "could not pack the debug symbols"
 mv "$WORK/symbols.zip" "$DSYM_ZIP"
+mv "$WORK/notes.md" "$RELEASE_NOTES"
 mv "$UNFINISHED_DMG" "$DMG"
+mv "$WORK/appcast.xml" "$APPCAST"
 
 SIZE="$(du -h "$DMG" | cut -f1 | tr -d ' ')"
-SHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
 echo "release: ${APP_NAME} ${VERSION} (${COUNT}) ${COMMIT} is signed, notarized and stapled"
 echo "release: $DMG"
 echo "release: ${SIZE}, sha256 ${SHA}"
+echo "release: $APPCAST tells the installed copies about this version"
+echo "release: publish BOTH files in the GitHub release v${VERSION}: ${APP_NAME}-${VERSION}.dmg and appcast.xml (under exactly that name)"
+echo "release: $RELEASE_NOTES is the text for that release"
 echo "release: $DSYM_ZIP holds the debug symbols of this build: keep it, do not publish it"
