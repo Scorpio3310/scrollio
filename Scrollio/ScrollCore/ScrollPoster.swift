@@ -939,6 +939,13 @@ extension ScrollPoster {
             sessionLog.endWatch.note(.notSeen("no watch"), isLook: true)
             return
         }
+        guard touchPlace?.pid != getpid() else {
+            // Never a look into Scrollio's own windows (`AccessibilityScrollEndWatch`): they
+            // scroll as with the switch off.
+            watchSeen = false
+            sessionLog.endWatch.note(.notSeen(AccessibilityScrollEndWatch.ownWindow), isLook: true)
+            return
+        }
         watchCall = .look(token: watchToken, epoch: watchEpoch, pid: touchPlace?.pid ?? 0, point: touchPlace?.pointer ?? .zero)
     }
 
@@ -974,7 +981,17 @@ extension ScrollPoster {
     }
 
     /// What an answer of the watch means for the scroll. Caller holds stateLock.
-    private func judgeLocked(_ reading: ScrollEndReading, token: UInt64, epoch: UInt64, askedAt: CFTimeInterval, isLook: Bool) {
+    private func judgeLocked(_ answer: ScrollEndReading, token: UInt64, epoch: UInt64, askedAt: CFTimeInterval, isLook: Bool) {
+        // A second fence behind the reader's: a value that is no number from 0 to 1 is no
+        // reading of where the page is.
+        var reading = answer
+        if let value = answer.value {
+            if let inRange = AccessibilityScrollEndWatch.fromZeroToOne(value) {
+                reading.value = inRange
+            } else {
+                reading = .notSeen(AccessibilityScrollEndWatch.notFromZeroToOne, roles: answer.roles, milliseconds: answer.milliseconds)
+            }
+        }
         if !isLook {
             watchReadInFlight = false
         }

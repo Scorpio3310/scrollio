@@ -117,6 +117,11 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
         }
         guard trusted else { return .notSeen("Scrollio is not trusted for Accessibility") }
         guard pid > 0 else { return .notSeen("no app") }
+        // Never Scrollio itself. For its own process Accessibility sends no message: it runs
+        // AppKit's accessibility code in place, on this queue, while the main thread
+        // scrolls and redraws the same views (read in HIServices by the reviewer), and no
+        // timeout counts. Its own windows scroll as with the switch off.
+        guard pid != getpid() else { return .notSeen(Self.ownWindow) }
         let application = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(application, Self.messagingTimeout)
         var hit: AXUIElement?
@@ -142,8 +147,14 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
                 // swiftlint:disable:next force_cast
                 let scrollBar = found as! AXUIElement
                 AXUIElementSetMessagingTimeout(scrollBar, Self.messagingTimeout)
+                // Only a bar that counts from 0 to 1. Apple's headers promise no range for a
+                // value; AppKit's scroller gives 0 to 1, Java Swing (every JetBrains IDE) the
+                // raw position in pixels, and its maximum is not 1.
+                if let maximum = Self.copy(scrollBar, kAXMaxValueAttribute) as? NSNumber, abs(maximum.doubleValue - 1) > 0.000_001 {
+                    return .notSeen(Self.notFromZeroToOne, roles: roles)
+                }
                 guard let value = Self.value(of: scrollBar) else {
-                    return .notSeen("a scroll bar without a value", roles: roles)
+                    return .notSeen("a scroll bar without a value from 0 to 1", roles: roles)
                 }
                 bar = scrollBar
                 return ScrollEndReading(value: value, roles: roles)
@@ -166,9 +177,18 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
     /// A scroll bar's value as a number from 0 to 1; nil for anything else.
     private static func value(of bar: AXUIElement) -> Double? {
         guard let number = copy(bar, kAXValueAttribute) as? NSNumber else { return nil }
-        let value = number.doubleValue
-        return value.isFinite ? value : nil
+        return fromZeroToOne(number.doubleValue)
     }
+
+    /// A value that counts from 0 to 1 (a hair of rounding allowed, then cut to the range);
+    /// nil for any other number. A bar that counts in pixels read "7" as "at the bottom":
+    /// the touch ended at once and scrolling down went dead.
+    static func fromZeroToOne(_ value: Double) -> Double? {
+        guard value.isFinite, value >= -0.001, value <= 1.001 else { return nil }
+        return min(1, max(0, value))
+    }
+    static let notFromZeroToOne = "a scroll bar that does not count from 0 to 1"
+    static let ownWindow = "Scrollio's own window"
 
     /// The line for the `app` log at the first look.
     static func firstLookLine(trusted: Bool) -> String {

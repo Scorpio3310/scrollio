@@ -1859,6 +1859,68 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         }
     }
 
+    /// A scroll bar that does not count from 0 to 1 is not a reading of where the page is
+    /// (review M1). Java Swing gives the raw position: at the top the look read 0, the first
+    /// read said 7, which was "at the bottom": the touch ended at once, the rest was dropped
+    /// and the wheel events taken in: 150 wheel events sent 7 px, and scrolling down was
+    /// dead from then on. Such a bar is "not seen": the page moves as with the switch off.
+    func testEndWatch_aBarThatCountsInPixels_isNotSeen() throws {
+        let wheels = (0..<150).map { (time: Double($0) * 0.02, y: -211.68) }
+        let off = try offStream(wheels, until: 8)
+        try withSettings(switchOn: true) {
+            for start in [0.0, 300.0] {
+                let watch = PageWatch(offset: start, range: 60_000)
+                watch.valueInstead = { $0 * 60_000 }
+                let run = realRun(over: .touchOnly, watch: watch)
+                for wheel in wheels { XCTAssertTrue(try run.wheel(at: wheel.time, y: wheel.y)) }
+                run.run(until: 8)
+                let frames = run.finish()
+                XCTAssertEqual(frames.filter { $0.y != 0 }.map(\.y), off.y, "from \(start) px: every wheel event scrolls, as with the switch off")
+                XCTAssertGreaterThan(abs(frames.reduce(0) { $0 + $1.y }), 30_000)
+                XCTAssertNil(brokenGesture(in: frames))
+                XCTAssertFalse(run.sessions.contains { $0.session.endWatch.line?.contains("reached the end") ?? false })
+                XCTAssertTrue(run.sessions.first?.session.endWatch.line?.contains("a scroll bar that does not count from 0 to 1") ?? false,
+                              run.sessions.first?.session.endWatch.line ?? "")
+            }
+        }
+        XCTAssertEqual(AccessibilityScrollEndWatch.fromZeroToOne(0.5), 0.5)
+        XCTAssertEqual(AccessibilityScrollEndWatch.fromZeroToOne(1.0004), 1)
+        XCTAssertEqual(AccessibilityScrollEndWatch.fromZeroToOne(-0.0004), 0)
+        XCTAssertNil(AccessibilityScrollEndWatch.fromZeroToOne(7))
+        XCTAssertNil(AccessibilityScrollEndWatch.fromZeroToOne(-3))
+        XCTAssertNil(AccessibilityScrollEndWatch.fromZeroToOne(.nan))
+    }
+
+    /// The watch never looks into Scrollio's own windows (review M2): for its own process
+    /// Accessibility sends no message, it runs AppKit's accessibility code on the calling
+    /// thread, which here is the watch's queue, while the main thread scrolls the same
+    /// views. A wheel event over Scrollio's Settings asks for no look and scrolls as with
+    /// the switch off; and the reader itself answers "not seen" for its own pid before any
+    /// call, also where it is trusted.
+    func testEndWatch_neverLooksIntoScrolliosOwnWindows() throws {
+        let own = Int64(getpid())
+        try withSettings(switchOn: true) {
+            let watch = PageWatch(offset: 3_000, range: 60_000)
+            let run = realRun(over: .touchOnly, watch: watch)
+            for index in 0..<5 { XCTAssertTrue(try run.wheel(at: Double(index) * 0.05, y: -211.68, pid: own)) }
+            run.run(until: 3)
+            let frames = run.finish()
+            XCTAssertEqual(watch.looks + watch.reads, 0, "no look, no read")
+            XCTAssertFalse(frames.contains { $0.hasPhase }, "plain")
+            XCTAssertGreaterThan(frames.count, 30)
+            XCTAssertTrue(run.sessions.first?.session.endWatch.line?.contains("not seen (Scrollio's own window)") ?? false)
+        }
+        let reader = AccessibilityScrollEndWatch(isTrusted: { true })
+        let answered = expectation(description: "answered")
+        reader.look(pid: getpid(), at: CGPoint(x: 10, y: 10)) { reading in
+            XCTAssertNil(reading.value)
+            XCTAssertEqual(reading.failedAt, "Scrollio's own window")
+            XCTAssertEqual(reading.roles, [], "nothing was asked")
+            answered.fulfill()
+        }
+        wait(for: [answered], timeout: 5)
+    }
+
     /// Rule 3: the page reaches the end the scroll heads for. "Ended" goes out at once, with
     /// a time right after the last moving frame (not 0.2 s after it: the app keeps the
     /// page's speed and bounces by itself), no tap (it would stop that bounce), and the
