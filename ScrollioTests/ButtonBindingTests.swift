@@ -772,8 +772,8 @@ final class ButtonBindingTests: XCTestCase {
         ])
         XCTAssertEqual(try identifiers(in: "System"), [
             "spotlight", "dictation", "characterViewer", "doNotDisturb", "escapeKey",
-            "forceQuit", "lockScreen", "logout", "shutdownDialog",
-        ])
+            "forceQuit", "lockScreen", "logout",
+        ], "\"Shut Down…\" is no longer offered: it sent Control-Z")
         XCTAssertFalse(SystemShortcut.shortcutsByCategory.flatMap(\.shortcuts).contains { $0.identifier == "mouseGestureNavigation" })
         XCTAssertEqual(SystemShortcut.shutdownDialog.localizedName, "Shut Down…")
         XCTAssertEqual(SystemShortcut.shutdownDialog.identifier, "shutdownDialog")

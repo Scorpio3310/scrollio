@@ -70,7 +70,7 @@ class Options {
 
     // 单例
     static let shared = Options()
-    init() { NSLog("Module initialized: Options") }
+    init() {}
 
     // 读取锁, 防止冲突
     private var readingOptionsLock = false
@@ -215,8 +215,10 @@ extension Options {
         general.autoLaunch = LoginItem.isEnabled
         general.hideStatusItem = UserDefaults.standard.bool(forKey: OptionItem.General.HideStatusItem)
         // 滚动
-        scroll.smooth = UserDefaults.standard.bool(forKey: OptionItem.Scroll.Smooth)
-        scroll.reverse = UserDefaults.standard.bool(forKey: OptionItem.Scroll.Reverse)
+        // A missing key is the default (on), as for the keys below: `bool(forKey:)` reads a
+        // missing key as off, so a settings file without "smooth" switched smoothing off.
+        scroll.smooth = Self.storedBool(forKey: OptionItem.Scroll.Smooth, default: OPTIONS_SCROLL_DEFAULT().smooth)
+        scroll.reverse = Self.storedBool(forKey: OptionItem.Scroll.Reverse, default: OPTIONS_SCROLL_DEFAULT().reverse)
         if UserDefaults.standard.object(forKey: OptionItem.Scroll.ReverseVertical) == nil {
             scroll.reverseVertical = true
         } else {
@@ -287,6 +289,12 @@ extension Options {
         readingOptionsLock = false
     }
     
+    /// A stored switch, or `defaultValue` when the key is missing.
+    static func storedBool(forKey key: String, default defaultValue: Bool, in defaults: UserDefaults = .standard) -> Bool {
+        guard defaults.object(forKey: key) != nil else { return defaultValue }
+        return defaults.bool(forKey: key)
+    }
+
     // 同步写入全部配置 (首启播种与遗留路径; 常规变更走 markChanged 的脏组合并写入)
     func saveOptions() {
         guard !AppRuntime.isRunningXCTest else { return }
@@ -328,31 +336,31 @@ extension Options {
             ) {
                 UserDefaults.standard.set(applicationsData, forKey: OptionItem.Application.Applications)
             } else {
-                NSLog("Failed to serialize applications data, skipping save")
+                AppSystemLog.problem("Settings: the list of apps could not be written; the stored list stays as it was")
             }
         case .gesture:
             if let data = try? encoder.encode(gesture) {
                 UserDefaults.standard.set(data, forKey: OptionItem.Gesture.Settings)
             } else {
-                NSLog("Failed to serialize gesture settings, skipping save")
+                AppSystemLog.problem("Settings: the gesture settings could not be written")
             }
         case .logiWheel:
             if let data = try? encoder.encode(logiWheel) {
                 UserDefaults.standard.set(data, forKey: OptionItem.MouseWheel.Settings)
             } else {
-                NSLog("Failed to serialize Logitech wheel settings, skipping save")
+                AppSystemLog.problem("Settings: the Logitech wheel settings could not be written")
             }
         case .logiMouse:
             if let data = try? encoder.encode(logiMouse) {
                 UserDefaults.standard.set(data, forKey: OptionItem.MouseBasics.Settings)
             } else {
-                NSLog("Failed to serialize Logitech mouse settings, skipping save")
+                AppSystemLog.problem("Settings: the Logitech mouse settings could not be written")
             }
         case .thumbWheel:
             if let data = try? encoder.encode(thumbWheel) {
                 UserDefaults.standard.set(data, forKey: OptionItem.ThumbWheel.Settings)
             } else {
-                NSLog("Failed to serialize thumb wheel settings, skipping save")
+                AppSystemLog.problem("Settings: the thumb wheel settings could not be written")
             }
         }
     }
@@ -403,7 +411,8 @@ extension Options {
         let rawValue = UserDefaults.standard.object(forKey: OptionItem.Button.Bindings)
         guard let data = rawValue as? Data else {
             if rawValue != nil {
-                NSLog("Button bindings data has wrong type: \(type(of: rawValue)), clearing corrupted data")
+                // The one place where stored bindings are thrown away: it leaves a trace.
+                AppSystemLog.problem("Settings: the stored button bindings are not data (a wrong type): removed them")
                 UserDefaults.standard.removeObject(forKey: OptionItem.Button.Bindings)
             }
             preservedUnknownBindings = []
@@ -426,7 +435,7 @@ extension Options {
         from data: Data
     ) -> (bindings: [ButtonBinding], unknownElements: [Any]) {
         guard let elements = try? JSONSerialization.jsonObject(with: data) as? [Any] else {
-            NSLog("Button bindings data is not a JSON array, returning empty")
+            AppSystemLog.problem("Settings: the stored button bindings are not a list; none loaded")
             return (bindings: [], unknownElements: [])
         }
         let decoder = JSONDecoder()
@@ -444,7 +453,8 @@ extension Options {
             }
         }
         if !unknown.isEmpty {
-            NSLog("Preserved \(unknown.count) unparseable button binding(s) for round-trip (likely from a newer Scrollio version)")
+            AppSystemLog.note("Settings: \(unknown.count) stored button binding(s) cannot be read by this version "
+                + "(of a newer one, or damaged); kept as stored")
         }
         return (bindings: bindings, unknownElements: unknown)
     }
@@ -459,7 +469,7 @@ extension Options {
         do {
             let knownData = try encoder.encode(buttons.binding)
             guard var merged = try JSONSerialization.jsonObject(with: knownData) as? [Any] else {
-                NSLog("Failed to round-trip known bindings to JSON array, skipping save")
+                AppSystemLog.problem("Settings: the button bindings could not be written; the stored ones stay as they were")
                 return
             }
             // 把保留的未知元素拼回去 (放在末尾, 不影响已知 bindings 顺序)
@@ -467,33 +477,30 @@ extension Options {
             let mergedData = try JSONSerialization.data(withJSONObject: merged)
             UserDefaults.standard.set(mergedData, forKey: OptionItem.Button.Bindings)
         } catch {
-            NSLog("Failed to encode button bindings data: \(error), skipping save")
+            AppSystemLog.problem("Settings: the button bindings could not be written (\(type(of: error))); "
+                + "the stored ones stay as they were")
         }
     }
 
-    // 加载滚动热键 (支持从旧版 Int 格式迁移)
+    // 加载滚动热键
+    /// A scroll hold key as stored (JSON of a `ScrollHotkey`). Data that cannot be read, and
+    /// a value that is no data at all, give the default key and are left as stored. (A bare
+    /// key code, the form of the original app before 2026, was converted here: 0, its
+    /// "Disabled", became the A key. Scrollio never wrote that form and no longer reads it.)
     private func loadScrollHotkey(forKey key: String, default defaultValue: ScrollHotkey?) -> ScrollHotkey? {
         let rawValue = UserDefaults.standard.object(forKey: key)
 
-        // 新格式: Data (JSON encoded ScrollHotkey)
         if let data = rawValue as? Data {
             do {
                 return try decoder.decode(ScrollHotkey.self, from: data)
             } catch {
-                NSLog("Failed to decode ScrollHotkey for \(key): \(error), using default")
+                AppSystemLog.problem("Settings: the stored scroll key \"\(key)\" cannot be read; using the default key")
                 return defaultValue
             }
         }
-
-        // 旧格式迁移: Int (keyboard keyCode only)
-        if let intValue = rawValue as? Int {
-            guard let hotkey = Self.legacyScrollHotkey(keyCode: intValue) else {
-                NSLog("Legacy ScrollHotkey for \(key) is out of range (\(intValue)), using default")
-                return defaultValue
-            }
-            // 迁移为新格式
-            saveScrollHotkey(hotkey, forKey: key)
-            return hotkey
+        if rawValue != nil {
+            AppSystemLog.problem("Settings: the stored scroll key \"\(key)\" is not data (a wrong type); using the default key")
+            return defaultValue
         }
 
         // 无值时: 检查配置是否已存在
@@ -501,13 +508,6 @@ extension Options {
         // 如果配置不存在（首次启动），返回默认值
         let optionsExist = UserDefaults.standard.object(forKey: OptionItem.General.OptionsExist) != nil
         return optionsExist ? nil : defaultValue
-    }
-
-    /// A scroll key stored by older versions as a bare key code. A number that is no key code
-    /// gives nil: `UInt16(_:)` trapped on it, and the app crashed at every launch.
-    static func legacyScrollHotkey(keyCode: Int) -> ScrollHotkey? {
-        guard let code = UInt16(exactly: keyCode) else { return nil }
-        return ScrollHotkey(type: .keyboard, code: code)
     }
 
     // 保存滚动热键
@@ -520,7 +520,7 @@ extension Options {
             let data = try encoder.encode(hotkey)
             UserDefaults.standard.set(data, forKey: key)
         } catch {
-            NSLog("Failed to encode ScrollHotkey for \(key): \(error), skipping save")
+            AppSystemLog.problem("Settings: the scroll key \"\(key)\" could not be written (\(type(of: error)))")
         }
     }
 
@@ -536,7 +536,7 @@ extension Options {
         preservedUnknownApplications = []
         guard let data = rawValue as? Data else {
             if rawValue != nil {
-                NSLog("Applications data has wrong type: \(type(of: rawValue)), clearing corrupted data")
+                AppSystemLog.problem("Settings: the stored list of apps is not data (a wrong type): removed it")
                 UserDefaults.standard.removeObject(forKey: OptionItem.Application.Applications)
             }
             return defaultArray
@@ -553,7 +553,7 @@ extension Options {
             // One entry this version cannot read used to make the whole list go. Each entry on
             // its own: the readable ones load, the others are kept as stored.
             guard let result = Self.decodeApplicationsWithUnknowns(from: data) else {
-                NSLog("Failed to decode applications data: \(error), resetting to defaults")
+                AppSystemLog.problem("Settings: the stored list of apps cannot be read (not a list): removed it")
                 UserDefaults.standard.removeObject(forKey: OptionItem.Application.Applications)
                 return defaultArray
             }
@@ -590,7 +590,8 @@ extension Options {
             }
         }
         if !unknown.isEmpty {
-            NSLog("Preserved \(unknown.count) unreadable per-app entr\(unknown.count == 1 ? "y" : "ies") for round-trip")
+            AppSystemLog.note("Settings: \(unknown.count) stored per-app entr\(unknown.count == 1 ? "y" : "ies") cannot be "
+                + "read by this version; kept as stored")
         }
         return (applications: applications, unknownElements: unknown)
     }

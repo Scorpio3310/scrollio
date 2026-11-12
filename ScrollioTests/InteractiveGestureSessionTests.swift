@@ -187,10 +187,12 @@ final class InteractiveGestureSessionTests: XCTestCase {
                 [.discrete(.down)]
             ),
             (
-                "vertical lock, then sideways: no swipe and no sideways action",
+                // It did nothing at all, however far the hand went: the first 8 pt decided
+                // the whole hold, and the jolt of pressing the button is enough for those.
+                "vertical lock, then clearly sideways: a swipe after all",
                 configuration(),
                 [.move(0, -10, at: 0.01), .move(-200, 0, at: 0.02), .release(at: 0.1)],
-                []
+                [.begin(.horizontal), .update(0.2), .end(velocity: 0)]
             ),
             (
                 "vertical lock that barely moved is still a click",
@@ -252,6 +254,42 @@ final class InteractiveGestureSessionTests: XCTestCase {
             let result = run(testCase.steps, configuration: testCase.configuration)
             assertCommands(result.commands, testCase.expected, testCase.name)
         }
+    }
+
+    /// The lock is decided on the first 8 pt, and the jolt of pressing a thumb button is
+    /// enough to make those vertical. Such a hold did nothing sideways, however far the hand
+    /// went, until the button was released and pressed again.
+    func testAHoldLockedVerticalByAJoltThatThenGoesSidewaysBecomesASwipe() {
+        // 9 pt down (the jolt), then to the left.
+        var session = Session(configuration: configuration(), startTime: 0)
+        XCTAssertEqual(session.move(deltaX: 0, deltaY: 9, at: 0.01), [])
+        XCTAssertEqual(session.phase, .discrete)
+        XCTAssertEqual(session.move(deltaX: -20, deltaY: 0, at: 0.02), [], "not yet a direction")
+        XCTAssertEqual(session.phase, .discrete)
+        // 40 pt and clearly sideways: the swipe begins with this movement (no jump by the 20 pt before).
+        let commands = session.move(deltaX: -30, deltaY: 0, at: 0.03)
+        XCTAssertEqual(commands.first, .begin(.horizontal))
+        XCTAssertEqual(commands.count, 2)
+        guard case .update(let progress)? = commands.last else { return XCTFail("\(commands)") }
+        XCTAssertEqual(progress, 0.03, accuracy: 1e-9)
+        XCTAssertEqual(session.phase, .swiping)
+        // From here it is an ordinary swipe with exactly one terminal command.
+        XCTAssertEqual(session.move(deltaX: -100, deltaY: 0, at: 0.05).count, 1)
+        let end = session.release(at: 0.06)
+        XCTAssertEqual(end.count, 1)
+        XCTAssertTrue(end[0].isSwipeCommand)
+        XCTAssertEqual(session.phase, .finished)
+    }
+
+    /// A hold that really is vertical keeps its action, once, and never swipes afterwards.
+    func testAVerticalHoldStillRunsItsActionAndDoesNotSwipeAfterwards() {
+        var session = Session(configuration: configuration(), startTime: 0)
+        XCTAssertEqual(session.move(deltaX: 0, deltaY: -9, at: 0.01), [])
+        XCTAssertEqual(session.move(deltaX: 0, deltaY: -40, at: 0.02), [.discrete(.up)])
+        // Sideways after the action ran: nothing more (one direction per hold).
+        XCTAssertEqual(session.move(deltaX: -200, deltaY: 0, at: 0.03), [])
+        XCTAssertEqual(session.phase, .discrete)
+        XCTAssertEqual(session.release(at: 0.04), [])
     }
 
     func testLockNeedsTheDominanceRatio() {

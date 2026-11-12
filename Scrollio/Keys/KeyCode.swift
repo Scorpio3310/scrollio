@@ -151,6 +151,51 @@ struct KeyCode {
         179: "Fn (179)", // 179 可以通过双击 FN 触发
     ]
 
+    // MARK: - The keyboard layout in use
+
+    /// The letter keys of the US layout: key code → its letter in lower case ("a" for 0).
+    /// `keyMap` and the listed shortcuts (`SystemShortcut`) are written in these codes.
+    static let usLetters: [UInt16: String] = {
+        var letters: [UInt16: String] = [:]
+        for (code, name) in keyMap where name.count == 1 {
+            guard let scalar = name.unicodeScalars.first, scalar.isASCII,
+                  CharacterSet.letters.contains(scalar) else { continue }
+            letters[code] = name.lowercased()
+        }
+        return letters
+    }()
+
+    /// The other way round: letter → its key on the US layout.
+    static let usLetterKeyCodes: [String: UInt16] = {
+        var codes: [String: UInt16] = [:]
+        for (code, letter) in usLetters {
+            codes[letter] = code
+        }
+        return codes
+    }()
+
+    /// The keys whose legend depends on the keyboard layout: the letters, digits and symbols
+    /// of the main block (0…50 without Return, Tab and Space; 10 is the extra key of ISO
+    /// keyboards) and the two extra keys of JIS keyboards. Every other key is named by
+    /// `keyMap` on any layout.
+    static let layoutDependentKeys: Set<UInt16> = Set(UInt16(0)...UInt16(50)).subtracting([36, 48, 49]).union([93, 94])
+
+    /// What the key `code` is called. A letter, digit or symbol key is named by what it types
+    /// on the keyboard layout in use (the US name was shown on every layout: on AZERTY the A
+    /// key read "Q", on German Z read "Y"), with Command held when `modifiers` has Command,
+    /// as an app sees a ⌘ shortcut. Every other key, and every key when the layout cannot be
+    /// read, is named by `keyMap`; nil for a key that has no name there either.
+    static func name(of code: UInt16, modifiers: UInt64 = 0) -> String? {
+        if layoutDependentKeys.contains(code),
+           let typed = KeyboardLayoutKeys.shared.label(
+               of: code,
+               withCommand: modifiers & CGEventFlags.maskCommand.rawValue != 0
+           ) {
+            return typed
+        }
+        return keyMap[code]
+    }
+
     /// 鼠标字符映射
     static let mouseMap: [UInt16: String] = [
         // 主要

@@ -438,29 +438,49 @@ final class ScrollSettingsLoadTests: XCTestCase {
         XCTAssertEqual(defaults.data(forKey: OptionItem.Application.Applications), stored, "nothing was removed")
     }
 
-    /// A scroll key stored by an older version as a number that is no key code trapped in
-    /// UInt16(_:): the app crashed at every launch. The default is used, nothing is written.
-    func testReadOptions_usesTheDefaultForALegacyScrollKeyOutOfRange() {
+    /// A scroll key stored as a bare number (the form of the original app before 2026) is
+    /// not read as a key code any more: 0, that app's "Disabled", became the A key for all
+    /// three hold functions, and a number that is no key code once crashed the app at every
+    /// launch. Scrollio never wrote that form. The default key is used and nothing is
+    /// rewritten.
+    func testReadOptions_aScrollKeyStoredAsANumberIsNotAKeyCode() {
         store("optionsExist", forKey: OptionItem.General.OptionsExist)
-        store(70_000, forKey: OptionItem.Scroll.Dash)
-        store(-1, forKey: OptionItem.Scroll.Toggle)
+        store(0, forKey: OptionItem.Scroll.Dash)
+        store(70_000, forKey: OptionItem.Scroll.Toggle)
         store(58, forKey: OptionItem.Scroll.Block)
 
         Options.shared.readOptions()
 
-        XCTAssertEqual(Options.shared.scroll.dash, OPTIONS_SCROLL_DEFAULT().dash)
+        XCTAssertEqual(Options.shared.scroll.dash, OPTIONS_SCROLL_DEFAULT().dash, "not the A key (key code 0)")
+        XCTAssertNotEqual(Options.shared.scroll.dash, ScrollHotkey(type: .keyboard, code: 0))
         XCTAssertEqual(Options.shared.scroll.toggle, OPTIONS_SCROLL_DEFAULT().toggle)
-        XCTAssertEqual(Options.shared.scroll.block, ScrollHotkey(type: .keyboard, code: 58), "a key code still migrates")
-        XCTAssertEqual(defaults.object(forKey: OptionItem.Scroll.Dash) as? Int, 70_000, "the stored value is not rewritten")
+        XCTAssertEqual(Options.shared.scroll.block, OPTIONS_SCROLL_DEFAULT().block)
+        XCTAssertEqual(defaults.object(forKey: OptionItem.Scroll.Dash) as? Int, 0, "the stored value is not rewritten")
+        XCTAssertEqual(defaults.object(forKey: OptionItem.Scroll.Block) as? Int, 58)
     }
 
-    func testLegacyScrollKeyCodes() {
-        XCTAssertEqual(Options.legacyScrollHotkey(keyCode: 58), ScrollHotkey(type: .keyboard, code: 58))
-        XCTAssertEqual(Options.legacyScrollHotkey(keyCode: 0), ScrollHotkey(type: .keyboard, code: 0))
-        XCTAssertEqual(Options.legacyScrollHotkey(keyCode: 65_535), ScrollHotkey(type: .keyboard, code: 65_535))
-        XCTAssertNil(Options.legacyScrollHotkey(keyCode: 65_536))
-        XCTAssertNil(Options.legacyScrollHotkey(keyCode: -1))
-        XCTAssertNil(Options.legacyScrollHotkey(keyCode: Int.max))
+    /// A settings file without "smooth" or "reverse" read both as off (`bool(forKey:)`),
+    /// while every newer key next to them fell back to its default.
+    func testReadOptions_aMissingSmoothOrReverseIsTheDefault() {
+        store("optionsExist", forKey: OptionItem.General.OptionsExist)
+        for key in [OptionItem.Scroll.Smooth, OptionItem.Scroll.Reverse] {
+            // Remembered first, so tearDown puts back what the test host had.
+            defaultsSnapshots.append((key: key, original: defaults.object(forKey: key)))
+            defaults.removeObject(forKey: key)
+        }
+
+        Options.shared.readOptions()
+
+        XCTAssertTrue(Options.shared.scroll.smooth)
+        XCTAssertTrue(Options.shared.scroll.reverse)
+        XCTAssertEqual(OPTIONS_SCROLL_DEFAULT().smooth, true)
+
+        // A stored "off" is still off.
+        store(false, forKey: OptionItem.Scroll.Smooth)
+        store(false, forKey: OptionItem.Scroll.Reverse)
+        Options.shared.readOptions()
+        XCTAssertFalse(Options.shared.scroll.smooth)
+        XCTAssertFalse(Options.shared.scroll.reverse)
     }
 
     func testReadOptions_keepsSettingsThatAreInRange() {

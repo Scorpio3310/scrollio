@@ -121,14 +121,12 @@ struct ActionDisplayResolver {
 
     private func openTargetPresentation(for payload: OpenTargetPayload) -> ActionPresentation {
         let workspace = NSWorkspace.shared
-        let resolvedURL: URL? = {
-            if let bundleID = payload.bundleID,
-               let url = workspace.urlForApplication(withBundleIdentifier: bundleID) {
-                return url
-            }
-            let url = URL(fileURLWithPath: payload.path)
-            return FileManager.default.fileExists(atPath: url.path) ? url : nil
-        }()
+        // What a press opens: the stored path first (ShortcutExecutor.applicationURL).
+        let resolvedURL = ShortcutExecutor.applicationURL(
+            for: payload,
+            fileExists: { FileManager.default.fileExists(atPath: $0) },
+            urlForBundleIdentifier: { workspace.urlForApplication(withBundleIdentifier: $0) }
+        )
 
         guard let url = resolvedURL else {
             // Gone: the file's name and a marker.

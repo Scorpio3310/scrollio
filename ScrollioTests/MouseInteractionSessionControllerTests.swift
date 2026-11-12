@@ -441,3 +441,299 @@ final class MouseInteractionSessionControllerTests: XCTestCase {
         XCTAssertEqual(stopCount, 1)
     }
 }
+
+// MARK: - ButtonCore's keys tap
+
+/// The keys tap exists only while the keyboard is needed: every transition of
+/// `OnDemandKeyTap`, on doubles (a test never makes a real tap).
+final class OnDemandKeyTapTests: XCTestCase {
+
+    private final class FakeKeyTap: KeyEventTap {
+        /// False: macOS no longer serves it; enabling it changes nothing.
+        var runsAfterStart: Bool
+        var startThrows = false
+        private(set) var running = false
+        private(set) var starts = 0
+        private(set) var pauses = 0
+        private(set) var stops = 0
+        private(set) var timeoutRestarts = 0
+
+        init(runsAfterStart: Bool) { self.runsAfterStart = runsAfterStart }
+
+        func start() throws {
+            if startThrows { throw Interceptor.InterceptorError.eventTapEnableFailed }
+            starts += 1
+            running = runsAfterStart
+        }
+        func pause() { pauses += 1; running = false }
+        func stop() { stops += 1; running = false }
+        func isRunning() -> Bool { return running }
+        func restartAfterTimeout() { timeoutRestarts += 1 }
+    }
+
+    /// The world of one keys tap: whether the keyboard is needed, the taps it made, and the
+    /// work it put off to the next turn of the main queue.
+    private final class Rig {
+        var needed = false
+        var made: [FakeKeyTap] = []
+        /// Whether each next tap runs after it was made; empty: it does.
+        var runsAfterStart: [Bool] = []
+        var makeThrows = false
+        var scheduled: [() -> Void] = []
+
+        private(set) lazy var tap = OnDemandKeyTap(
+            makeTap: { [unowned self] in
+                if self.makeThrows { throw Interceptor.InterceptorError.eventTapCreationFailed }
+                let tap = FakeKeyTap(runsAfterStart: self.runsAfterStart.isEmpty ? true : self.runsAfterStart.removeFirst())
+                try tap.start()
+                self.made.append(tap)
+                return tap
+            },
+            isNeeded: { [unowned self] in self.needed },
+            schedule: { [unowned self] block in self.scheduled.append(block) },
+            makeRetryTimer: nil
+        )
+
+        /// The next turn of the main queue.
+        func runScheduled() {
+            let blocks = scheduled
+            scheduled = []
+            blocks.forEach { $0() }
+        }
+    }
+
+    /// The default: no key is bound and no button holds a modifier. The app never makes a
+    /// tap on the keyboard at all.
+    func testWithoutANeedNoTapIsEverMade() {
+        let rig = Rig()
+        rig.tap.enable()
+        rig.tap.refresh()
+        rig.runScheduled()
+        XCTAssertEqual(rig.made.count, 0)
+        XCTAssertFalse(rig.tap.hasTap)
+        XCTAssertFalse(rig.tap.isRunning)
+        XCTAssertTrue(rig.scheduled.isEmpty)
+    }
+
+    func testTheFirstKeyBindingMakesTheTapAndTheLastRemovedPausesIt() {
+        let rig = Rig()
+        rig.tap.enable()
+
+        // The first key binding is added.
+        rig.needed = true
+        rig.tap.refresh()
+        XCTAssertEqual(rig.made.count, 1, "at once, not on a later turn")
+        XCTAssertTrue(rig.tap.isRunning)
+        XCTAssertTrue(rig.made[0].isRunning())
+        rig.tap.refresh()
+        rig.tap.refresh()
+        XCTAssertEqual(rig.made.count, 1)
+        XCTAssertEqual(rig.made[0].starts, 1, "already running: nothing is started twice")
+
+        // The last one is removed: paused on the next turn, not inside the call.
+        rig.needed = false
+        rig.tap.refresh()
+        rig.tap.refresh()
+        XCTAssertTrue(rig.made[0].isRunning(), "not inside the call: the caller may be the tap's own callback")
+        XCTAssertEqual(rig.scheduled.count, 1, "one pause, however often it is asked")
+        rig.runScheduled()
+        XCTAssertFalse(rig.tap.isRunning)
+        XCTAssertFalse(rig.made[0].isRunning())
+        XCTAssertEqual(rig.made[0].pauses, 1)
+        XCTAssertEqual(rig.made[0].stops, 0, "paused, kept for the next need")
+        XCTAssertTrue(rig.tap.hasTap)
+
+        // A key is bound again: the kept tap is started, no new one is made.
+        rig.needed = true
+        rig.tap.refresh()
+        XCTAssertEqual(rig.made.count, 1)
+        XCTAssertEqual(rig.made[0].starts, 2)
+        XCTAssertTrue(rig.tap.isRunning)
+    }
+
+    /// A button that holds a modifier needs the keyboard while it is down. Released and
+    /// pressed again before the pause ran (a double press): the tap never goes off.
+    func testANeedThatIsBackBeforeThePauseRanKeepsTheTapRunning() {
+        let rig = Rig()
+        rig.tap.enable()
+        rig.needed = true       // the button goes down
+        rig.tap.refresh()
+        rig.needed = false      // up
+        rig.tap.refresh()
+        rig.needed = true       // down again, before the main queue turned
+        rig.tap.refresh()
+        rig.runScheduled()
+        XCTAssertTrue(rig.tap.isRunning)
+        XCTAssertEqual(rig.made[0].pauses, 0)
+        XCTAssertEqual(rig.made[0].starts, 1)
+
+        // Up for good: paused. Down once more: started again at once.
+        rig.needed = false
+        rig.tap.refresh()
+        rig.runScheduled()
+        XCTAssertEqual(rig.made[0].pauses, 1)
+        rig.needed = true
+        rig.tap.refresh()
+        XCTAssertTrue(rig.made[0].isRunning())
+        XCTAssertEqual(rig.made.count, 1)
+    }
+
+    /// Pause, sleep, another user, lost access, quit: the cores stop. The tap is switched off
+    /// and let go, nothing is made while they are stopped, and a start makes a new one.
+    func testStoppingTheCoresLetsTheTapGoAndStartingThemMakesANewOne() {
+        let rig = Rig()
+        rig.needed = true
+        rig.tap.refresh()
+        XCTAssertEqual(rig.made.count, 0, "the cores do not run yet")
+
+        rig.tap.enable()
+        XCTAssertEqual(rig.made.count, 1, "started with the cores when a key is bound")
+        rig.tap.disable()
+        XCTAssertFalse(rig.tap.isRunning)
+        XCTAssertFalse(rig.tap.hasTap)
+        XCTAssertEqual(rig.made[0].stops, 1)
+        XCTAssertFalse(rig.made[0].isRunning())
+
+        // Paused: a binding changes, a button is pressed. Nothing is made.
+        rig.tap.refresh()
+        rig.tap.retryNow()
+        XCTAssertEqual(rig.made.count, 1)
+
+        // Resumed.
+        rig.tap.enable()
+        XCTAssertEqual(rig.made.count, 2)
+        XCTAssertTrue(rig.made[1].isRunning())
+        XCTAssertTrue(rig.tap.isRunning)
+    }
+
+    /// The cores stop between "no longer needed" and the pause: the pause that was put off
+    /// finds nothing to do and touches nothing.
+    func testAPauseThatWasPutOffDoesNothingAfterTheCoresStopped() {
+        let rig = Rig()
+        rig.tap.enable()
+        rig.needed = true
+        rig.tap.refresh()
+        rig.needed = false
+        rig.tap.refresh()
+        rig.tap.disable()
+        rig.runScheduled()
+        XCTAssertEqual(rig.made[0].pauses, 0)
+        XCTAssertEqual(rig.made[0].stops, 1)
+
+        // And after a new start the put-off pause of before is gone: a fresh tap keeps running.
+        rig.needed = true
+        rig.tap.enable()
+        rig.runScheduled()
+        XCTAssertTrue(rig.made[1].isRunning())
+    }
+
+    /// A tap kept across a loss of the access can be off for good: one that is off right
+    /// after it was started is replaced once.
+    func testATapThatIsOffRightAfterItsStartIsReplacedOnce() {
+        let rig = Rig()
+        rig.tap.enable()
+        rig.needed = true
+        rig.tap.refresh()
+        rig.needed = false
+        rig.tap.refresh()
+        rig.runScheduled()
+        // The kept tap went stale meanwhile.
+        rig.made[0].runsAfterStart = false
+        rig.needed = true
+        rig.tap.refresh()
+        XCTAssertEqual(rig.made.count, 2)
+        XCTAssertEqual(rig.made[0].stops, 1, "the stale one is let go")
+        XCTAssertTrue(rig.made[1].isRunning())
+        XCTAssertTrue(rig.tap.isRunning)
+    }
+
+    func testATapThatCannotRunIsTriedAgainWhileItIsNeeded() {
+        let rig = Rig()
+        rig.runsAfterStart = [false, false]
+        rig.tap.enable()
+        rig.needed = true
+        rig.tap.refresh()
+        XCTAssertEqual(rig.made.count, 2, "the first and one replacement")
+        XCTAssertFalse(rig.tap.isRunning)
+        XCTAssertFalse(rig.tap.hasTap)
+
+        // The retry (every 5 s in the app) gets one that runs.
+        rig.tap.retryNow()
+        XCTAssertEqual(rig.made.count, 3)
+        XCTAssertTrue(rig.tap.isRunning)
+        // Running: a retry makes nothing more.
+        rig.tap.retryNow()
+        XCTAssertEqual(rig.made.count, 3)
+
+        // A tap that cannot be made at all: not running, and no retry once it is not needed.
+        let failing = Rig()
+        failing.makeThrows = true
+        failing.tap.enable()
+        failing.needed = true
+        failing.tap.refresh()
+        XCTAssertFalse(failing.tap.isRunning)
+        failing.needed = false
+        failing.makeThrows = false
+        failing.tap.retryNow()
+        XCTAssertEqual(failing.made.count, 0)
+        failing.needed = true
+        failing.tap.refresh()
+        XCTAssertEqual(failing.made.count, 1)
+        XCTAssertTrue(failing.tap.isRunning)
+    }
+
+    /// The kept tap cannot be started (no Accessibility access any more): it is let go, and
+    /// the next need makes a new one.
+    func testAKeptTapThatCannotBeStartedIsLetGo() {
+        let rig = Rig()
+        rig.tap.enable()
+        rig.needed = true
+        rig.tap.refresh()
+        rig.needed = false
+        rig.tap.refresh()
+        rig.runScheduled()
+        rig.made[0].startThrows = true
+        rig.needed = true
+        rig.tap.refresh()
+        XCTAssertFalse(rig.tap.isRunning)
+        XCTAssertFalse(rig.tap.hasTap)
+        XCTAssertEqual(rig.made[0].stops, 1)
+        rig.tap.retryNow()
+        XCTAssertEqual(rig.made.count, 2)
+        XCTAssertTrue(rig.tap.isRunning)
+    }
+
+    /// macOS turned the tap off (a timeout) and the tap restarts itself: only when the
+    /// keyboard is still needed. When it is not, the tap counts as paused, so the next need
+    /// starts it again.
+    func testARestartAfterATimeoutOnlyWhenTheKeyboardIsStillNeeded() {
+        let rig = Rig()
+        rig.tap.enable()
+        rig.needed = true
+        rig.tap.refresh()
+        rig.tap.restartAfterTimeout()
+        XCTAssertEqual(rig.made[0].timeoutRestarts, 1)
+        XCTAssertTrue(rig.tap.isStillNeededAtRestart())
+        XCTAssertTrue(rig.tap.isRunning)
+
+        rig.needed = false
+        XCTAssertFalse(rig.tap.isStillNeededAtRestart())
+        XCTAssertFalse(rig.tap.isRunning)
+        rig.needed = true
+        rig.tap.refresh()
+        XCTAssertEqual(rig.made[0].starts, 2, "started again by the next need")
+        XCTAssertTrue(rig.tap.isRunning)
+
+        // Stopped cores never restart it.
+        rig.tap.disable()
+        XCTAssertFalse(rig.tap.isStillNeededAtRestart())
+    }
+
+    /// The app's own tap: off under XCTest (the cores never start), whatever is bound.
+    func testTheAppsKeysTapIsNeverMadeUnderXCTest() {
+        XCTAssertFalse(ButtonCore.shared.isActive)
+        XCTAssertFalse(ButtonCore.shared.keyTap.isEnabled)
+        ButtonCore.shared.keyTap.refresh()
+        XCTAssertFalse(ButtonCore.shared.keyTap.hasTap)
+    }
+}

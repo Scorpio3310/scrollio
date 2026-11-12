@@ -37,7 +37,7 @@ enum ButtonTriggerNaming {
                 return symbols(modifiers | KeyCode.getKeyMask(event.code).rawValue, includesFn: true)
             }
             let fn = !impliesFn(event.code)
-            return joined(symbols(modifiers, includesFn: fn), keyName(event.code))
+            return joined(symbols(modifiers, includesFn: fn), keyName(event.code, modifiers: modifiers))
         }
     }
 
@@ -133,7 +133,7 @@ enum ButtonTriggerNaming {
             if KeyCode.modifierKeys.contains(code) {
                 return symbols(modifiers | KeyCode.getKeyMask(code).rawValue, includesFn: true)
             }
-            return symbols(modifiers, includesFn: !impliesFn(code)) + keyName(code)
+            return symbols(modifiers, includesFn: !impliesFn(code)) + keyName(code, modifiers: modifiers)
         }
     }
 
@@ -152,9 +152,10 @@ enum ButtonTriggerNaming {
         return result
     }
 
-    /// The key's name as the recorder shows it ("K", "F5", "↩").
-    static func keyName(_ code: UInt16) -> String {
-        return KeyCode.keyMap[code] ?? String(format: text("buttons-trigger-key"), Int(code))
+    /// The key's name as the recorder shows it ("K", "F5", "↩"): on the keyboard layout in
+    /// use (`KeyCode.name`), as a shortcut with `modifiers` sees the key.
+    static func keyName(_ code: UInt16, modifiers: UInt64 = 0) -> String {
+        return KeyCode.name(of: code, modifiers: modifiers) ?? String(format: text("buttons-trigger-key"), Int(code))
     }
 
     /// Keys the Mac reports with Fn held whether or not it is: function keys, arrows, Home,

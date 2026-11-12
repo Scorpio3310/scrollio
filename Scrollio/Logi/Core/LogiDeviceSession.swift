@@ -5556,7 +5556,9 @@ class LogiDeviceSession {
     }
 
     /// 在当前 session 上执行 Logi 动作
-    private func executeLogiAction(_ name: String) {
+    /// Also the entry point for an action that comes from outside this mouse's own buttons
+    /// (`LogiSessionManager.executeLogiAction(named:)`).
+    func executeLogiAction(_ name: String) {
         guard let action = LogiButtonAction(name: name) else {
             // Unknown, or one of the actions that were removed: the binding does nothing.
             let removed = LogiButtonAction.removedNames.contains(name)

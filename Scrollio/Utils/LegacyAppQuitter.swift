@@ -5,9 +5,14 @@
 //  Scrollio and the original Mos cannot run side by side: two apps that handle the same
 //  mouse events fight each other (both would smooth the same wheel). So Scrollio
 //
-//  1. quits a running Mos at launch, before its own event taps start, and
-//  2. while it runs, quits Mos again whenever it starts (its old login item still launches
-//     it at login, after Scrollio). Login items are never changed here.
+//  1. quits a running Mos right before its own event taps start (AppRunController: at
+//     launch with Accessibility access, on Resume, when the access arrives), and
+//  2. while its taps run, quits Mos again whenever it starts (its old login item still
+//     launches it at login, after Scrollio). Login items are never changed here.
+//
+//  Each time it says so with a toast. While Scrollio does nothing (no Accessibility access
+//  yet, paused, asleep, another user has the Mac) Mos is left alone: it used to be quit at
+//  every launch of Scrollio and every time it started, also then, and nothing said why.
 //
 //  Nothing of Mos is read or changed: its settings stay where they are.
 //
@@ -42,11 +47,20 @@ enum LegacyAppQuitter {
         return !AppRuntime.isRunningXCTest
     }
 
-    /// Call once at launch, before the event taps start: a running copy of the old app is
-    /// asked to quit and waited for.
-    static func quitAtLaunch() {
+    /// Call right before the event taps start: a running copy of the old app is asked to
+    /// quit and waited for (at most 3 s, then force-quit and 1 s more).
+    static func quitBeforeStarting() {
         terminateLegacyApps()
     }
+
+    /// Tells the user that Mos was quit, and how to use it instead. Tests replace it.
+    static var announceQuit: () -> Void = {
+        Toast.show(NSLocalizedString("toast-mos-quit", comment: "Toast: Scrollio quit the original Mos app"), style: .info, duration: 8.0)
+    }
+
+    /// Whether Scrollio's event taps run (or are just being started): only then is Mos in
+    /// the way. Tests replace it.
+    static var scrollioHandlesEvents: () -> Bool = { AppRunController.shared.coresActive }
 
     // MARK: - Quit the old app
 
@@ -79,6 +93,9 @@ enum LegacyAppQuitter {
             AppSystemLog.note("The old Mos app is running (pid \(app.processIdentifier)): asking it to quit")
         }
         let outcome = quitAndWait(targets, timeout: timeout)
+        if !outcome.quit.isEmpty || !outcome.forced.isEmpty {
+            announceQuit()
+        }
         for pid in outcome.forced {
             AppSystemLog.problem("The old Mos app (pid \(pid)) did not quit within \(Int(timeout)) s: forced it to quit")
         }
@@ -181,15 +198,19 @@ enum LegacyAppQuitter {
         launchObserverCenter = nil
     }
 
-    /// Asks `app` to quit when it is a copy of the old app, never this process. One that
-    /// ignores the request is force-quit after `forceQuitDelay`; nothing here waits.
+    /// Asks `app` to quit when it is a copy of the old app, never this process, and only
+    /// while Scrollio's event taps run (`isActive`): a paused Scrollio, or one that still
+    /// waits for Accessibility access, leaves it alone. One that ignores the request is
+    /// force-quit after `forceQuitDelay`; nothing here waits. The user is told (`announce`).
     /// - Returns: true when `app` was asked to quit.
     @discardableResult
     static func handleLaunch(
         of app: LegacyAppHandle,
         isAllowed: Bool = isAllowedToRun,
         ownProcessIdentifier: pid_t = ProcessInfo.processInfo.processIdentifier,
-        forceQuitDelay: TimeInterval = 3.0
+        forceQuitDelay: TimeInterval = 3.0,
+        isActive: Bool = scrollioHandlesEvents(),
+        announce: () -> Void = announceQuit
     ) -> Bool {
         guard isAllowed,
               isLegacyInstance(
@@ -197,8 +218,13 @@ enum LegacyAppQuitter {
                 processIdentifier: app.processIdentifier,
                 ownProcessIdentifier: ownProcessIdentifier
               ) else { return false }
+        guard isActive else {
+            AppSystemLog.note("The old Mos app started (pid \(app.processIdentifier)) while Scrollio's event taps are off: left running")
+            return false
+        }
         AppSystemLog.note("The old Mos app started while Scrollio runs (pid \(app.processIdentifier)): asking it to quit")
         app.terminate()
+        announce()
         DispatchQueue.main.asyncAfter(deadline: .now() + forceQuitDelay) {
             guard !app.isTerminated else { return }
             AppSystemLog.problem("The old Mos app (pid \(app.processIdentifier)) did not quit within \(Int(forceQuitDelay)) s: forcing it to quit")

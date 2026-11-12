@@ -94,6 +94,10 @@ extension OpenTargetPayload: Codable {
 /// - Splits on spaces and tabs (`CharacterSet.whitespaces`); a line break does not split, it
 ///   stays inside the argument
 /// - 双引号包裹的部分原样保留 (引号本身不进入结果)
+/// - Single quotes work the same way, and everything between them is taken as it is (a
+///   backslash too), as in a shell: `--name='My File'` is one argument. A single quote that
+///   has no partner after it is an ordinary character (`it's` stays `it's`), and so is one
+///   inside double quotes.
 /// - 反斜杠转义紧随其后的下一个字符 (不论是否在引号内)
 /// - 末尾未闭合的引号: 视作 EOF 自动闭合, 不抛错
 ///
@@ -104,18 +108,29 @@ enum ArgumentSplitter {
         var args: [String] = []
         var current = ""
         var inQuotes = false
-        var iterator = raw.unicodeScalars.makeIterator()
-        while let scalar = iterator.next() {
+        let scalars = Array(raw.unicodeScalars)
+        var index = 0
+        while index < scalars.count {
+            let scalar = scalars[index]
+            index += 1
             // 反斜杠转义: 下一字符原样追加
             if scalar == "\\" {
-                if let next = iterator.next() {
-                    current.unicodeScalars.append(next)
+                if index < scalars.count {
+                    current.unicodeScalars.append(scalars[index])
+                    index += 1
                 }
                 continue
             }
             // 双引号: 切换状态, 引号本身不进入结果
             if scalar == "\"" {
                 inQuotes.toggle()
+                continue
+            }
+            // A single quote with a partner: everything up to the partner, as it is.
+            if scalar == "'", !inQuotes,
+               let closing = scalars[index...].firstIndex(of: "'") {
+                current.unicodeScalars.append(contentsOf: scalars[index..<closing])
+                index = closing + 1
                 continue
             }
             // 引号外的空白: 切分边界

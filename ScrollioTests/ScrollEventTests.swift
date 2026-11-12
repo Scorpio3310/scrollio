@@ -999,8 +999,9 @@ final class ThumbWheelEngineTests: XCTestCase {
         }
     }
 
-    /// Tabs: ⌃⇥ and ⌃⇧⇥ (Tab, key code 48, on every layout); keys of their own, the action
-    /// menu's tab actions stay as button bindings use them.
+    /// Tabs: ⌃⇥ and ⌃⇧⇥ (Tab, key code 48, on every layout); keys of their own. The action
+    /// menu's "Next Tab" and "Previous Tab" send the same keys now (they were ⇧⌘→ / ⇧⌘←,
+    /// which select text and are no tab shortcut in Chrome or Finder).
     func testTabs_areControlTabAndControlShiftTab() {
         XCTAssertEqual(ThumbWheelAction.nextTab.code, 48)
         XCTAssertEqual(ThumbWheelAction.nextTab.modifiers, .control)
@@ -1010,7 +1011,10 @@ final class ThumbWheelEngineTests: XCTestCase {
         XCTAssertNil(SystemShortcut.getShortcut(named: ThumbWheelAction.previousTab.identifier))
         XCTAssertEqual(SystemShortcut.switchTabRight.code, 124, "the menu's own actions are unchanged")
         XCTAssertEqual(SystemShortcut.switchTabRight.modifiers, [.command, .option])
-        XCTAssertEqual(SystemShortcut.nextTab.modifiers, [.command, .shift])
+        XCTAssertEqual(SystemShortcut.nextTab.code, ThumbWheelAction.nextTab.code)
+        XCTAssertEqual(SystemShortcut.nextTab.modifiers, ThumbWheelAction.nextTab.modifiers)
+        XCTAssertEqual(SystemShortcut.previousTab.code, ThumbWheelAction.previousTab.code)
+        XCTAssertEqual(SystemShortcut.previousTab.modifiers, ThumbWheelAction.previousTab.modifiers)
     }
 
     private func resolved(_ shortcut: SystemShortcut.Shortcut) -> [UInt64] {

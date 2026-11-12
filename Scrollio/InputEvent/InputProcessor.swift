@@ -6,6 +6,7 @@
 //  Copyright © 2026 Caldis. All rights reserved.
 //
 
+import Carbon.HIToolbox
 import Cocoa
 
 // MARK: - InputResult
@@ -21,7 +22,7 @@ enum InputResult: Equatable {
 /// 使用 activeBindings 表跟踪按下中的绑定, 确保 Up 事件正确配对
 class InputProcessor: ModifierFlagsProviding {
     static let shared = InputProcessor()
-    init() { NSLog("Module initialized: InputProcessor") }
+    init() {}
 
     private static let scrollActionTapReplayMovementTolerance: CGFloat = 8.0
     /// A gesture hold older than this is abandoned, in case its button-up was lost. The same
@@ -61,6 +62,10 @@ class InputProcessor: ModifierFlagsProviding {
         let action: ResolvedAction
         let mouseSessionID: UUID?
         var scrollActionTapReplay: ScrollActionTapReplay?
+        /// What holds the action on the hardware, for the watchdog of held actions; nil for
+        /// a trigger the Mac cannot be asked about (a Logitech button that arrives over
+        /// HID++).
+        var physicalHold: PhysicalHold?
     }
 
     private final class ActiveMouseGestureSession {
@@ -124,6 +129,143 @@ class InputProcessor: ModifierFlagsProviding {
         var didScroll = false
     }
 
+    // MARK: - The keyboard
+
+    /// Whether ButtonCore needs to see the keyboard at all (its keys tap exists only then):
+    /// an enabled binding is triggered by a key, a button holds a modifier that the keys
+    /// typed meanwhile must carry, or an action started by a key is still held (its key-up
+    /// must arrive even when its binding was removed or switched off meanwhile).
+    var needsKeyEvents: Bool {
+        if activeModifierFlags != 0 { return true }
+        if activeBindings.keys.contains(where: { $0.type == .keyboard }) { return true }
+        return ButtonUtils.shared.hasKeyboardTriggers
+    }
+
+    // MARK: - Held actions whose release never came
+    //
+    // A held action (a modifier, a mouse button, a held key, a scroll hold) ends with the
+    // release of its trigger. That release can get lost: a password field or Terminal's
+    // "Secure Keyboard Entry" starts while the bound key is down (no tap gets its key-up),
+    // or a button-up goes missing. The action then stayed held, and with a held modifier
+    // every key typed afterwards carried it, until the trigger was pressed again. Only
+    // gesture holds had a watchdog. While actions are held, a timer compares them with the
+    // hardware once a second and releases one whose trigger is up at two looks in a row
+    // (a real release arrives within milliseconds, long before the second look).
+    //
+    // - A native mouse button: up when macOS says no such button is pressed (the check the
+    //   scroll holds already use when the wheel turns).
+    // - A key: only while another app has secure keyboard entry on, since only then can its
+    //   key-up not arrive; up when macOS says the key is up (the state of the keyboards and
+    //   of the keys other programs post, so a key another program holds counts as held).
+    // In both cases "up" needs every way of asking to agree (`HeldInputProbe.system`).
+
+    /// What holds an action on the hardware.
+    enum PhysicalHold: Equatable {
+        case mouseButton(Int64)
+        case key(UInt16)
+    }
+
+    /// The hardware as the watchdog asks it. Replaced in tests.
+    struct HeldInputProbe {
+        var isMouseButtonDown: (Int64) -> Bool
+        var isKeyDown: (UInt16) -> Bool
+        var isSecureInputOn: () -> Bool
+
+        /// "Up" only when every way of asking says so (AppKit, the session's state with
+        /// what other programs post, the hardware alone): a hold is never released on one
+        /// source's word. A button number macOS has no state for counts as down.
+        static let system = HeldInputProbe(
+            isMouseButtonDown: { number in
+                guard number >= 0, number < 32, let button = CGMouseButton(rawValue: UInt32(number)) else { return true }
+                return InputProcessor.isMouseButtonPressed(number)
+                    || CGEventSource.buttonState(.combinedSessionState, button: button)
+                    || CGEventSource.buttonState(.hidSystemState, button: button)
+            },
+            isKeyDown: { code in
+                return CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(code))
+                    || CGEventSource.keyState(.hidSystemState, key: CGKeyCode(code))
+            },
+            isSecureInputOn: { IsSecureEventInputEnabled() }
+        )
+    }
+
+    static let heldActionCheckInterval: TimeInterval = 1.0
+
+    /// nil under XCTest: no timer runs and nothing asks the real hardware; a test sets a
+    /// probe and calls `checkHeldActions()` itself.
+    private var heldInputProbe: HeldInputProbe? = AppRuntime.isRunningXCTest ? nil : .system
+    private var heldActionTimer: Timer?
+    /// Held actions whose trigger was up at the last look.
+    private var suspectedLostReleases: Set<TriggerKey> = []
+
+    /// Whether a hold lost its release, as far as the hardware can tell. Pure.
+    static func hasLostItsRelease(_ hold: PhysicalHold, probe: HeldInputProbe) -> Bool {
+        switch hold {
+        case .mouseButton(let number):
+            return !probe.isMouseButtonDown(number)
+        case .key(let code):
+            return probe.isSecureInputOn() && !probe.isKeyDown(code)
+        }
+    }
+
+    private static func physicalHold(of event: InputEvent) -> PhysicalHold? {
+        guard case .cgEvent = event.source else { return nil }
+        switch event.type {
+        case .mouse: return .mouseButton(Int64(event.code))
+        case .keyboard: return .key(event.code)
+        }
+    }
+
+    /// The timer runs exactly while some held action can be compared with the hardware.
+    private func updateHeldActionTimer() {
+        let needed = heldInputProbe != nil && activeBindings.values.contains { $0.physicalHold != nil }
+        if needed {
+            guard heldActionTimer == nil else { return }
+            heldActionTimer = CommonModesTimer.scheduled(
+                withTimeInterval: Self.heldActionCheckInterval, repeats: true
+            ) { [weak self] _ in
+                self?.checkHeldActions()
+            }
+        } else {
+            heldActionTimer?.invalidate()
+            heldActionTimer = nil
+            suspectedLostReleases.removeAll()
+        }
+    }
+
+    /// One look of the watchdog.
+    func checkHeldActions() {
+        assertMainThread()
+        guard let probe = heldInputProbe else { return }
+        var stillSuspected: Set<TriggerKey> = []
+        var lost: [TriggerKey] = []
+        for (key, session) in activeBindings {
+            guard let hold = session.physicalHold, Self.hasLostItsRelease(hold, probe: probe) else { continue }
+            if suspectedLostReleases.contains(key) {
+                lost.append(key)
+            } else {
+                stillSuspected.insert(key)
+            }
+        }
+        suspectedLostReleases = stillSuspected
+        guard !lost.isEmpty else { return }
+        for key in lost {
+            guard let session = activeBindings.removeValue(forKey: key) else { continue }
+            ShortcutExecutor.shared.execute(
+                action: session.action,
+                phase: .up,
+                mouseSessionID: session.mouseSessionID
+            )
+            // A button-up that arrives after all belongs to the swallowed press.
+            if key.type == .mouse {
+                swallowedTriggerPresses.insert(key)
+            }
+        }
+        AppSystemLog.problem("InputProcessor: released \(lost.count) held action\(lost.count == 1 ? "" : "s") "
+            + "whose button or key is up (its release never came)")
+        recomputeActiveModifierFlags()
+    }
+
     /// 清空所有活跃绑定和虚拟修饰键状态 (ButtonCore disable 时调用, 防止状态残留)
     func clearActiveBindings() {
         assertMainThread()
@@ -146,6 +288,8 @@ class InputProcessor: ModifierFlagsProviding {
         activeModifierFlags = 0
         MouseInteractionSessionController.shared.clearAllSessions()
         MouseInteractionSessionController.shared.refreshMotionTapState()
+        updateHeldActionTimer()
+        ButtonCore.shared.keyTap.refresh()
     }
 
     // MARK: - Virtual Modifier Flags
@@ -163,6 +307,10 @@ class InputProcessor: ModifierFlagsProviding {
         }
         activeModifierFlags = flags
         MouseInteractionSessionController.shared.refreshMotionTapState()
+        // Called after every change of the held actions: the watchdog and the keys tap
+        // follow them.
+        updateHeldActionTimer()
+        ButtonCore.shared.keyTap.refresh()
     }
 
     /// 合并当前物理修饰键与虚拟修饰键, 供 synthetic / rewritten 事件复用
@@ -250,8 +398,10 @@ class InputProcessor: ModifierFlagsProviding {
         activeBindings[key] = ActiveBindingSession(
             action: action,
             mouseSessionID: executionResult.mouseSessionID,
-            scrollActionTapReplay: scrollActionTapReplay(for: action, event: event)
+            scrollActionTapReplay: scrollActionTapReplay(for: action, event: event),
+            physicalHold: Self.physicalHold(of: event)
         )
+        suspectedLostReleases.remove(key)
         recomputeActiveModifierFlags()
         return .consumed
     }
@@ -682,6 +832,17 @@ class InputProcessor: ModifierFlagsProviding {
 
     func clearTestingGestureHapticPlayer() {
         gestureHapticPlayer = InputProcessor.systemGestureHapticPlayer
+    }
+
+    /// The hardware the watchdog of held actions asks; nil: none (no timer, no look).
+    func setTestingHeldInputProbe(_ probe: HeldInputProbe?) {
+        heldInputProbe = probe
+        updateHeldActionTimer()
+    }
+
+    /// Whether the watchdog's timer runs.
+    var isHeldActionTimerRunning: Bool {
+        return heldActionTimer != nil
     }
     #endif
 

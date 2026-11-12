@@ -188,7 +188,12 @@ final class EventTapLogTests: XCTestCase {
         XCTAssertEqual(EventTapKind.of(mask: scrollCore.scrollEventMask), .scroll)
         XCTAssertEqual(EventTapKind.of(mask: scrollCore.hotkeyEventMask), .scrollKeys)
         XCTAssertEqual(EventTapKind.of(mask: scrollCore.mouseLeftEventMask), .leftClick)
-        XCTAssertEqual(EventTapKind.of(mask: ButtonCore.shared.dispatchEventMask), .buttonsAndKeys)
+        XCTAssertEqual(EventTapKind.of(mask: ButtonCore.shared.dispatchEventMask), .buttons)
+        XCTAssertEqual(EventTapKind.of(mask: ButtonCore.shared.keyEventMask), .keys)
+        XCTAssertEqual(EventTapKind.of(mask: ButtonCore.shared.dispatchEventMask | ButtonCore.shared.keyEventMask), .buttonsAndKeys)
+        // The recorder listens to the modifier keys too; it is not the scroll keys tap.
+        XCTAssertEqual(EventTapKind.of(mask: mask(.leftMouseDown) | mask(.rightMouseDown) | mask(.otherMouseDown)
+            | mask(.keyDown) | mask(.flagsChanged)), .recorder)
         XCTAssertEqual(EventTapKind.of(mask: MouseInteractionSessionController.motionEventMask), .pointerMovement)
         XCTAssertEqual(EventTapKind.of(mask: mask(.tabletPointer)), .other)
         XCTAssertEqual(EventTapKind.scroll.rawValue, "scroll")

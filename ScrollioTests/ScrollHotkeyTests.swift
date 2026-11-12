@@ -24,20 +24,6 @@ final class ScrollHotkeyTests: XCTestCase {
         XCTAssertEqual(hotkey.code, 3)
     }
 
-    // MARK: - legacyCode 迁移
-
-    func testInit_legacyCode_valid() {
-        let hotkey = ScrollHotkey(legacyCode: 58)
-        XCTAssertNotNil(hotkey)
-        XCTAssertEqual(hotkey?.type, .keyboard, "legacy codes should be keyboard type")
-        XCTAssertEqual(hotkey?.code, 58)
-    }
-
-    func testInit_legacyCode_nil_returnsNil() {
-        let hotkey = ScrollHotkey(legacyCode: nil)
-        XCTAssertNil(hotkey)
-    }
-
     // MARK: - Equatable
 
     func testEquatable_sameTypeAndCode() {

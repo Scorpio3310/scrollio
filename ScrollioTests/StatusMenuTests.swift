@@ -878,6 +878,61 @@ final class AppRunControllerTests: XCTestCase {
         )
     }
 
+    // MARK: - macOS says the Accessibility list changed
+
+    /// The taps' keepers look every 5 s; in that time a tap of a process without the access
+    /// is what makes keys and the wheel hang. The notification of macOS brings the look
+    /// forward, both ways.
+    func testAChangeOfTheAccessibilityListIsLookedAtAtOnce() {
+        let world = World()
+        let controller = make(world)
+        controller.start()
+        world.log = []
+
+        // Another app's entry changed: the access is still there, nothing happens.
+        XCTAssertEqual(changes(of: controller) { controller.accessibilityListDidChange() }, 0)
+        XCTAssertEqual(world.log, [])
+        XCTAssertTrue(controller.coresActive)
+
+        // Scrollio's own was switched off: the same stop as when a tap finds it gone.
+        world.access = false
+        XCTAssertEqual(changes(of: controller) { controller.accessibilityListDidChange() }, 1)
+        XCTAssertEqual(world.log, ["stop", "toast"])
+        XCTAssertFalse(controller.coresActive)
+        XCTAssertTrue(controller.isWaitingForAccess)
+
+        // Still off: one more change of the list starts nothing.
+        controller.accessibilityListDidChange()
+        XCTAssertEqual(world.log, ["stop", "toast"])
+
+        // Switched on again: the cores start now, not at the timer's next look.
+        world.access = true
+        controller.accessibilityListDidChange()
+        XCTAssertEqual(world.log, ["stop", "toast", "start"])
+        XCTAssertTrue(controller.coresActive)
+    }
+
+    func testAChangeOfTheAccessibilityListDoesNothingWhilePausedOrAsleep() {
+        let world = World()
+        let controller = make(world)
+        controller.start()
+        controller.setPaused(true)
+        world.log = []
+        world.access = false
+        controller.accessibilityListDidChange()
+        world.access = true
+        controller.accessibilityListDidChange()
+        XCTAssertEqual(world.log, [], "paused: nothing starts or stops")
+        XCTAssertFalse(controller.coresActive)
+
+        let asleep = make(world)
+        asleep.start()
+        asleep.stop(because: .sleep)
+        world.log = []
+        asleep.accessibilityListDidChange()
+        XCTAssertEqual(world.log, [], "asleep: no timer waits, nothing starts")
+    }
+
     // MARK: - Reopening the app
 
     /// Opening the app again (also with the menu bar icon hidden) always leads somewhere.

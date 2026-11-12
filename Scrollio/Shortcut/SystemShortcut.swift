@@ -47,6 +47,15 @@ struct SystemShortcut {
             self.descriptionKey = descriptionKey
         }
 
+        /// The letter of a letter shortcut, in lower case ("a" for ⌘A, "z" for ⇧⌘Z); nil for
+        /// every other shortcut and for the actions that are no keys. `code` is that
+        /// letter's key on the US layout; what is sent is the key that types the letter on
+        /// the layout in use (`KeyboardLayoutKeys.keyCode(for:)`). Digits, arrows, Tab,
+        /// Space, Esc, Delete and the F-keys are the same keys on every layout.
+        var letter: String? {
+            return KeyCode.usLetters[code]
+        }
+
         /// 获取本地化描述文本 (用于菜单项下方的灰色说明行)
         var localizedDescription: String? {
             guard let key = descriptionKey else { return nil }
@@ -273,7 +282,11 @@ struct SystemShortcut {
     static let forceQuit = Shortcut("forceQuit", 53, [.command, .option])  // Command-Option-Esc
     static let lockScreen = Shortcut("lockScreen", 12, [.command, .control])  // Command-Control-Q
     static let logout = Shortcut("logout", 12, [.command, .shift])  // Command-Shift-Q
-    static let shutdownDialog = Shortcut("shutdownDialog", 6, .control)  // Control-Power (mapped to Control-Z as placeholder)
+    /// Retired (`retiredIdentifiers`): it was sent as Control-Z, a placeholder for
+    /// Control-Power. No dialog came up, and the app in front got ⌃Z (in Terminal that
+    /// suspends the running command). The entry stays so that a stored binding keeps its
+    /// name; nothing is sent for it.
+    static let shutdownDialog = Shortcut("shutdownDialog", 6, .control)
     static let screenshot = Shortcut("screenshot", 20, [.command, .shift])  // Command-Shift-3
     static let screenshotSelection = Shortcut("screenshotSelection", 21, [.command, .shift])  // Command-Shift-4
     static let screenshotAndRecording = Shortcut("screenshotAndRecording", 23, [.command, .shift], minimumVersion: OperatingSystemVersion(majorVersion: 10, minorVersion: 14, patchVersion: 0))  // Command-Shift-5 (macOS 10.14+)
@@ -293,10 +306,13 @@ struct SystemShortcut {
     // Replaces Brackets (33/30) which are broken on German keyboards.
     static let navigateBack = Shortcut("navigateBack", 123, .command)  // Command-LeftArrow
     static let navigateForward = Shortcut("navigateForward", 124, .command)  // Command-RightArrow
-    // FIX: Next/Prev Tab - Use Command + Shift + Arrow Keys
-    // Replaces Command+Shift+Brackets.
-    static let nextTab = Shortcut("nextTab", 124, [.command, .shift])  // Command-Shift-RightArrow
-    static let previousTab = Shortcut("previousTab", 123, [.command, .shift])  // Command-Shift-LeftArrow
+    // Next / Previous Tab: Control-Tab and Control-Shift-Tab, the tab keys of every app with
+    // tabs (browsers, Finder, Terminal, window tabs), as the thumb wheel sends them. They
+    // were ⇧⌘→ / ⇧⌘←, which select text to the end of the line in a text field and are no
+    // tab shortcut in Chrome or Finder. (Before that ⇧⌘] / ⇧⌘[, which are other keys on a
+    // German keyboard.)
+    static let nextTab = Shortcut("nextTab", 48, .control)  // Control-Tab
+    static let previousTab = Shortcut("previousTab", 48, [.control, .shift])  // Control-Shift-Tab
     static let switchTabRight = Shortcut("switchTabRight", 124, [.command, .option])  // Command-Option-Right
     static let switchTabLeft = Shortcut("switchTabLeft", 123, [.command, .option])  // Command-Option-Left
 
@@ -365,6 +381,15 @@ struct SystemShortcut {
         return allShortcuts[named]
     }
 
+    /// Actions that are no longer offered and send nothing ("Shut Down…", see
+    /// `shutdownDialog`). A binding stored with one keeps its name in the list and its button
+    /// stays taken; a press runs nothing. A recorded shortcut is never shown as one.
+    static let retiredIdentifiers: Set<String> = ["shutdownDialog"]
+
+    static func isRetired(_ identifier: String) -> Bool {
+        return retiredIdentifiers.contains(identifier)
+    }
+
     /// 按类别分组的快捷键 (有序数组,顺序即菜单显示顺序)
     /// Grouped by what the actions do, not by how they are sent: "Mission Control & Spaces"
     /// holds what moves the desktop, the other keys of Apple keyboards (Dictation, Do Not
@@ -391,7 +416,7 @@ struct SystemShortcut {
         ]),
         ("categorySystem", [
             spotlight, dictation, characterViewer, doNotDisturb, escapeKey,
-            forceQuit, lockScreen, logout, shutdownDialog
+            forceQuit, lockScreen, logout
         ]),
         ("categoryScreenshot", [
             screenshot, screenshotSelection, screenshotAndRecording
@@ -581,10 +606,16 @@ struct SystemShortcut {
             return nil
         }
 
+        // A recorded shortcut carries the key of the keyboard layout it was recorded on, so
+        // it is compared with the key each listed shortcut has on the layout in use, not
+        // with its US key: on AZERTY a recorded ⌘A (the US Q key) was stored and shown as
+        // "Quit App", and ⌘Q as "Select All".
+        let layoutKeys = KeyboardLayoutKeys.shared
         let matchingShortcuts = allShortcuts.values.filter { shortcut in
-            shortcut.code == payload.code &&
-            shortcut.modifiers.rawValue == payload.modifiers &&
-            shortcut.code < 0xFFFC  // 0xFFFC... are pseudo actions, not recordable key equivalents
+            shortcut.code < 0xFFFB &&  // 0xFFFB... are pseudo actions, not recordable key equivalents
+            !isRetired(shortcut.identifier) &&
+            layoutKeys.keyCode(for: shortcut) == payload.code &&
+            shortcut.modifiers.rawValue == payload.modifiers
         }
 
         guard matchingShortcuts.count == 1 else {
@@ -608,8 +639,16 @@ extension SystemShortcut {
         82: "moveSpaceRight",  // Move right a space with shift modifier
     ]
 
+    /// What System Settings says about the shortcuts of interest.
+    struct SystemShortcutState {
+        /// The user's keys of the shortcuts that are switched on.
+        var resolved: [String: (code: CGKeyCode, modifiers: UInt64)] = [:]
+        /// The actions whose shortcut the user switched off.
+        var switchedOff: Set<String> = []
+    }
+
     /// 缓存的已解析快捷键配置
-    private static var resolvedCache: [String: (code: CGKeyCode, modifiers: UInt64)] = {
+    private static var systemState: SystemShortcutState = {
         loadSystemShortcuts()
     }()
 
@@ -617,14 +656,27 @@ extension SystemShortcut {
     /// - Parameter name: 快捷键名称 (如 "moveSpaceLeft")
     /// - Returns: (keyCode, modifiers) 或 nil
     static func resolveSystemShortcut(_ name: String) -> (code: CGKeyCode, modifiers: UInt64)? {
-        return resolvedCache[name]
+        return systemState.resolved[name]
+    }
+
+    /// Whether the user switched the shortcut of this action off in System Settings ›
+    /// Keyboard › Keyboard Shortcuts (only the Spaces actions can be). The action cannot
+    /// work then: it is the shortcut that moves the Space.
+    static func isSwitchedOffInSystemSettings(_ name: String) -> Bool {
+        return systemState.switchedOff.contains(name)
     }
 
     /// 重新加载系统快捷键配置
     static func reloadSystemShortcuts() {
-        resolvedCache = loadSystemShortcuts()
-        NSLog("SystemShortcut: Reloaded system config, \(resolvedCache.count) shortcuts resolved")
+        systemState = loadSystemShortcuts()
     }
+
+    #if DEBUG
+    /// What the lookups answer, for a test; nil reads the system again (nothing under XCTest).
+    static func setTestingSystemShortcutState(_ state: SystemShortcutState?) {
+        systemState = state ?? loadSystemShortcuts()
+    }
+    #endif
 
     /// System Settings, where the user changes these shortcuts.
     static let systemSettingsBundleIdentifier = "com.apple.systempreferences"
@@ -644,15 +696,43 @@ extension SystemShortcut {
         }
     }
 
+    /// The failure is written once per run, not at every reload.
+    private static var didLogUnreadableSymbolicHotKeys = false
+
     /// 从系统配置加载快捷键
-    private static func loadSystemShortcuts() -> [String: (code: CGKeyCode, modifiers: UInt64)] {
+    private static func loadSystemShortcuts() -> SystemShortcutState {
+        // Under XCTest nothing of the Mac's own settings is read: the tests must not depend
+        // on the shortcuts of whoever runs them.
+        guard !AppRuntime.isRunningXCTest else { return SystemShortcutState() }
         // 读取系统快捷键配置
         guard let symbolicHotkeys = UserDefaults.standard.persistentDomain(forName: "com.apple.symbolichotkeys"),
               let hotkeys = symbolicHotkeys["AppleSymbolicHotKeys"] as? [String: Any] else {
-            NSLog("SystemShortcut: Failed to read com.apple.symbolichotkeys")
-            return [:]
+            if !didLogUnreadableSymbolicHotKeys {
+                didLogUnreadableSymbolicHotKeys = true
+                AppSystemLog.problem("Could not read the keyboard shortcuts of System Settings: "
+                    + "the Spaces actions use the standard keys (Control-Left, Control-Right)")
+            }
+            return SystemShortcutState()
         }
-        return resolvedShortcuts(fromSymbolicHotKeys: hotkeys)
+        return SystemShortcutState(
+            resolved: resolvedShortcuts(fromSymbolicHotKeys: hotkeys),
+            switchedOff: switchedOffShortcuts(fromSymbolicHotKeys: hotkeys)
+        )
+    }
+
+    /// The actions whose main shortcut (79: move left a space, 81: move right a space) is
+    /// there and switched off. A missing entry is not "off": macOS then uses its default.
+    /// Pure: the values are another app's data and may be anything.
+    static func switchedOffShortcuts(fromSymbolicHotKeys hotkeys: [String: Any]) -> Set<String> {
+        var switchedOff: Set<String> = []
+        for hotkeyID in [79, 81] {
+            guard let name = symbolicHotkeyMapping[hotkeyID],
+                  let config = hotkeys[String(hotkeyID)] as? [String: Any],
+                  let enabled = config["enabled"] as? Bool,
+                  !enabled else { continue }
+            switchedOff.insert(name)
+        }
+        return switchedOff
     }
 
     /// The shortcuts of interest in `AppleSymbolicHotKeys` (the dictionary of
@@ -687,7 +767,6 @@ extension SystemShortcut {
             if hotkeyID == 79 || hotkeyID == 81 {
                 if resolved[shortcutName] == nil {
                     resolved[shortcutName] = (keyCode, modifiers)
-                    NSLog("SystemShortcut: Loaded \(shortcutName) = keyCode:\(keyCode), modifiers:0x\(String(modifiers, radix: 16))")
                 }
             }
         }

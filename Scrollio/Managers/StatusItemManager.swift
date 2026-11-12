@@ -44,7 +44,6 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
 
     // 初始化
     override func awakeFromNib() {
-        NSLog("Module initialized: StatusItemManager")
         // 设置图标/行为
         item.button?.image = #imageLiteral(resourceName: "AppStatusBarIcon")
         plainImagePosition = item.button?.imagePosition ?? .imageOnly

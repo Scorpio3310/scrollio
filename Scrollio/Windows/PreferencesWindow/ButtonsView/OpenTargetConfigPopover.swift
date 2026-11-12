@@ -1,8 +1,8 @@
 //
 //  OpenTargetConfigPopover.swift
 //  Mos
-//  "Open App or File…": a popover with a title, the file slot, the arguments and
-//  Cancel (Esc) / Done (Return).
+//  "Open App or File…": a popover with a title, the file slot, what a press does with a
+//  file that can run (open it or run it), the arguments and Cancel (Esc) / Done (Return).
 //
 
 import Cocoa
@@ -23,7 +23,12 @@ final class OpenTargetConfigPopover: NSObject {
     private var selectedBundleID: String?
     private var selectedKind: OpenTargetKind = .file
 
+    /// The chosen file has the executable bit: it can be run, so the popover asks which.
+    private var selectedCanRun = false
+
     // Views
+    private weak var modeRow: NSView?
+    private weak var modeControl: NSSegmentedControl?
     private weak var fileSlot: FileSlotView?
     private weak var argsStack: NSStackView?     // 容器 NSStackView; 隐藏所有 arrangedSubviews 时整体塌缩到 0 高
     private weak var argsCaption: NSView?
@@ -41,6 +46,8 @@ final class OpenTargetConfigPopover: NSObject {
         let path: String
         let bundleID: String?
         let kind: OpenTargetKind
+        /// The file has the executable bit (never for an app).
+        let canRun: Bool
     }
 
     // MARK: - Show
@@ -51,6 +58,9 @@ final class OpenTargetConfigPopover: NSObject {
         self.selectedPath = existing?.path
         self.selectedBundleID = existing?.bundleID
         self.selectedKind = existing?.kind ?? .file
+        self.selectedCanRun = existing.map {
+            $0.kind != .application && FileManager.default.isExecutableFile(atPath: $0.path)
+        } ?? false
 
         let popover = NSPopover()
         popover.behavior = .applicationDefined  // 不自动关闭, 必须显式 close
@@ -67,6 +77,7 @@ final class OpenTargetConfigPopover: NSObject {
             selectedPath = nil
             selectedBundleID = nil
             selectedKind = .file
+            selectedCanRun = false
             fileSlot?.setState(.empty, animated: false)
             doneButton?.isEnabled = false
             setArgumentsVisible(false, animated: false)
@@ -74,15 +85,34 @@ final class OpenTargetConfigPopover: NSObject {
             fileSlot?.setState(.empty, animated: false)
             setArgumentsVisible(false, animated: false)
         }
+        // The keyboard starts on the slot: without it Tab reached Cancel only, and nothing
+        // could be chosen without the mouse.
+        if let slot = fileSlot {
+            DispatchQueue.main.async { [weak slot] in
+                guard let slot, let window = slot.window else { return }
+                window.makeFirstResponder(slot)
+            }
+        }
+    }
+
+    /// The app or file the selection stands for, as a press would open it: the stored path
+    /// while it is there, for an app otherwise whatever macOS knows by its identifier
+    /// (`ShortcutExecutor.applicationURL`).
+    private func resolvedSelectionURL() -> URL? {
+        guard let path = selectedPath else { return nil }
+        if selectedKind == .application {
+            let payload = OpenTargetPayload(path: path, bundleID: selectedBundleID, arguments: "", kind: .application)
+            return ShortcutExecutor.applicationURL(
+                for: payload,
+                fileExists: { FileManager.default.fileExists(atPath: $0) },
+                urlForBundleIdentifier: { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }
+            )
+        }
+        return FileManager.default.fileExists(atPath: path) ? URL(fileURLWithPath: path) : nil
     }
 
     private func isCurrentSelectionResolvable() -> Bool {
-        guard let path = selectedPath else { return false }
-        if selectedKind == .application, let bundleID = selectedBundleID,
-           NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil {
-            return true
-        }
-        return FileManager.default.fileExists(atPath: path)
+        return resolvedSelectionURL() != nil
     }
 
     func hide() {
@@ -133,7 +163,8 @@ final class OpenTargetConfigPopover: NSObject {
         captionLabel.textColor = NSColor.labelColor
         let captionSuffix = NSTextField(labelWithString: " " + NSLocalizedString("open-target-arguments-optional-suffix", comment: ""))
         captionSuffix.font = NSFont.systemFont(ofSize: 11)
-        captionSuffix.textColor = NSColor.tertiaryLabelColor
+        // Secondary, not tertiary: at this size tertiary was close to invisible (1.6:1).
+        captionSuffix.textColor = NSColor.secondaryLabelColor
         captionRow.addArrangedSubview(captionLabel)
         captionRow.addArrangedSubview(captionSuffix)
         self.argsCaption = captionRow
@@ -150,11 +181,42 @@ final class OpenTargetConfigPopover: NSObject {
         // Args section (NSStackView): 隐藏所有 arrangedSubviews 时自身 intrinsic height = 0,
         // 这是 AppKit 唯一为"动态显隐布局"提供的原生机制. 用普通 NSView + 高度约束 toggle
         // 试过, fittingSize 会被内部 captionStack/args 的 required 约束牵扯, 算不到 0.
+        // What a press does with a file that can run: open it, or run it. Running used to be
+        // decided silently by the executable bit, which every file has on an exFAT or FAT
+        // volume and on many network shares: a PDF picked there was stored as a script, the
+        // button said "couldn't start", and nothing in the popover said why.
+        let modeLabel = NSTextField(labelWithString: NSLocalizedString("open-target-mode-label", comment: ""))
+        modeLabel.font = NSFont.systemFont(ofSize: 11)
+        modeLabel.textColor = NSColor.labelColor
+        let mode = NSSegmentedControl(
+            labels: [
+                NSLocalizedString("open-target-mode-open", comment: ""),
+                NSLocalizedString("open-target-mode-run", comment: ""),
+            ],
+            trackingMode: .selectOne,
+            target: self,
+            action: #selector(onModeChanged(_:))
+        )
+        mode.controlSize = .small
+        mode.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        mode.setToolTip(NSLocalizedString("open-target-mode-open-tooltip", comment: ""), forSegment: Self.openSegment)
+        mode.setToolTip(NSLocalizedString("open-target-mode-run-tooltip", comment: ""), forSegment: Self.runSegment)
+        mode.setAccessibilityLabel(NSLocalizedString("open-target-mode-label", comment: ""))
+        let modeRow = NSStackView(views: [modeLabel, mode])
+        modeRow.orientation = .horizontal
+        modeRow.alignment = .centerY
+        modeRow.spacing = 8
+        modeRow.isHidden = true
+        self.modeRow = modeRow
+        self.modeControl = mode
+
         let argsStack = NSStackView()
         argsStack.orientation = .vertical
         argsStack.alignment = .leading
         argsStack.spacing = 6
         argsStack.translatesAutoresizingMaskIntoConstraints = false
+        argsStack.addArrangedSubview(modeRow)
+        argsStack.setCustomSpacing(10, after: modeRow)
         argsStack.addArrangedSubview(captionRow)
         argsStack.addArrangedSubview(args)
         // 初始隐藏 (NSStackView 把 hidden arrangedSubviews 完全踢出布局)
@@ -261,11 +323,25 @@ final class OpenTargetConfigPopover: NSObject {
         }
     }
 
+    static let openSegment = 0
+    static let runSegment = 1
+
+    /// What a picked file that is no app is at first: run only when it has the executable
+    /// bit and its type says it is a program or a script (a Unix executable, a shell or
+    /// other script), opened otherwise. The bit alone does not decide. The user can change
+    /// it whenever the file can run at all (the "When pressed" control). Pure.
+    static func defaultKind(isExecutable: Bool, contentType: UTType?) -> OpenTargetKind {
+        guard isExecutable, let contentType else { return .file }
+        if contentType.conforms(to: .executable) || contentType.conforms(to: .script) {
+            return .script
+        }
+        return .file
+    }
+
     /// 解析任意文件 URL 为待保存的字段集; 返回 nil 表示路径无效.
     /// 推断规则:
     /// - .app 扩展名 → .application (同时取 bundleID)
-    /// - 可执行位 set 的非 .app → .script (Process 运行)
-    /// - 其它 → .file (NSWorkspace.open 用默认 app 打开)
+    /// - 非 .app: `defaultKind` (run a program or script, open anything else)
     private static func resolvePickedFile(at url: URL) -> PickedFile? {
         var isDirectory: ObjCBool = false
         let isApp = url.pathExtension.lowercased() == "app"
@@ -273,30 +349,41 @@ final class OpenTargetConfigPopover: NSObject {
               !isDirectory.boolValue || isApp else { return nil }
         if isApp {
             let bundleID = Bundle(url: url)?.bundleIdentifier
-            return PickedFile(path: url.path, bundleID: bundleID, kind: .application)
+            return PickedFile(path: url.path, bundleID: bundleID, kind: .application, canRun: false)
         }
-        if FileManager.default.isExecutableFile(atPath: url.path) {
-            return PickedFile(path: url.path, bundleID: nil, kind: .script)
-        }
-        return PickedFile(path: url.path, bundleID: nil, kind: .file)
+        let canRun = FileManager.default.isExecutableFile(atPath: url.path)
+        let contentType = (try? url.resourceValues(forKeys: [.contentTypeKey]))?.contentType
+        let kind = defaultKind(isExecutable: canRun, contentType: contentType)
+        return PickedFile(path: url.path, bundleID: nil, kind: kind, canRun: canRun)
     }
 
     private func applyPickedFile(_ picked: PickedFile) {
         selectedPath = picked.path
         selectedBundleID = picked.bundleID
         selectedKind = picked.kind
+        selectedCanRun = picked.canRun
         staleBanner?.isHidden = true
         applyFilledStateForCurrentSelection(animated: true)
+    }
+
+    /// "Open" or "Run" was chosen for a file that can run.
+    @objc private func onModeChanged(_ sender: NSSegmentedControl) {
+        guard selectedPath != nil, selectedKind != .application else { return }
+        selectedKind = sender.selectedSegment == Self.runSegment ? .script : .file
+        setArgumentsVisible(selectedKind == .script, animated: false)
     }
 
     private func applyFilledStateForCurrentSelection(animated: Bool) {
         guard let path = selectedPath else {
             fileSlot?.setState(.empty, animated: animated)
             doneButton?.isEnabled = false
+            modeRow?.isHidden = true
             setArgumentsVisible(false, animated: animated)
             return
         }
-        let url = URL(fileURLWithPath: path)
+        // The app a press would open (the one at the path, or the one macOS knows by the
+        // identifier once that path is gone).
+        let url = resolvedSelectionURL() ?? URL(fileURLWithPath: path)
         let workspace = NSWorkspace.shared
         let icon = workspace.icon(forFile: url.path)
         let title: String = {
@@ -308,9 +395,14 @@ final class OpenTargetConfigPopover: NSObject {
             }
             return url.lastPathComponent
         }()
-        let content = FileSlotView.FilledContent(icon: icon, title: title, subtitle: path)
+        let content = FileSlotView.FilledContent(icon: icon, title: title, subtitle: url.path)
         fileSlot?.setState(.filled(content), animated: animated)
         doneButton?.isEnabled = true
+        // "Open" or "Run": only for a file that can run. A script stored before (or whose
+        // executable bit was taken away since) still shows as run.
+        let showsMode = selectedKind != .application && (selectedCanRun || selectedKind == .script)
+        modeRow?.isHidden = !showsMode
+        modeControl?.selectedSegment = selectedKind == .script ? Self.runSegment : Self.openSegment
         // .file 不支持参数 (NSWorkspace.open 不接受 argv), 隐藏 args 区域避免误导.
         let supportsArgs = (selectedKind == .application || selectedKind == .script)
         setArgumentsVisible(supportsArgs, animated: animated)
@@ -320,9 +412,11 @@ final class OpenTargetConfigPopover: NSObject {
         selectedPath = nil
         selectedBundleID = nil
         selectedKind = .file
+        selectedCanRun = false
         staleBanner?.isHidden = true
         fileSlot?.setState(.empty, animated: true)
         doneButton?.isEnabled = false
+        modeRow?.isHidden = true
         setArgumentsVisible(false, animated: true)
     }
 
@@ -462,6 +556,76 @@ final class FileSlotView: NSView {
         addCursorRect(bounds, cursor: .pointingHand)
     }
 
+    // MARK: Keyboard and VoiceOver
+    //
+    // The slot is a button: it takes the keyboard focus (with a focus ring), Space and
+    // Return press it, and VoiceOver reads it as a button named by what it holds. It was a
+    // plain view with `mouseDown` only: a keyboard or VoiceOver user could choose nothing.
+
+    override var acceptsFirstResponder: Bool { return true }
+    override var canBecomeKeyView: Bool { return !isHiddenOrHasHiddenAncestor }
+
+    override func becomeFirstResponder() -> Bool {
+        needsDisplay = true
+        noteFocusRingMaskChanged()
+        return true
+    }
+
+    override func resignFirstResponder() -> Bool {
+        needsDisplay = true
+        noteFocusRingMaskChanged()
+        return true
+    }
+
+    override var focusRingMaskBounds: NSRect { return bounds }
+
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
+    }
+
+    /// Whether a key presses the slot: Space, Return or Enter.
+    static func isPressKey(_ keyCode: UInt16) -> Bool {
+        return keyCode == 49 || keyCode == 36 || keyCode == 76
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if Self.isPressKey(event.keyCode) {
+            onClick?()
+        } else {
+            super.keyDown(with: event)
+        }
+    }
+
+    override func isAccessibilityElement() -> Bool { return true }
+    override func accessibilityRole() -> NSAccessibility.Role? { return .button }
+
+    override func accessibilityLabel() -> String? {
+        switch state {
+        case .empty:
+            return NSLocalizedString("open-target-empty-primary", comment: "")
+        case .filled(let content):
+            return "\(content.title), \(content.subtitle)"
+        }
+    }
+
+    override func accessibilityHelp() -> String? {
+        switch state {
+        case .empty: return NSLocalizedString("open-target-empty-tooltip", comment: "")
+        case .filled: return NSLocalizedString("open-target-filled-tooltip", comment: "")
+        }
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        onClick?()
+        return true
+    }
+
+    /// The "x" stays reachable for VoiceOver as the slot's child.
+    override func accessibilityChildren() -> [Any]? {
+        guard case .filled = state, let clear = filledView.viewWithTag(99) else { return [] }
+        return [clear]
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let existing = trackingArea {
@@ -521,6 +685,7 @@ final class FileSlotView: NSView {
             cornerHeight: 8,
             transform: nil
         )
+        noteFocusRingMaskChanged()
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -624,7 +789,7 @@ final class FileSlotView: NSView {
 
         let secondary = NSTextField(labelWithString: NSLocalizedString("open-target-empty-secondary", comment: ""))
         secondary.font = NSFont.systemFont(ofSize: 11)
-        secondary.textColor = NSColor.tertiaryLabelColor
+        secondary.textColor = NSColor.secondaryLabelColor
 
         let stack = NSStackView(views: [placeholder, primary, secondary])
         stack.orientation = .vertical
@@ -675,7 +840,8 @@ final class FileSlotView: NSView {
 
         let subtitle = NSTextField(labelWithString: "")
         subtitle.font = NSFont.systemFont(ofSize: 10.5)
-        subtitle.textColor = NSColor.tertiaryLabelColor
+        // The path is what tells two apps or scripts of the same name apart: readable.
+        subtitle.textColor = NSColor.secondaryLabelColor
         subtitle.lineBreakMode = .byTruncatingMiddle
         self.filledSubtitle = subtitle
 
@@ -695,6 +861,7 @@ final class FileSlotView: NSView {
         clearBtn.isBordered = false
         clearBtn.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: nil)
         clearBtn.toolTip = NSLocalizedString("open-target-clear-tooltip", comment: "")
+        clearBtn.setAccessibilityLabel(NSLocalizedString("open-target-clear-tooltip", comment: ""))
         clearBtn.target = self
         clearBtn.action = #selector(onClearClicked)
         clearBtn.translatesAutoresizingMaskIntoConstraints = false

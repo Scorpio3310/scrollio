@@ -63,13 +63,29 @@ public class Utils {
     /// is gone both copies would run event taps and Logitech sessions, bound actions could fire
     /// twice and the old copy's answers to its teardown writes would confuse this one. Call it
     /// before any event tap or Logitech session starts; it blocks the main thread meanwhile.
+    ///
+    /// Only a copy that started later replaces one that started earlier. Two copies that
+    /// start together (both login items, an old one in ~/Applications and the new one in
+    /// /Applications) each used to ask the other to quit and then wait with a blocked main
+    /// thread, so neither could answer: 3 s lost at every login, and when both reached the
+    /// force-quit in the same moment, no Scrollio was left. Now the earlier of the two does
+    /// not wait: it goes on, and quits when the later one asks.
     class func preventMultiRunning(killExist kill: Bool = false, timeout: TimeInterval = 3.0) {
         guard let mainBundleID = Bundle.main.bundleIdentifier else { return }
-        let running = NSRunningApplication.runningApplications(withBundleIdentifier: mainBundleID)
+        let everyCopy = NSRunningApplication.runningApplications(withBundleIdentifier: mainBundleID)
         let own = ProcessInfo.processInfo.processIdentifier
-        guard !otherInstanceProcessIdentifiers(running: running.map { $0.processIdentifier }, own: own).isEmpty else { return }
+        guard !otherInstanceProcessIdentifiers(running: everyCopy.map { $0.processIdentifier }, own: own).isEmpty else { return }
         if kill {
-            let outcome = quitOtherInstances(running, own: own, timeout: timeout)
+            let ownLaunch = NSRunningApplication.current.launchDate
+            let others = everyCopy.filter { $0.processIdentifier != own }
+            let earlier = others.filter {
+                startedEarlier(other: ($0.processIdentifier, $0.launchDate), thanOwn: (own, ownLaunch))
+            }
+            if earlier.count < others.count {
+                AppSystemLog.note("Another copy of Scrollio started after this one: not waiting for it, it replaces this one")
+            }
+            guard !earlier.isEmpty else { return }
+            let outcome = quitOtherInstances(earlier, own: own, timeout: timeout)
             let quitWhenAsked = outcome.forced.isEmpty && outcome.stillRunning.isEmpty
             for line in otherInstanceLines(outcome, timeout: timeout) {
                 if quitWhenAsked {
@@ -82,6 +98,19 @@ public class Utils {
             AppSystemLog.note("Another copy of Scrollio runs: this one quits")
             NSApp.terminate(nil)
         }
+    }
+
+    /// Whether another copy started before this one, so this one replaces it: by the launch
+    /// time, and by the process id when the times are equal or one is unknown (the lower id
+    /// counts as earlier). Exactly one of two copies answers true about the other. Pure.
+    class func startedEarlier(
+        other: (pid: pid_t, launched: Date?),
+        thanOwn own: (pid: pid_t, launched: Date?)
+    ) -> Bool {
+        if let otherLaunch = other.launched, let ownLaunch = own.launched, otherLaunch != ownLaunch {
+            return otherLaunch < ownLaunch
+        }
+        return other.pid < own.pid
     }
 
     /// Asks the other copies in `running` to quit and waits for them (LegacyAppQuitter's

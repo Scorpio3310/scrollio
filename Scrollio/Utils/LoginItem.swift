@@ -105,7 +105,7 @@ enum LoginItem {
             do {
                 try service.unregister()
             } catch {
-                NSLog("LoginItem: unregister failed: \(error)")
+                AppSystemLog.problem("Open at login: macOS refused to remove the login item (\(logText(of: error)))")
             }
             return service.status != .enabled
         }
@@ -114,7 +114,7 @@ enum LoginItem {
         do {
             try service.register()
         } catch {
-            NSLog("LoginItem: register failed: \(error)")
+            AppSystemLog.problem("Open at login: macOS refused to add the login item (\(logText(of: error)))")
         }
         let result = service.status
         if result == .requiresApproval {
@@ -133,8 +133,15 @@ enum LoginItem {
         do {
             try service.unregister()
         } catch {
-            NSLog("LoginItem: unregister failed: \(error)")
+            AppSystemLog.problem("Open at login: macOS refused to remove the login item (\(logText(of: error)))")
         }
         return service.status == .notRegistered
+    }
+
+    /// An error for the log: where it comes from and its number, not its text (which may
+    /// carry the app's path).
+    private static func logText(of error: Error) -> String {
+        let error = error as NSError
+        return "\(error.domain) \(error.code)"
     }
 }

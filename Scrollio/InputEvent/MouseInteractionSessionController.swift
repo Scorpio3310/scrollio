@@ -30,6 +30,15 @@ protocol PointerMotionTap: AnyObject {
 
 extension Interceptor: PointerMotionTap {}
 
+/// A pointer-movement tap that listens to nothing: what the controller makes under XCTest.
+final class InertPointerMotionTap: PointerMotionTap {
+    private var running = true
+    func start() throws { running = true }
+    func pause() { running = false }
+    func stop() { running = false }
+    func isRunning() -> Bool { return running }
+}
+
 /// The pointer-movement tap is made on demand: by the first gesture hold that reads pointer
 /// movement, a synthetic mouse drag or a virtual modifier. Between those it is paused. When
 /// the cores stop (AppRunController) it is released and the next use makes a new one; a
@@ -204,6 +213,13 @@ final class MouseInteractionSessionController {
     func handleMotionTapEventForTests(_ event: CGEvent) -> Unmanaged<CGEvent>? {
         return handleMotionTapEvent(type: event.type, event: event)
     }
+
+    /// The same with the type the callback is called with (a "tap disabled" type is not the
+    /// type of the event that comes with it).
+    @discardableResult
+    func handleMotionTapEventForTests(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        return handleMotionTapEvent(type: type, event: event)
+    }
     #endif
 
     private static func syntheticPriority(of target: SyntheticMouseTarget) -> (Int, Int64) {
@@ -293,7 +309,7 @@ final class MouseInteractionSessionController {
                 tap = kept
             } else {
                 do {
-                    tap = try (makeMotionTapOverride ?? makeSystemMotionTap)()
+                    tap = try (makeMotionTapOverride ?? Self.makeDefaultMotionTap ?? makeSystemMotionTap)()
                 } catch {
                     AppSystemLog.problem("Could not create the pointer movement event tap: \(error)")
                     return false
@@ -321,6 +337,13 @@ final class MouseInteractionSessionController {
 
     static let motionTapGivenUpLine = "The pointer movement event tap stays off: it was off right after it was "
         + "started, and so was a new one. Gesture holds read no pointer movement until the next try, at the next hold"
+
+    /// Under XCTest the controller makes a tap that does nothing unless a test passes its
+    /// own: a test that started a click through the shared controller used to install a
+    /// real, active tap on every pointer movement in the test process (with Accessibility
+    /// access for the debug app: a stuttering pointer for the rest of the run).
+    private static let makeDefaultMotionTap: (() throws -> PointerMotionTap)? =
+        AppRuntime.isRunningXCTest ? { InertPointerMotionTap() } : nil
 
     private func makeSystemMotionTap() throws -> PointerMotionTap {
         let interceptor = try Interceptor(
@@ -365,7 +388,15 @@ final class MouseInteractionSessionController {
     }
 
     private func handleMotionTapEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        if type == .tapDisabledByUserInput {
+            // What this tap's callback gets after Scrollio itself paused it (`stopMotionTap`,
+            // after every use). Nothing went wrong and nothing is cleared: clearing here
+            // released every other held action. A button held for "scroll fast" or a held
+            // key lost its hold as soon as another button, bound to a click or a modifier,
+            // was released, and its own release then reached the app as an up without a down.
+            return Unmanaged.passUnretained(event)
+        }
+        if type == .tapDisabledByTimeout {
             EventTapDisableLog.note(.pointerMovement, type)
             InputProcessor.shared.clearActiveBindings()
             return Unmanaged.passUnretained(event)

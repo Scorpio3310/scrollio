@@ -1967,8 +1967,10 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertFalse(contains(.rightMouseUp, in: core.dispatchEventMask))
         XCTAssertTrue(contains(.otherMouseDown, in: core.dispatchEventMask))
         XCTAssertTrue(contains(.otherMouseUp, in: core.dispatchEventMask))
-        XCTAssertTrue(contains(.keyDown, in: core.dispatchEventMask))
-        XCTAssertTrue(contains(.keyUp, in: core.dispatchEventMask))
+        // The keyboard has a tap of its own, made only while it is needed.
+        XCTAssertFalse(contains(.keyDown, in: core.dispatchEventMask))
+        XCTAssertFalse(contains(.keyUp, in: core.dispatchEventMask))
+        XCTAssertEqual(core.keyEventMask, CGEventMask(1 << CGEventType.keyDown.rawValue) | CGEventMask(1 << CGEventType.keyUp.rawValue))
     }
 
     func testButtonCore_dispatchTapRunsBeforeNativeMouseButtonShortcuts() {
@@ -2280,6 +2282,389 @@ final class InputProcessorTests: XCTestCase {
             queuedWorkFinished.fulfill()
         }
         wait(for: [queuedWorkFinished], timeout: 1)
+    }
+
+    // MARK: - The pointer-movement tap's own pause
+
+    private func bind(_ bindings: [(button: UInt16, action: String)]) {
+        Options.shared.buttons.binding = bindings.map { binding in
+            ButtonBinding(
+                triggerEvent: RecordedEvent(type: .mouse, code: binding.button, modifiers: 0, deviceFilter: nil),
+                systemShortcutName: binding.action,
+                isEnabled: true
+            )
+        }
+        ButtonUtils.shared.invalidateCache()
+    }
+
+    private func nativeButton(_ number: Int64, _ type: CGEventType) -> InputEvent {
+        return InputEvent(fromCGEvent: makeOtherMouseEvent(type, buttonNumber: number))
+    }
+
+    /// After every use the app pauses the pointer-movement tap, and the tap's callback then
+    /// gets "disabled by user input". That was treated like a timeout: every held action was
+    /// released. A button held for "scroll fast" lost its hold as soon as another button,
+    /// bound to a click, was released, and its own release then went to the app as an up
+    /// without a down.
+    func testTheMotionTapsOwnPauseDoesNotEndOtherHeldActions() throws {
+        bind([(3, "scrollDash"), (4, "mouseMiddleClick")])
+        let pauseEvent = try XCTUnwrap(CGEvent(source: nil))
+
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(3, .otherMouseDown)), .consumed)
+        XCTAssertTrue(ScrollCore.shared.dashScroll)
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(4, .otherMouseDown)), .consumed)
+        XCTAssertTrue(MouseInteractionSessionController.shared.isMotionTapRunning, "the click's drag needs the tap")
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(4, .otherMouseUp)), .consumed)
+        XCTAssertFalse(MouseInteractionSessionController.shared.isMotionTapRunning, "paused again")
+
+        // What the paused tap's callback gets.
+        let passed = MouseInteractionSessionController.shared.handleMotionTapEventForTests(type: .tapDisabledByUserInput, event: pauseEvent)
+        XCTAssertNotNil(passed)
+        XCTAssertTrue(ScrollCore.shared.dashScroll, "button 3 is still down: its hold goes on")
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(3, .otherMouseUp)), .consumed,
+                       "and its release is still its own, not an up without a down for the app")
+        XCTAssertFalse(ScrollCore.shared.dashScroll)
+
+        // A timeout is still a failure: everything held is released.
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(3, .otherMouseDown)), .consumed)
+        XCTAssertTrue(ScrollCore.shared.dashScroll)
+        MouseInteractionSessionController.shared.handleMotionTapEventForTests(type: .tapDisabledByTimeout, event: pauseEvent)
+        XCTAssertFalse(ScrollCore.shared.dashScroll)
+    }
+
+    // MARK: - Actions that are none, triggers that cannot run
+
+    /// An unknown action counted as a shortcut: the press and the release were swallowed and
+    /// nothing was sent, so the button lost its own function too.
+    func testABindingWithAnActionThisVersionDoesNotKnowLeavesTheButtonAlone() {
+        let executed = recordKeyboardShortcuts()
+        for action in ["actionOfANewerVersion", "logiActionOfANewerVersion"] {
+            bindNativeButton3(to: action)
+            XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseDown)), .passthrough, action)
+            XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseUp)), .passthrough, action)
+        }
+        XCTAssertEqual(executed().count, 0)
+    }
+
+    /// "Shut Down…" is retired: a stored binding keeps the button, and sends nothing (it
+    /// sent Control-Z).
+    func testAStoredShutDownBindingSendsNothing() {
+        bindNativeButton3(to: "shutdownDialog")
+        let executed = recordKeyboardShortcuts()
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseDown)), .consumed)
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton3(.otherMouseUp)), .consumed)
+        XCTAssertEqual(executed().count, 0)
+    }
+
+    /// The rule "a key needs a modifier, unless it is an F-key" lived in the recorder only.
+    /// A binding is data: one written into the settings with a plain key as its trigger ran
+    /// its action (a script, a file) at the next press of that key.
+    func testAKeyWithoutAModifierIsNoTriggerUnlessItIsAnFKey() {
+        let executed = recordKeyboardShortcuts()
+        // Space, a letter, Return: stored, listed, never matched.
+        for code: UInt16 in [49, 40, 36] {
+            bindKey(code, flags: [], to: SystemShortcut.copy.identifier)
+            XCTAssertEqual(Options.shared.buttons.binding.count, 1, "the binding stays stored")
+            XCTAssertEqual(InputProcessor.shared.process(keyEvent(CGKeyCode(code), down: true, flags: [])), .passthrough)
+            XCTAssertEqual(InputProcessor.shared.process(keyEvent(CGKeyCode(code), down: false, flags: [])), .passthrough)
+            XCTAssertFalse(ButtonUtils.shared.hasKeyboardTriggers)
+        }
+        XCTAssertEqual(executed().count, 0)
+        // An F-key alone, and a key with a modifier, as the recorder takes them.
+        bindKey(KeyCode.F5, flags: [], to: SystemShortcut.copy.identifier)
+        XCTAssertEqual(InputProcessor.shared.process(keyEvent(CGKeyCode(KeyCode.F5), down: true, flags: [])), .consumed)
+        XCTAssertTrue(ButtonUtils.shared.hasKeyboardTriggers)
+        bindKey(40, flags: .maskControl, to: SystemShortcut.copy.identifier)
+        XCTAssertEqual(InputProcessor.shared.process(keyEvent(40, down: true, flags: .maskControl)), .consumed)
+        XCTAssertEqual(executed().count, 2)
+
+        func trigger(_ type: EventType, _ code: UInt16, _ flags: CGEventFlags = []) -> RecordedEvent {
+            return RecordedEvent(type: type, code: code, modifiers: UInt(flags.rawValue), deviceFilter: nil)
+        }
+        XCTAssertFalse(ButtonUtils.isRunnable(trigger(.keyboard, 40)))
+        XCTAssertFalse(ButtonUtils.isRunnable(trigger(.keyboard, 40, .maskSecondaryFn)), "Fn is no modifier of the rule")
+        XCTAssertFalse(ButtonUtils.isRunnable(trigger(.keyboard, KeyCode.shiftL, .maskShift)), "a modifier key alone")
+        XCTAssertTrue(ButtonUtils.isRunnable(trigger(.keyboard, 40, .maskShift)))
+        XCTAssertTrue(ButtonUtils.isRunnable(trigger(.keyboard, KeyCode.F13)))
+        // The left and right buttons are never a trigger; every other button is.
+        XCTAssertFalse(ButtonUtils.isRunnable(trigger(.mouse, 0, .maskAlternate)))
+        XCTAssertFalse(ButtonUtils.isRunnable(trigger(.mouse, 1, .maskCommand)))
+        XCTAssertTrue(ButtonUtils.isRunnable(trigger(.mouse, 2)))
+        XCTAssertTrue(ButtonUtils.isRunnable(trigger(.mouse, 1006)), "a Logitech button")
+    }
+
+    /// "⌥ + left click" could be recorded, got a row and an action, and never ran: no event
+    /// tap of the app sees the left and right buttons.
+    func testTheLeftAndRightButtonsAreNeverRecordedAsATrigger() {
+        func click(_ code: UInt16, _ flags: CGEventFlags) -> InputEvent {
+            return InputEvent(type: .mouse, code: code, modifiers: flags, phase: .down, source: .hidPP, device: nil)
+        }
+        XCTAssertFalse(click(0, .maskAlternate).isRecordable)
+        XCTAssertFalse(click(1, .maskCommand).isRecordable)
+        XCTAssertFalse(click(0, []).isRecordable)
+        XCTAssertTrue(click(2, []).isRecordable)
+        XCTAssertTrue(click(3, .maskShift).isRecordable)
+        let mask = ButtonCore.shared.dispatchEventMask
+        XCTAssertEqual(mask & CGEventMask(1 << CGEventType.leftMouseDown.rawValue), 0)
+        XCTAssertEqual(mask & CGEventMask(1 << CGEventType.rightMouseDown.rawValue), 0)
+
+        // The recorder says why, instead of only shaking.
+        let leftRight = NSLocalizedString("key-recorder-left-right-refused", comment: "")
+        XCTAssertEqual(KeyRecorder.refusalReason(for: click(0, .maskAlternate), mode: .combination), leftRight)
+        XCTAssertEqual(KeyRecorder.refusalReason(for: click(1, []), mode: .combination), leftRight)
+        XCTAssertEqual(KeyRecorder.refusalReason(for: click(1, []), mode: .singleKey), leftRight)
+        XCTAssertEqual(KeyRecorder.refusalReason(for: click(0, .maskShift), mode: .adaptive),
+                       NSLocalizedString("key-recorder-left-refused", comment: ""))
+        XCTAssertNil(KeyRecorder.refusalReason(for: click(1, []), mode: .adaptive), "the right button can be sent")
+        XCTAssertNil(KeyRecorder.refusalReason(for: click(3, []), mode: .combination))
+        XCTAssertNil(KeyRecorder.refusalReason(for: keyEvent(3, down: true, flags: []), mode: .combination), "an ordinary wrong key")
+        XCTAssertNotEqual(leftRight, "key-recorder-left-right-refused")
+    }
+
+    /// A gesture set to one of the "Logitech Mouse" actions runs it (seven of the ten did
+    /// nothing from a gesture).
+    func testAGestureRunsALogitechAction() {
+        configureGestureBinding()
+        Options.shared.gesture.upAction = "logiHost2"
+        var performed: [String] = []
+        let original = ShortcutExecutor.shared.logiActionPerformer
+        ShortcutExecutor.shared.logiActionPerformer = { performed.append($0) }
+        defer { ShortcutExecutor.shared.logiActionPerformer = original }
+
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 0, deltaY: -45)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        waitForMainQueue()
+        XCTAssertEqual(performed, ["logiHost2"])
+    }
+
+    // MARK: - When the keyboard is needed at all
+
+    /// ButtonCore's keys tap exists only while this is true: a key is bound, a button holds
+    /// a modifier, or an action started by a key is still held.
+    func testTheKeyboardIsNeededOnlyForKeyBindingsAndHeldModifiers() {
+        // Nothing bound (the default), or only mouse buttons: no keyboard.
+        XCTAssertFalse(InputProcessor.shared.needsKeyEvents)
+        bind([(3, SystemShortcut.missionControl.identifier), (4, "mouseMiddleClick")])
+        XCTAssertFalse(InputProcessor.shared.needsKeyEvents)
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(4, .otherMouseDown)), .consumed)
+        XCTAssertFalse(InputProcessor.shared.needsKeyEvents, "a held click is no reason")
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(4, .otherMouseUp)), .consumed)
+
+        // The first key binding, and the last one removed or switched off.
+        bindKey(40, flags: .maskControl, to: SystemShortcut.copy.identifier)
+        XCTAssertTrue(InputProcessor.shared.needsKeyEvents)
+        var binding = Options.shared.buttons.binding[0]
+        binding.isEnabled = false
+        Options.shared.buttons.binding = [binding]
+        ButtonUtils.shared.invalidateCache()
+        XCTAssertFalse(InputProcessor.shared.needsKeyEvents, "switched off")
+        Options.shared.buttons.binding = []
+        ButtonUtils.shared.invalidateCache()
+        XCTAssertFalse(InputProcessor.shared.needsKeyEvents)
+
+        // A modifier held through a mouse button: the keys typed meanwhile must carry it.
+        bind([(3, "modifierShift")])
+        XCTAssertFalse(InputProcessor.shared.needsKeyEvents)
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(3, .otherMouseDown)), .consumed)
+        XCTAssertEqual(InputProcessor.shared.activeModifierFlags, CGEventFlags.maskShift.rawValue)
+        XCTAssertTrue(InputProcessor.shared.needsKeyEvents)
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(3, .otherMouseUp)), .consumed)
+        XCTAssertFalse(InputProcessor.shared.needsKeyEvents)
+    }
+
+    /// A binding changed while its key is down: the key-up must still arrive, or the held
+    /// action would stay held. The keyboard stays needed until then.
+    func testAKeyHeldWhileItsBindingIsRemovedKeepsTheKeyboardUntilItsRelease() {
+        let flags: CGEventFlags = [.maskControl, .maskAlternate]
+        bindKey(3, flags: flags, to: "scrollDash")
+        XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: true, flags: flags)), .consumed)
+        XCTAssertTrue(ScrollCore.shared.dashScroll)
+
+        Options.shared.buttons.binding = []
+        ButtonUtils.shared.invalidateCache()
+        XCTAssertFalse(ButtonUtils.shared.hasKeyboardTriggers)
+        XCTAssertTrue(InputProcessor.shared.needsKeyEvents, "the key is still down")
+
+        // The release comes without its modifiers and without a binding: still its own.
+        XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: false, flags: [])), .consumed)
+        XCTAssertFalse(ScrollCore.shared.dashScroll)
+        XCTAssertFalse(InputProcessor.shared.needsKeyEvents)
+    }
+
+    /// The keys tap handles keys like the one tap did: a bound key runs its action, another
+    /// key passes with the modifiers a button holds, and both directions of a held key come
+    /// back the same way.
+    func testTheKeysTapHandlesKeysAsTheOneTapDid() throws {
+        let proxy = CGEventTapProxy(bitPattern: 1)!
+        let callback = ButtonCore.shared.keyEventCallBack
+        let flags: CGEventFlags = [.maskControl, .maskAlternate]
+        Options.shared.buttons.binding = [
+            ButtonBinding(triggerEvent: RecordedEvent(type: .keyboard, code: 3, modifiers: UInt(flags.rawValue), deviceFilter: nil),
+                          systemShortcutName: "scrollDash", isEnabled: true),
+            ButtonBinding(triggerEvent: RecordedEvent(type: .mouse, code: 6, modifiers: 0, deviceFilter: nil),
+                          systemShortcutName: "modifierShift", isEnabled: true),
+        ]
+        ButtonUtils.shared.invalidateCache()
+
+        func key(_ code: CGKeyCode, down: Bool, _ flags: CGEventFlags = []) throws -> CGEvent {
+            let event = try XCTUnwrap(CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down))
+            event.flags = flags
+            return event
+        }
+        // The bound key: its press and its release are both swallowed.
+        XCTAssertNil(callback(proxy, .keyDown, try key(3, down: true, flags), nil))
+        XCTAssertTrue(ScrollCore.shared.dashScroll)
+        XCTAssertNil(callback(proxy, .keyUp, try key(3, down: false), nil))
+        XCTAssertFalse(ScrollCore.shared.dashScroll)
+        // Any other key: both directions pass, untouched.
+        let plainDown = try key(0, down: true)
+        let plainUp = try key(0, down: false)
+        XCTAssertTrue(callback(proxy, .keyDown, plainDown, nil)?.takeUnretainedValue() === plainDown)
+        XCTAssertTrue(callback(proxy, .keyUp, plainUp, nil)?.takeUnretainedValue() === plainUp)
+        XCTAssertFalse(plainDown.flags.contains(.maskShift))
+        // While a button holds Shift, both directions carry it.
+        let holdShift = InputEvent(type: .mouse, code: 6, modifiers: [], phase: .down, source: .hidPP, device: nil)
+        XCTAssertEqual(InputProcessor.shared.process(holdShift), .consumed)
+        let shiftedDown = try key(0, down: true)
+        let shiftedUp = try key(0, down: false)
+        XCTAssertNotNil(callback(proxy, .keyDown, shiftedDown, nil))
+        XCTAssertNotNil(callback(proxy, .keyUp, shiftedUp, nil))
+        XCTAssertTrue(shiftedDown.flags.contains(.maskShift))
+        XCTAssertTrue(shiftedUp.flags.contains(.maskShift))
+        // A key the app posted itself passes unseen.
+        let own = try key(3, down: true, flags)
+        own.setIntegerValueField(.eventSourceUserData, value: ScrollioEventMarker.syntheticCustom)
+        XCTAssertNotNil(callback(proxy, .keyDown, own, nil))
+        XCTAssertFalse(ScrollCore.shared.dashScroll)
+    }
+
+    /// The keys tap is paused whenever the keyboard is no longer needed, and its callback
+    /// then gets "disabled by user input". That must not end what the buttons hold (the same
+    /// mistake as the pointer-movement tap's pause). A timeout still does.
+    func testTheKeysTapsOwnPauseDoesNotEndHeldActions() throws {
+        let proxy = CGEventTapProxy(bitPattern: 1)!
+        let event = try XCTUnwrap(CGEvent(source: nil))
+        bind([(3, "scrollDash")])
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(3, .otherMouseDown)), .consumed)
+        XCTAssertTrue(ScrollCore.shared.dashScroll)
+
+        XCTAssertNotNil(ButtonCore.shared.keyEventCallBack(proxy, .tapDisabledByUserInput, event, nil))
+        XCTAssertTrue(ScrollCore.shared.dashScroll)
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(3, .otherMouseUp)), .consumed)
+
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(3, .otherMouseDown)), .consumed)
+        XCTAssertNotNil(ButtonCore.shared.keyEventCallBack(proxy, .tapDisabledByTimeout, event, nil))
+        XCTAssertFalse(ScrollCore.shared.dashScroll, "a timeout releases everything held")
+    }
+
+    // MARK: - Held actions whose release never came
+
+    private final class Hardware {
+        var buttonsDown: Set<Int64> = []
+        var keysDown: Set<UInt16> = []
+        var secureInput = false
+
+        var probe: InputProcessor.HeldInputProbe {
+            return InputProcessor.HeldInputProbe(
+                isMouseButtonDown: { [unowned self] in self.buttonsDown.contains($0) },
+                isKeyDown: { [unowned self] in self.keysDown.contains($0) },
+                isSecureInputOn: { [unowned self] in self.secureInput }
+            )
+        }
+    }
+
+    /// A button bound to a modifier whose release got lost kept the modifier on for every
+    /// key typed afterwards, until the button was pressed again.
+    func testAHeldActionWhoseButtonIsUpIsReleasedAfterTwoLooks() {
+        let hardware = Hardware()
+        InputProcessor.shared.setTestingHeldInputProbe(hardware.probe)
+        defer { InputProcessor.shared.setTestingHeldInputProbe(nil) }
+        bind([(3, "modifierShift")])
+
+        XCTAssertFalse(InputProcessor.shared.isHeldActionTimerRunning, "nothing held, no timer")
+        hardware.buttonsDown = [3]
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(3, .otherMouseDown)), .consumed)
+        XCTAssertTrue(InputProcessor.shared.isHeldActionTimerRunning)
+        // Held for real: any number of looks changes nothing.
+        for _ in 0..<5 { InputProcessor.shared.checkHeldActions() }
+        XCTAssertEqual(InputProcessor.shared.activeModifierFlags, CGEventFlags.maskShift.rawValue)
+
+        // The button is up and its release never came. One look is not enough (a real
+        // release arrives within milliseconds of the button going up) ...
+        hardware.buttonsDown = []
+        InputProcessor.shared.checkHeldActions()
+        XCTAssertEqual(InputProcessor.shared.activeModifierFlags, CGEventFlags.maskShift.rawValue)
+        // ... the second releases the modifier.
+        InputProcessor.shared.checkHeldActions()
+        XCTAssertEqual(InputProcessor.shared.activeModifierFlags, 0)
+        XCTAssertFalse(InputProcessor.shared.needsKeyEvents)
+        XCTAssertFalse(InputProcessor.shared.isHeldActionTimerRunning)
+        // A release that arrives after all is the swallowed press's: the app never gets an
+        // up without a down. Only that one.
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(3, .otherMouseUp)), .consumed)
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(3, .otherMouseUp)), .passthrough)
+    }
+
+    /// A look between the button going up and its release arriving must not take the
+    /// release away: the real release ends the hold as always.
+    func testAReleaseThatArrivesAfterOneLookIsAnOrdinaryRelease() {
+        let hardware = Hardware()
+        InputProcessor.shared.setTestingHeldInputProbe(hardware.probe)
+        defer { InputProcessor.shared.setTestingHeldInputProbe(nil) }
+        bind([(3, "modifierShift")])
+        hardware.buttonsDown = [3]
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(3, .otherMouseDown)), .consumed)
+        hardware.buttonsDown = []
+        InputProcessor.shared.checkHeldActions()
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(3, .otherMouseUp)), .consumed)
+        XCTAssertEqual(InputProcessor.shared.activeModifierFlags, 0)
+        // The next press starts clean: one look with the button up does not release it.
+        hardware.buttonsDown = [3]
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(3, .otherMouseDown)), .consumed)
+        hardware.buttonsDown = []
+        InputProcessor.shared.checkHeldActions()
+        XCTAssertEqual(InputProcessor.shared.activeModifierFlags, CGEventFlags.maskShift.rawValue)
+        XCTAssertEqual(InputProcessor.shared.process(nativeButton(3, .otherMouseUp)), .consumed)
+    }
+
+    /// A key is judged only while another app has secure keyboard entry on (only then can
+    /// its key-up not arrive), and a Logitech button over HID++ never: the Mac cannot be
+    /// asked about it.
+    func testAHeldKeyIsOnlyJudgedWhileSecureKeyboardEntryIsOn() {
+        let hardware = Hardware()
+        InputProcessor.shared.setTestingHeldInputProbe(hardware.probe)
+        defer { InputProcessor.shared.setTestingHeldInputProbe(nil) }
+        let flags: CGEventFlags = [.maskControl, .maskAlternate]
+        bindKey(3, flags: flags, to: "scrollDash")
+
+        // Without secure keyboard entry a key is never judged, whatever its state reads.
+        XCTAssertEqual(InputProcessor.shared.process(keyEvent(3, down: true, flags: flags)), .consumed)
+        for _ in 0..<3 { InputProcessor.shared.checkHeldActions() }
+        XCTAssertTrue(ScrollCore.shared.dashScroll)
+        // A password field opens while the key is down ...
+        hardware.secureInput = true
+        hardware.keysDown = [3]
+        for _ in 0..<3 { InputProcessor.shared.checkHeldActions() }
+        XCTAssertTrue(ScrollCore.shared.dashScroll, "still down")
+        // ... and the key is let go: no key-up reaches any tap.
+        hardware.keysDown = []
+        InputProcessor.shared.checkHeldActions()
+        InputProcessor.shared.checkHeldActions()
+        XCTAssertFalse(ScrollCore.shared.dashScroll)
+
+        XCTAssertTrue(InputProcessor.hasLostItsRelease(.mouseButton(3), probe: hardware.probe))
+        let idle = Hardware()
+        XCTAssertFalse(InputProcessor.hasLostItsRelease(.key(3), probe: idle.probe), "secure input off")
+
+        // A Logitech button that arrives over HID++ is not judged.
+        hardware.secureInput = false
+        bind([(1006, "modifierShift")])
+        let logiDown = InputEvent(type: .mouse, code: 1006, modifiers: [], phase: .down, source: .hidPP, device: nil)
+        XCTAssertEqual(InputProcessor.shared.process(logiDown), .consumed)
+        XCTAssertFalse(InputProcessor.shared.isHeldActionTimerRunning)
+        for _ in 0..<3 { InputProcessor.shared.checkHeldActions() }
+        XCTAssertEqual(InputProcessor.shared.activeModifierFlags, CGEventFlags.maskShift.rawValue)
     }
 
 }

@@ -7,7 +7,8 @@
 //  swipe events and actions.
 //
 //      armed ──horizontal lock──▶ swiping ──release / cancel / watchdog──▶ finished
-//        │                                                                     ▲
+//        │                           ▲                                         ▲
+//        │                 goes sideways after all                             │
 //        └────vertical lock────▶ discrete ──release / cancel / watchdog────────┘
 //
 //  - armed: the button is down. Once the pointer has travelled `lockDistance` and one axis
@@ -15,7 +16,10 @@
 //  - swiping: sideways movement drives the Spaces swipe. Emits `begin` once, then `update`
 //    with the cumulative progress, then exactly one of `end` or `cancel`.
 //  - discrete: a vertical hold behaves like the classic mode: the up or down action fires
-//    once at the usual 40 pt, and a hold that barely moved is a click.
+//    once at the usual 40 pt, and a hold that barely moved is a click. A hold that then
+//    goes sideways after all (its first direction at 40 pt is left or right) becomes a
+//    swipe: the lock is decided on the first 8 pt, and the jolt of pressing a thumb button
+//    is enough to make those vertical.
 //
 
 import Cocoa
@@ -107,7 +111,7 @@ struct InteractiveGestureSession {
         case .swiping:
             return advance(byPoints: deltaX, at: time)
         case .discrete:
-            return discreteCommands(for: recognized)
+            return discreteOrSwipeCommands(deltaX: deltaX, recognized: recognized, time: time)
         case .finished:
             return []
         }
@@ -185,6 +189,25 @@ struct InteractiveGestureSession {
     private func discreteCommands(for recognized: MouseGestureDirection?) -> [Command] {
         guard let recognized, recognized == .up || recognized == .down else { return [] }
         return [.discrete(recognized)]
+    }
+
+    /// A hold locked to "discrete" whose first direction turns out to be left or right was
+    /// locked by mistake: its first 8 pt were mostly vertical, the hand then went sideways.
+    /// It did nothing until the button was released and pressed again, however far it went.
+    /// It becomes a swipe from here: nothing ran before (the recognizer commits one
+    /// direction per hold, and this is it), and the swipe starts with this movement, so the
+    /// desktop does not jump by the travel so far.
+    private mutating func discreteOrSwipeCommands(
+        deltaX: CGFloat,
+        recognized: MouseGestureDirection?,
+        time: TimeInterval
+    ) -> [Command] {
+        guard let recognized, recognized == .left || recognized == .right else {
+            return discreteCommands(for: recognized)
+        }
+        phase = .swiping
+        samples = [(time, 0)]
+        return [.begin(.horizontal)] + advance(byPoints: deltaX, at: time)
     }
 
     // MARK: - Swipe
