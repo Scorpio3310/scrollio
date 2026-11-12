@@ -172,7 +172,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-apps-limit", "general-settings-import-menu-bar-on", "general-settings-import-menu-bar-off",
         "general-settings-import-launch-one", "general-settings-import-launch-other", "general-settings-import-launch-hint",
         "general-settings-import-launch-app", "general-settings-import-launch-file", "general-settings-import-launch-script",
-        "general-settings-import-launch-arguments", "general-settings-import-note",
+        "general-settings-import-launch-arguments", "general-settings-import-launch-identifier",
+        "general-settings-import-note",
         "general-settings-import-unreadable-one", "general-settings-import-unreadable-other",
         "general-settings-import-confirm", "general-settings-import-cancel", "general-settings-import-ok",
         "general-settings-problem-import-title", "general-settings-problem-export-title",
@@ -292,6 +293,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-launch-file": "@@",
         "general-settings-import-launch-script": "@@",
         "general-settings-import-launch-arguments": "@@",
+        "general-settings-import-launch-identifier": "@@",
         "general-settings-import-unreadable-other": "d",
         "general-settings-problem-damaged": "@",
         // Welcome Guide

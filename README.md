@@ -239,7 +239,7 @@ move to another Mac, to keep a copy, or to pass a setup on.
 - "Import…" reads a file and shows what it holds before anything changes: which
   settings, how many apps and how many button and key actions. When buttons or keys in
   it open an app or a file, or run a script, the sheet lists every one of them with its
-  button or key and its whole path, and Return presses "Cancel". Read that list when the
+  button or key, its whole path and its arguments, and Return presses "Cancel". Read that list when the
   file is not your own: such an action starts at a press of its button. Importing itself
   starts nothing.
 - An import replaces the kinds of settings the file holds and leaves the others as they

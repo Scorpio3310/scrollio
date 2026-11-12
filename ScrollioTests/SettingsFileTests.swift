@@ -1394,6 +1394,20 @@ final class SettingsFileTextTests: XCTestCase {
         XCTAssertEqual(line(button, "/Applications/Notes.app", "", .application), "\(buttonName): opens the app /Applications/Notes.app")
         XCTAssertEqual(line(button, "/Applications/Notes.app", "--new", .application),
                        "\(buttonName): opens the app /Applications/Notes.app (arguments: --new)")
+        // An app is also found by its identifier when nothing is at the path: a file
+        // could name one app by path and another by identifier, so both are shown.
+        func appLine(_ identifier: String?, _ arguments: String = "") -> String {
+            let target = OpenTargetPayload(path: "/Applications/Harmless.app", bundleID: identifier, arguments: arguments, kind: .application)
+            return SettingsFileText.launchLine(for: SettingsFile.LaunchAction(trigger: button, target: target, applicationPath: nil), logitech: names)
+        }
+        XCTAssertEqual(appLine("com.example.other"),
+                       "\(buttonName): opens the app /Applications/Harmless.app, or else the app with the ID com.example.other")
+        XCTAssertEqual(appLine("com.example.other", "--flag"),
+                       "\(buttonName): opens the app /Applications/Harmless.app, or else the app with the ID com.example.other (arguments: --flag)")
+        XCTAssertEqual(appLine("com.example\u{202E}.other"),
+                       "\(buttonName): opens the app /Applications/Harmless.app, or else the app with the ID com.example\\u{202E}.other")
+        XCTAssertEqual(appLine(""), "\(buttonName): opens the app /Applications/Harmless.app")
+        XCTAssertEqual(appLine(nil), "\(buttonName): opens the app /Applications/Harmless.app")
         XCTAssertEqual(line(button, "/Users/someone/Desktop/start.command", "x", .file),
                        "\(buttonName): opens the file /Users/someone/Desktop/start.command")
 
@@ -1491,7 +1505,7 @@ final class SettingsImportSheetTests: XCTestCase {
         let lines = list.string.components(separatedBy: "\n")
         XCTAssertEqual(lines.count, 2)
         XCTAssertTrue(lines[0].hasSuffix(": runs the script /Users/someone/bin/sync.sh (arguments: --all)"), lines[0])
-        XCTAssertTrue(lines[1].hasSuffix(": opens the app /Applications/Notes.app"), lines[1])
+        XCTAssertTrue(lines[1].hasSuffix(": opens the app /Applications/Notes.app, or else the app with the ID com.apple.Notes"), lines[1])
         XCTAssertFalse(list.isEditable)
         XCTAssertTrue(list.isSelectable, "a path can be copied")
         XCTAssertEqual(sheet.unreadableLabel?.stringValue, "1 entry this version of Scrollio cannot read is left out.")

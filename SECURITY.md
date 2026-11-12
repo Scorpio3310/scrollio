@@ -92,8 +92,9 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
     Scrollio's own code.
   - Before anything changes, a sheet shows what the file holds. When it holds actions
     that open or run something, it says how many and lists every one with its button or
-    key, its whole path and its arguments; characters that draw nothing or turn the text
-    around are written out, so a path cannot look like another. Return then presses
+    key, its whole path and its arguments, and for an app also the identifier by which
+    macOS would find it when nothing is at the path; characters that draw nothing or
+    turn the text around are written out, so a path cannot look like another. Return then presses
     "Cancel".
   - Importing starts nothing. An imported action runs like any other, at a press of its
     button or key, under the rule above (a key only with ⌘, ⌥, ⌃ or ⇧ or as an F-key,

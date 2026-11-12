@@ -12,6 +12,7 @@
 //      ┌ ⚠ 2 actions open an app or a file, or run a script
 //      │ Each starts at a press of its button or key. …
 //      └ ⌥ Button 5: runs the script /Users/…/sync.sh (arguments: --all)   (every one, scrolls)
+//        Button 4: opens the app /Applications/Notes.app, or else the app with the ID com.apple.Notes
 //      These settings replace the ones on this Mac. Your current settings are saved first, …
 //                                                                   [Cancel] [Import]
 //
@@ -127,9 +128,15 @@ enum SettingsFileText {
     }
 
     /// "⌥ Button 5: runs the script /Users/…/sync.sh (arguments: --all)": the button or
-    /// key, what a press does, and the whole path as it is stored.
+    /// key, what a press does, and the whole path as it is stored. An app is opened at
+    /// its path, and when nothing is there, as the app macOS knows by the stored
+    /// identifier (`ShortcutExecutor.applicationURL`): the identifier is part of what a
+    /// press can open, so it is written out too.
     static func launchLine(for action: SettingsFile.LaunchAction, logitech: ButtonTriggerNaming.Logitech = .live) -> String {
         var target = visible(action.target.path)
+        if action.target.kind == .application, let identifier = action.target.bundleID, !identifier.isEmpty {
+            target = String(format: text("general-settings-import-launch-identifier"), target, visible(identifier))
+        }
         if !action.target.arguments.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             target = String(format: text("general-settings-import-launch-arguments"), target, visible(action.target.arguments))
         }
