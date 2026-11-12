@@ -2949,20 +2949,42 @@ final class ScrollGlideFollowerTests: XCTestCase {
     /// outside the allowed ones is not opened even when asked directly.
     func testTheLookRunsOffTheMainThreadAndAnswersOnTheMainQueue() throws {
         let utils = ScrollUtils()
+        // Every look into a bundle says which thread it runs on.
+        let lock = NSLock()
+        var looksOnTheMainThread: [Bool] = []
+        ScrollUtils.lookThreadObserverForTests = { onMain in
+            lock.lock()
+            looksOnTheMainThread.append(onMain)
+            lock.unlock()
+        }
+        defer { ScrollUtils.lookThreadObserverForTests = nil }
+        // The call comes back before the answer: nothing of the look runs inside it (it is
+        // made inside the scroll tap's callback).
+        var returned = false
         let finder = expectation(description: "the Finder was looked into")
         utils.inspectBundle(URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")) { isChromium in
             XCTAssertTrue(Thread.isMainThread)
+            XCTAssertTrue(returned, "the answer comes after the call has returned")
             XCTAssertFalse(isChromium, "the Finder is AppKit")
             finder.fulfill()
         }
         let electron = try app("Editor.app", files: ["Contents/Frameworks/Electron Framework.framework/Resources/resources.pak"])
         let outside = expectation(description: "answered without a look")
         utils.inspectBundle(electron) { isChromium in
+            XCTAssertTrue(returned)
             XCTAssertFalse(isChromium, "outside the Applications folders: not opened")
             outside.fulfill()
         }
+        lock.lock()
+        XCTAssertEqual(looksOnTheMainThread.filter { $0 }, [], "no look ran inside the call")
+        lock.unlock()
+        returned = true
         wait(for: [finder, outside], timeout: 5)
+        lock.lock()
+        XCTAssertEqual(looksOnTheMainThread, [false, false], "both looks ran, and off the main thread")
+        lock.unlock()
     }
+
 }
 
 // MARK: - The system log

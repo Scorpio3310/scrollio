@@ -220,9 +220,17 @@ class ScrollUtils {
     /// glide's events. The folder an alias in Applications points to is judged again: never
     /// outside the folders that may be looked into.
     static func lookFindsGlideFollower(bundleURL: URL, homeDirectory: String = ScrollUtils.homeDirectory) -> Bool {
+#if DEBUG
+        lookThreadObserverForTests?(Thread.isMainThread)
+#endif
         let resolved = bundleURL.resolvingSymlinksInPath()
         return mayLookIntoBundle(atPath: resolved.path, homeDirectory: homeDirectory) && scrollsByGlideEvents(bundleURL: resolved)
     }
+
+#if DEBUG
+    /// Tests: called by every look into a bundle with whether it runs on the main thread.
+    static var lookThreadObserverForTests: ((Bool) -> Void)?
+#endif
 
     /// Whether an app scrolls by the events of a glide and makes none of its own: the
     /// Chromium engine or the Gecko engine. One look into the bundle: reads the disk, so

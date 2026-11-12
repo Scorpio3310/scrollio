@@ -2407,6 +2407,13 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
 /// A display link that is none: it runs when started, and counts what was asked of it.
 // MARK: - The hardware record of a frame
 
+/// What the stand-in functions of `testASelfTestThatFails_keepsTheRecord` remember (a C
+/// function pointer cannot capture).
+private enum ScrollHardwareRecordStandIns {
+    static var firstRead: CGEvent?
+    static var attachedTo: CGEvent?
+}
+
 /// Offline: events are built and read, nothing is posted.
 final class ScrollHardwareRecordTests: XCTestCase {
 
@@ -2483,6 +2490,36 @@ final class ScrollHardwareRecordTests: XCTestCase {
         let readsNothing: ScrollHardwareRecord.CopyRecord = { _ in nil }
         let blind = ScrollHardwareRecord.Calls(set: real.set, copy: readsNothing, createScroll: real.createScroll)
         XCTAssertEqual(ScrollHardwareRecord.check(blind), .failed("a record attached to an event could not be read back"))
+
+        // A copy that does not carry the record of the event it was copied from: the
+        // reader answers for the first event it is asked about, and for no other.
+        ScrollHardwareRecordStandIns.firstRead = nil
+        let readsTheOriginalOnly: ScrollHardwareRecord.CopyRecord = { event in
+            if ScrollHardwareRecordStandIns.firstRead == nil { ScrollHardwareRecordStandIns.firstRead = event }
+            guard ScrollHardwareRecordStandIns.firstRead === event else { return nil }
+            return ScrollHardwareRecord.load().calls?.copy(event)
+        }
+        let notOnACopy = ScrollHardwareRecord.Calls(set: real.set, copy: readsTheOriginalOnly, createScroll: real.createScroll)
+        XCTAssertEqual(ScrollHardwareRecord.check(notOnACopy), .failed("a copy of the event did not carry its record"))
+        ScrollHardwareRecordStandIns.firstRead = nil
+
+        // A setter that takes the record off the original too (it changes the shared
+        // record in place): the step that guards "the wheel event keeps its own".
+        ScrollHardwareRecordStandIns.attachedTo = nil
+        let stripsTheOriginalToo: ScrollHardwareRecord.SetRecord = { event, record in
+            guard let calls = ScrollHardwareRecord.load().calls else { return }
+            if record != nil {
+                ScrollHardwareRecordStandIns.attachedTo = event
+                calls.set(event, record)
+            } else {
+                calls.set(event, nil)
+                if let original = ScrollHardwareRecordStandIns.attachedTo { calls.set(original, nil) }
+            }
+        }
+        let inPlace = ScrollHardwareRecord.Calls(set: stripsTheOriginalToo, copy: real.copy, createScroll: real.createScroll)
+        XCTAssertEqual(ScrollHardwareRecord.check(inPlace), .failed("taking the record off a copy took it off the event it was copied from"))
+        XCTAssertNil(ScrollHardwareRecord.prepare(macOSMajor: 27) { (inPlace, nil) }.calls, "not used")
+        ScrollHardwareRecordStandIns.attachedTo = nil
 
         let makesNothing: ScrollHardwareRecord.CreateScrollRecord = { _, _, _, _, _, _ in nil }
         let empty = ScrollHardwareRecord.Calls(set: real.set, copy: real.copy, createScroll: makesNothing)
