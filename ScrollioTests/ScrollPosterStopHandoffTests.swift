@@ -715,6 +715,64 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         XCTAssertEqual(display.made.first?.isRunning, false)
     }
 
+    /// B2 through the poster's real entry, with events that carry their target: a wheel
+    /// event for another process ends the scroll that runs before anything of it is taken.
+    /// Every frame of the first scroll goes to the first process, the second scroll is one
+    /// of its own, and the display link runs on for it.
+    func testAWheelEventForAnotherProcessEndsTheScrollThatRunsFirst() throws {
+        let savedApplication = ScrollCore.shared.application
+        ScrollCore.shared.application = nil
+        defer { ScrollCore.shared.application = savedApplication }
+        let context = ScrollDispatchContext()
+        let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+        let display = FakeDisplay(for: poster)
+        var posted: [pid_t] = []
+        let lock = NSLock()
+        context.postObserverForTests = { _, pid in
+            lock.lock()
+            posted.append(pid)
+            lock.unlock()
+        }
+        func postedSoFar() -> [pid_t] {
+            context.waitForPostQueueForTests()
+            lock.lock()
+            defer { lock.unlock() }
+            return posted
+        }
+        var ended: [ScrollSystemLog.EndReason] = []
+        ScrollSystemLog.sessionObserverForTests = { ended.append($1) }
+        defer { ScrollSystemLog.sessionObserverForTests = nil }
+        var now = ScrollPoster.monotonicNow()
+        func frames(_ count: Int) {
+            for _ in 0..<count {
+                now += 1.0 / 60.0
+                poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: now)
+            }
+        }
+
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(targetPID: 100), input: input()))
+        frames(6)
+        XCTAssertEqual(context.targetPID, 100)
+        let inTheFirst = postedSoFar()
+        XCTAssertGreaterThan(inTheFirst.count, 3)
+        XCTAssertTrue(inTheFirst.allSatisfy { $0 == 100 })
+        XCTAssertGreaterThan(poster.motionStateForTests.buffer.y - poster.motionStateForTests.current.y, 50, "its glide still runs")
+
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(targetPID: 200), input: input()))
+
+        XCTAssertEqual(ended, [.anotherApp])
+        XCTAssertEqual(context.targetPID, 200)
+        XCTAssertEqual(poster.sessionLogForTests.inputs, 1, "a scroll of its own")
+        XCTAssertEqual(poster.motionStateForTests.buffer.y, 211.68, accuracy: 1e-9, "with nothing of the first one's glide")
+        XCTAssertEqual(display.made.last?.isRunning, true, "the display link runs for it")
+        frames(6)
+        let all = postedSoFar()
+        XCTAssertGreaterThan(all.count, inTheFirst.count + 3)
+        XCTAssertTrue(all.dropFirst(inTheFirst.count).allSatisfy { $0 == 200 }, "\(all)")
+        XCTAssertEqual(context.diagnosticsSnapshot().droppedFramesByTTL, 0)
+        poster.stop()
+    }
+
     // MARK: - The app's own display link class, on a real CVDisplayLink
 
     private final class FrameCounter {
