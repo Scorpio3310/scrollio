@@ -182,6 +182,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-problem-not-settings", "general-settings-problem-newer", "general-settings-problem-damaged",
         "general-settings-problem-empty", "general-settings-problem-write", "general-settings-problem-backup",
         "general-settings-problem-store",
+        "general-settings-problem-not-imported-title", "general-settings-problem-too-many",
+        "general-settings-problem-not-stored",
     ]
 
     /// The window and the kit: the sidebar, the + and − under a list.
@@ -298,6 +300,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-unreadable-other": "d",
         "general-settings-import-corrected-other": "d",
         "general-settings-problem-damaged": "@",
+        "general-settings-problem-too-many": "d",
         // Welcome Guide
         "intro-step-of": "dd",
         // Status-bar menu and toasts

@@ -505,6 +505,37 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertEqual(SettingsFile.maximumFileSize, 2 * 1024 * 1024)
     }
 
+    /// A file may bring a thousand buttons and keys and a thousand apps, far more than
+    /// anybody sets by hand. 2 MB hold twelve times as many bindings and a hundred times
+    /// as many apps, and putting those in effect took seconds on the main thread; such a
+    /// file is refused before an entry is decoded.
+    func testAFileWithTooManyEntriesIsRefused() throws {
+        XCTAssertEqual(SettingsFile.maximumEntries, 1000)
+        func bindings(_ count: Int, from start: Int = 0) -> String {
+            return (start..<start + count).map { index in
+                #"{"id":"88888888-8888-8888-8888-"# + String(format: "%012d", index)
+                    + #"","triggerEvent":{"type":"mouse","code":4,"modifiers":0},"systemShortcutName":"copy","isEnabled":true,"createdAt":1}"#
+            }.joined(separator: ",")
+        }
+        func apps(_ count: Int) -> String {
+            return (0..<count).map { #"{"path":"/Applications/App \#($0).app"}"# }.joined(separator: ",")
+        }
+        func problem(_ settings: String) -> SettingsFile.Problem? {
+            if case .failure(let problem) = SettingsFile.read(Fixture.file(settings)) { return problem }
+            return nil
+        }
+        let full = try Fixture.contents(#""buttonBindings":["# + bindings(1000) + #"],"applications":["# + apps(1000) + "]")
+        XCTAssertEqual(full.bindings?.count, 1000)
+        XCTAssertEqual(full.applications?.count, 1000)
+        XCTAssertEqual(problem(#""buttonBindings":["# + bindings(1001) + "]"), .tooManyEntries)
+        XCTAssertEqual(problem(#""applications":["# + apps(1001) + "]"), .tooManyEntries)
+        XCTAssertEqual(problem(#""speed":3,"applications":["# + apps(1001) + "]"), .tooManyEntries, "the whole file, not only that part")
+        // Each app's own buttons count with the others.
+        let app = #"{"path":"/Applications/Busy.app","buttons":{"binding":["# + bindings(600, from: 5000) + "]}}"
+        XCTAssertNil(problem(#""buttonBindings":["# + bindings(400) + #"],"applications":["# + app + "]"))
+        XCTAssertEqual(problem(#""buttonBindings":["# + bindings(401) + #"],"applications":["# + app + "]"), .tooManyEntries)
+    }
+
     /// From a file on disk never more than the limit is read; a folder or a missing file
     /// is said as that.
     func testAFileOnDiskIsReadUpToTheLimit() throws {
@@ -1460,6 +1491,42 @@ final class SettingsFileCenterTests: XCTestCase {
         XCTAssertTrue(own.logLines.allSatisfy { $0.contains("not imported") }, "\(own.logLines)")
     }
 
+    /// Every value of a file is put in the form the store takes before anything is
+    /// written. A value that cannot be was dropped after its group's keys had been
+    /// removed: the group came out empty, without a word. Now nothing is changed, no
+    /// backup is written, and the import says so.
+    func testAValueThatCannotBeStoredChangesNothing() throws {
+        let own = OwnSettings(for: self)
+        own.options.readOptions()
+        own.options.application.allowlist = true
+        own.options.application.applications.append(Application(path: "/Applications/Mine.app"))
+        own.options.scroll.speed = 7.5
+        own.options.saveOptions()
+        let before = own.stored as NSDictionary
+
+        // No file gives such a value (a number of a file is finite and in range); the
+        // contents are made by hand to reach the encoder's refusal.
+        let broken = Application(path: "/Applications/Broken.app")
+        broken.scroll.step = .infinity
+        var contents = try Fixture.contents(#""speed":3,"allowlist":false"#)
+        contents.applications = [broken]
+        XCTAssertNil(SettingsFile.storeValues(of: contents, managedByScrollio: false))
+        XCTAssertNotNil(SettingsFile.storeValues(of: try Fixture.contents(#""speed":3,"allowlist":false"#), managedByScrollio: false))
+
+        XCTAssertFalse(SettingsFile.apply(contents, to: own.options))
+        XCTAssertEqual(own.stored as NSDictionary, before, "not a key was removed")
+        XCTAssertEqual(own.options.scroll.speed, 7.5)
+        XCTAssertTrue(own.options.application.allowlist)
+        XCTAssertEqual(own.options.application.applications.count, 1)
+
+        guard case .failure(.cannotStore) = own.center.importSettings(contents) else {
+            return XCTFail("imported what cannot be stored")
+        }
+        XCTAssertEqual(own.stored as NSDictionary, before)
+        XCTAssertEqual(names(in: own.backupFolder), [], "no backup of an import that was not begun")
+        XCTAssertEqual(own.logLines, ["Settings file: not imported (a value could not be encoded)"])
+    }
+
     /// The last five backups are kept; nothing else in the folder is touched.
     func testOnlyTheLastFiveBackupsAreKept() throws {
         let folder = try temporaryFolder(for: self)
@@ -1619,12 +1686,12 @@ final class SettingsFileTextTests: XCTestCase {
         header.appVersion = "1.0.1"
         XCTAssertEqual(
             SettingsFileText.source(fileName: "Mine.json", header: header, locale: gb, timeZone: utc),
-            "“Mine.json”, saved by Scrollio 1.0.1."
+            "“Mine.json”. It says it was saved by Scrollio 1.0.1."
         )
         header.exported = Date(timeIntervalSince1970: 1_794_476_527)
         XCTAssertEqual(
             SettingsFileText.source(fileName: "Mine.json", header: header, locale: gb, timeZone: utc),
-            "“Mine.json”, saved by Scrollio 1.0.1 on 12 Nov 2026 at 09:42."
+            "“Mine.json”. It says it was saved by Scrollio 1.0.1 on 12 Nov 2026 at 09:42."
         )
     }
 
@@ -1684,6 +1751,8 @@ final class SettingsFileTextTests: XCTestCase {
             (.newerFormat, "It was saved by a newer version of Scrollio. Update Scrollio, then import it again."),
             (.damaged("speed"), "The file is damaged: its part “speed” cannot be read."),
             (.nothingToImport, "It holds no settings this version of Scrollio knows."),
+            (.tooManyEntries, "It holds more than 1000 buttons and keys, or more than that many apps: more than Scrollio takes from a file."),
+            (.cannotStore, "Scrollio could not store these settings, so nothing was changed."),
             (.cannotWrite("The folder is read-only."), "Scrollio could not save the file there. The folder is read-only."),
             (.backupFailed(""), "Your current settings could not be saved first, so nothing was changed."),
             (.storeUnavailable, "Scrollio's settings cannot be read right now."),
@@ -2086,7 +2155,7 @@ final class PreferencesGeneralSettingsFileTests: XCTestCase {
         let restore = try XCTUnwrap(world.presented.last)
         XCTAssertFalse(restore === sheet)
         XCTAssertEqual(restore.titleLabel.stringValue, "Import these settings?")
-        XCTAssertTrue(restore.detailLabel.stringValue.hasPrefix("“" + backup.url.lastPathComponent + "”, saved by Scrollio 1.2.3 on "))
+        XCTAssertTrue(restore.detailLabel.stringValue.hasPrefix("“" + backup.url.lastPathComponent + "”. It says it was saved by Scrollio 1.2.3 on "))
         XCTAssertEqual(own.options.scroll.speed, 3, "not before it is confirmed")
         click(try XCTUnwrap(restore.importButton))
         XCTAssertEqual(own.options.scroll.speed, 7.5)
@@ -2188,7 +2257,7 @@ final class PreferencesGeneralSettingsFileTests: XCTestCase {
         XCTAssertEqual(own.options.scroll.speed, 7.5)
         XCTAssertTrue(pane.settingsSheet === sheet, "the same sheet stays and says why")
         XCTAssertTrue(world.dismissed.isEmpty)
-        XCTAssertEqual(sheet.titleLabel.stringValue, "This file cannot be imported")
+        XCTAssertEqual(sheet.titleLabel.stringValue, "The settings were not imported", "nothing is wrong with the file")
         XCTAssertEqual(sheet.detailLabel.stringValue, "Your current settings could not be saved first, so nothing was changed.")
         XCTAssertNil(sheet.importButton)
         XCTAssertTrue(world.notices.isEmpty)

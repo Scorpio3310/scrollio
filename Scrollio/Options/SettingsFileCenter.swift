@@ -176,6 +176,12 @@ final class SettingsFileCenter {
     /// are put in effect. Returns the backup, or why nothing was changed.
     func importSettings(_ contents: SettingsFile.Contents) -> Result<URL, SettingsFile.Problem> {
         let options = self.options()
+        // Before anything is written, the backup included: every value of the file can be
+        // put in the form the store takes.
+        guard SettingsFile.storeValues(of: contents, managedByScrollio: options.logiMouseManaged) != nil else {
+            log("Settings file: not imported (\(Self.logName(of: .cannotStore)))")
+            return .failure(.cannotStore)
+        }
         let backup: URL
         switch SettingsFile.export(from: options, bundleInfo: bundleInfo(), now: now()) {
         case .failure(let problem):
@@ -219,6 +225,8 @@ final class SettingsFileCenter {
         case .newerFormat: return "a newer format"
         case .damaged(let part): return "damaged: \(SettingsFile.isExported(part) || part == SettingsFile.Field.settings || part == SettingsFile.Field.formatVersion ? part : "?")"
         case .nothingToImport: return "no settings this version knows"
+        case .tooManyEntries: return "too many buttons or apps"
+        case .cannotStore: return "a value could not be encoded"
         case .cannotWrite: return "the file could not be written"
         case .backupFailed: return "the current settings could not be saved first"
         case .storeUnavailable: return "the settings are not open to files here"

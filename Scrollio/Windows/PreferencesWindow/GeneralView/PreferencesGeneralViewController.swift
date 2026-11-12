@@ -847,10 +847,11 @@ class PreferencesGeneralViewController: NSViewController {
     private func importConfirmed(_ contents: SettingsFile.Contents) {
         switch settingsFiles.importSettings(contents) {
         case .failure(let problem):
-            // The same sheet says why; "OK" closes it.
+            // The same sheet says why; "OK" closes it. The file was fine: it is the
+            // import that could not be made.
             settingsSheet?.onImport = nil
             settingsSheet?.show(.problem(
-                title: text("general-settings-problem-import-title"),
+                title: text("general-settings-problem-not-imported-title"),
                 text: SettingsFileText.explanation(of: problem)
             ))
         case .success:

@@ -83,6 +83,11 @@ enum SettingsFile {
     /// A file larger than this is refused before it is parsed. A real one has a few
     /// kilobytes; 200 apps and 200 buttons stay under 200 KB.
     static let maximumFileSize = 2 * 1024 * 1024
+    /// How many buttons and keys (those of every app and each app's own together), and
+    /// how many apps, a file may bring. Far more than anybody sets by hand; a file with
+    /// more is refused. (2 MB hold about 12,000 bindings or 100,000 apps, and putting
+    /// that many in effect takes seconds on the main thread.)
+    static let maximumEntries = 1000
 
     /// The names of the file's top level. Persisted identifiers: never rename one.
     enum Field {
@@ -268,23 +273,24 @@ enum SettingsFile {
         /// were brought into it.
         var correctedValues = 0
 
+        /// Every button and key of the file with its action: those of every app first,
+        /// then each app's own (with the app they belong to).
+        var allBindings: [(binding: ButtonBinding, application: Application?)] {
+            var all: [(binding: ButtonBinding, application: Application?)] = (bindings ?? []).map { ($0, nil) }
+            for application in applications ?? [] {
+                all += (application.buttons?.binding ?? []).map { ($0, application) }
+            }
+            return all
+        }
+
         /// Every action of the file that opens an app or a file, or runs a script: of the
         /// buttons and keys, switched on or off, and of each app's own buttons.
         var launchActions: [LaunchAction] {
-            var actions: [LaunchAction] = []
-            for binding in bindings ?? [] {
-                if let target = binding.openTarget {
-                    actions.append(LaunchAction(trigger: binding.triggerEvent, target: target, applicationPath: nil))
+            return allBindings.compactMap { entry in
+                entry.binding.openTarget.map {
+                    LaunchAction(trigger: entry.binding.triggerEvent, target: $0, applicationPath: entry.application?.path)
                 }
             }
-            for application in applications ?? [] {
-                for binding in application.buttons?.binding ?? [] {
-                    if let target = binding.openTarget {
-                        actions.append(LaunchAction(trigger: binding.triggerEvent, target: target, applicationPath: application.path))
-                    }
-                }
-            }
-            return actions
         }
 
         /// The file has Logitech values (the wheel's or the basics').
@@ -307,6 +313,11 @@ enum SettingsFile {
         case damaged(String)
         /// A settings file without a single setting this build knows.
         case nothingToImport
+        /// More buttons and keys, or more apps, than `maximumEntries`.
+        case tooManyEntries
+        /// A value of the file could not be written in the form the store takes: nothing
+        /// was changed.
+        case cannotStore
         /// The file could not be written; the system's own words.
         case cannotWrite(String)
         /// The current settings could not be saved before an import: nothing was changed.
@@ -359,6 +370,12 @@ enum SettingsFile {
             return .failure(.damaged(Field.settings))
         }
 
+        // Counted before a single entry is decoded.
+        for name in [OptionItem.Button.Bindings, OptionItem.Application.Applications] {
+            if let entries = settings[name] as? [Any], entries.count > maximumEntries {
+                return .failure(.tooManyEntries)
+            }
+        }
         var contents = Contents()
         contents.header = header(of: root)
         for key in exportedKeys {
@@ -369,6 +386,8 @@ enum SettingsFile {
             contents.groups.insert(key.group)
         }
         guard !contents.groups.isEmpty else { return .failure(.nothingToImport) }
+        // Each app's own buttons count with the others.
+        guard contents.allBindings.count <= maximumEntries else { return .failure(.tooManyEntries) }
         return .success(contents)
     }
 
@@ -637,11 +656,15 @@ enum SettingsFile {
     /// Puts `contents` in effect: the groups it holds replace those of `options`, in the
     /// store and in memory, and their observers are told. The caller has saved the current
     /// settings first (`SettingsFileCenter.importSettings`). False: the store is not open
-    /// to settings files, and nothing was changed. Runs nothing. Main thread.
+    /// to settings files, or a value could not be put in the form the store takes; nothing
+    /// was changed then. Runs nothing. Main thread.
     @discardableResult
     static func apply(_ contents: Contents, to options: Options) -> Bool {
         assertMainThread()
         guard options.writesToDefaults else { return false }
+        // Every new value is made first: a group's keys are only removed once all of its
+        // values, and all the others', are there to be written.
+        guard let values = storeValues(of: contents, managedByScrollio: options.logiMouseManaged) else { return false }
         // What was changed and not written yet, in any group, is in the store before the
         // store is read again.
         options.saveOptions()
@@ -650,7 +673,7 @@ enum SettingsFile {
         for key in exportedKeys where contents.groups.contains(key.group) {
             defaults.removeObject(forKey: key.name)
         }
-        for (name, value) in storeValues(of: contents, managedByScrollio: options.logiMouseManaged) {
+        for (name, value) in values {
             defaults.set(value, forKey: name)
         }
         options.reloadFromStore(notifying: OptionsGroup.allCases.filter(contents.groups.contains))
@@ -660,8 +683,9 @@ enum SettingsFile {
     /// What goes into the store for `contents`, by key: a switch as a Bool, a number as a
     /// Double, everything else as the JSON data the app's own encoders make of it
     /// (`Options.save(group:)` writes the same). `managedByScrollio` is this Mac's "Let
-    /// Scrollio manage this mouse": whatever the file said, it stays.
-    static func storeValues(of contents: Contents, managedByScrollio: Bool) -> [String: Any] {
+    /// Scrollio manage this mouse": whatever the file said, it stays. Nil when one of
+    /// the values cannot be encoded: then none is to be written.
+    static func storeValues(of contents: Contents, managedByScrollio: Bool) -> [String: Any]? {
         let encoder = JSONEncoder()
         var values: [String: Any] = [:]
         if let hidden = contents.hidesMenuBarIcon {
@@ -673,30 +697,34 @@ enum SettingsFile {
         for (name, number) in contents.scrollNumbers {
             values[name] = number
         }
-        for (name, hotkey) in contents.scrollHotkeys {
-            values[name] = try? encoder.encode(hotkey)
-        }
-        if let thumbWheel = contents.thumbWheel {
-            values[OptionItem.ThumbWheel.Settings] = try? encoder.encode(thumbWheel)
-        }
-        if let allowlist = contents.allowlist {
-            values[OptionItem.Application.Allowlist] = allowlist
-        }
-        if let applications = contents.applications {
-            values[OptionItem.Application.Applications] = try? encoder.encode(applications)
-        }
-        if let bindings = contents.bindings {
-            values[OptionItem.Button.Bindings] = try? encoder.encode(bindings)
-        }
-        if let gesture = contents.gesture {
-            values[OptionItem.Gesture.Settings] = try? encoder.encode(gesture)
-        }
-        if var wheel = contents.logiWheel {
-            wheel.managedByScrollio = managedByScrollio
-            values[OptionItem.MouseWheel.Settings] = try? encoder.encode(wheel)
-        }
-        if let mouse = contents.logiMouse {
-            values[OptionItem.MouseBasics.Settings] = try? encoder.encode(mouse)
+        do {
+            for (name, hotkey) in contents.scrollHotkeys {
+                values[name] = try encoder.encode(hotkey)
+            }
+            if let thumbWheel = contents.thumbWheel {
+                values[OptionItem.ThumbWheel.Settings] = try encoder.encode(thumbWheel)
+            }
+            if let allowlist = contents.allowlist {
+                values[OptionItem.Application.Allowlist] = allowlist
+            }
+            if let applications = contents.applications {
+                values[OptionItem.Application.Applications] = try encoder.encode(applications)
+            }
+            if let bindings = contents.bindings {
+                values[OptionItem.Button.Bindings] = try encoder.encode(bindings)
+            }
+            if let gesture = contents.gesture {
+                values[OptionItem.Gesture.Settings] = try encoder.encode(gesture)
+            }
+            if var wheel = contents.logiWheel {
+                wheel.managedByScrollio = managedByScrollio
+                values[OptionItem.MouseWheel.Settings] = try encoder.encode(wheel)
+            }
+            if let mouse = contents.logiMouse {
+                values[OptionItem.MouseBasics.Settings] = try encoder.encode(mouse)
+            }
+        } catch {
+            return nil
         }
         return values
     }

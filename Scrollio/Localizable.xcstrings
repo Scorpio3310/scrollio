@@ -6846,7 +6846,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "“%1$@”, saved by Scrollio %2$@ on %3$@."
+            "value": "“%1$@”. It says it was saved by Scrollio %2$@ on %3$@."
           }
         }
       }
@@ -6857,7 +6857,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "“%1$@”, saved by Scrollio %2$@."
+            "value": "“%1$@”. It says it was saved by Scrollio %2$@."
           }
         }
       }
@@ -7320,6 +7320,39 @@
           "stringUnit": {
             "state": "translated",
             "value": "%d values were out of range and were corrected."
+          }
+        }
+      }
+    },
+    "general-settings-problem-not-imported-title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The settings were not imported"
+          }
+        }
+      }
+    },
+    "general-settings-problem-too-many": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It holds more than %d buttons and keys, or more than that many apps: more than Scrollio takes from a file."
+          }
+        }
+      }
+    },
+    "general-settings-problem-not-stored": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio could not store these settings, so nothing was changed."
           }
         }
       }

@@ -179,6 +179,10 @@ enum SettingsFileText {
             return String(format: text("general-settings-problem-damaged"), visible(part))
         case .nothingToImport:
             return text("general-settings-problem-empty")
+        case .tooManyEntries:
+            return String(format: text("general-settings-problem-too-many"), SettingsFile.maximumEntries)
+        case .cannotStore:
+            return text("general-settings-problem-not-stored")
         case .cannotWrite(let reason):
             return joined(text("general-settings-problem-write"), reason)
         case .backupFailed(let reason):
