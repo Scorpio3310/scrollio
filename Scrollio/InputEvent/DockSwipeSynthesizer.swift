@@ -234,7 +234,8 @@ struct DockSwipeHIDBridge {
                 address = resolver(symbol.library, name)
             }
             guard let address else {
-                NSLog("DockSwipeSynthesizer: %@ is missing, interactive swipe unavailable", symbol.names[0])
+                AppSystemLog.problem("Gestures: macOS has no \(symbol.names[0]) here; "
+                    + "\"Follow the hand\" is not available and holds use the one-action gestures")
                 return nil
             }
             addresses.append(address)
@@ -489,7 +490,7 @@ private final class DockSwipeSystemPoster {
         hasPostedBegan = false
         let frame = DockSwipeFrame(phase: phase, axis: axis, progress: lastProgress, velocity: velocity)
         guard let events = factory.makeEvents(for: frame, naturalScrolling: naturalScrolling) else {
-            NSLog("DockSwipeSynthesizer: could not build the terminal event")
+            AppSystemLog.problem("Gestures: the last event of a swipe could not be built; the swipe was not finished")
             return
         }
         post(events)

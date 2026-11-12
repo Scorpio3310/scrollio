@@ -43,18 +43,32 @@ enum EventTapKind: String, CaseIterable {
     case scroll = "scroll"
     case scrollKeys = "scroll keys"
     case leftClick = "left click"
+    /// ButtonCore's tap for the extra mouse buttons.
+    case buttons = "buttons"
+    /// ButtonCore's tap for the keyboard, made only while a key is bound or a button holds
+    /// a modifier.
+    case keys = "keys"
+    /// One tap for both, as ButtonCore had it before the keyboard got a tap of its own.
     case buttonsAndKeys = "buttons and keys"
     case pointerMovement = "pointer movement"
+    /// The key recorder's tap, while a recording runs.
+    case recorder = "recorder"
     case other = "other"
 
-    /// The kind of a tap from its event mask (ScrollCore, ButtonCore and the gesture motion
-    /// tap each listen to their own set of events).
+    /// The kind of a tap from its event mask (ScrollCore, ButtonCore, the gesture motion
+    /// tap and the recorder each listen to their own set of events). The recorder is told
+    /// by listening to the left button and to keys at once: its mask has the modifier keys
+    /// too, and it used to be named "scroll keys", so "Could not create the scroll keys
+    /// event tap" for a recorder that could not start sent a reader to the wrong place.
     static func of(mask: CGEventMask) -> EventTapKind {
         func has(_ type: CGEventType) -> Bool { mask & CGEventMask(1 << type.rawValue) != 0 }
         if has(.scrollWheel) { return .scroll }
         if has(.mouseMoved) || has(.otherMouseDragged) { return .pointerMovement }
+        if has(.leftMouseDown) && has(.keyDown) { return .recorder }
         if has(.flagsChanged) { return .scrollKeys }
-        if has(.otherMouseDown) || has(.keyDown) { return .buttonsAndKeys }
+        if has(.otherMouseDown) && has(.keyDown) { return .buttonsAndKeys }
+        if has(.otherMouseDown) { return .buttons }
+        if has(.keyDown) { return .keys }
         if has(.leftMouseDown) { return .leftClick }
         return .other
     }
