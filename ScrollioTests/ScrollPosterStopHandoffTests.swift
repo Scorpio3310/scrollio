@@ -3691,3 +3691,234 @@ final class FakeDisplay {
         }
     }
 }
+
+/// The way up from the element under the pointer (`ScrollEndClimb`), run over a tree of the
+/// test's own that writes down what each element was asked. (The real reader asks an app
+/// through Accessibility, which a test may not do.)
+final class ScrollEndClimbTests: XCTestCase {
+
+    private final class Node {
+        let role: String?
+        let parent: Node?
+        var bar: Node?
+        var barAnswer: ScrollEndBar<Node>?
+        var maximum: Double?
+        var enabled: Bool?
+        var value: Double?
+        var isApplication = false
+        var asked: [String] = []
+
+        init(_ role: String?, in parent: Node?) {
+            self.role = role
+            self.parent = parent
+        }
+    }
+
+    private struct Tree: ScrollEndElements {
+        // (Whether an element is the application is decided without asking: not written down.)
+        func isApplication(_ element: Node) -> Bool { return element.isApplication }
+        func role(of element: Node) -> String? {
+            element.asked.append("role")
+            return element.role
+        }
+        func parent(of element: Node) -> Node? {
+            element.asked.append("parent")
+            return element.parent
+        }
+        func verticalBar(of element: Node) -> ScrollEndBar<Node> {
+            element.asked.append("bar")
+            if let answer = element.barAnswer { return answer }
+            return element.bar.map { .bar($0) } ?? .none
+        }
+        func maximum(of bar: Node) -> Double? {
+            bar.asked.append("maximum")
+            return bar.maximum
+        }
+        func isEnabled(_ bar: Node) -> Bool? {
+            bar.asked.append("enabled")
+            return bar.enabled
+        }
+        func value(of bar: Node) -> Double? {
+            bar.asked.append("value")
+            return bar.value
+        }
+    }
+
+    /// An application, a window, and the roles below it, the last one under the pointer.
+    private func window(_ roles: [String?]) -> (application: Node, window: Node, below: [Node]) {
+        let application = Node("AXApplication", in: nil)
+        application.isApplication = true
+        let window = Node("AXWindow", in: application)
+        var below: [Node] = []
+        var parent = window
+        for role in roles {
+            let node = Node(role, in: parent)
+            below.append(node)
+            parent = node
+        }
+        return (application, window, below)
+    }
+
+    private func scrollBar(at value: Double?) -> Node {
+        let bar = Node("AXScrollBar", in: nil)
+        bar.value = value
+        return bar
+    }
+
+    private func look(from node: Node, readsRoles: Bool = true) -> (reading: ScrollEndReading, bar: Node?) {
+        return ScrollEndClimb.look(from: node, in: Tree(), readsRoles: readsRoles)
+    }
+
+    /// As it was: up through the roles to the first scroll area, its bar, the bar's value.
+    func testWithRoles_theFirstScrollAreaAndItsBar() throws {
+        let tree = window(["AXScrollArea", "AXOutline", "AXRow", "AXCell"])
+        let bar = scrollBar(at: 0.25)
+        tree.below[0].bar = bar
+        let found = look(from: tree.below[3])
+        XCTAssertEqual(found.reading.value, 0.25)
+        XCTAssertEqual(found.reading.roles, ["AXCell", "AXRow", "AXOutline", "AXScrollArea"])
+        XCTAssertTrue(found.bar === bar)
+        XCTAssertEqual(tree.below[3].asked, ["role", "parent"])
+        XCTAssertEqual(tree.below[0].asked, ["role", "bar"], "the climb ends at the scroll area")
+        XCTAssertEqual(bar.asked, ["maximum", "enabled", "value"])
+        XCTAssertEqual(tree.window.asked, [])
+        XCTAssertEqual(tree.application.asked, [])
+
+        // A scroll area without a vertical bar ends the climb: the one around it is not looked for.
+        let nested = window(["AXScrollArea", "AXGroup", "AXScrollArea", "AXStaticText"])
+        nested.below[0].bar = scrollBar(at: 0.5)
+        let inner = look(from: nested.below[3])
+        XCTAssertNil(inner.reading.value)
+        XCTAssertEqual(inner.reading.failedAt, "a scroll area without a vertical scroll bar")
+        XCTAssertEqual(nested.below[0].asked, [])
+        nested.below[2].barAnswer = .unanswered(-25204)
+        nested.below[3].asked = []
+        XCTAssertEqual(look(from: nested.below[3]).reading.failedAt, "the scroll area's vertical scroll bar could not be read (-25204)")
+    }
+
+    /// The application's element is asked nothing, whatever is under the pointer: Chrome
+    /// and Electron switch on their accessibility support when the application is asked for
+    /// its role. The climb used to go on from the window to the application and ask it.
+    func testTheApplicationIsNeverAsked_theClimbStopsAtTheWindow() {
+        for readsRoles in [true, false] {
+            // A button in a toolbar: no scroll area on the way up.
+            let tree = window(["AXToolbar", "AXGroup", "AXButton"])
+            let found = look(from: tree.below[2], readsRoles: readsRoles)
+            XCTAssertNil(found.reading.value)
+            XCTAssertEqual(found.reading.failedAt, ScrollEndClimb.belowTheWindow)
+            XCTAssertEqual(tree.application.asked, [], "readsRoles \(readsRoles)")
+            if readsRoles {
+                XCTAssertEqual(found.reading.roles, ["AXButton", "AXGroup", "AXToolbar", "AXWindow"])
+                XCTAssertEqual(tree.window.asked, ["role"], "the window says what it is, and is not asked for its parent")
+            } else {
+                XCTAssertEqual(tree.window.asked, ["bar", "parent"])
+            }
+
+            // The menu bar's parent is the application too.
+            let application = Node("AXApplication", in: nil)
+            application.isApplication = true
+            let menuBar = Node("AXMenuBar", in: application)
+            let item = Node("AXMenuBarItem", in: menuBar)
+            XCTAssertEqual(look(from: item, readsRoles: readsRoles).reading.failedAt, ScrollEndClimb.belowTheWindow)
+            XCTAssertEqual(application.asked, [], "readsRoles \(readsRoles)")
+            if readsRoles { XCTAssertEqual(menuBar.asked, ["role"]) }
+
+            // Something of another kind whose parent is the application: known by the element, not by a role.
+            let other = Node("AXGroup", in: application)
+            XCTAssertEqual(look(from: other, readsRoles: readsRoles).reading.failedAt, ScrollEndClimb.belowTheWindow)
+            XCTAssertEqual(application.asked, [], "readsRoles \(readsRoles)")
+
+            // The hit test hands back the application itself.
+            XCTAssertEqual(look(from: application, readsRoles: readsRoles).reading.failedAt, ScrollEndClimb.belowTheWindow)
+            XCTAssertEqual(application.asked, [], "readsRoles \(readsRoles)")
+        }
+    }
+
+    /// Without roles (for an app that may hold Chromium's web content): no element is asked
+    /// for its role before it has shown a vertical scroll bar. Chromium's container for a
+    /// web page calls itself a scroll area, has no such bar, and switches on the web
+    /// content's accessibility when it is asked for its role.
+    func testWithoutRoles_noRoleIsAskedBeforeABarIsSeen() {
+        // Over a web page: the container, the shell's views, the window.
+        let page = window(["AXSplitGroup", "AXGroup", "AXScrollArea"])
+        let container = page.below[2]
+        let overPage = look(from: container, readsRoles: false)
+        XCTAssertNil(overPage.reading.value)
+        XCTAssertEqual(overPage.reading.failedAt, ScrollEndClimb.belowTheWindow)
+        XCTAssertEqual(overPage.reading.roles, ["-", "-", "-", "-"], "nobody was asked what it is")
+        XCTAssertEqual(container.asked, ["bar", "parent"])
+        for node in page.below + [page.window, page.application] {
+            XCTAssertFalse(node.asked.contains("role"))
+        }
+        XCTAssertEqual(page.application.asked, [])
+        // (With roles the container is asked for its role: what this form of the look is for.)
+        container.asked = []
+        XCTAssertEqual(look(from: container, readsRoles: true).reading.failedAt, "a scroll area without a vertical scroll bar")
+        XCTAssertEqual(container.asked, ["role", "bar"])
+
+        // Over a native list beside it: the first element that has a bar, and only it says what it is.
+        let list = window(["AXSplitGroup", "AXScrollArea", "AXOutline", "AXRow", "AXCell"])
+        let bar = scrollBar(at: 0.4)
+        list.below[1].bar = bar
+        let overList = look(from: list.below[4], readsRoles: false)
+        XCTAssertEqual(overList.reading.value, 0.4)
+        XCTAssertEqual(overList.reading.roles, ["-", "-", "-", "AXScrollArea"])
+        XCTAssertTrue(overList.bar === bar)
+        XCTAssertEqual(list.below[4].asked, ["bar", "parent"])
+        XCTAssertEqual(list.below[1].asked, ["bar", "role"])
+        XCTAssertEqual(list.below[0].asked, [])
+
+        // An app that does not answer in time ends the look; any other error is "no bar here".
+        let silent = window(["AXGroup", "AXGroup"])
+        silent.below[1].barAnswer = .unanswered(-25204)
+        XCTAssertEqual(look(from: silent.below[1], readsRoles: false).reading.failedAt, "the app did not answer (-25204)")
+        XCTAssertEqual(silent.below[1].asked, ["bar"])
+        silent.below[1].barAnswer = .unread(-25200)
+        XCTAssertEqual(look(from: silent.below[1], readsRoles: false).reading.failedAt, ScrollEndClimb.belowTheWindow)
+    }
+
+    /// The bar: only one that counts from 0 to 1, is not disabled, and has a value.
+    func testTheBar_countsFromZeroToOne_andIsNotDisabled() {
+        func reading(_ change: (Node) -> Void) -> (ScrollEndReading, [String]) {
+            let tree = window(["AXScrollArea", "AXTextArea"])
+            let bar = scrollBar(at: 0.75)
+            change(bar)
+            tree.below[0].bar = bar
+            return (look(from: tree.below[1]).reading, bar.asked)
+        }
+        // AppKit's scroller tells no maximum and says it is enabled.
+        XCTAssertEqual(reading { $0.enabled = true }.0.value, 0.75)
+        XCTAssertEqual(reading { _ in }.0.value, 0.75, "a bar that says neither")
+        XCTAssertEqual(reading { $0.maximum = 1 }.0.value, 0.75)
+        // A bar that counts in pixels.
+        let pixels = reading { $0.maximum = 4_000 }
+        XCTAssertEqual(pixels.0.failedAt, AccessibilityScrollEndWatch.notFromZeroToOne)
+        XCTAssertEqual(pixels.1, ["maximum"], "its value is not asked")
+        // A view whose content fits: AppKit gives a disabled bar at 0. It used to be "seen"
+        // at 0: a touch over a view that cannot scroll, held open while the frames came.
+        let fits = reading {
+            $0.enabled = false
+            $0.value = 0
+        }
+        XCTAssertNil(fits.0.value)
+        XCTAssertEqual(fits.0.failedAt, ScrollEndClimb.fits)
+        XCTAssertEqual(fits.1, ["maximum", "enabled"])
+        XCTAssertEqual(reading { $0.value = nil }.0.failedAt, "a scroll bar without a value from 0 to 1")
+    }
+
+    /// The ways a climb ends without a scroll area.
+    func testTheClimbEnds_withoutARole_withoutAParent_afterADozen() {
+        let deep = window(Array(repeating: "AXGroup", count: 20))
+        let found = look(from: deep.below[19])
+        XCTAssertEqual(found.reading.failedAt, "no scroll area within 12 parents")
+        XCTAssertEqual(found.reading.roles.count, 12)
+        XCTAssertEqual(deep.below[7].asked, [], "a dozen elements at most")
+
+        let unnamed = window(["AXGroup", nil])
+        XCTAssertEqual(look(from: unnamed.below[1]).reading.failedAt, "an element without a role")
+        XCTAssertEqual(unnamed.below[0].asked, [])
+
+        let orphan = Node("AXGroup", in: nil)
+        XCTAssertEqual(look(from: orphan).reading.failedAt, "no scroll area above the element under the pointer")
+    }
+}
