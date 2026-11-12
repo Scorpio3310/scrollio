@@ -284,8 +284,8 @@ final class GesturePreviewArrow: GesturePreviewArtworkView {
 /// The connected mouse seen from above, the drawing of the Mouse and Buttons panes
 /// (MouseArtwork.swift) a little smaller, with the button that runs Gesture Navigation where
 /// the model has it (MouseArtworkModel.gesturePreviewPart): it takes the accent colour while
-/// it is held. A mouse whose button is on its thumb side (the MX Master 4) turns to the
-/// view from that side for the hold, in the place of its body.
+/// it is held. A mouse whose button is on its thumb side (the MX Master 4 and 3) turns to
+/// the view from that side for the hold, in the place of its body.
 final class GesturePreviewMouse: GesturePreviewArtworkView {
 
     /// The drawing's grid is drawn this many points per unit: the body 80 points tall.
@@ -442,10 +442,6 @@ final class GesturePreviewMouse: GesturePreviewArtworkView {
             accent.mixed(0.3, with: .black).withAlphaComponent(depth).setStroke()
             button.lineWidth = 1 / unit
             button.stroke()
-            // The MX Master 3's gesture button is in the thumb rest, under the side buttons.
-            if model == .mxMaster3 {
-                MouseArtworkPainter.drawSideButtons(on: shapes(.above), ink: .card, unit: unit)
-            }
         }
     }
 }

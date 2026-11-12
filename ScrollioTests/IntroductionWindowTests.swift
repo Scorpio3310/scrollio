@@ -2168,12 +2168,17 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(picture.phaseCount, 2)
         XCTAssertEqual(picture.frame(at: 4.5).phase, 0)
         // A mouse drawn from above only never turns.
-        for model in [MouseArtworkModel.generic, .mxMaster3] {
-            picture.model = model
-            for time in stride(from: 0.0, through: 13, by: 0.1) {
-                XCTAssertEqual(picture.frame(at: time).turn, 0, "\(model) at \(time)")
-            }
+        for time in stride(from: 0.0, through: 13, by: 0.1) {
+            XCTAssertEqual(picture.frame(at: time).turn, 0, "the plain mouse at \(time)")
         }
+        // The MX Master 3 turns as the MX Master 4 does: for its side buttons and for the
+        // gesture pad in its thumb rest.
+        picture.model = .mxMaster3
+        XCTAssertEqual(picture.phaseCount, 3)
+        XCTAssertEqual(picture.frame(at: 1.9).turn, 0)
+        XCTAssertEqual(picture.frame(at: 2.4).turn, 1)
+        XCTAssertEqual(picture.frame(at: 4.8).turn, 1)
+        XCTAssertEqual(picture.viewpoint(ofPhase: 2), .thumbSide)
         picture.model = .generic
 
         // Reduce Motion: everything lit, nothing boxed.

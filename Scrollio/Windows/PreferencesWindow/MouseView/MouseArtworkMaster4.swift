@@ -1,8 +1,7 @@
 //
 //  MouseArtworkMaster4.swift
 //  Scrollio
-//  The MX Master 4's drawing: its two views on the grid of MouseArtwork.swift, and how
-//  they are painted (in the same ink, strokes and fills as the other drawings).
+//  The MX Master 4's drawing: its two views on the grid of MouseArtwork.swift.
 //
 //  From above (front at the top, thumb side on the left): the two buttons with the wheel
 //  between them, the small button behind the wheel on the palm shell with its light, the
@@ -16,72 +15,27 @@
 //
 //  Both views are the same mouse at the same size, 117 units long, so the drawing can turn
 //  from one to the other in place. Where the parts are was measured on the mouse; the
-//  lines are this app's own, and every point is a number below that can be moved.
+//  lines are this app's own, and every point is a number below that can be moved. How the
+//  shapes are painted is in MouseArtworkTwoViews.swift, shared with the MX Master 3.
 //
 
 import Cocoa
 
-struct MouseArtworkMaster4 {
+struct MouseArtworkMaster4: MouseArtworkTwoViews {
+
+    typealias Bar = MouseArtworkBar
 
     let viewpoint: MouseArtworkViewpoint
     /// For the small pictures: the parts larger and further apart, not to scale; from the
-    /// side the mouse is also drawn taller (`schematicRise`), to give them room.
+    /// side the mouse is also drawn taller (`MouseArtworkBar.schematicRise`), to give them
+    /// room.
     var schematic = false
 
-    /// How many times taller than it is the small pictures draw the mouse from the side.
-    static let schematicRise: CGFloat = 1.3
-
-    // MARK: - A wheel seen from its side
-
-    /// A roller (the thumb wheel) or a button, as a bar along an axis: `length` along it,
-    /// `thickness` across, turned by `degrees` (0: the axis runs left to right; negative:
-    /// its right end is higher; 90: it runs down).
-    struct Bar {
-        var centre: NSPoint
-        var length: CGFloat
-        var thickness: CGFloat
-        var degrees: CGFloat
-        /// Corner radius at the end the axis starts at (the mouse's front in the side
-        /// view) and at its other end.
-        var startRadius: CGFloat
-        var endRadius: CGFloat
-
-        /// The axis' direction, and the direction across it.
-        var along: NSPoint {
-            let angle = degrees * .pi / 180
-            return NSPoint(x: cos(angle), y: sin(angle))
-        }
-
-        var across: NSPoint {
-            let angle = degrees * .pi / 180
-            return NSPoint(x: -sin(angle), y: cos(angle))
-        }
-
-        /// A point `a` along the axis and `b` across it, from the centre.
-        func point(along a: CGFloat, across b: CGFloat) -> NSPoint {
-            return NSPoint(x: centre.x + along.x * a + across.x * b, y: centre.y + along.y * a + across.y * b)
-        }
-
-        var path: NSBezierPath {
-            let l = length / 2, t = thickness / 2
-            let rs = max(0.01, min(startRadius, t, l)), re = max(0.01, min(endRadius, t, l))
-            let path = NSBezierPath()
-            path.move(to: NSPoint(x: -l + rs, y: -t))
-            path.line(to: NSPoint(x: l - re, y: -t))
-            path.appendArc(from: NSPoint(x: l, y: -t), to: NSPoint(x: l, y: -t + re), radius: re)
-            path.line(to: NSPoint(x: l, y: t - re))
-            path.appendArc(from: NSPoint(x: l, y: t), to: NSPoint(x: l - re, y: t), radius: re)
-            path.line(to: NSPoint(x: -l + rs, y: t))
-            path.appendArc(from: NSPoint(x: -l, y: t), to: NSPoint(x: -l, y: t - rs), radius: rs)
-            path.line(to: NSPoint(x: -l, y: -t + rs))
-            path.appendArc(from: NSPoint(x: -l, y: -t), to: NSPoint(x: -l + rs, y: -t), radius: rs)
-            path.close()
-            path.transform(using: AffineTransform(
-                m11: along.x, m12: along.y, m21: across.x, m22: across.y, tX: centre.x, tY: centre.y
-            ))
-            return path
-        }
-    }
+    /// The thumb panel is the tinted area under the buttons; the two buttons have a clear
+    /// rim along their edge.
+    let restPart = MouseArtworkPart.thumbPanel
+    let hasClearRim = true
+    var restRidge: NSBezierPath? { return nil }
 
     // MARK: - Body
 
@@ -149,15 +103,10 @@ struct MouseArtworkMaster4 {
         }
     }
 
-    /// `path` as the small pictures draw the view from the side: taller, about the middle
-    /// of the mouse's height. Everything else is `path` itself.
+    /// `path` as the small pictures draw the view from the side: taller. Everything else
+    /// is `path` itself.
     private func risen(_ path: NSBezierPath) -> NSBezierPath {
-        guard schematic, viewpoint == .thumbSide else { return path }
-        let middle: CGFloat = 60
-        path.transform(using: AffineTransform(
-            m11: 1, m12: 0, m21: 0, m22: Self.schematicRise, tX: 0, tY: middle * (1 - Self.schematicRise)
-        ))
-        return path
+        return schematic && viewpoint == .thumbSide ? MouseArtworkBar.risen(path) : path
     }
 
     /// The fine lines inside the outline; the painter clips them to it.
@@ -426,200 +375,5 @@ struct MouseArtworkMaster4 {
     func capsule(_ rect: NSRect) -> NSBezierPath {
         let radius = min(rect.width, rect.height) / 2
         return NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
-    }
-}
-
-// MARK: - Painting
-
-extension MouseArtworkPainter {
-
-    /// One view of the MX Master 4, `lit` (a part that lights in this view) in the ink's
-    /// lit colour.
-    static func drawMaster4(
-        _ art: MouseArtworkMaster4, shapes: MouseArtworkShapes, ink: MouseArtworkInk, lit: MouseArtworkPart?, unit: CGFloat
-    ) {
-        let outline = art.outline()
-        if ink.shadow {
-            drawShadow(of: outline)
-        }
-        // From the side the wheel shows over the buttons; the body covers the rest of it.
-        if let crest = art.wheelCrest {
-            NSGraphicsContext.saveGraphicsState()
-            let outside = NSBezierPath(rect: MouseArtworkShapes.canvas.insetBy(dx: -20, dy: -20))
-            outside.append(outline)
-            outside.windingRule = .evenOdd
-            outside.addClip()
-            if ink.fillsParts {
-                ink.bodyFill.setFill()
-                crest.fill()
-                ink.wheel.setFill()
-                crest.fill()
-            }
-            crest.lineWidth = ink.partEdgeWidth / unit
-            ink.outline.setStroke()
-            crest.stroke()
-            NSGraphicsContext.restoreGraphicsState()
-        }
-        ink.bodyFill.setFill()
-        outline.fill()
-
-        // The thumb panel, under everything else.
-        if let panel = art.shape(of: .thumbPanel) {
-            drawPart(panel, lit: lit == .thumbPanel, fill: ink.panel, opaque: false, ink: ink, unit: unit)
-            if ink.ridges, let dots = art.panelDots {
-                (lit == .thumbPanel ? MouseArtworkPalette.litRidge : ink.outline).setFill()
-                dots.fill()
-            }
-        }
-        // The two buttons have a clear rim along their edge.
-        if ink.fillsParts {
-            let rim = outline.copy() as! NSBezierPath
-            rim.lineWidth = 2 * MouseArtworkShapes.rimWidth
-            for left in [true, false] {
-                guard let area = art.buttonArea(left: left) else { continue }
-                NSGraphicsContext.saveGraphicsState()
-                area.addClip()
-                ink.panel.setStroke()
-                rim.stroke()
-                NSGraphicsContext.restoreGraphicsState()
-            }
-        }
-        if lit == .left || lit == .right, let area = art.shape(of: lit!) {
-            ink.lit.setFill()
-            area.fill()
-        }
-
-        NSGraphicsContext.saveGraphicsState()
-        outline.addClip()
-        let lines = art.seams()
-        lines.lineWidth = ink.seamWidth / unit
-        lines.lineCapStyle = .round
-        lines.lineJoinStyle = .round
-        ink.seam.setStroke()
-        lines.stroke()
-        // The thumb wheel's slot ends at the body's edge.
-        if art.viewpoint == .thumbSide, let housing = art.thumbWheelHousing {
-            drawPart(housing, lit: false, fill: ink.well, opaque: true, ink: ink, unit: unit)
-        }
-        NSGraphicsContext.restoreGraphicsState()
-
-        if art.viewpoint == .above {
-            drawWheel(shapes, ink: ink, lit: lit == .wheel, unit: unit)
-            if let modeShift = art.shape(of: .modeShift) {
-                drawPart(modeShift, lit: lit == .modeShift, fill: ink.well, opaque: true, ink: ink, unit: unit)
-            }
-            if ink.ridges, let light = art.light {
-                ink.seam.setFill()
-                light.fill()
-            }
-        }
-
-        outline.lineWidth = ink.outlineWidth / unit
-        ink.outline.setStroke()
-        outline.stroke()
-
-        if art.viewpoint == .above, let housing = art.thumbWheelHousing {
-            drawPart(housing, lit: false, fill: ink.well, opaque: true, ink: ink, unit: unit)
-        }
-        drawMaster4Roller(art.thumbWheel, ink: ink, lit: lit == .thumbWheel, unit: unit)
-        for part in [MouseArtworkPart.gesture, .forward, .back] {
-            guard let button = art.shape(of: part) else { continue }
-            drawPart(button, lit: lit == part, fill: ink.well, opaque: true, ink: ink, unit: unit, edge: ink.outline)
-        }
-    }
-
-    /// `part` in the accent colour with a glow, as the cards light it over the drawing.
-    static func drawMaster4Highlight(
-        _ part: MouseArtworkPart, of art: MouseArtworkMaster4, shapes: MouseArtworkShapes, unit: CGFloat
-    ) {
-        guard let shape = art.shape(of: part) else { return }
-        let accent = NSColor.controlAccentColor
-        NSGraphicsContext.saveGraphicsState()
-        let glow = NSShadow()
-        glow.shadowColor = accent.withAlphaComponent(0.65)
-        glow.shadowBlurRadius = 6
-        glow.shadowOffset = .zero
-        glow.set()
-        if part == .body {
-            accent.setStroke()
-            shape.lineWidth = 2 / unit
-            shape.stroke()
-        } else {
-            accent.setFill()
-            shape.fill()
-        }
-        NSGraphicsContext.restoreGraphicsState()
-
-        let ink = MouseArtworkInk.card
-        switch part {
-        case .left, .right:
-            // The parts in a lit button stay as they are.
-            drawWheel(shapes, ink: ink, lit: false, unit: unit)
-            if let modeShift = art.shape(of: .modeShift) {
-                drawPart(modeShift, lit: false, fill: ink.well, opaque: true, ink: ink, unit: unit)
-            }
-        case .wheel:
-            drawRidges(in: art.wheelRect, color: MouseArtworkPalette.litRidge, unit: unit)
-        case .thumbWheel:
-            drawMaster4RollerRidges(art.thumbWheel, color: MouseArtworkPalette.litRidge, unit: unit)
-        case .thumbPanel:
-            if let dots = art.panelDots {
-                MouseArtworkPalette.litRidge.setFill()
-                dots.fill()
-            }
-        case .body, .modeShift, .back, .forward, .gesture:
-            break
-        }
-    }
-
-    /// The thumb wheel: a roller in two ribbed halves.
-    private static func drawMaster4Roller(_ roller: MouseArtworkMaster4.Bar, ink: MouseArtworkInk, lit: Bool, unit: CGFloat) {
-        let shape = roller.path
-        if lit {
-            ink.lit.setFill()
-            shape.fill()
-        } else if ink.fillsParts {
-            ink.bodyFill.setFill()
-            shape.fill()
-            ink.wheel.setFill()
-            shape.fill()
-        }
-        if ink.ridges {
-            drawMaster4RollerRidges(roller, color: lit ? MouseArtworkPalette.litRidge : ink.wheelRidge, unit: unit)
-        }
-        shape.lineWidth = ink.partEdgeWidth / unit
-        (lit ? ink.lit : ink.outline).setStroke()
-        shape.stroke()
-    }
-
-    /// The roller's ribs, which run along it (closer together towards its edges, where it
-    /// curves away), and the ring between its two halves.
-    private static func drawMaster4RollerRidges(_ roller: MouseArtworkMaster4.Bar, color: NSColor, unit: CGFloat) {
-        NSGraphicsContext.saveGraphicsState()
-        roller.path.addClip()
-        let half = roller.length / 2, ring: CGFloat = 0.9
-        let count = roller.thickness > 7 ? 3 : 1
-        for step in -count...count {
-            let angle = Double(step) * Double.pi / Double(2 * count + 2)
-            let across = roller.thickness / 2 * CGFloat(sin(angle))
-            let rib = NSBezierPath()
-            for side in [CGFloat(-1), 1] {
-                rib.move(to: roller.point(along: side * (ring + 0.9), across: across))
-                rib.line(to: roller.point(along: side * (half - 1), across: across))
-            }
-            rib.lineWidth = 0.9 / unit
-            rib.lineCapStyle = .round
-            color.withAlphaComponent(color.alphaComponent * CGFloat(cos(angle))).setStroke()
-            rib.stroke()
-        }
-        let band = NSBezierPath()
-        for side in [CGFloat(-1), 1] {
-            band.move(to: roller.point(along: side * ring, across: -roller.thickness / 2))
-            band.line(to: roller.point(along: side * ring, across: roller.thickness / 2))
-        }
-        band.lineWidth = 0.9 / unit
-        color.setStroke()
-        band.stroke()
-        NSGraphicsContext.restoreGraphicsState()
     }
 }
