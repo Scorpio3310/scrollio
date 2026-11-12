@@ -33,8 +33,9 @@
 //  it is on this Mac, so a file alone never makes Scrollio write to a mouse it was not
 //  allowed to write to) and "Open at login" (the system's own state).
 //
-//  Reading a file (`read`): at most `maximumFileSize` bytes, JSON, the format's name, a
-//  format version this build knows. Then only the names on the allow-list are looked at,
+//  Reading a file (`read`): a regular file of at most `maximumFileSize` bytes, JSON, the
+//  format's name, a format version this build knows, at most `maximumEntries` buttons
+//  and keys and as many apps. Then only the names on the allow-list are looked at,
 //  each checked for its type; a name the list does not have is ignored. What is JSON in
 //  the preferences is decoded by the same decoders as at launch, with their tolerance
 //  (one bad value falls back, one unreadable entry of a list does not take the list with

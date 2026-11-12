@@ -12,9 +12,10 @@ it for the people who use the app, and give the version its part before you tag 
 
 - **Your settings in a file.** General › Settings file: "Export…" saves all your
   settings to one file, and "Import…" loads them from one, on this Mac or on another.
-- Before an import Scrollio shows what the file holds, with every app, file or script
-  its buttons would open or run, and asks. Your settings from before are kept:
-  "Restore…" brings them back.
+- Before an import Scrollio shows what the file holds, with everything its buttons,
+  keys and gestures would do and every app, file or script they would open or run, and
+  asks. Your settings from before each import are kept, the last five: "Restore…"
+  brings one back.
 - "Let Scrollio manage this mouse" and "Open at login" are not in a file: they stay as
   they are on each Mac.
 

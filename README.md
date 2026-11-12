@@ -235,22 +235,32 @@ move to another Mac, to keep a copy, or to pass a setup on.
   ("Tracking speed" and "Pointer acceleration" are macOS's own).
 - What Scrollio asks of a Logitech mouse whatever that switch says (see
   [Logitech MX mice](#logitech-mx-mice)) follows the imported settings as it follows
-  yours: a Logitech button that has an action in the file is asked of the mouse.
+  yours: a Logitech button that has an action in the file is asked of the mouse, and a
+  Logitech action of the file runs on the mouse when its button, key or gesture is used.
 - "Import…" reads a file and shows what it holds before anything changes: which
-  settings, how many apps and how many button and key actions. When buttons or keys in
-  it open an app or a file, or run a script, the sheet lists every one of them with its
-  button or key, its whole path and its arguments, and Return presses "Cancel". Read that list when the
-  file is not your own: such an action starts at a press of its button. Importing itself
-  starts nothing.
+  settings, how many apps, and every button and key with what it will do, in the words
+  of the Buttons pane, with the gesture directions whose action is not the default
+  one. For buttons and keys that open an app or a file, or run a script, a box of its
+  own lists each one's whole path and arguments. Read those lists when the file is not
+  your own: an action starts at a press of its button. Unless the file gives no button
+  or key an action and leaves the gestures as they are by default, Return presses
+  "Cancel". Importing itself starts nothing.
 - An import replaces the kinds of settings the file holds and leaves the others as they
   are; a file made by "Export…" holds them all. The new settings are in effect at once.
-- The settings from before are kept: "Restore…" appears under the row and brings them
-  back, through the same sheet. The last five such backups are settings files in
+- The settings from before each import are kept, the last five (the same settings
+  never twice), as settings files named by their time (UTC) in
   `~/Library/Application Support/com.nikklemenc.Scrollio/Settings Backups`.
-- A file that is not a Scrollio settings file, is damaged, is larger than 2 MB, or was
-  saved in a newer format than this version reads, changes nothing; the sheet says
-  which. In a file that is read, entries this version does not know are left out, and
-  the sheet says how many.
+  "Restore…" appears under the row and opens that folder: the one you choose comes
+  back through the same sheet.
+- A file that is not a Scrollio settings file, is damaged, is larger than 2 MB, holds
+  more than 1000 buttons and keys or 1000 apps, or was saved in a newer format than
+  this version reads, changes nothing; the sheet says which.
+- From a file that is read, an import takes only what this version understands:
+  entries it cannot read and actions it does not run are left out, and numbers of
+  Scrolling outside what the panes can set are corrected; the sheet says how many of
+  each.
+  That also holds for "Restore…": entries a newer version of Scrollio had stored (if
+  you went back to an older version) are not kept by an import and do not come back.
 
 ### Updates
 
