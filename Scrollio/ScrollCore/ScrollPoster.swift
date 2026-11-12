@@ -1209,9 +1209,15 @@ private extension ScrollPoster {
         let outputMagnitude = ScrollMotion.outputPerReferenceFrame(
             max(abs(shiftedValue.y), abs(shiftedValue.x)), frameInterval: frameInterval
         )
+        // One touch to the end: "the last frame has gone out" also means that none is still to
+        // come. After a wheel event the other way the motion comes to a standstill before it
+        // turns (what the old way left runs down first), with most of the way back still ahead:
+        // the frames the remaining distance asks for are over the dead zone. That is no end;
+        // taken for one, the touch ended there and the way back never went out.
+        let moreToCome = config.oneTouch && residualMagnitude * duration > speedDeadZone
         // 检测是否已经超过手动输入的持续时间阈值，准备结束手动阶段
         if !manualInputEnded && lastManualEventTime > 0.0
-            && fingerLiftedLocked(now: now, glideFollows: residualMagnitude > deadZone, outputSettled: outputMagnitude <= speedDeadZone) {
+            && fingerLiftedLocked(now: now, glideFollows: residualMagnitude > deadZone, outputSettled: outputMagnitude <= speedDeadZone && !moreToCome) {
             let endPlan = phases.onManualInputEnded()
             if !(endPlan.queue.isEmpty && endPlan.target == nil) {
                 perform(endPlan, emitTargetImmediately: true)

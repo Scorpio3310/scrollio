@@ -976,6 +976,31 @@ final class ScrollClassicPathTests: XCTestCase {
         }
     }
 
+    /// A fast spin and then one click back, the way a page is stopped. The motion does not
+    /// turn at once: what the spin left has to run down first. With a short glide the click
+    /// back only brakes; with a long one the page comes to a standstill some time after that
+    /// click and then moves back (70 px at Float, 149 at glide time 5.0). That standstill is
+    /// not the end of the scroll, and the touch stays open through it. Taken for "the last
+    /// frame has gone out", it ended the touch there, and the way back never reached the app.
+    func testTrackpadStyleOneTouch_theTouchLastsThroughATurn() {
+        for (feel, duration, movesBack) in [("Quick", 3.13, false), ("Smooth", 3.69, false), ("Float", 4.6, true), ("glide time 5.0", 5.0, true)] {
+            var inputs = Self.spin
+            inputs.append((-211.68, 0.45))
+            let plain = ScrollClassicRig(duration: duration, trackpadStyle: false)
+            let touch = ScrollClassicRig(duration: duration, form: .oneTouch)
+            for rig in [plain, touch] {
+                for (pixels, time) in inputs { rig.input(pixels, notch: 211.68, at: time) }
+                rig.run(until: 30)
+            }
+            let back = plain.moving.filter { $0.frame.y < 0 }.reduce(0) { $0 + $1.frame.y }
+            XCTAssertEqual(back < -50, movesBack, "\(feel): with the switch off the page moves back \(back) px")
+            XCTAssertEqual(touch.moving.map { $0.frame.y }, plain.moving.map { $0.frame.y }, feel)
+            XCTAssertEqual(touch.moving.map { $0.time }, plain.moving.map { $0.time }, feel)
+            XCTAssertEqual(touch.phaseSequence, ["began", "changed", "ended"], "\(feel): one touch, through the turn")
+            XCTAssertTrue(touch.moving.allSatisfy { $0.frame.scrollPhase == 2 }, feel)
+        }
+    }
+
     /// The wheel goes on over another pane of the same app while the touch is open: the touch
     /// ends and a new one begins with that wheel event, which takes the motion on (as a flick's
     /// wheel event elsewhere does, and as it is with the switch off). Apps keep a gesture on
