@@ -40,8 +40,10 @@ struct ScrollEndReading: Equatable {
 /// only when the last has answered.
 protocol ScrollEndWatching: AnyObject {
     /// Finds the scroll area under `point` (global, top-left origin, as `CGEvent.location`)
-    /// in the app `pid` and reads its vertical scroll bar.
-    func look(pid: pid_t, at point: CGPoint, answer: @escaping (ScrollEndReading) -> Void)
+    /// in the app `pid` and reads its vertical scroll bar. `readsRoles` false: for an app
+    /// that may hold Chromium's web content, no element is asked what it is before it has
+    /// shown a vertical scroll bar (`ScrollEndClimb`).
+    func look(pid: pid_t, at point: CGPoint, readsRoles: Bool, answer: @escaping (ScrollEndReading) -> Void)
     /// Reads the bar the last look found again.
     func read(answer: @escaping (ScrollEndReading) -> Void)
 }
@@ -224,7 +226,7 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
         self.setProcessTimeout = setProcessTimeout
     }
 
-    func look(pid: pid_t, at point: CGPoint, answer: @escaping (ScrollEndReading) -> Void) {
+    func look(pid: pid_t, at point: CGPoint, readsRoles: Bool, answer: @escaping (ScrollEndReading) -> Void) {
         let asked = DispatchTime.now().uptimeNanoseconds
         queue.async { [self] in
             let began = DispatchTime.now().uptimeNanoseconds
@@ -232,7 +234,7 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
             // A look that waited behind a slow app is out of date: its scroll has gone on
             // plain, and messaging the app for it now would only keep the next look waiting.
             let waited = Double(began - asked) / 1_000_000_000
-            var reading = waited > Self.lookGoesStaleAfter ? ScrollEndReading.notSeen(Self.askedTooLongAgo) : lookOnQueue(pid: pid, at: point)
+            var reading = waited > Self.lookGoesStaleAfter ? ScrollEndReading.notSeen(Self.askedTooLongAgo) : lookOnQueue(pid: pid, at: point, readsRoles: readsRoles)
             reading.milliseconds = Double(DispatchTime.now().uptimeNanoseconds - began) / 1_000_000
             answer(reading)
         }
@@ -257,7 +259,7 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
         }
     }
 
-    private func lookOnQueue(pid: pid_t, at point: CGPoint) -> ScrollEndReading {
+    private func lookOnQueue(pid: pid_t, at point: CGPoint, readsRoles: Bool) -> ScrollEndReading {
         let trusted = isTrusted()
         if !saidWhetherTrusted {
             saidWhetherTrusted = true
@@ -288,7 +290,7 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
             return .notSeen("no element under the pointer (\(hitError.rawValue))")
         }
         AXUIElementSetMessagingTimeout(element, Self.messagingTimeout)
-        let found = ScrollEndClimb.look(from: element, in: Elements(application: application), readsRoles: true)
+        let found = ScrollEndClimb.look(from: element, in: Elements(application: application), readsRoles: readsRoles)
         guard let scrollBar = found.bar else { return found.reading }
         bar = scrollBar
         // Which bar: the same number as long as looks find the same element.
@@ -408,6 +410,9 @@ struct ScrollEndWatchLog: Equatable {
     var did: [String] = []
     var more = 0
     static let mostDid = 8
+    /// What "not seen" means for the scroll: plain frames for a one touch; for the look a
+    /// flick makes in an app with a native shell, that the flick goes on.
+    var otherwise = "plain"
 
     mutating func add(_ what: String) {
         if did.count < Self.mostDid {
@@ -441,8 +446,8 @@ struct ScrollEndWatchLog: Equatable {
         var parts: [String] = []
         switch seen {
         case .some(true): parts.append("seen")
-        case .some(false): parts.append("not seen (\(failedAt.isEmpty ? "no reason given" : failedAt)): plain")
-        case .none: parts.append("no answer: plain")
+        case .some(false): parts.append("not seen (\(failedAt.isEmpty ? "no reason given" : failedAt)): \(otherwise)")
+        case .none: parts.append("no answer: \(otherwise)")
         }
         if !roles.isEmpty {
             parts.append("roles " + roles.joined(separator: " > "))
@@ -468,7 +473,7 @@ struct ScrollEndWatchLog: Equatable {
 final class ScrollEndWatchSeenInMidPage: ScrollEndWatching {
     private(set) var looks = 0
     private(set) var reads = 0
-    func look(pid: pid_t, at point: CGPoint, answer: @escaping (ScrollEndReading) -> Void) {
+    func look(pid: pid_t, at point: CGPoint, readsRoles: Bool, answer: @escaping (ScrollEndReading) -> Void) {
         looks += 1
         answer(ScrollEndReading(value: 0.5, roles: ["AXScrollArea"], bar: 1))
     }

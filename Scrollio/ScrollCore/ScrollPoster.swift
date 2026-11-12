@@ -359,7 +359,7 @@ class ScrollPoster {
     /// A call to the watch that is made once the lock is let go (`takeWatchCallLocked`).
     private var watchCall: WatchCall?
     private enum WatchCall {
-        case look(token: UInt64, epoch: UInt64, pid: pid_t, point: CGPoint, forHold: Bool)
+        case look(token: UInt64, epoch: UInt64, pid: pid_t, point: CGPoint, forHold: Bool, forShell: Bool = false, readsRoles: Bool)
         case read(token: UInt64, epoch: UInt64, askedAt: CFTimeInterval)
     }
     // The watch's judgement is not for the whole scroll. A wheel that goes up and down
@@ -449,6 +449,39 @@ class ScrollPoster {
     static let endHoldLongestLife: CFTimeInterval = 4.0
     /// A check that ends a hold which only went stale is on its way (main queue).
     private var holdExpiryIsScheduled = false
+
+    // A native shell around Chromium (`ScrollUtils.TrackpadStyleTarget.nativeShell`: Dia,
+    // Arc). Its web pages want the flick, a list the shell draws itself wants the one
+    // touch (an AppKit view ignores a glide's events: under a flick the list stopped in
+    // mid-scroll). Which one is under the pointer, a look of the end watch says, in its
+    // form that asks no element for its role before a bar is seen (`ScrollEndClimb`: the
+    // view that holds a web page switches on Chromium's accessibility when asked for it).
+    // - A scroll there is a flick, frame for frame as in any Chromium app, unless a look
+    //   has seen a native scroll bar at this place: then it is a one touch with its end
+    //   watch, as in a native app.
+    // - A flick asks for one look per place (same app, 30 pt). Its answer is the verdict
+    //   for that place and counts from the next wheel event: "native" turns the scroll
+    //   into a one touch there and then (`enterOneTouchLocked` closes what the app has of
+    //   the flick); anything else (no bar, no answer, an error) changes nothing.
+    // - A one touch there looks for itself at every scroll, as always. "Not seen" (the
+    //   pointer is over the page after all) makes the verdict "web": the next wheel event
+    //   goes on as a flick.
+    // - A verdict lasts while it is used: "web" for `shellWebVerdictLife` after the last
+    //   wheel event there, "native" for `shellNativeVerdictLife` (a wrong "native" costs
+    //   one look, a wrong "web" a scroll that stops short).
+    private struct ShellVerdict {
+        var place: ScrollInputPlace
+        var isNative: Bool
+        var usedAt: CFTimeInterval
+    }
+    private var shellVerdict: ShellVerdict?
+    private var shellLookSerial: UInt64 = 0
+    /// When the look that is on its way was asked; nil: none is.
+    private var shellLookAskedAt: CFTimeInterval?
+    static let shellWebVerdictLife: CFTimeInterval = 2.0
+    static let shellNativeVerdictLife: CFTimeInterval = 60.0
+    /// A look that has not answered after this long no longer keeps the next from being asked.
+    static let shellLookPatience: CFTimeInterval = 1.0
     private var endHold: EndHold?
     /// Main thread's own note that a hold may be up, so that a wheel event asks under the
     /// lock only then. Set where a scroll stops; a wheel event that finds none clears it.
@@ -570,6 +603,9 @@ class ScrollPoster {
         /// switches on the page's accessibility support at that question (`ScrollEndClimb`).
         /// The frames are plain meanwhile, as before any look's answer.
         var looksWait = false
+        /// The app is a native shell around Chromium: a flick asks for the place's verdict,
+        /// and every look there asks no element for its role before a bar is seen.
+        var isShell = false
         var deadZone: Double
     }
     private var config = ConfigSnapshot(simTrackpadEnabled: false, flick: false, deadZone: 1.0)
@@ -679,7 +715,9 @@ extension ScrollPoster {
             return recordComesOff
                 ? (phases: true, flick: true, withheld: false, oneTouch: false)
                 : (phases: false, flick: false, withheld: true, oneTouch: false)
-        case .followsGlide:
+        case .followsGlide, .nativeShell:
+            // (A native shell is asked with the place's verdict already applied,
+            // `configSnapshot`: without one it is a flick.)
             return (phases: true, flick: true, withheld: false, oneTouch: false)
         case .touchOnly, nil:
             return (phases: true, flick: false, withheld: false, oneTouch: !oldLongTouch)
@@ -821,11 +859,70 @@ extension ScrollPoster {
         handleInputLocked(input, at: inputClock(), place: place)
         runningScrollHasPhases = snapshot.simTrackpadEnabled
         runningScrollIsSideways = snapshot.sideways
-        // (One touch only: the look for this scroll, asked for once the lock is let go.)
+        if config.isShell && config.flick, let place = place {
+            askForShellLookLocked(at: place)
+        }
+        // (One touch, and a flick in a native shell: the look, asked for once the lock is let go.)
         let call = takeWatchCallLocked()
         os_unfair_lock_unlock(&stateLock)
         make(call)
         return true
+    }
+
+    // MARK: A native shell around Chromium: the verdict for a place
+
+    /// What the last look said about this place, if it still counts; nil: nothing does.
+    /// Using it keeps it. Caller holds stateLock.
+    private func shellVerdictLocked(at place: ScrollInputPlace, now: CFTimeInterval) -> Bool? {
+        guard var verdict = shellVerdict else { return nil }
+        let life = verdict.isNative ? Self.shellNativeVerdictLife : Self.shellWebVerdictLife
+        guard verdict.place.pid == place.pid,
+              hypot(place.pointer.x - verdict.place.pointer.x, place.pointer.y - verdict.place.pointer.y) <= trackpadStylePointerSlack,
+              now - verdict.usedAt <= life else {
+            return nil
+        }
+        verdict.usedAt = max(verdict.usedAt, now)
+        shellVerdict = verdict
+        return verdict.isNative
+    }
+
+    /// A flick in a native shell, at a place without a verdict: one look, in the form that
+    /// asks no roles. One on its way at most. Caller holds stateLock; main thread.
+    private func askForShellLookLocked(at place: ScrollInputPlace) {
+        let now = inputClock()
+        guard endWatch != nil, watchCall == nil, place.pid != getpid(), shellVerdictLocked(at: place, now: now) == nil else { return }
+        if let askedAt = shellLookAskedAt, now - askedAt < Self.shellLookPatience { return }
+        shellLookAskedAt = now
+        shellLookSerial &+= 1
+        sessionLog.endWatch.looks += 1
+        sessionLog.endWatch.otherwise = "the flick goes on"
+        watchCall = .look(token: shellLookSerial, epoch: 0, pid: place.pid, point: place.pointer, forHold: false, forShell: true, readsRoles: false)
+    }
+
+    /// The answer to a flick's look: the verdict for its place. It changes nothing in the
+    /// scroll that runs; the next wheel event reads it (`configSnapshot`). On the watch's
+    /// thread, or inside the call for a stand-in; never while the lock is held.
+    private func shellLookAnswered(_ reading: ScrollEndReading, serial: UInt64, place: ScrollInputPlace) {
+        os_unfair_lock_lock(&stateLock)
+        defer { os_unfair_lock_unlock(&stateLock) }
+        guard serial == shellLookSerial else { return }
+        shellLookAskedAt = nil
+        // (The same fence as for a one touch: only a bar that counts from 0 to 1.)
+        let isNative = reading.value.flatMap(AccessibilityScrollEndWatch.fromZeroToOne) != nil
+        shellVerdict = ShellVerdict(place: place, isNative: isNative, usedAt: watchClockLocked())
+        if !sessionLog.isEmpty, config.isShell, !scrollIsOneTouch {
+            sessionLog.endWatch.note(reading, isLook: true)
+            if isNative {
+                sessionLog.endWatch.add("a native scroll bar under the pointer: one touch from the next wheel event")
+            }
+        }
+    }
+
+    /// A one touch in a native shell looked for itself: its answer is the place's verdict
+    /// too. Caller holds stateLock.
+    private func noteShellVerdictLocked(isNative: Bool) {
+        guard config.isShell, let place = touchPlace else { return }
+        shellVerdict = ShellVerdict(place: place, isNative: isNative, usedAt: watchClockLocked())
     }
 
     /// The clock of a wheel event's time. Main thread.
@@ -876,7 +973,7 @@ extension ScrollPoster {
         if !watchReadInFlight && watchCall == nil {
             // A look at where the pointer is now: is it still that bar, still at that end?
             watchReadInFlight = true
-            watchCall = .look(token: hold.token, epoch: watchEpoch, pid: place.pid, point: place.pointer, forHold: true)
+            watchCall = .look(token: hold.token, epoch: watchEpoch, pid: place.pid, point: place.pointer, forHold: true, readsRoles: !form.isShell)
         }
         scheduleHoldExpiryLocked()
         return true
@@ -933,8 +1030,14 @@ extension ScrollPoster {
     private func make(_ call: WatchCall?) {
         guard let call = call, let watch = endWatch else { return }
         switch call {
-        case .look(let token, let epoch, let pid, let point, let forHold):
-            watch.look(pid: pid, at: point) { [weak self] in self?.endWatchAnswered($0, token: token, epoch: epoch, askedAt: 0, isLook: true, forHold: forHold) }
+        case .look(let token, let epoch, let pid, let point, let forHold, let forShell, let readsRoles):
+            watch.look(pid: pid, at: point, readsRoles: readsRoles) { [weak self] reading in
+                if forShell {
+                    self?.shellLookAnswered(reading, serial: token, place: ScrollInputPlace(pid: pid, pointer: point))
+                } else {
+                    self?.endWatchAnswered(reading, token: token, epoch: epoch, askedAt: 0, isLook: true, forHold: forHold)
+                }
+            }
         case .read(let token, let epoch, let askedAt):
             watch.read { [weak self] in self?.endWatchAnswered($0, token: token, epoch: epoch, askedAt: askedAt, isLook: false, forHold: false) }
         }
@@ -1020,7 +1123,7 @@ extension ScrollPoster {
             sessionLog.endWatch.note(.notSeen(AccessibilityScrollEndWatch.ownWindow), isLook: true)
             return
         }
-        watchCall = .look(token: watchToken, epoch: watchEpoch, pid: touchPlace?.pid ?? 0, point: touchPlace?.pointer ?? .zero, forHold: false)
+        watchCall = .look(token: watchToken, epoch: watchEpoch, pid: touchPlace?.pid ?? 0, point: touchPlace?.pointer ?? .zero, forHold: false, readsRoles: !config.isShell)
     }
 
     /// The scroll goes on plain: the bar is not seen. An open touch is ended by force.
@@ -1092,6 +1195,7 @@ extension ScrollPoster {
             if isLook {
                 // No bar seen: plain, and another look in a while.
                 guard watchSeen == nil else { return }
+                noteShellVerdictLocked(isNative: false)
                 provenBar = nil
                 goPlainLocked(retry: true, now: now)
             } else if oneTouchIsOpen {
@@ -1111,6 +1215,7 @@ extension ScrollPoster {
         let towardBottom = watchHeadsToBottom ?? (delta.y < 0)
         if isLook {
             guard watchSeen == nil else { return }
+            noteShellVerdictLocked(isNative: true)
             let isAtItsEnd = Self.isAtEnd(value, towardBottom: towardBottom)
             if watchLookIsRetry && isAtItsEnd {
                 // Seen again, but the page is at the end the scroll heads for: plain goes on.
@@ -2496,7 +2601,18 @@ private extension ScrollPoster {
         // Asked with trackpad-style events only. It never reads the disk here: an app seen
         // for the first time counts as touch-only until its bundle was looked into, off this
         // thread (`ScrollUtils.trackpadStyleTarget`).
-        let target = simTrackpad ? event.map { trackpadStyleTarget($0) } : nil
+        var target = simTrackpad ? event.map { trackpadStyleTarget($0) } : nil
+        var isShell = false
+        if target == .nativeShell, let event = event {
+            // A native shell around Chromium: the one touch where a look has seen a native
+            // scroll bar at this place, the flick everywhere else.
+            isShell = true
+            let place = ScrollInputPlace(pid: pid_t(event.getIntegerValueField(.eventTargetUnixProcessID)), pointer: event.location)
+            os_unfair_lock_lock(&stateLock)
+            let native = shellVerdictLocked(at: place, now: inputClock()) == true
+            os_unfair_lock_unlock(&stateLock)
+            target = native ? .touchOnly : .followsGlide
+        }
         // Whether the record comes off is asked only where the answer is needed: over a
         // WebKit browser, and for frames that carry phases. With the switch off
         // (and for an app that gets no phases) nobody asks, and the self-test does not run.
@@ -2510,6 +2626,7 @@ private extension ScrollPoster {
             sideways: sideways,
             takesRecordOff: form.phases && hardwareRecordComesOff(),
             looksWait: form.oneTouch && !(event.map { appKindIsKnown($0) } ?? true),
+            isShell: isShell,
             deadZone: OPTIONS_SCROLL_DEFAULT.usableDeadZone(Options.shared.scroll.deadZone)
         )
     }

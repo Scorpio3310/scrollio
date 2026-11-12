@@ -1476,6 +1476,8 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         private(set) var kept: [(isLook: Bool, answer: (ScrollEndReading) -> Void)] = []
         private(set) var looks = 0
         private(set) var reads = 0
+        /// The looks that were allowed to ask for roles.
+        private(set) var looksWithRoles = 0
         private var waiting: [() -> Void] = []
         private var late: [(due: Double, work: () -> Void)] = []
         /// A page stops at its ends: what was sent past one is not owed back.
@@ -1506,8 +1508,9 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             clampedOffset = min(range, max(0, (clampedOffset ?? offset) + pixels))
         }
 
-        func look(pid: pid_t, at point: CGPoint, answer: @escaping (ScrollEndReading) -> Void) {
+        func look(pid: pid_t, at point: CGPoint, readsRoles: Bool, answer: @escaping (ScrollEndReading) -> Void) {
             looks += 1
+            if readsRoles { looksWithRoles += 1 }
             if keepsAnswers {
                 kept.append((true, answer))
                 return
@@ -1924,7 +1927,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         }
         let reader = AccessibilityScrollEndWatch(isTrusted: { true })
         let answered = expectation(description: "answered")
-        reader.look(pid: getpid(), at: CGPoint(x: 10, y: 10)) { reading in
+        reader.look(pid: getpid(), at: CGPoint(x: 10, y: 10), readsRoles: true) { reading in
             XCTAssertNil(reading.value)
             XCTAssertEqual(reading.failedAt, "Scrollio's own window")
             XCTAssertEqual(reading.roles, [], "nothing was asked")
@@ -2211,7 +2214,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         let looked = expectation(description: "the look answered")
         let read = expectation(description: "the read answered")
         var returned = false
-        reader.look(pid: ProcessInfo.processInfo.processIdentifier, at: CGPoint(x: 10, y: 10)) { reading in
+        reader.look(pid: ProcessInfo.processInfo.processIdentifier, at: CGPoint(x: 10, y: 10), readsRoles: true) { reading in
             XCTAssertFalse(Thread.isMainThread)
             XCTAssertNil(reading.value)
             XCTAssertEqual(reading.failedAt, "Scrollio is not trusted for Accessibility")
@@ -2251,11 +2254,11 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         let first = expectation(description: "the slow look answered")
         let second = expectation(description: "the look behind it answered")
         let own = ProcessInfo.processInfo.processIdentifier
-        reader.look(pid: own, at: .zero) { reading in
+        reader.look(pid: own, at: .zero, readsRoles: true) { reading in
             XCTAssertEqual(reading.failedAt, AccessibilityScrollEndWatch.notTrusted)
             first.fulfill()
         }
-        reader.look(pid: own, at: .zero) { reading in
+        reader.look(pid: own, at: .zero, readsRoles: true) { reading in
             XCTAssertNil(reading.value)
             XCTAssertEqual(reading.failedAt, AccessibilityScrollEndWatch.askedTooLongAgo)
             XCTAssertLessThan(reading.milliseconds, 50, "nothing was asked")
@@ -2289,11 +2292,11 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             wait(for: [answered], timeout: 5)
             return result
         }
-        XCTAssertEqual(answer { reader.look(pid: own, at: .zero, answer: $0) }?.failedAt, AccessibilityScrollEndWatch.notTrusted)
+        XCTAssertEqual(answer { reader.look(pid: own, at: .zero, readsRoles: true, answer: $0) }?.failedAt, AccessibilityScrollEndWatch.notTrusted)
         XCTAssertEqual(timeouts, [], "not trusted: nothing is set")
         trusted = true
-        XCTAssertEqual(answer { reader.look(pid: own, at: .zero, answer: $0) }?.failedAt, AccessibilityScrollEndWatch.ownWindow)
-        XCTAssertEqual(answer { reader.look(pid: own, at: .zero, answer: $0) }?.failedAt, AccessibilityScrollEndWatch.ownWindow)
+        XCTAssertEqual(answer { reader.look(pid: own, at: .zero, readsRoles: true, answer: $0) }?.failedAt, AccessibilityScrollEndWatch.ownWindow)
+        XCTAssertEqual(answer { reader.look(pid: own, at: .zero, readsRoles: true, answer: $0) }?.failedAt, AccessibilityScrollEndWatch.ownWindow)
         XCTAssertEqual(timeouts, [AccessibilityScrollEndWatch.processTimeout], "set once")
         XCTAssertLessThan(AccessibilityScrollEndWatch.processTimeout, 1.5)
         XCTAssertGreaterThanOrEqual(AccessibilityScrollEndWatch.processTimeout, AccessibilityScrollEndWatch.messagingTimeout)
@@ -2622,6 +2625,241 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             run.run(until: 4)
             XCTAssertNil(brokenGesture(in: run.finish()))
         }
+    }
+
+    // MARK: A native shell around Chromium (Dia, Arc): the flick for its pages, the one touch for its own lists
+
+    /// The wheel events of a scroll, as a run's posted frames in a form that compares.
+    private func stream(_ run: RealRun) -> [String] {
+        return run.frames.map { "\($0.name) \($0.y) \($0.x) \($0.timestamp)" }
+    }
+
+    /// Over a web page nothing changes: where the look sees no native scroll bar (a
+    /// scroll area without one, nothing at all, an answer that comes late, no answer) the
+    /// scroll is the flick, frame for frame as in any Chromium app. One look per place,
+    /// and it asks no roles.
+    func testNativeShell_overAPage_isTheFlickFrameForFrame_withOneLookPerPlace() throws {
+        try withSettings(switchOn: true) {
+            func wheels(_ run: RealRun) throws {
+                for index in 0..<6 { XCTAssertTrue(try run.wheel(at: Double(index) * 0.03, y: -211.68)) }
+                XCTAssertTrue(try run.wheel(at: 0.5, y: 211.68))
+                XCTAssertTrue(try run.wheel(at: 0.9, y: -211.68, pointerX: 420))
+                run.run(until: 4)
+            }
+            let chromium = realRun(over: .followsGlide, watch: PageWatch(offset: 30_000, range: 60_000))
+            try wheels(chromium)
+            let flick = stream(chromium)
+            XCTAssertTrue(flick.contains { $0.hasPrefix("momentumBegan") })
+            _ = chromium.finish()
+
+            let ways: [(String, (PageWatch) -> Void, Int)] = [
+                ("no bar", { $0.seesTheBar = false }, 1),
+                ("no answer", { $0.neverAnswers = true }, 1),
+                ("a late answer", {
+                    $0.seesTheBar = false
+                    $0.delay = 0.2
+                }, 1),
+                ("a bar that does not count from 0 to 1", { $0.valueInstead = { _ in 4_000 } }, 1),
+            ]
+            for (name, change, looks) in ways {
+                let watch = PageWatch(offset: 30_000, range: 60_000)
+                change(watch)
+                let run = realRun(over: .nativeShell, watch: watch)
+                try wheels(run)
+                XCTAssertEqual(stream(run), flick, "\(name): frame for frame the flick")
+                XCTAssertEqual(watch.looks, looks, "\(name): one look for the place, none per wheel event")
+                XCTAssertEqual(watch.looksWithRoles, 0, "\(name): no look asks for roles in such an app")
+                XCTAssertEqual(watch.reads, 0, name)
+                if name == "no bar" {
+                    let line = run.sessions.first?.session.endWatch.line ?? ""
+                    XCTAssertTrue(line.contains("not seen (a scroll area without a vertical scroll bar): the flick goes on"), line)
+                }
+                _ = run.finish()
+            }
+
+            // The verdict "a page" lasts while the wheel is used there: the same place again
+            // within 2 s asks nothing; after a longer pause, or 31 pt away, one look more.
+            let watch = PageWatch(offset: 30_000, range: 60_000)
+            watch.seesTheBar = false
+            let run = realRun(over: .nativeShell, watch: watch)
+            XCTAssertTrue(try run.wheel(at: 0, y: -211.68))
+            XCTAssertTrue(try run.wheel(at: 1.5, y: -211.68))
+            XCTAssertTrue(try run.wheel(at: 3.0, y: -211.68))
+            XCTAssertEqual(watch.looks, 1)
+            XCTAssertTrue(try run.wheel(at: 3.2, y: -211.68, pointerX: 431))
+            XCTAssertEqual(watch.looks, 2, "another place")
+            XCTAssertTrue(try run.wheel(at: 3.2 + ScrollPoster.shellWebVerdictLife + 0.5, y: -211.68, pointerX: 431))
+            XCTAssertEqual(watch.looks, 3, "after a pause the place is looked at again")
+            run.run(until: 12)
+            XCTAssertNil(brokenGesture(in: run.finish()))
+        }
+    }
+
+    /// Over a list the shell draws itself the look sees a native scroll bar: from the next
+    /// wheel event the scroll is a one touch with its end watch, as in a native app, and
+    /// what the app had of the flick is closed first. It was a flick to its end: an AppKit
+    /// view ignores the glide's events, so the list stopped in mid-scroll (the owner, Dia's
+    /// sidebar). Every look in such an app asks no roles.
+    func testNativeShell_overANativeList_becomesAOneTouchWithItsEndWatch() throws {
+        try withSettings(switchOn: true) {
+            let watch = PageWatch(offset: 30_000, range: 60_000)
+            let run = realRun(over: .nativeShell, watch: watch)
+            for index in 0..<6 { XCTAssertTrue(try run.wheel(at: Double(index) * 0.03, y: -211.68)) }
+            run.run(until: 3)
+            var frames = run.frames
+            XCTAssertNil(brokenGesture(in: frames))
+            XCTAssertFalse(frames.contains { $0.name.hasPrefix("momentum") && $0.y != 0 }, "no glide carries the scroll: \(phaseRuns(frames))")
+            XCTAssertGreaterThan(-Double(frames.reduce(0) { $0 + $1.y }), 6 * 211.68 * 0.9, "the whole way goes out")
+            XCTAssertEqual(frames.last?.name, "ended")
+            XCTAssertGreaterThan(watch.reads, 10, "the end watch runs")
+            XCTAssertEqual(watch.looksWithRoles, 0)
+            let last = run.sessions.last?.session
+            XCTAssertEqual(last?.oneTouch, true)
+            XCTAssertTrue(run.sessions.contains { ($0.session.endWatch.line ?? "").contains("a native scroll bar under the pointer: one touch from the next wheel event") },
+                          "\(run.sessions.map { $0.session.endWatch.line ?? "-" })")
+
+            // The next scroll there is a one touch from its first wheel event: no flick first.
+            let before = frames.count
+            for index in 0..<4 { XCTAssertTrue(try run.wheel(at: 5 + Double(index) * 0.03, y: -211.68)) }
+            run.run(until: 8)
+            frames = Array(run.frames.dropFirst(before))
+            XCTAssertEqual(phaseRuns(frames).first, "began ×1")
+            XCTAssertFalse(frames.contains { $0.name.hasPrefix("momentum") }, "\(phaseRuns(frames))")
+            XCTAssertEqual(frames.last?.name, "ended")
+
+            // With answers that take a while (an app that is busy: 10 ms, and Finder's 80 ms)
+            // the flick has sent more by the time the verdict counts, a glide even: it is
+            // closed, and the scroll still ends as a one touch with its whole way sent.
+            for delay in [0.01, 0.08] {
+                let slow = PageWatch(offset: 30_000, range: 60_000)
+                slow.delay = delay
+                let late = realRun(over: .nativeShell, watch: slow)
+                for index in 0..<6 { XCTAssertTrue(try late.wheel(at: Double(index) * 0.03, y: -211.68)) }
+                late.run(until: 3)
+                let sent = late.finish()
+                XCTAssertNil(brokenGesture(in: sent), "\(delay)")
+                XCTAssertGreaterThan(-Double(sent.reduce(0) { $0 + $1.y }), 6 * 211.68 * 0.9, "\(delay): the whole way goes out")
+                XCTAssertEqual(Array(phaseRuns(sent).suffix(3).map { $0.components(separatedBy: " ").first ?? "" }), ["began", "changed", "ended"], "\(delay): \(phaseRuns(sent))")
+                XCTAssertEqual(late.sessions.last?.session.oneTouch, true, "\(delay)")
+                XCTAssertGreaterThan(slow.reads, 2, "\(delay)")
+                XCTAssertEqual(slow.looksWithRoles, 0)
+            }
+
+            // The pointer moves on to the page (the same app, 100 pt away): the flick again.
+            watch.seesTheBar = false
+            let onPage = run.frames.count
+            for index in 0..<4 { XCTAssertTrue(try run.wheel(at: 10 + Double(index) * 0.03, y: -211.68, pointerX: 500)) }
+            run.run(until: 13)
+            frames = Array(run.frames.dropFirst(onPage))
+            XCTAssertTrue(frames.contains { $0.name == "momentumBegan" }, "\(phaseRuns(frames))")
+            XCTAssertEqual(watch.looksWithRoles, 0)
+            XCTAssertNil(brokenGesture(in: run.finish()))
+        }
+    }
+
+    /// At the list's end the one touch does what it does in a native app: "ended" at once
+    /// when the page arrives, and the wheel that still turns into the end is taken in.
+    func testNativeShell_atTheEndOfANativeList_theTouchEndsAtOnce() throws {
+        try withSettings(switchOn: true) {
+            let watch = PageWatch(offset: 59_000, range: 60_000)
+            let run = realRun(over: .nativeShell, watch: watch)
+            var time = 0.0
+            while (run.frames.last?.name != "ended" || run.poster.isGliding) && time < 2 {
+                _ = try run.wheel(at: time, y: -211.68)
+                time += 0.02
+            }
+            XCTAssertLessThan(time, 1)
+            let count = run.frames.count
+            for index in 0..<10 { XCTAssertTrue(try run.wheel(at: time + Double(index) * 0.02, y: -211.68), "taken in") }
+            XCTAssertEqual(run.frames.count, count, "nothing is sent while the wheel turns into the end")
+            XCTAssertTrue(run.sessions.contains { ($0.session.endWatch.line ?? "").contains("reached the end and ended at once") })
+            XCTAssertEqual(watch.looksWithRoles, 0, "the hold's looks ask no roles either")
+            run.run(until: time + 3)
+            XCTAssertNil(brokenGesture(in: run.finish()))
+        }
+    }
+
+    /// A one touch there that finds the pointer over the page after all (its own look sees
+    /// no bar) is plain for that wheel event and a flick from the next.
+    func testNativeShell_aOneTouchThatSeesNoBar_goesOnAsAFlick() throws {
+        try withSettings(switchOn: true) {
+            let watch = PageWatch(offset: 30_000, range: 60_000)
+            let run = realRun(over: .nativeShell, watch: watch)
+            XCTAssertTrue(try run.wheel(at: 0, y: -211.68))
+            run.run(until: 2)
+            // The verdict here is "native". Now the page is under the pointer at this place.
+            watch.seesTheBar = false
+            let before = run.frames.count
+            for index in 0..<5 { XCTAssertTrue(try run.wheel(at: 3 + Double(index) * 0.03, y: -211.68)) }
+            run.run(until: 6)
+            let frames = Array(run.frames.dropFirst(before))
+            XCTAssertTrue(frames.contains { $0.name == "momentumBegan" }, "\(phaseRuns(frames))")
+            XCTAssertGreaterThan(-Double(frames.reduce(0) { $0 + $1.y }), 5 * 211.68 * 0.9)
+            XCTAssertEqual(watch.looksWithRoles, 0)
+            XCTAssertNil(brokenGesture(in: run.finish()))
+        }
+    }
+
+    /// Who is never looked at: an app that runs Chromium as its application, a Gecko app
+    /// (both `followsGlide`), and anything with the switch off. And which bundle is a
+    /// native shell: Chromium's frameworks without an application class of the app's own.
+    func testNativeShell_whoIsOne_andWhoIsNeverLookedAt() throws {
+        for (switchOn, kind) in [(true, ScrollUtils.TrackpadStyleTarget.followsGlide), (false, .followsGlide), (false, .nativeShell), (false, .touchOnly)] {
+            try withSettings(switchOn: switchOn) {
+                let watch = PageWatch(offset: 30_000, range: 60_000)
+                let run = realRun(over: kind, watch: watch)
+                for index in 0..<6 { XCTAssertTrue(try run.wheel(at: Double(index) * 0.05, y: -211.68)) }
+                run.run(until: 3)
+                _ = run.finish()
+                XCTAssertEqual(watch.looks + watch.reads, 0, "\(kind), switch on: \(switchOn)")
+            }
+        }
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("scrollio-shell-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func app(_ name: String, files: [String], principal: String?) throws -> URL {
+            let bundle = root.appendingPathComponent("Applications/\(name).app", isDirectory: true)
+            for file in files {
+                let url = bundle.appendingPathComponent(file)
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data().write(to: url)
+            }
+            var info: [String: Any] = ["CFBundleIdentifier": "com.example.\(name)"]
+            if let principal = principal { info["NSPrincipalClass"] = principal }
+            try FileManager.default.createDirectory(at: bundle.appendingPathComponent("Contents"), withIntermediateDirectories: true)
+            XCTAssertTrue((info as NSDictionary).write(to: bundle.appendingPathComponent("Contents/Info.plist"), atomically: true))
+            return bundle
+        }
+        let engine = "Contents/Frameworks/Engine.framework/Versions/Current/Resources/resources.pak"
+        let home = root.resolvingSymlinksInPath().path
+        func isShell(_ url: URL) -> Bool { return ScrollUtils.lookFindsNativeShell(bundleURL: url, homeDirectory: home) }
+        XCTAssertTrue(isShell(try app("Shell", files: [engine], principal: nil)), "no application class of its own: Dia")
+        XCTAssertTrue(isShell(try app("Plain", files: [engine], principal: "NSApplication")))
+        XCTAssertFalse(isShell(try app("Electron", files: [engine], principal: "AtomApplication")))
+        XCTAssertFalse(isShell(try app("Chrome", files: [engine], principal: "BrowserCrApplication")))
+        XCTAssertFalse(isShell(try app("WebApp", files: ["Contents/MacOS/app_mode_loader"], principal: nil)), "a web app installed from a browser")
+        XCTAssertFalse(isShell(try app("Fox", files: ["Contents/MacOS/XUL", engine], principal: nil)), "Gecko")
+        XCTAssertFalse(isShell(try app("Native", files: ["Contents/MacOS/Native"], principal: nil)))
+        let elsewhere = root.appendingPathComponent("Documents/Shell.app", isDirectory: true)
+        try FileManager.default.createDirectory(at: elsewhere.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: root.appendingPathComponent("Applications/Shell.app"), to: elsewhere)
+        XCTAssertFalse(isShell(elsewhere), "outside the Applications folders nothing is looked into")
+
+        // The kind an app gets: the flick at the first answer, a native shell at the second.
+        let utils = ScrollUtils()
+        var shellAnswers: [(Bool) -> Void] = []
+        utils.inspectBundle = { _, completion in completion(true) }
+        utils.inspectShell = { _, completion in shellAnswers.append(completion) }
+        let dia = URL(fileURLWithPath: "/Applications/Shell.app")
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.shell", bundleURL: dia), .touchOnly)
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.shell", bundleURL: dia), .followsGlide)
+        XCTAssertEqual(shellAnswers.count, 1, "asked once")
+        shellAnswers.first?(true)
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.shell", bundleURL: dia), .nativeShell)
+        let chrome = URL(fileURLWithPath: "/Applications/Chrome.app")
+        _ = utils.trackpadStyleTarget(bundleIdentifier: "com.example.chrome", bundleURL: chrome)
+        shellAnswers.last?(false)
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.chrome", bundleURL: chrome), .followsGlide)
     }
 
     /// What breaks the rule in a stream of posted events, or nil: every "began" gets its
