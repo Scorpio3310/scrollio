@@ -1478,6 +1478,64 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         XCTAssertTrue(ScrollPoster.isMainlySideways(y: 212, x: 0, sidewaysKey: true), "the key turns an up-down event sideways")
         XCTAssertFalse(ScrollPoster.isMainlySideways(y: 212, x: 40, sidewaysKey: true), "an event with both is posted as it is")
         XCTAssertFalse(ScrollPoster.isMainlySideways(y: 0, x: 0, sidewaysKey: true))
+
+        // While a scroll runs, an event with both deltas keeps its kind unless the other
+        // axis leads two to one.
+        XCTAssertFalse(ScrollPoster.isMainlySideways(y: 190, x: 212, sidewaysKey: false, running: false), "an up-down scroll runs: it stays one")
+        XCTAssertFalse(ScrollPoster.isMainlySideways(y: 100, x: 200, sidewaysKey: false, running: false))
+        XCTAssertTrue(ScrollPoster.isMainlySideways(y: 100, x: 201, sidewaysKey: false, running: false), "more than two to one: it turns")
+        XCTAssertTrue(ScrollPoster.isMainlySideways(y: 212, x: 190, sidewaysKey: false, running: true), "a sideways scroll runs: it stays one")
+        XCTAssertTrue(ScrollPoster.isMainlySideways(y: 200, x: 101, sidewaysKey: false, running: true))
+        XCTAssertFalse(ScrollPoster.isMainlySideways(y: 200, x: 100, sidewaysKey: false, running: true), "two to one: it turns")
+        // An event with one delta (an ordinary wheel, the thumb wheel, Shift) is judged the
+        // same whatever runs.
+        for running in [Bool?.none, true, false] {
+            XCTAssertTrue(ScrollPoster.isMainlySideways(y: 0, x: 212, sidewaysKey: false, running: running))
+            XCTAssertTrue(ScrollPoster.isMainlySideways(y: 0, x: -1, sidewaysKey: false, running: running))
+            XCTAssertFalse(ScrollPoster.isMainlySideways(y: 212, x: 0, sidewaysKey: false, running: running))
+            XCTAssertFalse(ScrollPoster.isMainlySideways(y: -1, x: 0, sidewaysKey: false, running: running))
+            XCTAssertTrue(ScrollPoster.isMainlySideways(y: 212, x: 0, sidewaysKey: true, running: running))
+            XCTAssertFalse(ScrollPoster.isMainlySideways(y: 0, x: 0, sidewaysKey: false, running: running))
+        }
+    }
+
+    /// A device whose events carry both deltas and wobble about the diagonal (a trackball,
+    /// a wheel that tilts while it turns): twelve events 25 ms apart, alternately a little
+    /// more up-down and a little more sideways. Decided anew at every event, each flip ended
+    /// the scroll with what was left of it (316 of 2,410 px arrived, in 12 scrolls). An
+    /// event with both deltas now keeps the running scroll's kind unless the other axis
+    /// leads two to one: one scroll, and the page moves exactly as with the switch off.
+    func testTheRealPath_aDeviceThatWobblesAboutTheDiagonalKeepsItsScroll() throws {
+        func run(switchOn: Bool, over kind: ScrollUtils.TrackpadStyleTarget, firstSideways: Bool) throws -> (frames: [PostedFrame], reasons: [ScrollSystemLog.EndReason]) {
+            var result: ([PostedFrame], [ScrollSystemLog.EndReason]) = ([], [])
+            try withSettings(switchOn: switchOn) {
+                let run = realRun(over: kind)
+                for index in 0..<12 {
+                    let moreSideways = (index % 2 == 0) == firstSideways
+                    XCTAssertTrue(try run.wheel(at: Double(index) * 0.025, y: moreSideways ? 190 : 211.68, x: moreSideways ? 211.68 : 190))
+                }
+                run.run(until: 5)
+                let frames = run.finish()
+                result = (frames, run.sessions.map(\.reason))
+            }
+            return result
+        }
+        for firstSideways in [false, true] {
+            let off = try run(switchOn: false, over: .touchOnly, firstSideways: firstSideways)
+            let offY = off.frames.reduce(0) { $0 + $1.y }, offX = off.frames.reduce(0) { $0 + $1.x }
+            XCTAssertGreaterThan(offY, 2_300)
+            XCTAssertGreaterThan(offX, 2_300)
+            for form in Self.phasedForms where !form.oldLongTouch {
+                let on = try run(switchOn: true, over: form.kind, firstSideways: firstSideways)
+                let label = "\(form.name), the first event more \(firstSideways ? "sideways" : "up-down")"
+                XCTAssertEqual(on.reasons, [.glidedOut], "\(label): one scroll, not one per flip")
+                XCTAssertEqual(on.frames.reduce(0) { $0 + $1.y }, offY, "\(label): as far up-down as with the switch off")
+                XCTAssertEqual(on.frames.reduce(0) { $0 + $1.x }, offX, "\(label): and sideways")
+                XCTAssertNil(brokenGesture(in: on.frames), label)
+                // The scroll keeps the kind of its first event to the end.
+                XCTAssertEqual(on.frames.contains { $0.hasPhase }, !firstSideways, label)
+            }
+        }
     }
 
     /// One sideways click, over every kind of app, with the switch on: no posted event

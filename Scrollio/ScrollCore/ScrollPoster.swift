@@ -516,11 +516,23 @@ extension ScrollPoster {
     /// responders above a scroll view whether one wants the gesture as a swipe. A frame
     /// without phases cannot start any of that and scrolls as far. What it costs: no bounce
     /// at the sideways end of a list.
-    static func isMainlySideways(y: Double, x: Double, sidewaysKey: Bool) -> Bool {
+    ///
+    /// `running`: whether the scroll that runs is a sideways one (nil: none runs). An event
+    /// with both deltas keeps the running scroll's kind unless the other axis leads two to
+    /// one. A device whose events carry both (a trackball, a wheel that tilts while it
+    /// turns) wobbles about the diagonal, and decided anew at every event each flip ended
+    /// the scroll with its remaining distance (measured: 316 of 2,410 px arrived). An event
+    /// with one delta, which is every event of an ordinary wheel, is judged the same
+    /// whatever runs.
+    static func isMainlySideways(y: Double, x: Double, sidewaysKey: Bool, running: Bool? = nil) -> Bool {
         if sidewaysKey && y != 0.0 && x == 0.0 {
             return true
         }
-        return abs(x) > abs(y)
+        switch running {
+        case .some(true): return abs(x) * 2 > abs(y)
+        case .some(false): return abs(x) > abs(y) * 2
+        case .none: return abs(x) > abs(y)
+        }
     }
 
     /// Whether "Trackpad-style scrolling" is on anywhere: in the Scrolling pane, or in the
@@ -1806,7 +1818,10 @@ private extension ScrollPoster {
     private func configSnapshot(for event: CGEvent?, input: ScrollPosterInput? = nil) -> ConfigSnapshot {
         let switchOn = Self.trackpadStyleIsOn(application: ScrollCore.shared.application, global: Options.shared.scroll)
         // With the switch on only: a scroll that is mainly sideways carries no phases.
-        let sideways = switchOn && (input.map { Self.isMainlySideways(y: $0.y, x: $0.x, sidewaysKey: sidewaysKeyIsDown) } ?? false)
+        let sideways = switchOn && (input.map {
+            Self.isMainlySideways(y: $0.y, x: $0.x, sidewaysKey: sidewaysKeyIsDown,
+                                  running: runningScrollHasPhases == nil ? nil : runningScrollIsSideways)
+        } ?? false)
         let simTrackpad = switchOn && !sideways
         // Asked with trackpad-style events only. It never reads the disk here: an app seen
         // for the first time counts as touch-only until its bundle was looked into, off this
