@@ -75,6 +75,7 @@ it for the people who use the app, and give the version its part before you tag 
   that order before; that an app ever got them the wrong way round was not seen).
 - The README says what Trackpad-style scrolling (Beta) does in which app, and where its
   limits are.
+- On macOS 26 the line between the sidebar and the settings in the Settings window is gone.
 
 ## 1.0.1
 

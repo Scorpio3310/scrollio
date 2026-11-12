@@ -5,6 +5,10 @@
 //  `PreferencesWindowLayout.contentWidth` wide, centred when the pane is narrower, at the
 //  top, scrolling when it is taller than the window. The window keeps its size.
 //
+//  The background is the host's own view. Since macOS 26 it also lies under the sidebar
+//  (`PreferencesSplitViewController.extendPaneUnderSidebar`), so the window has one
+//  background; the column then keeps to the safe area, beside the sidebar.
+//
 
 import Cocoa
 
@@ -16,6 +20,18 @@ final class PreferencesPaneHostViewController: NSViewController {
     private(set) var titlebarSeparator: NSBox!
     private(set) var currentController: NSViewController?
     private var paneConstraints: [NSLayoutConstraint] = []
+    /// The view also lies under the sidebar (`PreferencesWindowLayout.paneLiesUnderSidebar`):
+    /// the column starts where the safe area does, not at the view's own edge.
+    let liesUnderSidebar: Bool
+
+    init(liesUnderSidebar: Bool = PreferencesWindowLayout.paneLiesUnderSidebar) {
+        self.liesUnderSidebar = liesUnderSidebar
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("PreferencesPaneHostViewController is built in code")
+    }
 
     override func loadView() {
         let root = PreferencesForm.makeBackground()
@@ -58,13 +74,17 @@ final class PreferencesPaneHostViewController: NSViewController {
 
         root.addSubview(scroll)
         root.addSubview(separator)
+        // Where the column starts. Under the sidebar the view is wider than its column:
+        // the safe area leaves the sidebar out, however wide the system makes it. Side by
+        // side (macOS 14 and 15) the column is the view.
+        let columnLeading = liesUnderSidebar ? root.safeAreaLayoutGuide.leadingAnchor : root.leadingAnchor
         NSLayoutConstraint.activate([
             // Below the title bar: the pane never slides under the title.
             scroll.topAnchor.constraint(equalTo: root.safeAreaLayoutGuide.topAnchor),
-            scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            scroll.leadingAnchor.constraint(equalTo: columnLeading),
             scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            separator.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            separator.leadingAnchor.constraint(equalTo: columnLeading),
             separator.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             separator.bottomAnchor.constraint(equalTo: scroll.topAnchor),
         ])

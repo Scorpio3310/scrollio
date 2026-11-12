@@ -27,6 +27,7 @@ final class PreferencesSidebarTests: XCTestCase {
     /// (nil remembers nothing); `prepare` runs before any pane's view loads. Never shown.
     private func makeWindow(
         defaults: UserDefaults? = nil,
+        paneLiesUnderSidebar: Bool = PreferencesWindowLayout.paneLiesUnderSidebar,
         prepare: (PreferencesSplitViewController) -> Void = { _ in }
     ) throws -> (NSWindow, PreferencesSplitViewController) {
         let storyboard = NSStoryboard(name: "Main", bundle: app)
@@ -34,7 +35,9 @@ final class PreferencesSidebarTests: XCTestCase {
             storyboard.instantiateController(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController) as? PreferencesWindowController
         )
         let window = try XCTUnwrap(controller.window)
-        let preferences = PreferencesSplitViewController(storyboard: storyboard, uiStateDefaults: defaults)
+        let preferences = PreferencesSplitViewController(
+            storyboard: storyboard, uiStateDefaults: defaults, paneLiesUnderSidebar: paneLiesUnderSidebar
+        )
         prepare(preferences)
         controller.contentViewController = preferences
         controller.configure(window, remembersFrame: false)
@@ -67,55 +70,214 @@ final class PreferencesSidebarTests: XCTestCase {
 
     // MARK: - The sidebar
 
-    /// Since macOS 26 the sidebar is glass that floats above what lies under it. Under it
-    /// lies the panes' own background material, not the window's plain background, which
-    /// made the sidebar almost white next to the grey of the pane.
-    func testTheSidebarFloatsAboveThePanesBackgroundMaterial() throws {
-        let (window, preferences) = try makeWindow()
-        guard #available(macOS 26.0, *) else {
-            XCTAssertNil(preferences.sidebarBackdrop, "older systems draw the sidebar's own material")
-            return
-        }
-        let backdrop = try XCTUnwrap(preferences.sidebarBackdrop, "no material under the sidebar")
-        // Under the split view, in the controller's own view: the split view lays out nothing of it.
-        XCTAssertTrue(backdrop.superview === preferences.view)
-        let siblings = preferences.view.subviews
-        let backdropIndex = try XCTUnwrap(siblings.firstIndex { $0 === backdrop })
-        let splitIndex = try XCTUnwrap(siblings.firstIndex { $0 === preferences.splitView })
-        XCTAssertLessThan(backdropIndex, splitIndex, "the backdrop must lie under the split view")
-        XCTAssertFalse(preferences.splitView.subviews.contains { $0 === backdrop })
-        XCTAssertFalse(preferences.splitView.arrangedSubviews.contains { $0 === backdrop })
-        // The same material as behind a pane, behind the window.
-        let pane = PreferencesForm.makeBackground()
-        XCTAssertEqual(backdrop.material, pane.material)
-        XCTAssertEqual(backdrop.blendingMode, .behindWindow)
-        XCTAssertEqual(backdrop.state, pane.state)
-        // The sidebar's column, from the top of the window (under the traffic lights) to its bottom.
-        window.contentView?.layoutSubtreeIfNeeded()
+    /// The stretches of the window's width that lie on the panes' background material at
+    /// the height `y` (window coordinates): every material view of that kind shown there,
+    /// joined where they touch or overlap. One stretch from edge to edge is one
+    /// continuous background; two stretches have a strip of the window's own background
+    /// between them.
+    private func materialStretches(in window: NSWindow, atHeight y: CGFloat) throws -> [ClosedRange<CGFloat>] {
         let content = try XCTUnwrap(window.contentView)
-        XCTAssertEqual(backdrop.convert(backdrop.bounds, to: nil), NSRect(x: 0, y: 0, width: PreferencesWindowLayout.sidebarWidth, height: content.bounds.height))
-        // Nothing else moved: the sidebar and the column are where they were, the window as wide.
-        let sidebarFrame = preferences.sidebar.view.convert(preferences.sidebar.view.bounds, to: nil)
-        XCTAssertEqual(sidebarFrame.minX, 0)
-        XCTAssertEqual(sidebarFrame.width, PreferencesWindowLayout.sidebarWidth)
-        XCTAssertEqual(preferences.host.view.convert(preferences.host.view.bounds, to: nil).minX, PreferencesWindowLayout.sidebarWidth)
-        XCTAssertEqual(content.bounds.width, PreferencesWindowLayout.sidebarWidth + PreferencesWindowLayout.contentWidth)
-        // Decoration: VoiceOver does not stop on it, and it takes no click from the list above it.
-        XCTAssertFalse(backdrop.isAccessibilityElement())
-        XCTAssertTrue(backdrop.subviews.isEmpty)
-        // Asking twice adds no second one.
-        XCTAssertEqual(preferences.view.subviews.filter { $0.identifier == PreferencesSplitViewController.sidebarBackdropIdentifier }.count, 1)
+        let kind = PreferencesForm.makeBackground()
+        // What is seen of a view: its frame, cut by every view it sits in (a pane is
+        // longer than the scroll view that shows it). Not `visibleRect`: before a window
+        // is shown that is wider than the view itself.
+        func shownRect(of view: NSView) -> NSRect {
+            var rect = view.convert(view.bounds, to: nil)
+            var ancestor = view.superview
+            while let outer = ancestor {
+                rect = rect.intersection(outer.convert(outer.bounds, to: nil))
+                ancestor = outer === content ? nil : outer.superview
+            }
+            return rect
+        }
+        let shown = ([content] + allSubviews(of: content))
+            .compactMap { $0 as? NSVisualEffectView }
+            .filter { !$0.isHiddenOrHasHiddenAncestor }
+            .filter { $0.material == kind.material && $0.blendingMode == kind.blendingMode && $0.state == kind.state }
+            .map(shownRect)
+            .filter { $0.width > 0 && $0.minY <= y && y < $0.maxY }
+            .sorted { $0.minX < $1.minX }
+        var stretches: [ClosedRange<CGFloat>] = []
+        for rect in shown {
+            if let last = stretches.last, rect.minX <= last.upperBound {
+                stretches[stretches.count - 1] = last.lowerBound...max(last.upperBound, rect.maxX)
+            } else {
+                stretches.append(rect.minX...rect.maxX)
+            }
+        }
+        return stretches
     }
 
-    /// The window keeps its height when it grows: the backdrop follows.
-    func testTheMaterialUnderTheSidebarFollowsTheWindowsHeight() throws {
+    /// At every height of the window, from its bottom to under the traffic lights, the
+    /// material runs from the left edge to the right edge without a gap.
+    private func assertTheMaterialFillsTheWindow(_ window: NSWindow, file: StaticString = #filePath, line: UInt = #line) throws {
+        window.contentView?.layoutSubtreeIfNeeded()
+        let content = try XCTUnwrap(window.contentView).bounds
+        XCTAssertGreaterThan(content.height, 100, file: file, line: line)
+        for y in stride(from: CGFloat(0.5), to: content.height, by: 1) {
+            let stretches = try materialStretches(in: window, atHeight: y)
+            guard stretches == [0...content.width] else {
+                XCTFail("at height \(y) the material covers \(stretches) of 0...\(content.width)", file: file, line: line)
+                return
+            }
+        }
+    }
+
+    /// A view's frame in the window.
+    private func frameInWindow(_ view: NSView) -> NSRect {
+        return view.convert(view.bounds, to: nil)
+    }
+
+    /// The window as macOS 14 and 15 have it: the pane's item beside the sidebar, its
+    /// column the whole of its view, nothing of ours added for the sidebar.
+    private func assertThePaneLiesBesideTheSidebar(
+        _ window: NSWindow, _ preferences: PreferencesSplitViewController, file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        window.contentView?.layoutSubtreeIfNeeded()
+        let content = try XCTUnwrap(window.contentView).bounds
+        let host = preferences.host
+        XCTAssertFalse(preferences.paneLiesUnderSidebar, file: file, line: line)
+        XCTAssertFalse(host.liesUnderSidebar, file: file, line: line)
+        if #available(macOS 26.0, *) {
+            XCTAssertTrue(preferences.splitViewItems.allSatisfy { !$0.automaticallyAdjustsSafeAreaInsets }, "no item is put under another", file: file, line: line)
+        }
+        // Side by side: the host's view starts where the sidebar's column ends and is the pane's column.
+        let sidebar = frameInWindow(preferences.sidebar.view)
+        let background = frameInWindow(host.view)
+        XCTAssertEqual(background.minX, sidebar.maxX, file: file, line: line)
+        XCTAssertEqual(background.width, PreferencesWindowLayout.contentWidth, file: file, line: line)
+        XCTAssertEqual(background.maxX, content.width, file: file, line: line)
+        XCTAssertEqual(host.view.safeAreaInsets.left, 0, file: file, line: line)
+        XCTAssertEqual(frameInWindow(host.scrollView).minX, background.minX, file: file, line: line)
+        XCTAssertEqual(frameInWindow(host.scrollView).width, background.width, file: file, line: line)
+        // The column is tied to the view's own edge, as it always was, not to a safe area.
+        let leading = host.view.constraints.filter { $0.firstItem === host.scrollView && $0.firstAttribute == .leading }
+        XCTAssertEqual(leading.count, 1, file: file, line: line)
+        XCTAssertTrue(leading.first?.secondItem === host.view, file: file, line: line)
+        // No material of ours beside the split view (where the controller's view holds the
+        // split view; where it is the split view, its subviews are the system's own).
+        if preferences.view !== preferences.splitView {
+            XCTAssertFalse(preferences.view.subviews.contains { $0 !== preferences.splitView && $0 is NSVisualEffectView }, file: file, line: line)
+        }
+        XCTAssertEqual(content.width, PreferencesWindowLayout.contentWidth(of: preferences.splitView), file: file, line: line)
+    }
+
+    /// Since macOS 26 the sidebar is glass that floats above what lies under it. Under it,
+    /// and under the pane, lies one background: the pane host's material, not the window's
+    /// plain background, which made the sidebar almost white next to the grey of the pane.
+    /// The split view puts it there (`automaticallyAdjustsSafeAreaInsets`); nothing is
+    /// placed by hand.
+    func testOneMaterialLiesUnderTheSidebarAndThePane() throws {
+        let (window, preferences) = try makeWindow()
+        guard #available(macOS 26.0, *) else {
+            XCTAssertFalse(PreferencesWindowLayout.paneLiesUnderSidebar, "older systems draw the sidebar's own material")
+            try assertThePaneLiesBesideTheSidebar(window, preferences)
+            return
+        }
+        XCTAssertTrue(PreferencesWindowLayout.paneLiesUnderSidebar)
+        XCTAssertTrue(preferences.paneLiesUnderSidebar)
+        XCTAssertTrue(preferences.host.liesUnderSidebar)
+        // The item beside the sidebar may lie under it; the sidebar's own stays as it is.
+        XCTAssertEqual(preferences.splitViewItems.map(\.automaticallyAdjustsSafeAreaInsets), [false, true])
+
+        // One view is the background of the whole window, from the top (under the traffic
+        // lights) to the bottom and from the left edge to the right: the pane host's.
+        window.contentView?.layoutSubtreeIfNeeded()
+        let content = try XCTUnwrap(window.contentView).bounds
+        let host = preferences.host
+        let background = try XCTUnwrap(host.view as? NSVisualEffectView)
+        XCTAssertEqual(frameInWindow(background), content)
+        let pane = PreferencesForm.makeBackground()
+        XCTAssertEqual(background.material, pane.material)
+        XCTAssertEqual(background.blendingMode, .behindWindow)
+        XCTAssertEqual(background.state, pane.state)
+        try assertTheMaterialFillsTheWindow(window)
+        // Nothing of ours lies under or beside the split view any more.
+        if preferences.view !== preferences.splitView {
+            XCTAssertFalse(preferences.view.subviews.contains { $0 !== preferences.splitView && $0 is NSVisualEffectView })
+        }
+
+        // The column is where it was: from the sidebar's column to the window's right edge,
+        // 520 pt. Where it starts is the system's word (the safe area), not a number of ours.
+        let sidebar = frameInWindow(preferences.sidebar.view)
+        let column = frameInWindow(host.scrollView)
+        XCTAssertEqual(column.minX, background.safeAreaInsets.left)
+        XCTAssertEqual(column.minX, sidebar.maxX)
+        XCTAssertEqual(column.width, PreferencesWindowLayout.contentWidth)
+        XCTAssertEqual(column.maxX, content.width)
+        XCTAssertEqual(content.width, PreferencesWindowLayout.contentWidth(of: preferences.splitView))
+        let shownPane = try XCTUnwrap(preferences.selectedController?.view)
+        XCTAssertEqual(frameInWindow(shownPane).minX, column.minX)
+        XCTAssertEqual(frameInWindow(shownPane).width, PreferencesWindowLayout.contentWidth)
+        // The line under the title bar belongs to the column, it does not run under the sidebar.
+        XCTAssertEqual(frameInWindow(host.titlebarSeparator).minX, column.minX)
+        XCTAssertEqual(frameInWindow(host.titlebarSeparator).maxX, content.width)
+        // The sidebar is above the pane's item: a click on a row is the list's, one in the column the pane's.
+        let contentView = try XCTUnwrap(window.contentView)
+        let table = preferences.sidebar.tableView!
+        let row = table.convert(table.rect(ofRow: 0), to: nil)
+        let hitInSidebar = try XCTUnwrap(contentView.hitTest(contentView.convert(NSPoint(x: row.midX, y: row.midY), from: nil)))
+        XCTAssertTrue(hitInSidebar === table || hitInSidebar.isDescendant(of: table))
+        let hitInColumn = try XCTUnwrap(contentView.hitTest(contentView.convert(NSPoint(x: column.midX, y: column.midY), from: nil)))
+        XCTAssertTrue(hitInColumn.isDescendant(of: host.scrollView))
+    }
+
+    /// The line of 1.0.1 on macOS 26. That system sets the sidebar's glass 8 pt in
+    /// from the window's edge, so the pane starts at 208 pt, not at the 200 pt that the
+    /// material under the sidebar was given then: 8 pt of the window's own background
+    /// showed between them, from the top of the window to its bottom. Here the sidebar's
+    /// column is made 8 pt wider than `sidebarWidth`, as that system makes it; nothing may
+    /// be left uncovered, and the column follows.
+    func testNoStripShowsBesideASidebarColumnTheSystemMadeWider() throws {
+        guard #available(macOS 26.0, *) else { return }
+        let sidebarColumn = PreferencesWindowLayout.sidebarWidth + 8
+        let (window, preferences) = try makeWindow { preferences in
+            _ = preferences.view
+            preferences.splitViewItems[0].minimumThickness = sidebarColumn
+            preferences.splitViewItems[0].maximumThickness = sidebarColumn
+        }
+        window.contentView?.layoutSubtreeIfNeeded()
+        // The window as macOS 26 lays it out: 728 pt wide, the pane from 208 pt on.
+        let content = try XCTUnwrap(window.contentView).bounds
+        XCTAssertEqual(content.width, sidebarColumn + PreferencesWindowLayout.contentWidth)
+        let pane = try XCTUnwrap(preferences.selectedController?.view)
+        XCTAssertEqual(frameInWindow(pane).minX, sidebarColumn)
+        XCTAssertEqual(frameInWindow(pane).maxX, content.width)
+        XCTAssertEqual(frameInWindow(preferences.host.scrollView).minX, sidebarColumn)
+        XCTAssertEqual(frameInWindow(preferences.host.scrollView).width, PreferencesWindowLayout.contentWidth)
+
+        XCTAssertEqual(frameInWindow(preferences.host.view), content)
+        try assertTheMaterialFillsTheWindow(window)
+    }
+
+    /// The window keeps its width when it grows or shrinks: the background follows its height.
+    func testTheBackgroundFollowsTheWindowsHeight() throws {
         guard #available(macOS 26.0, *) else { return }
         let (window, preferences) = try makeWindow()
-        let backdrop = try XCTUnwrap(preferences.sidebarBackdrop)
-        window.setContentSize(NSSize(width: window.contentRect(forFrameRect: window.frame).width, height: 900))
-        window.contentView?.layoutSubtreeIfNeeded()
-        XCTAssertEqual(backdrop.frame.height, 900)
-        XCTAssertEqual(backdrop.frame.width, PreferencesWindowLayout.sidebarWidth)
+        let width = window.contentRect(forFrameRect: window.frame).width
+        for height in [CGFloat(900), PreferencesWindowLayout.minimumContentHeight] {
+            window.setContentSize(NSSize(width: width, height: height))
+            window.contentView?.layoutSubtreeIfNeeded()
+            XCTAssertEqual(frameInWindow(preferences.host.view), NSRect(x: 0, y: 0, width: width, height: height))
+            XCTAssertEqual(frameInWindow(preferences.host.scrollView).width, PreferencesWindowLayout.contentWidth)
+            try assertTheMaterialFillsTheWindow(window)
+        }
+    }
+
+    /// Before macOS 26 none of this runs: the sidebar draws its own material, the pane's
+    /// item lies beside it and its column is its view, as in every version so far. Built
+    /// here the way those systems build it (the switch is `paneLiesUnderSidebar`, which
+    /// is false there), whatever system the tests run on.
+    func testWithoutAFloatingSidebarThePaneLiesBesideIt() throws {
+        let (window, preferences) = try makeWindow(paneLiesUnderSidebar: false)
+        try assertThePaneLiesBesideTheSidebar(window, preferences)
+        // A pane host on its own (a test's window, no sidebar) is the same either way.
+        XCTAssertEqual(PreferencesPaneHostViewController().liesUnderSidebar, PreferencesWindowLayout.paneLiesUnderSidebar)
+        if #available(macOS 26.0, *) {
+            XCTAssertTrue(PreferencesWindowLayout.paneLiesUnderSidebar)
+        } else {
+            XCTAssertFalse(PreferencesWindowLayout.paneLiesUnderSidebar)
+        }
     }
 
     func testTheSidebarListsThePanesInThreeGroups() throws {
@@ -348,9 +510,16 @@ final class PreferencesSidebarTests: XCTestCase {
         window.contentView?.layoutSubtreeIfNeeded()
         XCTAssertEqual(window.contentRect(forFrameRect: window.frame).width, width)
         XCTAssertEqual(preferences.sidebar.view.frame.width, PreferencesWindowLayout.sidebarWidth)
-        XCTAssertEqual(preferences.host.view.frame.width, PreferencesWindowLayout.contentWidth)
+        XCTAssertEqual(preferences.host.scrollView.frame.width, PreferencesWindowLayout.contentWidth)
         XCTAssertTrue(preferences.splitViewItems.first?.behavior == .sidebar)
         XCTAssertFalse(preferences.splitViewItems.first?.canCollapse ?? true)
+        // The divider between two fixed widths takes no drag, and the pointer does not offer one.
+        let divider = NSRect(x: PreferencesWindowLayout.sidebarWidth - 1, y: 0, width: 1, height: 640)
+        XCTAssertEqual(
+            preferences.splitView(preferences.splitView, effectiveRect: divider.insetBy(dx: -2, dy: 0), forDrawnRect: divider, ofDividerAt: 0),
+            .zero
+        )
+        XCTAssertEqual(preferences.splitViewItems.map(\.minimumThickness), preferences.splitViewItems.map(\.maximumThickness))
     }
 
     func testEveryPaneSitsAtTheTopOfTheColumnCentred() throws {

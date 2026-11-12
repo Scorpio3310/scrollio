@@ -11,7 +11,9 @@ import Cocoa
 /// (narrower panes are centred), as tall as its content (`PreferencesForm.fitToContent`
 /// after a change), and scrolls when it is taller than the window.
 enum PreferencesWindowLayout {
-    /// The sidebar, a fixed width as in System Settings.
+    /// The sidebar, a fixed width as in System Settings. It is what the sidebar's item is
+    /// given; the column the system makes of it can be wider (macOS 26 adds 8 pt beside
+    /// the floating glass), so nothing is placed by this number.
     static let sidebarWidth: CGFloat = 200
     /// The column every pane sits in.
     static let contentWidth: CGFloat = 520
@@ -22,8 +24,18 @@ enum PreferencesWindowLayout {
     /// Name under which the window keeps its frame in the user defaults.
     static let frameAutosaveName = "PreferencesWindow"
 
+    /// Whether the pane's background runs on under the sidebar. Since macOS 26 the
+    /// sidebar is a pane of glass that floats above the window's content, and the split
+    /// view lets the item beside it lie under it. On older systems the sidebar draws a
+    /// material of its own and the two lie side by side.
+    static var paneLiesUnderSidebar: Bool {
+        if #available(macOS 26.0, *) { return true }
+        return false
+    }
+
     /// The window's content width: the sidebar and the column, side by side (a full-height
-    /// sidebar draws its edge over itself). Fixed; only the height is the user's.
+    /// sidebar draws its edge over itself), as the split view itself asks for them: 720 pt
+    /// on macOS 27, 728 pt on macOS 26. Fixed; only the height is the user's.
     static func contentWidth(of splitView: NSSplitView?) -> CGFloat {
         let fitting = splitView?.fittingSize.width ?? 0
         return fitting > 0 ? fitting : sidebarWidth + contentWidth
@@ -112,6 +124,8 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
     /// Remembers the last open pane. Nil remembers nothing: the tests run without the
     /// app's defaults.
     let uiStateDefaults: UserDefaults?
+    /// `PreferencesWindowLayout.paneLiesUnderSidebar`, as this window was built.
+    let paneLiesUnderSidebar: Bool
 
     private let controllers: [String: NSViewController]
     private(set) var selectedPaneIdentifier: String?
@@ -119,10 +133,12 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
     init(
         panes: [PreferencesPane] = PreferencesPane.all,
         storyboard: NSStoryboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self)),
-        uiStateDefaults: UserDefaults? = AppRuntime.isRunningXCTest ? nil : .standard
+        uiStateDefaults: UserDefaults? = AppRuntime.isRunningXCTest ? nil : .standard,
+        paneLiesUnderSidebar: Bool = PreferencesWindowLayout.paneLiesUnderSidebar
     ) {
         self.panes = panes
         self.uiStateDefaults = uiStateDefaults
+        self.paneLiesUnderSidebar = paneLiesUnderSidebar
         // Every pane's controller is made up front, as the tabs were; views load on first show.
         var controllers: [String: NSViewController] = [:]
         for pane in panes {
@@ -130,7 +146,7 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
         }
         self.controllers = controllers
         self.sidebar = PreferencesSidebarViewController(panes: panes, titles: panes.map { controllers[$0.identifier]?.title ?? "" })
-        self.host = PreferencesPaneHostViewController()
+        self.host = PreferencesPaneHostViewController(liesUnderSidebar: paneLiesUnderSidebar)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -165,8 +181,8 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
         contentItem.maximumThickness = PreferencesWindowLayout.contentWidth
         addSplitViewItem(contentItem)
 
-        if #available(macOS 26.0, *) {
-            installSidebarBackdrop()
+        if #available(macOS 26.0, *), paneLiesUnderSidebar {
+            extendPaneUnderSidebar(contentItem)
         }
 
         sidebar.delegate = self
@@ -174,38 +190,26 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
         show(Self.initialPaneIdentifier(remembered: remembered, panes: panes), remember: false)
     }
 
-    /// The view under the sidebar on macOS 26 and later; nil on older systems.
-    private(set) var sidebarBackdrop: NSVisualEffectView?
-
-    static let sidebarBackdropIdentifier = NSUserInterfaceItemIdentifier("preferences-sidebar-backdrop")
-
-    /// Puts the panes' own background material under the sidebar's column.
+    /// Lets the pane's item lie under the sidebar, so the window has one background.
     ///
     /// Since macOS 26 the sidebar is a pane of glass that floats above whatever lies under
-    /// it, and under it lay only the window's plain background: the sidebar came out
-    /// almost white next to the translucent grey of the pane beside it. With the same
-    /// material under it (and under the margin around it, and the traffic lights) both
-    /// halves of the window are one surface again.
+    /// it. Beside a pane that draws a material of its own, only the window's plain
+    /// background lay under it: the sidebar came out almost white next to the translucent
+    /// grey of the pane. AppKit's answer is `automaticallyAdjustsSafeAreaInsets` on the
+    /// item beside the sidebar: the split view extends that item's frame beneath the
+    /// sidebar and tells it, as a safe area, which part is left free. The pane host's
+    /// background then fills the window from edge to edge, and its column keeps to the
+    /// safe area (`PreferencesPaneHostViewController`). The item's thickness still counts
+    /// the free part only, so the window is as wide as before.
     ///
-    /// The backdrop is a sibling of the split view, under it: on these systems the split
-    /// view controller's view is a plain container that holds the split view. Where the
-    /// split view is the root view itself there is nothing to put under it, and nothing
-    /// is added. The split view's own layout, and with it the window's width, is untouched.
-    private func installSidebarBackdrop() {
-        guard sidebarBackdrop == nil, view !== splitView, splitView.superview === view else { return }
-        let backdrop = PreferencesForm.makeBackground(plainContent: false)
-        backdrop.identifier = Self.sidebarBackdropIdentifier
-        backdrop.translatesAutoresizingMaskIntoConstraints = false
-        // Decoration only: nothing in it to read or to reach.
-        backdrop.setAccessibilityElement(false)
-        view.addSubview(backdrop, positioned: .below, relativeTo: splitView)
-        NSLayoutConstraint.activate([
-            backdrop.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            backdrop.topAnchor.constraint(equalTo: view.topAnchor),
-            backdrop.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            backdrop.widthAnchor.constraint(equalToConstant: PreferencesWindowLayout.sidebarWidth),
-        ])
-        sidebarBackdrop = backdrop
+    /// Nothing here knows how wide the sidebar's column is. That is the system's to say:
+    /// macOS 27 makes it as wide as the sidebar item (200 pt), macOS 26 sets the glass
+    /// 8 pt in from the window's edge and starts the pane at 208 pt. 1.0.1 put a material
+    /// of its own under the sidebar, 200 pt wide, and on macOS 26 those 8 pt showed the
+    /// window's background: a line from the top of the window to its bottom.
+    @available(macOS 26.0, *)
+    private func extendPaneUnderSidebar(_ contentItem: NSSplitViewItem) {
+        contentItem.automaticallyAdjustsSafeAreaInsets = true
     }
 
     /// Where a new window opens: the pane that was open last, the pane it was merged into,
@@ -221,8 +225,12 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
         updateWindowTitle()
     }
 
-    /// Both widths are fixed: the divider does not move.
+    /// Both widths are fixed: the divider does not move, and the pointer does not offer to
+    /// move it. The split view controller is its split view's delegate, and an override
+    /// of a delegate method must call `super` (NSSplitViewController's documentation);
+    /// its answer is not used.
     override func splitView(_ splitView: NSSplitView, effectiveRect proposedEffectiveRect: NSRect, forDrawnRect drawnRect: NSRect, ofDividerAt dividerIndex: Int) -> NSRect {
+        _ = super.splitView(splitView, effectiveRect: proposedEffectiveRect, forDrawnRect: drawnRect, ofDividerAt: dividerIndex)
         return .zero
     }
 
