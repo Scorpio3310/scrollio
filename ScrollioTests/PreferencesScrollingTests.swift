@@ -200,6 +200,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(boxes[2].rows, controller.keyRows)
         XCTAssertEqual(boxes[3].rows, [
             controller.advancedRow, controller.glideTimeRow, controller.smallestStepRow, controller.trackpadEventsRow,
+            controller.trackpadBrowsersRow, controller.trackpadMacAppsRow,
         ])
         XCTAssertEqual(controller.keyRows.count, ScrollHoldKey.allCases.count)
 
@@ -292,7 +293,8 @@ final class PreferencesScrollingTests: XCTestCase {
         let expectedButtons = [controller.advancedButton!, controller.resetToDefaultsButton!, controller.thumbWheelFunctionPopUp!]
             + controller.keyBindButtons + controller.keyClearButtons
         XCTAssertEqual(buttons, Set(expectedButtons.map(ObjectIdentifier.init)))
-        XCTAssertEqual(allSubviews(of: controller.view).compactMap { $0 as? NSSwitch }.count, 4)
+        // (Two of them stand under the Beta switch and show only while it is on.)
+        XCTAssertEqual(allSubviews(of: controller.view).compactMap { $0 as? NSSwitch }.count, 6)
     }
 
     // MARK: - Smooth scrolling
@@ -649,6 +651,40 @@ final class PreferencesScrollingTests: XCTestCase {
     }
 
     // MARK: - Trackpad-style events
+
+    /// "In browsers" and "In Mac apps" stand under the Beta switch only while it is on (and
+    /// Advanced is open), and write the two settings of their own.
+    func testTheTwoRowsUnderTheBetaSwitch_showOnlyWhileItIsOn_andWriteTheirSettings() {
+        let before = (Options.shared.trackpadStyleInBrowsers, Options.shared.trackpadStyleInMacApps)
+        defer {
+            (Options.shared.trackpadStyleInBrowsers, Options.shared.trackpadStyleInMacApps) = before
+            Options.shared.scroll.smoothSimTrackpad = false
+        }
+        Options.shared.trackpadStyleInBrowsers = true
+        Options.shared.trackpadStyleInMacApps = false
+        let controller = makeController(advanced: true)
+        let rows = [controller.trackpadBrowsersRow!, controller.trackpadMacAppsRow!]
+        XCTAssertTrue(rows.allSatisfy(\.isHidden), "hidden while the Beta is off")
+
+        set(controller.trackpadEventsSwitch, true)
+        XCTAssertFalse(rows.contains(where: \.isHidden), "shown with the Beta on")
+        XCTAssertEqual(rows.map(\.title), ["In browsers", "In Mac apps"])
+        XCTAssertEqual(rows.map(\.isOn), [true, false], "browsers on, Mac apps off, until chosen otherwise")
+        XCTAssertEqual(controller.trackpadEventsRow.title, "Trackpad-style scrolling (Beta)")
+
+        set(controller.trackpadMacAppsRow.toggle, true)
+        XCTAssertTrue(Options.shared.trackpadStyleInMacApps)
+        set(controller.trackpadBrowsersRow.toggle, false)
+        XCTAssertFalse(Options.shared.trackpadStyleInBrowsers)
+        XCTAssertTrue(Options.shared.scroll.smoothSimTrackpad, "the main switch is its own")
+
+        controller.setAdvancedExpanded(false)
+        XCTAssertTrue(rows.allSatisfy(\.isHidden), "closed with Advanced")
+        controller.setAdvancedExpanded(true)
+        XCTAssertFalse(rows.contains(where: \.isHidden))
+        set(controller.trackpadEventsSwitch, false)
+        XCTAssertTrue(rows.allSatisfy(\.isHidden), "and gone with the Beta off")
+    }
 
     func testTrackpadStyleEventsIsAPlainSwitchThatLeavesDurationAlone() {
         let controller = makeController(advanced: true)

@@ -2976,6 +2976,80 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.chrome", bundleURL: chrome), .followsGlide)
     }
 
+    // MARK: The two switches under the Beta: where it works
+
+    /// "In browsers" and "In Mac apps", each on and off, for one app of each kind. Off is
+    /// the stream of the main switch off, frame for frame, and nothing is asked of the app:
+    /// no look, no read.
+    func testTheTwoSwitches_decideWhereTrackpadStyleWorks() throws {
+        typealias Result = (frames: [String], phases: [String], watch: PageWatch)
+        func scroll(over kind: ScrollUtils.TrackpadStyleTarget, browsers: Bool, macApps: Bool, change: (PageWatch) -> Void = { _ in }) throws -> Result {
+            let watch = PageWatch(offset: 30_000, range: 60_000)
+            change(watch)
+            let run = realRun(over: kind, watch: watch)
+            run.poster.trackpadStyleInBrowsers = { browsers }
+            run.poster.trackpadStyleInMacApps = { macApps }
+            run.poster.hardwareRecordComesOff = { true }
+            for index in 0..<6 { XCTAssertTrue(try run.wheel(at: Double(index) * 0.03, y: -211.68)) }
+            run.run(until: 3)
+            let frames = stream(run)
+            return (frames, phaseRuns(run.finish()).map { $0.components(separatedBy: " ").first ?? "" }, watch)
+        }
+        var off: [String] = []
+        try withSettings(switchOn: false) { off = try scroll(over: .touchOnly, browsers: true, macApps: true).frames }
+        XCTAssertFalse(off.isEmpty)
+        let page = pageFacts
+        let row = rowFacts
+        try withSettings(switchOn: true) {
+            // In browsers: Chromium and Gecko, Safari and DuckDuckGo.
+            let browsers: [ScrollUtils.TrackpadStyleTarget] = [.followsGlide, .safari]
+            for kind in browsers {
+                let on = try scroll(over: kind, browsers: true, macApps: false)
+                XCTAssertTrue(on.phases.contains("momentumBegan"), "\(kind): the flick, whatever \"In Mac apps\" says")
+                let none = try scroll(over: kind, browsers: false, macApps: true)
+                XCTAssertEqual(none.frames, off, "\(kind): as with the main switch off")
+                XCTAssertEqual(on.watch.looks + on.watch.reads + none.watch.looks + none.watch.reads, 0, "\(kind)")
+            }
+            // In Mac apps: every other app.
+            let touch = try scroll(over: .touchOnly, browsers: false, macApps: true)
+            XCTAssertEqual(touch.phases, ["began", "changed", "ended"], "the one touch, whatever \"In browsers\" says")
+            XCTAssertGreaterThan(touch.watch.reads, 10, "with its end watch")
+            let plain = try scroll(over: .touchOnly, browsers: true, macApps: false)
+            XCTAssertEqual(plain.frames, off, "as with the main switch off")
+            XCTAssertEqual(plain.watch.looks + plain.watch.reads, 0, "and nothing is asked through Accessibility")
+            // A native shell (Dia, Arc) goes with the browsers: the page's flick and the careful look.
+            let onPage = try scroll(over: .nativeShell, browsers: true, macApps: false) {
+                $0.seesTheBar = false
+                $0.shell = page
+            }
+            XCTAssertTrue(onPage.phases.contains("momentumBegan"))
+            XCTAssertEqual(onPage.watch.looks, 1)
+            XCTAssertEqual(onPage.watch.looksWithRoles + onPage.watch.reads, 0)
+            // Its own list with a scroll bar: the one touch only with "In Mac apps" too; else plain like the rest.
+            let list = try scroll(over: .nativeShell, browsers: true, macApps: false) { $0.shell = row }
+            XCTAssertFalse(list.phases.contains { $0.hasSuffix("egan") || $0.hasSuffix("nded") || $0 == "changed" }, "plain: \(list.phases)")
+            XCTAssertEqual(list.watch.reads + list.watch.looksWithRoles, 0)
+            XCTAssertEqual(try scroll(over: .nativeShell, browsers: true, macApps: true) { $0.shell = row }.phases, ["began", "changed", "ended"])
+            let shellOff = try scroll(over: .nativeShell, browsers: false, macApps: true) { $0.shell = row }
+            XCTAssertEqual(shellOff.frames, off)
+            XCTAssertEqual(shellOff.watch.looks + shellOff.watch.reads, 0, "no look with \"In browsers\" off")
+            // An app that is left alone by name stays so.
+            XCTAssertEqual(try scroll(over: .plainScrolling, browsers: true, macApps: true).frames, off)
+        }
+
+        // The app's own poster reads the two settings; they start as "browsers yes, Mac apps no".
+        XCTAssertTrue(Options().trackpadStyleInBrowsers)
+        XCTAssertFalse(Options().trackpadStyleInMacApps)
+        let before = (Options.shared.trackpadStyleInBrowsers, Options.shared.trackpadStyleInMacApps)
+        defer { (Options.shared.trackpadStyleInBrowsers, Options.shared.trackpadStyleInMacApps) = before }
+        for (browsers, macApps) in [(false, true), (true, false)] {
+            Options.shared.trackpadStyleInBrowsers = browsers
+            Options.shared.trackpadStyleInMacApps = macApps
+            XCTAssertEqual(ScrollPoster.shared.trackpadStyleInBrowsers(), browsers)
+            XCTAssertEqual(ScrollPoster.shared.trackpadStyleInMacApps(), macApps)
+        }
+    }
+
     /// What breaks the rule in a stream of posted events, or nil: every "began" gets its
     /// "ended", a glide follows a touch or nothing does, each gesture is closed before the
     /// next one opens. Events without phases are left out.

@@ -141,6 +141,9 @@ class ScrollPoster {
         if !AppRuntime.isRunningXCTest {
             poster.endWatch = AccessibilityScrollEndWatch()
         }
+        // The app's own poster reads the two switches under "Trackpad-style scrolling (Beta)".
+        poster.trackpadStyleInBrowsers = { Options.shared.trackpadStyleInBrowsers }
+        poster.trackpadStyleInMacApps = { Options.shared.trackpadStyleInMacApps }
         return poster
     }()
     /// The shared poster uses the shared phase machine and dispatch context; tests pass their own.
@@ -169,6 +172,19 @@ class ScrollPoster {
     var trackpadStyleTarget: (CGEvent) -> ScrollUtils.TrackpadStyleTarget = {
         ScrollUtils.shared.trackpadStyleTarget(of: $0)
     }
+    /// The two switches under "Trackpad-style scrolling (Beta)": where it works. Asked only
+    /// while the main switch is on for the app. The app's own poster reads the settings
+    /// (`shared`); any other poster (tests, the measuring harness) counts both as on unless
+    /// it is told otherwise.
+    /// In browsers: the flick (Chromium, Gecko, Safari and DuckDuckGo), and in a native
+    /// shell around Chromium the page's flick with its careful look. Off: these apps scroll
+    /// as with the main switch off, and no look is made.
+    var trackpadStyleInBrowsers: () -> Bool = { true }
+    /// In Mac apps: the one touch with its end watch for every other app. Off: such an app
+    /// scrolls as with the main switch off and nothing is asked of it through
+    /// Accessibility; in a native shell a list with a scroll bar scrolls plain like the
+    /// rest of the shell.
+    var trackpadStyleInMacApps: () -> Bool = { true }
     /// Whether that kind is known already: false while the look into the app's bundle is on
     /// its way (asked only for a one touch). Until it is, the end watch does not look.
     var appKindIsKnown: (CGEvent) -> Bool = {
@@ -611,6 +627,8 @@ class ScrollPoster {
         /// The app is a native shell around Chromium: a flick asks for the place's verdict,
         /// and every look there asks no element for its role before a bar is seen.
         var isShell = false
+        /// A native shell with "In Mac apps" off: a scroll bar seen there opens no touch.
+        var shellStaysPlain = false
         var deadZone: Double
     }
     private var config = ConfigSnapshot(simTrackpadEnabled: false, flick: false, deadZone: 1.0)
@@ -1267,6 +1285,12 @@ extension ScrollPoster {
         if isLook {
             guard watchSeen == nil else { return }
             noteShellVerdictLocked(reading)
+            if config.shellStaysPlain {
+                // A bar of the shell's own, but "In Mac apps" is off: plain like the rest.
+                sessionLog.endWatch.add("a scroll bar, and \"In Mac apps\" is off")
+                goPlainLocked(retry: false, now: now)
+                return
+            }
             let isAtItsEnd = Self.isAtEnd(value, towardBottom: towardBottom)
             if watchLookIsRetry && isAtItsEnd {
                 // Seen again, but the page is at the end the scroll heads for: plain goes on.
@@ -2654,6 +2678,25 @@ private extension ScrollPoster {
         // thread (`ScrollUtils.trackpadStyleTarget`).
         var target = simTrackpad ? event.map { trackpadStyleTarget($0) } : nil
         var isShell = false
+        // The two switches under the main one: where it works. (Not asked with it off.)
+        var isAllowed = true
+        var shellStaysPlain = false
+        if simTrackpad {
+            switch target {
+            case .followsGlide, .safari, .nativeShell:
+                isAllowed = trackpadStyleInBrowsers()
+                shellStaysPlain = target == .nativeShell && isAllowed && !trackpadStyleInMacApps()
+            case .touchOnly, nil:
+                isAllowed = trackpadStyleInMacApps()
+            case .plainScrolling:
+                break
+            }
+        }
+        if !isAllowed {
+            // As with the main switch off: no phases, no look, nothing asked of the app.
+            return ConfigSnapshot(simTrackpadEnabled: false, flick: false, withheld: true, sideways: sideways,
+                                  deadZone: OPTIONS_SCROLL_DEFAULT.usableDeadZone(Options.shared.scroll.deadZone))
+        }
         if target == .nativeShell, let event = event {
             // A native shell around Chromium: the one touch (plain frames, unless a bar is
             // seen) where a look has said "not the page" about this place, the flick
@@ -2679,6 +2722,7 @@ private extension ScrollPoster {
             takesRecordOff: form.phases && hardwareRecordComesOff(),
             looksWait: form.oneTouch && !(event.map { appKindIsKnown($0) } ?? true),
             isShell: isShell,
+            shellStaysPlain: shellStaysPlain,
             deadZone: OPTIONS_SCROLL_DEFAULT.usableDeadZone(Options.shared.scroll.deadZone)
         )
     }

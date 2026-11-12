@@ -31,6 +31,8 @@ struct OptionItem {
         static let Duration = "duration"
         static let DeadZone = "deadZone"
         static let SmoothSimTrackpad = "smoothSimTrackpad"
+        static let TrackpadStyleInBrowsers = "trackpadStyleInBrowsers"
+        static let TrackpadStyleInMacApps = "trackpadStyleInMacApps"
         static let SmoothVertical = "smoothVertical"
         static let SmoothHorizontal = "smoothHorizontal"
     }
@@ -94,6 +96,19 @@ class Options {
         didSet { markChanged(.general) }
     }
     // 滚动
+    /// Where "Trackpad-style scrolling (Beta)" works while it is on. For the whole of
+    /// Scrollio: an app's own settings decide the main switch for that app, not these.
+    /// In browsers: the flick for apps built on Chromium or on Firefox's engine, Safari
+    /// and DuckDuckGo. On unless it was turned off.
+    var trackpadStyleInBrowsers = true {
+        didSet { markChanged(.scroll) }
+    }
+    /// In Mac apps: the one touch with its end watch, which reads the scroll bar under the
+    /// pointer through Accessibility. Off unless it was turned on, also for someone who
+    /// had the main switch on before there were two.
+    var trackpadStyleInMacApps = false {
+        didSet { markChanged(.scroll) }
+    }
     var scroll = OPTIONS_SCROLL_DEFAULT() {
         didSet { markChanged(.scroll) }
     }
@@ -274,6 +289,9 @@ extension Options {
             scroll.deadZone = OPTIONS_SCROLL_DEFAULT().deadZone
         }
         scroll.smoothSimTrackpad = defaults.bool(forKey: OptionItem.Scroll.SmoothSimTrackpad)
+        trackpadStyleInBrowsers = defaults.object(forKey: OptionItem.Scroll.TrackpadStyleInBrowsers) == nil
+            || defaults.bool(forKey: OptionItem.Scroll.TrackpadStyleInBrowsers)
+        trackpadStyleInMacApps = defaults.bool(forKey: OptionItem.Scroll.TrackpadStyleInMacApps)
         if defaults.object(forKey: OptionItem.Scroll.SmoothVertical) == nil {
             scroll.smoothVertical = true
         } else {
@@ -356,6 +374,8 @@ extension Options {
             defaults.set(scroll.duration, forKey: OptionItem.Scroll.Duration)
             defaults.set(scroll.deadZone, forKey: OptionItem.Scroll.DeadZone)
             defaults.set(scroll.smoothSimTrackpad, forKey: OptionItem.Scroll.SmoothSimTrackpad)
+            defaults.set(trackpadStyleInBrowsers, forKey: OptionItem.Scroll.TrackpadStyleInBrowsers)
+            defaults.set(trackpadStyleInMacApps, forKey: OptionItem.Scroll.TrackpadStyleInMacApps)
             defaults.set(scroll.smoothVertical, forKey: OptionItem.Scroll.SmoothVertical)
             defaults.set(scroll.smoothHorizontal, forKey: OptionItem.Scroll.SmoothHorizontal)
         case .buttons:

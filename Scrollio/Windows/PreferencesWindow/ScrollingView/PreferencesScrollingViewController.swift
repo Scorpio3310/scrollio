@@ -160,6 +160,8 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         static let glideTime = NSUserInterfaceItemIdentifier("scrolling-glide-time")
         static let smallestStep = NSUserInterfaceItemIdentifier("scrolling-smallest-step")
         static let trackpadEvents = NSUserInterfaceItemIdentifier("scrolling-trackpad-events")
+        static let trackpadBrowsers = NSUserInterfaceItemIdentifier("scrolling-trackpad-browsers")
+        static let trackpadMacApps = NSUserInterfaceItemIdentifier("scrolling-trackpad-mac-apps")
         static let thumbWheelFunction = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-function")
         static let thumbWheelFunctionHint = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-function-hint")
         static let thumbWheelSpeed = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-speed")
@@ -258,6 +260,10 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     private(set) var glideTimeRow: PreferencesSliderRow!
     private(set) var smallestStepRow: PreferencesSliderRow!
     private(set) var trackpadEventsRow: PreferencesSwitchRow!
+    /// The two rows under it: where the Beta works. Shown only while it is on, on the tab
+    /// (they are settings of the whole of Scrollio, not of an app).
+    private(set) var trackpadBrowsersRow: PreferencesSwitchRow!
+    private(set) var trackpadMacAppsRow: PreferencesSwitchRow!
     /// "While you hold a key": its title and box, and the row of each key.
     private(set) var keysSection: PreferencesGroupSection!
     private(set) var keyRows: [PreferencesGroupRow] = []
@@ -308,6 +314,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         ])
         let advanced = PreferencesGroupSection(width: width, rows: [
             makeAdvancedRow(), makeGlideTimeRow(), makeSmallestStepRow(), makeTrackpadEventsRow(),
+            makeTrackpadBrowsersRow(), makeTrackpadMacAppsRow(),
         ])
         advancedSection = advanced
         keyRows = ScrollHoldKey.allCases.map { makeKeyRow($0) }
@@ -428,6 +435,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
 
         trackpadEventsRow.isOn = scroll.smoothSimTrackpad
         trackpadEventsRow.isEnabled = smoothEditable
+        syncTrackpadScopeRows()
 
         for key in ScrollHoldKey.allCases {
             keyRows[key.rawValue].isEnabled = editable
@@ -597,6 +605,23 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
 
     private func applyAdvancedExpanded() {
         advancedRow.isExpanded = isAdvancedExpanded
+        syncTrackpadScopeRows()
+    }
+
+    /// "In browsers" and "In Mac apps": under the Beta switch while it is on and Advanced
+    /// is open, on the tab only.
+    private func syncTrackpadScopeRows() {
+        guard isViewLoaded, trackpadBrowsersRow != nil else { return }
+        let scroll = getTargetApplicationScrollOptions()
+        let shown = isAdvancedExpanded && currentTargetApplication == nil && scroll.smoothSimTrackpad
+        trackpadBrowsersRow.isOn = Options.shared.trackpadStyleInBrowsers
+        trackpadMacAppsRow.isOn = Options.shared.trackpadStyleInMacApps
+        trackpadBrowsersRow.isEnabled = trackpadEventsRow.isEnabled
+        trackpadMacAppsRow.isEnabled = trackpadEventsRow.isEnabled
+        guard trackpadBrowsersRow.isHidden == shown || trackpadMacAppsRow.isHidden == shown else { return }
+        trackpadBrowsersRow.isHidden = !shown
+        trackpadMacAppsRow.isHidden = !shown
+        contentHeightDidChange()
     }
 
     private func contentHeightDidChange() {
@@ -665,6 +690,14 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     @objc func trackpadEventsClick(_ sender: NSSwitch) {
         getTargetApplicationScrollOptions().smoothSimTrackpad = sender.state == .on
         syncViewWithOptions()
+    }
+
+    @objc func trackpadBrowsersClick(_ sender: NSSwitch) {
+        Options.shared.trackpadStyleInBrowsers = sender.state == .on
+    }
+
+    @objc func trackpadMacAppsClick(_ sender: NSSwitch) {
+        Options.shared.trackpadStyleInMacApps = sender.state == .on
     }
 
     /// Starts recording the key of the clicked row. The recorder ignores a click that comes
@@ -974,6 +1007,32 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         row.toggle.identifier = Identifier.trackpadEvents
         trackpadEventsRow = row
         trackpadEventsSwitch = row.toggle
+        return row
+    }
+
+    private func makeTrackpadBrowsersRow() -> PreferencesGroupRow {
+        let row = PreferencesSwitchRow(
+            title: text("scrolling-trackpad-browsers"),
+            explanation: text("scrolling-trackpad-browsers-hint"),
+            target: self,
+            action: #selector(trackpadBrowsersClick(_:))
+        )
+        row.toggle.identifier = Identifier.trackpadBrowsers
+        row.isHidden = true
+        trackpadBrowsersRow = row
+        return row
+    }
+
+    private func makeTrackpadMacAppsRow() -> PreferencesGroupRow {
+        let row = PreferencesSwitchRow(
+            title: text("scrolling-trackpad-mac-apps"),
+            explanation: text("scrolling-trackpad-mac-apps-hint"),
+            target: self,
+            action: #selector(trackpadMacAppsClick(_:))
+        )
+        row.toggle.identifier = Identifier.trackpadMacApps
+        row.isHidden = true
+        trackpadMacAppsRow = row
         return row
     }
 
