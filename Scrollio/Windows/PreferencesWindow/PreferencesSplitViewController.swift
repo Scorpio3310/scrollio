@@ -229,8 +229,12 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
         updateWindowTitle()
     }
 
-    /// Both widths are fixed: the divider does not move.
+    /// Both widths are fixed: the divider does not move, and the pointer does not offer to
+    /// move it. The split view controller is its split view's delegate, and an override
+    /// of a delegate method must call `super` (NSSplitViewController's documentation);
+    /// its answer is not used.
     override func splitView(_ splitView: NSSplitView, effectiveRect proposedEffectiveRect: NSRect, forDrawnRect drawnRect: NSRect, ofDividerAt dividerIndex: Int) -> NSRect {
+        _ = super.splitView(splitView, effectiveRect: proposedEffectiveRect, forDrawnRect: drawnRect, ofDividerAt: dividerIndex)
         return .zero
     }
 

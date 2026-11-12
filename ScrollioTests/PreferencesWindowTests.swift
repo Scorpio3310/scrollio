@@ -436,6 +436,13 @@ final class PreferencesSidebarTests: XCTestCase {
         XCTAssertEqual(preferences.host.view.frame.width, PreferencesWindowLayout.contentWidth)
         XCTAssertTrue(preferences.splitViewItems.first?.behavior == .sidebar)
         XCTAssertFalse(preferences.splitViewItems.first?.canCollapse ?? true)
+        // The divider between two fixed widths takes no drag, and the pointer does not offer one.
+        let divider = NSRect(x: PreferencesWindowLayout.sidebarWidth - 1, y: 0, width: 1, height: 640)
+        XCTAssertEqual(
+            preferences.splitView(preferences.splitView, effectiveRect: divider.insetBy(dx: -2, dy: 0), forDrawnRect: divider, ofDividerAt: 0),
+            .zero
+        )
+        XCTAssertEqual(preferences.splitViewItems.map(\.minimumThickness), preferences.splitViewItems.map(\.maximumThickness))
     }
 
     func testEveryPaneSitsAtTheTopOfTheColumnCentred() throws {
