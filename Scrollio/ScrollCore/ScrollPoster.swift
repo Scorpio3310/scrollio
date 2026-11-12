@@ -72,6 +72,15 @@ struct ScrollOutgoingFrame: Equatable {
     /// Pixels in a line, as macOS counts them for a scroll event.
     static let pixelsPerLine = 10.0
 
+    /// A whole number of lines as the integer the line delta field takes. A number no
+    /// `Int64` holds (a hand-edited Step of 1e25 gives frames that large: `isUsable` only
+    /// asks for a finite number) is written as the largest one of its sign: `Int64(_:)`
+    /// trapped on it.
+    static func wholeLines(_ lines: Double) -> Int64 {
+        guard lines.isFinite else { return 0 }
+        return Int64(exactly: lines.rounded(.towardZero)) ?? (lines < 0 ? Int64.min : Int64.max)
+    }
+
     /// Without phases only the point delta is written: the line delta, the fixed-point delta,
     /// the scroll count and the timestamp stay those of the copied wheel event, as they
     /// always did. CoreGraphics drops the fraction of a point delta, so the frames of a glide
@@ -1900,8 +1909,8 @@ private extension ScrollPoster {
             }
             frame.timestamp = stampLocked(moves: moves)
             let lines = lineCarry.take((y: v.y / ScrollOutgoingFrame.pixelsPerLine, x: v.x / ScrollOutgoingFrame.pixelsPerLine))
-            frame.lineY = Int64(lines.y)
-            frame.lineX = Int64(lines.x)
+            frame.lineY = ScrollOutgoingFrame.wholeLines(lines.y)
+            frame.lineX = ScrollOutgoingFrame.wholeLines(lines.x)
         }
 #if DEBUG
         if let recorder = frameRecorderForTests {

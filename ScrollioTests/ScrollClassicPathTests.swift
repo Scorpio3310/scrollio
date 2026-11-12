@@ -2032,6 +2032,30 @@ final class ScrollClassicPathTests: XCTestCase {
         }
     }
 
+    /// A Step that is no sane number (a hand-edited preference: 1e25 is finite, so the event
+    /// is taken) gives frames no `Int64` holds. The line delta is then the largest number
+    /// there is, and nothing traps: converting it trapped, with the switch on.
+    func testAStepThatIsNoSaneNumber_doesNotTrap() {
+        XCTAssertEqual(ScrollOutgoingFrame.wholeLines(1e25), .max)
+        XCTAssertEqual(ScrollOutgoingFrame.wholeLines(-1e25), .min)
+        XCTAssertEqual(ScrollOutgoingFrame.wholeLines(.nan), 0)
+        XCTAssertEqual(ScrollOutgoingFrame.wholeLines(.infinity), 0)
+        XCTAssertEqual(ScrollOutgoingFrame.wholeLines(3.9), 3)
+        XCTAssertEqual(ScrollOutgoingFrame.wholeLines(-2.2), -2)
+        XCTAssertEqual(ScrollOutgoingFrame.wholeLines(0), 0)
+        for form in ScrollClassicRig.Form.allCases {
+            let rig = ScrollClassicRig(duration: 3.69, form: form)
+            rig.input(1e25, notch: 1e25, at: 0)
+            rig.run(until: 0.5)
+            rig.poster.stop()
+            XCTAssertTrue(rig.recorded.contains { $0.frame.lineY == .max }, "\(form.rawValue): frames went out")
+        }
+        XCTAssertNil(ScrollPoster.nanoseconds(.infinity))
+        XCTAssertNil(ScrollPoster.nanoseconds(1e300))
+        XCTAssertNil(ScrollPoster.nanoseconds(-1))
+        XCTAssertEqual(ScrollPoster.nanoseconds(100.5), 100_500_000_000)
+    }
+
     /// Never a touch phase and a momentum phase on one frame: Chromium asserts on such an
     /// event (fatal from Chromium 163, over Chrome's own toolbar and tab strip).
     func testTrackpadStyle_noFrameCarriesATouchPhaseAndAMomentumPhase() {
