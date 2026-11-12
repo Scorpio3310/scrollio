@@ -23,7 +23,7 @@ class InputProcessor: ModifierFlagsProviding {
     static let shared = InputProcessor()
     init() { NSLog("Module initialized: InputProcessor") }
 
-    private static let mosScrollTapReplayMovementTolerance: CGFloat = 8.0
+    private static let scrollActionTapReplayMovementTolerance: CGFloat = 8.0
     /// A gesture hold older than this is abandoned, in case its button-up was lost. The same
     /// limit as the pointer lock and the "follow the hand" session use.
     static let mouseGestureHoldTimeout: TimeInterval = MouseGesturePointerLock.safetyTimeout
@@ -60,7 +60,7 @@ class InputProcessor: ModifierFlagsProviding {
     private struct ActiveBindingSession {
         let action: ResolvedAction
         let mouseSessionID: UUID?
-        var mosScrollTapReplay: MosScrollTapReplay?
+        var scrollActionTapReplay: ScrollActionTapReplay?
     }
 
     private final class ActiveMouseGestureSession {
@@ -113,10 +113,10 @@ class InputProcessor: ModifierFlagsProviding {
     private var gestureHapticPlayer: (MouseGestureHapticCue, UInt16) -> Void = InputProcessor.systemGestureHapticPlayer
 
     private static let systemGestureHapticPlayer: (MouseGestureHapticCue, UInt16) -> Void = { cue, code in
-        LogiCenter.shared.playGestureHaptic(cue, forMosCode: code)
+        LogiCenter.shared.playGestureHaptic(cue, forScrollioCode: code)
     }
 
-    private struct MosScrollTapReplay {
+    private struct ScrollActionTapReplay {
         let context: MouseTapReplayContext
         /// 仅 CG 鼠标事件设置。HID++/Logi 按键不可靠更新 NSEvent.pressedMouseButtons,
         /// 不能用 AppKit 的物理按钮位图做兜底释放判断。
@@ -250,7 +250,7 @@ class InputProcessor: ModifierFlagsProviding {
         activeBindings[key] = ActiveBindingSession(
             action: action,
             mouseSessionID: executionResult.mouseSessionID,
-            mosScrollTapReplay: mosScrollTapReplay(for: action, event: event)
+            scrollActionTapReplay: scrollActionTapReplay(for: action, event: event)
         )
         recomputeActiveModifierFlags()
         return .consumed
@@ -395,7 +395,7 @@ class InputProcessor: ModifierFlagsProviding {
         guard deltaX != 0 || deltaY != 0 else { return }
 
         if interactiveGestureKey == key {
-            // The pointer is not frozen by Mos for this hold, so there is no warp to
+            // The pointer is not frozen by Scrollio for this hold, so there is no warp to
             // compensate for.
             accumulateInteractiveMovement(CGPoint(x: deltaX, y: deltaY))
             return
@@ -703,8 +703,8 @@ class InputProcessor: ModifierFlagsProviding {
         )
         // A made-up release (the mouse went away mid-hold) is not a tap.
         if !event.isSyntheticRelease,
-           let tapReplay = session.mosScrollTapReplay,
-           shouldReplayMosScrollTap(tapReplay, releaseEvent: event) {
+           let tapReplay = session.scrollActionTapReplay,
+           shouldReplayScrollActionTap(tapReplay, releaseEvent: event) {
             ShortcutExecutor.shared.replayMouseTap(tapReplay.context)
         }
         recomputeActiveModifierFlags()
@@ -712,22 +712,22 @@ class InputProcessor: ModifierFlagsProviding {
 
     /// 标记 Mos Scroll 会话已经被真实滚动使用; 后续 mouseUp 不再重放原始点击。
     /// 已标记的会话不重复写回, 避免滚动高频路径上的无意义字典更新。
-    func markMosScrollActionSessionsUsedForScroll() {
+    func markScrollActionSessionsUsedForScroll() {
         for key in activeBindings.keys {
             guard var session = activeBindings[key],
-                  var tapReplay = session.mosScrollTapReplay,
+                  var tapReplay = session.scrollActionTapReplay,
                   !tapReplay.didScroll else { continue }
             tapReplay.didScroll = true
-            session.mosScrollTapReplay = tapReplay
+            session.scrollActionTapReplay = tapReplay
             activeBindings[key] = session
         }
     }
 
     /// CG 鼠标按钮丢失 Up 事件时的兜底释放。
     /// 只在真实滚轮 delta 到达后调用, 因此不会给普通按键处理路径增加持续开销。
-    func releaseMosScrollMouseSessionsIfPhysicalButtonsAreUp() {
+    func releaseScrollActionMouseSessionsIfPhysicalButtonsAreUp() {
         let releasedKeys = activeBindings.compactMap { key, session -> TriggerKey? in
-            guard let tapReplay = session.mosScrollTapReplay,
+            guard let tapReplay = session.scrollActionTapReplay,
                   let buttonNumber = tapReplay.releaseCheckButtonNumber,
                   !Self.isMouseButtonPressed(buttonNumber) else {
                 return nil
@@ -748,12 +748,12 @@ class InputProcessor: ModifierFlagsProviding {
         recomputeActiveModifierFlags()
     }
 
-    private func mosScrollTapReplay(for action: ResolvedAction, event: InputEvent) -> MosScrollTapReplay? {
-        guard case .mosScroll = action,
+    private func scrollActionTapReplay(for action: ResolvedAction, event: InputEvent) -> ScrollActionTapReplay? {
+        guard case .scrollAction = action,
               let context = ShortcutExecutor.shared.mouseTapReplayContext(for: event) else {
             return nil
         }
-        return MosScrollTapReplay(
+        return ScrollActionTapReplay(
             context: context,
             releaseCheckButtonNumber: releaseCheckButtonNumber(for: event, context: context)
         )
@@ -767,7 +767,7 @@ class InputProcessor: ModifierFlagsProviding {
         return context.buttonNumber
     }
 
-    private func shouldReplayMosScrollTap(_ tapReplay: MosScrollTapReplay, releaseEvent: InputEvent) -> Bool {
+    private func shouldReplayScrollActionTap(_ tapReplay: ScrollActionTapReplay, releaseEvent: InputEvent) -> Bool {
         guard !tapReplay.didScroll else {
             return false
         }
@@ -779,7 +779,7 @@ class InputProcessor: ModifierFlagsProviding {
         let deltaX = downLocation.x - upLocation.x
         let deltaY = downLocation.y - upLocation.y
         let distance = hypot(deltaX, deltaY)
-        return distance <= Self.mosScrollTapReplayMovementTolerance
+        return distance <= Self.scrollActionTapReplayMovementTolerance
     }
 
     private static func isMouseButtonPressed(_ buttonNumber: Int64) -> Bool {

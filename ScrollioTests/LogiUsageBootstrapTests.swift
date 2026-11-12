@@ -12,8 +12,8 @@ final class LogiUsageBootstrapTests: XCTestCase {
 
     /// app 从列表移除后, refreshAll 应推送空集清理其 appScroll 用量 (防注册表残留)
     func testRefreshAllClearsUsageForRemovedApp() {
-        let key = "/tmp/MosUsageBootstrapTest.app"
-        let code: UInt16 = 1006  // Logi Back 的 MosCode (与 LogiCenterDeviceIntegrationTests 一致)
+        let key = "/tmp/ScrollioUsageBootstrapTest.app"
+        let code: UInt16 = 1006  // Logi Back 的 ScrollioCode (与 LogiCenterDeviceIntegrationTests 一致)
         let app = Application(path: key)
         app.inherit = false
         app.scroll.dash = ScrollHotkey(type: .mouse, code: code)

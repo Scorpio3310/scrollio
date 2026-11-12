@@ -8,8 +8,8 @@ final class LogiCenterPublicSurfaceTests: XCTestCase {
         XCTAssertFalse(LogiCenter.shared.isLogiCode(42))    // arbitrary non-Logi
     }
 
-    func testNameForMosCode_known() {
-        let name = LogiCenter.shared.name(forMosCode: 1006)
+    func testNameForScrollioCode_known() {
+        let name = LogiCenter.shared.name(forScrollioCode: 1006)
         XCTAssertNotNil(name)
         XCTAssertFalse(name!.isEmpty)
     }
@@ -18,21 +18,21 @@ final class LogiCenterPublicSurfaceTests: XCTestCase {
     /// button of the MX Master 3 / 3S (0x00C3) stays the gesture button.
     func testControlRole_thumbPanel() {
         XCTAssertEqual(LogiControlRole(cid: 0x01A0), .thumbPanel)
-        XCTAssertEqual(LogiCenter.shared.controlRole(forMosCode: 2000 + 0x01A0), .thumbPanel)
+        XCTAssertEqual(LogiCenter.shared.controlRole(forScrollioCode: 2000 + 0x01A0), .thumbPanel)
         XCTAssertEqual(LogiControlRole(cid: 0x00C3), .gesture)
-        XCTAssertEqual(LogiCenter.shared.controlRole(forMosCode: 1000), .gesture)
+        XCTAssertEqual(LogiCenter.shared.controlRole(forScrollioCode: 1000), .gesture)
         XCTAssertNil(LogiControlRole(cid: 0x01A3), "another control of the MX Master 4 has no role")
     }
 
     /// The code of the control of each role: the one its role is read from, so the two agree.
-    func testMosCodeForRole_isTheControlOfThatRole() {
+    func testScrollioCodeForRole_isTheControlOfThatRole() {
         let roles: [LogiControlRole] = [.middle, .back, .forward, .gesture, .modeShift, .thumbPanel]
-        XCTAssertEqual(roles.map { LogiCenter.shared.mosCode(for: $0) }, [1005, 1006, 1007, 1000, 1001, 2000 + 0x01A0])
+        XCTAssertEqual(roles.map { LogiCenter.shared.scrollioCode(for: $0) }, [1005, 1006, 1007, 1000, 1001, 2000 + 0x01A0])
         for role in roles {
-            XCTAssertEqual(LogiCenter.shared.controlRole(forMosCode: LogiCenter.shared.mosCode(for: role)), role)
+            XCTAssertEqual(LogiCenter.shared.controlRole(forScrollioCode: LogiCenter.shared.scrollioCode(for: role)), role)
         }
         // The standard ones stand for the standard middle, back and forward buttons.
-        XCTAssertEqual([LogiControlRole.middle, .back, .forward].map { LogiCenter.shared.nativeMouseButton(forMosCode: LogiCenter.shared.mosCode(for: $0)) },
+        XCTAssertEqual([LogiControlRole.middle, .back, .forward].map { LogiCenter.shared.nativeMouseButton(forScrollioCode: LogiCenter.shared.scrollioCode(for: $0)) },
                        [2, 3, 4])
     }
 

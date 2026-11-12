@@ -106,7 +106,7 @@ final class LogiButtonDeliveryModeTests: XCTestCase {
         XCTAssertEqual(store.recordExternalClear(for: key, at: t0.addingTimeInterval(15)), .contended)
     }
 
-    func testDeliveryModeLookupByMosCodeUsesActiveMode() {
+    func testDeliveryModeLookupByScrollioCodeUsesActiveMode() {
         let store = LogiButtonDeliveryModeStore()
         let key = LogiOwnershipKey(
             vendorId: 0x046D,
@@ -119,8 +119,8 @@ final class LogiButtonDeliveryModeTests: XCTestCase {
         _ = store.recordExternalClear(for: key, at: t0)
         _ = store.recordExternalClear(for: key, at: t0.addingTimeInterval(1))
 
-        XCTAssertEqual(store.deliveryMode(forMosCode: 1006, matching: [key]), .contended)
-        XCTAssertNil(store.deliveryMode(forMosCode: 1007, matching: [key]))
+        XCTAssertEqual(store.deliveryMode(forScrollioCode: 1006, matching: [key]), .contended)
+        XCTAssertNil(store.deliveryMode(forScrollioCode: 1007, matching: [key]))
     }
 
     func testDefaultButtonDeliveryPolicyUsesTwoSecondStandardUndivertGuardInterval() {

@@ -8,15 +8,15 @@ import Cocoa
 /// Standard HID++ mouse controls that can be treated as stable macOS mouse
 /// button triggers.
 enum LogiStandardMouseButtonAlias {
-    static func nativeButtonCode(forMosCode code: UInt16) -> UInt16? {
-        return LogiCenter.shared.nativeMouseButton(forMosCode: code)
+    static func nativeButtonCode(forScrollioCode code: UInt16) -> UInt16? {
+        return LogiCenter.shared.nativeMouseButton(forScrollioCode: code)
     }
 
     static func convertedRecordedEvent(from event: RecordedEvent) -> RecordedEvent? {
         guard event.type == .mouse else {
             return nil
         }
-        guard let nativeCode = nativeButtonCode(forMosCode: event.code) else {
+        guard let nativeCode = nativeButtonCode(forScrollioCode: event.code) else {
             return nil
         }
 

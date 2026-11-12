@@ -157,11 +157,11 @@ final class LogiSelfTestWizard {
     private func startWait(_ condition: WaitCondition, timeout: TimeInterval) {
         // For now, only handle .rawButtonEvent — sufficient for the example step.
         switch condition {
-        case .rawButtonEvent(let mosCode, _):
+        case .rawButtonEvent(let scrollioCode, _):
             let token = NotificationCenter.default.addObserver(
                 forName: LogiCenter.rawButtonEvent, object: nil, queue: .main
             ) { [weak self] notif in
-                if let expected = mosCode, (notif.userInfo?["mosCode"] as? UInt16) != expected { return }
+                if let expected = scrollioCode, (notif.userInfo?["mosCode"] as? UInt16) != expected { return }
                 self?.endWait()
                 self?.handleOutcome(.pass)
             }

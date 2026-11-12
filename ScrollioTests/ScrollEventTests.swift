@@ -1069,7 +1069,7 @@ final class ThumbWheelEngineTests: XCTestCase {
             XCTAssertEqual(nsEvent.type, .systemDefined)
             XCTAssertEqual(nsEvent.subtype.rawValue, 8, "the keyboard's special keys")
             XCTAssertEqual(nsEvent.data1, data1)
-            XCTAssertEqual(event.getIntegerValueField(.eventSourceUserData), MosEventMarker.syntheticCustom, "marked as Scrollio's own")
+            XCTAssertEqual(event.getIntegerValueField(.eventSourceUserData), ScrollioEventMarker.syntheticCustom, "marked as Scrollio's own")
         }
         XCTAssertEqual(SystemVolumeKey.up.keyType, 0, "NX_KEYTYPE_SOUND_UP")
         XCTAssertEqual(SystemVolumeKey.down.keyType, 1, "NX_KEYTYPE_SOUND_DOWN")

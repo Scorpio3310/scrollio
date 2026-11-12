@@ -18,8 +18,8 @@ enum ButtonTriggerNaming {
         var name: (UInt16) -> String?
 
         static let live = Logitech(
-            role: { LogiCenter.shared.controlRole(forMosCode: $0) },
-            name: { LogiCenter.shared.name(forMosCode: $0) }
+            role: { LogiCenter.shared.controlRole(forScrollioCode: $0) },
+            name: { LogiCenter.shared.name(forScrollioCode: $0) }
         )
     }
 

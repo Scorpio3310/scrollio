@@ -344,9 +344,9 @@ final class LogiGestureControllerTests: XCTestCase {
 
     // MARK: - Raw XY left on the device
 
-    func testALeftoverIsClearedWhenMosDivertsTheControlWithoutTracking() {
+    func testALeftoverIsClearedWhenScrollioDivertsTheControlWithoutTracking() {
         let controller = makeController()
-        // getCidReporting during discovery: diverted + raw XY, from a Mos that died.
+        // getCidReporting during discovery: diverted + raw XY, from a Scrollio that died.
         controller.noteDeviceReporting(cid: Self.gesture, reportingFlags: 0x11)
         applyUsage(controller, bound: [Self.gesture], tracking: [])
         XCTAssertEqual(writes, [Write(cid: Self.gesture, flags: 0x23)])
@@ -374,7 +374,7 @@ final class LogiGestureControllerTests: XCTestCase {
         XCTAssertEqual(writes, [Write(cid: Self.gesture, flags: 0x23)])
     }
 
-    func testALeftoverOnAControlMosDoesNotDivertIsLeftAlone() {
+    func testALeftoverOnAControlScrollioDoesNotDivertIsLeftAlone() {
         let controller = makeController()
         controller.noteDeviceReporting(cid: Self.gesture, reportingFlags: 0x11)
         applyUsage(controller, bound: [Self.back], tracking: [])
@@ -773,7 +773,7 @@ final class LogiGestureControllerTests: XCTestCase {
 
     func testManagerPlaysNothingForAButtonNoMouseOwns() {
         let manager = LogiSessionManager()
-        XCTAssertFalse(manager.playGestureHaptic(.lockIn, forMosCode: 1000))
+        XCTAssertFalse(manager.playGestureHaptic(.lockIn, forScrollioCode: 1000))
         XCTAssertFalse(manager.supportsGestureDeviceTracking)
         XCTAssertFalse(manager.supportsGestureHaptics)
     }

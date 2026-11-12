@@ -23,7 +23,7 @@ final class LogiPersistenceCanaryTests: XCTestCase {
 
     func testDebugPanelLog_autoWritesLatestLocalLog() throws {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("MosLogiDebug-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("ScrollioLogiDebug-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 

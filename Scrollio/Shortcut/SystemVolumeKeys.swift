@@ -34,7 +34,7 @@ enum SystemVolumeKey: Equatable {
     }
 
     /// The key's down or up event, as the keyboard sends it, marked as Scrollio's own
-    /// (`MosEventMarker`) like every key it posts.
+    /// (`ScrollioEventMarker`) like every key it posts.
     func event(down: Bool) -> CGEvent? {
         let state = down ? Self.keyDownState : Self.keyUpState
         guard let event = NSEvent.otherEvent(
@@ -50,7 +50,7 @@ enum SystemVolumeKey: Equatable {
         ), let cgEvent = event.cgEvent else {
             return nil
         }
-        cgEvent.setIntegerValueField(.eventSourceUserData, value: MosEventMarker.syntheticCustom)
+        cgEvent.setIntegerValueField(.eventSourceUserData, value: ScrollioEventMarker.syntheticCustom)
         return cgEvent
     }
 }

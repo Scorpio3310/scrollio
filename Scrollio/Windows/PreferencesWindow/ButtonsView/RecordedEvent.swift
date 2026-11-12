@@ -59,7 +59,7 @@ struct ScrollHotkey: Codable, Equatable {
             return KeyCode.keyMap[code] ?? "Key \(code)"
         case .mouse:
             if LogiCenter.shared.isLogiCode(code) {
-                return (LogiCenter.shared.name(forMosCode: code) ?? "")
+                return (LogiCenter.shared.name(forScrollioCode: code) ?? "")
             }
             return KeyCode.mouseMap[code] ?? "🖱\(code)"
         }

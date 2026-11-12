@@ -11,5 +11,5 @@ import Foundation
 /// ScrollCore → InputProcessor → ShortcutExecutor → ScrollCore 三角循环。
 /// ScrollCore 实现此协议, 由启动期 (AppDelegate / 测试 setUp) 注入。
 protocol ScrollActionPort: AnyObject {
-    func handleMosScrollAction(role: ScrollRole, isDown: Bool)
+    func handleScrollAction(role: ScrollRole, isDown: Bool)
 }

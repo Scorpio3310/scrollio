@@ -17,7 +17,7 @@
 import Foundation
 
 /// Logitech HID++ Control ID (CID) 注册表
-/// 提供 CID→名称查询 和 CID↔MosCode 转换
+/// 提供 CID→名称查询 和 CID↔ScrollioCode 转换
 struct LogiCIDDirectory {
 
     // MARK: - CID 名称表 (来自 Solaar special_keys.py CONTROL 字典)
@@ -331,9 +331,9 @@ struct LogiCIDDirectory {
         0x1200: "MR",
     ]
 
-    // MARK: - CID → MosCode 特殊映射 (Mos 自有逻辑)
+    // MARK: - CID → ScrollioCode 特殊映射 (Mos 自有逻辑)
 
-    /// 为常见鼠标按钮保留固定 MosCode (1000~1007)
+    /// 为常见鼠标按钮保留固定 ScrollioCode (1000~1007)
     /// 其余 CID 使用公式: 2000 + CID
     private static let cidToCode: [UInt16: UInt16] = [
         0x0050: 1003,  // Left (diverted)
@@ -375,41 +375,41 @@ struct LogiCIDDirectory {
         return cidNames[cid] ?? String(format: "Unknown(0x%04X)", cid)
     }
 
-    /// 通过 MosCode 查询名称 (按键面板使用)
-    static func name(forMosCode code: UInt16) -> String {
+    /// 通过 ScrollioCode 查询名称 (按键面板使用)
+    static func name(forScrollioCode code: UInt16) -> String {
         guard let cid = toCID(code) else { return "Logi(\(code))" }
         return name(forCID: cid)
     }
 
     // MARK: - Code 转换
 
-    /// CID → MosCode
+    /// CID → ScrollioCode
     /// 已知 CID 最大值约 0x1200, 加 2000 后远小于 UInt16.max
-    static func toMosCode(_ cid: UInt16) -> UInt16 {
+    static func toScrollioCode(_ cid: UInt16) -> UInt16 {
         if let known = cidToCode[cid] { return known }
         let mapped = UInt32(2000) + UInt32(cid)
         return mapped <= UInt32(UInt16.max) ? UInt16(mapped) : UInt16(cid & 0x0FFF) + 2000
     }
 
-    /// MosCode → CID (反向映射, O(1))
-    static func toCID(_ mosCode: UInt16) -> UInt16? {
-        if let cid = codeToCID[mosCode] { return cid }
-        if mosCode >= 2000 { return mosCode - 2000 }
+    /// ScrollioCode → CID (反向映射, O(1))
+    static func toCID(_ scrollioCode: UInt16) -> UInt16? {
+        if let cid = codeToCID[scrollioCode] { return cid }
+        if scrollioCode >= 2000 { return scrollioCode - 2000 }
         return nil
     }
 
-    /// Native macOS mouse button number for a HID++ CID, if Mos can safely alias it.
+    /// Native macOS mouse button number for a HID++ CID, if Scrollio can safely alias it.
     static func nativeMouseButton(forCID cid: UInt16) -> UInt16? {
         return cidToNativeMouseButton[cid]
     }
 
-    /// Native macOS mouse button number for a Logi MosCode, if Mos can safely alias it.
-    static func nativeMouseButton(forMosCode mosCode: UInt16) -> UInt16? {
-        guard let cid = toCID(mosCode) else { return nil }
+    /// Native macOS mouse button number for a Logi ScrollioCode, if Scrollio can safely alias it.
+    static func nativeMouseButton(forScrollioCode scrollioCode: UInt16) -> UInt16? {
+        guard let cid = toCID(scrollioCode) else { return nil }
         return nativeMouseButton(forCID: cid)
     }
 
-    /// HID++ CID for a native macOS mouse button number, when Mos knows a stable alias.
+    /// HID++ CID for a native macOS mouse button number, when Scrollio knows a stable alias.
     static func cid(forNativeMouseButton button: UInt16) -> UInt16? {
         return nativeMouseButtonToCID[button]
     }

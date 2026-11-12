@@ -2,7 +2,7 @@ import XCTest
 @testable import Scrollio_Debug
 
 /// LogiWheelController against fake response bytes: what it sends, when it writes,
-/// that it never writes unless the settings are managed by Mos, and that a value the user
+/// that it never writes unless the settings are managed by Scrollio, and that a value the user
 /// never set is never written.
 final class LogiWheelControllerTests: XCTestCase {
 

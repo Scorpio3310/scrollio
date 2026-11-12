@@ -8,13 +8,13 @@
 //  logic is testable with fake bytes. Byte layouts: LogiGestureProtocol.
 //
 //  Raw XY rules:
-//  - A control is armed only when Mos asked for it (`setRawXYRequest`), the control has
+//  - A control is armed only when Scrollio asked for it (`setRawXYRequest`), the control has
 //    the raw_xy capability and it is being diverted anyway. Arming goes out together with
 //    the divert (0x33), at the time the binding is applied, never in the middle of a hold.
 //  - A hold is tracked by the device only when the mouse acknowledged the arm request
 //    before the button went down. No acknowledgement within `acknowledgeTimeout`, or an
 //    HID++ error, drops the control back to the pointer path until the request changes.
-//  - Controls Mos never armed keep getting the exact bytes they always got (0x03 / 0x02).
+//  - Controls Scrollio never armed keep getting the exact bytes they always got (0x03 / 0x02).
 //  - The first movement sample of every hold is dropped (OpenLogi saw a large jump there).
 //
 //  Haptic rules: play only when the mouse has 0x19B0 and lists a usable waveform. A cue is
@@ -89,15 +89,15 @@ final class LogiGestureController {
 
     /// Diverted controls of this device that can report raw XY (getCidInfo).
     private(set) var rawXYCapableCIDs: Set<UInt16> = []
-    /// Controls Mos wants tracked by the device, whatever this device can do.
+    /// Controls Scrollio wants tracked by the device, whatever this device can do.
     private(set) var rawXYRequest: Set<UInt16> = []
     /// Controls whose arm request failed; they stay on the pointer path until they leave
     /// the request (setting off, binding removed) or the device is discovered again.
     private(set) var rejectedCIDs: Set<UInt16> = []
-    /// Controls Mos set raw XY on. Absent: Mos never touched their raw XY bit.
+    /// Controls Scrollio set raw XY on. Absent: Scrollio never touched their raw XY bit.
     private var rawXYPhases: [UInt16: RawXYPhase] = [:]
-    /// Controls the device itself reported with raw XY on although Mos did not set it now:
-    /// left over from a Mos that died, or set by another app. Cleared the next time Mos
+    /// Controls the device itself reported with raw XY on although Scrollio did not set it now:
+    /// left over from a Scrollio that died, or set by another app. Cleared the next time Scrollio
     /// writes that control. Read from getCidReporting, whose layout is the least certain
     /// part of the research, so it is only ever used to send that one extra "raw XY off",
     /// and only to a control that has the capability (`hasLeftoverRawXY`).
@@ -117,7 +117,7 @@ final class LogiGestureController {
     /// A tracked button is held right now, so raw XY events are expected.
     var hasTrackedHold: Bool { !trackedHolds.isEmpty }
 
-    // MARK: - Raw XY: what Mos wants
+    // MARK: - Raw XY: what Scrollio wants
 
     func setRawXYCapableControls(_ cids: Set<UInt16>) {
         guard cids != rawXYCapableCIDs else { return }
@@ -149,7 +149,7 @@ final class LogiGestureController {
     /// sends them; calling this records the request, so call it exactly once per write.
     func reportingFlags(cid: UInt16, divert: Bool) -> UInt8 {
         let change = nextChange(cid: cid, divert: divert)
-        // Whatever goes out next states the raw XY bit Mos wants, so a leftover is settled.
+        // Whatever goes out next states the raw XY bit Scrollio wants, so a leftover is settled.
         leftoverRawXY.remove(cid)
         if change == .divertWithRawXY {
             // Re-asserting a control the mouse already confirmed keeps it armed.
@@ -236,14 +236,14 @@ final class LogiGestureController {
         }
     }
 
-    /// The divert of a control was lost or taken over from outside: Mos's raw XY state for
+    /// The divert of a control was lost or taken over from outside: Scrollio's raw XY state for
     /// it is void. The session re-applies the binding afterwards.
     func forget(cid: UInt16) {
         rawXYPhases[cid] = nil
         trackedHolds.removeAll { $0.cid == cid }
     }
 
-    /// Teardown: gives every control Mos set raw XY on back to the mouse (0x22). The
+    /// Teardown: gives every control Scrollio set raw XY on back to the mouse (0x22). The
     /// session undiverts the rest with the plain bytes.
     func disarmAll() {
         for cid in rawXYPhases.keys.sorted() {
@@ -293,7 +293,7 @@ final class LogiGestureController {
     /// getCapabilities waveform mask; nil until read.
     private(set) var hapticWaveformMask: UInt32?
 
-    /// The mouse has a haptic motor Mos can pulse.
+    /// The mouse has a haptic motor Scrollio can pulse.
     var supportsHaptics: Bool { hapticFeatureIndex != nil }
 
     /// A cue asked for before the mouse had said what it can play and whether haptics are

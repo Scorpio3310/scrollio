@@ -42,10 +42,10 @@ enum ButtonsMousePart: Int, CaseIterable {
     /// Modifiers do not matter: "⌥ Back button" is the Back button. A button the Mac knows
     /// only by its number is the part the user said it is ("Which button is this?").
     /// - Parameter logitechRole: what a Logitech code is on the mouse
-    ///   (`LogiCenter.controlRole(forMosCode:)`).
+    ///   (`LogiCenter.controlRole(forScrollioCode:)`).
     static func part(
         for event: RecordedEvent,
-        logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forMosCode: $0) }
+        logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forScrollioCode: $0) }
     ) -> ButtonsMousePart? {
         guard event.type == .mouse else { return nil }
         switch event.code {
@@ -113,7 +113,7 @@ enum PlacedMousePart: String, Encodable, CaseIterable {
     /// left and right buttons are not offered, a numbered button has no place of its own).
     static func known(
         for event: RecordedEvent,
-        logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forMosCode: $0) }
+        logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forScrollioCode: $0) }
     ) -> PlacedMousePart? {
         guard event.type == .mouse else { return nil }
         switch event.code {
@@ -159,7 +159,7 @@ enum ButtonTriggerPicture: Equatable {
     static func make(
         for event: RecordedEvent,
         mouse: MouseArtworkModel,
-        logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forMosCode: $0) }
+        logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forScrollioCode: $0) }
     ) -> ButtonTriggerPicture {
         guard event.type == .mouse else { return .key }
         let part = ButtonsMousePart.part(for: event, logitechRole: logitechRole)

@@ -674,7 +674,7 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .down)), .consumed)
         InputProcessor.shared.fireMouseGestureWatchdogsForTests()
 
-        // A hold that was merely long: its button-up still belongs to Mos, and it must not
+        // A hold that was merely long: its button-up still belongs to Scrollio, and it must not
         // run the click action (Mission Control) ten seconds after the press.
         XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
         waitForMainQueue()
@@ -1089,7 +1089,7 @@ final class InputProcessorTests: XCTestCase {
         }
     }
 
-    func testResolveAction_mosScrollActionsAreStateful() {
+    func testResolveAction_scrollActionsAreStateful() {
         for identifier in ["mosScrollDash", "mosScrollToggle", "mosScrollBlock"] {
             guard let action = ShortcutExecutor.shared.resolveAction(named: identifier) else {
                 return XCTFail("Expected \(identifier) action to resolve")
@@ -1118,7 +1118,7 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(ScrollCore.shared.dashAmplification, 1.0)
     }
 
-    func testProcess_mosScrollMiddleTapWithoutScroll_replaysOriginalMouseClick() {
+    func testProcess_scrollActionMiddleTapWithoutScroll_replaysOriginalMouseClick() {
         let trigger = RecordedEvent(type: .mouse, code: 2, modifiers: 0, displayComponents: ["🖱M"], deviceFilter: nil)
         let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "mosScrollDash", isEnabled: true)
         Options.shared.buttons.binding = [binding]
@@ -1146,11 +1146,11 @@ final class InputProcessorTests: XCTestCase {
 
         XCTAssertEqual(observedEvents.map(\.type), [.otherMouseDown, .otherMouseUp])
         XCTAssertEqual(observedEvents.map(\.buttonNumber), [2, 2])
-        XCTAssertEqual(observedEvents.map(\.userData), [MosEventMarker.syntheticCustom, MosEventMarker.syntheticCustom])
+        XCTAssertEqual(observedEvents.map(\.userData), [ScrollioEventMarker.syntheticCustom, ScrollioEventMarker.syntheticCustom])
         XCTAssertFalse(ScrollCore.shared.dashScroll)
     }
 
-    func testProcess_mosScrollMiddleTapWithScrollUse_doesNotReplayOriginalMouseClick() {
+    func testProcess_scrollActionMiddleTapWithScrollUse_doesNotReplayOriginalMouseClick() {
         let trigger = RecordedEvent(type: .mouse, code: 2, modifiers: 0, displayComponents: ["🖱M"], deviceFilter: nil)
         let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "mosScrollDash", isEnabled: true)
         Options.shared.buttons.binding = [binding]
@@ -1165,7 +1165,7 @@ final class InputProcessorTests: XCTestCase {
             InputProcessor.shared.process(InputEvent(type: .mouse, code: 2, modifiers: .init(rawValue: 0), phase: .down, source: .hidPP, device: nil)),
             .consumed
         )
-        InputProcessor.shared.markMosScrollActionSessionsUsedForScroll()
+        InputProcessor.shared.markScrollActionSessionsUsedForScroll()
 
         XCTAssertEqual(
             InputProcessor.shared.process(InputEvent(type: .mouse, code: 2, modifiers: .init(rawValue: 0), phase: .up, source: .hidPP, device: nil)),
@@ -1176,7 +1176,7 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertFalse(ScrollCore.shared.dashScroll)
     }
 
-    func testScrollCore_scrollWheelWhileMosScrollHeldSuppressesTapReplay() {
+    func testScrollCore_scrollWheelWhileScrollActionHeldSuppressesTapReplay() {
         let trigger = RecordedEvent(type: .mouse, code: 2, modifiers: 0, displayComponents: ["🖱M"], deviceFilter: nil)
         let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "mosScrollDash", isEnabled: true)
         Options.shared.buttons.binding = [binding]
@@ -1206,7 +1206,7 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertFalse(ScrollCore.shared.dashScroll)
     }
 
-    func testScrollCore_scrollWheelReleasesCGMosScrollSessionWhenPhysicalButtonIsNoLongerDown() {
+    func testScrollCore_scrollWheelReleasesCGScrollActionSessionWhenPhysicalButtonIsNoLongerDown() {
         let trigger = RecordedEvent(type: .mouse, code: 2, modifiers: 0, displayComponents: ["🖱M"], deviceFilter: nil)
         let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "mosScrollDash", isEnabled: true)
         Options.shared.buttons.binding = [binding]
@@ -1232,7 +1232,7 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(ScrollCore.shared.dashAmplification, 1.0)
     }
 
-    func testProcess_mosScrollCGMouseTapWithPointerMove_doesNotReplayOriginalMouseClick() {
+    func testProcess_scrollActionCGMouseTapWithPointerMove_doesNotReplayOriginalMouseClick() {
         let trigger = RecordedEvent(type: .mouse, code: 2, modifiers: 0, displayComponents: ["🖱M"], deviceFilter: nil)
         let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "mosScrollDash", isEnabled: true)
         Options.shared.buttons.binding = [binding]
@@ -1291,7 +1291,7 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertFalse(ScrollCore.shared.toggleScroll)
     }
 
-    func testProcess_logiMosScrollForwardTapWithoutScroll_replaysForwardButton() {
+    func testProcess_logiScrollActionForwardTapWithoutScroll_replaysForwardButton() {
         let trigger = RecordedEvent(
             type: .mouse,
             code: 1007,
@@ -1371,7 +1371,7 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(executed().count, 1)
     }
 
-    func testSyntheticReleaseOfAMosScrollHoldDoesNotReplayTheClick() {
+    func testSyntheticReleaseOfAScrollActionHoldDoesNotReplayTheClick() {
         let trigger = RecordedEvent(type: .mouse, code: 1007, modifiers: 0, displayComponents: ["[Logi]", "Forward"], deviceFilter: nil)
         Options.shared.buttons.binding = [ButtonBinding(triggerEvent: trigger, systemShortcutName: "mosScrollToggle", isEnabled: true)]
         ButtonUtils.shared.invalidateCache()
@@ -1455,7 +1455,7 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertFalse(ScrollCore.shared.dashScroll)
     }
 
-    func testProcess_mosScrollBindingDoesNotLatchWhenLegacyScrollHotkeySeesOnlyDown() {
+    func testProcess_scrollActionBindingDoesNotLatchWhenLegacyScrollHotkeySeesOnlyDown() {
         struct Case {
             let shortcutName: String
             let configureLegacyHotkey: (ScrollHotkey) -> Void
@@ -2071,7 +2071,7 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertFalse(InputProcessor.repeatsWhileHeld(.customKey(code: KeyCode.shiftL, modifiers: 0)))
         XCTAssertFalse(InputProcessor.repeatsWhileHeld(.mouseButton(kind: .left)))
         XCTAssertFalse(InputProcessor.repeatsWhileHeld(.customMouseButton(buttonNumber: 5, modifiers: 0)))
-        XCTAssertFalse(InputProcessor.repeatsWhileHeld(.mosScroll(role: .dash)))
+        XCTAssertFalse(InputProcessor.repeatsWhileHeld(.scrollAction(role: .dash)))
     }
 
     // MARK: - Shortcuts Scrollio posts are marked as its own
@@ -2086,14 +2086,14 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(up.type, .keyUp)
         XCTAssertEqual(down.keyCode, 8)
         XCTAssertEqual(up.keyCode, 8)
-        XCTAssertEqual(down.getIntegerValueField(.eventSourceUserData), MosEventMarker.syntheticCustom)
-        XCTAssertEqual(up.getIntegerValueField(.eventSourceUserData), MosEventMarker.syntheticCustom)
+        XCTAssertEqual(down.getIntegerValueField(.eventSourceUserData), ScrollioEventMarker.syntheticCustom)
+        XCTAssertEqual(up.getIntegerValueField(.eventSourceUserData), ScrollioEventMarker.syntheticCustom)
         XCTAssertTrue(down.flags.contains(.maskCommand))
         XCTAssertFalse(up.flags.contains(.maskCommand), "the key up carries the flags only when asked to")
         let keptUp = try XCTUnwrap(ShortcutExecutor.shortcutKeyEvent(code: 48, flags: command, keyDown: false,
                                                                      preserveFlagsOnKeyUp: true, source: nil))
         XCTAssertTrue(keptUp.flags.contains(.maskCommand))
-        XCTAssertEqual(keptUp.getIntegerValueField(.eventSourceUserData), MosEventMarker.syntheticCustom)
+        XCTAssertEqual(keptUp.getIntegerValueField(.eventSourceUserData), ScrollioEventMarker.syntheticCustom)
     }
 
     /// What the mark is for: the button tap lets a posted shortcut through untouched. Before,

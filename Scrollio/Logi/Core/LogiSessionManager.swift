@@ -49,10 +49,10 @@ internal class LogiSessionManager {
     var hapticSampleToken = 0
 
     /// Gesture Navigation (见 Gesture/LogiSessionManager+Gesture.swift).
-    /// Mos codes of the Logitech buttons the mouse should track itself (raw XY). Pushed by
+    /// Scrollio codes of the Logitech buttons the mouse should track itself (raw XY). Pushed by
     /// the Integration layer; empty while "let the mouse track the gesture" is off.
     var gestureTrackingCodes: Set<UInt16> = []
-    /// Mos code -> the device its button was last pressed on (target of haptic cues).
+    /// Scrollio code -> the device its button was last pressed on (target of haptic cues).
     var gestureHoldOwners: [UInt16: LogiGestureHoldOwner] = [:]
     var gestureStateNotificationScheduled = false
 
@@ -291,14 +291,14 @@ internal class LogiSessionManager {
         }
     }
 
-    /// 查询某 Logi MosCode 当前是否被第三方 (如 Logitech Options+) 接管.
+    /// 查询某 Logi ScrollioCode 当前是否被第三方 (如 Logitech Options+) 接管.
     /// 未连接设备 / 未完成 reporting 查询 / 非 Logi code -> unknown.
-    func conflictStatus(forMosCode mosCode: UInt16) -> ConflictStatus {
-        return buttonCaptureDiagnosis(forMosCode: mosCode).ownership
+    func conflictStatus(forScrollioCode scrollioCode: UInt16) -> ConflictStatus {
+        return buttonCaptureDiagnosis(forScrollioCode: scrollioCode).ownership
     }
 
-    func buttonCaptureDiagnosis(forMosCode mosCode: UInt16) -> LogiButtonCaptureDiagnosis {
-        guard let cid = LogiCIDDirectory.toCID(mosCode) else {
+    func buttonCaptureDiagnosis(forScrollioCode scrollioCode: UInt16) -> LogiButtonCaptureDiagnosis {
+        guard let cid = LogiCIDDirectory.toCID(scrollioCode) else {
             return .unknown(nativeMouseButton: nil)
         }
         let nativeMouseButton = LogiCIDDirectory.nativeMouseButton(forCID: cid)
@@ -306,13 +306,13 @@ internal class LogiSessionManager {
 
         for session in sessions.values.sorted(by: Self.prefersDiagnosisSession) where session.isHIDPPCandidate {
             if let control = session.control(forCID: cid) {
-                let mosOwns = session.debugDivertedCIDs.contains(cid)
+                let scrollioOwns = session.debugDivertedCIDs.contains(cid)
                 let ownership = LogiConflictDetector.status(
                     reportingFlags: control.reportingFlags,
                     targetCID: control.targetCID,
                     cid: cid,
                     reportingQueried: control.reportingQueried,
-                    mosOwnsDivert: mosOwns
+                    scrollioOwnsDivert: scrollioOwns
                 )
                 let key = session.ownershipKey(forCID: cid)
                 let delivery = deliveryModes.mode(for: key)
@@ -371,8 +371,8 @@ internal class LogiSessionManager {
     }
     #endif
 
-    func deliveryMode(forMosCode mosCode: UInt16) -> LogiButtonDeliveryMode? {
-        return deliveryModes.deliveryMode(forMosCode: mosCode, matching: activeOwnershipKeys)
+    func deliveryMode(forScrollioCode scrollioCode: UInt16) -> LogiButtonDeliveryMode? {
+        return deliveryModes.deliveryMode(forScrollioCode: scrollioCode, matching: activeOwnershipKeys)
     }
 
     func notifyConflictChanged() {
@@ -398,7 +398,7 @@ internal class LogiSessionManager {
             LogiDebugPanel.log(
                 device: key.name,
                 type: .buttonEvent,
-                message: "[DeliveryMode] changed cid=\(String(format: "0x%04X", key.cid)) mosCode=\(LogiCIDDirectory.toMosCode(key.cid)) transport=\(key.transport) previous=\(previousMode.debugLabel) current=\(mode.debugLabel)"
+                message: "[DeliveryMode] changed cid=\(String(format: "0x%04X", key.cid)) scrollioCode=\(LogiCIDDirectory.toScrollioCode(key.cid)) transport=\(key.transport) previous=\(previousMode.debugLabel) current=\(mode.debugLabel)"
             )
             if mode == .contended {
                 showDeliveryContentionToast(for: key)

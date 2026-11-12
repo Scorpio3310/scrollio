@@ -27,9 +27,9 @@ class ScrollCore: ScrollActionPort {
     var dashKeyHeld = false
     var toggleKeyHeld = false
     var blockKeyHeld = false
-    private var mosDashActionCount = 0
-    private var mosToggleActionCount = 0
-    private var mosBlockActionCount = 0
+    private var dashActionCount = 0
+    private var toggleActionCount = 0
+    private var blockActionCount = 0
     /// Who moves the page when the trackpad and the wheel overlap. Main thread (scroll tap).
     var handover = ScrollHandover()
     /// The sideways wheel's functions and its log line. Main thread (scroll tap, main queue).
@@ -102,8 +102,8 @@ class ScrollCore: ScrollActionPort {
         let hasHorizontalDelta = scrollEvent.X.valid && scrollEvent.X.usableValue != 0.0
         if hasVerticalDelta || hasHorizontalDelta {
             // 只有真实滚动才会取消 tap replay, 同时触发丢失 mouseUp 的轻量兜底释放。
-            InputProcessor.shared.markMosScrollActionSessionsUsedForScroll()
-            InputProcessor.shared.releaseMosScrollMouseSessionsIfPhysicalButtonsAreUp()
+            InputProcessor.shared.markScrollActionSessionsUsedForScroll()
+            InputProcessor.shared.releaseScrollActionMouseSessionsIfPhysicalButtonsAreUp()
         }
         // 不处理触控板
         // 无法区分黑苹果, 因为黑苹果的触控板驱动直接模拟鼠标输入
@@ -367,17 +367,17 @@ class ScrollCore: ScrollActionPort {
     private var hidToggleHeldCode: UInt16?
     private var hidBlockHeldCode: UInt16?
 
-    func handleMosScrollAction(role: ScrollRole, isDown: Bool) {
+    func handleScrollAction(role: ScrollRole, isDown: Bool) {
         assertMainThread()
         switch role {
         case .dash:
-            mosDashActionCount = updatedActionCount(mosDashActionCount, isDown: isDown)
+            dashActionCount = updatedActionCount(dashActionCount, isDown: isDown)
             refreshDashState()
         case .toggle:
-            mosToggleActionCount = updatedActionCount(mosToggleActionCount, isDown: isDown)
+            toggleActionCount = updatedActionCount(toggleActionCount, isDown: isDown)
             refreshToggleState()
         case .block:
-            mosBlockActionCount = updatedActionCount(mosBlockActionCount, isDown: isDown)
+            blockActionCount = updatedActionCount(blockActionCount, isDown: isDown)
             refreshBlockState()
         }
     }
@@ -390,16 +390,16 @@ class ScrollCore: ScrollActionPort {
     }
 
     private func refreshDashState() {
-        dashScroll = dashKeyHeld || mosDashActionCount > 0
+        dashScroll = dashKeyHeld || dashActionCount > 0
         dashAmplification = dashScroll ? 5.0 : 1.0
     }
 
     private func refreshToggleState() {
-        toggleScroll = toggleKeyHeld || mosToggleActionCount > 0
+        toggleScroll = toggleKeyHeld || toggleActionCount > 0
     }
 
     private func refreshBlockState() {
-        blockSmooth = blockKeyHeld || mosBlockActionCount > 0
+        blockSmooth = blockKeyHeld || blockActionCount > 0
     }
 
     /// 处理来自 Logitech HID++ 的按键事件, 匹配 dash/toggle/block 滚动热键
@@ -464,11 +464,11 @@ class ScrollCore: ScrollActionPort {
     // MARK: - 热键事件处理 (CGEventTap)
     let hotkeyEventCallBack: CGEventTapCallBack = { (proxy, type, event, refcon) in
         // 跳过 Mos 合成事件, 避免 executeCustom 的 flagsChanged 误触发 dash/toggle/block
-        if event.getIntegerValueField(.eventSourceUserData) == MosEventMarker.syntheticCustom {
+        if event.getIntegerValueField(.eventSourceUserData) == ScrollioEventMarker.syntheticCustom {
             return nil  // listenOnly tap 返回值无影响
         }
         if type == .keyDown || type == .flagsChanged || type == .otherMouseDown,
-           ScrollCore.shared.shouldDeferToMosScrollButtonBinding(event) {
+           ScrollCore.shared.shouldDeferToScrollActionButtonBinding(event) {
             // Mos Scroll 动作由 ButtonCore/InputProcessor 接管。若同一触发器也被旧滚动
             // 热键配置使用, listenOnly tap 不能再创建第二份 held 状态。
             return nil
@@ -545,7 +545,7 @@ class ScrollCore: ScrollActionPort {
         return nil
     }
 
-    private func shouldDeferToMosScrollButtonBinding(_ event: CGEvent) -> Bool {
+    private func shouldDeferToScrollActionButtonBinding(_ event: CGEvent) -> Bool {
         let inputEvent = InputEvent(fromCGEvent: event)
         return ButtonUtils.shared.getBestMatchingBinding(
             for: inputEvent,

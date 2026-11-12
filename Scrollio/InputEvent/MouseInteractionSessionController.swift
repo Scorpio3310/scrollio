@@ -41,7 +41,7 @@ final class MouseInteractionSessionController {
     /// then once more a new one.
     static let motionTapAttempts = 2
 
-    /// Mouse movement only. Mos's own dock swipe events (types 29 and 30) never reach this tap.
+    /// Mouse movement only. Scrollio's own dock swipe events (types 29 and 30) never reach this tap.
     static let motionEventMask: CGEventMask =
         (CGEventMask(1 << CGEventType.mouseMoved.rawValue)) |
         (CGEventMask(1 << CGEventType.leftMouseDragged.rawValue)) |

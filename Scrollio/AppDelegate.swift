@@ -32,7 +32,7 @@ enum AppRuntime {
     ) -> Bool {
         let isRunningTests = isRunningXCTest(environment: environment) || isXCTestLoaded
         guard isRunningTests else { return true }
-        return environment["MOS_TEST_ENABLE_APP_STARTUP"] == "1"
+        return environment["SCROLLIO_TEST_ENABLE_APP_STARTUP"] == "1"
     }
 
     private static var isXCTestLoaded: Bool {

@@ -1,7 +1,7 @@
 import XCTest
 @testable import Scrollio_Debug
 
-/// "Follow the hand" end to end inside Mos: settings, the InputProcessor wiring with a
+/// "Follow the hand" end to end inside Scrollio: settings, the InputProcessor wiring with a
 /// recording dock swipe driver, and the mode rules of the gesture controls. No event is ever posted.
 final class MouseGestureInteractiveModeTests: XCTestCase {
 
@@ -505,7 +505,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
             Presentation.make(storedMode: .interactive, isInteractiveAvailable: true),
             Presentation(selectedMode: .interactive, isInteractiveSelectable: true, areHorizontalActionsEditable: false)
         )
-        // Unavailable: Mos runs discrete whatever is stored, and the controls say so.
+        // Unavailable: Scrollio runs discrete whatever is stored, and the controls say so.
         XCTAssertEqual(
             Presentation.make(storedMode: .interactive, isInteractiveAvailable: false),
             Presentation(selectedMode: .discrete, isInteractiveSelectable: false, areHorizontalActionsEditable: true)
@@ -578,7 +578,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         let view = makeControlsView(isInteractiveAvailable: { false })
         let mode = modeControl(in: view)
 
-        XCTAssertEqual(mode.selectedSegment, 0, "Mos runs discrete, so discrete is shown")
+        XCTAssertEqual(mode.selectedSegment, 0, "Scrollio runs discrete, so discrete is shown")
         XCTAssertFalse(mode.isEnabled(forSegment: 1))
         XCTAssertTrue(mode.isEnabled(forSegment: 0))
         XCTAssertTrue(actionPopUp("left", in: view).isEnabled)

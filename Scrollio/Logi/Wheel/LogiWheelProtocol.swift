@@ -101,7 +101,7 @@ enum LogiWheelProtocol {
     // MARK: - Sensitivity <-> autoDisengage
     //
     // Logi Options+ does not publish how its 1...100 % "Sensitivity" maps to the
-    // autoDisengage byte, so Mos uses its own documented, monotonic mapping:
+    // autoDisengage byte, so Scrollio uses its own documented, monotonic mapping:
     //
     //   sensitivity   1 %  -> 50  (12.5 turns/s: hardest to trigger, Solaar/OpenLogi/Mouser slider max)
     //   sensitivity  50 %  -> 16  ( 4   turns/s: Logitech factory default,

@@ -296,7 +296,7 @@ final class ButtonBindingTests: XCTestCase {
         XCTAssertNil(SystemShortcut.displayShortcut(matchingBindingName: "custom::34:\(modifiers)"))
     }
 
-    func testDisplayShortcut_doesNotMatchMosScrollPlaceholderCode() {
+    func testDisplayShortcut_doesNotMatchScrollActionPlaceholderCode() {
         XCTAssertNil(SystemShortcut.displayShortcut(matchingBindingName: "custom::65532:0"))
     }
 
@@ -611,7 +611,7 @@ final class ButtonBindingTests: XCTestCase {
         guard let mouseIndex = menu.items.firstIndex(where: { $0.title == mouseCategoryName }),
               let mosIndex = menu.items.firstIndex(where: { $0.title == mosCategoryName }),
               let logiIndex = menu.items.firstIndex(where: { $0.title == logiCategoryName }) else {
-            return XCTFail("Expected mouse, Mos scroll, and Logi categories to exist in shortcut menu")
+            return XCTFail("Expected mouse, scroll, and Logi categories to exist in shortcut menu")
         }
 
         XCTAssertLessThan(mouseIndex, mosIndex)

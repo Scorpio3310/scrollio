@@ -152,8 +152,8 @@ final class LogiButtonDeliveryModeStore {
         return modes[key] ?? .hidpp
     }
 
-    func deliveryMode(forMosCode mosCode: UInt16, matching keys: [LogiOwnershipKey]) -> LogiButtonDeliveryMode? {
-        guard let cid = LogiCIDDirectory.toCID(mosCode) else { return nil }
+    func deliveryMode(forScrollioCode scrollioCode: UInt16, matching keys: [LogiOwnershipKey]) -> LogiButtonDeliveryMode? {
+        guard let cid = LogiCIDDirectory.toCID(scrollioCode) else { return nil }
         for key in keys where key.cid == cid {
             let mode = mode(for: key)
             if mode != .hidpp { return mode }

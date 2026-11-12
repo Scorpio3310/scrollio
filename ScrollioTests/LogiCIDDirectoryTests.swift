@@ -3,9 +3,9 @@ import XCTest
 
 final class LogiCIDDirectoryTests: XCTestCase {
 
-    /// For each known fixed-MosCode CID, toCID(toMosCode(cid)) must round-trip.
+    /// For each known fixed-ScrollioCode CID, toCID(toScrollioCode(cid)) must round-trip.
     func testRoundTrip_fixedMappings() {
-        let fixedPairs: [(cid: UInt16, mosCode: UInt16)] = [
+        let fixedPairs: [(cid: UInt16, scrollioCode: UInt16)] = [
             (0x0050, 1003),  // Left
             (0x0051, 1004),  // Right
             (0x0052, 1005),  // Middle
@@ -16,21 +16,21 @@ final class LogiCIDDirectoryTests: XCTestCase {
             (0x00D7, 1002),  // Virtual Gesture
         ]
         for pair in fixedPairs {
-            XCTAssertEqual(LogiCIDDirectory.toMosCode(pair.cid), pair.mosCode,
-                           "CID 0x\(String(pair.cid, radix: 16)) should map to MosCode \(pair.mosCode)")
-            XCTAssertEqual(LogiCIDDirectory.toCID(pair.mosCode), pair.cid,
-                           "MosCode \(pair.mosCode) should map back to CID 0x\(String(pair.cid, radix: 16))")
+            XCTAssertEqual(LogiCIDDirectory.toScrollioCode(pair.cid), pair.scrollioCode,
+                           "CID 0x\(String(pair.cid, radix: 16)) should map to ScrollioCode \(pair.scrollioCode)")
+            XCTAssertEqual(LogiCIDDirectory.toCID(pair.scrollioCode), pair.cid,
+                           "ScrollioCode \(pair.scrollioCode) should map back to CID 0x\(String(pair.cid, radix: 16))")
         }
     }
 
     func testGenericFallback_2000PlusCID() {
         // CIDs not in the fixed table use the formula 2000 + CID.
         let cid: UInt16 = 0x1001  // G1 button
-        XCTAssertEqual(LogiCIDDirectory.toMosCode(cid), 2000 + cid)
+        XCTAssertEqual(LogiCIDDirectory.toScrollioCode(cid), 2000 + cid)
     }
 
     func testIsLogitechCode_threshold() {
-        // Mos's convention: any code >= 1000 is treated as a Logi code.
+        // Scrollio's convention: any code >= 1000 is treated as a Logi code.
         XCTAssertFalse(LogiCIDDirectory.isLogitechCode(999))
         XCTAssertTrue(LogiCIDDirectory.isLogitechCode(1000))
         XCTAssertTrue(LogiCIDDirectory.isLogitechCode(1006))   // Back

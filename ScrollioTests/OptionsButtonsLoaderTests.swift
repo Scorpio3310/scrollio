@@ -78,7 +78,7 @@ final class OptionsButtonsLoaderTests: XCTestCase {
     }
 
     func testDecode_unknownExtraField_stillDecodesAndIgnores() {
-        // Future Mos version added a new field; current Mos must ignore it.
+        // Future Scrollio version added a new field; current Scrollio must ignore it.
         let json = "[\(makeBindingJSON(extraField: "\"futurePayloadKind\": {\"type\":\"runCommand\"}"))]"
         let data = json.data(using: .utf8)!
         let bindings = Options.decodeButtonBindings(from: data)
@@ -182,22 +182,22 @@ final class OptionsButtonsLoaderTests: XCTestCase {
 
     func testAppRuntimeDetectsXCTestEnvironment() {
         XCTAssertTrue(AppRuntime.isRunningXCTest(environment: [
-            "XCTestConfigurationFilePath": "/tmp/MosTests.xctestconfiguration"
+            "XCTestConfigurationFilePath": "/tmp/ScrollioTests.xctestconfiguration"
         ]))
         XCTAssertTrue(AppRuntime.isRunningXCTest(environment: [
-            "XCTestBundlePath": "/tmp/MosTests.xctest"
+            "XCTestBundlePath": "/tmp/ScrollioTests.xctest"
         ]))
         XCTAssertFalse(AppRuntime.isRunningXCTest(environment: [:]))
     }
 
     func testAppRuntimeSkipsStartupSideEffectsDuringTestsUnlessExplicitlyEnabled() {
         let testEnvironment = [
-            "XCTestConfigurationFilePath": "/tmp/MosTests.xctestconfiguration"
+            "XCTestConfigurationFilePath": "/tmp/ScrollioTests.xctestconfiguration"
         ]
         XCTAssertFalse(AppRuntime.shouldRunAppStartupSideEffects(environment: testEnvironment))
         XCTAssertTrue(AppRuntime.shouldRunAppStartupSideEffects(environment: [
-            "XCTestConfigurationFilePath": "/tmp/MosTests.xctestconfiguration",
-            "MOS_TEST_ENABLE_APP_STARTUP": "1"
+            "XCTestConfigurationFilePath": "/tmp/ScrollioTests.xctestconfiguration",
+            "SCROLLIO_TEST_ENABLE_APP_STARTUP": "1"
         ]))
         XCTAssertTrue(AppRuntime.shouldRunAppStartupSideEffects(environment: [:]))
     }

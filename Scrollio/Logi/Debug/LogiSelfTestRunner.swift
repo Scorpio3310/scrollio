@@ -27,7 +27,7 @@ enum StepKind {
 /// Async wait condition for a `physicalAutoVerified` step. The wizard
 /// observes a notification or a session state transition and resolves.
 enum WaitCondition {
-    case rawButtonEvent(mosCode: UInt16?, cid: UInt16?)
+    case rawButtonEvent(scrollioCode: UInt16?, cid: UInt16?)
     case sessionConnected(mode: LogiDeviceSession.ConnectionMode)
     case sessionDisconnected
     case divertApplied(cid: UInt16, expectBit0: Bool)
@@ -102,11 +102,11 @@ extension LogiSelfTestRunner {
             index: 2, total: 2,
             title: "Back button raw event",
             instruction: "Press the Back button on your Logi mouse within 30 seconds.",
-            expectation: "rawButtonEvent fires with mosCode = 1006 (Back).",
+            expectation: "rawButtonEvent fires with scrollioCode = 1006 (Back).",
             kind: .physicalAutoVerified(
                 instruction: "Press the Back button on your Logi mouse within 30 seconds.",
-                expectation: "rawButtonEvent fires with mosCode 1006.",
-                wait: .rawButtonEvent(mosCode: 1006, cid: nil),
+                expectation: "rawButtonEvent fires with scrollioCode 1006.",
+                wait: .rawButtonEvent(scrollioCode: 1006, cid: nil),
                 timeout: 30
             )
         ))

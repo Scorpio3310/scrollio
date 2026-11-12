@@ -420,7 +420,7 @@ struct SystemShortcut {
         executionMode: .stateful
     )
 
-    // MARK: - Mos Scroll Actions
+    // MARK: - Scroll Actions
     // Mos 鼠标滚动动作 (由 ShortcutExecutor 转发给 ScrollCore, 保留旧的单热键配置不迁移)
     // 使用 code=0xFFFC 作为占位, modifiers.rawValue 区分滚动功能角色
 

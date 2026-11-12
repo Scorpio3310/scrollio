@@ -65,7 +65,7 @@ enum LogiTrace {
         guard !codes.isEmpty else { return "[]" }
         return "[" + codes.sorted().map { code in
             if LogiCIDDirectory.isLogitechCode(code) {
-                return "\(code)(\(LogiCIDDirectory.name(forMosCode: code)))"
+                return "\(code)(\(LogiCIDDirectory.name(forScrollioCode: code)))"
             }
             return "\(code)(\(KeyCode.mouseMap[code] ?? "Mouse(\(code))"))"
         }.joined(separator: ",") + "]"
@@ -2965,13 +2965,13 @@ extension LogiDebugPanel: NSTableViewDelegate {
         // 真正的第三方冲突 = 设备侧非零 且 不在 Mos 的 divertedCIDs 集合里.
         // 同一 CID 若被 Mos 与第三方同时 divert, 此处偏向 Mos 语义: ACTIONS 显示 Undivert 时
         // Status 也显示 DVRT, 不会再出现 "按钮是 Undivert 但标签却是 3rd-DVRT" 的隐藏矛盾.
-        let mosOwns = currentSession?.debugDivertedCIDs.contains(ctrl.cid) ?? false
+        let scrollioOwns = currentSession?.debugDivertedCIDs.contains(ctrl.cid) ?? false
         let status = LogiConflictDetector.status(
             reportingFlags: ctrl.reportingFlags,
             targetCID: ctrl.targetCID,
             cid: ctrl.cid,
             reportingQueried: ctrl.reportingQueried,
-            mosOwnsDivert: mosOwns
+            scrollioOwnsDivert: scrollioOwns
         )
 
         switch tableColumn?.identifier.rawValue {
@@ -2988,7 +2988,7 @@ extension LogiDebugPanel: NSTableViewDelegate {
             case .remapped:
                 label.stringValue = "REMAP"
                 label.textColor = NSColor(calibratedRed: 1.0, green: 0.8, blue: 0.2, alpha: 0.8)
-            case .mosOwned:
+            case .scrollioOwned:
                 label.stringValue = "DVRT"
                 label.textColor = NSColor(calibratedRed: 1.0, green: 0.6, blue: 0.0, alpha: 0.8)
             case .clear:

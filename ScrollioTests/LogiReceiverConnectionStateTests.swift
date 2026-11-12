@@ -334,12 +334,12 @@ final class LogiReceiverConnectionStateTests: XCTestCase {
         for transport in [LogiTransportIdentity.receiver, .bleDirect] {
             let policy = LogiButtonDeliveryPolicy(standardMouseButtonsUseNativeEvents: true)
             XCTAssertEqual(LogiDeviceSession.targetCIDsForUsageForTests(
-                aggregateMosCodes: [], divertableCIDs: divertable,
+                aggregateScrollioCodes: [], divertableCIDs: divertable,
                 transport: transport, phase: .normal, policy: policy,
                 deliveryModeForCID: { _ in .hidpp }
             ), [])
             XCTAssertEqual(LogiDeviceSession.nativeFirstCIDsForUsageForTests(
-                aggregateMosCodes: [], divertableCIDs: divertable,
+                aggregateScrollioCodes: [], divertableCIDs: divertable,
                 transport: transport, phase: .normal, policy: policy
             ), [])
         }

@@ -26,6 +26,6 @@ final class LogiBridgeDeviceTests: LogiDeviceIntegrationBase {
             return (notif.userInfo?["mosCode"] as? UInt16) == 1006
         }
         let result = XCTWaiter.wait(for: [exp], timeout: 30)
-        XCTAssertEqual(result, .completed, "rawButtonEvent for Back (mosCode 1006) was not observed within 30s")
+        XCTAssertEqual(result, .completed, "rawButtonEvent for Back (scrollioCode 1006) was not observed within 30s")
     }
 }

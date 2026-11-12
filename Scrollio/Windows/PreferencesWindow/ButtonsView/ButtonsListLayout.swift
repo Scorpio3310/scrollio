@@ -53,8 +53,8 @@ extension ButtonsMousePart {
     /// panel always). Left and right: the left and right buttons. Reads, never writes to a
     /// mouse.
     func recordedTrigger(
-        logitechCode: (LogiControlRole) -> UInt16 = { LogiCenter.shared.mosCode(for: $0) },
-        diagnosis: (UInt16) -> LogiButtonCaptureDiagnosis = { LogiCenter.shared.buttonCaptureDiagnosis(forMosCode: $0) }
+        logitechCode: (LogiControlRole) -> UInt16 = { LogiCenter.shared.scrollioCode(for: $0) },
+        diagnosis: (UInt16) -> LogiButtonCaptureDiagnosis = { LogiCenter.shared.buttonCaptureDiagnosis(forScrollioCode: $0) }
     ) -> RecordedEvent {
         guard let role = logitechRole else {
             return RecordedEvent(type: .mouse, code: self == .left ? 0 : 1, modifiers: 0, deviceFilter: nil)
@@ -128,7 +128,7 @@ struct ButtonsListLayout: Equatable {
     static func make(
         bindings: [ButtonBinding],
         mouse: MouseArtworkModel,
-        logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forMosCode: $0) }
+        logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forScrollioCode: $0) }
     ) -> ButtonsListLayout {
         var taken = Set<UUID>()
         let partRows = ButtonsMousePart.listed(on: mouse).map { part -> PartRow in
@@ -172,7 +172,7 @@ struct ButtonsListLayout: Equatable {
     /// modifiers ("⌥ Back button") and a button the drawing does not show.
     static func plainPart(
         of event: RecordedEvent,
-        logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forMosCode: $0) }
+        logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forScrollioCode: $0) }
     ) -> ButtonsMousePart? {
         guard event.type == .mouse,
               UInt64(event.modifiers) & ButtonBinding.customBindingRelevantModifierMask == 0
@@ -191,7 +191,7 @@ struct ButtonsListLayout: Equatable {
     }
 
     /// The part whose row `event` (without modifiers) is; nil when it has none.
-    func part(for event: RecordedEvent, logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forMosCode: $0) }) -> ButtonsMousePart? {
+    func part(for event: RecordedEvent, logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forScrollioCode: $0) }) -> ButtonsMousePart? {
         guard let part = Self.plainPart(of: event, logitechRole: logitechRole), parts.contains(part) else { return nil }
         return part
     }
@@ -203,7 +203,7 @@ struct ButtonsListLayout: Equatable {
         of part: ButtonsMousePart,
         in bindings: [ButtonBinding],
         isLogitechCode: (UInt16) -> Bool = { LogiCenter.shared.isLogiCode($0) },
-        logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forMosCode: $0) }
+        logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forScrollioCode: $0) }
     ) -> Bool {
         return bindings.contains { binding in
             let trigger = binding.triggerEvent

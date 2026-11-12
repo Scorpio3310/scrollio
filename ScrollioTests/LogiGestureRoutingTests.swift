@@ -2,7 +2,7 @@ import XCTest
 @testable import Scrollio_Debug
 
 /// Gesture Navigation with a mouse that tracks the hold itself, inside the app: the two new
-/// settings, which buttons Mos asks the mouse to track, how movement from the device and
+/// settings, which buttons Scrollio asks the mouse to track, how movement from the device and
 /// from the pointer reach the two gesture modes without being counted twice, the pointer
 /// lock, and the haptic cues. Everything runs against recording drivers; no event is posted
 /// and no HID device is touched.

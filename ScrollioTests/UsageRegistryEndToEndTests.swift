@@ -42,7 +42,7 @@ final class UsageRegistryEndToEndTests: XCTestCase {
         let s2 = FakeLogiDeviceSession()
         s2.divertableCIDs = session.divertableCIDs
         s2.applyUsage([1006])
-        XCTAssertEqual(s2.divertedCIDs, [0x0053])  // CID for MosCode 1006 (Back)
+        XCTAssertEqual(s2.divertedCIDs, [0x0053])  // CID for ScrollioCode 1006 (Back)
         XCTAssertEqual(s2.applyUsageCallCount, 1)
         XCTAssertEqual(s2.lastApplied, [0x0053])
     }

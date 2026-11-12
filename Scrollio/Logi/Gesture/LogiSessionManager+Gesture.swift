@@ -26,14 +26,14 @@ extension LogiSessionManager {
     }
 
     /// Called for every diverted button-down, before the event is dispatched.
-    func noteButtonPress(mosCode: UInt16, session: LogiDeviceSession, slot: UInt8) {
-        gestureHoldOwners[mosCode] = LogiGestureHoldOwner(session: session, slot: slot)
+    func noteButtonPress(scrollioCode: UInt16, session: LogiDeviceSession, slot: UInt8) {
+        gestureHoldOwners[scrollioCode] = LogiGestureHoldOwner(session: session, slot: slot)
     }
 
     /// Plays the cue on the mouse the button was last pressed on. Returns whether a pulse
     /// was sent: false without such a mouse, without haptics, or with haptics switched off.
     @discardableResult
-    func playGestureHaptic(_ cue: MouseGestureHapticCue, forMosCode code: UInt16) -> Bool {
+    func playGestureHaptic(_ cue: MouseGestureHapticCue, forScrollioCode code: UInt16) -> Bool {
         guard let owner = gestureHoldOwners[code] else {
             LogiSystemLog.note("Haptic cue \(cue) skipped: no mouse owns button code \(code)")
             return false
@@ -54,7 +54,7 @@ extension LogiSessionManager {
         return activeSessions.contains { $0.isHIDPPCandidate && $0.supportsGestureHaptics }
     }
 
-    /// Re-reads whether haptics are switched on; the user can change that outside Mos.
+    /// Re-reads whether haptics are switched on; the user can change that outside Scrollio.
     func refreshGestureStates() {
         for session in activeSessions where session.isHIDPPCandidate {
             session.refreshGestureHaptics()

@@ -4,7 +4,7 @@ import XCTest
 final class LogiStandardMouseButtonAliasTests: XCTestCase {
 
     func testStandardAliasMapsLogiBackToMouseButton3() {
-        XCTAssertEqual(LogiStandardMouseButtonAlias.nativeButtonCode(forMosCode: 1006), 3)
+        XCTAssertEqual(LogiStandardMouseButtonAlias.nativeButtonCode(forScrollioCode: 1006), 3)
     }
 
     func testStandardButtonsMapToNativeMouseButtons() {
@@ -19,9 +19,9 @@ final class LogiStandardMouseButtonAliasTests: XCTestCase {
         XCTAssertNil(LogiCIDDirectory.nativeMouseButton(forCID: 0x00D7))
     }
 
-    func testMosCodeMapsToNativeMouseButton() {
-        XCTAssertEqual(LogiCIDDirectory.nativeMouseButton(forMosCode: 1006), 3)
-        XCTAssertNil(LogiCIDDirectory.nativeMouseButton(forMosCode: 1000))
+    func testScrollioCodeMapsToNativeMouseButton() {
+        XCTAssertEqual(LogiCIDDirectory.nativeMouseButton(forScrollioCode: 1006), 3)
+        XCTAssertNil(LogiCIDDirectory.nativeMouseButton(forScrollioCode: 1000))
     }
 
     func testRecordedEventConvertsStandardButtonToNativeMouseTrigger() {
@@ -51,7 +51,7 @@ final class LogiStandardMouseButtonAliasTests: XCTestCase {
             deviceFilter: nil
         )
         let diagnosis = LogiButtonCaptureDiagnosis(
-            ownership: .mosOwned,
+            ownership: .scrollioOwned,
             delivery: .hidpp,
             ownershipKey: nil,
             nativeMouseButton: 3,
@@ -73,7 +73,7 @@ final class LogiStandardMouseButtonAliasTests: XCTestCase {
             deviceFilter: nil
         )
         let diagnosis = LogiButtonCaptureDiagnosis(
-            ownership: .mosOwned,
+            ownership: .scrollioOwned,
             delivery: .hidpp,
             ownershipKey: nil,
             nativeMouseButton: 3,

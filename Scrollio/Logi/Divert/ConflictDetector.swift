@@ -6,12 +6,12 @@
 import Foundation
 
 /// Logi CID ownership status backed by device truth (reportingFlags + targetCID)
-/// plus Mos's own divertedCIDs set.
+/// plus Scrollio's own divertedCIDs set.
 public enum ConflictStatus: Equatable {
     case clear
     case foreignDivert
     case remapped
-    case mosOwned
+    case scrollioOwned
     case unknown
 
     /// Legacy adapter for callers that previously checked `== .conflict`.
@@ -19,26 +19,26 @@ public enum ConflictStatus: Equatable {
     public var isConflict: Bool {
         switch self {
         case .foreignDivert, .remapped: return true
-        case .clear, .mosOwned, .unknown: return false
+        case .clear, .scrollioOwned, .unknown: return false
         }
     }
 }
 
 /// Status detector for one Logi CID.
 /// Precedence (matches LogiDebugPanel cStatus column visual order):
-///   foreign-divert > remap > mos-owned > clear
+///   foreign-divert > remap > scrollio-owned > clear
 struct LogiConflictDetector {
     static func status(reportingFlags: UInt8,
                        targetCID: UInt16,
                        cid: UInt16,
                        reportingQueried: Bool,
-                       mosOwnsDivert: Bool) -> ConflictStatus {
+                       scrollioOwnsDivert: Bool) -> ConflictStatus {
         guard reportingQueried else { return .unknown }
         let hasDivertFlag = (reportingFlags & 0x03) != 0
         let remapped = targetCID != 0 && targetCID != cid
-        if hasDivertFlag && !mosOwnsDivert { return .foreignDivert }
+        if hasDivertFlag && !scrollioOwnsDivert { return .foreignDivert }
         if remapped { return .remapped }
-        if mosOwnsDivert { return .mosOwned }
+        if scrollioOwnsDivert { return .scrollioOwned }
         return .clear
     }
 }

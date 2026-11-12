@@ -10,7 +10,7 @@ import Foundation
 
 /// Logitech HID++ divert 决策纯函数
 ///
-/// 给定 (当前绑定的 MosCode, 本进程已 divert 的 CID, 设备上声明为 divertable 的 CID),
+/// 给定 (当前绑定的 ScrollioCode, 本进程已 divert 的 CID, 设备上声明为 divertable 的 CID),
 /// 计算出本次需要切换的 CID 集合. 原则:
 ///   1. 只 divert 用户绑定过且设备支持的按键.
 ///   2. 只 undivert Mos 本进程自己曾 divert 过、且已不再绑定的按键.
@@ -23,12 +23,12 @@ struct LogiDivertPlanner {
     }
 
     static func plan(
-        boundMosCodes: Set<UInt16>,
+        boundScrollioCodes: Set<UInt16>,
         alreadyDiverted: Set<UInt16>,
         divertableCIDs: Set<UInt16>
     ) -> Plan {
         var toDivert: [UInt16] = []
-        for code in boundMosCodes {
+        for code in boundScrollioCodes {
             guard let cid = LogiCIDDirectory.toCID(code) else { continue }
             guard divertableCIDs.contains(cid) else { continue }
             guard !alreadyDiverted.contains(cid) else { continue }
@@ -37,8 +37,8 @@ struct LogiDivertPlanner {
 
         var toUndivert: [UInt16] = []
         for cid in alreadyDiverted {
-            let code = LogiCIDDirectory.toMosCode(cid)
-            if !boundMosCodes.contains(code) {
+            let code = LogiCIDDirectory.toScrollioCode(cid)
+            if !boundScrollioCodes.contains(code) {
                 toUndivert.append(cid)
             }
         }

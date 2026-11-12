@@ -20,7 +20,7 @@ final class LogiCenterDeviceIntegrationTests: LogiDeviceIntegrationBase {
     ///   2. setUsage(.buttonBinding, codes: [...]) registers the source.
     ///   3. setUsage(.buttonBinding, codes: []) removes the source.
     /// LogiOpti+ ownership of CID 0x0053 does NOT block this test (registry
-    /// state is local to Mos).
+    /// state is local to Scrollio).
     func testBaselineTransition_BackButton() throws {
         // 1. Wait for first session ready (best-effort; some setups may not have
         //    a Logi mouse with REPROG_V4 reachable). XCTSkip if no session.
@@ -30,8 +30,8 @@ final class LogiCenterDeviceIntegrationTests: LogiDeviceIntegrationBase {
         try XCTSkipIf(waitResult != .completed, "No Logi HID++ session became ready in 30s")
         try XCTSkipIf(LogiCenter.shared.activeSessionsSnapshot().isEmpty, "No active session")
 
-        // 2. Apply Mos divert: registry should record the buttonBinding source.
-        LogiCenter.shared.setUsage(source: .buttonBinding, codes: [1006])  // MosCode for Back
+        // 2. Apply Scrollio divert: registry should record the buttonBinding source.
+        LogiCenter.shared.setUsage(source: .buttonBinding, codes: [1006])  // ScrollioCode for Back
         drainMainQueue()
         XCTAssertTrue(LogiCenter.shared.usages(of: 1006).contains(.buttonBinding),
                       "After setUsage([.buttonBinding: 1006]), usages(1006) should report .buttonBinding")

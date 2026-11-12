@@ -525,11 +525,11 @@ class LogiDeviceSession {
         LogiCenter.shared.registry.primeSession(self)
     }
 
-    internal func applyUsage(_ aggregateMosCodes: Set<UInt16>) {
+    internal func applyUsage(_ aggregateScrollioCodes: Set<UInt16>) {
         #if DEBUG
         precondition(Thread.isMainThread, "applyUsage main-thread-only")
         LogiTrace.log(
-            "[Session] applyUsage enter device=\(deviceInfo.name) mode=\(connectionMode) connected=\(currentReceiverTargetIsConnected) reprogInit=\(reprogInitComplete) aggregate=\(LogiTrace.codes(aggregateMosCodes)) lastApplied=\(LogiTrace.cids(lastApplied)) diverted=\(LogiTrace.cids(divertedCIDs))",
+            "[Session] applyUsage enter device=\(deviceInfo.name) mode=\(connectionMode) connected=\(currentReceiverTargetIsConnected) reprogInit=\(reprogInitComplete) aggregate=\(LogiTrace.codes(aggregateScrollioCodes)) lastApplied=\(LogiTrace.cids(lastApplied)) diverted=\(LogiTrace.cids(divertedCIDs))",
             device: deviceInfo.name
         )
         #endif
@@ -554,7 +554,7 @@ class LogiDeviceSession {
             #endif
             return
         }
-        // Project MosCodes -> CIDs, drop unmapped, intersect with divertable CIDs.
+        // Project ScrollioCodes -> CIDs, drop unmapped, intersect with divertable CIDs.
         let divertable = Set(discoveredControls.filter { $0.isDivertable }.map { $0.cid })
         let policy = LogiButtonDeliveryPolicy.default
         let transport = LogiTransportIdentity(connectionMode)
@@ -562,9 +562,9 @@ class LogiDeviceSession {
         // The controller folds raw XY into the reporting flags of the writes below.
         let gesture = gestureController(slot: deviceIndex)
         gesture.setRawXYCapableControls(Self.rawXYCapableCIDs(in: discoveredControls))
-        gesture.setRawXYRequest(Self.rawXYRequestCIDs(forMosCodes: LogiSessionManager.shared.gestureTrackingCodes))
+        gesture.setRawXYRequest(Self.rawXYRequestCIDs(forScrollioCodes: LogiSessionManager.shared.gestureTrackingCodes))
         #if DEBUG
-        let projection = aggregateMosCodes.sorted().map { code -> String in
+        let projection = aggregateScrollioCodes.sorted().map { code -> String in
             let cid = LogiCIDDirectory.toCID(code) ?? LogiCIDDirectory.cid(forNativeMouseButton: code)
             let cidLabel = cid.map { String(format: "0x%04X", $0) } ?? "nil"
             let mode = cid.map { LogiSessionManager.shared.deliveryMode(for: self.ownershipKey(forCID: $0)).debugLabel } ?? "none"
@@ -575,7 +575,7 @@ class LogiDeviceSession {
         LogiTrace.log("[Session] applyUsage projection \(projection)", device: deviceInfo.name)
         #endif
         let targetCIDs = Self.targetCIDsForUsage(
-            aggregateMosCodes: aggregateMosCodes,
+            aggregateScrollioCodes: aggregateScrollioCodes,
             divertableCIDs: divertable,
             transport: transport,
             phase: .normal,
@@ -584,7 +584,7 @@ class LogiDeviceSession {
             LogiSessionManager.shared.deliveryMode(for: self.ownershipKey(forCID: cid))
         }
         let nativeFirstCIDs = Self.nativeFirstCIDsForUsage(
-            aggregateMosCodes: aggregateMosCodes,
+            aggregateScrollioCodes: aggregateScrollioCodes,
             divertableCIDs: divertable,
             transport: transport,
             phase: .normal,
@@ -629,14 +629,14 @@ class LogiDeviceSession {
     }
 
     private static func targetCIDsForUsage(
-        aggregateMosCodes: Set<UInt16>,
+        aggregateScrollioCodes: Set<UInt16>,
         divertableCIDs: Set<UInt16>,
         transport: LogiTransportIdentity,
         phase: LogiButtonDeliveryPhase,
         policy: LogiButtonDeliveryPolicy,
         deliveryModeForCID: (UInt16) -> LogiButtonDeliveryMode
     ) -> Set<UInt16> {
-        return aggregateMosCodes.reduce(into: Set<UInt16>()) { acc, code in
+        return aggregateScrollioCodes.reduce(into: Set<UInt16>()) { acc, code in
             guard let cid = LogiCIDDirectory.toCID(code),
                   divertableCIDs.contains(cid),
                   shouldUseHIDPPDelivery(mode: deliveryModeForCID(cid)),
@@ -648,13 +648,13 @@ class LogiDeviceSession {
     }
 
     private static func nativeFirstCIDsForUsage(
-        aggregateMosCodes: Set<UInt16>,
+        aggregateScrollioCodes: Set<UInt16>,
         divertableCIDs: Set<UInt16>,
         transport: LogiTransportIdentity,
         phase: LogiButtonDeliveryPhase,
         policy: LogiButtonDeliveryPolicy
     ) -> Set<UInt16> {
-        return aggregateMosCodes.reduce(into: Set<UInt16>()) { acc, code in
+        return aggregateScrollioCodes.reduce(into: Set<UInt16>()) { acc, code in
             guard let cid = LogiCIDDirectory.toCID(code) ?? LogiCIDDirectory.cid(forNativeMouseButton: code),
                   divertableCIDs.contains(cid),
                   !policy.shouldUseHIDPPDelivery(transport: transport, cid: cid, phase: phase) else {
@@ -854,12 +854,12 @@ class LogiDeviceSession {
 
     #if DEBUG
     internal static func targetCIDsForUsageForTests(
-        aggregateMosCodes: Set<UInt16>,
+        aggregateScrollioCodes: Set<UInt16>,
         divertableCIDs: Set<UInt16>,
         deliveryModeForCID: (UInt16) -> LogiButtonDeliveryMode
     ) -> Set<UInt16> {
         return targetCIDsForUsage(
-            aggregateMosCodes: aggregateMosCodes,
+            aggregateScrollioCodes: aggregateScrollioCodes,
             divertableCIDs: divertableCIDs,
             transport: .receiver,
             phase: .normal,
@@ -871,7 +871,7 @@ class LogiDeviceSession {
     }
 
     internal static func targetCIDsForUsageForTests(
-        aggregateMosCodes: Set<UInt16>,
+        aggregateScrollioCodes: Set<UInt16>,
         divertableCIDs: Set<UInt16>,
         transport: LogiTransportIdentity,
         phase: LogiButtonDeliveryPhase,
@@ -879,7 +879,7 @@ class LogiDeviceSession {
         deliveryModeForCID: (UInt16) -> LogiButtonDeliveryMode
     ) -> Set<UInt16> {
         return targetCIDsForUsage(
-            aggregateMosCodes: aggregateMosCodes,
+            aggregateScrollioCodes: aggregateScrollioCodes,
             divertableCIDs: divertableCIDs,
             transport: transport,
             phase: phase,
@@ -889,14 +889,14 @@ class LogiDeviceSession {
     }
 
     internal static func nativeFirstCIDsForUsageForTests(
-        aggregateMosCodes: Set<UInt16>,
+        aggregateScrollioCodes: Set<UInt16>,
         divertableCIDs: Set<UInt16>,
         transport: LogiTransportIdentity,
         phase: LogiButtonDeliveryPhase,
         policy: LogiButtonDeliveryPolicy
     ) -> Set<UInt16> {
         return nativeFirstCIDsForUsage(
-            aggregateMosCodes: aggregateMosCodes,
+            aggregateScrollioCodes: aggregateScrollioCodes,
             divertableCIDs: divertableCIDs,
             transport: transport,
             phase: phase,
@@ -3289,7 +3289,7 @@ class LogiDeviceSession {
             },
             deliverMovement: { cid, deltaX, deltaY in
                 LogiCenter.shared.externalBridge.handleLogiGestureMovement(
-                    code: LogiCIDDirectory.toMosCode(cid), deltaX: deltaX, deltaY: deltaY
+                    code: LogiCIDDirectory.toScrollioCode(cid), deltaX: deltaX, deltaY: deltaY
                 )
             },
             schedule: { delay, work in
@@ -3323,7 +3323,7 @@ class LogiDeviceSession {
         LogiSessionManager.shared.notifyGestureStateChanged()
     }
 
-    /// Teardown: undivert + raw XY off (0x22) for every control Mos armed, on every slot.
+    /// Teardown: undivert + raw XY off (0x22) for every control Scrollio armed, on every slot.
     private func disarmAllGestureControllers() {
         for slot in gestureControllers.keys.sorted() {
             gestureControllers[slot]?.disarmAll()
@@ -3369,7 +3369,7 @@ class LogiDeviceSession {
     }
 
     /// Raw XY movement nobody asked for: no tracked hold on this slot (armed by another
-    /// app, left over from a Mos that died, or the arm echo is still on its way).
+    /// app, left over from a Scrollio that died, or the arm echo is still on its way).
     private func handleUntrackedRawXYEvent(_ report: UnsafeBufferPointer<UInt8>) {
         guard let delta = LogiGestureProtocol.rawXYDelta(report) else { return }
         LogiDebugPanel.log(device: deviceInfo.name, type: .info,
@@ -3414,8 +3414,8 @@ class LogiDeviceSession {
         }.map { $0.cid })
     }
 
-    /// Mos codes -> CIDs. Codes without a Logitech control (plain mouse buttons) drop out.
-    static func rawXYRequestCIDs(forMosCodes codes: Set<UInt16>) -> Set<UInt16> {
+    /// Scrollio codes -> CIDs. Codes without a Logitech control (plain mouse buttons) drop out.
+    static func rawXYRequestCIDs(forScrollioCodes codes: Set<UInt16>) -> Set<UInt16> {
         return Set(codes.compactMap { LogiCIDDirectory.toCID($0) })
     }
 
@@ -5026,9 +5026,9 @@ class LogiDeviceSession {
 
     // MARK: - Event Dispatch
 
-    /// Emit synthetic releases when Mos changes divert/session ownership and a
+    /// Emit synthetic releases when Scrollio changes divert/session ownership and a
     /// physical release may never arrive. Route through normal dispatch so
-    /// mouse mappings, virtual modifiers, and Mos Scroll all unwind together.
+    /// mouse mappings, virtual modifiers, and the scroll actions all unwind together.
     private func releaseAllActiveButtonState(reason: String) {
         emitSyntheticButtonReleases(
             for: buttonStateTracker.releaseAll(),
@@ -5067,7 +5067,7 @@ class LogiDeviceSession {
         }
         let event = InputEvent(
             type: .mouse,
-            code: LogiCIDDirectory.toMosCode(cid),
+            code: LogiCIDDirectory.toScrollioCode(cid),
             modifiers: currentFlags,
             phase: isDown ? .down : .up,
             source: .hidPP,
@@ -5077,7 +5077,7 @@ class LogiDeviceSession {
         )
         if isDown {
             // Haptic cues for this hold go to this device (and this receiver slot) only.
-            LogiSessionManager.shared.noteButtonPress(mosCode: event.code, session: self, slot: deviceIndex)
+            LogiSessionManager.shared.noteButtonPress(scrollioCode: event.code, session: self, slot: deviceIndex)
         }
 
         // Always-fired raw event (deterministic for wizard + debug observers)

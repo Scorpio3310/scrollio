@@ -42,7 +42,7 @@ struct ButtonPlaceMenuModel: Equatable {
         for trigger: RecordedEvent,
         among list: [RecordedEvent],
         mouse: MouseArtworkModel,
-        logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forMosCode: $0) }
+        logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forScrollioCode: $0) }
     ) -> ButtonPlaceMenuModel? {
         guard let number = ButtonTriggerPicture.number(for: trigger) else { return nil }
         var marks: [PlacedMousePart: String] = [:]

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Registry of MosCode usages declared by preference panels and the bootstrap.
+/// Registry of ScrollioCode usages declared by preference panels and the bootstrap.
 /// Push API: setUsage(source:codes:). Coalesces multiple updates in the same
 /// main-queue task into one recompute.
 final class UsageRegistry {

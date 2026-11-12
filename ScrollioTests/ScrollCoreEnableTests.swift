@@ -133,12 +133,12 @@ final class ScrollCoreEnableTests: XCTestCase {
     /// releases it when it stops (InputProcessor.clearActiveBindings), not ScrollCore.
     func testDisableLeavesAHeldScrollActionToButtonCore() {
         let core = ScrollCore()
-        core.handleMosScrollAction(role: .dash, isDown: true)
+        core.handleScrollAction(role: .dash, isDown: true)
         core.isActive = true
         core.disable()
         XCTAssertTrue(core.dashScroll)
 
-        core.handleMosScrollAction(role: .dash, isDown: false)
+        core.handleScrollAction(role: .dash, isDown: false)
         XCTAssertFalse(core.dashScroll)
         XCTAssertEqual(core.dashAmplification, 1.0)
     }

@@ -26,7 +26,7 @@ class ButtonCore {
     let otherUp = CGEventMask(1 << CGEventType.otherMouseUp.rawValue)
     let keyUp = CGEventMask(1 << CGEventType.keyUp.rawValue)
     var dispatchEventMask: CGEventMask {
-        // Primary mouse buttons are intentionally excluded. Mos does not allow
+        // Primary mouse buttons are intentionally excluded. Scrollio does not allow
         // recording an unmodified primary click, and installing a global tap for
         // those events can disturb applications that manage their own drag state.
         return otherDown | otherUp | keyDown | keyUp
@@ -49,13 +49,13 @@ class ButtonCore {
             return Unmanaged.passUnretained(event)
         }
         // 跳过 Mos 合成事件, 避免 executeCustom 发出的事件被重复处理
-        if event.getIntegerValueField(.eventSourceUserData) == MosEventMarker.syntheticCustom {
+        if event.getIntegerValueField(.eventSourceUserData) == ScrollioEventMarker.syntheticCustom {
             return Unmanaged.passUnretained(event)
         }
 
         // 使用原始 flags 匹配绑定 (不注入虚拟修饰键, 保证匹配准确)
-        let mosEvent = InputEvent(fromCGEvent: event)
-        let result = InputProcessor.shared.process(mosEvent)
+        let inputEvent = InputEvent(fromCGEvent: event)
+        let result = InputProcessor.shared.process(inputEvent)
         switch result {
         case .consumed:
             return nil

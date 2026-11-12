@@ -37,7 +37,7 @@ struct MouseGestureModePresentation: Equatable {
         "gesture-mode-interactive-unavailable",
     ]
 
-    /// Without the swipe synthesizer Mos runs discrete whatever is stored, so the control
+    /// Without the swipe synthesizer Scrollio runs discrete whatever is stored, so the control
     /// shows discrete. The stored mode is left alone and applies again once it is available.
     static func make(storedMode: MouseGestureMode, isInteractiveAvailable: Bool) -> MouseGestureModePresentation {
         let selected: MouseGestureMode = isInteractiveAvailable ? storedMode : .discrete
@@ -353,7 +353,7 @@ final class MouseGestureSettingsControls: NSObject {
     }
 
     /// Actions that make sense as a one-shot gesture: system shortcuts, mouse clicks and,
-    /// for Logitech triggers, Logi actions. Hold-style actions (modifier keys, Mos scroll
+    /// for Logitech triggers, Logi actions. Hold-style actions (modifier keys, scroll
     /// modes) and Gesture Navigation itself are left out.
     static func actionCategories(showLogiActions: Bool) -> [(category: String, shortcuts: [SystemShortcut.Shortcut])] {
         var categories = SystemShortcut.shortcutsByCategory.map { entry in

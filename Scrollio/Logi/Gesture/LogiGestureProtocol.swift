@@ -20,9 +20,9 @@
 //    fn2 getCidReporting  -> payload [cid(2), flags, remap(2)]: bit0 diverted, bit4 raw XY
 //    fn3 setCidReporting  <- params  [cid(2), flags, remap(2)]
 //                            bit0 divert          bit1 divert valid
-//                            bit2 persist         bit3 persist valid     (never set by Mos)
+//                            bit2 persist         bit3 persist valid     (never set by Scrollio)
 //                            bit4 raw XY          bit5 raw XY valid
-//                            bit6 force raw XY    bit7 force valid       (never set by Mos)
+//                            bit6 force raw XY    bit7 force valid       (never set by Scrollio)
 //                            A value bit only counts when its valid bit is set; remap 0
 //                            keeps the current target. The response echoes the request.
 //                            A change takes effect at the next press of the control.
@@ -65,12 +65,12 @@ enum LogiGestureProtocol {
     static let flagRawXY: UInt8 = 0x10
     static let flagRawXYValid: UInt8 = 0x20
 
-    /// Everything Mos ever asks of one control. Temporary flags only: they are gone when the
+    /// Everything Scrollio ever asks of one control. Temporary flags only: they are gone when the
     /// mouse reconnects, so nothing here can outlive a power cycle.
     enum ReportingChange: Equatable, CaseIterable {
-        /// Divert the button, leave raw XY as it is. What Mos has always sent.
+        /// Divert the button, leave raw XY as it is. What Scrollio has always sent.
         case divert
-        /// Give the button back, leave raw XY as it is. What Mos has always sent.
+        /// Give the button back, leave raw XY as it is. What Scrollio has always sent.
         case undivert
         /// "Arm": divert the button and let the mouse report movement while it is held.
         case divertWithRawXY
@@ -110,7 +110,7 @@ enum LogiGestureProtocol {
     // MARK: - 0x1B04 raw XY event
 
     /// Byte 3 of a raw XY event: function 1, software id 0. A getCidInfo answer has the same
-    /// function number but carries Mos's software id, so the two cannot be mixed up.
+    /// function number but carries Scrollio's software id, so the two cannot be mixed up.
     static let rawXYEventFunctionByte: UInt8 = 0x10
 
     static func isRawXYEvent<Bytes: RandomAccessCollection>(_ report: Bytes) -> Bool

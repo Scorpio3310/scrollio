@@ -797,10 +797,10 @@ final class PreferencesButtonsTests: XCTestCase {
         let policy = LogiButtonDeliveryPolicy(standardMouseButtonsUseNativeEvents: true)
         func diagnosis(over transport: LogiTransportIdentity?) -> (UInt16) -> LogiButtonCaptureDiagnosis {
             return { code in
-                let native = LogiCenter.shared.nativeMouseButton(forMosCode: code)
+                let native = LogiCenter.shared.nativeMouseButton(forScrollioCode: code)
                 guard let transport, let cid = LogiCIDDirectory.toCID(code) else { return .unknown(nativeMouseButton: native) }
                 return LogiButtonCaptureDiagnosis(
-                    ownership: .mosOwned,
+                    ownership: .scrollioOwned,
                     delivery: .hidpp,
                     ownershipKey: LogiOwnershipKey(vendorId: 0x046D, productId: 0xB042, name: "MX Master 4", transport: transport, cid: cid),
                     nativeMouseButton: native,
@@ -822,7 +822,7 @@ final class PreferencesButtonsTests: XCTestCase {
             let pressed = RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil)
             XCTAssertEqual(pressed.normalizedForButtonBinding(diagnosis: receiver(code)).code, code)
             XCTAssertEqual(pressed.normalizedForButtonBinding(diagnosis: diagnosis(over: .bleDirect)(code)).code,
-                           LogiCenter.shared.nativeMouseButton(forMosCode: code) ?? code)
+                           LogiCenter.shared.nativeMouseButton(forScrollioCode: code) ?? code)
         }
 
         // In the pane, over a receiver: the Back button's row stores the Logitech Back button.
@@ -1129,15 +1129,15 @@ final class PreferencesButtonsTests: XCTestCase {
 
     func testLogiCenterTellsTheRoleOfAControl() {
         let center = LogiCenter.shared
-        XCTAssertEqual(center.controlRole(forMosCode: 1000), .gesture)
-        XCTAssertEqual(center.controlRole(forMosCode: 1001), .modeShift)
-        XCTAssertEqual(center.controlRole(forMosCode: 1005), .middle)
-        XCTAssertEqual(center.controlRole(forMosCode: 1006), .back)
-        XCTAssertEqual(center.controlRole(forMosCode: 2000 + 0x0054), .back)
-        XCTAssertEqual(center.controlRole(forMosCode: 1007), .forward)
-        XCTAssertEqual(center.controlRole(forMosCode: 2000 + 0x01A0), .thumbPanel)
-        XCTAssertNil(center.controlRole(forMosCode: 2000 + 0x005B))
-        XCTAssertNil(center.controlRole(forMosCode: 3), "a native button is not a Logitech control")
+        XCTAssertEqual(center.controlRole(forScrollioCode: 1000), .gesture)
+        XCTAssertEqual(center.controlRole(forScrollioCode: 1001), .modeShift)
+        XCTAssertEqual(center.controlRole(forScrollioCode: 1005), .middle)
+        XCTAssertEqual(center.controlRole(forScrollioCode: 1006), .back)
+        XCTAssertEqual(center.controlRole(forScrollioCode: 2000 + 0x0054), .back)
+        XCTAssertEqual(center.controlRole(forScrollioCode: 1007), .forward)
+        XCTAssertEqual(center.controlRole(forScrollioCode: 2000 + 0x01A0), .thumbPanel)
+        XCTAssertNil(center.controlRole(forScrollioCode: 2000 + 0x005B))
+        XCTAssertNil(center.controlRole(forScrollioCode: 3), "a native button is not a Logitech control")
     }
 
     /// The MX Master 4's thumb panel lights the thumb rest of the drawing, its gesture

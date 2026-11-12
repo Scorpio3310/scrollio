@@ -9,7 +9,7 @@
 //
 //  App -> Logi (LogiCenter.swift, they need the private session manager):
 //    func setGestureTrackingCodes(_ codes: Set<UInt16>)
-//    func playGestureHaptic(_ cue: MouseGestureHapticCue, forMosCode code: UInt16)
+//    func playGestureHaptic(_ cue: MouseGestureHapticCue, forScrollioCode code: UInt16)
 //    func supportsGestureDeviceTracking() -> Bool
 //    func supportsGestureHaptics() -> Bool
 //    func refreshGestureStates()

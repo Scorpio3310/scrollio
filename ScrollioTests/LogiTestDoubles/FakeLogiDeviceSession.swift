@@ -1,7 +1,7 @@
 import Foundation
 @testable import Scrollio_Debug
 
-/// Test double that mirrors the planner contract: takes a MosCode aggregate,
+/// Test double that mirrors the planner contract: takes a ScrollioCode aggregate,
 /// projects to CIDs via LogiCIDDirectory.toCID, intersects with divertableCIDs,
 /// and tracks divertedCIDs / lastApplied with a per-session diff.
 final class FakeLogiDeviceSession {
@@ -11,9 +11,9 @@ final class FakeLogiDeviceSession {
     var applyUsageCallCount: Int = 0
     var lastAppliedSnapshot: [Set<UInt16>] = []
 
-    func applyUsage(_ aggregateMosCodes: Set<UInt16>) {
+    func applyUsage(_ aggregateScrollioCodes: Set<UInt16>) {
         applyUsageCallCount += 1
-        let target: Set<UInt16> = aggregateMosCodes.reduce(into: []) { acc, code in
+        let target: Set<UInt16> = aggregateScrollioCodes.reduce(into: []) { acc, code in
             if let cid = LogiCIDDirectory.toCID(code), divertableCIDs.contains(cid) {
                 acc.insert(cid)
             }

@@ -5,7 +5,7 @@ import XCTest
 private final class FakeScrollActionPort: ScrollActionPort {
     struct Call: Equatable { let role: ScrollRole; let isDown: Bool }
     var calls: [Call] = []
-    func handleMosScrollAction(role: ScrollRole, isDown: Bool) {
+    func handleScrollAction(role: ScrollRole, isDown: Bool) {
         calls.append(Call(role: role, isDown: isDown))
     }
 }
@@ -35,7 +35,7 @@ final class ScrollActionPortTests: XCTestCase {
         super.tearDown()
     }
 
-    func testMosScrollAction_dispatchesToInjectedPort() {
+    func testScrollAction_dispatchesToInjectedPort() {
         let fake = FakeScrollActionPort()
         ShortcutExecutor.shared.scrollActionPort = fake
 

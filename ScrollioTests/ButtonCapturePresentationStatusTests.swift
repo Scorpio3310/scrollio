@@ -73,9 +73,9 @@ final class ButtonCapturePresentationStatusTests: XCTestCase {
         XCTAssertFalse(ButtonCapturePresentationStatus.normal.shouldShowIndicator)
     }
 
-    func testDiagnosisDoesNotShowIndicatorForMosOwnedTemporaryDivert() {
+    func testDiagnosisDoesNotShowIndicatorForScrollioOwnedTemporaryDivert() {
         let diagnosis = LogiButtonCaptureDiagnosis(
-            ownership: .mosOwned,
+            ownership: .scrollioOwned,
             delivery: .hidpp,
             ownershipKey: bleKey,
             nativeMouseButton: 3
@@ -86,7 +86,7 @@ final class ButtonCapturePresentationStatusTests: XCTestCase {
 
     func testDiagnosisShowsStandardMouseAliasOnlyForBLEContentionWithMappedButton() {
         let diagnosis = LogiButtonCaptureDiagnosis(
-            ownership: .mosOwned,
+            ownership: .scrollioOwned,
             delivery: .contended,
             ownershipKey: bleKey,
             nativeMouseButton: 3
@@ -97,7 +97,7 @@ final class ButtonCapturePresentationStatusTests: XCTestCase {
 
     func testDiagnosisDoesNotUseStandardMouseAliasForReceiverContention() {
         let diagnosis = LogiButtonCaptureDiagnosis(
-            ownership: .mosOwned,
+            ownership: .scrollioOwned,
             delivery: .contended,
             ownershipKey: receiverKey,
             nativeMouseButton: 3
@@ -131,7 +131,7 @@ final class ButtonCapturePresentationStatusTests: XCTestCase {
 
     func testBLEHIDPPOnlyControlShowsUnstableRisk() {
         let diagnosis = LogiButtonCaptureDiagnosis(
-            ownership: .mosOwned,
+            ownership: .scrollioOwned,
             delivery: .hidpp,
             ownershipKey: bleDPIKey,
             nativeMouseButton: nil,
@@ -143,7 +143,7 @@ final class ButtonCapturePresentationStatusTests: XCTestCase {
 
     func testReceiverHIDPPOnlyControlDoesNotShowBLERisk() {
         let diagnosis = LogiButtonCaptureDiagnosis(
-            ownership: .mosOwned,
+            ownership: .scrollioOwned,
             delivery: .hidpp,
             ownershipKey: receiverDPIKey,
             nativeMouseButton: nil,
@@ -167,7 +167,7 @@ final class ButtonCapturePresentationStatusTests: XCTestCase {
 
     func testReceiverStandardAliasDoesNotShowStandardMouseAliasMigration() {
         let diagnosis = LogiButtonCaptureDiagnosis(
-            ownership: .mosOwned,
+            ownership: .scrollioOwned,
             delivery: .hidpp,
             ownershipKey: receiverKey,
             nativeMouseButton: 3,

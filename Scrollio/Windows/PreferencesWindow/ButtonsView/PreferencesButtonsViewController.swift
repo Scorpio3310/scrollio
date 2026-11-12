@@ -44,13 +44,13 @@ struct ButtonsDeviceSource {
     static let live = ButtonsDeviceSource(
         captureStatus: { code in
             guard LogiCenter.shared.isLogiCode(code) else { return .normal }
-            return ButtonCapturePresentationStatus.from(LogiCenter.shared.buttonCaptureDiagnosis(forMosCode: code))
+            return ButtonCapturePresentationStatus.from(LogiCenter.shared.buttonCaptureDiagnosis(forScrollioCode: code))
         },
         // The mouse the Mouse pane's card is about, so the two cards never name different mice.
         deviceName: { MousePaneModel.shownMouse()?.deviceName },
         isBusy: { LogiCenter.shared.isBusy },
         refresh: { LogiCenter.shared.refreshReportingStates() },
-        warnBluetoothButton: { LogiCenter.shared.showBLEHIDPPUnstableToast(forMosCode: $0) }
+        warnBluetoothButton: { LogiCenter.shared.showBLEHIDPPUnstableToast(forScrollioCode: $0) }
     )
 }
 
@@ -783,7 +783,7 @@ class PreferencesButtonsViewController: NSViewController {
     /// The trigger of a recorded event, placed like the rows of its button number.
     private func normalizedTrigger(for event: InputEvent) -> RecordedEvent {
         let recorded = RecordedEvent(from: event)
-        let diagnosis = LogiCenter.shared.buttonCaptureDiagnosis(forMosCode: event.code)
+        let diagnosis = LogiCenter.shared.buttonCaptureDiagnosis(forScrollioCode: event.code)
         return placedLikeItsButton(recorded.normalizedForButtonBinding(diagnosis: diagnosis))
     }
 

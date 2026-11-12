@@ -61,7 +61,7 @@ struct InputEvent {
     /// still and reports the movement separately (Logitech raw XY over HID++). False for
     /// everything else, including the matching button-up.
     let tracksMovementOnDevice: Bool
-    /// True for a button-up that Mos makes up itself because the real one may never arrive
+    /// True for a button-up that Scrollio makes up itself because the real one may never arrive
     /// (the mouse disconnected or went to sleep mid-hold, or its buttons were re-diverted).
     /// It unwinds what the press started (held keys, virtual modifiers, a gesture hold)
     /// but never runs what only a real release runs: no click action, no tap replay, no
@@ -142,7 +142,7 @@ struct InputEvent {
             components.append(KeyCode.keyMap[code] ?? "Key(\(code))")
         case .mouse:
             if LogiCenter.shared.isLogiCode(code) {
-                components.append((LogiCenter.shared.name(forMosCode: code) ?? ""))
+                components.append((LogiCenter.shared.name(forScrollioCode: code) ?? ""))
                 components.append("[Logi]")  // 特殊标记, KeyPreview 渲染为 tag
             } else {
                 components.append(KeyCode.mouseMap[code] ?? "Mouse(\(code))")

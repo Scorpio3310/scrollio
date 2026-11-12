@@ -96,7 +96,7 @@ final class DockSwipeSynthesizerTests: XCTestCase {
         XCTAssertEqual(natural.progress, -0.25)
         XCTAssertNil(natural.velocity)
 
-        // Off: the Dock flips it, so Mos sends the opposite sign for the same result.
+        // Off: the Dock flips it, so Scrollio sends the opposite sign for the same result.
         let classic = Encoding.hidValues(for: frame, naturalScrolling: false)
         XCTAssertEqual(classic.progress, 0.25)
     }
@@ -153,7 +153,7 @@ final class DockSwipeSynthesizerTests: XCTestCase {
         let events = try XCTUnwrap(factory.makeEvents(for: frame, naturalScrolling: true))
         XCTAssertEqual(events.map { $0.type.rawValue }, [30, 29], "dock event first, then the empty companion")
         for event in events {
-            XCTAssertEqual(event.getIntegerValueField(.eventSourceUserData), MosEventMarker.syntheticCustom)
+            XCTAssertEqual(event.getIntegerValueField(.eventSourceUserData), ScrollioEventMarker.syntheticCustom)
         }
 
         let event = events[0]
@@ -210,7 +210,7 @@ final class DockSwipeSynthesizerTests: XCTestCase {
         ))
         XCTAssertEqual(changed.count, 1)
         XCTAssertEqual(changed[0].type.rawValue, 30)
-        XCTAssertEqual(changed[0].getIntegerValueField(.eventSourceUserData), MosEventMarker.syntheticCustom)
+        XCTAssertEqual(changed[0].getIntegerValueField(.eventSourceUserData), ScrollioEventMarker.syntheticCustom)
         let changedHID = try XCTUnwrap(reader.copyHIDEvent(changed[0]))
         defer { reader.release(changedHID) }
         XCTAssertEqual(reader.type(changedHID), 23)
@@ -238,9 +238,9 @@ final class DockSwipeSynthesizerTests: XCTestCase {
         }
     }
 
-    // MARK: - Own events and Mos's event taps
+    // MARK: - Own events and Scrollio's event taps
 
-    func testNoMosEventTapListensToDockSwipeEvents() {
+    func testNoScrollioEventTapListensToDockSwipeEvents() {
         let masks: [(String, CGEventMask)] = [
             ("motion", MouseInteractionSessionController.motionEventMask),
             ("buttons", ButtonCore.shared.dispatchEventMask),

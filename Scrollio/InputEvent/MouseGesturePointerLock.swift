@@ -8,7 +8,7 @@
 //  movement still arrives as event deltas, so gesture recognition keeps working. If the
 //  system does not honour the detach for a background app, each motion event warps the
 //  pointer back to where the hold started. The lock always re-attaches on release,
-//  on cancellation, after a safety timeout and when Mos starts or quits.
+//  on cancellation, after a safety timeout and when Scrollio starts or quits.
 //
 //  The warp has a side effect on macOS 27 (documented by Mac Mouse Fix): it takes effect a
 //  few events late, and the first event back on the anchor then reports the jump as mouse

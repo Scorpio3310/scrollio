@@ -58,15 +58,15 @@ final class LogiCenter {
 
     // MARK: - CID directory (read-only)
     func isLogiCode(_ code: UInt16) -> Bool { LogiCIDDirectory.isLogitechCode(code) }
-    func name(forMosCode code: UInt16) -> String? {
-        let displayName = LogiCIDDirectory.name(forMosCode: code)
+    func name(forScrollioCode code: UInt16) -> String? {
+        let displayName = LogiCIDDirectory.name(forScrollioCode: code)
         return displayName.isEmpty ? nil : displayName
     }
     /// What a Logitech control is on the mouse, for the Buttons pane's drawing: the gesture
     /// button, the MX Master 4's thumb panel, the mode shift button behind the wheel, or one
     /// of the buttons a standard mouse has too. nil for any other control and for codes that
     /// are not Logitech's.
-    func controlRole(forMosCode code: UInt16) -> LogiControlRole? {
+    func controlRole(forScrollioCode code: UInt16) -> LogiControlRole? {
         guard let cid = LogiCIDDirectory.toCID(code) else { return nil }
         return LogiControlRole(cid: cid)
     }
@@ -74,7 +74,7 @@ final class LogiCenter {
     /// after: 0x52 middle, 0x53 back, 0x56 forward, 0xC3 gesture, 0xC4 mode shift, 0x1A0 the
     /// MX Master 4's thumb panel): what a press of it is recorded as while it is diverted.
     /// Read-only; touches no device.
-    func mosCode(for role: LogiControlRole) -> UInt16 {
+    func scrollioCode(for role: LogiControlRole) -> UInt16 {
         let cid: UInt16
         switch role {
         case .middle: cid = 0x0052
@@ -84,27 +84,27 @@ final class LogiCenter {
         case .modeShift: cid = 0x00C4
         case .thumbPanel: cid = 0x01A0
         }
-        return LogiCIDDirectory.toMosCode(cid)
+        return LogiCIDDirectory.toScrollioCode(cid)
     }
-    func nativeMouseButton(forMosCode code: UInt16) -> UInt16? {
-        let nativeButton = LogiCIDDirectory.nativeMouseButton(forMosCode: code)
+    func nativeMouseButton(forScrollioCode code: UInt16) -> UInt16? {
+        let nativeButton = LogiCIDDirectory.nativeMouseButton(forScrollioCode: code)
         #if DEBUG
-        LogiTrace.log("[Mapping] nativeMouseButton mosCode=\(code) -> \(nativeButton.map(String.init) ?? "nil")")
+        LogiTrace.log("[Mapping] nativeMouseButton scrollioCode=\(code) -> \(nativeButton.map(String.init) ?? "nil")")
         #endif
         return nativeButton
     }
 
     // MARK: - Conflict
-    func buttonCaptureDiagnosis(forMosCode code: UInt16) -> LogiButtonCaptureDiagnosis {
-        return manager.buttonCaptureDiagnosis(forMosCode: code)
+    func buttonCaptureDiagnosis(forScrollioCode code: UInt16) -> LogiButtonCaptureDiagnosis {
+        return manager.buttonCaptureDiagnosis(forScrollioCode: code)
     }
-    func conflictStatus(forMosCode code: UInt16) -> ConflictStatus {
-        return manager.conflictStatus(forMosCode: code)
+    func conflictStatus(forScrollioCode code: UInt16) -> ConflictStatus {
+        return manager.conflictStatus(forScrollioCode: code)
     }
-    func isDeliveryContended(forMosCode code: UInt16) -> Bool {
-        return manager.deliveryMode(forMosCode: code) == .contended
+    func isDeliveryContended(forScrollioCode code: UInt16) -> Bool {
+        return manager.deliveryMode(forScrollioCode: code) == .contended
     }
-    func showBLEHIDPPUnstableToast(forMosCode code: UInt16) {
+    func showBLEHIDPPUnstableToast(forScrollioCode code: UInt16) {
         guard let cid = LogiCIDDirectory.toCID(code) else { return }
         let controlName = LogiCIDDirectory.name(forCID: cid)
         let message = String(
@@ -212,7 +212,7 @@ final class LogiCenter {
 
     // MARK: - Gesture Navigation hardware support (contract: Scrollio/Logi/Gesture/LogiGestureTypes.swift)
 
-    /// Mos codes of the Logitech buttons whose holds the mouse should track itself (raw XY
+    /// Scrollio codes of the Logitech buttons whose holds the mouse should track itself (raw XY
     /// diversion) instead of moving the pointer. Remembered for mice that connect later and
     /// applied together with the button diverts. Pass an empty set to turn it off: armed
     /// controls are then put back to normal pointer movement. Main thread only.
@@ -230,11 +230,11 @@ final class LogiCenter {
     /// Plays a haptic cue on the mouse `code` was last pressed on. Does nothing unless that
     /// mouse has haptics and the user has them switched on; never changes the mouse's
     /// intensity or power saving. Main thread only.
-    func playGestureHaptic(_ cue: MouseGestureHapticCue, forMosCode code: UInt16) {
+    func playGestureHaptic(_ cue: MouseGestureHapticCue, forScrollioCode code: UInt16) {
         #if DEBUG
         precondition(Thread.isMainThread, "LogiCenter is main-thread-only")
         #endif
-        manager.playGestureHaptic(cue, forMosCode: code)
+        manager.playGestureHaptic(cue, forScrollioCode: code)
     }
 
     /// A connected mouse has a control that can report movement itself.
@@ -299,7 +299,7 @@ final class LogiCenter {
     static let rawButtonEvent        = NSNotification.Name("LogiRawButtonEvent")  // Step 4 fills in posters
 }
 
-/// The role of a Logitech control on the mouse (`LogiCenter.controlRole(forMosCode:)`).
+/// The role of a Logitech control on the mouse (`LogiCenter.controlRole(forScrollioCode:)`).
 enum LogiControlRole: Equatable {
     /// The gesture button under the thumb (also its virtual twin).
     case gesture

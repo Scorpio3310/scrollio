@@ -50,7 +50,7 @@ enum MouseButtonActionKind {
     }
 }
 
-enum MosScrollActionKind {
+enum ScrollActionKind {
     case dash
     case toggle
     case block
@@ -84,14 +84,14 @@ enum ResolvedAction {
     case customKey(code: UInt16, modifiers: UInt64)
     case customMouseButton(buttonNumber: UInt16, modifiers: UInt64)
     case mouseButton(kind: MouseButtonActionKind)
-    case mosScroll(role: ScrollRole)
+    case scrollAction(role: ScrollRole)
     case systemShortcut(identifier: String)
     case logiAction(identifier: String)
     case openTarget(payload: OpenTargetPayload)
 
     var executionMode: ActionExecutionMode {
         switch self {
-        case .customKey, .customMouseButton, .mouseButton, .mosScroll:
+        case .customKey, .customMouseButton, .mouseButton, .scrollAction:
             return .stateful
         case .logiAction, .openTarget:
             return .trigger
@@ -133,7 +133,7 @@ class ShortcutExecutor {
 
     /// 快速识别 Mos Scroll 三个 stateful 动作, 供事件热路径避免完整 action 解析。
     static func isMosScrollActionIdentifier(_ shortcutName: String) -> Bool {
-        MosScrollActionKind(shortcutIdentifier: shortcutName) != nil
+        ScrollActionKind(shortcutIdentifier: shortcutName) != nil
     }
 
     // MARK: - 执行快捷键 (统一接口)
@@ -167,7 +167,7 @@ class ShortcutExecutor {
         }
     }
 
-    /// The key down or key up of a shortcut, marked as Scrollio's own (`MosEventMarker`) like
+    /// The key down or key up of a shortcut, marked as Scrollio's own (`ScrollioEventMarker`) like
     /// every other key and click it posts. Unmarked they came back through the app's own
     /// taps: a keyboard trigger bound to the shortcut it is itself ran again in a loop, and
     /// the button tap added held virtual modifiers to them.
@@ -179,7 +179,7 @@ class ShortcutExecutor {
         if keyDown || preserveFlagsOnKeyUp {
             event.flags = CGEventFlags(rawValue: flags)
         }
-        event.setIntegerValueField(.eventSourceUserData, value: MosEventMarker.syntheticCustom)
+        event.setIntegerValueField(.eventSourceUserData, value: ScrollioEventMarker.syntheticCustom)
         return event
     }
 
@@ -228,8 +228,8 @@ class ShortcutExecutor {
                     inputModifiers: inputModifiers
                 )
             )
-        case .mosScroll(let role):
-            scrollActionPort?.handleMosScrollAction(role: role, isDown: phase == .down)
+        case .scrollAction(let role):
+            scrollActionPort?.handleScrollAction(role: role, isDown: phase == .down)
             return .none
         case .logiAction(let identifier):
             guard phase == .down else { return .none }
@@ -261,7 +261,7 @@ class ShortcutExecutor {
                 if let kind = MouseButtonActionKind(buttonNumber: code), modifiers == 0 {
                     return .mouseButton(kind: kind)
                 }
-                if let nativeCode = LogiStandardMouseButtonAlias.nativeButtonCode(forMosCode: code),
+                if let nativeCode = LogiStandardMouseButtonAlias.nativeButtonCode(forScrollioCode: code),
                    let kind = MouseButtonActionKind(buttonNumber: nativeCode),
                    modifiers == 0 {
                     return .mouseButton(kind: kind)
@@ -275,8 +275,8 @@ class ShortcutExecutor {
         if let kind = MouseButtonActionKind(shortcutIdentifier: shortcutName) {
             return .mouseButton(kind: kind)
         }
-        if let scrollAction = MosScrollActionKind(shortcutIdentifier: shortcutName) {
-            return .mosScroll(role: scrollAction.role)
+        if let scrollAction = ScrollActionKind(shortcutIdentifier: shortcutName) {
+            return .scrollAction(role: scrollAction.role)
         }
         // Gesture navigation is driven by InputProcessor while its trigger is held;
         // it is a menu action, not a synthetic keyboard shortcut.
@@ -326,14 +326,14 @@ class ShortcutExecutor {
                 event.flags = CGEventFlags(rawValue: 0)
             }
             // 标记为 Mos 合成事件, 避免被 ScrollCore/ButtonCore/KeyRecorder 误处理
-            event.setIntegerValueField(.eventSourceUserData, value: MosEventMarker.syntheticCustom)
+            event.setIntegerValueField(.eventSourceUserData, value: ScrollioEventMarker.syntheticCustom)
             event.post(tap: .cghidEventTap)
         } else {
             // 普通键: 使用 keyDown/keyUp
             guard let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: phase == .down) else { return }
             event.flags = CGEventFlags(rawValue: modifiers)
             // 标记为 Mos 合成事件
-            event.setIntegerValueField(.eventSourceUserData, value: MosEventMarker.syntheticCustom)
+            event.setIntegerValueField(.eventSourceUserData, value: ScrollioEventMarker.syntheticCustom)
             event.post(tap: .cghidEventTap)
         }
     }
@@ -372,7 +372,7 @@ class ShortcutExecutor {
             event.setIntegerValueField(.mouseEventButtonNumber, value: buttonNumber)
         }
         event.flags = CGEventFlags(rawValue: modifiers)
-        event.setIntegerValueField(.eventSourceUserData, value: MosEventMarker.syntheticCustom)
+        event.setIntegerValueField(.eventSourceUserData, value: ScrollioEventMarker.syntheticCustom)
         notifyOrPostMouseEvent(event)
         return createdSessionID
     }
@@ -416,7 +416,7 @@ class ShortcutExecutor {
         event.flags = modifierFlagsProvider?.combinedModifierFlags(physicalModifiers: inputModifiers)
             ?? inputModifiers
             ?? CGEventSource.flagsState(.combinedSessionState)
-        event.setIntegerValueField(.eventSourceUserData, value: MosEventMarker.syntheticCustom)
+        event.setIntegerValueField(.eventSourceUserData, value: ScrollioEventMarker.syntheticCustom)
         notifyOrPostMouseEvent(event)
         return createdSessionID
     }
@@ -528,7 +528,7 @@ class ShortcutExecutor {
         // context.modifiers 非可选, provider 未接线时直接退化为它
         event.flags = modifierFlagsProvider?.combinedModifierFlags(physicalModifiers: context.modifiers)
             ?? context.modifiers
-        event.setIntegerValueField(.eventSourceUserData, value: MosEventMarker.syntheticCustom)
+        event.setIntegerValueField(.eventSourceUserData, value: ScrollioEventMarker.syntheticCustom)
         notifyOrPostMouseEvent(event)
     }
 

@@ -56,7 +56,7 @@ final class KeyRecorderStartTests: XCTestCase {
         let proxy = CGEventTapProxy(bitPattern: 1)!
 
         let own = try XCTUnwrap(CGEvent(keyboardEventSource: nil, virtualKey: 8, keyDown: true))
-        own.setIntegerValueField(.eventSourceUserData, value: MosEventMarker.syntheticCustom)
+        own.setIntegerValueField(.eventSourceUserData, value: ScrollioEventMarker.syntheticCustom)
         let passed = recordingCallback(proxy, .keyDown, own, nil)
         XCTAssertTrue(passed?.takeUnretainedValue() === own, "let through unchanged")
 

@@ -116,7 +116,7 @@ final class LogiDivertReconciliationTests: XCTestCase {
 
     func testUsageProjectionSkipsCIDsOutsideHIDPPDeliveryMode() {
         let target = LogiDeviceSession.targetCIDsForUsageForTests(
-            aggregateMosCodes: [1006, 1007],
+            aggregateScrollioCodes: [1006, 1007],
             divertableCIDs: [0x0053, 0x0056],
             deliveryModeForCID: { cid in
                 cid == 0x0053 ? .contended : .hidpp
@@ -128,7 +128,7 @@ final class LogiDivertReconciliationTests: XCTestCase {
 
     func testBLEPolicyExcludesNativeBackFromNormalTargets() {
         let target = LogiDeviceSession.targetCIDsForUsageForTests(
-            aggregateMosCodes: [1006, 1002],
+            aggregateScrollioCodes: [1006, 1002],
             divertableCIDs: [0x0053, 0x00D7],
             transport: .bleDirect,
             phase: .normal,
@@ -141,7 +141,7 @@ final class LogiDivertReconciliationTests: XCTestCase {
 
     func testBLEPolicyMarksNativeBackForNormalUndivertEvenWhenTargetExcludesIt() {
         let nativeFirst = LogiDeviceSession.nativeFirstCIDsForUsageForTests(
-            aggregateMosCodes: [1006, 1002],
+            aggregateScrollioCodes: [1006, 1002],
             divertableCIDs: [0x0053, 0x00D7],
             transport: .bleDirect,
             phase: .normal,
@@ -153,7 +153,7 @@ final class LogiDivertReconciliationTests: XCTestCase {
 
     func testBLEPolicyMarksRecordedNativeSideButtonsForNormalUndivert() {
         let nativeFirst = LogiDeviceSession.nativeFirstCIDsForUsageForTests(
-            aggregateMosCodes: [3, 4, 2253],
+            aggregateScrollioCodes: [3, 4, 2253],
             divertableCIDs: [0x0053, 0x0056, 0x00FD],
             transport: .bleDirect,
             phase: .normal,
@@ -165,7 +165,7 @@ final class LogiDivertReconciliationTests: XCTestCase {
 
     func testReceiverPolicyKeepsNativeBackInNormalTargets() {
         let target = LogiDeviceSession.targetCIDsForUsageForTests(
-            aggregateMosCodes: [1006, 1002],
+            aggregateScrollioCodes: [1006, 1002],
             divertableCIDs: [0x0053, 0x00D7],
             transport: .receiver,
             phase: .normal,

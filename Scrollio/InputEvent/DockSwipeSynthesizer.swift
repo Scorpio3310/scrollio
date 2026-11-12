@@ -30,7 +30,7 @@
 //    Values are 16.16 fixed point. Progress is in device coordinates: the Dock applies the
 //    natural-scrolling preference itself (on: negative = next Space).
 //
-//  Mos's own convention, used by every type below: positive progress and velocity move
+//  Scrollio's own convention, used by every type below: positive progress and velocity move
 //  towards the next Space (the one on the right). The natural-scrolling preference is
 //  folded in when the event is built, so callers never see it.
 //
@@ -59,7 +59,7 @@ enum DockSwipePhase: UInt32, Equatable {
     var isTerminal: Bool { self == .ended || self == .cancelled }
 }
 
-/// One event of a swipe in Mos's convention (positive = towards the next Space).
+/// One event of a swipe in Scrollio's convention (positive = towards the next Space).
 struct DockSwipeFrame: Equatable {
     var phase: DockSwipePhase
     var axis: DockSwipeAxis
@@ -133,7 +133,7 @@ enum DockSwipeEventEncoding {
     static let fieldVelocityX: UInt32 = 129
     static let fieldVelocityY: UInt32 = 130
 
-    /// Event types Mos posts for a swipe. None of Mos's own event taps listens to them.
+    /// Event types Scrollio posts for a swipe. None of Scrollio's own event taps listens to them.
     static let ownEventTypes: [UInt32] = [gestureCompanionEventType, dockControlEventType]
 
     /// macOS 26 and older: positive progress = next Space, whatever the scrolling preference;
@@ -163,7 +163,7 @@ enum DockSwipeEventEncoding {
 
     /// macOS 27 and newer: device coordinates. With natural scrolling on, the Dock moves
     /// the desktop with the fingers, so a negative value brings in the next Space; with it
-    /// off the meaning flips. Mos undoes that here, so its own sign never depends on the
+    /// off the meaning flips. Scrollio undoes that here, so its own sign never depends on the
     /// preference. (Derived from Mac Mouse Fix; to be confirmed on real hardware.)
     static func hidValues(for frame: DockSwipeFrame, naturalScrolling: Bool) -> DockSwipeHIDValues {
         let deviceSign: Double = naturalScrolling ? -1 : 1
@@ -184,7 +184,7 @@ enum DockSwipeEventEncoding {
 
 // MARK: - Private symbols
 
-/// IOKit and SkyLight functions for the "hid" layout, resolved at run time so Mos has no
+/// IOKit and SkyLight functions for the "hid" layout, resolved at run time so Scrollio has no
 /// link-time dependency on them. `load` returns nil when any of them is missing.
 struct DockSwipeHIDBridge {
     typealias Create = @convention(c) (CFAllocator?, UInt32, UInt64, UInt32) -> UnsafeMutableRawPointer?
@@ -259,7 +259,7 @@ struct DockSwipeHIDBridge {
 
 struct DockSwipeEventFactory {
     /// Whether the IOHIDEvent carries the current time. A trackpad stamps its events, but
-    /// Mac Mouse Fix, the working reference on macOS 27, leaves the timestamp at 0, and Mos
+    /// Mac Mouse Fix, the working reference on macOS 27, leaves the timestamp at 0, and Scrollio
     /// does the same. Kept as a switch for hardware tests.
     static let stampsHIDEvents = false
     /// The "fields" layout is followed by an empty type-29 event, as Mac Mouse Fix does.
@@ -332,12 +332,12 @@ struct DockSwipeEventFactory {
         return event
     }
 
-    /// An empty event of a private type, marked as Mos's own so every Mos event tap skips it.
+    /// An empty event of a private type, marked as Scrollio's own so every Scrollio event tap skips it.
     private static func makeMarkedEvent(type: UInt32) -> CGEvent? {
         guard let event = CGEvent(source: nil) else { return nil }
         // The private types are not cases of the Swift enum.
         event.type = unsafeBitCast(type, to: CGEventType.self)
-        event.setIntegerValueField(.eventSourceUserData, value: MosEventMarker.syntheticCustom)
+        event.setIntegerValueField(.eventSourceUserData, value: ScrollioEventMarker.syntheticCustom)
         return event
     }
 
@@ -532,7 +532,7 @@ enum DockSwipeGeometry {
 
     /// Progress that moves the desktop by exactly one Space. Mac Mouse Fix found that the
     /// Dock scales progress with the number of Spaces on the display: 1 + 1 / (count - 1),
-    /// and 2 with a single Space (rubber band only). Without the count Mos assumes 1.
+    /// and 2 with a single Space (rubber band only). Without the count Scrollio assumes 1.
     static func progressPerSpace(spaceCount: Int?) -> Double {
         guard let spaceCount else { return 1 }
         guard spaceCount >= 2 else { return 2 }

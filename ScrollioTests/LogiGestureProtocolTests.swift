@@ -32,7 +32,7 @@ final class LogiGestureProtocolTests: XCTestCase {
         )
     }
 
-    func testPlainDivertBytesAreTheOnesMosAlwaysSent() {
+    func testPlainDivertBytesAreTheOnesScrollioAlwaysSent() {
         XCTAssertEqual(Change.divert.flags, 0x03)
         XCTAssertEqual(Change.undivert.flags, 0x02)
         // The existing entry point still produces them, raw XY bits untouched.
@@ -100,13 +100,13 @@ final class LogiGestureProtocolTests: XCTestCase {
         XCTAssertEqual(LogiDeviceSession.rawXYCapableCIDs(in: controls), [0x0053, 0x00C3])
     }
 
-    func testRequestedMosCodesMapToControlIds() {
+    func testRequestedScrollioCodesMapToControlIds() {
         // Gesture button, mode-shift button, MX Master 4 haptic sense panel; plain button 3 has no CID.
         XCTAssertEqual(
-            LogiDeviceSession.rawXYRequestCIDs(forMosCodes: [1000, 1001, 2000 + 0x01A0, 3]),
+            LogiDeviceSession.rawXYRequestCIDs(forScrollioCodes: [1000, 1001, 2000 + 0x01A0, 3]),
             [0x00C3, 0x00C4, 0x01A0]
         )
-        XCTAssertEqual(LogiDeviceSession.rawXYRequestCIDs(forMosCodes: []), [])
+        XCTAssertEqual(LogiDeviceSession.rawXYRequestCIDs(forScrollioCodes: []), [])
     }
 
     // MARK: - Raw XY event
@@ -134,7 +134,7 @@ final class LogiGestureProtocolTests: XCTestCase {
 
     func testOnlyFunctionOneWithSoftwareIdZeroIsARawXYEvent() {
         XCTAssertTrue(LogiGestureProtocol.isRawXYEvent(report(0x10, [0, 1, 0, 1])))
-        // getCidInfo answer: function 1 with Mos's software id.
+        // getCidInfo answer: function 1 with Scrollio's software id.
         XCTAssertFalse(LogiGestureProtocol.isRawXYEvent(report(0x11, [0x00, 0xC3, 0x00, 0x9C])))
         XCTAssertNil(LogiGestureProtocol.rawXYDelta(report(0x11, [0x00, 0xC3, 0x00, 0x9C])))
         // Button event (function 0), reporting notification (function 2), reporting echo (function 3).

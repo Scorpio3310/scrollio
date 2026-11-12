@@ -30,7 +30,7 @@ struct PANEL_IDENTIFIER {
 }
 
 // 合成事件标记 (用于 eventSourceUserData 字段, 区分 Mos 合成事件与物理事件)
-enum MosEventMarker {
+enum ScrollioEventMarker {
     /// ShortcutExecutor.executeCustom 发出的合成键盘/修饰键事件
     static let syntheticCustom: Int64 = 0x4D6F73  // "Mos" ASCII
 }

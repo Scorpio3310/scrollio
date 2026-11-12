@@ -221,11 +221,11 @@ class KeyRecorder: NSObject {
             queue: .main
         ) { [weak self] notification in
             guard let self = self, self.isRecording, !self.isRecorded else { return }
-            guard let mosEvent = notification.userInfo?["event"] as? InputEvent else { return }
-            guard mosEvent.phase == .down else { return }
+            guard let inputEvent = notification.userInfo?["event"] as? InputEvent else { return }
+            guard inputEvent.phase == .down else { return }
             NotificationCenter.default.post(
                 name: KeyRecorder.FINISH_NOTI_NAME,
-                object: mosEvent
+                object: inputEvent
             )
         }
         // 启动超时保护定时器
@@ -251,7 +251,7 @@ class KeyRecorder: NSObject {
         // 跳过 Mos 合成事件, 避免 executeCustom 的合成事件干扰录制
         // Skipped means let through: not recorded, and not swallowed either (a key or click
         // Scrollio posts while the recorder is open still reaches the app).
-        if event.getIntegerValueField(.eventSourceUserData) == MosEventMarker.syntheticCustom {
+        if event.getIntegerValueField(.eventSourceUserData) == ScrollioEventMarker.syntheticCustom {
             return Unmanaged.passUnretained(event)
         }
         let recordedEvent = event
@@ -417,7 +417,7 @@ class KeyRecorder: NSObject {
         adaptiveState = .recorded
 
         // 构造 InputEvent 并通过 FINISH 通知完成录制
-        let mosEvent = InputEvent(
+        let inputEvent = InputEvent(
             type: .keyboard,
             code: extractPrimaryModifierCode(from: modifiers),
             modifiers: modifiers,
@@ -427,7 +427,7 @@ class KeyRecorder: NSObject {
         )
         NotificationCenter.default.post(
             name: KeyRecorder.FINISH_NOTI_NAME,
-            object: mosEvent
+            object: inputEvent
         )
     }
 
@@ -502,11 +502,11 @@ class KeyRecorder: NSObject {
         // 统一转换为 InputEvent
         // 注意: 先检查 InputEvent (value type), 再检查 CGEvent (CoreFoundation type)
         // CGEvent 的 as? 对 Any 总是成功, 所以必须后检查
-        let mosEvent: InputEvent
+        let inputEvent: InputEvent
         if let hidEvent = notification.object as? InputEvent {
-            mosEvent = hidEvent
+            inputEvent = hidEvent
         } else if let cgEvent = notification.object, CFGetTypeID(cgEvent as CFTypeRef) == CGEvent.typeID {
-            mosEvent = InputEvent(fromCGEvent: cgEvent as! CGEvent)
+            inputEvent = InputEvent(fromCGEvent: cgEvent as! CGEvent)
         } else {
             NSLog("[EventRecorder] Unknown event type in notification")
             return
@@ -514,18 +514,18 @@ class KeyRecorder: NSObject {
 
         // Adaptive 模式: 清理定时器和状态
         if recordingMode == .adaptive {
-            handleAdaptiveRecordedEvent(mosEvent)
+            handleAdaptiveRecordedEvent(inputEvent)
         }
 
         // 检查事件有效性 (根据录制模式)
         let isValid: Bool
         switch recordingMode {
         case .singleKey:
-            isValid = mosEvent.isRecordableAsSingleKey
+            isValid = inputEvent.isRecordableAsSingleKey
         case .combination:
-            isValid = mosEvent.isRecordable
+            isValid = inputEvent.isRecordable
         case .adaptive:
-            isValid = mosEvent.isRecordableAsAdaptive
+            isValid = inputEvent.isRecordableAsAdaptive
         }
         guard isValid else {
             NSLog("[EventRecorder] Invalid event ignored")
@@ -540,16 +540,16 @@ class KeyRecorder: NSObject {
         guard !isRecorded else { return }
         isRecorded = true
 
-        let isNew = self.delegate?.validateRecordedEvent(self, event: mosEvent) ?? true
+        let isNew = self.delegate?.validateRecordedEvent(self, event: inputEvent) ?? true
         let isDuplicate = !isNew
         let status: KeyPreview.Status = isNew ? .recorded : .duplicate
 
         keyPopover?.keyPreview
-            .update(from: mosEvent.displayComponents, status: status)
+            .update(from: inputEvent.displayComponents, status: status)
         if isDuplicate {
-            keyPopover?.showRefusalHint(self.delegate?.refusalHint(self, event: mosEvent))
+            keyPopover?.showRefusalHint(self.delegate?.refusalHint(self, event: inputEvent))
         }
-        self.delegate?.onEventRecorded(self, didRecordEvent: mosEvent, isDuplicate: isDuplicate)
+        self.delegate?.onEventRecorded(self, didRecordEvent: inputEvent, isDuplicate: isDuplicate)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.recordingFeedbackDelay(isDuplicate: isDuplicate)) { [weak self] in
             self?.stopRecording()
