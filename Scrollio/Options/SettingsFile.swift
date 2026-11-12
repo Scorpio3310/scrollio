@@ -293,6 +293,17 @@ enum SettingsFile {
             }
         }
 
+        /// The file gives a button or a key an action, or a direction of Gesture
+        /// Navigation (or its click) another action than the default one. The sheet then
+        /// lists them, and Return does not import.
+        var bringsActions: Bool {
+            guard allBindings.isEmpty else { return true }
+            guard let gesture else { return false }
+            let defaults = MouseGestureSettings.default
+            return [\MouseGestureSettings.upAction, \.downAction, \.leftAction, \.rightAction, \.clickAction]
+                .contains { gesture[keyPath: $0] != defaults[keyPath: $0] }
+        }
+
         /// The file has Logitech values (the wheel's or the basics').
         var holdsLogitechValues: Bool {
             return groups.contains(.logiWheel) || groups.contains(.logiMouse)

@@ -7367,6 +7367,61 @@
           }
         }
       }
+    },
+    "general-settings-import-actions-title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What the buttons, keys and gestures will do"
+          }
+        }
+      }
+    },
+    "general-settings-import-action-line": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: %2$@"
+          }
+        }
+      }
+    },
+    "general-settings-import-action-line-app": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ in %2$@: %3$@"
+          }
+        }
+      }
+    },
+    "general-settings-import-action-open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open App or File: %@"
+          }
+        }
+      }
+    },
+    "general-settings-import-gesture-line": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesture %1$@: %2$@"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

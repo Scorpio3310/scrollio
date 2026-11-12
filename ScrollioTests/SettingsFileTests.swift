@@ -1933,19 +1933,36 @@ final class SettingsImportSheetTests: XCTestCase {
         return view.subviews.flatMap { [$0] + allSubviews(of: $0) }
     }
 
-    private func makeSheet(_ settings: String, fileName: String = "Scrollio Settings 2026-11-12.json") throws -> SettingsImportSheetViewController {
+    private func makeSheet(
+        _ settings: String, fileName: String = "Scrollio Settings 2026-11-12.json", maximumHeight: CGFloat? = nil
+    ) throws -> SettingsImportSheetViewController {
         let sheet = SettingsImportSheetViewController(content: .confirm(try Fixture.contents(settings), fileName: fileName))
+        if let maximumHeight {
+            sheet.maximumHeight = maximumHeight
+        }
         _ = sheet.view
         return sheet
     }
 
-    /// A file without actions that open or run something: what it holds, the note about
-    /// the backup, and "Import" on Return.
+    private func lines(of list: NSTextView?) -> [String] {
+        return (list?.string ?? "").components(separatedBy: "\n").filter { !$0.isEmpty }
+    }
+
+    private func key(_ code: UInt16, _ characters: String, _ flags: NSEvent.ModifierFlags = []) throws -> NSEvent {
+        // The event is made, never posted: a button is asked as its window would ask it.
+        return try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil,
+            characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
+        ))
+    }
+
+    /// A file that gives no button or key an action and leaves the gestures alone: what it
+    /// holds, the note about the backup, and "Import" on Return.
     func testTheSheetAsksBeforeAnythingChanges() throws {
-        let sheet = try makeSheet(#""speed":3,"buttonBindings":["# + Fixture.copyBinding + #"],"hideStatusItem":false"#)
+        let sheet = try makeSheet(#""speed":3,"mouseGestureSettings":{"trackingSpeed":2},"buttonBindings":[],"hideStatusItem":false"#)
         XCTAssertEqual(sheet.titleLabel.stringValue, "Import these settings?")
         XCTAssertEqual(sheet.detailLabel.stringValue, "“Scrollio Settings 2026-11-12.json”")
-        XCTAssertEqual(sheet.itemLabels.map(\.stringValue), ["Scrolling settings", "1 button or key action", "Show in menu bar: on"])
+        XCTAssertEqual(sheet.itemLabels.map(\.stringValue), ["Scrolling settings", "No button or key actions", "Gestures", "Show in menu bar: on"])
         XCTAssertEqual(
             sheet.noteLabel?.stringValue,
             "These settings replace the ones on this Mac. Your current settings are saved first, so you can go back. "
@@ -1953,7 +1970,10 @@ final class SettingsImportSheetTests: XCTestCase {
         )
         XCTAssertNil(sheet.launchTitleLabel)
         XCTAssertNil(sheet.launchList)
+        XCTAssertNil(sheet.actionsTitleLabel, "nothing is bound and the gestures do what they do by default: no list")
+        XCTAssertNil(sheet.actionList)
         XCTAssertNil(sheet.unreadableLabel)
+        XCTAssertNil(sheet.correctedLabel)
         let importButton = try XCTUnwrap(sheet.importButton)
         XCTAssertEqual(importButton.title, "Import")
         XCTAssertEqual(importButton.keyEquivalent, "\r")
@@ -1975,9 +1995,118 @@ final class SettingsImportSheetTests: XCTestCase {
         XCTAssertEqual(sheet.preferredContentSize, sheet.view.frame.size)
         sheet.view.layoutSubtreeIfNeeded()
         XCTAssertFalse(sheet.view.hasAmbiguousLayout)
+        // Everything fits: the middle part is as tall as its box and has no scroll bar.
+        let middle = try XCTUnwrap(sheet.middleScrollView)
+        XCTAssertFalse(middle.hasVerticalScroller)
+        XCTAssertTrue(sheet.middleEdgeLines.isEmpty)
+        XCTAssertEqual(middle.frame.height, try XCTUnwrap(middle.documentView).frame.height, accuracy: 0.5)
+        XCTAssertTrue(sheet.view.acceptsFirstResponder, "the sheet takes the keyboard, not a list")
     }
 
-    /// A file with such actions: how many, each with its whole path, and Return is Cancel.
+    /// Every button and key of the file is listed with what it will do, in the words of the
+    /// Buttons pane, and so are the gesture directions that are not the default; Return
+    /// is then "Cancel". Until now only actions that open or run something were shown: a
+    /// file could give ⌘C a Logitech action that switches the mouse to another computer,
+    /// a button a key combination, ⇧E "Move to Trash", a gesture "Empty Trash", and the
+    /// sheet said "3 button and key actions", "Gestures", with "Import" on Return.
+    func testEveryButtonKeyAndGestureIsListedBeforeTheImport() throws {
+        let hostSwitch = #"{"id":"AAAAAAAA-0000-0000-0000-000000000001","triggerEvent":{"type":"keyboard","code":8,"modifiers":1048576},"#
+            + #""systemShortcutName":"logiHost2","isEnabled":true,"createdAt":1}"#
+        let keyCombination = #"{"id":"AAAAAAAA-0000-0000-0000-000000000002","triggerEvent":{"type":"mouse","code":2,"modifiers":0},"#
+            + #""systemShortcutName":"custom::12:1703936","isEnabled":true,"createdAt":1}"#
+        let trash = #"{"id":"AAAAAAAA-0000-0000-0000-000000000003","triggerEvent":{"type":"keyboard","code":14,"modifiers":131072},"#
+            + #""systemShortcutName":"moveToTrash","isEnabled":true,"createdAt":1}"#
+        let noAction = #"{"id":"AAAAAAAA-0000-0000-0000-000000000004","triggerEvent":{"type":"mouse","code":3,"modifiers":0},"#
+            + #""systemShortcutName":"","isEnabled":false,"createdAt":1}"#
+        let ownButton = #"{"id":"AAAAAAAA-0000-0000-0000-000000000005","triggerEvent":{"type":"mouse","code":4,"modifiers":0},"#
+            + #""systemShortcutName":"missionControl","isEnabled":true,"createdAt":1}"#
+        let app = #"{"path":"/Applications/Notes.app","displayName":"","buttons":{"binding":["# + ownButton + "]}}"
+        let named = #"{"path":"/Applications/Other.app","displayName":"My Editor","buttons":{"binding":["# + ownButton.replacingOccurrences(of: "0005", with: "0006") + "]}}"
+        let sheet = try makeSheet(
+            #""buttonBindings":["# + [hostSwitch, keyCombination, trash, noAction, Fixture.scriptBinding].joined(separator: ",") + "],"
+                + #""applications":["# + app + "," + named + "],"
+                + #""mouseGestureSettings":{"clickAction":"logiHost3","upAction":"emptyTrash","leftAction":""}"#
+        )
+        let names = ButtonTriggerNaming.Logitech.live
+        func trigger(_ type: EventType, _ code: UInt16, _ modifiers: UInt) -> String {
+            return ButtonTriggerNaming.title(for: RecordedEvent(type: type, code: code, modifiers: modifiers, deviceFilter: nil), logitech: names)
+        }
+        XCTAssertEqual(sheet.actionsTitleLabel?.stringValue, "What the buttons, keys and gestures will do")
+        XCTAssertEqual(lines(of: sheet.actionList), [
+            "\(trigger(.keyboard, 8, 1_048_576)): Switch to Computer 2",
+            "\(trigger(.mouse, 2, 0)): \(ButtonTriggerNaming.shortcutText(type: .keyboard, code: 12, modifiers: 1_703_936))",
+            "\(trigger(.keyboard, 14, 131_072)): Move to Trash",
+            "\(trigger(.mouse, 3, 0)): No Action",
+            "\(trigger(.keyboard, 96, 524_288)): Open App or File: sync.sh",
+            "\(trigger(.mouse, 4, 0)) in Notes: Mission Control",
+            "\(trigger(.mouse, 4, 0)) in My Editor: Mission Control",
+            "Gesture Up: Empty Trash",
+            "Gesture Left: No Action",
+            "Gesture Click: Switch to Computer 3",
+        ])
+        XCTAssertEqual(trigger(.keyboard, 8, 1_048_576), "⌘ C", "as the Buttons pane names it")
+        XCTAssertEqual(trigger(.keyboard, 14, 131_072), "⇧ E")
+        let list = try XCTUnwrap(sheet.actionList)
+        XCTAssertFalse(list.isEditable)
+        XCTAssertTrue(list.isSelectable)
+        // The box of what opens or runs something stays, above the list.
+        XCTAssertEqual(sheet.launchTitleLabel?.stringValue, "1 action opens an app or a file, or runs a script")
+        let launch = try XCTUnwrap(sheet.launchList)
+        sheet.view.layoutSubtreeIfNeeded()
+        let document = try XCTUnwrap(sheet.middleScrollView?.documentView)
+        XCTAssertLessThan(document.convert(launch.bounds, from: launch).minY, document.convert(list.bounds, from: list).minY)
+        // What the sheet counts above is still there.
+        XCTAssertEqual(sheet.itemLabels.map(\.stringValue), ["5 button and key actions", "Gestures", "2 apps with their own settings"])
+
+        // Return does not import: it is Cancel, and so is Esc.
+        XCTAssertEqual(sheet.importButton?.keyEquivalent, "")
+        XCTAssertEqual(sheet.closeButton.keyEquivalent, "\r")
+        XCTAssertEqual(sheet.closeButton.title, "Cancel")
+        var imports = 0
+        var closes = 0
+        sheet.onImport = { imports += 1 }
+        sheet.onClose = { closes += 1 }
+        XCTAssertTrue(sheet.closeButton.performKeyEquivalent(with: try key(53, "\u{1b}")), "Esc")
+        XCTAssertEqual(closes, 1)
+        XCTAssertFalse(sheet.closeButton.performKeyEquivalent(with: try key(53, "\u{1b}", .command)), "not ⌘Esc")
+        XCTAssertFalse(try XCTUnwrap(sheet.importButton).performKeyEquivalent(with: try key(36, "\r")), "Return is not Import")
+        XCTAssertFalse(try XCTUnwrap(sheet.importButton).performKeyEquivalent(with: try key(53, "\u{1b}")))
+        XCTAssertEqual(imports, 0)
+        XCTAssertEqual(closes, 1)
+        XCTAssertFalse(sheet.view.hasAmbiguousLayout)
+        XCTAssertEqual(sheet.view.frame.size, sheet.view.fittingSize)
+    }
+
+    /// When "Import" is the button Return presses: only for a file that gives no button or
+    /// key an action and whose gesture actions are the default ones.
+    func testReturnImportsOnlyAFileThatBindsNothing() throws {
+        let plainBinding = #""buttonBindings":["# + Fixture.copyBinding + "]"
+        let ownButton = #""applications":[{"path":"/Applications/A.app","buttons":{"binding":["# + Fixture.copyBinding + "]}}]"
+        let cases: [(String, Bool, [String])] = [
+            (#""speed":3"#, true, []),
+            (#""buttonBindings":[]"#, true, []),
+            (#""mouseGestureSettings":{}"#, true, []),
+            (#""mouseGestureSettings":{"invertHorizontal":true,"mode":"interactive","trackingSpeed":3}"#, true, []),
+            (#""applications":[{"path":"/Applications/A.app"}]"#, true, []),
+            (#""logiWheelSettings":{"mode":"freeSpin"},"hideStatusItem":true"#, true, []),
+            (plainBinding, false, ["Forward button: Copy"]),
+            (ownButton, false, ["Forward button in A: Copy"]),
+            (#""mouseGestureSettings":{"downAction":"missionControl"}"#, false, ["Gesture Down: Mission Control"]),
+            (#""mouseGestureSettings":{"clickAction":""}"#, false, ["Gesture Click: No Action"]),
+        ]
+        for (settings, importIsDefault, listed) in cases {
+            let contents = try Fixture.contents(settings)
+            XCTAssertEqual(contents.bringsActions, !importIsDefault, settings)
+            let sheet = try makeSheet(settings)
+            XCTAssertEqual(sheet.importButton?.keyEquivalent, importIsDefault ? "\r" : "", settings)
+            XCTAssertEqual(sheet.closeButton.keyEquivalent, importIsDefault ? "\u{1b}" : "\r", settings)
+            XCTAssertEqual(lines(of: sheet.actionList), listed, settings)
+            XCTAssertEqual(sheet.actionsTitleLabel == nil, listed.isEmpty, settings)
+        }
+    }
+
+    /// The actions that open or run something keep their box: how many, each with its
+    /// whole path, and what cannot be read is counted under the boxes.
     func testActionsThatOpenOrRunSomethingAreShownBeforeTheImport() throws {
         let sheet = try makeSheet(
             #""buttonBindings":["# + [Fixture.copyBinding, Fixture.scriptBinding, Fixture.appBinding].joined(separator: ",") + ",{}]"
@@ -1989,64 +2118,70 @@ final class SettingsImportSheetTests: XCTestCase {
             "Each starts at a press of its button or key. Import the file only if you know what they do."
         )
         let list = try XCTUnwrap(sheet.launchList)
-        let lines = list.string.components(separatedBy: "\n")
-        XCTAssertEqual(lines.count, 2)
-        XCTAssertTrue(lines[0].hasSuffix(": runs the script /Users/someone/bin/sync.sh (arguments: --all)"), lines[0])
-        XCTAssertTrue(lines[1].hasSuffix(": opens the app /Applications/Notes.app, or else the app with the ID com.apple.Notes"), lines[1])
+        let launches = lines(of: list)
+        XCTAssertEqual(launches.count, 2)
+        XCTAssertTrue(launches[0].hasSuffix(": runs the script /Users/someone/bin/sync.sh (arguments: --all)"), launches[0])
+        XCTAssertTrue(launches[1].hasSuffix(": opens the app /Applications/Notes.app, or else the app with the ID com.apple.Notes"), launches[1])
         XCTAssertFalse(list.isEditable)
         XCTAssertTrue(list.isSelectable, "a path can be copied")
+        XCTAssertEqual(lines(of: sheet.actionList).count, 3, "and all three are in the list of everything")
         XCTAssertEqual(sheet.unreadableLabel?.stringValue, "1 entry this version of Scrollio does not know is left out.")
-        // Return does not import: it is Cancel, and so is Esc.
-        XCTAssertEqual(sheet.importButton?.keyEquivalent, "")
         XCTAssertEqual(sheet.closeButton.keyEquivalent, "\r")
-        XCTAssertEqual(sheet.closeButton.title, "Cancel")
-        var imports = 0
-        var closes = 0
-        sheet.onImport = { imports += 1 }
-        sheet.onClose = { closes += 1 }
-        func key(_ code: UInt16, _ characters: String, _ flags: NSEvent.ModifierFlags = []) throws -> NSEvent {
-            return try XCTUnwrap(NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil,
-                characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
-            ))
-        }
-        // The event is made, never posted: the button is asked as its window would ask it.
-        XCTAssertTrue(sheet.closeButton.performKeyEquivalent(with: try key(53, "\u{1b}")), "Esc")
-        XCTAssertEqual(closes, 1)
-        XCTAssertFalse(sheet.closeButton.performKeyEquivalent(with: try key(53, "\u{1b}", .command)), "not ⌘Esc")
-        XCTAssertFalse(try XCTUnwrap(sheet.importButton).performKeyEquivalent(with: try key(36, "\r")), "Return is not Import")
-        XCTAssertFalse(try XCTUnwrap(sheet.importButton).performKeyEquivalent(with: try key(53, "\u{1b}")))
-        XCTAssertEqual(imports, 0)
-        XCTAssertEqual(closes, 1)
-        XCTAssertTrue(sheet.view.acceptsFirstResponder, "the sheet takes the keyboard, not the list")
-        // Everything shows: the list is as tall as its two lines.
+        // Everything shows: each list is as tall as its text, and nothing scrolls.
         sheet.view.layoutSubtreeIfNeeded()
-        let scroll = try XCTUnwrap(sheet.launchScrollView)
-        XCTAssertGreaterThanOrEqual(scroll.frame.height, list.frame.height - 0.5)
-        XCTAssertLessThan(scroll.frame.height, SettingsImportSheetViewController.launchListMaximumHeight)
+        let layout = try XCTUnwrap(list.layoutManager)
+        let container = try XCTUnwrap(list.textContainer)
+        XCTAssertGreaterThanOrEqual(list.frame.height, layout.usedRect(for: container).height - 0.5)
+        XCTAssertEqual(sheet.middleScrollView?.hasVerticalScroller, false)
         XCTAssertFalse(sheet.view.hasAmbiguousLayout)
         XCTAssertEqual(sheet.view.frame.size, sheet.view.fittingSize)
     }
 
-    /// A file with very many of them: every one is in the list, the list scrolls, and the
-    /// sheet stays a sheet.
+    /// A file with very many actions: every one is listed, the middle part scrolls with
+    /// its bar in sight, and the sheet is no taller than the screen leaves room for; the
+    /// title, the notes and the buttons stay in place.
     func testManyActionsScrollInsideTheSheet() throws {
         let many = (0..<60).map { index in
             Fixture.scriptBinding
                 .replacingOccurrences(of: "22222222-2222-2222-2222-222222222222", with: String(format: "22222222-2222-2222-2222-%012d", index))
                 .replacingOccurrences(of: "sync.sh", with: "a-long-folder-name/with-another-folder-inside/script-number-\(index).sh")
         }
-        let sheet = try makeSheet(#""buttonBindings":["# + many.joined(separator: ",") + "]")
+        let sheet = try makeSheet(#""buttonBindings":["# + many.joined(separator: ",") + "]", maximumHeight: 600)
         XCTAssertEqual(sheet.launchTitleLabel?.stringValue, "60 actions open an app or a file, or run a script")
-        let list = try XCTUnwrap(sheet.launchList)
+        let launch = try XCTUnwrap(sheet.launchList)
+        let all = try XCTUnwrap(sheet.actionList)
         for index in 0..<60 {
-            XCTAssertTrue(list.string.contains("script-number-\(index).sh (arguments: --all)"), "\(index)")
+            XCTAssertTrue(launch.string.contains("script-number-\(index).sh (arguments: --all)"), "\(index)")
+            XCTAssertTrue(all.string.contains("Open App or File: script-number-\(index).sh"), "\(index)")
         }
         sheet.view.layoutSubtreeIfNeeded()
-        let scroll = try XCTUnwrap(sheet.launchScrollView)
-        XCTAssertEqual(scroll.frame.height, SettingsImportSheetViewController.launchListMaximumHeight, accuracy: 0.5)
-        XCTAssertGreaterThan(list.frame.height, scroll.frame.height, "the list scrolls")
-        XCTAssertLessThan(sheet.view.frame.height, 560)
+        XCTAssertEqual(sheet.view.frame.height, 600, accuracy: 1, "as tall as it may be, no taller")
+        let middle = try XCTUnwrap(sheet.middleScrollView)
+        let document = try XCTUnwrap(middle.documentView)
+        XCTAssertGreaterThan(document.frame.height, middle.frame.height + 500, "the boxes scroll")
+        XCTAssertTrue(middle.hasVerticalScroller)
+        XCTAssertEqual(middle.scrollerStyle, .legacy, "the bar stays in sight")
+        XCTAssertFalse(middle.autohidesScrollers)
+        XCTAssertEqual(sheet.middleEdgeLines.count, 2, "a line above and below, where the boxes are cut")
+        // The bar stands in the margin: the boxes are as wide as in a sheet that does not scroll.
+        XCTAssertEqual(document.frame.width, SettingsImportSheetViewController.width - 2 * SettingsImportSheetViewController.margin, accuracy: 0.5)
+        XCTAssertGreaterThanOrEqual(middle.contentView.frame.width, document.frame.width - 0.5)
+        // What is not in the middle part is in sight whatever the lists hold.
+        for fixed in [sheet.titleLabel!, sheet.noteLabel!, sheet.closeButton!, sheet.importButton!] as [NSView] {
+            let frame = sheet.view.convert(fixed.bounds, from: fixed)
+            XCTAssertTrue(sheet.view.bounds.contains(frame), "\(fixed)")
+            XCTAssertFalse(fixed.isDescendant(of: middle))
+        }
+        XCTAssertFalse(sheet.view.hasAmbiguousLayout)
+
+        // On a small screen the sheet is smaller, never the lists shorter.
+        XCTAssertEqual(SettingsImportSheetViewController.defaultMaximumHeight(screenHeight: 705), 545)
+        XCTAssertEqual(SettingsImportSheetViewController.defaultMaximumHeight(screenHeight: 1400), 720)
+        XCTAssertEqual(SettingsImportSheetViewController.defaultMaximumHeight(screenHeight: 300), 420)
+        XCTAssertEqual(SettingsImportSheetViewController.defaultMaximumHeight(screenHeight: nil), 720)
+        let small = try makeSheet(#""buttonBindings":["# + many.joined(separator: ",") + "]", maximumHeight: 420)
+        XCTAssertEqual(small.view.frame.height, 420, accuracy: 1)
+        XCTAssertEqual(small.launchList?.string, launch.string)
     }
 
     /// Why a file cannot be used: a title, the reason, OK. The same sheet can turn into it.
@@ -2058,18 +2193,22 @@ final class SettingsImportSheetTests: XCTestCase {
         XCTAssertEqual(sheet.titleLabel.stringValue, "This file cannot be imported")
         XCTAssertEqual(sheet.detailLabel.stringValue, "It is not a Scrollio settings file, or it is damaged. Nothing was changed.")
         XCTAssertNil(sheet.importButton)
+        XCTAssertNil(sheet.middleScrollView)
         XCTAssertEqual(sheet.closeButton.title, "OK")
         XCTAssertEqual(sheet.closeButton.keyEquivalent, "\r")
         XCTAssertTrue(sheet.itemLabels.isEmpty)
         XCTAssertFalse(allSubviews(of: sheet.view).contains { ($0 as? NSButton)?.title == "Import" })
         XCTAssertEqual(sheet.view.frame.size, sheet.view.fittingSize)
+        XCTAssertFalse(sheet.view.hasAmbiguousLayout)
 
         let asking = try makeSheet(#""speed":3"#)
         let tall = asking.view.frame.height
-        asking.show(.problem(title: "This file cannot be imported", text: "Your current settings could not be saved first, so nothing was changed."))
+        asking.show(.problem(title: "This file cannot be imported", text: "It is not a Scrollio settings file, or it is damaged. Nothing was changed."))
         XCTAssertNil(asking.importButton)
+        XCTAssertNil(asking.middleScrollView)
         XCTAssertEqual(asking.closeButton.title, "OK")
         XCTAssertLessThan(asking.view.frame.height, tall)
+        XCTAssertEqual(asking.view.frame.height, sheet.view.frame.height, "as a sheet that was made for it")
         XCTAssertEqual(asking.preferredContentSize, asking.view.frame.size)
         XCTAssertFalse(allSubviews(of: asking.view).contains { ($0 as? NSButton)?.title == "Import" })
     }

@@ -6,22 +6,38 @@
 //  asks before anything changes:
 //
 //      Import these settings?
-//      “Scrollio Settings 2026-11-12.json”, saved by Scrollio 1.0.1 on 12 Nov 2026 at 10:42.
-//      ┌ Scrolling settings · Thumb wheel · 4 apps with their own settings ·
-//      └ 12 button and key actions · Gestures · Logitech mouse values · Show in menu bar: on
-//      ┌ ⚠ 2 actions open an app or a file, or run a script
+//      “Scrollio Settings 2026-11-12.json”. It says it was saved by Scrollio 1.0.1 on …
+//      ┌ Scrolling settings · Thumb wheel · 3 button and key actions · Gestures ·
+//      └ Logitech mouse values · 4 apps with their own settings · Show in menu bar: on
+//      ┌ ⚠ 1 action opens an app or a file, or runs a script
 //      │ Each starts at a press of its button or key. …
-//      └ ⌥ Button 5: runs the script /Users/…/sync.sh (arguments: --all)   (every one, scrolls)
-//        Button 4: opens the app /Applications/Notes.app, or else the app with the ID com.apple.Notes
+//      └ ⌥ F5: runs the script /Users/…/sync.sh (arguments: --all)
+//      ┌ What the buttons, keys and gestures will do
+//      │ ⌥ F5: Open App or File: sync.sh
+//      │ ⌘ C: Switch to Computer 2
+//      │ Middle button: ⇧ ⌘ Q
+//      └ Gesture Up: Empty Trash
 //      These settings replace the ones on this Mac. Your current settings are saved first, …
 //                                                                   [Cancel] [Import]
 //
-//  A settings file can give a button or key an action that opens an app or a file, or runs
-//  a script (SECURITY.md). When the file holds such actions the sheet says how many and
-//  lists every one with its button or key and its whole path, and "Cancel" is the button
-//  Return presses (Esc cancels as always; importing then takes a click on "Import"). A
-//  path is shown as it is stored, with characters that draw nothing or turn the text
-//  around written out ("\u{202E}"), so a path cannot look like another.
+//  What an imported setting can do when a button or key is pressed is the one thing a
+//  user has to see before the import (SECURITY.md). So the sheet lists every button and
+//  key of the file with its action, in the words of the Buttons pane, and the directions
+//  of Gesture Navigation whose action is not the default one: a Logitech action writes to
+//  the mouse whatever "Let Scrollio manage this mouse" says, a recorded shortcut can be
+//  any key combination, "Move to Trash" on ⇧E is not what anybody wants to find out by
+//  typing. Above that list, a box of its own for the actions that open an app or a file
+//  or run a script: how many, and every one with its whole path and arguments.
+//
+//  "Import" is the button Return presses only when the file gives no button or key an
+//  action and leaves the gestures as they are by default; otherwise Return is "Cancel"
+//  (Esc cancels as always), and importing takes a click on "Import".
+//
+//  The boxes are the middle part of the sheet and scroll together when they are taller
+//  than the screen leaves room for (`maximumHeight`); the title above and, below, the
+//  notes and the buttons stay in place. A path, an argument or a name from the file is
+//  shown as it is stored, with characters that draw nothing or turn the text around
+//  written out ("\u{202E}", `SettingsFileText.visible`).
 //
 //  The same sheet says why a file cannot be used, or why an export or import failed: a
 //  title, one or two plain sentences, "OK". It is a sheet on the settings window, never
@@ -147,6 +163,56 @@ enum SettingsFileText {
         case .script: key = "general-settings-import-launch-script"
         }
         return String(format: text(key), ButtonTriggerNaming.title(for: action.trigger, logitech: logitech), target)
+    }
+
+    // MARK: Every button, key and gesture
+
+    /// One line per button and key of the file, in the order of the file: "⌥ F5: Mission
+    /// Control", and for a button that is one app's own "⌥ F5 in Notes: Mission Control".
+    /// The trigger and the action are named as the Buttons pane names them.
+    static func actionLines(of contents: SettingsFile.Contents, logitech: ButtonTriggerNaming.Logitech = .live) -> [String] {
+        return contents.allBindings.map { entry in
+            let trigger = ButtonTriggerNaming.title(for: entry.binding.triggerEvent, logitech: logitech)
+            let action = actionName(of: entry.binding)
+            guard let application = entry.application else {
+                return String(format: text("general-settings-import-action-line"), trigger, action)
+            }
+            return String(format: text("general-settings-import-action-line-app"), trigger, name(of: application), action)
+        }
+    }
+
+    /// What a button or key does, in the Buttons pane's words: the action's name, a
+    /// recorded shortcut as its keys, "No Action". An action that opens or runs something
+    /// is named by its file here ("Open App or File: sync.sh"); its whole path is in the
+    /// box above. Nothing on disk is looked at: the paths are a file's, not the user's.
+    static func actionName(of binding: ButtonBinding) -> String {
+        if let target = binding.openTarget {
+            let name = (target.path as NSString).lastPathComponent
+            return String(format: text("general-settings-import-action-open"), visible(name.isEmpty ? target.path : name))
+        }
+        return ActionDisplayResolver().actionName(of: binding) ?? text("unbound")
+    }
+
+    /// An app of the file's list by the name the file gives it, else by its file's name.
+    static func name(of application: Application) -> String {
+        if let name = application.displayName, !name.isEmpty {
+            return visible(name)
+        }
+        let file = ((application.path as NSString).lastPathComponent as NSString).deletingPathExtension
+        return visible(file.isEmpty ? application.path : file)
+    }
+
+    /// One line per direction of Gesture Navigation (and its click) whose action is not
+    /// the default one: "Gesture Up: App Exposé". None when the file leaves them alone.
+    static func gestureLines(of contents: SettingsFile.Contents) -> [String] {
+        guard let gesture = contents.gesture else { return [] }
+        let defaults = MouseGestureSettings.default
+        return MouseGestureSettingsControls.Slot.allCases.compactMap { slot in
+            let identifier = slot.value(in: gesture)
+            guard identifier != slot.value(in: defaults) else { return nil }
+            let action = SystemShortcut.getShortcut(named: identifier)?.localizedName ?? text("gesture-action-none")
+            return String(format: text("general-settings-import-gesture-line"), text(slot.labelKey), action)
+        }
     }
 
     /// "3 values were out of range and were corrected."
@@ -301,8 +367,24 @@ final class SettingsImportSheetViewController: NSViewController {
 
     static let width: CGFloat = 480
     static let margin: CGFloat = 20
-    /// The list of actions that open or run something scrolls when it is taller than this.
-    static let launchListMaximumHeight: CGFloat = 132
+    /// Between the title, the middle part and the notes.
+    static let gap: CGFloat = 12
+    /// The middle part's scroll bar stands in the sheet's right margin, so the boxes are
+    /// as wide with it as without: what is left of the margin to the right of the bar.
+    static var scrollBarInset: CGFloat {
+        return max(0, margin - NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy))
+    }
+    /// The least the middle part shows, however low `maximumHeight` is.
+    static let minimumMiddleHeight: CGFloat = 120
+
+    /// The tallest the sheet gets. What does not fit scrolls, in the middle part.
+    var maximumHeight = SettingsImportSheetViewController.defaultMaximumHeight()
+
+    /// Room for the sheet under the window's title bar on the screen in use, and never
+    /// more than 720 pt: a sheet is not a window.
+    static func defaultMaximumHeight(screenHeight: CGFloat? = NSScreen.main?.visibleFrame.height) -> CGFloat {
+        return min(720, max(420, (screenHeight ?? 900) - 160))
+    }
 
     private(set) var content: Content
     /// "Import" was clicked.
@@ -313,16 +395,24 @@ final class SettingsImportSheetViewController: NSViewController {
     // MARK: Views (read access for tests)
 
     private(set) var titleLabel: NSTextField!
-    /// The file's name and who saved it; the explanation of a problem.
+    /// The file's name and who it says saved it; the explanation of a problem.
     private(set) var detailLabel: NSTextField!
     /// What the file holds, one line each.
     private(set) var itemLabels: [NSTextField] = []
     /// "2 actions open an app or a file, or run a script"; nil without such actions.
     private(set) var launchTitleLabel: NSTextField?
     private(set) var launchHintLabel: NSTextField?
-    /// Every such action, one per line.
+    /// Every such action with its whole path, one per paragraph.
     private(set) var launchList: NSTextView?
-    private(set) var launchScrollView: NSScrollView?
+    /// "What the buttons, keys and gestures will do"; nil when the file brings none.
+    private(set) var actionsTitleLabel: NSTextField?
+    /// Every button and key with its action, then the gesture directions that are not
+    /// the default, one per paragraph.
+    private(set) var actionList: NSTextView?
+    /// The middle part: the boxes, scrolling together when they do not fit.
+    private(set) var middleScrollView: NSScrollView?
+    /// A line above and one below the middle part while it scrolls: where it is cut.
+    private(set) var middleEdgeLines: [NSBox] = []
     private(set) var noteLabel: NSTextField?
     private(set) var unreadableLabel: NSTextField?
     /// "3 values were out of range and were corrected."; nil when none was.
@@ -331,7 +421,8 @@ final class SettingsImportSheetViewController: NSViewController {
     /// "Cancel", or "OK" of a problem.
     private(set) var closeButton: NSButton!
 
-    private var stack: NSStackView?
+    /// Everything the sheet shows. Measured by itself (`rebuild`).
+    private var body: NSView?
     private var contentWidth: CGFloat { return Self.width - 2 * Self.margin }
 
     init(content: Content) {
@@ -358,32 +449,9 @@ final class SettingsImportSheetViewController: NSViewController {
 
     override func viewDidAppear() {
         super.viewDidAppear()
-        // The keyboard starts on the sheet itself, not in the list of paths (a text that
-        // can be selected would take it, and the keys with it): Return and Esc reach the
-        // buttons.
+        // The keyboard starts on the sheet itself, not in a list (a text that can be
+        // selected would take it, and the keys with it): Return and Esc reach the buttons.
         view.window?.makeFirstResponder(view)
-    }
-
-    /// A new, empty stack in the place of the one that showed something else.
-    private func installStack() {
-        stack?.removeFromSuperview()
-        let stack = NSStackView()
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 12
-        // Exactly as tall as what it holds: the sheet shrinks when it shows less.
-        stack.setHuggingPriority(.defaultHigh, for: .vertical)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: Self.margin),
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Self.margin),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Self.margin),
-            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -Self.margin),
-            // Its own width, so that it can be measured by itself (`rebuild`).
-            stack.widthAnchor.constraint(equalToConstant: Self.width - 2 * Self.margin),
-        ])
-        self.stack = stack
     }
 
     /// Shows something else in the same sheet: why an import that was confirmed failed.
@@ -394,68 +462,185 @@ final class SettingsImportSheetViewController: NSViewController {
     }
 
     private func rebuild() {
-        installStack()
+        body?.removeFromSuperview()
         itemLabels = []
         launchTitleLabel = nil
         launchHintLabel = nil
         launchList = nil
-        launchScrollView = nil
+        actionsTitleLabel = nil
+        actionList = nil
+        middleScrollView = nil
+        middleEdgeLines = []
         noteLabel = nil
         unreadableLabel = nil
         correctedLabel = nil
         importButton = nil
 
+        let header = makeColumn(spacing: 4)
+        let footer = makeColumn(spacing: 4)
+        var middle: NSStackView?
         switch content {
         case .confirm(let contents, let fileName):
-            buildConfirmation(of: contents, fileName: fileName)
+            middle = buildConfirmation(of: contents, fileName: fileName, header: header, footer: footer)
         case .problem(let title, let text):
-            buildProblem(title: title, text: text)
+            buildProblem(title: title, text: text, header: header, footer: footer)
         }
-        // Measured on the stack, not on the controller's view: AppKit holds that view at
-        // its preferred size (a constraint of priority 501 on the view itself), and with
-        // the old size in place a sheet that shows less would measure as tall as it was.
-        let height = ceil(stack?.fittingSize.height ?? 0) + 2 * Self.margin
-        let size = NSSize(width: Self.width, height: height)
+
+        // The body is as tall as its parts; the middle part is as tall as its boxes, or as
+        // the tallest sheet leaves room for, and then it scrolls.
+        let body = NSView()
+        body.translatesAutoresizingMaskIntoConstraints = false
+        body.addSubview(header)
+        body.addSubview(footer)
+        // The margin under the buttons is the one place that gives: the sheet's height is
+        // a whole number of points, what it holds may not be.
+        let bottomMargin = footer.bottomAnchor.constraint(equalTo: body.bottomAnchor, constant: -Self.margin)
+        bottomMargin.priority = .init(999)
+        var constraints = [
+            body.widthAnchor.constraint(equalToConstant: Self.width),
+            header.topAnchor.constraint(equalTo: body.topAnchor, constant: Self.margin),
+            header.leadingAnchor.constraint(equalTo: body.leadingAnchor, constant: Self.margin),
+            footer.leadingAnchor.constraint(equalTo: body.leadingAnchor, constant: Self.margin),
+            footer.bottomAnchor.constraint(lessThanOrEqualTo: body.bottomAnchor, constant: -Self.margin),
+            bottomMargin,
+        ]
+        if let middle {
+            let natural = ceil(middle.fittingSize.height)
+            let others = 2 * Self.margin + header.fittingSize.height + footer.fittingSize.height + 2 * Self.gap
+            let shown = min(natural, max(Self.minimumMiddleHeight, floor(maximumHeight - others)))
+            let scroll = makeMiddleScroll(for: middle, scrolls: natural > shown)
+            middleScrollView = scroll
+            body.addSubview(scroll)
+            constraints += [
+                scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: Self.gap),
+                scroll.leadingAnchor.constraint(equalTo: body.leadingAnchor, constant: Self.margin),
+                scroll.trailingAnchor.constraint(equalTo: body.trailingAnchor, constant: -Self.scrollBarInset),
+                scroll.heightAnchor.constraint(equalToConstant: shown),
+                footer.topAnchor.constraint(equalTo: scroll.bottomAnchor, constant: Self.gap),
+            ]
+            if natural > shown {
+                // Where the boxes are cut, a line says so (with the scroll bar, which
+                // stays in sight): what shows is not all there is.
+                for edge in [scroll.topAnchor, scroll.bottomAnchor] {
+                    let line = NSBox()
+                    line.boxType = .separator
+                    line.translatesAutoresizingMaskIntoConstraints = false
+                    body.addSubview(line)
+                    middleEdgeLines.append(line)
+                    constraints += [
+                        line.centerYAnchor.constraint(equalTo: edge),
+                        line.leadingAnchor.constraint(equalTo: body.leadingAnchor, constant: Self.margin),
+                        line.widthAnchor.constraint(equalToConstant: contentWidth),
+                    ]
+                }
+            }
+        } else {
+            constraints.append(footer.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 16))
+        }
+        NSLayoutConstraint.activate(constraints)
+
+        // Measured on the body, not on the controller's view: AppKit holds that view at its
+        // preferred size (a constraint of priority 501 on the view itself), and with the
+        // old size in place a sheet that shows less would measure as tall as it was.
+        let size = NSSize(width: Self.width, height: ceil(body.fittingSize.height))
+        view.addSubview(body)
+        NSLayoutConstraint.activate([
+            body.topAnchor.constraint(equalTo: view.topAnchor),
+            body.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            body.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            body.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        self.body = body
         view.setFrameSize(size)
         preferredContentSize = size
         view.layoutSubtreeIfNeeded()
     }
 
-    private func add(_ view: NSView, spacingBefore: CGFloat? = nil) {
-        guard let stack else { return }
-        if let spacingBefore, let previous = stack.arrangedSubviews.last {
-            stack.setCustomSpacing(spacingBefore, after: previous)
-        }
-        stack.addArrangedSubview(view)
-        view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+    /// A column of the sheet's content width whose rows are as wide as itself.
+    private func makeColumn(spacing: CGFloat) -> NSStackView {
+        let column = NSStackView()
+        column.orientation = .vertical
+        column.alignment = .leading
+        column.spacing = spacing
+        // Exactly as tall as what it holds.
+        column.setHuggingPriority(.required, for: .vertical)
+        column.translatesAutoresizingMaskIntoConstraints = false
+        column.widthAnchor.constraint(equalToConstant: contentWidth).isActive = true
+        return column
     }
 
-    private func buildConfirmation(of contents: SettingsFile.Contents, fileName: String) {
+    private func add(_ view: NSView, to column: NSStackView, spacingBefore: CGFloat? = nil) {
+        if let spacingBefore, let previous = column.arrangedSubviews.last {
+            column.setCustomSpacing(spacingBefore, after: previous)
+        }
+        column.addArrangedSubview(view)
+        view.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
+    }
+
+    /// The middle part in its scroll view. The boxes keep the sheet's content width; the
+    /// scroll view reaches into the right margin, where its bar stands when there is one.
+    /// A bar that is needed stays in sight (the system's own would hide until it is
+    /// used): nobody takes the first boxes for all of them.
+    private func makeMiddleScroll(for middle: NSStackView, scrolls: Bool) -> NSScrollView {
+        let document = PreferencesPaneDocumentView()
+        document.translatesAutoresizingMaskIntoConstraints = false
+        document.addSubview(middle)
+        let scroll = NSScrollView()
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+        scroll.hasVerticalScroller = scrolls
+        scroll.scrollerStyle = .legacy
+        scroll.autohidesScrollers = false
+        scroll.hasHorizontalScroller = false
+        scroll.verticalScrollElasticity = scrolls ? .allowed : .none
+        scroll.horizontalScrollElasticity = .none
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.documentView = document
+        NSLayoutConstraint.activate([
+            middle.topAnchor.constraint(equalTo: document.topAnchor),
+            middle.leadingAnchor.constraint(equalTo: document.leadingAnchor),
+            middle.trailingAnchor.constraint(equalTo: document.trailingAnchor),
+            middle.bottomAnchor.constraint(equalTo: document.bottomAnchor),
+            document.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
+            document.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
+        ])
+        return scroll
+    }
+
+    /// Fills the title, the notes and the buttons, and returns the middle part: what the
+    /// file holds, the actions that open or run something, and every button, key and
+    /// gesture with its action.
+    private func buildConfirmation(
+        of contents: SettingsFile.Contents, fileName: String, header: NSStackView, footer: NSStackView
+    ) -> NSStackView {
         titleLabel = makeTitle(text("general-settings-import-title"))
-        add(titleLabel)
+        add(titleLabel, to: header)
         detailLabel = makeNote(SettingsFileText.source(fileName: fileName, header: contents.header), width: contentWidth)
-        add(detailLabel, spacingBefore: 4)
+        add(detailLabel, to: header)
 
-        let rows = SettingsFileText.items(of: contents).map(makeItemRow)
-        add(SettingsImportBox(rows: rows))
-
-        let actions = contents.launchActions
-        if !actions.isEmpty {
-            add(makeLaunchBox(for: actions))
+        let middle = makeColumn(spacing: Self.gap)
+        add(SettingsImportBox(rows: SettingsFileText.items(of: contents).map(makeItemRow)), to: middle)
+        let launches = contents.launchActions
+        if !launches.isEmpty {
+            add(makeLaunchBox(for: launches), to: middle)
+        }
+        let lines = SettingsFileText.actionLines(of: contents) + SettingsFileText.gestureLines(of: contents)
+        if !lines.isEmpty {
+            add(makeActionsBox(for: lines), to: middle)
         }
 
         let note = makeNote(text("general-settings-import-note"), width: contentWidth)
         noteLabel = note
-        add(note)
+        add(note, to: footer)
         if contents.leftOutCount > 0 {
             let unreadable = makeNote(SettingsFileText.unreadable(count: contents.leftOutCount), width: contentWidth)
             unreadableLabel = unreadable
-            add(unreadable, spacingBefore: 4)
+            add(unreadable, to: footer)
         }
         if contents.correctedValues > 0 {
             let corrected = makeNote(SettingsFileText.corrected(count: contents.correctedValues), width: contentWidth)
             correctedLabel = corrected
-            add(corrected, spacingBefore: 4)
+            add(corrected, to: footer)
         }
 
         let cancel = SettingsSheetCancelButton(
@@ -467,34 +652,35 @@ final class SettingsImportSheetViewController: NSViewController {
         let confirm = PreferencesGroupedForm.makePushButton(
             title: text("general-settings-import-confirm"), target: self, action: #selector(importClicked(_:))
         )
-        // Return imports, unless the file brings actions that open or run something: then
-        // Return is "Cancel" (and so is Esc, as always), and importing takes a click on
-        // "Import".
-        if actions.isEmpty {
-            confirm.keyEquivalent = "\r"
-            cancel.keyEquivalent = "\u{1b}"
-        } else {
+        // Return imports only a file that gives no button or key an action and leaves the
+        // gestures at their defaults. Otherwise Return is "Cancel" (and so is Esc, as
+        // always), and importing takes a click on "Import".
+        if contents.bringsActions {
             cancel.keyEquivalent = "\r"
             cancel.alsoTakesEscape = true
+        } else {
+            confirm.keyEquivalent = "\r"
+            cancel.keyEquivalent = "\u{1b}"
         }
         closeButton = cancel
         importButton = confirm
-        add(makeButtonLine([cancel, confirm]), spacingBefore: 16)
+        add(makeButtonLine([cancel, confirm]), to: footer, spacingBefore: 16)
+        return middle
     }
 
-    private func buildProblem(title: String, text problem: String) {
+    private func buildProblem(title: String, text problem: String, header: NSStackView, footer: NSStackView) {
         titleLabel = makeTitle(title)
-        add(titleLabel)
+        add(titleLabel, to: header)
         detailLabel = makeNote(problem, width: contentWidth)
         detailLabel.font = PreferencesGroupedForm.titleFont
         detailLabel.textColor = .labelColor
-        add(detailLabel, spacingBefore: 6)
+        add(detailLabel, to: header, spacingBefore: 6)
         let ok = PreferencesGroupedForm.makePushButton(
             title: text("general-settings-import-ok"), target: self, action: #selector(closeClicked(_:))
         )
         ok.keyEquivalent = "\r"
         closeButton = ok
-        add(makeButtonLine([ok]), spacingBefore: 16)
+        add(makeButtonLine([ok]), to: footer)
     }
 
     private func makeTitle(_ title: String) -> NSTextField {
@@ -515,6 +701,16 @@ final class SettingsImportSheetViewController: NSViewController {
         label.isSelectable = false
         label.preferredMaxLayoutWidth = width
         label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }
+
+    /// The title of a box: the size of a row's title, semibold.
+    private func makeBoxTitle(_ title: String, width: CGFloat) -> NSTextField {
+        let label = NSTextField(wrappingLabelWithString: title)
+        label.font = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
+        label.textColor = .labelColor
+        label.isSelectable = false
+        label.preferredMaxLayoutWidth = width
         return label
     }
 
@@ -546,14 +742,10 @@ final class SettingsImportSheetViewController: NSViewController {
     }
 
     /// The box about actions that open an app or a file, or run a script: how many, what
-    /// that means, and every one of them.
+    /// that means, and every one of them with its whole path.
     private func makeLaunchBox(for actions: [SettingsFile.LaunchAction]) -> NSView {
         let inner = contentWidth - 2 * SettingsImportBox.inset
-        let title = NSTextField(wrappingLabelWithString: SettingsFileText.launchTitle(count: actions.count))
-        title.font = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
-        title.textColor = .labelColor
-        title.isSelectable = false
-        title.preferredMaxLayoutWidth = inner - 28
+        let title = makeBoxTitle(SettingsFileText.launchTitle(count: actions.count), width: inner - 28)
         launchTitleLabel = title
         let heading = NSStackView(views: [makeSymbol("exclamationmark.triangle.fill", color: .systemOrange), title])
         heading.orientation = .horizontal
@@ -563,14 +755,32 @@ final class SettingsImportSheetViewController: NSViewController {
         let hint = makeNote(text("general-settings-import-launch-hint"), width: inner)
         launchHintLabel = hint
 
-        let lines = actions.map { SettingsFileText.launchLine(for: $0) }.joined(separator: "\n")
-        let scroll = makeLaunchList(lines, width: inner)
-        return SettingsImportBox(rows: [heading, hint, scroll])
+        let list = makeList(
+            actions.map { SettingsFileText.launchLine(for: $0) },
+            font: NSFont.monospacedSystemFont(ofSize: PreferencesForm.hintFontSize, weight: .regular),
+            width: inner, accessibilityLabel: title.stringValue
+        )
+        launchList = list
+        return SettingsImportBox(rows: [heading, hint, list])
     }
 
-    /// Every action in a paragraph of its own, in a fixed-width font, as tall as its text up
-    /// to `launchListMaximumHeight`; beyond that it scrolls. The text can be selected and copied.
-    private func makeLaunchList(_ lines: String, width: CGFloat) -> NSScrollView {
+    /// The box with every button and key of the file and what it will do, and the
+    /// directions of Gesture Navigation that are not the default.
+    private func makeActionsBox(for lines: [String]) -> NSView {
+        let inner = contentWidth - 2 * SettingsImportBox.inset
+        let title = makeBoxTitle(text("general-settings-import-actions-title"), width: inner)
+        actionsTitleLabel = title
+        let list = makeList(
+            lines, font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize + 1), width: inner, accessibilityLabel: title.stringValue
+        )
+        actionList = list
+        return SettingsImportBox(rows: [title, list])
+    }
+
+    /// Lines of text, each a paragraph of its own (what does not fit goes on, indented, on
+    /// the next line), as tall as the text: a list does not scroll by itself, the middle
+    /// part of the sheet does. The text can be selected and copied.
+    private func makeList(_ lines: [String], font: NSFont, width: CGFloat, accessibilityLabel: String) -> NSTextView {
         let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: width, height: 10))
         textView.isEditable = false
         textView.isSelectable = true
@@ -579,44 +789,28 @@ final class SettingsImportSheetViewController: NSViewController {
         textView.textContainerInset = .zero
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
-        textView.textContainer?.widthTracksTextView = true
-        textView.minSize = .zero
-        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.isVerticallyResizable = true
+        textView.textContainer?.widthTracksTextView = false
+        textView.isVerticallyResizable = false
         textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        // One action per paragraph; what does not fit goes on, indented, on the next line.
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byWordWrapping
         paragraph.headIndent = 14
         paragraph.paragraphSpacing = 4
-        textView.textStorage?.setAttributedString(NSAttributedString(string: lines, attributes: [
-            .font: NSFont.monospacedSystemFont(ofSize: PreferencesForm.hintFontSize, weight: .regular),
+        textView.textStorage?.setAttributedString(NSAttributedString(string: lines.joined(separator: "\n"), attributes: [
+            .font: font,
             .foregroundColor: NSColor.labelColor,
             .paragraphStyle: paragraph,
         ]))
-        textView.setAccessibilityLabel(SettingsFileText.launchTitle(count: lines.components(separatedBy: "\n").count))
+        textView.setAccessibilityLabel(accessibilityLabel)
         var height: CGFloat = 0
         if let container = textView.textContainer, let layout = textView.layoutManager {
             layout.ensureLayout(for: container)
             height = ceil(layout.usedRect(for: container).height)
         }
         textView.setFrameSize(NSSize(width: width, height: height))
-        launchList = textView
-
-        let scroll = NSScrollView()
-        scroll.drawsBackground = false
-        scroll.borderType = .noBorder
-        // A list that does not fit keeps its scroll bar in sight (the system's own would
-        // hide until it is used): nobody takes the first lines for all of them.
-        scroll.hasVerticalScroller = height > Self.launchListMaximumHeight
-        scroll.scrollerStyle = .legacy
-        scroll.hasHorizontalScroller = false
-        scroll.documentView = textView
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        scroll.heightAnchor.constraint(equalToConstant: min(max(height, 14), Self.launchListMaximumHeight)).isActive = true
-        launchScrollView = scroll
-        return scroll
+        textView.translatesAutoresizingMaskIntoConstraints = false
+        textView.heightAnchor.constraint(equalToConstant: max(height, 14)).isActive = true
+        return textView
     }
 
     /// The buttons at the right edge, the one that goes on last.
