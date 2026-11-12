@@ -2189,12 +2189,13 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         reader.read { reading in
             XCTAssertFalse(Thread.isMainThread)
             XCTAssertNil(reading.value)
+            XCTAssertEqual(reading.failedAt, AccessibilityScrollEndWatch.notTrusted)
             read.fulfill()
         }
         returned = true
         wait(for: [looked, read], timeout: 5)
         XCTAssertTrue(returned)
-        XCTAssertEqual(askedTrust, 1, "asked before anything else, and nothing after it")
+        XCTAssertEqual(askedTrust, 2, "the look asks before anything else, and the read asks again")
         XCTAssertTrue(AccessibilityScrollEndWatch.firstLookLine(trusted: false).contains("not trusted"))
         XCTAssertTrue(AccessibilityScrollEndWatch.firstLookLine(trusted: true).contains("reads the scroll bar under the pointer through Accessibility"))
         XCTAssertTrue(ScrollPoster.isAtEnd(1.0, towardBottom: true) && ScrollPoster.isAtEnd(0.99995, towardBottom: true) && !ScrollPoster.isAtEnd(0.999, towardBottom: true))
@@ -2202,6 +2203,89 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
     }
 
 
+
+    /// Looks never queue up behind a slow app. A look that waited on the reader's queue for
+    /// longer than `lookGoesStaleAfter` (its scroll has gone on plain by then) answers "not
+    /// seen" without asking anything, not even whether Scrollio is trusted. It used to run
+    /// in full, and so did every look behind it.
+    func testEndWatch_theRealReader_aLookThatWaitedTooLong_answersWithoutAsking() {
+        var askedTrust = 0
+        let reader = AccessibilityScrollEndWatch(isTrusted: {
+            askedTrust += 1
+            // The first look is slow, as an app that does not answer makes it.
+            Thread.sleep(forTimeInterval: AccessibilityScrollEndWatch.lookGoesStaleAfter + 0.1)
+            return false
+        })
+        let first = expectation(description: "the slow look answered")
+        let second = expectation(description: "the look behind it answered")
+        let own = ProcessInfo.processInfo.processIdentifier
+        reader.look(pid: own, at: .zero) { reading in
+            XCTAssertEqual(reading.failedAt, AccessibilityScrollEndWatch.notTrusted)
+            first.fulfill()
+        }
+        reader.look(pid: own, at: .zero) { reading in
+            XCTAssertNil(reading.value)
+            XCTAssertEqual(reading.failedAt, AccessibilityScrollEndWatch.askedTooLongAgo)
+            XCTAssertLessThan(reading.milliseconds, 50, "nothing was asked")
+            second.fulfill()
+        }
+        wait(for: [first, second], timeout: 5)
+        XCTAssertEqual(askedTrust, 1, "the look that waited asked nothing")
+    }
+
+    /// The process's own messaging timeout (1.5 s by default; elements the library makes
+    /// itself use it, not the one set on an element) is shortened once, at the first look
+    /// that finds Scrollio trusted, and not before. And a read asks about trust again,
+    /// before anything else: access can be taken away between a look and a read.
+    /// (Scrollio's own pid: such a look stops before any message, as for its own windows.)
+    func testEndWatch_theRealReader_setsTheProcessTimeoutOnce_andAReadAsksAboutTrust() {
+        var trusted = false
+        var askedTrust = 0
+        var timeouts: [Float] = []
+        let reader = AccessibilityScrollEndWatch(isTrusted: {
+            askedTrust += 1
+            return trusted
+        }, setProcessTimeout: { timeouts.append($0) })
+        let own = ProcessInfo.processInfo.processIdentifier
+        func answer(_ ask: (@escaping (ScrollEndReading) -> Void) -> Void) -> ScrollEndReading? {
+            let answered = expectation(description: "answered")
+            var result: ScrollEndReading?
+            ask { reading in
+                result = reading
+                answered.fulfill()
+            }
+            wait(for: [answered], timeout: 5)
+            return result
+        }
+        XCTAssertEqual(answer { reader.look(pid: own, at: .zero, answer: $0) }?.failedAt, AccessibilityScrollEndWatch.notTrusted)
+        XCTAssertEqual(timeouts, [], "not trusted: nothing is set")
+        trusted = true
+        XCTAssertEqual(answer { reader.look(pid: own, at: .zero, answer: $0) }?.failedAt, AccessibilityScrollEndWatch.ownWindow)
+        XCTAssertEqual(answer { reader.look(pid: own, at: .zero, answer: $0) }?.failedAt, AccessibilityScrollEndWatch.ownWindow)
+        XCTAssertEqual(timeouts, [AccessibilityScrollEndWatch.processTimeout], "set once")
+        XCTAssertLessThan(AccessibilityScrollEndWatch.processTimeout, 1.5)
+        XCTAssertGreaterThanOrEqual(AccessibilityScrollEndWatch.processTimeout, AccessibilityScrollEndWatch.messagingTimeout)
+        let asked = askedTrust
+        XCTAssertEqual(answer { reader.read(answer: $0) }?.failedAt, "no bar to read again")
+        XCTAssertEqual(askedTrust, asked + 1, "a read asks about trust too")
+        trusted = false
+        XCTAssertEqual(answer { reader.read(answer: $0) }?.failedAt, AccessibilityScrollEndWatch.notTrusted)
+        XCTAssertEqual(timeouts.count, 1)
+    }
+
+    /// A role is whatever string the app answers: the scroll log keeps a dozen at most, each
+    /// cut to 40 characters. And a look says which bar it found (0: not said).
+    func testEndWatch_theLogCutsARoleShort() {
+        var log = ScrollEndWatchLog()
+        let long = String(repeating: "A", count: 5_000)
+        log.note(ScrollEndReading(value: 0.5, roles: [long, "AXScrollArea"] + Array(repeating: "AXGroup", count: 30)), isLook: true)
+        XCTAssertEqual(log.roles.count, AccessibilityScrollEndWatch.deepestClimb)
+        XCTAssertEqual(log.roles.first, String(repeating: "A", count: 40))
+        XCTAssertEqual(log.roles.dropFirst().first, "AXScrollArea")
+        XCTAssertLessThan(log.line?.count ?? 0, 400)
+        XCTAssertEqual(ScrollEndReading(value: 0.5).bar, 0)
+        XCTAssertNotEqual(ScrollEndReading(value: 0.5, bar: 1), ScrollEndReading(value: 0.5, bar: 2))
+    }
 
     /// What breaks the rule in a stream of posted events, or nil: every "began" gets its
     /// "ended", a glide follows a touch or nothing does, each gesture is closed before the

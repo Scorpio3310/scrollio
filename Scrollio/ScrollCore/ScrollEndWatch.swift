@@ -19,6 +19,9 @@ struct ScrollEndReading: Equatable {
     var roles: [String] = []
     /// How long it took (ms).
     var milliseconds = 0.0
+    /// Which scroll bar a look found: the same number for the same element, another for
+    /// another (the reader compares the elements). 0: not said.
+    var bar: UInt64 = 0
 
     static func notSeen(_ failedAt: String, roles: [String] = [], milliseconds: Double = 0) -> ScrollEndReading {
         return ScrollEndReading(value: nil, failedAt: failedAt, roles: roles, milliseconds: milliseconds)
@@ -73,21 +76,41 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
 
     private let queue = DispatchQueue(label: "com.nikklemenc.Scrollio.end-watch", qos: .userInteractive)
     private let isTrusted: () -> Bool
+    private let setProcessTimeout: (Float) -> Void
     /// The bar the last look found. Only on `queue`.
     private var bar: AXUIElement?
     /// The `app` log gets one line at the first look. Only on `queue`.
     private var saidWhetherTrusted = false
+    private var setTheProcessTimeout = false
+    /// The last bar a look found, and its number (`ScrollEndReading.bar`). Only on `queue`.
+    private var identified: AXUIElement?
+    private var barNumber: UInt64 = 0
+    /// A look that waited longer than this on the queue answers "not seen" unasked.
+    static let lookGoesStaleAfter = 0.25
+    static let askedTooLongAgo = "the look was asked too long ago"
+    static let notTrusted = "Scrollio is not trusted for Accessibility"
+    /// The process's own messaging timeout (seconds), for elements this reader never sees
+    /// (suspected to be asked by it; see where it is set).
+    static let processTimeout: Float = 0.25
 
     /// `isTrusted`: tests answer here (a test never messages another app).
-    init(isTrusted: @escaping () -> Bool = { AXIsProcessTrusted() }) {
+    /// `setProcessTimeout`: sets the timeout on the system-wide element, which is the
+    /// process's own (AXUIElement.h); it sends no message.
+    init(isTrusted: @escaping () -> Bool = { AXIsProcessTrusted() },
+         setProcessTimeout: @escaping (Float) -> Void = { AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), $0) }) {
         self.isTrusted = isTrusted
+        self.setProcessTimeout = setProcessTimeout
     }
 
     func look(pid: pid_t, at point: CGPoint, answer: @escaping (ScrollEndReading) -> Void) {
+        let asked = DispatchTime.now().uptimeNanoseconds
         queue.async { [self] in
             let began = DispatchTime.now().uptimeNanoseconds
             bar = nil
-            var reading = lookOnQueue(pid: pid, at: point)
+            // A look that waited behind a slow app is out of date: its scroll has gone on
+            // plain, and messaging the app for it now would only keep the next look waiting.
+            let waited = Double(began - asked) / 1_000_000_000
+            var reading = waited > Self.lookGoesStaleAfter ? ScrollEndReading.notSeen(Self.askedTooLongAgo) : lookOnQueue(pid: pid, at: point)
             reading.milliseconds = Double(DispatchTime.now().uptimeNanoseconds - began) / 1_000_000
             answer(reading)
         }
@@ -97,8 +120,11 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
         queue.async { [self] in
             let began = DispatchTime.now().uptimeNanoseconds
             var reading: ScrollEndReading
-            // (A bar is only ever kept from a look that found Scrollio trusted.)
-            if let bar = bar {
+            // Trust is asked again, and first: access can be taken away between a look and
+            // a read, and a call made without it is an attempt the system is told of.
+            if !isTrusted() {
+                reading = .notSeen(Self.notTrusted)
+            } else if let bar = bar {
                 reading = Self.value(of: bar).map { ScrollEndReading(value: $0) } ?? .notSeen("the bar's value could not be read again")
             } else {
                 reading = .notSeen("no bar to read again")
@@ -115,7 +141,16 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
             saidWhetherTrusted = true
             AppSystemLog.note(Self.firstLookLine(trusted: trusted))
         }
-        guard trusted else { return .notSeen("Scrollio is not trusted for Accessibility") }
+        guard trusted else { return .notSeen(Self.notTrusted) }
+        if !setTheProcessTimeout {
+            // A timeout set on an element is kept in that element only; the process's own
+            // is 1.5 s by default (read in the library by the reviewer). Elements the
+            // library makes itself (when an app answers "ask that other process": remote
+            // views, web content) are suspected to wait by the process's. Nothing else in
+            // Scrollio messages through Accessibility, so that one is shortened once as well.
+            setTheProcessTimeout = true
+            setProcessTimeout(Self.processTimeout)
+        }
         guard pid > 0 else { return .notSeen("no app") }
         // Never Scrollio itself. For its own process Accessibility sends no message: it runs
         // AppKit's accessibility code in place, on this queue, while the main thread
@@ -157,7 +192,14 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
                     return .notSeen("a scroll bar without a value from 0 to 1", roles: roles)
                 }
                 bar = scrollBar
-                return ScrollEndReading(value: value, roles: roles)
+                // Which bar: the same number as long as looks find the same element.
+                if let known = identified, CFEqual(known, scrollBar) {
+                    // the same bar as the look before
+                } else {
+                    identified = scrollBar
+                    barNumber += 1
+                }
+                return ScrollEndReading(value: value, roles: roles, bar: barNumber)
             }
             guard let parent = Self.copy(element, kAXParentAttribute), CFGetTypeID(parent) == AXUIElementGetTypeID() else {
                 return .notSeen("no scroll area above the element under the pointer", roles: roles)
@@ -238,7 +280,8 @@ struct ScrollEndWatchLog: Equatable {
         slowest = max(slowest, reading.milliseconds)
         if isLook {
             seen = reading.value != nil
-            roles = Array(reading.roles.prefix(AccessibilityScrollEndWatch.deepestClimb))
+            // (A role is whatever string the app answers: a dozen at most, each cut short.)
+            roles = reading.roles.prefix(AccessibilityScrollEndWatch.deepestClimb).map { String($0.prefix(40)) }
             failedAt = reading.failedAt
         } else if reading.value == nil {
             seen = false
@@ -263,7 +306,7 @@ struct ScrollEndWatchLog: Equatable {
             parts.append("roles " + roles.joined(separator: " > "))
         }
         if let first = firstValue, let last = lastValue {
-            parts.append(String(format: "value %.4f -> %.4f", first, last))
+            parts.append(String(format: "value %.6f -> %.6f", first, last))
         }
         parts.append(String(format: "%d looks, %d answers (slowest %.1f ms)", looks, answers, slowest))
         if turns + lost + retries > 0 {
@@ -285,7 +328,7 @@ final class ScrollEndWatchSeenInMidPage: ScrollEndWatching {
     private(set) var reads = 0
     func look(pid: pid_t, at point: CGPoint, answer: @escaping (ScrollEndReading) -> Void) {
         looks += 1
-        answer(ScrollEndReading(value: 0.5, roles: ["AXScrollArea"]))
+        answer(ScrollEndReading(value: 0.5, roles: ["AXScrollArea"], bar: 1))
     }
     func read(answer: @escaping (ScrollEndReading) -> Void) {
         reads += 1
