@@ -14,6 +14,10 @@ internal protocol LogiExternalBridge: AnyObject {
     /// right, +y towards the user. Only sent for a hold whose button-down event had
     /// `tracksMovementOnDevice` set, about 125 times a second. Hot path.
     func handleLogiGestureMovement(code: UInt16, deltaX: Int, deltaY: Int)
+    /// What the Buttons pane calls the button with this Scrollio code ("Back button", "Mode
+    /// shift button"), for the toasts: they must name a button as the pane does. nil when
+    /// the app has no name for it.
+    func logiButtonName(forScrollioCode code: UInt16) -> String?
 }
 
 internal enum LogiDispatchResult: Equatable {

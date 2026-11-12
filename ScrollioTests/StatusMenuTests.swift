@@ -1491,15 +1491,16 @@ final class SecondaryWindowNamingTests: XCTestCase {
     }
 
     func testToastsWithoutJargon() {
-        let name = "Back"
+        // The name the Buttons pane has for the button (the toasts get it through the bridge).
+        let name = "Back button"
         let texts = [
             String(format: NSLocalizedString("logi_ble_hidpp_unstable_toast", comment: ""), name),
             String(format: NSLocalizedString("logi_hidpp_contention_toast", comment: ""), name),
             String(format: NSLocalizedString("logi_ble_contention_standard_mouse_alias_toast", comment: ""), name),
             String(format: NSLocalizedString("openTargetScriptNotExecutable", comment: ""), "build.sh"),
         ]
-        XCTAssertEqual(texts[0], "Back may stop working while Logi Options+ runs. The receiver is more reliable.")
-        XCTAssertEqual(texts[1], "Logi Options+ keeps taking over Back.")
+        XCTAssertEqual(texts[0], "Back button may stop working while Logi Options+ runs. Connect the mouse with its Logitech receiver, or quit Logi Options+.")
+        XCTAssertEqual(texts[1], "Logi Options+ keeps taking over Back button.")
         XCTAssertEqual(texts[3], "Script \"build.sh\" can't run: it isn't marked as executable.")
         for text in texts {
             for jargon in ["HID++", "BLE", "Bolt", "Unifying", "chmod", "capture"] {
