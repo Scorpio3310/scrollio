@@ -253,9 +253,10 @@ class ScrollPoster {
     // - The Chromium engine (Chrome, Dia, Arc, Electron apps) and the Gecko engine (Firefox)
     //   scroll by the momentum events too. For them the scroll is a flick (`config.flick`),
     //   as described below.
-    // - Safari gets no phases at all, as with the switch off (`ScrollUtils.TrackpadStyleTarget
-    //   .safari` says what is known; an evaluation switch gives it the flick), and so do the
-    //   apps where a wheel has to stay a wheel (`.plainScrolling`).
+    // - Safari and the DuckDuckGo browser (WebKit) get the flick too, where the wheel event's
+    //   hardware record comes off a frame, and no phases where it does not
+    //   (`ScrollUtils.TrackpadStyleTarget.safari`). The apps where a wheel has to stay a
+    //   wheel get no phases (`.plainScrolling`).
     // - A scroll that is mainly sideways carries no phases in any app (`isMainlySideways`).
     //
     // A real flick is a short touch (3 or 4 events, ~50 ms) and then a long glide (momentum).
@@ -470,11 +471,6 @@ class ScrollPoster {
     /// Chromium-based get the old long touch (`TrackpadStyleEvaluation`). Read once at launch;
     /// tests set it. Main thread.
     var usesOldLongTouch = TrackpadStyleEvaluation.usesOldLongTouch
-    /// EVALUATION SWITCH, removed before this is released: Safari gets the flick, without
-    /// the wheel event's hardware record, instead of no phases (`TrackpadStyleEvaluation`).
-    /// It counts only where the record comes off (`hardwareRecordComesOff`). Read once at
-    /// launch; tests set it. Main thread.
-    var usesSafariFlick = TrackpadStyleEvaluation.usesSafariFlick
     // Ending a session from the display link (see `displayLinkFrameLocked`)
     /// Counts wheel inputs; a stop the display link asked for is dropped when it is stale.
     private var inputSequence: UInt64 = 0
@@ -633,11 +629,14 @@ extension ScrollPoster {
     /// whether the switch is on but the app gets none.
     /// `oldLongTouch`: the evaluation switch (`usesOldLongTouch`). `oneTouch` is the form of
     /// every app that gets phases and no flick, unless that switch asks for the old one.
-    /// `safariFlick`: the other evaluation switch, and only where the wheel event's hardware
-    /// record comes off a frame (`usesSafariFlick && hardwareRecordComesOff()`): Safari then
-    /// gets the flick. A glide whose "momentum began" carries a record never goes to an app
-    /// known as WebKit's: WebKit would replace it by a glide of its own.
-    static func trackpadStyleForm(switchOn: Bool, target: ScrollUtils.TrackpadStyleTarget?, oldLongTouch: Bool = false, safariFlick: Bool = false) -> (phases: Bool, flick: Bool, withheld: Bool, oneTouch: Bool) {
+    /// `recordComesOff`: whether the wheel event's hardware record comes off a frame here
+    /// (asked for a WebKit browser only). Safari and the other browsers WebKit draws then get
+    /// the flick; where it does not come off (before macOS 27, a failed self-test) they get
+    /// no phases. A glide whose "momentum began" carries a record never goes to an app known
+    /// as WebKit's: WebKit would replace it by a glide of its own. (Safari with the flick
+    /// and no record: seen on the owner's screen, macOS 27.2, 2026-11-12; WebKit's own log
+    /// said it followed every one of Scrollio's glides.)
+    static func trackpadStyleForm(switchOn: Bool, target: ScrollUtils.TrackpadStyleTarget?, oldLongTouch: Bool = false, recordComesOff: Bool = false) -> (phases: Bool, flick: Bool, withheld: Bool, oneTouch: Bool) {
         guard switchOn else {
             return (phases: false, flick: false, withheld: false, oneTouch: false)
         }
@@ -645,7 +644,7 @@ extension ScrollPoster {
         case .plainScrolling:
             return (phases: false, flick: false, withheld: true, oneTouch: false)
         case .safari:
-            return safariFlick
+            return recordComesOff
                 ? (phases: true, flick: true, withheld: false, oneTouch: false)
                 : (phases: false, flick: false, withheld: true, oneTouch: false)
         case .followsGlide:
@@ -2423,11 +2422,11 @@ private extension ScrollPoster {
         // for the first time counts as touch-only until its bundle was looked into, off this
         // thread (`ScrollUtils.trackpadStyleTarget`).
         let target = simTrackpad ? event.map { trackpadStyleTarget($0) } : nil
-        // Whether the record comes off is asked only where the answer is needed: over Safari
-        // with its evaluation switch, and for frames that carry phases. With the switch off
+        // Whether the record comes off is asked only where the answer is needed: over a
+        // WebKit browser, and for frames that carry phases. With the switch off
         // (and for an app that gets no phases) nobody asks, and the self-test does not run.
         let form = Self.trackpadStyleForm(switchOn: simTrackpad, target: target, oldLongTouch: usesOldLongTouch,
-                                          safariFlick: simTrackpad && usesSafariFlick && target == .safari && hardwareRecordComesOff())
+                                          recordComesOff: simTrackpad && target == .safari && hardwareRecordComesOff())
         return ConfigSnapshot(
             simTrackpadEnabled: form.phases,
             flick: form.flick,

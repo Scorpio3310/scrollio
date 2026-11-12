@@ -95,8 +95,8 @@ of scrolling and the menu bar icon.
 - Reverse wheel direction (the wheel only, not the trackpad).
 - Under Advanced: an exact glide time, the smallest step, and
   "Trackpad-style scrolling (Beta)": apps treat the wheel like a trackpad and bounce at
-  the ends of a page. Safari and sideways scrolling stay as they are. What it does in
-  which app, and its limits:
+  the ends of a page. Sideways scrolling stays as it is. What it does in which app, and
+  its limits:
   [Trackpad-style scrolling (Beta)](#trackpad-style-scrolling-beta).
 - While you hold a key: "Scroll faster" (5 × the distance), "Scroll sideways" and "Pause
   smoothing" (exact steps, for example to zoom with ⌘). A mouse button can hold them
@@ -139,12 +139,17 @@ sent in one of three ways:
   while the wheel still turns into that end, nothing more is sent; a scroll that starts
   at the end makes one small bounce. A view whose scroll bar cannot be read (no scroll
   bar, an app that does not answer in time) scrolls as with the switch off.
-- Safari, the web apps made with its "Add to Dock" and the DuckDuckGo browser: nothing
-  changes. The same for Maps, Find My, Calendar, iPhone Mirroring, Blender and the Godot
-  editor: by what people who use other mouse tools report, they do something else with a
+- Safari, the web apps made with its "Add to Dock" and the DuckDuckGo browser: on macOS
+  27 and later the same short touch and glide as Chrome gets. For Safari this was seen on
+  one screen (macOS 27.2, 2026-11-12: smooth, with the bounce; WebKit's own log said it
+  followed every glide it was sent); DuckDuckGo is the same engine and was not seen. On
+  macOS 14, 15 and 26 nothing changes for them: there the wheel's hardware event cannot be
+  taken off what is sent, and with it on a glide these browsers do not scroll smoothly.
+- Maps, Find My, Calendar, iPhone Mirroring, Blender and the Godot editor: nothing
+  changes. By what people who use other mouse tools report, they do something else with a
   trackpad's scroll than with a wheel's (the wheel pans a map where it zoomed, or orbits
-  a 3D view), or do not scroll as they should. For all of these the switch does nothing,
-  and neither does their own "Trackpad-style scrolling (Beta)" switch when you give one of
+  a 3D view), or do not scroll as they should. For these the switch does nothing, and
+  neither does their own "Trackpad-style scrolling (Beta)" switch when you give one of
   them its own settings in the Apps pane.
 
 Scrolling sideways (with Shift, "Scroll sideways" or the thumb wheel) stays as it is with
@@ -622,8 +627,8 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   or path), a held action whose release never came, at launch which accent colour is
   in effect, for "Trackpad-style scrolling (Beta)" whether the wheel's hardware event is
   taken off what an app is sent (once: at launch when the switch is on, in the Scrolling
-  pane or for an app; else at the first scroll after you switch it on) and which forms
-  are under evaluation, and the updater: whether this copy updates itself, and one line per check
+  pane or for an app; else at the first scroll after you switch it on), what Safari gets
+  and which form is under evaluation, and the updater: whether this copy updates itself, and one line per check
   with what it found:
 
   ```text

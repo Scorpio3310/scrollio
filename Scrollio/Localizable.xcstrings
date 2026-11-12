@@ -4182,7 +4182,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apps treat the wheel like a trackpad and bounce at the ends of a page. Safari stays as it is. Turn off if an app scrolls oddly."
+            "value": "Apps treat the wheel like a trackpad and bounce at the ends of a page. Turn off if an app scrolls oddly."
           }
         }
       }

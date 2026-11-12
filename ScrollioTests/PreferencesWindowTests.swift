@@ -483,11 +483,11 @@ final class PreferencesNamingTests: XCTestCase {
         // "scrolling", not "events" (a developer's word).
         XCTAssertEqual(scrolling.trackpadEventsRow.title, "Trackpad-style scrolling (Beta)")
         XCTAssertEqual(scrolling.trackpadEventsSwitch.accessibilityLabel(), "Trackpad-style scrolling (Beta)")
-        // The switch does nothing in Safari (ScrollUtils.TrackpadStyleTarget.plainScrolling):
-        // the line says so, so it is not taken for broken there.
+        // (The line used to say "Safari stays as it is". Since the hardware record comes off
+        // the frames Safari gets the flick on macOS 27, so that sentence was no longer true.)
         XCTAssertEqual(
             scrolling.trackpadEventsRow.explanation,
-            "Apps treat the wheel like a trackpad and bounce at the ends of a page. Safari stays as it is. Turn off if an app scrolls oddly."
+            "Apps treat the wheel like a trackpad and bounce at the ends of a page. Turn off if an app scrolls oddly."
         )
     }
 
