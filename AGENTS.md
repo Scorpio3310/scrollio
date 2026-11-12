@@ -1,16 +1,15 @@
 # AGENTS.md
 
-The single guidance file for coding agents in this repository. Tool-specific entry files
-(`CLAUDE.md`) only point here; do not keep a second copy of these rules anywhere.
+The single guidance file for coding agents (and people) working in this repository.
+Tool-specific entry files (`CLAUDE.md`) only point here; do not keep a second copy of
+these rules anywhere.
 
 ## Priority
 
 1. The user's current request and the system or tool safety rules.
 2. This file.
-3. `.agents/docs/code-map.md` and `LOCALIZATION.md`.
+3. `.agents/docs/code-map.md`.
 4. The current sources, the Xcode project and the test plans.
-5. `docs/` and `CHANGELOG.md`. These are history, mostly from the original project:
-   background only, never the source for commands, structure or scope.
 
 ## Before you start
 
@@ -20,8 +19,8 @@ The single guidance file for coding agents in this repository. Tool-specific ent
 ## The project
 
 - Scrollio is a macOS menu-bar app: Swift 5, AppKit, an Xcode project, Swift packages
-  (DGCharts only). It is a personal, non-commercial fork of Mos by Caldis (CC BY-NC 4.0;
-  the attribution in `README.md` and the file headers stay).
+  (DGCharts only). It is a non-commercial fork of Mos by Caldis (CC BY-NC 4.0; the
+  attribution in `README.md` and the file headers stay).
 - Names: the products are `Scrollio.app` (`com.nikklemenc.Scrollio`) and
   `Scrollio Debug.app` (`com.nikklemenc.Scrollio.debug`); the tests are
   `com.nikklemenc.ScrollioTests`. The project, folders, targets and Swift modules keep
@@ -32,9 +31,9 @@ The single guidance file for coding agents in this repository. Tool-specific ent
   Logi cache keys, CID and feature constants, storyboard object ids, string catalog keys.
 - Deployment target: macOS 14.0 for every target. Do not write fallbacks for older
   systems. Gate only APIs newer than 14.0 (the existing `macOS 26` checks stay).
-- There is no updater, no release process and no remote of our own. The git remote
-  `upstream` is the original project: never push to it, never open issues or pull
-  requests there.
+- There is no updater and no release process. The original project
+  (<https://github.com/Caldis/Mos>) is a separate repository: never push to it, and never
+  open issues or pull requests there about Scrollio.
 
 ## Commands
 
@@ -59,7 +58,8 @@ scripts/install.sh             # the same, then install to /Applications and sta
   instance with its global event tap is running, that modal prompt blocks the main thread
   and freezes all mouse and keyboard input. If it ever happened, rebuild normally to
   restore the signature.
-- Keep the signing team and identities in the project as they are.
+- Keep the signing team and identities in the project as they are. To build on another
+  Mac, set your own team locally and do not commit it (`README.md`, "Build from source").
 - To check that code compiles, prefer a plain `build`: it starts nothing and changes no
   signature.
 - Before `test`, make sure no debug instance runs: `pgrep -fl "Scrollio Debug.app"` must
@@ -75,6 +75,9 @@ scripts/install.sh             # the same, then install to /Applications and sta
   `Mos.xcodeproj/project.pbxproj` (file reference, group entry, build file, Sources
   phase of the `MosTests` target). A file that is only created is not compiled.
 - After adding, moving or deleting Swift files, build or run the related tests.
+- Outside the targets: `scripts/` (the install script and the boundary lint), `tools/`
+  (hand-run HID++ probes and a toast harness; read `tools/README.md` before running a
+  probe), `assets/readme/` (the README's pictures, made by the render tests).
 
 ## Module boundaries
 
@@ -96,7 +99,7 @@ See `.agents/docs/code-map.md` for the map. The rules:
   category `logi`; `AppSystemLog`, category `app`: the app's own health: starts and stops,
   event taps that macOS turned off or that could not be created, recoveries): state
   changes, decisions and one line per scroll, never a line per event, and no string built
-  per event. Use these, not `NSLog`: only they are in the subsystem the owner reads.
+  per event. Use these, not `NSLog`: only they write to the app's subsystem.
   Reading it: `README.md`, "Diagnostics".
 - A write to a Logitech device never runs on the main thread: `IOHIDDeviceSetReport` takes
   15 to 29 ms over Bluetooth and the main thread serves every event tap. Send through the
@@ -114,18 +117,44 @@ See `.agents/docs/code-map.md` for the map. The rules:
   count as stopped, and never block the main thread while one runs. The pointer-movement
   tap of gesture holds is made on demand while the cores run; their stop releases it.
 
-## Localization
+## Strings
 
-- English is the only language. The mechanism stays: two string catalogs that must stay
-  separate (`Mos/Localizable.xcstrings` for Swift, `Mos/mul.lproj/Main.xcstrings` for the
-  storyboard).
+English is the only language. The localization mechanism stays, with two string catalogs
+that must stay separate:
+
+| File | Strings | Keys |
+| --- | --- | --- |
+| `Mos/Localizable.xcstrings` | Used from Swift with `NSLocalizedString` | Readable phrases (older keys) or identifiers: those of `SystemShortcut.Shortcut`, and by area `general-*`, `scrolling-*`, `buttons-*`, `mouse-*`, `gesture-*` / `gestures-*`, `apps-*`, `about-*`, `preferences-*`, `main-menu-*`, `status-menu-*` / `status-item-*`, `intro-*`, `toast-*` |
+| `Mos/mul.lproj/Main.xcstrings` | The storyboard (`Mos/Base.lproj/Main.storyboard`) | Interface Builder object ids (`AYu-sK-qS6.title`) |
+
 - Every user-visible string is localized. In Swift use `NSLocalizedString(_:comment:)`,
-  not `String(localized:)`.
-- `PreferencesLocalizationTests` checks that the keys of the preferences panels, the
-  menus and the Welcome Guide exist, are not shown as raw keys and keep their format
-  specifiers. Add the keys of new strings to the array of their area (`generalKeys`,
-  `buttonsKeys`, `appsKeys`, `menuKeys`, ...).
-- Details and the steps for adding a language: `LOCALIZATION.md`.
+  not `String(localized:)`. A new key goes into `Localizable.xcstrings` with its English
+  value (a build in Xcode extracts new keys).
+- Never rename a key that code, saved settings or Interface Builder uses, and never edit
+  an object id by hand. A `SystemShortcut.Shortcut`'s `identifier` is its key: menus and
+  the Buttons pane show `NSLocalizedString(identifier, …)`.
+- The English values in `Main.xcstrings` override the storyboard's text: a storyboard
+  title is changed in both places. When a storyboard element is deleted, remove its
+  entries.
+- `Localizable.xcstrings` stays byte-stable: a script that edits it writes
+  `json.dumps(obj, ensure_ascii=False, indent=2, separators=(",", ": ")) + "\n"`.
+  `Main.xcstrings` is in Xcode's own format (`"key" : value`): edit it in Xcode, or keep
+  that format.
+- Keep the modifier symbols ("⌘ Command", "⌥ Option", "⌃ Control", "⇧ Shift") and the
+  product names (Scrollio, SmartShift, Logi Options+, MX Master, HID++, Mission Control)
+  as they are.
+- `PreferencesLocalizationTests` checks, for each locale in `locales` (`["en"]`), that
+  the keys of the preference panes, the sidebar, the menus and the Welcome Guide exist,
+  are not empty and are not shown as raw keys (one array per area: `generalKeys`,
+  `scrollingKeys`, `buttonsKeys`, `gesturesKeys`, `mouseKeys`, `appsKeys`, `windowKeys`,
+  `menuKeys`, `introKeys`), and that each string formatted with `String(format:)` takes
+  the arguments its call site passes (`formatArguments`). Add a new key to the array of
+  its area, and a formatted one to `formatArguments` too: several keys are built from
+  variables, and a missing one would only show up as the raw key in the UI.
+- Adding a language: add it to `knownRegions` in the project for both catalogs, translate
+  both catalogs (the terms of System Settings for system features), add the locale to
+  `PreferencesLocalizationTests.locales`, and look for clipped text in the Welcome Guide,
+  every pane, the button recorder and the action menus.
 
 ## Verification
 
@@ -136,29 +165,31 @@ Choose by risk, and run it: reading the code is not verification.
 | Docs, agent files | `git diff --check`, check paths and links | search for old paths |
 | Swift logic | the related `MosTests` class | full test run |
 | New, moved or deleted Swift file; project or target change | Debug build | related tests |
-| ScrollCore hot path | `ScrollClassicPathTests`, `ScrollMotionTests`, `ScrollFilterTests`, `ScrollPoster*Tests`, `ScrollSystemLogTests` | full run; the owner scrolls by hand and reads the `scroll` log |
-| ButtonCore, Shortcut, InputEvent | ButtonBinding, InputProcessor, ShortcutExecutor tests | the owner checks the Buttons pane |
-| App lifecycle (`AppRunController`, `AppDelegate`, status-bar menu) | `AppRunControllerTests`, `StatusMenuTests` | the owner: sleep and wake, another user, Pause / Resume, Accessibility turned off and on |
-| Logi, HID | the `MosTests/Logi*` tests and the boundary lint | real-device tests and the `logi` log, by the owner |
-| Preferences panes | the pane's `Preferences*Tests` / `MousePreferencesTests`, `PreferencesWindowTests` | the owner looks at the pane; previews stop when it is hidden |
+| ScrollCore hot path | `ScrollClassicPathTests`, `ScrollMotionTests`, `ScrollFilterTests`, `ScrollPoster*Tests`, `ScrollSystemLogTests` | full run; by hand: scroll and read the `scroll` log |
+| ButtonCore, Shortcut, InputEvent | ButtonBinding, InputProcessor, ShortcutExecutor tests | by hand: the Buttons pane |
+| App lifecycle (`AppRunController`, `AppDelegate`, status-bar menu) | `AppRunControllerTests`, `StatusMenuTests` | by hand: sleep and wake, another user, Pause / Resume, Accessibility turned off and on |
+| Logi, HID | the `MosTests/Logi*` tests and the boundary lint | real-device tests and the `logi` log, by hand |
+| Preferences panes | the pane's `Preferences*Tests` / `MousePreferencesTests`, `PreferencesWindowTests` | by hand: look at the pane (its render test can draw it); previews stop when it is hidden |
 | UI text | catalogs in sync, `PreferencesLocalizationTests` | long text, dark mode |
 
 - A bug fix gets a regression test that covers the old failure. If it cannot be automated,
-  say why, what was checked by hand or by reading, and what the owner still has to confirm.
+  say why, what was checked by hand or by reading, and what still has to be confirmed by
+  hand.
 - Prefer testable shapes: pure logic, planners, packet builders, small injected seams and
   test doubles. Do not widen an API only for a test.
 - A change to anything persisted needs a canary or migration test, or a clear statement
   of the risk. A retired setting's UserDefaults key goes into
   `ScrollSettingsCleanup.retiredDefaultsKeys` (removed on load) and is never reused.
 
-## What needs the owner
+## What needs the user's go-ahead
 
-Do these only when the owner asked for them explicitly:
+Do these only when the user asked for them explicitly:
 
 - Anything with real hardware or the live system: real-device tests
   (`LOGI_REAL_DEVICE=1 xcodebuild -scheme Debug -testPlan DebugWithDevice -destination 'platform=macOS' test`,
-  mouse connected), HID traffic, posting synthetic input events, launching the app while
-  the owner's installed copy runs, anything that depends on the Accessibility permission.
+  mouse connected), HID traffic (the probes in `tools/hidpp/` among it), posting synthetic
+  input events, launching the app while an installed copy runs, anything that depends on
+  the Accessibility permission.
 - Changes to signing, entitlements or notarization.
 - Changes to how existing settings are read, to persistence formats or to permission
   prompts.
