@@ -15,7 +15,8 @@
 //  only, so while "Smooth scrolling" is off a muted line under their box says so. The last
 //  box starts with "Advanced" (closed by default), which opens the exact glide time, the
 //  smallest step and trackpad-style scrolling in that box. "Reset to defaults" sits under the
-//  boxes; Edit › Undo takes a reset back.
+//  boxes; Edit › Undo takes a reset back, and for a few seconds after a reset the button
+//  itself reads "Undo Reset" and does the same.
 //  The tab edits scroll options (Options.shared.scroll, or the target application's own) and,
 //  on the tab itself, Options.shared.thumbWheel, which the Buttons pane edits too: a change
 //  made there shows here at once (ThumbWheelSettingsChange).
@@ -204,6 +205,12 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// Takes Undo and Redo of "Reset to Defaults"; the window's when nil.
     var paneUndoManager: UndoManager?
 
+    /// How long "Reset to Defaults" reads "Undo Reset" after a reset. Tests shorten it.
+    var undoOfferDuration: TimeInterval = 8
+    /// The button offers to take the reset back (it reads "Undo Reset").
+    private(set) var offersUndoOfReset = false
+    private var undoOfferWork: DispatchWorkItem?
+
     private(set) var isAdvancedExpanded = false
 
     /// The key whose recorder is recording. Recording wins over the pointer and the focus.
@@ -367,6 +374,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         if let thumbWheelObserver {
             ThumbWheelSettingsChange.removeObserver(thumbWheelObserver)
         }
+        undoOfferWork?.cancel()
     }
 
     override func viewWillAppear() {
@@ -385,6 +393,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         previewView.setAnimating(false)
         hoveredKey = nil
         updatePreviewScene()
+        endUndoOffer()
     }
 
     // MARK: - Refresh
@@ -427,7 +436,13 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         syncKeysNote(smoothing: scroll.smooth)
         syncThumbWheel()
 
-        resetToDefaultsButton.isEnabled = hasSettingsToReset
+        // A setting moved off the defaults again (or the reset was undone), or the app now
+        // follows Scrolling: the button is "Reset to Defaults" again.
+        if offersUndoOfReset, hasSettingsToReset || !editable {
+            endUndoOffer()
+        } else {
+            updateResetButton()
+        }
         updatePreviewScene()
     }
 
@@ -701,9 +716,59 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// click, no question: Edit › Undo ("Undo Reset Scrolling") brings back every value it
     /// changed.
     @objc func resetToDefaultClick(_ sender: NSButton) {
+        // "Undo Reset": while the button offers it and the settings are still the defaults.
+        if offersUndoOfReset, !hasSettingsToReset {
+            undoReset()
+            return
+        }
         Self.resetScrollOptions(of: currentTargetApplication, undoManager: undoTarget) { [weak self] in
             self?.syncViewWithOptions()
         }
+        beginUndoOffer()
+    }
+
+    // MARK: - "Undo Reset", offered after a reset
+
+    /// After a reset the button reads "Undo Reset" for `undoOfferDuration`: Edit › Undo takes
+    /// a reset back, but nobody looks there. Only where that Undo exists (an undo manager).
+    private func beginUndoOffer() {
+        guard undoTarget != nil else { return }
+        offersUndoOfReset = true
+        updateResetButton()
+        undoOfferWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.endUndoOffer() }
+        undoOfferWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + undoOfferDuration, execute: work)
+    }
+
+    /// The button is "Reset to Defaults" again (the time is up, a setting changed, the pane
+    /// went away). The reset stays on the Undo stack: Edit › Undo still takes it back.
+    func endUndoOffer() {
+        undoOfferWork?.cancel()
+        undoOfferWork = nil
+        guard offersUndoOfReset else { return }
+        offersUndoOfReset = false
+        updateResetButton()
+    }
+
+    /// "Undo Reset": what Edit › Undo Reset Scrolling does. Only the reset itself is taken
+    /// back: with anything else on top of the Undo stack the button does nothing.
+    private func undoReset() {
+        let undo = undoTarget
+        endUndoOffer()
+        guard let undo, undo.canUndo, undo.undoActionName == text("scrolling-undo-reset") else { return }
+        undo.undo()
+    }
+
+    /// The button's title and whether it can be clicked: "Undo Reset" while that is offered,
+    /// else "Reset to Defaults", on only while something differs from the defaults.
+    private func updateResetButton() {
+        let title = text(offersUndoOfReset ? "scrolling-reset-undo" : "scrolling-reset")
+        if resetToDefaultsButton.title != title {
+            resetToDefaultsButton.title = title
+            NSAccessibility.post(element: resetToDefaultsButton as Any, notification: .titleChanged)
+        }
+        resetToDefaultsButton.isEnabled = offersUndoOfReset || hasSettingsToReset
     }
 
     // MARK: - Reset, with Undo

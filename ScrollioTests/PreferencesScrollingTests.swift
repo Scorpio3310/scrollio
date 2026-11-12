@@ -1009,7 +1009,9 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(Options.shared.thumbWheel, .default)
         XCTAssertEqual(controller.thumbWheelFunctionPopUp.indexOfSelectedItem, 0)
         XCTAssertEqual(controller.thumbWheelSwapSwitch.state, .off)
-        XCTAssertFalse(controller.resetToDefaultsButton.isEnabled)
+        // With an Undo to take, the button offers it for a moment (it was greyed out).
+        XCTAssertEqual(controller.resetToDefaultsButton.title, "Undo Reset")
+        XCTAssertTrue(controller.resetToDefaultsButton.isEnabled)
         XCTAssertEqual(undo.undoMenuItemTitle, "Undo Reset Scrolling")
 
         undo.undo()
@@ -1797,6 +1799,128 @@ final class PreferencesScrollingTests: XCTestCase {
         }
         drag(controller.glideTimeSlider, to: 2.6)
         XCTAssertEqual(controller.view.fittingSize.height, height, "custom")
+    }
+
+    // MARK: - "Undo Reset"
+
+    /// A reset can be undone with Edit › Undo, where nobody looks: for a few seconds after
+    /// a reset the button itself reads "Undo Reset" and takes it back. Then, or as soon as a
+    /// setting changes, it is "Reset to Defaults" again, and Edit › Undo still works.
+    func testAfterAResetTheButtonOffersToUndoItForAMoment() {
+        let controller = makeController(advanced: true)
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        controller.paneUndoManager = undo
+        controller.undoOfferDuration = 0.15
+        let button = controller.resetToDefaultsButton!
+        /// A click that resets, as one event: its Undo is one group.
+        func click() {
+            undo.beginUndoGrouping()
+            send(button)
+            undo.endUndoGrouping()
+        }
+        let scroll = Options.shared.scroll
+        scroll.speed = 2.0
+        scroll.dash = nil
+        Options.shared.thumbWheel.speed = 2
+        controller.syncViewWithOptions()
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertTrue(button.isEnabled)
+        XCTAssertFalse(controller.offersUndoOfReset)
+
+        click()
+        XCTAssertEqual(Options.shared.scroll, OPTIONS_SCROLL_DEFAULT())
+        XCTAssertEqual(Options.shared.thumbWheel, .default)
+        XCTAssertTrue(controller.offersUndoOfReset)
+        XCTAssertEqual(button.title, "Undo Reset")
+        XCTAssertTrue(button.isEnabled, "it was greyed out right after the reset")
+
+        // "Undo Reset": every value is back, as with Edit › Undo, and Redo is there.
+        send(button)
+        XCTAssertEqual(Options.shared.scroll.speed, 2.0)
+        XCTAssertNil(Options.shared.scroll.dash)
+        XCTAssertEqual(Options.shared.thumbWheel.speed, 2)
+        XCTAssertFalse(controller.offersUndoOfReset)
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertTrue(button.isEnabled)
+        XCTAssertTrue(undo.canRedo)
+        XCTAssertEqual(undo.redoMenuItemTitle, "Redo Reset Scrolling")
+
+        // The offer ends by itself; Edit › Undo still takes the reset back.
+        click()
+        XCTAssertEqual(button.title, "Undo Reset")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+        XCTAssertFalse(controller.offersUndoOfReset)
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertFalse(button.isEnabled, "nothing differs from the defaults")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Reset Scrolling")
+        undo.undo()
+        XCTAssertEqual(Options.shared.scroll.speed, 2.0)
+        XCTAssertTrue(button.isEnabled)
+
+        // A change after a reset ends the offer: the next click resets, it does not undo.
+        click()
+        XCTAssertTrue(controller.offersUndoOfReset)
+        drag(controller.scrollSpeedSlider, to: 8)
+        XCTAssertFalse(controller.offersUndoOfReset)
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertTrue(button.isEnabled)
+        click()
+        XCTAssertEqual(Options.shared.scroll.speed, 6.3, "a reset")
+        XCTAssertTrue(controller.offersUndoOfReset)
+
+        // A setting changed behind the pane's back (the menu bar, another pane): the click
+        // still resets.
+        Options.shared.scroll.speed = 3
+        click()
+        XCTAssertEqual(Options.shared.scroll.speed, 6.3, "a reset, not an Undo of the one before")
+
+        // The pane goes away: the offer goes with it.
+        XCTAssertTrue(controller.offersUndoOfReset)
+        controller.viewDidDisappear()
+        XCTAssertFalse(controller.offersUndoOfReset)
+        XCTAssertEqual(button.title, "Reset to Defaults")
+    }
+
+    /// Without an undo manager (the pane in no window) there is no Undo to offer: the button
+    /// stays "Reset to Defaults", greyed out after a reset as before.
+    func testWithoutUndoTheButtonOffersNone() {
+        let controller = makeController()
+        XCTAssertNil(controller.undoTarget)
+        Options.shared.scroll.speed = 2.0
+        controller.syncViewWithOptions()
+        send(controller.resetToDefaultsButton)
+        XCTAssertEqual(Options.shared.scroll, OPTIONS_SCROLL_DEFAULT())
+        XCTAssertFalse(controller.offersUndoOfReset)
+        XCTAssertEqual(controller.resetToDefaultsButton.title, "Reset to Defaults")
+        XCTAssertFalse(controller.resetToDefaultsButton.isEnabled)
+    }
+
+    /// "Undo Reset" takes back only the reset: with something else on top of the Undo stack
+    /// (a button removed under Buttons, in the same window) it does nothing.
+    func testUndoResetLeavesAnotherUndoAlone() {
+        let controller = makeController()
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        controller.paneUndoManager = undo
+        Options.shared.scroll.speed = 2.0
+        controller.syncViewWithOptions()
+        undo.beginUndoGrouping()
+        send(controller.resetToDefaultsButton)
+        undo.endUndoGrouping()
+        XCTAssertTrue(controller.offersUndoOfReset)
+
+        var otherUndone = false
+        undo.beginUndoGrouping()
+        undo.registerUndo(withTarget: self) { _ in otherUndone = true }
+        undo.setActionName("Remove Button")
+        undo.endUndoGrouping()
+
+        send(controller.resetToDefaultsButton)
+        XCTAssertFalse(otherUndone, "not its Undo to take")
+        XCTAssertEqual(Options.shared.scroll, OPTIONS_SCROLL_DEFAULT(), "the reset stays")
+        XCTAssertFalse(controller.offersUndoOfReset)
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Remove Button")
     }
 
     // MARK: - The keys need a smoothed wheel

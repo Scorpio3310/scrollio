@@ -4146,6 +4146,18 @@
         }
       }
     },
+    "scrolling-reset-undo": {
+      "comment": "Scrolling pane and an app's page: what the button \"Reset to Defaults\" reads for a few seconds after a reset; a click takes the reset back (as Edit › Undo Reset Scrolling does)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Undo Reset"
+          }
+        }
+      }
+    },
     "list-add": {
       "comment": "Accessibility label of the + button under a list in the Preferences window",
       "extractionState": "manual",
