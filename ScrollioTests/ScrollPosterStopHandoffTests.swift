@@ -1468,6 +1468,8 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         /// when it comes), as an app that is busy scrolling answers.
         var delay = 0.0
         var clock: () -> Double = { 0 }
+        /// Which bar a look finds (another number: another view under the pointer).
+        var barNumber: UInt64 = 1
         private(set) var looks = 0
         private(set) var reads = 0
         private var waiting: [() -> Void] = []
@@ -1503,7 +1505,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         func look(pid: pid_t, at point: CGPoint, answer: @escaping (ScrollEndReading) -> Void) {
             looks += 1
             deliver { [self] in
-                answer(seesTheBar ? ScrollEndReading(value: value, roles: ["AXCell", "AXRow", "AXOutline", "AXScrollArea"], milliseconds: 2)
+                answer(seesTheBar ? ScrollEndReading(value: value, roles: ["AXCell", "AXRow", "AXOutline", "AXScrollArea"], milliseconds: 2, bar: barNumber)
                                   : .notSeen("a scroll area without a vertical scroll bar", roles: ["AXGroup", "AXScrollArea"], milliseconds: 3))
             }
         }
@@ -1852,7 +1854,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             XCTAssertEqual(run.sessions.count, 1, "one scroll")
             let line = run.sessions.first?.session.endWatch.line ?? ""
             XCTAssertTrue(line.contains("started afresh: 1 turns, 0 lost bars, "), line)
-            XCTAssertTrue(line.contains("the rest plain (this place is not proven)") && line.contains("reached the end and ended at once"), line)
+            XCTAssertTrue(line.contains("the rest plain (this bar is not proven)") && line.contains("reached the end and ended at once"), line)
             XCTAssertLessThan(abs(frames.dropFirst(before).reduce(0) { $0 + $1.y }), 3_000 + 700, "the rest of the way down is dropped at the bottom")
         }
     }
@@ -1959,8 +1961,8 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
     /// Rule 4: with the page at its end and the wheel still turning into it, the wheel
     /// events are taken in and nothing is sent (a new touch would catch the app's bounce and
     /// hold the page stretched; a plain event snaps the bounce off). Only while a fresh
-    /// read still says "at that end", in the same place, the same way. Anything else ends
-    /// the hold, and the wheel event scrolls as usual.
+    /// look at the pointer still finds the same bar at that end, in the same place, the
+    /// same way. Anything else ends the hold, and the wheel event scrolls as usual.
     func testEndWatch_atTheEndTheWheelStillTurning_isTakenInWhileAFreshReadSaysSo() throws {
         /// The wheel turns into the bottom, an event every 20 ms, until the touch has ended
         /// there and the scroll is over; it goes on turning from the time returned.
@@ -1997,25 +1999,40 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             run.run(until: time + 4)
             _ = run.finish()
 
-            // Each of these ends the hold; the wheel event then scrolls as usual.
-            let ways: [(String, (RealRun, PageWatch, Double) throws -> Bool)] = [
-                ("the other way", { run, _, time in try run.wheel(at: time, y: 211.68) }),
-                ("31 pt away", { run, _, time in try run.wheel(at: time, y: -211.68, pointerX: 431) }),
-                ("another app", { run, _, time in try run.wheel(at: time, y: -211.68, pid: 777) }),
-                ("the page left the end", { run, watch, time in
+            // Each of these ends the hold; the wheel event then scrolls as usual. (false: the
+            // same bar is found again, still at its end: one more short touch, and held again.)
+            let ways: [(String, Bool, (RealRun, PageWatch, Double) throws -> Bool)] = [
+                ("the other way", true, { run, _, time in try run.wheel(at: time, y: 211.68) }),
+                ("31 pt away, another view", true, { run, watch, time in
+                    watch.barNumber = 2
+                    return try run.wheel(at: time, y: -211.68, pointerX: 431)
+                }),
+                ("31 pt away, the same view", false, { run, _, time in try run.wheel(at: time, y: -211.68, pointerX: 431) }),
+                ("another app", true, { run, watch, time in
+                    watch.barNumber = 2
+                    return try run.wheel(at: time, y: -211.68, pid: 777)
+                }),
+                ("the page left the end", true, { run, watch, time in
                     watch.moveBy(-5_000)
-                    XCTAssertTrue(try run.wheel(at: time, y: -211.68), "this one is still taken: the read that says so is on its way")
+                    XCTAssertTrue(try run.wheel(at: time, y: -211.68), "this one is still taken: the look that says so is on its way")
                     return try run.wheel(at: time + 0.02, y: -211.68)
                 }),
-                ("a read fails", { run, watch, time in
-                    watch.readsWork = false
+                ("the look fails", true, { run, watch, time in
+                    watch.seesTheBar = false
                     XCTAssertTrue(try run.wheel(at: time, y: -211.68))
-                    watch.readsWork = true
+                    watch.seesTheBar = true
                     return try run.wheel(at: time + 0.02, y: -211.68)
                 }),
-                ("sideways", { run, _, time in try run.wheel(at: time, y: 0, x: 211.68) }),
+                ("another view under the pointer, 20 pt away", true, { run, watch, time in
+                    // (Within the 30 pt of "the same place", and at its end as well: only
+                    // the look, which finds another bar, can tell.)
+                    watch.barNumber = 2
+                    XCTAssertTrue(try run.wheel(at: time, y: -211.68, pointerX: 420), "this one is still taken: the look that finds the other view is on its way")
+                    return try run.wheel(at: time + 0.02, y: -211.68, pointerX: 420)
+                }),
+                ("sideways", true, { run, _, time in try run.wheel(at: time, y: 0, x: 211.68) }),
             ]
-            for (name, event) in ways {
+            for (name, scrollsOn, event) in ways {
                 let watch = PageWatch(offset: 59_600, range: 60_000)
                 (run, count, time) = try arrive(watch)
                 XCTAssertTrue(try run.wheel(at: time, y: -211.68), name)
@@ -2025,7 +2042,10 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
                 XCTAssertTrue(run.poster.isGliding, "\(name): a scroll began")
                 run.run(until: time + 0.2)
                 XCTAssertGreaterThan(run.frames.count, count, "\(name): and scrolls")
-                XCTAssertTrue(run.poster.isGliding, name)
+                XCTAssertEqual(run.poster.isGliding, scrollsOn, name)
+                if !scrollsOn {
+                    XCTAssertEqual(run.frames.dropFirst(count).map(\.name), ["began", "changed", "changed", "ended"], "\(name): one short touch, the rest dropped")
+                }
                 run.run(until: time + 5)
                 XCTAssertNil(brokenGesture(in: run.finish()), name)
             }
@@ -2034,7 +2054,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
 
     /// Rule 5: a scroll that starts with the page already at the end it heads for gets a
     /// short touch: "began", two moving frames, "ended" at once, no tap, so the app makes
-    /// one small bounce. Where the place is not proven (no arrival was seen there) the rest
+    /// one small bounce. Where the bar is not proven (no arrival was seen on it) the rest
     /// of the scroll goes out plain and no wheel event is ever taken in; where it is proven
     /// the rest is dropped and held. One bounce per fresh start, not one per wheel event.
     func testEndWatch_startingAtTheEnd_isAShortTouchAndOneBounce() throws {
@@ -2051,7 +2071,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             XCTAssertFalse(frames.dropFirst(4).contains { $0.hasPhase }, "the rest plain: one touch, one bounce, whatever the wheel does")
             XCTAssertGreaterThan(frames.dropFirst(4).filter { $0.y != 0 }.count, 20)
             XCTAssertNil(brokenGesture(in: frames))
-            XCTAssertTrue(run.sessions.first?.session.endWatch.line?.contains("started at the end: a short touch after 0 ms; the rest plain (this place is not proven)") ?? false,
+            XCTAssertTrue(run.sessions.first?.session.endWatch.line?.contains("started at the end: a short touch after 0 ms; the rest plain (this bar is not proven)") ?? false,
                           run.sessions.first?.session.endWatch.line ?? "")
 
             // Proven: the scroll arrived there; after a pause the wheel turns into the end again.
@@ -2198,7 +2218,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         XCTAssertEqual(askedTrust, 2, "the look asks before anything else, and the read asks again")
         XCTAssertTrue(AccessibilityScrollEndWatch.firstLookLine(trusted: false).contains("not trusted"))
         XCTAssertTrue(AccessibilityScrollEndWatch.firstLookLine(trusted: true).contains("reads the scroll bar under the pointer through Accessibility"))
-        XCTAssertTrue(ScrollPoster.isAtEnd(1.0, towardBottom: true) && ScrollPoster.isAtEnd(0.99995, towardBottom: true) && !ScrollPoster.isAtEnd(0.999, towardBottom: true))
+        XCTAssertTrue(ScrollPoster.isAtEnd(1.0, towardBottom: true) && ScrollPoster.isAtEnd(0.999_999_5, towardBottom: true) && !ScrollPoster.isAtEnd(0.999_99, towardBottom: true))
         XCTAssertTrue(ScrollPoster.isAtEnd(0.0, towardBottom: false) && !ScrollPoster.isAtEnd(0.001, towardBottom: false) && !ScrollPoster.isAtEnd(1.0, towardBottom: false))
     }
 
@@ -2285,6 +2305,134 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         XCTAssertLessThan(log.line?.count ?? 0, 400)
         XCTAssertEqual(ScrollEndReading(value: 0.5).bar, 0)
         XCTAssertNotEqual(ScrollEndReading(value: 0.5, bar: 1), ScrollEndReading(value: 0.5, bar: 2))
+    }
+
+    /// "At the end" is the end. In a document of 3,000,000 px the touch used to end 300 px
+    /// early (0.0001 of the bar's range), where the page still had that far to go: no
+    /// bounce, and the rest of the wheel's way taken in. AppKit's bar says exactly 0 and 1
+    /// at the ends; the slack is a millionth now (3 px in that document).
+    func testEndWatch_atTheEndOfALongDocument_theTouchEndsAtTheEnd_notEarly() throws {
+        try withSettings(switchOn: true) {
+            let watch = PageWatch(offset: 2_999_000, range: 3_000_000)
+            let run = realRun(over: .touchOnly, watch: watch)
+            for index in 0..<10 { _ = try run.wheel(at: Double(index) * 0.02, y: -211.68) }
+            run.run(until: 3)
+            let frames = run.finish()
+            let ended = try XCTUnwrap(frames.firstIndex { $0.name == "ended" })
+            let sent = -Double(frames.prefix(ended).reduce(0) { $0 + $1.y })
+            XCTAssertGreaterThanOrEqual(sent, 997, "the page was within 3 px of its end when the touch ended")
+            XCTAssertTrue(run.sessions.first?.session.endWatch.line?.contains("reached the end and ended at once") ?? false)
+            XCTAssertNil(brokenGesture(in: frames))
+        }
+    }
+
+    /// It is the bar that is proven, not the place. After an arrival, a fresh start at the
+    /// same place over ANOTHER view (another bar, also at its end) is not proven: a short
+    /// touch, the rest plain, no wheel event taken in. It was proven by the place (the app,
+    /// 30 pt), so the rest was dropped and the wheel taken in over a view that had never
+    /// been seen to follow. And the same bar, found from elsewhere in its view, is proven.
+    func testEndWatch_itIsTheBarThatIsProven_notThePlace() throws {
+        try withSettings(switchOn: true) {
+            func arrived(_ watch: PageWatch) throws -> (run: RealRun, count: Int) {
+                let run = realRun(over: .touchOnly, watch: watch)
+                for index in 0..<8 { _ = try run.wheel(at: Double(index) * 0.02, y: -211.68) }
+                run.run(until: 1.5)
+                XCTAssertEqual(run.frames.last?.name, "ended")
+                return (run, run.frames.count)
+            }
+            // Another view at the same place.
+            var watch = PageWatch(offset: 59_600, range: 60_000)
+            var (run, count) = try arrived(watch)
+            watch.barNumber = 2
+            for index in 0..<20 { XCTAssertTrue(try run.wheel(at: 1.5 + Double(index) * 0.02, y: -211.68)) }
+            run.run(until: 4)
+            var fresh = Array(run.finish().dropFirst(count))
+            XCTAssertEqual(Array(fresh.prefix(4).map(\.name)), ["began", "changed", "changed", "ended"])
+            XCTAssertFalse(fresh.dropFirst(4).contains { $0.hasPhase })
+            XCTAssertGreaterThan(fresh.dropFirst(4).filter { $0.y != 0 }.count, 20, "the rest goes out plain: nothing is taken in over a view that was never seen to follow")
+            XCTAssertTrue(run.sessions.last?.session.endWatch.line?.contains("the rest plain (this bar is not proven)") ?? false)
+
+            // The same bar, found 200 pt away in its view.
+            watch = PageWatch(offset: 59_600, range: 60_000)
+            (run, count) = try arrived(watch)
+            for index in 0..<20 { XCTAssertTrue(try run.wheel(at: 1.5 + Double(index) * 0.02, y: -211.68, pointerX: 600)) }
+            run.run(until: 4)
+            fresh = Array(run.finish().dropFirst(count))
+            XCTAssertEqual(fresh.map(\.name), ["began", "changed", "changed", "ended"], "one short touch, the rest dropped and taken in")
+        }
+    }
+
+    /// A hold has a longest life. However fresh its looks, after `endHoldLongestLife` it
+    /// ends and its bar is no longer proven: the wheel event scrolls (a short touch, then
+    /// plain frames, which move whatever can move), and nothing is taken in again until an
+    /// arrival is seen anew. It could last as long as the wheel turned.
+    func testEndWatch_aHoldHasALongestLife() throws {
+        var taken: [Int] = []
+        ScrollSystemLog.pageEndObserverForTests = { taken.append($0) }
+        defer { ScrollSystemLog.pageEndObserverForTests = nil }
+        try withSettings(switchOn: true) {
+            let run = realRun(over: .touchOnly, watch: PageWatch(offset: 59_600, range: 60_000))
+            var time = 0.0
+            while (run.frames.last?.name != "ended" || run.poster.isGliding) && time < 2 {
+                _ = try run.wheel(at: time, y: -211.68)
+                time += 0.02
+            }
+            let count = run.frames.count
+            let heldFrom = time
+            // The wheel spins on and on: every look says "that bar, at that end".
+            while !run.poster.isGliding && time < heldFrom + 10 {
+                XCTAssertTrue(try run.wheel(at: time, y: -211.68))
+                time += 0.02
+            }
+            let life = time - heldFrom
+            XCTAssertTrue((ScrollPoster.endHoldLongestLife - 0.6...ScrollPoster.endHoldLongestLife + 0.05).contains(life), "\(life)")
+            XCTAssertEqual(taken.count, 1)
+            XCTAssertGreaterThan(taken.first ?? 0, 150, "\(taken)")
+            // Not proven any more: a short touch, the rest plain, and the wheel is not taken in.
+            for index in 0..<50 { XCTAssertTrue(try run.wheel(at: time + Double(index) * 0.02, y: -211.68)) }
+            run.run(until: time + 4)
+            let fresh = Array(run.finish().dropFirst(count))
+            XCTAssertEqual(Array(fresh.prefix(4).map(\.name)), ["began", "changed", "changed", "ended"])
+            XCTAssertFalse(fresh.dropFirst(4).contains { $0.hasPhase })
+            XCTAssertGreaterThan(fresh.dropFirst(4).filter { $0.y != 0 }.count, 50, "plain frames for the wheel that still turns")
+            XCTAssertEqual(taken.count, 1, "no second hold")
+            XCTAssertNil(brokenGesture(in: fresh))
+        }
+    }
+
+    /// A hold that goes stale because the wheel stopped is ended by time, and the log gets
+    /// its "took in N wheel events" line then. It used to wait for the next wheel event,
+    /// which may come minutes later, or never. (The app checks on the main queue a moment
+    /// after a hold could have gone stale; a test's clock is its own, so the test calls
+    /// the check.)
+    func testEndWatch_aHoldThatWentStale_isEndedByTimeAndSaysWhatItTook() throws {
+        var taken: [Int] = []
+        ScrollSystemLog.pageEndObserverForTests = { taken.append($0) }
+        defer { ScrollSystemLog.pageEndObserverForTests = nil }
+        try withSettings(switchOn: true) {
+            let run = realRun(over: .touchOnly, watch: PageWatch(offset: 59_600, range: 60_000))
+            var time = 0.0
+            while (run.frames.last?.name != "ended" || run.poster.isGliding) && time < 2 {
+                _ = try run.wheel(at: time, y: -211.68)
+                time += 0.02
+            }
+            for index in 0..<5 { XCTAssertTrue(try run.wheel(at: time + Double(index) * 0.02, y: -211.68)) }
+            run.poster.endHoldIfStale()
+            XCTAssertEqual(taken, [], "fresh: the hold stays")
+            XCTAssertTrue(try run.wheel(at: time + 0.1, y: -211.68), "and takes the next wheel event in")
+            let count = run.frames.count
+            run.run(until: time + 0.1 + ScrollPoster.endHoldFreshness + 0.05)
+            run.poster.endHoldIfStale()
+            XCTAssertEqual(taken.count, 1, "ended by time")
+            XCTAssertTrue((6...9).contains(taken.first ?? 0), "\(taken)")
+            // The next wheel event finds no hold: a fresh start.
+            XCTAssertTrue(try run.wheel(at: time + 2, y: -211.68))
+            XCTAssertTrue(run.poster.isGliding)
+            run.run(until: time + 4)
+            XCTAssertGreaterThan(run.frames.count, count)
+            XCTAssertEqual(taken.count, 1, "said once")
+            XCTAssertNil(brokenGesture(in: run.finish()))
+        }
     }
 
     /// What breaks the rule in a stream of posted events, or nil: every "began" gets its
