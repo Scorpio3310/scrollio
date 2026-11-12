@@ -8,6 +8,12 @@ it for the people who use the app, and give the version its part before you tag 
 `## Unreleased` collects what the next version brings; it becomes that version's part
 (the heading gets the version) before the tag.
 
+## Unreleased
+
+- "You're up to date!" and a failed check are now the alert every Mac app shows, with
+  Scrollio's icon and an OK button, instead of a notice at the top of the screen.
+  Scrolling, buttons and gestures go on working while it is open.
+
 ## 1.0.1
 
 - **Scrollio updates itself.** If you allow it, Scrollio asks GitHub once a day whether

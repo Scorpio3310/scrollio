@@ -274,7 +274,8 @@ get the next version by hand, once.
   version is downloaded in the background and installed the next time Scrollio quits,
   for example when the Mac restarts). "Check Now" there, and "Check for Updates…" in
   the menu bar menu and in the Scrollio menu, ask at once; when there is nothing newer,
-  or the check failed, one of Scrollio's notices says so.
+  or the check failed, the alert every Mac app shows says so ("You're up to date!",
+  with OK), in front and on the Space you are in. Scrollio goes on working behind it.
 - When a check finds a version, a window says what is new and offers to install it.
   Right after Scrollio started, or after you touched the update switches, it opens in
   front; at any other time it waits behind what you are doing, or, while Scrollio's
