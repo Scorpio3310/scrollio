@@ -28,6 +28,15 @@ it for the people who use the app, and give the version its part before you tag 
   scroll short, Scrollio now also sends what a trackpad sends when two fingers tap it, so
   that the app stops there. All of this is derived from how macOS reads these events, not
   yet seen on a screen. At the end of a page the page can stay stretched a little longer.
+- **Trackpad-style scrolling (Beta)** at the end of a page in apps that are not browsers.
+  Such an app holds a page stretched past its end for as long as the wheel's scroll lasts;
+  with a free-spinning wheel that was a second or two before the page came back (seen in
+  Finder). Scrollio now reads where the page is (through Accessibility: the kind of the
+  element under the pointer and the position of its scroll bar, nothing else, nothing
+  kept) and ends the scroll's touch the moment the page arrives, so that the app bounces
+  by itself as it does for a trackpad; while the wheel keeps turning into the end nothing
+  more is sent. Where a view's scroll bar cannot be read, that view scrolls as with the
+  switch off. This part ran against a stand-in only; nobody has seen it on a screen yet.
 - **Trackpad-style scrolling (Beta)** knows more apps. Firefox and the apps built on its
   engine (Thunderbird, Zotero) now get the same form as Chrome-like apps, a short touch and
   its glide: by Firefox's code that is what makes it bounce like a trackpad (not yet seen
