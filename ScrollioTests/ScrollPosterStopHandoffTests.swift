@@ -438,7 +438,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         XCTAssertEqual(poster.healthLinesForTests, [
             ScrollPoster.displayLinkFailureLine(result: -6661, keepsTheLinkInUse: false),
         ])
-        XCTAssertTrue(poster.healthLinesForTests[0].contains("wheel events go through unsmoothed"))
+        XCTAssertTrue(poster.healthLinesForTests.first?.contains("wheel events go through unsmoothed") ?? false)
         XCTAssertFalse(poster.isAvailable)
 
         display.isOn = true
@@ -451,7 +451,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         display.isOn = false
         XCTAssertFalse(poster.create())
         XCTAssertEqual(poster.healthLinesForTests.count, 3)
-        XCTAssertTrue(poster.healthLinesForTests[2].contains("the link in use stays"))
+        XCTAssertTrue(poster.healthLinesForTests.last?.contains("the link in use stays") ?? false)
     }
 
     /// B5: while no link can be made the keeper tries less and less often (it tried every
@@ -602,7 +602,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         XCTAssertFalse(poster.isGliding)
         XCTAssertEqual(ended, [.keeper])
         XCTAssertEqual(poster.healthLinesForTests.count, 1)
-        XCTAssertTrue(poster.healthLinesForTests[0].contains("with nothing posted and no wheel event"), poster.healthLinesForTests[0])
+        XCTAssertTrue(poster.healthLinesForTests.first?.contains("with nothing posted and no wheel event") ?? false, "\(poster.healthLinesForTests)")
         XCTAssertEqual(display.tries, 1, "stopped, not replaced")
     }
 
@@ -648,7 +648,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
 
         XCTAssertEqual(display.made.count, 2)
         XCTAssertFalse(stuck.isRunning)
-        XCTAssertTrue(display.made[1].isRunning, "the replacement runs: the replaced one did")
+        XCTAssertEqual(display.made.last?.isRunning, true, "the replacement runs: the replaced one did")
         XCTAssertTrue(poster.healthLinesForTests.first?.contains("stuck") ?? false)
 
         // Still no frame and nobody scrolls: the next look stops it for good, instead of
@@ -656,7 +656,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         poster.clearRecreateCooldownForTests()
         poster.healthCheckForTests(now: ScrollPoster.monotonicNow() + 8)
         XCTAssertEqual(display.made.count, 2, "not replaced again")
-        XCTAssertFalse(display.made[1].isRunning)
+        XCTAssertEqual(display.made.last?.isRunning, false)
         XCTAssertFalse(poster.isDisplayLinkRunningForTests)
     }
 

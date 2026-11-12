@@ -1075,9 +1075,9 @@ final class ScrollClassicPathTests: XCTestCase {
         rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0.25, place: second, targetPID: 200)
         rig.run(until: 3)
 
-        XCTAssertTrue(rig.targets[..<beforeTheTick].allSatisfy { $0 == 100 })
-        XCTAssertEqual(Array(rig.targetedStream[beforeTheTick...].prefix(2)), ["100: momentumEnded 0", "200: began 0"])
-        XCTAssertTrue(rig.targets[(beforeTheTick + 1)...].allSatisfy { $0 == 200 }, "everything after it goes to the other app")
+        XCTAssertTrue(rig.targets.prefix(beforeTheTick).allSatisfy { $0 == 100 })
+        XCTAssertEqual(Array(rig.targetedStream.dropFirst(beforeTheTick).prefix(2)), ["100: momentumEnded 0", "200: began 0"])
+        XCTAssertTrue(rig.targets.dropFirst(beforeTheTick + 1).allSatisfy { $0 == 200 }, "everything after it goes to the other app")
         XCTAssertEqual(rig.targetedStream.last, "200: momentumEnded 0")
         // Each app got one whole gesture.
         let flick = ["began", "changed", "ended", "momentumBegan", "momentumChanged", "momentumEnded"]
@@ -1097,9 +1097,9 @@ final class ScrollClassicPathTests: XCTestCase {
         for index in 0..<4 { rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0.2 + Double(index) * 0.05, targetPID: 200) }
         rig.run(until: 3)
 
-        XCTAssertTrue(rig.targets[..<beforeTheTick].allSatisfy { $0 == 100 })
-        XCTAssertEqual(Array(rig.targetedStream[beforeTheTick...].prefix(2)), ["100: ended 0", "200: began 0"])
-        XCTAssertTrue(rig.targets[(beforeTheTick + 1)...].allSatisfy { $0 == 200 })
+        XCTAssertTrue(rig.targets.prefix(beforeTheTick).allSatisfy { $0 == 100 })
+        XCTAssertEqual(Array(rig.targetedStream.dropFirst(beforeTheTick).prefix(2)), ["100: ended 0", "200: began 0"])
+        XCTAssertTrue(rig.targets.dropFirst(beforeTheTick + 1).allSatisfy { $0 == 200 })
         let inTheFirstApp = zip(rig.targets, rig.stream).filter { $0.0 == 100 }.map { $0.1.split(separator: " ").first.map(String.init) ?? "" }
         XCTAssertEqual(inTheFirstApp.first, "began")
         XCTAssertEqual(inTheFirstApp.last, "ended")
@@ -1129,8 +1129,8 @@ final class ScrollClassicPathTests: XCTestCase {
         rig.input(click, notch: click, at: 0.15, targetPID: 200)
         rig.run(until: 3)
 
-        XCTAssertTrue(rig.targets[..<beforeTheTick].allSatisfy { $0 == 100 })
-        XCTAssertTrue(rig.targets[beforeTheTick...].allSatisfy { $0 == 200 })
+        XCTAssertTrue(rig.targets.prefix(beforeTheTick).allSatisfy { $0 == 100 })
+        XCTAssertTrue(rig.targets.dropFirst(beforeTheTick).allSatisfy { $0 == 200 })
         // The other app gets exactly what one click alone gives.
         let inTheOtherApp = rig.moving.filter { $0.time - rig.start > 0.15 }.map { $0.frame.y }
         XCTAssertEqual(inTheOtherApp, alone.moving.map { $0.frame.y })
@@ -1391,14 +1391,14 @@ final class ScrollGlideFollowerTests: XCTestCase {
         }
         XCTAssertEqual(looks.asked.count, 1, "not one per wheel event")
 
-        looks.asked[0].answer(true)
+        looks.asked.first?.answer(true)
         XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.editor", bundleURL: editor), .followsGlide, "from the next scroll on")
         XCTAssertEqual(looks.asked.count, 1)
 
         // An app that is not Chromium-based stays touch-only, and is not looked into again.
         let native = URL(fileURLWithPath: "/Applications/Native.app")
         XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.native", bundleURL: native), .touchOnly)
-        looks.asked[1].answer(false)
+        looks.asked.last?.answer(false)
         XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.native", bundleURL: native), .touchOnly)
         XCTAssertEqual(looks.asked.count, 2)
     }

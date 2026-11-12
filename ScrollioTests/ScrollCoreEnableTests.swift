@@ -186,7 +186,7 @@ final class ScrollCoreEnableTests: XCTestCase {
         XCTAssertEqual(made.map(\.options), [.defaultTap, .listenOnly, .listenOnly])
         XCTAssertEqual(made.map { $0.interceptor.kind }, [.scroll, .scrollKeys, .leftClick])
         XCTAssertTrue(made.allSatisfy { $0.interceptor.isRunning() })
-        XCTAssertTrue(core.scrollEventInterceptor === made[0].interceptor)
+        XCTAssertTrue(core.scrollEventInterceptor === made.first?.interceptor)
         XCTAssertEqual(display.made.count, 1, "the display link is made")
         XCTAssertEqual(display.made.first?.isRunning, false, "and waits for the first wheel event")
 
