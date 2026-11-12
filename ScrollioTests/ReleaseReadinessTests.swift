@@ -23,6 +23,25 @@ final class ReleaseReadinessTests: XCTestCase {
         return try XCTUnwrap(try? String(contentsOf: url, encoding: .utf8), "cannot read \(path)", file: file, line: line)
     }
 
+    private func data(_ path: String, file: StaticString = #filePath, line: UInt = #line) throws -> Data {
+        let url = Self.root.appendingPathComponent(path)
+        return try XCTUnwrap(try? Data(contentsOf: url), "cannot read \(path)", file: file, line: line)
+    }
+
+    /// Runs a shell program with arguments ($1, $2 …); what it printed, errors included.
+    private func bash(_ program: String, _ arguments: [String]) throws -> (status: Int32, output: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-c", program, "bash"] + arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try process.run()
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        process.waitUntilExit()
+        return (process.terminationStatus, output)
+    }
+
     /// The lines of a shell script that are not comments.
     private func commands(of script: String) -> [String] {
         return script.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }
@@ -154,7 +173,7 @@ final class ReleaseReadinessTests: XCTestCase {
 
     func testTheScriptsAreValidShell() throws {
         for script in ["scripts/install.sh", "scripts/release.sh", "scripts/release-lib.sh", "scripts/update-key.sh",
-                       "scripts/qa/lint-logi-boundary.sh"] {
+                       "scripts/dmg/preview.sh", "scripts/qa/lint-logi-boundary.sh"] {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/bash")
             process.arguments = ["-n", script]      // -n: read and check, run nothing
@@ -201,7 +220,8 @@ final class ReleaseReadinessTests: XCTestCase {
         XCTAssertFalse(pipesIntoQuietGrep("X=\"$(security find-identity | grep -F \"$ID\" || true)\""))
 
         // release-lib.sh is sourced by release.sh and runs under its settings.
-        for script in ["scripts/install.sh", "scripts/release.sh", "scripts/release-lib.sh", "scripts/update-key.sh"] {
+        for script in ["scripts/install.sh", "scripts/release.sh", "scripts/release-lib.sh", "scripts/update-key.sh",
+                       "scripts/dmg/preview.sh"] {
             let source = try text(script)
             if script != "scripts/release-lib.sh" {
                 XCTAssertTrue(source.contains("set -euo pipefail"), script)
@@ -396,11 +416,373 @@ final class ReleaseReadinessTests: XCTestCase {
         let lastCheck = try XCTUnwrap(script.range(of: "xcrun stapler validate \"$UNFINISHED_DMG\""))
         let rename = try XCTUnwrap(script.range(of: "mv \"$UNFINISHED_DMG\" \"$DMG\""))
         XCTAssertTrue(lastCheck.upperBound < rename.lowerBound)
-        XCTAssertFalse(script.contains("-srcfolder \"$STAGE\" -ov -format UDZO \"$DMG\""), "the image must not be created under its final name")
-        // The licences travel with the image.
-        XCTAssertTrue(script.contains("cp \"$REPO/LICENSE\" \"$STAGE/LICENSE.txt\""))
-        XCTAssertTrue(script.contains("\"$STAGE/Acknowledgements.txt\""))
+        // The image is made in one place, by the library's function, and not under its final name.
+        XCTAssertTrue(script.contains("\nmake_disk_image \"$STAGE\" \"$UNFINISHED_DMG\"\n"))
+        XCTAssertEqual(commands(of: script).filter { $0.contains("make_disk_image") || $0.contains("hdiutil create") }.count, 1,
+                       "the image must not be created under its final name")
+        // The licences travel with the image (the library fills it; a test below runs that).
+        XCTAssertTrue(script.contains("\nstage_disk_image \"$STAPLED\" \"$STAGE\"\n"))
+        let library = try text("scripts/release-lib.sh")
+        XCTAssertTrue(library.contains("cp \"$REPO/LICENSE\" \"$stage/LICENSE.txt\""))
+        XCTAssertTrue(library.contains("\"$stage/Acknowledgements.txt\""))
         // A release never moves Package.resolved by itself.
         XCTAssertTrue(script.contains("-disableAutomaticPackageResolution"))
+    }
+
+    // MARK: - The disk image's window
+
+    /// What a person sees on the image. Its two other items are hidden: the layout
+    /// (".DS_Store") and the folder of the window's picture (".background").
+    private static let imageItems = ["Scrollio.app", "Applications", "LICENSE.txt", "Acknowledgements.txt"]
+    /// The window's content, which is the picture's size in points, and the title bar
+    /// stored with it (its height on macOS 14 and 15; higher on later ones, where the
+    /// picture's lowest points are then not seen).
+    private static let windowContent = (width: 660, height: 420)
+    private static let titleBarHeight = 28
+
+    /// `stage_disk_image` of scripts/release-lib.sh, run for real with a stand-in for the
+    /// built app: the folder holds exactly what the image should hold.
+    func testTheDiskImageIsFilledWithTheAppTheLinkTheTextsAndItsWindow() throws {
+        let files = FileManager.default
+        let folder = files.temporaryDirectory.appendingPathComponent("ScrollioDiskImage-\(UUID().uuidString)")
+        let resources = folder.appendingPathComponent("built/Scrollio.app/Contents/Resources")
+        try files.createDirectory(at: resources, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: folder) }
+        try "what Scrollio owes\n".write(to: resources.appendingPathComponent("Acknowledgements.txt"), atomically: true, encoding: .utf8)
+        let program = """
+        set -euo pipefail
+        fail() { echo "FAIL: $*" >&2; exit 1; }
+        REPO="$1"; LOG="$2/log.txt"; APP_NAME="Scrollio"
+        . "$3"
+        stage_disk_image "$2/built/Scrollio.app" "$2/image"
+        """
+        let library = Self.root.appendingPathComponent("scripts/release-lib.sh").path
+        let first = try bash(program, [Self.root.path, folder.path, library])
+        XCTAssertEqual(first.status, 0, first.output)
+
+        let image = folder.appendingPathComponent("image")
+        XCTAssertEqual(Set(try files.contentsOfDirectory(atPath: image.path)), Set(Self.imageItems + [".DS_Store", ".background"]))
+        XCTAssertEqual(try files.contentsOfDirectory(atPath: image.appendingPathComponent(".background").path), ["background.tiff"])
+        XCTAssertEqual(try files.destinationOfSymbolicLink(atPath: image.appendingPathComponent("Applications").path), "/Applications")
+        XCTAssertEqual(try Data(contentsOf: image.appendingPathComponent("LICENSE.txt")), try data("LICENSE"))
+        XCTAssertEqual(try String(contentsOf: image.appendingPathComponent("Acknowledgements.txt"), encoding: .utf8), "what Scrollio owes\n")
+        XCTAssertTrue(files.fileExists(atPath: image.appendingPathComponent("Scrollio.app/Contents/Resources/Acknowledgements.txt").path))
+        XCTAssertEqual(try Data(contentsOf: image.appendingPathComponent(".DS_Store")), try data("scripts/dmg/DS_Store"))
+        XCTAssertEqual(try Data(contentsOf: image.appendingPathComponent(".background/background.tiff")), try data("scripts/dmg/background.tiff"))
+
+        // A folder that holds something already is refused: all of it would be on the image.
+        let second = try bash(program, [Self.root.path, folder.path, library])
+        XCTAssertNotEqual(second.status, 0)
+        XCTAssertTrue(second.output.contains("FAIL: the folder for the disk image is not empty"), second.output)
+
+        // Without the picture, and then without the layout, the run ends with a sentence that names the file.
+        let bare = folder.appendingPathComponent("repository")
+        try files.createDirectory(at: bare.appendingPathComponent("scripts/dmg"), withIntermediateDirectories: true)
+        try files.copyItem(at: Self.root.appendingPathComponent("LICENSE"), to: bare.appendingPathComponent("LICENSE"))
+        try files.removeItem(at: image)
+        let noPicture = try bash(program, [bare.path, folder.path, library])
+        XCTAssertNotEqual(noPicture.status, 0)
+        XCTAssertTrue(noPicture.output.contains("FAIL: the picture of the disk image's window is missing: scripts/dmg/background.tiff"), noPicture.output)
+        try files.copyItem(at: Self.root.appendingPathComponent("scripts/dmg/background.tiff"), to: bare.appendingPathComponent("scripts/dmg/background.tiff"))
+        let noLayout = try bash(program, [bare.path, folder.path, library])
+        XCTAssertNotEqual(noLayout.status, 0)
+        XCTAssertTrue(noLayout.output.contains("FAIL: the layout of the disk image's window is missing: scripts/dmg/DS_Store"), noLayout.output)
+        XCTAssertFalse(files.fileExists(atPath: image.path), "nothing is filled before both are there")
+    }
+
+    /// The layout (scripts/dmg/DS_Store, on the image Finder's ".DS_Store"), read back by a
+    /// reader of this file's own: the window, the icon view and the icons' places are the
+    /// numbers the picture is drawn for, and it names exactly the items the image holds.
+    func testTheLayoutOfTheDiskImageWindowIsWhatThePictureIsDrawnFor() throws {
+        let file = try data("scripts/dmg/DS_Store")
+        let records = try DiskImageLayout.records(in: file)
+        func plist(_ id: String, file: StaticString = #filePath, line: UInt = #line) throws -> [String: Any] {
+            let record = try XCTUnwrap(records.first { $0.name == "." && $0.id == id }, "no \(id)", file: file, line: line)
+            XCTAssertEqual(record.type, "blob", file: file, line: line)
+            return try XCTUnwrap(try PropertyListSerialization.propertyList(from: record.value, format: nil) as? [String: Any], file: file, line: line)
+        }
+
+        // The folder's own three records and one place per item, in the tree's order
+        // (by name without regard to case, then by id): nothing else, and no item without a place.
+        XCTAssertEqual(records.map { "\($0.name) \($0.id)" },
+                       [". bwsp", ". icvp", ". vSrn"] + Self.imageItems.sorted { $0.lowercased() < $1.lowercased() }.map { "\($0) Iloc" })
+
+        // The window: as wide and as high as the picture below a 28 pt title bar; no toolbar, sidebar or bars.
+        let window = try plist("bwsp")
+        let bounds = try XCTUnwrap(window["WindowBounds"] as? String)
+        let numbers = bounds.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap { Int($0) }
+        XCTAssertEqual(numbers.count, 4, bounds)
+        XCTAssertEqual(Array(numbers.suffix(2)), [Self.windowContent.width, Self.windowContent.height + Self.titleBarHeight], bounds)
+        for bar in ["ShowToolbar", "ShowSidebar", "ContainerShowSidebar", "ShowStatusBar", "ShowPathbar", "ShowTabView"] {
+            XCTAssertEqual(window[bar] as? Bool, false, bar)
+        }
+
+        // The icon view: 128 pt icons that stay where they are put, 13 pt names below them, a picture behind.
+        let view = try plist("icvp")
+        XCTAssertEqual(view["iconSize"] as? Double, 128)
+        XCTAssertEqual(view["textSize"] as? Double, 13)
+        XCTAssertEqual(view["arrangeBy"] as? String, "none")
+        XCTAssertEqual(view["labelOnBottom"] as? Bool, true)
+        XCTAssertEqual(view["showItemInfo"] as? Bool, false)
+        XCTAssertEqual(view["backgroundType"] as? Int, 2)
+
+        // Where the icons' centres are, from the top left corner of the window's content.
+        var places: [String: (x: Int, y: Int)] = [:]
+        for record in records where record.id == "Iloc" {
+            let bytes = [UInt8](record.value)
+            XCTAssertEqual(bytes.count, 16, record.name)
+            func number(_ at: Int) -> Int { return bytes[at..<(at + 4)].reduce(0) { $0 << 8 | Int($1) } }
+            places[record.name] = (number(0), number(4))
+        }
+        let app = try XCTUnwrap(places["Scrollio.app"])
+        let applications = try XCTUnwrap(places["Applications"])
+        XCTAssertTrue(app == (180, 184), "\(app)")
+        XCTAssertTrue(applications == (480, 184), "\(applications)")
+        // The two text files begin below what the window shows, so two icons are seen.
+        for name in ["LICENSE.txt", "Acknowledgements.txt"] {
+            let place = try XCTUnwrap(places[name])
+            XCTAssertGreaterThan(place.y - 64, Self.windowContent.height, name)
+            XCTAssertTrue((64...(Self.windowContent.width - 64)).contains(place.x), name)
+        }
+
+        // The script that writes the file is run by hand: it says the same numbers, so a
+        // change there does not pass without a new file.
+        let writer = try text("scripts/dmg/write-layout.swift")
+        for line in ["let contentWidth = 660\n", "let contentHeight = 420\n", "let titleBarHeight = 28\n", "let iconSize = 128.0\n",
+                     "let textSize = 13.0\n", "    (\"Scrollio.app\", 180, 184),\n", "    (\"Applications\", 480, 184),\n",
+                     "    (\"LICENSE.txt\", \(try XCTUnwrap(places["LICENSE.txt"]).x), \(try XCTUnwrap(places["LICENSE.txt"]).y)),\n",
+                     "    (\"Acknowledgements.txt\", \(try XCTUnwrap(places["Acknowledgements.txt"]).x), \(try XCTUnwrap(places["Acknowledgements.txt"]).y)),\n"] {
+            XCTAssertTrue(writer.contains(line), "scripts/dmg/write-layout.swift no longer has: \(line)")
+        }
+
+        // The picture is found by an alias: the volume's name and the path on it, as
+        // `stage_disk_image` and `make_disk_image` make them.
+        let alias = try DiskImageLayout.Alias(try XCTUnwrap(view["backgroundImageAlias"] as? Data))
+        XCTAssertEqual(alias.volume, "Scrollio")
+        XCTAssertEqual(alias.file, "background.tiff")
+        XCTAssertEqual(alias.fileSystem, "H+")
+        XCTAssertEqual(alias.text(15, utf16: true), "Scrollio")
+        XCTAssertEqual(alias.text(14, utf16: true), "background.tiff")
+        XCTAssertEqual(alias.text(18), "/.background/background.tiff")
+        XCTAssertEqual(alias.text(19), "/Volumes/Scrollio")
+        let library = try text("scripts/release-lib.sh")
+        XCTAssertTrue(library.contains("hdiutil create -volname \"$APP_NAME\" -srcfolder \"$1\" -fs HFS+ "))
+        XCTAssertTrue(library.contains("cp \"$REPO/$DMG_PICTURE\" \"$stage/.background/background.tiff\""))
+        XCTAssertTrue(library.contains("cp \"$REPO/$DMG_LAYOUT\" \"$stage/.DS_Store\""))
+        for script in ["scripts/release.sh", "scripts/dmg/preview.sh"] {
+            XCTAssertTrue(try text(script).contains("\nAPP_NAME=\"Scrollio\"\n"), script)
+        }
+        // Every release's image is a new volume: an alias with one image's dates and file
+        // numbers would be looked up by them first. Zero means "not known".
+        XCTAssertEqual(alias.numbers, [0, 0, 0, 0], "the volume's date, the folder's number, the file's number and date")
+        // Nothing of the Mac it was made on: no alias of an image file (piece 20), no bookmark
+        // (it would be a record of its own, "pBBk"), no path of a home folder.
+        XCTAssertEqual(alias.pieces.keys.sorted(), [0, 1, 2, 14, 15, 18, 19])
+        for needle in ["/Users/", NSHomeDirectory()] {
+            XCTAssertNil(file.range(of: Data(needle.utf8)), "the layout contains \(needle)")
+            XCTAssertNil(file.range(of: needle.data(using: .utf16BigEndian)!), "the layout contains \(needle)")
+        }
+    }
+
+    /// One TIFF with the picture twice: for a plain display and for a Retina display.
+    func testThePictureOfTheDiskImageWindowHasBothResolutions() throws {
+        let pictures = NSBitmapImageRep.imageReps(with: try data("scripts/dmg/background.tiff")).compactMap { $0 as? NSBitmapImageRep }
+        XCTAssertEqual(pictures.map { [$0.pixelsWide, $0.pixelsHigh] }.sorted { $0[0] < $1[0] },
+                       [[Self.windowContent.width, Self.windowContent.height], [Self.windowContent.width * 2, Self.windowContent.height * 2]])
+        for picture in pictures {
+            XCTAssertEqual(picture.size, NSSize(width: Self.windowContent.width, height: Self.windowContent.height), "both are the window's size in points")
+        }
+    }
+
+    /// The window costs a release nothing new: no scripted Finder, and a missing picture
+    /// stops the run before the build, not after Apple accepted the app.
+    func testTheReleaseScriptGivesTheImageItsWindow() throws {
+        let script = try text("scripts/release.sh")
+        let library = try text("scripts/release-lib.sh")
+        let preview = try text("scripts/dmg/preview.sh")
+        func position(_ needle: String, file: StaticString = #filePath, line: UInt = #line) throws -> String.Index {
+            return try XCTUnwrap(script.range(of: needle), "scripts/release.sh no longer has: \(needle)", file: file, line: line).lowerBound
+        }
+        let required = try position("\nrequire_disk_image_window\n")
+        let build = try position("SCROLLIO_UPDATE_FEED=\"$UPDATE_FEED\"")
+        // The app gets Apple's ticket, then the folder is filled with that copy, packed and signed.
+        let stapled = try position("staple \"$STAPLED\"")
+        let filled = try position("\nstage_disk_image \"$STAPLED\" \"$STAGE\"\n")
+        let packed = try position("\nmake_disk_image \"$STAGE\" \"$UNFINISHED_DMG\"\n")
+        let signed = try position("codesign --sign \"$IDENTITY\" --timestamp \"$UNFINISHED_DMG\"")
+        XCTAssertTrue(required < build && build < stapled && stapled < filled && filled < packed && packed < signed)
+        // Gatekeeper is asked about the copy that is on the image.
+        XCTAssertTrue(script.contains("spctl --assess --type execute -vv \"$STAGE/${APP_NAME}.app\""))
+        XCTAssertTrue(library.contains("stage_disk_image() {\n    local app=\"$1\" stage=\"$2\"\n    require_disk_image_window\n"))
+        XCTAssertTrue(script.contains("echo \"release: opened, the image is a window: "))
+
+        // The sample image is filled and packed by the same two functions.
+        XCTAssertTrue(preview.contains(". \"$REPO/scripts/release-lib.sh\""))
+        XCTAssertTrue(preview.contains("\nstage_disk_image \"$APP\" \"$OUT/image\"\nmake_disk_image \"$OUT/image\" \"$IMAGE\"\n"))
+        // It is not a release: nothing is built, signed, notarized, read from the keychain or opened.
+        for line in commands(of: preview) {
+            for tool in ["xcodebuild", "codesign", "notarytool", "stapler", "spctl", "security ", "sign_update", "generate_keys", "hdiutil attach"] {
+                XCTAssertFalse(line.contains(tool), "scripts/dmg/preview.sh: \(line)")
+            }
+            XCTAssertFalse(line.trimmingCharacters(in: .whitespaces).hasPrefix("open "), "scripts/dmg/preview.sh: \(line)")
+        }
+        // No script that makes an image scripts Finder or another app: that would ask for a permission.
+        for line in commands(of: script + "\n" + library + "\n" + preview) {
+            for scripting in ["osascript", "tell application", "System Events"] {
+                XCTAssertFalse(line.contains(scripting), line)
+            }
+        }
+    }
+}
+
+// MARK: - A reader of the layout file
+
+/// Reads the records of a ".DS_Store" file, and the alias inside one. Written for the
+/// tests above, apart from scripts/dmg/write-layout.swift, which writes the file: a
+/// mistake in one is not repeated in the other. It reads the file as Finder writes it too.
+private enum DiskImageLayout {
+
+    struct Unreadable: Error, CustomStringConvertible {
+        let description: String
+    }
+
+    struct Record {
+        /// The item's name; "." is the folder itself.
+        let name: String
+        let id: String
+        let type: String
+        /// The value without its length: a property list's or a place's bytes.
+        let value: Data
+    }
+
+    /// Big-endian numbers and texts, read one after the other.
+    private struct Bytes {
+        let all: [UInt8]
+        var at: Int
+
+        mutating func take(_ count: Int) throws -> [UInt8] {
+            guard count >= 0, at + count <= all.count else { throw Unreadable(description: "the file ends at byte \(at)") }
+            defer { at += count }
+            return Array(all[at..<(at + count)])
+        }
+        mutating func number(_ count: Int = 4) throws -> Int {
+            return try take(count).reduce(0) { $0 << 8 | Int($1) }
+        }
+        mutating func ascii(_ count: Int) throws -> String {
+            return String(decoding: try take(count), as: UTF8.self)
+        }
+        mutating func utf16(_ units: Int) throws -> String {
+            guard let text = String(data: Data(try take(units * 2)), encoding: .utf16BigEndian) else {
+                throw Unreadable(description: "a name that is not UTF-16 at byte \(at)")
+            }
+            return text
+        }
+    }
+
+    /// Every record, in the order of the tree.
+    static func records(in file: Data) throws -> [Record] {
+        let all = [UInt8](file)
+        // The header. Offsets in the file count from after its first four bytes.
+        var header = Bytes(all: all, at: 0)
+        guard try header.number() == 1, try header.ascii(4) == "Bud1" else { throw Unreadable(description: "not a Bud1 store") }
+        let listOffset = try header.number()
+        _ = try header.number()
+        guard try header.number() == listOffset else { throw Unreadable(description: "the two offsets of the block list differ") }
+
+        // The allocator's list: where each block is (the offset, with the power of two of
+        // its size in the low five bits), then the named blocks.
+        var list = Bytes(all: all, at: 4 + listOffset)
+        let count = try list.number()
+        _ = try list.number()
+        guard count <= 256 else { throw Unreadable(description: "more blocks than one list holds") }
+        let addresses = try (0..<count).map { _ in try list.number() }
+        list.at = 4 + listOffset + 8 + 256 * 4
+        var head: Int?
+        for _ in 0..<(try list.number()) {
+            let name = try list.ascii(try list.number(1))
+            let block = try list.number()
+            if name == "DSDB" { head = block }
+        }
+        func block(_ number: Int) throws -> Bytes {
+            guard addresses.indices.contains(number) else { throw Unreadable(description: "no block \(number)") }
+            return Bytes(all: all, at: 4 + (addresses[number] & ~0x1F))
+        }
+
+        // The tree's head: its root node and how many records it holds.
+        guard let head else { throw Unreadable(description: "no block named DSDB") }
+        var tree = try block(head)
+        let root = try tree.number()
+        _ = try tree.number()
+        let recordCount = try tree.number()
+
+        var records: [Record] = []
+        func read(node number: Int) throws {
+            var node = try block(number)
+            let last = try node.number()            // 0 in a leaf, else the child after the last record
+            for _ in 0..<(try node.number()) {
+                if last != 0 { try read(node: try node.number()) }
+                let name = try node.utf16(try node.number())
+                let id = try node.ascii(4)
+                let type = try node.ascii(4)
+                let value: [UInt8]
+                switch type {
+                case "blob": value = try node.take(try node.number())
+                case "ustr": value = try node.take(try node.number() * 2)
+                case "bool": value = try node.take(1)
+                case "long", "shor", "type": value = try node.take(4)
+                case "comp", "dutc": value = try node.take(8)
+                default: throw Unreadable(description: "a record of type \(type)")
+                }
+                records.append(Record(name: name, id: id, type: type, value: Data(value)))
+            }
+            if last != 0 { try read(node: last) }
+        }
+        try read(node: root)
+        guard records.count == recordCount else { throw Unreadable(description: "the tree says \(recordCount) records and holds \(records.count)") }
+        return records
+    }
+
+    /// An alias record of version 2: the fixed part, then numbered pieces.
+    struct Alias {
+        let volume: String
+        let file: String
+        let fileSystem: String
+        /// The volume's creation date, the folder's file number, the file's number and its creation date.
+        let numbers: [Int]
+        let pieces: [Int: Data]
+
+        init(_ data: Data) throws {
+            var bytes = Bytes(all: [UInt8](data), at: 4)
+            guard try bytes.number(2) == data.count, try bytes.number(2) == 2 else { throw Unreadable(description: "not an alias record of version 2") }
+            func pascal(_ width: Int) throws -> String {
+                let field = try bytes.take(width)
+                return String(decoding: field[1..<(1 + Int(field[0]))], as: UTF8.self)
+            }
+            _ = try bytes.number(2)                 // a file or a folder
+            volume = try pascal(28)
+            let volumeDate = try bytes.number()
+            fileSystem = try bytes.ascii(2)
+            _ = try bytes.number(2)                 // the kind of disk
+            let folderNumber = try bytes.number()
+            file = try pascal(64)
+            numbers = [volumeDate, folderNumber, try bytes.number(), try bytes.number()]
+            _ = try bytes.take(28)                  // creator, type, levels, volume attributes, file system id, reserved
+            var pieces: [Int: Data] = [:]
+            while true {
+                let number = try bytes.number(2)
+                let length = try bytes.number(2)
+                if number == 0xFFFF { break }
+                pieces[number] = Data(try bytes.take(length))
+                if length % 2 == 1 { _ = try bytes.take(1) }
+            }
+            guard bytes.at == data.count else { throw Unreadable(description: "bytes after the alias's end") }
+            self.pieces = pieces
+        }
+
+        /// A piece as text; the UTF-16 ones begin with their length.
+        func text(_ piece: Int, utf16: Bool = false) -> String? {
+            guard let data = pieces[piece] else { return nil }
+            return utf16 ? String(data: data.dropFirst(2), encoding: .utf16BigEndian) : String(data: data, encoding: .utf8)
+        }
     }
 }

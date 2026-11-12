@@ -53,7 +53,9 @@
 #
 # What a release leaves in build/release (or SCROLLIO_RELEASE_DIR):
 #   Scrollio-<version>.dmg        the image to publish: the app, a link to Applications,
-#                                 LICENSE.txt and Acknowledgements.txt
+#                                 LICENSE.txt and Acknowledgements.txt. Opened, it is a
+#                                 window with the app's icon, an arrow and the Applications
+#                                 folder on a picture (scripts/dmg, scripts/README.md)
 #   appcast.xml                   what the installed copies read: publish it with the
 #                                 image, in the same GitHub release, under this name.
 #                                 Without it no copy learns of the new version.
@@ -113,6 +115,10 @@ trap 'exit 143' TERM HUP
 
 # Build settings from the environment would override the ones this script passes.
 unset XCODE_XCCONFIG_FILE
+
+# The picture and the layout of the image's window are needed last, after the build and
+# after Apple accepted the app: a run without them stops here.
+require_disk_image_window
 
 # --- The certificate -----------------------------------------------------------------
 # One line per valid identity:   1) <sha-1> "Developer ID Application: Name (TEAMID)"
@@ -448,28 +454,28 @@ staple() {
 }
 
 rm -rf "$WORK"
-mkdir -p "$STAGE"
-ditto "$BUILT" "$STAGE/${APP_NAME}.app"
+mkdir -p "$WORK/app"
+STAPLED="$WORK/app/${APP_NAME}.app"
+ditto "$BUILT" "$STAPLED"
 
 # The app first, so that the copy inside the disk image carries its own ticket and opens
 # on a Mac that is offline.
 ZIP="$WORK/${APP_NAME}-${VERSION}.zip"
-ditto -c -k --keepParent "$STAGE/${APP_NAME}.app" "$ZIP"
+ditto -c -k --keepParent "$STAPLED" "$ZIP"
 notarize "$ZIP"
 rm -f "$ZIP"
-staple "$STAGE/${APP_NAME}.app" \
+staple "$STAPLED" \
     || fail "could not staple the ticket to the app (log: $LOG)"
 
 # --- Disk image ----------------------------------------------------------------------
-# Built in the unfinished folder; it moves to its name after the last check.
+# Built in the unfinished folder; it moves to its name after the last check. What the
+# image holds and how its window looks is release-lib.sh's (stage_disk_image); the same
+# function fills the sample image of scripts/dmg/preview.sh.
 DMG="$DERIVED/${APP_NAME}-${VERSION}.dmg"
 DSYM_ZIP="$DERIVED/${APP_NAME}-${VERSION}.dSYM.zip"
 UNFINISHED_DMG="$WORK/${APP_NAME}-${VERSION}.dmg"
-ln -s /Applications "$STAGE/Applications"
-cp "$REPO/LICENSE" "$STAGE/LICENSE.txt"
-cp "$ACKNOWLEDGEMENTS" "$STAGE/Acknowledgements.txt"
-hdiutil create -volname "$APP_NAME" -srcfolder "$STAGE" -ov -format UDZO "$UNFINISHED_DMG" >> "$LOG" 2>&1 \
-    || fail "could not create the disk image (log: $LOG)"
+stage_disk_image "$STAPLED" "$STAGE"
+make_disk_image "$STAGE" "$UNFINISHED_DMG"
 codesign --sign "$IDENTITY" --timestamp "$UNFINISHED_DMG" >> "$LOG" 2>&1 \
     || fail "could not sign the disk image (log: $LOG)"
 notarize "$UNFINISHED_DMG"
@@ -526,6 +532,7 @@ SIZE="$(du -h "$DMG" | cut -f1 | tr -d ' ')"
 echo "release: ${APP_NAME} ${VERSION} (${COUNT}) ${COMMIT} is signed, notarized and stapled"
 echo "release: $DMG"
 echo "release: ${SIZE}, sha256 ${SHA}"
+echo "release: opened, the image is a window: ${APP_NAME}, an arrow and Applications on the picture of scripts/dmg (scripts/dmg/preview.sh shows it without a release)"
 echo "release: $APPCAST tells the installed copies about this version"
 echo "release: publish BOTH files in the GitHub release v${VERSION}: ${APP_NAME}-${VERSION}.dmg and appcast.xml (under exactly that name)"
 echo "release: $RELEASE_NOTES is the text for that release"

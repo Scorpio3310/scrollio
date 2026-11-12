@@ -1,9 +1,10 @@
 #!/bin/bash
 #
 # Functions of scripts/release.sh that do not need the Developer ID to be tried: signing
-# Sparkle's helper programs, looking at the signature of every program in the app, and
-# writing the appcast. release.sh sources this file; so can a test, with another
-# certificate (an "Apple Development" one signs the same way).
+# Sparkle's helper programs, looking at the signature of every program in the app,
+# writing the appcast, and filling and packing the disk image. release.sh sources this
+# file; so can a test, with another certificate (an "Apple Development" one signs the
+# same way), and so does scripts/dmg/preview.sh, which signs nothing.
 #
 # The caller provides:
 #   fail <message>     prints the message and ends the run
@@ -11,7 +12,8 @@
 #   IDENTITY           the certificate to sign with (its SHA-1 or its name)
 #   APP_NAME           "Scrollio"
 #   RELEASES_URL       the GitHub releases page, without a slash at the end
-#   REPO               the repository's folder (CHANGELOG.md is read there)
+#   REPO               the repository's folder (CHANGELOG.md, LICENSE and scripts/dmg
+#                      are read there)
 
 # "14.0" as the appcast wants it: "14.0.0".
 three_part() { awk -F. '{ printf "%d.%d.%d\n", $1, $2, $3 }' <<< "$1"; }
@@ -133,4 +135,53 @@ check_programs() {
         grep -q '^Timestamp=' <<< "$info" \
             || fail "$name has no secure timestamp"
     done < <(find "$app" -type f -print0)
+}
+
+# --- The disk image ---------------------------------------------------------------------
+# Opened, the image is a window: the app's icon, an arrow and the Applications folder on a
+# picture. Finder reads that from two files on the image, which scripts/dmg holds ready:
+# the picture, and the layout (Finder's ".DS_Store": the window's size, the icons' size
+# and place, and which picture). scripts/README.md says how both are made. The layout
+# names the items below, the volume and the picture's place by name: change a name here
+# and in scripts/dmg/write-layout.swift together (ReleaseReadinessTests compares them).
+DMG_PICTURE="scripts/dmg/background.tiff"
+DMG_LAYOUT="scripts/dmg/DS_Store"
+
+# Ends the run unless the picture and the layout of the image's window are there.
+require_disk_image_window() {
+    [ -s "$REPO/$DMG_PICTURE" ] \
+        || fail "the picture of the disk image's window is missing: $DMG_PICTURE (scripts/README.md says how it is drawn)"
+    [ -s "$REPO/$DMG_LAYOUT" ] \
+        || fail "the layout of the disk image's window is missing: $DMG_LAYOUT (scripts/README.md says how it is written)"
+}
+
+# Fills <folder> with everything the image holds: the app, a link to Applications, the
+# licence and the acknowledgements, and the window's picture and layout. The folder must
+# be new or empty: what lies in it would be on the image too.
+#   stage_disk_image <app> <folder>
+stage_disk_image() {
+    local app="$1" stage="$2"
+    require_disk_image_window
+    [ -d "$app" ] || fail "no app at $app"
+    [ -s "$app/Contents/Resources/Acknowledgements.txt" ] \
+        || fail "the app does not carry Acknowledgements.txt (Scrollio/Acknowledgements.txt)"
+    [ -s "$REPO/LICENSE" ] || fail "no LICENSE in the repository"
+    [ -z "$(ls -A "$stage" 2>/dev/null)" ] || fail "the folder for the disk image is not empty: $stage"
+    mkdir -p "$stage/.background"
+    ditto "$app" "$stage/${APP_NAME}.app"
+    ln -s /Applications "$stage/Applications"
+    cp "$REPO/LICENSE" "$stage/LICENSE.txt"
+    cp "$app/Contents/Resources/Acknowledgements.txt" "$stage/Acknowledgements.txt"
+    cp "$REPO/$DMG_PICTURE" "$stage/.background/background.tiff"
+    cp "$REPO/$DMG_LAYOUT" "$stage/.DS_Store"
+}
+
+# Packs <folder> into a compressed, read-only image. The volume is named APP_NAME: the
+# layout finds its picture by that name. The file system is asked for by name: left to
+# itself, hdiutil takes the one its macOS prefers (APFS on macOS 27), and an image would
+# differ with the Mac it was made on. HFS+ is what the layout's alias says.
+#   make_disk_image <folder> <image>
+make_disk_image() {
+    hdiutil create -volname "$APP_NAME" -srcfolder "$1" -fs HFS+ -ov -format UDZO "$2" >> "$LOG" 2>&1 \
+        || fail "could not create the disk image (log: $LOG)"
 }
