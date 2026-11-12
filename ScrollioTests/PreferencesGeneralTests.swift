@@ -477,7 +477,7 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertEqual(pane.accessibilityStatusLabel.stringValue, "Allowed")
 
         world.access = false
-        NotificationCenter.default.post(name: .mosAccessibilityPermissionLost, object: nil)
+        NotificationCenter.default.post(name: .scrollioAccessibilityPermissionLost, object: nil)
         XCTAssertEqual(pane.accessibilityStatusLabel.stringValue, "Not allowed")
         XCTAssertFalse(pane.openAccessibilitySettingsButton.isHidden)
 

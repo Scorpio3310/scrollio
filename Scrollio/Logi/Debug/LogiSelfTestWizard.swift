@@ -161,7 +161,7 @@ final class LogiSelfTestWizard {
             let token = NotificationCenter.default.addObserver(
                 forName: LogiCenter.rawButtonEvent, object: nil, queue: .main
             ) { [weak self] notif in
-                if let expected = scrollioCode, (notif.userInfo?["mosCode"] as? UInt16) != expected { return }
+                if let expected = scrollioCode, (notif.userInfo?["scrollioCode"] as? UInt16) != expected { return }
                 self?.endWait()
                 self?.handleOutcome(.pass)
             }

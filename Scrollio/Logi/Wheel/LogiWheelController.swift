@@ -64,9 +64,9 @@ final class LogiWheelController {
         case scrollForce
     }
 
-    /// What the user wants; `managedByMos` is the switch.
+    /// What the user wants; `managedByScrollio` is the switch.
     private(set) var desired = LogiWheelSettings.default
-    var managed: Bool { desired.managedByMos }
+    var managed: Bool { desired.managedByScrollio }
     /// Values waiting for a fresh status read before they are decided (written or not).
     private(set) var pendingFields: Set<Field> = []
     /// "SmartShift Toggle" waiting for the current mode.
@@ -161,12 +161,12 @@ final class LogiWheelController {
     /// the user set, if (and only if) the mouse is managed.
     func start(desired: LogiWheelSettings) {
         self.desired = desired
-        pendingFields = desired.managedByMos ? Set(Field.allCases) : []
+        pendingFields = desired.managedByScrollio ? Set(Field.allCases) : []
         forceWaitsForCapabilities = false
         loggedStatus = nil
         outcomes.removeAll()
         writtenFields.removeAll()
-        log("Connected: \(String(format: "0x%04X", feature.featureId)) at index \(String(format: "0x%02X", featureIndex)); \(desired.managedByMos ? "managed, \(Self.describe(desired))" : "not managed, reading only")")
+        log("Connected: \(String(format: "0x%04X", feature.featureId)) at index \(String(format: "0x%02X", featureIndex)); \(desired.managedByScrollio ? "managed, \(Self.describe(desired))" : "not managed, reading only")")
         refresh()
     }
 
@@ -184,16 +184,16 @@ final class LogiWheelController {
         let old = desired
         desired = settings
         if settings != old { onChange() }  // what the user set is part of the shown state
-        if settings.managedByMos != old.managedByMos {
-            log(settings.managedByMos ? "Managed from now on: \(Self.describe(settings))" : "Not managed any more: nothing is written")
+        if settings.managedByScrollio != old.managedByScrollio {
+            log(settings.managedByScrollio ? "Managed from now on: \(Self.describe(settings))" : "Not managed any more: nothing is written")
         }
-        guard settings.managedByMos else {
+        guard settings.managedByScrollio else {
             pendingFields.removeAll()
             forceWaitsForCapabilities = false
             announceMismatchChanges()
             return
         }
-        let turnedOn = !old.managedByMos
+        let turnedOn = !old.managedByScrollio
         var changed: Set<Field> = []
         if turnedOn || settings.mode != old.mode { changed.insert(.mode) }
         if turnedOn || settings.smartShiftSensitivity != old.smartShiftSensitivity { changed.insert(.sensitivity) }

@@ -350,7 +350,7 @@ class PreferencesGeneralViewController: NSViewController {
                 self.refreshAccessState()
             },
             // The access was turned off while Scrollio ran, or came back (the cores started).
-            center.addObserver(forName: .mosAccessibilityPermissionLost, object: nil, queue: .main) { [weak self] _ in
+            center.addObserver(forName: .scrollioAccessibilityPermissionLost, object: nil, queue: .main) { [weak self] _ in
                 self?.refreshAccessState()
             },
             // Paused, resumed, or the cores started or stopped.

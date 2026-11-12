@@ -5,7 +5,7 @@
 //  Options -> LogiCenter wiring for the Logitech scroll-wheel settings (Options group
 //  .logiWheel). LogiCenter remembers the latest settings and replays them whenever a
 //  supporting device (re)connects, so this only has to push changes. Nothing is written
-//  to a device unless the user turned on `managedByMos`.
+//  to a device unless the user turned on `managedByScrollio`.
 //
 
 import Foundation

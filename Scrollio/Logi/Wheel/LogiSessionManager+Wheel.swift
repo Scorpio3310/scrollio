@@ -11,11 +11,11 @@ import Foundation
 extension LogiSessionManager {
 
     /// Stores `settings` for devices that connect later and hands them to every connected
-    /// wheel. A wheel writes only while `settings.managedByMos` is true, and only the values
+    /// wheel. A wheel writes only while `settings.managedByScrollio` is true, and only the values
     /// the user set (see LogiWheelController).
     func applyWheelSettings(_ settings: LogiWheelSettings) {
         if settings != wheelSettings {
-            LogiSystemLog.note("Wheel settings: \(settings.managedByMos ? "managed" : "not managed"), \(LogiWheelController.describe(settings))")
+            LogiSystemLog.note("Wheel settings: \(settings.managedByScrollio ? "managed" : "not managed"), \(LogiWheelController.describe(settings))")
         }
         wheelSettings = settings
         for session in activeSessions where session.isHIDPPCandidate {

@@ -223,5 +223,5 @@ class OPTIONS_APPLICATION_DEFAULT {
 // MARK: - Notification Names
 extension Notification.Name {
     /// 辅助功能权限在运行时被撤销
-    static let mosAccessibilityPermissionLost = Notification.Name("mosAccessibilityPermissionLost")
+    static let scrollioAccessibilityPermissionLost = Notification.Name("scrollioAccessibilityPermissionLost")
 }

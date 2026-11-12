@@ -23,7 +23,7 @@ final class LogiBridgeDeviceTests: LogiDeviceIntegrationBase {
 
         print("[LogiBridgeDeviceTests] Press the Back button on your Logi device within 30 seconds...")
         let exp = expectation(forNotification: LogiCenter.rawButtonEvent, object: nil) { notif in
-            return (notif.userInfo?["mosCode"] as? UInt16) == 1006
+            return (notif.userInfo?["scrollioCode"] as? UInt16) == 1006
         }
         let result = XCTWaiter.wait(for: [exp], timeout: 30)
         XCTAssertEqual(result, .completed, "rawButtonEvent for Back (scrollioCode 1006) was not observed within 30s")

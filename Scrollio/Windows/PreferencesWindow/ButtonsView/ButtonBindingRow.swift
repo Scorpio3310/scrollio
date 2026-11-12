@@ -165,7 +165,7 @@ struct ButtonRowNote: Equatable {
                 }
                 return ButtonRowNote(kind: .gestureNavigation, text: text("buttons-note-gesture-navigation"))
             }
-            if SystemShortcut.mosMouseScrollCategory.shortcuts.contains(where: { $0.identifier == shortcut.identifier }) {
+            if SystemShortcut.mouseScrollCategory.shortcuts.contains(where: { $0.identifier == shortcut.identifier }) {
                 return ButtonRowNote(kind: .holdAction, text: text("buttons-note-hold-action"))
             }
             return nil

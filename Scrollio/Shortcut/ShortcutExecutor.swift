@@ -57,11 +57,11 @@ enum ScrollActionKind {
 
     init?(shortcutIdentifier: String) {
         switch shortcutIdentifier {
-        case "mosScrollDash":
+        case "scrollDash":
             self = .dash
-        case "mosScrollToggle":
+        case "scrollToggle":
             self = .toggle
-        case "mosScrollBlock":
+        case "scrollBlock":
             self = .block
         default:
             return nil
@@ -132,7 +132,7 @@ class ShortcutExecutor {
     private var testingKeyboardShortcutObserver: ((CGKeyCode, UInt64, Bool) -> Void)?
 
     /// 快速识别 Mos Scroll 三个 stateful 动作, 供事件热路径避免完整 action 解析。
-    static func isMosScrollActionIdentifier(_ shortcutName: String) -> Bool {
+    static func isScrollActionIdentifier(_ shortcutName: String) -> Bool {
         ScrollActionKind(shortcutIdentifier: shortcutName) != nil
     }
 

@@ -549,7 +549,7 @@ class ScrollCore: ScrollActionPort {
         let inputEvent = InputEvent(fromCGEvent: event)
         return ButtonUtils.shared.getBestMatchingBinding(
             for: inputEvent,
-            where: { ShortcutExecutor.isMosScrollActionIdentifier($0.systemShortcutName) }
+            where: { ShortcutExecutor.isScrollActionIdentifier($0.systemShortcutName) }
         ) != nil
     }
     

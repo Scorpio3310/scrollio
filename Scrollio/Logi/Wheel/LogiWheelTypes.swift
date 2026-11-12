@@ -7,7 +7,7 @@
 //  the LogiCenter methods below; the HID++ work stays inside Scrollio/Logi.
 //
 //  Writing follows the rule of the basic mouse settings (LogiMouseBasicsTypes): a value is
-//  written only when "Let Scrollio manage this mouse" (`managedByMos`) is on, the user has set
+//  written only when "Let Scrollio manage this mouse" (`managedByScrollio`) is on, the user has set
 //  that value (non-nil here) and the value freshly read from the mouse differs. A value the
 //  user never set is never written; the mouse keeps its own.
 //
@@ -29,18 +29,18 @@ enum LogiWheelMode: String, Codable, CaseIterable, Equatable {
 
 /// User preference, stored in Options (group `.logiWheel`, UserDefaults key
 /// "logiWheelSettings") and applied to every connected Logitech mouse that supports it, but
-/// only while `managedByMos` is true. The wheel values are optional: nil means "not set by the
+/// only while `managedByScrollio` is true. The wheel values are optional: nil means "not set by the
 /// user, leave the mouse's own value", and a value is set only when the user moves that control.
 ///
-/// Stored format: `{"managedByMos": Bool}` plus the keys of the values the user set
+/// Stored format: `{"managedByScrollio": Bool}` plus the keys of the values the user set
 /// (`mode`, `smartShiftSensitivity`, `scrollForce`); an unset value has no key. Settings stored
 /// before the values were optional always carry all three keys and so load as set by the user.
 struct LogiWheelSettings: Codable, Equatable {
     /// "Let Scrollio manage this mouse": the one switch for everything Scrollio writes to a
     /// Logitech mouse, the wheel settings here and the basic settings of LogiMouseSettings
     /// (pointer speed, haptics, press force). Off by default: nothing is written to a device
-    /// unless the user opts in. The JSON key keeps its old name.
-    var managedByMos: Bool
+    /// unless the user opts in.
+    var managedByScrollio: Bool
     var mode: LogiWheelMode?
     /// 1...100 %, like Logi Options+ "Sensitivity": higher switches to free-spin sooner.
     /// Applies only while the wheel is in SmartShift.
@@ -65,12 +65,12 @@ struct LogiWheelSettings: Codable, Equatable {
     static let `default` = LogiWheelSettings()
 
     init(
-        managedByMos: Bool = false,
+        managedByScrollio: Bool = false,
         mode: LogiWheelMode? = nil,
         smartShiftSensitivity: Int? = nil,
         scrollForce: Int? = nil
     ) {
-        self.managedByMos = managedByMos
+        self.managedByScrollio = managedByScrollio
         self.mode = mode
         self.smartShiftSensitivity = smartShiftSensitivity.map { Self.clamp($0, Self.sensitivityRange) }
         self.scrollForce = scrollForce.map { Self.clamp($0, Self.scrollForceRange) }
@@ -80,11 +80,11 @@ struct LogiWheelSettings: Codable, Equatable {
     /// kept); a missing switch is off; out-of-range values are clamped; unknown keys are ignored.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        let managed = (try? c.decodeIfPresent(Bool.self, forKey: .managedByMos)) ?? nil
+        let managed = (try? c.decodeIfPresent(Bool.self, forKey: .managedByScrollio)) ?? nil
         let mode = (try? c.decodeIfPresent(LogiWheelMode.self, forKey: .mode)) ?? nil
         let sensitivity = (try? c.decodeIfPresent(Int.self, forKey: .smartShiftSensitivity)) ?? nil
         let force = (try? c.decodeIfPresent(Int.self, forKey: .scrollForce)) ?? nil
-        self.init(managedByMos: managed ?? false, mode: mode, smartShiftSensitivity: sensitivity, scrollForce: force)
+        self.init(managedByScrollio: managed ?? false, mode: mode, smartShiftSensitivity: sensitivity, scrollForce: force)
     }
 
     private static func clamp(_ value: Int, _ range: ClosedRange<Int>) -> Int {

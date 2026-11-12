@@ -147,7 +147,7 @@ final class LogiCenter {
     }
 
     /// Remembers `settings` for devices that (re)connect later and writes them to every
-    /// connected device that supports them. Never writes when `settings.managedByMos`
+    /// connected device that supports them. Never writes when `settings.managedByScrollio`
     /// is false. Main thread only.
     func applyWheelSettings(_ settings: LogiWheelSettings) {
         #if DEBUG

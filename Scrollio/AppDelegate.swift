@@ -133,7 +133,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleAccessibilityPermissionLost),
-            name: .mosAccessibilityPermissionLost,
+            name: .scrollioAccessibilityPermissionLost,
             object: nil
         )
         // The user's System Settings shortcuts (Spaces): read again when they may have changed

@@ -436,8 +436,8 @@ final class PreferencesSidebarTests: XCTestCase {
     }
 }
 
-/// Names the redesign changed. Only what the user reads changed: every identifier that is
-/// stored in the settings or used as a key stays as it was.
+/// Names the redesign changed. Only what the user reads changed: the identifiers that are
+/// stored in the settings or used as keys are frozen below.
 final class PreferencesNamingTests: XCTestCase {
 
     private let app = Bundle(for: PreferencesSplitViewController.self)
@@ -465,18 +465,18 @@ final class PreferencesNamingTests: XCTestCase {
 
         // Button actions (code): the same three names as the Scrolling tab, in the Title
         // Case of menu items.
-        XCTAssertEqual(SystemShortcut.mosScrollDash.localizedName, "Scroll Faster")
-        XCTAssertEqual(SystemShortcut.mosScrollToggle.localizedName, "Scroll Sideways")
-        XCTAssertEqual(SystemShortcut.mosScrollBlock.localizedName, "Pause Smoothing")
+        XCTAssertEqual(SystemShortcut.scrollDash.localizedName, "Scroll Faster")
+        XCTAssertEqual(SystemShortcut.scrollToggle.localizedName, "Scroll Sideways")
+        XCTAssertEqual(SystemShortcut.scrollBlock.localizedName, "Pause Smoothing")
     }
 
-    func testScrollKeyIdentifiersAreUnchanged() {
-        XCTAssertEqual(SystemShortcut.mosScrollDash.identifier, "mosScrollDash")
-        XCTAssertEqual(SystemShortcut.mosScrollToggle.identifier, "mosScrollToggle")
-        XCTAssertEqual(SystemShortcut.mosScrollBlock.identifier, "mosScrollBlock")
+    func testScrollActionIdentifiersAreFrozen() {
+        XCTAssertEqual(SystemShortcut.scrollDash.identifier, "scrollDash")
+        XCTAssertEqual(SystemShortcut.scrollToggle.identifier, "scrollToggle")
+        XCTAssertEqual(SystemShortcut.scrollBlock.identifier, "scrollBlock")
         XCTAssertEqual(
-            SystemShortcut.mosMouseScrollCategory.shortcuts.map(\.identifier),
-            ["mosScrollDash", "mosScrollToggle", "mosScrollBlock"]
+            SystemShortcut.mouseScrollCategory.shortcuts.map(\.identifier),
+            ["scrollDash", "scrollToggle", "scrollBlock"]
         )
     }
 

@@ -155,7 +155,7 @@ struct MousePaneModel: Equatable {
 
     /// - Parameters:
     ///   - settings: `Options.shared.logiMouse`.
-    ///   - wheel: `Options.shared.logiWheel`; its `managedByMos` is the tab's main switch.
+    ///   - wheel: `Options.shared.logiWheel`; its `managedByScrollio` is the tab's main switch.
     ///   - heldReadbacks: settings the user just changed; their "On the mouse" line waits
     ///     until the mouse has had time to take the new value.
     init(
@@ -164,7 +164,7 @@ struct MousePaneModel: Equatable {
         wheel: LogiWheelSettings,
         heldReadbacks: Set<MouseSetting> = []
     ) {
-        let managed = wheel.managedByMos
+        let managed = wheel.managedByScrollio
         self.managed = managed
         let mice = Self.ordered(devices)
         hasMouse = !mice.isEmpty

@@ -1090,7 +1090,7 @@ final class InputProcessorTests: XCTestCase {
     }
 
     func testResolveAction_scrollActionsAreStateful() {
-        for identifier in ["mosScrollDash", "mosScrollToggle", "mosScrollBlock"] {
+        for identifier in ["scrollDash", "scrollToggle", "scrollBlock"] {
             guard let action = ShortcutExecutor.shared.resolveAction(named: identifier) else {
                 return XCTFail("Expected \(identifier) action to resolve")
             }
@@ -1099,9 +1099,9 @@ final class InputProcessorTests: XCTestCase {
         }
     }
 
-    func testProcess_mosScrollDash_downAndUpControlsDashState() {
+    func testProcess_scrollDash_downAndUpControlsDashState() {
         let trigger = RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil)
-        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "mosScrollDash", isEnabled: true)
+        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "scrollDash", isEnabled: true)
         Options.shared.buttons.binding = [binding]
         ButtonUtils.shared.invalidateCache()
 
@@ -1120,7 +1120,7 @@ final class InputProcessorTests: XCTestCase {
 
     func testProcess_scrollActionMiddleTapWithoutScroll_replaysOriginalMouseClick() {
         let trigger = RecordedEvent(type: .mouse, code: 2, modifiers: 0, displayComponents: ["🖱M"], deviceFilter: nil)
-        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "mosScrollDash", isEnabled: true)
+        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "scrollDash", isEnabled: true)
         Options.shared.buttons.binding = [binding]
         ButtonUtils.shared.invalidateCache()
 
@@ -1152,7 +1152,7 @@ final class InputProcessorTests: XCTestCase {
 
     func testProcess_scrollActionMiddleTapWithScrollUse_doesNotReplayOriginalMouseClick() {
         let trigger = RecordedEvent(type: .mouse, code: 2, modifiers: 0, displayComponents: ["🖱M"], deviceFilter: nil)
-        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "mosScrollDash", isEnabled: true)
+        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "scrollDash", isEnabled: true)
         Options.shared.buttons.binding = [binding]
         ButtonUtils.shared.invalidateCache()
 
@@ -1178,7 +1178,7 @@ final class InputProcessorTests: XCTestCase {
 
     func testScrollCore_scrollWheelWhileScrollActionHeldSuppressesTapReplay() {
         let trigger = RecordedEvent(type: .mouse, code: 2, modifiers: 0, displayComponents: ["🖱M"], deviceFilter: nil)
-        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "mosScrollDash", isEnabled: true)
+        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "scrollDash", isEnabled: true)
         Options.shared.buttons.binding = [binding]
         ButtonUtils.shared.invalidateCache()
 
@@ -1208,7 +1208,7 @@ final class InputProcessorTests: XCTestCase {
 
     func testScrollCore_scrollWheelReleasesCGScrollActionSessionWhenPhysicalButtonIsNoLongerDown() {
         let trigger = RecordedEvent(type: .mouse, code: 2, modifiers: 0, displayComponents: ["🖱M"], deviceFilter: nil)
-        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "mosScrollDash", isEnabled: true)
+        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "scrollDash", isEnabled: true)
         Options.shared.buttons.binding = [binding]
         ButtonUtils.shared.invalidateCache()
 
@@ -1234,7 +1234,7 @@ final class InputProcessorTests: XCTestCase {
 
     func testProcess_scrollActionCGMouseTapWithPointerMove_doesNotReplayOriginalMouseClick() {
         let trigger = RecordedEvent(type: .mouse, code: 2, modifiers: 0, displayComponents: ["🖱M"], deviceFilter: nil)
-        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "mosScrollDash", isEnabled: true)
+        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "scrollDash", isEnabled: true)
         Options.shared.buttons.binding = [binding]
         ButtonUtils.shared.invalidateCache()
 
@@ -1266,7 +1266,7 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertFalse(ScrollCore.shared.dashScroll)
     }
 
-    func testProcess_logiButtonCanTriggerMosScrollToggle() {
+    func testProcess_logiButtonCanTriggerScrollToggle() {
         let trigger = RecordedEvent(
             type: .mouse,
             code: 1007,
@@ -1274,7 +1274,7 @@ final class InputProcessorTests: XCTestCase {
             displayComponents: ["[Logi]", "Forward"],
             deviceFilter: nil
         )
-        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "mosScrollToggle", isEnabled: true)
+        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "scrollToggle", isEnabled: true)
         Options.shared.buttons.binding = [binding]
         ButtonUtils.shared.invalidateCache()
 
@@ -1299,7 +1299,7 @@ final class InputProcessorTests: XCTestCase {
             displayComponents: ["[Logi]", "Forward"],
             deviceFilter: nil
         )
-        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "mosScrollToggle", isEnabled: true)
+        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "scrollToggle", isEnabled: true)
         Options.shared.buttons.binding = [binding]
         ButtonUtils.shared.invalidateCache()
 
@@ -1373,7 +1373,7 @@ final class InputProcessorTests: XCTestCase {
 
     func testSyntheticReleaseOfAScrollActionHoldDoesNotReplayTheClick() {
         let trigger = RecordedEvent(type: .mouse, code: 1007, modifiers: 0, displayComponents: ["[Logi]", "Forward"], deviceFilter: nil)
-        Options.shared.buttons.binding = [ButtonBinding(triggerEvent: trigger, systemShortcutName: "mosScrollToggle", isEnabled: true)]
+        Options.shared.buttons.binding = [ButtonBinding(triggerEvent: trigger, systemShortcutName: "scrollToggle", isEnabled: true)]
         ButtonUtils.shared.invalidateCache()
         var observed: [CGEventType] = []
         ShortcutExecutor.shared.setTestingMouseEventObserver { observed.append($0.type) }
@@ -1403,9 +1403,9 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(InputProcessor.shared.activeModifierFlags, 0)
     }
 
-    func testProcess_mosScrollBlock_downAndUpControlsBlockState() {
+    func testProcess_scrollBlock_downAndUpControlsBlockState() {
         let trigger = RecordedEvent(type: .mouse, code: 5, modifiers: 0, displayComponents: ["🖱6"], deviceFilter: nil)
-        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "mosScrollBlock", isEnabled: true)
+        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "scrollBlock", isEnabled: true)
         Options.shared.buttons.binding = [binding]
         ButtonUtils.shared.invalidateCache()
 
@@ -1422,11 +1422,11 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertFalse(ScrollCore.shared.blockSmooth)
     }
 
-    func testProcess_multipleMosScrollDashTriggers_releaseOneKeepsDashActive() {
+    func testProcess_multipleScrollDashTriggers_releaseOneKeepsDashActive() {
         let firstTrigger = RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil)
         let secondTrigger = RecordedEvent(type: .mouse, code: 4, modifiers: 0, displayComponents: ["🖱5"], deviceFilter: nil)
-        let firstBinding = ButtonBinding(triggerEvent: firstTrigger, systemShortcutName: "mosScrollDash", isEnabled: true)
-        let secondBinding = ButtonBinding(triggerEvent: secondTrigger, systemShortcutName: "mosScrollDash", isEnabled: true)
+        let firstBinding = ButtonBinding(triggerEvent: firstTrigger, systemShortcutName: "scrollDash", isEnabled: true)
+        let secondBinding = ButtonBinding(triggerEvent: secondTrigger, systemShortcutName: "scrollDash", isEnabled: true)
         Options.shared.buttons.binding = [firstBinding, secondBinding]
         ButtonUtils.shared.invalidateCache()
 
@@ -1473,17 +1473,17 @@ final class InputProcessorTests: XCTestCase {
 
         let cases: [Case] = [
             Case(
-                shortcutName: "mosScrollDash",
+                shortcutName: "scrollDash",
                 configureLegacyHotkey: { Options.shared.scroll.dash = $0 },
                 isRoleActive: { ScrollCore.shared.dashScroll }
             ),
             Case(
-                shortcutName: "mosScrollToggle",
+                shortcutName: "scrollToggle",
                 configureLegacyHotkey: { Options.shared.scroll.toggle = $0 },
                 isRoleActive: { ScrollCore.shared.toggleScroll }
             ),
             Case(
-                shortcutName: "mosScrollBlock",
+                shortcutName: "scrollBlock",
                 configureLegacyHotkey: { Options.shared.scroll.block = $0 },
                 isRoleActive: { ScrollCore.shared.blockSmooth }
             ),

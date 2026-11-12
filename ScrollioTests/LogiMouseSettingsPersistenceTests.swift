@@ -2,7 +2,7 @@ import XCTest
 @testable import Scrollio_Debug
 
 /// Canary for the persisted basic mouse settings (UserDefaults key "logiMouseSettings") and
-/// the switch they share with the wheel (`logiWheelSettings.managedByMos`). The key names
+/// the switch they share with the wheel (`logiWheelSettings.managedByScrollio`). The key names
 /// below are frozen: never derive them from production code.
 final class LogiMouseSettingsPersistenceTests: XCTestCase {
 
@@ -72,18 +72,18 @@ final class LogiMouseSettingsPersistenceTests: XCTestCase {
         XCTAssertEqual(String(data: empty, encoding: .utf8), "{}", "unset values are not stored")
     }
 
-    func testTheSwitchKeepsItsJSONKey() throws {
+    func testTheSwitchJSONKeyIsFrozen() throws {
         let data = try JSONEncoder().encode(LogiWheelSettings.default)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(object["managedByMos"] as? Bool, false)
+        XCTAssertEqual(object["managedByScrollio"] as? Bool, false)
     }
 
     func testTheMouseSwitchIsTheWheelSwitch() {
         let saved = Options.shared.logiWheel
         defer { Options.shared.logiWheel = saved }
         Options.shared.logiMouseManaged = true
-        XCTAssertTrue(Options.shared.logiWheel.managedByMos)
-        Options.shared.logiWheel.managedByMos = false
+        XCTAssertTrue(Options.shared.logiWheel.managedByScrollio)
+        Options.shared.logiWheel.managedByScrollio = false
         XCTAssertFalse(Options.shared.logiMouseManaged)
     }
 

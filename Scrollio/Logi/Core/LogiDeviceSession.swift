@@ -3088,7 +3088,7 @@ class LogiDeviceSession {
     // 每个 slot 一个 LogiWheelController (BLE 直连 slot = 0xFF). 协议字节与映射见
     // Scrollio/Logi/Wheel/LogiWheelProtocol.swift. 建立时机: 可选功能探测链走完 (含缓存命中),
     // receiver 重连 slot 的 sweep 结束, 或 SmartShift Toggle 按需发现. 建立即读状态,
-    // 且仅当 LogiSessionManager.wheelSettings.managedByMos 时写入用户设过的值 (重连后自动重放).
+    // 且仅当 LogiSessionManager.wheelSettings.managedByScrollio 时写入用户设过的值 (重连后自动重放).
 
     private var wheelControllers: [UInt8: LogiWheelController] = [:]
     private var wheelRefreshWorkItems: [UInt8: DispatchWorkItem] = [:]
@@ -3138,7 +3138,7 @@ class LogiDeviceSession {
             }
         )
         wheelControllers[slot] = controller
-        LogiDebugPanel.log("[\(name)] Wheel feature \(String(format: "0x%04X", feature.featureId)) at index \(String(format: "0x%02X", index)) (slot \(String(format: "0x%02X", slot)), managedByMos=\(desired.managedByMos))")
+        LogiDebugPanel.log("[\(name)] Wheel feature \(String(format: "0x%04X", feature.featureId)) at index \(String(format: "0x%02X", index)) (slot \(String(format: "0x%02X", slot)), managedByScrollio=\(desired.managedByScrollio))")
         LogiSessionManager.shared.notifyWheelStateChanged()
         controller.start(desired: desired)
     }
@@ -5086,7 +5086,7 @@ class LogiDeviceSession {
             object: nil,
             userInfo: [
                 "event": event,
-                "mosCode": event.code,
+                "scrollioCode": event.code,
                 "cid": cid,
                 "phase": isDown ? "down" : "up",
             ])

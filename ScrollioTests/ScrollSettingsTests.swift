@@ -315,7 +315,7 @@ final class ScrollSettingsTests: XCTestCase {
         defaults.set(Data(tuning.utf8), forKey: "scrollTuning")
         defaults.set(3.69, forKey: OptionItem.Scroll.Duration)
         defaults.set(6.3, forKey: OptionItem.Scroll.Speed)
-        defaults.set(Data(#"{"managedByMos":true}"#.utf8), forKey: OptionItem.MouseWheel.Settings)
+        defaults.set(Data(#"{"managedByScrollio":true}"#.utf8), forKey: OptionItem.MouseWheel.Settings)
 
         ScrollSettingsCleanup.run(global: OPTIONS_SCROLL_DEFAULT(), applications: [], defaults: defaults)
 

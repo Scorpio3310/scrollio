@@ -39,8 +39,8 @@ final class ScrollActionPortTests: XCTestCase {
         let fake = FakeScrollActionPort()
         ShortcutExecutor.shared.scrollActionPort = fake
 
-        guard let action = ShortcutExecutor.shared.resolveAction(named: "mosScrollDash") else {
-            return XCTFail("mosScrollDash 应可解析")
+        guard let action = ShortcutExecutor.shared.resolveAction(named: "scrollDash") else {
+            return XCTFail("scrollDash 应可解析")
         }
         _ = ShortcutExecutor.shared.execute(action: action, phase: .down)
         _ = ShortcutExecutor.shared.execute(action: action, phase: .up)

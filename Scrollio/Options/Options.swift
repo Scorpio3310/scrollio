@@ -99,7 +99,7 @@ class Options {
         didSet { markChanged(.gesture) }
     }
     // Logitech 滚轮硬件设置 (SmartShift 模式 / 灵敏度 / 齿感力度). Every value is optional
-    // (nil = leave the mouse's own); written only while `managedByMos` is on.
+    // (nil = leave the mouse's own); written only while `managedByScrollio` is on.
     var logiWheel = LogiWheelSettings.default {
         didSet { markChanged(.logiWheel) }
     }
@@ -114,10 +114,10 @@ class Options {
         didSet { markChanged(.thumbWheel) }
     }
     /// "Let Scrollio manage this mouse": the one switch for everything Scrollio writes to a
-    /// Logitech mouse (wheel and basic settings). Stored as `logiWheel.managedByMos`.
+    /// Logitech mouse (wheel and basic settings). Stored as `logiWheel.managedByScrollio`.
     var logiMouseManaged: Bool {
-        get { logiWheel.managedByMos }
-        set { logiWheel.managedByMos = newValue }
+        get { logiWheel.managedByScrollio }
+        set { logiWheel.managedByScrollio = newValue }
     }
 
     /// 保留无法 decode 的 binding 原始 JSON 元素 (来自未来 Mos 版本).

@@ -1289,7 +1289,7 @@ final class PreferencesButtonsTests: XCTestCase {
     /// is to be said: a problem or what the action needs comes first.
     func testTheExtraButtonNoteComesLast() throws {
         scrollKeys = [ScrollHotkey(type: .mouse, code: 7)]
-        let bindings = [binding(5), binding(6, SystemShortcut.mosScrollDash.identifier), binding(7, "copy"), binding(8, "copy"), binding(2000 + 0x005B, "copy")]
+        let bindings = [binding(5), binding(6, SystemShortcut.scrollDash.identifier), binding(7, "copy"), binding(8, "copy"), binding(2000 + 0x005B, "copy")]
         let pane = makePane(bindings)
         XCTAssertEqual(try rows(of: bindings, in: pane).map(\.explanation), [
             "Choose what this button does.",
@@ -1891,7 +1891,7 @@ final class PreferencesButtonsTests: XCTestCase {
     func testRowsSayWhatTheActionNeeds() throws {
         let bindings = [
             binding(3, SystemShortcut.mouseGestureNavigation.identifier),
-            binding(4, SystemShortcut.mosScrollToggle.identifier),
+            binding(4, SystemShortcut.scrollToggle.identifier),
             binding(5),
             binding(6, "copy"),
         ]
@@ -2383,7 +2383,7 @@ final class PreferencesButtonsTests: XCTestCase {
     func testMinusRemovesTheSelectedButtonAndUndoPutsItBack() throws {
         deviceName = nil
         let first = binding(3, "copy")
-        let second = binding(4, SystemShortcut.mosScrollDash.identifier)
+        let second = binding(4, SystemShortcut.scrollDash.identifier)
         let third = binding(5)
         let pane = makePane([first, second, third])
         let undo = try XCTUnwrap(pane.paneUndoManager)

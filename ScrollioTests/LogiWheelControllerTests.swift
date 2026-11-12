@@ -62,7 +62,7 @@ final class LogiWheelControllerTests: XCTestCase {
         force: Int? = nil,
         managed: Bool = true
     ) -> LogiWheelSettings {
-        return LogiWheelSettings(managedByMos: managed, mode: mode, smartShiftSensitivity: sensitivity, scrollForce: force)
+        return LogiWheelSettings(managedByScrollio: managed, mode: mode, smartShiftSensitivity: sensitivity, scrollForce: force)
     }
 
     /// An MX Master 4 class wheel (0x2111, tunable torque) that has answered with `status`.
@@ -410,7 +410,7 @@ final class LogiWheelControllerTests: XCTestCase {
 
     func testManagerStoresSettings_unmanagedIsNoOp() {
         let manager = LogiSessionManager()
-        XCTAssertFalse(manager.wheelSettings.managedByMos, "default never manages the device")
+        XCTAssertFalse(manager.wheelSettings.managedByScrollio, "default never manages the device")
         XCTAssertEqual(manager.wheelSettings, LogiWheelSettings(), "and sets nothing")
         let unmanaged = settings(.freeSpin, managed: false)
         manager.applyWheelSettings(unmanaged)
@@ -455,7 +455,7 @@ final class LogiWheelControllerTests: XCTestCase {
     func testSwitchOnBeforeTheMouseReported_writesNothing() {
         let wheel = makeController(.smartShiftEnhanced)
         wheel.start(desired: .default)
-        wheel.apply(LogiWheelSettings(managedByMos: true))
+        wheel.apply(LogiWheelSettings(managedByScrollio: true))
         XCTAssertNil(wheel.status, "nothing reported yet")
 
         wheel.handleResponse(functionId: 0, report: report(functionId: 0, payload: [0x01, 0x10, 0x32]))
@@ -482,7 +482,7 @@ final class LogiWheelControllerTests: XCTestCase {
         }
         let a = controller { sentA.append($0) }
         let b = controller { sentB.append($0) }
-        let switchedOn = LogiWheelSettings(managedByMos: true)
+        let switchedOn = LogiWheelSettings(managedByScrollio: true)
         for (wheel, status) in [(a, [UInt8]([0x02, 0xFF, 100])), (b, [0x01, 0x0C, 30])] {
             wheel.start(desired: switchedOn)
             wheel.handleResponse(functionId: 0, report: report(functionId: 0, payload: [0x01, 0x10, 0x32]))
@@ -492,7 +492,7 @@ final class LogiWheelControllerTests: XCTestCase {
         XCTAssertTrue(sentB.filter { $0.functionId == 2 }.isEmpty)
 
         // The user sets one value: each mouse gets that value and keeps everything else.
-        let force = LogiWheelSettings(managedByMos: true, scrollForce: 70)
+        let force = LogiWheelSettings(managedByScrollio: true, scrollForce: 70)
         for (wheel, status) in [(a, [UInt8]([0x02, 0xFF, 100])), (b, [0x01, 0x0C, 30])] {
             wheel.apply(force)
             wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: status))
@@ -551,7 +551,7 @@ final class LogiWheelControllerTests: XCTestCase {
 
     /// The owner's settings from before the values were optional: everything already on the mouse.
     func testTheOwnersStoredSettingsWriteNothingToHisMouse() {
-        let stored = LogiWheelSettings(managedByMos: true, mode: .smartShift, smartShiftSensitivity: 51, scrollForce: 100)
+        let stored = LogiWheelSettings(managedByScrollio: true, mode: .smartShift, smartShiftSensitivity: 51, scrollForce: 100)
         _ = connectedEnhanced(stored, status: [0x02, 0x10, 100])
         XCTAssertTrue(writes.isEmpty)
     }
@@ -572,7 +572,7 @@ final class LogiWheelControllerTests: XCTestCase {
         XCTAssertTrue(writes.isEmpty)
         // Logi Options+ changes the force while Scrollio does not manage the mouse.
         var off = desired
-        off.managedByMos = false
+        off.managedByScrollio = false
         wheel.apply(off)
         wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0x10, 40]))
         XCTAssertTrue(writes.isEmpty, "not managed: nothing written")

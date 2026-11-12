@@ -4,7 +4,7 @@
 //
 //  Options -> LogiCenter wiring for the basic Logitech mouse settings (Options group
 //  .logiMouse: pointer speed, haptics, press force). The switch that allows writing is
-//  the wheel's "Let Scrollio manage this mouse" (`logiWheel.managedByMos`), so `.logiWheel`
+//  the wheel's "Let Scrollio manage this mouse" (`logiWheel.managedByScrollio`), so `.logiWheel`
 //  changes are pushed too. LogiCenter remembers the latest values and replays them whenever
 //  a mouse (re)connects, so this only has to push changes.
 //
@@ -30,7 +30,7 @@ extension LogiUsageBootstrap {
     static func pushMouseSettings() {
         LogiCenter.shared.applyMouseSettings(
             Options.shared.logiMouse,
-            managed: Options.shared.logiWheel.managedByMos
+            managed: Options.shared.logiWheel.managedByScrollio
         )
     }
 

@@ -106,7 +106,7 @@ extension Interceptor {
         }
         // 权限已被撤销时, 不启用 tap, 避免僵尸 tap 吞没系统事件
         guard AXIsProcessTrusted() else {
-            NotificationCenter.default.post(name: .mosAccessibilityPermissionLost, object: nil)
+            NotificationCenter.default.post(name: .scrollioAccessibilityPermissionLost, object: nil)
             throw InterceptorError.eventTapEnableFailed
         }
         // 确保 source 没有被重复添加
@@ -122,7 +122,7 @@ extension Interceptor {
             guard AXIsProcessTrusted() else {
                 self.stop()
                 self.onRestart?()
-                NotificationCenter.default.post(name: .mosAccessibilityPermissionLost, object: nil)
+                NotificationCenter.default.post(name: .scrollioAccessibilityPermissionLost, object: nil)
                 return
             }
             if !self.isRunning() {
@@ -265,7 +265,7 @@ extension Interceptor {
         guard AXIsProcessTrusted() else {
             stop()
             onRestart?()
-            NotificationCenter.default.post(name: .mosAccessibilityPermissionLost, object: nil)
+            NotificationCenter.default.post(name: .scrollioAccessibilityPermissionLost, object: nil)
             return
         }
         stop(removeFromRunLoop: false)

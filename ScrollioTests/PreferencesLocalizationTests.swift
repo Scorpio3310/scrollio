@@ -98,7 +98,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "button_ble_hidpp_unstable_title", "button_ble_hidpp_unstable_detail", "button_use_native_mouse",
         "unbound", "custom-recording-prompt", "custom-shortcut", "open-target-action",
         "mouseGestureNavigation", "gesture-navigation-menu-tooltip",
-        "categoryMosMouseScroll", "categoryLogiActions", "categoryFinderActions",
+        "categoryMouseScroll", "categoryLogiActions", "categoryFinderActions",
         "open-target-title", "open-target-empty-primary", "open-target-empty-secondary",
         "open-target-arguments-placeholder", "open-target-stale-warning", "open-target-cancel", "open-target-done",
         "appExposeApps", "categoryMissionControlAndSpaces",

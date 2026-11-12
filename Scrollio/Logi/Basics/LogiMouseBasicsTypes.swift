@@ -8,7 +8,7 @@
 //  methods below; the HID++ work stays inside Scrollio/Logi.
 //
 //  Writing follows one switch for everything Scrollio writes to a mouse:
-//  `LogiWheelSettings.managedByMos` ("Let Scrollio manage this mouse"). A value is written
+//  `LogiWheelSettings.managedByScrollio` ("Let Scrollio manage this mouse"). A value is written
 //  only when that switch is on, the user has set the value (non-nil here) and the value
 //  freshly read from the mouse differs. Values the user set are written again on every
 //  connect. Reading never needs the switch.

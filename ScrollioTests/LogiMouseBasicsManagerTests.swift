@@ -84,7 +84,7 @@ final class LogiMouseBasicsManagerTests: XCTestCase {
     func testSendAgainWithoutMicePostsOnce() {
         let manager = LogiSessionManager()
         manager.applyMouseSettings(LogiMouseSettings(pointerDPI: 1600), managed: true)
-        manager.applyWheelSettings(LogiWheelSettings(managedByMos: true, scrollForce: 70))
+        manager.applyWheelSettings(LogiWheelSettings(managedByScrollio: true, scrollForce: 70))
         let posted = expectation(forNotification: LogiCenter.mouseStateChanged, object: nil)
         manager.sendMouseSettingsAgain()
         wait(for: [posted], timeout: 2)
@@ -100,7 +100,7 @@ final class LogiMouseBasicsManagerTests: XCTestCase {
         center.sendMouseSettingsAgain()
         wait(for: [posted], timeout: 2)
         XCTAssertFalse(manager.mouseManaged)
-        XCTAssertFalse(manager.wheelSettings.managedByMos)
+        XCTAssertFalse(manager.wheelSettings.managedByScrollio)
     }
 
     func testLogiCenterExposesTheSurface() {
@@ -121,12 +121,12 @@ final class LogiMouseBasicsManagerTests: XCTestCase {
             manager.mouseManaged = saved.3
         }
         options.logiMouse = LogiMouseSettings(pointerDPI: 1200, hapticStrength: 40)
-        options.logiWheel.managedByMos = true
+        options.logiWheel.managedByScrollio = true
         LogiUsageBootstrap.pushMouseSettings()
         XCTAssertEqual(manager.mouseSettings, LogiMouseSettings(pointerDPI: 1200, hapticStrength: 40))
         XCTAssertTrue(manager.mouseManaged)
 
-        options.logiWheel.managedByMos = false
+        options.logiWheel.managedByScrollio = false
         LogiUsageBootstrap.pushMouseSettings()
         XCTAssertFalse(manager.mouseManaged)
     }

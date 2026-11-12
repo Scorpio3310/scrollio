@@ -55,7 +55,7 @@ extension LogiSessionManager {
     /// it is a plain refresh: nothing is written. Posts `mouseStateChanged` right away, so the
     /// tab shows "still sending" while the mice answer.
     func sendMouseSettingsAgain() {
-        guard mouseManaged || wheelSettings.managedByMos else {
+        guard mouseManaged || wheelSettings.managedByScrollio else {
             LogiSystemLog.note("Send Again: not managed, reading only")
             refreshMouseStates()
             return

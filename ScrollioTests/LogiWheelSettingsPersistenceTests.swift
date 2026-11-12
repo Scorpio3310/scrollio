@@ -20,16 +20,17 @@ final class LogiWheelSettingsPersistenceTests: XCTestCase {
         XCTAssertEqual(OptionItem.MouseWheel.Settings, "logiWheelSettings")
     }
 
-    /// The old format, as the owner's Mac has it: every value present, all set by the user.
+    /// The old format, from before the values were optional: every value present, all set by
+    /// the user.
     func testOldFormatLoadsAsSetByTheUser_andRoundTrips() throws {
-        let old = #"{"mode":"smartShift","smartShiftSensitivity":51,"scrollForce":100,"managedByMos":true}"#
+        let old = #"{"mode":"smartShift","smartShiftSensitivity":51,"scrollForce":100,"managedByScrollio":true}"#
         let settings = decode(old)
-        XCTAssertEqual(settings, LogiWheelSettings(managedByMos: true, mode: .smartShift, smartShiftSensitivity: 51, scrollForce: 100))
+        XCTAssertEqual(settings, LogiWheelSettings(managedByScrollio: true, mode: .smartShift, smartShiftSensitivity: 51, scrollForce: 100))
 
         // Out in the new format: the same keys and values, nothing lost.
         let object = try encodedObject(settings)
-        XCTAssertEqual(Set(object.keys), ["managedByMos", "mode", "smartShiftSensitivity", "scrollForce"])
-        XCTAssertEqual(object["managedByMos"] as? Bool, true)
+        XCTAssertEqual(Set(object.keys), ["managedByScrollio", "mode", "smartShiftSensitivity", "scrollForce"])
+        XCTAssertEqual(object["managedByScrollio"] as? Bool, true)
         XCTAssertEqual(object["mode"] as? String, "smartShift")
         XCTAssertEqual(object["smartShiftSensitivity"] as? Int, 51)
         XCTAssertEqual(object["scrollForce"] as? Int, 100)
@@ -41,24 +42,24 @@ final class LogiWheelSettingsPersistenceTests: XCTestCase {
     /// Every old-format record loads as set, whatever the switch: the user may have set the
     /// values before turning it off.
     func testOldFormatWithTheSwitchOffLoadsAsSetToo() {
-        XCTAssertEqual(decode(#"{"managedByMos":false,"mode":"ratchet","smartShiftSensitivity":50,"scrollForce":50}"#),
-                       LogiWheelSettings(managedByMos: false, mode: .ratchet, smartShiftSensitivity: 50, scrollForce: 50))
+        XCTAssertEqual(decode(#"{"managedByScrollio":false,"mode":"ratchet","smartShiftSensitivity":50,"scrollForce":50}"#),
+                       LogiWheelSettings(managedByScrollio: false, mode: .ratchet, smartShiftSensitivity: 50, scrollForce: 50))
     }
 
     func testFreshInstallSetsNothing() throws {
         XCTAssertEqual(Options.decodeLogiWheelSettings(nil), .default)
-        XCTAssertEqual(LogiWheelSettings.default, LogiWheelSettings(managedByMos: false, mode: nil, smartShiftSensitivity: nil, scrollForce: nil))
+        XCTAssertEqual(LogiWheelSettings.default, LogiWheelSettings(managedByScrollio: false, mode: nil, smartShiftSensitivity: nil, scrollForce: nil))
         let data = try JSONEncoder().encode(LogiWheelSettings.default)
-        XCTAssertEqual(String(data: data, encoding: .utf8), #"{"managedByMos":false}"#, "unset values are not stored")
+        XCTAssertEqual(String(data: data, encoding: .utf8), #"{"managedByScrollio":false}"#, "unset values are not stored")
     }
 
     func testNewFormatKeepsUnsetValuesUnset() throws {
-        let switchedOn = LogiWheelSettings(managedByMos: true)
-        XCTAssertEqual(String(data: try JSONEncoder().encode(switchedOn), encoding: .utf8), #"{"managedByMos":true}"#)
-        XCTAssertEqual(decode(#"{"managedByMos":true}"#), switchedOn)
+        let switchedOn = LogiWheelSettings(managedByScrollio: true)
+        XCTAssertEqual(String(data: try JSONEncoder().encode(switchedOn), encoding: .utf8), #"{"managedByScrollio":true}"#)
+        XCTAssertEqual(decode(#"{"managedByScrollio":true}"#), switchedOn)
 
-        let oneValue = LogiWheelSettings(managedByMos: true, scrollForce: 70)
-        XCTAssertEqual(Set(try encodedObject(oneValue).keys), ["managedByMos", "scrollForce"])
+        let oneValue = LogiWheelSettings(managedByScrollio: true, scrollForce: 70)
+        XCTAssertEqual(Set(try encodedObject(oneValue).keys), ["managedByScrollio", "scrollForce"])
         XCTAssertEqual(Options.decodeLogiWheelSettings(try JSONEncoder().encode(oneValue)), oneValue)
     }
 
@@ -70,11 +71,11 @@ final class LogiWheelSettingsPersistenceTests: XCTestCase {
     }
 
     func testAWronglyTypedValueKeepsTheOthers() {
-        XCTAssertEqual(decode(#"{"managedByMos":true,"mode":"turbo","smartShiftSensitivity":"high","scrollForce":40,"future":1}"#),
-                       LogiWheelSettings(managedByMos: true, scrollForce: 40))
-        XCTAssertEqual(decode(#"{"managedByMos":"yes","mode":"freeSpin"}"#), LogiWheelSettings(mode: .freeSpin),
+        XCTAssertEqual(decode(#"{"managedByScrollio":true,"mode":"turbo","smartShiftSensitivity":"high","scrollForce":40,"future":1}"#),
+                       LogiWheelSettings(managedByScrollio: true, scrollForce: 40))
+        XCTAssertEqual(decode(#"{"managedByScrollio":"yes","mode":"freeSpin"}"#), LogiWheelSettings(mode: .freeSpin),
                        "an unreadable switch is off")
-        XCTAssertEqual(decode(#"{"managedByMos":true,"mode":null}"#), LogiWheelSettings(managedByMos: true))
+        XCTAssertEqual(decode(#"{"managedByScrollio":true,"mode":null}"#), LogiWheelSettings(managedByScrollio: true))
     }
 
     func testOutOfRangeValuesAreClamped() {

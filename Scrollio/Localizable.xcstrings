@@ -130,7 +130,7 @@
         }
       }
     },
-    "categoryMosMouseScroll": {
+    "categoryMouseScroll": {
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -2144,7 +2144,7 @@
         }
       }
     },
-    "mosScrollBlock": {
+    "scrollBlock": {
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -2155,7 +2155,7 @@
         }
       }
     },
-    "mosScrollDash": {
+    "scrollDash": {
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -2166,7 +2166,7 @@
         }
       }
     },
-    "mosScrollToggle": {
+    "scrollToggle": {
       "extractionState": "manual",
       "localizations": {
         "en": {

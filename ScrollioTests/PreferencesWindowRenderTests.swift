@@ -158,7 +158,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
     func testRenderMouse() throws {
         let master4 = MouseDeviceFixtures.mxMaster4()
         Options.shared.logiMouse = .default
-        Options.shared.logiWheel = LogiWheelSettings(managedByMos: true)
+        Options.shared.logiWheel = LogiWheelSettings(managedByScrollio: true)
         try renderMouse([master4], name: "mouse-mx-master-4-managed")
         Options.shared.logiMouse = LogiMouseSettings(pointerDPI: 1600, hapticsOn: true, hapticStrength: 60, pressForce: 5167)
         try renderMouse([master4], name: "mouse-mx-master-4-managed-haptics-on")
@@ -268,7 +268,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
         let controlOption = UInt(CGEventFlags.maskControl.rawValue | CGEventFlags.maskAlternate.rawValue)
         let bindings = [
             binding(3, SystemShortcut.mouseGestureNavigation.identifier),
-            binding(4, SystemShortcut.mosScrollDash.identifier),
+            binding(4, SystemShortcut.scrollDash.identifier),
             binding(2, SystemShortcut.missionControl.identifier, modifiers: option),
             binding(5, SystemShortcut.copy.identifier),
             binding(6, ""),
@@ -300,7 +300,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
             binding(1000, SystemShortcut.mouseGestureNavigation.identifier),
             binding(1006, SystemShortcut.navigateBack.identifier),
             binding(1001, SystemShortcut.logiSmartShiftToggle.identifier),
-            binding(5, SystemShortcut.mosScrollDash.identifier),
+            binding(5, SystemShortcut.scrollDash.identifier),
         ]
         let troubled = ButtonsDeviceSource(
             captureStatus: { code in
@@ -773,12 +773,12 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 .uiStateDefaults = self.uiDefaults(advanced: true)
         })
         Options.shared.logiMouse = .default
-        Options.shared.logiWheel = LogiWheelSettings(managedByMos: true)
+        Options.shared.logiWheel = LogiWheelSettings(managedByScrollio: true)
         try renderMouse([MouseDeviceFixtures.mxMaster4()], name: "min-mouse-managed", windowHeight: minimum)
         Options.shared.logiWheel = .default
         Options.shared.buttons.binding = [
             binding(3, SystemShortcut.mouseGestureNavigation.identifier),
-            binding(4, SystemShortcut.mosScrollDash.identifier),
+            binding(4, SystemShortcut.scrollDash.identifier),
             binding(2, SystemShortcut.missionControl.identifier),
             binding(5, SystemShortcut.copy.identifier),
             binding(6, ""),
@@ -821,7 +821,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
         let all = UInt(CGEventFlags.maskControl.rawValue | CGEventFlags.maskAlternate.rawValue
             | CGEventFlags.maskShift.rawValue | CGEventFlags.maskCommand.rawValue)
         Options.shared.buttons.binding = [
-            binding(2214, SystemShortcut.mosScrollDash.identifier),
+            binding(2214, SystemShortcut.scrollDash.identifier),
             binding(2253, SystemShortcut.logiDPICycleUp.identifier),
             binding(4, SystemShortcut.missionControl.identifier, modifiers: all),
             binding(1001, SystemShortcut.logiSmartShiftToggle.identifier),
@@ -844,7 +844,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
         Options.shared.buttons.binding = [
             binding(3, SystemShortcut.mouseGestureNavigation.identifier),
-            binding(4, SystemShortcut.mosScrollDash.identifier),
+            binding(4, SystemShortcut.scrollDash.identifier),
             binding(5, SystemShortcut.copy.identifier),
         ]
         let plain = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
@@ -1061,7 +1061,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
 
         // The values are the mouse's own: nothing set here that it does not have.
         Options.shared.logiMouse = .default
-        Options.shared.logiWheel = LogiWheelSettings(managedByMos: true)
+        Options.shared.logiWheel = LogiWheelSettings(managedByScrollio: true)
         let master4 = MouseDeviceFixtures.mxMaster4(dpi: 1600, hapticsOn: true, strength: 60, pressForce: 5167)
         try renderMouse([master4], name: "readme-mouse", titled: TitledCut(boxes: 4))
     }
@@ -1141,7 +1141,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
         ]
         for mouse in mice {
             Options.shared.logiMouse = .default
-            Options.shared.logiWheel = LogiWheelSettings(managedByMos: mouse.device != nil)
+            Options.shared.logiWheel = LogiWheelSettings(managedByScrollio: mouse.device != nil)
             try renderMouse(mouse.device.map { [$0] } ?? [], name: "pane-mouse-\(mouse.name)")
             if let device = mouse.device {
                 let model = MouseArtworkModel.model(forDeviceName: device.deviceName)

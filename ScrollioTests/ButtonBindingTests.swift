@@ -111,7 +111,7 @@ final class ButtonBindingTests: XCTestCase {
         XCTAssertTrue(identifiers.contains(SystemShortcut.mouseBackClick.identifier))
         XCTAssertFalse(identifiers.contains(SystemShortcut.mouseGestureNavigation.identifier))
         XCTAssertFalse(identifiers.contains(SystemShortcut.modifierShift.identifier))
-        XCTAssertFalse(identifiers.contains(SystemShortcut.mosScrollDash.identifier))
+        XCTAssertFalse(identifiers.contains(SystemShortcut.scrollDash.identifier))
         XCTAssertFalse(identifiers.contains(SystemShortcut.logiSmartShiftToggle.identifier))
 
         let withLogi = MouseGestureSettingsControls.actionCategories(showLogiActions: true)
@@ -440,7 +440,7 @@ final class ButtonBindingTests: XCTestCase {
     }
 
     func testActionDisplayResolver_scrollActionsHaveASymbolAndNoBrandTag() {
-        let presentation = makeResolvedPresentation(shortcut: SystemShortcut.mosScrollDash)
+        let presentation = makeResolvedPresentation(shortcut: SystemShortcut.scrollDash)
 
         XCTAssertEqual(presentation.kind, .namedAction)
         XCTAssertEqual(presentation.title, "Scroll Faster")
@@ -478,7 +478,7 @@ final class ButtonBindingTests: XCTestCase {
     }
 
     func testPullDown_isAPullDownAsWideAsTheGesturesPullDowns() {
-        let pullDown = makePullDown(binding: makeBinding(SystemShortcut.mosScrollDash))
+        let pullDown = makePullDown(binding: makeBinding(SystemShortcut.scrollDash))
         XCTAssertTrue(pullDown.pullsDown)
         XCTAssertEqual(ButtonActionPullDown.width, GesturesPreferencesViewController.popUpWidth)
         XCTAssertEqual(shownTitle(pullDown), "Scroll Faster")
@@ -593,7 +593,7 @@ final class ButtonBindingTests: XCTestCase {
         )
     }
 
-    func testBuildShortcutMenu_placesMosMouseScrollBelowMouseButtons() {
+    func testBuildShortcutMenu_placesMouseScrollBelowMouseButtons() {
         let menu = NSMenu()
         let target = ShortcutMenuTestTarget()
 
@@ -605,23 +605,23 @@ final class ButtonBindingTests: XCTestCase {
         )
 
         let mouseCategoryName = SystemShortcut.localizedCategoryName(SystemShortcut.mouseButtonsCategory.category)
-        let mosCategoryName = SystemShortcut.localizedCategoryName(SystemShortcut.mosMouseScrollCategory.category)
+        let scrollCategoryName = SystemShortcut.localizedCategoryName(SystemShortcut.mouseScrollCategory.category)
         let logiCategoryName = SystemShortcut.localizedCategoryName(SystemShortcut.logiActionsCategory.category)
 
         guard let mouseIndex = menu.items.firstIndex(where: { $0.title == mouseCategoryName }),
-              let mosIndex = menu.items.firstIndex(where: { $0.title == mosCategoryName }),
+              let scrollIndex = menu.items.firstIndex(where: { $0.title == scrollCategoryName }),
               let logiIndex = menu.items.firstIndex(where: { $0.title == logiCategoryName }) else {
             return XCTFail("Expected mouse, scroll, and Logi categories to exist in shortcut menu")
         }
 
-        XCTAssertLessThan(mouseIndex, mosIndex)
-        XCTAssertLessThan(mosIndex, logiIndex)
-        XCTAssertNotNil(menu.items[mosIndex].image)
+        XCTAssertLessThan(mouseIndex, scrollIndex)
+        XCTAssertLessThan(scrollIndex, logiIndex)
+        XCTAssertNotNil(menu.items[scrollIndex].image)
 
-        let mosItems = menu.items[mosIndex].submenu?.items.compactMap {
+        let scrollItems = menu.items[scrollIndex].submenu?.items.compactMap {
             ($0.representedObject as? SystemShortcut.Shortcut)?.identifier
         }
-        XCTAssertEqual(mosItems, ["mosScrollDash", "mosScrollToggle", "mosScrollBlock"])
+        XCTAssertEqual(scrollItems, ["scrollDash", "scrollToggle", "scrollBlock"])
     }
 
     func testBuildShortcutMenu_includesOpenTargetEntryAboveCustom() {

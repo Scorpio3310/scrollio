@@ -142,7 +142,7 @@ class ShortcutManager {
         // Scrolling: the hold actions of the Scrolling pane
         addCategoryToMenu(
             menu: menu,
-            category: SystemShortcut.mosMouseScrollCategory,
+            category: SystemShortcut.mouseScrollCategory,
             target: target,
             action: action,
             totalShortcuts: &totalShortcuts
