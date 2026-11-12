@@ -836,6 +836,106 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         poster.stop()
     }
 
+    /// B2: `stop()` returns only after its closing frames went out. A finger begins to
+    /// scroll on the trackpad while the wheel's touch is open: the tap's callback ends the
+    /// wheel's scroll and then lets the trackpad's "began" through. The closing "ended" used
+    /// to be posted from another queue some time after `stop()` had returned, so nothing
+    /// kept it ahead of that "began". The post is slow here (20 ms): without the wait
+    /// `stop()` is back long before the frame is out.
+    func testAStopReturnsAfterItsClosingFrameWentOut() throws {
+        let savedApplication = ScrollCore.shared.application
+        let savedSwitch = Options.shared.scroll.smoothSimTrackpad
+        ScrollCore.shared.application = nil
+        Options.shared.scroll.smoothSimTrackpad = true
+        defer {
+            ScrollCore.shared.application = savedApplication
+            Options.shared.scroll.smoothSimTrackpad = savedSwitch
+        }
+        let context = ScrollDispatchContext()
+        let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+        poster.trackpadStyleTarget = { _ in .touchOnly }
+        _ = FakeDisplay(for: poster)
+        var posted: [Double] = []
+        let lock = NSLock()
+        context.postObserverForTests = { event, _ in
+            Thread.sleep(forTimeInterval: 0.02)
+            lock.lock()
+            posted.append(event.getDoubleValueField(.scrollWheelEventScrollPhase))
+            lock.unlock()
+        }
+        var waits = 0
+        context.waitObserverForTests = { waits += 1 }
+
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        var now = ScrollPoster.monotonicNow()
+        for _ in 0..<2 {
+            now += 1.0 / 60.0
+            poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: now)
+        }
+        XCTAssertEqual(waits, 0, "no frame of a running scroll is waited for")
+        // What was posted so far has reached the app ("began" and two "changed").
+        context.waitForPostQueueForTests()
+
+        XCTAssertTrue(ScrollCore.stopWheelGlide(forTrackpadScrollPhase: 1, poster: poster))
+
+        // Read at once, without waiting for the queue.
+        lock.lock()
+        let phases = posted
+        lock.unlock()
+        XCTAssertEqual(phases.last, 4, "the closing \"ended\" is out when stop() returns: \(phases)")
+        XCTAssertEqual(phases.first, 1)
+        XCTAssertEqual(waits, 1)
+
+        // A stop with nothing to close waits for nothing.
+        poster.stop()
+        XCTAssertEqual(waits, 1)
+    }
+
+    /// B2, the other side: without trackpad-style phases a stop queues nothing an app waits
+    /// for, and it does not wait on the post queue at all. The queue is blocked here (a post
+    /// that does not return until the test lets it): a stop that touched the queue would
+    /// hang. This is the switch-off path inside the tap callback, which must stay as it was.
+    func testAStopWithoutPhasesDoesNotWaitForTheQueue() throws {
+        let savedApplication = ScrollCore.shared.application
+        let savedSwitch = Options.shared.scroll.smoothSimTrackpad
+        ScrollCore.shared.application = nil
+        Options.shared.scroll.smoothSimTrackpad = false
+        defer {
+            ScrollCore.shared.application = savedApplication
+            Options.shared.scroll.smoothSimTrackpad = savedSwitch
+        }
+        let context = ScrollDispatchContext()
+        let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+        _ = FakeDisplay(for: poster)
+        let gate = DispatchSemaphore(value: 0)
+        let entered = DispatchSemaphore(value: 0)
+        var enteredOnce = false
+        context.postObserverForTests = { _, _ in
+            if !enteredOnce {
+                enteredOnce = true
+                entered.signal()
+            }
+            gate.wait()
+        }
+        var waits = 0
+        context.waitObserverForTests = { waits += 1 }
+
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        var now = ScrollPoster.monotonicNow()
+        for _ in 0..<3 {
+            now += 1.0 / 60.0
+            poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: now)
+        }
+        XCTAssertEqual(entered.wait(timeout: .now() + 5), .success, "a post is under way and does not return")
+
+        poster.stop(reason: .leftClick)
+
+        XCTAssertEqual(waits, 0)
+        XCTAssertFalse(poster.isGliding)
+        for _ in 0..<64 { gate.signal() }
+        context.waitForPostQueueForTests()
+    }
+
     // MARK: - The app's own display link class, on a real CVDisplayLink
 
     private final class FrameCounter {

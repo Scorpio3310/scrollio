@@ -180,6 +180,9 @@ class ScrollPoster {
     private var inputSequence: UInt64 = 0
     /// Input sequence of the stop request already handed to the main thread; nil = none yet.
     private var requestedStopSequence: UInt64?
+    /// Counts the frames handed to the post queue (`post`), so that `stop(_:)` knows whether
+    /// it queued a closing frame. Guarded by stateLock.
+    private var queuedFrames: UInt64 = 0
     // 状态锁和投递上下文
     private var stateLock = os_unfair_lock_s()
     private let dispatchContext: ScrollDispatchContext
@@ -761,6 +764,7 @@ extension ScrollPoster {
         }
 
         // 发送结束事件
+        let queuedBefore = queuedFrames
         if enableSimTrackpad {
             perform(plan, emitTargetImmediately: true)
         } else {
@@ -780,6 +784,9 @@ extension ScrollPoster {
                 )
             }
         }
+        // With trackpad-style phases only. Without them nothing an app waits for is queued
+        // here (Chrome's "ended" below goes out as it always did), and a stop waits for nothing.
+        let closingFrameQueued = enableSimTrackpad && queuedFrames != queuedBefore
         manualInputEnded = true
         momentumActive = false
         let finished = sessionLog
@@ -787,6 +794,17 @@ extension ScrollPoster {
         // 重置参数 (不递增 generation, 保留本次收尾帧有效性)
         resetUnlocked()
         os_unfair_lock_unlock(&stateLock)
+        if closingFrameQueued {
+            // The closing frames ("ended", "momentum ended") are out before this returns.
+            // They are posted from the post queue, and what ended the scroll is often an
+            // event on its own way to the same app: a finger that begins to scroll on the
+            // trackpad (the tap's callback lets that "began" through right after this), a
+            // click. Nothing ordered the two: when the trackpad's "began" arrived first, the
+            // app got "began, ended" and the finger's scroll had no gesture left. At quit the
+            // process could be gone before the frame was posted. The wait is short and
+            // certain: see `ScrollDispatchContext.waitForQueuedFrames`.
+            dispatchContext.waitForQueuedFrames()
+        }
         if !finished.isEmpty {
             ScrollSystemLog.note(finished, ended: reason)
         }
@@ -1291,6 +1309,7 @@ private extension ScrollPoster {
         // 不依赖 proxy (消除崩溃), 不经过 tap 链重新路由 (动量不跟随光标)
         // ref: @shichangone MR: https://github.com/Caldis/Mos/pull/523, issue #868
         dispatchContext.enqueue(snapshot)
+        queuedFrames &+= 1
         phases.didDeliverFrame()
         return true
     }

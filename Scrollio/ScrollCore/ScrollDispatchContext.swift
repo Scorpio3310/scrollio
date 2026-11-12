@@ -153,7 +153,28 @@ final class ScrollDispatchContext {
         }
     }
 
+    /// Returns once every frame handed to the post queue so far has gone out or was dropped.
+    ///
+    /// `ScrollPoster.stop` waits here for its closing frames ("ended", "momentum ended"),
+    /// also inside the scroll tap's callback, so the wait has to be short and certain. It
+    /// is: the queue is this context's own and serial, and a block on it takes this
+    /// context's lock for a few comparisons (never across a call), then either drops its
+    /// frame or hands it to the window server with `postToPid`, a message that does not
+    /// wait for the app it is addressed to. No block waits for the main thread, for
+    /// ScrollPoster's lock or for another queue. A stop moves the generation on before it
+    /// queues its closing frames, so frames still waiting from before it are dropped
+    /// without a post: what is waited for is one or two posts.
+    func waitForQueuedFrames() {
 #if DEBUG
+        waitObserverForTests?()
+#endif
+        postQueue.sync {}
+    }
+
+#if DEBUG
+    /// Tests: called each time `waitForQueuedFrames` is asked to wait.
+    var waitObserverForTests: (() -> Void)?
+
     /// Tests: the target of the frames, without an event to copy (frames then go to the
     /// poster's recorder, never to a process).
     func setTargetForTests(_ pid: pid_t) {
