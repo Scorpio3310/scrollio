@@ -23,12 +23,21 @@ these rules anywhere.
   attribution in `README.md` and the file headers stay).
 - Names: the products are `Scrollio.app` (`com.nikklemenc.Scrollio`) and
   `Scrollio Debug.app` (`com.nikklemenc.Scrollio.debug`); the tests are
-  `com.nikklemenc.ScrollioTests`. The project, folders, targets and Swift modules keep
-  the old name: `Mos.xcodeproj`, `Mos/`, `MosTests/`, modules `Mos` (Release) and
-  `Mos_Debug` (Debug, what tests import).
-- Never rename persisted identifiers, even when they say "mos": UserDefaults keys, the
-  `mosScroll*` action identifiers, shortcut identifiers, the JSON key `managedByMos`,
-  Logi cache keys, CID and feature constants, storyboard object ids, string catalog keys.
+  `com.nikklemenc.ScrollioTests`. The project, folders and targets carry the same name:
+  `Scrollio.xcodeproj`, `Scrollio/`, `ScrollioTests/`, targets `Scrollio` and
+  `ScrollioTests`; the Swift modules are `Scrollio` (Release), `Scrollio_Debug` (Debug,
+  what tests import) and `ScrollioTests`.
+- "Mos" is the original app, never this one. The word stays only where it means that app
+  or its authors: the credit and the licence, the header blocks at the top of the source
+  files, comments in Chinese (the original authors'), and `LegacyAppQuitter`, which asks
+  a running Mos to quit (`com.caldis.Mos`). Do not use it for anything of Scrollio's.
+- Never rename persisted identifiers: UserDefaults keys, action identifiers (`scrollDash`,
+  `scrollToggle` and `scrollBlock` among them), shortcut identifiers, JSON keys (such as
+  `managedByScrollio`), Logi cache keys, CID and feature constants, storyboard object
+  ids, string catalog keys. The stored names that carried the original app's name were
+  renamed once, together with the project and before the first public release, on the
+  owner's decision and without a migration: the old names are not read. That is not a
+  precedent.
 - Deployment target: macOS 14.0 for every target. Do not write fallbacks for older
   systems. Gate only APIs newer than 14.0 (the existing `macOS 26` checks stay).
 - There is no updater. A release is made by hand with `scripts/release.sh` (see Commands)
@@ -41,8 +50,8 @@ these rules anywhere.
 ```bash
 xcodebuild -scheme Debug -configuration Debug -destination 'platform=macOS' build
 xcodebuild -scheme Debug -destination 'platform=macOS' test
-xcodebuild -scheme Debug -destination 'platform=macOS' test -only-testing:MosTests/<TestClassName>
-xcodebuild -scheme Debug -destination 'platform=macOS' test -only-testing:MosTests/<TestClassName>/<testMethodName>
+xcodebuild -scheme Debug -destination 'platform=macOS' test -only-testing:ScrollioTests/<TestClassName>
+xcodebuild -scheme Debug -destination 'platform=macOS' test -only-testing:ScrollioTests/<TestClassName>/<testMethodName>
 xcodebuild -scheme Debug -configuration Release -destination 'platform=macOS' build
 scripts/qa/lint-logi-boundary.sh
 scripts/install.sh --check     # release build + signature, entitlement and binary checks
@@ -51,7 +60,7 @@ scripts/release.sh --check     # universal build signed with Developer ID + chec
 scripts/release.sh             # the same, then notarized by Apple and packed into build/release/Scrollio-<version>.dmg
 ```
 
-- Always use the shared scheme `Debug`. Never build with `-target Mos`.
+- Always use the shared scheme `Debug`. Never build with `-target Scrollio`.
 - `scripts/release.sh` builds the app for other people's Macs. It passes the Developer ID
   identity to that one build and leaves the project's signing settings alone. Without
   `--check` it uploads the build to Apple's notary service: run it only when the owner
@@ -77,11 +86,12 @@ scripts/release.sh             # the same, then notarized by Apple and packed in
 
 ## Files and targets
 
-- `Mos/` is a file-system-synchronized group: a file placed there is compiled, or copied
-  into the app bundle, without a project edit. Put nothing there that should not ship.
-- `MosTests/` is **not** synchronized: a new test file must be added to
-  `Mos.xcodeproj/project.pbxproj` (file reference, group entry, build file, Sources
-  phase of the `MosTests` target). A file that is only created is not compiled.
+- `Scrollio/` is a file-system-synchronized group: a file placed there is compiled, or
+  copied into the app bundle, without a project edit. Put nothing there that should not
+  ship.
+- `ScrollioTests/` is **not** synchronized: a new test file must be added to
+  `Scrollio.xcodeproj/project.pbxproj` (file reference, group entry, build file, Sources
+  phase of the `ScrollioTests` target). A file that is only created is not compiled.
 - After adding, moving or deleting Swift files, build or run the related tests.
 - Outside the targets: `scripts/` (the install script and the boundary lint), `tools/`
   (hand-run HID++ probes and a toast harness; read `tools/README.md` before running a
@@ -91,13 +101,13 @@ scripts/release.sh             # the same, then notarized by Apple and packed in
 
 See `.agents/docs/code-map.md` for the map. The rules:
 
-- Logitech details (HID++ packets, device sessions, divert) stay inside `Mos/Logi/`.
-  The rest of the app talks to `LogiCenter` and `Mos/Integration/` only.
+- Logitech details (HID++ packets, device sessions, divert) stay inside `Scrollio/Logi/`.
+  The rest of the app talks to `LogiCenter` and `Scrollio/Integration/` only.
   `scripts/qa/lint-logi-boundary.sh` enforces the allowlists and is run by
-  `LogiBoundaryEnforcementTests`; run it after any change in `Mos/Logi/` or
-  `Mos/Integration/`.
-- `Mos/ScrollCore/`, input event handling and HID callbacks are hot paths: no avoidable
-  allocations, no synchronous I/O, no heavy logging, no notifications, no UI or
+  `LogiBoundaryEnforcementTests`; run it after any change in `Scrollio/Logi/` or
+  `Scrollio/Integration/`.
+- `Scrollio/ScrollCore/`, input event handling and HID callbacks are hot paths: no
+  avoidable allocations, no synchronous I/O, no heavy logging, no notifications, no UI or
   persistence work in them.
 - Smooth scrolling has one path (`ScrollCore` -> `ScrollPoster`, see the code map). The
   scroll tap callback runs on the main thread, the display link on its own thread:
@@ -118,8 +128,8 @@ See `.agents/docs/code-map.md` for the map. The rules:
   switch.
 - ButtonCore, InputEvent, Shortcut and Keys share one meaning of recording, display,
   persistence and execution. When you change one, check the others.
-- Only `AppRunController` (`Mos/Managers/`) starts and stops the cores (the scroll and
-  button event taps and the Logitech sessions): launch, sleep and wake, fast user
+- Only `AppRunController` (`Scrollio/Managers/`) starts and stops the cores (the scroll
+  and button event taps and the Logitech sessions): launch, sleep and wake, fast user
   switching, lost Accessibility access, "Pause Scrollio", quit. An active event tap that
   is not serviced freezes input system-wide: never leave one installed while the cores
   count as stopped, and never block the main thread while one runs. The pointer-movement
@@ -132,8 +142,8 @@ that must stay separate:
 
 | File | Strings | Keys |
 | --- | --- | --- |
-| `Mos/Localizable.xcstrings` | Used from Swift with `NSLocalizedString` | Readable phrases (older keys) or identifiers: those of `SystemShortcut.Shortcut`, and by area `general-*`, `scrolling-*`, `buttons-*`, `mouse-*`, `gesture-*` / `gestures-*`, `apps-*`, `about-*`, `preferences-*`, `main-menu-*`, `status-menu-*` / `status-item-*`, `intro-*`, `toast-*` |
-| `Mos/mul.lproj/Main.xcstrings` | The storyboard (`Mos/Base.lproj/Main.storyboard`) | Interface Builder object ids (`AYu-sK-qS6.title`) |
+| `Scrollio/Localizable.xcstrings` | Used from Swift with `NSLocalizedString` | Readable phrases (older keys) or identifiers: those of `SystemShortcut.Shortcut`, and by area `general-*`, `scrolling-*`, `buttons-*`, `mouse-*`, `gesture-*` / `gestures-*`, `apps-*`, `about-*`, `preferences-*`, `main-menu-*`, `status-menu-*` / `status-item-*`, `intro-*`, `toast-*` |
+| `Scrollio/mul.lproj/Main.xcstrings` | The storyboard (`Scrollio/Base.lproj/Main.storyboard`) | Interface Builder object ids (`AYu-sK-qS6.title`) |
 
 - Every user-visible string is localized. In Swift use `NSLocalizedString(_:comment:)`,
   not `String(localized:)`. A new key goes into `Localizable.xcstrings` with its English
@@ -171,12 +181,12 @@ Choose by risk, and run it: reading the code is not verification.
 | Change | Minimum | Also |
 | --- | --- | --- |
 | Docs, agent files | `git diff --check`, check paths and links | search for old paths |
-| Swift logic | the related `MosTests` class | full test run |
+| Swift logic | the related `ScrollioTests` class | full test run |
 | New, moved or deleted Swift file; project or target change | Debug build | related tests |
 | ScrollCore hot path | `ScrollClassicPathTests`, `ScrollMotionTests`, `ScrollFilterTests`, `ScrollPoster*Tests`, `ScrollSystemLogTests` | full run; by hand: scroll and read the `scroll` log |
 | ButtonCore, Shortcut, InputEvent | ButtonBinding, InputProcessor, ShortcutExecutor tests | by hand: the Buttons pane |
 | App lifecycle (`AppRunController`, `AppDelegate`, status-bar menu) | `AppRunControllerTests`, `StatusMenuTests` | by hand: sleep and wake, another user, Pause / Resume, Accessibility turned off and on |
-| Logi, HID | the `MosTests/Logi*` tests and the boundary lint | real-device tests and the `logi` log, by hand |
+| Logi, HID | the `ScrollioTests/Logi*` tests and the boundary lint | real-device tests and the `logi` log, by hand |
 | Preferences panes | the pane's `Preferences*Tests` / `MousePreferencesTests`, `PreferencesWindowTests` | by hand: look at the pane (its render test can draw it); previews stop when it is hidden |
 | UI text | catalogs in sync, `PreferencesLocalizationTests` | long text, dark mode |
 

@@ -189,7 +189,8 @@ those controls.
 - General also has "Open at login" and the state of the Accessibility access.
 - Scrollio stops while the Mac sleeps or another user has it, and starts again when you
   are back.
-- At launch it quits a running Mos and, on its first launch, copies Mos's settings.
+- At launch, and whenever Mos starts later, it quits a running Mos: two apps would both
+  handle the same mouse events. Mos's settings are not read.
 
 ---
 
@@ -223,8 +224,8 @@ System Settings under Login Items.
 - Nothing leaves your Mac. The settings are kept in Scrollio's preferences, and its log
   goes to the macOS system log on the Mac (see [Diagnostics](#-diagnostics)).
 - Besides its own settings, Scrollio reads the macOS keyboard shortcuts for Spaces (to
-  run them), reads Mos's settings once if Mos was installed, and changes the macOS
-  pointer settings only as described under [Logitech MX mice](#logitech-mx-mice).
+  run them), and changes the macOS pointer settings only as described under
+  [Logitech MX mice](#logitech-mx-mice).
 
 ---
 
@@ -263,8 +264,6 @@ xcodebuild -scheme Debug -configuration Release -destination 'platform=macOS' bu
 ```
 
 The debug build is a separate app, `Scrollio Debug.app` (`com.nikklemenc.Scrollio.debug`).
-The project, its targets and its Swift modules keep the name Mos (`Mos.xcodeproj`, `Mos`,
-`Mos_Debug`, `MosTests`).
 
 ---
 
@@ -351,7 +350,7 @@ warranty.
 ```bash
 pgrep -fl "Scrollio Debug.app"     # must print nothing: quit a running debug app first
 xcodebuild -scheme Debug -destination 'platform=macOS' test
-xcodebuild -scheme Debug -destination 'platform=macOS' test -only-testing:MosTests/<TestClassName>
+xcodebuild -scheme Debug -destination 'platform=macOS' test -only-testing:ScrollioTests/<TestClassName>
 scripts/qa/lint-logi-boundary.sh
 ```
 
@@ -383,9 +382,9 @@ signature is not the development signature of the copy in `/Applications`.
 
 | Path | Contents |
 | --- | --- |
-| `Mos/` | The app: `ScrollCore`, `ButtonCore`, `InputEvent`, `Shortcut`, `Keys`, `Logi`, `Integration`, `MacPointer`, `Options`, `Managers`, `Components`, `Windows`, `Utils` |
-| `MosTests/` | Unit tests (XCTest) |
-| `Mos.xcodeproj/` | The Xcode project, schemes `Debug` and `Profile` |
+| `Scrollio/` | The app: `ScrollCore`, `ButtonCore`, `InputEvent`, `Shortcut`, `Keys`, `Logi`, `Integration`, `MacPointer`, `Options`, `Managers`, `Components`, `Windows`, `Utils` |
+| `ScrollioTests/` | Unit tests (XCTest) |
+| `Scrollio.xcodeproj/` | The Xcode project, schemes `Debug` and `Profile` |
 | `scripts/` | `install.sh`, `release.sh`, and in `qa/` the Logitech boundary lint (also run by a test) |
 | `tools/` | Hand-run HID++ probes and a small regression harness (see its README before running a probe) |
 | `assets/` | The pictures of this README |

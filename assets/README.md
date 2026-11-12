@@ -1,8 +1,8 @@
 # Assets
 
 The pictures of the repository's `README.md`. Nothing here is loaded by the app: run-time
-images belong in `Mos/Assets.xcassets`, and the app icon is `Mos/AppIcon.icon` (an Icon
-Composer file).
+images belong in `Scrollio/Assets.xcassets`, and the app icon is `Scrollio/AppIcon.icon`
+(an Icon Composer file).
 
 `readme/`:
 

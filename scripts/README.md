@@ -9,8 +9,8 @@ Repeatable automation.
   with the Developer ID certificate, notarized by Apple and packed into
   `build/release/Scrollio-<version>.dmg`. It installs nothing. `--check` stops before the
   notarization, so nothing is uploaded.
-- `qa/lint-logi-boundary.sh`: enforces the boundary around `Mos/Logi/` and
-  `Mos/Integration/`. Run it by hand after changes there; `LogiBoundaryEnforcementTests`
-  runs it as part of the test suite.
+- `qa/lint-logi-boundary.sh`: enforces the boundary around `Scrollio/Logi/` and
+  `Scrollio/Integration/`. Run it by hand after changes there;
+  `LogiBoundaryEnforcementTests` runs it as part of the test suite.
 
 Hand-run diagnostics that are not stable entry points live in `tools/`.

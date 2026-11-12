@@ -6,8 +6,8 @@ in Chinese, as the original project wrote them.
 
 ## `hidpp/`: HID++ probes
 
-Swift scripts that talk HID++ 2.0 to a Logitech mouse directly, as `Mos/Logi/` does over
-Bluetooth (device index `0xFF`, divert flags `0x03`). Each opens the first Logitech
+Swift scripts that talk HID++ 2.0 to a Logitech mouse directly, as `Scrollio/Logi/` does
+over Bluetooth (device index `0xFF`, divert flags `0x03`). Each opens the first Logitech
 device (vendor `0x046D`) connected over **Bluetooth** (not through a receiver), sends
 requests and prints the answers.
 
@@ -45,8 +45,8 @@ target:
 ```bash
 mkdir -p build
 swiftc -parse-as-library \
-  Mos/Components/Toast/ToastLayout.swift Mos/Components/Toast/ToastVisibilityRules.swift \
-  Mos/Components/Toast/ToastContentView.swift Mos/Components/Toast/ToastStorage.swift \
+  Scrollio/Components/Toast/ToastLayout.swift Scrollio/Components/Toast/ToastVisibilityRules.swift \
+  Scrollio/Components/Toast/ToastContentView.swift Scrollio/Components/Toast/ToastStorage.swift \
   tools/regression/toast-regression-tests.swift -o build/toast-regression-tests
 build/toast-regression-tests    # prints "toast regression tests passed"
 ```
