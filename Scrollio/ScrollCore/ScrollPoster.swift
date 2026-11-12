@@ -47,6 +47,12 @@ struct ScrollOutgoingFrame: Equatable {
     /// between its events, and every frame of a wheel tick used to carry that tick's time.
     var timestamp: UInt64? = nil
 
+    /// Whether the frame opens or closes a gesture for the app: "began", "ended", "momentum
+    /// began", "momentum ended". Never a frame without phases.
+    var opensOrClosesGesture: Bool {
+        return scrollPhase == 1.0 || scrollPhase == 4.0 || momentumPhase == 1.0 || momentumPhase == 3.0
+    }
+
     /// Only the point delta is written; the line delta stays that of the copied wheel event,
     /// and so does the timestamp unless one is given. CoreGraphics drops the fraction of a point
     /// delta, so the frames of a glide come here in whole pixels (ScrollPixelCarry keeps the
@@ -148,6 +154,11 @@ class ScrollPoster {
     //   every frame is a "changed", "ended" follows the last one. WebKit, in a web view of any
     //   app, makes a glide of its own at "momentum began" and drops the glide events it is sent;
     //   without glide events it follows the touch's frames like AppKit.
+    //   The one touch is laid over the scroll as it runs with the switch off: the phase machine
+    //   runs exactly as it does then (it only times the scroll; nothing of it is posted), and
+    //   what the app gets is "began" with the first wheel event, "changed" on every frame that
+    //   moves the page, "ended" after the last one (`oneTouchIsOpen`). So the motion and the
+    //   end of a one-touch scroll are the switch-off scroll's, frame for frame.
     //   (Before, the touch lasted while the wheel turned, until it had been still for
     //   `manualContinuationThreshold`, and the rest went out as momentum: 70 of a click's
     //   205 px at Smooth, 136 at Float, which such views never followed. That form is still
@@ -176,16 +187,18 @@ class ScrollPoster {
     /// touch began without trackpad-style events (the app got no "began" for it).
     private var touchPlace: ScrollInputPlace?
     private var lastInputPlace: ScrollInputPlace?
-    /// The touch that is open began as one touch to the end (`config.oneTouch` at its "began").
-    /// Kept with the touch, not read from the config: the form of the next wheel event can be
-    /// another (the look into a Chromium-based app answers in mid-scroll), and the touch is
-    /// still the one that lasts until the frames run out.
-    private var touchIsOneTouch = false
+    /// One touch to the end: the app has got "began" and not yet "ended".
+    private var oneTouchIsOpen = false
+    /// The scroll that runs is sent as one touch: the phase machine runs as with the switch
+    /// off and nothing of it is posted. Kept with the scroll, not read from the config: the
+    /// form of the next wheel event can be another (the look into a Chromium-based app answers
+    /// in mid-scroll; `leaveOneTouchLocked`).
+    private var scrollIsOneTouch = false
     /// A tick adds to the glide only where its touch began: in the same app, with the pointer no
     /// farther than this (points) from there. Apps keep a gesture on the scroller that got its
     /// "began", so a tick over another pane has to begin a touch of its own; a hand that turns
     /// the wheel moves the pointer by a few points at most. The same for the one touch: a tick
-    /// farther away ends it and begins a new one (`endTouch(unlessAt:)`).
+    /// farther away ends it and begins a new one (`endOneTouchLocked(unlessAt:)`).
     private let trackpadStylePointerSlack: CGFloat = 30
     /// EVALUATION SWITCH, removed before the one-touch form is released: apps that are not
     /// Chromium-based get the old long touch (`TrackpadStyleEvaluation`). Read once at launch;
@@ -199,6 +212,13 @@ class ScrollPoster {
     /// Counts the frames handed to the post queue (`post`), so that `stop(_:)` knows whether
     /// it queued a closing frame. Guarded by stateLock.
     private var queuedFrames: UInt64 = 0
+    /// Whether the scroll that runs carries trackpad phases; nil while none runs. Main thread
+    /// only and read without the lock: set when a wheel event is taken (`smooth`), cleared by
+    /// `stop`. A wheel event compares its own form with it. (It used to compare under
+    /// stateLock: two more lock rounds for every wheel event, with the switch off as well.)
+    private var runningScrollHasPhases: Bool?
+    /// When the line about closing frames that still waited was last written. Main thread.
+    private var lastClosingFramesStillWaitLine: CFTimeInterval = -.infinity
     // 状态锁和投递上下文
     private var stateLock = os_unfair_lock_s()
     private let dispatchContext: ScrollDispatchContext
@@ -228,6 +248,9 @@ class ScrollPoster {
     var targetRecorderForTests: ((ScrollOutgoingFrame, pid_t) -> Void)?
     /// Tests: the clock of the frames' timestamps (`ScrollEventClock.uptimeNanoseconds` otherwise).
     var eventClockForTests: (() -> UInt64)?
+    /// Tests: how often a wheel event asked, under the lock, whether an open touch has to end
+    /// (`endOneTouchLocked(unlessAt:)`). Never with the switch off.
+    var touchChecksForTests = 0
     /// Tests: the lines about the display link's health written to the `app` log, oldest first.
     var healthLinesForTests: [String] = []
     /// The cumulative drop counters of the dispatch context, as `stop` logs them.
@@ -291,7 +314,7 @@ class ScrollPoster {
 // MARK: - 滚动数据更新控制
 extension ScrollPoster {
     /// What "Trackpad-style events" come to for an app of the given kind (nil: not known, as
-    /// touch-only): whether the frames carry phases at all, as a flick or as one long touch, and
+    /// touch-only): whether the frames carry phases at all, as a flick or as one touch, and
     /// whether the switch is on but the app gets none.
     /// `oldLongTouch`: the evaluation switch (`usesOldLongTouch`). `oneTouch` is the form of
     /// every app that gets phases and no flick, unless that switch asks for the old one.
@@ -336,22 +359,55 @@ extension ScrollPoster {
     ///   mid-scroll): that scroll is ended first, in the form it was sent in
     ///   (`endScroll(unlessPhasesStay:)`).
     /// - it comes far from where the one touch that is open began (another pane of the same
-    ///   app): that touch is ended first, at its own place (`endTouch(unlessAt:)`).
+    ///   app): that touch is ended first, at its own place (`endOneTouchLocked(unlessAt:)`),
+    ///   in one stretch under the lock with the "began" that follows.
     /// - Returns: whether the event was taken. false: the caller lets it through.
     func smooth(event: CGEvent, input: ScrollPosterInput) -> Bool {
         guard input.isUsable else { return false }
         let target = pid_t(event.getIntegerValueField(.eventTargetUnixProcessID))
         endScroll(unlessFor: target)
-        // 捕获本次手势的配置快照 (主线程读 Options/ScrollCore, CVDisplayLink 线程只读)
-        let snapshot = configSnapshot(for: event)
-        endScroll(unlessPhasesStay: snapshot.simTrackpadEnabled)
-        endTouch(unlessAt: { ScrollInputPlace(pid: target, pointer: event.location) })
-        guard tryStart(), dispatchContext.capture(event: event) else { return false }
-        os_unfair_lock_lock(&stateLock)
+        // The form of this event's scroll is read once the event is known to be taken, as it
+        // always was. Only while a scroll runs it is read here, before: that scroll has to be
+        // ended first when the two differ in whether they carry phases, and that has to
+        // happen before the display link is started and the event is stored.
+        var formReadBefore: ConfigSnapshot?
+        var bothCarryPhases = false
+        if let runsWithPhases = runningScrollHasPhases {
+            let form = configSnapshot(for: event)
+            formReadBefore = form
+            if form.simTrackpadEnabled != runsWithPhases {
+                endScroll(unlessPhasesStay: form.simTrackpadEnabled)
+            } else {
+                bothCarryPhases = runsWithPhases
+            }
+        }
+        guard tryStart() else { return false }
+        let snapshot: ConfigSnapshot
+        if bothCarryPhases, let form = formReadBefore {
+            // An open one touch may have to end at its own place before this event is stored
+            // (its "ended" is a copy of the event stored until then), and nothing may fall between
+            // that "ended" and the "began" this event brings: one stretch under the lock, the
+            // storing of the event included. (They were two stretches: a display frame that
+            // ran between them found no touch to belong to, and its distance was lost.)
+            os_unfair_lock_lock(&stateLock)
+            endOneTouchLocked(unlessAt: { ScrollInputPlace(pid: target, pointer: event.location) })
+            guard dispatchContext.capture(event: event) else {
+                os_unfair_lock_unlock(&stateLock)
+                return false
+            }
+            snapshot = form
+        } else {
+            // Without phases, and for the first event of a scroll: as it always was.
+            guard dispatchContext.capture(event: event) else { return false }
+            // 捕获本次手势的配置快照 (主线程读 Options/ScrollCore, CVDisplayLink 线程只读)
+            snapshot = formReadBefore ?? configSnapshot(for: event)
+            os_unfair_lock_lock(&stateLock)
+        }
         defer { os_unfair_lock_unlock(&stateLock) }
         applyConfigLocked(snapshot)
         let place = (config.flick || config.oneTouch) ? ScrollInputPlace(pid: target, pointer: event.location) : nil
         handleInputLocked(input, at: Self.monotonicNow(), place: place)
+        runningScrollHasPhases = snapshot.simTrackpadEnabled
         return true
     }
     /// Ends the scroll that runs when the next wheel event goes to another process, before
@@ -374,11 +430,9 @@ extension ScrollPoster {
     /// had got "began" (or "momentum began") never got its "ended".
     /// The two forms that carry phases pass into each other without an end: the first scroll
     /// over a Chromium-based app begins as one touch and goes on as a flick.
+    /// Main thread; no lock (`runningScrollHasPhases`).
     private func endScroll(unlessPhasesStay phases: Bool) {
-        os_unfair_lock_lock(&stateLock)
-        let changes = !sessionLog.isEmpty && config.simTrackpadEnabled != phases
-        os_unfair_lock_unlock(&stateLock)
-        guard changes else { return }
+        guard let running = runningScrollHasPhases, running != phases else { return }
         stop(reason: .settingChanged)
     }
     /// One touch to the end: the wheel goes on more than `trackpadStylePointerSlack` from where
@@ -390,20 +444,47 @@ extension ScrollPoster {
     /// the first pane until the scroll ran out: apps keep a gesture on the scroller that got
     /// its "began". (The old long touch never looked at the place; it was over 0.18 s after
     /// the wheel stopped.)
-    /// `place`: the new event's place, asked only while such a touch is open (with the switch
-    /// off, and in the other forms, nothing of the event is read here).
-    private func endTouch(unlessAt place: () -> ScrollInputPlace) {
-        os_unfair_lock_lock(&stateLock)
-        defer { os_unfair_lock_unlock(&stateLock) }
-        guard touchIsOneTouch, !manualInputEnded,
-              phases.phase == .TrackingBegin || phases.phase == .TrackingOngoing,
-              let began = touchPlace else { return }
+    /// `place`: the new event's place, asked only while such a touch is open (in the other
+    /// forms nothing of the event is read here; with the switch off this is never called).
+    /// Caller holds stateLock, and keeps it until the event's own "began" has gone out.
+    private func endOneTouchLocked(unlessAt place: () -> ScrollInputPlace) {
+#if DEBUG
+        touchChecksForTests += 1
+#endif
+        guard oneTouchIsOpen, let began = touchPlace else { return }
         let place = place()
         let isFar = place.pid != began.pid
             || hypot(place.pointer.x - began.pointer.x, place.pointer.y - began.pointer.y) > trackpadStylePointerSlack
         guard isFar else { return }
-        perform(phases.onManualInputEnded(), emitTargetImmediately: true)
+        endOneTouchLocked()
+    }
+    /// One touch: "began", unless the touch is open. Caller holds stateLock.
+    private func beginOneTouchLocked(at place: ScrollInputPlace?) {
+        guard !oneTouchIsOpen else { return }
+        oneTouchIsOpen = true
+        touchPlace = place
+        sessionLog.touches += 1
+        post((y: 0.0, x: 0.0), phaseOverride: phaseValues(for: .TrackingBegin), fallbackToCurrentPhase: false, advancesPhase: false)
+    }
+    /// One touch: "ended", if the touch is open. Caller holds stateLock.
+    private func endOneTouchLocked() {
+        guard oneTouchIsOpen else { return }
+        oneTouchIsOpen = false
+        post((y: 0.0, x: 0.0), phaseOverride: phaseValues(for: .TrackingEnd), fallbackToCurrentPhase: false, advancesPhase: false)
+    }
+    /// A scroll that ran as one touch goes on in a form the phase machine posts itself: the
+    /// app's kind was found in mid-scroll (Chromium-based: a flick). The app's touch is ended,
+    /// and the machine, which ran as with the switch off, starts from nothing, so the wheel
+    /// event begins a gesture of the new form. (The other way round does not happen: a kind
+    /// only changes from not known to Chromium-based.) Caller holds stateLock.
+    private func leaveOneTouchLocked() {
+        endOneTouchLocked()
+        scrollIsOneTouch = false
+        phases.reset()
         manualInputEnded = true
+        momentumActive = false
+        momentumEndScheduledTime = nil
+        trackingEndScheduledTime = nil
     }
     /// 处理一次滚轮输入: 缓冲与阶段 (调用方须持有 stateLock)
     private func handleInputLocked(_ input: ScrollPosterInput, at now: CFTimeInterval, place: ScrollInputPlace? = nil) {
@@ -420,6 +501,13 @@ extension ScrollPoster {
         sessionLog.trackpadStyleWithheld = config.withheld
         lastActivityTime = now
         inputSequence &+= 1
+        if scrollIsOneTouch != config.oneTouch {
+            if config.oneTouch {
+                scrollIsOneTouch = true
+            } else {
+                leaveOneTouchLocked()
+            }
+        }
         if !config.flick {
             // The form can differ per app: a turn asked for in a flick is not carried into a
             // scroll that is not one.
@@ -451,26 +539,19 @@ extension ScrollPoster {
             trackingEndScheduledTime = nil
             return
         }
-        if config.simTrackpadEnabled {
-            // (Both forms. As one long touch the glide's "momentum ended" went out here
-            // although its "momentum began" had not: no frame of the glide had been posted.)
+        if config.simTrackpadEnabled && !scrollIsOneTouch {
+            // (The forms the machine posts. As the old long touch the glide's "momentum ended"
+            // went out here although its "momentum began" had not: no frame of the glide had
+            // been posted.)
             phases.dropWaitingMomentumBegan()
         }
         let phase = phases.phase
         let separatedPhase = (phase == .Idle || phase == .MomentumEnd || phase == .TrackingEnd)
-        // One touch to the end: the touch is open until the frames have run out, however long
-        // ago the last wheel event was (0.73 s after a click at Glide, 1 s at Float, 3 s at
-        // glide time 5.0). A wheel event goes on with it. Taken for a new scroll by its time
-        // alone, it sent a second "began" into the open touch. (In the other forms no touch is
-        // open that long after a wheel event.)
-        let touchIsOpen = touchIsOneTouch && !manualInputEnded
-            && (phase == .TrackingBegin || phase == .TrackingOngoing)
-        let separated = manualInputEnded || (separatedByTime && !touchIsOpen) || separatedPhase
+        let separated = manualInputEnded || separatedByTime || separatedPhase
         let plan = phases.onManualInputDetected(isSeparated: separated)
-        if plan.beginsTouch {
+        if plan.beginsTouch && !scrollIsOneTouch {
             touchBeganTime = now
             touchPlace = place
-            touchIsOneTouch = config.oneTouch
             sessionLog.touches += 1
         }
         touchWaitsForTurn = false
@@ -481,6 +562,14 @@ extension ScrollPoster {
         momentumActive = false
         momentumEndScheduledTime = nil
         trackingEndScheduledTime = nil
+        if scrollIsOneTouch {
+            // The app's touch: it begins with the scroll's first wheel event, and again with a
+            // wheel event that comes after it has ended (the frames had run out, or the wheel
+            // went on far from its place). While it is open a wheel event only goes on with it,
+            // however long after the last one: the machine counts that as a new scroll by its
+            // time alone, the touch does not.
+            beginOneTouchLocked(at: place)
+        }
     }
     /// Whether a wheel input goes on in the glide's direction: the same sign on each axis that
     /// moved, and no axis newly moving. Compared with the glide (`glideDelta`), not with the last
@@ -508,7 +597,6 @@ extension ScrollPoster {
         touchWaitsForTurn = false
         glideDelta = delta
         touchPlace = lastInputPlace
-        touchIsOneTouch = false
         sessionLog.touches += 1
         phases.dropWaitingMomentumBegan()
         perform(phases.onManualInputDetected(isSeparated: true), emitTargetImmediately: false)
@@ -645,12 +733,14 @@ extension ScrollPoster {
             endScroll(unlessFor: targetPID)
             dispatchContext.setTargetForTests(targetPID)
         }
-        if let place = place {
-            endTouch(unlessAt: { place })
-        }
         os_unfair_lock_lock(&stateLock)
+        if let place = place {
+            endOneTouchLocked(unlessAt: { place })
+        }
         handleInputLocked(input, at: time, place: place)
+        let phases = config.simTrackpadEnabled
         os_unfair_lock_unlock(&stateLock)
+        runningScrollHasPhases = phases
     }
     /// One display frame at `now`, exactly as the display link runs it but without the hop
     /// to the main thread: returns the stop request the frame makes, if any.
@@ -710,7 +800,8 @@ extension ScrollPoster {
         glideDelta = ( y: 0.0, x: 0.0 )
         touchPlace = nil
         lastInputPlace = nil
-        touchIsOneTouch = false
+        oneTouchIsOpen = false
+        scrollIsOneTouch = false
         momentumEndScheduledTime = nil
         trackingEndScheduledTime = nil
     }
@@ -816,6 +907,7 @@ extension ScrollPoster {
     ///   - requestedPhase: the phase to end with (a momentum is finished whatever was asked).
     ///   - reason: why, for the scroll's line in the log.
     func stop(_ requestedPhase: Phase = Phase.MomentumEnd, reason: ScrollSystemLog.EndReason = .stopped) {
+        runningScrollHasPhases = nil
         // 停止循环, 然后准备发送最后一次事件
         let wasRunning = poster?.isRunning ?? false
         poster?.stop()
@@ -846,7 +938,13 @@ extension ScrollPoster {
         // 发送结束事件
         let queuedBefore = queuedFrames
         if enableSimTrackpad {
-            perform(plan, emitTargetImmediately: true)
+            if scrollIsOneTouch {
+                // What the app has is the touch, not the machine's phases: it is ended, if
+                // it is still open.
+                endOneTouchLocked()
+            } else {
+                perform(plan, emitTargetImmediately: true)
+            }
         } else {
             // Chrome only, from Mos ("only [4, 0] lets Chrome recover"): after frames without
             // phases Chrome stays in its scroll until an "ended" arrives, so one is posted at
@@ -865,7 +963,7 @@ extension ScrollPoster {
             }
         }
         // With trackpad-style phases only. Without them nothing an app waits for is queued
-        // here (Chrome's "ended" below goes out as it always did), and a stop waits for nothing.
+        // here (Chrome's "ended" above goes out as it always did), and a stop waits for nothing.
         let closingFrameQueued = enableSimTrackpad && queuedFrames != queuedBefore
         manualInputEnded = true
         momentumActive = false
@@ -874,16 +972,21 @@ extension ScrollPoster {
         // 重置参数 (不递增 generation, 保留本次收尾帧有效性)
         resetUnlocked()
         os_unfair_lock_unlock(&stateLock)
-        if closingFrameQueued {
-            // The closing frames ("ended", "momentum ended") are out before this returns.
+        // A frame that closes the gesture can also wait from before this stop: the one
+        // touch's "ended" is queued by the display link's thread (it is kept, see `enqueue`).
+        if closingFrameQueued || (enableSimTrackpad && dispatchContext.hasWaitingGestureFrames) {
+            // The closing frames ("ended", "momentum ended") are out before this returns,
+            // unless a post takes longer than the wait's deadline (50 ms).
             // They are posted from the post queue, and what ended the scroll is often an
             // event on its own way to the same app: a finger that begins to scroll on the
             // trackpad (the tap's callback lets that "began" through right after this), a
             // click. Nothing ordered the two: when the trackpad's "began" arrived first, the
             // app got "began, ended" and the finger's scroll had no gesture left. At quit the
-            // process could be gone before the frame was posted. The wait is short and
-            // certain: see `ScrollDispatchContext.waitForQueuedFrames`.
-            dispatchContext.waitForQueuedFrames()
+            // process could be gone before the frame was posted. The wait is short, and it
+            // has a deadline: see `ScrollDispatchContext.waitForQueuedFrames`.
+            if !dispatchContext.waitForQueuedFrames() {
+                noteClosingFramesStillWait()
+            }
         }
         if !finished.isEmpty {
             ScrollSystemLog.note(finished, ended: reason)
@@ -899,6 +1002,18 @@ extension ScrollPoster {
                   diag.skippedSyntheticEvents, diag.updateSnapshotFailures)
         }
 #endif
+    }
+    /// The line for the `app` log when a stop's wait for its closing frames ran out.
+    static let closingFramesStillWaitLine = "ScrollPoster: the frames that close a scroll's gesture were still waiting to be posted when the stop's wait for them ran out; the stop went on, and they are posted in their order when the queue reaches them"
+    /// At most one such line in this many seconds.
+    static let closingFramesStillWaitInterval: CFTimeInterval = 10
+    /// A stop waited its whole deadline for the post queue. One line, not one per stop: while
+    /// a post hangs, every stop finds the same. Main thread.
+    private func noteClosingFramesStillWait() {
+        let now = Self.monotonicNow()
+        guard now - lastClosingFramesStillWaitLine >= Self.closingFramesStillWaitInterval else { return }
+        lastClosingFramesStillWaitLine = now
+        logHealth(problem: Self.closingFramesStillWaitLine)
     }
     /// Carries out a stop the display link asked for. Main thread only.
     ///
@@ -1117,6 +1232,12 @@ private extension ScrollPoster {
     /// ("Trackpad-style events" on) or no phase fields (off).
     func emitPhase(_ item: (Phase, Phase?)) {
         phases.apply(phase: item.0, autoAdvance: item.1)
+        if scrollIsOneTouch {
+            // One touch: the machine moves on as it does with the switch off, and nothing of
+            // it is posted (there a frame without distance goes out here, which moves no page).
+            phases.didDeliverFrame()
+            return
+        }
         let phaseOverride = config.simTrackpadEnabled ? phaseValues(for: item.0) : nil
         // 无可用事件时不发送, 状态机照常推进
         if !post((y: 0.0, x: 0.0), phaseOverride: phaseOverride, fallbackToCurrentPhase: false) {
@@ -1170,23 +1291,32 @@ private extension ScrollPoster {
     /// part reaches the app as momentum. A touch that leaves no glide (what remains is under the
     /// dead zone) lasts until its last frame has gone out: a frame posted after "ended" and
     /// before "momentum began" would carry "ended" again, with a distance. That holds for both
-    /// forms of trackpad-style events: as one long touch, too, the touch ends when the wheel
-    /// has been still for `manualContinuationThreshold` and either a glide follows or the
-    /// last frame has gone out.
-    /// As one touch to the end (`config.oneTouch`) no glide follows at all: the touch lasts
-    /// until the wheel is still and the last frame has gone out, so every frame of the scroll
-    /// is a "changed". Caller holds stateLock.
+    /// forms the machine posts: as the old long touch (the evaluation switch), too, the touch
+    /// ends when the wheel has been still for `manualContinuationThreshold` and either a
+    /// glide follows or the last frame has gone out.
+    /// As one touch to the end nothing of this reaches the app either: the machine runs as
+    /// with the switch off, and the app's touch ends by a rule of its own
+    /// (`oneTouchHasRunOutLocked`). Caller holds stateLock.
     func fingerLiftedLocked(now: CFTimeInterval, glideFollows: Bool, outputSettled: Bool) -> Bool {
         if config.flick {
             return now - touchBeganTime >= trackpadStyleTouchTime && (glideFollows || outputSettled)
         }
         let wheelIsStill = now - lastManualEventTime > manualContinuationThreshold
         // Without phases nothing of this reaches an app: exactly as it always was.
-        guard config.simTrackpadEnabled else { return wheelIsStill }
-        if config.oneTouch {
-            return wheelIsStill && outputSettled
-        }
+        guard config.simTrackpadEnabled, !scrollIsOneTouch else { return wheelIsStill }
         return wheelIsStill && (glideFollows || outputSettled)
+    }
+
+    /// One touch to the end: whether the open touch ends with this frame. The wheel is still
+    /// (as for the machine: `manualContinuationThreshold`), the last frame has gone out (this
+    /// one is under the dead zone), and none is still to come: after a wheel event the other
+    /// way the motion comes to a standstill before it turns (what the old way left runs down
+    /// first), with most of the way back still ahead, and the frames the remaining distance
+    /// asks for are over the dead zone. That is no end. Caller holds stateLock.
+    func oneTouchHasRunOutLocked(now: CFTimeInterval, outputMagnitude: Double, residualMagnitude: Double, speedDeadZone: Double) -> Bool {
+        return now - lastManualEventTime > manualContinuationThreshold
+            && outputMagnitude <= speedDeadZone
+            && residualMagnitude * duration <= speedDeadZone
     }
 
     /// 处理一帧, 返回需要以哪个阶段结束会话 (nil 表示继续)。调用方须持有 stateLock。
@@ -1209,15 +1339,9 @@ private extension ScrollPoster {
         let outputMagnitude = ScrollMotion.outputPerReferenceFrame(
             max(abs(shiftedValue.y), abs(shiftedValue.x)), frameInterval: frameInterval
         )
-        // One touch to the end: "the last frame has gone out" also means that none is still to
-        // come. After a wheel event the other way the motion comes to a standstill before it
-        // turns (what the old way left runs down first), with most of the way back still ahead:
-        // the frames the remaining distance asks for are over the dead zone. That is no end;
-        // taken for one, the touch ended there and the way back never went out.
-        let moreToCome = config.oneTouch && residualMagnitude * duration > speedDeadZone
         // 检测是否已经超过手动输入的持续时间阈值，准备结束手动阶段
         if !manualInputEnded && lastManualEventTime > 0.0
-            && fingerLiftedLocked(now: now, glideFollows: residualMagnitude > deadZone, outputSettled: outputMagnitude <= speedDeadZone && !moreToCome) {
+            && fingerLiftedLocked(now: now, glideFollows: residualMagnitude > deadZone, outputSettled: outputMagnitude <= speedDeadZone) {
             let endPlan = phases.onManualInputEnded()
             if !(endPlan.queue.isEmpty && endPlan.target == nil) {
                 perform(endPlan, emitTargetImmediately: true)
@@ -1246,11 +1370,12 @@ private extension ScrollPoster {
                 momentumActive = false
             }
         }
-        // One touch to the end: once the finger has lifted nothing more goes out. (The finger
-        // lifts when the frames have fallen under the dead zone, so nothing is left to post;
-        // a frame that came out over it again, after an uneven frame interval, would be a
-        // glide event, and this form has none.)
-        let oneTouchIsOver = config.oneTouch && manualInputEnded
+        // One touch to the end: while the app's touch is not open nothing goes out. (It ends
+        // when the frames have fallen under the dead zone and none is to come, and a wheel
+        // event opens it again, so no frame falls in between; one that came out over the dead
+        // zone again by itself, after an uneven frame interval, would have no touch to belong
+        // to: that pixel is left out.)
+        let oneTouchIsOver = scrollIsOneTouch && !oneTouchIsOpen
         // 发送滚动结果 - 只有当输出值超过死区阈值时才发送
         if outputMagnitude > speedDeadZone && !oneTouchIsOver {
             // Whole pixels go out, the fraction waits for the next frame. A frame that comes
@@ -1269,6 +1394,9 @@ private extension ScrollPoster {
                 sessionLog.lastFrameAt = now
                 lastActivityTime = now
             }
+        }
+        if oneTouchIsOpen && oneTouchHasRunOutLocked(now: now, outputMagnitude: outputMagnitude, residualMagnitude: residualMagnitude, speedDeadZone: speedDeadZone) {
+            endOneTouchLocked()
         }
 
         if let scheduled = momentumEndScheduledTime, momentumActive {
@@ -1353,7 +1481,8 @@ private extension ScrollPoster {
         config = snapshot
         // Both forms of trackpad-style events (it used to be the flick only: as one long
         // touch a glide whose first frame came to no whole pixel lost its "momentum began").
-        phases.holdsWaitingMomentumBegan = snapshot.simTrackpadEnabled
+        // (Not as one touch: there the machine runs as with the switch off.)
+        phases.holdsWaitingMomentumBegan = snapshot.simTrackpadEnabled && !snapshot.oneTouch
     }
 
     func eventTimestamp() -> UInt64 {
@@ -1375,10 +1504,14 @@ private extension ScrollPoster {
 
     /// 组装并发送一帧。没有可用事件时返回 false (未发送)。
     @discardableResult
-    func post(_ v: (y: Double, x: Double), phaseOverride: (scroll: Double, momentum: Double)? = nil, fallbackToCurrentPhase: Bool = true, using preparedSnapshot: ScrollDispatchContext.PostingSnapshot? = nil) -> Bool {
+    /// `advancesPhase`: the phase machine moves on with this frame (`didDeliverFrame`), as it
+    /// does with every frame it posts or times. Not with the one touch's own "began" and
+    /// "ended": the machine knows nothing of them and runs as with the switch off.
+    func post(_ v: (y: Double, x: Double), phaseOverride: (scroll: Double, momentum: Double)? = nil, fallbackToCurrentPhase: Bool = true, advancesPhase: Bool = true, using preparedSnapshot: ScrollDispatchContext.PostingSnapshot? = nil) -> Bool {
         var phaseValues = phaseOverride
         if phaseValues == nil && fallbackToCurrentPhase && config.simTrackpadEnabled {
-            phaseValues = self.phaseValues(for: phases.phase)
+            // One touch: every frame that moves the page is a "changed" of the open touch.
+            phaseValues = scrollIsOneTouch ? self.phaseValues(for: .TrackingOngoing) : self.phaseValues(for: phases.phase)
         }
         var frame = ScrollOutgoingFrame(y: v.y, x: v.x, scrollPhase: phaseValues?.scroll, momentumPhase: phaseValues?.momentum)
         if config.flick {
@@ -1389,21 +1522,22 @@ private extension ScrollPoster {
         if let recorder = frameRecorderForTests {
             recorder(frame)
             targetRecorderForTests?(frame, dispatchContext.targetPID ?? 0)
-            phases.didDeliverFrame()
+            if advancesPhase { phases.didDeliverFrame() }
             return true
         }
 #endif
-        guard let snapshot = preparedSnapshot ?? dispatchContext.preparePostingSnapshot() else {
+        guard var snapshot = preparedSnapshot ?? dispatchContext.preparePostingSnapshot() else {
             return false
         }
         frame.write(to: snapshot.event)
+        snapshot.opensOrClosesGesture = frame.opensOrClosesGesture
         ScrollUtils.shared.markSyntheticSmoothEvent(snapshot.event)
         // 通过 CGEventPostToPid 直投目标进程:
         // 不依赖 proxy (消除崩溃), 不经过 tap 链重新路由 (动量不跟随光标)
         // ref: @shichangone MR: https://github.com/Caldis/Mos/pull/523, issue #868
         dispatchContext.enqueue(snapshot)
         queuedFrames &+= 1
-        phases.didDeliverFrame()
+        if advancesPhase { phases.didDeliverFrame() }
         return true
     }
 }

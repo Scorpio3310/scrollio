@@ -49,7 +49,7 @@ class ScrollUtils {
     /// events" can be sent in the form it scrolls by (ScrollPoster).
     enum TrackpadStyleTarget: Equatable {
         /// AppKit and UIKit scroll views, and anything not known: they follow the touch only and
-        /// compute the glide themselves. One touch for as long as the wheel turns.
+        /// compute the glide themselves. One touch until the scroll has run out.
         case touchOnly
         /// The Chromium engine (Chrome, Dia, Arc, Edge, Electron and CEF apps) scrolls by the
         /// glide's events: a flick.
@@ -165,7 +165,7 @@ class ScrollUtils {
     /// now (the look into its bundle runs off the main thread, as always), so that the first
     /// scroll in it already knows. It used to be asked by the first wheel event, and that
     /// scroll (until the answer) went out as for an app that is not known: over a
-    /// Chromium-based app as one long touch instead of a flick. An app that never comes to
+    /// Chromium-based app as one touch instead of a flick. An app that never comes to
     /// the front (a scroll over a window in the background) is still asked for by its first
     /// wheel event. Main thread.
     func applicationCameToFront(bundleIdentifier: String?, bundleURL: URL?, trackpadStyleOn: Bool) {

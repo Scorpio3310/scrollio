@@ -708,9 +708,9 @@ final class ScrollClassicPathTests: XCTestCase {
     /// And a touch that leaves no glide ends after its last frame (frames after "ended" carried
     /// "ended" again, with a distance); a glide of which no frame went out sends nothing at all.
     ///
-    /// For both forms: the flick, and the one long touch every app that is not Chromium-based
-    /// gets. The long touch used to be left out here, and broke the rule in about one run of
-    /// six: a frame with a distance that carried "ended" after the "ended" (short Durations),
+    /// For every form: the flick, the one touch every app that is not Chromium-based gets,
+    /// and the old long touch. The long touch used to be left out here, and broke the rule in
+    /// about one run of six: a frame with a distance that carried "ended" after the "ended" (short Durations),
     /// "momentum changed" without a "momentum began", a "momentum ended" for a glide whose
     /// "began" never went out.
     func testTrackpadStyle_phasesAlwaysMakeWholeGestures() {
@@ -922,35 +922,86 @@ final class ScrollClassicPathTests: XCTestCase {
         }
     }
 
-    /// Every scroll, not only a click: the frames that move the page are the switch-off path's
-    /// (times and distances), all of them "changed"; a scroll that begins after the last one
-    /// has run out is a touch of its own.
+    /// Every scroll, not only a click. The one touch is laid over the scroll as it runs with
+    /// the switch off, so at every feel, display rate and dead zone, in every gesture, and for
+    /// eight clicks at every pace from ten a second to one every 1.6 s: the frames that move
+    /// the page are the switch-off path's (times and distances), every one of them a
+    /// "changed", no glide event, and each scroll ends at the moment the switch-off one ends.
+    /// (It ran at Smooth only. The touch used to end the scroll itself, 0.04 s after its
+    /// "ended"; with the switch off a scroll ends 0.13 s after it has arrived, and a click
+    /// between the two met a new scroll: at Quick, 120 Hz, a click every 0.425 s, eight
+    /// scrolls instead of one and 1,656 px instead of 1,671; 10 of 732 paces differed, at
+    /// Direct and Quick.)
     func testTrackpadStyleOneTouch_keepsEveryFrameOfTheMotion() {
-        let scenarios: [(String, [(Double, Double)], Int)] = [
-            ("click", [(211.68, 0)], 1),
-            ("burst", [(211.68, 0), (211.68, 0.024), (340.2, 0.038), (491.4, 0.060)], 1),
-            ("spin", Self.spin, 1),
-            ("turn back", [(211.68, 0), (211.68, 0.024), (340.2, 0.038), (-211.68, 0.3)], 1),
-            ("keeps turning", Self.keepsTurning, 1),
-            ("a click every 0.4 s", [(211.68, 0), (211.68, 0.4), (211.68, 0.8), (211.68, 1.2)], 1),
-            ("two scrolls", [(211.68, 0), (211.68, 1.2)], 2),
-        ]
-        for (name, inputs, touches) in scenarios {
-            for rate in [60.0, 120.0] {
-                let plain = ScrollClassicRig(duration: 3.69, rate: rate, trackpadStyle: false)
-                let touch = ScrollClassicRig(duration: 3.69, rate: rate, form: .oneTouch)
-                for rig in [plain, touch] {
-                    for (pixels, time) in inputs { rig.input(pixels, notch: 211.68, at: time) }
-                    rig.run(until: 6)
-                }
-                let label = "\(name) at \(Int(rate)) Hz"
-                XCTAssertEqual(plain.moving.map { $0.time }, touch.moving.map { $0.time }, label)
-                XCTAssertEqual(plain.moving.map { $0.frame.y }, touch.moving.map { $0.frame.y }, label)
-                XCTAssertTrue(touch.moving.allSatisfy { $0.frame.scrollPhase == 2 }, "\(label): every moving frame is a \"changed\"")
-                XCTAssertFalse(touch.recorded.contains { ($0.frame.momentumPhase ?? 0) != 0 }, "\(label): no glide event")
-                XCTAssertEqual(touch.recorded.filter { $0.frame.scrollPhase == 1 }.count, touches, label)
-                XCTAssertEqual(touch.recorded.filter { $0.frame.scrollPhase == 4 }.count, touches, label)
+        let notch = 33.6 * 6.3
+        let here = ScrollInputPlace(pid: 100, pointer: CGPoint(x: 400, y: 300))
+        var failures: [String] = []
+        var runs = 0
+        func compare(_ label: String, duration: Double, rate: Double, deadZone: Double, inputs: [(Double, Double)]) {
+            let touch = ScrollClassicRig(duration: duration, rate: rate, deadZone: deadZone, form: .oneTouch)
+            let plain = ScrollClassicRig(duration: duration, rate: rate, trackpadStyle: false, deadZone: deadZone)
+            for (notches, time) in inputs {
+                touch.input(notches * notch, notch: notch, at: time, place: here, targetPID: 100)
+                plain.input(notches * notch, notch: notch, at: time, targetPID: 100)
             }
+            touch.run(until: 40)
+            plain.run(until: 40)
+            runs += 1
+            let name = "\(label), Duration \(duration), \(Int(rate)) Hz, dead zone \(deadZone)"
+            if touch.moving.map({ $0.frame.y }) != plain.moving.map({ $0.frame.y }) {
+                failures.append("\(name): \(touch.postedY) px in \(touch.moving.count) frames, switch off \(plain.postedY) px in \(plain.moving.count)")
+            } else if touch.moving.map({ $0.time }) != plain.moving.map({ $0.time }) {
+                failures.append("\(name): the frames come at other times")
+            }
+            if touch.stops.map({ $0.time }) != plain.stops.map({ $0.time }) {
+                failures.append("\(name): \(touch.stops.count) scrolls, switch off \(plain.stops.count), or they end at other times")
+            }
+            if !touch.moving.allSatisfy({ $0.frame.scrollPhase == 2 }) { failures.append("\(name): a moving frame that is no \"changed\"") }
+            if touch.recorded.contains(where: { ($0.frame.momentumPhase ?? 0) != 0 }) { failures.append("\(name): a glide event") }
+            if let broken = Self.brokenGesture(in: touch, mayBeEmpty: false) { failures.append("\(name): \(broken)") }
+        }
+        var freeSpin: [(Double, Double)] = []
+        for index in 0..<100 { freeSpin.append((1, Double(index) * 0.010)) }
+        var spinAndBack: [(Double, Double)] = []
+        for index in 0..<27 { spinAndBack.append((1 + Double(index) * 0.1, Double(index) * 0.015)) }
+        spinAndBack.append((-1, 0.45))
+        let scenarios = Self.gestureScenarios + [
+            ("free spin, an event every 10 ms", freeSpin),
+            ("a click every 0.4 s", (0..<8).map { (1, Double($0) * 0.4) }),
+            ("spin, then one click back", spinAndBack),
+        ]
+        for duration in [2.0, 3.13, 3.69, 4.35, 4.6, 5.0] {
+            for rate in [60.0, 120.0, 144.0] {
+                for deadZone in [1.0, 3.0] {
+                    for (name, inputs) in scenarios {
+                        compare(name, duration: duration, rate: rate, deadZone: deadZone, inputs: inputs)
+                    }
+                }
+            }
+            for rate in [60.0, 120.0] {
+                for gap in stride(from: 0.10, through: 1.60, by: 0.025) {
+                    compare("eight clicks, one every \(String(format: "%.3f", gap)) s", duration: duration, rate: rate, deadZone: 1,
+                            inputs: (0..<8).map { (1, Double($0) * gap) })
+                }
+            }
+        }
+        XCTAssertEqual(runs, 6 * 3 * 2 * 11 + 6 * 2 * 61)
+        XCTAssertTrue(failures.isEmpty, "\(failures.count) differ:\n" + failures.prefix(30).joined(separator: "\n"))
+    }
+
+    /// A scroll that begins after the last one has ended is a touch of its own; clicks that
+    /// follow each other while the frames still run are one touch.
+    func testTrackpadStyleOneTouch_aTouchPerScroll() {
+        for (name, inputs, touches) in [
+            ("a click every 0.4 s", [(211.68, 0.0), (211.68, 0.4), (211.68, 0.8), (211.68, 1.2)], 1),
+            ("two scrolls", [(211.68, 0.0), (211.68, 1.2)], 2),
+        ] {
+            let rig = ScrollClassicRig(duration: 3.69, form: .oneTouch)
+            for (pixels, time) in inputs { rig.input(pixels, notch: 211.68, at: time) }
+            rig.run(until: 6)
+            XCTAssertEqual(rig.recorded.filter { $0.frame.scrollPhase == 1 }.count, touches, name)
+            XCTAssertEqual(rig.recorded.filter { $0.frame.scrollPhase == 4 }.count, touches, name)
+            XCTAssertEqual(rig.sessions.reduce(0) { $0 + $1.touches }, touches, name)
         }
     }
 
@@ -1034,6 +1085,156 @@ final class ScrollClassicPathTests: XCTestCase {
                                ["ended", "began"], "\(name): with the wheel event itself")
             }
         }
+    }
+
+    // MARK: One touch, the pointer moving while the wheel turns
+    //
+    // The 30 pt rule ends a touch and begins another whenever a wheel event comes more than
+    // 30 pt from where the touch began. The sweeps above pass one place, so it never acted in
+    // them. Here the pointer moves by 5, 31 or 200 pt with every wheel event.
+
+    /// The place of wheel event number `index` when the pointer moves `step` pt per event.
+    private static func movingPlace(_ index: Int, step: Double) -> ScrollInputPlace {
+        return ScrollInputPlace(pid: 100, pointer: CGPoint(x: 400 + Double(index) * step, y: 300))
+    }
+
+    private static let movingScenarios: [(String, [(Double, Double)])] = {
+        var freeSpin: [(Double, Double)] = []
+        for index in 0..<100 { freeSpin.append((1, Double(index) * 0.010)) }
+        var spinAndBack: [(Double, Double)] = []
+        for index in 0..<27 { spinAndBack.append((1 + Double(index) * 0.1, Double(index) * 0.015)) }
+        spinAndBack.append((-1, 0.45))
+        return gestureScenarios + [
+            ("free spin, an event every 10 ms", freeSpin),
+            ("a click every 0.4 s", (0..<8).map { (1, Double($0) * 0.4) }),
+            ("spin, then one click back", spinAndBack),
+        ]
+    }()
+
+    /// However the pointer moves: whole touches, as many "ended" as "began", no glide event,
+    /// and the frames that move the page are the switch-off path's, times and distances
+    /// (with the switch off the frames follow the pointer too).
+    func testTrackpadStyleOneTouch_thePointerMoving_keepsWholeTouchesAndTheMotion() {
+        let notch = 33.6 * 6.3
+        var failures: [String] = []
+        var runs = 0
+        var touchesByStep: [Double: Int] = [:]
+        for step in [5.0, 31, 200] {
+            for duration in [2.0, 3.13, 3.69, 4.35, 4.6, 5.0] {
+                for rate in [60.0, 120.0] {
+                    for (name, inputs) in Self.movingScenarios {
+                        let touch = ScrollClassicRig(duration: duration, rate: rate, form: .oneTouch)
+                        let plain = ScrollClassicRig(duration: duration, rate: rate, trackpadStyle: false)
+                        for (index, (notches, time)) in inputs.enumerated() {
+                            touch.input(notches * notch, notch: notch, at: time, place: Self.movingPlace(index, step: step), targetPID: 100)
+                            plain.input(notches * notch, notch: notch, at: time, targetPID: 100)
+                        }
+                        touch.run(until: 30)
+                        plain.run(until: 30)
+                        runs += 1
+                        let label = "the pointer \(step) pt per wheel event, \(name), Duration \(duration), \(Int(rate)) Hz"
+                        if let broken = Self.brokenGesture(in: touch, mayBeEmpty: false) { failures.append("\(label): \(broken)") }
+                        let began = touch.recorded.filter { $0.frame.scrollPhase == 1 }.count
+                        let ended = touch.recorded.filter { $0.frame.scrollPhase == 4 }.count
+                        if began != ended { failures.append("\(label): \(began) began, \(ended) ended") }
+                        if touch.recorded.contains(where: { ($0.frame.momentumPhase ?? 0) != 0 }) { failures.append("\(label): a glide event") }
+                        if touch.moving.map({ $0.frame.y }) != plain.moving.map({ $0.frame.y }) {
+                            failures.append("\(label): \(touch.postedY) px in \(touch.moving.count) frames, switch off \(plain.postedY) px in \(plain.moving.count)")
+                        } else if touch.moving.map({ $0.time }) != plain.moving.map({ $0.time }) {
+                            failures.append("\(label): the frames come at other times")
+                        }
+                        if name == "spin" && duration == 3.69 && rate == 60 { touchesByStep[step] = began }
+                    }
+                }
+            }
+        }
+        XCTAssertEqual(runs, 3 * 6 * 2 * 11)
+        XCTAssertTrue(failures.isEmpty, "\(failures.count) broken:\n" + failures.prefix(30).joined(separator: "\n"))
+        // The rule did act: a spin of 27 wheel events is one touch while the pointer stays
+        // within 30 pt of where the touch began, and a touch per wheel event when it jumps.
+        XCTAssertEqual(touchesByStep[5], 4, "5 pt per event: a new touch every seventh event")
+        XCTAssertEqual(touchesByStep[31], 27)
+        XCTAssertEqual(touchesByStep[200], 27)
+    }
+
+    /// The same with a stop at any moment, by a click and by the tap's restart.
+    func testTrackpadStyleOneTouch_thePointerMoving_aStopAtAnyMomentLeavesWholeTouches() {
+        let notch = 33.6 * 6.3
+        var failures: [String] = []
+        var stops = 0
+        for step in [31.0, 200] {
+            for duration in [2.0, 3.69, 5.0] {
+                for (name, inputs) in Self.movingScenarios {
+                    for stopAt in stride(from: 0.004, through: 1.2, by: 0.011) {
+                        for restart in [false, true] {
+                            let rig = ScrollClassicRig(duration: duration, form: .oneTouch)
+                            for (index, (notches, time)) in inputs.enumerated() where time <= stopAt {
+                                rig.input(notches * notch, notch: notch, at: time, place: Self.movingPlace(index, step: step), targetPID: 100)
+                            }
+                            rig.run(until: stopAt)
+                            if restart {
+                                rig.poster.stop(.TrackingEnd, reason: .tapRestarted)
+                            } else {
+                                rig.poster.stop(reason: .leftClick)
+                            }
+                            stops += 1
+                            if let broken = Self.brokenGesture(in: rig, mayBeEmpty: true) {
+                                failures.append("the pointer \(step) pt, \(name), Duration \(duration), \(restart ? "a tap restart" : "a click") at \(Int(stopAt * 1000)) ms: \(broken)")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        XCTAssertEqual(stops, 2 * 3 * 11 * 109 * 2)
+        XCTAssertTrue(failures.isEmpty, "\(failures.count) broken:\n" + failures.prefix(30).joined(separator: "\n"))
+    }
+
+    /// And with the app's kind found in mid-scroll (the one touch goes on as a flick): at any
+    /// wheel event of a gesture, and at any moment of a click's tail with a second click then.
+    func testTrackpadStyleOneTouch_thePointerMoving_theFormChangingToAFlickLeavesWholeGestures() {
+        let notch = 33.6 * 6.3
+        var failures: [String] = []
+        var runs = 0
+        for step in [0.0, 31, 200] {
+            for duration in [2.0, 3.69, 5.0] {
+                for (name, inputs) in Self.movingScenarios {
+                    for answerBefore in 1..<max(2, min(inputs.count, 8)) {
+                        let rig = ScrollClassicRig(duration: duration, form: .oneTouch)
+                        for (index, (notches, time)) in inputs.enumerated() {
+                            if index == answerBefore {
+                                rig.run(until: time)
+                                rig.poster.setConfigForTests(simTrackpadEnabled: true, flick: true)
+                            }
+                            rig.input(notches * notch, notch: notch, at: time, place: Self.movingPlace(index, step: step), targetPID: 100)
+                        }
+                        rig.run(until: 30)
+                        runs += 1
+                        if let broken = Self.brokenGesture(in: rig, mayBeEmpty: false) {
+                            failures.append("the pointer \(step) pt, \(name), Duration \(duration), a flick from wheel event \(answerBefore + 1): \(broken)")
+                        }
+                    }
+                }
+            }
+        }
+        for step in [0.0, 200] {
+            for duration in [2.0, 3.69, 4.6, 5.0] {
+                for second in stride(from: 0.05, through: 3.6, by: 0.013) {
+                    let rig = ScrollClassicRig(duration: duration, form: .oneTouch)
+                    rig.input(notch, notch: notch, at: 0, place: Self.movingPlace(0, step: step), targetPID: 100)
+                    rig.run(until: second)
+                    rig.poster.setConfigForTests(simTrackpadEnabled: true, flick: true)
+                    rig.input(notch, notch: notch, at: second, place: Self.movingPlace(1, step: step), targetPID: 100)
+                    rig.run(until: 30)
+                    runs += 1
+                    if let broken = Self.brokenGesture(in: rig, mayBeEmpty: false) {
+                        failures.append("the pointer \(step) pt, Duration \(duration), a click, the answer and a second click at \(Int(second * 1000)) ms: \(broken)")
+                    }
+                }
+            }
+        }
+        XCTAssertGreaterThan(runs, 2_500)
+        XCTAssertTrue(failures.isEmpty, "\(failures.count) broken:\n" + failures.prefix(30).joined(separator: "\n"))
     }
 
     // MARK: Trackpad-style, as the old long touch (the evaluation switch)

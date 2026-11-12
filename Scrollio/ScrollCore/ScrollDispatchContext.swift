@@ -18,6 +18,11 @@ final class ScrollDispatchContext {
         let generation: UInt64
         /// When this frame was made (`ScrollPoster.monotonicNow`).
         let createdAt: CFTimeInterval
+        /// The frame opens or closes a gesture for the app: "began", "ended", "momentum
+        /// began", "momentum ended" (`ScrollOutgoingFrame.opensOrClosesGesture`). A stop that
+        /// comes while such a frame still waits on the post queue does not drop it, as it
+        /// drops the frames that only move the page: see `enqueue`.
+        var opensOrClosesGesture = false
     }
 
     private struct SnapshotState {
@@ -27,6 +32,8 @@ final class ScrollDispatchContext {
     }
 
     private var state = SnapshotState()
+    /// Frames that open or close a gesture and still wait on the post queue. Guarded by `lock`.
+    private var waitingGestureFrames = 0
     private var lock = os_unfair_lock_s()
     private let postQueue = DispatchQueue(label: "com.nikklemenc.Scrollio.scrollposter.post", qos: .userInteractive)
     // TTL 仅作为 enqueue 投递时的兜底安全网, 不用于快照创建门控
@@ -58,6 +65,9 @@ final class ScrollDispatchContext {
 
     @discardableResult
     func capture(event: CGEvent) -> Bool {
+#if DEBUG
+        captureObserverForTests?()
+#endif
         guard let template = event.copy() else {
 #if DEBUG
             os_unfair_lock_lock(&lock)
@@ -115,12 +125,32 @@ final class ScrollDispatchContext {
         return snapshot
     }
 
+    /// Posts a frame from the post queue, in the order queued.
+    ///
+    /// A stop moves the generation on, and a frame from before it that only moves the page
+    /// is dropped: the scroll is over. A frame that opens or closes a gesture is not: the
+    /// app's gesture has to stay whole whatever comes between its queueing and its post. The
+    /// one touch's "ended" is queued by the display link's thread, and the stop for that
+    /// scroll follows it 40 ms to a quarter of a second later (a click or a finger can come
+    /// sooner); when a post before it took longer than that, the "ended" was still waiting,
+    /// was dropped here, and the stop queued nothing in its place: "began" without "ended".
+    /// Such a frame goes out without its distance when the scroll it belonged to was stopped
+    /// ("momentum began" carries the glide's first step). Only its age can drop it.
     func enqueue(_ snapshot: PostingSnapshot) {
+        if snapshot.opensOrClosesGesture {
+            os_unfair_lock_lock(&lock)
+            waitingGestureFrames += 1
+            os_unfair_lock_unlock(&lock)
+        }
         postQueue.async { [self] in
             os_unfair_lock_lock(&self.lock)
             let now = ScrollPoster.monotonicNow()
-            let validGeneration = snapshot.generation == self.state.generation
+            let currentGeneration = snapshot.generation == self.state.generation
+            let validGeneration = currentGeneration || snapshot.opensOrClosesGesture
             let validTTL = now - snapshot.createdAt <= self.eventTTL
+            if snapshot.opensOrClosesGesture {
+                self.waitingGestureFrames -= 1
+            }
             if !validGeneration {
 #if DEBUG
                 self.droppedFramesByGeneration &+= 1
@@ -132,6 +162,11 @@ final class ScrollDispatchContext {
             }
             os_unfair_lock_unlock(&self.lock)
             guard validGeneration && validTTL else { return }
+            if !currentGeneration {
+                // Its scroll was stopped: the gesture is opened or closed, the page is not moved.
+                snapshot.event.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: 0.0)
+                snapshot.event.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: 0.0)
+            }
             // 使用 CGEventPostToPid 直接投递到目标进程:
             // 1. 不依赖 proxy → 无生命周期崩溃 (issue #868)
             // 2. 不经过 session event tap 链路重新路由 → 动量阶段光标移动不会
@@ -153,27 +188,48 @@ final class ScrollDispatchContext {
         }
     }
 
-    /// Returns once every frame handed to the post queue so far has gone out or was dropped.
+    /// Whether a frame that opens or closes a gesture still waits on the post queue.
+    var hasWaitingGestureFrames: Bool {
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
+        return waitingGestureFrames > 0
+    }
+
+    /// How long `ScrollPoster.stop` waits for the frames that close a gesture (seconds).
+    /// Tests that hold a post on purpose set it.
+    var closingFrameDeadline: TimeInterval = 0.05
+
+    /// Waits until every frame handed to the post queue so far has gone out or was dropped,
+    /// but no longer than `closingFrameDeadline`.
     ///
-    /// `ScrollPoster.stop` waits here for its closing frames ("ended", "momentum ended"),
-    /// also inside the scroll tap's callback, so the wait has to be short and certain. It
-    /// is: the queue is this context's own and serial, and a block on it takes this
-    /// context's lock for a few comparisons (never across a call), then either drops its
-    /// frame or hands it to the window server with `postToPid`, a message that does not
-    /// wait for the app it is addressed to. No block waits for the main thread, for
-    /// ScrollPoster's lock or for another queue. A stop moves the generation on before it
-    /// queues its closing frames, so frames still waiting from before it are dropped
-    /// without a post: what is waited for is one or two posts.
-    func waitForQueuedFrames() {
+    /// `ScrollPoster.stop` waits here for the frames that close the app's gesture ("ended",
+    /// "momentum ended"), also inside the scroll tap's callback, so the wait has to be short.
+    /// As a rule it is some microseconds: the queue is this context's own and serial, and a
+    /// block on it takes this context's lock for a few comparisons (never across a call),
+    /// then either drops its frame or hands it to the window server with `postToPid`. No
+    /// block waits for the main thread, for ScrollPoster's lock or for another queue, and a
+    /// stop moves the generation on before it queues its closing frames, so the frames from
+    /// before it that only move the page are dropped without a post.
+    /// But `postToPid` is another process's time: a post in flight can take long, or not
+    /// come back. The tap's callback is not held for that (an event tap that does not answer
+    /// stops all input, and macOS turns it off): after the deadline the stop goes on, and the
+    /// frames are posted, in their order, when the queue reaches them.
+    /// - Returns: false when the deadline ran out first.
+    @discardableResult
+    func waitForQueuedFrames() -> Bool {
 #if DEBUG
         waitObserverForTests?()
 #endif
-        postQueue.sync {}
+        let reached = DispatchSemaphore(value: 0)
+        postQueue.async { reached.signal() }
+        return reached.wait(timeout: .now() + closingFrameDeadline) == .success
     }
 
 #if DEBUG
     /// Tests: called each time `waitForQueuedFrames` is asked to wait.
     var waitObserverForTests: (() -> Void)?
+    /// Tests: called when a wheel event is about to be stored (`capture`).
+    var captureObserverForTests: (() -> Void)?
 
     /// Tests: the target of the frames, without an event to copy (frames then go to the
     /// poster's recorder, never to a process).

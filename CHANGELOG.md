@@ -19,18 +19,21 @@ it for the people who use the app, and give the version its part before you tag 
 - "Let Scrollio manage this mouse" and "Open at login" are not in a file: they stay as
   they are on each Mac.
 - **Trackpad-style scrolling (Beta)** in apps that are not browsers (Finder, Notes, a
-  message in Mail): the whole scroll is now sent as one touch, the form these apps follow
-  to its end. Before, the end of a scroll was sent as a glide, which they do not follow: a
-  click could stop short, more so with a long glide time. At the end of a page the page
-  can stay stretched a little longer for it.
+  message in Mail): the whole scroll is now sent as one touch. Before, the end of a scroll
+  was sent as a glide. By how these apps read such events they follow a touch to its end
+  and not a glide they are sent, so a click should have stopped short, more so with a long
+  glide time, and should now go as far as with the switch off. That is derived, not yet
+  seen on a screen. At the end of a page the page can stay stretched a little longer.
 - **Trackpad-style scrolling (Beta)** knows more apps. Web apps made with Safari's "Add to
   Dock" and the DuckDuckGo browser are left as they are, like Safari. A web app installed
   from Chrome, Brave or Edge scrolls and bounces like its browser.
-- With it on, the first scroll in a Chrome-like app after Scrollio starts already bounces
-  like the later ones.
-- With it on, an app is no longer left waiting for the end of a scroll: when a finger on
-  the trackpad takes over from the wheel, and when the setting is switched while a scroll
-  runs.
+- With it on, a Chrome-like app that comes to the front is known before you scroll in it,
+  so its first scroll already bounces like the later ones. (An app that was in front when
+  you turned the switch on, or that you scroll in without bringing it to the front, is
+  known from the scroll after its first, as before.)
+- With it on, a scroll that runs is closed when the setting is switched, and the wheel's
+  scroll is closed before a finger on the trackpad begins its own (nothing kept the two in
+  that order before; that an app ever got them the wrong way round was not seen).
 - The README says what Trackpad-style scrolling does in which app, and where its limits
   are.
 

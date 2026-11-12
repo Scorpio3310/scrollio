@@ -113,8 +113,9 @@ of scrolling and the menu bar icon.
 
 Off by default. With it on, a wheel scroll reaches an app in the form a trackpad's scroll
 has: a touch, then a glide. Apps then treat the wheel like a trackpad and bounce at the
-ends of a page. Scrollio sends the same motion as with it off; only the form differs, and
-apps do not all read it the same way, so it is sent in one of three ways:
+ends of a page. Scrollio sends the same motion as with it off (to a Chromium-based app,
+at the Direct feel, a click now and then comes out a pixel apart); only the form differs,
+and apps do not all read it the same way, so it is sent in one of three ways:
 
 - Chrome, Brave, Arc, Dia and the other browsers and apps built on Chromium (Electron
   apps such as VS Code and Slack, Spotify, a web app installed from such a browser): a
@@ -136,6 +137,9 @@ Its limits:
   a two-finger swipe, and go back or forward a page in an app that does that.
 - At the end of a page, an app that is not a browser can keep the page stretched until
   the scroll has run out: about half a second after a click at Smooth, a second at Float.
+  How far it stretches is not known from a screen. The one measurement there is comes
+  from a test, with an AppKit scroll view 600 px high and a fast spin into its top sent
+  as a touch: 356 px past the top, much more than a trackpad's bounce.
 
 If one app scrolls oddly with it, give that app its own settings in the Apps pane and
 turn it off there.

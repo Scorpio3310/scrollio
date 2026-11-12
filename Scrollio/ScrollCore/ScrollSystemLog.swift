@@ -38,7 +38,7 @@ enum ScrollSystemLog {
         var transition = 0.0
         var trackpadStyle = false
         /// Trackpad-style as a flick (a short touch and its glide, for apps that scroll by the
-        /// glide's events) instead of one touch for as long as the wheel turns.
+        /// glide's events) instead of one touch until the scroll has run out.
         var flick = false
         /// Trackpad-style as one touch until the scroll has run out (apps that are not
         /// Chromium-based). With `trackpadStyle` and neither this nor `flick`: the old long
