@@ -860,6 +860,56 @@ final class ScrollClassicPathTests: XCTestCase {
     }
 
     /// Wheel turns as (notches, seconds), for the whole-gesture checks.
+    /// The other way round: a scroll that runs as a flick (or as the old long touch) goes
+    /// on as one touch. No path does that today (an app's kind only changes from not known
+    /// to "follows the glide"), but should one ever: the gesture the app has is closed
+    /// before the one touch begins. It used to stay open for good: the one touch posts
+    /// nothing of the phase machine's, so the glide never got its "momentum ended".
+    func testTrackpadStyle_aFlickGoingOnAsOneTouchClosesItsGestureFirst() {
+        var failures: [String] = []
+        var runs = 0
+        let place = ScrollInputPlace(pid: 100, pointer: CGPoint(x: 400, y: 300))
+        for form in [ScrollClassicRig.Form.flick, .oldLongTouch] {
+            for duration in [2.0, 3.69, 5.0] {
+                for rate in [60.0, 120.0] {
+                    for (name, inputs) in Self.gestureScenarios {
+                        for changeBefore in 1..<max(2, min(inputs.count, 6)) {
+                            let rig = ScrollClassicRig(duration: duration, rate: rate, form: form)
+                            let notch = 33.6 * 6.3
+                            for (index, (notches, time)) in inputs.enumerated() {
+                                if index == changeBefore {
+                                    rig.run(until: time)
+                                    rig.poster.setConfigForTests(simTrackpadEnabled: true, flick: false)
+                                }
+                                rig.input(notches * notch, notch: notch, at: time, place: place, targetPID: 100)
+                            }
+                            rig.run(until: 30)
+                            runs += 1
+                            if let broken = Self.brokenGesture(in: rig, mayBeEmpty: false) {
+                                failures.append("\(form.rawValue), \(name), Duration \(duration), \(Int(rate)) Hz, one touch from wheel event \(changeBefore + 1): \(broken)")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        XCTAssertGreaterThan(runs, 200)
+        XCTAssertTrue(failures.isEmpty, "\(failures.count) broken:\n" + failures.prefix(30).joined(separator: "\n"))
+
+        // In the glide: "momentum ended", then the one touch's "began", with the wheel event.
+        let rig = ScrollClassicRig(duration: 3.69, form: .flick)
+        rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0, place: place, targetPID: 100)
+        rig.run(until: 0.25)
+        XCTAssertEqual(rig.phases.phase, .MomentumOngoing)
+        let before = rig.recorded.count
+        rig.poster.setConfigForTests(simTrackpadEnabled: true, flick: false)
+        rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0.25, place: place, targetPID: 100)
+        XCTAssertEqual(Array(rig.stream.dropFirst(before)), ["momentumEnded 0", "began 0"])
+        rig.run(until: 4)
+        XCTAssertEqual(rig.stream.last, "ended 0")
+        XCTAssertFalse(rig.recorded.dropFirst(before + 1).contains { ($0.frame.momentumPhase ?? 0) != 0 }, "from there on: one touch")
+    }
+
     private static let gestureScenarios: [(String, [(Double, Double)])] = {
         var spin: [(Double, Double)] = []
         for index in 0..<27 { spin.append((1 + Double(index) * 0.1, Double(index) * 0.015)) }

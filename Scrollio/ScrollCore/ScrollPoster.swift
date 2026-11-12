@@ -714,6 +714,31 @@ extension ScrollPoster {
         momentumEndScheduledTime = nil
         trackingEndScheduledTime = nil
     }
+    /// A scroll goes on as one touch. As a rule it begins as one, and nothing is open. But
+    /// when it ran in a form the phase machine posts (a flick, the old long touch), what
+    /// the app has of that gesture is closed first, as a stop closes it: an open touch gets
+    /// its "ended", a glide its "momentum ended". Then the machine starts from nothing and
+    /// runs as with the switch off. (No path does that today: an app's kind only changes
+    /// from not known to "follows the glide". Without this such a change left the glide
+    /// open for good: the one touch posts nothing of the machine's.) Caller holds stateLock.
+    private func enterOneTouchLocked() {
+        if phases.beganIsWaiting {
+            // A flick's touch of which nothing went out: there is nothing to close.
+            phases.reset()
+        } else {
+            flushHeldEndedLocked()
+            phases.dropWaitingMomentumBegan()
+            perform(phases.onMomentumFinish(), emitTargetImmediately: true)
+            phases.reset()
+        }
+        manualInputEnded = true
+        momentumActive = false
+        momentumEndScheduledTime = nil
+        trackingEndScheduledTime = nil
+        touchWaitsForTurn = false
+        endedWaitsForGlide = false
+        scrollIsOneTouch = true
+    }
     /// 处理一次滚轮输入: 缓冲与阶段 (调用方须持有 stateLock)
     private func handleInputLocked(_ input: ScrollPosterInput, at now: CFTimeInterval, place: ScrollInputPlace? = nil) {
         if sessionLog.isEmpty {
@@ -734,7 +759,7 @@ extension ScrollPoster {
         oneTouchStopIsHeld = false
         if scrollIsOneTouch != config.oneTouch {
             if config.oneTouch {
-                scrollIsOneTouch = true
+                enterOneTouchLocked()
             } else {
                 leaveOneTouchLocked()
             }
