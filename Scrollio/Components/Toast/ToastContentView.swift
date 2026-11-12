@@ -257,6 +257,37 @@ class ToastContentView: NSView {
         }
     }
 
+    // MARK: - Pointer over the toast
+
+    /// Called when the pointer comes over the toast (true) or leaves it, whichever app is in
+    /// front. The toast's manager sets it: the toast's time stands still meanwhile
+    /// (`ToastManager.setHovered`).
+    var onHoverChange: ((Bool) -> Void)?
+    private var hoverTrackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onHoverChange?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onHoverChange?(false)
+    }
+
     // MARK: - Dragging
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {

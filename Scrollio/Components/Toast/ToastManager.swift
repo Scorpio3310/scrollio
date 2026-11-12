@@ -27,7 +27,19 @@ class ToastManager {
         var dismissTimer: Timer?
         let message: String
         var isDismissing: Bool
+        /// What is left of the toast's time; it stands still while the pointer is over it.
+        var countdown: ToastCountdown
     }
+
+    /// Says a new toast's text to VoiceOver (nothing happens without VoiceOver): a toast
+    /// takes no focus, so it would otherwise never be heard. Tests replace it.
+    var announce: (String, Toast.Style) -> Void = ToastManager.postAnnouncement
+
+    /// The clock of the toasts' countdowns. Tests replace it.
+    var now: () -> Date = { Date() }
+
+    /// Puts a new toast's panel on screen. Tests replace it: nothing is shown.
+    var orderFront: (NSPanel) -> Void = { $0.orderFrontRegardless() }
 
     /// 递增 ID 生成器
     private var nextId: UInt = 0
@@ -62,6 +74,7 @@ class ToastManager {
            ToastVisibilityRules.containsVisibleMessage(message, in: visibilityEntries()) {
             return
         }
+        announce(message, style)
 
         let maxCount = ToastStorage.shared.maxCount
 
@@ -95,6 +108,11 @@ class ToastManager {
             singleLineMaxWidth: singleLineMaxWidth(for: anchorPoint)
         )
         let panel = ToastWindow.shared.createPanel(for: contentView)
+        // The pointer over the toast stops its time (see `setHovered`).
+        contentView.onHoverChange = { [weak self, weak panel] hovered in
+            guard let self, let panel else { return }
+            self.setHovered(hovered, for: panel)
+        }
 
         // 创建条目
         let id = nextId
@@ -105,14 +123,12 @@ class ToastManager {
             contentView: contentView,
             dismissTimer: nil,
             message: message,
-            isDismissing: false
+            isDismissing: false,
+            countdown: ToastCountdown(duration: duration, now: now())
         )
 
         // 设置自动消失
-        let timer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
-            self?.dismiss(id: id)
-        }
-        entry.dismissTimer = timer
+        entry.dismissTimer = makeDismissTimer(for: id, after: entry.countdown.remaining)
         activeToasts.append(entry)
 
         // 新 toast = depth 0 (最前面, 紧贴锚点)
@@ -126,11 +142,69 @@ class ToastManager {
 
         // 淡入: 先透明显示, 再动画到不透明
         panel.alphaValue = 0
-        panel.orderFrontRegardless()
+        orderFront(panel)
 
         // 已有 toast 被推开: 重新计算所有 toast 的层叠深度和位置
         repositionAllToasts(animated: true)
     }
+
+    private func makeDismissTimer(for id: UInt, after interval: TimeInterval) -> Timer {
+        return Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            self?.dismiss(id: id)
+        }
+    }
+
+    // MARK: - Hover
+
+    /// The pointer came over the toast of `panel` or left it. Over it, the toast's time
+    /// stands still, so a warning can be read to its end; when the pointer leaves, the time
+    /// runs on with at least a moment left (`ToastTiming.minimumAfterHover`). A toast that
+    /// is already fading out is left alone.
+    func setHovered(_ hovered: Bool, for panel: NSPanel) {
+        guard let index = activeToasts.firstIndex(where: { $0.panel == panel }),
+              !activeToasts[index].isDismissing else { return }
+        if hovered {
+            activeToasts[index].countdown.pause(now: now())
+            activeToasts[index].dismissTimer?.invalidate()
+            activeToasts[index].dismissTimer = nil
+        } else if let remaining = activeToasts[index].countdown.resume(now: now()) {
+            activeToasts[index].dismissTimer?.invalidate()
+            activeToasts[index].dismissTimer = makeDismissTimer(for: activeToasts[index].id, after: remaining)
+        }
+    }
+
+    // MARK: - VoiceOver
+
+    /// A VoiceOver announcement of a toast's text: a warning or an error interrupts what is
+    /// being read, anything else waits its turn.
+    private static func postAnnouncement(_ text: String, style: Toast.Style) {
+        guard let app = NSApp else { return }
+        let priority: NSAccessibilityPriorityLevel = (style == .warning || style == .error) ? .high : .medium
+        NSAccessibility.post(element: app, notification: .announcementRequested, userInfo: [
+            .announcement: text,
+            .priority: priority.rawValue,
+        ])
+    }
+
+#if DEBUG
+    /// The toasts on screen, oldest first: the message, the panel, and whether the toast's
+    /// time stands still (the pointer is over it) or a timer runs for it.
+    var testingToasts: [(message: String, panel: NSPanel, isPaused: Bool, hasTimer: Bool, remaining: TimeInterval)] {
+        return activeToasts.filter { !$0.isDismissing }.map {
+            ($0.message, $0.panel, $0.countdown.isPaused, $0.dismissTimer?.isValid == true, $0.countdown.remaining)
+        }
+    }
+
+    /// Takes every toast off the screen at once, without the fade.
+    func testingRemoveAll() {
+        for entry in activeToasts {
+            entry.dismissTimer?.invalidate()
+            entry.panel.orderOut(nil)
+        }
+        activeToasts.removeAll()
+        transientAnchorPoint = nil
+    }
+#endif
 
     // MARK: - Dismiss
 

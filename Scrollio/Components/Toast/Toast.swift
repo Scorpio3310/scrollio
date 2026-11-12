@@ -45,7 +45,9 @@ struct Toast {
     /// - Parameters:
     ///   - message: 提示文本
     ///   - style: 提示样式, 默认为 `.info`
-    ///   - duration: 显示时长 (秒), 默认 2.5 秒
+    ///   - duration: 显示时长 (秒). nil (the default): as long as the text takes to read,
+    ///     3 to 10 seconds (`ToastTiming.readingDuration`). The time stands still while the
+    ///     pointer is over the toast.
     ///   - icon: 自定义图标, 传 nil 则使用样式默认图标
     ///   - showsIcon: 是否显示图标, 传 false 时忽略自定义和默认图标
     ///   - wrapWidth: 文本换行宽度；传 `nil` 时使用全局默认配置（未配置时为 `400`），传 `<= 0` 时保持单行，传正数时按该宽度自动换行
@@ -53,12 +55,13 @@ struct Toast {
     static func show(
         _ message: String,
         style: Style = .info,
-        duration: TimeInterval = 2.5,
+        duration: TimeInterval? = nil,
         icon: NSImage? = nil,
         showsIcon: Bool = true,
         wrapWidth: CGFloat? = nil,
         allowDuplicateVisibleMessage: Bool = false
     ) {
+        let duration = resolvedDuration(duration, for: message)
         // 始终异步调度到主线程
         // 即使已在主线程也必须 async, 因为调用方可能在 IOKit/CGEventTap 等
         // RunLoop source 回调中, 同步创建 NSPanel 会导致 RunLoop 递归死锁
@@ -73,6 +76,12 @@ struct Toast {
                 allowDuplicateVisibleMessage: allowDuplicateVisibleMessage
             )
         }
+    }
+
+    /// How long `message` stays: the caller's `duration`, or without one the time its text
+    /// takes to read (`ToastTiming.readingDuration`).
+    static func resolvedDuration(_ duration: TimeInterval?, for message: String) -> TimeInterval {
+        return duration ?? ToastTiming.readingDuration(for: message)
     }
 
     /// 关闭所有通知
