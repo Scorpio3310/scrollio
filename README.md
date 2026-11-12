@@ -95,7 +95,8 @@ of scrolling and the menu bar icon.
 - Reverse wheel direction (the wheel only, not the trackpad).
 - Under Advanced: an exact glide time, the smallest step, and
   "Trackpad-style scrolling (Beta)": apps treat the wheel like a trackpad and bounce at
-  the ends of a page. Safari stays as it is.
+  the ends of a page. Safari stays as it is. What it does in which app, and its limits:
+  [Trackpad-style scrolling](#trackpad-style-scrolling-beta).
 - While you hold a key: "Scroll faster" (5 × the distance), "Scroll sideways" and "Pause
   smoothing" (exact steps, for example to zoom with ⌘). A mouse button can hold them
   too. These keys work while Smooth scrolling is on.
@@ -106,6 +107,37 @@ of scrolling and the menu bar icon.
   or off for the app in front.
 - Trackpads and the Magic Mouse are left alone. With several displays, the motion is
   timed to the display under the pointer.
+
+#### Trackpad-style scrolling (Beta)
+
+Off by default. With it on, a wheel scroll reaches an app in the form a trackpad's scroll
+has: a touch, then a glide. Apps then treat the wheel like a trackpad and bounce at the
+ends of a page. Scrollio sends the same motion as with it off; only the form differs, and
+apps do not all read it the same way, so it is sent in one of three ways:
+
+- Chrome, Brave, Arc, Dia and the other browsers and apps built on Chromium (Electron
+  apps such as VS Code and Slack, Spotify, a web app installed from such a browser): a
+  short touch and then its glide.
+- Every other app: one touch that lasts until the scroll has run out, with no glide
+  after it. These apps follow a touch to its end, and make what they will of a glide.
+- Safari, the web apps made with its "Add to Dock" and the DuckDuckGo browser: nothing
+  changes. With trackpad-style events they do not scroll smoothly.
+
+Its limits:
+
+- A list that macOS draws inside a Chromium-based app (the file dialog of VS Code or
+  Slack) gets that app's form, and may scroll shorter than the same list in Finder.
+- An app outside the Applications folders is treated as "every other app", also when it
+  is Chromium-based: Scrollio looks into no bundle elsewhere (see [Privacy](#-privacy)).
+- An app that tells a mouse from a trackpad by these events takes the wheel for a
+  trackpad. In some 3D and design apps the wheel may then pan where it used to zoom.
+- Scrolling sideways (with Shift, "Scroll sideways" or the thumb wheel) can be taken for
+  a two-finger swipe, and go back or forward a page in an app that does that.
+- At the end of a page, an app that is not a browser can keep the page stretched until
+  the scroll has run out: about half a second after a click at Smooth, a second at Float.
+
+If one app scrolls oddly with it, give that app its own settings in the Apps pane and
+turn it off there.
 
 ### Buttons and keys
 
@@ -380,9 +412,10 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](SECURIT
     setting for natural scrolling (for "Follow the hand");
   - which app is under the pointer or in front, for the per-app settings and "Smooth
     Scrolling in …". With "Trackpad-style scrolling" on it also looks once into the
-    bundle of each app you scroll in, to see whether the app is built on Chromium (the
-    names in `Contents/Frameworks`); only apps in the Applications folders and in
-    /System are looked into;
+    bundle of each app that comes to the front or that you scroll in, to see whether the
+    app is built on Chromium (the names in `Contents/Frameworks`, and whether
+    `Contents/MacOS` holds a browser's app loader); only apps in the Applications folders
+    and in /System are looked into;
   - the running apps, with their names and icons, to offer them in the Apps pane;
   - the macOS pointer settings, which it shows, and changes only as described under
     [Logitech MX mice](#logitech-mx-mice).
@@ -474,9 +507,13 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   glide after the last event 1389 ms, Duration 4.50 (tau 230 ms), trackpad-style off, ended: glided out
   ```
 
+  `trackpad-style` says in which form the scroll was sent: `off`; `on (flick: 1 touches,
+  2 wheel events into a glide)` for a Chromium-based app; `on (one touch: 1 touches)`
+  for any other app; `off (not sent to this app)` for Safari while the switch is on.
   The line ends with why the scroll ended: glided out, left click, a finger on the
-  trackpad, the wheel went on in another app, the scroll tap was restarted, ended by the
-  keeper, or stopped. Also one `thumb wheel:` line per roll of the sideways wheel, and at
+  trackpad, the wheel went on in another app, trackpad-style was switched, the scroll tap
+  was restarted, ended by the keeper, or stopped. Also one `thumb wheel:` line per roll of
+  the sideways wheel, and at
   most one line per reason every 3 seconds while wheel events are let through unsmoothed
   (trackpad events, a remote desktop, smoothing off for that event or that axis, no
   display link, a Step or Speed that is not a number).

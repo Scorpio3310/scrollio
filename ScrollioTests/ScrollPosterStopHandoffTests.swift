@@ -773,6 +773,437 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         poster.stop()
     }
 
+    /// B1 through the poster's real entry: "Trackpad-style scrolling" is switched off (from
+    /// the keyboard) while a touch is open, and the wheel goes on in the same process. The
+    /// touch gets its "ended" before any frame of the next event; that event's scroll is one
+    /// of its own, without phases. The scroll used to be taken over as it was: frames
+    /// without phases followed the "began", and no "ended" ever came.
+    func testSwitchingTrackpadStyleOffInMidScrollClosesTheTouchFirst() throws {
+        let savedApplication = ScrollCore.shared.application
+        let savedSwitch = Options.shared.scroll.smoothSimTrackpad
+        ScrollCore.shared.application = nil
+        defer {
+            ScrollCore.shared.application = savedApplication
+            Options.shared.scroll.smoothSimTrackpad = savedSwitch
+        }
+        let context = ScrollDispatchContext()
+        let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+        poster.trackpadStyleTarget = { _ in .touchOnly }
+        let display = FakeDisplay(for: poster)
+        var posted: [(scroll: Double, momentum: Double)] = []
+        let lock = NSLock()
+        context.postObserverForTests = { event, _ in
+            lock.lock()
+            posted.append((event.getDoubleValueField(.scrollWheelEventScrollPhase), event.getDoubleValueField(.scrollWheelEventMomentumPhase)))
+            lock.unlock()
+        }
+        func postedSoFar() -> [(scroll: Double, momentum: Double)] {
+            context.waitForPostQueueForTests()
+            lock.lock()
+            defer { lock.unlock() }
+            return posted
+        }
+        var ended: [ScrollSystemLog.EndReason] = []
+        ScrollSystemLog.sessionObserverForTests = { ended.append($1) }
+        defer { ScrollSystemLog.sessionObserverForTests = nil }
+        var now = ScrollPoster.monotonicNow()
+        func frames(_ count: Int) {
+            for _ in 0..<count {
+                now += 1.0 / 60.0
+                poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: now)
+            }
+        }
+
+        Options.shared.scroll.smoothSimTrackpad = true
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        frames(4)
+        let touch = postedSoFar()
+        XCTAssertEqual(touch.first?.scroll, 1, "began")
+        XCTAssertEqual(touch.last?.scroll, 2, "the touch is open")
+
+        Options.shared.scroll.smoothSimTrackpad = false
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        frames(4)
+
+        XCTAssertEqual(ended, [.settingChanged])
+        let after = Array(postedSoFar().dropFirst(touch.count))
+        XCTAssertEqual(after.first?.scroll, 4, "the touch got its \"ended\" first")
+        XCTAssertGreaterThan(after.count, 3)
+        XCTAssertTrue(after.dropFirst().allSatisfy { $0.scroll == 0 && $0.momentum == 0 }, "then frames without phases: \(after)")
+        XCTAssertEqual(poster.sessionLogForTests.inputs, 1, "a scroll of its own")
+        XCTAssertEqual(poster.motionStateForTests.buffer.y, 211.68, accuracy: 1e-9)
+        XCTAssertEqual(display.made.last?.isRunning, true, "the display link runs for it")
+        poster.stop()
+    }
+
+    /// B2: `stop()` returns only after its closing frames went out. A finger begins to
+    /// scroll on the trackpad while the wheel's touch is open: the tap's callback ends the
+    /// wheel's scroll and then lets the trackpad's "began" through. The closing "ended" used
+    /// to be posted from another queue some time after `stop()` had returned, so nothing
+    /// kept it ahead of that "began". The post is slow here (20 ms): without the wait
+    /// `stop()` is back long before the frame is out.
+    func testAStopReturnsAfterItsClosingFrameWentOut() throws {
+        let savedApplication = ScrollCore.shared.application
+        let savedSwitch = Options.shared.scroll.smoothSimTrackpad
+        ScrollCore.shared.application = nil
+        Options.shared.scroll.smoothSimTrackpad = true
+        defer {
+            ScrollCore.shared.application = savedApplication
+            Options.shared.scroll.smoothSimTrackpad = savedSwitch
+        }
+        let context = ScrollDispatchContext()
+        let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+        poster.trackpadStyleTarget = { _ in .touchOnly }
+        _ = FakeDisplay(for: poster)
+        var posted: [Double] = []
+        let lock = NSLock()
+        context.postObserverForTests = { event, _ in
+            Thread.sleep(forTimeInterval: 0.02)
+            lock.lock()
+            posted.append(event.getDoubleValueField(.scrollWheelEventScrollPhase))
+            lock.unlock()
+        }
+        var waits = 0
+        context.waitObserverForTests = { waits += 1 }
+
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        var now = ScrollPoster.monotonicNow()
+        for _ in 0..<2 {
+            now += 1.0 / 60.0
+            poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: now)
+        }
+        XCTAssertEqual(waits, 0, "no frame of a running scroll is waited for")
+        // What was posted so far has reached the app ("began" and two "changed").
+        context.waitForPostQueueForTests()
+
+        XCTAssertTrue(ScrollCore.stopWheelGlide(forTrackpadScrollPhase: 1, poster: poster))
+
+        // Read at once, without waiting for the queue.
+        lock.lock()
+        let phases = posted
+        lock.unlock()
+        XCTAssertEqual(phases.last, 4, "the closing \"ended\" is out when stop() returns: \(phases)")
+        XCTAssertEqual(phases.first, 1)
+        XCTAssertEqual(waits, 1)
+
+        // A stop with nothing to close waits for nothing.
+        poster.stop()
+        XCTAssertEqual(waits, 1)
+    }
+
+    /// B2, the other side: without trackpad-style phases a stop queues nothing an app waits
+    /// for, and it does not wait on the post queue at all. The queue is blocked here (a post
+    /// that does not return until the test lets it): a stop that touched the queue would
+    /// hang. This is the switch-off path inside the tap callback, which must stay as it was.
+    func testAStopWithoutPhasesDoesNotWaitForTheQueue() throws {
+        let savedApplication = ScrollCore.shared.application
+        let savedSwitch = Options.shared.scroll.smoothSimTrackpad
+        ScrollCore.shared.application = nil
+        Options.shared.scroll.smoothSimTrackpad = false
+        defer {
+            ScrollCore.shared.application = savedApplication
+            Options.shared.scroll.smoothSimTrackpad = savedSwitch
+        }
+        let context = ScrollDispatchContext()
+        let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+        _ = FakeDisplay(for: poster)
+        let gate = DispatchSemaphore(value: 0)
+        let entered = DispatchSemaphore(value: 0)
+        var enteredOnce = false
+        context.postObserverForTests = { _, _ in
+            if !enteredOnce {
+                enteredOnce = true
+                entered.signal()
+            }
+            gate.wait()
+        }
+        var waits = 0
+        context.waitObserverForTests = { waits += 1 }
+
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        var now = ScrollPoster.monotonicNow()
+        for _ in 0..<3 {
+            now += 1.0 / 60.0
+            poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: now)
+        }
+        XCTAssertEqual(entered.wait(timeout: .now() + 5), .success, "a post is under way and does not return")
+
+        poster.stop(reason: .leftClick)
+
+        XCTAssertEqual(waits, 0)
+        XCTAssertFalse(poster.isGliding)
+        for _ in 0..<64 { gate.signal() }
+        context.waitForPostQueueForTests()
+    }
+
+    // MARK: - The real path with "Trackpad-style scrolling" on
+
+    /// One frame as it would be posted: what the app reads on the event.
+    private struct PostedFrame {
+        var scroll: Double
+        var momentum: Double
+        var y: Int64
+        var timestamp: UInt64
+        var pid: pid_t
+        var isContinuous: Int64
+        var name: String { return ScrollClassicRig.phaseName(scroll: scroll, momentum: momentum) }
+        var hasPhase: Bool { return scroll != 0 || momentum != 0 }
+    }
+
+    /// The wheel event's own time, and where the clock of the frames' own times starts.
+    private static let wheelTime: UInt64 = 1_000_000_000
+    private static let firstFrameTime: UInt64 = 5_000_000_000
+
+    /// The default click: every frame that moves the page, with the switch off (pinned by
+    /// `ScrollClassicPathTests.testTheDefaultClick_isWhatItWas`). No form changes it.
+    private static let defaultClick: [Int64] = [
+        7, 13, 15, 16, 16, 16, 15, 14, 12, 11, 10, 9, 8, 7, 6, 5, 5, 4, 3, 3, 2, 2, 2, 2, 1, 1,
+    ]
+
+    /// One click of the wheel as the scroll tap hands it over: a CGEvent with a target through
+    /// `smooth(event:input:)`, the switch read from the settings (the caller sets them), the
+    /// app's kind as given, display frames until the scroll has ended by itself. Returns the
+    /// events that would be posted, the scroll's log entry, and how often the kind was asked.
+    /// `oldLongTouch`: the evaluation switch (`ScrollPoster.usesOldLongTouch`).
+    private func oneClick(over kind: ScrollUtils.TrackpadStyleTarget, oldLongTouch: Bool = false,
+                          file: StaticString = #filePath, line: UInt = #line) throws -> (frames: [PostedFrame], session: ScrollSystemLog.Session?, asked: Int) {
+        let context = ScrollDispatchContext()
+        let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+        poster.usesOldLongTouch = oldLongTouch
+        var asked = 0
+        poster.trackpadStyleTarget = { _ in
+            asked += 1
+            return kind
+        }
+        _ = FakeDisplay(for: poster)
+        var clock = Self.firstFrameTime
+        poster.eventClockForTests = {
+            clock += 16_000_000
+            return clock
+        }
+        var posted: [PostedFrame] = []
+        let lock = NSLock()
+        context.postObserverForTests = { event, pid in
+            lock.lock()
+            posted.append(PostedFrame(
+                scroll: event.getDoubleValueField(.scrollWheelEventScrollPhase),
+                momentum: event.getDoubleValueField(.scrollWheelEventMomentumPhase),
+                y: event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1),
+                timestamp: event.timestamp,
+                pid: pid,
+                isContinuous: event.getIntegerValueField(.scrollWheelEventIsContinuous)
+            ))
+            lock.unlock()
+        }
+        var sessions: [ScrollSystemLog.Session] = []
+        ScrollSystemLog.sessionObserverForTests = { session, _ in sessions.append(session) }
+        defer { ScrollSystemLog.sessionObserverForTests = nil }
+
+        let wheel = try wheelEvent(targetPID: 4242)
+        wheel.timestamp = Self.wheelTime
+        XCTAssertTrue(poster.smooth(event: wheel, input: input()), file: file, line: line)
+        var now = ScrollPoster.monotonicNow()
+        for _ in 0..<240 {
+            now += 1.0 / 60.0
+            if let request = poster.displayLinkFrameForTests(frameInterval: 1.0 / 60.0, now: now) {
+                // The frames come here without the 16 ms between them: let the post queue
+                // catch up before the stop (it drops what still waits from before it).
+                context.waitForPostQueueForTests()
+                XCTAssertTrue(poster.performRequestedStop(request), file: file, line: line)
+                break
+            }
+        }
+        XCTAssertFalse(poster.isGliding, "the scroll ended by itself", file: file, line: line)
+        context.waitForPostQueueForTests()
+        lock.lock()
+        defer { lock.unlock() }
+        XCTAssertTrue(posted.allSatisfy { $0.pid == 4242 }, "every frame goes to the wheel event's process", file: file, line: line)
+        XCTAssertTrue(posted.allSatisfy { $0.isContinuous == 1 }, file: file, line: line)
+        XCTAssertEqual(posted.filter { $0.y != 0 }.map(\.y), Self.defaultClick, "the motion is the default click's in every form", file: file, line: line)
+        return (posted, sessions.last, asked)
+    }
+
+    /// Sets the Scrolling pane's switch and the entry of the app under the pointer for one
+    /// test, and puts both back.
+    private func withSettings(switchOn: Bool, application: Application? = nil, _ body: () throws -> Void) rethrows {
+        let savedApplication = ScrollCore.shared.application
+        let savedSwitch = Options.shared.scroll.smoothSimTrackpad
+        ScrollCore.shared.application = application
+        Options.shared.scroll.smoothSimTrackpad = switchOn
+        defer {
+            ScrollCore.shared.application = savedApplication
+            Options.shared.scroll.smoothSimTrackpad = savedSwitch
+        }
+        try body()
+    }
+
+    private func phaseRuns(_ frames: [PostedFrame]) -> [String] {
+        var runs: [(String, Int)] = []
+        for frame in frames {
+            if runs.last?.0 == frame.name { runs[runs.count - 1].1 += 1 } else { runs.append((frame.name, 1)) }
+        }
+        return runs.map { "\($0.0) ×\($0.1)" }
+    }
+
+    /// Over a Chromium-based app: a flick. The posted events carry the phases of a short touch
+    /// and its glide, and every one its own time (the wheel event's time is on none of them).
+    /// Until now the phases and times were only checked on frames before they were written
+    /// to an event, with the form set by hand.
+    func testTheRealPath_overAChromiumApp_postsAFlickWithItsOwnTimes() throws {
+        try withSettings(switchOn: true) {
+            let result = try oneClick(over: .followsGlide)
+            XCTAssertEqual(phaseRuns(result.frames), [
+                "began ×1", "changed ×2", "ended ×1", "momentumBegan ×1", "momentumChanged ×23", "momentumEnded ×1",
+            ])
+            let times = result.frames.map(\.timestamp)
+            XCTAssertTrue(times.allSatisfy { $0 > Self.firstFrameTime }, "every frame its own time")
+            XCTAssertEqual(times, times.sorted())
+            XCTAssertEqual(Set(times).count, times.count, "no two frames the same time")
+            XCTAssertEqual(result.asked, 1, "the app's kind is asked once per wheel event")
+            XCTAssertEqual(result.session?.trackpadStyle, true)
+            XCTAssertEqual(result.session?.flick, true)
+            XCTAssertEqual(result.session?.touches, 1)
+        }
+    }
+
+    /// Over any other app (AppKit, a web view, an app that is not known): one touch until the
+    /// scroll has run out. Every frame of the click is a "changed", "ended" follows the last
+    /// one, no event carries a glide phase, and every one keeps the wheel event's time.
+    func testTheRealPath_overAnyOtherApp_postsOneTouchToTheEnd() throws {
+        try withSettings(switchOn: true) {
+            let result = try oneClick(over: .touchOnly)
+            XCTAssertEqual(phaseRuns(result.frames), ["began ×1", "changed ×26", "ended ×1"])
+            XCTAssertFalse(result.frames.contains { $0.momentum != 0 }, "no glide event")
+            XCTAssertTrue(result.frames.allSatisfy { $0.timestamp == Self.wheelTime }, "the wheel event's time on every frame")
+            XCTAssertEqual(result.frames.filter { $0.scroll == 2 }.reduce(0) { $0 + $1.y }, 205, "the touch carries the whole click")
+            XCTAssertEqual(result.session?.trackpadStyle, true)
+            XCTAssertEqual(result.session?.flick, false)
+            XCTAssertEqual(result.session?.oneTouch, true)
+            XCTAssertEqual(result.session?.touches, 1)
+        }
+    }
+
+    /// EVALUATION SWITCH: with it the same apps get the old long touch, a touch until the
+    /// wheel has been still for 0.18 s and the rest as its glide: 135 of the click's 205 px
+    /// in the touch. Nothing else changes with it: a Chromium app still gets the flick.
+    func testTheRealPath_withTheEvaluationSwitch_postsTheOldLongTouch() throws {
+        try withSettings(switchOn: true) {
+            let result = try oneClick(over: .touchOnly, oldLongTouch: true)
+            XCTAssertEqual(phaseRuns(result.frames), [
+                "began ×1", "changed ×10", "ended ×1", "momentumBegan ×1", "momentumChanged ×15", "momentumEnded ×1",
+            ])
+            XCTAssertTrue(result.frames.allSatisfy { $0.timestamp == Self.wheelTime }, "the wheel event's time on every frame")
+            XCTAssertEqual(result.frames.filter { $0.scroll == 2 }.reduce(0) { $0 + $1.y }, 135, "what the touch carries of the 205 px")
+            XCTAssertEqual(result.session?.trackpadStyle, true)
+            XCTAssertEqual(result.session?.flick, false)
+            XCTAssertEqual(result.session?.oneTouch, false)
+
+            let flick = try oneClick(over: .followsGlide, oldLongTouch: true)
+            XCTAssertEqual(flick.session?.flick, true)
+            XCTAssertEqual(phaseRuns(flick.frames).prefix(4), ["began ×1", "changed ×2", "ended ×1", "momentumBegan ×1"])
+        }
+    }
+
+    /// The one touch ends at its own place. The wheel goes on over another pane of the same
+    /// app: the "ended" of the open touch is a copy of the last event at the first place, and
+    /// the "began" that follows is the new event's. (Ended after the new event was stored, it
+    /// would carry the second pane's place, for a touch that pane never saw begin.)
+    func testTheRealPath_theOneTouchEndsAtItsOwnPlace() throws {
+        try withSettings(switchOn: true) {
+            let context = ScrollDispatchContext()
+            let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+            poster.trackpadStyleTarget = { _ in .touchOnly }
+            _ = FakeDisplay(for: poster)
+            var posted: [(scroll: Double, x: CGFloat)] = []
+            let lock = NSLock()
+            context.postObserverForTests = { event, _ in
+                lock.lock()
+                posted.append((event.getDoubleValueField(.scrollWheelEventScrollPhase), event.location.x))
+                lock.unlock()
+            }
+            func wheel(atX x: CGFloat) throws -> CGEvent {
+                let event = try wheelEvent()
+                event.location = CGPoint(x: x, y: 300)
+                return event
+            }
+            var now = ScrollPoster.monotonicNow()
+            func frames(_ count: Int) {
+                for _ in 0..<count {
+                    now += 1.0 / 60.0
+                    poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: now)
+                }
+            }
+
+            XCTAssertTrue(poster.smooth(event: try wheel(atX: 400), input: input()))
+            frames(3)
+            XCTAssertTrue(poster.smooth(event: try wheel(atX: 410), input: input()))   // the hand moved a little
+            frames(3)
+            XCTAssertTrue(poster.smooth(event: try wheel(atX: 900), input: input()))   // another pane
+            frames(3)
+            // (The frames come here without the 16 ms between them: the post queue catches
+            // up before the stop, which drops what still waits from before it.)
+            context.waitForPostQueueForTests()
+            poster.stop()
+
+            context.waitForPostQueueForTests()
+            lock.lock()
+            let all = posted
+            lock.unlock()
+            XCTAssertEqual(all.filter { $0.scroll == 1 }.map(\.x), [400, 900], "two touches: the first place and the far one")
+            XCTAssertEqual(all.filter { $0.scroll == 4 }.map(\.x), [410, 900], "each ended where it was")
+            let firstEnded = try XCTUnwrap(all.firstIndex { $0.scroll == 4 })
+            XCTAssertEqual(all.dropFirst(firstEnded + 1).first?.scroll, 1, "the new touch begins right after")
+            XCTAssertTrue(all.prefix(firstEnded).allSatisfy { $0.x == 400 || $0.x == 410 })
+            XCTAssertTrue(all.dropFirst(firstEnded + 1).allSatisfy { $0.x == 900 })
+        }
+    }
+
+    /// Over Safari: no phase on any posted event and the wheel event's time, exactly the
+    /// switch-off stream; the log says the switch is on but nothing was sent to this app.
+    func testTheRealPath_overSafari_postsNoPhases() throws {
+        try withSettings(switchOn: true) {
+            let result = try oneClick(over: .plainScrolling)
+            XCTAssertFalse(result.frames.contains { $0.hasPhase })
+            XCTAssertTrue(result.frames.allSatisfy { $0.timestamp == Self.wheelTime })
+            XCTAssertEqual(result.session?.trackpadStyle, false)
+            XCTAssertEqual(result.session?.trackpadStyleWithheld, true)
+        }
+        // The same stream with the switch off, and then the app's kind is not even asked.
+        try withSettings(switchOn: false) {
+            let off = try oneClick(over: .followsGlide)
+            XCTAssertFalse(off.frames.contains { $0.hasPhase })
+            XCTAssertTrue(off.frames.allSatisfy { $0.timestamp == Self.wheelTime })
+            XCTAssertEqual(off.asked, 0, "asked only while the switch is on")
+            XCTAssertEqual(off.session?.trackpadStyle, false)
+            XCTAssertEqual(off.session?.trackpadStyleWithheld, false)
+        }
+    }
+
+    /// An app that keeps its own settings (the Apps pane): its own switch counts, not the
+    /// Scrolling pane's. An app that uses the Scrolling pane's settings follows that one.
+    func testTheRealPath_anAppsOwnSwitchCounts() throws {
+        let own = Application(path: "/Applications/Editor.app")
+        own.inherit = false
+
+        own.scroll.smoothSimTrackpad = true
+        try withSettings(switchOn: false, application: own) {
+            let result = try oneClick(over: .followsGlide)
+            XCTAssertTrue(result.frames.contains { $0.hasPhase }, "on for this app, off in the Scrolling pane")
+            XCTAssertEqual(result.session?.flick, true)
+        }
+        own.scroll.smoothSimTrackpad = false
+        try withSettings(switchOn: true, application: own) {
+            let result = try oneClick(over: .followsGlide)
+            XCTAssertFalse(result.frames.contains { $0.hasPhase }, "off for this app, on in the Scrolling pane")
+            XCTAssertEqual(result.asked, 0)
+        }
+        own.inherit = true
+        try withSettings(switchOn: true, application: own) {
+            let result = try oneClick(over: .touchOnly)
+            XCTAssertTrue(result.frames.contains { $0.hasPhase }, "the app uses the Scrolling pane's settings")
+        }
+    }
+
     // MARK: - The app's own display link class, on a real CVDisplayLink
 
     private final class FrameCounter {

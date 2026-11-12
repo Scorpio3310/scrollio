@@ -244,23 +244,9 @@ final class ScrollPhaseTests: XCTestCase {
         XCTAssertEqual(values?[.Momentum], 2.0)
     }
 
-    func testPhaseValueMapping_hold() {
-        let values = PhaseValueMapping[.Hold]
-        XCTAssertNotNil(values)
-        XCTAssertEqual(values?[.Scroll], 128.0)
-        XCTAssertEqual(values?[.Momentum], 0.0)
-    }
-
-    func testPhaseValueMapping_leave() {
-        let values = PhaseValueMapping[.Leave]
-        XCTAssertNotNil(values)
-        XCTAssertEqual(values?[.Scroll], 8.0)
-        XCTAssertEqual(values?[.Momentum], 0.0)
-    }
-
     func testPhaseValueMapping_allPhasesHaveEntries() {
-        let allPhases: [Phase] = [.Idle, .Hold, .TrackingBegin, .TrackingOngoing, .TrackingEnd,
-                                   .MomentumBegin, .MomentumOngoing, .MomentumEnd, .Leave]
+        let allPhases: [Phase] = [.Idle, .TrackingBegin, .TrackingOngoing, .TrackingEnd,
+                                   .MomentumBegin, .MomentumOngoing, .MomentumEnd]
         for phase in allPhases {
             XCTAssertNotNil(PhaseValueMapping[phase], "Missing mapping for \(phase)")
         }
@@ -378,5 +364,61 @@ final class ScrollPhaseTests: XCTestCase {
         sut.apply(phase: .MomentumBegin, autoAdvance: .MomentumOngoing)
         XCTAssertEqual(sut.onMomentumFinish().target?.0, .MomentumEnd)
         XCTAssertEqual(sut.onMomentumOngoing().target?.0, .MomentumOngoing)
+    }
+
+    // MARK: - With trackpad-style events (the mode whose phases reach an app)
+    //
+    // The tests above run the machine as it runs with the switch off: its phases reach no app
+    // then, they only time the end of a scroll. With the switch on (`holdsWaitingMomentumBegan`)
+    // the same calls have to keep what an app gets whole.
+
+    /// A whole scroll with a glide: "momentum began" stays until the frame that carries it has
+    /// gone out, however many frames post nothing before that.
+    func testFullFlow_withTrackpadStyle_momentumBeganWaitsForItsFrame() {
+        sut.holdsWaitingMomentumBegan = true
+        let begin = sut.onManualInputDetected(isSeparated: true)
+        XCTAssertTrue(begin.beginsTouch)
+        sut.apply(phase: begin.queue[0].0, autoAdvance: begin.queue[0].1)
+        sut.didDeliverFrame()
+        XCTAssertEqual(sut.phase, .TrackingOngoing)
+        XCTAssertEqual(sut.onManualInputEnded().target?.0, .TrackingEnd)
+        sut.apply(phase: .TrackingEnd)
+
+        let start = sut.onMomentumStart()
+        XCTAssertEqual(start.target?.0, .MomentumBegin)
+        sut.apply(phase: .MomentumBegin, autoAdvance: .MomentumOngoing)
+        // Frames that come to no whole pixel: nothing is posted, the phase stays.
+        for _ in 0..<5 {
+            XCTAssertNil(sut.onMomentumOngoing().target)
+            XCTAssertNil(sut.onMomentumStart().target)
+            XCTAssertEqual(sut.phase, .MomentumBegin)
+        }
+        // The frame that carries it goes out; from then on the glide runs and can be ended.
+        sut.didDeliverFrame()
+        XCTAssertEqual(sut.phase, .MomentumOngoing)
+        XCTAssertFalse(sut.momentumBeganIsWaiting)
+        XCTAssertEqual(sut.onMomentumFinish().target?.0, .MomentumEnd)
+    }
+
+    /// A wheel event while "momentum began" still waits: the glide is taken back (the app has
+    /// the touch and its "ended", nothing of a glide), and the new touch begins without a
+    /// "momentum ended" in between.
+    func testDropWaitingMomentumBegan_takesBackAGlideOfWhichNothingWentOut() {
+        sut.holdsWaitingMomentumBegan = true
+        sut.apply(phase: .MomentumBegin, autoAdvance: .MomentumOngoing)
+        XCTAssertTrue(sut.momentumBeganIsWaiting)
+
+        sut.dropWaitingMomentumBegan()
+
+        XCTAssertEqual(sut.phase, .TrackingEnd)
+        let next = sut.onManualInputDetected(isSeparated: true)
+        XCTAssertEqual(next.queue.map { $0.0 }, [.TrackingBegin], "\"began\" alone, no \"momentum ended\"")
+
+        // A glide that has begun for the app is not taken back: it is ended.
+        sut.apply(phase: .MomentumBegin, autoAdvance: .MomentumOngoing)
+        sut.didDeliverFrame()
+        sut.dropWaitingMomentumBegan()
+        XCTAssertEqual(sut.phase, .MomentumOngoing)
+        XCTAssertEqual(sut.onManualInputDetected(isSeparated: true).queue.map { $0.0 }, [.MomentumEnd, .TrackingBegin])
     }
 }

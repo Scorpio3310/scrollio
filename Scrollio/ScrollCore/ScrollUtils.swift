@@ -60,6 +60,8 @@ class ScrollUtils {
         /// hardware event the frame still carries as a copy of the wheel event: its time (the
         /// same for every frame of a tick) and the wheel's raw delta, for a glide of its own.
         /// Frames made anew without that record did not scroll Safari at all (build 1538).
+        /// Also the other apps whose whole window is WebKit's and that are known by name
+        /// (`getsPlainScrolling`): Safari's web apps, the DuckDuckGo browser.
         case plainScrolling
     }
 
@@ -87,8 +89,10 @@ class ScrollUtils {
         return trackpadStyleTarget(bundleIdentifier: application.bundleIdentifier, bundleURL: bundleURL)
     }
 
-    /// The answer for an app, at once. Safari is known by its name. Any other app counts as
-    /// touch-only the first time it is seen (what an app that is not known gets), and its
+    /// The answer for an app, at once. Safari is known by its name (`getsPlainScrolling`). Any
+    /// other app counts as touch-only the first time it is seen (what an app that is not known
+    /// gets; an app is first seen when it comes to the front, `applicationCameToFront`, or by
+    /// its first wheel event), and its
     /// bundle is looked into once, off the main thread; the answer is stored on the main
     /// queue for the scrolls after it. It used to be looked into here, inside the tap's
     /// callback: for an app in Documents, Desktop, Downloads or on a network volume macOS
@@ -101,7 +105,7 @@ class ScrollUtils {
         if let known = trackpadStyleTargetByBundlePath[path] {
             return known
         }
-        if let identifier = bundleIdentifier, Self.safariBundleIdentifiers.contains(identifier) {
+        if let identifier = bundleIdentifier, Self.getsPlainScrolling(bundleIdentifier: identifier) {
             trackpadStyleTargetByBundlePath[path] = .plainScrolling
             return .plainScrolling
         }
@@ -133,24 +137,54 @@ class ScrollUtils {
     }
     private static let homeDirectory = NSHomeDirectory()
 
-    /// Safari by its name, a Chromium-based app by what its bundle carries. (Firefox, and web
+    /// Whether an app gets no trackpad-style events at all (`TrackpadStyleTarget
+    /// .plainScrolling`): a browser whose pages WebKit draws, known by its bundle id.
+    ///
+    /// - Safari: every id that begins with `com.apple.Safari`. That is Safari itself, Safari
+    ///   Technology Preview, and the web apps made with "Add to Dock"
+    ///   (`com.apple.Safari.WebApp.<id>`), which used to count as touch-only and got the form
+    ///   Safari could not scroll with.
+    /// - The DuckDuckGo browser (WKWebView): both ids are in its own repository,
+    ///   github.com/duckduckgo/apple-browsers, `macOS/Configuration/DeveloperID.xcconfig`
+    ///   (the download) and `macOS/Configuration/AppStore.xcconfig` (the Mac App Store build).
+    ///
+    /// An id goes in here only from a source that can be named. (Orion is WebKit too; its id
+    /// could not be confirmed from Kagi's own material, so it is not listed.) Firefox, and web
     /// views inside other apps, count as touch-only: not checked on screen, and a web view
-    /// cannot be told from the app's own lists.) Reads the disk: never on the main thread
-    /// (the scroll path asks `trackpadStyleTarget(bundleIdentifier:bundleURL:)` of an instance).
-    static func trackpadStyleTarget(bundleIdentifier: String?, bundleURL: URL, fileManager: FileManager = .default) -> TrackpadStyleTarget {
-        if let identifier = bundleIdentifier, safariBundleIdentifiers.contains(identifier) {
-            return .plainScrolling
-        }
-        return isChromiumBased(bundleURL: bundleURL, fileManager: fileManager) ? .followsGlide : .touchOnly
+    /// cannot be told from the app's own lists.
+    static func getsPlainScrolling(bundleIdentifier: String) -> Bool {
+        return bundleIdentifier.hasPrefix(safariBundleIdentifierPrefix)
+            || webKitBrowserBundleIdentifiers.contains(bundleIdentifier)
     }
+    static let safariBundleIdentifierPrefix = "com.apple.Safari"
+    static let webKitBrowserBundleIdentifiers: Set<String> = [
+        "com.duckduckgo.macos.browser", "com.duckduckgo.mobile.ios",
+    ]
 
-    static let safariBundleIdentifiers: Set<String> = ["com.apple.Safari", "com.apple.SafariTechnologyPreview"]
+    /// An app came to the front. With trackpad-style events on for it, its kind is asked for
+    /// now (the look into its bundle runs off the main thread, as always), so that the first
+    /// scroll in it already knows. It used to be asked by the first wheel event, and that
+    /// scroll (until the answer) went out as for an app that is not known: over a
+    /// Chromium-based app as one long touch instead of a flick. An app that never comes to
+    /// the front (a scroll over a window in the background) is still asked for by its first
+    /// wheel event. Main thread.
+    func applicationCameToFront(bundleIdentifier: String?, bundleURL: URL?, trackpadStyleOn: Bool) {
+        guard trackpadStyleOn, let bundleURL = bundleURL else { return }
+        _ = trackpadStyleTarget(bundleIdentifier: bundleIdentifier, bundleURL: bundleURL)
+    }
 
     /// A Chromium-based app carries the engine's resources (`resources.pak`) in one of its
     /// frameworks: "Google Chrome Framework", "Electron Framework", "Chromium Embedded
-    /// Framework", Dia's and Arc's "ArcCore". One look into `Contents/Frameworks`: reads the
-    /// disk, so never on the main thread (`inspectBundle`).
+    /// Framework", Dia's and Arc's "ArcCore". A web app installed from such a browser (Chrome,
+    /// Brave, Edge: "Install as app") is a small bundle of its own without frameworks: its
+    /// program is the browser's `app_mode_loader`, and its windows live in that process, so it
+    /// is known by that file. One look into `Contents/Frameworks` and `Contents/MacOS`: reads
+    /// the disk, so never on the main thread (`inspectBundle`).
     static func isChromiumBased(bundleURL: URL, fileManager: FileManager = .default) -> Bool {
+        let appModeLoader = bundleURL.appendingPathComponent("Contents/MacOS/app_mode_loader")
+        if fileManager.fileExists(atPath: appModeLoader.path) {
+            return true
+        }
         let frameworks = bundleURL.appendingPathComponent("Contents/Frameworks", isDirectory: true)
         guard let names = try? fileManager.contentsOfDirectory(atPath: frameworks.path) else {
             return false

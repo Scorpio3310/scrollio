@@ -40,6 +40,10 @@ enum ScrollSystemLog {
         /// Trackpad-style as a flick (a short touch and its glide, for apps that scroll by the
         /// glide's events) instead of one touch for as long as the wheel turns.
         var flick = false
+        /// Trackpad-style as one touch until the scroll has run out (apps that are not
+        /// Chromium-based). With `trackpadStyle` and neither this nor `flick`: the old long
+        /// touch of the evaluation switch (`TrackpadStyleEvaluation`).
+        var oneTouch = false
         /// The switch is on, but the app under the pointer gets no trackpad-style events (Safari).
         var trackpadStyleWithheld = false
         /// How many touches ("began") the scroll was sent as, and how many of its wheel events
@@ -69,6 +73,9 @@ enum ScrollSystemLog {
         case fingerOnTrackpad = "a finger on the trackpad"
         /// The next wheel event went to another app.
         case anotherApp = "the wheel went on in another app"
+        /// "Trackpad-style scrolling" (or the app's own setting) was switched on or off while
+        /// the scroll ran: it was closed in the form it was sent in.
+        case settingChanged = "trackpad-style was switched"
         /// macOS turned the scroll tap off, or the tap was restarted.
         case tapRestarted = "the scroll tap was restarted"
         /// The keeper ended it (`ScrollPoster.healthCheck`; the `app` log says why).
@@ -84,6 +91,8 @@ enum ScrollSystemLog {
             trackpadStyle = session.trackpadStyleWithheld ? "off (not sent to this app)" : "off"
         } else if session.flick {
             trackpadStyle = "on (flick: \(session.touches) touches, \(session.glideInputs) wheel events into a glide)"
+        } else if session.oneTouch {
+            trackpadStyle = "on (one touch: \(session.touches) touches)"
         } else {
             trackpadStyle = "on (long touch: \(session.touches) touches)"
         }
