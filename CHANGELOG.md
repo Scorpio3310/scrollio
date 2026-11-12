@@ -85,6 +85,14 @@ it for the people who use the app, and give the version its part before you tag 
 - The README says what Trackpad-style scrolling (Beta) does in which app, and where its
   limits are.
 - On macOS 26 the line between the sidebar and the settings in the Settings window is gone.
+- "You're up to date!" and a failed check are now the alert every Mac app shows, with
+  Scrollio's icon and an OK button, instead of a notice at the top of the screen.
+  Scrolling, buttons and gestures go on working while it is open.
+- The window of an update you asked for opens where you are, also over a full-screen
+  app; there it used to open out of sight.
+- An update that the daily check finds no longer opens a window by itself. Scrollio
+  shows in the Dock with a badge, and the window opens when you come to Scrollio or
+  choose "Update to Scrollio …" in its menu.
 
 ## 1.0.1
 

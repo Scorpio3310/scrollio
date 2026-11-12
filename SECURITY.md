@@ -59,7 +59,10 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
   show other release notes in the update window (Scrollio's own are Markdown, but a
   feed can also send HTML or point to a page: scripts in it do not run, pictures and
   styles from the web do load); put a link in that window that opens a web page in the
-  browser; call an update critical; and offer an older release that was properly
+  browser, and a "Learn More…" button that does the same in the alert that says the
+  newest version does not run on this Mac (only http and https addresses; Scrollio
+  leaves out the "Version History" button the feed could otherwise add to "You're up
+  to date!"); call an update critical; and offer an older release that was properly
   signed, to copies older than it.
 - With a check Sparkle can send a profile of the Mac. It is off, and Scrollio hands
   Sparkle an empty list of what such a profile may hold, so a switch planted in the

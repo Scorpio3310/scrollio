@@ -456,13 +456,18 @@ get the next version by hand, once.
   version is downloaded in the background and installed the next time Scrollio quits,
   for example when the Mac restarts). "Check Now" there, and "Check for Updates…" in
   the menu bar menu and in the Scrollio menu, ask at once; when there is nothing newer,
-  or the check failed, one of Scrollio's notices says so.
-- When a check finds a version, a window says what is new and offers to install it.
-  Right after Scrollio started, or after you touched the update switches, it opens in
-  front; at any other time it waits behind what you are doing, or, while Scrollio's
-  settings are open, until Scrollio is next in front. Until you answer it, Scrollio sits
-  in the Dock with a badge, its menu bar menu starts with "Update to Scrollio …" and
-  General names the version.
+  or the check failed, the alert every Mac app shows says so ("You're up to date!",
+  with OK), in front and on the Space you are in. Scrollio goes on working behind it.
+- When a check you asked for finds a version, a window says what is new and offers to
+  install it. It opens where you are, over a full-screen app too, and so do the
+  download and "Ready to Install" after it. If you leave it unanswered and go
+  elsewhere, Scrollio sits in the Dock until you answer, so that ⌘Tab and the Dock find
+  the window again.
+- When the daily check finds a version, no window opens and nothing comes to the front:
+  Scrollio goes into the Dock with a badge, its menu bar menu starts with "Update to
+  Scrollio …" and General names the version. The window opens when you come to Scrollio
+  (its Dock icon, ⌘Tab, its settings) or choose that menu item, which opens it where
+  you are.
 - An update is installed only when its disk image carries a signature made with
   Scrollio's update key (or, should that key ever be replaced, the signature of the
   same Developer ID as the installed app), and that is checked before the image is
