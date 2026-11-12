@@ -773,6 +773,69 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         poster.stop()
     }
 
+    /// B1 through the poster's real entry: "Trackpad-style scrolling" is switched off (from
+    /// the keyboard) while a touch is open, and the wheel goes on in the same process. The
+    /// touch gets its "ended" before any frame of the next event; that event's scroll is one
+    /// of its own, without phases. The scroll used to be taken over as it was: frames
+    /// without phases followed the "began", and no "ended" ever came.
+    func testSwitchingTrackpadStyleOffInMidScrollClosesTheTouchFirst() throws {
+        let savedApplication = ScrollCore.shared.application
+        let savedSwitch = Options.shared.scroll.smoothSimTrackpad
+        ScrollCore.shared.application = nil
+        defer {
+            ScrollCore.shared.application = savedApplication
+            Options.shared.scroll.smoothSimTrackpad = savedSwitch
+        }
+        let context = ScrollDispatchContext()
+        let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+        poster.trackpadStyleTarget = { _ in .touchOnly }
+        let display = FakeDisplay(for: poster)
+        var posted: [(scroll: Double, momentum: Double)] = []
+        let lock = NSLock()
+        context.postObserverForTests = { event, _ in
+            lock.lock()
+            posted.append((event.getDoubleValueField(.scrollWheelEventScrollPhase), event.getDoubleValueField(.scrollWheelEventMomentumPhase)))
+            lock.unlock()
+        }
+        func postedSoFar() -> [(scroll: Double, momentum: Double)] {
+            context.waitForPostQueueForTests()
+            lock.lock()
+            defer { lock.unlock() }
+            return posted
+        }
+        var ended: [ScrollSystemLog.EndReason] = []
+        ScrollSystemLog.sessionObserverForTests = { ended.append($1) }
+        defer { ScrollSystemLog.sessionObserverForTests = nil }
+        var now = ScrollPoster.monotonicNow()
+        func frames(_ count: Int) {
+            for _ in 0..<count {
+                now += 1.0 / 60.0
+                poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: now)
+            }
+        }
+
+        Options.shared.scroll.smoothSimTrackpad = true
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        frames(4)
+        let touch = postedSoFar()
+        XCTAssertEqual(touch.first?.scroll, 1, "began")
+        XCTAssertEqual(touch.last?.scroll, 2, "the touch is open")
+
+        Options.shared.scroll.smoothSimTrackpad = false
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        frames(4)
+
+        XCTAssertEqual(ended, [.settingChanged])
+        let after = Array(postedSoFar().dropFirst(touch.count))
+        XCTAssertEqual(after.first?.scroll, 4, "the touch got its \"ended\" first")
+        XCTAssertGreaterThan(after.count, 3)
+        XCTAssertTrue(after.dropFirst().allSatisfy { $0.scroll == 0 && $0.momentum == 0 }, "then frames without phases: \(after)")
+        XCTAssertEqual(poster.sessionLogForTests.inputs, 1, "a scroll of its own")
+        XCTAssertEqual(poster.motionStateForTests.buffer.y, 211.68, accuracy: 1e-9)
+        XCTAssertEqual(display.made.last?.isRunning, true, "the display link runs for it")
+        poster.stop()
+    }
+
     // MARK: - The app's own display link class, on a real CVDisplayLink
 
     private final class FrameCounter {

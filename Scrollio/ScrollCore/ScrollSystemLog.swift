@@ -69,6 +69,9 @@ enum ScrollSystemLog {
         case fingerOnTrackpad = "a finger on the trackpad"
         /// The next wheel event went to another app.
         case anotherApp = "the wheel went on in another app"
+        /// "Trackpad-style scrolling" (or the app's own setting) was switched on or off while
+        /// the scroll ran: it was closed in the form it was sent in.
+        case settingChanged = "trackpad-style was switched"
         /// macOS turned the scroll tap off, or the tap was restarted.
         case tapRestarted = "the scroll tap was restarted"
         /// The keeper ended it (`ScrollPoster.healthCheck`; the `app` log says why).

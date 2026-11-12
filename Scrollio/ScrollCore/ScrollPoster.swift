@@ -98,6 +98,11 @@ class ScrollPoster {
     var makeDisplayLink: () -> (link: ScrollDisplayLink?, result: CVReturn) = {
         ScrollCVDisplayLink.make(output: ScrollPoster.displayLinkOutput)
     }
+    /// The kind of the app a wheel event goes to, for the form of "Trackpad-style scrolling"
+    /// (asked only while that is on). Tests say the kind here: no running app is looked up.
+    var trackpadStyleTarget: (CGEvent) -> ScrollUtils.TrackpadStyleTarget = {
+        ScrollUtils.shared.trackpadStyleTarget(of: $0)
+    }
     /// Seconds on a clock that is never set back or forward (the wall clock was used here:
     /// set back by a time sync, it refused every new display link and kept a touch open for
     /// as long as it was set back). Both threads read the same clock.
@@ -291,14 +296,19 @@ extension ScrollPoster {
     ///   swallowed and nothing was posted.
     /// - it goes to another app than the scroll that runs: that scroll is ended first
     ///   (`endScroll(unlessFor:)`).
+    /// - its scroll carries trackpad phases and the scroll that runs has none, or the other
+    ///   way round (the switch, the app's own setting or "Reset to Defaults" changed in
+    ///   mid-scroll): that scroll is ended first, in the form it was sent in
+    ///   (`endScroll(unlessPhasesStay:)`).
     /// - Returns: whether the event was taken. false: the caller lets it through.
     func smooth(event: CGEvent, input: ScrollPosterInput) -> Bool {
         guard input.isUsable else { return false }
         let target = pid_t(event.getIntegerValueField(.eventTargetUnixProcessID))
         endScroll(unlessFor: target)
-        guard tryStart(), dispatchContext.capture(event: event) else { return false }
         // 捕获本次手势的配置快照 (主线程读 Options/ScrollCore, CVDisplayLink 线程只读)
         let snapshot = configSnapshot(for: event)
+        endScroll(unlessPhasesStay: snapshot.simTrackpadEnabled)
+        guard tryStart(), dispatchContext.capture(event: event) else { return false }
         os_unfair_lock_lock(&stateLock)
         defer { os_unfair_lock_unlock(&stateLock) }
         applyConfigLocked(snapshot)
@@ -316,6 +326,22 @@ extension ScrollPoster {
     private func endScroll(unlessFor target: pid_t) {
         guard let running = dispatchContext.targetPID, running != target, isGliding else { return }
         stop(reason: .anotherApp)
+    }
+    /// Ends the scroll that runs when the next wheel event's scroll carries trackpad phases
+    /// and the running one does not, or the other way round: "Trackpad-style scrolling", the
+    /// app's own setting or "Reset to Defaults" was changed in mid-scroll (from the keyboard;
+    /// a click ends the scroll anyway). The running scroll is closed in the form it was sent
+    /// in, and the wheel event begins a scroll of its own. It used to be taken over into the
+    /// new form: the frames went on without phases, so did the closing ones, and an app that
+    /// had got "began" (or "momentum began") never got its "ended".
+    /// The two forms that carry phases pass into each other without an end: the first scroll
+    /// over a Chromium-based app begins as one touch and goes on as a flick.
+    private func endScroll(unlessPhasesStay phases: Bool) {
+        os_unfair_lock_lock(&stateLock)
+        let changes = !sessionLog.isEmpty && config.simTrackpadEnabled != phases
+        os_unfair_lock_unlock(&stateLock)
+        guard changes else { return }
+        stop(reason: .settingChanged)
     }
     /// 处理一次滚轮输入: 缓冲与阶段 (调用方须持有 stateLock)
     private func handleInputLocked(_ input: ScrollPosterInput, at now: CFTimeInterval, place: ScrollInputPlace? = nil) {
@@ -517,10 +543,19 @@ extension ScrollPoster {
     }
     /// Sets the config snapshot directly (an event would read it from Options). `flick`: the app
     /// under the pointer scrolls by the events of a glide (it only counts with trackpad-style on).
+    /// Nothing is ended: for the form of a scroll before it begins. In mid-scroll a wheel
+    /// event's form arrives as `changeFormForTests` takes it up.
     func setConfigForTests(simTrackpadEnabled: Bool, deadZone: Double = 1.0, flick: Bool = true) {
         os_unfair_lock_lock(&stateLock)
         applyConfigLocked(ConfigSnapshot(simTrackpadEnabled: simTrackpadEnabled, flick: simTrackpadEnabled && flick, deadZone: deadZone))
         os_unfair_lock_unlock(&stateLock)
+    }
+    /// The form the next wheel event arrives in, taken up as `smooth(event:input:)` does it: a
+    /// scroll that runs with phases is ended first when the new form has none, and the other
+    /// way round.
+    func changeFormForTests(simTrackpadEnabled: Bool, deadZone: Double = 1.0, flick: Bool = true) {
+        endScroll(unlessPhasesStay: simTrackpadEnabled)
+        setConfigForTests(simTrackpadEnabled: simTrackpadEnabled, deadZone: deadZone, flick: flick)
     }
     /// One wheel event through the whole input path (buffer, lead cap, phases, session log),
     /// without an event to copy. Frames go to `frameRecorderForTests`.
@@ -1192,7 +1227,7 @@ private extension ScrollPoster {
         // Asked with trackpad-style events only. It never reads the disk here: an app seen
         // for the first time counts as touch-only until its bundle was looked into, off this
         // thread (`ScrollUtils.trackpadStyleTarget`).
-        let target = simTrackpad ? event.map { ScrollUtils.shared.trackpadStyleTarget(of: $0) } : nil
+        let target = simTrackpad ? event.map { trackpadStyleTarget($0) } : nil
         let form = Self.trackpadStyleForm(switchOn: simTrackpad, target: target)
         return ConfigSnapshot(
             simTrackpadEnabled: form.phases,

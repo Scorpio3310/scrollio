@@ -594,38 +594,93 @@ final class ScrollClassicPathTests: XCTestCase {
         }
     }
 
-    /// The switch can differ per app. A scroll that began in an app with it off goes on in an
-    /// app with it on as a touch of its own: that app got no "began" for the glide.
+    /// The switch goes on while a scroll without phases runs (in the same process: the switch
+    /// or the app's own setting was changed). That scroll is ended, and the wheel event begins
+    /// a touch of its own: the app got no "began" for the glide that ran, so it gets no
+    /// "momentum ended" for it either (it used to get one).
     func testTrackpadStyle_afterAScrollWithTheSwitchOff_beginsATouch() {
+        var ended: [ScrollSystemLog.EndReason] = []
+        ScrollSystemLog.sessionObserverForTests = { ended.append($1) }
+        defer { ScrollSystemLog.sessionObserverForTests = nil }
         let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: false)
         rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0)
         rig.run(until: 0.25)
         XCTAssertEqual(rig.phases.phase, .MomentumOngoing, "the phase machine runs with the switch off too")
-        rig.poster.setConfigForTests(simTrackpadEnabled: true)
+        rig.poster.changeFormForTests(simTrackpadEnabled: true)
+        XCTAssertEqual(ended, [.settingChanged])
         rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0.25, place: ScrollInputPlace(pid: 100, pointer: .zero))
         rig.run(until: 3)
 
-        XCTAssertEqual(Array(rig.phaseSequence.prefix(3)), ["momentumEnded", "began", "changed"])
+        XCTAssertEqual(rig.phaseSequence, ["began", "changed", "ended", "momentumBegan", "momentumChanged", "momentumEnded"])
+        // The new scroll is the wheel event's own: one click, nothing of the glide that ran.
+        let afterTheSwitch = rig.recorded.filter { $0.frame.scrollPhase != nil }.reduce(0) { $0 + $1.frame.y }
+        XCTAssertEqual(afterTheSwitch, 205)
     }
 
-    /// And the other way: a turn asked for with the switch on is not carried into a scroll with
-    /// it off. It used to begin a "touch" there with the next frame: two frames without distance
-    /// that the switch-off path does not post.
+    /// And the other way: the switch goes off while a flick's glide runs, with a turn asked
+    /// for. The glide is closed in its own form ("momentum ended") before anything goes out
+    /// without phases, and the turn is not carried into the scroll that follows. The scroll
+    /// used to be taken over as it was: the app never got "momentum ended" (this test passed
+    /// on that stream), and before that the turn began a "touch" with the next frame, two
+    /// frames without distance that the switch-off path does not post.
     func testSwitchOffInTheNextApp_carriesNoTurnOver() {
+        var ended: [ScrollSystemLog.EndReason] = []
+        ScrollSystemLog.sessionObserverForTests = { ended.append($1) }
+        defer { ScrollSystemLog.sessionObserverForTests = nil }
         let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
         for (points, time) in [(1.0, 0.0), (12, 0.024), (54, 0.038), (78, 0.060)] {
             rig.input(max(33.6, points) * 6.3, notch: 33.6 * 6.3, at: time)
         }
         rig.input(-33.6 * 6.3, notch: 33.6 * 6.3, at: 0.300)
-        rig.poster.setConfigForTests(simTrackpadEnabled: false)
+        rig.poster.changeFormForTests(simTrackpadEnabled: false)
         rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0.310)
         rig.run(until: 3)
 
+        // The glide that ran was closed, and nothing with a phase came after that.
+        XCTAssertEqual(ended.first, .settingChanged)
+        XCTAssertEqual(rig.phaseSequence, ["began", "changed", "ended", "momentumBegan", "momentumChanged", "momentumEnded"])
+        let lastPhased = try? XCTUnwrap(rig.recorded.lastIndex { $0.frame.scrollPhase != nil })
+        let firstPlain = try? XCTUnwrap(rig.recorded.firstIndex { $0.frame.scrollPhase == nil })
+        XCTAssertLessThan(lastPhased ?? .max, firstPlain ?? .min, "closed before the first frame without phases")
         // From the tick until the wheel counts as still (0.18 s later) only frames that move the page.
         let afterTheTick = rig.recorded.filter { $0.time - rig.start > 0.310 + 1e-6 && $0.time - rig.start < 0.45 }
         XCTAssertFalse(afterTheTick.isEmpty)
         XCTAssertTrue(afterTheTick.allSatisfy { $0.frame.y != 0 }, "no frame without distance")
         XCTAssertTrue(afterTheTick.allSatisfy { $0.frame.scrollPhase == nil }, "and no phases")
+        // The scroll that follows is the wheel event's own click, the way it turned last.
+        XCTAssertEqual(rig.recorded.filter { $0.frame.scrollPhase == nil }.reduce(0) { $0 + $1.frame.y }, 205)
+    }
+
+    /// B1: "Trackpad-style scrolling" goes off for the process a scroll runs in (the switch,
+    /// the app's own setting or "Reset to Defaults", changed from the keyboard), at any moment
+    /// of a touch or a glide, in either form. What the app got with phases is whole gestures:
+    /// the running scroll is closed before the first frame without phases.
+    func testTrackpadStyle_switchedOffInMidScroll_closesTheGestureFirst() {
+        var failures: [String] = []
+        var runs = 0
+        for flick in [true, false] {
+            for (name, inputs) in Self.gestureScenarios {
+                for offAt in stride(from: 0.010, through: 0.9, by: 0.023) {
+                    let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true, flick: flick)
+                    let notch = 33.6 * 6.3
+                    for (notches, time) in inputs where time <= offAt { rig.input(notches * notch, notch: notch, at: time, targetPID: 100) }
+                    rig.run(until: offAt)
+                    rig.poster.changeFormForTests(simTrackpadEnabled: false)
+                    rig.input(notch, notch: notch, at: offAt, targetPID: 100)
+                    rig.run(until: 4)
+                    runs += 1
+                    let label = "\(flick ? "flick" : "long touch"): \(name), off at \(Int(offAt * 1000)) ms"
+                    if let broken = Self.brokenGesture(in: rig, mayBeEmpty: true, phasedOnly: true) {
+                        failures.append("\(label): \(broken)")
+                    }
+                    let lastPhased = rig.recorded.lastIndex { $0.frame.scrollPhase != nil } ?? -1
+                    let firstPlain = rig.recorded.firstIndex { $0.frame.scrollPhase == nil } ?? .max
+                    if lastPhased > firstPlain { failures.append("\(label): a phase after a frame without one") }
+                }
+            }
+        }
+        XCTAssertEqual(runs, 624)
+        XCTAssertTrue(failures.isEmpty, "\(failures.count) broken:\n" + failures.prefix(40).joined(separator: "\n"))
     }
 
     /// The phases an app gets always make whole gestures, at any Duration, Speed, dead zone and
@@ -751,7 +806,8 @@ final class ScrollClassicPathTests: XCTestCase {
 
     /// What breaks the rule in the frames a rig recorded, or nil: "began, changed…, ended",
     /// then "momentum began, momentum changed…, momentum ended" or nothing, each gesture closed.
-    private static func brokenGesture(in rig: ScrollClassicRig, mayBeEmpty: Bool) -> String? {
+    /// `phasedOnly`: frames without phases (a scroll with the switch off) are left out.
+    private static func brokenGesture(in rig: ScrollClassicRig, mayBeEmpty: Bool, phasedOnly: Bool = false) -> String? {
         let allowed: [String: Set<String>] = [
             "": ["began"],
             "began": ["changed", "ended"],
@@ -763,6 +819,7 @@ final class ScrollClassicPathTests: XCTestCase {
         ]
         var last = ""
         for item in rig.recorded {
+            if phasedOnly && item.frame.scrollPhase == nil { continue }
             let phase = ScrollClassicRig.phaseName(scroll: item.frame.scrollPhase ?? -1, momentum: item.frame.momentumPhase ?? -1)
             if allowed[last]?.contains(phase) != true {
                 return "\"\(phase)\" after \"\(last)\" at \(Int(((item.time - rig.start) * 1000).rounded())) ms"
@@ -1781,8 +1838,8 @@ final class ScrollSystemLogTests: XCTestCase {
         )
         let reasons: [ScrollSystemLog.EndReason: String] = [
             .glidedOut: "glided out", .leftClick: "left click", .fingerOnTrackpad: "a finger on the trackpad",
-            .anotherApp: "the wheel went on in another app", .tapRestarted: "the scroll tap was restarted",
-            .keeper: "ended by the keeper", .stopped: "stopped",
+            .anotherApp: "the wheel went on in another app", .settingChanged: "trackpad-style was switched",
+            .tapRestarted: "the scroll tap was restarted", .keeper: "ended by the keeper", .stopped: "stopped",
         ]
         for (reason, text) in reasons {
             XCTAssertTrue(ScrollSystemLog.message(for: session, ended: reason).hasSuffix(", ended: \(text)"), text)
@@ -1807,8 +1864,9 @@ final class ScrollSystemLogTests: XCTestCase {
         scroll().poster.stop(.TrackingEnd, reason: .tapRestarted)
         scroll().poster.stop()
         scroll().input(211.68, notch: 211.68, at: 0.1, targetPID: 200)
+        scroll().poster.changeFormForTests(simTrackpadEnabled: true)
 
-        XCTAssertEqual(ended, [.glidedOut, .fingerOnTrackpad, .leftClick, .tapRestarted, .stopped, .anotherApp])
+        XCTAssertEqual(ended, [.glidedOut, .fingerOnTrackpad, .leftClick, .tapRestarted, .stopped, .anotherApp, .settingChanged])
     }
 
     /// One line per reason every few seconds, with the count of the events it stands for;

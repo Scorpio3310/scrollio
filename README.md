@@ -475,8 +475,9 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   ```
 
   The line ends with why the scroll ended: glided out, left click, a finger on the
-  trackpad, the wheel went on in another app, the scroll tap was restarted, ended by the
-  keeper, or stopped. Also one `thumb wheel:` line per roll of the sideways wheel, and at
+  trackpad, the wheel went on in another app, trackpad-style was switched, the scroll tap
+  was restarted, ended by the keeper, or stopped. Also one `thumb wheel:` line per roll of
+  the sideways wheel, and at
   most one line per reason every 3 seconds while wheel events are let through unsmoothed
   (trackpad events, a remote desktop, smoothing off for that event or that axis, no
   display link, a Step or Speed that is not a number).
