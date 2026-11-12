@@ -1591,6 +1591,81 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         }
     }
 
+    /// A flick's closing frames go out at the place of the gesture they close, whatever
+    /// the wheel does next in the same app. Three cases, each with the next wheel event
+    /// 500 pt away:
+    /// - while the glide runs (scroll, move to another pane or window, scroll again):
+    ///   "momentum ended" used to be a copy of the new event, at the new place;
+    /// - while the touch is still open (a scroll of a few pixels at a long glide time: the
+    ///   touch lasts until two frames have moved the page): no new touch began, and the
+    ///   rest of the first gesture went out at the new place;
+    /// - before the first frame has moved the page: "began" goes out at the second place,
+    ///   and a later wheel event there adds to the glide (the touch's place was left the
+    ///   first one's, so it began a touch of its own).
+    func testTheRealPath_flick_closingFramesGoOutAtTheirOwnPlace() throws {
+        try withSettings(switchOn: true) {
+            // In the glide.
+            let glide = realRun(over: .followsGlide)
+            XCTAssertTrue(try glide.wheel(at: 0, pointerX: 400))
+            glide.run(until: 0.25)
+            XCTAssertEqual(glide.frames.last?.name, "momentumChanged")
+            var before = glide.frames.count
+            XCTAssertTrue(try glide.wheel(at: 0.254, pointerX: 900))
+            XCTAssertEqual(glide.frames.dropFirst(before).map(\.name), ["momentumEnded"])
+            XCTAssertEqual(glide.frames.dropFirst(before).first?.pointerX, 400, "the glide ends where it ran")
+            glide.run(until: 4)
+            var all = glide.finish()
+            XCTAssertNil(brokenGesture(in: all))
+            XCTAssertTrue(all.prefix(before + 1).allSatisfy { $0.pointerX == 400 })
+            XCTAssertTrue(all.dropFirst(before + 1).allSatisfy { $0.pointerX == 900 }, "the new gesture, whole, at the new place")
+            XCTAssertEqual(all.dropFirst(before + 1).first?.name, "began")
+            let moved = all.filter { $0.y != 0 }.map(\.y)
+            try withSettings(switchOn: false) {
+                let off = realRun(over: .followsGlide)
+                XCTAssertTrue(try off.wheel(at: 0, pointerX: 400))
+                off.run(until: 0.25)
+                XCTAssertTrue(try off.wheel(at: 0.254, pointerX: 900))
+                off.run(until: 4)
+                XCTAssertEqual(moved, off.finish().filter { $0.y != 0 }.map(\.y), "the motion goes on as with the switch off")
+            }
+
+            // In the touch.
+            let touch = realRun(over: .followsGlide)
+            touch.duration = 5.0
+            XCTAssertTrue(try touch.wheel(at: 0, y: 12, pointerX: 400))
+            var time = 0.0
+            while touch.frames.count < 1 && time < 3 {
+                time += 1.0 / 60.0
+                touch.run(until: time)
+            }
+            XCTAssertEqual(touch.frames.map(\.name), ["began"], "the touch is open: one frame has moved the page")
+            XCTAssertFalse(touch.poster.endedWaitsForGlideForTests)
+            before = touch.frames.count
+            XCTAssertTrue(try touch.wheel(at: time + 0.004, y: 12, pointerX: 900))
+            XCTAssertEqual(touch.frames.dropFirst(before).map(\.name), ["ended"])
+            XCTAssertEqual(touch.frames.dropFirst(before).first?.pointerX, 400, "the touch ends where it began")
+            touch.run(until: time + 8)
+            all = touch.finish()
+            XCTAssertNil(brokenGesture(in: all))
+            XCTAssertEqual(all.filter { $0.scroll == 1 }.map(\.pointerX), [400, 900], "and a touch of its own begins at the new place")
+            XCTAssertTrue(all.dropFirst(before + 1).allSatisfy { $0.pointerX == 900 })
+
+            // Before the first frame.
+            let early = realRun(over: .followsGlide)
+            XCTAssertTrue(try early.wheel(at: 0, pointerX: 400))
+            XCTAssertTrue(try early.wheel(at: 0.004, pointerX: 900))
+            XCTAssertTrue(early.frames.isEmpty, "nothing of the first touch went out, so nothing is closed")
+            early.run(until: 0.3)
+            XCTAssertTrue(try early.wheel(at: 0.304, pointerX: 900))
+            early.run(until: 5)
+            all = early.finish()
+            XCTAssertNil(brokenGesture(in: all))
+            XCTAssertEqual(all.filter { $0.scroll == 1 }.map(\.pointerX), [900], "one touch, at the second place")
+            XCTAssertEqual(all.filter { $0.momentum == 3 }.count, 1, "and one glide: the third wheel event added to it")
+            XCTAssertEqual(early.sessions.last?.session.glideInputs, 1)
+        }
+    }
+
     // MARK: The one touch's end, as posted
 
     /// A scroll that runs out by itself, through the real path: the posted "ended" carries

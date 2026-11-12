@@ -582,13 +582,11 @@ extension ScrollPoster {
             // ran between them found no touch to belong to, and its distance was lost.)
             os_unfair_lock_lock(&stateLock)
             endOneTouchLocked(unlessAt: { ScrollInputPlace(pid: target, pointer: event.location) })
-            if endedWaitsForGlide, !staysAtTouchPlaceLocked(ScrollInputPlace(pid: target, pointer: event.location)) {
-                // A flick's "ended" that still waits for its glide, and the wheel goes on far
-                // from where that touch began: it goes out now, as a copy of the event stored
-                // until here, at the touch's own place. (Flushed after the new event is
-                // stored, it would carry the new place: an "ended" in a pane that never got
-                // the "began".)
-                flushHeldEndedLocked()
+            if config.flick, !staysAtTouchPlaceLocked(ScrollInputPlace(pid: target, pointer: event.location)) {
+                // A flick, and the wheel goes on far from where its touch began: what the app
+                // has of that gesture is closed now, as copies of the event stored until
+                // here, at the gesture's own place (`closeFlickGestureLocked`).
+                closeFlickGestureLocked()
             }
             guard dispatchContext.capture(event: event) else {
                 os_unfair_lock_unlock(&stateLock)
@@ -661,6 +659,26 @@ extension ScrollPoster {
             || hypot(place.pointer.x - began.pointer.x, place.pointer.y - began.pointer.y) > trackpadStylePointerSlack
         guard isFar else { return }
         endOneTouchLocked(forced: true)
+    }
+    /// Flick: the wheel goes on more than `trackpadStylePointerSlack` from where the touch
+    /// began, in the same process (another pane, another window). What the app has of the
+    /// running gesture is closed, as a stop closes it: a held "ended" goes out, an open
+    /// touch gets its "ended", a glide its "momentum ended"; a touch of which nothing went
+    /// out is taken back. Called before the new event is stored, so the closing frames are
+    /// copies of the last event at the gesture's own place: an app routes a scroll event by
+    /// its place, and posted after the new event was stored they went to the pane under it
+    /// (a "momentum ended" for a glide that pane never saw begin, while the first pane's
+    /// glide or touch stayed open). The new event then begins a touch of its own, where it
+    /// is, and takes the motion on. Caller holds stateLock.
+    private func closeFlickGestureLocked() {
+        flushHeldEndedLocked()
+        phases.dropWaitingMomentumBegan()
+        perform(phases.onMomentumFinish(), emitTargetImmediately: true)
+        manualInputEnded = true
+        momentumActive = false
+        momentumEndScheduledTime = nil
+        trackingEndScheduledTime = nil
+        touchWaitsForTurn = false
     }
     /// One touch: "began", unless the touch is open. Caller holds stateLock.
     private func beginOneTouchLocked(at place: ScrollInputPlace?) {
@@ -964,6 +982,9 @@ extension ScrollPoster {
         os_unfair_lock_lock(&stateLock)
         if let place = place {
             endOneTouchLocked(unlessAt: { place })
+            if config.flick, !staysAtTouchPlaceLocked(place) {
+                closeFlickGestureLocked()
+            }
         }
         handleInputLocked(input, at: time, place: place)
         let phases = config.simTrackpadEnabled
