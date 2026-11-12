@@ -429,6 +429,16 @@ final class UpdateCenter: NSObject {
     func checkForUpdates() {
         guard updaterIsReady() else { return }
         if reminder.waitingVersion != nil {
+            // The window of a scheduled find opens now for the first time, and it must
+            // open where the user is. Asked for from the menu bar with Scrollio behind
+            // another app, that takes a menu bar app: the Dock icon the update waited
+            // with is let go before the window opens (`updateWillBeShown` says why; a
+            // window opened right after it also lands on the Space in use, measured). It
+            // comes back when the update waits again (`appResignedActive`). A window that
+            // was open before is brought forward as it is: it has its place.
+            if !reminder.windowWasShown && !appIsActive() {
+                releaseDockIcon()
+            }
             updateGotAttention()
         }
         // A menu bar app is not in front when its menu was used.
@@ -502,6 +512,15 @@ final class UpdateCenter: NSObject {
         askUpdater()
     }
 
+    /// The user chose "Install Update". The window of the download opens next, and like
+    /// the first one it must open where he is: had the update waited in between (he left
+    /// it and came back), Scrollio is in the Dock for it, and is a menu bar app again
+    /// before that window opens. The icon comes back when the update waits again.
+    func updateWillBeInstalled() {
+        guard reminder.waitingVersion != nil else { return }
+        releaseDockIcon()
+    }
+
     /// Scrollio left the front. An update whose window the user has seen and not answered
     /// waits from now on, and an update that waits is in the Dock: there ⌘Tab and a click
     /// on the icon find its window again. Decided a moment later (`leaveDelay`), and only
@@ -536,8 +555,13 @@ final class UpdateCenter: NSObject {
     /// that moment gets the alert on the desktop Space of the display: someone who works
     /// in a full-screen app would not see it, and it would have the keyboard all the
     /// same. As a menu bar app Scrollio opens the alert on the Space in use, over a
-    /// full-screen app too. (Measured on macOS 27.2.)
+    /// full-screen app too. (Measured on macOS 27.2.) For the same reason a Dock icon
+    /// that is there for a waiting update is let go first when Scrollio is behind another
+    /// app (a download failed while the user was elsewhere).
     func alertWillOpen() {
+        if reminder.waitingVersion != nil && !appIsActive() {
+            releaseDockIcon()
+        }
         activateApp()
     }
 }
@@ -569,6 +593,14 @@ extension UpdateCenter: SPUUpdaterDelegate {
 
     func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
         log("Updates: quitting to start the new version")
+    }
+
+    /// The user answered the window of a found update; Sparkle acts on the answer after
+    /// this call.
+    func updater(_ updater: SPUUpdater, userDidMake choice: SPUUserUpdateChoice, forUpdate updateItem: SUAppcastItem, state: SPUUserUpdateState) {
+        if choice == .install {
+            updateWillBeInstalled()
+        }
     }
 
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {

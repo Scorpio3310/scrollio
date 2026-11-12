@@ -344,6 +344,65 @@ final class UpdateCenterTests: XCTestCase {
         XCTAssertEqual(world.dockReleased, 1, "the session's end lets the icon go whether or not it was on")
     }
 
+    /// "Update to Scrollio 1.1.0…" in the menu bar menu, chosen while Scrollio is in the
+    /// Dock for a scheduled find and behind another app: the window opens for the first
+    /// time and must open where the user is. The Dock icon is let go before Sparkle is
+    /// asked (a menu bar app again), and comes back when the update waits again.
+    func testAskedForFromTheMenuBarTheWindowOfAScheduledFindOpensWhereTheUserIs() {
+        let world = World()
+        let center = makeCenter(world, withUpdater: true)
+        center.updateWillBeShown(version: "1.1.0", userInitiated: false)
+        world.asked = []
+
+        world.isInFront = false
+        center.checkForUpdates()
+        XCTAssertEqual(world.asked, ["Dock icon off", "no badge", "come to the front", "Sparkle: the window in front"])
+        XCTAssertTrue(center.reminder.windowWasShown)
+
+        // Left unanswered, it waits again.
+        world.asked = []
+        center.appResignedActive()
+        world.aMomentPasses()
+        XCTAssertEqual(world.asked, ["Dock icon on"])
+    }
+
+    /// The same request with Scrollio in front (General's "Update…"): he is at Scrollio,
+    /// the Dock icon stays.
+    func testAskedForInScrollioTheWaitingUpdateKeepsItsDockIcon() {
+        let world = World()
+        let center = makeCenter(world, withUpdater: true)
+        center.updateWillBeShown(version: "1.1.0", userInitiated: false)
+        world.asked = []
+        world.isInFront = true
+        center.checkForUpdates()
+        XCTAssertEqual(world.asked, ["no badge", "come to the front", "Sparkle: the window in front"])
+    }
+
+    /// "Install Update": the window of the download opens next, and it too must open
+    /// where the user is. If the update had waited in between, the Dock icon is let go
+    /// before Sparkle goes on.
+    func testInstallUpdateLetsTheDockIconGoBeforeTheDownloadOpens() {
+        let world = World()
+        let center = makeCenter(world, withUpdater: true)
+        // Nothing waits: nothing to let go.
+        center.updateWillBeInstalled()
+        XCTAssertEqual(world.asked, [])
+
+        center.updateWillBeShown(version: "2.0.0", userInitiated: true)
+        center.appResignedActive()
+        world.aMomentPasses()
+        XCTAssertEqual(world.asked, ["no badge", "Dock icon on"])
+        world.isInFront = true
+        center.updateWillBeInstalled()
+        XCTAssertEqual(world.asked, ["no badge", "Dock icon on", "Dock icon off"])
+        XCTAssertEqual(center.reminder.waitingVersion, "2.0.0", "the download and \"Ready to Install\" still wait for him")
+        // He leaves during the download: it waits again.
+        world.isInFront = false
+        center.appResignedActive()
+        world.aMomentPasses()
+        XCTAssertEqual(world.asked.last, "Dock icon on")
+    }
+
     /// A click on the Dock icon of a waiting update leads to the update, not to the
     /// settings.
     func testTheDockIconOfAWaitingUpdateLeadsToTheUpdate() {
@@ -489,6 +548,7 @@ final class UpdateCenterTests: XCTestCase {
             "updater:didFindValidUpdate:",
             "updater:willInstallUpdate:",
             "updaterWillRelaunchApplication:",
+            "updater:userDidMakeChoice:forUpdate:state:",
             "updater:didFinishUpdateCycleForUpdateCheck:error:",
             // SPUStandardUserDriverDelegate
             "supportsGentleScheduledUpdateReminders",
@@ -773,12 +833,20 @@ final class UpdateCenterTests: XCTestCase {
         XCTAssertEqual(world.badges, [])
         XCTAssertFalse(center.holdsDockIcon)
         XCTAssertEqual(center.reminder, UpdateReminder())
-        // While an update waits, its Dock icon stays through an alert (a failed download).
+        // An update waits and Scrollio is in the Dock for it. In front, the icon stays
+        // through an alert.
         center.updateWillBeShown(version: "1.0.2", userInitiated: false)
+        world.isInFront = true
         center.alertWillOpen()
         XCTAssertTrue(center.holdsDockIcon)
         XCTAssertEqual(world.dockShown, 1)
         XCTAssertEqual(world.dockReleased, 0)
+        // Behind another app (a download failed while the user was elsewhere) the icon is
+        // let go before the alert opens, so that it opens where he is.
+        world.isInFront = false
+        world.asked = []
+        center.alertWillOpen()
+        XCTAssertEqual(world.asked, ["Dock icon off", "come to the front"])
     }
 
     /// "You're up to date!" has one button: Sparkle's "Version History" is declined.
