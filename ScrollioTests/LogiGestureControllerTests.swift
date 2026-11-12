@@ -608,7 +608,12 @@ final class LogiGestureControllerTests: XCTestCase {
         let controller = hapticController(enabledFlags: 0x00)
         XCTAssertEqual(controller.hapticsEnabled, false)
 
-        XCTAssertTrue(controller.play(.lockIn))
+        // The "off" is what the mouse said at connect time: the state is read again first
+        // (this test used to expect the switch-on at once, written from that old copy).
+        XCTAssertFalse(controller.play(.lockIn), "the cue waits for the fresh state")
+        XCTAssertEqual(haptics, [Haptic(functionId: 1, params: [])], "a read, no write yet")
+        haptics = []
+        controller.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [0x00, 60]))
         XCTAssertEqual(haptics, [
             Haptic(functionId: 2, params: [0x01, 60, 0]),
             Haptic(functionId: 4, params: [0x04]),
@@ -660,9 +665,15 @@ final class LogiGestureControllerTests: XCTestCase {
         var allowed = false
         let controller = hapticController(enabledFlags: 0x00, mayEnableHaptics: { allowed })
         XCTAssertFalse(controller.play(.lockIn))
+        XCTAssertEqual(haptics, [], "not allowed: not even a read")
         allowed = true  // the user cleared the choice: today's behaviour again
-        XCTAssertTrue(controller.play(.lockIn))
-        XCTAssertEqual(haptics.first, Haptic(functionId: 2, params: [0x01, 60, 0]))
+        XCTAssertFalse(controller.play(.lockIn), "allowed: waits for the fresh state")
+        controller.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [0x00, 60]))
+        XCTAssertEqual(haptics, [
+            Haptic(functionId: 1, params: []),
+            Haptic(functionId: 2, params: [0x01, 60, 0]),
+            Haptic(functionId: 4, params: [0x04]),
+        ])
     }
 
     func testNothingIsSwitchedOnWithoutACue() {
@@ -748,10 +759,11 @@ final class LogiGestureControllerTests: XCTestCase {
         let controller = hapticController(enabledFlags: 0x02)   // off, power saving on, intensity 60
         controller.refreshHaptics()
         _ = controller.play(.lockIn)
+        controller.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [0x02, 60]))
         _ = controller.play(.commit)
         controller.handleHapticResponse(functionId: 4, report: hapticReport(functionId: 4, payload: [0x04]))
 
-        XCTAssertFalse(haptics.isEmpty)
+        XCTAssertTrue(haptics.contains { $0.functionId == LogiGestureProtocol.hapticSetStateFunction }, "\(haptics)")
         for request in haptics where request.functionId == LogiGestureProtocol.hapticSetStateFunction {
             XCTAssertEqual(request.params, [0x03, 60, 0], "only the on bit changes")
         }
@@ -767,6 +779,56 @@ final class LogiGestureControllerTests: XCTestCase {
         XCTAssertNil(controller.hapticsEnabled)
         XCTAssertFalse(controller.play(.lockIn))
         XCTAssertEqual(haptics, [])
+    }
+
+    /// The switch-on writes the mouse's flags and intensity back with the on bit set. It
+    /// used to take them from the copy made at connect time: a strength the user changed
+    /// elsewhere since then was written back to the old value. Now the state is read first.
+    func testSwitchingOnUsesTheStateAsItIsNowNotAsItWasAtConnectTime() {
+        let controller = hapticController(enabledFlags: 0x00)   // at connect: off, intensity 60
+        XCTAssertFalse(controller.play(.lockIn))
+        haptics = []
+        // Since then the user chose intensity 30 and power saving elsewhere.
+        controller.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [0x02, 30]))
+        XCTAssertEqual(haptics, [
+            Haptic(functionId: 2, params: [0x03, 30, 0]),
+            Haptic(functionId: 4, params: [0x04]),
+        ])
+    }
+
+    /// The fresh read can show that the haptics were switched on meanwhile: then nothing is
+    /// written, the cue just plays.
+    func testACueWritesNothingWhenTheFreshStateSaysOn() {
+        let controller = hapticController(enabledFlags: 0x00)
+        XCTAssertFalse(controller.play(.commit))
+        haptics = []
+        controller.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [0x01, 80]))
+        XCTAssertEqual(haptics, [Haptic(functionId: 4, params: [0x01])])
+        XCTAssertEqual(controller.hapticsEnabled, true)
+    }
+
+    /// Only a state answer lets a waiting cue switch the haptics on: another answer (the
+    /// waveform list) says nothing about the state.
+    func testOnlyAStateAnswerReleasesACueThatFoundHapticsOff() {
+        let controller = hapticController(enabledFlags: 0x00)
+        XCTAssertFalse(controller.play(.lockIn))
+        haptics = []
+        controller.handleHapticResponse(functionId: 0, report: hapticReport(functionId: 0, payload: Self.allWaveforms))
+        XCTAssertEqual(haptics, [], "no switch-on from the old copy")
+        controller.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [0x00, 60]))
+        XCTAssertEqual(haptics.first, Haptic(functionId: 2, params: [0x01, 60, 0]))
+    }
+
+    /// No answer in time: the cue is dropped and nothing was written.
+    func testACueThatFoundHapticsOffIsDroppedWhenTheMouseDoesNotAnswer() {
+        let controller = hapticController(enabledFlags: 0x00)
+        timers = []
+        XCTAssertFalse(controller.play(.lockIn))
+        XCTAssertEqual(timers.last?.delay, LogiGestureController.pendingCueLifetime)
+        timers.last?.work()
+        haptics = []
+        controller.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [0x00, 60]))
+        XCTAssertEqual(haptics, [], "a late answer switches nothing on")
     }
 
     // MARK: - Manager
