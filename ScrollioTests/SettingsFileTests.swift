@@ -128,7 +128,7 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertEqual(SettingsFile.exportedKeys.map(\.name), [
             "smooth", "reverse", "reverseVertical", "reverseHorizontal", "step", "speed", "duration", "deadZone",
             "smoothSimTrackpad", "trackpadStyleInBrowsers", "trackpadStyleInMacApps",
-            "smoothVertical", "smoothHorizontal", "dash", "toggle", "block",
+            "smoothVertical", "smoothHorizontal", "dash", "slow", "toggle", "block",
             "thumbWheelSettings", "allowlist", "applications", "buttonBindings", "mouseGestureSettings",
             "logiWheelSettings", "logiMouseSettings", "hideStatusItem",
         ])
@@ -161,6 +161,9 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertNotNil(own.options.scroll.dash)
         XCTAssertNotNil(own.options.scroll.toggle)
         XCTAssertNotNil(own.options.scroll.block)
+        // "Scroll slower" has no key by default, and a hold key without a key is not stored.
+        XCTAssertNil(own.options.scroll.slow)
+        own.options.scroll.slow = ScrollHotkey(type: .keyboard, code: KeyCode.controlR)
         own.options.saveOptions()
 
         let saved = Set(own.stored.keys)
@@ -392,6 +395,9 @@ final class SettingsFileFormatTests: XCTestCase {
         source.options.scroll.step = 44.5
         source.options.scroll.smoothSimTrackpad = true
         source.options.scroll.dash = ScrollHotkey(type: .mouse, code: 4)
+        source.options.scroll.slow = ScrollHotkey(type: .keyboard, code: KeyCode.controlR)
+        // An app's own settings have a "Scroll slower" key of their own.
+        try XCTUnwrap(source.options.application.applications.get(by: "/Applications/Notes.app")).scroll.slow = ScrollHotkey(type: .mouse, code: 5)
         source.options.application.allowlist = true
         var gesture = MouseGestureSettings.default
         gesture.invertHorizontal = true
@@ -411,6 +417,7 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertTrue(SettingsFile.apply(contents, to: target.options))
 
         XCTAssertTrue(target.options.scroll == source.options.scroll)
+        XCTAssertEqual(target.options.scroll.slow, ScrollHotkey(type: .keyboard, code: KeyCode.controlR), "the \"Scroll slower\" key travels with the file")
         XCTAssertNil(target.options.scroll.toggle, "a hold key that was removed is none in the file and after it")
         XCTAssertEqual(target.options.thumbWheel, source.options.thumbWheel)
         XCTAssertEqual(target.options.buttons.binding, source.options.buttons.binding)
@@ -420,6 +427,7 @@ final class SettingsFileFormatTests: XCTestCase {
         let notes = try XCTUnwrap(target.options.application.applications.get(by: "/Applications/Notes.app"))
         XCTAssertFalse(notes.inherit)
         XCTAssertEqual(notes.scroll.speed, 2.5)
+        XCTAssertEqual(notes.scroll.slow, ScrollHotkey(type: .mouse, code: 5), "the app's own key, not the one of Scrolling")
         XCTAssertEqual(target.options.gesture, gesture)
         XCTAssertEqual(target.options.logiMouse, source.options.logiMouse)
         XCTAssertEqual(target.options.logiWheel.mode, .freeSpin)
@@ -493,7 +501,9 @@ final class SettingsFileFormatTests: XCTestCase {
         for name in settings.keys {
             XCTAssertTrue(SettingsFile.isExported(name), name)
         }
-        XCTAssertEqual(settings.count, SettingsFile.exportedKeys.count - 1, "everything but the hold key that is none")
+        XCTAssertEqual(settings.count, SettingsFile.exportedKeys.count - 2,
+                       "everything but the hold keys that are none: the one removed, and \"Scroll slower\", which has none until recorded")
+        XCTAssertNil(settings["slow"])
         let text = String(decoding: data, as: UTF8.self)
         for word in ["welcomeGuide", "optionsExist", "SUEnable", "SUFeedURL", "FeatureCache", "preferencesSelectedPane", "NSWindow", "autoLaunch"] {
             XCTAssertFalse(text.contains(word), word)

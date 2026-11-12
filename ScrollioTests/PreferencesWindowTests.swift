@@ -673,7 +673,7 @@ final class PreferencesNamingTests: XCTestCase {
         // Scrolling tab (built in code): what holding the key does, in plain words.
         let scrolling = try XCTUnwrap(instantiate(PANEL_IDENTIFIER.scrolling))
         let shown = texts(in: scrolling.view)
-        for name in ["Scroll faster", "Scroll sideways", "Pause smoothing"] {
+        for name in ["Scroll faster", "Scroll slower", "Scroll sideways", "Pause smoothing"] {
             XCTAssertTrue(shown.contains(name), "\(name) is not in the Scrolling tab")
         }
         for old in ["Dash Key", "Toggle Key", "Block Key"] {
@@ -683,17 +683,19 @@ final class PreferencesNamingTests: XCTestCase {
         // Button actions (code): the same three names as the Scrolling tab, in the Title
         // Case of menu items.
         XCTAssertEqual(SystemShortcut.scrollDash.localizedName, "Scroll Faster")
+        XCTAssertEqual(SystemShortcut.scrollSlow.localizedName, "Scroll Slower")
         XCTAssertEqual(SystemShortcut.scrollToggle.localizedName, "Scroll Sideways")
         XCTAssertEqual(SystemShortcut.scrollBlock.localizedName, "Pause Smoothing")
     }
 
     func testScrollActionIdentifiersAreFrozen() {
         XCTAssertEqual(SystemShortcut.scrollDash.identifier, "scrollDash")
+        XCTAssertEqual(SystemShortcut.scrollSlow.identifier, "scrollSlow")
         XCTAssertEqual(SystemShortcut.scrollToggle.identifier, "scrollToggle")
         XCTAssertEqual(SystemShortcut.scrollBlock.identifier, "scrollBlock")
         XCTAssertEqual(
             SystemShortcut.mouseScrollCategory.shortcuts.map(\.identifier),
-            ["scrollDash", "scrollToggle", "scrollBlock"]
+            ["scrollDash", "scrollSlow", "scrollToggle", "scrollBlock"]
         )
     }
 

@@ -10,9 +10,12 @@
   the ends of a page. Sideways scrolling stays as it is. What it does in which app, and
   its limits:
   [Trackpad-style scrolling (Experimental)](#trackpad-style-scrolling-experimental).
-- While you hold a key: "Scroll faster" (5 × the distance), "Scroll sideways" and "Pause
-  smoothing" (exact steps, for example to zoom with ⌘). A mouse button can hold them
-  too. These keys work while Smooth scrolling is on.
+- While you hold a key: "Scroll faster" (5 × the distance), "Scroll slower" (a fifth of
+  the distance, for fine work), "Scroll sideways" and "Pause smoothing" (exact steps, for
+  example to zoom with ⌘). "Scroll slower" has no key until you record one: ⌥, ⇧ and ⌘
+  are the other three, and ⌃ with the wheel is the screen zoom of macOS for those who
+  turned that on. Held together, "Scroll faster" and "Scroll slower" cancel. A mouse
+  button can hold them too. These keys work while Smooth scrolling is on.
 - "Reset to Defaults" can be taken back: for a few seconds the button reads "Undo Reset".
 - Per app (the Apps pane): an app uses the Scrolling settings or keeps its own. "Change
   scrolling only in these apps" leaves every other app to macOS; buttons and gestures

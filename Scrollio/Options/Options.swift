@@ -24,6 +24,7 @@ struct OptionItem {
         static let ReverseVertical = "reverseVertical"
         static let ReverseHorizontal = "reverseHorizontal"
         static let Dash = "dash"
+        static let Slow = "slow"
         static let Toggle = "toggle"
         static let Block = "block"
         static let Step = "step"
@@ -266,6 +267,7 @@ extension Options {
             scroll.reverseHorizontal = defaults.bool(forKey: OptionItem.Scroll.ReverseHorizontal)
         }
         scroll.dash = loadScrollHotkey(forKey: OptionItem.Scroll.Dash, default: OPTIONS_SCROLL_DEFAULT().dash)
+        scroll.slow = loadScrollHotkey(forKey: OptionItem.Scroll.Slow, default: OPTIONS_SCROLL_DEFAULT().slow)
         scroll.toggle = loadScrollHotkey(forKey: OptionItem.Scroll.Toggle, default: OPTIONS_SCROLL_DEFAULT().toggle)
         scroll.block = loadScrollHotkey(forKey: OptionItem.Scroll.Block, default: OPTIONS_SCROLL_DEFAULT().block)
         if let storedStep = defaults.object(forKey: OptionItem.Scroll.Step) as? Double {
@@ -367,6 +369,7 @@ extension Options {
             defaults.set(scroll.reverseVertical, forKey: OptionItem.Scroll.ReverseVertical)
             defaults.set(scroll.reverseHorizontal, forKey: OptionItem.Scroll.ReverseHorizontal)
             saveScrollHotkey(scroll.dash, forKey: OptionItem.Scroll.Dash)
+            saveScrollHotkey(scroll.slow, forKey: OptionItem.Scroll.Slow)
             saveScrollHotkey(scroll.toggle, forKey: OptionItem.Scroll.Toggle)
             saveScrollHotkey(scroll.block, forKey: OptionItem.Scroll.Block)
             defaults.set(scroll.step, forKey: OptionItem.Scroll.Step)

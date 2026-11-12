@@ -18,6 +18,11 @@ class ScrollCore: ScrollActionPort {
     var isActive = false
     // 热键数据
     var dashScroll = false
+    /// "Scroll slower" is held (its key, or its action on a button).
+    var slowScroll = false
+    /// What a scroll's distance is multiplied by: 5 with "Scroll faster" held, a fifth with
+    /// "Scroll slower", 1 with neither or both (`amplification(faster:slower:)`). Worked
+    /// out when a key goes down or up, never per wheel event.
     var dashAmplification = 1.0
     var toggleScroll = false {
         didSet { ScrollPoster.shared.updateShifting(enable: toggleScroll) }
@@ -25,9 +30,11 @@ class ScrollCore: ScrollActionPort {
     var blockSmooth = false
     // 非修饰键热键的按下状态跟踪
     var dashKeyHeld = false
+    var slowKeyHeld = false
     var toggleKeyHeld = false
     var blockKeyHeld = false
     private var dashActionCount = 0
+    private var slowActionCount = 0
     private var toggleActionCount = 0
     private var blockActionCount = 0
     /// Who moves the page when the trackpad and the wheel overlap. Main thread (scroll tap).
@@ -393,6 +400,7 @@ class ScrollCore: ScrollActionPort {
     /// 跟踪当前由哪个 HID++ 按键码激活了热键状态
     /// key-up 时按 code 清除, 不依赖当前 app 的热键配置, 避免跨应用释放时状态卡死
     private var hidDashHeldCode: UInt16?
+    private var hidSlowHeldCode: UInt16?
     private var hidToggleHeldCode: UInt16?
     private var hidBlockHeldCode: UInt16?
 
@@ -401,6 +409,9 @@ class ScrollCore: ScrollActionPort {
         switch role {
         case .dash:
             dashActionCount = updatedActionCount(dashActionCount, isDown: isDown)
+            refreshDashState()
+        case .slow:
+            slowActionCount = updatedActionCount(slowActionCount, isDown: isDown)
             refreshDashState()
         case .toggle:
             toggleActionCount = updatedActionCount(toggleActionCount, isDown: isDown)
@@ -418,9 +429,19 @@ class ScrollCore: ScrollActionPort {
         return max(0, count - 1)
     }
 
+    /// "Scroll faster" and "Scroll slower" share one factor: both are settled here.
     private func refreshDashState() {
         dashScroll = dashKeyHeld || dashActionCount > 0
-        dashAmplification = dashScroll ? 5.0 : 1.0
+        slowScroll = slowKeyHeld || slowActionCount > 0
+        dashAmplification = ScrollCore.amplification(faster: dashScroll, slower: slowScroll)
+    }
+
+    /// The factor of a scroll's distance (and so of its least distance, one "Smallest step"):
+    /// 5 while "Scroll faster" is held, a fifth while "Scroll slower" is, and the plain 1
+    /// with neither or with both, which cancel.
+    static func amplification(faster: Bool, slower: Bool) -> Double {
+        if faster == slower { return 1.0 }
+        return faster ? 5.0 : 0.2
     }
 
     private func refreshToggleState() {
@@ -444,6 +465,12 @@ class ScrollCore: ScrollActionPort {
                 refreshDashState()
                 matched = true
             }
+            if hidSlowHeldCode == code {
+                slowKeyHeld = false
+                hidSlowHeldCode = nil
+                refreshDashState()
+                matched = true
+            }
             if hidToggleHeldCode == code {
                 toggleKeyHeld = false
                 hidToggleHeldCode = nil
@@ -463,6 +490,7 @@ class ScrollCore: ScrollActionPort {
         application = ScrollUtils.shared.getTargetApplication(from: NSWorkspace.shared.frontmostApplication)
 
         let dashHotkey = ScrollUtils.shared.optionsDashKey(application: application)
+        let slowHotkey = ScrollUtils.shared.optionsSlowKey(application: application)
         let toggleHotkey = ScrollUtils.shared.optionsToggleKey(application: application)
         let blockHotkey = ScrollUtils.shared.optionsBlockKey(application: application)
 
@@ -471,6 +499,12 @@ class ScrollCore: ScrollActionPort {
         if let h = dashHotkey, h.type == .mouse, h.code == code {
             dashKeyHeld = true
             hidDashHeldCode = code
+            refreshDashState()
+            matched = true
+        }
+        if let h = slowHotkey, h.type == .mouse, h.code == code {
+            slowKeyHeld = true
+            hidSlowHeldCode = code
             refreshDashState()
             matched = true
         }
@@ -519,6 +553,7 @@ class ScrollCore: ScrollActionPort {
 
         // 获取配置的热键
         let dashHotkey = ScrollUtils.shared.optionsDashKey(application: ScrollCore.shared.application)
+        let slowHotkey = ScrollUtils.shared.optionsSlowKey(application: ScrollCore.shared.application)
         let toggleHotkey = ScrollUtils.shared.optionsToggleKey(application: ScrollCore.shared.application)
         let blockHotkey = ScrollUtils.shared.optionsBlockKey(application: ScrollCore.shared.application)
 
@@ -545,6 +580,11 @@ class ScrollCore: ScrollActionPort {
             ScrollCore.shared.dashKeyHeld = isPressed
             ScrollCore.shared.refreshDashState()
         }
+        // Slow (no key unless the user recorded one: then this is one test of nil)
+        if let isPressed = checkAndUpdateHotkey(slowHotkey, keyHeld: &ScrollCore.shared.slowKeyHeld) {
+            ScrollCore.shared.slowKeyHeld = isPressed
+            ScrollCore.shared.refreshDashState()
+        }
         // Toggle
         if let isPressed = checkAndUpdateHotkey(toggleHotkey, keyHeld: &ScrollCore.shared.toggleKeyHeld) {
             ScrollCore.shared.toggleKeyHeld = isPressed
@@ -562,6 +602,7 @@ class ScrollCore: ScrollActionPort {
         if isAppTargetChanged && isAnyKeyUp {
             // 重置按键状态
             ScrollCore.shared.dashKeyHeld = false
+            ScrollCore.shared.slowKeyHeld = false
             ScrollCore.shared.toggleKeyHeld = false
             ScrollCore.shared.blockKeyHeld = false
             ScrollCore.shared.refreshDashState()
@@ -718,9 +759,11 @@ class ScrollCore: ScrollActionPort {
     /// button bindings are counted apart and released by ButtonCore.
     private func releaseHeldScrollKeys() {
         dashKeyHeld = false
+        slowKeyHeld = false
         toggleKeyHeld = false
         blockKeyHeld = false
         hidDashHeldCode = nil
+        hidSlowHeldCode = nil
         hidToggleHeldCode = nil
         hidBlockHeldCode = nil
         currentApplication = nil

@@ -27,10 +27,13 @@
 
 import Cocoa
 
-/// The three keys of "While you hold a key".
+/// The four keys of "While you hold a key", in the order of their rows. The raw value is
+/// the row's place only (a control's tag): nothing stores it.
 enum ScrollHoldKey: Int, CaseIterable {
     /// `scroll.dash`
     case faster
+    /// `scroll.slow`: no key until the user records one.
+    case slower
     /// `scroll.toggle`
     case sideways
     /// `scroll.block`
@@ -40,6 +43,7 @@ enum ScrollHoldKey: Int, CaseIterable {
     var name: String {
         switch self {
         case .faster: return "faster"
+        case .slower: return "slower"
         case .sideways: return "sideways"
         case .pause: return "pause"
         }
@@ -57,6 +61,7 @@ enum ScrollHoldKey: Int, CaseIterable {
     var emphasis: ScrollPreviewView.Emphasis {
         switch self {
         case .faster: return .faster
+        case .slower: return .slower
         case .sideways: return .sideways
         case .pause: return .paused
         }
@@ -65,6 +70,7 @@ enum ScrollHoldKey: Int, CaseIterable {
     func hotkey(in scroll: OPTIONS_SCROLL_DEFAULT) -> ScrollHotkey? {
         switch self {
         case .faster: return scroll.dash
+        case .slower: return scroll.slow
         case .sideways: return scroll.toggle
         case .pause: return scroll.block
         }
@@ -73,6 +79,7 @@ enum ScrollHoldKey: Int, CaseIterable {
     func store(_ hotkey: ScrollHotkey?, in scroll: OPTIONS_SCROLL_DEFAULT) {
         switch self {
         case .faster: scroll.dash = hotkey
+        case .slower: scroll.slow = hotkey
         case .sideways: scroll.toggle = hotkey
         case .pause: scroll.block = hotkey
         }
@@ -455,7 +462,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     }
 
     /// The line under the keys' box: there while the wheel is not smoothed, because the
-    /// three keys (5× the distance, sideways, pause) act on a smoothed wheel only. The keys
+    /// keys (5× the distance, a fifth of it, sideways, pause) act on a smoothed wheel only. The keys
     /// stay editable: they apply again once smoothing is on. A line sits close under its
     /// box; without it the next box keeps the gap between boxes. The pane's height follows.
     private func syncKeysNote(smoothing: Bool) {

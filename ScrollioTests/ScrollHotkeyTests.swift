@@ -174,6 +174,7 @@ final class ScrollHotkeyTests: XCTestCase {
         let defaults = OPTIONS_SCROLL_DEFAULT()
         XCTAssertEqual(defaults.dash?.type, .keyboard)
         XCTAssertEqual(defaults.dash?.code, KeyCode.optionL)
+        XCTAssertNil(defaults.slow, "\"Scroll slower\" has no key until the user records one")
         XCTAssertEqual(defaults.toggle?.type, .keyboard)
         XCTAssertEqual(defaults.toggle?.code, KeyCode.shiftL)
         XCTAssertEqual(defaults.block?.type, .keyboard)

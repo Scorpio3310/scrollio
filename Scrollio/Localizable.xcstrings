@@ -7455,6 +7455,39 @@
           }
         }
       }
+    },
+    "scrolling-key-slower": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll slower"
+          }
+        }
+      }
+    },
+    "scrolling-key-slower-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For fine work: a fifth of the distance."
+          }
+        }
+      }
+    },
+    "scrollSlow": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll Slower"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

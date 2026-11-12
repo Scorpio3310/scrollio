@@ -269,7 +269,8 @@ final class ScrollPreviewViewTests: XCTestCase {
         XCTAssertTrue(key.isHidden)
         XCTAssertEqual(page.frame.size, NSSize(width: viewport.bounds.width, height: viewport.bounds.height + travel))
 
-        for (emphasis, glyph) in [(ScrollPreviewView.Emphasis.faster, "⌥"), (.sideways, "⇧"), (.paused, "⌘")] {
+        // "Scroll slower" has no key of its own: a key cap without a sign.
+        for (emphasis, glyph) in [(ScrollPreviewView.Emphasis.faster, "⌥"), (.slower, ""), (.sideways, "⇧"), (.paused, "⌘")] {
             view.scene = scene(emphasis)
             XCTAssertFalse(key.isHidden, glyph)
             XCTAssertEqual(key.glyph, glyph)

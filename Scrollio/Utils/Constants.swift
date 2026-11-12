@@ -103,6 +103,12 @@ class OPTIONS_SCROLL_DEFAULT: Codable {
     var dash: ScrollHotkey? = ScrollHotkey(type: .keyboard, code: KeyCode.optionL) {
         didSet {Options.shared.markChanged(scrollContainer: self)}
     }
+    /// "Scroll slower": a fifth of the distance while held. No key until the user records
+    /// one (⌥, ⇧ and ⌘ are the other three; ⌃ with the wheel is macOS's own screen zoom).
+    /// Stored only when set, so options without it read and write as they always did.
+    var slow: ScrollHotkey? = nil {
+        didSet {Options.shared.markChanged(scrollContainer: self)}
+    }
     var toggle: ScrollHotkey? = ScrollHotkey(type: .keyboard, code: KeyCode.shiftL) {
         didSet {Options.shared.markChanged(scrollContainer: self)}
     }
@@ -172,6 +178,7 @@ extension OPTIONS_SCROLL_DEFAULT: Equatable {
             l.reverseVertical == r.reverseVertical &&
             l.reverseHorizontal == r.reverseHorizontal &&
             l.dash == r.dash &&
+            l.slow == r.slow &&
             l.toggle == r.toggle &&
             l.block == r.block &&
             l.step == r.step &&

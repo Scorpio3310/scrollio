@@ -19,7 +19,7 @@ import QuartzCore
 final class ScrollPreviewView: NSView {
 
     /// What the demo is about: the plain wheel, or the wheel with one of the keys held.
-    enum Emphasis { case wheel, faster, sideways, paused }
+    enum Emphasis { case wheel, faster, slower, sideways, paused }
 
     struct Scene: Equatable {
         var smoothing = true      // false: the page jumps click by click

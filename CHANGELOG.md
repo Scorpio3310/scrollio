@@ -8,6 +8,14 @@ it for the people who use the app, and give the version its part before you tag 
 `## Unreleased` collects what the next version brings; it becomes that version's part
 (the heading gets the version) before the tag.
 
+## Unreleased
+
+- **Scroll slower**: a fourth key under Scrolling › While you hold a key, for fine work.
+  While you hold it the wheel moves the page a fifth as far, as smoothly as ever. It has
+  no key until you record one (⌥, ⇧ and ⌘ belong to the other three); a mouse button can
+  hold it too ("Scroll Slower" in the Buttons pane), and an app with its own scroll
+  settings has its own key.
+
 ## 1.0.3
 
 - **About Scrollio** now opens the About window every Mac app has: the icon, the version,

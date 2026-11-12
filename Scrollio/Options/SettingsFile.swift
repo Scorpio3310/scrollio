@@ -150,6 +150,7 @@ enum SettingsFile {
         Key(name: OptionItem.Scroll.SmoothVertical, group: .scroll, kind: .bool),
         Key(name: OptionItem.Scroll.SmoothHorizontal, group: .scroll, kind: .bool),
         Key(name: OptionItem.Scroll.Dash, group: .scroll, kind: .hotkey),
+        Key(name: OptionItem.Scroll.Slow, group: .scroll, kind: .hotkey),
         Key(name: OptionItem.Scroll.Toggle, group: .scroll, kind: .hotkey),
         Key(name: OptionItem.Scroll.Block, group: .scroll, kind: .hotkey),
         // The thumb wheel

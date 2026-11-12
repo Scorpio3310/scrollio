@@ -140,6 +140,8 @@ final class ScrollPreviewDeviceCard: ScrollPreviewArtworkView {
         switch emphasis {
         case .wheel: return nil
         case .faster: return "⌥"
+        // No key of its own until the user records one: a key without a sign.
+        case .slower: return ""
         case .sideways: return "⇧"
         case .paused: return "⌘"
         }

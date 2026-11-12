@@ -233,7 +233,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(controller.glideTimeRow.title, "Glide time")
         XCTAssertEqual(controller.smallestStepRow.title, "Smallest step")
         XCTAssertEqual(controller.trackpadEventsRow.title, "Trackpad-style scrolling (Experimental)")
-        XCTAssertEqual(controller.keyRows.map(\.title), ["Scroll faster", "Scroll sideways", "Pause smoothing"])
+        XCTAssertEqual(controller.keyRows.map(\.title), ["Scroll faster", "Scroll slower", "Scroll sideways", "Pause smoothing"])
         XCTAssertEqual(controller.smoothSwitch.accessibilityLabel(), "Smooth scrolling")
         XCTAssertEqual(controller.reverseSwitch.accessibilityLabel(), "Reverse wheel direction")
         XCTAssertEqual(controller.trackpadEventsSwitch.accessibilityLabel(), "Trackpad-style scrolling (Experimental)")
@@ -266,10 +266,11 @@ final class PreferencesScrollingTests: XCTestCase {
             "Smooth scrolling", "Feel", "Speed", "Slow", "Fast", "Reverse wheel direction",
             "Glide time", "Shorter", "Longer", "Smallest step", "Smaller", "Larger",
             "Trackpad-style scrolling (Experimental)", "While you hold a key",
-            "Scroll faster", "Scroll sideways", "Pause smoothing",
+            "Scroll faster", "Scroll slower", "Scroll sideways", "Pause smoothing",
             text("scrolling-smooth-hint"), text("scrolling-speed-hint"), text("scrolling-reverse-hint"),
             text("scrolling-glide-time-hint"), text("scrolling-step-hint"), text("scrolling-trackpad-events-hint"),
-            text("scrolling-key-faster-hint"), text("scrolling-key-sideways-hint"), text("scrolling-key-pause-hint"),
+            text("scrolling-key-faster-hint"), text("scrolling-key-slower-hint"),
+            text("scrolling-key-sideways-hint"), text("scrolling-key-pause-hint"),
             "Thumb wheel", "Action", "Scrolls sideways.", "How far a turn scrolls sideways.",
             "Swap direction", "Swaps what the two directions of the thumb wheel do.",
             "For the sideways wheel: an MX Master's thumb wheel, or a wheel that tilts.",
@@ -341,7 +342,8 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertTrue(controller.smoothSwitch.isEnabled)
         XCTAssertTrue(controller.reverseSwitch.isEnabled)
         XCTAssertTrue(controller.keyBindButtons.allSatisfy(\.isEnabled))
-        XCTAssertTrue(controller.keyClearButtons.allSatisfy(\.isEnabled))
+        // Every key that is set can be cleared ("Scroll slower" has none to clear).
+        XCTAssertEqual(controller.keyClearButtons.map(\.isEnabled), [true, false, true, true])
         XCTAssertTrue(controller.advancedButton.isEnabled)
         // The thumb wheel stays editable: an app with its own settings may still smooth it.
         XCTAssertTrue(controller.thumbWheelSpeedRow.isEnabled)
@@ -747,21 +749,27 @@ final class PreferencesScrollingTests: XCTestCase {
 
     func testKeyRowsShowTheStoredKeysAndClearThem() {
         let controller = makeController(advanced: true)
-        XCTAssertEqual(controller.keyBindButtons.map(\.title), ["⌥", "⇧", "⌘"], "the default keys, named as the Buttons pane names them")
-        XCTAssertTrue(controller.keyClearButtons.allSatisfy { $0.isEnabled && $0.alphaValue == 1 })
+        XCTAssertEqual(controller.keyBindButtons.map(\.title), ["⌥", "None", "⇧", "⌘"],
+                       "the default keys, named as the Buttons pane names them; \"Scroll slower\" has none")
+        let slower = ScrollHoldKey.slower.rawValue
+        for (index, clear) in controller.keyClearButtons.enumerated() {
+            // Three keys to clear; nothing to clear on the row without a key.
+            XCTAssertEqual(clear.isEnabled, index != slower)
+            XCTAssertEqual(clear.alphaValue, index != slower ? 1 : 0)
+            XCTAssertEqual(clear.isAccessibilityElement(), index != slower)
+        }
         XCTAssertEqual(
             controller.keyClearButtons.map { $0.accessibilityLabel() },
-            ["Clear key for Scroll faster", "Clear key for Scroll sideways", "Clear key for Pause smoothing"],
-            "VoiceOver tells the three apart"
+            ["Clear key for Scroll faster", "Clear key for Scroll slower", "Clear key for Scroll sideways", "Clear key for Pause smoothing"],
+            "VoiceOver tells the four apart"
         )
-        XCTAssertTrue(controller.keyClearButtons.allSatisfy { $0.isAccessibilityElement() })
 
         send(controller.keyClearButtons[ScrollHoldKey.sideways.rawValue])
 
         XCTAssertNil(Options.shared.scroll.toggle)
         XCTAssertNotNil(Options.shared.scroll.dash)
         XCTAssertNotNil(Options.shared.scroll.block)
-        XCTAssertEqual(controller.keyBindButtons.map(\.title), ["⌥", "None", "⌘"])
+        XCTAssertEqual(controller.keyBindButtons.map(\.title), ["⌥", "None", "None", "⌘"])
         let cleared = controller.keyClearButtons[ScrollHoldKey.sideways.rawValue]
         XCTAssertFalse(cleared.isEnabled)
         XCTAssertEqual(cleared.alphaValue, 0, "nothing to clear")
@@ -785,6 +793,7 @@ final class PreferencesScrollingTests: XCTestCase {
         let recorder = KeyRecorder()
         let stored: [(ScrollHoldKey, UInt16, String)] = [
             (.faster, KeyCode.controlL, "⌃"),
+            (.slower, KeyCode.optionR, "⌥"),
             (.sideways, KeyCode.optionL, "⌥"),
             (.pause, KeyCode.shiftL, "⇧"),
         ]
@@ -798,6 +807,7 @@ final class PreferencesScrollingTests: XCTestCase {
             XCTAssertNil(controller.recordingKey)
         }
         XCTAssertEqual(Options.shared.scroll.dash, ScrollHotkey(type: .keyboard, code: KeyCode.controlL))
+        XCTAssertEqual(Options.shared.scroll.slow, ScrollHotkey(type: .keyboard, code: KeyCode.optionR))
         XCTAssertEqual(Options.shared.scroll.toggle, ScrollHotkey(type: .keyboard, code: KeyCode.optionL))
         XCTAssertEqual(Options.shared.scroll.block, ScrollHotkey(type: .keyboard, code: KeyCode.shiftL))
 
@@ -843,13 +853,18 @@ final class PreferencesScrollingTests: XCTestCase {
         scroll.block = nil
         controller.syncViewWithOptions()
 
-        XCTAssertEqual(controller.keyBindButtons.map(\.title), ["⌥", "Back button", "None"])
+        XCTAssertEqual(controller.keyBindButtons.map(\.title), ["⌥", "None", "Back button", "None"])
     }
 
     func testHoldKeysMapToTheThreeHotkeys() {
         let scroll = OPTIONS_SCROLL_DEFAULT()
-        XCTAssertEqual(ScrollHoldKey.allCases, [.faster, .sideways, .pause])
+        XCTAssertEqual(ScrollHoldKey.allCases, [.faster, .slower, .sideways, .pause], "\"Scroll slower\" stands under \"Scroll faster\"")
         XCTAssertEqual(ScrollHoldKey.faster.hotkey(in: scroll), scroll.dash)
+        XCTAssertNil(scroll.slow, "no key until the user records one")
+        scroll.slow = ScrollHotkey(type: .keyboard, code: KeyCode.controlR)
+        XCTAssertEqual(ScrollHoldKey.slower.hotkey(in: scroll), scroll.slow)
+        XCTAssertEqual(scroll.dash, OPTIONS_SCROLL_DEFAULT().dash, "a key of its own, not another's")
+        scroll.slow = nil
         XCTAssertEqual(ScrollHoldKey.sideways.hotkey(in: scroll), scroll.toggle)
         XCTAssertEqual(ScrollHoldKey.pause.hotkey(in: scroll), scroll.block)
         // The model's default keys are what every Mac app expects and are not changed here.
@@ -1339,6 +1354,7 @@ final class PreferencesScrollingTests: XCTestCase {
     func testResetRestoresTheDefaultsAndLeavesAdvancedOpen() {
         let controller = makeController(advanced: true)
         let scroll = Options.shared.scroll
+        scroll.slow = ScrollHotkey(type: .keyboard, code: KeyCode.controlR)
         scroll.smooth = false
         scroll.reversesWheel = false
         scroll.speed = 2.0
@@ -1365,7 +1381,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(controller.smallestStepSlider.doubleValue, 33.6, accuracy: 1e-9)
         XCTAssertEqual(controller.trackpadEventsSwitch.state, .off)
         XCTAssertEqual(controller.reverseSwitch.state, .on)
-        XCTAssertEqual(controller.keyBindButtons.map(\.title), ["⌥", "⇧", "⌘"])
+        XCTAssertEqual(controller.keyBindButtons.map(\.title), ["⌥", "None", "⇧", "⌘"])
         XCTAssertFalse(controller.resetToDefaultsButton.isEnabled)
         XCTAssertTrue(controller.isAdvancedExpanded, "reset closes nothing")
         XCTAssertTrue(uiDefaults.bool(forKey: PreferencesScrollingViewController.advancedExpandedDefaultsKey))
@@ -1539,7 +1555,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(controller.previewView.scene.emphasis, .wheel)
 
         let expected: [(ScrollHoldKey, ScrollPreviewView.Emphasis)] = [
-            (.faster, .faster), (.sideways, .sideways), (.pause, .paused),
+            (.faster, .faster), (.slower, .slower), (.sideways, .sideways), (.pause, .paused),
         ]
         for (key, emphasis) in expected {
             controller.keyRowHoverChanged(key, inside: true)
@@ -1840,7 +1856,7 @@ final class PreferencesScrollingTests: XCTestCase {
         let keys = [
             "scrolling-smooth-hint", "scrolling-speed-hint", "scrolling-reverse-hint",
             "scrolling-glide-time-hint", "scrolling-step-hint",
-            "scrolling-key-faster-hint", "scrolling-key-sideways-hint", "scrolling-key-pause-hint",
+            "scrolling-key-faster-hint", "scrolling-key-slower-hint", "scrolling-key-sideways-hint", "scrolling-key-pause-hint",
             "thumb-wheel-function-scroll-hint", "scrolling-thumb-wheel-speed-hint-scroll", "scrolling-thumb-wheel-swap-hint",
             "scrolling-thumb-wheel-note",
         ]

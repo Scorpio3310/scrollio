@@ -79,7 +79,7 @@ class PreferencesButtonsViewController: NSViewController {
     /// The keys of Scrolling › While you hold a key.
     var scrollHoldKeys: () -> [ScrollHotkey] = {
         let scroll = Options.shared.scroll
-        return [scroll.dash, scroll.toggle, scroll.block].compactMap { $0 }
+        return [scroll.dash, scroll.slow, scroll.toggle, scroll.block].compactMap { $0 }
     }
     /// Starts recording a button at "+". nil: the real recorder, which taps the system's
     /// events; tests never use it.

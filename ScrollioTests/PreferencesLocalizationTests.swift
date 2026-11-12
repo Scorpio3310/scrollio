@@ -55,6 +55,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "scrolling-step-label", "scrolling-step-hint",
         "scrolling-trackpad-events", "scrolling-trackpad-events-hint",
         "scrolling-keys-header", "scrolling-key-faster", "scrolling-key-faster-hint",
+        "scrolling-key-slower", "scrolling-key-slower-hint",
         "scrolling-key-sideways", "scrolling-key-sideways-hint", "scrolling-key-pause", "scrolling-key-pause-hint",
         "scrolling-key-clear-for", "scrolling-key-none", "scrolling-keys-smoothing-off", "scrolling-reset", "scrolling-reset-undo",
         "scrolling-undo-reset",

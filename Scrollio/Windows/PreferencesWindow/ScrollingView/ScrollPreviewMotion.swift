@@ -151,13 +151,15 @@ struct ScrollPreviewMotion {
     }
 
     /// Real pixels (signed) one click with turn +1 moves the page: 33.6 × the speed as the
-    /// demo shows it (`shownSpeed`), five times that while the "faster" key is held, the
-    /// other way when reversed. The key only works on smoothed scrolling (unsmoothed events
-    /// pass through the engine untouched).
+    /// demo shows it (`shownSpeed`), five times that while the "faster" key is held, a fifth
+    /// of it while the "slower" key is, the other way when reversed. The keys only work on
+    /// smoothed scrolling (unsmoothed events pass through the engine untouched).
     static func clickDistance(for scene: ScrollPreviewView.Scene) -> Double {
         var distance = pixelsPerClick * shownSpeed(scene.speed)
         if scene.emphasis == .faster && isEased(scene) {
             distance *= fasterFactor
+        } else if scene.emphasis == .slower && isEased(scene) {
+            distance /= fasterFactor
         }
         return scene.reversed ? -distance : distance
     }

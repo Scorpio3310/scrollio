@@ -480,6 +480,13 @@ class ScrollUtils {
             return Options.shared.scroll.dash
         }
     }
+    func optionsSlowKey(application: Application?) -> ScrollHotkey? {
+        if let targetApplication = application {
+            return targetApplication.inherit ? Options.shared.scroll.slow : targetApplication.scroll.slow
+        } else {
+            return Options.shared.scroll.slow
+        }
+    }
     func optionsToggleKey(application: Application?) -> ScrollHotkey? {
         if let targetApplication = application {
             return targetApplication.inherit ? Options.shared.scroll.toggle : targetApplication.scroll.toggle
