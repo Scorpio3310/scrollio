@@ -1498,7 +1498,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 }
                 let newTop = top + 18 + 2 * cell
                 NSAttributedString(string: "new", attributes: captionAttributes).draw(at: NSPoint(x: 6, y: newTop + 3))
-                let names: [ButtonsMousePart: String] = [.middle: "wheel", .modeShift: "mode shift", .thumbPanel: "thumb panel"]
+                let names: [ButtonsMousePart: String] = [.middle: "wheel", .modeShift: "mode shift", .thumbPanel: "panel"]
                 for (column, name) in (parts.map { names[$0] ?? "\($0)" } + ["thumb wheel", "nothing lit", "numbered"]).enumerated() {
                     let text = NSAttributedString(string: name, attributes: [
                         .font: NSFont.systemFont(ofSize: 5, weight: .medium), .foregroundColor: NSColor.secondaryLabelColor,
