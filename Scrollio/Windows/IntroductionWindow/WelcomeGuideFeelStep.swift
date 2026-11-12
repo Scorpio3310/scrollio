@@ -115,6 +115,13 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
     static var rowToBox: CGFloat { return WelcomeGuideLayout.controlToControl }
     static let hintSpacing: CGFloat = 6
 
+    /// Under the line for a custom glide time: what is left of the gap between the cards and
+    /// the box, so the box stays where it is without the line (in the tight window, where
+    /// the line does not fit into that gap, the least room around a line).
+    static func spacingUnderHint(hintHeight: CGFloat) -> CGFloat {
+        return max(hintSpacing, rowToBox - hintSpacing - hintHeight)
+    }
+
     /// Puts the stored feel, the try area's state and the mouse on screen.
     func refresh() {
         let feel = selectedFeel
@@ -123,6 +130,7 @@ final class WelcomeGuideFeelStep: NSObject, WelcomeGuideStepView {
         }
         hintLabel.isHidden = feel != nil
         stack.setCustomSpacing(feel == nil ? Self.hintSpacing : Self.rowToBox, after: row)
+        stack.setCustomSpacing(Self.spacingUnderHint(hintHeight: hintLabel.fittingSize.height), after: hintLabel)
         reverseRow.isOn = scrollOptions().reversesWheel
         artwork.model = mouseSource()
         artwork.setScene(duration: scrollOptions().duration, speed: scrollOptions().speed)

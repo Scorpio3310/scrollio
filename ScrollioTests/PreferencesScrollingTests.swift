@@ -222,7 +222,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(controller.thumbWheelFunctionPopUp.accessibilityHelp(), "Scrolls sideways.")
         XCTAssertEqual(controller.thumbWheelSpeedSlider.accessibilityLabel(), "Speed")
         XCTAssertEqual(controller.thumbWheelSwapSwitch.accessibilityLabel(), "Swap direction")
-        XCTAssertEqual(controller.thumbWheelSwapSwitch.accessibilityHelp(), "Turns the thumb wheel the other way.")
+        XCTAssertEqual(controller.thumbWheelSwapSwitch.accessibilityHelp(), "Swaps what the two directions of the thumb wheel do.")
         XCTAssertEqual(controller.thumbWheelSpeedRow.lowEndLabel?.stringValue, "Slow")
         XCTAssertEqual(controller.thumbWheelSpeedRow.highEndLabel?.stringValue, "Fast")
         XCTAssertEqual(controller.thumbWheelSwapSwitch.controlSize, PreferencesGroupedForm.switchControlSize)
@@ -234,11 +234,11 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(controller.reverseRow.title, "Reverse wheel direction")
         XCTAssertEqual(controller.glideTimeRow.title, "Glide time")
         XCTAssertEqual(controller.smallestStepRow.title, "Smallest step")
-        XCTAssertEqual(controller.trackpadEventsRow.title, "Trackpad-style events (Beta)")
+        XCTAssertEqual(controller.trackpadEventsRow.title, "Trackpad-style scrolling (Beta)")
         XCTAssertEqual(controller.keyRows.map(\.title), ["Scroll faster", "Scroll sideways", "Pause smoothing"])
         XCTAssertEqual(controller.smoothSwitch.accessibilityLabel(), "Smooth scrolling")
         XCTAssertEqual(controller.reverseSwitch.accessibilityLabel(), "Reverse wheel direction")
-        XCTAssertEqual(controller.trackpadEventsSwitch.accessibilityLabel(), "Trackpad-style events (Beta)")
+        XCTAssertEqual(controller.trackpadEventsSwitch.accessibilityLabel(), "Trackpad-style scrolling (Beta)")
         XCTAssertEqual(controller.glideTimeSlider.accessibilityLabel(), "Glide time")
         XCTAssertEqual(controller.smoothSwitch.accessibilityHelp(), text("scrolling-smooth-hint"))
         for (index, button) in controller.keyBindButtons.enumerated() {
@@ -267,13 +267,13 @@ final class PreferencesScrollingTests: XCTestCase {
         let expected = [
             "Smooth scrolling", "Feel", "Speed", "Slow", "Fast", "Reverse wheel direction",
             "Glide time", "Shorter", "Longer", "Smallest step", "Smaller", "Larger",
-            "Trackpad-style events (Beta)", "While you hold a key",
+            "Trackpad-style scrolling (Beta)", "While you hold a key",
             "Scroll faster", "Scroll sideways", "Pause smoothing",
             text("scrolling-smooth-hint"), text("scrolling-speed-hint"), text("scrolling-reverse-hint"),
             text("scrolling-glide-time-hint"), text("scrolling-step-hint"), text("scrolling-trackpad-events-hint"),
             text("scrolling-key-faster-hint"), text("scrolling-key-sideways-hint"), text("scrolling-key-pause-hint"),
             "Thumb wheel", "Action", "Scrolls sideways.", "How far a turn scrolls sideways.",
-            "Swap direction", "Turns the thumb wheel the other way.",
+            "Swap direction", "Swaps what the two directions of the thumb wheel do.",
             "For the sideways wheel: an MX Master's thumb wheel, or a wheel that tilts.",
         ]
         for line in expected {
@@ -932,15 +932,18 @@ final class PreferencesScrollingTests: XCTestCase {
             XCTAssertEqual(controller.thumbWheelSpeedSlider.accessibilityHelp(), line, "\(label): VoiceOver reads the line")
             XCTAssertEqual(row.explanationLabel.frame.height, oneLine, accuracy: 0.5, "\(label): one line")
             XCTAssertEqual(row.frame.height, rowHeight, accuracy: 0.5, "\(label): the row keeps its height")
-            XCTAssertEqual(controller.view.fittingSize.height, height, "\(label): the tab never jumps")
+            // With "Smooth scrolling" off the tab is taller by the line under the keys' box,
+            // whatever the thumb wheel does; the thumb wheel's row itself never changes it.
+            let keysLine = controller.keysNote.superview.map { $0.isHidden ? 0 : $0.frame.height + PreferencesGroupedForm.noteSpacing } ?? 0
+            XCTAssertEqual(controller.view.fittingSize.height, height + keysLine, accuracy: 0.5, "\(label): the tab never jumps")
             XCTAssertTrue(row.isEnabled, label)
             XCTAssertTrue(controller.thumbWheelSpeedSlider.isEnabled, label)
             XCTAssertEqual(row.titleLabel.textColor, .labelColor, label)
         }
         choose(.tabs, in: controller)
-        check("How little of a turn each step needs.", "tabs")
+        check("Faster means less of a turn for each step.", "tabs")
         set(controller.smoothSwitch, false)
-        check("How little of a turn each step needs.", "tabs without smoothing")
+        check("Faster means less of a turn for each step.", "tabs without smoothing")
         choose(.scroll, in: controller)
         check("Applies where Smooth scrolling is on.", "scroll without smoothing")
         XCTAssertEqual(row.valueText, ThumbWheelPresentation.speedText(1.0), "the value still shows")
@@ -1794,6 +1797,80 @@ final class PreferencesScrollingTests: XCTestCase {
         }
         drag(controller.glideTimeSlider, to: 2.6)
         XCTAssertEqual(controller.view.fittingSize.height, height, "custom")
+    }
+
+    // MARK: - The keys need a smoothed wheel
+
+    /// The three keys of "While you hold a key" act on a smoothed wheel only (the 5× and the
+    /// sideways turn are the smoothing engine's; pausing needs something to pause). With
+    /// "Smooth scrolling" off they stayed on and did nothing, without a word: now a muted
+    /// line under their box says so, close under it, and the pane grows by exactly that line.
+    /// The keys stay editable for when smoothing is on again.
+    func testWithSmoothingOffALineUnderTheKeysSaysTheyNeedIt() throws {
+        let controller = makeController(advanced: true)
+        let holder = try XCTUnwrap(controller.keysNote.superview)
+        controller.view.layoutSubtreeIfNeeded()
+        let smoothHeight = controller.view.fittingSize.height
+        XCTAssertTrue(holder.isHidden, "nothing to say while the wheel is smoothed")
+        XCTAssertEqual(controller.keysNote.identifier, PreferencesScrollingViewController.Identifier.keysNote)
+
+        set(controller.smoothSwitch, false)
+        controller.view.setFrameSize(controller.view.fittingSize)
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertFalse(holder.isHidden)
+        XCTAssertEqual(controller.keysNote.stringValue, "These keys work only while Smooth scrolling is on.")
+        XCTAssertEqual(controller.keysNote.font?.pointSize, PreferencesForm.hintFontSize)
+        XCTAssertEqual(controller.keysNote.textColor, .secondaryLabelColor)
+        XCTAssertTrue(controller.keyRows.allSatisfy(\.isEnabled), "still editable")
+        XCTAssertTrue(controller.keyBindButtons.allSatisfy(\.isEnabled))
+        // Close under the keys' box, at the rows' inset; "Advanced" a box's gap under the line.
+        let keysBox = frame(of: controller.keysSection.box, in: controller)
+        let line = frame(of: holder, in: controller)
+        let advancedBox = frame(of: controller.advancedSection.box, in: controller)
+        XCTAssertEqual(keysBox.minY - line.maxY, PreferencesGroupedForm.noteSpacing, accuracy: 1)
+        XCTAssertEqual(line.minY - advancedBox.maxY, PreferencesGroupedForm.boxSpacing, accuracy: 1)
+        XCTAssertEqual(
+            frame(of: controller.keysNote, in: controller).minX,
+            keysBox.minX + PreferencesGroupedForm.rowHorizontalInset, accuracy: 1
+        )
+        XCTAssertEqual(
+            controller.view.fittingSize.height, smoothHeight + line.height + PreferencesGroupedForm.noteSpacing, accuracy: 1,
+            "taller by the line and its gap, nothing else"
+        )
+
+        // On again: the line goes and the boxes stand as before.
+        set(controller.smoothSwitch, true)
+        controller.view.setFrameSize(controller.view.fittingSize)
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertTrue(holder.isHidden)
+        XCTAssertEqual(controller.view.fittingSize.height, smoothHeight, accuracy: 0.5)
+        XCTAssertEqual(
+            frame(of: controller.keysSection.box, in: controller).minY - frame(of: controller.advancedSection.box, in: controller).maxY,
+            PreferencesGroupedForm.boxSpacing, accuracy: 1
+        )
+    }
+
+    /// The line follows the settings shown: stored smoothing off shows it from the start, an
+    /// app's own settings on its page, and an app that inherits shows what Scrolling has.
+    func testTheKeysLineFollowsTheSettingsShown() throws {
+        Options.shared.scroll.smooth = false
+        let tab = makeController()
+        XCTAssertEqual(tab.keysNote.superview?.isHidden, false, "from the start")
+        XCTAssertEqual(tab.view.frame.size, tab.view.fittingSize, "the pane is as tall as what it shows")
+
+        Options.shared.scroll.smooth = true
+        let own = makeApplication(inherit: false)
+        own.scroll.smooth = false
+        let page = makeController(target: own)
+        XCTAssertEqual(page.keysNote.superview?.isHidden, false, "the app's own smoothing is off")
+        own.scroll.smooth = true
+        page.syncViewWithOptions()
+        XCTAssertEqual(page.keysNote.superview?.isHidden, true)
+
+        let inherits = makeApplication(inherit: true)
+        inherits.scroll.smooth = false
+        let inherited = makeController(target: inherits)
+        XCTAssertEqual(inherited.keysNote.superview?.isHidden, true, "it follows Scrolling, where smoothing is on")
     }
 }
 

@@ -38,4 +38,17 @@ final class PreferencesFormTests: XCTestCase {
         // No step: only clamped.
         XCTAssertEqual(PreferencesForm.snapped(0.123, to: 0...1, step: 0), 0.123)
     }
+
+    /// A link button is in the accent colour (the app's violet), not the system's blue link
+    /// colour: "Having trouble?" was the one blue thing in the windows.
+    func testALinkButtonIsInTheAccentColour() throws {
+        let button = PreferencesForm.makeLinkButton(title: "Having trouble?", target: nil, action: nil)
+        let colour = try XCTUnwrap(
+            button.attributedTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
+        )
+        XCTAssertEqual(colour, .controlAccentColor)
+        XCTAssertNotEqual(colour, .linkColor)
+        XCTAssertEqual(PreferencesForm.linkColor, .controlAccentColor)
+        XCTAssertFalse(button.isBordered)
+    }
 }

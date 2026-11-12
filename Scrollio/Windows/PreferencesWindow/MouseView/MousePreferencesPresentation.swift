@@ -383,7 +383,9 @@ struct MousePaneModel: Equatable {
     }
 
     /// - Parameter managed: "Let Scrollio manage this mouse" is on. Only then do the choices
-    ///   go to the mice, so only then does the card say they go to all of them.
+    ///   go to the mice, so only then does the card name the other mice they also go to
+    ///   ("Connected. Your choices also go to MX Anywhere 3."): the pane shows one mouse,
+    ///   and the others are named nowhere else.
     private static func header(for mice: [LogiMouseDeviceState], managed: Bool) -> Header {
         guard let mouse = mice.first else {
             return Header(
@@ -394,8 +396,10 @@ struct MousePaneModel: Equatable {
                 model: .generic
             )
         }
+        // A name is not broken at the end of a line ("MX" / "Master 3S"): its spaces do not break.
+        let others = mice.dropFirst().map { $0.deviceName.replacingOccurrences(of: " ", with: "\u{00A0}") }
         let subtitle = mice.count > 1 && managed
-            ? String(format: MouseText.text("mouse-header-connected-several"), mice.count)
+            ? String(format: MouseText.text("mouse-header-connected-several"), ListFormatter.localizedString(byJoining: others))
             : MouseText.text("mouse-header-connected")
         return Header(
             title: mouse.deviceName, subtitle: subtitle, battery: battery(mouse.battery), isConnected: true,

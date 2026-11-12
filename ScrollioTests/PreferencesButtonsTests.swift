@@ -203,6 +203,18 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertFalse(pane.list.removeButton.isEnabled)
         XCTAssertEqual(pane.headerView.content.title, "Your mouse")
         XCTAssertEqual(pane.headerView.content.subtitle, "No buttons set up yet")
+        // No "Not sure which is which?" between "No buttons set up yet" and "No buttons yet":
+        // there is nothing to tell apart, and the empty list says what to do.
+        XCTAssertNil(pane.headerView.content.hint)
+        XCTAssertTrue(pane.headerView.hintLabel.isHidden)
+        XCTAssertEqual(pane.headerView.accessibilityLabel(), "Your mouse, No buttons set up yet")
+
+        // With a row in the list the hint is back.
+        pane.addBinding(for: RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil), action: nil)
+        pane.list.select(nil)
+        XCTAssertEqual(pane.rows.count, 1)
+        XCTAssertEqual(pane.headerView.content.hint, "Not sure which is which? Click + and press a button.")
+        XCTAssertFalse(pane.headerView.hintLabel.isHidden)
     }
 
     // MARK: - The connected mouse's buttons
@@ -233,7 +245,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(pane.rows.map { shown($0.pullDown) }, Array(repeating: "Default", count: 6))
         XCTAssertEqual(pane.rows.map(\.explanation), [
             "Middle click.",
-            "Switches the wheel between ratchet and free-spin.",
+            "Switches the wheel between clicking and spinning freely.",
             "Does what the mouse does on its own.",
             "Goes forward in apps that support it.",
             "Goes back in apps that support it.",
@@ -646,7 +658,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(changes, 1)
         XCTAssertEqual(scrolling.thumbWheelFunctionPopUp.titleOfSelectedItem, "Zoom")
         XCTAssertEqual(scrolling.thumbWheelFunctionRow.explanation, "Zooms the page in and out.")
-        XCTAssertEqual(scrolling.thumbWheelSpeedRow.explanation, "How little of a turn each step needs.")
+        XCTAssertEqual(scrolling.thumbWheelSpeedRow.explanation, "Faster means less of a turn for each step.")
 
         // Scrolling → Buttons.
         let popUp = try XCTUnwrap(scrolling.thumbWheelFunctionPopUp)
@@ -677,7 +689,8 @@ final class PreferencesButtonsTests: XCTestCase {
     /// A binding of a button without modifiers is that button's row: a standard button, a
     /// Logitech control, a numbered button said to be there. Two of one button: the one
     /// with an action is the row, the other is below with what tells them apart. The rest
-    /// is below, as stored, where "−" works; the card counts every binding with an action.
+    /// is below, as stored, where "−" works; the card counts every button with an action
+    /// (a keyboard shortcut is a key, not a button: it was counted as one).
     func testABindingOfAButtonIsItsRowAndEverythingElseIsBelow() throws {
         let gestureNumber = ButtonBinding(triggerEvent: placed(6, .gestureButton), systemShortcutName: SystemShortcut.mouseGestureNavigation.identifier, isEnabled: true)
         let bindings = [
@@ -713,7 +726,8 @@ final class PreferencesButtonsTests: XCTestCase {
         pane.list.select(ButtonsMousePart.back)
         XCTAssertFalse(pane.list.removeButton.isEnabled, "a button of the mouse is cleared with Default")
         pane.list.select(nil)
-        XCTAssertEqual(pane.headerView.content.subtitle, "7 buttons have actions")
+        XCTAssertEqual(pane.headerView.content.subtitle, "6 buttons have actions", "the seven with an action, less ⌃ K")
+        XCTAssertEqual(PreferencesButtonsViewController.boundButtonCount(in: bindings), 6)
         XCTAssertEqual(Options.shared.buttons.binding, bindings, "nothing is rewritten")
 
         // "−" below; the Logitech Back button goes and the Back button's row stays.
@@ -1206,6 +1220,61 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertNil(pane.headerView.artwork.emphasis)
         XCTAssertEqual(pane.headerView.accessibilityLabel(), "MX Master 4, 2 buttons have actions, Not sure which is which? Click + and press a button.")
         XCTAssertFalse(pane.headerView.hintLabel.isHidden)
+    }
+
+    /// "5 buttons have actions" counted keyboard shortcuts too. The card counts buttons: a
+    /// mouse button with or without modifier keys, never a key.
+    func testTheCardCountsButtonsNotKeys() {
+        let key = binding(40, "copy", modifiers: control, type: .keyboard)
+        let bindings = [binding(3, "copy"), key, binding(4, "paste", modifiers: option), binding(5)]
+        XCTAssertEqual(PreferencesButtonsViewController.boundButtonCount(in: bindings), 2, "⌃ K is a key, button 5 has no action")
+        XCTAssertEqual(PreferencesButtonsViewController.boundButtonCount(in: [key]), 0)
+
+        let pane = makePane(bindings)
+        XCTAssertEqual(pane.headerView.content.subtitle, "2 buttons have actions")
+        deviceName = nil
+        let keyOnly = makePane([key])
+        XCTAssertEqual(keyOnly.headerView.content.subtitle, "No buttons set up yet", "a key is listed, no button is set up")
+        XCTAssertEqual(keyOnly.headerView.content.hint, "Not sure which is which? Click + and press a button.", "the list is not empty")
+
+        typealias Content = ButtonsHeaderContent
+        XCTAssertEqual(Content.make(deviceName: nil, boundCount: 0, isRecording: false, listIsEmpty: true, focus: nil),
+                       Content(title: "Your mouse", subtitle: "No buttons set up yet", part: nil, hint: nil))
+    }
+
+    /// Gestures › Change: the row of the button that runs Gesture Navigation is selected and
+    /// lit on the card. A key with that action (it cannot run it) and a disabled binding are
+    /// passed over; without a gesture button nothing is selected.
+    func testSelectGestureButtonSelectsTheRowThatRunsGestureNavigation() {
+        let gestureNavigation = SystemShortcut.mouseGestureNavigation.identifier
+        let key = binding(40, gestureNavigation, modifiers: control, type: .keyboard)
+        var off = binding(3, gestureNavigation)
+        off.isEnabled = false
+        let gesture = binding(4, gestureNavigation)
+        let bindings = [binding(5, "copy"), key, off, gesture]
+        let pane = makePane(bindings)
+        XCTAssertEqual(pane.gestureButtonBinding, gesture)
+        XCTAssertNil(pane.list.selectedID)
+
+        XCTAssertTrue(pane.selectGestureButton())
+        XCTAssertEqual(pane.list.selectedID, pane.rowID(forBinding: gesture.id))
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(ButtonsMousePart.forward), "the Forward button's row")
+        XCTAssertEqual(pane.headerView.content.title, "Forward button")
+        XCTAssertEqual(pane.headerView.content.subtitle, "Gesture Navigation")
+        XCTAssertEqual(pane.headerView.content.part, .forward)
+        XCTAssertTrue(anchors.isEmpty, "nothing is recorded")
+        XCTAssertTrue(openedMenus.isEmpty, "no menu opens")
+        XCTAssertEqual(Options.shared.buttons.binding, bindings, "nothing is changed")
+
+        // A gesture button made elsewhere while the pane was away is found too.
+        let other = makePane([binding(3, "copy")])
+        XCTAssertFalse(other.selectGestureButton(), "no button runs it")
+        XCTAssertNil(other.list.selectedID)
+        let late = binding(1000, gestureNavigation)
+        Options.shared.buttons.binding = [binding(3, "copy"), late]
+        XCTAssertTrue(other.selectGestureButton())
+        XCTAssertEqual(other.list.selectedID, other.rowID(forBinding: late.id))
+        XCTAssertEqual(other.headerView.content.part, .gesture)
     }
 
     // MARK: - Which button is which
@@ -1741,10 +1810,10 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(stored.map(\.triggerEvent.mousePart), [.gestureButton, .thumbPanel, nil])
         XCTAssertEqual(stored, ownerBindingsWithIDs(of: stored), "the same triggers and actions")
 
-        // The Gestures pane's "Gesture button" line.
+        // The Gestures pane's "Button to hold" line.
         let summary = MouseGestureBindingSummary(bindings: stored, isLogitechCode: { LogiCenter.shared.isLogiCode($0) })
         XCTAssertEqual(summary.buttonTitles, ["Gesture button (button 6)"])
-        XCTAssertEqual(summary.gestureButtonExplanation, "Assigned to Gesture button (button 6).")
+        XCTAssertEqual(summary.gestureButtonExplanation, "Gesture button (button 6).")
         XCTAssertFalse(summary.hasLogitechGestureButton)
 
         // Modifiers stay in front.
@@ -1963,6 +2032,13 @@ final class PreferencesButtonsTests: XCTestCase {
         let scrollKey = try XCTUnwrap(pane.showProblem(of: listed[4], relativeTo: listed[4].infoButton))
         _ = scrollKey.view
         XCTAssertEqual(scrollKey.titleLabel.stringValue, "Also a key under Scrolling")
+        XCTAssertEqual(
+            scrollKey.detailLabel.stringValue,
+            "This button is also set under Scrolling › While you hold a key, so holding it does both. Clear one of the two."
+        )
+        // The explanation is what the popover is for: in the label colour, not the muted one.
+        XCTAssertEqual(scrollKey.detailLabel.textColor, .labelColor)
+        XCTAssertEqual(popover.detailLabel.textColor, .labelColor)
     }
 
     /// A key that has Gesture Navigation from before does nothing with it (the input side

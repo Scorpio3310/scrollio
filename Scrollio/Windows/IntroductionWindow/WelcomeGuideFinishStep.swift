@@ -68,7 +68,9 @@ final class WelcomeGuideFinishStep: WelcomeGuideStepView {
 
     func refresh() {
         let hidden = isMenuBarIconHidden()
-        textLabel.stringValue = WelcomeGuideText.localized(Self.textKey(iconHidden: hidden, paused: isPaused()))
+        let paused = isPaused()
+        titleLabel.stringValue = WelcomeGuideText.localized(Self.titleKey(iconHidden: hidden, paused: paused))
+        textLabel.stringValue = WelcomeGuideText.localized(Self.textKey(iconHidden: hidden, paused: paused))
         artwork.isIconHidden = hidden
         loginRow.isOn = opensAtLogin()
         // As General says it: an item that waits for approval is not on yet.
@@ -80,6 +82,13 @@ final class WelcomeGuideFinishStep: WelcomeGuideStepView {
     func setShown(_ shown: Bool) {
         if shown { refresh() }
         artwork.setAnimating(shown)
+    }
+
+    /// The title: "Scrollio is ready", except while it is paused with its menu bar icon
+    /// hidden. The text under it then only says how to reach Settings, and nothing else on
+    /// the step would tell that Scrollio does not run.
+    static func titleKey(iconHidden: Bool, paused: Bool) -> String {
+        return iconHidden && paused ? "intro-finish-title-hidden-icon-paused" : "intro-finish-title"
     }
 
     /// The sentence under the title; paused, it does not claim that Scrollio runs.

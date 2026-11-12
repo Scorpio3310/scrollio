@@ -851,6 +851,30 @@ class PreferencesButtonsViewController: NSViewController {
 
     // MARK: - Gestures
 
+    /// The button that runs Gesture Navigation, as the Gestures pane counts it (an enabled
+    /// binding of a mouse button; a key never starts a gesture): the first of several.
+    var gestureButtonBinding: ButtonBinding? {
+        return buttonBindings.first {
+            $0.isEnabled && $0.triggerEvent.type == .mouse
+                && $0.systemShortcutName == SystemShortcut.mouseGestureNavigation.identifier
+        }
+    }
+
+    /// Gestures › Change: selects the row of the button that runs Gesture Navigation. The
+    /// list scrolls to it, the card lights the button, and the list takes the keyboard, so
+    /// the user sees what to change. False when no button runs it.
+    @discardableResult
+    func selectGestureButton() -> Bool {
+        _ = view
+        // The binding may have been made a moment ago, while this pane was away.
+        reload()
+        guard let binding = gestureButtonBinding else { return false }
+        list.select(rowID(forBinding: binding.id))
+        focusList()
+        updateHeader()
+        return true
+    }
+
     /// "Show Gesture Settings": the Gestures pane.
     func showGesturesPane() {
         let identifier = GesturesPreferencesViewController.tabIdentifier
@@ -913,17 +937,24 @@ class PreferencesButtonsViewController: NSViewController {
                 focus = self.focus(for: row)
             }
         }
-        let bound = buttonBindings.filter { CellActionState(binding: $0).hasBoundAction }.count
         let deviceName = deviceSource.deviceName()
         shownDeviceName = deviceName
         headerView.mouse = mouse
         headerView.content = ButtonsHeaderContent.make(
             deviceName: deviceName,
-            boundCount: bound,
+            boundCount: Self.boundButtonCount(in: buttonBindings),
             isRecording: isRecording,
             mouseButtonOnly: Self.needsMouseButton(pendingAction),
+            listIsEmpty: list.rows.isEmpty,
             focus: focus
         )
+    }
+
+    /// How many buttons have an action, for the card's "3 buttons have actions": mouse
+    /// buttons (with or without modifier keys). A keyboard shortcut in the list is a key,
+    /// not a button, and is not counted.
+    static func boundButtonCount(in bindings: [ButtonBinding]) -> Int {
+        return bindings.filter { $0.triggerEvent.type == .mouse && CellActionState(binding: $0).hasBoundAction }.count
     }
 
     /// Gesture Navigation is held while the mouse moves: only a mouse button can have it.

@@ -224,7 +224,7 @@ final class PreferencesGeneralTests: XCTestCase {
         let pane = try makePane(world)
         XCTAssertEqual(pane.welcomeGuideRow.title, "Welcome Guide")
         XCTAssertEqual(pane.welcomeGuideRow.explanation, "Shows the first-launch steps again, including Accessibility access.")
-        XCTAssertEqual(pane.welcomeGuideButton.title, "Open…", "it opens a window")
+        XCTAssertEqual(pane.welcomeGuideButton.title, "Open", "it only opens a window: no …")
         XCTAssertEqual(pane.welcomeGuideButton.bezelStyle, .push)
         XCTAssertTrue(pane.welcomeGuideRow.controls.contains { $0 === pane.welcomeGuideButton })
         XCTAssertTrue(pane.welcomeGuideButton.accessibilityTitleUIElement() as? NSTextField === pane.welcomeGuideRow.titleLabel)
@@ -351,7 +351,7 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertEqual(pane.launchOnLoginRow.title, "Open at login")
         XCTAssertEqual(pane.launchOnLoginRow.explanation, "Scrollio starts when you log in to your Mac.")
         XCTAssertTrue(pane.loginApprovalRow.isHidden)
-        XCTAssertFalse(shownTexts(pane).contains("Open Login Items…"))
+        XCTAssertFalse(shownTexts(pane).contains("Open Login Items"))
     }
 
     /// macOS waits for the user to allow the login item in System Settings: the row says so
@@ -364,7 +364,7 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertEqual(pane.launchOnLoginRow.explanation, "Waiting for your approval in System Settings.")
         XCTAssertFalse(pane.loginApprovalRow.isHidden)
         XCTAssertEqual(pane.loginApprovalRow.title, "Approve in System Settings")
-        XCTAssertEqual(pane.openLoginItemsButton.title, "Open Login Items…")
+        XCTAssertEqual(pane.openLoginItemsButton.title, "Open Login Items")
         XCTAssertEqual(pane.openLoginItemsButton.bezelStyle, .push)
         XCTAssertEqual(fake.openSettingsCalls, 0, "showing the row opens nothing")
 
@@ -462,7 +462,24 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertEqual(pane.accessibilityStatusLabel.stringValue, "Not allowed")
         XCTAssertEqual(pane.accessibilityStatusIcon.contentTintColor, .systemOrange)
         XCTAssertFalse(pane.openAccessibilitySettingsButton.isHidden)
-        XCTAssertEqual(pane.openAccessibilitySettingsButton.title, "Open Settings…")
+        // Where it leads, in the words of macOS's own alert (not "Open Settings…", which the
+        // Welcome Guide uses for Scrollio's own settings).
+        XCTAssertEqual(pane.openAccessibilitySettingsButton.title, "Open System Settings")
+        // "Not allowed" is said in the row's line; by the button stands the orange sign alone,
+        // so the line keeps room for two lines (it was a narrow column of three).
+        XCTAssertTrue(pane.accessibilityStatusLabel.isHidden)
+        XCTAssertFalse(pane.accessibilityStatusIcon.isHidden)
+        XCTAssertEqual(
+            pane.accessibilityRow.explanation,
+            "Not allowed. Scrollio needs this to smooth scrolling and run your buttons."
+        )
+        XCTAssertEqual(pane.openAccessibilitySettingsButton.accessibilityHelp(), pane.accessibilityRow.explanation)
+        pane.view.layoutSubtreeIfNeeded()
+        let measure = NSTextField(wrappingLabelWithString: "X")
+        measure.font = PreferencesForm.hintFont
+        XCTAssertLessThanOrEqual(
+            pane.accessibilityRow.explanationLabel.frame.height, 2 * measure.fittingSize.height + 0.5, "two lines at most"
+        )
         XCTAssertEqual(world.accessibilitySettingsOpened, 0, "showing the row opens nothing")
 
         click(pane.openAccessibilitySettingsButton)
@@ -479,11 +496,18 @@ final class PreferencesGeneralTests: XCTestCase {
         world.access = false
         NotificationCenter.default.post(name: .scrollioAccessibilityPermissionLost, object: nil)
         XCTAssertEqual(pane.accessibilityStatusLabel.stringValue, "Not allowed")
+        XCTAssertTrue(pane.accessibilityStatusLabel.isHidden, "said in the row's line")
+        XCTAssertEqual(pane.accessibilityRow.explanation?.hasPrefix("Not allowed. "), true)
         XCTAssertFalse(pane.openAccessibilitySettingsButton.isHidden)
 
         world.access = true
         NotificationCenter.default.post(name: AppRunController.didChangeNotification, object: nil)
         XCTAssertEqual(pane.accessibilityStatusLabel.stringValue, "Allowed")
+        XCTAssertFalse(pane.accessibilityStatusLabel.isHidden)
+        XCTAssertEqual(
+            pane.accessibilityRow.explanation,
+            "Lets Scrollio read the mouse and keyboard to smooth scrolling and run your buttons."
+        )
         XCTAssertTrue(pane.openAccessibilitySettingsButton.isHidden)
     }
 
@@ -586,8 +610,12 @@ final class PreferencesGeneralTests: XCTestCase {
                 func alignment(_ view: NSView) -> NSRect {
                     return row.convert(view.alignmentRect(forFrame: view.frame), from: view.superview)
                 }
-                let status = alignment(pane.accessibilityStatusLabel)
+                // Allowed: the check and "Allowed"; not allowed: the sign and the button.
+                let status = alignment(access ? pane.accessibilityStatusLabel : pane.openAccessibilitySettingsButton)
+                let sign = alignment(pane.accessibilityStatusIcon)
+                XCTAssertLessThanOrEqual(sign.maxX, status.minX, name)
                 let explanation = alignment(row.explanationLabel)
+                XCTAssertLessThanOrEqual(explanation.maxX, sign.minX, name)
                 XCTAssertLessThanOrEqual(explanation.maxX, status.minX, name)
                 XCTAssertLessThanOrEqual(status.maxX, row.bounds.maxX - PreferencesGroupedForm.rowHorizontalInset + 0.5, name)
             }

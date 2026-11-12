@@ -56,7 +56,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "scrolling-trackpad-events", "scrolling-trackpad-events-hint",
         "scrolling-keys-header", "scrolling-key-faster", "scrolling-key-faster-hint",
         "scrolling-key-sideways", "scrolling-key-sideways-hint", "scrolling-key-pause", "scrolling-key-pause-hint",
-        "scrolling-key-clear-for", "scrolling-key-none", "scrolling-reset",
+        "scrolling-key-clear-for", "scrolling-key-none", "scrolling-keys-smoothing-off", "scrolling-reset",
         "scrolling-undo-reset",
         "scrolling-speed-value", "scrolling-glide-time-shorter", "scrolling-glide-time-longer",
         "scrolling-step-smaller", "scrolling-step-larger", "key-recorder-waiting-single-key",
@@ -142,6 +142,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-show-in-menu-bar", "general-show-in-menu-bar-hint",
         "general-paused", "general-paused-hint", "general-resume",
         "general-permissions-header", "general-accessibility", "general-accessibility-hint",
+        "general-accessibility-hint-not-allowed",
         "general-accessibility-allowed", "general-accessibility-not-allowed", "general-accessibility-open-settings",
         "about-app-name", "about-tagline", "about-version", "about-credit", "about-welcome-guide",
         "about-welcome-guide-open", "about-welcome-guide-hint",
@@ -188,9 +189,11 @@ final class PreferencesLocalizationTests: XCTestCase {
         "intro-feel-trackpad", "intro-feel-not-running", "intro-feel-not-in-list", "intro-feel-smoothing-off",
         "intro-feel-try-area", "intro-feel-custom-hint", "intro-feel-caption-direct", "intro-feel-caption-quick",
         "intro-feel-caption-smooth", "intro-feel-caption-glide", "intro-feel-caption-float",
-        "intro-access-could-not-start", "intro-access-todo", "intro-access-todo-detail", "intro-status-running",
+        "intro-access-could-not-start", "intro-access-could-not-start-title", "intro-access-todo",
+        "intro-access-todo-detail", "intro-status-running",
         "intro-finish-title", "intro-finish-text", "intro-finish-picture", "intro-finish-picture-hidden-icon",
-        "intro-finish-hidden-icon-paused", "intro-open-app-settings-button", "intro-done-button",
+        "intro-finish-hidden-icon-paused", "intro-finish-title-hidden-icon-paused",
+        "intro-open-app-settings-button", "intro-done-button",
     ]
 
     static let keys = mouseKeys + scrollingKeys + buttonsKeys + gesturesKeys + appsKeys
@@ -204,7 +207,7 @@ final class PreferencesLocalizationTests: XCTestCase {
     /// garbage or crashes. Add the key with its arguments when you format a new string.
     static let formatArguments: [String: String] = [
         // Mouse pane
-        "mouse-header-connected-several": "d",
+        "mouse-header-connected-several": "@",
         "mouse-battery-about": "@",
         "mouse-battery-not-charging": "@",
         "mouse-battery-accessibility": "@",

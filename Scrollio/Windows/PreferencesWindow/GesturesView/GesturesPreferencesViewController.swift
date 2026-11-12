@@ -12,7 +12,8 @@
 //  them off under Mouse, a muted line that says so and leads there ("Open Mouse").
 //  Mode, actions, invert and freeze come from MouseGestureSettingsControls.
 //  The tab only edits Options.shared.gesture; which button runs Gesture Navigation is
-//  chosen in the Buttons tab, and the first row ("Gesture button") names it and leads there.
+//  chosen in the Buttons tab, and the first row ("Button to hold") names it and leads there:
+//  "Set Up…" records one, "Change" shows the Buttons pane with that button's row selected.
 //
 
 import Cocoa
@@ -28,8 +29,9 @@ final class GesturesPreferencesViewController: NSViewController {
     }
     /// All action pop-ups have this width, so they line up.
     static let popUpWidth: CGFloat = 240
-    /// Room for the widest tracking speed ("2.75×"), a little more than the kit's default.
-    static let trackingSpeedValueWidth: CGFloat = 40
+    /// Room for the widest tracking speed ("2.75×"): the kit's value column, so the slider
+    /// stands where the Scrolling pane's sliders stand.
+    static let trackingSpeedValueWidth: CGFloat = PreferencesGroupedForm.sliderValueWidth
 
     /// Identifiers for the views of the tab (tests and accessibility tooling). The shared
     /// controls have theirs in `MouseGestureSettingsControls.Identifier`.
@@ -53,8 +55,9 @@ final class GesturesPreferencesViewController: NSViewController {
     var deviceSource: MouseGestureDeviceSource = .live
     /// Which buttons use Gesture Navigation; tests and screenshots replace it with fixtures.
     var bindingSummary: () -> MouseGestureBindingSummary = { .current }
-    /// "Set Up…" or "Change…": shows the Buttons pane and, with no gesture button yet
-    /// (true), records one that gets Gesture Navigation. Tests replace it.
+    /// "Set Up…" or "Change": shows the Buttons pane and, with no gesture button yet
+    /// (true), records one that gets Gesture Navigation; with one (false), selects its row
+    /// there. Tests replace it.
     var openButtonsPane: ((Bool) -> Void)?
     /// "Open Mouse": shows the Mouse pane. Tests replace it.
     var openMousePane: (() -> Void)?
@@ -373,8 +376,9 @@ final class GesturesPreferencesViewController: NSViewController {
         return NSLocalizedString(key, comment: "")
     }
 
-    /// "Gesture button": the buttons that run Gesture Navigation, or none yet, and a push
-    /// button to the Buttons pane ("Set Up…" records a new one, "Change…" shows the list).
+    /// "Button to hold": the buttons that run Gesture Navigation, or none yet, and a push
+    /// button to the Buttons pane ("Set Up…" records a new one, "Change" shows the list with
+    /// the gesture button's row selected).
     private func makeGestureButtonRow() -> PreferencesGroupRow {
         let button = PreferencesGroupedForm.makePushButton(
             title: text("gestures-gesture-button-set-up"),
@@ -400,8 +404,13 @@ final class GesturesPreferencesViewController: NSViewController {
         }
         guard let split = PreferencesButtonsViewController.splitViewController(of: self),
               split.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons) else { return }
-        guard addsButton, let buttons = split.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController else { return }
-        buttons.beginAddingBinding(action: SystemShortcut.mouseGestureNavigation)
+        guard let buttons = split.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController else { return }
+        if addsButton {
+            buttons.beginAddingBinding(action: SystemShortcut.mouseGestureNavigation)
+        } else {
+            // The user sees which row to change: it is selected and its button lit on the card.
+            buttons.selectGestureButton()
+        }
     }
 
     /// "Mode": what the selected mode does under the title, the two modes across the box.

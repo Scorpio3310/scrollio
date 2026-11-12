@@ -404,11 +404,11 @@ final class StatusMenuTests: XCTestCase {
 
         let paused = StatusMenu.IconLook(coresActive: false, isPaused: true)
         XCTAssertTrue(paused.appearsDisabled)
-        XCTAssertEqual(paused.toolTip, "Scrollio is paused")
+        XCTAssertEqual(paused.toolTip, "Scrollio is paused.")
 
         let noAccess = StatusMenu.IconLook(coresActive: false, isPaused: false)
         XCTAssertTrue(noAccess.appearsDisabled)
-        XCTAssertEqual(noAccess.toolTip, "Scrollio needs Accessibility access")
+        XCTAssertEqual(noAccess.toolTip, "Scrollio needs Accessibility access.")
     }
 
     /// Regression: with the access allowed but an event tap that could not be created, the
@@ -431,10 +431,10 @@ final class StatusMenuTests: XCTestCase {
 
         // A pause says "paused" whatever else is true.
         XCTAssertEqual(StatusMenu.IconLook(coresActive: false, isPaused: true, startFailed: true, tapRestartsThrottled: true).toolTip,
-                       "Scrollio is paused")
+                       "Scrollio is paused.")
         // Without the access the start did not fail: it waits.
         XCTAssertEqual(StatusMenu.IconLook(coresActive: false, isPaused: false, startFailed: false, tapRestartsThrottled: true).toolTip,
-                       "Scrollio needs Accessibility access")
+                       "Scrollio needs Accessibility access.")
     }
 
     /// The live state of the taps: nothing is throttled under tests.

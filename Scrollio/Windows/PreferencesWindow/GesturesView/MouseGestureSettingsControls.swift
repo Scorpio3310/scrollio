@@ -63,11 +63,17 @@ enum MouseGestureTrackingSpeed {
         return scale.snapped(value, in: MouseGestureSettings.trackingSpeedRange)
     }
 
-    /// 1.5 -> "1.5×", 1.25 -> "1.25×": one decimal, two where a quarter needs them.
-    static func text(_ value: Double) -> String {
-        let tenths = (value * 10).rounded()
-        let digits = abs(tenths - value * 10) < 1e-6 ? 1 : 2
-        return String(format: "%.\(digits)f×", value)
+    /// 1.5 -> "1.5×", 1.25 -> "1.25×": one decimal, two where a quarter needs them, in the
+    /// user's locale ("1,25×" with a decimal comma), as the Scrolling pane writes its speeds.
+    /// Display only: the stored value is not changed.
+    static func text(_ value: Double, locale: Locale = .current) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = locale
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 1
+        formatter.maximumFractionDigits = 2
+        let number = formatter.string(from: NSNumber(value: value)) ?? ""
+        return String(format: NSLocalizedString("scrolling-speed-value", comment: ""), number)
     }
 }
 

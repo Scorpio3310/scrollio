@@ -168,6 +168,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try renderMouse([MouseDeviceFixtures.mxMaster4(mismatches: [.pointerSpeed: .refused])], name: "mouse-mx-master-4-refused")
         try renderMouse([MouseDeviceFixtures.mxMaster4(mismatches: [.pointerSpeed: .sending])], name: "mouse-mx-master-4-sending")
         Options.shared.logiMouse = .default
+        // Two mice, managed: the card names the one the choices also go to.
+        try renderMouse([master4, MouseDeviceFixtures.mxMaster3S()], name: "mouse-two-mice-managed")
         Options.shared.logiWheel = .default
         try renderMouse([master4], name: "mouse-mx-master-4-not-managed")
         try renderMouse([MouseDeviceFixtures.mxMaster3S()], name: "mouse-mx-master-3s")
@@ -1595,7 +1597,7 @@ private final class ListRenderController: NSViewController {
                 PreferencesListRow(id: "back", title: "⌥ Back button", explanation: "Hold and move the mouse. Set the directions under Gestures.",
                                    icon: .symbol("computermouse"), accessory: accessory, centeredOn: selectedPopUp, controls: [selectedPopUp]),
                 PreferencesListRow(id: "forward", title: "Forward button", icon: .symbol("arrow.right.circle"), accessory: popUp),
-                PreferencesListRow(id: "calculator", title: "Calculator", explanation: "Uses its own scrolling settings",
+                PreferencesListRow(id: "calculator", title: "Calculator", explanation: "Uses its own scrolling settings.",
                                    icon: .image(calculator), showsChevron: true),
                 PreferencesListRow(id: "dimmed", title: "Button 6", explanation: "Choose what this button does.",
                                    icon: .symbol("questionmark.circle")),
@@ -1616,7 +1618,7 @@ private final class ListRenderController: NSViewController {
             section = PreferencesListSection(title: "Apps", list: list)
         }
         let switchBox = PreferencesGroupSection(width: width, rows: [
-            PreferencesSwitchRow(title: "Limit scrolling to these apps", explanation: "Apps not in the list scroll the way macOS does.", target: nil, action: nil),
+            PreferencesSwitchRow(title: "Change scrolling only in these apps", explanation: "Apps not in the list scroll the way macOS does.", target: nil, action: nil),
         ])
         PreferencesGroupedForm.add([switchBox, section], to: content)
         view = root

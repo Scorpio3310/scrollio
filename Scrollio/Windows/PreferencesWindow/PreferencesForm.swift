@@ -56,13 +56,20 @@ enum PreferencesForm {
 
     // MARK: - Controls
 
-    /// A borderless button that reads as a link: link-coloured text and a pointing hand.
+    /// The colour of a link button's text.
+    static var linkColor: NSColor {
+        return .controlAccentColor
+    }
+
+    /// A borderless button that reads as a link: text in the accent colour (the app's
+    /// violet, or the user's own accent; not the system's blue link colour, which was the
+    /// one blue thing in the windows) and a pointing hand.
     static func makeLinkButton(title: String, target: AnyObject?, action: Selector?) -> NSButton {
         let button = PreferencesLinkButton(title: title, target: target, action: action)
         button.isBordered = false
         button.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         button.attributedTitle = NSAttributedString(string: title, attributes: [
-            .foregroundColor: NSColor.linkColor,
+            .foregroundColor: linkColor,
             .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
         ])
         button.setButtonType(.momentaryChange)

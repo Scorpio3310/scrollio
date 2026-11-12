@@ -7,7 +7,8 @@
 //  Logitech mouse the card shows its name and battery, and "Let Scrollio manage this mouse",
 //  the pointer speed, the wheel and the haptics follow. A row for something the mouse does
 //  not have, or a macOS value that could not be read, is hidden. A muted line under the
-//  switch says why the rows are greyed while it is off, and, while it is on, that a value
+//  switch says why the rows are greyed while it is off (their values, what the mouse
+//  reports, stay in the label colour so they can be read), and, while it is on, that a value
 //  is not on the mouse, with "Send Again" (LogiCenter reads the mice again and writes what
 //  differs, as on a reconnect).
 //
@@ -48,7 +49,8 @@ final class MousePreferencesViewController: NSViewController {
     static var boxWidth: CGFloat {
         return PreferencesGroupedForm.boxWidth(paneWidth: paneWidth)
     }
-    /// Room for "8000 DPI"; every slider of the tab gets it, so they line up.
+    /// Room for "8000 DPI"; every slider of the tab gets it, so they line up. (Wider than
+    /// the kit's column of the other panes: see `PreferencesGroupedForm.sliderValueWidth`.)
     static let sliderValueWidth: CGFloat = 56
 
     // MARK: - State
@@ -847,6 +849,8 @@ final class MousePreferencesViewController: NSViewController {
             action: action
         )
         row.slider.identifier = identifier
+        // Greyed (the switch is off), the row shows what the mouse reports: that stays readable.
+        row.keepsValueReadable = true
         return row
     }
 }

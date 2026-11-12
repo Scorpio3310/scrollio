@@ -11,10 +11,11 @@
 //  does, its speed and its direction, with a line under the box on which wheel that is;
 //  global only, so not on an app's page (VoiceOver hears it as a group of that name, so its
 //  "Speed" is not taken for the main wheel's). Then "While you hold a key" with the three
-//  keys, which work from the first launch, so they always show. The last box starts with "Advanced"
-//  (closed by default), which opens the exact glide time, the smallest step and
-//  trackpad-style events in that box. "Reset to defaults" sits under the boxes; Edit › Undo
-//  takes a reset back.
+//  keys, which work from the first launch, so they always show; they act on a smoothed wheel
+//  only, so while "Smooth scrolling" is off a muted line under their box says so. The last
+//  box starts with "Advanced" (closed by default), which opens the exact glide time, the
+//  smallest step and trackpad-style scrolling in that box. "Reset to defaults" sits under the
+//  boxes; Edit › Undo takes a reset back.
 //  The tab edits scroll options (Options.shared.scroll, or the target application's own) and,
 //  on the tab itself, Options.shared.thumbWheel, which the Buttons pane edits too: a change
 //  made there shows here at once (ThumbWheelSettingsChange).
@@ -163,6 +164,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         static let thumbWheelSpeed = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-speed")
         static let thumbWheelSwap = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-swap")
         static let thumbWheelNote = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-note")
+        static let keysNote = NSUserInterfaceItemIdentifier("scrolling-keys-note")
         static let reset = NSUserInterfaceItemIdentifier("scrolling-reset")
 
         static func key(_ key: ScrollHoldKey) -> NSUserInterfaceItemIdentifier {
@@ -252,6 +254,13 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// "While you hold a key": its title and box, and the row of each key.
     private(set) var keysSection: PreferencesGroupSection!
     private(set) var keyRows: [PreferencesGroupRow] = []
+    /// The line under the keys' box, shown while "Smooth scrolling" is off: the keys act on
+    /// a smoothed wheel only (in a holder that insets it, which is what hides).
+    private(set) var keysNote: NSTextField!
+    /// The column of boxes: the gap under the keys' box follows its line.
+    private var contentStack: NSStackView!
+    /// `loadView` is through: a row or line that comes or goes now changes the pane's height.
+    private var isBuilt = false
     /// "Thumb wheel": its title and box, the line under the box, and its three rows. Only on
     /// the tab (hidden on an app's page: the thumb wheel has no per-app settings).
     private(set) var thumbWheelSection: PreferencesGroupSection!
@@ -297,6 +306,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         keyRows = ScrollHoldKey.allCases.map { makeKeyRow($0) }
         let keys = PreferencesGroupSection(title: text("scrolling-keys-header"), width: width, rows: keyRows)
         keysSection = keys
+        let keysNoteHolder = makeKeysNote()
         let thumbWheel = PreferencesGroupSection(title: ThumbWheelPresentation.title, width: width, rows: [
             makeThumbWheelFunctionRow(), makeThumbWheelSpeedRow(), makeThumbWheelSwapRow(),
         ])
@@ -326,9 +336,10 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         // The thumb wheel above the keys, so the default window shows it. Hidden (an app's
         // page) it takes no room, and the keys keep the gap above their title.
         PreferencesGroupedForm.add(
-            [preview, basic, thumbWheel, thumbWheelNoteHolder, keys, advanced, PreferencesGroupFooter(trailing: [reset])],
+            [preview, basic, thumbWheel, thumbWheelNoteHolder, keys, keysNoteHolder, advanced, PreferencesGroupFooter(trailing: [reset])],
             to: content
         )
+        contentStack = content
         // The line about the thumb wheel sits close under its box, as the muted lines of the
         // other panes do.
         content.setCustomSpacing(PreferencesGroupedForm.noteSpacing, after: thumbWheel)
@@ -339,6 +350,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         applyAdvancedExpanded()
         syncViewWithOptions()
         root.setFrameSize(root.fittingSize)
+        isBuilt = true
     }
 
     override func viewDidLoad() {
@@ -412,10 +424,28 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
             keyRows[key.rawValue].isEnabled = editable
         }
         updateKeyButtons(in: scroll, enabled: editable)
+        syncKeysNote(smoothing: scroll.smooth)
         syncThumbWheel()
 
         resetToDefaultsButton.isEnabled = hasSettingsToReset
         updatePreviewScene()
+    }
+
+    /// The line under the keys' box: there while the wheel is not smoothed, because the
+    /// three keys (5× the distance, sideways, pause) act on a smoothed wheel only. The keys
+    /// stay editable: they apply again once smoothing is on. A line sits close under its
+    /// box; without it the next box keeps the gap between boxes. The pane's height follows.
+    private func syncKeysNote(smoothing: Bool) {
+        guard let holder = keysNote.superview, holder.isHidden != smoothing else { return }
+        holder.isHidden = smoothing
+        contentStack.setCustomSpacing(
+            smoothing ? PreferencesGroupedForm.boxSpacing : PreferencesGroupedForm.noteSpacing,
+            after: keysSection
+        )
+        // Not while the view is still being built (`loadView` sizes it once at the end).
+        if isBuilt {
+            contentHeightDidChange()
+        }
     }
 
     /// The thumb wheel group: on the tab only. It shows Options.shared.thumbWheel and writes
@@ -666,7 +696,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     }
 
     /// Back to the scroll options of a new installation: the "Smooth" feel, the default
-    /// speed and step, the three default keys, trackpad-style events off; on the tab also the
+    /// speed and step, the three default keys, trackpad-style scrolling off; on the tab also the
     /// thumb wheel (scrolls sideways at 1×, not swapped). "Advanced" stays as it is. One
     /// click, no question: Edit › Undo ("Undo Reset Scrolling") brings back every value it
     /// changed.
@@ -949,18 +979,31 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         return row
     }
 
-    /// The muted line under the thumb wheel's box: which wheel that is. Inset like the text
-    /// of the rows above it.
+    /// The muted line under the thumb wheel's box: which wheel that is.
     private func makeThumbWheelNote() -> NSView {
+        let (holder, label) = makeNote(text("scrolling-thumb-wheel-note"), identifier: Identifier.thumbWheelNote)
+        thumbWheelNote = label
+        return holder
+    }
+
+    /// The muted line under the keys' box, hidden until "Smooth scrolling" is off.
+    private func makeKeysNote() -> NSView {
+        let (holder, label) = makeNote(text("scrolling-keys-smoothing-off"), identifier: Identifier.keysNote)
+        holder.isHidden = true
+        keysNote = label
+        return holder
+    }
+
+    /// A muted line under a box, in a holder that insets it like the text of the rows above.
+    private func makeNote(_ string: String, identifier: NSUserInterfaceItemIdentifier) -> (holder: NSView, label: NSTextField) {
         let inset = PreferencesGroupedForm.rowHorizontalInset
-        let label = NSTextField(wrappingLabelWithString: text("scrolling-thumb-wheel-note"))
-        label.identifier = Identifier.thumbWheelNote
+        let label = NSTextField(wrappingLabelWithString: string)
+        label.identifier = identifier
         label.font = PreferencesGroupedForm.explanationFont
         label.textColor = PreferencesGroupedForm.explanationColor(enabled: true)
         label.isSelectable = false
         label.preferredMaxLayoutWidth = Self.boxWidth - 2 * inset
         label.translatesAutoresizingMaskIntoConstraints = false
-        thumbWheelNote = label
         let holder = NSView()
         holder.translatesAutoresizingMaskIntoConstraints = false
         holder.addSubview(label)
@@ -970,7 +1013,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
             label.leadingAnchor.constraint(equalTo: holder.leadingAnchor, constant: inset),
             label.trailingAnchor.constraint(lessThanOrEqualTo: holder.trailingAnchor, constant: -inset),
         ])
-        return holder
+        return (holder, label)
     }
 
     /// A slider with the words for its ends under it, the setting's tick marks and, on the

@@ -1226,7 +1226,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connected. Your choices go to all %d mice."
+            "value": "Connected. Your choices also go to %@."
           }
         }
       }
@@ -1589,7 +1589,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Let the mouse track the gesture"
+            "value": "Let the mouse track the gesture (Beta)"
           }
         }
       }
@@ -1600,7 +1600,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Experimental: the mouse holds the pointer still and reports the movement."
+            "value": "The mouse holds the pointer still and reports the movement."
           }
         }
       }
@@ -1633,7 +1633,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A short tap from the mouse as the gesture takes hold (MX Master 4)."
+            "value": "A short pulse from the mouse when a gesture locks in (MX Master 4)."
           }
         }
       }
@@ -2183,7 +2183,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Move Space Left"
+            "value": "Desktop on the Left"
           }
         }
       }
@@ -2194,7 +2194,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Move Space Right"
+            "value": "Desktop on the Right"
           }
         }
       }
@@ -2573,7 +2573,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Duplicate key"
+            "value": "Already has an action"
           }
         }
       }
@@ -2891,7 +2891,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Limit scrolling to these apps"
+            "value": "Change scrolling only in these apps"
           }
         }
       }
@@ -2927,7 +2927,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Uses your scrolling settings"
+            "value": "Uses your scrolling settings."
           }
         }
       }
@@ -2939,7 +2939,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Uses its own scrolling settings"
+            "value": "Uses its own scrolling settings."
           }
         }
       }
@@ -3636,7 +3636,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Holding this button also does what Scrolling › While you hold a key sets for it, so both happen at once. Clear one of them to keep only the other."
+            "value": "This button is also set under Scrolling › While you hold a key, so holding it does both. Clear one of the two."
           }
         }
       }
@@ -3708,7 +3708,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Gesture button"
+            "value": "Button to hold"
           }
         }
       }
@@ -3720,7 +3720,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No button has the action Gesture Navigation yet."
+            "value": "No button yet. Set one up to use gestures."
           }
         }
       }
@@ -3744,7 +3744,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Change…"
+            "value": "Change"
           }
         }
       }
@@ -4030,7 +4030,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Trackpad-style events (Beta)"
+            "value": "Trackpad-style scrolling (Beta)"
           }
         }
       }
@@ -4041,7 +4041,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apps treat the wheel like a trackpad and bounce at the ends. Turn off if an app scrolls oddly."
+            "value": "Apps treat the wheel like a trackpad and bounce at the ends of a page. Safari stays as it is. Turn off if an app scrolls oddly."
           }
         }
       }
@@ -4123,6 +4123,18 @@
         }
       }
     },
+    "scrolling-keys-smoothing-off": {
+      "comment": "Scrolling pane and an app's page: the muted line under the box \"While you hold a key\" while Smooth scrolling is off (the three keys only act on a smoothed wheel)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These keys work only while Smooth scrolling is on."
+          }
+        }
+      }
+    },
     "scrolling-reset": {
       "extractionState": "manual",
       "localizations": {
@@ -4186,7 +4198,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open…"
+            "value": "Open"
           }
         }
       }
@@ -4332,7 +4344,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Login Items…"
+            "value": "Open Login Items"
           }
         }
       }
@@ -4370,6 +4382,18 @@
         }
       }
     },
+    "general-accessibility-hint-not-allowed": {
+      "comment": "General pane, Accessibility row while access is missing: the status and what the permission is for in one line under the title (an orange sign and \"Open System Settings\" stand on the right)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not allowed. Scrollio needs this to smooth scrolling and run your buttons."
+          }
+        }
+      }
+    },
     "general-accessibility-allowed": {
       "extractionState": "manual",
       "localizations": {
@@ -4398,7 +4422,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Settings…"
+            "value": "Open System Settings"
           }
         }
       }
@@ -4475,7 +4499,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrollio is paused"
+            "value": "Scrollio is paused."
           }
         }
       }
@@ -4486,7 +4510,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrollio needs Accessibility access"
+            "value": "Scrollio needs Accessibility access."
           }
         }
       }
@@ -4586,7 +4610,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Assigned to %@."
+            "value": "%@."
           }
         }
       }
@@ -5744,7 +5768,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Switches the wheel between ratchet and free-spin."
+            "value": "Switches the wheel between clicking and spinning freely."
           }
         }
       }
@@ -5972,7 +5996,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "How little of a turn each step needs."
+            "value": "Faster means less of a turn for each step."
           }
         }
       }
@@ -6008,7 +6032,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Turns the thumb wheel the other way."
+            "value": "Swaps what the two directions of the thumb wheel do."
           }
         }
       }
@@ -6113,6 +6137,18 @@
         }
       }
     },
+    "intro-access-could-not-start-title": {
+      "comment": "Welcome Guide, Accessibility step: the status box's title while access is allowed and Scrollio could not start (the line under it is intro-access-could-not-start)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allowed, but Scrollio hasn't started"
+          }
+        }
+      }
+    },
     "intro-access-todo": {
       "extractionState": "manual",
       "localizations": {
@@ -6153,6 +6189,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Scrollio's menu bar icon is hidden. To reach Settings, open Scrollio again."
+          }
+        }
+      }
+    },
+    "intro-finish-title-hidden-icon-paused": {
+      "comment": "Welcome Guide, last step: the title while Scrollio is paused and its menu bar icon is hidden (instead of \"Scrollio is ready\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio is paused"
           }
         }
       }

@@ -590,6 +590,15 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertFalse(controller.wheelModeControl.isEnabled)
         XCTAssertFalse(controller.hapticsSwitch.isEnabled)
         XCTAssertFalse(controller.pressForceSlider.isEnabled)
+        // The line under the switch says the rows "show what the mouse reports": those values
+        // stay in the label colour (they were as faint as the greyed titles), the words under
+        // the sliders' ends dim with the sliders.
+        let readOuts = [controller.pointerSpeedRow!, controller.sensitivityRow!, controller.firmnessRow!,
+                        controller.strengthRow!, controller.pressForceRow!]
+        for row in readOuts {
+            XCTAssertEqual(row.valueLabel?.textColor, .labelColor, row.title)
+            XCTAssertEqual(row.lowEndLabel?.textColor, PreferencesGroupedForm.titleColor(enabled: false), row.title)
+        }
     }
 
     func testAValueTheMouseHasNotReportedFallsBackOnYoursOrTheDefault() {
@@ -749,7 +758,17 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         )
         // The mouse with the most settings is the one in the header.
         XCTAssertEqual(model.header.title, "MX Master 4")
-        XCTAssertEqual(model.header.subtitle, String(format: text("mouse-header-connected-several"), 2))
+        // The card names the other mouse: the pane shows one, and "all 2 mice" named none.
+        // (A name's spaces do not break: it is not cut in two at the end of a line.)
+        XCTAssertEqual(model.header.subtitle, "Connected. Your choices also go to MX\u{00A0}Master\u{00A0}3S.")
+        let three = MousePaneModel(
+            devices: [Fixtures.mxMaster3S(), Fixtures.mxMaster4(), Fixtures.mxMaster3S()],
+            settings: .default, wheel: LogiWheelSettings(managedByScrollio: true)
+        )
+        XCTAssertEqual(
+            three.header.subtitle,
+            "Connected. Your choices also go to MX\u{00A0}Master\u{00A0}3S and MX\u{00A0}Master\u{00A0}3S."
+        )
         // Not managed: nothing goes to any mouse, and the card does not say it does.
         let unmanaged = MousePaneModel(
             devices: [Fixtures.mxMaster3S(), Fixtures.mxMaster4()],

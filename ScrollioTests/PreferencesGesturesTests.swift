@@ -46,6 +46,11 @@ final class PreferencesGesturesTests: XCTestCase {
         return controller
     }
 
+    /// What the Swipe speed row writes, in the locale the tests run in ("1.5×", "1,5×").
+    private func speedText(_ value: Double) -> String {
+        return MouseGestureTrackingSpeed.text(value)
+    }
+
     private func send(_ control: NSControl) {
         XCTAssertTrue(control.sendAction(control.action, to: control.target))
     }
@@ -258,7 +263,7 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertFalse(MouseGestureSettingsControls.isOn(controls.freezeToggle))
         // 2.2 lies between two ticks: the knob shows it on the nearer, the label as stored.
         XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 2.25, accuracy: 1e-9)
-        XCTAssertEqual(controller.trackingSpeedRow.valueText, "2.2×")
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, speedText(2.2))
         XCTAssertEqual(Options.shared.gesture.trackingSpeed, 2.2, "shown, not rewritten")
     }
 
@@ -278,7 +283,7 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertFalse(MouseGestureSettingsControls.isOn(controls.freezeToggle))
         XCTAssertTrue(controller.trackingSpeedSlider.isEnabled)
         XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 1.75, accuracy: 1e-9, "the nearest tick")
-        XCTAssertEqual(controller.trackingSpeedRow.valueText, "1.8×")
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, speedText(1.8))
         XCTAssertEqual(controller.previewView.scene.gesture.mode, .interactive)
         XCTAssertEqual(controller.previewView.scene.gesture.trackingSpeed, 1.8)
     }
@@ -293,7 +298,7 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(slider.minValue, 0.5)
         XCTAssertEqual(slider.maxValue, 3)
         XCTAssertEqual(slider.doubleValue, 1, accuracy: 1e-9)
-        XCTAssertEqual(controller.trackingSpeedRow.valueText, "1.0×")
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, speedText(1))
         // Not "Tracking speed": that is the macOS pointer setting under Mouse.
         XCTAssertEqual(controller.trackingSpeedRow.title, "Swipe speed")
         XCTAssertEqual(slider.accessibilityLabel(), "Swipe speed")
@@ -316,13 +321,13 @@ final class PreferencesGesturesTests: XCTestCase {
         slider.doubleValue = 1.66
         send(slider)
         XCTAssertEqual(Options.shared.gesture.trackingSpeed, 1.75, accuracy: 1e-9, "the nearest tick")
-        XCTAssertEqual(controller.trackingSpeedRow.valueText, "1.75×")
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, speedText(1.75))
         XCTAssertEqual(controller.previewView.scene.gesture.trackingSpeed, 1.75, accuracy: 1e-9)
 
         slider.doubleValue = 3
         send(slider)
         XCTAssertEqual(Options.shared.gesture.trackingSpeed, 3, accuracy: 1e-9)
-        XCTAssertEqual(controller.trackingSpeedRow.valueText, "3.0×")
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, speedText(3))
 
         // Nothing else moved.
         var expected = MouseGestureSettings.default
@@ -338,12 +343,22 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(MouseGestureTrackingSpeed.snapped(1.3), 1.25, accuracy: 1e-9)
         XCTAssertEqual(MouseGestureTrackingSpeed.snapped(1.38), 1.5, accuracy: 1e-9)
         XCTAssertEqual(MouseGestureTrackingSpeed.snapped(.nan), 0.5)
-        XCTAssertEqual(MouseGestureTrackingSpeed.text(0.5), "0.5×")
-        XCTAssertEqual(MouseGestureTrackingSpeed.text(0.75), "0.75×")
-        XCTAssertEqual(MouseGestureTrackingSpeed.text(1), "1.0×")
-        XCTAssertEqual(MouseGestureTrackingSpeed.text(1.25), "1.25×")
-        XCTAssertEqual(MouseGestureTrackingSpeed.text(2.5), "2.5×")
-        XCTAssertEqual(MouseGestureTrackingSpeed.text(1.3), "1.3×", "a stored speed off the ticks")
+        let english = Locale(identifier: "en_US")
+        XCTAssertEqual(MouseGestureTrackingSpeed.text(0.5, locale: english), "0.5×")
+        XCTAssertEqual(MouseGestureTrackingSpeed.text(0.75, locale: english), "0.75×")
+        XCTAssertEqual(MouseGestureTrackingSpeed.text(1, locale: english), "1.0×")
+        XCTAssertEqual(MouseGestureTrackingSpeed.text(1.25, locale: english), "1.25×")
+        XCTAssertEqual(MouseGestureTrackingSpeed.text(2.5, locale: english), "2.5×")
+        XCTAssertEqual(MouseGestureTrackingSpeed.text(1.3, locale: english), "1.3×", "a stored speed off the ticks")
+        // The region's decimal mark, as the Scrolling pane writes its speeds (it was always a dot).
+        let slovenian = Locale(identifier: "sl_SI")
+        XCTAssertEqual(MouseGestureTrackingSpeed.text(1, locale: slovenian), "1,0×")
+        XCTAssertEqual(MouseGestureTrackingSpeed.text(1.25, locale: slovenian), "1,25×")
+        XCTAssertEqual(MouseGestureTrackingSpeed.text(2.5, locale: Locale(identifier: "de_DE")), "2,5×")
+        XCTAssertEqual(
+            MouseGestureTrackingSpeed.text(2.5, locale: slovenian), ScrollingSlider.speed.shownText(for: 2.5, locale: slovenian),
+            "the same mark and the same sign as Scrolling › Speed"
+        )
 
         // Every value the slider can show fits the value column of the row.
         let controller = makeController()
@@ -355,13 +370,41 @@ final class PreferencesGesturesTests: XCTestCase {
         }
     }
 
+    /// The Swipe speed slider stands where the Scrolling pane's sliders stand: both panes
+    /// use the kit's value column (Scrolling had 34 pt, Gestures 40, so the sliders stood
+    /// 6 pt apart from pane to pane).
+    func testTheSliderStandsInTheScrollingPanesColumn() throws {
+        func left(_ row: PreferencesSliderRow, in view: NSView) -> CGFloat {
+            view.layoutSubtreeIfNeeded()
+            return view.convert(row.slider.alignmentRect(forFrame: row.slider.frame), from: row.slider.superview).minX
+        }
+        let gestures = makeController()
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesScrollingViewController.self))
+        let scrolling = try XCTUnwrap(
+            storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController
+        )
+        let suite = "ScrollioTests.gestures.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: PreferencesScrollingViewController.advancedExpandedDefaultsKey)
+        scrolling.uiStateDefaults = defaults
+        _ = scrolling.view
+
+        let column = left(gestures.trackingSpeedRow, in: gestures.view)
+        for row in [scrolling.speedRow!, scrolling.thumbWheelSpeedRow!, scrolling.glideTimeRow!, scrolling.smallestStepRow!] {
+            XCTAssertEqual(left(row, in: scrolling.view), column, accuracy: 0.5, row.title)
+        }
+        XCTAssertEqual(GesturesPreferencesViewController.trackingSpeedValueWidth, PreferencesGroupedForm.sliderValueWidth)
+        XCTAssertEqual(gestures.trackingSpeedRow.slider.frame.width, scrolling.speedRow.slider.frame.width, accuracy: 0.5)
+    }
+
     func testAStoredTrackingSpeedOffTheTicksIsShownNotRewritten() {
         Options.shared.gesture.mode = .interactive
         Options.shared.gesture.trackingSpeed = 1.3
         let controller = makeController()
         let slider = controller.trackingSpeedSlider as! PreferencesSlider
         XCTAssertEqual(slider.doubleValue, 1.25, accuracy: 1e-9, "on the nearest tick")
-        XCTAssertEqual(controller.trackingSpeedRow.valueText, "1.3×")
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, speedText(1.3))
 
         controller.viewWillAppear()
         controller.reload()
@@ -370,7 +413,7 @@ final class PreferencesGesturesTests: XCTestCase {
         // An arrow key moves the knob one tick and writes that tick.
         XCTAssertTrue(slider.moveKnob(by: 1))
         XCTAssertEqual(Options.shared.gesture.trackingSpeed, 1.5, accuracy: 1e-9)
-        XCTAssertEqual(controller.trackingSpeedRow.valueText, "1.5×")
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, speedText(1.5))
         XCTAssertTrue(slider.moveKnob(by: -1))
         XCTAssertEqual(Options.shared.gesture.trackingSpeed, 1.25, accuracy: 1e-9)
     }
@@ -468,8 +511,8 @@ final class PreferencesGesturesTests: XCTestCase {
         summary = MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false)
         let controller = makeController()
         let row = controller.gestureButtonRow!
-        XCTAssertEqual(row.title, "Gesture button")
-        XCTAssertEqual(row.explanation, "No button has the action Gesture Navigation yet.")
+        XCTAssertEqual(row.title, "Button to hold")
+        XCTAssertEqual(row.explanation, "No button yet. Set one up to use gestures.")
         XCTAssertTrue(row.accessory === controller.gestureButtonButton)
         XCTAssertEqual(controller.gestureButtonButton.title, "Set Up…")
         XCTAssertEqual(controller.gestureButtonButton.bezelStyle, .push)
@@ -482,8 +525,8 @@ final class PreferencesGesturesTests: XCTestCase {
         summary = MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: true, buttonTitles: ["Back button", "Gesture button"])
         controller.reload()
         XCTAssertFalse(row.isHidden, "always shown")
-        XCTAssertEqual(row.explanation, "Assigned to Back button and Gesture button.")
-        XCTAssertEqual(controller.gestureButtonButton.title, "Change…")
+        XCTAssertEqual(row.explanation, "Back button and Gesture button.")
+        XCTAssertEqual(controller.gestureButtonButton.title, "Change", "it only leads to the Buttons pane: no …")
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
         // The old line under the boxes is gone.
         let texts = controller.view.allSubviewsForTests.compactMap { ($0 as? NSTextField)?.stringValue }
@@ -503,12 +546,12 @@ final class PreferencesGesturesTests: XCTestCase {
             isLogitechCode: { $0 >= 1000 }
         )
         XCTAssertEqual(summary.buttonTitles, ["Back button", "⌥ Forward button"])
-        XCTAssertEqual(summary.gestureButtonExplanation, "Assigned to Back button and ⌥ Forward button.")
-        // An MX Master's own gesture button is not named twice under the row's title.
+        XCTAssertEqual(summary.gestureButtonExplanation, "Back button and ⌥ Forward button.")
+        // An MX Master's own gesture button under the row's title "Button to hold": named once.
         XCTAssertEqual(MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: true, buttonTitles: ["Gesture button"])
-            .gestureButtonExplanation, "Assigned to Gesture button.")
+            .gestureButtonExplanation, "Gesture button.")
         XCTAssertEqual(MouseGestureBindingSummary(bindings: [], isLogitechCode: { _ in false }).gestureButtonExplanation,
-                       "No button has the action Gesture Navigation yet.")
+                       "No button yet. Set one up to use gestures.")
     }
 
     func testSetUpAndChangeLeadToTheButtonsPane() {
@@ -522,7 +565,54 @@ final class PreferencesGesturesTests: XCTestCase {
         summary = MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"])
         controller.reload()
         controller.gestureButtonButton.performClick(nil)
-        XCTAssertEqual(requests, [true, false], "Change… only shows the list")
+        XCTAssertEqual(requests, [true, false], "Change shows the list, with the gesture button's row selected")
+    }
+
+    /// "Change" in the window: the Buttons pane opens with the row of the button that runs
+    /// Gesture Navigation selected and lit on the card, and nothing is recorded or changed.
+    /// (It only switched panes, and the user had to find the row.)
+    func testChangeInTheWindowSelectsTheGestureButtonsRowInButtons() throws {
+        let savedBindings = Options.shared.buttons.binding
+        defer { Options.shared.buttons.binding = savedBindings }
+        func binding(_ code: UInt16, _ shortcut: String) -> ButtonBinding {
+            return ButtonBinding(
+                triggerEvent: RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil),
+                systemShortcutName: shortcut, isEnabled: true
+            )
+        }
+        let copy = binding(4, SystemShortcut.copy.identifier)
+        let gesture = binding(3, SystemShortcut.mouseGestureNavigation.identifier)
+        Options.shared.buttons.binding = [copy, gesture]
+
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        let windowController = try XCTUnwrap(
+            storyboard.instantiateController(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController) as? NSWindowController
+        )
+        defer { windowController.close() }
+        let preferences = try XCTUnwrap(windowController.contentViewController as? PreferencesSplitViewController)
+        _ = preferences.view
+        let gestures = try XCTUnwrap(preferences.controller(for: GesturesPreferencesViewController.tabIdentifier) as? GesturesPreferencesViewController)
+        gestures.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+        gestures.bindingSummary = { MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"]) }
+        let buttons = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController)
+        buttons.deviceSource = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+        var recordings = 0
+        buttons.startRecording = { _ in recordings += 1 }
+        var openedMenus = 0
+        buttons.openActionMenu = { _ in openedMenus += 1 }
+        XCTAssertTrue(preferences.selectPane(withIdentifier: GesturesPreferencesViewController.tabIdentifier))
+        XCTAssertEqual(gestures.gestureButtonButton.title, "Change")
+
+        gestures.gestureButtonButton.performClick(nil)
+
+        XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.buttons)
+        XCTAssertEqual(buttons.list.selectedID, buttons.rowID(forBinding: gesture.id), "the gesture button's row, not the first")
+        XCTAssertEqual(buttons.headerView.content.title, "Back button")
+        XCTAssertEqual(buttons.headerView.content.subtitle, "Gesture Navigation")
+        XCTAssertEqual(buttons.headerView.content.part, .back, "lit on the card")
+        XCTAssertEqual(recordings, 0, "nothing is recorded")
+        XCTAssertEqual(openedMenus, 0, "no menu opens by itself")
+        XCTAssertEqual(Options.shared.buttons.binding, [copy, gesture], "nothing is changed")
     }
 
     func testSetUpInTheWindowSelectsButtonsAndTheRecordedButtonGetsGestureNavigation() throws {
@@ -657,7 +747,7 @@ final class PreferencesGesturesTests: XCTestCase {
         let controller = makeController()
         controller.bindingSummary = { .current }
         controller.reload()
-        XCTAssertEqual(controller.gestureButtonRow.explanation, "No button has the action Gesture Navigation yet.")
+        XCTAssertEqual(controller.gestureButtonRow.explanation, "No button yet. Set one up to use gestures.")
         XCTAssertEqual(controller.gestureButtonButton.title, "Set Up…")
 
         Options.shared.buttons.binding = [gesture]

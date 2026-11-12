@@ -32,7 +32,8 @@ enum ButtonCapturePresentationStatus: Equatable {
         }
     }
 
-    /// The orange (or, for the standard button, blue) line under the row's title.
+    /// The line under the row's title, after an orange sign (or, for the standard button,
+    /// a light bulb in the accent colour).
     var noteKey: String {
         switch self {
         case .normal:

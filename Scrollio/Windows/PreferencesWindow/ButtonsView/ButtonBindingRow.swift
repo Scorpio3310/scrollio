@@ -44,7 +44,7 @@ struct ButtonRowNote: Equatable {
         case plain
         /// After an orange warning sign.
         case problem
-        /// After a blue light bulb: a better way exists.
+        /// After a light bulb in the accent colour: a better way exists.
         case hint
     }
 
@@ -452,7 +452,9 @@ final class ButtonProblemPopoverController: NSViewController {
         title.isSelectable = false
         let detail = NSTextField(wrappingLabelWithString: note.detailText)
         detail.font = PreferencesGroupedForm.explanationFont
-        detail.textColor = .secondaryLabelColor
+        // The explanation is what the popover is for: in the label colour, not the muted
+        // one of a line under a title (too faint to read at this size).
+        detail.textColor = .labelColor
         detail.isSelectable = false
         let textWidth = Self.width - 2 * Self.padding
         title.preferredMaxLayoutWidth = textWidth

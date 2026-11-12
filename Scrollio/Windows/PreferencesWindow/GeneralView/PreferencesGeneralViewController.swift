@@ -11,7 +11,8 @@
 //  - "Open at login" (with a row to approve it in System Settings while macOS waits for
 //    that) and "Show in menu bar";
 //  - "Permissions": whether Scrollio has Accessibility access, with a way to System
-//    Settings when it has not.
+//    Settings when it has not (the row then says "Not allowed." in its line under the
+//    title, so the orange sign and the button leave that line room for two lines).
 //  The developer tools (scroll monitor, Logitech diagnostics) are not in the pane: the
 //  status-bar menu lists them while Option is held.
 //  At the bottom a box with the Welcome Guide and "Scrollio on GitHub" (the repository in the
@@ -190,8 +191,9 @@ class PreferencesGeneralViewController: NSViewController {
         return row
     }
 
-    /// "Accessibility": a green check and "Allowed", or an orange warning, "Not allowed" and
-    /// "Open Settings…".
+    /// "Accessibility": a green check and "Allowed"; or an orange warning and "Open System
+    /// Settings", with "Not allowed." at the start of the line under the title (next to the
+    /// button the two words would squeeze that line into a narrow column of four lines).
     private func makeAccessibilityRow() -> PreferencesGroupRow {
         let icon = NSImageView()
         icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: NSFont.systemFontSize, weight: .regular)
@@ -235,7 +237,7 @@ class PreferencesGeneralViewController: NSViewController {
         return row
     }
 
-    /// "Welcome Guide" with "Open…": the first-launch steps again.
+    /// "Welcome Guide" with "Open": the first-launch steps again.
     private func makeWelcomeGuideRow() -> PreferencesGroupRow {
         let button = PreferencesGroupedForm.makePushButton(
             title: text("about-welcome-guide-open"),
@@ -450,7 +452,13 @@ class PreferencesGeneralViewController: NSViewController {
         accessibilityStatusIcon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         accessibilityStatusIcon.contentTintColor = hasAccess ? .systemGreen : .systemOrange
         accessibilityStatusLabel.stringValue = text(hasAccess ? "general-accessibility-allowed" : "general-accessibility-not-allowed")
+        // Without access the words are in the row's line, and the sign alone stands by the button.
+        accessibilityStatusLabel.isHidden = !hasAccess
         openAccessibilitySettingsButton.isHidden = hasAccess
+        let explanation = text(hasAccess ? "general-accessibility-hint" : "general-accessibility-hint-not-allowed")
+        if accessibilityRow.explanation != explanation {
+            accessibilityRow.explanation = explanation
+        }
         PreferencesForm.fitToContent(self)
     }
 

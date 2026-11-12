@@ -320,6 +320,33 @@ final class PreferencesGroupedFormTests: XCTestCase {
         )
     }
 
+    /// A row that is off dims its value with the rest; a row whose value is a read-out then
+    /// (`keepsValueReadable`, the Mouse pane) keeps it in the label colour and dims the rest.
+    func testASliderRowCanKeepItsValueReadableWhileOff() throws {
+        let row = PreferencesSliderRow(
+            title: "Pointer speed", range: 0...10, ends: (low: "Slow", high: "Fast"), target: nil, action: nil
+        )
+        row.valueText = "1000 DPI"
+        let value = try XCTUnwrap(row.valueLabel)
+        let low = try XCTUnwrap(row.lowEndLabel)
+        XCTAssertEqual(value.textColor, .labelColor)
+
+        row.isEnabled = false
+        XCTAssertEqual(value.textColor, Form.titleColor(enabled: false), "dimmed with the row by default")
+        XCTAssertEqual(low.textColor, Form.titleColor(enabled: false))
+        XCTAssertFalse(row.slider.isEnabled)
+
+        row.keepsValueReadable = true
+        XCTAssertEqual(value.textColor, .labelColor, "the read-out stays readable")
+        XCTAssertEqual(low.textColor, Form.titleColor(enabled: false), "the rest stays dimmed")
+        XCTAssertEqual(row.titleLabel.textColor, Form.titleColor(enabled: false))
+        XCTAssertFalse(row.slider.isEnabled)
+
+        row.isEnabled = true
+        XCTAssertEqual(value.textColor, .labelColor)
+        XCTAssertEqual(low.textColor, .labelColor)
+    }
+
     // MARK: - Tick marks and steps
 
     /// Counts the actions a control sends and remembers the value of the last one.

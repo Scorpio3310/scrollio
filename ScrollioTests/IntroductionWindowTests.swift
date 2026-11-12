@@ -444,10 +444,20 @@ final class IntroductionWindowTests: XCTestCase {
         world.accessGranted = true
         controller.accessibilityPermissionsChecker(nil)
         XCTAssertEqual(controller.accessState, .couldNotStart)
+        // Not "Allowed" alone: next to the warning sign and a Continue that is off it read as
+        // if everything were in order.
+        XCTAssertEqual(controller.accessStep.statusBox.titleLabel.stringValue, "Allowed, but Scrollio hasn't started")
         XCTAssertEqual(
             controller.accessStep.statusBox.detailLabel.stringValue,
             "Scrollio couldn't start yet and keeps trying. If nothing changes, quit Scrollio and open it again."
         )
+        XCTAssertEqual(
+            controller.accessStep.statusBox.accessibilityLabel(),
+            "Allowed, but Scrollio hasn't started. Scrollio couldn't start yet and keeps trying. If nothing changes, quit Scrollio and open it again."
+        )
+        for state in [WelcomeGuideAccessState.starting, .running, .paused] {
+            XCTAssertEqual(WelcomeGuideAccessStep.statusTexts(for: state, context: .init()).title, "Allowed", "\(state)")
+        }
         XCTAssertEqual(controller.primaryButton.title, "Continue")
         XCTAssertFalse(controller.primaryButton.isEnabled)
         XCTAssertTrue(controller.primaryButton.sendAction(controller.primaryButton.action, to: controller.primaryButton.target))
@@ -648,6 +658,35 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(step.hintLabel.stringValue, "Your own glide time, set in Settings › Scrolling.")
         click(controller.primaryButton)
         XCTAssertEqual(world.scroll.duration, 3.4)
+    }
+
+    /// The line for a glide time of one's own takes its room out of the gap between the
+    /// cards and the box, so the box under it stays where it is (it moved up by a point).
+    func testTheLineForACustomGlideTimeDoesNotMoveTheBox() {
+        let controller = makeFeelController()
+        _ = makeWindow(for: controller)
+        let step = controller.feelStep
+        func boxTop() -> CGFloat {
+            controller.view.layoutSubtreeIfNeeded()
+            return step.reverseBox.convert(step.reverseBox.bounds, to: nil).maxY
+        }
+        let without = boxTop()
+        XCTAssertFalse(isShown(step.hintLabel))
+
+        world.scroll.duration = 3.4
+        step.refresh()
+        XCTAssertTrue(isShown(step.hintLabel))
+        let hintHeight = step.hintLabel.fittingSize.height
+        if WelcomeGuideFeelStep.rowToBox >= 2 * WelcomeGuideFeelStep.hintSpacing + hintHeight {
+            XCTAssertEqual(boxTop(), without, accuracy: 0.5, "the roomy window: the line fits into the gap")
+        }
+        // The rule itself, for both windows: the gap is used up, never less than the least room.
+        XCTAssertEqual(WelcomeGuideFeelStep.spacingUnderHint(hintHeight: 15), max(6, WelcomeGuideFeelStep.rowToBox - 6 - 15))
+        XCTAssertEqual(WelcomeGuideFeelStep.spacingUnderHint(hintHeight: 100), WelcomeGuideFeelStep.hintSpacing)
+
+        ScrollFeel.smooth.apply(to: world.scroll)
+        step.refresh()
+        XCTAssertEqual(boxTop(), without, accuracy: 0.5)
     }
 
     func testAPickStoresOnlyThePresetsGlideTime() throws {
@@ -1898,6 +1937,37 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertTrue(world.progress.isFinished)
     }
 
+    /// "Having trouble?": the help in its popover is written in the label colour (the muted
+    /// one of a line under a title was too faint to read there), and the link that opens it
+    /// is in the accent colour.
+    func testTheHelpIsWrittenInTheLabelColour() throws {
+        let help = WelcomeGuideHelpViewController(showInFinder: {})
+        _ = help.view
+        XCTAssertEqual(help.textLabel.textColor, .labelColor)
+        XCTAssertEqual(help.headingLabel.textColor, .labelColor)
+        let controller = world.makeController(flow: .full)
+        _ = controller.view
+        let link = try XCTUnwrap(controller.accessStep.helpButton)
+        XCTAssertEqual(link.attributedTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .controlAccentColor)
+    }
+
+    /// The buttons of the last step stand clear of the step dots in the middle of the bar:
+    /// a longer title for "Open Settings" ("Open Scrollio Settings") ran into them.
+    func testTheLastStepsButtonsStandClearOfTheDots() {
+        world.accessGranted = true
+        world.run = .running
+        let controller = world.makeController(flow: .full)
+        _ = makeWindow(for: controller)
+        click(controller.primaryButton)
+        click(controller.primaryButton)
+        XCTAssertEqual(controller.currentStep, .finish)
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertFalse(controller.secondaryButton.isHidden)
+        XCTAssertGreaterThanOrEqual(controller.secondaryButton.frame.minX - controller.dots.frame.maxX, 8, "Open Settings and the dots")
+        XCTAssertGreaterThanOrEqual(controller.dots.frame.minX - controller.backButton.frame.maxX, 8, "Back and the dots")
+        XCTAssertLessThanOrEqual(controller.secondaryButton.frame.maxX, controller.primaryButton.frame.minX)
+    }
+
     func testTheLastStepNamesTheHiddenIconWay() {
         world.menuBarIconHidden = true
         world.accessGranted = true
@@ -1914,14 +1984,23 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertTrue(step.artwork.isIconHidden)
         XCTAssertEqual(step.artwork.accessibilityLabel(), "The menu bar, with an empty place where Scrollio's icon would be.")
 
-        // Paused, it does not say that Scrollio runs.
+        XCTAssertEqual(step.titleLabel.stringValue, "Scrollio is ready")
+
+        // Paused, it does not say that Scrollio runs: not in the text, and not in the title
+        // ("Scrollio is ready" stood over a text that only said where the icon is).
         world.run = .paused
         step.refresh()
+        XCTAssertEqual(step.titleLabel.stringValue, "Scrollio is paused")
         XCTAssertEqual(step.textLabel.stringValue, "Scrollio's menu bar icon is hidden. To reach Settings, open Scrollio again.")
+        XCTAssertEqual(WelcomeGuideFinishStep.titleKey(iconHidden: true, paused: true), "intro-finish-title-hidden-icon-paused")
+        for (hidden, paused) in [(false, false), (false, true), (true, false)] {
+            XCTAssertEqual(WelcomeGuideFinishStep.titleKey(iconHidden: hidden, paused: paused), "intro-finish-title", "\(hidden) \(paused)")
+        }
 
         world.menuBarIconHidden = false
         step.refresh()
         XCTAssertFalse(step.artwork.isIconHidden)
+        XCTAssertEqual(step.titleLabel.stringValue, "Scrollio is ready", "the icon and its menu are there to resume")
         XCTAssertEqual(step.textLabel.stringValue, "It runs in the menu bar. Click its icon to open Settings or pause Scrollio.")
         XCTAssertEqual(step.artwork.accessibilityLabel(), "The menu bar with Scrollio's icon and its menu open.")
     }

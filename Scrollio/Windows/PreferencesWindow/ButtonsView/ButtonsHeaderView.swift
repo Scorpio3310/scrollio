@@ -60,10 +60,13 @@ struct ButtonsHeaderContent: Equatable {
 
     /// - Parameters:
     ///   - deviceName: the connected Logitech mouse, nil without one.
-    ///   - boundCount: buttons that have an action.
+    ///   - boundCount: mouse buttons that have an action (keys are not counted).
     ///   - isRecording: "+" waits for a button.
     ///   - mouseButtonOnly: it waits for the gesture button (Gestures › Set Up…): a key
     ///     will not do.
+    ///   - listIsEmpty: the list under the card has no row. The card then leaves out "Not
+    ///     sure which is which?": there is nothing to tell apart, and the empty list says
+    ///     what to do ("Click + and press a mouse button…").
     ///   - focus: the row pointed at (it wins), else the selected row or the one just
     ///     recorded; nil: none.
     static func make(
@@ -71,6 +74,7 @@ struct ButtonsHeaderContent: Equatable {
         boundCount: Int,
         isRecording: Bool,
         mouseButtonOnly: Bool = false,
+        listIsEmpty: Bool = false,
         focus: Focus?
     ) -> ButtonsHeaderContent {
         if isRecording {
@@ -114,7 +118,10 @@ struct ButtonsHeaderContent: Equatable {
         default: subtitle = String(format: text("buttons-header-count"), boundCount)
         }
         let name = deviceName.flatMap { $0.isEmpty ? nil : $0 } ?? text("buttons-header-your-mouse")
-        return ButtonsHeaderContent(title: name, subtitle: subtitle, part: nil, hint: text("buttons-header-find-hint"))
+        return ButtonsHeaderContent(
+            title: name, subtitle: subtitle, part: nil,
+            hint: listIsEmpty ? nil : text("buttons-header-find-hint")
+        )
     }
 
     private static func text(_ key: String) -> String {

@@ -53,9 +53,13 @@ enum PreferencesGroupedForm {
     static let noteSpacing: CGFloat = 10
     /// A slider's default width.
     static let sliderWidth: CGFloat = 140
-    /// Between a slider and its value, and the room kept for the value.
+    /// Between a slider and its value, and the room kept for the value: enough for the
+    /// widest factor ("2.75×", "10.0×"). The Scrolling and the Gestures pane both use it, so
+    /// their sliders stand in one column; the Mouse pane needs more for "8000 DPI"
+    /// (`MousePreferencesViewController.sliderValueWidth`), and one column of that width
+    /// for all three would wrap the explanations of two rows here.
     static let sliderValueSpacing: CGFloat = 8
-    static let sliderValueWidth: CGFloat = 34
+    static let sliderValueWidth: CGFloat = 40
     /// Between a slider and the words under its ends.
     static let sliderEndsSpacing: CGFloat = 2
     /// The switches of System Settings: 36 × 16 pt on macOS 26.
@@ -920,6 +924,13 @@ final class PreferencesSliderRow: PreferencesGroupRow {
         set { slider.scale = newValue }
     }
 
+    /// The value stays in the label colour while the row is off: for a row whose value is a
+    /// read-out then (the Mouse pane's greyed rows show what the mouse reports, and the line
+    /// above them says so). The title, the slider and the words under its ends dim as always.
+    var keepsValueReadable = false {
+        didSet { applyEnabled() }
+    }
+
     init(
         title: String,
         explanation: String? = nil,
@@ -1029,9 +1040,10 @@ final class PreferencesSliderRow: PreferencesGroupRow {
     override func applyEnabled() {
         super.applyEnabled()
         let color = PreferencesGroupedForm.titleColor(enabled: isEnabled)
-        for label in [valueLabel, lowEndLabel, highEndLabel].compactMap({ $0 }) {
+        for label in [lowEndLabel, highEndLabel].compactMap({ $0 }) {
             label.textColor = color
         }
+        valueLabel?.textColor = PreferencesGroupedForm.titleColor(enabled: isEnabled || keepsValueReadable)
     }
 }
 

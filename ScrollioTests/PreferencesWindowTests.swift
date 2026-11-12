@@ -483,8 +483,26 @@ final class PreferencesNamingTests: XCTestCase {
     func testTrackpadStyleEventsWording() throws {
         let scrolling = try XCTUnwrap(instantiate(PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)
         _ = scrolling.view
-        XCTAssertEqual(scrolling.trackpadEventsRow.title, "Trackpad-style events (Beta)")
-        XCTAssertEqual(scrolling.trackpadEventsSwitch.accessibilityLabel(), "Trackpad-style events (Beta)")
+        // "scrolling", not "events" (a developer's word).
+        XCTAssertEqual(scrolling.trackpadEventsRow.title, "Trackpad-style scrolling (Beta)")
+        XCTAssertEqual(scrolling.trackpadEventsSwitch.accessibilityLabel(), "Trackpad-style scrolling (Beta)")
+        // The switch does nothing in Safari (ScrollUtils.TrackpadStyleTarget.plainScrolling):
+        // the line says so, so it is not taken for broken there.
+        XCTAssertEqual(
+            scrolling.trackpadEventsRow.explanation,
+            "Apps treat the wheel like a trackpad and bounce at the ends of a page. Safari stays as it is. Turn off if an app scrolls oddly."
+        )
+    }
+
+    /// The actions that switch desktops say "desktop", as the rest of the app does, and do
+    /// not read as "move this space" ("Move Space Left").
+    func testSwitchingDesktopsIsNamedByTheDesktop() {
+        XCTAssertEqual(SystemShortcut.moveSpaceLeft.localizedName, "Desktop on the Left")
+        XCTAssertEqual(SystemShortcut.moveSpaceRight.localizedName, "Desktop on the Right")
+        XCTAssertEqual(NSLocalizedString("thumb-wheel-function-desktops", comment: ""), "Switch Desktops")
+        // The identifiers are stored: they stay.
+        XCTAssertEqual(SystemShortcut.moveSpaceLeft.identifier, "moveSpaceLeft")
+        XCTAssertEqual(SystemShortcut.moveSpaceRight.identifier, "moveSpaceRight")
     }
 
     func testAnUnboundButtonSaysNoActionEverywhere() {

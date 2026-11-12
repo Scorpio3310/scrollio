@@ -108,7 +108,12 @@ final class WelcomeGuideAccessStep: WelcomeGuideStepView {
         case .paused:
             return (allowed, WelcomeGuideText.localized("intro-access-paused"))
         case .couldNotStart:
-            return (allowed, WelcomeGuideText.localized("intro-access-could-not-start"))
+            // Not "Allowed" alone: beside the warning sign, with Continue off, it would read
+            // as if all were well.
+            return (
+                WelcomeGuideText.localized("intro-access-could-not-start-title"),
+                WelcomeGuideText.localized("intro-access-could-not-start")
+            )
         }
     }
 }
@@ -559,9 +564,10 @@ final class WelcomeGuideHelpViewController: NSViewController {
             WelcomeGuideText.localized("intro-help-heading"), font: PreferencesForm.sectionHeaderFont,
             color: .labelColor, alignment: .left, width: width
         )
+        // The help itself: in the label colour, as the Buttons pane's ⓘ popovers write theirs.
         let text = WelcomeGuideText.makeText(
             WelcomeGuideText.localized("intro-help-text"), font: PreferencesForm.hintFont,
-            alignment: .left, width: width
+            color: .labelColor, alignment: .left, width: width
         )
         let finder = NSButton(
             title: WelcomeGuideText.localized("intro-help-finder-button"), target: self, action: #selector(finderClicked(_:))
