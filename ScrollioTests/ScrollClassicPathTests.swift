@@ -2468,6 +2468,38 @@ final class ScrollGlideFollowerTests: XCTestCase {
     /// already knows. The first scroll over a Chromium-based app used to go out as for an app
     /// that is not known, until the look had answered. Nothing is asked while trackpad-style
     /// events are off for the app.
+    /// Apps where a wheel has to stay a wheel (they tell a mouse from a trackpad by the
+    /// phase: the wheel then pans a map instead of zooming, orbits a 3D view, or does not
+    /// scroll at all) get no phases, known by their bundle id without a look into the
+    /// bundle. Only the exact ids: nothing that merely begins the same way.
+    func testAppsWhereAWheelMustStayAWheel_getPlainScrolling() {
+        let utils = ScrollUtils()
+        let looks = Looks()
+        looks.install(on: utils)
+        let listed: [(String, String)] = [
+            ("com.apple.Maps", "/System/Applications/Maps.app"),
+            ("com.apple.findmy", "/System/Applications/FindMy.app"),
+            ("com.apple.iCal", "/System/Applications/Calendar.app"),
+            ("com.apple.ScreenContinuity", "/System/Applications/iPhone Mirroring.app"),
+            ("org.blenderfoundation.blender", "/Applications/Blender.app"),
+            ("org.godotengine.godot", "/Applications/Godot.app"),
+        ]
+        XCTAssertEqual(Set(listed.map(\.0)), ScrollUtils.wheelOnlyBundleIdentifiers, "every listed id is tested, and no other is listed")
+        for (identifier, path) in listed {
+            XCTAssertTrue(ScrollUtils.getsPlainScrolling(bundleIdentifier: identifier), identifier)
+            XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: identifier, bundleURL: URL(fileURLWithPath: path)), .plainScrolling, identifier)
+            let form = ScrollPoster.trackpadStyleForm(switchOn: true, target: .plainScrolling)
+            XCTAssertFalse(form.phases, identifier)
+            XCTAssertTrue(form.withheld, identifier)
+        }
+        XCTAssertEqual(looks.asked.count, 0, "known by name: no look into a bundle")
+        for identifier in ["com.apple.Maps.widget", "com.apple.MapsSupport", "com.apple.findmy.FindMyWidget", "com.apple.iCal.CalendarNC",
+                           "com.apple.reminders", "com.apple.Notes", "com.apple.finder", "org.blenderfoundation.blender.thumbnailer",
+                           "org.godotengine.godot.game", "com.autodesk.fusion360", "com.mcneel.rhinoceros"] {
+            XCTAssertFalse(ScrollUtils.getsPlainScrolling(bundleIdentifier: identifier), identifier)
+        }
+    }
+
     func testAnAppThatComesToTheFront_isKnownBeforeItsFirstScroll() {
         let utils = ScrollUtils()
         let looks = Looks()

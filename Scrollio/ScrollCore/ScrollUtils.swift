@@ -62,7 +62,9 @@ class ScrollUtils {
         /// same for every frame of a tick) and the wheel's raw delta, for a glide of its own.
         /// Frames made anew without that record did not scroll Safari at all (build 1538).
         /// Also the other apps whose whole window is WebKit's and that are known by name
-        /// (`getsPlainScrolling`): Safari's web apps, the DuckDuckGo browser.
+        /// (`getsPlainScrolling`): Safari's web apps, the DuckDuckGo browser. And the apps
+        /// where a wheel has to stay a wheel (`wheelOnlyBundleIdentifiers`): Maps, Find My,
+        /// Calendar, iPhone Mirroring, Blender, the Godot editor.
         case plainScrolling
     }
 
@@ -138,7 +140,8 @@ class ScrollUtils {
     private static let homeDirectory = NSHomeDirectory()
 
     /// Whether an app gets no trackpad-style events at all (`TrackpadStyleTarget
-    /// .plainScrolling`): a browser whose pages WebKit draws, known by its bundle id.
+    /// .plainScrolling`), known by its bundle id: a browser whose pages WebKit draws, or an
+    /// app where a wheel has to stay a wheel.
     ///
     /// - Safari: every id that begins with `com.apple.Safari`. That is Safari itself, Safari
     ///   Technology Preview, and the web apps made with "Add to Dock"
@@ -152,13 +155,46 @@ class ScrollUtils {
     /// could not be confirmed from Kagi's own material, so it is not listed.) A web view
     /// inside another app counts as touch-only: it cannot be told from the app's own lists.
     /// (Firefox is known by its engine: `isGeckoBased`.)
+    ///
+    /// And the apps where a wheel has to stay a wheel (`wheelOnlyBundleIdentifiers`).
     static func getsPlainScrolling(bundleIdentifier: String) -> Bool {
         return bundleIdentifier.hasPrefix(safariBundleIdentifierPrefix)
             || webKitBrowserBundleIdentifiers.contains(bundleIdentifier)
+            || wheelOnlyBundleIdentifiers.contains(bundleIdentifier)
     }
     static let safariBundleIdentifierPrefix = "com.apple.Safari"
     static let webKitBrowserBundleIdentifiers: Set<String> = [
         "com.duckduckgo.macos.browser", "com.duckduckgo.mobile.ios",
+    ]
+    /// Apps where a wheel has to stay a wheel: they tell a mouse from a trackpad by the
+    /// phase on a scroll event and do something else with a trackpad's scroll, or do not
+    /// follow phased events that do not come from a trackpad. Known from the trackers of
+    /// other mouse tools (Mac Mouse Fix, LinearMouse, Mos), where people report it for a
+    /// wheel that is sent with phases; none of it was seen with Scrollio on a screen.
+    ///
+    /// - Maps `com.apple.Maps`: the wheel pans the map instead of zooming (Mac Mouse Fix
+    ///   #436, #610).
+    /// - Find My `com.apple.findmy`: the same (LinearMouse #1503, on macOS 27.2).
+    /// - Calendar `com.apple.iCal`: the month view does not scroll by phased scroll events
+    ///   alone, or stutters and runs backwards (LinearMouse #1217, #1290).
+    /// - iPhone Mirroring `com.apple.ScreenContinuity`: phased events that do not come from
+    ///   a trackpad are not followed (Mos #1045, Mac Mouse Fix #1015).
+    /// - Blender `org.blenderfoundation.blender`: the wheel orbits the view instead of
+    ///   zooming (Mac Mouse Fix #523).
+    /// - The Godot editor `org.godotengine.godot`: the wheel pans instead of zooming (it
+    ///   reads the phase to tell the devices apart).
+    ///
+    /// Where each id comes from: the four Apple apps from their own `Info.plist` on macOS
+    /// 27.2 (`/System/Applications/…`); Blender from its source, blender/blender
+    /// `release/darwin/Blender.app/Contents/Info.plist`; Godot from godotengine/godot
+    /// `misc/dist/macos_tools.app/Contents/Info.plist` (the editor: a game made with Godot
+    /// has an id of its own). Autodesk Fusion and Rhino are reported the same way (Mac
+    /// Mouse Fix #868, LinearMouse #1502), but their ids could not be confirmed from a
+    /// source that can be named, so they are not listed: such an app gets one touch until
+    /// its user gives it its own settings in the Apps pane with the switch off.
+    static let wheelOnlyBundleIdentifiers: Set<String> = [
+        "com.apple.Maps", "com.apple.findmy", "com.apple.iCal", "com.apple.ScreenContinuity",
+        "org.blenderfoundation.blender", "org.godotengine.godot",
     ]
 
     /// An app came to the front. With trackpad-style events on for it, its kind is asked for
