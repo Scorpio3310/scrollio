@@ -63,7 +63,7 @@ is under [Download and first launch](#-download-and-first-launch).
     <td width="50%" valign="top">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="assets/readme/gestures-dark.png">
-        <img src="assets/readme/gestures-light.png" width="400" alt="The Gestures pane: a moving preview, the gesture button, the mode, and an action for each direction">
+        <img src="assets/readme/gestures-light.png" width="400" alt="The Gestures pane: a moving preview, the button to hold, the mode, and an action for each direction">
       </picture>
       <p><b>Gestures</b>: an action for each direction.</p>
     </td>
@@ -92,15 +92,16 @@ of scrolling and the menu bar icon.
   feel.
 - Reverse wheel direction (the wheel only, not the trackpad).
 - Under Advanced: an exact glide time, the smallest step, and
-  "Trackpad-style events (Beta)": apps treat the wheel like a trackpad and bounce at the
-  ends of a page. Safari gets none of these events.
+  "Trackpad-style scrolling (Beta)": apps treat the wheel like a trackpad and bounce at
+  the ends of a page. Safari stays as it is.
 - While you hold a key: "Scroll faster" (5 × the distance), "Scroll sideways" and "Pause
   smoothing" (exact steps, for example to zoom with ⌘). A mouse button can hold them
-  too.
-- Per app (the Apps pane): an app uses the Scrolling settings or keeps its own. "Limit
-  scrolling to these apps" leaves every other app to macOS; buttons and gestures still
-  work everywhere. "Smooth Scrolling in …" in the menu bar menu turns smoothing on or off
-  for the app in front.
+  too. These keys work while Smooth scrolling is on.
+- "Reset to Defaults" can be taken back: for a few seconds the button reads "Undo Reset".
+- Per app (the Apps pane): an app uses the Scrolling settings or keeps its own. "Change
+  scrolling only in these apps" leaves every other app to macOS; buttons and gestures
+  still work everywhere. "Smooth Scrolling in …" in the menu bar menu turns smoothing on
+  or off for the app in front.
 - Trackpads and the Magic Mouse are left alone. With several displays, the motion is
   timed to the display under the pointer.
 
@@ -110,6 +111,10 @@ of scrolling and the menu bar icon.
   Finder, screenshots, navigation and more), a keyboard shortcut you record, a modifier
   key, another mouse button, one of the scroll keys, Gesture Navigation, or opening an
   app, a file or a script.
+- The listed shortcuts (Select All, Undo, Copy and the rest) press the right key on every
+  keyboard layout, and keys are named as your keyboard names them.
+- To record a button or a key, click + and press it. Esc, a left click, closing the
+  popover or switching to another app ends the recording.
 - A drawing of the mouse lights the button each row is about. With an MX Master, its
   buttons are listed in the order they sit on the mouse, and any other buttons and keys
   under them:
@@ -118,9 +123,9 @@ of scrolling and the menu bar icon.
   - MX Master 3 and 3S: Middle button, Mode shift button, Thumb wheel, Forward button,
     Back button, Gesture button.
 - On a Logitech mouse, buttons that macOS does not report (such as the gesture button,
-  the mode shift button and the thumb panel) can have actions too, and a Logitech button
-  can run Logitech actions: switch the wheel mode, change the pointer speed, switch to
-  another computer, and more.
+  the mode shift button and the thumb panel) can have actions too. With a Logitech mouse
+  connected, a button, a key or a gesture can also run a Logitech action: switch the
+  wheel mode, change the pointer speed, or switch the mouse to another computer.
 - A row says when its button is also a scroll key, or when another app (Logi Options+)
   may take it over.
 - Removing a button or an app can be undone (Edit › Undo).
@@ -134,8 +139,8 @@ of scrolling and the menu bar icon.
   private macOS interface; where it is missing, the mode is not available.
 - "Freeze pointer during a gesture" keeps the pointer where it is while you hold the
   button.
-- With a Logitech MX Master, the mouse can track the gesture itself (experimental), and an
-  MX Master 4 can pulse when a gesture locks in.
+- With a Logitech MX Master, the mouse can track the gesture itself (Beta), and an MX
+  Master 4 can pulse when a gesture locks in.
 
 ### Thumb wheel
 
@@ -168,17 +173,16 @@ Apart from those settings, and whatever that switch says:
 - For a Logitech-only button that has an action, and for a gesture button the mouse
   tracks itself, Scrollio asks the mouse to send that button to Scrollio, and gives it
   back when Scrollio pauses or quits.
-- While you record a button in the Buttons pane, Scrollio asks the mouse for all of its
-  buttons, so that it can tell which one you press, and gives them back when the
-  recording ends.
-- A Logitech action you give a button changes the mouse when you press it.
+- While you record a button in the Buttons pane, Scrollio asks the mouse for every
+  button it can send (never the left or the right one), so that it can tell which one
+  you press, and gives them back when the recording ends.
+- A Logitech action changes the mouse when its button, key or gesture runs it.
 - The gesture pulse plays on the mouse and can switch its haptics on, unless Haptic
   feedback is turned off.
-- Logitech Diagnostics (see [Menu bar](#menu-bar)) is a developer window: what you
-  change there is sent to the mouse.
 
 A value written to the mouse is stored in the mouse: it stays after Scrollio quits or is
-removed.
+removed. If a Logitech button stops working after Scrollio crashed or was force quit,
+switch the mouse off and on.
 
 Logitech mice work over a Logitech receiver (Bolt or Unifying) or Bluetooth. A low
 battery gets one notice at 10 % and one at 5 %, and its percentage stands next to the
@@ -194,7 +198,7 @@ those controls.
   front, "Pause Scrollio" or "Resume Scrollio", "Settings…" and "Quit Scrollio". A pause
   stops everything and gives the Logitech mice their buttons back; it is not kept after
   Scrollio quits. With Option held the menu also lists Logitech Diagnostics, a developer
-  window with the HID++ details of the connected mice.
+  window with the HID++ details of the connected mice. In the released app it only reads.
 - The icon is dimmed while Scrollio is paused, waits for Accessibility access, or could
   not start and tries again; its tooltip says which.
 - The icon can be hidden (General › Show in menu bar). Opening Scrollio again then shows
@@ -202,8 +206,13 @@ those controls.
 - General also has "Open at login" and the state of the Accessibility access.
 - Scrollio stops while the Mac sleeps or another user has it, and starts again when you
   are back.
-- At launch, and whenever Mos starts later, it quits a running Mos: two apps would both
-  handle the same mouse events. Mos's settings are not read.
+- When its event handling starts (at launch once Accessibility access is there, on
+  Resume) and whenever Mos starts later while it runs, Scrollio quits a running Mos and
+  says so with a notice: two apps would both handle the same mouse events. While Scrollio
+  is paused or still waits for the access, Mos is left running. Mos's settings are not
+  read.
+- Scrollio's notices stay on screen as long as their text takes to read (3 to 10
+  seconds) and wait while the pointer is over them.
 
 ---
 
@@ -228,7 +237,7 @@ Macs. The app in it and the image itself are signed with the author's Developer 
 by anyone else, is not an official build.
 
 1. Open the disk image and drag Scrollio to the Applications folder. Open it from there,
-   not from the disk image.
+   not from the disk image: opened from the image, Scrollio asks to be moved first.
 2. macOS asks once whether to open an app that was downloaded from the internet.
 3. The Welcome Guide opens. "Open Accessibility Settings" takes you to System Settings ›
    Privacy & Security › Accessibility: turn on Scrollio in the list. Until you do,
@@ -236,8 +245,8 @@ by anyone else, is not an official build.
 4. Choose how scrolling feels, and whether Scrollio opens at login. It then runs in the
    menu bar; click its icon for Settings, Pause and Quit.
 
-If Mos is running, Scrollio quits it (see [Menu bar](#menu-bar)): quit Scrollio before you
-go back to Mos.
+If Mos is running, Scrollio quits it once Accessibility access is there, and says so
+(see [Menu bar](#menu-bar)). To go back to Mos, pause or quit Scrollio.
 
 To check a download before you open it:
 
@@ -294,10 +303,15 @@ Welcome Guide leads you to the switch.
 "Open at login" registers Scrollio as a login item; macOS may ask you to approve it in
 System Settings under Login Items.
 
-A script you bind to a button or a key runs with Scrollio's permissions, Accessibility
-included: macOS counts it as part of Scrollio. It cannot send Apple events (a script that
-tells another app to do something fails), because Scrollio has no permission for them.
-Bind only scripts you trust; [SECURITY.md](SECURITY.md) says why.
+Key presses pass through Scrollio only while a key is bound to an action in Buttons,
+while a button you hold stands for a modifier, or while you record a key in Settings.
+Otherwise it only listens to them, for the keys under Scrolling › While you hold a key,
+and cannot delay them.
+
+A script a button runs is started as a program of its own: it has none of Scrollio's
+permissions (not its Accessibility access), and macOS asks for the script's own when it
+needs one. On a macOS without the function for this, it runs as Scrollio's child with
+Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](SECURITY.md).
 
 ---
 
@@ -308,16 +322,17 @@ Bind only scripts you trust; [SECURITY.md](SECURITY.md) says why.
   GitHub" (General) hands the page to your web browser.
 - Nothing leaves your Mac. The settings are kept in Scrollio's preferences, and its log
   goes to the macOS system log on the Mac (see [Diagnostics](#-diagnostics)).
-- With Accessibility access, the scroll, mouse button and key events of your session pass
-  through Scrollio while it runs. A key or button is compared with your bindings and
-  passed on; Scrollio keeps no record of what you type. What it does log is listed under
-  [Diagnostics](#-diagnostics).
+- Scrollio keeps no record of what you type. When key presses pass through it at all is
+  under [Permissions](#-permissions); what it logs is under [Diagnostics](#-diagnostics).
 - Besides its own settings, Scrollio reads:
-  - the macOS keyboard shortcuts for Spaces (to run them) and the macOS setting for
-    natural scrolling (for "Follow the hand");
+  - the macOS keyboard shortcuts for Spaces (to run them), the keyboard layout in use
+    (to press the right key for shortcuts such as ⌘A, and to name keys) and the macOS
+    setting for natural scrolling (for "Follow the hand");
   - which app is under the pointer or in front, for the per-app settings and "Smooth
-    Scrolling in …", and whether that app is built on Chromium (one look for a file
-    inside the app, for "Trackpad-style events");
+    Scrolling in …". With "Trackpad-style scrolling" on it also looks once into the
+    bundle of each app you scroll in, to see whether the app is built on Chromium (the
+    names in `Contents/Frameworks`); only apps in the Applications folders and in
+    /System are looked into;
   - the running apps, with their names and icons, to offer them in the Apps pane;
   - the macOS pointer settings, which it shows, and changes only as described under
     [Logitech MX mice](#logitech-mx-mice).
@@ -397,36 +412,36 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
 - `scroll`: one line per finished scroll, what the wheel asked for and what was sent:
 
   ```text
-  scroll: 5 wheel events 2140 px in -> 61 frames 2112 px out (largest 98.4), wheel 44 ms,
-  glide after the last event 820 ms, Duration 4.50 (tau 230 ms), trackpad-style off, ended MomentumEnd
+  scroll: 5 wheel events 2140 px in -> 83 frames 2134 px out (largest 94), wheel 44 ms,
+  glide after the last event 1389 ms, Duration 4.50 (tau 230 ms), trackpad-style off, ended: glided out
   ```
 
-  Also one `thumb wheel:` line per roll of the sideways wheel, and at most one line per
-  reason every 3 seconds while wheel events are let through unsmoothed (trackpad events,
-  a remote desktop, smoothing off for that event, no display link).
+  The line ends with why the scroll ended: glided out, left click, a finger on the
+  trackpad, the wheel went on in another app, the scroll tap was restarted, ended by the
+  keeper, or stopped. Also one `thumb wheel:` line per roll of the sideways wheel, and at
+  most one line per reason every 3 seconds while wheel events are let through unsmoothed
+  (trackpad events, a remote desktop, smoothing off for that event or that axis, no
+  display link, a Step or Speed that is not a number).
 - `logi`: what a Logitech mouse reported (battery, pointer speed, haptics, press force,
   wheel settings), each decision to write a value or not and why, the read-back after a
   write, requests the mouse refused or did not answer, gesture haptic cues, and slow
   writes. A gesture button that the mouse tracks itself writes one line per press
-  (`raw XY: CID 0x01A0 released after 14 samples`). Every `logi` line begins with the
-  mouse's name as the Mac knows it.
+  (`raw XY: CID 0x01A0 released after 14 samples`). A mouse is named by its model, as the
+  mouse reports it; never by a name you gave it in the Bluetooth settings.
 - `app`: Scrollio's own health: each start and stop with its cause (launch, sleep and
   wake, another user, Pause, Accessibility access lost or back, quit), event taps that
-  could not be created or that macOS turned off, restarts, and at launch which accent
-  colour is in effect:
+  could not be created or that macOS turned off, restarts, settings that could not be
+  read or written, an app, a file or a script that could not be opened (never its name
+  or path), a held action whose release never came, and at launch which accent colour is
+  in effect:
 
   ```text
   Accent colour: the app's own (purple)
   Started (the Mac woke up): the event taps and the Logitech sessions run
   ```
 
-Some older parts of the code still write with `NSLog`, outside these categories: among
-them notes at launch, the steps of the button recorder (one line per modifier key while it
-records), and a failure to open an app or a file or to run a script, with its path.
-Current macOS stores the text of such lines as `<private>`.
-
-Before you paste a log into an issue, read it: the `logi` lines carry the name of your
-mouse, and a Bluetooth name can be a person's name.
+The log you export from Logitech Diagnostics is more detailed than the `logi` category:
+read it before you share it.
 
 ---
 

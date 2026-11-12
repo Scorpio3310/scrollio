@@ -5,8 +5,8 @@ what you can expect.
 
 - **Issues are welcome.** A report helps most when it says which macOS, which mouse and how
   it is connected (Bluetooth, a Logitech receiver, a cable), what you did, what you
-  expected, and what the log says around that moment (README, "Diagnostics"). Read the log
-  before you paste it: its `logi` lines carry the name of your mouse.
+  expected, and what the log says around that moment (README, "Diagnostics"). Read a log
+  before you paste it, the one exported from Logitech Diagnostics above all.
 - **Pull requests are read, but may wait.** There is no promise when, and not every one
   will be merged. Before a larger change, open an issue and ask whether it fits.
 - **A security problem does not go into an issue.** See [SECURITY.md](SECURITY.md).

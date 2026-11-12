@@ -148,16 +148,15 @@ See `.agents/docs/code-map.md` for the map. The rules:
   15 to 29 ms over Bluetooth and the main thread serves every event tap. Send through the
   session (`LogiReportWriter`: one serial queue per device, order kept); never call
   `IOHIDDeviceSetReport` directly.
-- No setting (pointer speed, wheel mode, SmartShift, click firmness, haptics, press
-  force) is written to a Logitech mouse unless "Let Scrollio manage this mouse"
-  (`Options.shared.logiMouseManaged`) is on and the user set that value. Reading needs no
-  switch. The switch does not cover the rest, which `README.md` lists under "Logitech MX
-  mice" and which must stay as narrow as it is: buttons are diverted (sent to Scrollio)
-  for bindings, for gestures the mouse tracks and, all of them, while a button is being
-  recorded, and given back at Pause and quit; a Logitech action bound to a button changes
-  the mouse when it is pressed; a gesture pulse plays and can switch the haptics on; the
-  Logitech Diagnostics window sends what its user changes. A new kind of write needs the
-  switch, or a sentence in that list.
+- No setting is written to a Logitech mouse unless "Let Scrollio manage this mouse"
+  (`Options.shared.logiMouseManaged`) is on, the user set that value and the value
+  freshly read from the mouse differs. Apart from settings: a button is diverted for a
+  binding and while a button is recorded, and given back when Scrollio pauses or quits; a
+  Logitech button action writes when its button is pressed; a gesture cue plays a pulse
+  and may switch the haptics on. Reading needs no switch. The header of
+  `LogiDeviceSession` has the whole list; the Logitech Diagnostics window writes in debug
+  builds only. A new kind of write needs a line in that header and in `README.md`,
+  "Logitech MX mice".
 - ButtonCore, InputEvent, Shortcut and Keys share one meaning of recording, display,
   persistence and execution. When you change one, check the others.
 - Only `AppRunController` (`Scrollio/Managers/`) starts and stops the cores (the scroll
@@ -166,6 +165,8 @@ See `.agents/docs/code-map.md` for the map. The rules:
   is not serviced freezes input system-wide: never leave one installed while the cores
   count as stopped, and never block the main thread while one runs. The pointer-movement
   tap of gesture holds is made on demand while the cores run; their stop releases it.
+  ButtonCore's keys tap too: it exists only while a key is bound, a button holds a
+  modifier or a key-started action is held.
 
 ## Strings
 
