@@ -39,4 +39,42 @@ final class LogiTeardownTests: XCTestCase {
         XCTAssertTrue(LogiSessionManager.shouldAttachSession(usagePage: 0x0001, usage: 0x0001),
                       "Pointer (Generic Desktop) must still attach")
     }
+
+    // MARK: - Ending Scrollio with a signal
+
+    /// `kill` and `killall Scrollio` end a process without applicationWillTerminate, so the
+    /// mice kept their buttons diverted. A watched signal asks for the ordinary quit on the
+    /// main thread; when the process is still there after the grace time, the last resort
+    /// runs (in the app: the signal's default action). Tried with SIGUSR2, not SIGTERM.
+    func testAWatchedSignalAsksForTheOrdinaryQuitAndThenTheLastResort() {
+        let watcher = LogiTerminationSignal()
+        let quit = expectation(description: "the ordinary quit is asked for")
+        let lastResort = expectation(description: "the last resort after the grace time")
+        var lastResortSignal: Int32?
+        watcher.install(
+            signal: SIGUSR2,
+            grace: 0.2,
+            graceful: {
+                XCTAssertTrue(Thread.isMainThread)
+                quit.fulfill()
+            },
+            lastResort: { number in
+                lastResortSignal = number
+                lastResort.fulfill()
+            }
+        )
+        addTeardownBlock { watcher.uninstall() }
+        XCTAssertTrue(watcher.isInstalled)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            kill(getpid(), SIGUSR2)
+        }
+        wait(for: [quit, lastResort], timeout: 10, enforceOrder: true)
+        XCTAssertEqual(lastResortSignal, SIGUSR2)
+    }
+
+    func testTheTestHostDoesNotWatchSIGTERM() {
+        XCTAssertFalse(LogiTerminationSignal.shared.isInstalled, "under XCTest LogiCenter.start() installs nothing")
+        XCTAssertEqual(LogiTerminationSignal.defaultGrace, 4, "longer than the 2 s the give-back waits for a mouse")
+    }
 }

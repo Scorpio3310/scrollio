@@ -11,4 +11,5 @@ internal final class LogiNoOpBridge: LogiExternalBridge {
     func handleLogiScrollHotkey(code: UInt16, phase: InputPhase) {}
     func showLogiToast(_ message: String, severity: LogiToastSeverity) {}
     func handleLogiGestureMovement(code: UInt16, deltaX: Int, deltaY: Int) {}
+    func logiButtonName(forScrollioCode code: UInt16) -> String? { nil }
 }

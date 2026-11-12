@@ -131,6 +131,29 @@ enum LogiPointerSpeedProtocol {
         }
     }
 
+    // MARK: - Steps of the "Increase / Decrease Pointer Speed" button actions
+
+    /// The speeds a button steps through on a mouse that accepts a fine range (an MX Master
+    /// lists 200...8000 in steps of 50: one step of the list, 1600 to 1650, cannot be felt).
+    static let cycleStops: [Int] = [400, 800, 1000, 1200, 1600, 2000, 2400, 3200, 4000, 6000, 8000]
+
+    /// The stops for a mouse with these accepted values: a short list is its own set of
+    /// stops (400, 800, 1600, 3200); from a long one, `cycleStops` snapped to the list, with
+    /// its lowest and highest value so that both ends can be reached.
+    static func cycleStops(for choices: [Int]) -> [Int] {
+        let sorted = Array(Set(choices)).sorted()
+        guard sorted.count > cycleStops.count, let low = sorted.first, let high = sorted.last else { return sorted }
+        let inRange = cycleStops.filter { $0 >= low && $0 <= high }.compactMap { snap($0, to: sorted) }
+        return Array(Set(inRange + [low, high])).sorted()
+    }
+
+    /// The value one press moves to from `current`: the next stop above or below it. nil at
+    /// the end of the scale (nothing is written then). Always a value of `choices`.
+    static func cycleTarget(from current: Int, up: Bool, choices: [Int]) -> Int? {
+        let stops = cycleStops(for: choices)
+        return up ? stops.first(where: { $0 > current }) : stops.last(where: { $0 < current })
+    }
+
     /// Short text for the log: "200...8000 (157 values)" or "400, 800, 1600".
     static func describe(_ list: DPIList) -> String {
         let values = list.values

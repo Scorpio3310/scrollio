@@ -375,6 +375,12 @@ struct LogiCIDDirectory {
         return cidNames[cid] ?? String(format: "Unknown(0x%04X)", cid)
     }
 
+    /// Whether the directory has a name for the control (`name(forCID:)` otherwise makes
+    /// up "Unknown(0x…)", which is for the diagnostics window and the log only).
+    static func hasName(forCID cid: UInt16) -> Bool {
+        return cidNames[cid] != nil
+    }
+
     /// 通过 ScrollioCode 查询名称 (按键面板使用)
     static func name(forScrollioCode code: UInt16) -> String {
         guard let cid = toCID(code) else { return "Logi(\(code))" }

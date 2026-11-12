@@ -22,7 +22,9 @@
 //  haptics switched off (the state of an MX Master 4 that never ran Options+), they are
 //  switched on for it, unless the user switched the mouse's haptics off in Scrollio's
 //  mouse settings (`mayEnableHaptics` false): then the cue is skipped. Intensity and power
-//  saving are never changed.
+//  saving are never changed: the switch-on is only ever written right after a fresh read of
+//  the state, with the flags and the intensity of that answer (never from the copy made at
+//  connect time, which the user may have changed elsewhere since).
 //
 //  Main thread only (HID++ callbacks run on the main run loop).
 //
@@ -354,7 +356,7 @@ final class LogiGestureController {
         default:
             return  // play acknowledgement, or somebody else's setState
         }
-        playPendingCueIfReady()
+        playPendingCueIfReady(stateJustRead: functionId == LogiGestureProtocol.hapticGetStateFunction)
     }
 
     /// Plays the cue when the mouse can and the user has haptics on. Returns whether a
@@ -369,26 +371,51 @@ final class LogiGestureController {
         guard let enabled = hapticsEnabled, let mask = hapticWaveformMask else {
             // Not read yet, or an answer got lost: ask again and keep the cue for a moment.
             log("Haptic cue \(cue) waits: state \(hapticsEnabled == nil ? "unknown" : "known"), waveforms \(hapticWaveformMask == nil ? "unknown" : "known")")
-            pendingCueToken += 1
-            let token = pendingCueToken
-            pendingCue = (cue, token)
+            waitForAnswers(cue)
             refreshHaptics()
-            schedule(Self.pendingCueLifetime) { [weak self] in
-                guard let self = self, self.pendingCue?.token == token else { return }
-                self.pendingCue = nil
-                self.log("Haptic cue \(cue) dropped: the mouse did not answer in time")
-            }
             return false
         }
-        return send(cue, enabled: enabled, mask: mask)
+        guard enabled else {
+            // Off when last read. Switching them on writes the mouse's flags and intensity
+            // back with the on bit set, so it needs the state as it is now, not as it was
+            // at connect time: read it, and decide when the answer is in.
+            guard mayEnableHaptics() else {
+                log("Haptic cue \(cue) skipped: haptics are off on the mouse and switched off in Scrollio's mouse settings")
+                return false
+            }
+            log("Haptic cue \(cue) waits: haptics were off when last read, reading the state again before switching them on")
+            waitForAnswers(cue)
+            sendHaptic(LogiGestureProtocol.hapticGetStateFunction, [])
+            return false
+        }
+        return send(cue, enabled: true, mask: mask)
     }
 
-    private func playPendingCueIfReady() {
+    /// Keeps the cue until the mouse's answers are in (playPendingCueIfReady), at most
+    /// `pendingCueLifetime`.
+    private func waitForAnswers(_ cue: MouseGestureHapticCue) {
+        pendingCueToken += 1
+        let token = pendingCueToken
+        pendingCue = (cue, token)
+        schedule(Self.pendingCueLifetime) { [weak self] in
+            guard let self = self, self.pendingCue?.token == token else { return }
+            self.pendingCue = nil
+            self.log("Haptic cue \(cue) dropped: the mouse did not answer in time")
+        }
+    }
+
+    /// - Parameter stateJustRead: this call follows a state answer. A cue that finds the
+    ///   haptics off goes on only then: with any other answer the "off" (and the flags and
+    ///   intensity a switch-on would write back) may be an old copy.
+    private func playPendingCueIfReady(stateJustRead: Bool) {
         guard let pending = pendingCue, let enabled = hapticsEnabled, let mask = hapticWaveformMask else { return }
+        guard enabled || stateJustRead else { return }
         pendingCue = nil
         send(pending.cue, enabled: enabled, mask: mask)
     }
 
+    /// Sends the pulse. `enabled` false is only ever passed right after a state answer
+    /// (playPendingCueIfReady): the switch-on below writes what that answer said.
     @discardableResult
     private func send(_ cue: MouseGestureHapticCue, enabled: Bool, mask: UInt32) -> Bool {
         guard let waveform = LogiGestureProtocol.waveform(for: cue, mask: mask) else {
@@ -401,8 +428,8 @@ final class LogiGestureController {
                 return false
             }
             // The user asked for cues, the mouse has its haptics off: switch them on, with
-            // the intensity it reports. The mouse works through requests in order, so the
-            // pulse right behind this one already plays.
+            // the flags and the intensity it just reported. The mouse works through requests
+            // in order, so the pulse right behind this one already plays.
             let state = hapticState ?? (flags: 0, level: 0)
             let params = LogiGestureProtocol.hapticSwitchOnParams(flags: state.flags, level: state.level)
             sendHaptic(LogiGestureProtocol.hapticSetStateFunction, params)

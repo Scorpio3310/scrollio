@@ -488,7 +488,10 @@ struct SystemShortcut {
         "categoryLogiActions", [
             logiSmartShiftToggle, logiDPICycleUp, logiDPICycleDown,
             logiHost1, logiHost2, logiHost3,
-            logiHiResScrollToggle, logiScrollInvertToggle, logiThumbWheelToggle, logiPointerSpeedCycle
+            // Not offered any more (the Logitech code runs nothing for them): the hi-res,
+            // invert and thumb wheel toggles left the mouse changed after Pause and Quit.
+            // Their definitions stay so that a stored binding still shows its name.
+            logiPointerSpeedCycle
         ]
     )
 

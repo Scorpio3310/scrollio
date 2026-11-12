@@ -2558,7 +2558,9 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(logitech.items.map(\.title), [
             "Switch Wheel Mode", "Increase Pointer Speed", "Decrease Pointer Speed",
             "Switch to Computer 1", "Switch to Computer 2", "Switch to Computer 3",
-            "Toggle Hi-Res Scrolling", "Invert Scrolling", "Toggle Thumb Wheel", "Next Pointer Speed",
+            // "Toggle Hi-Res Scrolling", "Invert Scrolling" and "Toggle Thumb Wheel" are no
+            // longer offered: they left the mouse changed after Pause and Quit.
+            "Next Pointer Speed",
         ])
         // The last group: Gesture Navigation, its settings (hidden: not its action), Open
         // App or File…, Keyboard Shortcut….

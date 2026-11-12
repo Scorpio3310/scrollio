@@ -763,4 +763,39 @@ final class LogiWheelControllerTests: XCTestCase {
         XCTAssertTrue(unset.mode.mouseMatches)
         XCTAssertEqual(unset.scrollForce, .init(onMouse: 30, setByYou: nil))
     }
+
+    // MARK: - SmartShift Toggle without an answer
+
+    /// A press while the mouse does not answer used to stay armed: minutes later the status
+    /// menu read the wheel, the answer came, and the wheel mode flipped by itself.
+    func testAToggleWithoutAnAnswerIsDroppedAndDoesNotRunLater() {
+        let wheel = makeController(.smartShiftEnhanced)
+        wheel.toggleMode()
+        XCTAssertTrue(wheel.pendingToggle)
+        XCTAssertEqual(scheduled.last?.delay, LogiWheelController.replyTimeout)
+
+        expireReplyTimeouts()   // 2 s without an answer
+        XCTAssertFalse(wheel.pendingToggle)
+
+        // Much later some other read of the wheel is answered.
+        sent = []
+        wheel.refresh()
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0x10, 0x32]))
+        XCTAssertFalse(sent.contains { $0.functionId == 2 }, "nothing is written: \(sent)")
+        XCTAssertNotNil(wheel.mode, "the answer was read")
+    }
+
+    /// The timeout of an earlier press does not cancel a later one.
+    func testTheTimeoutOfAnEarlierPressLeavesALaterPressAlone() {
+        let wheel = makeController(.smartShiftEnhanced)
+        wheel.toggleMode()
+        let firstTimeout = scheduled.last?.work
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x02, 0x10, 0x32]))
+        XCTAssertFalse(wheel.pendingToggle, "the first press ran")
+        wheel.handleResponse(functionId: 1, report: report(functionId: 1, payload: [0x01, 0x10, 0x32]))
+
+        wheel.toggleMode()
+        firstTimeout?()
+        XCTAssertTrue(wheel.pendingToggle, "the second press still waits for its answer")
+    }
 }

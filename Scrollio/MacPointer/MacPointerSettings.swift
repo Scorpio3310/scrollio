@@ -64,6 +64,23 @@ struct MacPointerSettings {
         return MacPointerState(readSpeed: readTrackingSpeed(), readAcceleration: readPointerAcceleration())
     }
 
+    /// The tracking speed of a new macOS user (the fourth stop of System Settings).
+    static let defaultTrackingSpeed: Double = 0.6875
+
+    /// Turns pointer acceleration on or off, as the switch of the Mouse pane asks.
+    ///
+    /// With a negative tracking speed (`com.apple.mouse.scaling = -1`, the old way to switch
+    /// acceleration off) macOS has no acceleration whatever `com.apple.mouse.linear` says, so
+    /// turning it on also needs a real speed: the macOS default is written then. Without it
+    /// the switch jumped back to off and the pane offered no way out (the speed row is hidden
+    /// in that state). Turning it off never touches the speed.
+    /// - Returns: true when macOS took everything that was written.
+    func setPointerAcceleration(_ on: Bool) -> Bool {
+        guard writePointerAcceleration(on) else { return false }
+        guard on, let speed = readTrackingSpeed(), speed < 0 else { return true }
+        return writeTrackingSpeed(Self.defaultTrackingSpeed)
+    }
+
     // MARK: - The scale of System Settings
 
     /// The stops of System Settings › Mouse › Tracking speed, slow to fast: one tick mark each

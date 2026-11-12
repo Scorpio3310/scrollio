@@ -96,17 +96,39 @@ final class LogiBasicsSessionFixesTests: XCTestCase {
         #endif
     }
 
-    // MARK: - 0x2121 writes
+    // MARK: - The toggle actions that were removed (0x2121 wheel mode, 0x2150 thumb wheel)
 
-    /// Regression: the hi-res / invert toggles sent only the mode byte, zeroing bytes 1-2.
-    func testHiResWheelToggleSendsBytesOneAndTwoBack() {
-        var report: [UInt8] = [0x11, 0xFF, 0x0F, 0x11, 0x0A, 0x12, 0x34]
-        while report.count < 20 { report.append(0) }
-        XCTAssertEqual(LogiDeviceSession.hiResWheelModeParams(toggling: LogiDeviceSession.hiResWheelResolutionBit, in: report),
-                       [0x08, 0x12, 0x34])
-        XCTAssertEqual(LogiDeviceSession.hiResWheelModeParams(toggling: LogiDeviceSession.hiResWheelInvertBit, in: report),
-                       [0x0E, 0x12, 0x34], "the analytics bit 3 and the target bit stay as read")
-        XCTAssertNil(LogiDeviceSession.hiResWheelModeParams(toggling: 0x02, in: [0x11, 0xFF, 0x0F, 0x11, 0x0A]))
+    /// "Toggle Hi-Res Scrolling", "Invert Scrolling" and "Toggle Thumb Wheel" changed a
+    /// state of the mouse that nothing showed and nothing put back at Pause or Quit (the
+    /// thumb wheel stayed dead). They are gone: a stored binding that names one resolves to
+    /// no action, so pressing its button writes nothing and does nothing. (This replaces the
+    /// test of the bytes those toggles wrote.)
+    func testTheRemovedToggleActionsResolveToNothing() {
+        for name in ["logiHiResScrollToggle", "logiScrollInvertToggle", "logiThumbWheelToggle"] {
+            XCTAssertNil(LogiButtonAction(name: name), name)
+            XCTAssertTrue(LogiButtonAction.removedNames.contains(name), name)
+        }
+        XCTAssertNil(LogiButtonAction(name: "logiSomethingNobodyKnows"))
+        XCTAssertNil(LogiButtonAction(name: ""))
+    }
+
+    func testTheActionsThatStayKeepTheirNames() {
+        XCTAssertEqual(LogiButtonAction(name: "logiSmartShiftToggle"), .smartShiftToggle)
+        XCTAssertEqual(LogiButtonAction(name: "logiDPICycleUp"), .dpiCycleUp)
+        XCTAssertEqual(LogiButtonAction(name: "logiDPICycleDown"), .dpiCycleDown)
+        XCTAssertEqual(LogiButtonAction(name: "logiHost1"), .host(0))
+        XCTAssertEqual(LogiButtonAction(name: "logiHost2"), .host(1))
+        XCTAssertEqual(LogiButtonAction(name: "logiHost3"), .host(2))
+        XCTAssertEqual(LogiButtonAction(name: "logiPointerSpeedCycle"), .pointerSpeedCycle)
+    }
+
+    /// The removed actions are no longer offered in the action list of the Buttons pane.
+    func testTheRemovedToggleActionsAreNotOffered() {
+        let offered = Set(SystemShortcut.logiActionsCategory.shortcuts.map(\.identifier))
+        XCTAssertTrue(offered.isDisjoint(with: LogiButtonAction.removedNames), "\(offered.sorted())")
+        for name in offered {
+            XCTAssertNotNil(LogiButtonAction(name: name), "\(name) is offered but runs nothing")
+        }
     }
 
     // MARK: - Probing and features
@@ -142,5 +164,168 @@ final class LogiBasicsSessionFixesTests: XCTestCase {
         XCTAssertEqual(HIDPPInfo.featureNames[LogiDeviceSession.featureUnifiedBattery]?.0, "UnifiedBattery")
         XCTAssertEqual(HIDPPInfo.featureNames[LogiDeviceSession.featureBatteryStatus]?.0, "BatteryStatus")
         XCTAssertEqual(HIDPPInfo.featureNames[LogiDeviceSession.featureAdjustableDPI]?.0, "AdjustableDPI")
+    }
+
+    // MARK: - Button actions that read before they write
+
+    /// A press whose read got no answer used to stay armed for the whole connection: the
+    /// next answer to any read of that value (minutes later, from the Mouse pane) ran it.
+    func testAPressThatGotNoAnswerDoesNotRunLater() {
+        var pending = LogiPendingActions()
+        let pressed = Date(timeIntervalSince1970: 5_000)
+        pending.arm(.dpiCurrent, now: pressed)
+        XCTAssertTrue(pending.isArmed(.dpiCurrent))
+        XCTAssertFalse(pending.take(.dpiCurrent, now: pressed.addingTimeInterval(120)), "two minutes later: not the press's answer")
+        XCTAssertFalse(pending.isArmed(.dpiCurrent), "and it waits no longer")
+
+        pending.arm(.pointerSpeed, now: pressed)
+        XCTAssertTrue(pending.take(.pointerSpeed, now: pressed.addingTimeInterval(0.3)), "the answer of the press")
+        XCTAssertFalse(pending.take(.pointerSpeed, now: pressed.addingTimeInterval(0.4)), "only once")
+        XCTAssertFalse(pending.take(.dpiList, now: pressed), "never armed")
+
+        pending.arm(.dpiList, now: pressed)
+        pending.cancelAll()
+        XCTAssertFalse(pending.take(.dpiList, now: pressed))
+        XCTAssertEqual(LogiPendingActions.lifetime, 2)
+    }
+
+    // MARK: - Increase / Decrease Pointer Speed
+
+    /// An MX Master lists 200...8000 in steps of 50. One press used to move to the next
+    /// value of that list: 1600 to 1650, which nobody feels.
+    func testOnePressMovesThePointerSpeedByAStepThatCanBeFelt() {
+        let fine = Array(stride(from: 200, through: 8000, by: 50))
+        XCTAssertEqual(LogiPointerSpeedProtocol.cycleTarget(from: 1600, up: true, choices: fine), 2000)
+        XCTAssertEqual(LogiPointerSpeedProtocol.cycleTarget(from: 1600, up: false, choices: fine), 1200)
+        XCTAssertEqual(LogiPointerSpeedProtocol.cycleTarget(from: 1650, up: true, choices: fine), 2000, "from a value between two stops")
+        XCTAssertEqual(LogiPointerSpeedProtocol.cycleTarget(from: 1650, up: false, choices: fine), 1600)
+        XCTAssertEqual(LogiPointerSpeedProtocol.cycleTarget(from: 4000, up: true, choices: fine), 6000)
+        XCTAssertEqual(LogiPointerSpeedProtocol.cycleTarget(from: 8000, up: true, choices: fine), nil, "at the top: nothing is written")
+        XCTAssertEqual(LogiPointerSpeedProtocol.cycleTarget(from: 400, up: false, choices: fine), 200, "the mouse's lowest value is a stop")
+        XCTAssertEqual(LogiPointerSpeedProtocol.cycleTarget(from: 200, up: false, choices: fine), nil)
+        XCTAssertEqual(LogiPointerSpeedProtocol.cycleStops(for: fine), [200, 400, 800, 1000, 1200, 1600, 2000, 2400, 3200, 4000, 6000, 8000])
+    }
+
+    func testAShortListIsItsOwnSetOfStops() {
+        let presets = [400, 800, 1600, 3200]
+        XCTAssertEqual(LogiPointerSpeedProtocol.cycleStops(for: presets), presets)
+        XCTAssertEqual(LogiPointerSpeedProtocol.cycleTarget(from: 800, up: true, choices: presets), 1600)
+        XCTAssertEqual(LogiPointerSpeedProtocol.cycleTarget(from: 800, up: false, choices: presets), 400)
+        XCTAssertEqual(LogiPointerSpeedProtocol.cycleTarget(from: 3200, up: true, choices: presets), nil)
+        XCTAssertEqual(LogiPointerSpeedProtocol.cycleTarget(from: 800, up: true, choices: []), nil)
+    }
+
+    /// Every stop is a value the mouse accepts (a range that does not hold the round numbers).
+    func testEveryStopIsAValueTheMouseAccepts() {
+        let odd = Array(stride(from: 250, through: 5250, by: 125))
+        let stops = LogiPointerSpeedProtocol.cycleStops(for: odd)
+        XCTAssertTrue(stops.allSatisfy(odd.contains), "\(stops)")
+        XCTAssertEqual(stops.first, 250)
+        XCTAssertEqual(stops.last, 5250)
+        XCTAssertEqual(stops, stops.sorted())
+    }
+
+    // MARK: - Logitech Diagnostics in a Release build
+
+    /// Without device writes the window keeps the buttons that read or are local. "Re-Divert",
+    /// "Undivert All" and "Enumerate" wrote to the mouse in a Release build whatever "Let
+    /// Scrollio manage this mouse" said ("Undivert All" also left every Logitech button
+    /// binding dead until the next discovery).
+    func testWithoutDeviceWritesTheDiagnosticsWindowOffersNoButtonThatChangesTheMouse() {
+        XCTAssertEqual(HIDPPFeatureActions.globalActions(offeringWrites: false).map(\.rawValue), ["Re-Discover", "Clear Log"])
+        XCTAssertEqual(
+            HIDPPFeatureActions.globalActions(offeringWrites: true).map(\.rawValue),
+            ["Re-Discover", "Re-Divert", "Undivert All", "Enumerate", "Clear Log"]
+        )
+        XCTAssertTrue(HIDPPFeatureActions.GlobalAction.undivertAll.changesDevice)
+        XCTAssertFalse(HIDPPFeatureActions.GlobalAction.rediscover.changesDevice)
+    }
+
+    // MARK: - Toasts
+
+    /// A toast names a button as the Buttons pane does; the name comes in through the bridge.
+    func testAToastCallsAButtonWhatTheButtonsPaneCallsIt() {
+        let pane: (UInt16) -> String? = { code in
+            switch code {
+            case 1001: return "Mode shift button"
+            case 1006: return "Back button"
+            default: return "Button \(code)"
+            }
+        }
+        XCTAssertEqual(LogiToastText.buttonName(forCID: 0x00C4, paneName: pane), "Mode shift button")
+        XCTAssertEqual(LogiToastText.buttonName(forCID: 0x0053, paneName: pane), "Back button")
+        // A control the directory has no name for is never shown as "Unknown(0x…)".
+        XCTAssertFalse(LogiCIDDirectory.hasName(forCID: 0x0FFF))
+        XCTAssertNil(LogiToastText.buttonName(forCID: 0x0FFF, paneName: pane))
+        XCTAssertNil(LogiToastText.buttonName(forCID: 0x00C4, paneName: { _ in nil }), "the app has no name")
+    }
+
+    func testAToastAboutAButtonWithoutANameSaysAButton() {
+        let english: [String: String] = [
+            "logi_ble_hidpp_unstable_toast": "%@ may stop working while Logi Options+ runs.",
+            "logi_hidpp_contention_toast": "Logi Options+ keeps taking over %@.",
+            "logi-toast-a-button": "a button",
+            "logi-toast-a-button-start": "A button",
+        ]
+        let localized: (String) -> String = { english[$0] ?? $0 }
+        XCTAssertEqual(
+            LogiToastText.buttonToast(formatKey: "logi_ble_hidpp_unstable_toast", buttonName: nil, localized: localized),
+            "A button may stop working while Logi Options+ runs."
+        )
+        XCTAssertEqual(
+            LogiToastText.buttonToast(formatKey: "logi_hidpp_contention_toast", buttonName: nil, localized: localized),
+            "Logi Options+ keeps taking over a button."
+        )
+        XCTAssertEqual(
+            LogiToastText.buttonToast(formatKey: "logi_hidpp_contention_toast", buttonName: "Back button", localized: localized),
+            "Logi Options+ keeps taking over Back button."
+        )
+    }
+
+    /// The texts of the catalog: no raw key, a full stop, the feature in the panes' words.
+    func testTheToastTextsOfTheCatalog() {
+        XCTAssertEqual(
+            LogiToastText.featureNotAvailable(mouse: "MX Master 3S", feature: .haptics),
+            "MX Master 3S does not support haptic feedback."
+        )
+        XCTAssertEqual(
+            LogiToastText.featureNotAvailable(mouse: "MX Anywhere 3S", feature: .pointerSpeed),
+            "MX Anywhere 3S does not support pointer speed steps."
+        )
+        for feature in [LogiToastText.MissingFeature.pointerSpeed, .haptics, .wheelForce, .pressForce] {
+            let text = NSLocalizedString(feature.catalogKey, comment: "")
+            XCTAssertNotEqual(text, feature.catalogKey, "missing in the catalog")
+            XCTAssertFalse(text.isEmpty)
+        }
+        XCTAssertEqual(
+            LogiToastText.buttonToast(formatKey: "logi_ble_hidpp_unstable_toast", buttonName: "Mode shift button"),
+            "Mode shift button may stop working while Logi Options+ runs. Connect the mouse with its Logitech receiver, or quit Logi Options+."
+        )
+        XCTAssertEqual(
+            LogiToastText.buttonToast(formatKey: "logi_ble_hidpp_unstable_toast", buttonName: nil),
+            "A button may stop working while Logi Options+ runs. Connect the mouse with its Logitech receiver, or quit Logi Options+."
+        )
+        XCTAssertEqual(
+            LogiToastText.buttonToast(formatKey: "logi_hidpp_contention_toast", buttonName: nil),
+            "Logi Options+ keeps taking over a button."
+        )
+    }
+
+    /// The bridge of the app answers with the Buttons pane's own names.
+    func testTheAppsBridgeNamesButtonsAsTheButtonsPaneDoes() {
+        XCTAssertEqual(LogiIntegrationBridge.shared.logiButtonName(forScrollioCode: 1001), ButtonTriggerNaming.buttonName(code: 1001))
+        XCTAssertEqual(LogiIntegrationBridge.shared.logiButtonName(forScrollioCode: 1006), ButtonTriggerNaming.buttonName(code: 1006))
+        XCTAssertEqual(ButtonTriggerNaming.buttonName(code: 1001), "Mode shift button")
+        XCTAssertEqual(ButtonTriggerNaming.buttonName(code: 1006), "Back button")
+    }
+
+    // MARK: - The diagnostics log's words for the reporting flags
+
+    func testTheReportingFlagsAreNamedAsTheyAre() {
+        XCTAssertEqual(LogiDeviceSession.reportingFlagNames(0x00), [])
+        XCTAssertEqual(LogiDeviceSession.reportingFlagNames(0x01), ["divert"])
+        XCTAssertEqual(LogiDeviceSession.reportingFlagNames(0x04), ["persistDivert"], "bit 2, which used to be shown as a remap")
+        XCTAssertEqual(LogiDeviceSession.reportingFlagNames(0x11), ["divert", "rawXY"])
+        XCTAssertEqual(LogiDeviceSession.reportingFlagNames(0x0A), ["0x0A"], "bits without a known meaning by their value")
     }
 }

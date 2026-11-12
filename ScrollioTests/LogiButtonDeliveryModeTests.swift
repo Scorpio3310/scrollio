@@ -124,51 +124,70 @@ final class LogiButtonDeliveryModeTests: XCTestCase {
     }
 
     func testDefaultButtonDeliveryPolicyUsesTwoSecondStandardUndivertGuardInterval() {
-        let key = "LogiBLEStandardUndivertGuardInterval"
-        let defaults = UserDefaults.standard
-        let original = defaults.object(forKey: key)
-        defaults.removeObject(forKey: key)
-        defer {
-            if let original {
-                defaults.set(original, forKey: key)
-            } else {
-                defaults.removeObject(forKey: key)
-            }
-        }
-
         XCTAssertEqual(LogiButtonDeliveryPolicy.default.standardButtonUndivertGuardInterval, 2)
     }
 
     func testDefaultButtonDeliveryPolicyDisablesStandardUndivertGuard() {
-        let key = "LogiBLEStandardUndivertGuardEnabled"
-        let defaults = UserDefaults.standard
-        let original = defaults.object(forKey: key)
-        defaults.removeObject(forKey: key)
-        defer {
-            if let original {
-                defaults.set(original, forKey: key)
-            } else {
-                defaults.removeObject(forKey: key)
-            }
-        }
-
         XCTAssertFalse(LogiButtonDeliveryPolicy.default.standardButtonUndivertGuardEnabled)
+        XCTAssertTrue(LogiButtonDeliveryPolicy.default.standardMouseButtonsUseNativeEvents)
     }
 
-    func testUserDefaultCanEnableStandardUndivertGuard() {
-        let key = "LogiBLEStandardUndivertGuardEnabled"
+    /// Three preference keys that nothing documented used to change what is written to a
+    /// mouse (the guard on, its interval, the standard buttons diverted over Bluetooth).
+    /// They are no longer read: a value stored under them changes nothing. (This replaces
+    /// the test that a stored key switches the guard on.)
+    func testTheOldHiddenPreferenceKeysNoLongerChangeThePolicy() {
+        let stored: [String: Any] = [
+            "LogiBLEStandardUndivertGuardEnabled": true,
+            "LogiBLEStandardUndivertGuardInterval": 0.001,
+            "LogiBLEStandardButtonsNativeFirst": false,
+        ]
         let defaults = UserDefaults.standard
-        let original = defaults.object(forKey: key)
-        defaults.set(true, forKey: key)
+        let originals = stored.keys.map { ($0, defaults.object(forKey: $0)) }
+        for (key, value) in stored { defaults.set(value, forKey: key) }
         defer {
-            if let original {
-                defaults.set(original, forKey: key)
-            } else {
-                defaults.removeObject(forKey: key)
+            for (key, original) in originals {
+                if let original {
+                    defaults.set(original, forKey: key)
+                } else {
+                    defaults.removeObject(forKey: key)
+                }
             }
         }
 
-        XCTAssertTrue(LogiButtonDeliveryPolicy.default.standardButtonUndivertGuardEnabled)
+        let policy = LogiButtonDeliveryPolicy.default
+        XCTAssertFalse(policy.standardButtonUndivertGuardEnabled)
+        XCTAssertEqual(policy.standardButtonUndivertGuardInterval, 2)
+        XCTAssertTrue(policy.standardMouseButtonsUseNativeEvents)
+    }
+
+    /// Whoever builds a policy cannot make the guard write faster than twice a second.
+    func testTheGuardIntervalHasAFloor() {
+        let policy = LogiButtonDeliveryPolicy(
+            standardMouseButtonsUseNativeEvents: true,
+            standardButtonUndivertGuardEnabled: true,
+            standardButtonUndivertGuardInterval: 0.001
+        )
+        XCTAssertEqual(policy.standardButtonUndivertGuardInterval, LogiButtonDeliveryPolicy.minimumGuardInterval)
+        XCTAssertEqual(LogiButtonDeliveryPolicy.minimumGuardInterval, 0.5)
+    }
+
+    /// Pause, sleep and Quit end every connection: what was found "taken over by another
+    /// app" on it is forgotten, so the button is diverted again at the next start.
+    func testStoppingForgetsTheContendedControls() {
+        let store = LogiButtonDeliveryModeStore(clearWindow: 30, clearThreshold: 2)
+        let key = LogiOwnershipKey(vendorId: 0x046D, productId: 0xB034, name: "MX", transport: .bleDirect, cid: 0x00C4)
+        let t0 = Date(timeIntervalSince1970: 100)
+        _ = store.recordExternalClear(for: key, at: t0)
+        XCTAssertFalse(store.removeAll(), "one count is no contention yet")
+        _ = store.recordExternalClear(for: key, at: t0.addingTimeInterval(1))
+        XCTAssertEqual(store.mode(for: key), .hidpp, "the count started again after removeAll")
+        _ = store.recordExternalClear(for: key, at: t0.addingTimeInterval(2))
+        XCTAssertEqual(store.mode(for: key), .contended)
+
+        XCTAssertTrue(store.removeAll())
+        XCTAssertEqual(store.mode(for: key), .hidpp)
+        XCTAssertEqual(store.recordExternalClear(for: key, at: t0.addingTimeInterval(3)), .hidpp, "the count starts at one again")
     }
 
     func testDiagnosisSessionPreferenceFollowsCurrentTransport() {

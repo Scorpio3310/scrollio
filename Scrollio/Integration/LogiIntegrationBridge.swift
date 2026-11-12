@@ -59,6 +59,11 @@ final class LogiIntegrationBridge: LogiExternalBridge {
         InputProcessor.shared.handleDeviceGestureMovement(code: code, countsX: deltaX, countsY: deltaY)
     }
 
+    /// The Buttons pane's own name for the button, so that a toast and the pane agree.
+    func logiButtonName(forScrollioCode code: UInt16) -> String? {
+        return ButtonTriggerNaming.buttonName(code: code)
+    }
+
     func showLogiToast(_ message: String, severity: LogiToastSeverity) {
         let style: Toast.Style
         switch severity {

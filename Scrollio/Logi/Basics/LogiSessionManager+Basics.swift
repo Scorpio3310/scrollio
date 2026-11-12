@@ -70,9 +70,18 @@ extension LogiSessionManager {
     func mouseDeviceStates() -> [LogiMouseDeviceState] {
         let states = activeSessions
             .filter { $0.isHIDPPCandidate }
-            .flatMap { $0.mouseDeviceStates() }
-            .sorted { ($0.deviceName, $0.id) < ($1.deviceName, $1.id) }
-        return Self.disambiguatedMouseStates(states)
+            .flatMap { session in session.mouseDeviceStates().map { (state: $0, twinOrder: session.twinOrderKey) } }
+        return Self.disambiguatedMouseStates(Self.orderedForDisambiguation(states))
+    }
+
+    /// By name and id, and two mice with the same name and id (two of one model over
+    /// Bluetooth) by a key that belongs to the unit (`LogiDeviceSession.twinOrderKey`). Without
+    /// it their order was the order of a dictionary: it changed when either reconnected, the
+    /// "#2" moved to the other mouse, and with it its low-battery notice.
+    static func orderedForDisambiguation(_ states: [(state: LogiMouseDeviceState, twinOrder: String)]) -> [LogiMouseDeviceState] {
+        return states
+            .sorted { ($0.state.deviceName, $0.state.id, $0.twinOrder) < ($1.state.deviceName, $1.state.id, $1.twinOrder) }
+            .map { $0.state }
     }
 
     /// Two identical mice share VID:PID; suffix later duplicates so ids stay unique (the

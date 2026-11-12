@@ -72,6 +72,15 @@ struct LogiReceiverCatalog {
         return kindByPID[pid]
     }
 
+    /// Whether a Logitech USB product is a receiver: a known one, or any product id of the
+    /// 0xC5xx block, where every receiver of the list above is (so a receiver newer than
+    /// the list is still spoken to). Only a receiver's vendor-specific interface gets HID++
+    /// traffic; wired mice and keyboards (0xC0xx, 0xC3xx), webcams, headsets and lights
+    /// do not.
+    static func isReceiver(pid: UInt16) -> Bool {
+        return kindByPID[pid] != nil || pid >> 8 == 0xC5
+    }
+
     /// 返回对用户展示的接收器名称; 未知 PID 回退到 "USB Receiver"
     static func displayName(forPID pid: UInt16) -> String {
         return kindByPID[pid]?.rawValue ?? "USB Receiver"

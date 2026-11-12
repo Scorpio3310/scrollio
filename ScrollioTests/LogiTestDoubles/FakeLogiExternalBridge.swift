@@ -29,4 +29,9 @@ final class FakeLogiExternalBridge: LogiExternalBridge {
     func handleLogiGestureMovement(code: UInt16, deltaX: Int, deltaY: Int) {
         gestureMovements.append((code, deltaX, deltaY))
     }
+    /// What the app would call each button; a code that is absent has no name.
+    var buttonNames: [UInt16: String] = [:]
+    func logiButtonName(forScrollioCode code: UInt16) -> String? {
+        return buttonNames[code]
+    }
 }

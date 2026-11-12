@@ -342,7 +342,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ does not support %@"
+            "value": "%@ does not support %@."
           }
         }
       }
@@ -3194,7 +3194,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ may stop working while Logi Options+ runs. The receiver is more reliable."
+            "value": "%@ may stop working while Logi Options+ runs. Connect the mouse with its Logitech receiver, or quit Logi Options+."
           }
         }
       }
@@ -3217,6 +3217,78 @@
           "stringUnit": {
             "state": "translated",
             "value": "Logi Options+ keeps taking over %@."
+          }
+        }
+      }
+    },
+    "logi-toast-a-button": {
+      "comment": "Logitech toast: stands in for a button that has no name, inside a sentence",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "a button"
+          }
+        }
+      }
+    },
+    "logi-toast-a-button-start": {
+      "comment": "Logitech toast: stands in for a button that has no name, at the start of a sentence",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A button"
+          }
+        }
+      }
+    },
+    "logi-feature-pointer-speed": {
+      "comment": "Logitech toast: what a mouse lacks, in \"%@ does not support %@.\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pointer speed steps"
+          }
+        }
+      }
+    },
+    "logi-feature-haptics": {
+      "comment": "Logitech toast: what a mouse lacks, in \"%@ does not support %@.\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "haptic feedback"
+          }
+        }
+      }
+    },
+    "logi-feature-wheel-force": {
+      "comment": "Logitech toast: what a mouse lacks, in \"%@ does not support %@.\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "adjustable click firmness"
+          }
+        }
+      }
+    },
+    "logi-feature-press-force": {
+      "comment": "Logitech toast: what a mouse lacks, in \"%@ does not support %@.\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "an adjustable thumb panel press"
           }
         }
       }

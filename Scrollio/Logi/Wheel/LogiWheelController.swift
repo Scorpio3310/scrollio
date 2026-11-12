@@ -71,6 +71,8 @@ final class LogiWheelController {
     private(set) var pendingFields: Set<Field> = []
     /// "SmartShift Toggle" waiting for the current mode.
     private(set) var pendingToggle = false
+    /// Identifies the press a toggle timeout belongs to.
+    private var toggleToken = 0
 
     private var statusReadOutstanding = false
     private var capabilitiesRequested = false
@@ -211,9 +213,20 @@ final class LogiWheelController {
     }
 
     /// Flips free-spin <-> ratchet, keeping threshold and torque.
+    /// The press does not stay armed: when the mouse has not answered within
+    /// `replyTimeout`, it is dropped. It used to wait for ever, and the wheel mode then
+    /// flipped by itself minutes later, when some other read of the wheel was answered (the
+    /// status menu opening, the Mouse pane).
     func toggleMode() {
         pendingToggle = true
+        toggleToken += 1
+        let token = toggleToken
         requestStatus()
+        schedule(Self.replyTimeout) { [weak self] in
+            guard let self = self, self.pendingToggle, self.toggleToken == token else { return }
+            self.pendingToggle = false
+            self.log("SmartShift Toggle: no answer from the mouse within \(Int(Self.replyTimeout)) s, the press is dropped")
+        }
     }
 
     // MARK: - Responses
