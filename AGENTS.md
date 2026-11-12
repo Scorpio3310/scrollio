@@ -143,7 +143,8 @@ scripts/update-key.sh          # shows whether the update key in the keychain is
   phase of the `ScrollioTests` target). A file that is only created is not compiled.
 - After adding, moving or deleting Swift files, build or run the related tests.
 - Outside the targets: `scripts/` (`install.sh`, `release.sh` with `release-lib.sh`,
-  `update-key.sh` and the boundary lint), `CHANGELOG.md`,
+  `update-key.sh`, `dmg/` with the disk image's picture and window layout, and the
+  boundary lint), `CHANGELOG.md`,
   `tools/` (hand-run HID++ probes and a toast harness; read `tools/README.md` before
   running a probe), `assets/readme/` (the README's pictures, made by the render tests),
   and the documents a visitor reads first: `README.md`, `LICENSE`, `SECURITY.md`,

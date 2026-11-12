@@ -4171,7 +4171,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Trackpad-style scrolling (Beta)"
+            "value": "Trackpad-style scrolling (Experimental)"
           }
         }
       }
@@ -4182,7 +4182,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apps treat the wheel like a trackpad and bounce at the ends of a page. Turn off if an app scrolls oddly."
+            "value": "Apps treat the wheel like a trackpad and bounce at a page's end. Experimental: in some apps scrolling can stutter. Turn it off if it does."
           }
         }
       }
@@ -7451,7 +7451,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Lists and documents in apps such as Finder. An app bounces at a page's end where Scrollio can read its scroll bar, or can see the content under the pointer move with the wheel; elsewhere it scrolls as usual. In some apps (Messages, Calendar) scrolling can get worse: turn this off, or turn the Beta off for that app under Apps."
+            "value": "Lists and documents in apps such as Finder. An app bounces at a page's end where Scrollio can read its scroll bar, or can see the content under the pointer move with the wheel; elsewhere it scrolls as usual. In some apps (Messages, Calendar) scrolling can get worse: turn this off, or turn Trackpad-style scrolling off for that app under Apps."
           }
         }
       }

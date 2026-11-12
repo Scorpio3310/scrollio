@@ -96,7 +96,7 @@ class Options {
         didSet { markChanged(.general) }
     }
     // 滚动
-    /// Where "Trackpad-style scrolling (Beta)" works while it is on. For the whole of
+    /// Where "Trackpad-style scrolling (Experimental)" works while it is on. For the whole of
     /// Scrollio: an app's own settings decide the main switch for that app, not these.
     /// In browsers: the flick for apps built on Chromium or on Firefox's engine, Safari
     /// and DuckDuckGo. On unless it was turned off.

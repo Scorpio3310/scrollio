@@ -10,20 +10,23 @@ it for the people who use the app, and give the version its part before you tag 
 
 ## Unreleased
 
-- **Trackpad-style scrolling (Beta)**, "In Mac apps": a view that shows no scroll bar
+- **Trackpad-style scrolling is now marked Experimental** (it was Beta). It is right in
+  browsers and in Finder, and uneven elsewhere: in some apps scrolling can stutter, stop
+  short or not bounce. The switch says so, and its two places let you choose where it is on.
+- **Trackpad-style scrolling (Experimental)**, "In Mac apps": a view that shows no scroll bar
   (the conversation in Messages) can bounce at its end too. Scrollio watches whether the
   content under the pointer moves with the wheel; where it does, the scroll gets a
   trackpad's form, and when the content stops at the page's end the app bounces. Where
   it does not, the view scrolls as before. Built from one log and a stand-in; not seen
   on a screen yet.
-- **Trackpad-style scrolling (Beta)** now says where it works. While it is on, two
+- **Trackpad-style scrolling (Experimental)** now says where it works. While it is on, two
   switches stand under it in Scrolling › Advanced. "In browsers" (on): web pages in
   Safari, Chrome-like browsers and Firefox, and apps built like them. "In Mac apps"
   (off): lists and documents in every other app, for which Scrollio reads the scroll bar
   under the pointer; good in Finder, worse than without it in some apps (Messages,
-  Calendar). **If you had the Beta on in 1.0.1: Mac apps now need their own switch**, and
-  scroll as without the Beta until you turn it on. Both are in the settings file.
-- **Trackpad-style scrolling (Beta)** in apps that are not browsers (Finder, Notes, a
+  Calendar). **If you had it on in 1.0.1 (it was called Beta then): Mac apps now need their own switch**, and
+  scroll as without it until you turn that switch on. Both are in the settings file.
+- **Trackpad-style scrolling (Experimental)** in apps that are not browsers (Finder, Notes, a
   message in Mail): the whole scroll is now sent as one touch, which ends a fifth of a
   second after the page last moved. Before, the end of a scroll was sent as a glide. By
   how these apps read such events they follow a touch to its end and not a glide they are
@@ -33,7 +36,7 @@ it for the people who use the app, and give the version its part before you tag 
   scroll short, Scrollio now also sends what a trackpad sends when two fingers tap it, so
   that the app stops there. All of this is derived from how macOS reads these events, not
   yet seen on a screen. At the end of a page the page can stay stretched a little longer.
-- **Trackpad-style scrolling (Beta)** at the end of a page in apps that are not browsers.
+- **Trackpad-style scrolling (Experimental)** at the end of a page in apps that are not browsers.
   Such an app holds a page stretched past its end for as long as the wheel's scroll lasts;
   with a free-spinning wheel that was a second or two before the page came back (seen in
   Finder). Scrollio now reads where the page is (through Accessibility: the kind of the
@@ -45,24 +48,24 @@ it for the people who use the app, and give the version its part before you tag 
   scroll bar cannot be read, that view scrolls as with the switch off (the README lists
   the views known to be such). Seen on one Mac, in Finder; in the tests this part runs
   against a stand-in, because a test may not read another app.
-- **Trackpad-style scrolling (Beta)** in Dia and Arc: the sidebar of tabs (drawn by the
+- **Trackpad-style scrolling (Experimental)** in Dia and Arc: the sidebar of tabs (drawn by the
   browser itself, not a web page) stopped in mid-scroll. Scrollio now looks at what is
   under the pointer in these two and tells a web page from everything else without
   asking the page's view what it is. A page scrolls as before; everything else scrolls
-  as without the Beta, the right distance without a bounce. Built from Chromium's code,
+  as without it, the right distance without a bounce. Built from Chromium's code,
   from what macOS answers and from one log of Dia; the new rule is not seen on a screen
   yet.
-- **Trackpad-style scrolling (Beta)** is more careful with what it asks an app. It never
+- **Trackpad-style scrolling (Experimental)** is more careful with what it asks an app. It never
   asks the app itself what it is (Chrome and Electron apps switch on their accessibility
   support at that question, and get slower), it does not look at an app before it knows
   whether the app is built on Chromium, and a view whose content fits is no longer taken
   for a page at its top.
-- **Trackpad-style scrolling (Beta)** now works in Safari on macOS 27: Safari scrolls and
+- **Trackpad-style scrolling (Experimental)** now works in Safari on macOS 27: Safari scrolls and
   bounces like Chrome does with it (seen on one Mac: smooth). Before, Safari was left as it
   was, because with the wheel's hardware event on what it is sent it did not scroll
   smoothly; that is now taken off. The DuckDuckGo browser gets the same (same engine; not
   seen). On macOS 14, 15 and 26 both stay as they are.
-- **Trackpad-style scrolling (Beta)** knows more apps. Firefox and the apps built on its
+- **Trackpad-style scrolling (Experimental)** knows more apps. Firefox and the apps built on its
   engine (Thunderbird, Zotero) now get the same form as Chrome-like apps, a short touch and
   its glide: by Firefox's code that is what makes it bounce like a trackpad (not yet seen
   on a screen). Web apps made with Safari's "Add to Dock" are treated as Safari. Maps,
@@ -88,7 +91,7 @@ it for the people who use the app, and give the version its part before you tag 
 - With it on, a scroll that runs is closed when the setting is switched, and the wheel's
   scroll is closed before a finger on the trackpad begins its own (nothing kept the two in
   that order before; that an app ever got them the wrong way round was not seen).
-- The README says what Trackpad-style scrolling (Beta) does in which app, and where its
+- The README says what Trackpad-style scrolling (Experimental) does in which app, and where its
   limits are.
 - On macOS 26 the line between the sidebar and the settings in the Settings window is gone.
 - "You're up to date!" and a failed check are now the alert every Mac app shows, with
@@ -101,9 +104,9 @@ it for the people who use the app, and give the version its part before you tag 
   choose "Update to Scrollio …" in its menu.
 - The disk image opens as a window that shows what to do: Scrollio's icon, an arrow and
   the Applications folder.
-- Under the Beta switch the two places stand a little further in, and the three switches
-  cannot contradict each other: the last place switched off switches the Beta off, and the
-  Beta switched on with both off comes on in browsers.
+- Under the switch the two places stand a little further in, and the three switches
+  cannot contradict each other: the last place switched off switches it off, and the
+  switch turned on with both places off comes on in browsers.
 - The purple of the app's switches, selection and buttons is a little darker.
 - A new install starts at Speed 6.5, a tick of the slider (it was 6.3). If you never
   moved Speed, Smallest step or the feel, your scroll is 3 % longer per click from now on;

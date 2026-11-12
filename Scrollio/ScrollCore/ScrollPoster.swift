@@ -141,7 +141,7 @@ class ScrollPoster {
         if !AppRuntime.isRunningXCTest {
             poster.endWatch = AccessibilityScrollEndWatch()
         }
-        // The app's own poster reads the two switches under "Trackpad-style scrolling (Beta)".
+        // The app's own poster reads the two switches under "Trackpad-style scrolling (Experimental)".
         poster.trackpadStyleInBrowsers = { Options.shared.trackpadStyleInBrowsers }
         poster.trackpadStyleInMacApps = { Options.shared.trackpadStyleInMacApps }
         return poster
@@ -172,7 +172,7 @@ class ScrollPoster {
     var trackpadStyleTarget: (CGEvent) -> ScrollUtils.TrackpadStyleTarget = {
         ScrollUtils.shared.trackpadStyleTarget(of: $0)
     }
-    /// The two switches under "Trackpad-style scrolling (Beta)": where it works. Asked only
+    /// The two switches under "Trackpad-style scrolling (Experimental)": where it works. Asked only
     /// while the main switch is on for the app. The app's own poster reads the settings
     /// (`shared`); any other poster (tests, the measuring harness) counts both as on unless
     /// it is told otherwise.

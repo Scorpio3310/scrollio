@@ -260,7 +260,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     private(set) var glideTimeRow: PreferencesSliderRow!
     private(set) var smallestStepRow: PreferencesSliderRow!
     private(set) var trackpadEventsRow: PreferencesSwitchRow!
-    /// The two rows under it: where the Beta works. Shown only while it is on, on the tab
+    /// The two rows under it: where the Experimental switch works. Shown only while it is on, on the tab
     /// (they are settings of the whole of Scrollio, not of an app).
     private(set) var trackpadBrowsersRow: PreferencesSwitchRow!
     private(set) var trackpadMacAppsRow: PreferencesSwitchRow!
@@ -608,7 +608,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         syncTrackpadScopeRows()
     }
 
-    /// "In browsers" and "In Mac apps": under the Beta switch while it is on and Advanced
+    /// "In browsers" and "In Mac apps": under the Experimental switch while it is on and Advanced
     /// is open, on the tab only.
     private func syncTrackpadScopeRows() {
         guard isViewLoaded, trackpadBrowsersRow != nil else { return }
@@ -690,7 +690,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     @objc func trackpadEventsClick(_ sender: NSSwitch) {
         let on = sender.state == .on
         getTargetApplicationScrollOptions().smoothSimTrackpad = on
-        // On with both places off would be on in name only: the Beta comes on in browsers.
+        // On with both places off would be on in name only: the Experimental switch comes on in browsers.
         if on, currentTargetApplication == nil,
            !Options.shared.trackpadStyleInBrowsers, !Options.shared.trackpadStyleInMacApps {
             Options.shared.trackpadStyleInBrowsers = true
@@ -708,7 +708,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         trackpadScopeDidChange()
     }
 
-    /// The last place switched off switches the Beta off: with neither place on there is
+    /// The last place switched off switches the Experimental switch off: with neither place on there is
     /// nothing left for the main switch to mean, and it must not stay lit.
     private func trackpadScopeDidChange() {
         guard currentTargetApplication == nil,

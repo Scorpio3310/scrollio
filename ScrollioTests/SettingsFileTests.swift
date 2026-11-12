@@ -354,7 +354,7 @@ final class SettingsFileFormatTests: XCTestCase {
 
     """
 
-    /// Where "Trackpad-style scrolling (Beta)" works is in the file. A file from before the
+    /// Where "Trackpad-style scrolling (Experimental)" works is in the file. A file from before the
     /// two switches (1.0.1) leaves them as a new store has them: browsers on, Mac apps off.
     func testWhereTrackpadStyleWorks_isInTheFile_andAFileWithoutItGivesTheDefaults() throws {
         let source = makeSource()

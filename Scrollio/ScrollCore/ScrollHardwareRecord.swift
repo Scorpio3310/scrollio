@@ -3,7 +3,7 @@
 //  Scrollio
 //
 //  The hardware record of a scroll event, and taking it off the frames of
-//  "Trackpad-style scrolling (Beta)".
+//  "Trackpad-style scrolling (Experimental)".
 //
 
 import Cocoa
@@ -36,7 +36,7 @@ import Cocoa
 /// Scrolling pane or in some app's own settings (`ScrollPoster.trackpadStyleIsOnSomewhere`),
 /// and otherwise by the first wheel event whose frames would carry phases (the switch was
 /// turned on in this run): about 30 microseconds, once. So a macOS on which the private
-/// call misbehaves reaches only a user who has the Beta on, and he can still start the app
+/// call misbehaves reaches only a user who has the Experimental switch on, and he can still start the app
 /// and switch it off. The `app` log line is written when the self-test runs.
 ///
 /// The self-test passes NULL to a private function in this process. That was run on macOS

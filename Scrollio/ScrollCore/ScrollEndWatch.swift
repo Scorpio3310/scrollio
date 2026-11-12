@@ -2,7 +2,7 @@
 //  ScrollEndWatch.swift
 //  Scrollio
 //
-//  "Trackpad-style scrolling (Beta)", the one touch: where the page under the pointer ends.
+//  "Trackpad-style scrolling (Experimental)", the one touch: where the page under the pointer ends.
 //
 
 import Cocoa

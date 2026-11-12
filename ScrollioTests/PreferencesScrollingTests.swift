@@ -232,11 +232,11 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(controller.reverseRow.title, "Reverse wheel direction")
         XCTAssertEqual(controller.glideTimeRow.title, "Glide time")
         XCTAssertEqual(controller.smallestStepRow.title, "Smallest step")
-        XCTAssertEqual(controller.trackpadEventsRow.title, "Trackpad-style scrolling (Beta)")
+        XCTAssertEqual(controller.trackpadEventsRow.title, "Trackpad-style scrolling (Experimental)")
         XCTAssertEqual(controller.keyRows.map(\.title), ["Scroll faster", "Scroll sideways", "Pause smoothing"])
         XCTAssertEqual(controller.smoothSwitch.accessibilityLabel(), "Smooth scrolling")
         XCTAssertEqual(controller.reverseSwitch.accessibilityLabel(), "Reverse wheel direction")
-        XCTAssertEqual(controller.trackpadEventsSwitch.accessibilityLabel(), "Trackpad-style scrolling (Beta)")
+        XCTAssertEqual(controller.trackpadEventsSwitch.accessibilityLabel(), "Trackpad-style scrolling (Experimental)")
         XCTAssertEqual(controller.glideTimeSlider.accessibilityLabel(), "Glide time")
         XCTAssertEqual(controller.smoothSwitch.accessibilityHelp(), text("scrolling-smooth-hint"))
         for (index, button) in controller.keyBindButtons.enumerated() {
@@ -265,7 +265,7 @@ final class PreferencesScrollingTests: XCTestCase {
         let expected = [
             "Smooth scrolling", "Feel", "Speed", "Slow", "Fast", "Reverse wheel direction",
             "Glide time", "Shorter", "Longer", "Smallest step", "Smaller", "Larger",
-            "Trackpad-style scrolling (Beta)", "While you hold a key",
+            "Trackpad-style scrolling (Experimental)", "While you hold a key",
             "Scroll faster", "Scroll sideways", "Pause smoothing",
             text("scrolling-smooth-hint"), text("scrolling-speed-hint"), text("scrolling-reverse-hint"),
             text("scrolling-glide-time-hint"), text("scrolling-step-hint"), text("scrolling-trackpad-events-hint"),
@@ -293,7 +293,7 @@ final class PreferencesScrollingTests: XCTestCase {
         let expectedButtons = [controller.advancedButton!, controller.resetToDefaultsButton!, controller.thumbWheelFunctionPopUp!]
             + controller.keyBindButtons + controller.keyClearButtons
         XCTAssertEqual(buttons, Set(expectedButtons.map(ObjectIdentifier.init)))
-        // (Two of them stand under the Beta switch and show only while it is on.)
+        // (Two of them stand under the Experimental switch and show only while it is on.)
         XCTAssertEqual(allSubviews(of: controller.view).compactMap { $0 as? NSSwitch }.count, 6)
     }
 
@@ -653,9 +653,9 @@ final class PreferencesScrollingTests: XCTestCase {
     // MARK: - Trackpad-style events
 
     /// The main switch and the two places cannot contradict each other: the last place
-    /// switched off switches the Beta off (and the rows go), and the Beta switched on with
+    /// switched off switches the Experimental switch off (and the rows go), and the Experimental switched on with
     /// both places off comes on in browsers.
-    func testTheBetaSwitchAndItsTwoPlaces_neverSayOnWithNothingOn() {
+    func testTheExperimentalSwitchAndItsTwoPlaces_neverSayOnWithNothingOn() {
         let before = (Options.shared.trackpadStyleInBrowsers, Options.shared.trackpadStyleInMacApps)
         defer {
             (Options.shared.trackpadStyleInBrowsers, Options.shared.trackpadStyleInMacApps) = before
@@ -668,7 +668,7 @@ final class PreferencesScrollingTests: XCTestCase {
         set(controller.trackpadEventsSwitch, true)
 
         set(controller.trackpadBrowsersRow.toggle, false)
-        XCTAssertFalse(Options.shared.scroll.smoothSimTrackpad, "the last place off switches the Beta off")
+        XCTAssertFalse(Options.shared.scroll.smoothSimTrackpad, "the last place off switches the Experimental switch off")
         XCTAssertEqual(controller.trackpadEventsSwitch.state, .off)
         XCTAssertTrue(rows.allSatisfy(\.isHidden))
 
@@ -686,9 +686,9 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(rows.map(\.isOn), [false, true], "a choice that is not empty is kept")
     }
 
-    /// "In browsers" and "In Mac apps" stand under the Beta switch only while it is on (and
+    /// "In browsers" and "In Mac apps" stand under the Experimental switch only while it is on (and
     /// Advanced is open), and write the two settings of their own.
-    func testTheTwoRowsUnderTheBetaSwitch_showOnlyWhileItIsOn_andWriteTheirSettings() {
+    func testTheTwoRowsUnderTheExperimentalSwitch_showOnlyWhileItIsOn_andWriteTheirSettings() {
         let before = (Options.shared.trackpadStyleInBrowsers, Options.shared.trackpadStyleInMacApps)
         defer {
             (Options.shared.trackpadStyleInBrowsers, Options.shared.trackpadStyleInMacApps) = before
@@ -698,13 +698,13 @@ final class PreferencesScrollingTests: XCTestCase {
         Options.shared.trackpadStyleInMacApps = false
         let controller = makeController(advanced: true)
         let rows = [controller.trackpadBrowsersRow!, controller.trackpadMacAppsRow!]
-        XCTAssertTrue(rows.allSatisfy(\.isHidden), "hidden while the Beta is off")
+        XCTAssertTrue(rows.allSatisfy(\.isHidden), "hidden while the Experimental switch is off")
 
         set(controller.trackpadEventsSwitch, true)
-        XCTAssertFalse(rows.contains(where: \.isHidden), "shown with the Beta on")
+        XCTAssertFalse(rows.contains(where: \.isHidden), "shown with the Experimental switch on")
         XCTAssertEqual(rows.map(\.title), ["In browsers", "In Mac apps"])
         XCTAssertEqual(rows.map(\.isOn), [true, false], "browsers on, Mac apps off, until chosen otherwise")
-        XCTAssertEqual(controller.trackpadEventsRow.title, "Trackpad-style scrolling (Beta)")
+        XCTAssertEqual(controller.trackpadEventsRow.title, "Trackpad-style scrolling (Experimental)")
 
         set(controller.trackpadMacAppsRow.toggle, true)
         XCTAssertTrue(Options.shared.trackpadStyleInMacApps)
@@ -720,7 +720,7 @@ final class PreferencesScrollingTests: XCTestCase {
         controller.setAdvancedExpanded(true)
         XCTAssertFalse(rows.contains(where: \.isHidden))
         set(controller.trackpadEventsSwitch, false)
-        XCTAssertTrue(rows.allSatisfy(\.isHidden), "and gone with the Beta off")
+        XCTAssertTrue(rows.allSatisfy(\.isHidden), "and gone with the Experimental switch off")
     }
 
     func testTrackpadStyleEventsIsAPlainSwitchThatLeavesDurationAlone() {
@@ -1775,7 +1775,7 @@ final class PreferencesScrollingTests: XCTestCase {
             XCTAssertEqual(box.maxX, boxRight, accuracy: 0.5)
         }
         // Titles start at the box's inset; controls end at it. The two rows that depend on
-        // the Beta switch stand further in.
+        // the Experimental switch stand further in.
         let rows: [PreferencesGroupRow] = controller.sections.flatMap(\.box.rows).filter { !($0 is PreferencesDisclosureRow) }
         let dependent: [PreferencesGroupRow] = [controller.trackpadBrowsersRow, controller.trackpadMacAppsRow]
         for row in rows {

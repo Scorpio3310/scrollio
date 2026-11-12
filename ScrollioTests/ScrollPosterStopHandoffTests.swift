@@ -3021,7 +3021,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.example.chrome", bundleURL: chrome), .followsGlide)
     }
 
-    // MARK: The two switches under the Beta: where it works
+    // MARK: The two switches under the Experimental switch: where it works
 
     /// "In browsers" and "In Mac apps", each on and off, for one app of each kind. Off is
     /// the stream of the main switch off, frame for frame, and nothing is asked of the app:

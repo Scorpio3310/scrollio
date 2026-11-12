@@ -95,10 +95,10 @@ of scrolling and the menu bar icon.
   feel.
 - Reverse wheel direction (the wheel only, not the trackpad).
 - Under Advanced: an exact glide time, the smallest step, and
-  "Trackpad-style scrolling (Beta)": apps treat the wheel like a trackpad and bounce at
+  "Trackpad-style scrolling (Experimental)": apps treat the wheel like a trackpad and bounce at
   the ends of a page. Sideways scrolling stays as it is. What it does in which app, and
   its limits:
-  [Trackpad-style scrolling (Beta)](#trackpad-style-scrolling-beta).
+  [Trackpad-style scrolling (Experimental)](#trackpad-style-scrolling-beta).
 - While you hold a key: "Scroll faster" (5 × the distance), "Scroll sideways" and "Pause
   smoothing" (exact steps, for example to zoom with ⌘). A mouse button can hold them
   too. These keys work while Smooth scrolling is on.
@@ -110,7 +110,7 @@ of scrolling and the menu bar icon.
 - Trackpads and the Magic Mouse are left alone. With several displays, the motion is
   timed to the display under the pointer.
 
-#### Trackpad-style scrolling (Beta)
+#### Trackpad-style scrolling (Experimental)
 
 Off by default. With it on, a wheel scroll up or down reaches an app in the form a
 trackpad's scroll has: a touch, and for some apps a glide after it. Apps then treat the
@@ -193,7 +193,7 @@ The form is sent in one of three ways:
   changes. By what people who use other mouse tools report, they do something else with a
   trackpad's scroll than with a wheel's (the wheel pans a map where it zoomed, or orbits
   a 3D view), or do not scroll as they should. For these the switch does nothing, and
-  neither does their own "Trackpad-style scrolling (Beta)" switch when you give one of
+  neither does their own "Trackpad-style scrolling (Experimental)" switch when you give one of
   them its own settings in the Apps pane.
 
 Scrolling sideways (with Shift, "Scroll sideways" or the thumb wheel) stays as it is with
@@ -240,7 +240,7 @@ Its limits:
   question Chromium switches on its accessibility support for web content, which makes
   the app slower until it is quit (read in Chromium's code, where it sits behind one of
   Chromium's own switches; not measured). Move such an app to Applications, or turn
-  "Trackpad-style scrolling (Beta)" off for it in the Apps pane.
+  "Trackpad-style scrolling (Experimental)" off for it in the Apps pane.
 - An app that tells a mouse from a trackpad by these events takes the wheel for a
   trackpad. In some 3D and design apps the wheel may then pan where it used to zoom. The
   ones Scrollio knows by name are left alone (above); Autodesk Fusion and Rhino are
@@ -590,7 +590,7 @@ smooth the scrolling, run the actions of buttons, keys and gestures, and send th
 presses those actions make. Without it, no scroll, button or key event is changed. The
 Welcome Guide leads you to the switch.
 
-With "Trackpad-style scrolling (Beta)" on, the same permission is used for one more
+With "Trackpad-style scrolling (Experimental)" on, the same permission is used for one more
 thing, and only for a wheel scroll in an app that gets the one-touch form: an app that is
 not known to be built on Chromium or on Firefox's engine, is not Safari or DuckDuckGo, and
 is not one of the apps left alone by name. (An Electron app is no browser and is not
@@ -667,12 +667,12 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](SECURIT
     (to press the right key for shortcuts such as ⌘A, and to name keys) and the macOS
     setting for natural scrolling (for "Follow the hand");
   - which app is under the pointer or in front, for the per-app settings and "Smooth
-    Scrolling in …". With "Trackpad-style scrolling (Beta)" on, for a wheel scroll in an
+    Scrolling in …". With "Trackpad-style scrolling (Experimental)" on, for a wheel scroll in an
     app that gets the one-touch form, it reads the kind of the element under the pointer
     and the position of that view's scroll bar (see [Permissions](#-permissions) for
     which apps and when); the scroll log gets the kinds met ("AXRow", "AXScrollArea": a
     dozen at most, each cut to 40 characters) and the bar's position, nothing else.
-    With "Trackpad-style scrolling (Beta)" on it also looks once into the
+    With "Trackpad-style scrolling (Experimental)" on it also looks once into the
     bundle of each app that comes to the front or that you scroll in, to see whether the
     app is built on Chromium or on Firefox's engine (the names in `Contents/Frameworks`,
     and whether `Contents/MacOS` holds a browser's app loader or Firefox's engine), and
@@ -796,7 +796,7 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   could not be created or that macOS turned off, restarts, settings that could not be
   read or written, an app, a file or a script that could not be opened (never its name
   or path), a held action whose release never came, at launch which accent colour is
-  in effect, for "Trackpad-style scrolling (Beta)" whether the wheel's hardware event is
+  in effect, for "Trackpad-style scrolling (Experimental)" whether the wheel's hardware event is
   taken off what an app is sent (once: at launch when the switch is on, in the Scrolling
   pane or for an app; else at the first scroll after you switch it on), what Safari gets
   and which form is under evaluation, and the updater: whether this copy updates itself, and one line per check

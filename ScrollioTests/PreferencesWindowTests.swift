@@ -701,13 +701,13 @@ final class PreferencesNamingTests: XCTestCase {
         let scrolling = try XCTUnwrap(instantiate(PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)
         _ = scrolling.view
         // "scrolling", not "events" (a developer's word).
-        XCTAssertEqual(scrolling.trackpadEventsRow.title, "Trackpad-style scrolling (Beta)")
-        XCTAssertEqual(scrolling.trackpadEventsSwitch.accessibilityLabel(), "Trackpad-style scrolling (Beta)")
+        XCTAssertEqual(scrolling.trackpadEventsRow.title, "Trackpad-style scrolling (Experimental)")
+        XCTAssertEqual(scrolling.trackpadEventsSwitch.accessibilityLabel(), "Trackpad-style scrolling (Experimental)")
         // (The line used to say "Safari stays as it is". Since the hardware record comes off
         // the frames Safari gets the flick on macOS 27, so that sentence was no longer true.)
         XCTAssertEqual(
             scrolling.trackpadEventsRow.explanation,
-            "Apps treat the wheel like a trackpad and bounce at the ends of a page. Turn off if an app scrolls oddly."
+            "Apps treat the wheel like a trackpad and bounce at a page's end. Experimental: in some apps scrolling can stutter. Turn it off if it does."
         )
     }
 
