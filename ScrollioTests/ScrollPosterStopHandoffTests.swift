@@ -857,6 +857,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         _ = FakeDisplay(for: poster)
         var posted: [Double] = []
         let lock = NSLock()
+        context.closingFrameDeadline = 10   // the post is slow on purpose
         context.postObserverForTests = { event, _ in
             Thread.sleep(forTimeInterval: 0.02)
             lock.lock()
@@ -971,6 +972,66 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         XCTAssertEqual(try touchChecks(switchOn: true), 2, "one touch: the second and the third wheel event ask")
     }
 
+    // MARK: - The stop's wait for its closing frames has a deadline
+
+    /// A post that does not come back: the stop waits for its closing frame, but only for
+    /// its deadline (50 ms), and says so in the `app` log, once, not at every stop. It used
+    /// to wait without an end, inside the tap's callback, where an event tap that does not
+    /// answer holds up all input. The frames are not lost: they go out, the gestures whole,
+    /// when the queue moves again.
+    func testAStopWaitsNoLongerThanItsDeadlineAndSaysSoOnce() throws {
+        try withSettings(switchOn: true) {
+            let context = ScrollDispatchContext()
+            let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+            poster.trackpadStyleTarget = { _ in .touchOnly }
+            _ = FakeDisplay(for: poster)
+            XCTAssertEqual(context.closingFrameDeadline, 0.05)
+            var posted: [Double] = []
+            let lock = NSLock()
+            let gate = DispatchSemaphore(value: 0)
+            let held = DispatchSemaphore(value: 0)
+            var holds = true
+            context.postObserverForTests = { event, _ in
+                lock.lock()
+                posted.append(event.getDoubleValueField(.scrollWheelEventScrollPhase))
+                let holdNow = holds
+                holds = false
+                lock.unlock()
+                if holdNow {
+                    held.signal()
+                    gate.wait()
+                }
+            }
+            func stillWaitLines() -> Int {
+                return poster.healthLinesForTests.filter { $0 == ScrollPoster.closingFramesStillWaitLine }.count
+            }
+
+            XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+            XCTAssertEqual(held.wait(timeout: .now() + 5), .success, "the post of \"began\" does not come back")
+            let before = ProcessInfo.processInfo.systemUptime
+            poster.stop(reason: .leftClick)
+            let took = ProcessInfo.processInfo.systemUptime - before
+
+            XCTAssertGreaterThan(took, 0.04, "it waited for its closing frame")
+            XCTAssertLessThan(took, 2, "and gave up at the deadline")
+            XCTAssertFalse(poster.isGliding)
+            XCTAssertEqual(stillWaitLines(), 1)
+
+            // The next scroll and its stop find the queue still held: no second line.
+            XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+            poster.stop(reason: .leftClick)
+            XCTAssertEqual(stillWaitLines(), 1, "one line while the post hangs, not one per stop")
+
+            // The post comes back: everything that opens or closes a gesture goes out, in order.
+            gate.signal()
+            context.waitForPostQueueForTests()
+            lock.lock()
+            let all = posted
+            lock.unlock()
+            XCTAssertEqual(all, [1, 4, 1, 4], "two whole touches")
+        }
+    }
+
     // MARK: - Frames that open or close a gesture are not dropped by a stop
 
     /// One click as one touch, on the real path, with one slow post: the post of the last
@@ -984,6 +1045,8 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         try withSettings(switchOn: true) {
             let context = ScrollDispatchContext()
             let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+            // (The post is held on purpose here: the stop's wait gets time for it.)
+            context.closingFrameDeadline = 10
             poster.trackpadStyleTarget = { _ in .touchOnly }
             _ = FakeDisplay(for: poster)
             var posted: [Double] = []
@@ -1041,6 +1104,8 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         try withSettings(switchOn: true) {
             let context = ScrollDispatchContext()
             let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+            // (The post is held on purpose here: the stop's wait gets time for it.)
+            context.closingFrameDeadline = 10
             poster.trackpadStyleTarget = { _ in .followsGlide }
             _ = FakeDisplay(for: poster)
             var posted: [(name: String, y: Int64)] = []

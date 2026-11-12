@@ -192,22 +192,34 @@ final class ScrollDispatchContext {
         return waitingGestureFrames > 0
     }
 
-    /// Returns once every frame handed to the post queue so far has gone out or was dropped.
+    /// How long `ScrollPoster.stop` waits for the frames that close a gesture (seconds).
+    /// Tests that hold a post on purpose set it.
+    var closingFrameDeadline: TimeInterval = 0.05
+
+    /// Waits until every frame handed to the post queue so far has gone out or was dropped,
+    /// but no longer than `closingFrameDeadline`.
     ///
     /// `ScrollPoster.stop` waits here for the frames that close the app's gesture ("ended",
-    /// "momentum ended"), also inside the scroll tap's callback, so the wait has to be short
-    /// and certain. It is: the queue is this context's own and serial, and a block on it
-    /// takes this context's lock for a few comparisons (never across a call), then either
-    /// drops its frame or hands it to the window server with `postToPid`, a message that
-    /// does not wait for the app it is addressed to. No block waits for the main thread, for
-    /// ScrollPoster's lock or for another queue. A stop moves the generation on before it
-    /// queues its closing frames, so the frames from before it that only move the page are
-    /// dropped without a post: what is waited for is the few that open or close a gesture.
-    func waitForQueuedFrames() {
+    /// "momentum ended"), also inside the scroll tap's callback, so the wait has to be short.
+    /// As a rule it is some microseconds: the queue is this context's own and serial, and a
+    /// block on it takes this context's lock for a few comparisons (never across a call),
+    /// then either drops its frame or hands it to the window server with `postToPid`. No
+    /// block waits for the main thread, for ScrollPoster's lock or for another queue, and a
+    /// stop moves the generation on before it queues its closing frames, so the frames from
+    /// before it that only move the page are dropped without a post.
+    /// But `postToPid` is another process's time: a post in flight can take long, or not
+    /// come back. The tap's callback is not held for that (an event tap that does not answer
+    /// stops all input, and macOS turns it off): after the deadline the stop goes on, and the
+    /// frames are posted, in their order, when the queue reaches them.
+    /// - Returns: false when the deadline ran out first.
+    @discardableResult
+    func waitForQueuedFrames() -> Bool {
 #if DEBUG
         waitObserverForTests?()
 #endif
-        postQueue.sync {}
+        let reached = DispatchSemaphore(value: 0)
+        postQueue.async { reached.signal() }
+        return reached.wait(timeout: .now() + closingFrameDeadline) == .success
     }
 
 #if DEBUG

@@ -210,6 +210,8 @@ class ScrollPoster {
     /// `stop`. A wheel event compares its own form with it. (It used to compare under
     /// stateLock: two more lock rounds for every wheel event, with the switch off as well.)
     private var runningScrollHasPhases: Bool?
+    /// When the line about closing frames that still waited was last written. Main thread.
+    private var lastClosingFramesStillWaitLine: CFTimeInterval = -.infinity
     // 状态锁和投递上下文
     private var stateLock = os_unfair_lock_s()
     private let dispatchContext: ScrollDispatchContext
@@ -915,9 +917,11 @@ extension ScrollPoster {
             // trackpad (the tap's callback lets that "began" through right after this), a
             // click. Nothing ordered the two: when the trackpad's "began" arrived first, the
             // app got "began, ended" and the finger's scroll had no gesture left. At quit the
-            // process could be gone before the frame was posted. The wait is short and
-            // certain: see `ScrollDispatchContext.waitForQueuedFrames`.
-            dispatchContext.waitForQueuedFrames()
+            // process could be gone before the frame was posted. The wait is short, and it
+            // has a deadline: see `ScrollDispatchContext.waitForQueuedFrames`.
+            if !dispatchContext.waitForQueuedFrames() {
+                noteClosingFramesStillWait()
+            }
         }
         if !finished.isEmpty {
             ScrollSystemLog.note(finished, ended: reason)
@@ -933,6 +937,18 @@ extension ScrollPoster {
                   diag.skippedSyntheticEvents, diag.updateSnapshotFailures)
         }
 #endif
+    }
+    /// The line for the `app` log when a stop's wait for its closing frames ran out.
+    static let closingFramesStillWaitLine = "ScrollPoster: the frames that close a scroll's gesture were still waiting to be posted when the stop's wait for them ran out; the stop went on, and they are posted in their order when the queue reaches them"
+    /// At most one such line in this many seconds.
+    static let closingFramesStillWaitInterval: CFTimeInterval = 10
+    /// A stop waited its whole deadline for the post queue. One line, not one per stop: while
+    /// a post hangs, every stop finds the same. Main thread.
+    private func noteClosingFramesStillWait() {
+        let now = Self.monotonicNow()
+        guard now - lastClosingFramesStillWaitLine >= Self.closingFramesStillWaitInterval else { return }
+        lastClosingFramesStillWaitLine = now
+        logHealth(problem: Self.closingFramesStillWaitLine)
     }
     /// Carries out a stop the display link asked for. Main thread only.
     ///
