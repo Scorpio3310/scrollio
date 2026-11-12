@@ -1849,6 +1849,189 @@ final class ScrollClassicPathTests: XCTestCase {
         }
     }
 
+    /// A poster driven callback by callback: every callback's own reading of the clock and
+    /// the interval it reports, and what it posted.
+    private final class CallbackRun {
+        let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: ScrollDispatchContext())
+        var clock = 100.0
+        /// Every posted frame, with the callback that made it (-1: the main thread), that
+        /// callback's interval and its reading of the clock.
+        private(set) var posted: [(frame: ScrollOutgoingFrame, callback: Int, interval: Double, now: Double)] = []
+        private var callback = -1
+        private var interval = 0.0
+        private var callbacks = 0
+
+        init(form: ScrollClassicRig.Form) {
+            poster.frameRecorderForTests = { [unowned self] in self.posted.append(($0, self.callback, self.interval, self.clock)) }
+            poster.eventClockForTests = { [unowned self] in UInt64((self.clock * 1e9).rounded()) }
+            poster.setConfigForTests(simTrackpadEnabled: true, flick: form == .flick, oldLongTouch: form == .oldLongTouch)
+        }
+
+        func wheel(_ pixels: Double = 33.6 * 6.3 * 4, at time: Double) {
+            clock = time
+            let transition = OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: 3.69)
+            poster.inputForTests(ScrollPosterInput(y: pixels, x: 0, notch: 33.6 * 6.3, duration: transition), at: time)
+        }
+
+        func frame(at time: Double, interval: Double = 1.0 / 60.0) {
+            clock = time
+            callback = callbacks
+            callbacks += 1
+            self.interval = interval
+            _ = poster.displayLinkFrameForTests(frameInterval: interval, now: time)
+            callback = -1
+        }
+
+        var stamps: [UInt64] { return posted.compactMap { $0.frame.timestamp } }
+    }
+
+    /// A callback that runs more than a frame late, and a display that changes its rate in
+    /// mid-scroll, in every form: the time between two frames that move the page, made by
+    /// callbacks that follow each other, is never less than half the interval the later
+    /// one's distance was computed with, and never more than the time between the two
+    /// callbacks and one interval more. So what an app reads as the speed (distance / step
+    /// between the two times) is at most twice the real one. The grid used to be put back
+    /// on the clock when it had come more than a frame ahead: the next frame's time fell
+    /// before the last one's and came out 1 ms after it, 17 times the speed at 60 Hz.
+    func testTrackpadStyle_aLateCallbackOrAChangeOfRate_keepsTheSpeedWithinTwiceTheRealOne() throws {
+        typealias Callback = (time: Double, interval: Double)
+        func schedule(late: Double, nextAtOnce: Bool) -> [Callback] {
+            var out: [Callback] = []
+            for index in 1...40 {
+                var time = 100.0 + Double(index) / 60.0
+                if index == 10 { time += late / 60.0 }
+                if index == 11 {
+                    if !nextAtOnce && late >= 1 { continue }
+                    time = max(time, 100.0 + (10.0 + late) / 60.0 + 0.0002)
+                }
+                if index == 12 && late >= 2 {
+                    if !nextAtOnce { continue }
+                    time = max(time, 100.0 + (10.0 + late) / 60.0 + 0.0004)
+                }
+                out.append((time, 1.0 / 60.0))
+            }
+            return out
+        }
+        var rateChange: [Callback] = []
+        var time = 100.0
+        for index in 0..<50 {
+            let interval = (15..<35).contains(index) ? 1.0 / 120.0 : 1.0 / 60.0
+            time += interval
+            rateChange.append((time, interval))
+        }
+        // The rate goes up while the grid is ahead of the clock (the callbacks before ran early).
+        var rateChangeAhead: [Callback] = []
+        time = 100.0
+        for index in 0..<50 {
+            let interval = (15..<35).contains(index) ? 1.0 / 120.0 : 1.0 / 60.0
+            time += index < 15 && index > 0 ? interval * 0.92 : interval
+            rateChangeAhead.append((time, interval))
+        }
+        let cases: [(String, [Callback])] = [
+            ("a callback 1.3 frames late, the next at once", schedule(late: 1.3, nextAtOnce: true)),
+            ("a callback 1.3 frames late, the next a frame on", schedule(late: 1.3, nextAtOnce: false)),
+            ("a callback 2.5 frames late, the next at once", schedule(late: 2.5, nextAtOnce: true)),
+            ("a callback 2.5 frames late, the next ones skipped", schedule(late: 2.5, nextAtOnce: false)),
+            ("60 Hz to 120 Hz and back", rateChange),
+            ("60 Hz to 120 Hz and back, the grid ahead of the clock", rateChangeAhead),
+        ]
+        for form in ScrollClassicRig.Form.allCases {
+            for (name, callbacks) in cases {
+                let run = CallbackRun(form: form)
+                run.wheel(33.6 * 6.3 * 12, at: 100.0)
+                for callback in callbacks { run.frame(at: callback.time, interval: callback.interval) }
+                let label = "\(form.rawValue), \(name)"
+                let moving = run.posted.filter { $0.frame.y != 0 }
+                XCTAssertGreaterThan(moving.count, 25, label)
+                var pairs = 0
+                for (later, earlier) in zip(moving.dropFirst(), moving) where later.callback == earlier.callback + 1 {
+                    pairs += 1
+                    let step = Double(try XCTUnwrap(later.frame.timestamp) - (try XCTUnwrap(earlier.frame.timestamp))) / 1e9
+                    XCTAssertGreaterThanOrEqual(step, later.interval / 2 - 1e-6, "\(label): a frame of \(later.frame.y) px \(step * 1000) ms after the one before: more than twice its speed")
+                    XCTAssertLessThanOrEqual(step, (later.now - earlier.now) + later.interval + 1e-6, "\(label): \(step * 1000) ms")
+                }
+                XCTAssertGreaterThan(pairs, 20, label)
+                XCTAssertEqual(run.stamps, run.stamps.sorted(), label)
+                XCTAssertEqual(Set(run.stamps).count, run.stamps.count, label)
+                run.poster.stop()
+            }
+        }
+    }
+
+    /// The times never go back from one scroll to the next, in any form: across a click, a
+    /// restart of the tap and a change of form, also when the frames before ran a little
+    /// ahead of the clock and the next wheel event comes a millisecond after the stop. (A
+    /// stop used to forget the last time: the next scroll's "began" could carry a time
+    /// before the "ended" or "cancelled" that had just gone out.)
+    func testTrackpadStyle_timesNeverGoBackFromOneScrollToTheNext() {
+        let ends: [(String, (CallbackRun, ScrollClassicRig.Form) -> Void)] = [
+            ("a click", { run, _ in run.poster.stop(reason: .leftClick) }),
+            ("a restart of the tap", { run, _ in run.poster.stop(.TrackingEnd, reason: .tapRestarted) }),
+            ("the switch off and on", { run, form in
+                run.poster.changeFormForTests(simTrackpadEnabled: false)
+                run.poster.changeFormForTests(simTrackpadEnabled: true, flick: form == .flick, oldLongTouch: form == .oldLongTouch)
+            }),
+            ("another form", { run, form in
+                run.poster.setConfigForTests(simTrackpadEnabled: true, flick: form != .flick)
+            }),
+        ]
+        for form in ScrollClassicRig.Form.allCases {
+            for (name, end) in ends {
+                for stopAfter in [3, 6, 9, 14] {
+                    let label = "\(form.rawValue), \(name) after \(stopAfter) frames"
+                    let run = CallbackRun(form: form)
+                    run.wheel(at: 100.0)
+                    // Callbacks that run early: the grid comes to be most of a frame ahead of the clock.
+                    var time = 100.0
+                    for _ in 0..<stopAfter {
+                        time += 0.0125
+                        run.frame(at: time)
+                    }
+                    run.clock = time + 0.0005
+                    end(run, form)
+                    run.wheel(at: time + 0.0015)
+                    for _ in 0..<12 {
+                        time += 1.0 / 60.0
+                        run.frame(at: time)
+                    }
+                    run.poster.stop()
+                    let stamps = run.stamps
+                    XCTAssertGreaterThan(stamps.count, 10, label)
+                    XCTAssertEqual(stamps.count, run.posted.count, label)
+                    for (later, earlier) in zip(stamps.dropFirst(), stamps) where later <= earlier {
+                        XCTFail("\(label): a time \(Double(earlier - later) / 1e6) ms before the frame before it")
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    /// A frame made on the main thread (a stop's closing frames, the tap, the one touch's
+    /// "began") carries the clock's time, not a display frame's: no display frame is being
+    /// worked off then.
+    func testTrackpadStyle_aFrameFromTheMainThreadCarriesTheClocksTime() {
+        let run = CallbackRun(form: .oneTouch)
+        run.wheel(at: 100.0)
+        XCTAssertEqual(run.stamps, [100_000_000_000], "\"began\": the clock at the wheel event")
+        for index in 1...5 { run.frame(at: 100.0 + Double(index) / 60.0) }
+        run.clock = 100.3
+        let before = run.posted.count
+        run.poster.stop(reason: .leftClick)
+        let closing = run.posted.dropFirst(before).compactMap { $0.frame.timestamp }
+        XCTAssertEqual(closing, [100_300_000_000, 100_301_000_000, 100_302_000_000], "\"ended\" and the tap: the clock at the click, each a millisecond on")
+
+        for form in [ScrollClassicRig.Form.flick, .oldLongTouch] {
+            let other = CallbackRun(form: form)
+            other.wheel(at: 100.0)
+            for index in 1...5 { other.frame(at: 100.0 + Double(index) / 60.0) }
+            other.clock = 100.3
+            let count = other.posted.count
+            other.poster.stop(reason: .leftClick)
+            XCTAssertEqual(other.posted.dropFirst(count).first?.frame.timestamp, 100_300_000_000, form.rawValue)
+        }
+    }
+
     /// Never a touch phase and a momentum phase on one frame: Chromium asserts on such an
     /// event (fatal from Chromium 163, over Chrome's own toolbar and tab strip).
     func testTrackpadStyle_noFrameCarriesATouchPhaseAndAMomentumPhase() {

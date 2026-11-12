@@ -158,6 +158,11 @@ class ScrollPoster {
     static func monotonicNow() -> CFTimeInterval {
         return Double(ScrollEventClock.uptimeNanoseconds()) / 1_000_000_000
     }
+    /// Seconds of the event clock as its nanoseconds; nil for what is no time on it.
+    static func nanoseconds(_ seconds: CFTimeInterval) -> UInt64? {
+        guard seconds.isFinite, seconds > 0, seconds < 1e9 else { return nil }
+        return UInt64((seconds * 1_000_000_000).rounded())
+    }
     // 滚动数据
     private var current = (y: 0.0, x: 0.0)  // 当前滚动距离
     private var delta = (y: 0.0, x: 0.0)  // 滚动方向记录
@@ -325,7 +330,8 @@ class ScrollPoster {
     private var frameStamp: UInt64 = 0
     /// The interval of that frame (ns).
     private var frameStampStep: UInt64 = 0
-    /// The time the last frame with phases was given; 0: none yet in this scroll.
+    /// The time the last frame with phases was given; 0: none yet. Kept from one scroll to
+    /// the next: the times never go back.
     private var lastPhasedStamp: UInt64 = 0
     /// A display frame is being worked off (`processFrameLocked`).
     private var isInDisplayFrame = false
@@ -1004,7 +1010,9 @@ extension ScrollPoster {
         oneTouchStopIsHeld = false
         frameStamp = 0
         frameStampStep = 0
-        lastPhasedStamp = 0
+        // (`lastPhasedStamp` stays: the next scroll's frames come after this one's. Its
+        // closing frames can sit a little ahead of the clock, and a wheel event right
+        // after a stop began a gesture with a time before the one that had just closed.)
         lineCarry.reset()
     }
 
@@ -1773,21 +1781,35 @@ private extension ScrollPoster {
 
     /// Trackpad-style: moves the frames' time grid on by one display frame. The grid starts
     /// at the clock's time and then steps by the display's own interval, the value the
-    /// frame's distance was computed with, whenever the callback ran. When that has come
-    /// more than a frame away from the clock (the link stalled; a frame was skipped), it
-    /// starts again from the clock. `now`: the display frame's own reading of the clock
-    /// (`monotonicNow`, the event clock in seconds). Caller holds stateLock.
+    /// frame's distance was computed with, whenever the callback ran.
+    /// - The clock is more than a frame ahead of the next grid time (the link stalled, or a
+    ///   callback ran more than a frame late): the grid goes forward to the clock.
+    /// - The grid's next time is more than a frame ahead of the clock (after a late
+    ///   callback the link caught up at once; the display's rate went up): the grid goes on
+    ///   by half a step until the clock has caught up. It never goes back: put back on the
+    ///   clock, the next frame's time fell before the last one's and came out 1 ms after
+    ///   it, with a whole frame's distance (an app that divides the two read 17 times the
+    ///   speed).
+    /// So the times of two frames from display frames that follow each other are never less
+    /// than half a display interval apart. `now`: the display frame's own reading of the
+    /// clock (`monotonicNow`, the event clock in seconds). Caller holds stateLock.
     func advanceFrameStampLocked(frameInterval: Double, now seconds: CFTimeInterval) {
-        let now = seconds.isFinite && seconds > 0 ? UInt64((seconds * 1_000_000_000).rounded()) : eventTimestamp()
-        let step = frameInterval.isFinite && frameInterval > 0 ? UInt64((frameInterval * 1_000_000_000).rounded()) : 0
+        let now = Self.nanoseconds(seconds) ?? eventTimestamp()
+        // (An interval that is no sane number counts as none: the grid then follows the clock.)
+        let step = frameInterval.isFinite && frameInterval > 0 && frameInterval < 10 ? UInt64((frameInterval * 1_000_000_000).rounded()) : 0
         frameStampStep = step
         guard frameStamp != 0 else {
-            frameStamp = now
+            frameStamp = max(now, lastPhasedStamp)
             return
         }
         let next = frameStamp &+ step
-        let away = next > now ? next - now : now - next
-        frameStamp = away > step ? now : next
+        if now > next &+ step {
+            frameStamp = now
+        } else if next > now &+ step {
+            frameStamp = frameStamp &+ max(step / 2, Self.leastStampStep)
+        } else {
+            frameStamp = next
+        }
     }
 
     /// One touch: whether the open touch has rested, so that its "ended" can go out with this
@@ -1812,6 +1834,12 @@ private extension ScrollPoster {
     func stampLocked(moves: Bool) -> UInt64 {
         let stamp = nextStampLocked(moves: moves)
         lastPhasedStamp = stamp
+        if moves && isInDisplayFrame && stamp > frameStamp {
+            // The frame had to be put after the one before it (that one came from the main
+            // thread, or from the scroll before): the grid goes on from here, so that the
+            // next frame is a whole step after this one.
+            frameStamp = stamp
+        }
         return stamp
     }
 
