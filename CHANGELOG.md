@@ -22,11 +22,14 @@ it for the people who use the app, and give the version its part before you tag 
   Such an app holds a page stretched past its end for as long as the wheel's scroll lasts;
   with a free-spinning wheel that was a second or two before the page came back (seen in
   Finder). Scrollio now reads where the page is (through Accessibility: the kind of the
-  element under the pointer and the position of its scroll bar, nothing else, nothing
-  kept) and ends the scroll's touch the moment the page arrives, so that the app bounces
-  by itself as it does for a trackpad; while the wheel keeps turning into the end nothing
-  more is sent. Where a view's scroll bar cannot be read, that view scrolls as with the
-  switch off. This part ran against a stand-in only; nobody has seen it on a screen yet.
+  element under the pointer and the position of its scroll bar, nothing else; only those
+  kinds and the position go into the scroll log) and ends the scroll's touch the moment
+  the page arrives, so that the app bounces by itself as it does for a trackpad; while the
+  wheel keeps turning into the end nothing more is sent, as long as the same scroll bar is
+  found under the pointer at that end, and for four seconds at most. Where a view's
+  scroll bar cannot be read, that view scrolls as with the switch off (the README lists
+  the views known to be such). Seen on one Mac, in Finder; in the tests this part runs
+  against a stand-in, because a test may not read another app.
 - **Trackpad-style scrolling (Beta)** now works in Safari on macOS 27: Safari scrolls and
   bounces like Chrome does with it (seen on one Mac: smooth). Before, Safari was left as it
   was, because with the wheel's hardware event on what it is sent it did not scroll
