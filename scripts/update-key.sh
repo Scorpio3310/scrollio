@@ -39,7 +39,7 @@ BIN="$DERIVED/SourcePackages/artifacts/sparkle/Sparkle/bin"
 if [ ! -x "$BIN/generate_keys" ]; then
     echo "update-key: fetching the packages (the key tool is Sparkle's)…"
     mkdir -p "$DERIVED"
-    xcodebuild -resolvePackageDependencies -project "${APP_NAME}.xcodeproj" -scheme Debug \
+    xcodebuild -project "${APP_NAME}.xcodeproj" -scheme Debug -resolvePackageDependencies \
         -derivedDataPath "$DERIVED" -disableAutomaticPackageResolution > "$DERIVED/update-key.log" 2>&1 \
         || fail "could not fetch the packages (log: $DERIVED/update-key.log)"
 fi

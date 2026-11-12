@@ -180,7 +180,7 @@ scripts/qa/lint-logi-boundary.sh >> "$LOG" 2>&1 \
 SPARKLE_BIN="$DERIVED/SourcePackages/artifacts/sparkle/Sparkle/bin"
 if [ ! -x "$SPARKLE_BIN/sign_update" ] || [ ! -x "$SPARKLE_BIN/generate_keys" ]; then
     echo "release: fetching the packages (Sparkle's tools sign the update)…"
-    xcodebuild -resolvePackageDependencies -project "${APP_NAME}.xcodeproj" -scheme Debug \
+    xcodebuild -project "${APP_NAME}.xcodeproj" -scheme Debug -resolvePackageDependencies \
         -derivedDataPath "$DERIVED" -disableAutomaticPackageResolution >> "$LOG" 2>&1 \
         || fail "could not fetch the packages (log: $LOG)"
 fi

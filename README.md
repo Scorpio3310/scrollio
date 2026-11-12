@@ -32,7 +32,8 @@ to check it, is under [Download and first launch](#-download-and-first-launch). 
 - ✅ **Thumb wheel actions** – the sideways wheel can scroll, zoom, switch tabs or desktops, go back and forward, or set the volume.
 - ✅ **Logitech MX settings** – battery, pointer speed, wheel mode and haptics of a Logitech MX mouse.
 - ✅ **Menu bar item** – battery, Pause, and smoothing on or off for the app in front; the icon can be hidden.
-- ✅ **No network** – no analytics, no crash reporter, no updater: nothing leaves your Mac.
+- ✅ **Updates itself** – a released Scrollio asks GitHub once a day for a newer version, if you allow it, and installs only what carries the author's signature.
+- ✅ **No tracking** – no analytics, no crash reporter. The update check is the only network request, and you can switch it off.
 
 ---
 
@@ -204,7 +205,8 @@ those controls.
   not start and tries again; its tooltip says which.
 - The icon can be hidden (General › Show in menu bar). Opening Scrollio again then shows
   its settings, or the Welcome Guide while Accessibility access is missing.
-- General also has "Open at login" and the state of the Accessibility access.
+- General also has "Open at login", the state of the Accessibility access and the
+  [updates](#updates).
 - Scrollio stops while the Mac sleeps or another user has it, and starts again when you
   are back.
 - When its event handling starts (at launch once Accessibility access is there, on
@@ -214,6 +216,31 @@ those controls.
   read.
 - Scrollio's notices stay on screen as long as their text takes to read (3 to 10
   seconds) and wait while the pointer is over them.
+
+### Updates
+
+A released Scrollio (the one from the disk image) updates itself, with
+[Sparkle](https://sparkle-project.org). Version 1.0.0 cannot do this yet: from 1.0.0,
+get the next version by hand, once.
+
+- On its second launch Scrollio asks once whether it may check for updates
+  automatically. Afterwards the answer is two switches under General › Updates: "Check
+  for updates automatically" (once a day) and "Install updates automatically" (a new
+  version is downloaded in the background and installed the next time Scrollio quits,
+  for example when the Mac restarts). "Check Now" there, and "Check for Updates…" in
+  the menu bar menu and in the Scrollio menu, ask at once.
+- When a check finds a version, a window says what is new and offers to install it. It
+  opens behind what you are doing and does not take the keyboard away. Until you answer
+  it, Scrollio sits in the Dock with a badge, its menu bar menu starts with "Update to
+  Scrollio …" and General names the version.
+- An update is installed only when its disk image carries a signature made with
+  Scrollio's update key, and that is checked before the image is opened. The app in it
+  is signed with the same Developer ID as the download and notarized. macOS keeps the
+  Accessibility permission across an update.
+- A check asks GitHub for one small file that names the newest version. What that
+  request shows is under [Privacy](#-privacy).
+- A copy built from source does not update itself and asks nobody; neither does a copy
+  that runs from the disk image. General › Updates says so.
 
 ---
 
@@ -230,7 +257,8 @@ those controls.
 
 Get the latest `Scrollio-<version>.dmg` from the
 [Releases page](https://github.com/Scorpio3310/scrollio/releases). (The other way to get
-Scrollio is to [build it from source](#-build-from-source).)
+Scrollio is to [build it from source](#-build-from-source).) Later versions arrive as
+[updates](#updates); only 1.0.0 has to be replaced by hand.
 
 A release is one disk image, `Scrollio-<version>.dmg`, for Apple silicon and Intel
 Macs. The app in it and the image itself are signed with the author's Developer ID
@@ -284,6 +312,13 @@ codesign -dv --verbose=2 /Applications/Scrollio.app 2>&1 | grep -E "Authority|Te
    defaults delete com.nikklemenc.Scrollio.toast
    ```
 
+5. Delete what the updater kept: a downloaded update, and what macOS stores for the
+   app's web requests.
+
+   ```bash
+   rm -rf ~/Library/Caches/com.nikklemenc.Scrollio ~/Library/HTTPStorages/com.nikklemenc.Scrollio
+   ```
+
 What stays, because it was never Scrollio's to keep:
 
 - Values written to a Logitech mouse (pointer speed, wheel mode, haptics and so on)
@@ -318,11 +353,20 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](SECURIT
 
 ## 🔒 Privacy
 
-- Scrollio makes no network connections: there is no networking code in it, no
-  analytics, no crash reporter and no updater. The "Open" button next to "Scrollio on
+- The only network requests Scrollio makes are the updater's, and only in a released
+  copy: it asks GitHub for the file `appcast.xml` of the newest release (once a day
+  while "Check for updates automatically" is on, and when you choose "Check for
+  Updates…" or "Check Now"), and it downloads the disk image from GitHub when an update
+  is installed. Such a request shows GitHub what every web request shows, your IP
+  address, and names the app and its version (`Scrollio/1.1.0 Sparkle/2.10.1`). Nothing
+  about you, your Mac or your settings is added: Sparkle's system profile is off. With
+  the switch off and no check asked for, a released copy makes no request either; a
+  copy built from source never makes one.
+- There is no analytics and no crash reporter. The "Open" button next to "Scrollio on
   GitHub" (General) hands the page to your web browser.
-- Nothing leaves your Mac. The settings are kept in Scrollio's preferences, and its log
-  goes to the macOS system log on the Mac (see [Diagnostics](#-diagnostics)).
+- Nothing else leaves your Mac. The settings are kept in Scrollio's preferences (the
+  updater's own among them: your two choices and the time of the last check), and its
+  log goes to the macOS system log on the Mac (see [Diagnostics](#-diagnostics)).
 - Scrollio keeps no record of what you type. When key presses pass through it at all is
   under [Permissions](#-permissions); what it logs is under [Diagnostics](#-diagnostics).
 - Besides its own settings, Scrollio reads:
@@ -380,6 +424,12 @@ with its commit and date (shown under General). It installs a build only when:
 It then quits the running copy, replaces `/Applications/Scrollio.app`, registers it again
 with macOS so the Dock and Finder show the current icon, and opens it.
 
+A build of your own does not update itself and makes no network request: only
+`scripts/release.sh` gives a build the address of the update feed. (An update would put
+the released app, signed by another certificate, in the place of yours, and macOS would
+ask for the Accessibility permission again.) Take new versions with `git pull` and
+build again.
+
 Plain builds:
 
 ```bash
@@ -390,7 +440,9 @@ xcodebuild -scheme Debug -configuration Release -destination 'platform=macOS' bu
 The debug build is a separate app, `Scrollio Debug.app` (`com.nikklemenc.Scrollio.debug`).
 It has two developer windows more (Scroll Monitor and Test Toasts, in the menu bar menu
 with Option held) and links [Charts](https://github.com/danielgindi/Charts) for the
-Scroll Monitor's graph; the release app is built without both.
+Scroll Monitor's graph; the release app is built without both. Both apps embed
+[Sparkle](https://github.com/sparkle-project/Sparkle), the updater, which stays off in
+a build without an update feed.
 
 ---
 
@@ -433,12 +485,15 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   wake, another user, Pause, Accessibility access lost or back, quit), event taps that
   could not be created or that macOS turned off, restarts, settings that could not be
   read or written, an app, a file or a script that could not be opened (never its name
-  or path), a held action whose release never came, and at launch which accent colour is
-  in effect:
+  or path), a held action whose release never came, at launch which accent colour is
+  in effect, and the updater: whether this copy updates itself, and one line per check
+  with what it found:
 
   ```text
   Accent colour: the app's own (purple)
   Started (the Mac woke up): the event taps and the Logitech sessions run
+  Updates: on, automatic checks on, automatic install off, feed at github.com
+  Updates: a scheduled check found no newer version
   ```
 
 The log you export from Logitech Diagnostics is more detailed than the `logi` category:
@@ -464,8 +519,9 @@ new name, icon and bundle identifier; a reworked smooth-scrolling engine and sim
 scroll settings; the "Follow the hand" gesture mode; the thumb wheel's actions; settings
 for Logitech MX mice (pointer speed, wheel, haptics, press force) and gestures tracked by
 the mouse; the Mouse and Gestures panes, a battery in the menu bar, a main menu and a new
-Welcome Guide; English as the only language; the Sparkle updater and the original
-website and release tooling removed; macOS 14 as the minimum. The history of Mos up to
+Welcome Guide; English as the only language; the original website and release tooling
+removed, and updates set up anew (Sparkle 2, fed from this repository's GitHub
+releases); macOS 14 as the minimum. The history of Mos up to
 the fork is in its own repository, in its
 [changelog](https://github.com/Caldis/Mos/blob/master/CHANGELOG.md) and its git history.
 
@@ -509,8 +565,12 @@ product names used here are trademarks of Logitech.
   credited by Mos for its approach to smoothing.
 - [Charts](https://github.com/danielgindi/Charts) (DGCharts, Apache License 2.0) draws
   the graph of the debug build's Scroll Monitor. The release app is built without it.
+- [Sparkle](https://github.com/sparkle-project/Sparkle) (MIT licence) is the updater of
+  the released app: it is embedded as it is distributed, and its helper programs are
+  signed with Scrollio's Developer ID. Its licence names the code it includes, among it
+  the [Ed25519 implementation](https://github.com/orlp/ed25519) by Orson Peters.
 
-The same list, with the licence of Charts, is in
+The same list, with the licences of Charts and Sparkle, is in
 [Scrollio/Acknowledgements.txt](Scrollio/Acknowledgements.txt), which is part of the app
 and of the disk image.
 
@@ -551,11 +611,23 @@ xcodebuild -scheme Debug -testPlan DebugWithDevice -destination 'platform=macOS'
 A build for other people's Macs is made with `scripts/release.sh`, from a tagged commit:
 
 ```bash
+scripts/update-key.sh                   # the update key is in the keychain and is the app's
 scripts/release.sh --check              # build, sign and check; nothing is uploaded (needs no tag)
-git tag -a v1.0.0 -m "Scrollio 1.0.0"   # the version being released
-scripts/release.sh                      # the same, then notarized by Apple and packed into a disk image
-git push origin v1.0.0                  # that one tag, by name
+git tag -a v1.1.0 -m "Scrollio 1.1.0"   # the version being released
+scripts/release.sh                      # the same, then notarized by Apple, packed and signed as an update
+git push origin v1.1.0                  # that one tag, by name
 ```
+
+Then publish the GitHub release for that tag with **both** files of `build/release`:
+`Scrollio-<version>.dmg` and `appcast.xml`, the second under exactly that name. The
+installed copies ask for `releases/latest/download/appcast.xml`: a newest release
+without that file means their check fails, and no copy learns of the version.
+`Scrollio-<version>-notes.md` is the text for the release.
+
+- **Before the tag.** Give the version its part in [CHANGELOG.md](CHANGELOG.md)
+  (`## 1.1.0`) and commit it: the update window shows that part to people with an older
+  version, and the release notes start with it. Without it the script goes on and says
+  that the window will not tell what is new.
 
 - **Tags.** A release's version is its tag's: the commit must carry `v<version>`
   (`v1.0.0`), and the script refuses to release without it. The app and the image get
@@ -567,21 +639,44 @@ git push origin v1.0.0                  # that one tag, by name
   build folder, signed with the Developer ID certificate and stripped: an unstripped
   binary names the folders it was compiled in. Apple notarizes the app and the disk
   image.
-- **What it checks** before anything is uploaded: the signature (Developer ID, team,
-  hardened runtime, secure timestamp, no `get-task-allow`), both architectures, no
-  code-coverage instrumentation, no debug map and no path of the build Mac anywhere in
-  the app, debug symbols that belong to the binary, no Charts in the app, and the
-  Logitech boundary lint. After the notarization: Gatekeeper's verdict on the app and on
-  the image.
+- **Updates.** The script gives the build its update feed (no other build has one),
+  signs Sparkle's helper programs with the Developer ID (they are distributed signed ad
+  hoc, which Apple does not notarize), and after the image is notarized and stapled
+  signs it with the update key and writes `appcast.xml` for it. The build number
+  (`CFBundleVersion`, the number of commits) is what an installed copy compares: a
+  release must be made from a commit later than the one before.
+- **What it checks** before anything is uploaded: that the update key in the keychain is
+  the one in `Scrollio/Info.plist` and can sign; the signature (Developer ID, team,
+  hardened runtime, secure timestamp, no `get-task-allow`) of the app and of every
+  program inside it; that signing the helpers left the app's designated requirement as
+  the build made it (the Accessibility permission hangs on it); the feed and the key in
+  the built app; both architectures, no code-coverage instrumentation, no debug map and
+  no path of the build Mac anywhere in the app, debug symbols that belong to the
+  binary, no Charts in the app, and the Logitech boundary lint. After the notarization:
+  Gatekeeper's verdict on the app and on the image, and that the image's update
+  signature verifies.
 - **What it leaves** in `build/release`: `Scrollio-<version>.dmg` (the app, a link to
-  Applications, `LICENSE.txt` and `Acknowledgements.txt`) and
-  `Scrollio-<version>.dSYM.zip`. The image gets its name only after the last check, so a
-  run that fails leaves no image. Keep the `.dSYM.zip` and do not publish it: a crash
-  report of that build cannot be read without it, and it holds the paths of the Mac it
-  was built on. The script prints the image's SHA-256: put it into the release notes.
-- **What it needs**: a Developer ID Application certificate in the keychain, and
+  Applications, `LICENSE.txt` and `Acknowledgements.txt`), `appcast.xml`,
+  `Scrollio-<version>-notes.md` (the version's part of the changelog and the image's
+  SHA-256) and `Scrollio-<version>.dSYM.zip`. The image and the appcast get their names
+  only after the last check, so a run that fails leaves neither. Keep the `.dSYM.zip`
+  and do not publish it: a crash report of that build cannot be read without it, and it
+  holds the paths of the Mac it was built on.
+- **What it needs**: a Developer ID Application certificate in the keychain,
   notarization credentials stored as the keychain profile `scrollio-notary`
-  (`xcrun notarytool store-credentials "scrollio-notary" --team-id <team id>`).
+  (`xcrun notarytool store-credentials "scrollio-notary" --team-id <team id>`), and the
+  update key in the keychain. macOS asks once per tool whether it may use that key:
+  "Always Allow".
+- **The update key** is a key pair made once (`scripts/update-key.sh create`): the
+  private half is in the login keychain of the Mac that makes releases, the public half
+  is `SUPublicEDKey` in `Scrollio/Info.plist`. Keep one copy of the private half
+  outside that Mac (`scripts/update-key.sh export <file>`, then into a password manager
+  and the file deleted; `import <file>` brings it to another Mac). Whoever has it can
+  sign what every installed copy would install. If it is lost, updates can go on with a
+  new key as long as the image stays signed with the same Developer ID, which Sparkle
+  accepts in place of the old key's signature: make a new key, put its public half into
+  `Info.plist`, release. If the Developer ID changes as well, the installed copies
+  cannot be updated and people have to download the new version by hand.
 
 It installs nothing and leaves the project's signing settings as they are: the release
 signature is not the development signature of the copy in `/Applications`. Before a
@@ -589,13 +684,14 @@ release is announced, open the image once on a Mac that never had Scrollio.
 
 | Path | Contents |
 | --- | --- |
-| `Scrollio/` | The app: `ScrollCore`, `ButtonCore`, `InputEvent`, `Shortcut`, `Keys`, `Logi`, `Integration`, `MacPointer`, `Options`, `Managers`, `Components`, `Windows`, `Utils` |
+| `Scrollio/` | The app: `ScrollCore`, `ButtonCore`, `InputEvent`, `Shortcut`, `Keys`, `Logi`, `Integration`, `MacPointer`, `Options`, `Managers`, `Update`, `Components`, `Windows`, `Utils` |
 | `ScrollioTests/` | Unit tests (XCTest) |
 | `Scrollio.xcodeproj/` | The Xcode project, schemes `Debug` and `Profile` |
-| `scripts/` | `install.sh`, `release.sh`, and in `qa/` the Logitech boundary lint (also run by a test) |
+| `scripts/` | `install.sh`, `release.sh` with `release-lib.sh`, `update-key.sh`, and in `qa/` the Logitech boundary lint (also run by a test) |
 | `tools/` | Hand-run HID++ probes and a small regression harness (see its README before running a probe) |
 | `assets/` | The pictures of this README |
 | `AGENTS.md` | Rules for coding agents and contributors: build, tests, signing, module boundaries, strings |
 | `CONTRIBUTING.md`, `SECURITY.md` | What to expect of issues and pull requests; how to report a security problem |
 | `LICENSE`, `Scrollio/Acknowledgements.txt` | The licence with its notices; what Scrollio owes to other projects |
+| `CHANGELOG.md` | What changed in each version: the text of the update window and of a release |
 | `Local.xcconfig.example` | The template of `Local.xcconfig`, a Mac's own signing team |

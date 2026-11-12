@@ -125,13 +125,16 @@ final class UpdateCenter: NSObject {
         return Configuration(feedURL: url, publicKey: key)
     }
 
-    // MARK: - Seams (tests replace them: no Dock change, nothing logged)
+    // MARK: - Seams (tests replace them; under XCTest the Dock and the front app are left alone)
 
-    var showDockIcon: () -> Void = { Utils.showDockIcon() }
-    var releaseDockIcon: () -> Void = { Utils.releaseDockIcon() }
-    var setDockBadge: (String?) -> Void = { NSApp.dockTile.badgeLabel = $0 }
-    var activateApp: () -> Void = { NSApp.activate(ignoringOtherApps: true) }
+    var showDockIcon: () -> Void = AppRuntime.isRunningXCTest ? {} : { Utils.showDockIcon() }
+    var releaseDockIcon: () -> Void = AppRuntime.isRunningXCTest ? {} : { Utils.releaseDockIcon() }
+    var setDockBadge: (String?) -> Void = AppRuntime.isRunningXCTest ? { _ in } : { NSApp.dockTile.badgeLabel = $0 }
+    var activateApp: () -> Void = AppRuntime.isRunningXCTest ? {} : { NSApp.activate(ignoringOtherApps: true) }
     var log: (String) -> Void = { AppSystemLog.note($0) }
+    /// Whether an updater may start at all. Never under XCTest: a started updater asks
+    /// the network, whatever feed a test hands in.
+    var mayStart: () -> Bool = { !AppRuntime.isRunningXCTest }
 
     // MARK: - State
 
@@ -173,6 +176,11 @@ final class UpdateCenter: NSObject {
         guard !runsFromWrongPlace else {
             availability = .wrongPlace
             log("Updates: off while Scrollio runs from a disk image or a translocated copy")
+            return
+        }
+        guard mayStart() else {
+            availability = .failed
+            log("Updates: off, no updater starts while the tests run")
             return
         }
         self.configuration = configuration

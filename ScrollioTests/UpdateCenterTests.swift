@@ -115,6 +115,33 @@ final class UpdateCenterTests: XCTestCase {
         XCTAssertEqual(world.log, ["Updates: off while Scrollio runs from a disk image or a translocated copy"])
     }
 
+    /// A test can hand in a feed and a key that would do: still nothing starts, so no
+    /// test run ever asks the network.
+    func testUnderTestsNoUpdaterStartsWhateverTheConfiguration() {
+        let world = World()
+        let center = makeCenter(world)
+        center.start(info: ["SUFeedURL": Self.feed, "SUPublicEDKey": Self.someKey], runsFromWrongPlace: false)
+        XCTAssertEqual(center.availability, .failed)
+        XCTAssertFalse(center.status.isAvailable)
+        XCTAssertNil(center.configuration)
+        XCTAssertEqual(world.log, ["Updates: off, no updater starts while the tests run"])
+    }
+
+    /// The center the app uses leaves the Dock and the front app alone under tests, also
+    /// when a test forgets to replace its seams.
+    func testTheAppsOwnCenterTouchesNothingUnderTests() {
+        let center = UpdateCenter()
+        center.log = { _ in }
+        let policy = NSApp.activationPolicy()
+        let badge = NSApp.dockTile.badgeLabel
+        center.updateWillBeShown(version: "9.9.9", userInitiated: false)
+        XCTAssertEqual(NSApp.activationPolicy(), policy)
+        XCTAssertEqual(NSApp.dockTile.badgeLabel, badge)
+        center.updateSessionEnded()
+        XCTAssertEqual(NSApp.activationPolicy(), policy)
+        XCTAssertFalse(center.mayStart())
+    }
+
     // MARK: - The app's Info.plist
 
     /// The tests run in the debug build: a copy that was not built by scripts/release.sh.
