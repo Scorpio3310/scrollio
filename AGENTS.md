@@ -18,9 +18,18 @@ these rules anywhere.
 
 ## The project
 
-- Scrollio is a macOS menu-bar app: Swift 5, AppKit, an Xcode project, Swift packages
-  (DGCharts only). It is a non-commercial fork of Mos by Caldis (CC BY-NC 4.0; the
-  attribution in `README.md` and the file headers stay).
+- Scrollio is a macOS menu-bar app: Swift 5, AppKit, an Xcode project, one Swift package
+  (DGCharts). It is a non-commercial fork of Mos by Caldis (CC BY-NC 4.0). The attribution
+  stays wherever it is: the notices at the top of `LICENSE`, "Licence and credits" in
+  `README.md`, `NSHumanReadableCopyright` in `Scrollio/Info.plist`, the credit line in
+  General, the file headers. `Scrollio/Acknowledgements.txt` ships inside the app and on
+  the disk image and carries the same list of projects as the README: change both
+  (`ReleaseReadinessTests` compares them).
+- DGCharts is for the debug build only: it draws the Scroll Monitor
+  (`Scrollio/Windows/MonitorWindow/`, every file inside `#if DEBUG`). The Release
+  configuration of the app target leaves the package out of the link and of the bundle
+  (`EXCLUDED_SOURCE_FILE_NAMES = DGCharts*`), so an `import DGCharts` outside `#if DEBUG`
+  does not link in Release, and `scripts/release.sh` refuses an app that contains it.
 - Names: the products are `Scrollio.app` (`com.nikklemenc.Scrollio`) and
   `Scrollio Debug.app` (`com.nikklemenc.Scrollio.debug`); the tests are
   `com.nikklemenc.ScrollioTests`. The project, folders and targets carry the same name:
@@ -41,7 +50,11 @@ these rules anywhere.
 - Deployment target: macOS 14.0 for every target. Do not write fallbacks for older
   systems. Gate only APIs newer than 14.0 (the existing `macOS 26` checks stay).
 - There is no updater. A release is made by hand with `scripts/release.sh` (see Commands)
-  and published by the owner. The original project (<https://github.com/Caldis/Mos>) is a
+  and published by the owner, from a commit that carries the tag `v<version>` (`v1.0.0`);
+  the version of a release is its tag's. Never create, move, delete or push a tag unless
+  the owner asked for exactly that, and never `git push --tags`: a clone can also hold
+  the original project's tags (`1.0`, `1.0.0` … without a `v`), which must not reach
+  Scrollio's repository. The original project (<https://github.com/Caldis/Mos>) is a
   separate repository: never push to it, and never open issues or pull requests there
   about Scrollio.
 
@@ -66,6 +79,9 @@ scripts/release.sh             # the same, then notarized by Apple and packed in
   `--check` it uploads the build to Apple's notary service: run it only when the owner
   asked for a release. It never installs: its signature is not the development signature
   of the copy in `/Applications`, so that copy would be asked for Accessibility again.
+  What it checks and what it leaves behind: `README.md`, "Making a release". A check in
+  either script never pipes a tool into `grep -q` (under `pipefail` a match then reads as
+  no match): the output goes to a variable or a file first.
 - Install the release app with `scripts/install.sh`, not by copying a build by hand: it
   refuses a build whose signature differs from the installed app's (see the next point),
   one that carries `get-task-allow`, and one instrumented for code coverage (the test
@@ -75,8 +91,10 @@ scripts/release.sh             # the same, then notarized by Apple and packed in
   instance with its global event tap is running, that modal prompt blocks the main thread
   and freezes all mouse and keyboard input. If it ever happened, rebuild normally to
   restore the signature.
-- Keep the signing team and identities in the project as they are. To build on another
-  Mac, set your own team locally and do not commit it (`README.md`, "Build from source").
+- Keep the signing team and identities in the project as they are. Another Mac's team
+  goes into `Local.xcconfig` (ignored by git; template `Local.xcconfig.example`), which
+  `scripts/install.sh` passes to its build and a plain build takes with
+  `-xcconfig Local.xcconfig` (`README.md`, "Build from source").
 - To check that code compiles, prefer a plain `build`: it starts nothing and changes no
   signature.
 - Before `test`, make sure no debug instance runs: `pgrep -fl "Scrollio Debug.app"` must
@@ -88,14 +106,17 @@ scripts/release.sh             # the same, then notarized by Apple and packed in
 
 - `Scrollio/` is a file-system-synchronized group: a file placed there is compiled, or
   copied into the app bundle, without a project edit. Put nothing there that should not
-  ship.
+  ship. (`Scrollio/Acknowledgements.txt` is there because it should.)
 - `ScrollioTests/` is **not** synchronized: a new test file must be added to
   `Scrollio.xcodeproj/project.pbxproj` (file reference, group entry, build file, Sources
   phase of the `ScrollioTests` target). A file that is only created is not compiled.
 - After adding, moving or deleting Swift files, build or run the related tests.
-- Outside the targets: `scripts/` (the install script and the boundary lint), `tools/`
-  (hand-run HID++ probes and a toast harness; read `tools/README.md` before running a
-  probe), `assets/readme/` (the README's pictures, made by the render tests).
+- Outside the targets: `scripts/` (`install.sh`, `release.sh` and the boundary lint),
+  `tools/` (hand-run HID++ probes and a toast harness; read `tools/README.md` before
+  running a probe), `assets/readme/` (the README's pictures, made by the render tests),
+  and the documents a visitor reads first: `README.md`, `LICENSE`, `SECURITY.md`,
+  `CONTRIBUTING.md`. They describe the app as it is: a change that makes one of their
+  sentences untrue changes the sentence too.
 
 ## Module boundaries
 
@@ -105,7 +126,9 @@ See `.agents/docs/code-map.md` for the map. The rules:
   The rest of the app talks to `LogiCenter` and `Scrollio/Integration/` only.
   `scripts/qa/lint-logi-boundary.sh` enforces the allowlists and is run by
   `LogiBoundaryEnforcementTests`; run it after any change in `Scrollio/Logi/` or
-  `Scrollio/Integration/`.
+  `Scrollio/Integration/`. It knows a Logitech type by its `Logi` prefix: give a new
+  top-level type in `Scrollio/Logi/` that prefix, or add its name to `LOGI_SYMBOL` in the
+  lint.
 - `Scrollio/ScrollCore/`, input event handling and HID callbacks are hot paths: no
   avoidable allocations, no synchronous I/O, no heavy logging, no notifications, no UI or
   persistence work in them.
@@ -116,16 +139,25 @@ See `.agents/docs/code-map.md` for the map. The rules:
 - Diagnostics go to the system log (`ScrollSystemLog`, category `scroll`; `LogiSystemLog`,
   category `logi`; `AppSystemLog`, category `app`: the app's own health: starts and stops,
   event taps that macOS turned off or that could not be created, recoveries): state
-  changes, decisions and one line per scroll, never a line per event, and no string built
-  per event. Use these, not `NSLog`: only they write to the app's subsystem.
+  changes, decisions and one line per scroll (or per roll of the thumb wheel, or per hold
+  of a gesture button the mouse tracks), never a line per wheel, pointer or key event, and
+  no string built per event. Nothing a user types, and no path of a user's file, goes
+  into a log. Use these, not `NSLog`: only they write to the app's subsystem.
   Reading it: `README.md`, "Diagnostics".
 - A write to a Logitech device never runs on the main thread: `IOHIDDeviceSetReport` takes
   15 to 29 ms over Bluetooth and the main thread serves every event tap. Send through the
   session (`LogiReportWriter`: one serial queue per device, order kept); never call
   `IOHIDDeviceSetReport` directly.
-- Nothing is written to a Logitech mouse unless "Let Scrollio manage this mouse"
+- No setting (pointer speed, wheel mode, SmartShift, click firmness, haptics, press
+  force) is written to a Logitech mouse unless "Let Scrollio manage this mouse"
   (`Options.shared.logiMouseManaged`) is on and the user set that value. Reading needs no
-  switch.
+  switch. The switch does not cover the rest, which `README.md` lists under "Logitech MX
+  mice" and which must stay as narrow as it is: buttons are diverted (sent to Scrollio)
+  for bindings, for gestures the mouse tracks and, all of them, while a button is being
+  recorded, and given back at Pause and quit; a Logitech action bound to a button changes
+  the mouse when it is pressed; a gesture pulse plays and can switch the haptics on; the
+  Logitech Diagnostics window sends what its user changes. A new kind of write needs the
+  switch, or a sentence in that list.
 - ButtonCore, InputEvent, Shortcut and Keys share one meaning of recording, display,
   persistence and execution. When you change one, check the others.
 - Only `AppRunController` (`Scrollio/Managers/`) starts and stops the cores (the scroll
@@ -189,6 +221,7 @@ Choose by risk, and run it: reading the code is not verification.
 | Logi, HID | the `ScrollioTests/Logi*` tests and the boundary lint | real-device tests and the `logi` log, by hand |
 | Preferences panes | the pane's `Preferences*Tests` / `MousePreferencesTests`, `PreferencesWindowTests` | by hand: look at the pane (its render test can draw it); previews stop when it is hidden |
 | UI text | catalogs in sync, `PreferencesLocalizationTests` | long text, dark mode |
+| `scripts/`, licence and notices, `Acknowledgements.txt`, the DGCharts exclusion | `ReleaseReadinessTests`, `bash -n` on the script, `scripts/install.sh --check` | a Release build; `scripts/release.sh --check` when the owner asked (it signs with the Developer ID) |
 
 - A bug fix gets a regression test that covers the old failure. If it cannot be automated,
   say why, what was checked by hand or by reading, and what still has to be confirmed by
@@ -208,7 +241,8 @@ Do these only when the user asked for them explicitly:
   mouse connected), HID traffic (the probes in `tools/hidpp/` among it), posting synthetic
   input events, launching the app while an installed copy runs, anything that depends on
   the Accessibility permission.
-- Changes to signing, entitlements or notarization.
+- Changes to signing, entitlements or notarization. Creating, moving, deleting or pushing
+  a tag.
 - Changes to how existing settings are read, to persistence formats or to permission
   prompts.
 - Pushing, publishing, or anything visible outside this machine.
