@@ -407,7 +407,7 @@ extension ScrollPoster {
             phases.dropWaitingMomentumBegan()
         }
         let phase = phases.phase
-        let separatedPhase = (phase == .Idle || phase == .Leave || phase == .MomentumEnd || phase == .TrackingEnd)
+        let separatedPhase = (phase == .Idle || phase == .MomentumEnd || phase == .TrackingEnd)
         let separated = manualInputEnded || separatedByTime || separatedPhase
         let plan = phases.onManualInputDetected(isSeparated: separated)
         if plan.beginsTouch {

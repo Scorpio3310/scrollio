@@ -137,17 +137,6 @@ class ScrollUtils {
     }
     private static let homeDirectory = NSHomeDirectory()
 
-    /// Safari by its name, a Chromium-based app by what its bundle carries. (Firefox, and web
-    /// views inside other apps, count as touch-only: not checked on screen, and a web view
-    /// cannot be told from the app's own lists.) Reads the disk: never on the main thread
-    /// (the scroll path asks `trackpadStyleTarget(bundleIdentifier:bundleURL:)` of an instance).
-    static func trackpadStyleTarget(bundleIdentifier: String?, bundleURL: URL, fileManager: FileManager = .default) -> TrackpadStyleTarget {
-        if let identifier = bundleIdentifier, getsPlainScrolling(bundleIdentifier: identifier) {
-            return .plainScrolling
-        }
-        return isChromiumBased(bundleURL: bundleURL, fileManager: fileManager) ? .followsGlide : .touchOnly
-    }
-
     /// Whether an app gets no trackpad-style events at all (`TrackpadStyleTarget
     /// .plainScrolling`): a browser whose pages WebKit draws, known by its bundle id.
     ///
@@ -160,7 +149,9 @@ class ScrollUtils {
     ///   (the download) and `macOS/Configuration/AppStore.xcconfig` (the Mac App Store build).
     ///
     /// An id goes in here only from a source that can be named. (Orion is WebKit too; its id
-    /// could not be confirmed from Kagi's own material, so it is not listed.)
+    /// could not be confirmed from Kagi's own material, so it is not listed.) Firefox, and web
+    /// views inside other apps, count as touch-only: not checked on screen, and a web view
+    /// cannot be told from the app's own lists.
     static func getsPlainScrolling(bundleIdentifier: String) -> Bool {
         return bundleIdentifier.hasPrefix(safariBundleIdentifierPrefix)
             || webKitBrowserBundleIdentifiers.contains(bundleIdentifier)

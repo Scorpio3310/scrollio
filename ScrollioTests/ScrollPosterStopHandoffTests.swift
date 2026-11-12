@@ -936,6 +936,193 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         context.waitForPostQueueForTests()
     }
 
+    // MARK: - The real path with "Trackpad-style scrolling" on
+
+    /// One frame as it would be posted: what the app reads on the event.
+    private struct PostedFrame {
+        var scroll: Double
+        var momentum: Double
+        var y: Int64
+        var timestamp: UInt64
+        var pid: pid_t
+        var isContinuous: Int64
+        var name: String { return ScrollClassicRig.phaseName(scroll: scroll, momentum: momentum) }
+        var hasPhase: Bool { return scroll != 0 || momentum != 0 }
+    }
+
+    /// The wheel event's own time, and where the clock of the frames' own times starts.
+    private static let wheelTime: UInt64 = 1_000_000_000
+    private static let firstFrameTime: UInt64 = 5_000_000_000
+
+    /// The default click: every frame that moves the page, with the switch off (pinned by
+    /// `ScrollClassicPathTests.testTheDefaultClick_isWhatItWas`). No form changes it.
+    private static let defaultClick: [Int64] = [
+        7, 13, 15, 16, 16, 16, 15, 14, 12, 11, 10, 9, 8, 7, 6, 5, 5, 4, 3, 3, 2, 2, 2, 2, 1, 1,
+    ]
+
+    /// One click of the wheel as the scroll tap hands it over: a CGEvent with a target through
+    /// `smooth(event:input:)`, the switch read from the settings (the caller sets them), the
+    /// app's kind as given, display frames until the scroll has ended by itself. Returns the
+    /// events that would be posted, the scroll's log entry, and how often the kind was asked.
+    private func oneClick(over kind: ScrollUtils.TrackpadStyleTarget,
+                          file: StaticString = #filePath, line: UInt = #line) throws -> (frames: [PostedFrame], session: ScrollSystemLog.Session?, asked: Int) {
+        let context = ScrollDispatchContext()
+        let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+        var asked = 0
+        poster.trackpadStyleTarget = { _ in
+            asked += 1
+            return kind
+        }
+        _ = FakeDisplay(for: poster)
+        var clock = Self.firstFrameTime
+        poster.eventClockForTests = {
+            clock += 16_000_000
+            return clock
+        }
+        var posted: [PostedFrame] = []
+        let lock = NSLock()
+        context.postObserverForTests = { event, pid in
+            lock.lock()
+            posted.append(PostedFrame(
+                scroll: event.getDoubleValueField(.scrollWheelEventScrollPhase),
+                momentum: event.getDoubleValueField(.scrollWheelEventMomentumPhase),
+                y: event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1),
+                timestamp: event.timestamp,
+                pid: pid,
+                isContinuous: event.getIntegerValueField(.scrollWheelEventIsContinuous)
+            ))
+            lock.unlock()
+        }
+        var sessions: [ScrollSystemLog.Session] = []
+        ScrollSystemLog.sessionObserverForTests = { session, _ in sessions.append(session) }
+        defer { ScrollSystemLog.sessionObserverForTests = nil }
+
+        let wheel = try wheelEvent(targetPID: 4242)
+        wheel.timestamp = Self.wheelTime
+        XCTAssertTrue(poster.smooth(event: wheel, input: input()), file: file, line: line)
+        var now = ScrollPoster.monotonicNow()
+        for _ in 0..<240 {
+            now += 1.0 / 60.0
+            if let request = poster.displayLinkFrameForTests(frameInterval: 1.0 / 60.0, now: now) {
+                XCTAssertTrue(poster.performRequestedStop(request), file: file, line: line)
+                break
+            }
+        }
+        XCTAssertFalse(poster.isGliding, "the scroll ended by itself", file: file, line: line)
+        context.waitForPostQueueForTests()
+        lock.lock()
+        defer { lock.unlock() }
+        XCTAssertTrue(posted.allSatisfy { $0.pid == 4242 }, "every frame goes to the wheel event's process", file: file, line: line)
+        XCTAssertTrue(posted.allSatisfy { $0.isContinuous == 1 }, file: file, line: line)
+        XCTAssertEqual(posted.filter { $0.y != 0 }.map(\.y), Self.defaultClick, "the motion is the default click's in every form", file: file, line: line)
+        return (posted, sessions.last, asked)
+    }
+
+    /// Sets the Scrolling pane's switch and the entry of the app under the pointer for one
+    /// test, and puts both back.
+    private func withSettings(switchOn: Bool, application: Application? = nil, _ body: () throws -> Void) rethrows {
+        let savedApplication = ScrollCore.shared.application
+        let savedSwitch = Options.shared.scroll.smoothSimTrackpad
+        ScrollCore.shared.application = application
+        Options.shared.scroll.smoothSimTrackpad = switchOn
+        defer {
+            ScrollCore.shared.application = savedApplication
+            Options.shared.scroll.smoothSimTrackpad = savedSwitch
+        }
+        try body()
+    }
+
+    private func phaseRuns(_ frames: [PostedFrame]) -> [String] {
+        var runs: [(String, Int)] = []
+        for frame in frames {
+            if runs.last?.0 == frame.name { runs[runs.count - 1].1 += 1 } else { runs.append((frame.name, 1)) }
+        }
+        return runs.map { "\($0.0) ×\($0.1)" }
+    }
+
+    /// Over a Chromium-based app: a flick. The posted events carry the phases of a short touch
+    /// and its glide, and every one its own time (the wheel event's time is on none of them).
+    /// Until now the phases and times were only checked on frames before they were written
+    /// to an event, with the form set by hand.
+    func testTheRealPath_overAChromiumApp_postsAFlickWithItsOwnTimes() throws {
+        try withSettings(switchOn: true) {
+            let result = try oneClick(over: .followsGlide)
+            XCTAssertEqual(phaseRuns(result.frames), [
+                "began ×1", "changed ×2", "ended ×1", "momentumBegan ×1", "momentumChanged ×23", "momentumEnded ×1",
+            ])
+            let times = result.frames.map(\.timestamp)
+            XCTAssertTrue(times.allSatisfy { $0 > Self.firstFrameTime }, "every frame its own time")
+            XCTAssertEqual(times, times.sorted())
+            XCTAssertEqual(Set(times).count, times.count, "no two frames the same time")
+            XCTAssertEqual(result.asked, 1, "the app's kind is asked once per wheel event")
+            XCTAssertEqual(result.session?.trackpadStyle, true)
+            XCTAssertEqual(result.session?.flick, true)
+            XCTAssertEqual(result.session?.touches, 1)
+        }
+    }
+
+    /// Over any other app (AppKit, a web view, an app that is not known): one long touch, and
+    /// its glide after the wheel has been still for 0.18 s. Every frame keeps the wheel
+    /// event's time.
+    func testTheRealPath_overAnyOtherApp_postsTheLongTouchWithTheWheelEventsTime() throws {
+        try withSettings(switchOn: true) {
+            let result = try oneClick(over: .touchOnly)
+            XCTAssertEqual(phaseRuns(result.frames), [
+                "began ×1", "changed ×10", "ended ×1", "momentumBegan ×1", "momentumChanged ×15", "momentumEnded ×1",
+            ])
+            XCTAssertTrue(result.frames.allSatisfy { $0.timestamp == Self.wheelTime }, "the wheel event's time on every frame")
+            XCTAssertEqual(result.frames.filter { $0.scroll == 2 }.reduce(0) { $0 + $1.y }, 135, "what the touch carries of the 205 px")
+            XCTAssertEqual(result.session?.trackpadStyle, true)
+            XCTAssertEqual(result.session?.flick, false)
+        }
+    }
+
+    /// Over Safari: no phase on any posted event and the wheel event's time, exactly the
+    /// switch-off stream; the log says the switch is on but nothing was sent to this app.
+    func testTheRealPath_overSafari_postsNoPhases() throws {
+        try withSettings(switchOn: true) {
+            let result = try oneClick(over: .plainScrolling)
+            XCTAssertFalse(result.frames.contains { $0.hasPhase })
+            XCTAssertTrue(result.frames.allSatisfy { $0.timestamp == Self.wheelTime })
+            XCTAssertEqual(result.session?.trackpadStyle, false)
+            XCTAssertEqual(result.session?.trackpadStyleWithheld, true)
+        }
+        // The same stream with the switch off, and then the app's kind is not even asked.
+        try withSettings(switchOn: false) {
+            let off = try oneClick(over: .followsGlide)
+            XCTAssertFalse(off.frames.contains { $0.hasPhase })
+            XCTAssertTrue(off.frames.allSatisfy { $0.timestamp == Self.wheelTime })
+            XCTAssertEqual(off.asked, 0, "asked only while the switch is on")
+            XCTAssertEqual(off.session?.trackpadStyle, false)
+            XCTAssertEqual(off.session?.trackpadStyleWithheld, false)
+        }
+    }
+
+    /// An app that keeps its own settings (the Apps pane): its own switch counts, not the
+    /// Scrolling pane's. An app that uses the Scrolling pane's settings follows that one.
+    func testTheRealPath_anAppsOwnSwitchCounts() throws {
+        let own = Application(path: "/Applications/Editor.app")
+        own.inherit = false
+
+        own.scroll.smoothSimTrackpad = true
+        try withSettings(switchOn: false, application: own) {
+            let result = try oneClick(over: .followsGlide)
+            XCTAssertTrue(result.frames.contains { $0.hasPhase }, "on for this app, off in the Scrolling pane")
+            XCTAssertEqual(result.session?.flick, true)
+        }
+        own.scroll.smoothSimTrackpad = false
+        try withSettings(switchOn: true, application: own) {
+            let result = try oneClick(over: .followsGlide)
+            XCTAssertFalse(result.frames.contains { $0.hasPhase }, "off for this app, on in the Scrolling pane")
+            XCTAssertEqual(result.asked, 0)
+        }
+        own.inherit = true
+        try withSettings(switchOn: true, application: own) {
+            let result = try oneClick(over: .touchOnly)
+            XCTAssertTrue(result.frames.contains { $0.hasPhase }, "the app uses the Scrolling pane's settings")
+        }
+    }
+
     // MARK: - The app's own display link class, on a real CVDisplayLink
 
     private final class FrameCounter {

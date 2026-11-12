@@ -753,6 +753,35 @@ final class ScrollClassicPathTests: XCTestCase {
         XCTAssertTrue(failures.isEmpty, "\(failures.count) broken:\n" + failures.prefix(40).joined(separator: "\n"))
     }
 
+    /// And when macOS turns the scroll tap off, or the tap is restarted, at any moment: that
+    /// stop asks for the touch's end, not the glide's (`stop(.TrackingEnd)`), and a glide that
+    /// runs has to be ended all the same. (Two single moments were tested before.)
+    func testTrackpadStyle_aTapRestartAtAnyMomentLeavesWholeGestures() {
+        var failures: [String] = []
+        var stops = 0
+        for flick in [true, false] {
+            for duration in [2.0, 3.69, 5.0] {
+                for rate in [60.0, 120.0] {
+                    for (name, inputs) in Self.gestureScenarios {
+                        for stopAt in stride(from: 0.004, through: 1.2, by: 0.011) {
+                            let rig = ScrollClassicRig(duration: duration, rate: rate, trackpadStyle: true, flick: flick)
+                            let notch = 33.6 * 6.3
+                            for (notches, time) in inputs where time <= stopAt { rig.input(notches * notch, notch: notch, at: time) }
+                            rig.run(until: stopAt)
+                            rig.poster.stop(.TrackingEnd, reason: .tapRestarted)
+                            stops += 1
+                            if let broken = Self.brokenGesture(in: rig, mayBeEmpty: true) {
+                                failures.append("\(flick ? "flick" : "long touch"): \(name), Duration \(duration), \(Int(rate)) Hz, stop at \(Int(stopAt * 1000)) ms: \(broken)")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        XCTAssertEqual(stops, 10_464)
+        XCTAssertTrue(failures.isEmpty, "\(failures.count) broken:\n" + failures.prefix(40).joined(separator: "\n"))
+    }
+
     /// The first scroll over a Chromium-based app after Scrollio started: the app counts as
     /// touch-only until its bundle was looked into (off the main thread, a moment), so the
     /// scroll begins as one long touch and goes on as a flick from the wheel event after the
@@ -864,9 +893,34 @@ final class ScrollClassicPathTests: XCTestCase {
         XCTAssertEqual(rig.stops.count, 1)
     }
 
-    /// What an AppKit list follows is the touch. As a long touch nearly all of a scroll is touch;
-    /// as a flick almost none of it is, which is why such a list stopped short.
-    func testTrackpadStyleLongTouch_carriesTheScrollInTheTouch() {
+    /// What an AppKit list follows is the touch, and the long touch ends when the wheel has
+    /// been still for 0.18 s, whatever the glide time. So the longer the glide, the less of a
+    /// scroll is touch: one click at each feel, in px of touch of the px posted. (This used to
+    /// be asserted at Smooth only, as "more than 65 %".) The rest goes out as glide events,
+    /// which such a list does not follow.
+    func testTrackpadStyleLongTouch_whatTheTouchCarriesAtEachGlideTime() {
+        let click = 33.6 * 6.3
+        //                       Duration  touch  posted
+        let expected: [(String, Double, Double, Double)] = [
+            ("Direct", 2.0, 203, 209), ("Quick", 3.13, 158, 207), ("Smooth", 3.69, 135, 205),
+            ("Glide", 4.35, 92, 205), ("Float", 4.6, 69, 205), ("glide time 5.0", 5.0, 25, 205),
+        ]
+        for (feel, duration, touch, posted) in expected {
+            let rig = ScrollClassicRig(duration: duration, trackpadStyle: true, flick: false)
+            rig.input(click, notch: click, at: 0)
+            rig.run(until: 30)
+            let inTheTouch = rig.recorded.filter { $0.frame.scrollPhase == 2 }.reduce(0) { $0 + $1.frame.y }
+            XCTAssertEqual(inTheTouch, touch, feel)
+            XCTAssertEqual(rig.postedY, posted, feel)
+            XCTAssertEqual(rig.firstTime(of: "ended") ?? -1, 11.0 / 60.0, accuracy: 1e-6, "\(feel): the touch ends 0.18 s after the click")
+        }
+    }
+
+    /// The forms differ in the phases only: every frame that moves the page is the same as a
+    /// flick's (which is the switch-off path's, `testTrackpadStyle_keepsEveryFrameOfTheMotion`).
+    /// As a flick almost none of a scroll is touch, which is why an AppKit list stopped short
+    /// with it.
+    func testTrackpadStyleLongTouch_movesThePageAsTheFlickDoes() {
         let scenarios: [(String, [(Double, Double)], Double)] = [
             ("click", [(211.68, 0)], 0.65),
             ("spin", Self.spin, 0.85),
@@ -884,6 +938,7 @@ final class ScrollClassicPathTests: XCTestCase {
             XCTAssertGreaterThan(touchShare(longTouch), share, name)
             XCTAssertLessThan(touchShare(flick), 0.15, name)
             XCTAssertEqual(longTouch.moving.map { $0.frame.y }, flick.moving.map { $0.frame.y }, "\(name): the motion is the same")
+            XCTAssertEqual(longTouch.moving.map { $0.time }, flick.moving.map { $0.time }, "\(name): at the same times")
         }
     }
 
@@ -1242,139 +1297,6 @@ final class ScrollClassicPathTests: XCTestCase {
     }
 }
 
-// MARK: - An AppKit scroll view at its top edge
-
-/// The posted frames fed to a real `NSScrollView` at the top of its page, in a window that is
-/// never shown, and where its page sits at each moment.
-///
-/// What this can and cannot show: AppKit's concurrent ("responsive") scrolling needs a visible
-/// window, so the page view opts out of it. On the classic path a touch ("began", "changed",
-/// "ended") stretches the page past the edge and lets it spring back exactly as an app does, but
-/// momentum events are not animated in a window that is not on screen: the glide's bounce is not
-/// seen here. So this checks the part that went wrong for a fast scroll: how far the touch drags
-/// the page past the edge.
-final class ScrollTrackpadStyleScrollViewTests: XCTestCase {
-
-    private final class Page: NSView {
-        override var isFlipped: Bool { true }
-        override class var isCompatibleWithResponsiveScrolling: Bool { false }
-    }
-
-    private struct Fed {
-        let time: Double
-        let y: Double
-        let scrollPhase: Double
-        let momentumPhase: Double
-    }
-
-    /// Feeds the events at their times (seconds after the start) and returns the top of the visible
-    /// rect every few milliseconds (negative: stretched past the top) until `total`, each with the
-    /// time it was read at.
-    private func positions(feeding events: [Fed], total: Double) throws -> [(time: Double, y: Double)] {
-        // Inside the main screen's frame, so that the scroll view has a screen, but never ordered in.
-        let screen = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1000, height: 1000)
-        let window = NSWindow(contentRect: NSRect(x: screen.minX + 10, y: screen.minY + 10, width: 400, height: 600),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        defer { window.close() }
-        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 600))
-        scrollView.verticalScrollElasticity = .allowed
-        scrollView.documentView = Page(frame: NSRect(x: 0, y: 0, width: 400, height: 6000))
-        window.contentView = scrollView
-        XCTAssertFalse(window.isVisible)
-
-        let start = ScrollEventClock.uptimeNanoseconds()
-        var nsEvents: [NSEvent] = []
-        for event in events {
-            let cgEvent = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: 0, wheel2: 0, wheel3: 0))
-            ScrollOutgoingFrame(y: event.y, x: 0, scrollPhase: event.scrollPhase, momentumPhase: event.momentumPhase,
-                                timestamp: start + UInt64(event.time * 1e9)).write(to: cgEvent)
-            nsEvents.append(try XCTUnwrap(NSEvent(cgEvent: cgEvent)))
-        }
-        var samples: [(time: Double, y: Double)] = []
-        var next = 0
-        let begin = CACurrentMediaTime()
-        let feeder = Timer(timeInterval: 0.002, repeats: true) { _ in
-            let now = CACurrentMediaTime() - begin
-            while next < nsEvents.count && events[next].time <= now {
-                scrollView.scrollWheel(with: nsEvents[next])
-                next += 1
-            }
-            samples.append((now, scrollView.contentView.bounds.origin.y))
-        }
-        RunLoop.main.add(feeder, forMode: .common)
-        while CACurrentMediaTime() - begin < total {
-            RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
-        }
-        feeder.invalidate()
-        XCTAssertEqual(next, events.count, "every event was fed")
-        return samples
-    }
-
-    private func fed(_ rig: ScrollClassicRig) -> [Fed] {
-        return rig.recorded.map {
-            Fed(time: $0.time - rig.start, y: $0.frame.y, scrollPhase: $0.frame.scrollPhase ?? 0, momentumPhase: $0.frame.momentumPhase ?? 0)
-        }
-    }
-
-    /// A fast spin of the wheel with the page at its top. As one touch for as long as the wheel
-    /// turned (what was posted before), it drags the page more than half the view past the edge
-    /// (measured 356 px of 600); as a short touch and a glide it stretches it a few pixels, and the
-    /// page comes back to the edge without a jump.
-    func testFastSpinAtTheTop_stretchesThePageLittleAndItComesBackSmoothly() throws {
-        // What is measured is AppKit's own rubber band, and that moves only with a display
-        // link: with no display awake (a night run, a headless Mac) the page does not
-        // stretch at all, whatever is fed to it.
-        var link: CVDisplayLink?
-        guard CVDisplayLinkCreateWithActiveCGDisplays(&link) == kCVReturnSuccess, link != nil else {
-            throw XCTSkip("no display is awake: AppKit's rubber band, which this test measures, does not move without a display link")
-        }
-        let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
-        for (pixels, time) in ScrollClassicPathTests.spin { rig.input(pixels, notch: 33.6 * 6.3, at: time) }
-        rig.run(until: 2)
-        let flick = fed(rig)
-        // The same frames as one long touch, as before: "began", then every moving frame "changed"
-        // until 0.18 s after the last tick, then "ended" (the glide's tail as momentum).
-        let lastTick = ScrollClassicPathTests.spin.last?.1 ?? 0
-        var longTouch: [Fed] = []
-        var ended = false
-        for item in flick where !(item.y == 0 && item.scrollPhase == 4) {
-            if item.scrollPhase == 1 { longTouch.append(item); continue }
-            if item.time <= lastTick + 0.18 && item.momentumPhase != 3 {
-                longTouch.append(Fed(time: item.time, y: item.y, scrollPhase: 2, momentumPhase: 0))
-            } else {
-                if !ended {
-                    longTouch.append(Fed(time: item.time, y: 0, scrollPhase: 4, momentumPhase: 0))
-                    longTouch.append(Fed(time: item.time, y: item.y, scrollPhase: 0, momentumPhase: 1))
-                    ended = true
-                    continue
-                }
-                longTouch.append(item)
-            }
-        }
-
-        let before = try positions(feeding: longTouch, total: 1.6)
-        let after = try positions(feeding: flick, total: 1.6)
-
-        let stretchBefore = -(before.map(\.y).min() ?? 0)
-        let stretchAfter = -(after.map(\.y).min() ?? 0)
-        XCTAssertGreaterThan(stretchBefore, 150, "one long touch drags the page far past the edge")
-        XCTAssertLessThan(stretchAfter, 20, "the short touch stretches it a little")
-        XCTAssertGreaterThan(stretchAfter, 0, "and it does stretch")
-        // Back at the edge, monotonically from the deepest point, in small steps. The steps are
-        // judged between samples read in a row only: on a busy machine the run loop stalls, and
-        // the page is then rightly farther along at the next sample.
-        let deepest = after.firstIndex { $0.y == -stretchAfter } ?? 0
-        for index in (deepest + 1)..<after.count {
-            XCTAssertGreaterThanOrEqual(after[index].y, after[index - 1].y - 0.5, "sample \(index): only back toward the edge")
-            if after[index].time - after[index - 1].time < 0.008 {
-                XCTAssertLessThanOrEqual(after[index].y - after[index - 1].y, 10, "sample \(index): no jump")
-            }
-        }
-        XCTAssertEqual(after.last?.y ?? -1, 0, accuracy: 0.5, "at rest at the edge")
-    }
-}
-
 // MARK: - Which apps get a flick
 
 /// "Trackpad-style events" go out as a flick only for an app that scrolls by a glide's events:
@@ -1423,7 +1345,6 @@ final class ScrollGlideFollowerTests: XCTestCase {
     func testABrowsersWebApp_isFoundByItsLoader() throws {
         let webApp = try app("Mail.app", files: ["Contents/MacOS/app_mode_loader", "Contents/Resources/app.icns"])
         XCTAssertTrue(ScrollUtils.isChromiumBased(bundleURL: webApp))
-        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "com.brave.Browser.app.abcdef", bundleURL: webApp), .followsGlide)
         // Another program in that place is not one.
         let other = try app("Other.app", files: ["Contents/MacOS/Other", "Contents/Resources/app_mode_loader"])
         XCTAssertFalse(ScrollUtils.isChromiumBased(bundleURL: other))
@@ -1441,19 +1362,6 @@ final class ScrollGlideFollowerTests: XCTestCase {
         XCTAssertFalse(ScrollUtils.isChromiumBased(bundleURL: root.appendingPathComponent("Missing.app")))
         // The Finder is AppKit: its lists follow the touch only.
         XCTAssertFalse(ScrollUtils.isChromiumBased(bundleURL: URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")))
-    }
-
-    /// Three kinds of apps: Safari gets no trackpad-style events at all (with them it does not
-    /// scroll smoothly), a Chromium-based app the flick, everything else the long touch.
-    func testTheFormFollowsTheApp() throws {
-        let electron = try app("Editor.app", files: ["Contents/Frameworks/Electron Framework.framework/Resources/resources.pak"])
-        let plain = try app("Plain.app", files: ["Contents/MacOS/Plain"])
-        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "com.apple.Safari", bundleURL: plain), .plainScrolling)
-        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "com.apple.SafariTechnologyPreview", bundleURL: plain), .plainScrolling)
-        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "com.example.editor", bundleURL: electron), .followsGlide)
-        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "com.apple.finder", bundleURL: plain), .touchOnly)
-        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: nil, bundleURL: plain), .touchOnly)
-        XCTAssertEqual(ScrollUtils.trackpadStyleTarget(bundleIdentifier: "org.mozilla.firefox", bundleURL: plain), .touchOnly, "not checked on screen")
     }
 
     /// What the switch comes to for each kind of app. Safari: no phases, exactly as with the

@@ -57,16 +57,17 @@ import Cocoa
  *  - Leave
  */
 
+/// The phases a wheel scroll is sent in. (A trackpad has two more, listed above: Hold and
+/// Leave, a finger that rests on it without scrolling. A wheel has no such state, so they are
+/// never sent and are not kept here: scroll phase 128 and 8.)
 enum Phase {
     case Idle
-    case Hold
     case TrackingBegin
     case TrackingOngoing
     case TrackingEnd
     case MomentumBegin
     case MomentumOngoing
     case MomentumEnd
-    case Leave
 }
 enum PhaseItem {
     case Scroll
@@ -76,8 +77,6 @@ enum PhaseItem {
 let PhaseValueMapping: [Phase: [PhaseItem: Double]] = [
     // 空
     Phase.Idle: [PhaseItem.Scroll: 0.0, PhaseItem.Momentum: 0.0],
-    // 手指保持: 双指放下不滚动 / 缓动中点按停止
-    Phase.Hold: [PhaseItem.Scroll: 128.0, PhaseItem.Momentum: 0.0],
     // 跟随: 首帧
     Phase.TrackingBegin: [PhaseItem.Scroll: 1.0, PhaseItem.Momentum: 0.0],
     // 跟随: 移动过程
@@ -90,8 +89,6 @@ let PhaseValueMapping: [Phase: [PhaseItem: Double]] = [
     Phase.MomentumOngoing: [PhaseItem.Scroll: 0.0, PhaseItem.Momentum: 2.0],
     // 缓动: 末帧
     Phase.MomentumEnd: [PhaseItem.Scroll: 0.0, PhaseItem.Momentum: 3.0],
-    // 手指离开: 末帧
-    Phase.Leave: [PhaseItem.Scroll: 8.0, PhaseItem.Momentum: 0.0],
 ]
 
 class ScrollPhase {
