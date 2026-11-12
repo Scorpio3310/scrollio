@@ -1918,6 +1918,46 @@ final class ScrollGlideFollowerTests: XCTestCase {
         XCTAssertFalse(ScrollUtils.isChromiumBased(bundleURL: other))
     }
 
+    /// A Gecko-based app (Firefox and its rebuilds, Thunderbird) is known by the engine's
+    /// library beside its program, and gets the flick as a Chromium-based app does: Gecko
+    /// follows every delta, touch and glide alike. (It counted as touch-only.)
+    func testGeckoBasedApps_areFoundByTheEnginesLibrary() throws {
+        let firefox = try app("Fox.app", files: ["Contents/MacOS/XUL", "Contents/MacOS/fox", "Contents/Resources/application.ini"])
+        XCTAssertTrue(ScrollUtils.isGeckoBased(bundleURL: firefox))
+        XCTAssertFalse(ScrollUtils.isChromiumBased(bundleURL: firefox))
+        XCTAssertTrue(ScrollUtils.scrollsByGlideEvents(bundleURL: firefox))
+        // A file of that name anywhere else is not the engine.
+        let other = try app("Other.app", files: ["Contents/MacOS/Other", "Contents/Resources/XUL", "Contents/Frameworks/XUL"])
+        XCTAssertFalse(ScrollUtils.isGeckoBased(bundleURL: other))
+        XCTAssertFalse(ScrollUtils.scrollsByGlideEvents(bundleURL: other))
+        // Chromium still counts, and the Finder (AppKit) is neither.
+        let electron = try app("Editor.app", files: ["Contents/Frameworks/Electron Framework.framework/Resources/resources.pak"])
+        XCTAssertTrue(ScrollUtils.scrollsByGlideEvents(bundleURL: electron))
+        XCTAssertFalse(ScrollUtils.scrollsByGlideEvents(bundleURL: URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")))
+    }
+
+    /// The look into a bundle as it runs off the main thread: a Gecko-based app in an
+    /// Applications folder is one that follows the glide, as a Chromium-based one is; the
+    /// same bundle anywhere else is not looked into.
+    func testTheLook_findsAGeckoBasedAppInAnApplicationsFolder() throws {
+        let home = root.resolvingSymlinksInPath().path
+        let firefox = try app("Applications/Fox.app", files: ["Contents/MacOS/XUL"])
+        let electron = try app("Applications/Editor.app", files: ["Contents/Frameworks/Electron Framework.framework/Resources/resources.pak"])
+        let native = try app("Applications/Native.app", files: ["Contents/MacOS/Native"])
+        let elsewhere = try app("Documents/Fox.app", files: ["Contents/MacOS/XUL"])
+        XCTAssertTrue(ScrollUtils.lookFindsGlideFollower(bundleURL: firefox, homeDirectory: home))
+        XCTAssertTrue(ScrollUtils.lookFindsGlideFollower(bundleURL: electron, homeDirectory: home))
+        XCTAssertFalse(ScrollUtils.lookFindsGlideFollower(bundleURL: native, homeDirectory: home))
+        XCTAssertFalse(ScrollUtils.lookFindsGlideFollower(bundleURL: elsewhere, homeDirectory: home), "never looked into")
+
+        // And the answer of the look makes the app one that gets the flick.
+        let utils = ScrollUtils()
+        utils.inspectBundle = { url, completion in completion(ScrollUtils.lookFindsGlideFollower(bundleURL: firefox, homeDirectory: home)) }
+        let inApplications = URL(fileURLWithPath: "/Applications/Fox.app")
+        _ = utils.trackpadStyleTarget(bundleIdentifier: "org.mozilla.firefox", bundleURL: inApplications)
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "org.mozilla.firefox", bundleURL: inApplications), .followsGlide)
+    }
+
     func testOtherApps_areNotTakenForChromium() throws {
         let plain = try app("Plain.app", files: ["Contents/MacOS/Plain"])
         let native = try app("Native.app", files: [

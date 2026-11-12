@@ -51,8 +51,9 @@ class ScrollUtils {
         /// AppKit and UIKit scroll views, and anything not known: they follow the touch only and
         /// compute the glide themselves. One touch until the scroll has run out.
         case touchOnly
-        /// The Chromium engine (Chrome, Dia, Arc, Edge, Electron and CEF apps) scrolls by the
-        /// glide's events: a flick.
+        /// The Chromium engine (Chrome, Dia, Arc, Edge, Electron and CEF apps) and the Gecko
+        /// engine (Firefox and its rebuilds, Thunderbird) scroll by the glide's events and make
+        /// no glide of their own: a flick.
         case followsGlide
         /// Safari: no trackpad-style events at all, the frames go out as with the switch off.
         /// With phases Safari does not scroll smoothly (owner, build 1521; the frames went out as
@@ -69,13 +70,12 @@ class ScrollUtils {
     private var trackpadStyleTargetByBundlePath: [String: TrackpadStyleTarget] = [:]
 
     /// Looks into an app's bundle off the main thread and calls back on the main queue with
-    /// whether it is Chromium-based. Tests put their own in its place (no disk).
+    /// whether it scrolls by a glide's events (Chromium-based or Gecko-based). Tests put
+    /// their own in its place (no disk).
     var inspectBundle: (_ bundleURL: URL, _ completion: @escaping (Bool) -> Void) -> Void = { bundleURL, completion in
         ScrollUtils.bundleInspectionQueue.async {
-            // The folder an alias in Applications points to is judged again: never outside.
-            let resolved = bundleURL.resolvingSymlinksInPath()
-            let isChromium = ScrollUtils.mayLookIntoBundle(atPath: resolved.path) && ScrollUtils.isChromiumBased(bundleURL: resolved)
-            DispatchQueue.main.async { completion(isChromium) }
+            let followsGlide = ScrollUtils.lookFindsGlideFollower(bundleURL: bundleURL)
+            DispatchQueue.main.async { completion(followsGlide) }
         }
     }
     private static let bundleInspectionQueue = DispatchQueue(label: "com.nikklemenc.Scrollio.bundle-inspection", qos: .utility)
@@ -114,8 +114,8 @@ class ScrollUtils {
         guard Self.mayLookIntoBundle(atPath: path) else {
             return .touchOnly
         }
-        inspectBundle(bundleURL) { [weak self] isChromium in
-            if isChromium {
+        inspectBundle(bundleURL) { [weak self] followsGlide in
+            if followsGlide {
                 self?.trackpadStyleTargetByBundlePath[path] = .followsGlide
             }
         }
@@ -149,9 +149,9 @@ class ScrollUtils {
     ///   (the download) and `macOS/Configuration/AppStore.xcconfig` (the Mac App Store build).
     ///
     /// An id goes in here only from a source that can be named. (Orion is WebKit too; its id
-    /// could not be confirmed from Kagi's own material, so it is not listed.) Firefox, and web
-    /// views inside other apps, count as touch-only: not checked on screen, and a web view
-    /// cannot be told from the app's own lists.
+    /// could not be confirmed from Kagi's own material, so it is not listed.) A web view
+    /// inside another app counts as touch-only: it cannot be told from the app's own lists.
+    /// (Firefox is known by its engine: `isGeckoBased`.)
     static func getsPlainScrolling(bundleIdentifier: String) -> Bool {
         return bundleIdentifier.hasPrefix(safariBundleIdentifierPrefix)
             || webKitBrowserBundleIdentifiers.contains(bundleIdentifier)
@@ -171,6 +171,33 @@ class ScrollUtils {
     func applicationCameToFront(bundleIdentifier: String?, bundleURL: URL?, trackpadStyleOn: Bool) {
         guard trackpadStyleOn, let bundleURL = bundleURL else { return }
         _ = trackpadStyleTarget(bundleIdentifier: bundleIdentifier, bundleURL: bundleURL)
+    }
+
+    /// The look into a bundle, as it runs off the main thread: whether the app scrolls by a
+    /// glide's events. The folder an alias in Applications points to is judged again: never
+    /// outside the folders that may be looked into.
+    static func lookFindsGlideFollower(bundleURL: URL, homeDirectory: String = ScrollUtils.homeDirectory) -> Bool {
+        let resolved = bundleURL.resolvingSymlinksInPath()
+        return mayLookIntoBundle(atPath: resolved.path, homeDirectory: homeDirectory) && scrollsByGlideEvents(bundleURL: resolved)
+    }
+
+    /// Whether an app scrolls by the events of a glide and makes none of its own: the
+    /// Chromium engine or the Gecko engine. One look into the bundle: reads the disk, so
+    /// never on the main thread (`inspectBundle`).
+    static func scrollsByGlideEvents(bundleURL: URL, fileManager: FileManager = .default) -> Bool {
+        return isChromiumBased(bundleURL: bundleURL, fileManager: fileManager)
+            || isGeckoBased(bundleURL: bundleURL, fileManager: fileManager)
+    }
+
+    /// A Gecko-based app carries the engine as one library beside its program:
+    /// `Contents/MacOS/XUL` (mozilla-central, `toolkit/library/moz.build`: on macOS the
+    /// shared library's name is "XUL"). That is every build of the engine without a list of
+    /// names: Firefox and its channels, rebuilds such as LibreWolf, Zen, Tor Browser and
+    /// Waterfox, Thunderbird, Zotero. Gecko follows every delta it is sent, touch and glide
+    /// alike, and makes no glide of its own (read in its source at two revisions; not seen
+    /// on a screen), so it gets the flick as Chromium does.
+    static func isGeckoBased(bundleURL: URL, fileManager: FileManager = .default) -> Bool {
+        return fileManager.fileExists(atPath: bundleURL.appendingPathComponent("Contents/MacOS/XUL").path)
     }
 
     /// A Chromium-based app carries the engine's resources (`resources.pak`) in one of its
