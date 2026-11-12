@@ -1480,6 +1480,47 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         private(set) var looksWithRoles = 0
         /// What a look that asks no roles finds out about the element under the pointer.
         var shell: ScrollEndShellFacts?
+        /// A view without a bar: where the element under the pointer is when it is taken.
+        /// It moves with the page. nil: it gives no position.
+        var content: CGRect?
+        var contentNeverMoves = false
+        /// The element is recycled after this many readings: one reading fails, and
+        /// another element is under the pointer.
+        var contentVanishesAfter: Int?
+        private(set) var contentReads = 0
+        private var contentTakenAt = 0.0
+        private var contentReadsOfThisElement = 0
+        private var contentIsGone = false
+
+        private func takeContent() {
+            contentTakenAt = value * range
+            contentReadsOfThisElement = 0
+            contentIsGone = false
+        }
+
+        private var contentNow: CGRect? {
+            guard let content = content, !contentIsGone else { return nil }
+            return contentNeverMoves ? content : content.offsetBy(dx: 0, dy: CGFloat(contentTakenAt - value * range))
+        }
+
+        func readContent(retakingAt point: CGPoint?, pid: pid_t, answer: @escaping (ScrollEndReading) -> Void) {
+            contentReads += 1
+            deliver { [self] in
+                var reading = ScrollEndReading.notSeen("the element under the pointer gave no position", milliseconds: 1)
+                if point != nil {
+                    takeContent()
+                    reading.contentIsNew = true
+                } else {
+                    contentReadsOfThisElement += 1
+                    if let limit = contentVanishesAfter, contentReadsOfThisElement > limit { contentIsGone = true }
+                }
+                if let frame = contentNow {
+                    reading.failedAt = ""
+                    reading.content = frame
+                }
+                answer(reading)
+            }
+        }
         private var waiting: [() -> Void] = []
         private var late: [(due: Double, work: () -> Void)] = []
         /// A page stops at its ends: what was sent past one is not owed back.
@@ -1521,6 +1562,10 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
                 var reading = seesTheBar ? ScrollEndReading(value: value, roles: ["AXCell", "AXRow", "AXOutline", "AXScrollArea"], milliseconds: 2, bar: barNumber)
                                          : ScrollEndReading.notSeen("a scroll area without a vertical scroll bar", roles: ["AXGroup", "AXScrollArea"], milliseconds: 3)
                 if !readsRoles { reading.shell = shell }
+                if !seesTheBar, readsRoles, content != nil {
+                    takeContent()
+                    reading.content = contentNow
+                }
                 answer(reading)
             }
         }
@@ -3047,6 +3092,154 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             Options.shared.trackpadStyleInMacApps = macApps
             XCTAssertEqual(ScrollPoster.shared.trackpadStyleInBrowsers(), browsers)
             XCTAssertEqual(ScrollPoster.shared.trackpadStyleInMacApps(), macApps)
+        }
+    }
+
+    // MARK: The content under the pointer is seen to follow (a view without a bar; "In Mac apps")
+
+    /// A view without a bar whose element under the pointer says where it is and moves with the page.
+    private func barless(offset: Double) -> PageWatch {
+        let watch = PageWatch(offset: offset, range: 60_000)
+        watch.seesTheBar = false
+        watch.content = CGRect(x: 300, y: 250, width: 500, height: 120)
+        return watch
+    }
+
+    private func contentLines(_ run: RealRun) -> String {
+        return run.sessions.map { $0.session.endWatch.line ?? "-" }.joined(separator: " | ")
+    }
+
+    /// Proof first: the scroll starts plain; once the element has moved with the frames the
+    /// touch opens, and it ends by its rest as any one touch. The whole distance goes out.
+    /// The place is remembered: the next scroll there opens its touch with the look.
+    func testContent_inMidPage_isProvenFirst_thenAOneTouch_andThePlaceIsRemembered() throws {
+        try withSettings(switchOn: true) {
+            let watch = barless(offset: 30_000)
+            let run = realRun(over: .touchOnly, watch: watch)
+            for index in 0..<8 { XCTAssertTrue(try run.wheel(at: Double(index) * 0.03, y: -211.68)) }
+            run.run(until: 3)
+            var frames = run.frames
+            XCTAssertNil(brokenGesture(in: frames))
+            XCTAssertFalse(frames.prefix(3).contains { $0.hasPhase }, "plain until the proof")
+            XCTAssertEqual(frames.filter(\.hasPhase).map(\.name).first, "began")
+            XCTAssertEqual(frames.last?.name, "ended")
+            XCTAssertFalse(frames.contains { $0.name.hasPrefix("momentum") })
+            XCTAssertEqual(-Double(frames.reduce(0) { $0 + $1.y }), 8 * 211.68, accuracy: 8, "the whole distance (but the last pixels under the dead zone, as with the switch off)")
+            let line = contentLines(run)
+            XCTAssertTrue(line.contains("content: first element 500 x 120, moved ") && line.contains("followed after "), line)
+            XCTAssertFalse(line.contains("arrived"), line)
+            XCTAssertGreaterThan(watch.contentReads, 5)
+            XCTAssertEqual(watch.reads, 0, "no bar is read")
+
+            let before = frames.count
+            for index in 0..<4 { XCTAssertTrue(try run.wheel(at: 5 + Double(index) * 0.03, y: -211.68)) }
+            run.run(until: 8)
+            frames = Array(run.frames.dropFirst(before))
+            XCTAssertEqual(frames.first?.name, "began", "remembered: the touch opens with the look")
+            XCTAssertEqual(frames.last?.name, "ended")
+            XCTAssertNil(brokenGesture(in: run.finish()))
+        }
+    }
+
+    /// The arrival: the element stops at the page's end, and "ended" goes out at once, with
+    /// the rest dropped. Nothing is taken in after it: the wheel that still turns scrolls
+    /// plain. After a pause a start at that end is the short touch, then plain.
+    func testContent_atThePagesEnd_theTouchEndsAtOnce_andNothingIsTakenIn() throws {
+        var taken: [Int] = []
+        ScrollSystemLog.pageEndObserverForTests = { taken.append($0) }
+        defer { ScrollSystemLog.pageEndObserverForTests = nil }
+        try withSettings(switchOn: true) {
+            let watch = barless(offset: 59_300)
+            let run = realRun(over: .touchOnly, watch: watch)
+            for index in 0..<60 { XCTAssertTrue(try run.wheel(at: Double(index) * 0.02, y: -211.68), "never taken in") }
+            run.run(until: 3)
+            let frames = run.frames
+            XCTAssertNil(brokenGesture(in: frames))
+            let line = contentLines(run)
+            XCTAssertTrue(line.contains("arrived (moved "), line)
+            let ended = try XCTUnwrap(frames.firstIndex { $0.name == "ended" })
+            let sentToTheEnd = -Double(frames.prefix(ended).reduce(0) { $0 + $1.y })
+            XCTAssertGreaterThanOrEqual(sentToTheEnd, 700, "the page had arrived")
+            XCTAssertLessThan(run.postedAt[ended] - run.postedAt[0], 0.7, "and the touch ended within a moment of it, not when the wheel stopped")
+            let after = frames.dropFirst(ended + 1)
+            XCTAssertGreaterThan(after.filter { $0.y != 0 }.count, 20, "the wheel that still turns scrolls on")
+            XCTAssertFalse(after.contains { $0.hasPhase }, "plain: \(phaseRuns(Array(after)))")
+            XCTAssertEqual(taken, [], "no hold: that is the bar's alone")
+
+            let before = frames.count
+            for index in 0..<6 { XCTAssertTrue(try run.wheel(at: 5 + Double(index) * 0.03, y: -211.68)) }
+            run.run(until: 8)
+            let fresh = Array(run.frames.dropFirst(before))
+            XCTAssertEqual(Array(fresh.prefix(4).map(\.name)), ["began", "changed", "changed", "ended"], "a start at the end it had reached: the short touch")
+            XCTAssertFalse(fresh.dropFirst(4).contains { $0.hasPhase }, "then plain")
+            XCTAssertEqual(taken, [])
+            XCTAssertNil(brokenGesture(in: run.finish()))
+        }
+    }
+
+    /// What must not look like an arrival or a proof: answers 100 ms late in mid-page (the
+    /// touch opens and ends by its rest), an element that never moves (plain, and the
+    /// reading stops), an element that is recycled (the one under the pointer is taken
+    /// again, nothing is judged across the change), and an element without a position.
+    func testContent_lateAnswers_anElementThatNeverMoves_andOneThatVanishes() throws {
+        try withSettings(switchOn: true) {
+            func scroll(_ change: (PageWatch) -> Void) throws -> (frames: [PostedFrame], line: String, watch: PageWatch) {
+                let watch = barless(offset: 30_000)
+                change(watch)
+                let run = realRun(over: .touchOnly, watch: watch)
+                for index in 0..<40 { XCTAssertTrue(try run.wheel(at: Double(index) * 0.03, y: -211.68)) }
+                run.run(until: 5)
+                let line = contentLines(run)
+                let frames = run.finish()
+                XCTAssertNil(brokenGesture(in: frames), line)
+                XCTAssertEqual(-Double(frames.reduce(0) { $0 + $1.y }), 40 * 211.68, accuracy: 8, "the whole distance: \(line)")
+                XCTAssertFalse(line.contains("arrived"), line)
+                return (frames, line, watch)
+            }
+            let late = try scroll { $0.delay = 0.1 }
+            XCTAssertTrue(late.line.contains("followed after "), late.line)
+            XCTAssertEqual(late.frames.last?.name, "ended", "the touch ended by its rest")
+            XCTAssertFalse(late.line.contains("by force"), late.line)
+
+            let still = try scroll { $0.contentNeverMoves = true }
+            XCTAssertFalse(still.frames.contains { $0.hasPhase }, "plain to the end")
+            XCTAssertTrue(still.line.contains("never followed: plain"), still.line)
+            XCTAssertLessThan(still.watch.contentReads, 30, "and the reading stops")
+
+            let recycled = try scroll { $0.contentVanishesAfter = 8 }
+            XCTAssertTrue(recycled.line.contains("followed after "), recycled.line)
+            XCTAssertFalse(recycled.line.contains("taken again 0 times"), recycled.line)
+            XCTAssertEqual(recycled.frames.last?.name, "ended")
+
+            let none = try scroll { $0.content = nil }
+            XCTAssertFalse(none.frames.contains { $0.hasPhase }, "as before: plain")
+            XCTAssertEqual(none.watch.contentReads, 0)
+        }
+    }
+
+    /// Where a bar is seen nothing changes (Finder), frame for frame, and the content is
+    /// never read; with "In Mac apps" off nothing at all is asked.
+    func testContent_isOnlyTheSecondWay_afterTheBar_andOnlyWithInMacApps() throws {
+        try withSettings(switchOn: true) {
+            func scroll(content: Bool, macApps: Bool = true, bar: Bool = true) throws -> (stream: [String], watch: PageWatch) {
+                let watch = PageWatch(offset: 59_300, range: 60_000)
+                watch.seesTheBar = bar
+                if content { watch.content = CGRect(x: 300, y: 250, width: 500, height: 120) }
+                let run = realRun(over: .touchOnly, watch: watch)
+                run.poster.trackpadStyleInMacApps = { macApps }
+                for index in 0..<30 { XCTAssertTrue(try run.wheel(at: Double(index) * 0.02, y: -211.68)) }
+                run.run(until: 4)
+                let stream = self.stream(run)
+                _ = run.finish()
+                return (stream, watch)
+            }
+            let asBefore = try scroll(content: false)
+            let withContent = try scroll(content: true)
+            XCTAssertEqual(withContent.stream, asBefore.stream, "a bar seen: frame for frame as before")
+            XCTAssertEqual(withContent.watch.contentReads, 0)
+            XCTAssertGreaterThan(withContent.watch.reads, 3)
+            let off = try scroll(content: true, macApps: false, bar: false)
+            XCTAssertEqual(off.watch.looks + off.watch.reads + off.watch.contentReads, 0, "\"In Mac apps\" off: nothing is asked")
         }
     }
 

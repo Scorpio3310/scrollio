@@ -125,8 +125,10 @@ works:
   Firefox, and apps built like them (VS Code, Slack). The first way below. With it off
   these apps scroll as with the main switch off, and Scrollio asks them nothing.
 - **In Mac apps** (off at first): lists and documents in every other app, the second
-  way below. For this Scrollio reads the position of the scroll bar under the pointer
-  (see [Permissions](#-permissions)). It is good in Finder; in some apps scrolling gets
+  way below. An app bounces at a page's end where Scrollio can read the scroll bar under
+  the pointer, or, where there is none to read, can see the content under the pointer
+  move with the wheel; elsewhere it scrolls as usual (see [Permissions](#-permissions)).
+  It is good in Finder; in some apps scrolling gets
   worse with it (seen in Messages, whose list of conversations says "at the end" when it
   is not, and in Calendar), which is why you choose it. With it off these apps scroll as
   with the main switch off, and Scrollio asks them nothing through Accessibility.
@@ -170,8 +172,17 @@ The form is sent in one of three ways:
   while the wheel still turns into that end, nothing more is sent, as long as each new
   look finds the same scroll bar under the pointer, still at that end, and for four
   seconds at most; a scroll that starts at the end makes one small bounce. A view whose
-  scroll bar cannot be read (no scroll bar, a bar that does not count from 0 to 1, an app
-  that does not answer in time) scrolls as with the switch off.
+  scroll bar cannot be read (no scroll bar, a bar that does not count from 0 to 1) is
+  given a second way: Scrollio asks the element under the pointer where it is on the
+  screen, once per display frame. Such a scroll starts as with the switch off; when the
+  element has moved with what was sent (three readings, 48 points, within a quarter),
+  the touch opens, and when the element then moves less than half of what is sent (over
+  a tenth of a second and 30 points), the page is at its end: the touch ends at once and
+  the app bounces. After that nothing is held back: the wheel that still turns scrolls
+  as with the switch off. A view where the element does not move with the wheel or
+  gives no position, and an app that does not answer in time, scroll as with the switch
+  off. (This second way was built for the conversation in Messages from its log; it ran
+  against a stand-in only and is seen on no screen yet.)
 - Safari, the web apps made with its "Add to Dock" and the DuckDuckGo browser: on macOS
   27 and later the same short touch and glide as Chrome gets. For Safari this was seen on
   one screen (macOS 27.2, 2026-11-12: smooth, with the bounce; WebKit's own log said it
@@ -589,7 +600,9 @@ asks that app which kind of element is under the pointer, which kinds its contai
 up to the first scroll area (never further than the window), and where that area's
 vertical scroll bar stands. Only a bar that counts from 0 to 1 and is not disabled is
 used: its maximum, where the app tells one, whether it is enabled, and every value are
-checked. It reads no title, no text and no other value. It never asks macOS for the
+checked. Where no bar is seen it asks the element under the pointer for its position
+and size, once per display frame while the scroll runs, to see whether it moves with
+the wheel. It reads no title, no text and no other value. It never asks macOS for the
 permission by itself for this: where the access is missing, nothing is read.
 
 The app itself (its application element) is asked one thing only: which element is under
