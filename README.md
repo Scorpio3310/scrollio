@@ -322,10 +322,10 @@ new name, icon and bundle identifier; a reworked smooth-scrolling engine and sim
 scroll settings; the "Follow the hand" gesture mode; the thumb wheel's actions; settings
 for Logitech MX mice (pointer speed, wheel, haptics, press force) and gestures tracked by
 the mouse; the Mouse and Gestures panes, a battery in the menu bar, a main menu and a new
-Welcome Guide; English as the only language; no Sparkle updater, website or release
-tooling; macOS 14 as the minimum. The history of Mos up to the fork is in its own
-repository, in its [changelog](https://github.com/Caldis/Mos/blob/master/CHANGELOG.md)
-and its git history.
+Welcome Guide; English as the only language; the Sparkle updater and the original
+website and release tooling removed; macOS 14 as the minimum. The history of Mos up to
+the fork is in its own repository, in its
+[changelog](https://github.com/Caldis/Mos/blob/master/CHANGELOG.md) and its git history.
 
 **Non-commercial use only.** Neither Scrollio nor anything derived from it may be used
 for commercial purposes.
@@ -366,12 +366,27 @@ real Logitech mouse run only when asked for:
 LOGI_REAL_DEVICE=1 xcodebuild -scheme Debug -testPlan DebugWithDevice -destination 'platform=macOS' test
 ```
 
+A build for other people's Macs is made with `scripts/release.sh`:
+
+```bash
+scripts/release.sh --check    # universal build signed with Developer ID, and its checks; nothing is notarized
+scripts/release.sh            # the same, then notarized by Apple and packed into a disk image
+```
+
+It builds a universal Release app (Apple silicon and Intel) signed with the Developer ID
+certificate, has Apple notarize the app and the disk image, and writes
+`build/release/Scrollio-<version>.dmg`. It needs a Developer ID Application certificate
+in the keychain and notarization credentials stored as the keychain profile
+`scrollio-notary` (`xcrun notarytool store-credentials "scrollio-notary" --team-id <team id>`).
+It installs nothing and leaves the project's signing settings as they are: the release
+signature is not the development signature of the copy in `/Applications`.
+
 | Path | Contents |
 | --- | --- |
 | `Mos/` | The app: `ScrollCore`, `ButtonCore`, `InputEvent`, `Shortcut`, `Keys`, `Logi`, `Integration`, `MacPointer`, `Options`, `Managers`, `Components`, `Windows`, `Utils` |
 | `MosTests/` | Unit tests (XCTest) |
 | `Mos.xcodeproj/` | The Xcode project, schemes `Debug` and `Profile` |
-| `scripts/` | `install.sh`, and in `qa/` the Logitech boundary lint (also run by a test) |
+| `scripts/` | `install.sh`, `release.sh`, and in `qa/` the Logitech boundary lint (also run by a test) |
 | `tools/` | Hand-run HID++ probes and a small regression harness (see its README before running a probe) |
 | `assets/` | The pictures of this README |
 | `AGENTS.md` | Rules for coding agents and contributors: build, tests, signing, module boundaries, strings |
