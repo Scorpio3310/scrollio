@@ -57,9 +57,12 @@ enum SystemVolumeKey: Equatable {
 
 /// Presses volume keys. Main thread.
 struct SystemVolumeKeys {
-    /// Where the events go: to the system. The seam: tests replace it, so nothing is posted
-    /// and the volume does not change.
-    var post: (CGEvent) -> Void = { $0.post(tap: .cghidEventTap) }
+    /// Where the events go: to the system. The seam: tests replace it. Under XCTest it
+    /// does nothing, whatever a test forgets to replace: nothing is posted and the volume
+    /// does not change.
+    var post: (CGEvent) -> Void = AppRuntime.isRunningXCTest
+        ? { _ in }
+        : { $0.post(tap: .cghidEventTap) }
 
     /// One press: the key goes down and up.
     func press(_ key: SystemVolumeKey) {
