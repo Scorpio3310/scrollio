@@ -83,6 +83,50 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
   does not check a script before it runs it. A planted binding cannot hang on ordinary
   typing or clicking: a key runs an action only with ⌘, ⌥, ⌃ or ⇧ held or when it is an
   F-key, and the left and right mouse buttons never do.
+- **A settings file can give a button a script.** General › Settings file › Import…
+  takes a JSON file that can hold everything the panes can set: buttons and keys that
+  open an app or a file or run a script, that press any key combination, that run a
+  system action such as Move to Trash, or that run a Logitech action. What Scrollio
+  does about it:
+  - It reads only a regular file of at most 2 MB with at most 1000 buttons and keys and
+    1000 apps. It takes only the settings on its list (anything else in the file is
+    ignored), only entries this version can read and only actions this version runs;
+    the others are left out, not kept for a later version. Numbers of Scrolling are
+    brought into the range the panes and the scroll engine work with. What is imported
+    is what was understood, written by Scrollio's own code.
+  - Before anything changes, a sheet shows what the file holds: every button and key
+    with what it will do, in the words of the Buttons pane, and every gesture direction
+    whose action is not the default one. For an action that opens or runs something it
+    also lists the whole path and the arguments, and for an app the identifier by which
+    macOS would find it when nothing is at the path. Characters that draw nothing, are
+    blank or turn the text around are written out, and a run of them is one short
+    mark, so that no part of a path or an argument is out of sight. Letters that look
+    like other letters are not told apart: read a path, do not glance at it. Unless the
+    file gives no button or key an action and leaves the gestures at their defaults,
+    Return presses "Cancel".
+  - Importing starts nothing. An imported action runs like any other, at a press of its
+    button or key, under the rule above (a key only with ⌘, ⌥, ⌃ or ⇧ or as an F-key,
+    never the left or right button), and a script is started as described above.
+  - A file cannot switch on "Let Scrollio manage this mouse" or "Open at login", and
+    cannot touch the updater's settings: none of them is read from a file. So the
+    Logitech settings of a file (wheel mode, pointer speed, haptics) reach a mouse only
+    where the user had already allowed Scrollio to write its settings.
+  - Two things reach a Logitech mouse whatever that switch says, for an imported
+    setting as for one made by hand, and an import can bring both: a Logitech button
+    that gets an action (and a gesture button the mouse is to track) is asked of the
+    mouse, and a Logitech action (switch the mouse to another computer, change the
+    wheel mode or the pointer speed) writes to the mouse when its button, key or
+    gesture is used. The sheet lists these actions with all the others.
+  - An import only starts from that button in Settings. Scrollio registers no file type
+    and opens no file by itself, so nothing outside Scrollio can start one.
+
+  So: do not import a file from someone you do not trust without reading those lists.
+  The settings from before an import are kept, and "Restore…" brings them back.
+- The settings from before an import are files in
+  `~/Library/Application Support/com.nikklemenc.Scrollio/Settings Backups`. Like the
+  preferences file, any program that runs as you can change them; a backup chosen with
+  "Restore…" goes through the same sheet, with the same lists, before it is put in
+  effect.
 - The debug build (`Scrollio Debug.app`) is a developer's tool. Its Scroll Monitor shows
   every scroll, button, pointer and modifier-key event while it is open. Do not hand a
   debug build to anyone as "Scrollio".

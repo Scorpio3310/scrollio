@@ -6685,6 +6685,743 @@
           }
         }
       }
+    },
+    "general-settings-file": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings file"
+          }
+        }
+      }
+    },
+    "general-settings-file-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save all your settings to a file, or load them from one."
+          }
+        }
+      }
+    },
+    "general-settings-file-export": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export…"
+          }
+        }
+      }
+    },
+    "general-settings-file-import": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import…"
+          }
+        }
+      }
+    },
+    "general-settings-file-previous": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings from before an import"
+          }
+        }
+      }
+    },
+    "general-settings-file-previous-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio keeps the last %1$d. The newest is from %2$@."
+          }
+        }
+      }
+    },
+    "general-settings-file-restore": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore…"
+          }
+        }
+      }
+    },
+    "general-settings-file-default-name": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio Settings %@"
+          }
+        }
+      }
+    },
+    "general-settings-file-export-prompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export"
+          }
+        }
+      }
+    },
+    "general-settings-file-import-message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a settings file that Scrollio exported."
+          }
+        }
+      }
+    },
+    "general-settings-file-import-prompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose"
+          }
+        }
+      }
+    },
+    "general-settings-file-exported": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings exported to “%@”."
+          }
+        }
+      }
+    },
+    "general-settings-file-imported": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings imported. To go back to the ones from before, choose Restore… under General › Settings file."
+          }
+        }
+      }
+    },
+    "general-settings-import-title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import these settings?"
+          }
+        }
+      }
+    },
+    "general-settings-import-source": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%1$@”. It says it was saved by Scrollio %2$@ on %3$@."
+          }
+        }
+      }
+    },
+    "general-settings-import-source-version": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%1$@”. It says it was saved by Scrollio %2$@."
+          }
+        }
+      }
+    },
+    "general-settings-import-source-plain": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@”"
+          }
+        }
+      }
+    },
+    "general-settings-import-scrolling": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrolling settings"
+          }
+        }
+      }
+    },
+    "general-settings-import-thumb-wheel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thumb wheel"
+          }
+        }
+      }
+    },
+    "general-settings-import-actions-none": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No button or key actions"
+          }
+        }
+      }
+    },
+    "general-settings-import-actions-one": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 button or key action"
+          }
+        }
+      }
+    },
+    "general-settings-import-actions-other": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d button and key actions"
+          }
+        }
+      }
+    },
+    "general-settings-import-gestures": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gestures"
+          }
+        }
+      }
+    },
+    "general-settings-import-logitech": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logitech mouse values"
+          }
+        }
+      }
+    },
+    "general-settings-import-apps-none": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An empty list of apps"
+          }
+        }
+      }
+    },
+    "general-settings-import-apps-one": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 app with its own settings"
+          }
+        }
+      }
+    },
+    "general-settings-import-apps-other": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d apps with their own settings"
+          }
+        }
+      }
+    },
+    "general-settings-import-apps-limit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“Change scrolling only in these apps” is on"
+          }
+        }
+      }
+    },
+    "general-settings-import-menu-bar-on": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in menu bar: on"
+          }
+        }
+      }
+    },
+    "general-settings-import-menu-bar-off": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in menu bar: off"
+          }
+        }
+      }
+    },
+    "general-settings-import-launch-one": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 action opens an app or a file, or runs a script"
+          }
+        }
+      }
+    },
+    "general-settings-import-launch-other": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d actions open an app or a file, or run a script"
+          }
+        }
+      }
+    },
+    "general-settings-import-launch-hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each starts at a press of its button or key. Import the file only if you know what they do."
+          }
+        }
+      }
+    },
+    "general-settings-import-launch-app": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: opens the app %2$@"
+          }
+        }
+      }
+    },
+    "general-settings-import-launch-file": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: opens the file %2$@"
+          }
+        }
+      }
+    },
+    "general-settings-import-launch-script": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: runs the script %2$@"
+          }
+        }
+      }
+    },
+    "general-settings-import-launch-arguments": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ (arguments: %2$@)"
+          }
+        }
+      }
+    },
+    "general-settings-import-note": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These settings replace the ones on this Mac. Your current settings are saved first, so you can go back. “Let Scrollio manage this mouse” and “Open at login” stay as they are."
+          }
+        }
+      }
+    },
+    "general-settings-import-unreadable-one": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 entry this version of Scrollio does not know is left out."
+          }
+        }
+      }
+    },
+    "general-settings-import-unreadable-other": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d entries this version of Scrollio does not know are left out."
+          }
+        }
+      }
+    },
+    "general-settings-import-confirm": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import"
+          }
+        }
+      }
+    },
+    "general-settings-import-cancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        }
+      }
+    },
+    "general-settings-import-ok": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        }
+      }
+    },
+    "general-settings-problem-import-title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This file cannot be imported"
+          }
+        }
+      }
+    },
+    "general-settings-problem-export-title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The settings could not be exported"
+          }
+        }
+      }
+    },
+    "general-settings-problem-unchanged": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing was changed."
+          }
+        }
+      }
+    },
+    "general-settings-problem-read": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio could not read the file."
+          }
+        }
+      }
+    },
+    "general-settings-problem-too-large": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It is too large to be a Scrollio settings file."
+          }
+        }
+      }
+    },
+    "general-settings-problem-not-settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It is not a Scrollio settings file, or it is damaged."
+          }
+        }
+      }
+    },
+    "general-settings-problem-newer": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It was saved by a newer version of Scrollio. Update Scrollio, then import it again."
+          }
+        }
+      }
+    },
+    "general-settings-problem-damaged": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file is damaged: its part “%@” cannot be read."
+          }
+        }
+      }
+    },
+    "general-settings-problem-empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It holds no settings this version of Scrollio knows."
+          }
+        }
+      }
+    },
+    "general-settings-problem-write": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio could not save the file there."
+          }
+        }
+      }
+    },
+    "general-settings-problem-backup": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your current settings could not be saved first, so nothing was changed."
+          }
+        }
+      }
+    },
+    "general-settings-problem-store": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio's settings cannot be read right now."
+          }
+        }
+      }
+    },
+    "general-settings-import-launch-identifier": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, or else the app with the ID %2$@"
+          }
+        }
+      }
+    },
+    "general-settings-import-corrected-one": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 value was out of range and was corrected."
+          }
+        }
+      }
+    },
+    "general-settings-import-corrected-other": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d values were out of range and were corrected."
+          }
+        }
+      }
+    },
+    "general-settings-problem-not-imported-title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The settings were not imported"
+          }
+        }
+      }
+    },
+    "general-settings-problem-too-many": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It holds more than %d buttons and keys, or more than that many apps: more than Scrollio takes from a file."
+          }
+        }
+      }
+    },
+    "general-settings-problem-not-stored": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio could not store these settings, so nothing was changed."
+          }
+        }
+      }
+    },
+    "general-settings-file-restore-message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose the settings to go back to. Each file is named by the time (UTC) it was saved."
+          }
+        }
+      }
+    },
+    "general-settings-import-actions-title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What the buttons, keys and gestures will do"
+          }
+        }
+      }
+    },
+    "general-settings-import-action-line": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: %2$@"
+          }
+        }
+      }
+    },
+    "general-settings-import-action-line-app": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ in %2$@: %3$@"
+          }
+        }
+      }
+    },
+    "general-settings-import-action-open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open App or File: %@"
+          }
+        }
+      }
+    },
+    "general-settings-import-gesture-line": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesture %1$@: %2$@"
+          }
+        }
+      }
     }
   },
   "version": "1.1"
