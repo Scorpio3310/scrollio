@@ -500,7 +500,8 @@ final class PreferencesSidebarTests: XCTestCase {
         let content = window.contentRect(forFrameRect: window.frame).size
         XCTAssertEqual(content, NSSize(width: width, height: PreferencesWindowLayout.defaultContentHeight))
 
-        // No tabs in the toolbar any more: only the separator that puts the title next to the sidebar.
+        // No tabs in the toolbar any more: only the separator that puts the title next to the
+        // sidebar (and, on an app's page under Apps, the back button after it).
         let toolbar = try XCTUnwrap(window.toolbar)
         XCTAssertEqual(toolbar.items.map(\.itemIdentifier), [.sidebarTrackingSeparator])
         XCTAssertTrue(toolbar.items.first is NSTrackingSeparatorToolbarItem)
@@ -535,6 +536,10 @@ final class PreferencesSidebarTests: XCTestCase {
             XCTAssertEqual(view.frame.minY, 0, pane.identifier)
             XCTAssertEqual(document.frame.width, preferences.host.scrollView.contentSize.width, pane.identifier)
             XCTAssertGreaterThan(view.frame.height, 50, pane.identifier)
+            // The title bar: the pane's name, and no back button (that is for an app's page).
+            XCTAssertEqual(window.title, preferences.selectedController?.title, pane.identifier)
+            XCTAssertEqual(window.toolbar?.items.map(\.itemIdentifier), [.sidebarTrackingSeparator], pane.identifier)
+            XCTAssertFalse(preferences.canGoBack, pane.identifier)
         }
         // Every pane fills the 520 pt column, so their boxes and tables share its margins.
         for pane in preferences.panes {

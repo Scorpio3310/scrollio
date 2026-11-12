@@ -3073,30 +3073,6 @@
         }
       }
     },
-    "apps-back": {
-      "comment": "App page: borderless button at the top left that goes back to the list",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Apps"
-          }
-        }
-      }
-    },
-    "apps-back-accessibility": {
-      "comment": "App page: accessibility label and tooltip of the back button",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Back to Apps"
-          }
-        }
-      }
-    },
     "apps-detail-inherit": {
       "comment": "App page: switch; on, the app uses the settings of the Scrolling pane",
       "extractionState": "manual",
@@ -7485,6 +7461,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Scroll Slower"
+          }
+        }
+      }
+    },
+    "preferences-back": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back"
           }
         }
       }

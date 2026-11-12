@@ -22,6 +22,8 @@ it for the people who use the app, and give the version its part before you tag 
   as before, turn "Use settings from Scrolling" on for it or remove it from the list:
   Scrollio does not add it again. Nothing changes if Calendar is on your list already, or
   while "Change scrolling only in these apps" is on.
+- Settings › Apps: an app's own page has a back button in the title bar, beside the
+  app's name, as in System Settings. The "‹ Apps" link at the top of the page is gone.
 
 ## 1.0.3
 

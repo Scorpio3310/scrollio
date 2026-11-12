@@ -2,7 +2,9 @@
 //  ApplicationDetailViewController.swift
 //  Mos
 //  The page of one app under Apps, opened from its row in the list (it replaces the old
-//  per-app popover). On top "‹ Apps" goes back (so do Esc and ⌘[). A box shows the app
+//  per-app popover). The way back is the window's: a back button in its title bar, beside
+//  the app's name (PreferencesWindowController), as in System Settings; Esc and ⌘[ go back
+//  too. A box shows the app
 //  (icon, name, where it is) and "Use settings from Scrolling"; under it the Scrolling
 //  settings themselves, editing the app's own options (PreferencesScrollingViewController
 //  with a target application: no preview, dimmed while the app uses the Scrolling settings,
@@ -20,21 +22,17 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
 
     /// Identifiers for the controls (tests and accessibility tooling).
     enum Identifier {
-        static let back = NSUserInterfaceItemIdentifier("apps-detail-back")
         static let header = NSUserInterfaceItemIdentifier("apps-detail-header")
         static let inherit = NSUserInterfaceItemIdentifier("apps-detail-inherit")
     }
 
     /// As wide as the Scrolling settings under the header.
     static let paneWidth: CGFloat = PreferencesScrollingViewController.paneWidth
-    /// Between the top of the page and "‹ Apps", and between it and the app's box.
-    static let backButtonTop: CGFloat = 12
-    static let backButtonSpacing: CGFloat = 8
 
     let application: Application
     private let uiStateDefaults: UserDefaults
 
-    /// "‹ Apps", Esc or ⌘[ asked to go back to the list.
+    /// Esc or ⌘[ asked to go back to the list.
     var onBack: (() -> Void)?
     /// "Use settings from Scrolling" was switched (the list says which apps have their own).
     var onInheritChange: (() -> Void)?
@@ -43,7 +41,6 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
 
     // MARK: - Views (read access for tests)
 
-    private(set) var backButton: NSButton!
     private(set) var headerRow: ApplicationDetailHeaderRow!
     private(set) var inheritRow: PreferencesSwitchRow!
     private(set) var headerSection: PreferencesGroupSection!
@@ -70,9 +67,6 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
         let root = ApplicationDetailView()
         root.translatesAutoresizingMaskIntoConstraints = false
         root.onBack = { [weak self] in self?.goBack() }
-
-        let back = makeBackButton()
-        backButton = back
 
         let name = application.getName()
         headerRow = ApplicationDetailHeaderRow(
@@ -107,15 +101,13 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
         let settings = scrolling.view
         settings.translatesAutoresizingMaskIntoConstraints = false
 
-        for view in [back, header, settings] {
+        for view in [header, settings] {
             root.addSubview(view)
         }
         let margin = PreferencesGroupedForm.margin
         NSLayoutConstraint.activate([
-            back.topAnchor.constraint(equalTo: root.topAnchor, constant: Self.backButtonTop),
-            // The chevron lines up with the texts in the boxes.
-            back.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: margin + PreferencesGroupedForm.rowHorizontalInset - 4),
-            header.topAnchor.constraint(equalTo: back.bottomAnchor, constant: Self.backButtonSpacing),
+            // The app's box begins where the first box of every pane does.
+            header.topAnchor.constraint(equalTo: root.topAnchor, constant: margin),
             header.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: margin),
             header.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -margin),
             // The settings bring their own margins: the space above their first box is the
@@ -170,10 +162,6 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
         onInheritChange?()
     }
 
-    @objc func backClick(_ sender: Any?) {
-        goBack()
-    }
-
     /// Esc, when a control of the page passes it on as a command.
     override func cancelOperation(_ sender: Any?) {
         goBack()
@@ -187,24 +175,6 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
 
     private func text(_ key: String) -> String {
         return NSLocalizedString(key, comment: "")
-    }
-
-    /// "‹ Apps": borderless, in the accent colour, as a link back.
-    private func makeBackButton() -> NSButton {
-        let configuration = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
-        let image = NSImage(systemSymbolName: "chevron.left", accessibilityDescription: nil)?
-            .withSymbolConfiguration(configuration) ?? NSImage()
-        let button = NSButton(title: text("apps-back"), image: image, target: self, action: #selector(backClick(_:)))
-        button.identifier = Identifier.back
-        button.isBordered = false
-        button.imagePosition = .imageLeading
-        button.imageHugsTitle = true
-        button.font = PreferencesGroupedForm.titleFont
-        button.contentTintColor = .controlAccentColor
-        button.setAccessibilityLabel(text("apps-back-accessibility"))
-        button.toolTip = text("apps-back-accessibility")
-        button.translatesAutoresizingMaskIntoConstraints = false
-        return button
     }
 
     /// Where the app is, for its header: the app bundle (not the program inside it that

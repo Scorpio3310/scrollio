@@ -581,16 +581,22 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertTrue(controller.currentPage === page.view)
         XCTAssertTrue(page.view.isDescendant(of: controller.view))
         XCTAssertFalse(controller.listPage.isDescendant(of: controller.view))
-        XCTAssertEqual(controller.title, "Apps", "the window title stays")
+        XCTAssertEqual(controller.title, "Apps", "the pane keeps its name")
+        XCTAssertEqual(controller.subpageTitle, "Calculator", "the window is named after the app while its page shows")
         // The header: the app's icon, name and where it is; then its Scrolling settings.
         XCTAssertEqual(page.headerRow.title, "Calculator")
         XCTAssertEqual(page.headerRow.explanation, Self.calculator)
         XCTAssertEqual(page.headerRow.toolTip, "Calculator\n" + Self.calculator)
         XCTAssertEqual(page.headerRow.iconView.frame.size, NSSize(width: 32, height: 32))
         XCTAssertNotNil(page.headerRow.iconView.image)
-        XCTAssertEqual(page.backButton.title, "Apps")
-        XCTAssertEqual(page.backButton.accessibilityLabel(), "Back to Apps")
-        XCTAssertFalse(page.backButton.isBordered)
+        // No link back on the page any more (the window's title bar has the back button):
+        // no button but the settings' own, and the app's box begins where the first box of
+        // every pane does.
+        XCTAssertFalse(allSubviews(of: page.view).contains { ($0 as? NSButton)?.title == "Apps" })
+        XCTAssertFalse(allSubviews(of: page.view).contains { $0.identifier?.rawValue == "apps-detail-back" })
+        XCTAssertTrue(allSubviews(of: page.view).compactMap { $0 as? NSButton }.allSatisfy { $0.isDescendant(of: page.scrollingController.view) || $0 === page.inheritSwitch })
+        XCTAssertEqual(page.view.frame.height - page.headerSection.frame.maxY, PreferencesGroupedForm.margin, accuracy: 0.5)
+        XCTAssertEqual(page.headerSection.frame.minX, PreferencesGroupedForm.margin, accuracy: 0.5)
         XCTAssertTrue(page.scrollingController.currentTargetApplication === calculator)
         XCTAssertTrue(page.scrollingController.previewView.isHidden)
         XCTAssertEqual(page.scrollingController.scrollSpeedSlider.doubleValue, 4.2, accuracy: 1e-9)
@@ -600,8 +606,9 @@ final class PreferencesApplicationTests: XCTestCase {
         // No rename any more.
         XCTAssertFalse(allSubviews(of: page.view).contains { ($0 as? NSTextField)?.isEditable == true })
 
-        page.backButton.performClick(nil)
+        controller.leaveSubpage()
         XCTAssertNil(controller.detailController)
+        XCTAssertNil(controller.subpageTitle)
         XCTAssertNil(page.parent)
         XCTAssertTrue(controller.currentPage === controller.listPage)
         XCTAssertTrue(controller.listPage.isDescendant(of: controller.view))
@@ -844,7 +851,12 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(header.explanationLabel.toolTip, header.toolTip)
     }
 
-    func testInTheWindowThePageKeepsTheTitleAndTheColumnFollowsItsHeight() throws {
+    /// In the window an app's page is a page of its own, as in System Settings: the title
+    /// bar names the app and has a back button before the name, in the pane's part of the
+    /// toolbar (after the sidebar's separator). The button is the system's: a navigational
+    /// toolbar item with the back chevron in the standard bordered button. It is there
+    /// only while an app's page shows, and pressing it shows the list.
+    func testInTheWindowAnAppsPageHasTheTitleBarsBackButtonAndTheAppsName() throws {
         Options.shared.application.applications = Self.makeStore([application(Self.calculator, inherit: false)])
         let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
         let windowController = try XCTUnwrap(
@@ -857,22 +869,81 @@ final class PreferencesApplicationTests: XCTestCase {
         windowController.contentViewController = preferences
         windowController.configure(window, remembersFrame: false)
         addTeardownBlock { windowController.close() }
+        let toolbar = try XCTUnwrap(window.toolbar)
+        let back = PreferencesWindowController.backItemIdentifier
+        func items() -> [NSToolbarItem.Identifier] { return toolbar.items.map(\.itemIdentifier) }
+
+        // The list of apps: the toolbar as it was, the pane's name. (Every other pane:
+        // PreferencesWindowTests.testEveryPaneSitsAtTheTopOfTheColumnCentred.)
+        XCTAssertEqual(items(), [.sidebarTrackingSeparator])
         XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        XCTAssertFalse(preferences.canGoBack)
         window.contentView?.layoutSubtreeIfNeeded()
         XCTAssertEqual(window.title, "Apps")
+        XCTAssertEqual(items(), [.sidebarTrackingSeparator])
 
+        // An app's page: its name, and the back button after the separator.
         apps.openApplication(withID: Self.calculator)
         let page = try XCTUnwrap(apps.detailController)
-        XCTAssertEqual(window.title, "Apps")
+        XCTAssertEqual(window.title, "Calculator")
+        XCTAssertEqual(items(), [.sidebarTrackingSeparator, back])
+        XCTAssertTrue(preferences.canGoBack)
+        let item = try XCTUnwrap(toolbar.items.last)
+        XCTAssertTrue(item.isNavigational, "the system places it before the title")
+        XCTAssertTrue(item.isBordered, "the standard toolbar button")
+        XCTAssertNil(item.view, "nothing drawn by the app")
+        XCTAssertNotNil(item.image)
+        XCTAssertEqual(item.image?.accessibilityDescription, "Back")
+        XCTAssertEqual(item.label, "Back", "what VoiceOver calls it")
+        XCTAssertEqual(item.toolTip, "Back")
+        XCTAssertEqual(toolbar.items.filter { $0.isNavigational }.count, 1, "no forward button")
         XCTAssertTrue(window.firstResponder === page.view, "Esc works straight away")
         let document = preferences.host.documentView!
         XCTAssertGreaterThanOrEqual(document.frame.height, page.view.fittingSize.height - 0.5)
         XCTAssertEqual(apps.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+        // Opening it twice makes no second button.
+        windowController.syncBackItem()
+        XCTAssertEqual(items(), [.sidebarTrackingSeparator, back])
+        // Where the system puts it, in the title bar as it is laid out here (never shown):
+        // in the pane's part, right of the sidebar, and before the app's name.
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        let titleBar = try XCTUnwrap(window.contentView?.superview)
+        titleBar.layoutSubtreeIfNeeded()
+        let chrome = titleBar.subviews.filter { $0 !== window.contentView }.flatMap { [$0] + allSubviews(of: $0) }
+        let button = try XCTUnwrap(chrome.compactMap { $0 as? NSButton }.first { $0.accessibilityLabel() == "Back" }, "the system's button for the item")
+        let name = try XCTUnwrap(chrome.compactMap { $0 as? NSTextField }.first { $0.stringValue == "Calculator" }, "the title")
+        let buttonFrame = button.convert(button.bounds, to: nil)
+        XCTAssertTrue(button.isBordered)
+        XCTAssertGreaterThanOrEqual(buttonFrame.minX, preferences.sidebar.view.frame.width, "right of the sidebar")
+        XCTAssertLessThanOrEqual(buttonFrame.maxX, name.convert(name.bounds, to: nil).minX + 0.5, "before the name")
 
-        page.backButton.performClick(nil)
+        // Pressed: the list, "Apps", and no button.
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item))
+        XCTAssertNil(apps.detailController)
         XCTAssertEqual(window.title, "Apps")
+        XCTAssertEqual(items(), [.sidebarTrackingSeparator])
         XCTAssertTrue(window.firstResponder === apps.list, "the list has the focus again")
         XCTAssertEqual(apps.view.frame.height, apps.listPage.fittingSize.height, accuracy: 0.5)
+
+        // ⌘[ and Esc leave the same way.
+        apps.openApplication(withID: Self.calculator)
+        XCTAssertEqual(items(), [.sidebarTrackingSeparator, back])
+        XCTAssertTrue(try XCTUnwrap(apps.detailController).view.performKeyEquivalent(with: try key("[", keyCode: 33, modifiers: .command)))
+        XCTAssertEqual(items(), [.sidebarTrackingSeparator])
+        XCTAssertEqual(window.title, "Apps")
+
+        // The sidebar leaves an app's page: the button goes with it, the title is the pane's.
+        apps.openApplication(withID: Self.calculator)
+        XCTAssertEqual(items(), [.sidebarTrackingSeparator, back])
+        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.scrolling))
+        XCTAssertEqual(items(), [.sidebarTrackingSeparator])
+        XCTAssertEqual(window.title, "Scrolling")
+        XCTAssertFalse(preferences.canGoBack)
+        // (In a window on screen the pane hears that it went away; here it is told.)
+        apps.viewDidDisappear()
+        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        XCTAssertEqual(window.title, "Apps")
+        XCTAssertEqual(items(), [.sidebarTrackingSeparator])
     }
 
     // MARK: - Stored apps

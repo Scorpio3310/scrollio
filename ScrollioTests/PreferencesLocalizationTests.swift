@@ -135,7 +135,7 @@ final class PreferencesLocalizationTests: XCTestCase {
     static let appsKeys = [
         "apps-limit", "apps-limit-hint", "apps-list-header", "apps-row-inherit", "apps-row-own",
         "apps-empty-title", "apps-empty-hint", "apps-choose-in-finder", "apps-open-panel-prompt",
-        "apps-undo-remove", "apps-back", "apps-back-accessibility", "apps-detail-inherit",
+        "apps-undo-remove", "apps-detail-inherit",
         "apps-detail-inherit-on", "apps-detail-inherit-off", "apps-limit-empty",
     ]
 
@@ -193,7 +193,7 @@ final class PreferencesLocalizationTests: XCTestCase {
 
     /// The window and the kit: the sidebar, the + and − under a list.
     static let windowKeys = [
-        "preferences-sidebar", "list-add", "list-remove",
+        "preferences-sidebar", "preferences-back", "list-add", "list-remove",
     ]
 
     /// Main menu and status-bar menu, the windows they open, and the toasts of the app.
