@@ -40,7 +40,11 @@
 //  (one bad value falls back, one unreadable entry of a list does not take the list with
 //  it), and what goes into the store afterwards is what those decoders understood, written
 //  by the app's own encoders: an entry or a name this version cannot read is left out,
-//  not kept for a later version. What a file can make the app do is therefore exactly
+//  not kept for a later version. The four numbers of Scrolling (and of each app's own
+//  settings) are brought into the range the panes and the engine work with
+//  (`range(ofScrollNumber:)`), and what was corrected is counted for the sheet: the
+//  preferences take any number, but a file can come from anywhere, and a dead zone of
+//  1e300 is a wheel that does nothing in a setting no pane shows. What a file can make the app do is therefore exactly
 //  what `Contents` holds, and the sheet shown before the import is drawn from it
 //  (`launchActions`: every app, file and script a button or key would open or run).
 //
@@ -250,6 +254,9 @@ enum SettingsFile {
         var logiMouse: LogiMouseSettings?
         /// Entries of the two lists that this version cannot read. They are left out.
         var unreadableEntries = 0
+        /// Numbers of Scrolling, the file's or an app's own, that were out of range and
+        /// were brought into it.
+        var correctedValues = 0
 
         /// Every action of the file that opens an app or a file, or runs a script: of the
         /// buttons and keys, switched on or off, and of each app's own buttons.
@@ -367,7 +374,9 @@ enum SettingsFile {
             }
         case .number:
             guard let number = number(value) else { return false }
-            contents.scrollNumbers[key.name] = number
+            let kept = inRange(number, scrollNumber: key.name)
+            contents.scrollNumbers[key.name] = kept
+            if kept != number { contents.correctedValues += 1 }
         case .hotkey:
             guard let hotkey: ScrollHotkey = decoded(value) else { return false }
             contents.scrollHotkeys[key.name] = hotkey
@@ -378,7 +387,13 @@ enum SettingsFile {
             contents.unreadableEntries += entries.count - bindings.count
         case .applications:
             guard let entries = value as? [Any] else { return false }
-            let applications: [Application] = decodedEntries(entries)
+            var applications: [Application] = []
+            for entry in entries {
+                var corrected = 0
+                guard let application: Application = decoded(applicationEntry(entry, corrected: &corrected)) else { continue }
+                applications.append(application)
+                contents.correctedValues += corrected
+            }
             contents.applications = applications
             contents.unreadableEntries += entries.count - applications.count
         case .gesture:
@@ -395,6 +410,50 @@ enum SettingsFile {
             contents.thumbWheel = thumbWheel
         }
         return true
+    }
+
+    // MARK: - Numbers in range
+
+    /// The dead zone a file may bring. No pane sets it and the app only ever writes its
+    /// default (1); a file's is kept within a factor of ten of that. Far below, a glide
+    /// takes very long to count as ended; far above, the frames of a scroll are slower
+    /// than the dead zone and none is posted: the wheel does nothing.
+    static let deadZoneRange: ClosedRange<Double> = 0.1...10
+
+    /// The range a number of Scrolling is kept in, by its name (the UserDefaults key, and
+    /// the name inside an app's own "scroll"): what the pane's sliders can set, and for
+    /// the dead zone `deadZoneRange`.
+    static func range(ofScrollNumber name: String) -> ClosedRange<Double>? {
+        switch name {
+        case OptionItem.Scroll.Step: return ScrollSliderSetting.smallestStep.range
+        case OptionItem.Scroll.Speed: return ScrollSliderSetting.speed.range
+        case OptionItem.Scroll.Duration: return ScrollSliderSetting.glideTime.range
+        case OptionItem.Scroll.DeadZone: return deadZoneRange
+        default: return nil
+        }
+    }
+
+    static func inRange(_ number: Double, scrollNumber name: String) -> Double {
+        guard let range = range(ofScrollNumber: name) else { return number }
+        return min(max(number, range.lowerBound), range.upperBound)
+    }
+
+    /// An app's entry as it goes to the decoder: the numbers of its own scroll settings
+    /// brought into range, in the JSON itself (changing them on the decoded object would
+    /// tell the app's observers of a change). Anything else is left for the decoder to
+    /// judge. `corrected` counts what was changed.
+    private static func applicationEntry(_ entry: Any, corrected: inout Int) -> Any {
+        guard var object = entry as? [String: Any], var scroll = object["scroll"] as? [String: Any] else { return entry }
+        for key in exportedKeys where key.kind == .number {
+            guard let number = number(scroll[key.name]) else { continue }
+            let kept = inRange(number, scrollNumber: key.name)
+            if kept != number {
+                scroll[key.name] = kept
+                corrected += 1
+            }
+        }
+        object["scroll"] = scroll
+        return object
     }
 
     /// A JSON object of the file as the model's own decoder reads it (the decoder the

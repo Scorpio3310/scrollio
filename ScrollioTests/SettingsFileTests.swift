@@ -711,6 +711,63 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertEqual(contents.unreadableEntries, 3)
     }
 
+    /// The four numbers of Scrolling are brought into the range the panes and the engine
+    /// work with, the file's own and each app's, and the sheet says how many were. A
+    /// dead zone of 1e300 was imported as it was: no frame of a scroll is that fast, so
+    /// the wheel did nothing in every smoothed app, in a setting no pane shows.
+    func testNumbersNoPaneCanSetAreBroughtIntoRange() throws {
+        XCTAssertEqual(SettingsFile.range(ofScrollNumber: "step"), 0.01...100)
+        XCTAssertEqual(SettingsFile.range(ofScrollNumber: "speed"), 1...10)
+        XCTAssertEqual(SettingsFile.range(ofScrollNumber: "duration"), 1...5)
+        XCTAssertEqual(SettingsFile.range(ofScrollNumber: "deadZone"), 0.1...10)
+        XCTAssertNil(SettingsFile.range(ofScrollNumber: "smooth"))
+        // The ranges are the sliders' own, and the default dead zone lies inside its range.
+        XCTAssertEqual(SettingsFile.range(ofScrollNumber: "step"), ScrollSliderSetting.smallestStep.range)
+        XCTAssertEqual(SettingsFile.range(ofScrollNumber: "speed"), ScrollSliderSetting.speed.range)
+        XCTAssertEqual(SettingsFile.range(ofScrollNumber: "duration"), ScrollSliderSetting.glideTime.range)
+        XCTAssertTrue(SettingsFile.deadZoneRange.contains(OPTIONS_SCROLL_DEFAULT.defaultDeadZone))
+
+        let app = StoredDataCanaryTests.readableApp
+            .replacingOccurrences(of: #""deadZone":1,"#, with: #""deadZone":1e300,"#)
+            .replacingOccurrences(of: #""duration":3.69,"#, with: #""duration":99,"#)
+            .replacingOccurrences(of: #""speed":2.5,"#, with: #""speed":0,"#)
+            .replacingOccurrences(of: #""step":33.6,"#, with: #""step":-5,"#)
+            .replacingOccurrences(of: "A.app", with: "Wild.app")
+        let contents = try Fixture.contents(
+            #""deadZone":1e300,"step":-1e300,"duration":-7,"speed":3,"#
+                + #""applications":["# + app + "," + StoredDataCanaryTests.readableApp + "]"
+        )
+        XCTAssertEqual(contents.scrollNumbers, ["deadZone": 10, "step": 0.01, "duration": 1, "speed": 3])
+        let first = try XCTUnwrap(contents.applications?.first)
+        XCTAssertEqual([first.scroll.deadZone, first.scroll.duration, first.scroll.speed, first.scroll.step], [10, 5, 1, 0.01])
+        let second = try XCTUnwrap(contents.applications?.last)
+        XCTAssertEqual([second.scroll.deadZone, second.scroll.duration, second.scroll.speed, second.scroll.step], [1, 3.69, 2.5, 33.6])
+        XCTAssertEqual(contents.correctedValues, 7, "three of the file's own, four of the first app's")
+        XCTAssertEqual(contents.unreadableEntries, 0)
+
+        // In effect, they are what the engine can work with.
+        let own = OwnSettings(for: self)
+        own.options.readOptions()
+        XCTAssertTrue(SettingsFile.apply(contents, to: own.options))
+        XCTAssertEqual(own.options.scroll.deadZone, 10)
+        XCTAssertEqual(OPTIONS_SCROLL_DEFAULT.usableDeadZone(own.options.scroll.deadZone), 10)
+        XCTAssertEqual(own.options.scroll.step, 0.01)
+        XCTAssertEqual(own.options.scroll.duration, 1)
+        XCTAssertEqual(own.options.application.applications.get(by: "/Applications/Wild.app")?.scroll.deadZone, 10)
+        XCTAssertEqual(own.options.application.applications.get(by: "/Applications/A.app")?.scroll.deadZone, 1)
+
+        // The sheet says so; a file whose numbers are in range has no such line.
+        let sheet = SettingsImportSheetViewController(content: .confirm(contents, fileName: "x.json"))
+        _ = sheet.view
+        XCTAssertEqual(sheet.correctedLabel?.stringValue, "7 values were out of range and were corrected.")
+        XCTAssertEqual(SettingsFileText.corrected(count: 1), "1 value was out of range and was corrected.")
+        let fine = try SettingsFile.read(Data(Self.frozenFile.utf8)).get()
+        XCTAssertEqual(fine.correctedValues, 0)
+        let plain = SettingsImportSheetViewController(content: .confirm(fine, fileName: "x.json"))
+        _ = plain.view
+        XCTAssertNil(plain.correctedLabel)
+    }
+
     /// A name the allow-list does not have is ignored, in the file's top level and among
     /// the settings, and nothing of it reaches the store: not the updater's keys, not the
     /// Welcome Guide's, not a cache.

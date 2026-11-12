@@ -175,6 +175,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-launch-arguments", "general-settings-import-launch-identifier",
         "general-settings-import-note",
         "general-settings-import-unreadable-one", "general-settings-import-unreadable-other",
+        "general-settings-import-corrected-one", "general-settings-import-corrected-other",
         "general-settings-import-confirm", "general-settings-import-cancel", "general-settings-import-ok",
         "general-settings-problem-import-title", "general-settings-problem-export-title",
         "general-settings-problem-unchanged", "general-settings-problem-read", "general-settings-problem-too-large",
@@ -295,6 +296,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-launch-arguments": "@@",
         "general-settings-import-launch-identifier": "@@",
         "general-settings-import-unreadable-other": "d",
+        "general-settings-import-corrected-other": "d",
         "general-settings-problem-damaged": "@",
         // Welcome Guide
         "intro-step-of": "dd",

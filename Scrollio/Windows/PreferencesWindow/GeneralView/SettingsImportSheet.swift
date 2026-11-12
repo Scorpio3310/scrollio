@@ -149,6 +149,13 @@ enum SettingsFileText {
         return String(format: text(key), ButtonTriggerNaming.title(for: action.trigger, logitech: logitech), target)
     }
 
+    /// "3 values were out of range and were corrected."
+    static func corrected(count: Int) -> String {
+        return count == 1
+            ? text("general-settings-import-corrected-one")
+            : String(format: text("general-settings-import-corrected-other"), count)
+    }
+
     /// "2 entries this version of Scrollio cannot read are left out."
     static func unreadable(count: Int) -> String {
         return count == 1
@@ -239,6 +246,8 @@ final class SettingsImportSheetViewController: NSViewController {
     private(set) var launchScrollView: NSScrollView?
     private(set) var noteLabel: NSTextField?
     private(set) var unreadableLabel: NSTextField?
+    /// "3 values were out of range and were corrected."; nil when none was.
+    private(set) var correctedLabel: NSTextField?
     private(set) var importButton: NSButton?
     /// "Cancel", or "OK" of a problem.
     private(set) var closeButton: NSButton!
@@ -314,6 +323,7 @@ final class SettingsImportSheetViewController: NSViewController {
         launchScrollView = nil
         noteLabel = nil
         unreadableLabel = nil
+        correctedLabel = nil
         importButton = nil
 
         switch content {
@@ -362,6 +372,11 @@ final class SettingsImportSheetViewController: NSViewController {
             let unreadable = makeNote(SettingsFileText.unreadable(count: contents.unreadableEntries), width: contentWidth)
             unreadableLabel = unreadable
             add(unreadable, spacingBefore: 4)
+        }
+        if contents.correctedValues > 0 {
+            let corrected = makeNote(SettingsFileText.corrected(count: contents.correctedValues), width: contentWidth)
+            correctedLabel = corrected
+            add(corrected, spacingBefore: 4)
         }
 
         let cancel = SettingsSheetCancelButton(

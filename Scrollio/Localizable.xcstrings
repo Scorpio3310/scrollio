@@ -7301,6 +7301,28 @@
           }
         }
       }
+    },
+    "general-settings-import-corrected-one": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 value was out of range and was corrected."
+          }
+        }
+      }
+    },
+    "general-settings-import-corrected-other": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d values were out of range and were corrected."
+          }
+        }
+      }
     }
   },
   "version": "1.1"
