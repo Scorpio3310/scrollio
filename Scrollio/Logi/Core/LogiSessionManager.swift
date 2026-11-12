@@ -477,4 +477,11 @@ internal class LogiSessionManager {
         guard let session = primarySession else { return }
         session.executeDPICycle(direction: direction)
     }
+
+    /// Any of the "Logitech Mouse" actions by its identifier, on the primary session
+    /// (`LogiCenter.executeAction(named:)`).
+    func executeLogiAction(named name: String) {
+        guard let session = primarySession else { return }
+        session.executeLogiAction(name)
+    }
 }

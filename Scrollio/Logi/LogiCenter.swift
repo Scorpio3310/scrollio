@@ -122,6 +122,11 @@ final class LogiCenter {
     // MARK: - Feature actions
     func executeSmartShiftToggle() { manager.executeSmartShiftToggle() }
     func executeDPICycle(direction: Direction) { manager.executeDPICycle(direction: direction) }
+    /// Runs one of the "Logitech Mouse" actions by its identifier (`logiSmartShiftToggle`,
+    /// `logiHost2`, `logiPointerSpeedCycle`, …) on the connected mouse: the one entry point
+    /// for an action that does not come from a Logitech button of that mouse (a gesture, a
+    /// standard button, a key). Does nothing without a mouse or for a name it does not know.
+    func executeAction(named name: String) { manager.executeLogiAction(named: name) }
 
     // MARK: - Reporting refresh
     func refreshReportingStates() { manager.refreshReportingStates() }
