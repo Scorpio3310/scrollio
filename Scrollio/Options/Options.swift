@@ -77,7 +77,9 @@ class Options {
     var defaults: UserDefaults = .standard
     /// Whether changes are written at all. Under XCTest never to the app's real
     /// preferences, whatever a test changes or forgets; only to a store a test passed in.
-    private var writesToDefaults: Bool {
+    /// A settings file follows the same rule (`SettingsFile`): it is neither made from the
+    /// app's real preferences under XCTest nor imported into them.
+    var writesToDefaults: Bool {
         return !AppRuntime.isRunningXCTest || defaults !== UserDefaults.standard
     }
 
@@ -149,6 +151,16 @@ class Options {
         readingOptionsLock = true
         defer { readingOptionsLock = false }
         body()
+    }
+    /// Tests: how many observers there are, and a way to take the newest ones away again.
+    /// The app's observers stay for its life; a test that installs the launch's own on
+    /// the shared settings (to see a change travel through them) must not leave them
+    /// there for every test that runs after it.
+    var observerCountForTests: Int {
+        return observers.count
+    }
+    func removeNewestObserversForTests(_ count: Int) {
+        observers.removeLast(min(max(0, count), observers.count))
     }
     #endif
 }
@@ -298,6 +310,17 @@ extension Options {
         readingOptionsLock = false
     }
     
+    /// After a settings file was put into the store (`SettingsFile.apply`): everything is
+    /// read again exactly as at launch (the same decoding, the same clean-up), then the
+    /// observers of `groups` are told and those groups are saved, as after a change made
+    /// by hand. Reading alone tells nobody (`readingOptionsLock`). Main thread.
+    func reloadFromStore(notifying groups: [OptionsGroup]) {
+        readOptions()
+        for group in groups {
+            markChanged(group)
+        }
+    }
+
     /// A stored switch, or `defaultValue` when the key is missing.
     static func storedBool(forKey key: String, default defaultValue: Bool, in defaults: UserDefaults = .standard) -> Bool {
         guard defaults.object(forKey: key) != nil else { return defaultValue }

@@ -6,8 +6,9 @@
 //  showed), "Scrollio is paused" with Resume, "Open at login" and its approval row, "Show
 //  in menu bar" (the stored "hide" shown the other way round), the Accessibility row, no
 //  developer tools, "Updates" (the two switches and "Check Now" in a copy that updates
-//  itself, one line that says why in every other), and at the bottom the Welcome Guide,
-//  Scrollio on GitHub and the credit line. The login item, the permission, the pause,
+//  itself, one line that says why in every other), "Settings file" (its own tests are in
+//  SettingsFileTests.swift), and at the bottom the Welcome Guide, Scrollio on GitHub and
+//  the credit line. The login item, the permission, the pause,
 //  System Settings, the menu bar icon, the windows, the browser and the updater are
 //  replaced; nothing is shown on screen, no page is opened and nothing asks the network.
 //
@@ -570,9 +571,10 @@ final class PreferencesGeneralTests: XCTestCase {
         }
         XCTAssertFalse(allSubviews(of: pane.view).contains { $0 is PreferencesDisclosureRow })
         XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
-        // The boxes: the card, (paused), startup, permissions, updates, the Welcome Guide, the credit.
+        // The boxes: the card, (paused), startup, permissions, updates, the settings file,
+        // the Welcome Guide, the credit.
         let content = try XCTUnwrap(pane.headerView.superview as? NSStackView)
-        XCTAssertEqual(content.arrangedSubviews.filter { $0 is PreferencesGroupSection }.count, 5)
+        XCTAssertEqual(content.arrangedSubviews.filter { $0 is PreferencesGroupSection }.count, 6)
         for removed in ["general-advanced", "general-scroll-monitor", "general-diagnostics", "general-open-window"] {
             XCTAssertEqual(NSLocalizedString(removed, comment: ""), removed, "\(removed) left the catalog")
         }
@@ -611,10 +613,11 @@ final class PreferencesGeneralTests: XCTestCase {
         }
         XCTAssertFalse(shownTexts(pane).contains("Check Now"))
         XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
-        // Between the permissions and the Welcome Guide.
+        // After the permissions; the settings file and the Welcome Guide follow.
         let content = try XCTUnwrap(pane.headerView.superview as? NSStackView)
         let sections = content.arrangedSubviews.filter { $0 is PreferencesGroupSection && !$0.isHidden }
-        XCTAssertTrue(sections.dropLast().last === section)
+        XCTAssertTrue(sections.dropLast(2).last === section)
+        XCTAssertTrue(sections.dropLast().last === pane.settingsFileSection)
     }
 
     func testFromADiskImageOrAfterAFailedStartItSaysWhy() throws {

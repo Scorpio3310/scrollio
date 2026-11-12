@@ -43,7 +43,9 @@ these rules anywhere.
 - Never rename persisted identifiers: UserDefaults keys, action identifiers (`scrollDash`,
   `scrollToggle` and `scrollBlock` among them), shortcut identifiers, JSON keys (such as
   `managedByScrollio`), Logi cache keys, CID and feature constants, storyboard object
-  ids, string catalog keys. The stored names that carried the original app's name were
+  ids, string catalog keys. A settings file a user exported (`SettingsFile`) holds the
+  same names, the UserDefaults keys and the JSON keys under them, and six names of its
+  own: the rule covers the file too. The stored names that carried the original app's name were
   renamed once, together with the project and before the first public release, on the
   owner's decision and without a migration: the old names are not read. That is not a
   precedent.
@@ -63,7 +65,8 @@ these rules anywhere.
   never run `scripts/update-key.sh create`, `export` or `import`, and never run Sparkle's
   `sign_update` or `generate_keys` against the keychain (macOS then asks the owner for
   the key). `CHANGELOG.md` has one part per released version; the update window and the
-  release notes show it.
+  release notes show it. What is merged between releases goes under `## Unreleased`
+  above them, which becomes the next version's part.
 - A release is made by hand with `scripts/release.sh` (see Commands)
   and published by the owner, from a commit that carries the tag `v<version>` (`v1.0.0`);
   the version of a release is its tag's. Never create, move, delete or push a tag unless
@@ -172,7 +175,10 @@ See `.agents/docs/code-map.md` for the map. The rules:
   Sparkle's windows, says these three as a notice and passes everything else on: keep
   the updater on it (never `SPUStandardUpdaterController`, never Sparkle's windows
   directly), and treat every new modal alert in the app the same way: `runModal` from a
-  main-queue block is the trap, from a click it is not.
+  main-queue block is the trap, from a click it is not. What can wait for the user
+  without stopping anything is a sheet on its window: the save and open panels and the
+  import sheet of General › Settings file are sheets (`beginSheetModal`,
+  `presentAsSheet`), each opened from the click or from the end of the sheet before it.
 - `Scrollio/ScrollCore/`, input event handling and HID callbacks are hot paths: no
   avoidable allocations, no synchronous I/O, no heavy logging, no notifications, no UI or
   persistence work in them.
@@ -268,6 +274,7 @@ Choose by risk, and run it: reading the code is not verification.
 | UI text | catalogs in sync, `PreferencesLocalizationTests` | long text, dark mode |
 | `scripts/`, licence and notices, `Acknowledgements.txt`, the DGCharts exclusion | `ReleaseReadinessTests`, `bash -n` on the script, `scripts/install.sh --check` | a Release build; `scripts/release.sh --check` when the owner asked (it signs with the Developer ID) |
 | The updater (`Scrollio/Update/`, the Sparkle keys of `Info.plist`, `scripts/release-lib.sh`) | `UpdateCenterTests`, `PreferencesGeneralTests`, `StatusMenuTests`, `MainMenuTests`, `ReleaseReadinessTests` | the library's functions on a copy of a Release build with the "Apple Development" certificate; a real update can only be seen with a released copy and a newer release |
+| The settings file (`SettingsFile`, `SettingsFileCenter`, `SettingsImportSheet`), a new or changed stored setting | the classes of `SettingsFileTests.swift`, `PreferencesGeneralTests` | by hand: Export…, Import… of that file and of one whose button runs a script, Restore…; the render test draws the sheet |
 
 - A bug fix gets a regression test that covers the old failure. If it cannot be automated,
   say why, what was checked by hand or by reading, and what still has to be confirmed by
@@ -275,7 +282,8 @@ Choose by risk, and run it: reading the code is not verification.
 - Prefer testable shapes: pure logic, planners, packet builders, small injected seams and
   test doubles. Do not widen an API only for a test.
 - Under XCTest every real effect is inert unless a test asks for it: posting an event, an
-  event tap, the pointer, a toast, opening an app or a file, the app's real preferences.
+  event tap, the pointer, a toast, opening an app or a file, a save or open panel, the
+  app's real preferences, its folder in Application Support.
   New code that reaches out of the process gets a seam whose default does nothing while
   `AppRuntime.isRunningXCTest` (as `ShortcutExecutor.post`), so a test that forgets to
   replace it does nothing to the Mac it runs on; `TestIsolationTests` lists the files
@@ -287,6 +295,13 @@ Choose by risk, and run it: reading the code is not verification.
 - A change to anything persisted needs a canary or migration test, or a clear statement
   of the risk. A retired setting's UserDefaults key goes into
   `ScrollSettingsCleanup.retiredDefaultsKeys` (removed on load) and is never reused.
+- A setting the app starts to store is put on one of the two lists of `SettingsFile`:
+  `exportedKeys` (a settings file holds it, an import replaces it; give it its type
+  check and a line in the sheet's summary) or `leftOut` (it stays on this Mac, with the
+  reason). `SettingsFileFormatTests` fails while it is on neither. What could make the
+  app reach further than its panes can (a switch that lets it write to a device, a
+  path it runs, anything of the updater or of a permission) is either left out or
+  shown in the sheet before the import, never imported unseen.
 
 ## What needs the user's go-ahead
 

@@ -192,13 +192,18 @@ extension StatusItemManager {
  * 图标显示
  **/
 extension StatusItemManager {
+    /// Shows or hides the icon in the menu bar. A test that hides it takes this instead
+    /// (the icon is the test host's own, and macOS stores whether it shows).
+    static var setStatusItemVisible: (Bool) -> Void = { visible in
+        statusItem.isVisible = visible
+    }
     // 显示状态栏图标
     class func showStatusItem() {
-        self.statusItem.isVisible = true
+        setStatusItemVisible(true)
     }
     // 隐藏状态栏图标
     class func hideStatusItem() {
-        self.statusItem.isVisible = false
+        setStatusItemVisible(false)
     }
 }
 
