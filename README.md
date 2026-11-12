@@ -521,8 +521,10 @@ The tests run inside `Scrollio Debug.app` with its startup side effects switched
 the event taps and Logitech sessions are not started, the real settings are not written
 and no login item is registered. Never add `CODE_SIGNING_ALLOWED=NO`: it re-signs the
 debug app ad hoc, macOS then asks for the Accessibility permission again, and with a
-running instance that prompt can freeze mouse and keyboard input. Tests that talk to a
-real Logitech mouse run only when asked for:
+running instance that prompt can freeze mouse and keyboard input. With a team of your
+own, add `-xcconfig Local.xcconfig` to these commands too (see
+[Build from source](#-build-from-source)). Tests that talk to a real Logitech mouse run
+only when asked for:
 
 ```bash
 LOGI_REAL_DEVICE=1 xcodebuild -scheme Debug -testPlan DebugWithDevice -destination 'platform=macOS' test
