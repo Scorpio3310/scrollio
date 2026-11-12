@@ -17,6 +17,7 @@
       "identifier" : "22142D9F1E25344E00E4BFBF",
       "name" : "Scrollio"
     },
+    "testExecutionOrdering" : "random",
     "testTimeoutsEnabled" : true
   },
   "testTargets" : [

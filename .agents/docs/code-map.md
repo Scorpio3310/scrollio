@@ -47,7 +47,8 @@ Tests are in `ScrollioTests/`; Logitech test doubles in `ScrollioTests/LogiTestD
   `Scrollio/Integration/` or an explicit facade. `Scrollio/Integration/` may know more
   bridge types; the rest of the app only the public allowlist in
   `scripts/qa/lint-logi-boundary.sh`.
-- Real-device logic is isolated behind `LOGI_REAL_DEVICE=1`.
+- Real-device logic is isolated behind the test plan `DebugWithDevice` (it sets
+  `LOGI_REAL_DEVICE=1` for the tests).
 - No setting is written to a Logitech mouse while `logiMouseManaged` is off. Not covered
   by the switch: diverting buttons (for bindings, for gestures the mouse tracks, and all
   of them while a button is recorded), Logitech actions bound to a button, the gesture

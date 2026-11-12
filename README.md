@@ -527,7 +527,7 @@ own, add `-xcconfig Local.xcconfig` to these commands too (see
 only when asked for:
 
 ```bash
-LOGI_REAL_DEVICE=1 xcodebuild -scheme Debug -testPlan DebugWithDevice -destination 'platform=macOS' test
+xcodebuild -scheme Debug -testPlan DebugWithDevice -destination 'platform=macOS' test
 ```
 
 ### Making a release

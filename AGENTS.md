@@ -101,6 +101,14 @@ scripts/release.sh             # the same, then notarized by Apple and packed in
   print nothing. The tests run inside that app with its startup side effects off
   (`AppRuntime`): the app's event taps and Logitech sessions are not started, the real
   settings are not written and no login item is registered.
+- The suite passes with no display awake (a night run, a headless Mac): a test that needs
+  a display link skips and says so. Each test has 60 seconds (the test plans' time limit),
+  and the order is shuffled at every run: a test must not lean on the one before it.
+- Render tests draw panes and the Welcome Guide to PNG files and run only when asked to:
+  `TEST_RUNNER_SCROLLIO_SHOTS_DIR=<folder> xcodebuild … test -only-testing:ScrollioTests/<Class>`.
+  xcodebuild hands a variable to the tests only when its name begins with `TEST_RUNNER_`
+  (the tests see it without the prefix); a variable set in the shell without it does not
+  arrive.
 
 ## Files and targets
 
@@ -228,6 +236,16 @@ Choose by risk, and run it: reading the code is not verification.
   hand.
 - Prefer testable shapes: pure logic, planners, packet builders, small injected seams and
   test doubles. Do not widen an API only for a test.
+- Under XCTest every real effect is inert unless a test asks for it: posting an event, an
+  event tap, the pointer, a toast, opening an app or a file, the app's real preferences.
+  New code that reaches out of the process gets a seam whose default does nothing while
+  `AppRuntime.isRunningXCTest` (as `ShortcutExecutor.post`), so a test that forgets to
+  replace it does nothing to the Mac it runs on; `TestIsolationTests` lists the files
+  that may hold such a call.
+- A test that stores settings takes its store from `TestDefaults` (a temporary folder,
+  removed with the test) and hands it to `Options.defaults` or the pane's own seam. Never
+  `UserDefaults(suiteName:)` with a name (it leaves a file in `~/Library/Preferences`
+  for every test) and never `UserDefaults.standard`.
 - A change to anything persisted needs a canary or migration test, or a clear statement
   of the risk. A retired setting's UserDefaults key goes into
   `ScrollSettingsCleanup.retiredDefaultsKeys` (removed on load) and is never reused.
@@ -237,8 +255,8 @@ Choose by risk, and run it: reading the code is not verification.
 Do these only when the user asked for them explicitly:
 
 - Anything with real hardware or the live system: real-device tests
-  (`LOGI_REAL_DEVICE=1 xcodebuild -scheme Debug -testPlan DebugWithDevice -destination 'platform=macOS' test`,
-  mouse connected), HID traffic (the probes in `tools/hidpp/` among it), posting synthetic
+  (`xcodebuild -scheme Debug -testPlan DebugWithDevice -destination 'platform=macOS' test`,
+  mouse connected; the plan itself tells the tests that a mouse is there), HID traffic (the probes in `tools/hidpp/` among it), posting synthetic
   input events, launching the app while an installed copy runs, anything that depends on
   the Accessibility permission.
 - Changes to signing, entitlements or notarization. Creating, moving, deleting or pushing
