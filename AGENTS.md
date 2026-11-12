@@ -181,12 +181,24 @@ See `.agents/docs/code-map.md` for the map. The rules:
   `runModal` from a main-queue block is the trap, from a click, a timer or
   `fromTheRunLoop` it is not. Do not use `CFRunLoopPerformBlock` or
   `RunLoop.perform(inModes:)` for it: a block that stays holds back the other blocks of
-  its turn. Do not turn Scrollio into a Dock app (`Utils.showDockIcon`) right before an
-  alert: it then opens on the desktop Space, out of sight for someone in a full-screen
-  app. What can wait for the user without being modal for the app is a sheet on its
+  its turn. What can wait for the user without being modal for the app is a sheet on its
   window: the save and open panels and the import sheet of General › Settings file are
   sheets (`beginSheetModal`, `presentAsSheet`), each opened from the click or from the
   end of the sheet before it.
+- A window or an alert opens while Scrollio is a menu bar app; the Dock icon
+  (`Utils.showDockIcon`) comes afterwards, never right before. A menu bar app that
+  becomes a Dock app and then opens a window gets it on the desktop Space of the
+  display: for someone in a full-screen app it is not on screen at all, and may hold the
+  keyboard all the same. Opened first, it is on the Space in use, over the full-screen
+  app, and stays there when the icon comes (`WindowManager.showWindow` does it so for
+  the settings). For updates `UpdateCenter` keeps the order: the window of a check the
+  user asked for opens without the icon, which comes when the update starts to wait
+  (Scrollio left the front with it unanswered); a scheduled find gets the icon and a
+  badge and no window (Sparkle is told not to open one), and the window opens when the
+  user comes to Scrollio or asks in the menu; before a window or an alert opens for
+  someone who is elsewhere (the menu item, "Install Update", "Update Error!") the icon
+  is let go first. Do not hand Sparkle the showing of scheduled finds again: it opens
+  them behind the front app, or in front with the keyboard right after a start.
 - `Scrollio/ScrollCore/`, input event handling and HID callbacks are hot paths: no
   avoidable allocations, no synchronous I/O, no heavy logging, no notifications, no UI or
   persistence work in them.
