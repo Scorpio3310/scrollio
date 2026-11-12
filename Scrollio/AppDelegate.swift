@@ -97,6 +97,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// The controller that sleep, wake, a change of user and a change of the Accessibility
     /// access lead to: the app's own. A test passes one with a fake environment.
     lazy var runController: AppRunController = .shared
+    /// Puts the window of a waiting update in front; false when none waits.
+    var showWaitingUpdate: () -> Bool = { UpdateCenter.shared.showWaitingUpdate() }
 
     // 运行前预处理
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -290,6 +292,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         guard !flag else {
             return true
+        }
+        // While an update waits, Scrollio is in the Dock for it: a click on that icon
+        // leads to the update, not to the settings.
+        if showWaitingUpdate() {
+            return false
         }
         let identifier = Self.windowForReopen(hasAccess: Utils.isHadAccessibilityPermissions())
         if identifier == WINDOW_IDENTIFIER.introductionWindowController {

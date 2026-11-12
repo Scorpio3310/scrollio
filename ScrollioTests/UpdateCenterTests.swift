@@ -116,6 +116,8 @@ final class UpdateCenterTests: XCTestCase {
         XCTAssertTrue(world.log[0].hasPrefix("Updates: off, this copy has no update feed"), world.log[0])
         // Its calls do nothing.
         center.checkForUpdates()
+        center.appBecameActive()
+        XCTAssertFalse(center.showWaitingUpdate())
         center.setChecksAutomatically(true)
         center.setInstallsAutomatically(true)
         XCTAssertEqual(world.activations, 0)
@@ -168,8 +170,10 @@ final class UpdateCenterTests: XCTestCase {
         XCTAssertFalse(center.mayStart())
         // Without an updater its calls ask nobody, whatever comes and goes.
         center.updateWillBeShown(version: "9.9.9", userInitiated: false)
+        center.appBecameActive()
         center.appResignedActive()
         center.checkForUpdates()
+        XCTAssertFalse(center.showWaitingUpdate())
         XCTAssertFalse(center.reminder.windowWasShown)
         XCTAssertEqual(NSApp.activationPolicy(), policy)
         center.updateSessionEnded()
@@ -211,36 +215,74 @@ final class UpdateCenterTests: XCTestCase {
 
     // MARK: - While an update waits
 
-    func testAnUpdateFoundByAScheduledCheckShowsInTheDockWithABadge() {
+    /// A scheduled check found an update while the user was doing something else: the
+    /// update waits. Scrollio goes into the Dock with a badge, and that is all: Sparkle
+    /// is told not to open its window (it would, behind the front app's window or, in
+    /// the first seconds after a start, in front with the keyboard), and nothing brings
+    /// Scrollio to the front. Nothing lands on a full-screen app.
+    func testAScheduledFindShowsTheDockIconAndABadgeAndOpensNoWindow() throws {
         let world = World()
-        let center = makeCenter(world)
+        let center = makeCenter(world, withUpdater: true)
         var changes = 0
         let observer = NotificationCenter.default.addObserver(forName: UpdateCenter.didChangeNotification, object: center, queue: nil) { _ in changes += 1 }
         defer { NotificationCenter.default.removeObserver(observer) }
 
+        // Sparkle asks whether it should open the window, behind or in front: no.
+        let selector = NSSelectorFromString("standardUserDriverShouldHandleShowingScheduledUpdate:andInImmediateFocus:")
+        let method = try XCTUnwrap(center.method(for: selector), "Sparkle would open the window of a scheduled find by itself")
+        typealias Answer = @convention(c) (AnyObject, Selector, AnyObject?, ObjCBool) -> ObjCBool
+        let answer = unsafeBitCast(method, to: Answer.self)
+        XCTAssertFalse(answer(center, selector, nil, false).boolValue, "behind what the user is doing")
+        XCTAssertFalse(answer(center, selector, nil, true).boolValue, "in front, with the keyboard")
+
         center.updateWillBeShown(version: "1.1.0", userInitiated: false)
+        XCTAssertEqual(world.asked, ["Dock icon on", "badge 1"], "nothing else: no window, nothing in front")
         XCTAssertEqual(center.reminder.waitingVersion, "1.1.0")
         XCTAssertTrue(center.reminder.showsBadge)
+        XCTAssertFalse(center.reminder.windowWasShown)
         XCTAssertTrue(center.holdsDockIcon)
-        XCTAssertEqual(world.dockShown, 1)
-        XCTAssertEqual(world.badges, ["1"])
         XCTAssertEqual(changes, 1)
 
-        // The user brings the window to the front: the badge goes, the icon stays.
-        center.updateGotAttention()
-        XCTAssertEqual(center.reminder.waitingVersion, "1.1.0")
-        XCTAssertFalse(center.reminder.showsBadge)
-        XCTAssertTrue(center.holdsDockIcon)
-        XCTAssertEqual(world.badges, ["1", nil])
-        XCTAssertEqual(world.dockReleased, 0)
+        // Scrollio was never in front, and whatever goes on elsewhere changes nothing.
+        center.appResignedActive()
+        world.aMomentPasses()
+        XCTAssertEqual(world.asked, ["Dock icon on", "badge 1"])
+        XCTAssertTrue(world.later.isEmpty)
 
         // Installed, skipped or postponed.
         center.updateSessionEnded()
         XCTAssertEqual(center.reminder, UpdateReminder())
         XCTAssertFalse(center.holdsDockIcon)
-        XCTAssertEqual(world.dockReleased, 1)
-        XCTAssertEqual(world.badges, ["1", nil, nil])
+        XCTAssertEqual(world.asked, ["Dock icon on", "badge 1", "no badge", "Dock icon off"])
         XCTAssertEqual(changes, 2)
+    }
+
+    /// The window of a scheduled find opens when the user comes to Scrollio: the Dock
+    /// icon, ⌘Tab, its settings. Once, and in front; the badge goes, the icon stays.
+    func testTheWindowOfAScheduledFindOpensWhenTheUserComesToScrollio() {
+        let world = World()
+        let center = makeCenter(world, withUpdater: true)
+        center.updateWillBeShown(version: "1.1.0", userInitiated: false)
+        world.asked = []
+
+        // While Sparkle takes no request (it is still busy with the find), nothing is asked.
+        world.updaterIsReady = false
+        world.isInFront = true
+        center.appBecameActive()
+        XCTAssertEqual(world.asked, [])
+        XCTAssertTrue(center.reminder.showsBadge)
+
+        world.updaterIsReady = true
+        center.appBecameActive()
+        XCTAssertEqual(world.asked, ["no badge", "Sparkle: the window in front"], "he came by himself: Scrollio stays the Dock app it is")
+        XCTAssertTrue(center.reminder.windowWasShown)
+        XCTAssertFalse(center.reminder.showsBadge)
+        XCTAssertTrue(center.holdsDockIcon, "until the update is answered")
+
+        // Coming again does not open it again; Sparkle says when it has his attention.
+        center.appBecameActive()
+        center.updateGotAttention()
+        XCTAssertEqual(world.asked, ["no badge", "Sparkle: the window in front", "no badge"])
     }
 
     /// An update the user asked about opens its window where he is, over a full-screen
@@ -258,6 +300,10 @@ final class UpdateCenterTests: XCTestCase {
         XCTAssertEqual(center.reminder.waitingVersion, "2.0.0")
         XCTAssertTrue(center.reminder.windowWasShown)
         XCTAssertFalse(center.reminder.showsBadge)
+        // Being in front again (his own click on the window) opens nothing a second time.
+        center.appBecameActive()
+        XCTAssertEqual(world.asked, ["no badge"])
+
         // He looks elsewhere for an instant and is back: it does not wait yet.
         world.isInFront = false
         center.appResignedActive()
@@ -296,6 +342,32 @@ final class UpdateCenterTests: XCTestCase {
         world.aMomentPasses()
         XCTAssertEqual(world.dockShown, 0)
         XCTAssertEqual(world.dockReleased, 1, "the session's end lets the icon go whether or not it was on")
+    }
+
+    /// A click on the Dock icon of a waiting update leads to the update, not to the
+    /// settings.
+    func testTheDockIconOfAWaitingUpdateLeadsToTheUpdate() {
+        let world = World()
+        let center = makeCenter(world, withUpdater: true)
+        XCTAssertFalse(center.showWaitingUpdate(), "no update waits")
+        center.updateWillBeShown(version: "1.1.0", userInitiated: false)
+        world.asked = []
+        world.updaterIsReady = false
+        XCTAssertFalse(center.showWaitingUpdate())
+        world.updaterIsReady = true
+        XCTAssertTrue(center.showWaitingUpdate())
+        XCTAssertEqual(world.asked, ["no badge", "Sparkle: the window in front"])
+
+        // The app's side: reopening asks the updater first, and opens nothing else then.
+        let delegate = AppDelegate()
+        var asked = 0
+        delegate.showWaitingUpdate = { asked += 1; return true }
+        XCTAssertTrue(delegate.applicationShouldHandleReopen(NSApp, hasVisibleWindows: true), "a window is there: AppKit brings it forward")
+        XCTAssertEqual(asked, 0)
+        let windows = Set(WindowManager.shared.refs.keys)
+        XCTAssertFalse(delegate.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false))
+        XCTAssertEqual(asked, 1)
+        XCTAssertEqual(Set(WindowManager.shared.refs.keys), windows, "the settings were not opened beside the update")
     }
 
     /// A check that found nothing, or one that failed, also ends a session: the Dock icon
@@ -420,6 +492,7 @@ final class UpdateCenterTests: XCTestCase {
             "updater:didFinishUpdateCycleForUpdateCheck:error:",
             // SPUStandardUserDriverDelegate
             "supportsGentleScheduledUpdateReminders",
+            "standardUserDriverShouldHandleShowingScheduledUpdate:andInImmediateFocus:",
             "standardUserDriverWillHandleShowingUpdate:forUpdate:state:",
             "standardUserDriverDidReceiveUserAttentionForUpdate:",
             "standardUserDriverWillFinishUpdateSession",

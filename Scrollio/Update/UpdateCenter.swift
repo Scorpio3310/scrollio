@@ -36,12 +36,11 @@
 //    yet in the Dock. The download and "Ready to Install" follow in the same place. The
 //    Dock icon comes when that update starts to wait: Scrollio left the front with it
 //    unanswered;
-//  - when a scheduled check finds a version, Sparkle shows its window: in front only
-//    right after Scrollio started or the user touched the updater (the first seconds),
-//    otherwise behind what the user is doing, or, while a settings window is open, the
-//    next time Scrollio comes to the front. Until it is answered Scrollio sits in the
-//    Dock with a badge, the menu bar menu starts with "Update to Scrollio 1.1.0…" and
-//    General says so (`UpdateReminder`).
+//  - when a scheduled check finds a version, no window opens and nothing comes to the
+//    front: Scrollio goes into the Dock with a badge, the menu bar menu starts with
+//    "Update to Scrollio 1.1.0…" and General says so (`UpdateReminder`). The window
+//    opens when the user comes to Scrollio (the Dock icon, ⌘Tab, its settings) or asks
+//    for it in the menu.
 //
 
 import Cocoa
@@ -84,12 +83,13 @@ struct UpdateReminder: Equatable {
     /// The Dock icon carries a badge: the update came from a scheduled check and the user
     /// has not looked at it yet.
     private(set) var showsBadge = false
-    /// The update's window has been in front of the user: he asked for the check, or
-    /// looked at the window of a scheduled find.
+    /// The update's window has been in front of the user: he asked for the check, or came
+    /// to Scrollio after a scheduled one. False: a scheduled check found the update and
+    /// its window has not opened yet.
     private(set) var windowWasShown = false
 
     /// A check found `version`. `userInitiated`: the user asked for the check, so the
-    /// window opens in front of them and needs no badge.
+    /// window opens in front of them and needs no badge; a scheduled check opens none.
     mutating func willShow(version: String, userInitiated: Bool) {
         waitingVersion = version
         showsBadge = !userInitiated
@@ -388,10 +388,14 @@ final class UpdateCenter: NSObject {
         ]
     }
 
-    /// Scrollio leaving the front decides when a found update's Dock icon appears.
+    /// Scrollio coming to the front and leaving it decide when a found update's window
+    /// opens and when its Dock icon appears.
     private func observeAppActivity() {
         let notes = NotificationCenter.default
         activityObservers = [
+            notes.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: nil) { [weak self] _ in
+                self?.appBecameActive()
+            },
             notes.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: nil) { [weak self] _ in
                 self?.appResignedActive()
             },
@@ -432,6 +436,16 @@ final class UpdateCenter: NSObject {
         askUpdater()
     }
 
+    /// The window of a waiting update, in front. False: no update waits (or this copy has
+    /// no updater). For the Dock icon: clicked while an update waits, it leads to the
+    /// update and not to the settings.
+    func showWaitingUpdate() -> Bool {
+        guard reminder.waitingVersion != nil, updaterIsReady() else { return false }
+        updateGotAttention()
+        askUpdater()
+        return true
+    }
+
     /// The switch in General. Sparkle stores it (in the app's preferences) and plans the
     /// next check; a choice made here also answers Sparkle's own question at launch.
     func setChecksAutomatically(_ on: Bool) {
@@ -459,8 +473,11 @@ final class UpdateCenter: NSObject {
     /// Install" follow there. The Dock icon comes when the update starts to wait
     /// (`appResignedActive`).
     ///
-    /// A scheduled check found it: the update waits from the start, and Scrollio goes
-    /// into the Dock with a badge, where ⌘Tab and a click find it.
+    /// A scheduled check found it: the update waits from the start. Scrollio goes into
+    /// the Dock with a badge, where ⌘Tab and a click find it, and Sparkle opens no window
+    /// (`standardUserDriverShouldHandleShowingScheduledUpdate`): nothing lands on what the
+    /// user is doing. The window opens when he comes to Scrollio (`appBecameActive`) or
+    /// asks for it (`checkForUpdates`).
     func updateWillBeShown(version: String, userInitiated: Bool) {
         reminder.willShow(version: version, userInitiated: userInitiated)
         if !userInitiated {
@@ -474,6 +491,15 @@ final class UpdateCenter: NSObject {
     func updateGotAttention() {
         reminder.userLooked()
         setDockBadge(nil)
+    }
+
+    /// Scrollio came to the front: the Dock icon, ⌘Tab, its settings. The window of an
+    /// update that a scheduled check found opens now, in front. (The user left what he
+    /// was doing to come here; a full-screen Space is left by coming to a Dock app.)
+    func appBecameActive() {
+        guard reminder.waitingVersion != nil, !reminder.windowWasShown, updaterIsReady() else { return }
+        updateGotAttention()
+        askUpdater()
     }
 
     /// Scrollio left the front. An update whose window the user has seen and not answered
@@ -601,12 +627,19 @@ extension UpdateCenter: SPUUpdaterDelegate {
 
 extension UpdateCenter: SPUStandardUserDriverDelegate {
 
-    /// Scrollio adds its own reminders (the Dock, the menus, General). Sparkle still shows
-    /// its window when it wants to: for an app without a Dock icon at once, behind what
-    /// the user is doing (in front only in the first seconds after the updater started
-    /// or its settings changed); for one in the Dock, when it next comes to the front.
+    /// Scrollio reminds of a scheduled find itself: the Dock, the menus, General.
     var supportsGentleScheduledUpdateReminders: Bool {
         return true
+    }
+
+    /// Sparkle does not open the window of an update that a scheduled check found.
+    /// Left to itself it would: for an app without a Dock icon at once, behind the front
+    /// app's window, and in the first seconds after the updater started (or its settings
+    /// changed) in front, with the keyboard. Neither belongs on someone's work. Scrollio
+    /// shows the Dock icon and the badge and opens the window when the user comes
+    /// (`updateWillBeShown`); Sparkle keeps the window ready and shows it when asked.
+    func standardUserDriverShouldHandleShowingScheduledUpdate(_ update: SUAppcastItem, andInImmediateFocus immediateFocus: Bool) -> Bool {
+        return false
     }
 
     func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
