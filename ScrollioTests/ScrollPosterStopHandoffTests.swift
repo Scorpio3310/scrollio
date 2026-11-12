@@ -1033,6 +1033,60 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         }
     }
 
+    /// The same over Chrome, the one app whose stop posts a frame with the switch off (its
+    /// "ended"). That frame is queued behind the post that does not return, and the stop
+    /// still does not wait: the wait is for a scroll with trackpad phases only.
+    func testAStopOverChromeWithoutPhasesDoesNotWaitForTheQueue() throws {
+        let savedApplication = ScrollCore.shared.application
+        let savedSwitch = Options.shared.scroll.smoothSimTrackpad
+        ScrollCore.shared.application = nil
+        Options.shared.scroll.smoothSimTrackpad = false
+        defer {
+            ScrollCore.shared.application = savedApplication
+            Options.shared.scroll.smoothSimTrackpad = savedSwitch
+        }
+        let context = ScrollDispatchContext()
+        let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+        poster.isEventTargetingChrome = { _ in true }
+        _ = FakeDisplay(for: poster)
+        let gate = DispatchSemaphore(value: 0)
+        let entered = DispatchSemaphore(value: 0)
+        var enteredOnce = false
+        var phases: [Double] = []
+        let lock = NSLock()
+        context.postObserverForTests = { event, _ in
+            lock.lock()
+            phases.append(event.getDoubleValueField(.scrollWheelEventScrollPhase))
+            let first = !enteredOnce
+            enteredOnce = true
+            lock.unlock()
+            if first { entered.signal() }
+            gate.wait()
+        }
+        var waits = 0
+        context.waitObserverForTests = { waits += 1 }
+
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        var now = ScrollPoster.monotonicNow()
+        for _ in 0..<3 {
+            now += 1.0 / 60.0
+            poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: now)
+        }
+        XCTAssertEqual(entered.wait(timeout: .now() + 5), .success, "a post is under way and does not return")
+
+        let before = ProcessInfo.processInfo.systemUptime
+        poster.stop(reason: .leftClick)
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - before, 0.03, "the stop came back at once")
+
+        XCTAssertEqual(waits, 0, "no wait, although Chrome's \"ended\" is queued")
+        XCTAssertFalse(poster.isGliding)
+        for _ in 0..<64 { gate.signal() }
+        context.waitForPostQueueForTests()
+        lock.lock()
+        XCTAssertEqual(phases.last, 4, "Chrome's \"ended\" went out, in its turn")
+        lock.unlock()
+    }
+
     // MARK: - Frames that open or close a gesture are not dropped by a stop
 
     /// One click as one touch, on the real path, with one slow post: the post of the last
@@ -1315,8 +1369,8 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
                 self.postedAt.append(self.now - self.base)
                 self.lock.unlock()
             }
-            ScrollSystemLog.sessionObserverForTests = { [unowned self] session, reason in
-                self.sessions.append((session, reason))
+            ScrollSystemLog.sessionObserverForTests = { [weak self] session, reason in
+                self?.sessions.append((session, reason))
             }
         }
 
@@ -1373,7 +1427,11 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         }
     }
 
+    /// The run's observer of the scroll log is taken down when the test ends, however it
+    /// ends: a test that threw before `finish()` left it pointing at the run, and the next
+    /// test that ended a scroll crashed the host.
     private func realRun(over kind: ScrollUtils.TrackpadStyleTarget, oldLongTouch: Bool = false) -> RealRun {
+        addTeardownBlock { ScrollSystemLog.sessionObserverForTests = nil }
         return RealRun(over: kind, oldLongTouch: oldLongTouch) { _ = FakeDisplay(for: $0) }
     }
 
@@ -1667,6 +1725,35 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
     }
 
     // MARK: The one touch's end, as posted
+
+    /// What ends a one touch by itself is a display frame: the first one 0.2 s after the
+    /// touch's last frame. When no frame comes in that rest (a display link that runs but
+    /// does not call: suspected for a display that goes to sleep), the touch stays open
+    /// until the keeper's look finds a link with nothing posted and no wheel event for 5 s.
+    /// The keeper then ends the scroll: "ended" and the tap go out, and the scroll's line
+    /// says who ended it.
+    func testTheRealPath_oneTouch_withoutFramesInTheRestTheKeeperEndsItAndTheLogSaysSo() throws {
+        try withSettings(switchOn: true) {
+            let run = realRun(over: .touchOnly)
+            XCTAssertTrue(try run.wheel(at: 0))
+            run.run(until: 0.45)
+            XCTAssertEqual(run.frames.last?.name, "changed", "the last frame has gone out, the touch rests")
+            let before = run.frames.count
+            // No display frame from here on. The keeper looks 3 s later: too soon.
+            run.poster.healthCheckForTests(now: 5_000 + 0.45 + 3)
+            XCTAssertEqual(run.frames.count, before)
+            XCTAssertTrue(run.poster.isGliding, "the touch is still open")
+            run.poster.healthCheckForTests(now: 5_000 + 0.45 + 5.1)
+            XCTAssertFalse(run.poster.isGliding)
+            let frames = run.finish()
+            XCTAssertEqual(frames.dropFirst(before).map(\.name), ["ended", "mayBegin", "cancelled"])
+            XCTAssertNil(brokenGesture(in: frames))
+            XCTAssertEqual(run.sessions.map(\.reason), [.keeper])
+            let line = ScrollSystemLog.message(for: try XCTUnwrap(run.sessions.first?.session), ended: .keeper)
+            XCTAssertTrue(line.hasSuffix("trackpad-style on (one touch: 1 touches), ended: ended by the keeper"), line)
+            XCTAssertTrue(run.poster.healthLinesForTests.contains { $0.contains("the keeper stopped a display link") }, "and the app log says why")
+        }
+    }
 
     /// A scroll that runs out by itself, through the real path: the posted "ended" carries
     /// a time 0.2 s or more after the last "changed", it is handed over that long after it,

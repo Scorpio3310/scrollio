@@ -131,6 +131,18 @@ final class ScrollClassicRig {
         isRunning = true
     }
 
+    /// One vertical wheel event with a glide time of its own (the feel was changed between
+    /// two wheel events).
+    func input(_ pixels: Double, notch: Double, at time: Double, duration: Double) {
+        run(until: time)
+        now = start + time
+        poster.inputForTests(
+            ScrollPosterInput(y: pixels, x: 0, notch: notch, duration: OPTIONS_SCROLL_DEFAULT.generateDurationTransition(with: duration)),
+            at: start + time
+        )
+        isRunning = true
+    }
+
     // MARK: Results
 
     /// Frames that move the page.
@@ -908,6 +920,39 @@ final class ScrollClassicPathTests: XCTestCase {
         rig.run(until: 4)
         XCTAssertEqual(rig.stream.last, "ended 0")
         XCTAssertFalse(rig.recorded.dropFirst(before + 1).contains { ($0.frame.momentumPhase ?? 0) != 0 }, "from there on: one touch")
+    }
+
+    /// The scroll under a one touch ends when the switch-off scroll does, also after a
+    /// wheel event that came while its stop was held for the touch's rest. A click at a
+    /// short glide time is over (its stop held, the touch resting) when a click with
+    /// Smooth's glide time comes (the feel was changed in between). That click's own scroll
+    /// ends 17 ms after its touch's "ended", as with the switch off, not with it. (The wheel
+    /// event takes the held stop back. Left standing, the stop was asked for the moment
+    /// the second touch ended, before the scroll under it was over.)
+    func testTrackpadStyleOneTouch_aWheelEventTakesBackAHeldStop() throws {
+        let click = 33.6 * 6.3
+        let alone = ScrollClassicRig(duration: 2.0, trackpadStyle: false)
+        alone.input(click, notch: click, at: 0)
+        alone.run(until: 4)
+        let over = try XCTUnwrap(alone.stops.first?.time)
+        let touchEnds = alone.lastMovement + 0.2
+        XCTAssertLessThan(over, touchEnds - 0.03, "at this glide time the scroll is over while the touch still rests")
+        let second = (over + touchEnds) / 2
+
+        let touch = ScrollClassicRig(duration: 2.0, form: .oneTouch)
+        let plain = ScrollClassicRig(duration: 2.0, trackpadStyle: false)
+        for rig in [touch, plain] {
+            rig.input(click, notch: click, at: 0)
+            rig.input(click, notch: click, at: second, duration: 3.69)
+            rig.run(until: 6)
+        }
+        XCTAssertEqual(plain.stops.count, 2, "with the switch off the first scroll is over before the second click")
+        XCTAssertEqual(touch.stops.count, 1, "the click came in the touch's rest: one scroll")
+        XCTAssertEqual(touch.phaseSequence, ["began", "changed", "ended"])
+        XCTAssertEqual(touch.moving.map { $0.frame.y }, plain.moving.map { $0.frame.y })
+        let ended = touch.firstTime(of: "ended") ?? -1
+        XCTAssertLessThan(ended, (plain.stops.last?.time ?? 0) - 1e-6, "the touch ends before the scroll under it is over")
+        XCTAssertEqual(touch.stops.last?.time ?? -1, plain.stops.last?.time ?? -2, accuracy: 1e-6, "and the scroll ends when the switch-off one does")
     }
 
     private static let gestureScenarios: [(String, [(Double, Double)])] = {
