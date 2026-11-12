@@ -3022,7 +3022,7 @@ final class ScrollGlideFollowerTests: XCTestCase {
 
 // MARK: - The system log
 
-/// The diagnostics the owner reads with `log show` (README, "Diagnostics"): they have to say
+/// The diagnostics the owner reads with `log show` (docs/troubleshooting.md, "Diagnostics"): they have to say
 /// what really happened, and cost nothing per event.
 final class ScrollSystemLogTests: XCTestCase {
 

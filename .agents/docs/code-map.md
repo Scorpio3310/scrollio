@@ -78,7 +78,7 @@ summary of the writes of each connection and writes that were slow or refused) a
 category `app` (`AppSystemLog` in `Utils/`: starts
 and stops with their reason, event taps macOS turned off or that could not be created,
 restarts and their throttle, a new copy replacing a running one). How to read it:
-`README.md`, "Diagnostics". All are low volume by rule: state changes, decisions and one
+`docs/troubleshooting.md`, "Diagnostics". All are low volume by rule: state changes, decisions and one
 line per scroll, per roll of the thumb wheel or per hold of a gesture button the mouse
 tracks, never a line per wheel, pointer or key event.
 

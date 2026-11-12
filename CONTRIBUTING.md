@@ -5,7 +5,7 @@ what you can expect.
 
 - **Issues are welcome.** A report helps most when it says which macOS, which mouse and how
   it is connected (Bluetooth, a Logitech receiver, a cable), what you did, what you
-  expected, and what the log says around that moment (README, "Diagnostics"). Read a log
+  expected, and what the log says around that moment (`docs/troubleshooting.md`, "Diagnostics"). Read a log
   before you paste it, the one exported from Logitech Diagnostics above all.
 - **Pull requests are read, but may wait.** There is no promise when, and not every one
   will be merged. Before a larger change, open an issue and ask whether it fits.
@@ -18,7 +18,7 @@ what you can expect.
 - [AGENTS.md](AGENTS.md) has the rules of this code for people and for coding agents:
   how to build and test, what never to do with signing, the module boundaries, the
   strings.
-- Build with your own signing team through `Local.xcconfig` (README, "Build from
+- Build with your own signing team through `Local.xcconfig` (`docs/development.md`, "Build from
   source"), not by changing the project.
 - Run the tests of what you changed and `scripts/qa/lint-logi-boundary.sh`. A bug fix
   comes with a test that fails without it.

@@ -33,7 +33,7 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
   reporter, and Sparkle's system profile is off. A copy built from source has no update
   feed and makes no network request.
 - It talks to Logitech mice over HID++ (a Logitech receiver or Bluetooth). What it reads
-  and what it writes is in the README, under "Logitech MX mice".
+  and what it writes is in `docs/features.md`, under "Logitech MX mice".
 - The released app is signed with a Developer ID, notarized by Apple, runs with the
   hardened runtime without exceptions and has no entitlements. It is not sandboxed: a
   sandboxed app cannot change other apps' events, talk to the mouse or run your scripts.

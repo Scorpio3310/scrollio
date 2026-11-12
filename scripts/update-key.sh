@@ -15,7 +15,7 @@
 #     the Accessibility permission the app holds;
 #   - without it no new version reaches the installed copies as an update. (As long as
 #     the releases stay signed with the same Developer ID, a lost key can be replaced by
-#     a new one: see the README, "Making a release".)
+#     a new one: see docs/development.md, "Making a release".)
 # A file written by "export" is the key itself, unprotected: move it into the password
 # manager and delete the file.
 #

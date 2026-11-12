@@ -98,7 +98,7 @@ scripts/update-key.sh          # shows whether the update key in the keychain is
   `--check` it uploads the build to Apple's notary service: run it only when the owner
   asked for a release. It never installs: its signature is not the development signature
   of the copy in `/Applications`, so that copy would be asked for Accessibility again.
-  What it checks and what it leaves behind: `README.md`, "Making a release". A check in
+  What it checks and what it leaves behind: `docs/development.md`, "Making a release". A check in
   either script never pipes a tool into `grep -q` (under `pipefail` a match then reads as
   no match): the output goes to a variable or a file first. The parts that can be tried
   without the Developer ID (signing Sparkle's helper programs, looking at every program's
@@ -117,7 +117,7 @@ scripts/update-key.sh          # shows whether the update key in the keychain is
 - Keep the signing team and identities in the project as they are. Another Mac's team
   goes into `Local.xcconfig` (ignored by git; template `Local.xcconfig.example`), which
   `scripts/install.sh` passes to its build and a plain build takes with
-  `-xcconfig Local.xcconfig` (`README.md`, "Build from source").
+  `-xcconfig Local.xcconfig` (`docs/development.md`, "Build from source").
 - To check that code compiles, prefer a plain `build`: it starts nothing and changes no
   signature.
 - Before `test`, make sure no debug instance runs: `pgrep -fl "Scrollio Debug.app"` must
@@ -147,7 +147,8 @@ scripts/update-key.sh          # shows whether the update key in the keychain is
   boundary lint), `CHANGELOG.md`,
   `tools/` (hand-run HID++ probes and a toast harness; read `tools/README.md` before
   running a probe), `assets/readme/` (the README's pictures, made by the render tests),
-  and the documents a visitor reads first: `README.md`, `LICENSE`, `SECURITY.md`,
+  and the documents a visitor reads first: `README.md` (kept short: what Scrollio is, how
+  to get it, licence and credits) with the details it links to in `docs/`, `LICENSE`, `SECURITY.md`,
   `CONTRIBUTING.md`. They describe the app as it is: a change that makes one of their
   sentences untrue changes the sentence too.
 
@@ -214,7 +215,7 @@ See `.agents/docs/code-map.md` for the map. The rules:
   of a gesture button the mouse tracks), never a line per wheel, pointer or key event, and
   no string built per event. Nothing a user types, and no path of a user's file, goes
   into a log. Use these, not `NSLog`: only they write to the app's subsystem.
-  Reading it: `README.md`, "Diagnostics".
+  Reading it: `docs/troubleshooting.md`, "Diagnostics".
 - A write to a Logitech device never runs on the main thread: `IOHIDDeviceSetReport` takes
   15 to 29 ms over Bluetooth and the main thread serves every event tap. Send through the
   session (`LogiReportWriter`: one serial queue per device, order kept); never call
@@ -226,8 +227,8 @@ See `.agents/docs/code-map.md` for the map. The rules:
   Logitech button action writes when its button is pressed; a gesture cue plays a pulse
   and may switch the haptics on. Reading needs no switch. The header of
   `LogiDeviceSession` has the whole list; the Logitech Diagnostics window writes in debug
-  builds only. A new kind of write needs a line in that header and in `README.md`,
-  "Logitech MX mice".
+  builds only. A new kind of write needs a line in that header and in
+  `docs/features.md`, "Logitech MX mice".
 - ButtonCore, InputEvent, Shortcut and Keys share one meaning of recording, display,
   persistence and execution. When you change one, check the others.
 - Only `AppRunController` (`Scrollio/Managers/`) starts and stops the cores (the scroll
