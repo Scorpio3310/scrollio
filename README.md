@@ -131,6 +131,14 @@ sent in one of three ways:
   wheel going on over another pane or another app, Pause), the touch ends at once, and
   Scrollio sends what a trackpad sends when two fingers tap it: by the notes of two other
   mouse tools (Mac Mouse Fix, LinearMouse), that is what stops an app that would glide on.
+  For this form Scrollio has to know where the page ends, because such an app holds a
+  page stretched past its end for as long as a touch lasts. While such a scroll runs it
+  reads, through Accessibility, what kind of element is under the pointer and the
+  position of that view's scroll bar; nothing else, and nothing of it is kept or sent.
+  When the page reaches its end, the touch ends at once and the app bounces by itself;
+  while the wheel still turns into that end, nothing more is sent; a scroll that starts
+  at the end makes one small bounce. A view whose scroll bar cannot be read (no scroll
+  bar, an app that does not answer in time) scrolls as with the switch off.
 - Safari, the web apps made with its "Add to Dock" and the DuckDuckGo browser: nothing
   changes. The same for Maps, Find My, Calendar, iPhone Mirroring, Blender and the Godot
   editor: by what people who use other mouse tools report, they do something else with a
@@ -153,7 +161,11 @@ How sure this is. Nobody has seen this version on a screen yet. It was worked ou
 how AppKit, WebKit, Chromium and Firefox handle a trackpad's scroll (read in their code,
 AppKit's on macOS 27.2), from what other mouse tools send, and from measurements in a web
 view that ran without a display (there every form arrived whole: 205 of a click's 205 px).
-The form for "every other app" in a native list or text view is derived only.
+The form for "every other app" in mid-page was seen on a screen by one person, in
+Finder and other Apple apps (nothing flies on). What it does at a page's end (the
+reading of the scroll bar and all that follows from it) was written after that test and
+seen on no screen yet; no test may read another app's interface, so that part has only
+run against a stand-in.
 
 Its limits:
 
@@ -189,14 +201,15 @@ Its limits:
   the page last moved. Should the display send no frame then (suspected for a display
   that goes to sleep in that moment), the touch stays open until Scrollio's keeper ends
   it, 5 to 10 seconds later; that scroll's line in the log ends "ended by the keeper".
-- At the end of a page, an app that is not a browser can keep the page stretched until
-  the touch ends: about two thirds of a second after a click at Smooth, 1.2 s at Float
-  (a fifth of a second of each is the touch's rest). How far it
-  stretches is not known from a screen. The one measurement there is comes from a test,
-  with an AppKit scroll view 600 px high and a fast spin into its top sent as a touch:
-  356 px past the top, much more than a trackpad's bounce. A web page shown inside such an
-  app (a message in Mail) did not stretch at all when measured in a web view, unless the
-  page handles the wheel itself.
+- At the end of a page: where the scroll bar can be read, the touch ends when the page
+  arrives, a frame or two late (the reading follows the frames), so the page can go a
+  little past its end before the app's own bounce takes over. A page that is at its end
+  when a scroll starts there for the first time gets its small bounce and then plain
+  scrolling, which can cut that bounce short; from the second time on the rest is held
+  back. A page whose length changes while it scrolls (a list that loads more) can look
+  for a moment as if it moved the wrong way: the rest of that scroll is then plain.
+  Where the scroll bar cannot be read the scroll is as with the switch off: no stretch
+  and no bounce.
 
 If one app scrolls oddly with it, give that app its own settings in the Apps pane and
 turn it off there.
@@ -434,6 +447,14 @@ smooth the scrolling, run the actions of buttons, keys and gestures, and send th
 presses those actions make. Without it, no scroll, button or key event is changed. The
 Welcome Guide leads you to the switch.
 
+With "Trackpad-style scrolling (Beta)" on, the same permission is used for one more
+thing, and only while a wheel scroll in its trackpad form runs in an app that is not a
+browser: Scrollio asks that app which kind of element is under the pointer, which kinds
+its containers are up to the first scroll area, and where that area's vertical scroll
+bar stands (a number from 0 to 1). It reads no title, no text and no other value. It
+never asks macOS for the permission by itself for this: where the access is missing,
+nothing is read.
+
 "Open at login" registers Scrollio as a login item; macOS may ask you to approve it in
 System Settings under Login Items.
 
@@ -473,7 +494,11 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](SECURIT
     (to press the right key for shortcuts such as ⌘A, and to name keys) and the macOS
     setting for natural scrolling (for "Follow the hand");
   - which app is under the pointer or in front, for the per-app settings and "Smooth
-    Scrolling in …". With "Trackpad-style scrolling (Beta)" on it also looks once into the
+    Scrolling in …". With "Trackpad-style scrolling (Beta)" on, and while a wheel scroll
+    runs in an app that is not a browser, it reads the kind of the element under the
+    pointer and the position of that view's scroll bar (see [Permissions](#-permissions));
+    the scroll log gets the kinds met ("AXRow", "AXScrollArea") and the bar's position,
+    nothing else. With "Trackpad-style scrolling (Beta)" on it also looks once into the
     bundle of each app that comes to the front or that you scroll in, to see whether the
     app is built on Chromium or on Firefox's engine (the names in `Contents/Frameworks`,
     and whether `Contents/MacOS` holds a browser's app loader or Firefox's engine); only
