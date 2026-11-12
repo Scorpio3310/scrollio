@@ -260,6 +260,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             AppSystemLog.note(hardwareRecord.text)
         }
+        // EVALUATION SWITCH (removed with `TrackpadStyleEvaluation`): what Safari gets.
+        AppSystemLog.note(TrackpadStyleEvaluation.safariLaunchLine(
+            usesSafariFlick: TrackpadStyleEvaluation.usesSafariFlick, recordComesOff: ScrollHardwareRecord.comesOff
+        ))
         // Read now what the first press of a button would otherwise read inside the button
         // tap's callback: the user's Spaces shortcuts (another app's preferences) and the
         // keys of the keyboard layout in use.

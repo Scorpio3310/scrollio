@@ -1189,8 +1189,9 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
     /// `chrome`: whether the app counts as Chrome itself (it gets an "ended" at a stop with
     /// the switch off).
     /// `takesRecordOff`: what the launch's self-test found (nil: this Mac's own answer).
+    /// `safariFlick`: the evaluation switch for Safari (`ScrollPoster.usesSafariFlick`).
     private func oneClick(over kind: ScrollUtils.TrackpadStyleTarget, oldLongTouch: Bool = false, chrome: Bool = false,
-                          takesRecordOff: Bool? = nil,
+                          takesRecordOff: Bool? = nil, safariFlick: Bool = false,
                           file: StaticString = #filePath, line: UInt = #line) throws -> (frames: [PostedFrame], session: ScrollSystemLog.Session?, asked: Int) {
         let context = ScrollDispatchContext()
         let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
@@ -1198,6 +1199,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         if let takesRecordOff = takesRecordOff {
             poster.takesHardwareRecordOff = takesRecordOff
         }
+        poster.usesSafariFlick = safariFlick
         poster.isEventTargetingChrome = { _ in chrome }
         var asked = 0
         poster.trackpadStyleTarget = { _ in
@@ -1932,6 +1934,37 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             let off = try oneClick(over: .followsGlide, chrome: true)
             XCTAssertEqual(off.frames.last?.name, "ended")
             XCTAssertTrue(off.frames.allSatisfy { $0.hasRecord == true }, "off: every frame keeps the record, Chrome's \"ended\" too")
+        }
+    }
+
+    /// EVALUATION SWITCH (goes with `TrackpadStyleEvaluation`). Over Safari with it: the
+    /// flick, as a Chromium-based app gets it, and no posted event carries the wheel
+    /// event's hardware record ("momentum began" least of all: with a record on it WebKit
+    /// replaces the glide by its own). Where the record does not come off, the switch does
+    /// nothing: Safari gets no phases. Without the switch Safari gets no phases; the
+    /// DuckDuckGo browser and the apps where a wheel stays a wheel never get any.
+    func testTheRealPath_overSafariWithItsSwitch_postsAFlickWithoutTheHardwareRecord() throws {
+        try withSettings(switchOn: true) {
+            if ScrollHardwareRecord.comesOff {
+                let result = try oneClick(over: .safari, safariFlick: true)
+                XCTAssertEqual(phaseRuns(result.frames), [
+                    "began ×1", "changed ×1", "ended ×1", "momentumBegan ×1", "momentumChanged ×23", "momentumEnded ×1",
+                ])
+                XCTAssertTrue(result.frames.allSatisfy { $0.hasRecord == false }, "no event of it carries a record")
+                XCTAssertEqual(result.frames.first { $0.name == "momentumBegan" }?.hasRecord, false)
+                try assertOwnFields(result.frames)
+                XCTAssertEqual(result.session?.flick, true)
+            }
+            let noRemoval = try oneClick(over: .safari, takesRecordOff: false, safariFlick: true)
+            XCTAssertFalse(noRemoval.frames.contains { $0.hasPhase }, "the record does not come off: no phases, whatever the switch says")
+            XCTAssertEqual(noRemoval.session?.trackpadStyleWithheld, true)
+
+            let withoutTheSwitch = try oneClick(over: .safari)
+            XCTAssertFalse(withoutTheSwitch.frames.contains { $0.hasPhase })
+            XCTAssertEqual(withoutTheSwitch.session?.trackpadStyleWithheld, true)
+
+            let otherPlainApp = try oneClick(over: .plainScrolling, safariFlick: true)
+            XCTAssertFalse(otherPlainApp.frames.contains { $0.hasPhase }, "the switch is Safari's alone")
         }
     }
 

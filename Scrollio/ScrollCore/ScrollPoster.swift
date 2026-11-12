@@ -224,8 +224,10 @@ class ScrollPoster {
     //   here behind an evaluation switch, `usesOldLongTouch`.)
     // - The Chromium engine (Chrome, Dia, Arc, Electron apps) scrolls by the momentum events
     //   too. For it the scroll is a flick (`config.flick`), as described below.
-    // - Safari gets no phases at all, as with the switch off: with them it does not scroll
-    //   smoothly (`ScrollUtils.TrackpadStyleTarget.plainScrolling` says what was tried).
+    // - Safari gets no phases at all, as with the switch off (`ScrollUtils.TrackpadStyleTarget
+    //   .safari` says what is known; an evaluation switch gives it the flick), and so do the
+    //   apps where a wheel has to stay a wheel (`.plainScrolling`).
+    // - A scroll that is mainly sideways carries no phases in any app (`isMainlySideways`).
     //
     // A real flick is a short touch (3 or 4 events, ~50 ms) and then a long glide (momentum).
     // At a page edge apps treat the two very differently: the touch drags the page past the edge
@@ -299,6 +301,11 @@ class ScrollPoster {
     /// Chromium-based get the old long touch (`TrackpadStyleEvaluation`). Read once at launch;
     /// tests set it. Main thread.
     var usesOldLongTouch = TrackpadStyleEvaluation.usesOldLongTouch
+    /// EVALUATION SWITCH, removed before this is released: Safari gets the flick, without
+    /// the wheel event's hardware record, instead of no phases (`TrackpadStyleEvaluation`).
+    /// It counts only where the record comes off (`takesHardwareRecordOff`). Read once at
+    /// launch; tests set it. Main thread.
+    var usesSafariFlick = TrackpadStyleEvaluation.usesSafariFlick
     // Ending a session from the display link (see `displayLinkFrameLocked`)
     /// Counts wheel inputs; a stop the display link asked for is dropped when it is stale.
     private var inputSequence: UInt64 = 0
@@ -450,13 +457,21 @@ extension ScrollPoster {
     /// whether the switch is on but the app gets none.
     /// `oldLongTouch`: the evaluation switch (`usesOldLongTouch`). `oneTouch` is the form of
     /// every app that gets phases and no flick, unless that switch asks for the old one.
-    static func trackpadStyleForm(switchOn: Bool, target: ScrollUtils.TrackpadStyleTarget?, oldLongTouch: Bool = false) -> (phases: Bool, flick: Bool, withheld: Bool, oneTouch: Bool) {
+    /// `safariFlick`: the other evaluation switch, and only where the wheel event's hardware
+    /// record comes off a frame (`usesSafariFlick && takesHardwareRecordOff`): Safari then
+    /// gets the flick. A glide whose "momentum began" carries a record never goes to an app
+    /// known as WebKit's: WebKit would replace it by a glide of its own.
+    static func trackpadStyleForm(switchOn: Bool, target: ScrollUtils.TrackpadStyleTarget?, oldLongTouch: Bool = false, safariFlick: Bool = false) -> (phases: Bool, flick: Bool, withheld: Bool, oneTouch: Bool) {
         guard switchOn else {
             return (phases: false, flick: false, withheld: false, oneTouch: false)
         }
         switch target {
         case .plainScrolling:
             return (phases: false, flick: false, withheld: true, oneTouch: false)
+        case .safari:
+            return safariFlick
+                ? (phases: true, flick: true, withheld: false, oneTouch: false)
+                : (phases: false, flick: false, withheld: true, oneTouch: false)
         case .followsGlide:
             return (phases: true, flick: true, withheld: false, oneTouch: false)
         case .touchOnly, nil:
@@ -1708,7 +1723,8 @@ private extension ScrollPoster {
         // for the first time counts as touch-only until its bundle was looked into, off this
         // thread (`ScrollUtils.trackpadStyleTarget`).
         let target = simTrackpad ? event.map { trackpadStyleTarget($0) } : nil
-        let form = Self.trackpadStyleForm(switchOn: simTrackpad, target: target, oldLongTouch: usesOldLongTouch)
+        let form = Self.trackpadStyleForm(switchOn: simTrackpad, target: target, oldLongTouch: usesOldLongTouch,
+                                          safariFlick: usesSafariFlick && takesHardwareRecordOff)
         return ConfigSnapshot(
             simTrackpadEnabled: form.phases,
             flick: form.flick,
