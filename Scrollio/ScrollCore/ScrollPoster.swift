@@ -352,14 +352,58 @@ class ScrollPoster {
     /// A call to the watch that is made once the lock is let go (`takeWatchCallLocked`).
     private var watchCall: WatchCall?
     private enum WatchCall {
-        case look(token: UInt64, pid: pid_t, point: CGPoint)
-        case read(token: UInt64)
+        case look(token: UInt64, epoch: UInt64, pid: pid_t, point: CGPoint)
+        case read(token: UInt64, epoch: UInt64, askedAt: CFTimeInterval)
     }
-    /// The bar's value at the touch's start (or its last turn) and at the last read.
+    // The watch's judgement is not for the whole scroll. A wheel that goes up and down
+    // without a pause makes one scroll of many seconds and many turns (the owner: 335
+    // wheel events in 9.4 s), and one verdict lasted to its end: "plain from there" after
+    // a single slow read, or after a turn that the lagging reads (up to 100 ms behind while
+    // Finder flings) made look like "the wrong way".
+    // - A turn of the wheel starts the judgement afresh (`watchEpoch`): "followed" and the
+    //   first value are counted from reads asked after the turn, a read asked before it
+    //   says nothing, and a scroll that had gone plain gets a new look at once.
+    // - Being blind is temporary: after a lost bar, a look that saw none, or a short touch
+    //   at an end that is not proven, the scroll is plain and a new look is asked every
+    //   `watchRetryInterval` while it goes on; the touch opens again when the bar is seen
+    //   and the page is not at the end the scroll heads for.
+    // - One read that fails does not cost the bar; the second in a row does. And a touch is
+    //   never open longer than `watchBlindLimit` without a fresh reading.
+    // - "The wrong way" is judged against the frames that were sent, not the wheel, and
+    //   only in a stretch where every frame went the same way for `sameWayMargin` before
+    //   the read was asked: three such reads in a row against the frames, by
+    //   `wrongWaySlack` in all. Then the scroll is plain until the wheel turns.
+    /// Counts the wheel's turns in this scroll; a read carries the count it was asked under.
+    private var watchEpoch: UInt64 = 0
+    /// The last wheel event's direction in this scroll: toward the bottom (value 1) or the top.
+    private var watchHeadsToBottom: Bool?
+    /// The bar's value at the first reading since the last turn, and at the last one.
+    private var watchHasFirstValue = false
     private var watchFirstValue = 0.0
     private var watchValue = 0.0
-    /// Whether the touch heads for the page's bottom (value 1) or its top (value 0).
-    private var watchTowardBottom = false
+    /// When the open touch last got a reading, on the clock of the wheel events and display
+    /// frames this poster has seen (`latestNow`): what the blind limit and the retry are
+    /// counted on.
+    private var watchLastAnswerAt: CFTimeInterval = 0
+    /// The latest time a wheel event or a display frame brought.
+    private var latestNow: CFTimeInterval = 0
+    /// Reads that failed in a row.
+    private var watchReadFailures = 0
+    /// Blind: when the next look is asked. nil: none (seen, or the verdict "the wrong way").
+    private var watchRetryAt: CFTimeInterval?
+    /// The look in flight is such a retry: it opens the touch only away from the end.
+    private var watchLookIsRetry = false
+    /// "The wrong way": the direction of the frames, since when they all went that way, the
+    /// value at the last read that counts, and the reads in a row that went against them.
+    private var framesHeadToBottom: Bool?
+    private var framesSameWaySince: CFTimeInterval = 0
+    private var watchJudgedValue: Double?
+    private var watchWrongWayReads = 0
+    private var watchWrongWayMoved = 0.0
+    static let watchRetryInterval: CFTimeInterval = 0.25
+    static let watchBlindLimit: CFTimeInterval = 0.35
+    static let sameWayMargin: CFTimeInterval = 0.2
+    static let wrongWayReadsInARow = 3
     /// The value was seen to move toward the end the touch heads for: the bar is the
     /// scrolled view's own.
     private var watchFollowed = false
@@ -796,7 +840,7 @@ extension ScrollPoster {
         endHold = hold
         if !watchReadInFlight && watchCall == nil {
             watchReadInFlight = true
-            watchCall = .read(token: hold.token)
+            watchCall = .read(token: hold.token, epoch: watchEpoch, askedAt: inputClock())
         }
         return true
     }
@@ -822,22 +866,43 @@ extension ScrollPoster {
     private func make(_ call: WatchCall?) {
         guard let call = call, let watch = endWatch else { return }
         switch call {
-        case .look(let token, let pid, let point):
-            watch.look(pid: pid, at: point) { [weak self] in self?.endWatchAnswered($0, token: token, isLook: true) }
-        case .read(let token):
-            watch.read { [weak self] in self?.endWatchAnswered($0, token: token, isLook: false) }
+        case .look(let token, let epoch, let pid, let point):
+            watch.look(pid: pid, at: point) { [weak self] in self?.endWatchAnswered($0, token: token, epoch: epoch, askedAt: 0, isLook: true) }
+        case .read(let token, let epoch, let askedAt):
+            watch.read { [weak self] in self?.endWatchAnswered($0, token: token, epoch: epoch, askedAt: askedAt, isLook: false) }
         }
     }
 
     /// One touch: this wheel event's scroll needs its look, unless the touch is open (the
     /// wheel goes on with it) or the look for this scroll was asked for already. Until the
-    /// answer the frames are plain. Caller holds stateLock.
-    private func watchForOneTouchLocked(at place: ScrollInputPlace?, now: CFTimeInterval) {
+    /// answer the frames are plain. A wheel event that turns the scroll around starts the
+    /// watch's judgement afresh. `towardBottom`: the event's direction (nil: none up-down).
+    /// Caller holds stateLock.
+    private func watchForOneTouchLocked(at place: ScrollInputPlace?, now: CFTimeInterval, towardBottom: Bool?) {
+        if let heading = towardBottom {
+            if let last = watchHeadsToBottom, last != heading {
+                // The wheel turned. What the watch judged, it judged for the other way.
+                watchEpoch &+= 1
+                watchFollowed = false
+                watchHasFirstValue = false
+                watchJudgedValue = nil
+                watchWrongWayReads = 0
+                watchWrongWayMoved = 0
+                // (A short touch at an end heads away from that end now: an ordinary touch.)
+                oneTouchIsShort = false
+                sessionLog.endWatch.turns += 1
+                if watchSeen == false {
+                    // Plain (blind, or "the wrong way"): a new look at once.
+                    watchAsked = false
+                }
+            }
+            watchHeadsToBottom = heading
+        }
         guard !oneTouchIsOpen else { return }
         oneTouchLeavesFramesOut = false
         if watchAsked {
-            // Asked already. Not seen stays not seen for this scroll, unless the wheel goes
-            // on somewhere else; a touch that ended by itself gets a look of its own.
+            // Asked already. Not seen stays not seen until the retry or a turn, unless the
+            // wheel goes on somewhere else; a touch that ended by itself gets a look of its own.
             let moved: Bool
             if let last = touchPlace, let place = place {
                 moved = last.pid != place.pid || hypot(place.pointer.x - last.pointer.x, place.pointer.y - last.pointer.y) > trackpadStylePointerSlack
@@ -846,28 +911,70 @@ extension ScrollPoster {
             }
             if watchSeen == nil || (watchSeen == false && !moved) { return }
         }
+        touchPlace = place
+        askForALookLocked(now: now, isRetry: false)
+    }
+
+    /// Asks for a look at the scroll's place. Caller holds stateLock.
+    private func askForALookLocked(now: CFTimeInterval, isRetry: Bool) {
         watchToken &+= 1
         watchAsked = true
         watchAskedAt = now
         watchSeen = nil
         watchFollowed = false
+        watchHasFirstValue = false
+        watchJudgedValue = nil
+        watchWrongWayReads = 0
+        watchWrongWayMoved = 0
+        watchReadFailures = 0
+        watchRetryAt = nil
+        watchLookIsRetry = isRetry
         oneTouchIsShort = false
-        touchPlace = place
         sessionLog.endWatch.looks += 1
+        if isRetry {
+            sessionLog.endWatch.retries += 1
+        }
         guard endWatch != nil else {
             watchSeen = false
             sessionLog.endWatch.note(.notSeen("no watch"), isLook: true)
             return
         }
-        watchCall = .look(token: watchToken, pid: place?.pid ?? 0, point: place?.pointer ?? .zero)
+        watchCall = .look(token: watchToken, epoch: watchEpoch, pid: touchPlace?.pid ?? 0, point: touchPlace?.pointer ?? .zero)
+    }
+
+    /// The scroll goes on plain: the bar is not seen. An open touch is ended by force.
+    /// `retry`: blind for now, a new look is asked in `watchRetryInterval`; false: the
+    /// verdict stands until the wheel turns. Caller holds stateLock.
+    private func goPlainLocked(retry: Bool, now: CFTimeInterval) {
+        watchSeen = false
+        watchRetryAt = retry ? now + Self.watchRetryInterval : nil
+        oneTouchIsShort = false
+        endOneTouchLocked(forced: true)
     }
 
     /// The watch answered: on its own thread, or inside the call for a stand-in; never
     /// while this lock is held. A late answer (another look has been asked for, the scroll
-    /// is over) is thrown away.
-    private func endWatchAnswered(_ reading: ScrollEndReading, token: UInt64, isLook: Bool) {
+    /// is over) is thrown away. `epoch`: the count of the wheel's turns the request was
+    /// made under; `askedAt`: when a read was asked.
+    private func endWatchAnswered(_ reading: ScrollEndReading, token: UInt64, epoch: UInt64, askedAt: CFTimeInterval, isLook: Bool) {
         os_unfair_lock_lock(&stateLock)
-        defer { os_unfair_lock_unlock(&stateLock) }
+        judgeLocked(reading, token: token, epoch: epoch, askedAt: askedAt, isLook: isLook)
+        // An answer that took longer than a display frame (an app that is busy scrolling:
+        // Finder took 60 to 100 ms) is followed by the next read at once, not at the next
+        // display frame: with answers that slow every read counts. An answer that came
+        // faster waits for the frame (one read per frame at most).
+        if oneTouchIsOpen && watchSeen == true && !watchReadInFlight && watchCall == nil
+            && (isLook ? watchClockLocked() - watchAskedAt : latestNow - askedAt) >= ScrollMotion.referenceFrameInterval {
+            watchReadInFlight = true
+            watchCall = .read(token: watchToken, epoch: watchEpoch, askedAt: latestNow)
+        }
+        let call = takeWatchCallLocked()
+        os_unfair_lock_unlock(&stateLock)
+        make(call)
+    }
+
+    /// What an answer of the watch means for the scroll. Caller holds stateLock.
+    private func judgeLocked(_ reading: ScrollEndReading, token: UInt64, epoch: UInt64, askedAt: CFTimeInterval, isLook: Bool) {
         if !isLook {
             watchReadInFlight = false
         }
@@ -887,56 +994,92 @@ extension ScrollPoster {
         }
         guard token == watchToken, scrollIsOneTouch, !sessionLog.isEmpty else { return }
         sessionLog.endWatch.note(reading, isLook: isLook)
+        let now = latestNow
         guard let value = reading.value else {
-            // Not seen: no phases from here on. An open touch is ended by force.
-            watchSeen = false
-            provenPlace = nil
-            oneTouchIsShort = false
-            if oneTouchIsOpen {
-                sessionLog.endWatch.did.append("lost the bar: ended the touch, plain from there")
-                endOneTouchLocked(forced: true)
+            if isLook {
+                // No bar seen: plain, and another look in a while.
+                guard watchSeen == nil else { return }
+                provenPlace = nil
+                goPlainLocked(retry: true, now: now)
+            } else if oneTouchIsOpen {
+                // One read that fails is asked again with the next display frame; the
+                // second in a row loses the bar.
+                watchReadFailures += 1
+                if watchReadFailures >= 2 {
+                    sessionLog.endWatch.lost += 1
+                    sessionLog.endWatch.add("lost the bar: ended the touch, plain until it is seen again")
+                    provenPlace = nil
+                    goPlainLocked(retry: true, now: now)
+                }
             }
             return
         }
-        let towardBottom = delta.y < 0
+        watchReadFailures = 0
+        let towardBottom = watchHeadsToBottom ?? (delta.y < 0)
         if isLook {
             guard watchSeen == nil else { return }
+            let isAtItsEnd = Self.isAtEnd(value, towardBottom: towardBottom)
+            if watchLookIsRetry && isAtItsEnd {
+                // Seen again, but the page is at the end the scroll heads for: plain goes on.
+                watchSeen = false
+                watchRetryAt = now + Self.watchRetryInterval
+                return
+            }
             watchSeen = true
+            watchLastAnswerAt = now
+            watchFollowed = false
+            // (A look asked before the wheel's last turn opens the touch; the first value
+            // for "followed" is then the first read's.)
+            watchHasFirstValue = epoch == watchEpoch
             watchFirstValue = value
             watchValue = value
-            watchTowardBottom = towardBottom
-            watchFollowed = false
-            let waited = Int(((watchClockLocked() - watchAskedAt) * 1000).rounded())
-            if Self.isAtEnd(value, towardBottom: towardBottom) {
+            let waited = Int((max(0, watchClockLocked() - watchAskedAt) * 1000).rounded())
+            if isAtItsEnd {
                 oneTouchIsShort = true
                 shortTouchFrames = 0
-                sessionLog.endWatch.did.append("started at the end: a short touch after \(waited) ms")
+                sessionLog.endWatch.add("started at the end: a short touch after \(waited) ms")
             } else {
-                sessionLog.endWatch.did.append("opened the touch after \(waited) ms")
+                sessionLog.endWatch.add(watchLookIsRetry ? "seen again: opened the touch" : "opened the touch after \(waited) ms")
             }
             beginOneTouchLocked(at: touchPlace)
             return
         }
         guard oneTouchIsOpen, watchSeen == true else { return }
-        if towardBottom != watchTowardBottom {
-            // The wheel turned: the touch heads for the other end from here.
-            watchTowardBottom = towardBottom
-            watchFirstValue = value
-            watchFollowed = false
+        watchLastAnswerAt = now
+        // "The wrong way": against the frames, in a stretch where they all went one way.
+        if let framesToBottom = framesHeadToBottom, askedAt - framesSameWaySince >= Self.sameWayMargin {
+            if let before = watchJudgedValue {
+                let moved = (value - before) * (framesToBottom ? 1.0 : -1.0)
+                if moved < -1e-7 {
+                    watchWrongWayReads += 1
+                    watchWrongWayMoved -= moved
+                } else if moved > 1e-7 {
+                    watchWrongWayReads = 0
+                    watchWrongWayMoved = 0
+                }
+            }
+            watchJudgedValue = value
+            if watchWrongWayReads >= Self.wrongWayReadsInARow && watchWrongWayMoved >= Self.wrongWaySlack {
+                sessionLog.endWatch.add("the value went against the frames over \(watchWrongWayReads) reads: ended the touch, plain until the wheel turns")
+                provenPlace = nil
+                goPlainLocked(retry: false, now: now)
+                return
+            }
+        } else {
+            watchJudgedValue = nil
         }
-        let sign = towardBottom ? 1.0 : -1.0
-        if (value - watchValue) * sign > 1e-7 {
+        // A read asked before the wheel's last turn says nothing about this way.
+        guard epoch == watchEpoch else { return }
+        guard watchHasFirstValue else {
+            watchHasFirstValue = true
+            watchFirstValue = value
+            watchValue = value
+            return
+        }
+        if (value - watchValue) * (towardBottom ? 1.0 : -1.0) > 1e-7 {
             watchFollowed = true
         }
         watchValue = value
-        if (value - watchFirstValue) * sign < -Self.wrongWaySlack {
-            watchSeen = false
-            provenPlace = nil
-            oneTouchIsShort = false
-            sessionLog.endWatch.did.append("the value moved the wrong way: ended the touch, plain from there")
-            endOneTouchLocked(forced: true)
-            return
-        }
         if !oneTouchIsShort && watchFollowed && Self.isAtEnd(value, towardBottom: towardBottom) {
             arriveAtPageEndLocked()
         }
@@ -957,7 +1100,7 @@ extension ScrollPoster {
     /// of the motion is dropped. The scroll itself ends with the next display frame; wheel
     /// events that still head into the end are held (rule 4). Caller holds stateLock.
     private func arriveAtPageEndLocked() {
-        sessionLog.endWatch.did.append("reached the end and ended at once")
+        sessionLog.endWatch.add("reached the end and ended at once")
         endOneTouchLocked(forced: false)
         holdAtPageEndLocked()
     }
@@ -966,7 +1109,7 @@ extension ScrollPoster {
     private func holdAtPageEndLocked() {
         provenPlace = touchPlace
         if let place = touchPlace {
-            endHold = EndHold(token: watchToken, place: place, towardBottom: watchTowardBottom, lastAtEnd: watchClockLocked())
+            endHold = EndHold(token: watchToken, place: place, towardBottom: watchHeadsToBottom ?? (delta.y < 0), lastAtEnd: watchClockLocked())
         }
         resetMotionLocked()
         oneTouchStopIsHeld = true
@@ -988,11 +1131,14 @@ extension ScrollPoster {
             isProven = false
         }
         if isProven {
-            sessionLog.endWatch.did.append("the rest dropped")
+            sessionLog.endWatch.add("the rest dropped")
             holdAtPageEndLocked()
         } else {
-            sessionLog.endWatch.did.append("the rest plain (this place is not proven)")
+            // Plain for now, not for the rest of the scroll: a look is asked again in a
+            // while, and at once when the wheel turns.
+            sessionLog.endWatch.add("the rest plain (this place is not proven)")
             watchSeen = false
+            watchRetryAt = latestNow + Self.watchRetryInterval
         }
     }
     /// Ends the scroll that runs when the next wheel event goes to another process, before
@@ -1127,6 +1273,7 @@ extension ScrollPoster {
         if sessionLog.isEmpty {
             sessionLog.startedAt = now
         }
+        latestNow = max(latestNow, now)
         sessionLog.inputs += 1
         sessionLog.transition = input.duration
         sessionLog.inputDistance += abs(input.y) + abs(input.x)
@@ -1212,7 +1359,7 @@ extension ScrollPoster {
             // time alone, the touch does not.
             // Since the end watch the touch opens with the answer to this scroll's look
             // (`endWatchAnswered`), not here: until then the frames are plain.
-            watchForOneTouchLocked(at: place, now: now)
+            watchForOneTouchLocked(at: place, now: now, towardBottom: input.y != 0.0 ? input.y < 0 : nil)
         }
     }
     /// Whether a wheel input goes on in the glide's direction: the same sign on each axis that
@@ -1462,6 +1609,15 @@ extension ScrollPoster {
         watchSeen = nil
         watchCall = nil
         watchFollowed = false
+        watchHasFirstValue = false
+        watchHeadsToBottom = nil
+        watchRetryAt = nil
+        watchLookIsRetry = false
+        watchReadFailures = 0
+        watchJudgedValue = nil
+        watchWrongWayReads = 0
+        watchWrongWayMoved = 0
+        framesHeadToBottom = nil
         oneTouchIsShort = false
         oneTouchLeavesFramesOut = false
         frameStamp = 0
@@ -2036,6 +2192,7 @@ private extension ScrollPoster {
     /// 处理一帧, 返回需要以哪个阶段结束会话 (nil 表示继续)。调用方须持有 stateLock。
     func processFrameLocked(frameInterval: Double, now: CFTimeInterval) -> Phase? {
         var pendingStopPhase: Phase?
+        latestNow = max(latestNow, now)
         if config.simTrackpadEnabled {
             advanceFrameStampLocked(frameInterval: frameInterval, now: now)
             isInDisplayFrame = true
@@ -2118,10 +2275,20 @@ private extension ScrollPoster {
                 sessionLog.largestFrame = max(sessionLog.largestFrame, moved)
                 sessionLog.lastFrameAt = now
                 lastActivityTime = now
-                if oneTouchIsShort && oneTouchIsOpen {
-                    shortTouchFrames += 1
-                    if shortTouchFrames >= 2 {
-                        endShortTouchLocked()
+                if oneTouchIsOpen {
+                    if pixels.y != 0.0, framesHeadToBottom != (pixels.y < 0) {
+                        // The frames turned: "the wrong way" is judged from here anew.
+                        framesHeadToBottom = pixels.y < 0
+                        framesSameWaySince = now
+                        watchJudgedValue = nil
+                        watchWrongWayReads = 0
+                        watchWrongWayMoved = 0
+                    }
+                    if oneTouchIsShort {
+                        shortTouchFrames += 1
+                        if shortTouchFrames >= 2 {
+                            endShortTouchLocked()
+                        }
                     }
                 }
             }
@@ -2133,10 +2300,23 @@ private extension ScrollPoster {
             oneTouchLeavesFramesOut = true
             oneTouchIsShort = false
         }
-        if oneTouchIsOpen && watchSeen == true && !watchReadInFlight && watchCall == nil {
-            // The end watch: the bar is read again, once per display frame at most.
-            watchReadInFlight = true
-            watchCall = .read(token: watchToken)
+        if scrollIsOneTouch {
+            if oneTouchIsOpen && watchSeen == true {
+                if now - watchLastAnswerAt > Self.watchBlindLimit {
+                    // No reading for too long (a watch that does not answer): the touch is
+                    // not left open without one.
+                    sessionLog.endWatch.lost += 1
+                    sessionLog.endWatch.add("no reading for \(Int(Self.watchBlindLimit * 1000)) ms: ended the touch, plain until the bar is seen again")
+                    goPlainLocked(retry: true, now: now)
+                } else if !watchReadInFlight && watchCall == nil {
+                    // The bar is read again, once per display frame at most.
+                    watchReadInFlight = true
+                    watchCall = .read(token: watchToken, epoch: watchEpoch, askedAt: now)
+                }
+            } else if watchSeen == false, let retryAt = watchRetryAt, now >= retryAt, watchCall == nil, !oneTouchIsOpen {
+                // Blind, and the scroll goes on: look again.
+                askForALookLocked(now: now, isRetry: true)
+            }
         }
 
         if let scheduled = momentumEndScheduledTime, momentumActive {

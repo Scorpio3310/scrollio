@@ -63,8 +63,11 @@ protocol ScrollEndWatching: AnyObject {
 /// may not read another app's interface. The scroll log says per scroll what it met.
 final class AccessibilityScrollEndWatch: ScrollEndWatching {
 
-    /// Seconds an app gets to answer one message.
-    static let messagingTimeout: Float = 0.1
+    /// Seconds an app gets to answer one message. Finder took 60 to 100 ms to answer while
+    /// it flung through a long list (the owner's log), and at 0.1 s one such read timed
+    /// out. One read that fails is asked again (`ScrollPoster`), so an app that does not
+    /// answer at all costs two of these.
+    static let messagingTimeout: Float = 0.15
     /// How far up from the element under the pointer the scroll area is looked for.
     static let deepestClimb = 12
 
@@ -129,8 +132,12 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
             }
             roles.append(role)
             if role == kAXScrollAreaRole {
-                guard let found = Self.copy(element, kAXVerticalScrollBarAttribute), CFGetTypeID(found) == AXUIElementGetTypeID() else {
-                    return .notSeen("a scroll area without a vertical scroll bar", roles: roles)
+                var found: CFTypeRef?
+                let barError = AXUIElementCopyAttributeValue(element, kAXVerticalScrollBarAttribute as CFString, &found)
+                guard barError == .success, let found = found, CFGetTypeID(found) == AXUIElementGetTypeID() else {
+                    // (Told apart: an area that has no such bar, and an app that did not answer.)
+                    let has = barError == .noValue || barError == .attributeUnsupported || barError == .success
+                    return .notSeen(has ? "a scroll area without a vertical scroll bar" : "the scroll area's vertical scroll bar could not be read (\(barError.rawValue))", roles: roles)
                 }
                 // swiftlint:disable:next force_cast
                 let scrollBar = found as! AXUIElement
@@ -187,8 +194,24 @@ struct ScrollEndWatchLog: Equatable {
     /// Answers that came (looks and reads), and the slowest (ms).
     var answers = 0
     var slowest = 0.0
-    /// What the watch did, in order.
+    /// How often the watch started afresh in this scroll, and why: the wheel turned; the
+    /// bar was lost (two reads failed in a row, or no reading came for too long); a look was
+    /// asked again while the scroll was plain.
+    var turns = 0
+    var lost = 0
+    var retries = 0
+    /// What the watch did, in order: the first `mostDid`, and how many more.
     var did: [String] = []
+    var more = 0
+    static let mostDid = 8
+
+    mutating func add(_ what: String) {
+        if did.count < Self.mostDid {
+            did.append(what)
+        } else {
+            more += 1
+        }
+    }
 
     mutating func note(_ reading: ScrollEndReading, isLook: Bool) {
         answers += 1
@@ -223,8 +246,11 @@ struct ScrollEndWatchLog: Equatable {
             parts.append(String(format: "value %.4f -> %.4f", first, last))
         }
         parts.append(String(format: "%d looks, %d answers (slowest %.1f ms)", looks, answers, slowest))
+        if turns + lost + retries > 0 {
+            parts.append("started afresh: \(turns) turns, \(lost) lost bars, \(retries) looks again")
+        }
         if !did.isEmpty {
-            parts.append(did.joined(separator: "; "))
+            parts.append(did.joined(separator: "; ") + (more > 0 ? "; and \(more) more" : ""))
         }
         return "scroll end watch: " + parts.joined(separator: ", ")
     }
