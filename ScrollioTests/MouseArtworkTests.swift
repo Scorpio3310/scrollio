@@ -382,20 +382,23 @@ final class MouseArtworkTests: XCTestCase {
 
     // MARK: - The drawings that did not change
 
-    /// The MX Master 3's and the plain mouse's drawings are pinned: every shape of theirs,
-    /// at the card's size and in the small pictures, as a fingerprint of its points. Taken
-    /// before the MX Master 4 got its second view; it fails when one of their shapes moves.
+    /// The drawings that are not being redrawn are pinned: every shape of theirs, at the
+    /// card's size and in the small pictures, as a fingerprint of its points. The plain
+    /// mouse's was taken before the MX Master 4 got its second view, the MX Master 4's two
+    /// views before the MX Master 3 got its own; it fails when one of their shapes moves.
     func testTheOtherDrawingsHaveNotMoved() {
-        let pinned: [(MouseArtworkModel, Bool, String)] = [
-            (.mxMaster3, false, "0f082beac6cf3272"),
-            (.mxMaster3, true, "d87f54a795d3ebbf"),
-            (.generic, false, "3d0e0b56666d7899"),
-            (.generic, true, "2c9df290e9faecaf"),
+        let pinned: [(MouseArtworkModel, MouseArtworkViewpoint, Bool, String)] = [
+            (.generic, .above, false, "3d0e0b56666d7899"),
+            (.generic, .above, true, "2c9df290e9faecaf"),
+            (.mxMaster4, .above, false, "28b1acb4cc68b12d"),
+            (.mxMaster4, .above, true, "780a63821b2a097e"),
+            (.mxMaster4, .thumbSide, false, "83230de9673eb75f"),
+            (.mxMaster4, .thumbSide, true, "3195c879cc678f2b"),
         ]
-        for (model, schematic, fingerprint) in pinned {
+        for (model, viewpoint, schematic, fingerprint) in pinned {
             XCTAssertEqual(
-                Self.fingerprint(of: MouseArtworkShapes(model: model, schematic: schematic)), fingerprint,
-                "\(model), schematic: \(schematic)"
+                Self.fingerprint(of: MouseArtworkShapes(model: model, schematic: schematic, viewpoint: viewpoint)), fingerprint,
+                "\(model) \(viewpoint), schematic: \(schematic)"
             )
         }
     }
@@ -433,8 +436,10 @@ final class MouseArtworkTests: XCTestCase {
         var lines = [
             "outline " + points(of: shapes.outline()),
             "seams " + points(of: shapes.seams()),
-            "shoulder " + points(of: shapes.shoulder()),
-            "ridge " + points(of: shapes.gestureRidge()),
+            // Two lines only the MX Master 3's first drawing had; kept so that the plain
+            // mouse's fingerprint is the one first taken.
+            "shoulder none",
+            "ridge none",
             "body " + rect(shapes.mainBody),
             "wheel " + rect(shapes.wheelRect),
             "well " + rect(shapes.wellRect),
@@ -448,9 +453,12 @@ final class MouseArtworkTests: XCTestCase {
                 lines.append("\(part) " + points(of: shape))
             }
         }
-        if shapes.model.has(.thumbWheel) {
-            let axis = shapes.thumbWheelAxis
-            lines.append("axis " + [axis.start.x, axis.start.y, axis.end.x, axis.end.y, axis.width].map { number($0) }.joined(separator: ","))
+        // What a drawing in two views has besides its parts.
+        if let views = shapes.master4 {
+            lines.append("housing " + points(of: views.thumbWheelHousing))
+            lines.append("dots " + points(of: views.panelDots))
+            lines.append("light " + points(of: views.light))
+            lines.append("crest " + points(of: views.wheelCrest))
         }
         var hash: UInt64 = 0xcbf2_9ce4_8422_2325
         for byte in lines.joined(separator: "\n").utf8 {
