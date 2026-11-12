@@ -93,7 +93,10 @@ sign_sparkle_helpers() {
     sign_one "$code/Autoupdate"
     sign_one "$code/Updater.app"
     sign_one "$sparkle"
-    sign_one --preserve-metadata=entitlements "$app"
+    # The app keeps the requirement the build wrote into its signature. For a Developer ID
+    # codesign would otherwise write its own default, which says the same in other words;
+    # with it kept, every release has the very requirement of the one before.
+    sign_one --preserve-metadata=entitlements,requirements "$app"
     after="$(codesign -d -r- "$app" 2>/dev/null | grep '^designated' || true)"
     [ -n "$after" ] && [ "$after" = "$before" ] \
         || fail "signing the app again changed its designated requirement: macOS would take an update for another app and ask for the Accessibility permission again"

@@ -356,6 +356,9 @@ final class ReleaseReadinessTests: XCTestCase {
         XCTAssertTrue(library.contains("sign_one --preserve-metadata=entitlements \"$code/XPCServices/Downloader.xpc\""))
         XCTAssertFalse(commands(of: library).contains { $0.contains("codesign") && $0.contains("--deep") })
         XCTAssertTrue(library.contains("[ -n \"$after\" ] && [ \"$after\" = \"$before\" ]"))
+        // The app is signed again with the requirement the build wrote: for a Developer ID
+        // codesign's own default reads differently (found when the script first ran with one).
+        XCTAssertTrue(library.contains("sign_one --preserve-metadata=entitlements,requirements \"$app\""))
         XCTAssertTrue(library.contains("--options runtime --timestamp"))
         // The release script only reads the key's public half: it never makes, exports or imports a key.
         let keyToolRuns = commands(of: script + "\n" + library).filter { $0.contains("generate_keys\" --account") }
