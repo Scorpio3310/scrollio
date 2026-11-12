@@ -25,6 +25,11 @@ struct ScrollEndReading: Equatable {
     /// A look that asks no roles (a native shell around Chromium): what it found out about
     /// the element under the pointer.
     var shell: ScrollEndShellFacts?
+    /// Where the element under the pointer is on the screen: from a look that saw no bar
+    /// (the reader keeps that element), and from `readContent`.
+    var content: CGRect?
+    /// `readContent` took the element under the pointer anew.
+    var contentIsNew = false
 
     static func notSeen(_ failedAt: String, roles: [String] = [], milliseconds: Double = 0) -> ScrollEndReading {
         return ScrollEndReading(value: nil, failedAt: failedAt, roles: roles, milliseconds: milliseconds)
@@ -49,6 +54,9 @@ protocol ScrollEndWatching: AnyObject {
     func look(pid: pid_t, at point: CGPoint, readsRoles: Bool, answer: @escaping (ScrollEndReading) -> Void)
     /// Reads the bar the last look found again.
     func read(answer: @escaping (ScrollEndReading) -> Void)
+    /// Where the element is now that the last look kept (the one under the pointer, where
+    /// no bar was seen). With a point: the element under that point is taken anew first.
+    func readContent(retakingAt point: CGPoint?, pid: pid_t, answer: @escaping (ScrollEndReading) -> Void)
 }
 
 /// What a look may ask of an app, one element at a time. The real one messages the app
@@ -332,6 +340,8 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
     private let setProcessTimeout: (Float) -> Void
     /// The bar the last look found. Only on `queue`.
     private var bar: AXUIElement?
+    /// The element under the pointer, kept by a look that saw no bar. Only on `queue`.
+    private var content: AXUIElement?
     /// The `app` log gets one line at the first look. Only on `queue`.
     private var saidWhetherTrusted = false
     private var setTheProcessTimeout = false
@@ -360,10 +370,38 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
         queue.async { [self] in
             let began = DispatchTime.now().uptimeNanoseconds
             bar = nil
+            content = nil
             // A look that waited behind a slow app is out of date: its scroll has gone on
             // plain, and messaging the app for it now would only keep the next look waiting.
             let waited = Double(began - asked) / 1_000_000_000
             var reading = waited > Self.lookGoesStaleAfter ? ScrollEndReading.notSeen(Self.askedTooLongAgo) : lookOnQueue(pid: pid, at: point, readsRoles: readsRoles)
+            reading.milliseconds = Double(DispatchTime.now().uptimeNanoseconds - began) / 1_000_000
+            answer(reading)
+        }
+    }
+
+    func readContent(retakingAt point: CGPoint?, pid: pid_t, answer: @escaping (ScrollEndReading) -> Void) {
+        queue.async { [self] in
+            let began = DispatchTime.now().uptimeNanoseconds
+            var reading = ScrollEndReading.notSeen("the element under the pointer gave no position")
+            if !isTrusted() {
+                reading = .notSeen(Self.notTrusted)
+            } else if pid > 0, pid != getpid() {
+                let application = AXUIElementCreateApplication(pid)
+                AXUIElementSetMessagingTimeout(application, Self.messagingTimeout)
+                let elements = Elements(application: application)
+                if let point = point {
+                    content = elements.hit(at: point)
+                    if let element = content { AXUIElementSetMessagingTimeout(element, Self.messagingTimeout) }
+                    reading.contentIsNew = true
+                }
+                if let element = content, let frame = elements.frame(of: element) {
+                    reading.failedAt = ""
+                    reading.content = frame
+                } else {
+                    content = nil
+                }
+            }
             reading.milliseconds = Double(DispatchTime.now().uptimeNanoseconds - began) / 1_000_000
             answer(reading)
         }
@@ -431,7 +469,15 @@ final class AccessibilityScrollEndWatch: ScrollEndWatching {
             }
             found.reading.shell?.hitMilliseconds = Double(afterHit - beganLook) / 1_000_000
         }
-        guard let scrollBar = found.bar else { return found.reading }
+        guard let scrollBar = found.bar else {
+            // No bar: where the element under the pointer is, so that it can be seen to
+            // follow the frames (`ScrollPoster`, the content watch). Not in a native shell.
+            if readsRoles, let frame = elements.frame(of: element) {
+                content = element
+                found.reading.content = frame
+            }
+            return found.reading
+        }
         bar = scrollBar
         // Which bar: the same number as long as looks find the same element.
         if let known = identified, CFEqual(known, scrollBar) {
@@ -591,6 +637,20 @@ struct ScrollEndWatchLog: Equatable {
     var otherwise = "plain"
     /// A native shell: what the last look found out about the element under the pointer.
     var shell: ScrollEndShellFacts?
+    /// A view without a bar whose content was watched: numbers, and what was decided.
+    struct Content: Equatable {
+        /// The first element's size.
+        var width = 0.0
+        var height = 0.0
+        /// How far the element moved against how much was sent, at the proof.
+        var moved: Double?
+        var sent: Double?
+        var reads = 0
+        /// How often the element under the pointer was taken again.
+        var retakes = 0
+        var decided: [String] = []
+    }
+    var content: Content?
 
     mutating func add(_ what: String) {
         if did.count < Self.mostDid {
@@ -634,6 +694,12 @@ struct ScrollEndWatchLog: Equatable {
         if let shell = shell {
             parts.append("shell look: " + shell.line)
         }
+        if let content = content {
+            let proof = content.moved.flatMap { moved in content.sent.map { String(format: "moved %.0f of %.0f sent at the proof", moved, $0) } } ?? "no proof"
+            parts.append(String(format: "content: first element %.0f x %.0f, ", content.width, content.height) + proof
+                + ", \(content.reads) reads, taken again \(content.retakes) times"
+                + (content.decided.isEmpty ? "" : ": " + content.decided.joined(separator: "; ")))
+        }
         if let first = firstValue, let last = lastValue {
             parts.append(String(format: "value %.6f -> %.6f", first, last))
         }
@@ -662,6 +728,9 @@ final class ScrollEndWatchSeenInMidPage: ScrollEndWatching {
     func read(answer: @escaping (ScrollEndReading) -> Void) {
         reads += 1
         answer(ScrollEndReading(value: 0.5))
+    }
+    func readContent(retakingAt point: CGPoint?, pid: pid_t, answer: @escaping (ScrollEndReading) -> Void) {
+        answer(.notSeen("no element"))
     }
 }
 #endif

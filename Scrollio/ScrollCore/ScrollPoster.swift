@@ -377,6 +377,7 @@ class ScrollPoster {
     private enum WatchCall {
         case look(token: UInt64, epoch: UInt64, pid: pid_t, point: CGPoint, forHold: Bool, forShell: Bool = false, readsRoles: Bool)
         case read(token: UInt64, epoch: UInt64, askedAt: CFTimeInterval)
+        case content(token: UInt64, epoch: UInt64, retake: CGPoint?, pid: pid_t)
     }
     // The watch's judgement is not for the whole scroll. A wheel that goes up and down
     // without a pause makes one scroll of many seconds and many turns (the owner: 335
@@ -465,6 +466,64 @@ class ScrollPoster {
     static let endHoldLongestLife: CFTimeInterval = 4.0
     /// A check that ends a hold which only went stale is on its way (main queue).
     private var holdExpiryIsScheduled = false
+
+    // The second way to know a page's end, after the bar: THE CONTENT UNDER THE POINTER IS
+    // SEEN TO FOLLOW. Only for a one touch outside a native shell, and only where a look
+    // saw no bar but the element under the pointer says where it is on the screen (its
+    // position and size: `ScrollEndReading.content`). In mid-page that element moves by
+    // what Scrollio sends; at the page's end it stops.
+    // 1. Proof first. The scroll starts plain, as it did. The element's position is read
+    //    once per display frame (one read in flight). When it has moved with the frames
+    //    (`contentProofLow` to `contentProofHigh` of the distance sent, over three
+    //    readings and `contentProofDistance` at least), the view follows: the touch opens
+    //    for this scroll, and the place is remembered (`followsMemory`, 60 s after its
+    //    last use), where the next scroll's touch opens with its look.
+    // 2. Arrival. While the touch is open: when the element moved less than
+    //    `contentArrivalShare` of what was sent, over two readings and
+    //    `contentArrivalWindow` at least and `contentArrivalDistance` sent ("lag" is not
+    //    judged: a late answer still says where the element is when it comes), "ended"
+    //    goes out at once with its real time, no tap, and the rest of the motion is
+    //    dropped, as at an arrival seen on a bar: the app bounces by itself.
+    // 3. Never held, never swallowed. The touch is never open longer than
+    //    `watchBlindLimit` without a reading (then it ends by force and the scroll goes on
+    //    plain). After an arrival nothing is taken in: there is no hold (that stays the
+    //    bar's); the wheel events that follow go out plain.
+    // 4. A start in a remembered place at the end the last scroll there reached, after a
+    //    pause of the wheel (`endHoldFreshness`): the short touch, then plain.
+    // 5. The element goes away (no position any more, or `contentFarOff` from the pointer):
+    //    the element under the pointer is taken again; nothing is judged across the change.
+    // 6. Not following (three stretches in a row), no position, a reader that fails: plain.
+    private struct ContentWatch {
+        /// The touch is opened on its strength.
+        var follows = false
+        /// The readings the judgement runs over: when, where the element was, how much had been sent.
+        var samples: [(at: CFTimeInterval, y: Double, sent: Double)] = []
+        var needsRetake = false
+        var misses = 0
+        var failedStretches = 0
+        var startedAt: CFTimeInterval
+    }
+    private var contentWatch: ContentWatch?
+    /// The up-down distance posted in this scroll, signed (one touch only).
+    private var contentSent = 0.0
+    private struct FollowsMemory {
+        var place: ScrollInputPlace
+        var usedAt: CFTimeInterval
+        /// The end the last scroll there was seen to reach, if it reached one.
+        var arrivedToBottom: Bool?
+    }
+    private var followsMemory: FollowsMemory?
+    /// How long the wheel had rested at a remembered place before the wheel event that
+    /// asked for this scroll's look.
+    private var pauseBeforeLook: CFTimeInterval = 0
+    static let contentProofDistance = 48.0
+    static let contentProofLow = 0.75
+    static let contentProofHigh = 1.25
+    static let contentArrivalWindow: CFTimeInterval = 0.1
+    static let contentArrivalDistance = 30.0
+    static let contentArrivalShare = 0.5
+    static let contentFarOff: CGFloat = 400
+    static let followsMemoryLife: CFTimeInterval = 60
 
     // A native shell around Chromium (`ScrollUtils.TrackpadStyleTarget.nativeShell`: Dia,
     // Arc). Its web pages want the flick. Everything else in its windows is the shell's
@@ -1101,6 +1160,10 @@ extension ScrollPoster {
             }
         case .read(let token, let epoch, let askedAt):
             watch.read { [weak self] in self?.endWatchAnswered($0, token: token, epoch: epoch, askedAt: askedAt, isLook: false, forHold: false) }
+        case .content(let token, let epoch, let retake, let pid):
+            watch.readContent(retakingAt: retake, pid: pid) { [weak self] in
+                self?.endWatchAnswered($0, token: token, epoch: epoch, askedAt: 0, isLook: false, forHold: false)
+            }
         }
     }
 
@@ -1110,6 +1173,18 @@ extension ScrollPoster {
     /// watch's judgement afresh. `towardBottom`: the event's direction (nil: none up-down).
     /// Caller holds stateLock.
     private func watchForOneTouchLocked(at place: ScrollInputPlace?, now: CFTimeInterval, towardBottom: Bool?) {
+        // (A place where the content was seen to follow: how long the wheel had rested there.)
+        var pause: CFTimeInterval = 0
+        if var memory = followsMemory, let place = place, memory.place.pid == place.pid,
+           hypot(place.pointer.x - memory.place.pointer.x, place.pointer.y - memory.place.pointer.y) <= trackpadStylePointerSlack {
+            pause = now - memory.usedAt
+            if pause > Self.followsMemoryLife {
+                followsMemory = nil
+            } else {
+                memory.usedAt = now
+                followsMemory = memory
+            }
+        }
         if let heading = towardBottom {
             if let last = watchHeadsToBottom, last != heading {
                 // The wheel turned. What the watch judged, it judged for the other way.
@@ -1121,6 +1196,7 @@ extension ScrollPoster {
                 watchWrongWayMoved = 0
                 // (A short touch at an end heads away from that end now: an ordinary touch.)
                 oneTouchIsShort = false
+                contentWatch?.samples.removeAll()
                 sessionLog.endWatch.turns += 1
                 if watchSeen == false {
                     // Plain (blind, or "the wrong way"): a new look at once.
@@ -1140,7 +1216,10 @@ extension ScrollPoster {
             } else {
                 moved = false
             }
-            if watchSeen == nil || (watchSeen == false && !moved) { return }
+            // (A touch the content watch had opened and that ended by its rest opens again
+            // with a look, as one opened on a bar does.)
+            let contentTouchRested = contentWatch?.follows == true
+            if watchSeen == nil || (watchSeen == false && !moved && !contentTouchRested) { return }
         }
         if config.looksWait {
             // Asked at the next wheel event, when the app's kind is known (and the app is
@@ -1150,6 +1229,7 @@ extension ScrollPoster {
         }
         touchPlace = place
         askForALookLocked(now: now, isRetry: false)
+        pauseBeforeLook = pause
     }
 
     /// Asks for a look at the scroll's place. Caller holds stateLock.
@@ -1174,8 +1254,153 @@ extension ScrollPoster {
         watchCall = .look(token: watchToken, epoch: watchEpoch, pid: touchPlace?.pid ?? 0, point: touchPlace?.pointer ?? .zero, forHold: false, readsRoles: !config.isShell)
     }
 
+    // MARK: One touch: the content under the pointer is seen to follow
+
+    /// A look saw no bar, but the element under the pointer says where it is: the scroll
+    /// goes on plain while that element is read, unless the place is remembered. Caller
+    /// holds stateLock.
+    private func startContentWatchLocked(frame: CGRect, now: CFTimeInterval) {
+        watchSeen = false
+        watchRetryAt = nil
+        if sessionLog.endWatch.content == nil {
+            sessionLog.endWatch.content = ScrollEndWatchLog.Content(width: Double(frame.width), height: Double(frame.height))
+        }
+        var watch = ContentWatch(startedAt: now)
+        watch.samples = [(now, Double(frame.minY), contentSent)]
+        let headsToBottom = watchHeadsToBottom ?? (delta.y < 0)
+        if let memory = followsMemory, let place = touchPlace, memory.place.pid == place.pid,
+           hypot(place.pointer.x - memory.place.pointer.x, place.pointer.y - memory.place.pointer.y) <= trackpadStylePointerSlack {
+            if memory.arrivedToBottom != headsToBottom {
+                // Seen to follow here not long ago: the touch opens with the look.
+                watch.follows = true
+                contentWatch = watch
+                watchLastAnswerAt = now
+                sessionLog.endWatch.content?.decided.append("followed here before: the touch opened")
+                beginOneTouchLocked(at: touchPlace)
+                return
+            }
+            if pauseBeforeLook >= Self.endHoldFreshness {
+                // At the end the last scroll here reached, after a pause: the short touch
+                // (one small bounce), then plain.
+                pauseBeforeLook = 0
+                contentWatch = nil
+                oneTouchIsShort = true
+                shortTouchFrames = 0
+                sessionLog.endWatch.content?.decided.append("started at the end it had reached: a short touch")
+                beginOneTouchLocked(at: touchPlace)
+                return
+            }
+            // (The wheel has not paused since that arrival: plain, and the proof anew.)
+        }
+        contentWatch = watch
+    }
+
+    /// The answer to a reading of the content element. Caller holds stateLock.
+    private func judgeContentLocked(_ reading: ScrollEndReading, epoch: UInt64) {
+        guard var watch = contentWatch else { return }
+        let now = latestNow
+        sessionLog.endWatch.answers += 1
+        sessionLog.endWatch.slowest = max(sessionLog.endWatch.slowest, reading.milliseconds)
+        sessionLog.endWatch.content?.reads += 1
+        guard let frame = reading.content else {
+            // The element is gone: the one under the pointer is taken next. Twice in a
+            // row there is none: plain.
+            watch.misses += 1
+            watch.samples.removeAll()
+            watch.needsRetake = true
+            contentWatch = watch
+            if watch.misses >= 2 {
+                sessionLog.endWatch.content?.decided.append("lost the element: plain")
+                contentWatch = nil
+                goPlainLocked(retry: true, now: now)
+            }
+            return
+        }
+        watch.misses = 0
+        watchLastAnswerAt = now
+        if reading.contentIsNew {
+            // Another element: nothing is judged across the change.
+            watch.samples.removeAll()
+            watch.needsRetake = false
+            sessionLog.endWatch.content?.retakes += 1
+        }
+        // (A reading asked before the wheel's last turn says nothing about this way.)
+        guard epoch == watchEpoch else {
+            contentWatch = watch
+            return
+        }
+        watch.samples.append((now, Double(frame.minY), contentSent))
+        if watch.samples.count > 24 { watch.samples.removeFirst() }
+        if let pointer = touchPlace?.pointer, !frame.insetBy(dx: -Self.contentFarOff, dy: -Self.contentFarOff).contains(pointer) {
+            watch.needsRetake = true
+        }
+        guard let first = watch.samples.first, let last = watch.samples.last else {
+            contentWatch = watch
+            return
+        }
+        if !watch.follows {
+            // The proof: three readings, enough sent between the first and the last, and
+            // the element moved by about as much, the same way.
+            let sent = last.sent - first.sent
+            let moved = last.y - first.y
+            if watch.samples.count >= 3, abs(sent) >= Self.contentProofDistance {
+                let share = moved / sent
+                if share >= Self.contentProofLow && share <= Self.contentProofHigh {
+                    watch.follows = true
+                    watch.samples = [last]
+                    contentWatch = watch
+                    sessionLog.endWatch.content?.moved = abs(moved)
+                    sessionLog.endWatch.content?.sent = abs(sent)
+                    sessionLog.endWatch.content?.decided.append("followed after \(Int(((now - watch.startedAt) * 1000).rounded())) ms: the touch opened")
+                    if let place = touchPlace {
+                        followsMemory = FollowsMemory(place: place, usedAt: now, arrivedToBottom: nil)
+                    }
+                    beginOneTouchLocked(at: touchPlace)
+                    return
+                }
+                // Not with the frames over this stretch: the next one is judged afresh.
+                watch.failedStretches += 1
+                watch.samples = [last]
+                if watch.failedStretches >= 3 {
+                    if sessionLog.endWatch.content?.moved == nil {
+                        sessionLog.endWatch.content?.moved = abs(moved)
+                        sessionLog.endWatch.content?.sent = abs(sent)
+                    }
+                    sessionLog.endWatch.content?.decided.append("never followed: plain")
+                    contentWatch = nil
+                    return
+                }
+            }
+        } else if oneTouchIsOpen {
+            // The arrival: over the last readings (two steps and `contentArrivalWindow`
+            // at least) the element moved clearly less than was sent.
+            let count = watch.samples.count
+            if count >= 3, let from = watch.samples[0..<(count - 2)].last(where: { last.at - $0.at >= Self.contentArrivalWindow }) {
+                let sent = last.sent - from.sent
+                let moved = last.y - from.y
+                if abs(sent) >= Self.contentArrivalDistance, moved / sent < Self.contentArrivalShare {
+                    sessionLog.endWatch.content?.decided.append(String(format: "arrived (moved %.0f of %.0f sent): ended at once", moved * (sent < 0 ? -1 : 1), abs(sent)))
+                    if let place = touchPlace {
+                        followsMemory = FollowsMemory(place: place, usedAt: now, arrivedToBottom: sent < 0)
+                    }
+                    contentWatch = nil
+                    // As at an arrival seen on a bar, without its hold: "ended" at once with
+                    // the clock's time, no tap, the rest dropped. Nothing is taken in after it.
+                    endOneTouchLocked(forced: false)
+                    resetMotionLocked()
+                    oneTouchStopIsHeld = true
+                    return
+                }
+            }
+        }
+        contentWatch = watch
+    }
+
     /// The watch's state as a look that was just asked leaves it. Caller holds stateLock.
     private func prepareForALookLocked(now: CFTimeInterval, isRetry: Bool) {
+        // (A watch of the content belongs to the look before.)
+        contentWatch = nil
+        pauseBeforeLook = 0
         watchToken &+= 1
         watchAsked = true
         watchAskedAt = now
@@ -1239,6 +1464,12 @@ extension ScrollPoster {
         if !isLook || forHold {
             watchReadInFlight = false
         }
+        if !isLook, !forHold, contentWatch != nil {
+            // The content watch's reading: where the element under the pointer is.
+            guard token == watchToken, scrollIsOneTouch, !sessionLog.isEmpty else { return }
+            judgeContentLocked(reading, epoch: epoch)
+            return
+        }
         // Rule 4: the hold lives by looks that still find its bar at that end.
         if forHold {
             guard var hold = endHold, hold.token == token else { return }
@@ -1264,6 +1495,11 @@ extension ScrollPoster {
                 guard watchSeen == nil else { return }
                 noteShellVerdictLocked(reading)
                 provenBar = nil
+                if !config.isShell, let frame = reading.content {
+                    // No bar, but the element under the pointer says where it is.
+                    startContentWatchLocked(frame: frame, now: now)
+                    return
+                }
                 // (In a native shell "no bar" is what most of its own views say: plain to
                 // the scroll's end or the wheel's next turn, without asking again and again.)
                 goPlainLocked(retry: !config.isShell, now: now)
@@ -1891,6 +2127,8 @@ extension ScrollPoster {
         framesHeadToBottom = nil
         oneTouchIsShort = false
         oneTouchLeavesFramesOut = false
+        contentWatch = nil
+        contentSent = 0
         frameStamp = 0
         frameStampStep = 0
         // (`lastPhasedStamp` stays: the next scroll's frames come after this one's. Its
@@ -2543,6 +2781,7 @@ private extension ScrollPoster {
                 let moved = abs(pixels.y) + abs(pixels.x)
                 sessionLog.frames += 1
                 sessionLog.postedDistance += moved
+                if scrollIsOneTouch { contentSent += pixels.y }
                 sessionLog.largestFrame = max(sessionLog.largestFrame, moved)
                 sessionLog.lastFrameAt = now
                 lastActivityTime = now
@@ -2572,7 +2811,18 @@ private extension ScrollPoster {
             oneTouchIsShort = false
         }
         if scrollIsOneTouch {
-            if oneTouchIsOpen && watchSeen == true {
+            if let content = contentWatch {
+                if oneTouchIsOpen && now - watchLastAnswerAt > Self.watchBlindLimit {
+                    // No reading for too long: the touch is not left open without one.
+                    sessionLog.endWatch.content?.decided.append("no reading for \(Int(Self.watchBlindLimit * 1000)) ms: ended by force, plain")
+                    contentWatch = nil
+                    goPlainLocked(retry: true, now: now)
+                } else if !watchReadInFlight && watchCall == nil {
+                    watchReadInFlight = true
+                    watchCall = .content(token: watchToken, epoch: watchEpoch,
+                                         retake: content.needsRetake ? touchPlace?.pointer : nil, pid: touchPlace?.pid ?? 0)
+                }
+            } else if oneTouchIsOpen && watchSeen == true {
                 if now - watchLastAnswerAt > Self.watchBlindLimit {
                     // No reading for too long (a watch that does not answer): the touch is
                     // not left open without one.

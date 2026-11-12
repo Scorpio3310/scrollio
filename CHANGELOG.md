@@ -10,6 +10,12 @@ it for the people who use the app, and give the version its part before you tag 
 
 ## Unreleased
 
+- **Trackpad-style scrolling (Beta)**, "In Mac apps": a view that shows no scroll bar
+  (the conversation in Messages) can bounce at its end too. Scrollio watches whether the
+  content under the pointer moves with the wheel; where it does, the scroll gets a
+  trackpad's form, and when the content stops at the page's end the app bounces. Where
+  it does not, the view scrolls as before. Built from one log and a stand-in; not seen
+  on a screen yet.
 - **Trackpad-style scrolling (Beta)** now says where it works. While it is on, two
   switches stand under it in Scrolling › Advanced. "In browsers" (on): web pages in
   Safari, Chrome-like browsers and Firefox, and apps built like them. "In Mac apps"

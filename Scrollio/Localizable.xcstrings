@@ -7451,7 +7451,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Lists and documents in apps such as Finder. To end a scroll at a page's end, Scrollio reads the position of the scroll bar under the pointer. In some apps (Messages, Calendar) scrolling can get worse: turn this off, or turn the Beta off for that app under Apps."
+            "value": "Lists and documents in apps such as Finder. An app bounces at a page's end where Scrollio can read its scroll bar, or can see the content under the pointer move with the wheel; elsewhere it scrolls as usual. In some apps (Messages, Calendar) scrolling can get worse: turn this off, or turn the Beta off for that app under Apps."
           }
         }
       }
