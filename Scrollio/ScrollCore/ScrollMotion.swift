@@ -57,6 +57,49 @@ enum ScrollMotion {
         return magnitude * referenceFrameInterval / clampedFrameInterval(interval)
     }
 
+    // MARK: The dead zone, by Duration
+
+    /// Smooth's Duration factor (`ScrollFeel.smooth`, Duration 3.69). At this factor and at
+    /// every larger one (a shorter Duration) the dead zone is the stored one, unchanged.
+    static let deadZoneReferenceTransition = 0.158
+
+    /// The speed, in pixels per 60 Hz frame, under which a frame is not posted.
+    ///
+    /// A glide's frames stop when its speed falls under this, and what is left then, speed /
+    /// `transition` pixels, never goes out. With the stored dead zone (1 px a frame) at every
+    /// Duration that was 6 px at Smooth, 17 at Float and 52 at glide time 5.0, whatever the
+    /// scroll's length: a click at Speed 1 (33.6 px) moved 15 px at Float and nothing at all
+    /// at 5.0. A Duration longer than Smooth's gets a dead zone smaller in proportion to its
+    /// factor, so every Duration leaves what Smooth leaves; `ScrollPixelCarry` turns the slow
+    /// last frames into whole pixels. Smooth and every shorter Duration keep the stored one.
+    static func postingDeadZone(_ deadZone: Double, transition: Double) -> Double {
+        guard transition.isFinite, transition > 0, transition < deadZoneReferenceTransition else {
+            return deadZone
+        }
+        return deadZone * transition / deadZoneReferenceTransition
+    }
+
+    /// How many 60 Hz frames Smooth's glide takes from its last posted frame's speed (the dead
+    /// zone) down to a distance left of the dead zone: ln(t) / ln(1 − t) at Smooth's factor t,
+    /// about 10.7 frames (0.18 s).
+    private static let deadZoneReferenceFrames = log(deadZoneReferenceTransition) / log(1 - deadZoneReferenceTransition)
+
+    /// The distance left (px) under which a scroll counts as arrived: its glide is over and,
+    /// a moment later, the scroll ends.
+    ///
+    /// With the stored dead zone at every Duration a long glide stayed open long after its
+    /// last frame: 0.85 s at Float, 3.5 s at glide time 5.0, with the display link running
+    /// and, with trackpad-style events, the app's glide open and nothing arriving. A Duration
+    /// longer than Smooth's counts as arrived when Smooth would: as long after its frames
+    /// stop (they stop with dead zone / Smooth's factor left to go, see `postingDeadZone`).
+    /// Smooth and every shorter Duration keep the stored dead zone.
+    static func arrivalDeadZone(_ deadZone: Double, transition: Double) -> Double {
+        guard transition.isFinite, transition > 0, transition < deadZoneReferenceTransition else {
+            return deadZone
+        }
+        return deadZone / deadZoneReferenceTransition * pow(1 - transition, deadZoneReferenceFrames)
+    }
+
     /// ScrollFilter's weight per 60 Hz frame for the Duration factor `transition`.
     ///
     /// The page answers a notch at once (the lerp moves fastest on its first frame) and then
