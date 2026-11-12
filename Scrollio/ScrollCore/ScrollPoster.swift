@@ -194,9 +194,10 @@ class ScrollPoster {
     //   momentum events say (measured in the owner's recording of a Finder list: 7,225 px posted,
     //   mostly as momentum, moved the list by ~250 pt along AppKit's own decay). For them the
     //   scroll is one touch until it has run out, and no glide events at all (`config.oneTouch`):
-    //   every frame is a "changed", "ended" follows the last one. WebKit, in a web view of any
-    //   app, makes a glide of its own at "momentum began" and drops the glide events it is sent;
-    //   without glide events it follows the touch's frames like AppKit.
+    //   every frame is a "changed". WebKit, in a web view of any app, follows the touch's
+    //   frames whole (measured in a WKWebView: 205 of 205 px); it makes a glide of its own
+    //   and drops the one it is sent only when "momentum began" carries a hardware record
+    //   (`ScrollHardwareRecord`).
     //   The one touch is laid over the scroll as it runs with the switch off: the phase machine
     //   runs exactly as it does then (it only times the scroll; nothing of it is posted), and
     //   what the app gets is "began" with the first wheel event, "changed" on every frame that
@@ -222,8 +223,9 @@ class ScrollPoster {
     //   `manualContinuationThreshold`, and the rest went out as momentum: 70 of a click's
     //   205 px at Smooth, 136 at Float, which such views never followed. That form is still
     //   here behind an evaluation switch, `usesOldLongTouch`.)
-    // - The Chromium engine (Chrome, Dia, Arc, Electron apps) scrolls by the momentum events
-    //   too. For it the scroll is a flick (`config.flick`), as described below.
+    // - The Chromium engine (Chrome, Dia, Arc, Electron apps) and the Gecko engine (Firefox)
+    //   scroll by the momentum events too. For them the scroll is a flick (`config.flick`),
+    //   as described below.
     // - Safari gets no phases at all, as with the switch off (`ScrollUtils.TrackpadStyleTarget
     //   .safari` says what is known; an evaluation switch gives it the flick), and so do the
     //   apps where a wheel has to stay a wheel (`.plainScrolling`).
@@ -359,11 +361,11 @@ class ScrollPoster {
         /// .trackpadStyleTarget`): a short touch and its glide. Without it the touch lasts as long
         /// as the wheel turns, as it always did.
         var flick: Bool
-        /// The switch is on, but this app gets no trackpad-style events (Safari:
-        /// `ScrollUtils.TrackpadStyleTarget.plainScrolling`); `simTrackpadEnabled` is false then.
+        /// The switch is on, but this app gets no trackpad-style events (`ScrollUtils
+        /// .TrackpadStyleTarget.safari` and `.plainScrolling`); `simTrackpadEnabled` is false then.
         var withheld = false
-        /// Trackpad-style for an app that is not Chromium-based: one touch until the scroll
-        /// has run out, no glide events. (false with phases and without `flick`: the old long
+        /// Trackpad-style for an app that is not Chromium-based or Gecko-based: one touch
+        /// until the scroll has run out, no glide events. (false with phases and without `flick`: the old long
         /// touch of the evaluation switch.)
         var oneTouch = false
         /// The switch is on, but this scroll is mainly sideways and carries no phases

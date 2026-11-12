@@ -9,14 +9,35 @@ it for the people who use the app, and give the version its part before you tag 
 ## Unreleased
 
 - **Trackpad-style scrolling (Beta)** in apps that are not browsers (Finder, Notes, a
-  message in Mail): the whole scroll is now sent as one touch. Before, the end of a scroll
-  was sent as a glide. By how these apps read such events they follow a touch to its end
-  and not a glide they are sent, so a click should have stopped short, more so with a long
-  glide time, and should now go as far as with the switch off. That is derived, not yet
-  seen on a screen. At the end of a page the page can stay stretched a little longer.
-- **Trackpad-style scrolling (Beta)** knows more apps. Web apps made with Safari's "Add to
-  Dock" and the DuckDuckGo browser are left as they are, like Safari. A web app installed
-  from Chrome, Brave or Edge scrolls and bounces like its browser.
+  message in Mail): the whole scroll is now sent as one touch, which ends a fifth of a
+  second after the page last moved. Before, the end of a scroll was sent as a glide. By
+  how these apps read such events they follow a touch to its end and not a glide they are
+  sent, and after a touch that ends at speed they add a glide of their own. So a click
+  should have stopped short, more so with a long glide time, and should now go exactly as
+  far as with the switch off. When a click, a finger on the trackpad or another app cuts a
+  scroll short, Scrollio now also sends what a trackpad sends when two fingers tap it, so
+  that the app stops there. All of this is derived from how macOS reads these events, not
+  yet seen on a screen. At the end of a page the page can stay stretched a little longer.
+- **Trackpad-style scrolling (Beta)** knows more apps. Firefox and the apps built on its
+  engine (Thunderbird, Zotero) now get the same form as Chrome-like apps, a short touch and
+  its glide: by Firefox's code that is what makes it bounce like a trackpad (not yet seen
+  on a screen). Web apps made with Safari's "Add to Dock" and the DuckDuckGo browser are
+  left as they are, like Safari. So are Maps, Find My, Calendar, iPhone Mirroring, Blender
+  and the Godot editor: people who use other mouse tools report that with a wheel in a
+  trackpad's form these pan or turn the view instead of zooming, or do not scroll as they
+  should. A web app installed from Chrome, Brave or Edge scrolls and bounces like its
+  browser.
+- With it on, scrolling sideways (Shift, "Scroll sideways", the thumb wheel) now stays as
+  it is with the switch off. In a trackpad's form a sideways scroll is a swipe, and by
+  their code Chrome and Firefox go back or forward a page on it.
+- With it on, what an app is sent reads more like a trackpad's events: each has a time of
+  its own, evenly spaced (apps take the speed for a bounce from it), its own line count,
+  and nothing of the wheel's hardware event left on it (a web view that found it on a
+  glide replaced the glide by one of its own: measured in a web view without a display).
+  In Chrome-like apps and Firefox the touch now begins with the first step the page
+  moves, and its end goes out together with the glide's beginning. The motion itself is
+  what it was. On macOS 14, 15 and 26 the wheel's hardware event stays on, as before:
+  taking it off was only run on macOS 27.
 - With it on, a Chrome-like app that comes to the front is known before you scroll in it,
   so its first scroll already bounces like the later ones. (An app that was in front when
   you turned the switch on, or that you scroll in without bringing it to the front, is
