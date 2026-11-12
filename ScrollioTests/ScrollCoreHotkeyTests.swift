@@ -211,4 +211,61 @@ final class ScrollCoreHotkeyTests: XCTestCase {
         XCTAssertFalse(ScrollCore.shared.toggleScroll)
         XCTAssertFalse(ScrollCore.shared.blockSmooth)
     }
+
+    // MARK: - B4: a mouse button number above 127
+
+    /// CoreGraphics keeps a mouse event's button number in 8 bits and reads it back signed:
+    /// 200 comes back as -56, and `UInt16(-56)` traps. The hold-key tap read it that way for
+    /// every other-button event: an event another program made up with such a number crashed
+    /// the app, each time.
+    func testAButtonNumberAbove127_isReadWithoutATrap() throws {
+        let event = try XCTUnwrap(CGEvent(mouseEventSource: nil, mouseType: .otherMouseUp,
+                                          mouseCursorPosition: CGPoint(x: 40, y: 40), mouseButton: .center))
+        event.setIntegerValueField(.mouseEventButtonNumber, value: 200)
+        let field = event.getIntegerValueField(.mouseEventButtonNumber)
+        XCTAssertEqual(field, -56, "what CoreGraphics gives back for 200")
+        XCTAssertNil(UInt16(exactly: field), "the conversion that trapped")
+
+        XCTAssertEqual(ScrollCore.mouseButtonNumber(fromField: field), 200)
+        XCTAssertEqual(ScrollCore.mouseButtonNumber(fromField: -128), 128)
+        XCTAssertEqual(ScrollCore.mouseButtonNumber(fromField: -1), 255)
+        for number in [Int64(0), 2, 31, 127] {
+            XCTAssertEqual(ScrollCore.mouseButtonNumber(fromField: number), UInt16(number), "as before")
+        }
+    }
+
+    /// The same through the hold-key tap's callback, with the release of button 200 (the
+    /// press first asks `CGEvent.mouseCode`, which has the same conversion and its own fix).
+    /// A scroll key recorded for that button is released by it, so the number read is 200.
+    func testTheHoldKeyTap_takesAReleaseOfButton200() throws {
+        let saved = (Options.shared.scroll.dash, ScrollCore.shared.application, ScrollCore.shared.currentApplication)
+        defer {
+            Options.shared.scroll.dash = saved.0
+            ScrollCore.shared.application = saved.1
+            ScrollCore.shared.currentApplication = saved.2
+        }
+        ScrollCore.shared.application = nil
+        ScrollCore.shared.currentApplication = nil
+        Options.shared.scroll.dash = ScrollHotkey(type: .mouse, code: 200)
+        ScrollCore.shared.dashKeyHeld = true
+        ScrollCore.shared.dashScroll = true
+        ScrollCore.shared.dashAmplification = 5.0
+
+        let release = try XCTUnwrap(CGEvent(mouseEventSource: nil, mouseType: .otherMouseUp,
+                                            mouseCursorPosition: CGPoint(x: 40, y: 40), mouseButton: .center))
+        release.setIntegerValueField(.mouseEventButtonNumber, value: 200)
+        let result = ScrollCore.shared.hotkeyEventCallBack(CGEventTapProxy(bitPattern: 1)!, .otherMouseUp, release, nil)
+
+        XCTAssertNil(result, "a listen-only tap returns nothing")
+        XCTAssertFalse(ScrollCore.shared.dashKeyHeld, "button 200 was recognised")
+        XCTAssertEqual(ScrollCore.shared.dashAmplification, 1.0)
+
+        // Another button does not release it.
+        ScrollCore.shared.dashKeyHeld = true
+        let other = try XCTUnwrap(CGEvent(mouseEventSource: nil, mouseType: .otherMouseUp,
+                                          mouseCursorPosition: CGPoint(x: 40, y: 40), mouseButton: .center))
+        other.setIntegerValueField(.mouseEventButtonNumber, value: 255)
+        _ = ScrollCore.shared.hotkeyEventCallBack(CGEventTapProxy(bitPattern: 1)!, .otherMouseUp, other, nil)
+        XCTAssertTrue(ScrollCore.shared.dashKeyHeld)
+    }
 }

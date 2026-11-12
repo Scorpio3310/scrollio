@@ -384,4 +384,62 @@ final class ScrollMotionTests: XCTestCase {
         mach_timebase_info(&info)
         XCTAssertEqual(ScrollEventClock.secondsPerTick, Double(info.numer) / Double(info.denom) / 1e9, accuracy: 1e-18)
     }
+
+    // MARK: - The dead zone by Duration
+
+    /// Smooth and every shorter Duration keep the stored dead zone, exactly: nothing about
+    /// their motion may change. (The glide time slider's stops next to Smooth: 3.65 is
+    /// shorter, 3.70 a hair longer.)
+    func testDeadZones_areTheStoredOneUpToSmooth() {
+        XCTAssertEqual(transition(ScrollFeel.smooth.duration), ScrollMotion.deadZoneReferenceTransition)
+        for duration in [1.0, 2.0, 3.13, 3.5, 3.65, 3.69] {
+            for deadZone in [0.5, 1.0, 3.0] {
+                XCTAssertEqual(ScrollMotion.postingDeadZone(deadZone, transition: transition(duration)), deadZone, "Duration \(duration)")
+                XCTAssertEqual(ScrollMotion.arrivalDeadZone(deadZone, transition: transition(duration)), deadZone, "Duration \(duration)")
+            }
+        }
+        // A factor that is no factor: the stored dead zone.
+        for odd in [0.0, -1.0, 1.0, 2.0, .nan, .infinity] {
+            XCTAssertEqual(ScrollMotion.postingDeadZone(1, transition: odd), 1, "\(odd)")
+            XCTAssertEqual(ScrollMotion.arrivalDeadZone(1, transition: odd), 1, "\(odd)")
+        }
+    }
+
+    /// A longer Duration: frames are posted down to a speed that leaves what Smooth leaves,
+    /// (dead zone / Smooth's factor) pixels, about 6.3 at dead zone 1.
+    func testPostingDeadZone_leavesWhatSmoothLeavesAtALongerDuration() {
+        let leftAtSmooth = 1 / ScrollMotion.deadZoneReferenceTransition
+        var last = 1.0
+        for duration in [3.7, 3.9, 4.35, 4.6, 4.9, 5.0] {
+            let factor = transition(duration)
+            let speed = ScrollMotion.postingDeadZone(1, transition: factor)
+            XCTAssertLessThan(speed, last, "Duration \(duration): smaller the longer the glide")
+            XCTAssertGreaterThan(speed, 0)
+            // What a lerp still has to go when its speed is `speed`: speed / factor.
+            XCTAssertEqual(speed / factor, leftAtSmooth, accuracy: 1e-9, "Duration \(duration)")
+            XCTAssertEqual(ScrollMotion.postingDeadZone(3, transition: factor), 3 * speed, accuracy: 1e-12, "in proportion to the stored one")
+            last = speed
+        }
+        XCTAssertEqual(ScrollMotion.postingDeadZone(1, transition: transition(5.0)), 0.019 / 0.158, accuracy: 1e-12)
+    }
+
+    /// A longer Duration counts as arrived as long after its frames stop as Smooth does:
+    /// Smooth goes from (dead zone / factor) left to the dead zone in about 10.7 frames.
+    func testArrivalDeadZone_isReachedAsSoonAfterTheLastFrameAsAtSmooth() {
+        let smooth = ScrollMotion.deadZoneReferenceTransition
+        let framesAtSmooth = log(smooth) / log(1 - smooth)
+        XCTAssertEqual(framesAtSmooth, 10.73, accuracy: 0.01)
+        var last = 1.0
+        for duration in [3.7, 3.9, 4.35, 4.6, 4.9, 5.0] {
+            let factor = transition(duration)
+            let arrival = ScrollMotion.arrivalDeadZone(1, transition: factor)
+            XCTAssertGreaterThan(arrival, last, "Duration \(duration): larger the longer the glide")
+            XCTAssertLessThan(arrival, 1 / smooth, "Duration \(duration): under what is left when the frames stop")
+            // Frames from (dead zone / Smooth's factor) left down to `arrival`, at this Duration.
+            let frames = log(arrival * smooth) / log(1 - factor)
+            XCTAssertEqual(frames, framesAtSmooth, accuracy: 1e-9, "Duration \(duration)")
+            XCTAssertEqual(ScrollMotion.arrivalDeadZone(3, transition: factor), 3 * arrival, accuracy: 1e-12, "in proportion to the stored one")
+            last = arrival
+        }
+    }
 }

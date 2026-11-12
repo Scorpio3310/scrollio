@@ -93,6 +93,16 @@ struct ScrollHandover: Equatable {
         }
     }
 
+    /// Whether a trackpad event is the glide's "ended" that macOS sends when the wheel turns
+    /// during the glide: a momentum "ended" that is not continuous (a trackpad's events
+    /// always are) and carries a delta, the wheel's own. The wheel event itself follows it
+    /// and is smoothed, so let through as it came the delta reached the app twice, the first
+    /// time raw and unreversed: a pixel as a rule, about 130 px the wrong way with the wheel
+    /// already spinning and "Reverse wheel direction" on. The caller clears its deltas.
+    static func carriesTheWheelsDelta(momentumPhase: Double, isContinuous: Double, hasDelta: Bool) -> Bool {
+        return momentumPhase == momentumEnded && isContinuous == 0.0 && hasDelta
+    }
+
     /// Wheel to trackpad: a finger that begins to scroll on the trackpad stops Scrollio's own
     /// glide from the wheel at once, so only the finger moves the page.
     static func fingerTakesOver(scrollPhase: Double) -> Bool {

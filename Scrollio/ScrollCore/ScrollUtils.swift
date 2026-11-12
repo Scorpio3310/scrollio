@@ -12,7 +12,7 @@ class ScrollUtils {
     
     // 单例
     static let shared = ScrollUtils()
-    init() { NSLog("Module initialized: ScrollUtils") }
+    init() {}
     private let syntheticSmoothEventMarker: Int64 = 0x4D4F53534D4F4F54
     
     func markSyntheticSmoothEvent(_ event: CGEvent) {
@@ -66,22 +66,77 @@ class ScrollUtils {
     /// Bundle path -> answer. Main thread.
     private var trackpadStyleTargetByBundlePath: [String: TrackpadStyleTarget] = [:]
 
-    /// The kind of the app a wheel event goes to; looked into once per app. Main thread.
+    /// Looks into an app's bundle off the main thread and calls back on the main queue with
+    /// whether it is Chromium-based. Tests put their own in its place (no disk).
+    var inspectBundle: (_ bundleURL: URL, _ completion: @escaping (Bool) -> Void) -> Void = { bundleURL, completion in
+        ScrollUtils.bundleInspectionQueue.async {
+            // The folder an alias in Applications points to is judged again: never outside.
+            let resolved = bundleURL.resolvingSymlinksInPath()
+            let isChromium = ScrollUtils.mayLookIntoBundle(atPath: resolved.path) && ScrollUtils.isChromiumBased(bundleURL: resolved)
+            DispatchQueue.main.async { completion(isChromium) }
+        }
+    }
+    private static let bundleInspectionQueue = DispatchQueue(label: "com.nikklemenc.Scrollio.bundle-inspection", qos: .utility)
+
+    /// The kind of the app a wheel event goes to. Main thread, inside the scroll tap's
+    /// callback: it never touches the disk.
     func trackpadStyleTarget(of event: CGEvent) -> TrackpadStyleTarget {
         guard let application = getRunningApplication(from: event), let bundleURL = application.bundleURL else {
             return .touchOnly
         }
-        if let known = trackpadStyleTargetByBundlePath[bundleURL.path] {
+        return trackpadStyleTarget(bundleIdentifier: application.bundleIdentifier, bundleURL: bundleURL)
+    }
+
+    /// The answer for an app, at once. Safari is known by its name. Any other app counts as
+    /// touch-only the first time it is seen (what an app that is not known gets), and its
+    /// bundle is looked into once, off the main thread; the answer is stored on the main
+    /// queue for the scrolls after it. It used to be looked into here, inside the tap's
+    /// callback: for an app in Documents, Desktop, Downloads or on a network volume macOS
+    /// held that call (a privacy prompt in Scrollio's name, or the wait for the share) and
+    /// with it every event tap. A bundle outside the Applications folders and /System is
+    /// never looked into (`mayLookIntoBundle`), so macOS never asks for a folder of the
+    /// user's on Scrollio's behalf; such an app stays touch-only.
+    func trackpadStyleTarget(bundleIdentifier: String?, bundleURL: URL) -> TrackpadStyleTarget {
+        let path = bundleURL.path
+        if let known = trackpadStyleTargetByBundlePath[path] {
             return known
         }
-        let target = Self.trackpadStyleTarget(bundleIdentifier: application.bundleIdentifier, bundleURL: bundleURL)
-        trackpadStyleTargetByBundlePath[bundleURL.path] = target
-        return target
+        if let identifier = bundleIdentifier, Self.safariBundleIdentifiers.contains(identifier) {
+            trackpadStyleTargetByBundlePath[path] = .plainScrolling
+            return .plainScrolling
+        }
+        // Stored at once: one look per app, however many wheel events come before its answer.
+        trackpadStyleTargetByBundlePath[path] = .touchOnly
+        guard Self.mayLookIntoBundle(atPath: path) else {
+            return .touchOnly
+        }
+        inspectBundle(bundleURL) { [weak self] isChromium in
+            if isChromium {
+                self?.trackpadStyleTargetByBundlePath[path] = .followsGlide
+            }
+        }
+        return .touchOnly
     }
+
+    /// Whether an app's bundle may be looked into: only inside /Applications, /System (with
+    /// /System/Applications) and the user's own Applications folder. None of them is a
+    /// folder macOS guards with a privacy prompt (Documents, Desktop, Downloads, iCloud
+    /// Drive, removable and network volumes are). /System/Volumes is left out: the data
+    /// volume, and so every user's folders, can be reached through it. Pure: the path as it
+    /// is given, no disk.
+    static func mayLookIntoBundle(atPath path: String, homeDirectory: String = ScrollUtils.homeDirectory) -> Bool {
+        guard path.hasPrefix("/"), !path.contains("/../"), !path.hasSuffix("/..") else { return false }
+        if path.hasPrefix("/System/") {
+            return !path.hasPrefix("/System/Volumes/")
+        }
+        return path.hasPrefix("/Applications/") || path.hasPrefix(homeDirectory + "/Applications/")
+    }
+    private static let homeDirectory = NSHomeDirectory()
 
     /// Safari by its name, a Chromium-based app by what its bundle carries. (Firefox, and web
     /// views inside other apps, count as touch-only: not checked on screen, and a web view
-    /// cannot be told from the app's own lists.)
+    /// cannot be told from the app's own lists.) Reads the disk: never on the main thread
+    /// (the scroll path asks `trackpadStyleTarget(bundleIdentifier:bundleURL:)` of an instance).
     static func trackpadStyleTarget(bundleIdentifier: String?, bundleURL: URL, fileManager: FileManager = .default) -> TrackpadStyleTarget {
         if let identifier = bundleIdentifier, safariBundleIdentifiers.contains(identifier) {
             return .plainScrolling
@@ -93,7 +148,8 @@ class ScrollUtils {
 
     /// A Chromium-based app carries the engine's resources (`resources.pak`) in one of its
     /// frameworks: "Google Chrome Framework", "Electron Framework", "Chromium Embedded
-    /// Framework", Dia's and Arc's "ArcCore". One look into `Contents/Frameworks`.
+    /// Framework", Dia's and Arc's "ArcCore". One look into `Contents/Frameworks`: reads the
+    /// disk, so never on the main thread (`inspectBundle`).
     static func isChromiumBased(bundleURL: URL, fileManager: FileManager = .default) -> Bool {
         let frameworks = bundleURL.appendingPathComponent("Contents/Frameworks", isDirectory: true)
         guard let names = try? fileManager.contentsOfDirectory(atPath: frameworks.path) else {

@@ -8,6 +8,26 @@
 
 import Cocoa
 
+/// The system calls an `Interceptor` makes. The app uses `live`; a test passes its own and
+/// so makes an Interceptor without a real event tap and without Accessibility access.
+struct EventTapSystem {
+    var create: (_ tap: CGEventTapLocation, _ place: CGEventTapPlacement, _ options: CGEventTapOptions,
+                 _ mask: CGEventMask, _ callback: CGEventTapCallBack) -> CFMachPort?
+    var enable: (_ tap: CFMachPort, _ enable: Bool) -> Void
+    var isEnabled: (_ tap: CFMachPort) -> Bool
+    /// Whether the app has Accessibility access.
+    var isTrusted: () -> Bool
+
+    static let live = EventTapSystem(
+        create: { tap, place, options, mask, callback in
+            CGEvent.tapCreate(tap: tap, place: place, options: options, eventsOfInterest: mask, callback: callback, userInfo: nil)
+        },
+        enable: { tap, enable in CGEvent.tapEnable(tap: tap, enable: enable) },
+        isEnabled: { tap in CGEvent.tapIsEnabled(tap: tap) },
+        isTrusted: { AXIsProcessTrusted() }
+    )
+}
+
 class Interceptor {
 
     private var keeper: Timer?
@@ -15,9 +35,12 @@ class Interceptor {
     private var _runLoopSourceRef: CFRunLoopSource?
     /// What this tap listens to, for the log.
     let kind: EventTapKind
+    private let system: EventTapSystem
 
     /// keeper 触发的自动重启时间戳, 仅保留冷却窗口内的记录
-    private var autoRestartHistory: [Date] = []
+    /// Seconds of `monotonicNow`, never the wall clock: set back by N seconds (by hand, or a
+    /// time sync), the wall clock kept a tap that was restarted three times off for N + 60 s.
+    private var autoRestartHistory: [TimeInterval] = []
     /// The restarts of this tap are refused by the throttle; it is off. Cleared when a
     /// restart is admitted again, and when the tap is stopped or paused on purpose.
     private(set) var restartsThrottled = false
@@ -27,17 +50,25 @@ class Interceptor {
     // 用户永远点不到弹窗. 窗口期内重启达到上限即进入冷却, 让系统输入保持可用.
     static let autoRestartWindow: TimeInterval = 60
     static let autoRestartLimit = 3
+    /// A restarted tap goes on again after this long (`restart`).
+    static let restartDelay: TimeInterval = 0.5
+
+    /// The clock of the restart throttle: seconds since the Mac started, never set back or
+    /// forward.
+    static func monotonicNow() -> TimeInterval {
+        return ProcessInfo.processInfo.systemUptime
+    }
 
     /// 纯函数: 窗口期内自动重启次数达到上限 → 冷却 (跳过本轮重启)
-    static func isAutoRestartThrottled(history: [Date], now: Date) -> Bool {
-        let windowStart = now.addingTimeInterval(-autoRestartWindow)
+    static func isAutoRestartThrottled(history: [TimeInterval], now: TimeInterval) -> Bool {
+        let windowStart = now - autoRestartWindow
         return history.filter { $0 > windowStart }.count >= autoRestartLimit
     }
 
     /// Counts one automatic restart unless the throttle refuses it: drops the entries that
     /// left the window, and adds `now` when the restart may go ahead.
-    static func admitAutoRestart(history: inout [Date], now: Date) -> Bool {
-        history.removeAll { now.timeIntervalSince($0) >= autoRestartWindow }
+    static func admitAutoRestart(history: inout [TimeInterval], now: TimeInterval) -> Bool {
+        history.removeAll { now - $0 >= autoRestartWindow }
         guard !isAutoRestartThrottled(history: history, now: now) else { return false }
         history.append(now)
         return true
@@ -53,10 +84,11 @@ class Interceptor {
     public var eventTapRef: CFMachPort? { _eventTapRef }
     public var runLoopSourceRef: CFRunLoopSource? { _runLoopSourceRef }
     
-    public init(event mask: CGEventMask, handleBy eventHandler: @escaping CGEventTapCallBack, listenOn eventTap: CGEventTapLocation, placeAt eventPlace: CGEventTapPlacement, for behaver: CGEventTapOptions) throws {
+    init(event mask: CGEventMask, handleBy eventHandler: @escaping CGEventTapCallBack, listenOn eventTap: CGEventTapLocation, placeAt eventPlace: CGEventTapPlacement, for behaver: CGEventTapOptions, system: EventTapSystem = .live) throws {
         // 创建拦截层
         kind = EventTapKind.of(mask: mask)
-        guard let tap = CGEvent.tapCreate(tap: eventTap, place: eventPlace, options: behaver, eventsOfInterest: mask, callback: eventHandler, userInfo: nil) else {
+        self.system = system
+        guard let tap = system.create(eventTap, eventPlace, behaver, mask, eventHandler) else {
             AppSystemLog.problem("Could not create the \(kind.rawValue) event tap")
             throw InterceptorError.eventTapCreationFailed
         }
@@ -71,7 +103,7 @@ class Interceptor {
         stop()
         // 清理 event tap
         if let tap = _eventTapRef {
-            CGEvent.tapEnable(tap: tap, enable: false)
+            system.enable(tap, false)
             // CoreGraphics 内部持有该 CFMachPort 的引用, 仅释放引用不会销毁它; 不调用
             // CFMachPortInvalidate 的话, WindowServer 会保留这个 (已禁用的) tap 注册直到
             // 进程退出。ScrollCore/ButtonCore 每次休眠唤醒都重建 Interceptor, 累积的僵尸
@@ -105,7 +137,7 @@ extension Interceptor {
             throw InterceptorError.eventTapEnableFailed
         }
         // 权限已被撤销时, 不启用 tap, 避免僵尸 tap 吞没系统事件
-        guard AXIsProcessTrusted() else {
+        guard system.isTrusted() else {
             NotificationCenter.default.post(name: .scrollioAccessibilityPermissionLost, object: nil)
             throw InterceptorError.eventTapEnableFailed
         }
@@ -114,21 +146,25 @@ extension Interceptor {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
         }
         // 启动拦截层
-        CGEvent.tapEnable(tap: tap, enable: true)
+        system.enable(tap, true)
         // 启动守护 (also while a menu is open: see CommonModesTimer)
         Self.replaceKeeper(&keeper, with: CommonModesTimer.scheduled(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            // 权限被撤销时, 主动停止 tap 并通知, 不等 restart 判断
-            guard AXIsProcessTrusted() else {
-                self.stop()
-                self.onRestart?()
-                NotificationCenter.default.post(name: .scrollioAccessibilityPermissionLost, object: nil)
-                return
-            }
-            if !self.isRunning() {
-                self.restartUnlessThrottled(after: .foundOff)
-            }
+            self?.keeperLook()
         })
+    }
+
+    /// One look of the keeper, every 5 s while the tap is started.
+    func keeperLook() {
+        // 权限被撤销时, 主动停止 tap 并通知, 不等 restart 判断
+        guard system.isTrusted() else {
+            stop()
+            onRestart?()
+            NotificationCenter.default.post(name: .scrollioAccessibilityPermissionLost, object: nil)
+            return
+        }
+        if !isRunning() {
+            restartUnlessThrottled(after: .foundOff)
+        }
     }
 
     /// Why an automatic restart was asked for.
@@ -146,7 +182,7 @@ extension Interceptor {
     /// - Returns: false when the throttle refused it.
     @discardableResult
     func restartUnlessThrottled(after cause: RestartCause = .timeout) -> Bool {
-        guard Self.admitAutoRestart(history: &autoRestartHistory, now: Date()) else {
+        guard Self.admitAutoRestart(history: &autoRestartHistory, now: Self.monotonicNow()) else {
             if !restartsThrottled {
                 setRestartsThrottled(true)
                 AppSystemLog.problem(Self.throttledLine(kind: kind))
@@ -242,7 +278,7 @@ extension Interceptor {
         Self.replaceKeeper(&keeper, with: nil)
         // 关闭拦截层
         if let tap = _eventTapRef, let source = _runLoopSourceRef {
-            CGEvent.tapEnable(tap: tap, enable: false)
+            system.enable(tap, false)
             if removeFromRunLoop, CFRunLoopContainsSource(CFRunLoopGetCurrent(), source, .commonModes) {
                 CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
             }
@@ -254,15 +290,18 @@ extension Interceptor {
 extension Interceptor {
     public func isRunning() -> Bool {
         if let tap = _eventTapRef {
-            return CGEvent.tapIsEnabled(tap: tap)
+            return system.isEnabled(tap)
         } else {
             return false
         }
     }
     
+    /// Switches the tap off, lets its owner clean up (`onRestart`) and switches it on again
+    /// `restartDelay` later (not at once: the tap stays off for that half second, and the
+    /// events it listens to go by untouched).
     public func restart() {
         // 权限已被撤销时, 不再尝试重新启用 tap
-        guard AXIsProcessTrusted() else {
+        guard system.isTrusted() else {
             stop()
             onRestart?()
             NotificationCenter.default.post(name: .scrollioAccessibilityPermissionLost, object: nil)
@@ -272,7 +311,7 @@ extension Interceptor {
         onRestart?()
         guard shouldRestart?() ?? true else { return }
         // 使用 closure timer 避免 @objc throws 方法作为 selector 的 ObjC bridge 问题
-        Self.replaceKeeper(&keeper, with: CommonModesTimer.scheduled(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+        Self.replaceKeeper(&keeper, with: CommonModesTimer.scheduled(withTimeInterval: Self.restartDelay, repeats: false) { [weak self] _ in
             try? self?.start()
         })
     }

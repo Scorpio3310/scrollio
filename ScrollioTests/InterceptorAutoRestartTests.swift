@@ -6,10 +6,11 @@ import XCTest
 /// keeper 盲目重启会再次冻结输入, 形成用户点不到弹窗的自锁. 冷却窗口用于打破该循环.
 final class InterceptorAutoRestartTests: XCTestCase {
 
-    private let now = Date(timeIntervalSince1970: 1_000_000)
+    /// Seconds on the throttle's clock (`Interceptor.monotonicNow`), not a date.
+    private let now: TimeInterval = 1_000_000
 
-    private func secondsAgo(_ s: TimeInterval) -> Date {
-        return now.addingTimeInterval(-s)
+    private func secondsAgo(_ s: TimeInterval) -> TimeInterval {
+        return now - s
     }
 
     func testNotThrottled_whenHistoryEmpty() {
@@ -41,7 +42,7 @@ final class InterceptorAutoRestartTests: XCTestCase {
         let history = [secondsAgo(50), secondsAgo(55), secondsAgo(58)]
         XCTAssertTrue(Interceptor.isAutoRestartThrottled(history: history, now: now))
         // 冷却后: 同一批记录在 61s 后全部滑出窗口 → 恢复
-        let later = now.addingTimeInterval(61)
+        let later = now + 61
         XCTAssertFalse(Interceptor.isAutoRestartThrottled(history: history, now: later))
     }
 
@@ -51,20 +52,20 @@ final class InterceptorAutoRestartTests: XCTestCase {
     /// not at the keeper's next look; both count against the same limit, so a main thread
     /// that keeps timing out cannot freeze input again and again.
     func testRestartsAreAdmittedUpToTheLimitThenRefusedUntilTheWindowPasses() {
-        var history: [Date] = []
+        var history: [TimeInterval] = []
         for second in 0..<Interceptor.autoRestartLimit {
-            XCTAssertTrue(Interceptor.admitAutoRestart(history: &history, now: now.addingTimeInterval(Double(second))))
+            XCTAssertTrue(Interceptor.admitAutoRestart(history: &history, now: now + Double(second)))
         }
         XCTAssertEqual(history.count, Interceptor.autoRestartLimit)
 
-        let refusedAt = now.addingTimeInterval(10)
+        let refusedAt = now + 10
         XCTAssertFalse(Interceptor.admitAutoRestart(history: &history, now: refusedAt))
         XCTAssertEqual(history.count, Interceptor.autoRestartLimit, "a refused restart is not counted")
 
         // Once the first ones left the window, a restart is admitted and the old ones are gone.
-        let later = now.addingTimeInterval(Interceptor.autoRestartWindow + 0.5)
+        let later = now + Interceptor.autoRestartWindow + 0.5
         XCTAssertTrue(Interceptor.admitAutoRestart(history: &history, now: later))
-        XCTAssertEqual(history, [now.addingTimeInterval(1), now.addingTimeInterval(2), later],
+        XCTAssertEqual(history, [now + 1, now + 2, later],
                        "the entry at 0 s left the window; those at 1 s and 2 s are still in it")
     }
 
@@ -168,6 +169,193 @@ final class InterceptorAutoRestartTests: XCTestCase {
             XCTAssertFalse(source.contains("Timer.scheduledTimer"), "\(file.path) makes a default-mode timer")
             XCTAssertEqual(source.components(separatedBy: "CommonModesTimer.scheduled(").count - 1, file.timers, file.path)
         }
+    }
+
+    // MARK: - An Interceptor without a real tap (FakeEventTapSystem)
+
+    /// Counts the "Accessibility access lost" notifications while it lives.
+    private final class AccessLostCounter {
+        private(set) var count = 0
+        private var observer: NSObjectProtocol?
+
+        init() {
+            observer = NotificationCenter.default.addObserver(forName: .scrollioAccessibilityPermissionLost, object: nil, queue: nil) { [weak self] _ in
+                self?.count += 1
+            }
+        }
+
+        deinit {
+            if let observer = observer { NotificationCenter.default.removeObserver(observer) }
+        }
+    }
+
+    /// `start()` checks the Accessibility access before it switches the tap on: an active
+    /// tap of an app without access swallows the events it listens to.
+    func testATapIsNotSwitchedOnWithoutAccessibilityAccess() {
+        let system = FakeEventTapSystem()
+        system.isTrusted = false
+        let lost = AccessLostCounter()
+        XCTAssertThrowsError(try system.makeInterceptor()) { error in
+            XCTAssertEqual(error as? Interceptor.InterceptorError, .eventTapEnableFailed)
+        }
+        XCTAssertEqual(system.created, 1, "the tap was made")
+        XCTAssertFalse(system.switches.contains(true), "and never switched on")
+        XCTAssertEqual(lost.count, 1, "the app hears that the access is missing")
+    }
+
+    func testATapThatCannotBeMadeThrows() {
+        let system = FakeEventTapSystem()
+        system.canCreate = false
+        XCTAssertThrowsError(try system.makeInterceptor()) { error in
+            XCTAssertEqual(error as? Interceptor.InterceptorError, .eventTapCreationFailed)
+        }
+        XCTAssertEqual(system.switches, [])
+    }
+
+    func testStartSwitchesTheTapOnAndStopSwitchesItOff() throws {
+        let system = FakeEventTapSystem()
+        let interceptor = try system.makeInterceptor()
+        XCTAssertTrue(interceptor.isRunning())
+        XCTAssertEqual(system.switches, [true])
+
+        interceptor.stop()
+        XCTAssertFalse(interceptor.isRunning())
+        XCTAssertEqual(system.switches.last, false)
+    }
+
+    /// The keeper finds the access gone: the tap is switched off at once, its owner cleans
+    /// up, and the app is told. No restart.
+    func testTheKeeperSwitchesTheTapOffWhenTheAccessIsGone() throws {
+        let system = FakeEventTapSystem()
+        let interceptor = try system.makeInterceptor()
+        var cleanedUp = 0
+        interceptor.onRestart = { cleanedUp += 1 }
+
+        system.isTrusted = false
+        let lost = AccessLostCounter()
+        interceptor.keeperLook()
+
+        XCTAssertFalse(interceptor.isRunning())
+        XCTAssertEqual(cleanedUp, 1)
+        XCTAssertEqual(lost.count, 1)
+        XCTAssertFalse(interceptor.restartsThrottled)
+    }
+
+    /// The keeper finds the tap off (macOS turned it off): it is restarted, which switches
+    /// it on again `restartDelay` later.
+    func testTheKeeperRestartsATapItFindsOff() throws {
+        let system = FakeEventTapSystem()
+        let interceptor = try system.makeInterceptor()
+        var cleanedUp = 0
+        interceptor.onRestart = { cleanedUp += 1 }
+        interceptor.keeperLook()
+        XCTAssertEqual(cleanedUp, 0, "a tap that runs is left alone")
+
+        system.turnOffAsMacOSDoes()
+        XCTAssertFalse(interceptor.isRunning())
+        interceptor.keeperLook()
+
+        XCTAssertEqual(cleanedUp, 1, "the owner cleans up")
+        XCTAssertFalse(interceptor.isRunning(), "off until the restart's timer fires")
+        runMainRunLoop(in: .default, timeout: 3) { interceptor.isRunning() }
+        XCTAssertTrue(interceptor.isRunning(), "on again")
+        interceptor.stop()
+    }
+
+    /// The restart throttle holds: after `autoRestartLimit` restarts within the window the
+    /// next one is refused, the tap stays off and the app knows a tap is off.
+    func testRestartsBeyondTheLimitAreRefusedAndTheTapStaysOff() throws {
+        let system = FakeEventTapSystem()
+        let interceptor = try system.makeInterceptor()
+        var cleanedUp = 0
+        interceptor.onRestart = { cleanedUp += 1 }
+        for _ in 0..<Interceptor.autoRestartLimit {
+            XCTAssertTrue(interceptor.restartUnlessThrottled())
+        }
+        XCTAssertEqual(cleanedUp, Interceptor.autoRestartLimit)
+        XCTAssertFalse(interceptor.restartsThrottled)
+        let switchesBefore = system.switches.count
+
+        XCTAssertFalse(interceptor.restartUnlessThrottled(), "the fourth within a minute")
+        XCTAssertFalse(interceptor.restartUnlessThrottled(after: .foundOff))
+
+        XCTAssertTrue(interceptor.restartsThrottled)
+        XCTAssertTrue(Interceptor.hasThrottledTap)
+        XCTAssertEqual(cleanedUp, Interceptor.autoRestartLimit, "a refused restart does nothing")
+        XCTAssertEqual(system.switches.count, switchesBefore, "and touches no tap")
+
+        // Stopped on purpose: off because it should be, not because its restarts are refused.
+        interceptor.stop()
+        XCTAssertFalse(interceptor.restartsThrottled)
+        XCTAssertFalse(Interceptor.hasThrottledTap)
+    }
+
+    /// A restart whose owner says "no more" (`shouldRestart`) leaves the tap off.
+    func testARestartTheOwnerRefusesLeavesTheTapOff() throws {
+        let system = FakeEventTapSystem()
+        let interceptor = try system.makeInterceptor()
+        interceptor.shouldRestart = { false }
+        interceptor.restart()
+        runMainRunLoop(in: .default, timeout: Interceptor.restartDelay + 0.3) { false }
+        XCTAssertFalse(interceptor.isRunning())
+    }
+
+    /// The throttle's clock is never the wall clock: set back, that kept a throttled tap off
+    /// for as long as it was set back.
+    func testTheThrottlesClockOnlyGoesForward() {
+        let first = Interceptor.monotonicNow()
+        let second = Interceptor.monotonicNow()
+        XCTAssertGreaterThanOrEqual(second, first)
+        XCTAssertEqual(first, ProcessInfo.processInfo.systemUptime, accuracy: 1)
+        XCTAssertLessThan(first, Date().timeIntervalSinceReferenceDate / 2, "seconds since the Mac started, not a date")
+    }
+}
+
+// MARK: - A stand-in for the system calls of an event tap
+
+/// Lets a test make an `Interceptor` without a real event tap and without Accessibility
+/// access: the "tap" is a plain Mach port that listens to nothing, "enabled" a flag.
+final class FakeEventTapSystem {
+    var isTrusted = true
+    var canCreate = true
+    private(set) var created = 0
+    private(set) var isOn = false
+    /// Every `enable` call, in order (true: switched on).
+    private(set) var switches: [Bool] = []
+
+    var system: EventTapSystem {
+        return EventTapSystem(
+            create: { [self] _, _, _, _, _ in
+                guard canCreate else { return nil }
+                created += 1
+                return CFMachPortCreate(kCFAllocatorDefault, { _, _, _, _ in }, nil, nil)
+            },
+            enable: { [self] _, enable in
+                isOn = enable
+                switches.append(enable)
+            },
+            isEnabled: { [self] _ in isOn },
+            isTrusted: { [self] in isTrusted }
+        )
+    }
+
+    /// macOS turned the tap off (a timeout): no `enable` call of ours.
+    func turnOffAsMacOSDoes() {
+        isOn = false
+    }
+
+    /// An Interceptor on this system. Its callback lets every event through unless one is given.
+    func makeInterceptor(mask: CGEventMask = CGEventMask(1 << CGEventType.scrollWheel.rawValue),
+                         callback: @escaping CGEventTapCallBack = { _, _, event, _ in Unmanaged.passUnretained(event) },
+                         options: CGEventTapOptions = .listenOnly) throws -> Interceptor {
+        return try Interceptor(
+            event: mask,
+            handleBy: callback,
+            listenOn: .cgAnnotatedSessionEventTap,
+            placeAt: .tailAppendEventTap,
+            for: options,
+            system: system
+        )
     }
 }
 

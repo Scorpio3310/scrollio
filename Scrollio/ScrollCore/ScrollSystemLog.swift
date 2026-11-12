@@ -61,7 +61,23 @@ enum ScrollSystemLog {
         return 5.2 * root * root
     }
 
-    static func message(for session: Session, endedWith phase: String) -> String {
+    /// Why a scroll ended, for its line.
+    enum EndReason: String {
+        /// Its glide ran out (the display link asked for the stop).
+        case glidedOut = "glided out"
+        case leftClick = "left click"
+        case fingerOnTrackpad = "a finger on the trackpad"
+        /// The next wheel event went to another app.
+        case anotherApp = "the wheel went on in another app"
+        /// macOS turned the scroll tap off, or the tap was restarted.
+        case tapRestarted = "the scroll tap was restarted"
+        /// The keeper ended it (`ScrollPoster.healthCheck`; the `app` log says why).
+        case keeper = "ended by the keeper"
+        /// Scrollio stopped handling scrolling: Pause, sleep, another user, quit.
+        case stopped = "stopped"
+    }
+
+    static func message(for session: Session, ended reason: EndReason) -> String {
         let tau = ScrollMotion.timeConstant(forTransition: session.transition)
         let trackpadStyle: String
         if !session.trackpadStyle {
@@ -72,19 +88,27 @@ enum ScrollSystemLog {
             trackpadStyle = "on (long touch: \(session.touches) touches)"
         }
         return String(
-            format: "scroll: %d wheel events %.0f px in -> %d frames %.0f px out (largest %.1f), wheel %.0f ms, glide after the last event %.0f ms, Duration %.2f (tau %.0f ms), trackpad-style %@, ended %@",
+            format: "scroll: %d wheel events %.0f px in -> %d frames %.0f px out (largest %.0f), wheel %.0f ms, glide after the last event %.0f ms, Duration %.2f (tau %.0f ms), trackpad-style %@, ended: %@",
             session.inputs, session.inputDistance, session.frames, session.postedDistance, session.largestFrame,
             (session.lastInputAt - session.startedAt) * 1000,
             max(0, session.lastFrameAt - session.lastInputAt) * 1000,
             session.duration, tau * 1000,
             trackpadStyle,
-            phase
+            reason.rawValue
         )
     }
 
-    static func note(_ session: Session, endedWith phase: String) {
+#if DEBUG
+    /// Tests: sees every finished scroll and why it ended.
+    static var sessionObserverForTests: ((Session, EndReason) -> Void)?
+#endif
+
+    static func note(_ session: Session, ended reason: EndReason) {
         guard !session.isEmpty else { return }
-        let message = message(for: session, endedWith: phase)
+#if DEBUG
+        sessionObserverForTests?(session, reason)
+#endif
+        let message = message(for: session, ended: reason)
         logger.notice("\(message, privacy: .public)")
     }
 
@@ -101,8 +125,10 @@ enum ScrollSystemLog {
         case smoothingOff
         /// Smoothing is on, but not for this axis.
         case axisNotSmoothed
-        /// Smoothing wanted, but there is no display link to post with.
+        /// Smoothing wanted, but no display link runs to post with (the display is off).
         case noDisplayLink
+        /// Smoothing wanted, but Step or Speed is no finite number (a hand-edited setting).
+        case unusableSettings
 
         var text: String {
             switch self {
@@ -111,6 +137,7 @@ enum ScrollSystemLog {
             case .smoothingOff: return "smoothing is off for this event"
             case .axisNotSmoothed: return "smoothing is on, but not for this axis"
             case .noDisplayLink: return "no display link"
+            case .unusableSettings: return "Step or Speed is not a finite number"
             }
         }
     }
@@ -132,7 +159,7 @@ enum ScrollSystemLog {
     @discardableResult
     static func notePassthrough(
         _ reason: PassthroughReason,
-        now: CFTimeInterval = CFAbsoluteTimeGetCurrent(),
+        now: CFTimeInterval = ScrollPoster.monotonicNow(),
         detail: () -> String = { "" }
     ) -> String? {
 #if DEBUG
