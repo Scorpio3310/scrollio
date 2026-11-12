@@ -936,6 +936,41 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         context.waitForPostQueueForTests()
     }
 
+    // MARK: - With the switch off a wheel event asks nothing new under the lock
+
+    /// The checks trackpad-style adds to a wheel event (does the open touch have to end?)
+    /// take the poster's lock. With the switch off none of them runs: the wheel events of a
+    /// scroll without phases never enter that check. With one touch every wheel event after
+    /// the first does. (The check ran for every wheel event, the switch off included: two
+    /// more rounds of the lock that the display link's thread waits on.)
+    func testWithTheSwitchOffNoWheelEventAsksAboutATouch() throws {
+        func touchChecks(switchOn: Bool) throws -> Int {
+            var checks = 0
+            try withSettings(switchOn: switchOn) {
+                let context = ScrollDispatchContext()
+                let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+                poster.trackpadStyleTarget = { _ in .touchOnly }
+                _ = FakeDisplay(for: poster)
+                context.postObserverForTests = { _, _ in }
+                var now = ScrollPoster.monotonicNow()
+                for _ in 0..<3 {
+                    XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+                    for _ in 0..<2 {
+                        now += 1.0 / 60.0
+                        poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: now)
+                    }
+                }
+                XCTAssertEqual(poster.sessionLogForTests.inputs, 3, "one scroll of three wheel events")
+                checks = poster.touchChecksForTests
+                poster.stop()
+                context.waitForPostQueueForTests()
+            }
+            return checks
+        }
+        XCTAssertEqual(try touchChecks(switchOn: false), 0, "the switch is off: nothing is asked")
+        XCTAssertEqual(try touchChecks(switchOn: true), 2, "one touch: the second and the third wheel event ask")
+    }
+
     // MARK: - Frames that open or close a gesture are not dropped by a stop
 
     /// One click as one touch, on the real path, with one slow post: the post of the last

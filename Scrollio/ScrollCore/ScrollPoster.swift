@@ -205,6 +205,11 @@ class ScrollPoster {
     /// Counts the frames handed to the post queue (`post`), so that `stop(_:)` knows whether
     /// it queued a closing frame. Guarded by stateLock.
     private var queuedFrames: UInt64 = 0
+    /// Whether the scroll that runs carries trackpad phases; nil while none runs. Main thread
+    /// only and read without the lock: set when a wheel event is taken (`smooth`), cleared by
+    /// `stop`. A wheel event compares its own form with it. (It used to compare under
+    /// stateLock: two more lock rounds for every wheel event, with the switch off as well.)
+    private var runningScrollHasPhases: Bool?
     // 状态锁和投递上下文
     private var stateLock = os_unfair_lock_s()
     private let dispatchContext: ScrollDispatchContext
@@ -234,6 +239,9 @@ class ScrollPoster {
     var targetRecorderForTests: ((ScrollOutgoingFrame, pid_t) -> Void)?
     /// Tests: the clock of the frames' timestamps (`ScrollEventClock.uptimeNanoseconds` otherwise).
     var eventClockForTests: (() -> UInt64)?
+    /// Tests: how often a wheel event asked, under the lock, whether an open touch has to end
+    /// (`endTouch(unlessAt:)`). Never with the switch off.
+    var touchChecksForTests = 0
     /// Tests: the lines about the display link's health written to the `app` log, oldest first.
     var healthLinesForTests: [String] = []
     /// The cumulative drop counters of the dispatch context, as `stop` logs them.
@@ -348,16 +356,30 @@ extension ScrollPoster {
         guard input.isUsable else { return false }
         let target = pid_t(event.getIntegerValueField(.eventTargetUnixProcessID))
         endScroll(unlessFor: target)
-        // 捕获本次手势的配置快照 (主线程读 Options/ScrollCore, CVDisplayLink 线程只读)
-        let snapshot = configSnapshot(for: event)
-        endScroll(unlessPhasesStay: snapshot.simTrackpadEnabled)
-        endTouch(unlessAt: { ScrollInputPlace(pid: target, pointer: event.location) })
+        // The form of this event's scroll is read once the event is known to be taken, as it
+        // always was. Only while a scroll runs it is read here, before: that scroll has to be
+        // ended first when the two differ in whether they carry phases, and that has to
+        // happen before the display link is started and the event is stored. Nothing here
+        // takes the lock unless both carry phases.
+        var formReadBefore: ConfigSnapshot?
+        if let runsWithPhases = runningScrollHasPhases {
+            let form = configSnapshot(for: event)
+            formReadBefore = form
+            if form.simTrackpadEnabled != runsWithPhases {
+                endScroll(unlessPhasesStay: form.simTrackpadEnabled)
+            } else if runsWithPhases {
+                endTouch(unlessAt: { ScrollInputPlace(pid: target, pointer: event.location) })
+            }
+        }
         guard tryStart(), dispatchContext.capture(event: event) else { return false }
+        // 捕获本次手势的配置快照 (主线程读 Options/ScrollCore, CVDisplayLink 线程只读)
+        let snapshot = formReadBefore ?? configSnapshot(for: event)
         os_unfair_lock_lock(&stateLock)
         defer { os_unfair_lock_unlock(&stateLock) }
         applyConfigLocked(snapshot)
         let place = (config.flick || config.oneTouch) ? ScrollInputPlace(pid: target, pointer: event.location) : nil
         handleInputLocked(input, at: Self.monotonicNow(), place: place)
+        runningScrollHasPhases = snapshot.simTrackpadEnabled
         return true
     }
     /// Ends the scroll that runs when the next wheel event goes to another process, before
@@ -380,11 +402,9 @@ extension ScrollPoster {
     /// had got "began" (or "momentum began") never got its "ended".
     /// The two forms that carry phases pass into each other without an end: the first scroll
     /// over a Chromium-based app begins as one touch and goes on as a flick.
+    /// Main thread; no lock (`runningScrollHasPhases`).
     private func endScroll(unlessPhasesStay phases: Bool) {
-        os_unfair_lock_lock(&stateLock)
-        let changes = !sessionLog.isEmpty && config.simTrackpadEnabled != phases
-        os_unfair_lock_unlock(&stateLock)
-        guard changes else { return }
+        guard let running = runningScrollHasPhases, running != phases else { return }
         stop(reason: .settingChanged)
     }
     /// One touch to the end: the wheel goes on more than `trackpadStylePointerSlack` from where
@@ -399,6 +419,9 @@ extension ScrollPoster {
     /// `place`: the new event's place, asked only while such a touch is open (with the switch
     /// off, and in the other forms, nothing of the event is read here).
     private func endTouch(unlessAt place: () -> ScrollInputPlace) {
+#if DEBUG
+        touchChecksForTests += 1
+#endif
         os_unfair_lock_lock(&stateLock)
         defer { os_unfair_lock_unlock(&stateLock) }
         guard touchIsOneTouch, !manualInputEnded,
@@ -656,7 +679,9 @@ extension ScrollPoster {
         }
         os_unfair_lock_lock(&stateLock)
         handleInputLocked(input, at: time, place: place)
+        let phases = config.simTrackpadEnabled
         os_unfair_lock_unlock(&stateLock)
+        runningScrollHasPhases = phases
     }
     /// One display frame at `now`, exactly as the display link runs it but without the hop
     /// to the main thread: returns the stop request the frame makes, if any.
@@ -822,6 +847,7 @@ extension ScrollPoster {
     ///   - requestedPhase: the phase to end with (a momentum is finished whatever was asked).
     ///   - reason: why, for the scroll's line in the log.
     func stop(_ requestedPhase: Phase = Phase.MomentumEnd, reason: ScrollSystemLog.EndReason = .stopped) {
+        runningScrollHasPhases = nil
         // 停止循环, 然后准备发送最后一次事件
         let wasRunning = poster?.isRunning ?? false
         poster?.stop()
