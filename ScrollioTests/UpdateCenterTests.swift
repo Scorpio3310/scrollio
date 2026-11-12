@@ -341,6 +341,7 @@ final class UpdateCenterTests: XCTestCase {
             "standardUserDriverDidReceiveUserAttentionForUpdate:",
             "standardUserDriverWillFinishUpdateSession",
             "standardUserDriverWillShowModalAlert",
+            "standardUserDriverShouldShowVersionHistoryForAppcastItem:",
         ] {
             XCTAssertTrue(center.responds(to: NSSelectorFromString(name)), name)
         }
@@ -612,6 +613,17 @@ final class UpdateCenterTests: XCTestCase {
         XCTAssertTrue(center.holdsDockIcon)
         XCTAssertEqual(world.dockShown, 1)
         XCTAssertEqual(world.dockReleased, 0)
+    }
+
+    /// "You're up to date!" has one button: Sparkle's "Version History" is declined.
+    func testTheUpToDateAlertHasNoVersionHistoryButton() throws {
+        let center = UpdateCenter()
+        let selector = NSSelectorFromString("standardUserDriverShouldShowVersionHistoryForAppcastItem:")
+        let method = try XCTUnwrap(center.method(for: selector))
+        typealias Answer = @convention(c) (AnyObject, Selector, AnyObject?) -> ObjCBool
+        let answer = unsafeBitCast(method, to: Answer.self)
+        // The center does not look at the item.
+        XCTAssertFalse(answer(center, selector, nil).boolValue)
     }
 
     /// Only the Update folder imports Sparkle; the rest of the app sees UpdateStatus.

@@ -554,4 +554,10 @@ extension UpdateCenter: SPUStandardUserDriverDelegate {
     func standardUserDriverWillShowModalAlert() {
         alertWillOpen()
     }
+
+    /// "You're up to date!" has one button, "OK". Sparkle would add "Version History"
+    /// beside it, because the feed names the releases page; General links to GitHub.
+    func standardUserDriverShouldShowVersionHistory(for item: SUAppcastItem) -> Bool {
+        return false
+    }
 }
