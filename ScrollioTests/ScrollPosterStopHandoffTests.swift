@@ -1161,6 +1161,8 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         var lines: Int64 = 0
         var fixedLines: Double = 0
         var scrollCount: Int64 = 0
+        /// Whether the event carries a hardware record (nil: this macOS cannot be asked).
+        var hasRecord: Bool?
         var name: String { return ScrollClassicRig.phaseName(scroll: scroll, momentum: momentum) }
         var hasPhase: Bool { return scroll != 0 || momentum != 0 }
     }
@@ -1183,11 +1185,16 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
     /// `oldLongTouch`: the evaluation switch (`ScrollPoster.usesOldLongTouch`).
     /// `chrome`: whether the app counts as Chrome itself (it gets an "ended" at a stop with
     /// the switch off).
+    /// `takesRecordOff`: what the launch's self-test found (nil: this Mac's own answer).
     private func oneClick(over kind: ScrollUtils.TrackpadStyleTarget, oldLongTouch: Bool = false, chrome: Bool = false,
+                          takesRecordOff: Bool? = nil,
                           file: StaticString = #filePath, line: UInt = #line) throws -> (frames: [PostedFrame], session: ScrollSystemLog.Session?, asked: Int) {
         let context = ScrollDispatchContext()
         let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
         poster.usesOldLongTouch = oldLongTouch
+        if let takesRecordOff = takesRecordOff {
+            poster.takesHardwareRecordOff = takesRecordOff
+        }
         poster.isEventTargetingChrome = { _ in chrome }
         var asked = 0
         poster.trackpadStyleTarget = { _ in
@@ -1213,7 +1220,8 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
                 isContinuous: event.getIntegerValueField(.scrollWheelEventIsContinuous),
                 lines: event.getIntegerValueField(.scrollWheelEventDeltaAxis1),
                 fixedLines: event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1),
-                scrollCount: event.getIntegerValueField(.scrollWheelEventScrollCount)
+                scrollCount: event.getIntegerValueField(.scrollWheelEventScrollCount),
+                hasRecord: ScrollHardwareRecord.isCarried(by: event)
             ))
             lock.unlock()
         }
@@ -1226,6 +1234,8 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         // A wheel event that counts as the third of a row of fast ones: AppKit would
         // multiply the deltas of a precise event that carries this count.
         wheel.setIntegerValueField(.scrollWheelEventScrollCount, value: Self.wheelScrollCount)
+        // A real wheel event carries a hardware record (its own time, one notch).
+        try attachHardwareRecord(to: wheel)
         XCTAssertTrue(poster.smooth(event: wheel, input: input()), file: file, line: line)
         var now = ScrollPoster.monotonicNow()
         for _ in 0..<240 {
@@ -1246,6 +1256,16 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         XCTAssertTrue(posted.allSatisfy { $0.isContinuous == 1 }, file: file, line: line)
         XCTAssertEqual(posted.filter { $0.y != 0 }.map(\.y), Self.defaultClick, "the motion is the default click's in every form", file: file, line: line)
         return (posted, sessions.last, asked)
+    }
+
+    /// Gives an event a hardware record as a wheel's event has one. Skips the test on a
+    /// macOS where the record cannot be made or read (the functions are private).
+    private func attachHardwareRecord(to event: CGEvent) throws {
+        let calls = try XCTUnwrap(ScrollHardwareRecord.readingCalls, "this macOS has the three functions")
+        let record = try XCTUnwrap(calls.createScroll(nil, mach_absolute_time(), 0, 1, 0, 0))
+        calls.set(event, record)
+        Unmanaged<AnyObject>.fromOpaque(record).release()
+        XCTAssertEqual(ScrollHardwareRecord.isCarried(by: event), true)
     }
 
     /// Sets the Scrolling pane's switch and the entry of the app under the pointer for one
@@ -1483,6 +1503,35 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         }
     }
 
+    /// No posted event of "Trackpad-style scrolling" carries the wheel event's hardware
+    /// record, in any form: WebKit makes a glide of its own from the record on "momentum
+    /// began" and drops the glide it is sent (36 of a flick's 205 px arrived in a WKWebView,
+    /// 146 of the old long touch's). Without phases every frame keeps the record, as always.
+    /// Where the launch's self-test did not pass, the frames keep it too.
+    func testTheRealPath_noFrameWithPhasesCarriesTheWheelsHardwareRecord() throws {
+        try XCTSkipUnless(ScrollHardwareRecord.comesOff, "the record is not taken off on this macOS (\(ScrollHardwareRecord.system.outcome))")
+        try withSettings(switchOn: true) {
+            for (kind, oldLongTouch) in [(ScrollUtils.TrackpadStyleTarget.followsGlide, false), (.touchOnly, false), (.touchOnly, true)] {
+                let result = try oneClick(over: kind, oldLongTouch: oldLongTouch)
+                XCTAssertTrue(result.frames.allSatisfy { $0.hasPhase }, "\(kind)")
+                XCTAssertTrue(result.frames.allSatisfy { $0.hasRecord == false }, "\(kind), old long touch \(oldLongTouch): no frame carries a record")
+            }
+            let safari = try oneClick(over: .plainScrolling)
+            XCTAssertTrue(safari.frames.allSatisfy { $0.hasRecord == true }, "no phases: the wheel event's record stays")
+
+            // The self-test did not pass: as before, every frame keeps the record.
+            for kind in [ScrollUtils.TrackpadStyleTarget.followsGlide, .touchOnly] {
+                let kept = try oneClick(over: kind, takesRecordOff: false)
+                XCTAssertTrue(kept.frames.allSatisfy { $0.hasRecord == true }, "\(kind)")
+            }
+        }
+        try withSettings(switchOn: false) {
+            let off = try oneClick(over: .followsGlide, chrome: true)
+            XCTAssertEqual(off.frames.last?.name, "ended")
+            XCTAssertTrue(off.frames.allSatisfy { $0.hasRecord == true }, "off: every frame keeps the record, Chrome's \"ended\" too")
+        }
+    }
+
     /// With the switch off Chrome gets an "ended" at every stop (from Mos: "only [4, 0] lets
     /// Chrome recover"). It is the one frame with a phase on that path, and it is written as
     /// it always was: the wheel event's time, line delta and scroll count. Nothing of
@@ -1598,6 +1647,106 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
 // MARK: - A stand-in for the display
 
 /// A display link that is none: it runs when started, and counts what was asked of it.
+// MARK: - The hardware record of a frame
+
+/// Offline: events are built and read, nothing is posted.
+final class ScrollHardwareRecordTests: XCTestCase {
+
+    /// On the macOS the removal was run on, the launch's self-test passes; on an older one
+    /// it is not tried.
+    func testThisMac_passesTheSelfTestOrDoesNotTry() {
+        let major = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        if major >= ScrollHardwareRecord.testedFromMacOS {
+            XCTAssertEqual(ScrollHardwareRecord.system.outcome, .comesOff)
+            XCTAssertTrue(ScrollHardwareRecord.comesOff)
+        } else {
+            XCTAssertEqual(ScrollHardwareRecord.system.outcome, .notTried(macOS: major))
+            XCTAssertFalse(ScrollHardwareRecord.comesOff)
+        }
+    }
+
+    /// The record comes off a copy; the event it was copied from keeps its own (copies share
+    /// one record object, so it is never changed in place).
+    func testTheRecordComesOffACopyAndStaysOnTheOriginal() throws {
+        try XCTSkipUnless(ScrollHardwareRecord.comesOff, "\(ScrollHardwareRecord.system.outcome)")
+        let calls = try XCTUnwrap(ScrollHardwareRecord.readingCalls)
+        let wheel = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 1, wheel2: 0, wheel3: 0))
+        XCTAssertEqual(ScrollHardwareRecord.isCarried(by: wheel), false, "a made event has none")
+        let record = try XCTUnwrap(calls.createScroll(nil, mach_absolute_time(), 0, 1, 0, 0))
+        calls.set(wheel, record)
+        Unmanaged<AnyObject>.fromOpaque(record).release()
+        let frame = try XCTUnwrap(wheel.copy())
+        XCTAssertEqual(ScrollHardwareRecord.isCarried(by: frame), true, "a copy carries the record")
+
+        ScrollHardwareRecord.remove(from: frame)
+        XCTAssertEqual(ScrollHardwareRecord.isCarried(by: frame), false)
+        XCTAssertEqual(ScrollHardwareRecord.isCarried(by: wheel), true, "the wheel event keeps its own")
+        XCTAssertEqual(frame.getIntegerValueField(.scrollWheelEventDeltaAxis1), 1, "nothing else of the event changes")
+        XCTAssertEqual(frame.timestamp, wheel.timestamp)
+    }
+
+    /// A macOS older than the one it was run on: nothing is looked up or called.
+    func testAnOlderMacOS_isNotTried() {
+        var looked = 0
+        let found = ScrollHardwareRecord.prepare(macOSMajor: 26) {
+            looked += 1
+            return ScrollHardwareRecord.load()
+        }
+        XCTAssertEqual(found.outcome, .notTried(macOS: 26))
+        XCTAssertNil(found.calls)
+        XCTAssertEqual(looked, 0)
+    }
+
+    /// A function that is missing: named, and nothing is used.
+    func testAMissingFunction_isNamed() {
+        let loaded = ScrollHardwareRecord.load { library, name in
+            name == "CGEventCopyIOHIDEvent" ? nil : ScrollHardwareRecord.systemResolver(library, name)
+        }
+        XCTAssertNil(loaded.calls)
+        XCTAssertEqual(loaded.missing, "CGEventCopyIOHIDEvent")
+        let found = ScrollHardwareRecord.prepare(macOSMajor: 27) { loaded }
+        XCTAssertEqual(found.outcome, .missing("CGEventCopyIOHIDEvent"))
+        XCTAssertNil(found.calls)
+    }
+
+    /// A step of the self-test that fails: the removal is not used. (A setter that does not
+    /// take a record off, as an older macOS might: the record stays.)
+    func testASelfTestThatFails_keepsTheRecord() throws {
+        let real = try XCTUnwrap(ScrollHardwareRecord.load().calls)
+        let ignoresNULL: ScrollHardwareRecord.SetRecord = { event, record in
+            guard let record = record else { return }
+            ScrollHardwareRecord.load().calls?.set(event, record)
+        }
+        let stays = ScrollHardwareRecord.Calls(set: ignoresNULL, copy: real.copy, createScroll: real.createScroll)
+        XCTAssertEqual(ScrollHardwareRecord.check(stays), .failed("the record stayed on the event it was taken off"))
+        let found = ScrollHardwareRecord.prepare(macOSMajor: 27) { (stays, nil) }
+        XCTAssertNil(found.calls, "not used")
+
+        let readsNothing: ScrollHardwareRecord.CopyRecord = { _ in nil }
+        let blind = ScrollHardwareRecord.Calls(set: real.set, copy: readsNothing, createScroll: real.createScroll)
+        XCTAssertEqual(ScrollHardwareRecord.check(blind), .failed("a record attached to an event could not be read back"))
+
+        let makesNothing: ScrollHardwareRecord.CreateScrollRecord = { _, _, _, _, _, _ in nil }
+        let empty = ScrollHardwareRecord.Calls(set: real.set, copy: real.copy, createScroll: makesNothing)
+        XCTAssertEqual(ScrollHardwareRecord.check(empty), .failed("no hardware record could be made"))
+    }
+
+    /// The `app` log says once what the launch found; every outcome but a pass is a problem line.
+    func testTheLaunchLine_saysWhatWasFound() {
+        let passed = ScrollHardwareRecord.launchLine(.comesOff)
+        XCTAssertFalse(passed.isProblem)
+        XCTAssertTrue(passed.text.contains("is taken off every frame that carries phases"))
+        for outcome in [ScrollHardwareRecord.Outcome.notTried(macOS: 15), .missing("SLEventSetIOHIDEvent"), .failed("a step")] {
+            let line = ScrollHardwareRecord.launchLine(outcome)
+            XCTAssertTrue(line.isProblem, "\(outcome)")
+            XCTAssertTrue(line.text.contains("keep the wheel event's hardware record, as before"), line.text)
+        }
+        XCTAssertTrue(ScrollHardwareRecord.launchLine(.notTried(macOS: 15)).text.contains("on macOS 15 it is not tried"))
+        XCTAssertTrue(ScrollHardwareRecord.launchLine(.missing("SLEventSetIOHIDEvent")).text.contains("macOS has no SLEventSetIOHIDEvent here"))
+        XCTAssertTrue(ScrollHardwareRecord.launchLine(.failed("a step")).text.contains("failed (a step)"))
+    }
+}
+
 final class FakeScrollDisplayLink: ScrollDisplayLink {
     var isRunning = false
     var startResult: CVReturn = kCVReturnSuccess

@@ -241,6 +241,9 @@ class ScrollPoster {
     /// the wheel moves the pointer by a few points at most. The same for the one touch: a tick
     /// farther away ends it and begins a new one (`endOneTouchLocked(unlessAt:)`).
     private let trackpadStylePointerSlack: CGFloat = 30
+    /// Whether the wheel event's hardware record is taken off a trackpad-style frame: the
+    /// launch's self-test passed (`ScrollHardwareRecord`). Tests set it. Main thread.
+    var takesHardwareRecordOff = ScrollHardwareRecord.comesOff
     /// EVALUATION SWITCH, removed before the one-touch form is released: apps that are not
     /// Chromium-based get the old long touch (`TrackpadStyleEvaluation`). Read once at launch;
     /// tests set it. Main thread.
@@ -299,6 +302,9 @@ class ScrollPoster {
         /// has run out, no glide events. (false with phases and without `flick`: the old long
         /// touch of the evaluation switch.)
         var oneTouch = false
+        /// The frames go out without the wheel event's hardware record
+        /// (`takesHardwareRecordOff`, with trackpad-style only).
+        var takesRecordOff = false
         var deadZone: Double
     }
     private var config = ConfigSnapshot(simTrackpadEnabled: false, flick: false, deadZone: 1.0)
@@ -1543,6 +1549,7 @@ private extension ScrollPoster {
             flick: form.flick,
             withheld: form.withheld,
             oneTouch: form.oneTouch,
+            takesRecordOff: form.phases && takesHardwareRecordOff,
             deadZone: OPTIONS_SCROLL_DEFAULT.usableDeadZone(Options.shared.scroll.deadZone)
         )
     }
@@ -1648,6 +1655,12 @@ private extension ScrollPoster {
             return false
         }
         frame.write(to: snapshot.event)
+        if frame.isTrackpadStyle && config.takesRecordOff {
+            // The copy still carries the wheel's record: its time and "one notch". WebKit
+            // makes a glide of its own from the record on "momentum began" and drops the
+            // glide it is sent; nobody else reads it (`ScrollHardwareRecord`).
+            ScrollHardwareRecord.remove(from: snapshot.event)
+        }
         snapshot.opensOrClosesGesture = frame.opensOrClosesGesture
         ScrollUtils.shared.markSyntheticSmoothEvent(snapshot.event)
         // 通过 CGEventPostToPid 直投目标进程:

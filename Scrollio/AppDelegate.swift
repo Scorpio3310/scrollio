@@ -252,6 +252,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // EVALUATION SWITCH (removed with `TrackpadStyleEvaluation`): which form of
         // "Trackpad-style scrolling" apps that are not Chromium-based get in this run.
         AppSystemLog.note(TrackpadStyleEvaluation.launchLine(usesOldLongTouch: TrackpadStyleEvaluation.usesOldLongTouch))
+        // The self-test for taking the wheel event's hardware record off a trackpad-style
+        // frame runs here, once, before any scroll; the log says what it found.
+        let hardwareRecord = ScrollHardwareRecord.launchLine(ScrollHardwareRecord.system.outcome)
+        if hardwareRecord.isProblem {
+            AppSystemLog.problem(hardwareRecord.text)
+        } else {
+            AppSystemLog.note(hardwareRecord.text)
+        }
         // Read now what the first press of a button would otherwise read inside the button
         // tap's callback: the user's Spaces shortcuts (another app's preferences) and the
         // keys of the keyboard layout in use.
