@@ -40,7 +40,10 @@
 //  (one bad value falls back, one unreadable entry of a list does not take the list with
 //  it), and what goes into the store afterwards is what those decoders understood, written
 //  by the app's own encoders: an entry or a name this version cannot read is left out,
-//  not kept for a later version. The four numbers of Scrolling (and of each app's own
+//  not kept for a later version. The same goes for an action: a button or key whose
+//  action this version does not run is left out, and a gesture direction with such an
+//  action gets none (`StoredAction`), or a later version that gives the name a meaning
+//  would run something the sheet never showed. The four numbers of Scrolling (and of each app's own
 //  settings) are brought into the range the panes and the engine work with
 //  (`range(ofScrollNumber:)`), and what was corrected is counted for the sheet: the
 //  preferences take any number, but a file can come from anywhere, and a dead zone of
@@ -254,6 +257,13 @@ enum SettingsFile {
         var logiMouse: LogiMouseSettings?
         /// Entries of the two lists that this version cannot read. They are left out.
         var unreadableEntries = 0
+        /// Buttons and keys whose action this version does not run (left out), and gesture
+        /// directions with such an action (they got no action).
+        var unknownActions = 0
+        /// What the sheet counts as left out: both of the above.
+        var leftOutCount: Int {
+            return unreadableEntries + unknownActions
+        }
         /// Numbers of Scrolling, the file's or an app's own, that were out of range and
         /// were brought into it.
         var correctedValues = 0
@@ -382,22 +392,27 @@ enum SettingsFile {
             contents.scrollHotkeys[key.name] = hotkey
         case .bindings:
             guard let entries = value as? [Any] else { return false }
-            let bindings: [ButtonBinding] = decodedEntries(entries)
+            let readable: [ButtonBinding] = decodedEntries(entries)
+            let bindings = readable.filter(StoredAction.isKnown)
             contents.bindings = bindings
-            contents.unreadableEntries += entries.count - bindings.count
+            contents.unreadableEntries += entries.count - readable.count
+            contents.unknownActions += readable.count - bindings.count
         case .applications:
             guard let entries = value as? [Any] else { return false }
             var applications: [Application] = []
             for entry in entries {
-                var corrected = 0
-                guard let application: Application = decoded(applicationEntry(entry, corrected: &corrected)) else { continue }
+                var counts = EntryCounts()
+                guard let application: Application = decoded(applicationEntry(entry, counts: &counts)) else { continue }
                 applications.append(application)
-                contents.correctedValues += corrected
+                contents.correctedValues += counts.corrected
+                contents.unreadableEntries += counts.unreadable
+                contents.unknownActions += counts.unknownActions
             }
             contents.applications = applications
             contents.unreadableEntries += entries.count - applications.count
         case .gesture:
-            guard let gesture: MouseGestureSettings = decoded(value) else { return false }
+            guard var gesture: MouseGestureSettings = decoded(value) else { return false }
+            contents.unknownActions += blankUnknownActions(of: &gesture)
             contents.gesture = gesture
         case .logiWheel:
             guard let wheel: LogiWheelSettings = decoded(value) else { return false }
@@ -438,22 +453,61 @@ enum SettingsFile {
         return min(max(number, range.lowerBound), range.upperBound)
     }
 
-    /// An app's entry as it goes to the decoder: the numbers of its own scroll settings
-    /// brought into range, in the JSON itself (changing them on the decoded object would
-    /// tell the app's observers of a change). Anything else is left for the decoder to
-    /// judge. `corrected` counts what was changed.
-    private static func applicationEntry(_ entry: Any, corrected: inout Int) -> Any {
-        guard var object = entry as? [String: Any], var scroll = object["scroll"] as? [String: Any] else { return entry }
-        for key in exportedKeys where key.kind == .number {
-            guard let number = number(scroll[key.name]) else { continue }
-            let kept = inRange(number, scrollNumber: key.name)
-            if kept != number {
-                scroll[key.name] = kept
-                corrected += 1
+    /// What was done to one app's entry before it was decoded.
+    private struct EntryCounts {
+        var corrected = 0
+        var unreadable = 0
+        var unknownActions = 0
+    }
+
+    /// An app's entry as it goes to the decoder, changed in the JSON itself (changing the
+    /// decoded object would tell the app's observers of a change):
+    /// - the numbers of its own scroll settings are brought into range;
+    /// - of its own buttons, those that cannot be read or whose action this version does
+    ///   not run are left out, one by one (as a whole they would take the app with them).
+    /// Anything else is left for the decoder to judge. `counts` says what was changed.
+    private static func applicationEntry(_ entry: Any, counts: inout EntryCounts) -> Any {
+        guard var object = entry as? [String: Any] else { return entry }
+        if var scroll = object["scroll"] as? [String: Any] {
+            for key in exportedKeys where key.kind == .number {
+                guard let number = number(scroll[key.name]) else { continue }
+                let kept = inRange(number, scrollNumber: key.name)
+                if kept != number {
+                    scroll[key.name] = kept
+                    counts.corrected += 1
+                }
             }
+            object["scroll"] = scroll
         }
-        object["scroll"] = scroll
+        if var buttons = object["buttons"] as? [String: Any], let entries = buttons["binding"] as? [Any] {
+            var kept: [Any] = []
+            for entry in entries {
+                guard let binding: ButtonBinding = decoded(entry) else {
+                    counts.unreadable += 1
+                    continue
+                }
+                guard StoredAction.isKnown(binding) else {
+                    counts.unknownActions += 1
+                    continue
+                }
+                kept.append(entry)
+            }
+            buttons["binding"] = kept
+            object["buttons"] = buttons
+        }
         return object
+    }
+
+    /// Takes the action from every direction of Gesture Navigation (and its click) whose
+    /// action this version does not run. Returns how many.
+    private static func blankUnknownActions(of gesture: inout MouseGestureSettings) -> Int {
+        var blanked = 0
+        for path in [\MouseGestureSettings.upAction, \.downAction, \.leftAction, \.rightAction, \.clickAction]
+        where !StoredAction.isKnown(gestureAction: gesture[keyPath: path]) {
+            gesture[keyPath: path] = ""
+            blanked += 1
+        }
+        return blanked
     }
 
     /// A JSON object of the file as the model's own decoder reads it (the decoder the

@@ -134,6 +134,10 @@ final class LogiCenter {
     /// for an action that does not come from a Logitech button of that mouse (a gesture, a
     /// standard button, a key). Does nothing without a mouse or for a name it does not know.
     func executeAction(named name: String) { manager.executeLogiAction(named: name) }
+    /// Whether `name` is a "Logitech Mouse" action this version still runs: not one it
+    /// never had, and not one of those that were removed (`LogiButtonAction.removedNames`).
+    /// Asks no mouse.
+    func runsAction(named name: String) -> Bool { LogiButtonAction(name: name) != nil }
 
     // MARK: - Reporting refresh
     func refreshReportingStates() { manager.refreshReportingStates() }

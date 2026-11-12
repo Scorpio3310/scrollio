@@ -156,7 +156,8 @@ enum SettingsFileText {
             : String(format: text("general-settings-import-corrected-other"), count)
     }
 
-    /// "2 entries this version of Scrollio cannot read are left out."
+    /// "2 entries this version of Scrollio does not know are left out.": entries it
+    /// cannot read, and buttons, keys and gesture directions with an action it does not run.
     static func unreadable(count: Int) -> String {
         return count == 1
             ? text("general-settings-import-unreadable-one")
@@ -368,8 +369,8 @@ final class SettingsImportSheetViewController: NSViewController {
         let note = makeNote(text("general-settings-import-note"), width: contentWidth)
         noteLabel = note
         add(note)
-        if contents.unreadableEntries > 0 {
-            let unreadable = makeNote(SettingsFileText.unreadable(count: contents.unreadableEntries), width: contentWidth)
+        if contents.leftOutCount > 0 {
+            let unreadable = makeNote(SettingsFileText.unreadable(count: contents.leftOutCount), width: contentWidth)
             unreadableLabel = unreadable
             add(unreadable, spacingBefore: 4)
         }

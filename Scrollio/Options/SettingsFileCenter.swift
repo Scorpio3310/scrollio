@@ -196,7 +196,7 @@ final class SettingsFileCenter {
         afterImport()
         let groups = OptionsGroup.allCases.filter(contents.groups.contains).map { "\($0)" }.joined(separator: ", ")
         log("Settings file: imported (\(groups); \(contents.launchActions.count) action(s) that open or run something; "
-            + "\(contents.unreadableEntries) unreadable entr\(contents.unreadableEntries == 1 ? "y" : "ies") left out)")
+            + "\(contents.leftOutCount) entr\(contents.leftOutCount == 1 ? "y" : "ies") left out)")
         return .success(backup)
     }
 

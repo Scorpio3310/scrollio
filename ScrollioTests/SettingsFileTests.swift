@@ -832,6 +832,77 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertNil(apps.first?["future"])
     }
 
+    /// A button or key whose action this version does not run is left out, and a gesture
+    /// direction with such an action gets none: a name this version does not know could be
+    /// one a later version gives a meaning, and then a press would run what no sheet ever
+    /// showed (and on a Logitech button the binding would take the button and do nothing).
+    func testActionsThisVersionDoesNotRunAreLeftOut() throws {
+        func binding(_ id: Int, _ name: String, code: Int = 4, enabled: Bool = true) -> String {
+            return #"{"id":"77777777-7777-7777-7777-"# + String(format: "%012d", id)
+                + #"","triggerEvent":{"type":"mouse","code":\#(code),"modifiers":0},"systemShortcutName":"\#(name)","#
+                + #""isEnabled":\#(enabled),"createdAt":1}"#
+        }
+        let bindings = [
+            binding(1, "copy"),
+            binding(2, "teleport", code: 1006),          // no such action, on a Logitech button
+            binding(3, "custom::not-a-key"),             // a recorded shortcut that is none
+            binding(4, "shutdownDialog"),                // retired: it runs nothing
+            binding(5, "logiThumbWheelToggle"),          // a Logitech action that was removed
+            binding(6, "", enabled: false),              // a row without an action yet
+            binding(7, "mouseGestureNavigation"),
+            binding(8, "custom::12:1703936"),            // a recorded shortcut
+            binding(9, "logiHost2"),                     // a Logitech action that is run
+            Fixture.scriptBinding,
+        ]
+        let appButtons = [binding(20, "copy"), binding(21, "teleport"), #"{"id":"broken"}"#]
+        let app = StoredDataCanaryTests.readableApp.replacingOccurrences(
+            of: #"{"displayName":"","#, with: #"{"buttons":{"binding":["# + appButtons.joined(separator: ",") + #"]},"displayName":"","#
+        )
+        let contents = try Fixture.contents(
+            #""buttonBindings":["# + bindings.joined(separator: ",") + "],"
+                + #""applications":["# + app + "],"
+                + #""mouseGestureSettings":{"upAction":"teleport","clickAction":"logiThumbWheelToggle","downAction":"appExpose","leftAction":"","rightAction":"logiHost3"}"#
+        )
+        XCTAssertEqual(contents.bindings?.map(\.systemShortcutName),
+                       ["copy", "", "mouseGestureNavigation", "custom::12:1703936", "logiHost2", "openTarget"])
+        XCTAssertEqual(contents.applications?.count, 1, "the app stays; its buttons are judged one by one")
+        XCTAssertEqual(contents.applications?.first?.buttons?.binding.map(\.systemShortcutName), ["copy"])
+        let gesture = try XCTUnwrap(contents.gesture)
+        XCTAssertEqual([gesture.upAction, gesture.downAction, gesture.leftAction, gesture.rightAction, gesture.clickAction],
+                       ["", "appExpose", "", "logiHost3", ""])
+        XCTAssertEqual(contents.unknownActions, 4 + 1 + 2, "four buttons, one of the app's, two gesture directions")
+        XCTAssertEqual(contents.unreadableEntries, 1, "the app's button that cannot be read")
+        XCTAssertEqual(contents.leftOutCount, 8)
+        XCTAssertFalse(contents.bindings?.contains { $0.triggerEvent.code == 1006 } ?? true, "the Logitech button is not taken")
+
+        // The sheet counts them, and nothing of them reaches the store.
+        let sheet = SettingsImportSheetViewController(content: .confirm(contents, fileName: "x.json"))
+        _ = sheet.view
+        XCTAssertEqual(sheet.unreadableLabel?.stringValue, "8 entries this version of Scrollio does not know are left out.")
+        let own = OwnSettings(for: self)
+        own.options.readOptions()
+        XCTAssertTrue(SettingsFile.apply(contents, to: own.options))
+        own.options.saveOptions()
+        let stored = String(decoding: try XCTUnwrap(own.store.defaults.data(forKey: "buttonBindings")), as: UTF8.self)
+            + String(decoding: try XCTUnwrap(own.store.defaults.data(forKey: "applications")), as: UTF8.self)
+            + String(decoding: try XCTUnwrap(own.store.defaults.data(forKey: "mouseGestureSettings")), as: UTF8.self)
+        for name in ["teleport", "not-a-key", "shutdownDialog", "logiThumbWheelToggle", "broken"] {
+            XCTAssertFalse(stored.contains(name), name)
+        }
+
+        // What the rule is made of.
+        let trigger = RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil)
+        XCTAssertTrue(StoredAction.isKnown(ButtonBinding(triggerEvent: trigger, systemShortcutName: "missionControl")))
+        XCTAssertFalse(StoredAction.isKnown(ButtonBinding(triggerEvent: trigger, systemShortcutName: "openTarget")), "the name without a target")
+        XCTAssertTrue(StoredAction.isKnown(gestureAction: ""))
+        XCTAssertTrue(StoredAction.isKnown(gestureAction: "mouseBackClick"))
+        XCTAssertFalse(StoredAction.isKnown(gestureAction: "custom::12:1703936"), "a gesture runs no recorded shortcut")
+        XCTAssertFalse(StoredAction.isKnown(gestureAction: "mouseGestureNavigation"))
+        XCTAssertTrue(LogiCenter.shared.runsAction(named: "logiSmartShiftToggle"))
+        XCTAssertFalse(LogiCenter.shared.runsAction(named: "logiHiResScrollToggle"))
+        XCTAssertFalse(LogiCenter.shared.runsAction(named: "copy"))
+    }
+
     /// Every action that opens an app or a file, or runs a script, is found: switched on
     /// or off, of the buttons of every app and of one app's own.
     func testEveryActionThatOpensOrRunsSomethingIsFound() throws {
@@ -1493,7 +1564,7 @@ final class SettingsFileCenterTests: XCTestCase {
         XCTAssertEqual(own.logLines.count, 4, "\(own.logLines)")
         XCTAssertTrue(own.logLines[0].hasPrefix("Settings file: exported ("))
         XCTAssertEqual(own.logLines[1], "Settings file: a file was not usable (the file could not be read)")
-        XCTAssertEqual(own.logLines[2], "Settings file: imported (buttons; 1 action(s) that open or run something; 1 unreadable entry left out)")
+        XCTAssertEqual(own.logLines[2], "Settings file: imported (buttons; 1 action(s) that open or run something; 1 entry left out)")
         XCTAssertEqual(own.logLines[3], "Settings file: not exported (the file could not be written)")
         for line in own.logLines {
             for word in ["Private", "Secret", "sync.sh", "/Users", folder.lastPathComponent, "someone"] {
@@ -1536,8 +1607,8 @@ final class SettingsFileTextTests: XCTestCase {
         XCTAssertEqual(SettingsFileText.counted(1, "general-settings-import-actions"), "1 button or key action")
         XCTAssertEqual(SettingsFileText.counted(12, "general-settings-import-actions"), "12 button and key actions")
         XCTAssertEqual(SettingsFileText.counted(4, "general-settings-import-apps"), "4 apps with their own settings")
-        XCTAssertEqual(SettingsFileText.unreadable(count: 1), "1 entry this version of Scrollio cannot read is left out.")
-        XCTAssertEqual(SettingsFileText.unreadable(count: 3), "3 entries this version of Scrollio cannot read are left out.")
+        XCTAssertEqual(SettingsFileText.unreadable(count: 1), "1 entry this version of Scrollio does not know is left out.")
+        XCTAssertEqual(SettingsFileText.unreadable(count: 3), "3 entries this version of Scrollio does not know are left out.")
     }
 
     func testTheSheetSaysWhoSavedTheFileAndWhen() throws {
@@ -1693,7 +1764,7 @@ final class SettingsImportSheetTests: XCTestCase {
         XCTAssertTrue(lines[1].hasSuffix(": opens the app /Applications/Notes.app, or else the app with the ID com.apple.Notes"), lines[1])
         XCTAssertFalse(list.isEditable)
         XCTAssertTrue(list.isSelectable, "a path can be copied")
-        XCTAssertEqual(sheet.unreadableLabel?.stringValue, "1 entry this version of Scrollio cannot read is left out.")
+        XCTAssertEqual(sheet.unreadableLabel?.stringValue, "1 entry this version of Scrollio does not know is left out.")
         // Return does not import: it is Cancel, and so is Esc.
         XCTAssertEqual(sheet.importButton?.keyEquivalent, "")
         XCTAssertEqual(sheet.closeButton.keyEquivalent, "\r")

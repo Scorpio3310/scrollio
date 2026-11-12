@@ -7110,7 +7110,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "1 entry this version of Scrollio cannot read is left out."
+            "value": "1 entry this version of Scrollio does not know is left out."
           }
         }
       }
@@ -7121,7 +7121,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%d entries this version of Scrollio cannot read are left out."
+            "value": "%d entries this version of Scrollio does not know are left out."
           }
         }
       }
