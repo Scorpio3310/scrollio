@@ -2985,6 +2985,39 @@ final class ScrollGlideFollowerTests: XCTestCase {
         lock.unlock()
     }
 
+    /// An app seen without its bundle id (suspected for a process that is still starting)
+    /// is touch-only for that event but is not written down as that: once its id is known
+    /// it gets its kind, Safari and the listed apps among them. It used to stay touch-only
+    /// for the whole run. Its bundle is still looked into once, however often it is asked.
+    func testAnAppFirstSeenWithoutItsBundleId_getsItsKindOnceTheIdIsKnown() {
+        let utils = ScrollUtils()
+        let looks = Looks()
+        looks.install(on: utils)
+        let safari = URL(fileURLWithPath: "/Applications/Safari.app")
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: nil, bundleURL: safari), .touchOnly, "not known yet")
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: nil, bundleURL: safari), .touchOnly)
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: nil, bundleURL: safari), .touchOnly)
+        XCTAssertEqual(looks.asked.count, 1, "looked into once")
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.apple.Safari", bundleURL: safari), .safari, "with its id: Safari")
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: nil, bundleURL: safari), .safari, "and that is kept")
+
+        let maps = URL(fileURLWithPath: "/System/Applications/Maps.app")
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: nil, bundleURL: maps), .touchOnly)
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.apple.Maps", bundleURL: maps), .plainScrolling)
+
+        // An app that never has an id is still found by the look.
+        let nameless = URL(fileURLWithPath: "/Applications/Nameless.app")
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: nil, bundleURL: nameless), .touchOnly)
+        XCTAssertEqual(looks.asked.count, 3)
+        looks.asked.last?.answer(true)
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: nil, bundleURL: nameless), .followsGlide)
+        XCTAssertEqual(looks.asked.count, 3)
+        // And an app with an id is written down at once, as before.
+        let notes = URL(fileURLWithPath: "/System/Applications/Notes.app")
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.apple.Notes", bundleURL: notes), .touchOnly)
+        XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: "com.apple.Notes", bundleURL: notes), .touchOnly)
+        XCTAssertEqual(looks.asked.count, 4)
+    }
 }
 
 // MARK: - The system log

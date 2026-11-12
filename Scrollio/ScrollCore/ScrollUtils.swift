@@ -76,6 +76,8 @@ class ScrollUtils {
 
     /// Bundle path -> answer. Main thread.
     private var trackpadStyleTargetByBundlePath: [String: TrackpadStyleTarget] = [:]
+    /// The bundles of apps seen without a bundle id that were looked into already. Main thread.
+    private var bundlesLookedIntoWithoutIdentifier: Set<String> = []
 
     /// Looks into an app's bundle off the main thread and calls back on the main queue with
     /// whether it scrolls by a glide's events (Chromium-based or Gecko-based). Tests put
@@ -118,8 +120,20 @@ class ScrollUtils {
             trackpadStyleTargetByBundlePath[path] = target
             return target
         }
-        // Stored at once: one look per app, however many wheel events come before its answer.
-        trackpadStyleTargetByBundlePath[path] = .touchOnly
+        if bundleIdentifier != nil {
+            // Stored at once: one look per app, however many wheel events come before its answer.
+            trackpadStyleTargetByBundlePath[path] = .touchOnly
+        } else {
+            // An app seen without its bundle id is not written down as touch-only: once its
+            // id is known it may be Safari or a listed app, and a stored answer is never
+            // asked again in this run. (Whether macOS ever gives a running app with an
+            // Info.plist no id is not known; a process that is still starting is the
+            // suspected case.) It is touch-only for this event and asked again at the next
+            // one; its bundle is still looked into once.
+            guard bundlesLookedIntoWithoutIdentifier.insert(path).inserted else {
+                return .touchOnly
+            }
+        }
         guard Self.mayLookIntoBundle(atPath: path) else {
             return .touchOnly
         }
