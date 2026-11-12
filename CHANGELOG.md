@@ -45,8 +45,8 @@ it for the people who use the app, and give the version its part before you tag 
 - With it on, a scroll that runs is closed when the setting is switched, and the wheel's
   scroll is closed before a finger on the trackpad begins its own (nothing kept the two in
   that order before; that an app ever got them the wrong way round was not seen).
-- The README says what Trackpad-style scrolling does in which app, and where its limits
-  are.
+- The README says what Trackpad-style scrolling (Beta) does in which app, and where its
+  limits are.
 
 ## 1.0.1
 

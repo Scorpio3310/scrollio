@@ -97,7 +97,7 @@ of scrolling and the menu bar icon.
   "Trackpad-style scrolling (Beta)": apps treat the wheel like a trackpad and bounce at
   the ends of a page. Safari and sideways scrolling stay as they are. What it does in
   which app, and its limits:
-  [Trackpad-style scrolling](#trackpad-style-scrolling-beta).
+  [Trackpad-style scrolling (Beta)](#trackpad-style-scrolling-beta).
 - While you hold a key: "Scroll faster" (5 × the distance), "Scroll sideways" and "Pause
   smoothing" (exact steps, for example to zoom with ⌘). A mouse button can hold them
   too. These keys work while Smooth scrolling is on.
@@ -129,12 +129,15 @@ sent in one of three ways:
   second after the page last moved; a turn of the wheel in that time goes on with the
   same touch. When something cuts a scroll short (a click, a finger on the trackpad, the
   wheel going on over another pane or another app, Pause), the touch ends at once, and
-  Scrollio sends what a trackpad sends when two fingers tap it: that is what stops an app
-  that would glide on.
+  Scrollio sends what a trackpad sends when two fingers tap it: by the notes of two other
+  mouse tools (Mac Mouse Fix, LinearMouse), that is what stops an app that would glide on.
 - Safari, the web apps made with its "Add to Dock" and the DuckDuckGo browser: nothing
   changes. The same for Maps, Find My, Calendar, iPhone Mirroring, Blender and the Godot
-  editor: they do something else with a trackpad's scroll than with a wheel's (the wheel
-  pans a map where it zoomed, or orbits a 3D view), or do not scroll as they should.
+  editor: by what people who use other mouse tools report, they do something else with a
+  trackpad's scroll than with a wheel's (the wheel pans a map where it zoomed, or orbits
+  a 3D view), or do not scroll as they should. For all of these the switch does nothing,
+  and neither does their own "Trackpad-style scrolling (Beta)" switch when you give one of
+  them its own settings in the Apps pane.
 
 Scrolling sideways (with Shift, "Scroll sideways" or the thumb wheel) stays as it is with
 the switch off, in every app. In a trackpad's form a sideways scroll is a swipe, and apps
@@ -142,8 +145,9 @@ go back or forward a page on it, or switch tabs.
 
 What an app is sent also reads like a trackpad's events in the details: each has a time
 of its own, evenly spaced (apps take the speed for a bounce from it), its own line count,
-and nothing of the wheel's hardware event left on it (with that on a glide, a web view
-replaces the glide by one of its own).
+and, on macOS 27 and later, nothing of the wheel's hardware event left on it (with that
+on a glide, a web view replaces the glide by one of its own). On macOS 14, 15 and 26 the
+hardware event stays on, as before: taking it off was only run on macOS 27.
 
 How sure this is. Nobody has seen this version on a screen yet. It was worked out from
 how AppKit, WebKit, Chromium and Firefox handle a trackpad's scroll (read in their code,
@@ -164,14 +168,27 @@ Its limits:
 - An app that tells a mouse from a trackpad by these events takes the wheel for a
   trackpad. In some 3D and design apps the wheel may then pan where it used to zoom. The
   ones Scrollio knows by name are left alone (above); Autodesk Fusion and Rhino are
-  reported to be such apps too, and are not known by name.
-- A scroll is either up-down or sideways. When you turn the other wheel, or press "Scroll
-  sideways", while a scroll still glides, that scroll stops at once. And a sideways list
-  does not bounce at its end.
+  reported to be such apps too, and are not known by name. A game made with Godot has a
+  name of its own and is not left alone either: by Godot's code a game that listens for
+  the wheel's steps gets none from a trackpad's scroll (it gets a pan instead). Turn it
+  off for such a game in the Apps pane.
+- A scroll is either up-down or sideways. Turning the other wheel while a scroll still
+  glides cuts that glide short with the switch off too (what the first wheel had left is
+  dropped); with it on the scroll ends at once, so a little more is lost (a click and a
+  sideways click 150 ms later: 124 of the 205 px, against 166 with the switch off).
+  Pressing or letting go of "Scroll sideways" while a scroll with a trackpad's form still
+  glides ends that scroll. And a sideways list does not bounce at its end.
+- A device whose turns go both ways at once (a trackball, a wheel that tilts as it
+  turns) keeps the kind of scroll it began with until the other direction leads two to
+  one.
 - When the wheel keeps turning at the end of an inner pane (a chat, a text box), the page
   around it may not take over until the scroll has ended and a new one begins; with the
   switch off it takes over at once. (From Firefox's code: an app keeps a trackpad's scroll
   on the pane it began on.)
+- What ends the touch by itself is the display's next frame, a fifth of a second after
+  the page last moved. Should the display send no frame then (suspected for a display
+  that goes to sleep in that moment), the touch stays open until Scrollio's keeper ends
+  it, 5 to 10 seconds later; that scroll's line in the log ends "ended by the keeper".
 - At the end of a page, an app that is not a browser can keep the page stretched until
   the touch ends: about two thirds of a second after a click at Smooth, 1.2 s at Float
   (a fifth of a second of each is the touch's rest). How far it
@@ -456,7 +473,7 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](SECURIT
     (to press the right key for shortcuts such as ⌘A, and to name keys) and the macOS
     setting for natural scrolling (for "Follow the hand");
   - which app is under the pointer or in front, for the per-app settings and "Smooth
-    Scrolling in …". With "Trackpad-style scrolling" on it also looks once into the
+    Scrolling in …". With "Trackpad-style scrolling (Beta)" on it also looks once into the
     bundle of each app that comes to the front or that you scroll in, to see whether the
     app is built on Chromium or on Firefox's engine (the names in `Contents/Frameworks`,
     and whether `Contents/MacOS` holds a browser's app loader or Firefox's engine); only
@@ -578,7 +595,10 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   could not be created or that macOS turned off, restarts, settings that could not be
   read or written, an app, a file or a script that could not be opened (never its name
   or path), a held action whose release never came, at launch which accent colour is
-  in effect, and the updater: whether this copy updates itself, and one line per check
+  in effect, for "Trackpad-style scrolling (Beta)" whether the wheel's hardware event is
+  taken off what an app is sent (once: at launch when the switch is on, in the Scrolling
+  pane or for an app; else at the first scroll after you switch it on) and which forms
+  are under evaluation, and the updater: whether this copy updates itself, and one line per check
   with what it found:
 
   ```text

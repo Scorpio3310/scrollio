@@ -67,8 +67,10 @@ class ScrollUtils {
         /// "momentum began" frame carries a hardware record, WebKit runs a glide of its own
         /// from the record's raw delta and drops the glide it is sent; without a record it
         /// follows every frame (measured in a WKWebView). And the frames made anew that did
-        /// not scroll Safari at all (build 1538) never arrived: an event made anew has no
-        /// window number, so that was the delivery, not WebKit.
+        /// not scroll Safari at all (build 1538) probably never arrived: an event made anew
+        /// has no window number, so the delivery is suspected, not WebKit (suspected only:
+        /// it rests on a log line that is absent, and a web view did scroll by such events
+        /// when they were handed to it in-process).
         /// A case of its own because of an EVALUATION SWITCH (`TrackpadStyleEvaluation`,
         /// `ScrollPoster.usesSafariFlick`): with it Safari gets the flick without the record.
         case safari
