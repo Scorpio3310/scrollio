@@ -198,7 +198,7 @@ class ScrollPoster {
     /// farther than this (points) from there. Apps keep a gesture on the scroller that got its
     /// "began", so a tick over another pane has to begin a touch of its own; a hand that turns
     /// the wheel moves the pointer by a few points at most. The same for the one touch: a tick
-    /// farther away ends it and begins a new one (`endTouch(unlessAt:)`).
+    /// farther away ends it and begins a new one (`endOneTouchLocked(unlessAt:)`).
     private let trackpadStylePointerSlack: CGFloat = 30
     /// EVALUATION SWITCH, removed before the one-touch form is released: apps that are not
     /// Chromium-based get the old long touch (`TrackpadStyleEvaluation`). Read once at launch;
@@ -249,7 +249,7 @@ class ScrollPoster {
     /// Tests: the clock of the frames' timestamps (`ScrollEventClock.uptimeNanoseconds` otherwise).
     var eventClockForTests: (() -> UInt64)?
     /// Tests: how often a wheel event asked, under the lock, whether an open touch has to end
-    /// (`endTouch(unlessAt:)`). Never with the switch off.
+    /// (`endOneTouchLocked(unlessAt:)`). Never with the switch off.
     var touchChecksForTests = 0
     /// Tests: the lines about the display link's health written to the `app` log, oldest first.
     var healthLinesForTests: [String] = []
@@ -359,7 +359,8 @@ extension ScrollPoster {
     ///   mid-scroll): that scroll is ended first, in the form it was sent in
     ///   (`endScroll(unlessPhasesStay:)`).
     /// - it comes far from where the one touch that is open began (another pane of the same
-    ///   app): that touch is ended first, at its own place (`endTouch(unlessAt:)`).
+    ///   app): that touch is ended first, at its own place (`endOneTouchLocked(unlessAt:)`),
+    ///   in one stretch under the lock with the "began" that follows.
     /// - Returns: whether the event was taken. false: the caller lets it through.
     func smooth(event: CGEvent, input: ScrollPosterInput) -> Bool {
         guard input.isUsable else { return false }
@@ -368,22 +369,40 @@ extension ScrollPoster {
         // The form of this event's scroll is read once the event is known to be taken, as it
         // always was. Only while a scroll runs it is read here, before: that scroll has to be
         // ended first when the two differ in whether they carry phases, and that has to
-        // happen before the display link is started and the event is stored. Nothing here
-        // takes the lock unless both carry phases.
+        // happen before the display link is started and the event is stored.
         var formReadBefore: ConfigSnapshot?
+        var bothCarryPhases = false
         if let runsWithPhases = runningScrollHasPhases {
             let form = configSnapshot(for: event)
             formReadBefore = form
             if form.simTrackpadEnabled != runsWithPhases {
                 endScroll(unlessPhasesStay: form.simTrackpadEnabled)
-            } else if runsWithPhases {
-                endTouch(unlessAt: { ScrollInputPlace(pid: target, pointer: event.location) })
+            } else {
+                bothCarryPhases = runsWithPhases
             }
         }
-        guard tryStart(), dispatchContext.capture(event: event) else { return false }
-        // 捕获本次手势的配置快照 (主线程读 Options/ScrollCore, CVDisplayLink 线程只读)
-        let snapshot = formReadBefore ?? configSnapshot(for: event)
-        os_unfair_lock_lock(&stateLock)
+        guard tryStart() else { return false }
+        let snapshot: ConfigSnapshot
+        if bothCarryPhases, let form = formReadBefore {
+            // An open one touch may have to end at its own place before this event is stored
+            // (its "ended" is a copy of the event stored until then), and nothing may fall between
+            // that "ended" and the "began" this event brings: one stretch under the lock, the
+            // storing of the event included. (They were two stretches: a display frame that
+            // ran between them found no touch to belong to, and its distance was lost.)
+            os_unfair_lock_lock(&stateLock)
+            endOneTouchLocked(unlessAt: { ScrollInputPlace(pid: target, pointer: event.location) })
+            guard dispatchContext.capture(event: event) else {
+                os_unfair_lock_unlock(&stateLock)
+                return false
+            }
+            snapshot = form
+        } else {
+            // Without phases, and for the first event of a scroll: as it always was.
+            guard dispatchContext.capture(event: event) else { return false }
+            // 捕获本次手势的配置快照 (主线程读 Options/ScrollCore, CVDisplayLink 线程只读)
+            snapshot = formReadBefore ?? configSnapshot(for: event)
+            os_unfair_lock_lock(&stateLock)
+        }
         defer { os_unfair_lock_unlock(&stateLock) }
         applyConfigLocked(snapshot)
         let place = (config.flick || config.oneTouch) ? ScrollInputPlace(pid: target, pointer: event.location) : nil
@@ -425,14 +444,13 @@ extension ScrollPoster {
     /// the first pane until the scroll ran out: apps keep a gesture on the scroller that got
     /// its "began". (The old long touch never looked at the place; it was over 0.18 s after
     /// the wheel stopped.)
-    /// `place`: the new event's place, asked only while such a touch is open (with the switch
-    /// off, and in the other forms, nothing of the event is read here).
-    private func endTouch(unlessAt place: () -> ScrollInputPlace) {
+    /// `place`: the new event's place, asked only while such a touch is open (in the other
+    /// forms nothing of the event is read here; with the switch off this is never called).
+    /// Caller holds stateLock, and keeps it until the event's own "began" has gone out.
+    private func endOneTouchLocked(unlessAt place: () -> ScrollInputPlace) {
 #if DEBUG
         touchChecksForTests += 1
 #endif
-        os_unfair_lock_lock(&stateLock)
-        defer { os_unfair_lock_unlock(&stateLock) }
         guard oneTouchIsOpen, let began = touchPlace else { return }
         let place = place()
         let isFar = place.pid != began.pid
@@ -715,10 +733,10 @@ extension ScrollPoster {
             endScroll(unlessFor: targetPID)
             dispatchContext.setTargetForTests(targetPID)
         }
-        if let place = place {
-            endTouch(unlessAt: { place })
-        }
         os_unfair_lock_lock(&stateLock)
+        if let place = place {
+            endOneTouchLocked(unlessAt: { place })
+        }
         handleInputLocked(input, at: time, place: place)
         let phases = config.simTrackpadEnabled
         os_unfair_lock_unlock(&stateLock)

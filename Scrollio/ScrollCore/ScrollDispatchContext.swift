@@ -65,6 +65,9 @@ final class ScrollDispatchContext {
 
     @discardableResult
     func capture(event: CGEvent) -> Bool {
+#if DEBUG
+        captureObserverForTests?()
+#endif
         guard let template = event.copy() else {
 #if DEBUG
             os_unfair_lock_lock(&lock)
@@ -225,6 +228,8 @@ final class ScrollDispatchContext {
 #if DEBUG
     /// Tests: called each time `waitForQueuedFrames` is asked to wait.
     var waitObserverForTests: (() -> Void)?
+    /// Tests: called when a wheel event is about to be stored (`capture`).
+    var captureObserverForTests: (() -> Void)?
 
     /// Tests: the target of the frames, without an event to copy (frames then go to the
     /// poster's recorder, never to a process).

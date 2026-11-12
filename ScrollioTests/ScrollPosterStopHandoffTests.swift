@@ -1294,6 +1294,69 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         }
     }
 
+    /// Nothing falls between that "ended" and the "began" that follows. A display frame tries
+    /// to run at the moment the far wheel event is being stored: it has to wait until that
+    /// event's "began" is out, and then moves the page as the new touch's "changed". The
+    /// "ended" and the rest of the wheel event used to be two stretches under the lock: a
+    /// frame that ran between them found no touch to belong to, and its distance was lost.
+    func testTheRealPath_noDisplayFrameFallsBetweenATouchsEndedAndTheNextBegan() throws {
+        try withSettings(switchOn: true) {
+            let context = ScrollDispatchContext()
+            let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
+            poster.trackpadStyleTarget = { _ in .touchOnly }
+            _ = FakeDisplay(for: poster)
+            var posted: [(scroll: Double, x: CGFloat, y: Int64)] = []
+            let lock = NSLock()
+            context.postObserverForTests = { event, _ in
+                lock.lock()
+                posted.append((event.getDoubleValueField(.scrollWheelEventScrollPhase), event.location.x,
+                               event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1)))
+                lock.unlock()
+            }
+            func wheel(atX x: CGFloat) throws -> CGEvent {
+                let event = try wheelEvent()
+                event.location = CGPoint(x: x, y: 300)
+                return event
+            }
+            var now = ScrollPoster.monotonicNow()
+            XCTAssertTrue(poster.smooth(event: try wheel(atX: 400), input: input()))
+            for _ in 0..<3 {
+                now += 1.0 / 60.0
+                poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: now)
+            }
+            context.waitForPostQueueForTests()
+
+            // The display link's thread wants a frame while the far event is being stored.
+            let frameTime = now + 1.0 / 60.0
+            let frameDone = DispatchSemaphore(value: 0)
+            var ranWhileTheEventWasStored: Bool?
+            context.captureObserverForTests = {
+                context.captureObserverForTests = nil
+                DispatchQueue.global(qos: .userInteractive).async {
+                    poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: frameTime)
+                    frameDone.signal()
+                }
+                ranWhileTheEventWasStored = frameDone.wait(timeout: .now() + 0.2) == .success
+            }
+            XCTAssertTrue(poster.smooth(event: try wheel(atX: 900), input: input()))
+
+            XCTAssertEqual(ranWhileTheEventWasStored, false, "the frame waited for the lock")
+            XCTAssertEqual(frameDone.wait(timeout: .now() + 5), .success, "and ran once the event's \"began\" was out")
+            context.waitForPostQueueForTests()
+            lock.lock()
+            let all = posted
+            lock.unlock()
+            let ended = try XCTUnwrap(all.firstIndex { $0.scroll == 4 })
+            XCTAssertEqual(all[ended].x, 400, "the touch ended at its own place")
+            let after = Array(all.dropFirst(ended + 1))
+            XCTAssertEqual(after.map(\.scroll), [1, 2], "\"began\", then that frame as the new touch's \"changed\"")
+            XCTAssertTrue(after.allSatisfy { $0.x == 900 })
+            XCTAssertGreaterThan(after.last?.y ?? 0, 0, "its distance went out")
+            context.waitForPostQueueForTests()
+            poster.stop()
+        }
+    }
+
     /// EVALUATION SWITCH: with it the same apps get the old long touch, a touch until the
     /// wheel has been still for 0.18 s and the rest as its glide: 135 of the click's 205 px
     /// in the touch. Nothing else changes with it: a Chromium app still gets the flick.
