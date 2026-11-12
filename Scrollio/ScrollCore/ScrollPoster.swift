@@ -47,6 +47,12 @@ struct ScrollOutgoingFrame: Equatable {
     /// between its events, and every frame of a wheel tick used to carry that tick's time.
     var timestamp: UInt64? = nil
 
+    /// Whether the frame opens or closes a gesture for the app: "began", "ended", "momentum
+    /// began", "momentum ended". Never a frame without phases.
+    var opensOrClosesGesture: Bool {
+        return scrollPhase == 1.0 || scrollPhase == 4.0 || momentumPhase == 1.0 || momentumPhase == 3.0
+    }
+
     /// Only the point delta is written; the line delta stays that of the copied wheel event,
     /// and so does the timestamp unless one is given. CoreGraphics drops the fraction of a point
     /// delta, so the frames of a glide come here in whole pixels (ScrollPixelCarry keeps the
@@ -865,7 +871,7 @@ extension ScrollPoster {
             }
         }
         // With trackpad-style phases only. Without them nothing an app waits for is queued
-        // here (Chrome's "ended" below goes out as it always did), and a stop waits for nothing.
+        // here (Chrome's "ended" above goes out as it always did), and a stop waits for nothing.
         let closingFrameQueued = enableSimTrackpad && queuedFrames != queuedBefore
         manualInputEnded = true
         momentumActive = false
@@ -874,7 +880,9 @@ extension ScrollPoster {
         // 重置参数 (不递增 generation, 保留本次收尾帧有效性)
         resetUnlocked()
         os_unfair_lock_unlock(&stateLock)
-        if closingFrameQueued {
+        // A frame that closes the gesture can also wait from before this stop: the one
+        // touch's "ended" is queued by the display link's thread (it is kept, see `enqueue`).
+        if closingFrameQueued || (enableSimTrackpad && dispatchContext.hasWaitingGestureFrames) {
             // The closing frames ("ended", "momentum ended") are out before this returns.
             // They are posted from the post queue, and what ended the scroll is often an
             // event on its own way to the same app: a finger that begins to scroll on the
@@ -1393,10 +1401,11 @@ private extension ScrollPoster {
             return true
         }
 #endif
-        guard let snapshot = preparedSnapshot ?? dispatchContext.preparePostingSnapshot() else {
+        guard var snapshot = preparedSnapshot ?? dispatchContext.preparePostingSnapshot() else {
             return false
         }
         frame.write(to: snapshot.event)
+        snapshot.opensOrClosesGesture = frame.opensOrClosesGesture
         ScrollUtils.shared.markSyntheticSmoothEvent(snapshot.event)
         // 通过 CGEventPostToPid 直投目标进程:
         // 不依赖 proxy (消除崩溃), 不经过 tap 链重新路由 (动量不跟随光标)
