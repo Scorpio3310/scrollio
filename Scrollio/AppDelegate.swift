@@ -258,14 +258,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // off everywhere nothing asks for it, here or at a wheel event; switched on later,
         // the first wheel event with phases asks.
         let applications = Options.shared.application.applications
-        if ScrollPoster.trackpadStyleIsOnSomewhere(
+        let isOnSomewhere = ScrollPoster.trackpadStyleIsOnSomewhere(
             global: Options.shared.scroll,
             applications: (0..<applications.count).compactMap { applications.get(by: $0) }
-        ) {
+        )
+        if isOnSomewhere {
             _ = ScrollHardwareRecord.comesOff
         }
-        // EVALUATION SWITCH (removed with `TrackpadStyleEvaluation`): what Safari gets.
-        AppSystemLog.note(TrackpadStyleEvaluation.safariLaunchLine(usesSafariFlick: TrackpadStyleEvaluation.usesSafariFlick))
+        // What Safari and the DuckDuckGo browser get, and why (it hangs on the self-test).
+        AppSystemLog.note(ScrollHardwareRecord.webKitLine(isOnSomewhere ? ScrollHardwareRecord.system.outcome : nil))
         // Read now what the first press of a button would otherwise read inside the button
         // tap's callback: the user's Spaces shortcuts (another app's preferences) and the
         // keys of the keyboard layout in use.

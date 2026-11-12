@@ -2674,7 +2674,7 @@ final class ScrollGlideFollowerTests: XCTestCase {
         }
         //                                          phases flick  withheld oneTouch
         XCTAssertEqual(form(true, .plainScrolling), [false, false, true, false], "apps where a wheel stays a wheel, DuckDuckGo")
-        XCTAssertEqual(form(true, .safari), [false, false, true, false], "Safari")
+        XCTAssertEqual(form(true, .safari), [false, false, true, false], "Safari and DuckDuckGo where the hardware record does not come off")
         XCTAssertEqual(form(true, .safari, oldLongTouch: true), [false, false, true, false])
         XCTAssertEqual(form(true, .followsGlide), [true, true, false, false], "Chromium")
         XCTAssertEqual(form(true, .touchOnly), [true, false, false, true], "native apps: one touch to the end")
@@ -2691,52 +2691,50 @@ final class ScrollGlideFollowerTests: XCTestCase {
         }
     }
 
-    /// EVALUATION SWITCH (goes with `TrackpadStyleEvaluation`): with it Safari gets the
-    /// flick, and nothing else changes for any other kind of app.
-    func testTheSafariSwitch_givesSafariTheFlickAndNobodyElseAnything() {
-        func form(_ target: ScrollUtils.TrackpadStyleTarget?, safariFlick: Bool, oldLongTouch: Bool = false, switchOn: Bool = true) -> [Bool] {
-            let form = ScrollPoster.trackpadStyleForm(switchOn: switchOn, target: target, oldLongTouch: oldLongTouch, safariFlick: safariFlick)
+    /// Safari and the DuckDuckGo browser get the flick where the wheel event's hardware
+    /// record comes off a frame; nothing else changes for any other kind of app with it.
+    func testWebKitBrowsers_getTheFlickWhereTheHardwareRecordComesOff() {
+        func form(_ target: ScrollUtils.TrackpadStyleTarget?, recordComesOff: Bool, oldLongTouch: Bool = false, switchOn: Bool = true) -> [Bool] {
+            let form = ScrollPoster.trackpadStyleForm(switchOn: switchOn, target: target, oldLongTouch: oldLongTouch, recordComesOff: recordComesOff)
             return [form.phases, form.flick, form.withheld, form.oneTouch]
         }
-        XCTAssertEqual(form(.safari, safariFlick: true), [true, true, false, false], "Safari: a flick")
-        XCTAssertEqual(form(.safari, safariFlick: true, oldLongTouch: true), [true, true, false, false])
-        XCTAssertEqual(form(.safari, safariFlick: true, switchOn: false), [false, false, false, false], "the switch is off")
+        XCTAssertEqual(form(.safari, recordComesOff: true), [true, true, false, false], "a flick")
+        XCTAssertEqual(form(.safari, recordComesOff: true, oldLongTouch: true), [true, true, false, false])
+        XCTAssertEqual(form(.safari, recordComesOff: false), [false, false, true, false], "no phases")
+        XCTAssertEqual(form(.safari, recordComesOff: true, switchOn: false), [false, false, false, false], "the switch is off")
         for target in [ScrollUtils.TrackpadStyleTarget.plainScrolling, .followsGlide, .touchOnly, nil] {
             for oldLongTouch in [false, true] {
-                XCTAssertEqual(form(target, safariFlick: true, oldLongTouch: oldLongTouch), form(target, safariFlick: false, oldLongTouch: oldLongTouch), "\(String(describing: target))")
+                XCTAssertEqual(form(target, recordComesOff: true, oldLongTouch: oldLongTouch), form(target, recordComesOff: false, oldLongTouch: oldLongTouch), "\(String(describing: target))")
             }
         }
+        XCTAssertEqual(ScrollHardwareRecord.webKitLine(.comesOff), "Trackpad-style scrolling, Safari and DuckDuckGo: the flick, without the hardware record")
+        XCTAssertTrue(ScrollHardwareRecord.webKitLine(.notTried(macOS: 15)).hasSuffix("no phases, as with the switch off: the hardware record does not come off a frame here"))
+        XCTAssertTrue(ScrollHardwareRecord.webKitLine(nil).contains("asked at the first scroll with the switch on"))
     }
 
     /// An app known as WebKit's never gets a glide whose "momentum began" carries the wheel
     /// event's hardware record: WebKit replaces such a glide by one of its own (36 of a
-    /// flick's 205 px arrived in a WKWebView). Whatever the two evaluation switches say and
-    /// whether the record comes off here or not: Safari and the DuckDuckGo browser get
-    /// either no phases at all, or (Safari, with its switch, where the record comes off) a
-    /// flick whose every frame goes out without the record.
+    /// flick's 205 px arrived in a WKWebView). Whatever the evaluation switch says: Safari
+    /// and the DuckDuckGo browser get the flick only where the record comes off, and no
+    /// phases at all where it does not; a listed app never gets phases.
     func testAWebKitApp_neverGetsAGlideThatCarriesAHardwareRecord() {
         var checked = 0
         for kind in [ScrollUtils.TrackpadStyleTarget.safari, .plainScrolling] {
-            for safariSwitch in [false, true] {
-                for oldLongTouch in [false, true] {
-                    for recordComesOff in [false, true] {
-                        // As `ScrollPoster.configSnapshot` asks.
-                        let form = ScrollPoster.trackpadStyleForm(switchOn: true, target: kind, oldLongTouch: oldLongTouch,
-                                                                  safariFlick: safariSwitch && recordComesOff)
-                        checked += 1
-                        let label = "\(kind), Safari switch \(safariSwitch), old long touch \(oldLongTouch), record comes off \(recordComesOff)"
-                        if form.phases {
-                            XCTAssertEqual(kind, .safari, label)
-                            XCTAssertTrue(safariSwitch && recordComesOff, "\(label): phases only where the record comes off")
-                            XCTAssertTrue(form.flick, label)
-                        } else {
-                            XCTAssertTrue(form.withheld, label)
-                        }
-                    }
+            for oldLongTouch in [false, true] {
+                for recordComesOff in [false, true] {
+                    // As `ScrollPoster.configSnapshot` asks.
+                    let form = ScrollPoster.trackpadStyleForm(switchOn: true, target: kind, oldLongTouch: oldLongTouch,
+                                                              recordComesOff: kind == .safari && recordComesOff)
+                    checked += 1
+                    let label = "\(kind), old long touch \(oldLongTouch), record comes off \(recordComesOff)"
+                    XCTAssertEqual(form.phases, kind == .safari && recordComesOff, "\(label): phases only where the record comes off")
+                    XCTAssertEqual(form.flick, form.phases, label)
+                    XCTAssertEqual(form.withheld, !form.phases, label)
+                    XCTAssertFalse(form.oneTouch, label)
                 }
             }
         }
-        XCTAssertEqual(checked, 16)
+        XCTAssertEqual(checked, 8)
     }
 
     // MARK: B3: nothing is read from disk inside the scroll tap's callback
@@ -2806,7 +2804,7 @@ final class ScrollGlideFollowerTests: XCTestCase {
         for (identifier, path) in plain {
             // Safari's own ids are a kind of their own (an evaluation switch asks for them);
             // without that switch they get what the other WebKit browsers get: no phases.
-            let kind: ScrollUtils.TrackpadStyleTarget = identifier.hasPrefix("com.apple.Safari") ? .safari : .plainScrolling
+            let kind = ScrollUtils.TrackpadStyleTarget.safari
             XCTAssertEqual(utils.trackpadStyleTarget(bundleIdentifier: identifier, bundleURL: URL(fileURLWithPath: path)), kind, identifier)
             XCTAssertTrue(ScrollUtils.getsPlainScrolling(bundleIdentifier: identifier), identifier)
             let form = ScrollPoster.trackpadStyleForm(switchOn: true, target: kind)
@@ -3392,17 +3390,6 @@ final class ScrollSystemLogTests: XCTestCase {
 /// compared on a real Mac. It is not a setting of the app.
 final class TrackpadStyleEvaluationTests: XCTestCase {
 
-    func testTheSafariSwitchIsOneDefaultReadAsABoolean() {
-        XCTAssertEqual(TrackpadStyleEvaluation.safariFlickDefaultsKey, "trackpadStyleEvaluationSafariFlick")
-        let defaults = TestDefaults.make(for: self)
-        XCTAssertFalse(TrackpadStyleEvaluation.usesSafariFlick(in: defaults), "not set: no phases for Safari")
-        defaults.set(true, forKey: TrackpadStyleEvaluation.safariFlickDefaultsKey)
-        XCTAssertTrue(TrackpadStyleEvaluation.usesSafariFlick(in: defaults))
-        XCTAssertFalse(TrackpadStyleEvaluation.usesOldLongTouch(in: defaults), "the two are two defaults")
-        defaults.set(false, forKey: TrackpadStyleEvaluation.safariFlickDefaultsKey)
-        XCTAssertFalse(TrackpadStyleEvaluation.usesSafariFlick(in: defaults))
-    }
-
     func testTheSwitchIsOneDefaultReadAsABoolean() {
         XCTAssertEqual(TrackpadStyleEvaluation.defaultsKey, "trackpadStyleEvaluationOldLongTouch")
         let defaults = TestDefaults.make(for: self)
@@ -3417,8 +3404,6 @@ final class TrackpadStyleEvaluationTests: XCTestCase {
     func testUnderTestsTheNewFormIsUsed() {
         XCTAssertFalse(TrackpadStyleEvaluation.usesOldLongTouch)
         XCTAssertFalse(ScrollPoster(phases: ScrollPhase(), dispatchContext: ScrollDispatchContext()).usesOldLongTouch)
-        XCTAssertFalse(TrackpadStyleEvaluation.usesSafariFlick)
-        XCTAssertFalse(ScrollPoster(phases: ScrollPhase(), dispatchContext: ScrollDispatchContext()).usesSafariFlick)
     }
 
     func testTheLaunchLineSaysWhichFormIsInUse() {
@@ -3429,14 +3414,6 @@ final class TrackpadStyleEvaluationTests: XCTestCase {
         XCTAssertEqual(
             TrackpadStyleEvaluation.launchLine(usesOldLongTouch: true),
             "Trackpad-style scrolling, apps that are not Chromium-based or Gecko-based: the old long touch (a touch while the wheel turns, then its glide) (evaluation switch trackpadStyleEvaluationOldLongTouch: YES)"
-        )
-        XCTAssertEqual(
-            TrackpadStyleEvaluation.safariLaunchLine(usesSafariFlick: false),
-            "Trackpad-style scrolling, Safari: no phases, as with the switch off (evaluation switch trackpadStyleEvaluationSafariFlick: not set)"
-        )
-        XCTAssertEqual(
-            TrackpadStyleEvaluation.safariLaunchLine(usesSafariFlick: true),
-            "Trackpad-style scrolling, Safari: the flick, without the hardware record (no phases where the record does not come off a frame: the line about the hardware record says which) (evaluation switch trackpadStyleEvaluationSafariFlick: YES)"
         )
     }
 
@@ -3456,11 +3433,10 @@ final class TrackpadStyleEvaluationTests: XCTestCase {
         XCTAssertEqual(defaults.object(forKey: TrackpadStyleEvaluation.defaultsKey) as? Bool, true, "reading and saving leave it alone")
         XCTAssertFalse(ScrollSettingsCleanup.retiredDefaultsKeys.contains(TrackpadStyleEvaluation.defaultsKey))
 
-        XCTAssertNil(defaults.object(forKey: TrackpadStyleEvaluation.safariFlickDefaultsKey), "nor the one for Safari")
-        defaults.set(true, forKey: TrackpadStyleEvaluation.safariFlickDefaultsKey)
-        options.readOptions()
-        options.saveOptions()
-        XCTAssertEqual(defaults.object(forKey: TrackpadStyleEvaluation.safariFlickDefaultsKey) as? Bool, true)
-        XCTAssertFalse(ScrollSettingsCleanup.retiredDefaultsKeys.contains(TrackpadStyleEvaluation.safariFlickDefaultsKey))
+        // The key of the evening's Safari switch is no longer read: it changes nothing.
+        defaults.removeObject(forKey: TrackpadStyleEvaluation.defaultsKey)
+        defaults.set(true, forKey: "trackpadStyleEvaluationSafariFlick")
+        XCTAssertFalse(TrackpadStyleEvaluation.usesOldLongTouch(in: defaults))
+        XCTAssertFalse(TrackpadStyleEvaluation.launchLine(usesOldLongTouch: false).contains("Safari"))
     }
 }

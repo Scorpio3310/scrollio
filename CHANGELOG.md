@@ -37,14 +37,18 @@ it for the people who use the app, and give the version its part before you tag 
   by itself as it does for a trackpad; while the wheel keeps turning into the end nothing
   more is sent. Where a view's scroll bar cannot be read, that view scrolls as with the
   switch off. This part ran against a stand-in only; nobody has seen it on a screen yet.
+- **Trackpad-style scrolling (Beta)** now works in Safari on macOS 27: Safari scrolls and
+  bounces like Chrome does with it (seen on one Mac: smooth). Before, Safari was left as it
+  was, because with the wheel's hardware event on what it is sent it did not scroll
+  smoothly; that is now taken off. The DuckDuckGo browser gets the same (same engine; not
+  seen). On macOS 14, 15 and 26 both stay as they are.
 - **Trackpad-style scrolling (Beta)** knows more apps. Firefox and the apps built on its
   engine (Thunderbird, Zotero) now get the same form as Chrome-like apps, a short touch and
   its glide: by Firefox's code that is what makes it bounce like a trackpad (not yet seen
-  on a screen). Web apps made with Safari's "Add to Dock" and the DuckDuckGo browser are
-  left as they are, like Safari. So are Maps, Find My, Calendar, iPhone Mirroring, Blender
-  and the Godot editor: people who use other mouse tools report that with a wheel in a
-  trackpad's form these pan or turn the view instead of zooming, or do not scroll as they
-  should. A web app installed from Chrome, Brave or Edge scrolls and bounces like its
+  on a screen). Web apps made with Safari's "Add to Dock" are treated as Safari. Maps,
+  Find My, Calendar, iPhone Mirroring, Blender and the Godot editor are left as they are:
+  people who use other mouse tools report that with a wheel in a trackpad's form these
+  pan or turn the view instead of zooming, or do not scroll as they should. A web app installed from Chrome, Brave or Edge scrolls and bounces like its
   browser.
 - With it on, scrolling sideways (Shift, "Scroll sideways", the thumb wheel) now stays as
   it is with the switch off. In a trackpad's form a sideways scroll is a swipe, and by

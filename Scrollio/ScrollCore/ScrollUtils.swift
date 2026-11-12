@@ -55,24 +55,24 @@ class ScrollUtils {
         /// engine (Firefox and its rebuilds, Thunderbird) scroll by the glide's events and make
         /// no glide of their own: a flick.
         case followsGlide
-        /// No trackpad-style events at all, the frames go out as with the switch off: the
-        /// DuckDuckGo browser (WebKit draws its whole window, as Safari's), and the apps where
-        /// a wheel has to stay a wheel (`wheelOnlyBundleIdentifiers`): Maps, Find My, Calendar,
-        /// iPhone Mirroring, Blender, the Godot editor.
+        /// No trackpad-style events at all, the frames go out as with the switch off: the apps
+        /// where a wheel has to stay a wheel (`wheelOnlyBundleIdentifiers`): Maps, Find My,
+        /// Calendar, iPhone Mirroring, Blender, the Godot editor.
         case plainScrolling
-        /// Safari, Safari Technology Preview and Safari's web apps (every id that begins
-        /// with `com.apple.Safari`): no trackpad-style events either, as `plainScrolling`.
-        /// With phases Safari did not scroll smoothly (owner, build 1521: the old long touch,
-        /// every frame with the wheel event's hardware record). What is known since: when the
-        /// "momentum began" frame carries a hardware record, WebKit runs a glide of its own
-        /// from the record's raw delta and drops the glide it is sent; without a record it
-        /// follows every frame (measured in a WKWebView). And the frames made anew that did
-        /// not scroll Safari at all (build 1538) probably never arrived: an event made anew
-        /// has no window number, so the delivery is suspected, not WebKit (suspected only:
-        /// it rests on a log line that is absent, and a web view did scroll by such events
-        /// when they were handed to it in-process).
-        /// A case of its own because of an EVALUATION SWITCH (`TrackpadStyleEvaluation`,
-        /// `ScrollPoster.usesSafariFlick`): with it Safari gets the flick without the record.
+        /// A browser whose pages WebKit draws: Safari, Safari Technology Preview and Safari's
+        /// web apps (every id that begins with `com.apple.Safari`), and the DuckDuckGo browser.
+        /// Where the wheel event's hardware record comes off a frame they get the flick, as
+        /// Chromium does; where it does not (before macOS 27, a failed self-test) they get no
+        /// trackpad-style events at all (`ScrollPoster.trackpadStyleForm`).
+        /// Why the record decides: when the "momentum began" frame carries a hardware record,
+        /// WebKit runs a glide of its own from the record's raw delta and drops the glide it
+        /// is sent (that is what made Safari not scroll smoothly: owner, build 1521, the old
+        /// long touch with the wheel's record on every frame); without a record it follows
+        /// every frame. Seen for Safari on the owner's screen (macOS 27.2, 2026-11-12:
+        /// "works well, quite smooth", and WebKit's own log said 71 times that it followed
+        /// Scrollio's glide and never that it replaced one). DuckDuckGo is the same engine
+        /// and was not seen. (The frames made anew that did not scroll Safari at all, build
+        /// 1538, probably never arrived: an event made anew has no window number. Suspected.)
         case safari
     }
 
@@ -118,7 +118,8 @@ class ScrollUtils {
             return known
         }
         if let identifier = bundleIdentifier, Self.getsPlainScrolling(bundleIdentifier: identifier) {
-            let target: TrackpadStyleTarget = identifier.hasPrefix(Self.safariBundleIdentifierPrefix) ? .safari : .plainScrolling
+            let isWebKitBrowser = identifier.hasPrefix(Self.safariBundleIdentifierPrefix) || Self.webKitBrowserBundleIdentifiers.contains(identifier)
+            let target: TrackpadStyleTarget = isWebKitBrowser ? .safari : .plainScrolling
             trackpadStyleTargetByBundlePath[path] = target
             return target
         }

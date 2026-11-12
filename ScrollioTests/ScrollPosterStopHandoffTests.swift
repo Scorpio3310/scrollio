@@ -1243,9 +1243,8 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
     /// `chrome`: whether the app counts as Chrome itself (it gets an "ended" at a stop with
     /// the switch off).
     /// `takesRecordOff`: what the launch's self-test found (nil: this Mac's own answer).
-    /// `safariFlick`: the evaluation switch for Safari (`ScrollPoster.usesSafariFlick`).
     private func oneClick(over kind: ScrollUtils.TrackpadStyleTarget, oldLongTouch: Bool = false, chrome: Bool = false,
-                          takesRecordOff: Bool? = nil, safariFlick: Bool = false,
+                          takesRecordOff: Bool? = nil,
                           file: StaticString = #filePath, line: UInt = #line) throws -> (frames: [PostedFrame], session: ScrollSystemLog.Session?, asked: Int) {
         let context = ScrollDispatchContext()
         let poster = ScrollPoster(phases: ScrollPhase(), dispatchContext: context)
@@ -1253,7 +1252,6 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         if let takesRecordOff = takesRecordOff {
             poster.hardwareRecordComesOff = { takesRecordOff }
         }
-        poster.usesSafariFlick = safariFlick
         poster.isEventTargetingChrome = { _ in chrome }
         var asked = 0
         poster.trackpadStyleTarget = { _ in
@@ -2979,16 +2977,16 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         }
     }
 
-    /// EVALUATION SWITCH (goes with `TrackpadStyleEvaluation`). Over Safari with it: the
-    /// flick, as a Chromium-based app gets it, and no posted event carries the wheel
-    /// event's hardware record ("momentum began" least of all: with a record on it WebKit
-    /// replaces the glide by its own). Where the record does not come off, the switch does
-    /// nothing: Safari gets no phases. Without the switch Safari gets no phases; the
-    /// DuckDuckGo browser and the apps where a wheel stays a wheel never get any.
-    func testTheRealPath_overSafariWithItsSwitch_postsAFlickWithoutTheHardwareRecord() throws {
+    /// Over Safari (and the DuckDuckGo browser): the flick, as a Chromium-based app gets it,
+    /// and no posted event carries the wheel event's hardware record ("momentum began" least
+    /// of all: with a record on it WebKit replaces the glide by its own). Seen on the
+    /// owner's screen for Safari. Where the record does not come off (before macOS 27, a
+    /// failed self-test): no phases at all, as with the switch off. An app where a wheel
+    /// stays a wheel never gets phases.
+    func testTheRealPath_overSafari_postsAFlickWithoutTheHardwareRecord() throws {
         try withSettings(switchOn: true) {
             if ScrollHardwareRecord.comesOff {
-                let result = try oneClick(over: .safari, safariFlick: true)
+                let result = try oneClick(over: .safari)
                 XCTAssertEqual(phaseRuns(result.frames), [
                     "began ×1", "changed ×1", "ended ×1", "momentumBegan ×1", "momentumChanged ×23", "momentumEnded ×1",
                 ])
@@ -2997,71 +2995,14 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
                 try assertOwnFields(result.frames)
                 XCTAssertEqual(result.session?.flick, true)
             }
-            let noRemoval = try oneClick(over: .safari, takesRecordOff: false, safariFlick: true)
-            XCTAssertFalse(noRemoval.frames.contains { $0.hasPhase }, "the record does not come off: no phases, whatever the switch says")
+            let noRemoval = try oneClick(over: .safari, takesRecordOff: false)
+            XCTAssertFalse(noRemoval.frames.contains { $0.hasPhase }, "the record does not come off: no phases")
+            XCTAssertTrue(noRemoval.frames.allSatisfy { $0.timestamp == Self.wheelTime }, "the switch-off stream")
             XCTAssertEqual(noRemoval.session?.trackpadStyleWithheld, true)
 
-            let withoutTheSwitch = try oneClick(over: .safari)
-            XCTAssertFalse(withoutTheSwitch.frames.contains { $0.hasPhase })
-            XCTAssertEqual(withoutTheSwitch.session?.trackpadStyleWithheld, true)
-
-            let otherPlainApp = try oneClick(over: .plainScrolling, safariFlick: true)
-            XCTAssertFalse(otherPlainApp.frames.contains { $0.hasPhase }, "the switch is Safari's alone")
+            let listed = try oneClick(over: .plainScrolling)
+            XCTAssertFalse(listed.frames.contains { $0.hasPhase })
         }
-    }
-
-    /// The hardware record's self-test is a private call. For a user who has "Trackpad-style
-    /// scrolling" off it never runs: nobody asks whether the record comes off, not a wheel
-    /// event, not a display frame, not a stop (over Chrome either), through the poster as
-    /// the app makes it. With the switch on it is not asked either where no frame carries
-    /// phases: over Safari and the other apps that are left alone, and for a sideways
-    /// scroll. The first wheel event whose frames carry phases asks.
-    func testTheRealPath_switchOff_nobodyAsksWhetherTheHardwareRecordComesOff() throws {
-        func asked(_ body: () throws -> Void) rethrows -> Int {
-            let before = ScrollHardwareRecord.timesAskedForTests
-            try body()
-            return ScrollHardwareRecord.timesAskedForTests - before
-        }
-        try withSettings(switchOn: false) {
-            XCTAssertEqual(try asked { _ = try oneClick(over: .touchOnly) }, 0, "off")
-            XCTAssertEqual(try asked { _ = try oneClick(over: .followsGlide, chrome: true) }, 0, "off, over Chrome, with its \"ended\" at the stop")
-            XCTAssertEqual(try asked { _ = try oneClick(over: .safari, safariFlick: true) }, 0, "off, also with Safari's evaluation switch set")
-            XCTAssertEqual(try asked {
-                let run = realRun(over: .touchOnly)
-                XCTAssertTrue(try run.wheel(at: 0, y: 0, x: 211.68))
-                XCTAssertTrue(try run.wheel(at: 0.1))
-                run.run(until: 2)
-                run.poster.updateShifting(enable: true)
-                run.poster.stop(reason: .leftClick)
-                _ = run.finish()
-            }, 0, "off: several wheel events, both axes, the sideways key, a click")
-        }
-        try withSettings(switchOn: true) {
-            XCTAssertEqual(try asked { _ = try oneClick(over: .plainScrolling) }, 0, "on, an app that is left alone")
-            XCTAssertEqual(try asked { _ = try oneClick(over: .safari) }, 0, "on, Safari without its switch")
-            XCTAssertEqual(try asked {
-                let run = realRun(over: .touchOnly)
-                XCTAssertTrue(try run.wheel(at: 0, y: 0, x: 211.68))
-                run.run(until: 2)
-                _ = run.finish()
-            }, 0, "on, a sideways scroll")
-            XCTAssertGreaterThan(try asked { _ = try oneClick(over: .touchOnly) }, 0, "on, frames with phases: asked")
-            XCTAssertGreaterThan(try asked { _ = try oneClick(over: .safari, safariFlick: true) }, 0, "on, Safari with its switch: asked")
-        }
-        let own = Application(path: "/Applications/Editor.app")
-        own.inherit = false
-        own.scroll.smoothSimTrackpad = true
-        let inherits = Application(path: "/Applications/Other.app")
-        inherits.inherit = true
-        inherits.scroll.smoothSimTrackpad = true
-        var global = OPTIONS_SCROLL_DEFAULT()
-        global.smoothSimTrackpad = false
-        // What decides whether the self-test runs at launch.
-        XCTAssertFalse(ScrollPoster.trackpadStyleIsOnSomewhere(global: global, applications: []), "off everywhere: not at launch")
-        XCTAssertFalse(ScrollPoster.trackpadStyleIsOnSomewhere(global: global, applications: [inherits]), "an app that uses the Scrolling pane's settings does not count")
-        XCTAssertTrue(ScrollPoster.trackpadStyleIsOnSomewhere(global: global, applications: [inherits, own]), "on for one app")
-        global.smoothSimTrackpad = true
-        XCTAssertTrue(ScrollPoster.trackpadStyleIsOnSomewhere(global: global, applications: []), "on in the Scrolling pane")
     }
 
     /// With the switch off Chrome gets an "ended" at every stop (from Mos: "only [4, 0] lets

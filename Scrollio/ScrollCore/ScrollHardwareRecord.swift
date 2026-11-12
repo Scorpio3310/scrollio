@@ -216,6 +216,19 @@ enum ScrollHardwareRecord {
         }
     }
 
+    /// The line for the `app` log at launch about Safari and the DuckDuckGo browser.
+    /// `outcome`: what the self-test found, nil when it has not run (the switch is off
+    /// everywhere: nothing asks for it at launch).
+    static func webKitLine(_ outcome: Outcome?) -> String {
+        let what: String
+        switch outcome {
+        case .some(.comesOff): what = "the flick, without the hardware record"
+        case .some: what = "no phases, as with the switch off: the hardware record does not come off a frame here"
+        case .none: what = "the flick where the hardware record comes off a frame, no phases where it does not (asked at the first scroll with the switch on)"
+        }
+        return "Trackpad-style scrolling, Safari and DuckDuckGo: \(what)"
+    }
+
     /// Balances a +1 reference (`CGEventCopyIOHIDEvent`, `IOHIDEventCreateScrollEvent`).
     private static func release(_ record: UnsafeMutableRawPointer) {
         Unmanaged<AnyObject>.fromOpaque(record).release()
