@@ -91,9 +91,10 @@ extension KeyRecorderDelegate {
 class KeyRecorder: NSObject {
 
     // MARK: - Constants
-    static let TIMEOUT: TimeInterval = 10.0
-    /// The timeout of this recorder: `TIMEOUT` in the app, shorter in tests.
-    var timeout: TimeInterval = KeyRecorder.TIMEOUT
+    /// How long a recording waits for a key: 10 s in the app, shorter in tests. The one
+    /// place that says it: whoever needs the time asks the recorder it was handed, so a
+    /// test that shortens this shortens every wait that depends on it.
+    var timeout: TimeInterval = 10.0
     private static let recordedFeedbackDelay: TimeInterval = 0.7
     private static let duplicateFeedbackDelay: TimeInterval = 1.0
     static let FLAG_CHANGE_NOTI_NAME = NSNotification.Name("RECORD_FLAG_CHANGE_NOTI_NAME")

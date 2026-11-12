@@ -6,20 +6,20 @@ import XCTest
 /// key — mirroring the existing `deadZone` nil-guard.
 ///
 /// `UserDefaults.double(forKey:)` returns `0.0` (not `nil`) for a missing key,
-/// which previously stomped those defaults. `speed == 0.0` is especially bad:
-/// `ScrollPoster.update` scales the smoothing buffer by `speed`
-/// (`buffer.y += y * speed * amplification`), so with a zero speed the buffer
-/// never accumulates and no smoothed event is ever posted — scrolling in the
-/// affected app dies entirely.
+/// which previously stomped those defaults. `speed == 0.0` is especially bad: every
+/// event's distance is multiplied by the speed (`ScrollCore.posterInput`), so with a
+/// zero speed nothing ever moves and scrolling in the affected app dies entirely.
+///
+/// The settings are read from a store of the test's own (`Options.defaults`), never from
+/// the debug app's real preferences.
 final class OptionsScrollDefaultsTests: XCTestCase {
 
-    private let defaults = UserDefaults.standard
-
-    // UserDefaults keys touched by these tests, restored 1:1 in tearDown.
-    private var defaultsSnapshots: [(key: String, original: Any?)] = []
+    private var defaults: UserDefaults!
     // In-memory snapshot of every scroll field readOptions() writes, so the
     // shared singleton is left exactly as we found it.
     private var scrollSnapshot: ScrollSnapshot?
+    // Everything else `readOptions()` replaces (bindings, apps, gestures, the mice).
+    private var otherSettings: OptionsSnapshot?
 
     private let expectedStep = OPTIONS_SCROLL_DEFAULT().step         // 33.6
     private let expectedSpeed = OPTIONS_SCROLL_DEFAULT().speed       // 6.30
@@ -121,33 +121,30 @@ final class OptionsScrollDefaultsTests: XCTestCase {
     override func setUp() {
         super.setUp()
         scrollSnapshot = ScrollSnapshot(of: Options.shared.scroll)
+        otherSettings = OptionsSnapshot()
+        defaults = TestDefaults.make(for: self)
+        Options.shared.defaults = defaults
     }
 
     override func tearDown() {
-        // Restore UserDefaults first, then write the captured in-memory values
-        // back into the shared singleton.
-        for snapshot in defaultsSnapshots {
-            if let original = snapshot.original {
-                defaults.set(original, forKey: snapshot.key)
-            } else {
-                defaults.removeObject(forKey: snapshot.key)
-            }
-        }
-        defaultsSnapshots.removeAll()
+        // The app's own store first, then the captured in-memory values back into the
+        // shared singleton (written nowhere: under XCTest the real preferences never are).
+        Options.shared.defaults = .standard
+        defaults = nil
         scrollSnapshot?.restore(into: Options.shared.scroll)
         scrollSnapshot = nil
+        otherSettings?.restore()
+        otherSettings = nil
         super.tearDown()
     }
 
     // MARK: - Helpers
 
     private func snapshotUserDefaultsAndRemove(_ key: String) {
-        defaultsSnapshots.append((key: key, original: defaults.object(forKey: key)))
         defaults.removeObject(forKey: key)
     }
 
     private func snapshotUserDefaultsAndSet(_ key: String, to value: Any) {
-        defaultsSnapshots.append((key: key, original: defaults.object(forKey: key)))
         defaults.set(value, forKey: key)
     }
 

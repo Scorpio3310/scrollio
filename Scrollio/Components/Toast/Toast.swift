@@ -21,11 +21,6 @@ import Cocoa
 /// Toast.show("当前设备不支持此功能", style: .warning)
 /// Toast.dismissAll()
 /// ```
-///
-/// 集成 Debug 面板:
-/// ```swift
-/// menu.addItem(Toast.debugMenuItem())
-/// ```
 struct Toast {
 
     /// 提示样式
@@ -96,15 +91,5 @@ struct Toast {
         DispatchQueue.main.async {
             ToastPanel.shared.show()
         }
-    }
-
-    /// 返回可直接加入菜单的 Debug 面板入口 MenuItem
-    ///
-    /// 内部自包含 target/action/icon/title, 调用方无需额外配置。
-    /// ```swift
-    /// menu.addItem(Toast.debugMenuItem())
-    /// ```
-    static func debugMenuItem() -> NSMenuItem {
-        return ToastPanel.shared.createMenuItem()
     }
 }

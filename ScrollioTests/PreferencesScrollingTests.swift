@@ -20,7 +20,6 @@ final class PreferencesScrollingTests: XCTestCase {
     private var originalScroll: OPTIONS_SCROLL_DEFAULT!
     private var originalThumbWheel = ThumbWheelSettings.default
     private var uiDefaults: UserDefaults!
-    private var uiDefaultsSuite = ""
 
     override func setUp() {
         super.setUp()
@@ -29,15 +28,13 @@ final class PreferencesScrollingTests: XCTestCase {
         // A fresh container, so the tests never edit the one they restore.
         Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
         Options.shared.thumbWheel = .default
-        uiDefaultsSuite = "ScrollioTests.scrolling.\(UUID().uuidString)"
-        uiDefaults = UserDefaults(suiteName: uiDefaultsSuite)
+        uiDefaults = TestDefaults.make(for: self)
     }
 
     override func tearDown() {
         Options.shared.scroll = originalScroll
         Options.shared.thumbWheel = originalThumbWheel
         originalScroll = nil
-        uiDefaults.removePersistentDomain(forName: uiDefaultsSuite)
         uiDefaults = nil
         super.tearDown()
     }
@@ -535,7 +532,7 @@ final class PreferencesScrollingTests: XCTestCase {
 
     // MARK: - Values off the grid
 
-    /// The owner tuned Speed and Duration by feel; the new steps must not move them.
+    /// Speed and Duration tuned by feel (values off the sliders' steps): the steps must not move them.
     func testStoredValuesOffTheGridAreShownAndNeverRewritten() throws {
         let scroll = Options.shared.scroll
         scroll.speed = 6.31
@@ -2007,30 +2004,23 @@ final class PreferencesScrollingRenderTests: XCTestCase {
 
     private var originalScroll: OPTIONS_SCROLL_DEFAULT!
     private var uiDefaults: UserDefaults!
-    private var uiDefaultsSuite = ""
 
     override func setUp() {
         super.setUp()
         originalScroll = Options.shared.scroll
         Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
-        uiDefaultsSuite = "ScrollioTests.scrolling-render.\(UUID().uuidString)"
-        uiDefaults = UserDefaults(suiteName: uiDefaultsSuite)
+        uiDefaults = TestDefaults.make(for: self)
     }
 
     override func tearDown() {
         Options.shared.scroll = originalScroll
         originalScroll = nil
-        uiDefaults.removePersistentDomain(forName: uiDefaultsSuite)
         uiDefaults = nil
         super.tearDown()
     }
 
     func testRenderTheTab() throws {
-        guard let folder = ProcessInfo.processInfo.environment["SCROLLIO_SHOTS_DIR"], !folder.isEmpty else {
-            throw XCTSkip("set TEST_RUNNER_SCROLLIO_SHOTS_DIR to render the Scrolling tab")
-        }
-        let directory = URL(fileURLWithPath: folder, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let directory = try RenderShots.directory(for: "the Scrolling tab")
         let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesScrollingViewController.self))
         let key = PreferencesScrollingViewController.advancedExpandedDefaultsKey
 

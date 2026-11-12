@@ -45,10 +45,7 @@ final class PreferencesSidebarTests: XCTestCase {
     }
 
     private func makeDefaults() -> UserDefaults {
-        let suite = "ScrollioTests.preferences-window.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
-        return defaults
+        return TestDefaults.make(for: self)
     }
 
     private func titles(in sidebar: PreferencesSidebarViewController) -> [String?] {
@@ -584,9 +581,7 @@ final class PreferencesTextSizeTests: XCTestCase {
         // The Scrolling tab with "Advanced" open, so every row is looked at.
         let scrolling = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
             .instantiateController(withIdentifier: PANEL_IDENTIFIER.scrolling) as! PreferencesScrollingViewController
-        let suite = "ScrollioTests.text-size.\(UUID().uuidString)"
-        let uiDefaults = UserDefaults(suiteName: suite)!
-        addTeardownBlock { uiDefaults.removePersistentDomain(forName: suite) }
+        let uiDefaults = TestDefaults.make(for: self)
         uiDefaults.set(true, forKey: PreferencesScrollingViewController.advancedExpandedDefaultsKey)
         scrolling.uiStateDefaults = uiDefaults
         _ = scrolling.view
@@ -648,10 +643,8 @@ final class PreferencesKeyboardAccessibilityTests: XCTestCase {
     }
 
     private func makeDefaults() -> UserDefaults {
-        let suite = "ScrollioTests.preferences-keyboard.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
+        let defaults = TestDefaults.make(for: self)
         defaults.set(true, forKey: PreferencesScrollingViewController.advancedExpandedDefaultsKey)
-        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         return defaults
     }
 

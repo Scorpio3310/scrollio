@@ -25,6 +25,10 @@ final class InputProcessorTests: XCTestCase {
         MouseInteractionSessionController.shared.clearAllSessions()
         ShortcutExecutor.shared.setTestingMouseEventObserver()
         ShortcutExecutor.shared.setTestingKeyboardShortcutObserver()
+        // A wheel event a test sends through the scroll tap's callback stops here: without
+        // an observer it went on to the shared scroll poster, which made and started a real
+        // display link and left a glide running across the following tests.
+        ScrollCore.posterInputObserverForTests = { _ in }
         InputProcessor.shared.clearActiveBindings()
         ScrollCore.shared.dashScroll = false
         ScrollCore.shared.dashAmplification = 1.0
@@ -53,6 +57,7 @@ final class InputProcessorTests: XCTestCase {
         MouseInteractionSessionController.shared.clearTestingMotionTapHooks()
         ShortcutExecutor.shared.clearTestingMouseEventObserver()
         ShortcutExecutor.shared.clearTestingKeyboardShortcutObserver()
+        ScrollCore.posterInputObserverForTests = nil
         MouseGesturePointerLock.shared.clearTestingDriver()
         Options.shared.gesture = .default
         Options.shared.buttons.binding = []

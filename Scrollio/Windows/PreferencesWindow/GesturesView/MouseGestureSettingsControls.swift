@@ -366,7 +366,7 @@ final class MouseGestureSettingsControls: NSObject {
             (
                 category: entry.category,
                 shortcuts: entry.shortcuts.filter {
-                    $0.isAvailable && $0.identifier != SystemShortcut.mouseGestureNavigation.identifier
+                    $0.identifier != SystemShortcut.mouseGestureNavigation.identifier
                 }
             )
         }

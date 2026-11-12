@@ -20,7 +20,6 @@ final class PreferencesApplicationTests: XCTestCase {
     private var originalAllowlist = false
     private var originalScroll: OPTIONS_SCROLL_DEFAULT!
     private var uiDefaults: UserDefaults!
-    private var uiDefaultsSuite = ""
 
     private static let calculator = "/System/Applications/Calculator.app"
     private static let calculatorProgram = "/System/Applications/Calculator.app/Contents/MacOS/Calculator"
@@ -35,8 +34,7 @@ final class PreferencesApplicationTests: XCTestCase {
         // Fresh containers, so the tests never edit the ones they restore.
         Options.shared.application.applications = Self.makeStore()
         Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
-        uiDefaultsSuite = "ScrollioTests.apps.\(UUID().uuidString)"
-        uiDefaults = UserDefaults(suiteName: uiDefaultsSuite)
+        uiDefaults = TestDefaults.make(for: self)
         uiDefaults.set(false, forKey: PreferencesScrollingViewController.advancedExpandedDefaultsKey)
     }
 
@@ -46,7 +44,6 @@ final class PreferencesApplicationTests: XCTestCase {
         Options.shared.scroll = originalScroll
         originalApplications = nil
         originalScroll = nil
-        uiDefaults.removePersistentDomain(forName: uiDefaultsSuite)
         uiDefaults = nil
         super.tearDown()
     }

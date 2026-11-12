@@ -142,18 +142,19 @@ final class LogiButtonDeliveryModeTests: XCTestCase {
             "LogiBLEStandardUndivertGuardInterval": 0.001,
             "LogiBLEStandardButtonsNativeFirst": false,
         ]
+        // In memory only (the argument domain, which every read of the app's preferences
+        // looks at first): a reader would see the values, and nothing is written to the
+        // debug app's real preferences.
         let defaults = UserDefaults.standard
-        let originals = stored.keys.map { ($0, defaults.object(forKey: $0)) }
-        for (key, value) in stored { defaults.set(value, forKey: key) }
+        let arguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+        defaults.removeVolatileDomain(forName: UserDefaults.argumentDomain)
+        defaults.setVolatileDomain(arguments.merging(stored) { _, new in new }, forName: UserDefaults.argumentDomain)
         defer {
-            for (key, original) in originals {
-                if let original {
-                    defaults.set(original, forKey: key)
-                } else {
-                    defaults.removeObject(forKey: key)
-                }
-            }
+            defaults.removeVolatileDomain(forName: UserDefaults.argumentDomain)
+            defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
         }
+        XCTAssertTrue(defaults.bool(forKey: "LogiBLEStandardUndivertGuardEnabled"), "a reader of the preferences would see it")
+        XCTAssertEqual(defaults.double(forKey: "LogiBLEStandardUndivertGuardInterval"), 0.001)
 
         let policy = LogiButtonDeliveryPolicy.default
         XCTAssertFalse(policy.standardButtonUndivertGuardEnabled)

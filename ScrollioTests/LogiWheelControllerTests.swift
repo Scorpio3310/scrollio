@@ -549,8 +549,9 @@ final class LogiWheelControllerTests: XCTestCase {
         XCTAssertTrue(logs.contains { $0.hasPrefix("Scroll force:") && $0.hasSuffix("already set, no write") })
     }
 
-    /// The owner's settings from before the values were optional: everything already on the mouse.
-    func testTheOwnersStoredSettingsWriteNothingToHisMouse() {
+    /// Settings stored before the values were optional (as on the Mac the wheel code was
+    /// written on): everything is already on the mouse.
+    func testSettingsStoredBeforeTheValuesWereOptionalWriteNothing() {
         let stored = LogiWheelSettings(managedByScrollio: true, mode: .smartShift, smartShiftSensitivity: 51, scrollForce: 100)
         _ = connectedEnhanced(stored, status: [0x02, 0x10, 100])
         XCTAssertTrue(writes.isEmpty)

@@ -256,4 +256,34 @@ final class ScrollCoreEnableTests: XCTestCase {
         XCTAssertEqual(system.switches.count, switchesBefore)
         XCTAssertEqual(cleanedUp, 1)
     }
+
+    // MARK: - Scrollio's own events
+
+    /// The scroll tap also sees the frames Scrollio posts itself; they carry a mark. Such
+    /// an event passes as it is and is not smoothed a second time. With the mark ignored
+    /// every posted frame would feed the smoothing again, and only a test of the Welcome
+    /// Guide noticed.
+    func testAnEventScrollioPostedItselfPassesTheScrollTapAndIsNotSmoothedAgain() throws {
+        var inputs = 0
+        ScrollCore.posterInputObserverForTests = { _ in inputs += 1 }
+        defer { ScrollCore.posterInputObserverForTests = nil }
+        let proxy = CGEventTapProxy(bitPattern: 1)!
+        func wheelEvent() throws -> CGEvent {
+            return try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 3, wheel2: 0, wheel3: 0))
+        }
+
+        // The control: the same event without the mark is taken for smoothing.
+        _ = ScrollCore.shared.scrollEventCallBack(proxy, .scrollWheel, try wheelEvent(), nil)
+        try XCTSkipIf(inputs == 0, "smoothing is off for the app in front, so there is nothing to tell apart")
+        XCTAssertEqual(inputs, 1)
+
+        let own = try wheelEvent()
+        ScrollUtils.shared.markSyntheticSmoothEvent(own)
+        XCTAssertTrue(ScrollUtils.shared.isSyntheticSmoothEvent(own))
+        let result = ScrollCore.shared.scrollEventCallBack(proxy, .scrollWheel, own, nil)
+
+        XCTAssertEqual(inputs, 1, "not smoothed again")
+        XCTAssertTrue(result?.takeUnretainedValue() === own, "it passes")
+        XCTAssertEqual(own.getIntegerValueField(.scrollWheelEventDeltaAxis1), 3, "unchanged")
+    }
 }

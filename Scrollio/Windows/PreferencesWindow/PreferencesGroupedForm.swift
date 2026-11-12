@@ -809,7 +809,7 @@ final class PreferencesSlider: NSSlider {
             onPressEndedWithoutAction?()
             return
         }
-        sendAction(action, to: target)
+        _ = sendAction(action, to: target)
     }
 
     /// NSSlider tracks the mouse in here until the button goes up. A slider that is off
@@ -855,7 +855,7 @@ final class PreferencesSlider: NSSlider {
         let next = scale.stepped(from: doubleValue, by: steps, in: range)
         guard next != doubleValue else { return false }
         doubleValue = next
-        sendAction(action, to: target)
+        _ = sendAction(action, to: target)
         return true
     }
 

@@ -1318,7 +1318,7 @@ final class BatteryWatcherTests: XCTestCase {
         watcher.check()
     }
 
-    func testTheOwnersMouseIsFine() {
+    func testAMouseAtThreeQuartersIsFine() {
         report(MouseDeviceFixtures.battery(75))
         XCTAssertEqual(toasts, [])
     }
@@ -1562,5 +1562,119 @@ final class SecondaryWindowNamingTests: XCTestCase {
                 XCTAssertFalse(text.contains(jargon), "\(jargon) in \(text)")
             }
         }
+    }
+}
+
+// MARK: - What the Mac tells the app while it runs
+
+/// `AppDelegate.registerObservers`: which notification leads where. The launch code that
+/// calls it does not run under XCTest, so nothing noticed a missing or miswired observer
+/// (sleep that does not stop the event taps, a lost access nobody hears of). Here the
+/// observers are registered on centers of the test's own and lead to a controller whose
+/// cores are fakes.
+final class AppDelegateObserverTests: XCTestCase {
+
+    private final class World {
+        var access = true
+        var log: [String] = []
+    }
+
+    private var world: World!
+    private var controller: AppRunController!
+    private var delegate: AppDelegate!
+    private let workspace = NotificationCenter()
+    private let app = NotificationCenter()
+    private let distributed = NotificationCenter()
+
+    override func setUp() {
+        super.setUp()
+        let world = World()
+        self.world = world
+        controller = AppRunController(environment: AppRunController.Environment(
+            hasAccess: { world.access },
+            startCores: { world.log.append("start"); return true },
+            stopCores: { world.log.append("stop") },
+            showWelcomeGuide: { world.log.append("guide") },
+            showAccessLostToast: { world.log.append("toast") }
+        ))
+        delegate = AppDelegate()
+        delegate.runController = controller
+        delegate.registerObservers(workspace: workspace, app: app, distributed: distributed)
+        controller.start()
+        XCTAssertEqual(world.log, ["start"])
+        XCTAssertTrue(controller.coresActive)
+        world.log = []
+    }
+
+    override func tearDown() {
+        // No timer of the controller may outlive a test.
+        controller.stop()
+        for center in [workspace, app, distributed] {
+            center.removeObserver(delegate as Any)
+        }
+        delegate = nil
+        controller = nil
+        world = nil
+        super.tearDown()
+    }
+
+    func testSleepStopsTheCoresAndWakeStartsThem() {
+        workspace.post(name: NSWorkspace.willSleepNotification, object: nil)
+        XCTAssertEqual(world.log, ["stop"])
+        XCTAssertFalse(controller.coresActive)
+
+        workspace.post(name: NSWorkspace.didWakeNotification, object: nil)
+        XCTAssertEqual(world.log, ["stop", "start"])
+        XCTAssertTrue(controller.coresActive)
+    }
+
+    func testAnotherUserTakingTheMacStopsTheCoresAndComingBackStartsThem() {
+        workspace.post(name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
+        XCTAssertEqual(world.log, ["stop"])
+        XCTAssertFalse(controller.isSessionActive)
+
+        // A wake while the other user has the Mac starts nothing.
+        workspace.post(name: NSWorkspace.didWakeNotification, object: nil)
+        XCTAssertEqual(world.log, ["stop"])
+
+        workspace.post(name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
+        XCTAssertEqual(world.log, ["stop", "start"])
+        XCTAssertTrue(controller.coresActive)
+    }
+
+    /// An event tap that finds the access gone posts this; the cores stop at once.
+    func testALostAccessStopsTheCores() {
+        world.access = false
+        app.post(name: .scrollioAccessibilityPermissionLost, object: nil)
+        XCTAssertEqual(world.log.first, "stop")
+        XCTAssertTrue(world.log.contains("toast"))
+        XCTAssertFalse(controller.coresActive)
+    }
+
+    /// The Accessibility list of System Settings changed: the access is looked at half a
+    /// second later, not at the event taps' next look.
+    func testAChangeOfTheAccessibilityListIsLookedAtShortlyAfter() {
+        world.access = false
+        distributed.post(name: AppDelegate.accessibilityListChangedNotification, object: nil)
+        XCTAssertEqual(world.log, [], "not before macOS can answer")
+
+        let looked = expectation(description: "the access was looked at")
+        DispatchQueue.main.asyncAfter(deadline: .now() + AppDelegate.accessibilityCheckDelay + 0.1) { looked.fulfill() }
+        wait(for: [looked], timeout: 5)
+        XCTAssertEqual(world.log.first, "stop")
+        XCTAssertFalse(controller.coresActive)
+    }
+
+    /// The Welcome Guide reports the grant through the delegate.
+    func testTheGrantReportedByTheGuideReachesTheController() {
+        world.access = false
+        app.post(name: .scrollioAccessibilityPermissionLost, object: nil)
+        XCTAssertFalse(controller.coresActive)
+        world.log = []
+
+        world.access = true
+        delegate.accessibilityPermissionWasGranted()
+        XCTAssertEqual(world.log, ["start"])
+        XCTAssertTrue(controller.coresActive)
     }
 }

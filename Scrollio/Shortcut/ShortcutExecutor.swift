@@ -832,7 +832,13 @@ class ShortcutExecutor {
         qos: .userInitiated
     )
 
+    /// Whether "Open App or File…" opens anything. Off under XCTest unless a test switches
+    /// it on: a binding pressed in a test starts no app, opens no file and runs no script
+    /// on the Mac the tests run on.
+    var opensTargets = !AppRuntime.isRunningXCTest
+
     private func executeOpenTarget(_ payload: OpenTargetPayload) {
+        guard opensTargets else { return }
         // CRITICAL: dispatch to background queue.
         // 调用栈: ButtonCore CGEvent tap → InputProcessor → ShortcutExecutor.execute(action:phase:).
         // CGEvent tap 有严格的回调延迟约束 (默认 1s 超时), 超时后系统会自动禁用 tap, 整个

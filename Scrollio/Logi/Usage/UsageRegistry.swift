@@ -55,11 +55,6 @@ final class UsageRegistry {
         return sources.compactMap { $0.value.contains(code) ? $0.key : nil }
     }
 
-    var aggregatedCacheIsEmpty: Bool {
-        if aggregatedDirty { return sources.values.allSatisfy { $0.isEmpty } }
-        return aggregatedCache.isEmpty
-    }
-
     /// Re-applies the current usage to every session on the next coalesced pass. For
     /// state the sessions read when they apply usage but that is not a usage itself
     /// (which diverted buttons the mouse should track, see LogiCenter.setGestureTrackingCodes).

@@ -158,26 +158,25 @@ final class OptionsButtonsLoaderTests: XCTestCase {
 
     // MARK: - Test isolation
 
+    /// Under XCTest nothing is ever saved to the debug app's real preferences, whatever a
+    /// test changes: the stored bindings are the same object before and after a change, a
+    /// flush and a full save. (The test only compares; it writes nothing there itself.)
     func testSaveOptionsDoesNotPersistButtonBindingsWhileRunningTests() {
-        let defaults = UserDefaults.standard
+        XCTAssertTrue(Options.shared.defaults === UserDefaults.standard, "the app's own store unless a test passes one")
         let key = OptionItem.Button.Bindings
-        let originalValue = defaults.object(forKey: key)
-        let sentinel = "test-sentinel".data(using: .utf8)!
-        let originalBindings = Options.shared.buttons
+        let before = UserDefaults.standard.object(forKey: key) as? NSObject
+        let originalBindings = Options.shared.buttons.binding
+        defer { Options.shared.buttons.binding = originalBindings }
 
-        defaults.set(sentinel, forKey: key)
-        defer {
-            Options.shared.buttons = originalBindings
-            if let originalValue {
-                defaults.set(originalValue, forKey: key)
-            } else {
-                defaults.removeObject(forKey: key)
-            }
-        }
-
+        var flushed: [Set<OptionsGroup>] = []
+        Options.shared.onFlushForTests = { flushed.append($0) }
+        defer { Options.shared.onFlushForTests = nil }
         Options.shared.buttons.binding = [makeBinding()]
+        Options.shared.flushPendingSaves()
+        Options.shared.saveOptions()
 
-        XCTAssertEqual(defaults.data(forKey: key), sentinel)
+        XCTAssertTrue(flushed.contains { $0.contains(.buttons) }, "the save was due")
+        XCTAssertEqual(UserDefaults.standard.object(forKey: key) as? NSObject, before)
     }
 
     func testAppRuntimeDetectsXCTestEnvironment() {

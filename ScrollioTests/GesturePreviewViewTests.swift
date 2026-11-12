@@ -8,9 +8,9 @@
 //  dark. Nothing is shown on screen: windows are created but never ordered in, and frames
 //  are asked for by loop time, not waited for. Nothing runs a real action.
 //
-//  With GESTURE_PREVIEW_SHOTS set to a directory, `testContactSheets` also writes contact
-//  sheets of the demo there, for a look at the artwork:
-//  TEST_RUNNER_GESTURE_PREVIEW_SHOTS=/some/dir xcodebuild … test -only-testing:ScrollioTests/GesturePreviewViewTests/testContactSheets
+//  With the render tests' switch set (`RenderShots`), `testContactSheets` also writes contact
+//  sheets of the demo into `gesture-preview` in that folder, for a look at the artwork:
+//  TEST_RUNNER_SCROLLIO_SHOTS_DIR=/some/dir xcodebuild … test -only-testing:ScrollioTests/GesturePreviewViewTests/testContactSheets
 //
 
 import XCTest
@@ -539,32 +539,57 @@ final class GesturePreviewViewTests: XCTestCase {
 
     /// The desktop is redrawn at most once per frame that changes it; a desktop at rest is
     /// cheap enough to draw on every display refresh while it moves.
+    ///
+    /// Measured against a reference drawn the same way in the same moments (a plain card of
+    /// the same size: one gradient, one rounded outline), not against the clock: the limit
+    /// of 8 ms per frame held on a fast Mac that was idle and said nothing true on a slow
+    /// or a busy one. The desktop cost 4.0 times the reference when this was written (three
+    /// runs: 3.99, 4.00, 4.01); three times that is the limit, the headroom the 8 ms gave.
     func testDrawingTheDesktopIsCheap() throws {
         let view = makeView()
         view.appearance = NSAppearance(named: .darkAqua)
         view.scene = scene(focus: .up)
-        let rep = try XCTUnwrap(view.screenCard.bitmapImageRepForCachingDisplay(in: view.screenCard.bounds))
+        let card = view.screenCard
+        let rep = try XCTUnwrap(card.bitmapImageRepForCachingDisplay(in: card.bounds))
+        let reference = ReferenceCard(frame: card.bounds)
+        let referenceRep = try XCTUnwrap(reference.bitmapImageRepForCachingDisplay(in: reference.bounds))
         let loop = view.loop
         let frames = 120
-        let start = CFAbsoluteTimeGetCurrent()
+        var desktopTime: CFAbsoluteTime = 0
+        var referenceTime: CFAbsoluteTime = 0
         for index in 0..<frames {
             view.showLoop(at: loop.length * Double(index) / Double(frames))
-            view.screenCard.cacheDisplay(in: view.screenCard.bounds, to: rep)
+            let start = CFAbsoluteTimeGetCurrent()
+            card.cacheDisplay(in: card.bounds, to: rep)
+            let middle = CFAbsoluteTimeGetCurrent()
+            reference.cacheDisplay(in: reference.bounds, to: referenceRep)
+            desktopTime += middle - start
+            referenceTime += CFAbsoluteTimeGetCurrent() - middle
         }
-        let perFrame = (CFAbsoluteTimeGetCurrent() - start) / Double(frames)
-        // Generous: an off-screen bitmap is slower than the screen, and test machines vary.
-        XCTAssertLessThan(perFrame, 0.008, "\(perFrame * 1000) ms per frame")
+        let ratio = desktopTime / referenceTime
+        XCTAssertLessThan(
+            ratio, 12,
+            "the desktop takes \(ratio) times the reference card "
+                + "(\(desktopTime / Double(frames) * 1000) ms and \(referenceTime / Double(frames) * 1000) ms per frame)"
+        )
+    }
+
+    /// What the desktop's drawing time is compared with.
+    private final class ReferenceCard: NSView {
+        override func draw(_ dirtyRect: NSRect) {
+            NSGradient(starting: .darkGray, ending: .black)?.draw(in: bounds, angle: 90)
+            NSColor.white.setStroke()
+            let outline = NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 4), xRadius: 10, yRadius: 10)
+            outline.lineWidth = 2
+            outline.stroke()
+        }
     }
 
     // MARK: - Contact sheets
 
-    /// Writes contact sheets of the demo when GESTURE_PREVIEW_SHOTS names a directory.
+    /// Writes contact sheets of the demo when the render tests are asked for (`RenderShots`).
     func testContactSheets() throws {
-        guard let path = ProcessInfo.processInfo.environment["GESTURE_PREVIEW_SHOTS"], !path.isEmpty else {
-            throw XCTSkip("GESTURE_PREVIEW_SHOTS is not set")
-        }
-        let directory = URL(fileURLWithPath: path, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let directory = try RenderShots.directory(for: "the gesture demo's contact sheets", subfolder: "gesture-preview")
 
         func write(_ name: String, _ scene: GesturePreviewScene, dark: Bool) throws {
             let sheet = try contactSheet(title: name, scene: scene, dark: dark)

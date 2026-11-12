@@ -48,11 +48,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
 
     override func setUpWithError() throws {
         try super.setUpWithError()
-        guard let folder = ProcessInfo.processInfo.environment["SCROLLIO_SHOTS_DIR"], !folder.isEmpty else {
-            throw XCTSkip("set TEST_RUNNER_SCROLLIO_SHOTS_DIR to render the Preferences window")
-        }
-        directory = URL(fileURLWithPath: folder, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        directory = try RenderShots.directory(for: "the Preferences window")
         try ForcedAppAccent.install()
         savedScroll = Options.shared.scroll
         savedMouse = Options.shared.logiMouse
@@ -333,7 +329,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try renderRowPictures()
     }
 
-    /// Which button is which: the owner's MX Master 4 over Bluetooth (Gesture Navigation on
+    /// Which button is which: an MX Master 4 over Bluetooth as its user set it up (Gesture Navigation on
     /// Button 6, a shortcut on Button 5, a screenshot on the mode shift button), a row of
     /// every part the drawing knows and a key, numbered buttons, and the card's answer
     /// after "+" ("That's …").
@@ -390,7 +386,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
-    /// "Which button is this?" on the owner's bindings (Gesture Navigation on Button 6, a
+    /// "Which button is this?" on the same bindings (Gesture Navigation on Button 6, a
     /// shortcut on Button 5, a screenshot on the mode shift button): before, with the
     /// picture under the pointer, and after Button 6 was said to be the gesture button and
     /// Button 5 the thumb panel (the rows, the card, "That's …", the Gestures pane's line),
@@ -1329,10 +1325,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
     // MARK: - Helpers
 
     private func uiDefaults(advanced: Bool) -> UserDefaults {
-        let suite = "ScrollioTests.window-render.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
+        let defaults = TestDefaults.make(for: self)
         defaults.set(advanced, forKey: PreferencesScrollingViewController.advancedExpandedDefaultsKey)
-        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         return defaults
     }
 

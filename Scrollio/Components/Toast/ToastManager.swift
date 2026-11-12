@@ -38,8 +38,11 @@ class ToastManager {
     /// The clock of the toasts' countdowns. Tests replace it.
     var now: () -> Date = { Date() }
 
-    /// Puts a new toast's panel on screen. Tests replace it: nothing is shown.
-    var orderFront: (NSPanel) -> Void = { $0.orderFrontRegardless() }
+    /// Puts a new toast's panel on screen. Under XCTest it does nothing, whatever a test
+    /// forgets to replace: no toast appears on the screen of whoever runs the tests.
+    var orderFront: (NSPanel) -> Void = AppRuntime.isRunningXCTest
+        ? { _ in }
+        : { $0.orderFrontRegardless() }
 
     /// 递增 ID 生成器
     private var nextId: UInt = 0

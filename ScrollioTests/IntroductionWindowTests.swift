@@ -57,8 +57,10 @@ private final class GuideWorld {
     var announcements: [String] = []
     var presentedHelp: [NSPopover] = []
 
-    let defaultsSuite = "ScrollioTests.welcomeGuide.\(UUID().uuidString)"
-    lazy var defaults = UserDefaults(suiteName: defaultsSuite)!
+    /// The guide's stored value, in a store of this world's own (a temporary folder that
+    /// goes with the world).
+    private let store = TestDefaults()
+    var defaults: UserDefaults { return store.defaults }
     lazy var progress = WelcomeGuideProgress(defaults: defaults)
 
     func makeController(flow: WelcomeGuideFlow? = nil, finished: Bool = false) -> IntroductionViewController {
@@ -99,7 +101,7 @@ private final class GuideWorld {
     }
 
     func tearDown() {
-        UserDefaults().removePersistentDomain(forName: defaultsSuite)
+        store.remove()
     }
 }
 
@@ -714,7 +716,7 @@ final class IntroductionWindowTests: XCTestCase {
     }
 
     /// The picture on a card: a mark where the wheel stops and a dot where the page comes to
-    /// rest. The owner found the five curves the cards had "very alike": each card's dot now
+    /// rest. The five curves the cards had before looked "very alike": each card's dot now
     /// rests clearly further from the mark than the one before. It is a rank, not a measure,
     /// so the cards must be in the order of their glide times.
     func testEachCardsDotRestsFurtherThanTheOneBefore() throws {
@@ -976,6 +978,85 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(controller.currentStep, .finish)
     }
 
+    /// The end of a step change comes from an animation's completion handler. When that
+    /// call never comes (seen with no display awake), the step still arrives a little after
+    /// the animations should have ended: Continue and Back used to stay dead until the
+    /// window was reopened.
+    func testAStepChangeWhoseAnimationNeverReportsItsEndStillArrives() {
+        world.accessGranted = true
+        world.run = .running
+        for reduceMotion in [false, true] {
+            world.reduceMotion = reduceMotion
+            let controller = world.makeController(flow: .full)
+            _ = makeEventWindow(for: controller)
+            // The changes are made; no completion handler is ever called.
+            controller.runAnimation = { changes, _ in
+                NSAnimationContext.runAnimationGroup { context in changes(context) }
+            }
+            controller.stepArrivalGrace = 0.05
+            let primary = controller.primaryButton!
+            realClick(primary, at: middle(of: primary))
+            XCTAssertEqual(controller.currentStep, .feel)
+            XCTAssertTrue(controller.isChangingStep)
+            realClick(primary, at: middle(of: primary))
+            XCTAssertEqual(controller.currentStep, .feel, "no press while the steps change")
+
+            let animations = reduceMotion
+                ? IntroductionViewController.crossfadeDuration
+                : IntroductionViewController.textOutDuration + IntroductionViewController.textInDuration
+            settle(animations + controller.stepArrivalGrace + 0.25)
+            XCTAssertFalse(controller.isChangingStep, "reduce motion \(reduceMotion)")
+            // The step that came is all there, the one that went is gone.
+            XCTAssertEqual(controller.feelStep.content.alphaValue, 1)
+            XCTAssertEqual(controller.feelStep.picture.alphaValue, 1)
+            XCTAssertEqual(controller.feelStep.content.frame.origin, .zero)
+            XCTAssertNil(controller.welcomeStep.content.superview)
+            XCTAssertNil(controller.welcomeStep.picture.superview)
+            realClick(primary, at: middle(of: primary))
+            XCTAssertEqual(controller.currentStep, .finish, "Continue works again, reduce motion \(reduceMotion)")
+        }
+    }
+
+    /// The safety timer belongs to one step change: another change that begins meanwhile
+    /// cancels it and gets its own, and a change that arrived leaves none.
+    func testTheSafetyTimerOfAStepChangeGoesWithIt() throws {
+        world.accessGranted = true
+        world.run = .running
+        let controller = world.makeController(flow: .full)
+        _ = makeEventWindow(for: controller)
+        controller.runAnimation = { changes, _ in
+            NSAnimationContext.runAnimationGroup { context in changes(context) }
+        }
+        XCTAssertNil(controller.stepArrivalTimer, "no change, no timer")
+        controller.go(by: 1)
+        let first = try XCTUnwrap(controller.stepArrivalTimer)
+        XCTAssertTrue(first.isValid)
+        let length = IntroductionViewController.textOutDuration + IntroductionViewController.textInDuration
+        XCTAssertEqual(first.fireDate.timeIntervalSinceNow, length + controller.stepArrivalGrace, accuracy: 0.2)
+
+        controller.go(by: 1)
+        XCTAssertEqual(controller.currentStep, .finish)
+        XCTAssertFalse(first.isValid, "the abandoned change's timer is cancelled")
+        let second = try XCTUnwrap(controller.stepArrivalTimer)
+        XCTAssertFalse(second === first)
+        XCTAssertTrue(controller.isChangingStep)
+
+        second.fire()
+        XCTAssertFalse(controller.isChangingStep)
+        XCTAssertNil(controller.stepArrivalTimer)
+        XCTAssertEqual(controller.finishStep.content.alphaValue, 1)
+        XCTAssertNil(controller.feelStep.content.superview)
+
+        // A change whose animations do report their end leaves no timer either.
+        controller.runAnimation = { changes, completion in
+            NSAnimationContext.runAnimationGroup { context in changes(context) }
+            completion()
+        }
+        controller.go(by: -1)
+        XCTAssertFalse(controller.isChangingStep)
+        XCTAssertNil(controller.stepArrivalTimer)
+    }
+
     /// The poll runs while the window shows; AppRunController's change is heard only then.
     func testThePollAndTheRunStateFollowTheWindow() {
         world.accessGranted = true
@@ -1163,7 +1244,7 @@ final class IntroductionWindowTests: XCTestCase {
         try assertTheStepsShareOneGrid()
     }
 
-    /// The owner found the feel step crammed in 620 pt (its parts 14 to 18 pt apart). The
+    /// The feel step looked crammed in 620 pt (its parts 14 to 18 pt apart). The
     /// window is 680 pt tall unless the screen cannot show that whole: then Continue would
     /// lie under the Dock, and the guide keeps the 620 pt it had.
     func testTheWindowIsRoomyUnlessTheScreenIsTooShort() {
@@ -1259,6 +1340,19 @@ final class IntroductionWindowTests: XCTestCase {
         IntroductionWindowController.style(window)
         // Pressed with the events that come out of the application's queue.
         controller.currentEvent = { NSApp.currentEvent }
+        // A step change's animations end by a timer here, not by AppKit's display link:
+        // with no display awake (a night run, a headless Mac) AppKit does not call an
+        // animation's completion handler in time, and the tests of presses during a change
+        // failed for that reason alone. The changes are still made inside an animation group.
+        controller.runAnimation = { changes, completion in
+            var duration: TimeInterval = 0
+            NSAnimationContext.runAnimationGroup { context in
+                changes(context)
+                duration = context.duration
+            }
+            let timer = Timer(timeInterval: duration, repeats: false) { _ in completion() }
+            RunLoop.main.add(timer, forMode: .common)
+        }
         window.contentViewController = controller
         window.putOutOfSight()
         addTeardownBlock {
@@ -1432,7 +1526,7 @@ final class IntroductionWindowTests: XCTestCase {
         return step.feelButtons.filter { $0.state == .on }.map(\.feel)
     }
 
-    /// The owner's report: "clicking a card selects it only sometimes". AppKit's radio cell
+    /// A report from use: "clicking a card selects it only sometimes". AppKit's radio cell
     /// took a click only on the title it would draw (47 × 16 pt left of the middle), not on
     /// the name drawn under the picture, the picture or the edges.
     func testAClickAnywhereOnAFeelCardChoosesItWhileTheDemoRuns() {
@@ -2319,11 +2413,7 @@ final class WelcomeGuideRenderTests: XCTestCase {
 
     override func setUpWithError() throws {
         try super.setUpWithError()
-        guard let folder = ProcessInfo.processInfo.environment["SCROLLIO_SHOTS_DIR"], !folder.isEmpty else {
-            throw XCTSkip("set TEST_RUNNER_SCROLLIO_SHOTS_DIR to render the Welcome Guide")
-        }
-        directory = URL(fileURLWithPath: folder, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        directory = try RenderShots.directory(for: "the Welcome Guide")
         // The drawings in the app's own purple, whatever accent this Mac's user chose.
         try ForcedAppAccent.install()
     }

@@ -92,9 +92,8 @@ class ShortcutManager {
             let subMenu = NSMenu(title: categoryName)
             subMenu.autoenablesItems = false
 
-            // 添加该分类下的所有快捷键到子菜单(过滤掉当前系统不支持的,保持原始顺序)
-            let availableShortcuts = shortcuts.filter { $0.isAvailable }
-            for shortcut in availableShortcuts {
+            // 添加该分类下的所有快捷键到子菜单 (保持原始顺序)
+            for shortcut in shortcuts {
                 let menuKeyEquivalent = shortcut.keyEquivalent
 
                 let shortcutMenuItem = NSMenuItem(
@@ -227,8 +226,7 @@ class ShortcutManager {
 
         let subMenu = NSMenu(title: categoryName)
         subMenu.autoenablesItems = false
-        let availableShortcuts = category.shortcuts.filter { $0.isAvailable }
-        for shortcut in availableShortcuts {
+        for shortcut in category.shortcuts {
             let menuKeyEquivalent = shortcut.keyEquivalent
 
             let shortcutMenuItem = NSMenuItem(

@@ -57,7 +57,6 @@
 		C4E5F6A7B8C9D0E1F3020200 /* ScrollioTests/ButtonCapturePresentationStatusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4E5F6A7B8C9D0E1F3020201 /* ScrollioTests/ButtonCapturePresentationStatusTests.swift */; };
 		C7A1B2C3D4E5F60718293A4B /* ScrollioTests/OptionsChangePropagationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A1B2C3D4E5F60718293A4C /* ScrollioTests/OptionsChangePropagationTests.swift */; };
 		F1A5C3D400000000000000B0 /* ScrollioTests/OptionsScrollDefaultsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A5C3D400000000000000B1 /* ScrollioTests/OptionsScrollDefaultsTests.swift */; };
-		D1A2B3C4E5F6A7B8C9D01000 /* ScrollioTests/LogiDivertPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01001 /* ScrollioTests/LogiDivertPlannerTests.swift */; };
 		A7E1C0DF0000000000000007 /* ScrollioTests/LogiGestureSectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0DF0000000000000008 /* ScrollioTests/LogiGestureSectionTests.swift */; };
 		A7E1C0DF0000000000000005 /* ScrollioTests/LogiGestureRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0DF0000000000000006 /* ScrollioTests/LogiGestureRoutingTests.swift */; };
 		A7E1C0DF0000000000000003 /* ScrollioTests/LogiGestureControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0DF0000000000000004 /* ScrollioTests/LogiGestureControllerTests.swift */; };
@@ -93,6 +92,7 @@
 		D1A2B3C4E5F6A7B8C9D0121D /* ScrollioTests/LogiFeatureActionDeviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D0121E /* ScrollioTests/LogiFeatureActionDeviceTests.swift */; };
 		D1A2B3C4E5F6A7B8C9D0121F /* ScrollioTests/LogiBoundaryEnforcementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01220 /* ScrollioTests/LogiBoundaryEnforcementTests.swift */; };
 		5CD0C0DE0000000000000102 /* ScrollioTests/ReleaseReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CD0C0DE0000000000000101 /* ScrollioTests/ReleaseReadinessTests.swift */; };
+		5CD0C0DE0000000000000202 /* ScrollioTests/TestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CD0C0DE0000000000000201 /* ScrollioTests/TestSupport.swift */; };
 		D1A2B3C4E5F6A7B8C9D01300 /* ScrollioTests/LogiControlReportingPacketTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01301 /* ScrollioTests/LogiControlReportingPacketTests.swift */; };
 		D1A2B3C4E5F6A7B8C9D01302 /* ScrollioTests/LogiReportingResponseRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01303 /* ScrollioTests/LogiReportingResponseRoutingTests.swift */; };
 		D1A2B3C4E5F6A7B8C9D01304 /* ScrollioTests/LogiDivertReconciliationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01305 /* ScrollioTests/LogiDivertReconciliationTests.swift */; };
@@ -173,7 +173,6 @@
 		C4E5F6A7B8C9D0E1F3020201 /* ScrollioTests/ButtonCapturePresentationStatusTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ButtonCapturePresentationStatusTests.swift; sourceTree = SOURCE_ROOT; };
 		C7A1B2C3D4E5F60718293A4C /* ScrollioTests/OptionsChangePropagationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/OptionsChangePropagationTests.swift; sourceTree = SOURCE_ROOT; };
 		F1A5C3D400000000000000B1 /* ScrollioTests/OptionsScrollDefaultsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/OptionsScrollDefaultsTests.swift; sourceTree = SOURCE_ROOT; };
-		D1A2B3C4E5F6A7B8C9D01001 /* ScrollioTests/LogiDivertPlannerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiDivertPlannerTests.swift; sourceTree = SOURCE_ROOT; };
 		A7E1C0DF0000000000000008 /* ScrollioTests/LogiGestureSectionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiGestureSectionTests.swift; sourceTree = SOURCE_ROOT; };
 		A7E1C0DF0000000000000006 /* ScrollioTests/LogiGestureRoutingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiGestureRoutingTests.swift; sourceTree = SOURCE_ROOT; };
 		A7E1C0DF0000000000000004 /* ScrollioTests/LogiGestureControllerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiGestureControllerTests.swift; sourceTree = SOURCE_ROOT; };
@@ -210,6 +209,7 @@
 		D1A2B3C4E5F6A7B8C9D0121E /* ScrollioTests/LogiFeatureActionDeviceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiFeatureActionDeviceTests.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01220 /* ScrollioTests/LogiBoundaryEnforcementTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiBoundaryEnforcementTests.swift; sourceTree = SOURCE_ROOT; };
 		5CD0C0DE0000000000000101 /* ScrollioTests/ReleaseReadinessTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ReleaseReadinessTests.swift; sourceTree = SOURCE_ROOT; };
+		5CD0C0DE0000000000000201 /* ScrollioTests/TestSupport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/TestSupport.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01301 /* ScrollioTests/LogiControlReportingPacketTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiControlReportingPacketTests.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01303 /* ScrollioTests/LogiReportingResponseRoutingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiReportingResponseRoutingTests.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01305 /* ScrollioTests/LogiDivertReconciliationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiDivertReconciliationTests.swift; sourceTree = SOURCE_ROOT; };
@@ -310,7 +310,6 @@
 				B2C3D4E5F6A7B8C9D0E1F201 /* ScrollioTests/ButtonUtilsCacheTests.swift */,
 				C4E5F6A7B8C9D0E1F3020201 /* ScrollioTests/ButtonCapturePresentationStatusTests.swift */,
 				C3D4E5F6A7B8C9D0E1F30201 /* ScrollioTests/InputProcessorTests.swift */,
-				D1A2B3C4E5F6A7B8C9D01001 /* ScrollioTests/LogiDivertPlannerTests.swift */,
 				A7E1C0DF0000000000000008 /* ScrollioTests/LogiGestureSectionTests.swift */,
 				A7E1C0DF0000000000000006 /* ScrollioTests/LogiGestureRoutingTests.swift */,
 				A7E1C0DF0000000000000004 /* ScrollioTests/LogiGestureControllerTests.swift */,
@@ -344,6 +343,7 @@
 				D1A2B3C4E5F6A7B8C9D0121E /* ScrollioTests/LogiFeatureActionDeviceTests.swift */,
 				D1A2B3C4E5F6A7B8C9D01220 /* ScrollioTests/LogiBoundaryEnforcementTests.swift */,
 				5CD0C0DE0000000000000101 /* ScrollioTests/ReleaseReadinessTests.swift */,
+				5CD0C0DE0000000000000201 /* ScrollioTests/TestSupport.swift */,
 				D1A2B3C4E5F6A7B8C9D01301 /* ScrollioTests/LogiControlReportingPacketTests.swift */,
 				D1A2B3C4E5F6A7B8C9D01303 /* ScrollioTests/LogiReportingResponseRoutingTests.swift */,
 				D1A2B3C4E5F6A7B8C9D01305 /* ScrollioTests/LogiDivertReconciliationTests.swift */,
@@ -460,7 +460,6 @@
 				TargetAttributes = {
 					22142D9F1E25344E00E4BFBF = {
 						CreatedOnToolsVersion = 8.2.1;
-						LastSwiftMigration = 1020;
 						SystemCapabilities = {
 							com.apple.Sandbox = {
 								enabled = 0;
@@ -559,7 +558,6 @@
 				1A5E00000000000000000202 /* ScrollioTests/PreferencesLocalizationTests.swift in Sources */,
 				B2C3D4E5F6A7B8C9D0E1F200 /* ScrollioTests/ButtonUtilsCacheTests.swift in Sources */,
 				C3D4E5F6A7B8C9D0E1F30200 /* ScrollioTests/InputProcessorTests.swift in Sources */,
-				D1A2B3C4E5F6A7B8C9D01000 /* ScrollioTests/LogiDivertPlannerTests.swift in Sources */,
 				A7E1C0DF0000000000000007 /* ScrollioTests/LogiGestureSectionTests.swift in Sources */,
 				A7E1C0DF0000000000000005 /* ScrollioTests/LogiGestureRoutingTests.swift in Sources */,
 				A7E1C0DF0000000000000003 /* ScrollioTests/LogiGestureControllerTests.swift in Sources */,
@@ -595,6 +593,7 @@
 				D1A2B3C4E5F6A7B8C9D0121D /* ScrollioTests/LogiFeatureActionDeviceTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D0121F /* ScrollioTests/LogiBoundaryEnforcementTests.swift in Sources */,
 				5CD0C0DE0000000000000102 /* ScrollioTests/ReleaseReadinessTests.swift in Sources */,
+				5CD0C0DE0000000000000202 /* ScrollioTests/TestSupport.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D01300 /* ScrollioTests/LogiControlReportingPacketTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D01302 /* ScrollioTests/LogiReportingResponseRoutingTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D01304 /* ScrollioTests/LogiDivertReconciliationTests.swift in Sources */,
@@ -661,11 +660,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_CXX_LANGUAGE_STANDARD = "compiler-default";
-				CLANG_CXX_LIBRARY = "compiler-default";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -692,16 +689,12 @@
 				CODE_SIGN_IDENTITY = "-";
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 8C592KLVN6;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GCC_C_LANGUAGE_STANDARD = "compiler-default";
-				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = "";
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
@@ -710,14 +703,12 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_PRECOMPILE_BRIDGING_HEADER = YES;
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
@@ -726,11 +717,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_CXX_LANGUAGE_STANDARD = "compiler-default";
-				CLANG_CXX_LIBRARY = "compiler-default";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -763,9 +752,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GCC_C_LANGUAGE_STANDARD = "compiler-default";
 				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = fast;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
@@ -774,14 +761,12 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MTL_ENABLE_DEBUG_INFO = NO;
 				ONLY_ACTIVE_ARCH = NO;
 				SDKROOT = macosx;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
-				SWIFT_PRECOMPILE_BRIDGING_HEADER = YES;
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
@@ -792,31 +777,23 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
-				CLANG_CXX_LANGUAGE_STANDARD = "compiler-default";
-				CLANG_CXX_LIBRARY = "compiler-default";
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Scrollio/ScrollioRelease.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 8C592KLVN6;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Scrollio/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Scrollio Debug";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				MTL_ENABLE_DEBUG_INFO = NO;
-				"OTHER_SWIFT_FLAGS[arch=*]" = "-DDEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = com.nikklemenc.Scrollio.debug;
 				PRODUCT_MODULE_NAME = Scrollio_Debug;
 				PRODUCT_NAME = "Scrollio Debug";
@@ -828,7 +805,6 @@
 				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
 				SDKROOT = macosx;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 			};
@@ -840,32 +816,25 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
-				CLANG_CXX_LANGUAGE_STANDARD = "compiler-default";
-				CLANG_CXX_LIBRARY = "compiler-default";
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Scrollio/ScrollioRelease.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 8C592KLVN6;
 				ENABLE_HARDENED_RUNTIME = YES;
 				EXCLUDED_SOURCE_FILE_NAMES = "DGCharts*";
-				GCC_OPTIMIZATION_LEVEL = fast;
 				INFOPLIST_FILE = Scrollio/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Scrollio;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				MTL_ENABLE_DEBUG_INFO = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = com.nikklemenc.Scrollio;
 				PRODUCT_MODULE_NAME = Scrollio;
 				PRODUCT_NAME = Scrollio;

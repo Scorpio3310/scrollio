@@ -112,6 +112,11 @@ final class PreferencesGroupedFormTests: XCTestCase {
     func testAPaneDrawsItsContentInThePlainAppearance() {
         let host = NSView(frame: NSRect(x: 0, y: 0, width: paneWidth, height: 200))
         let root = PreferencesForm.makeBackground()
+        // The background fills its host, as a pane fills its window. Without a size of its
+        // own it was 0 x 0, and every layout pass printed "Unable to simultaneously satisfy
+        // constraints": 51 times per run, enough to hide a real conflict.
+        root.frame = host.bounds
+        root.autoresizingMask = [.width, .height]
         host.addSubview(root)
         let content = Form.installContentStack(in: root, paneWidth: paneWidth)
         let row = PreferencesSwitchRow(title: "Strength", explanation: "Off while haptics are off.", target: nil, action: nil)

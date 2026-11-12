@@ -22,7 +22,7 @@
 //                            with fn2.
 //
 //  Units are raw and differ per unit (one MX Master 4: 4071...6768, default 5089);
-//  lower = lighter press. ASSUMPTION for the owner's mice until their info is read: write
+//  lower = lighter press. ASSUMPTION until the info of more mice has been read: write
 //  only when the button is changeable and the info is sane (min <= default <= max), and
 //  clamp to [min, max] of this unit.
 //

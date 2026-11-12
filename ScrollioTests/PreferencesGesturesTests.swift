@@ -383,9 +383,7 @@ final class PreferencesGesturesTests: XCTestCase {
         let scrolling = try XCTUnwrap(
             storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController
         )
-        let suite = "ScrollioTests.gestures.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = TestDefaults.make(for: self)
         defaults.set(true, forKey: PreferencesScrollingViewController.advancedExpandedDefaultsKey)
         scrolling.uiStateDefaults = defaults
         _ = scrolling.view
@@ -876,7 +874,7 @@ final class PreferencesGesturesTests: XCTestCase {
 /// supports the Logitech options, without a gesture button, light and dark. Off screen the
 /// window's material draws a flat grey and vibrant text is not blended, so text looks a
 /// little dimmer than on screen. Only runs when asked to:
-/// `TEST_RUNNER_GESTURES_SHOTS_DIR=<folder> xcodebuild … test -only-testing:ScrollioTests/PreferencesGesturesRenderTests`.
+/// `TEST_RUNNER_SCROLLIO_SHOTS_DIR=<folder> xcodebuild … test -only-testing:ScrollioTests/PreferencesGesturesRenderTests`.
 final class PreferencesGesturesRenderTests: XCTestCase {
 
     private var savedGesture = MouseGestureSettings.default
@@ -892,11 +890,8 @@ final class PreferencesGesturesRenderTests: XCTestCase {
     }
 
     func testRenderTheTab() throws {
-        guard let folder = ProcessInfo.processInfo.environment["GESTURES_SHOTS_DIR"], !folder.isEmpty else {
-            throw XCTSkip("set TEST_RUNNER_GESTURES_SHOTS_DIR to render the Gestures tab")
-        }
-        let directory = URL(fileURLWithPath: folder, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // Its files are named "tab-…": in a folder of their own.
+        let directory = try RenderShots.directory(for: "the Gestures tab", subfolder: "gestures-tab")
 
         let master4 = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
         let master3 = MouseGestureDeviceSupport(deviceTracking: true, haptics: false)
