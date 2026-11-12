@@ -1576,8 +1576,9 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         try withSettings(switchOn: true) {
             let result = try oneClick(over: .followsGlide)
             XCTAssertEqual(phaseRuns(result.frames), [
-                "began ×1", "changed ×2", "ended ×1", "momentumBegan ×1", "momentumChanged ×23", "momentumEnded ×1",
+                "began ×1", "changed ×1", "ended ×1", "momentumBegan ×1", "momentumChanged ×23", "momentumEnded ×1",
             ])
+            XCTAssertEqual(result.frames.first?.y, 7, "\"began\" is the first frame that moves the page")
             try assertOwnFields(result.frames)
             XCTAssertEqual(result.asked, 1, "the app's kind is asked once per wheel event")
             XCTAssertEqual(result.session?.trackpadStyle, true)
@@ -1699,7 +1700,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
 
             let flick = try oneClick(over: .followsGlide, oldLongTouch: true)
             XCTAssertEqual(flick.session?.flick, true)
-            XCTAssertEqual(phaseRuns(flick.frames).prefix(4), ["began ×1", "changed ×2", "ended ×1", "momentumBegan ×1"])
+            XCTAssertEqual(phaseRuns(flick.frames).prefix(4), ["began ×1", "changed ×1", "ended ×1", "momentumBegan ×1"])
         }
     }
 

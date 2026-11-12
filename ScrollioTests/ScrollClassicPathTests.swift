@@ -481,13 +481,16 @@ final class ScrollClassicPathTests: XCTestCase {
 
     /// One click at the owner's settings (Step 33.6 × Speed 6.3, Duration 3.69), frame by frame.
     /// Before: began, ten "changed" frames (145 of the 205 px), ended at 183 ms, then the glide.
+    /// "Began" is the first frame that moves the page (it was a frame of its own, without
+    /// distance, posted with the wheel event), and "ended" goes out right before the glide's
+    /// first frame.
     func testTrackpadStyle_oneClick_isAShortTouchAndThenItsGlide() {
         let rig = ScrollClassicRig(duration: 3.69, trackpadStyle: true)
         rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0)
         rig.run(until: 2)
 
         XCTAssertEqual(rig.stream, [
-            "began 0", "changed 7", "changed 13", "ended 0",
+            "began 7", "changed 13", "ended 0",
             "momentumBegan 15", "momentumChanged 16", "momentumChanged 16", "momentumChanged 16",
             "momentumChanged 15", "momentumChanged 14", "momentumChanged 12", "momentumChanged 11",
             "momentumChanged 10", "momentumChanged 9", "momentumChanged 8", "momentumChanged 7",
@@ -496,7 +499,9 @@ final class ScrollClassicPathTests: XCTestCase {
             "momentumChanged 2", "momentumChanged 2", "momentumChanged 1", "momentumChanged 1",
             "momentumEnded 0",
         ])
-        // The touch lifts 50 ms after it began, the glide's first frame comes with it.
+        // The touch begins with the first display frame after the wheel event and lifts 50 ms
+        // after that event; the glide's first frame comes with the "ended".
+        XCTAssertEqual(rig.firstTime(of: "began") ?? -1, 1.0 / 60.0, accuracy: 1e-6)
         XCTAssertEqual(rig.firstTime(of: "ended") ?? -1, 0.05, accuracy: 1e-6)
         XCTAssertEqual(rig.firstTime(of: "momentumBegan") ?? -1, 0.05, accuracy: 1e-6)
         XCTAssertEqual(rig.stops.map(\.phase), [.MomentumEnd])
@@ -512,9 +517,9 @@ final class ScrollClassicPathTests: XCTestCase {
         rig.run(until: 3)
 
         XCTAssertEqual(rig.phaseRuns, [
-            "began ×1", "changed ×2", "ended ×1", "momentumBegan ×1", "momentumChanged ×36", "momentumEnded ×1",
+            "began ×1", "changed ×1", "ended ×1", "momentumBegan ×1", "momentumChanged ×36", "momentumEnded ×1",
         ])
-        XCTAssertEqual(Array(rig.stream.prefix(5)), ["began 0", "changed 7", "changed 20", "ended 0", "momentumBegan 40"])
+        XCTAssertEqual(Array(rig.stream.prefix(4)), ["began 7", "changed 20", "ended 0", "momentumBegan 40"])
     }
 
     /// A long spin (27 ticks in 400 ms, up to 690 px a frame): the touch is over after 50 ms and
@@ -525,7 +530,7 @@ final class ScrollClassicPathTests: XCTestCase {
         rig.run(until: 4)
 
         XCTAssertEqual(rig.phaseRuns, [
-            "began ×1", "changed ×2", "ended ×1", "momentumBegan ×1", "momentumChanged ×64", "momentumEnded ×1",
+            "began ×1", "changed ×1", "ended ×1", "momentumBegan ×1", "momentumChanged ×64", "momentumEnded ×1",
         ])
         XCTAssertGreaterThan(rig.moving.map { $0.frame.y }.max() ?? 0, 600, "the fast part of the spin is glide")
     }
@@ -538,7 +543,7 @@ final class ScrollClassicPathTests: XCTestCase {
         rig.run(until: 4)
 
         XCTAssertEqual(rig.phaseRuns, [
-            "began ×1", "changed ×2", "ended ×1", "momentumBegan ×1", "momentumChanged ×104", "momentumEnded ×1",
+            "began ×1", "changed ×1", "ended ×1", "momentumBegan ×1", "momentumChanged ×104", "momentumEnded ×1",
         ])
         XCTAssertEqual(rig.stops.count, 1)
     }
@@ -555,8 +560,8 @@ final class ScrollClassicPathTests: XCTestCase {
         rig.run(until: 3)
 
         XCTAssertEqual(rig.phaseRuns, [
-            "began ×1", "changed ×2", "ended ×1", "momentumBegan ×1", "momentumChanged ×17", "momentumEnded ×1",
-            "began ×1", "changed ×3", "ended ×1", "momentumBegan ×1", "momentumChanged ×20", "momentumEnded ×1",
+            "began ×1", "changed ×1", "ended ×1", "momentumBegan ×1", "momentumChanged ×17", "momentumEnded ×1",
+            "began ×1", "changed ×2", "ended ×1", "momentumBegan ×1", "momentumChanged ×20", "momentumEnded ×1",
         ])
         let secondTouch = rig.recorded.lastIndex { $0.frame.scrollPhase == 1 } ?? 0
         let before = rig.recorded[..<secondTouch].filter { $0.frame.y != 0 }
@@ -606,7 +611,8 @@ final class ScrollClassicPathTests: XCTestCase {
             XCTAssertEqual(rig.sessions.last?.glideInputs, beginsATouch ? 0 : 1, name)
             if beginsATouch {
                 let second = rig.recorded.last { $0.frame.scrollPhase == 1 }
-                XCTAssertEqual((second?.time ?? 0) - rig.start, 0.2, accuracy: 1e-6, "\(name): with the tick itself")
+                XCTAssertEqual((second?.time ?? 0) - rig.start, 0.2 + 1.0 / 60.0, accuracy: 1e-6, "\(name): with the first frame after the tick")
+                XCTAssertNotEqual(second?.frame.y, 0, "\(name): \"began\" moves the page")
             }
         }
     }
@@ -727,8 +733,14 @@ final class ScrollClassicPathTests: XCTestCase {
                                 for (notches, time) in inputs { rig.input(notches * notch, notch: notch, at: time) }
                                 rig.run(until: 30)  // Duration 5 glides for many seconds
                                 runs += 1
-                                if let broken = Self.brokenGesture(in: rig, mayBeEmpty: false) {
+                                // A flick has no frame without distance to begin with: a scroll
+                                // that moves nothing (it stays under the dead zone) sends nothing.
+                                let mayBeEmpty = form == .flick && rig.moving.isEmpty
+                                if let broken = Self.brokenGesture(in: rig, mayBeEmpty: mayBeEmpty) {
                                     failures.append("\(form.rawValue): \(name), Duration \(duration), \(Int(rate)) Hz, Speed \(speed), dead zone \(deadZone): \(broken)")
+                                }
+                                if form == .flick && rig.moving.isEmpty && !rig.recorded.isEmpty {
+                                    failures.append("\(form.rawValue): \(name), Duration \(duration), \(Int(rate)) Hz, Speed \(speed), dead zone \(deadZone): frames for a scroll that moves nothing: \(rig.stream)")
                                 }
                             }
                         }
@@ -1323,9 +1335,161 @@ final class ScrollClassicPathTests: XCTestCase {
         rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 1.2)
         rig.run(until: 3)
 
-        let flick = ["began ×1", "changed ×2", "ended ×1", "momentumBegan ×1", "momentumChanged ×23", "momentumEnded ×1"]
+        let flick = ["began ×1", "changed ×1", "ended ×1", "momentumBegan ×1", "momentumChanged ×23", "momentumEnded ×1"]
         XCTAssertEqual(rig.phaseRuns, flick + flick)
         XCTAssertEqual(rig.stops.count, 2)
+    }
+
+    // MARK: The flick as Chromium and Gecko need it
+
+    /// Scrolls of every size for the flick's sweeps: one wheel event from 1 px to a click at
+    /// the owner's Speed, at glide times up to the longest, three display rates, two dead zones.
+    private static func flickSweep(_ body: (_ rig: ScrollClassicRig, _ label: String) -> Void) -> Int {
+        var runs = 0
+        for duration in [1.0, 3.13, 3.69, 4.35, 4.6, 5.0] {
+            for rate in [30.0, 60.0, 120.0, 144.0] {
+                for deadZone in [0.25, 1.0] {
+                    for pixels in [1.0, 2, 3, 4, 6, 8, 10, 12, 16, 24, 33.6, 60, 211.68] {
+                        let rig = ScrollClassicRig(duration: duration, rate: rate, deadZone: deadZone, form: .flick)
+                        rig.input(pixels, notch: 33.6, at: 0)
+                        rig.run(until: 30)
+                        runs += 1
+                        body(rig, "\(pixels) px, glide time \(duration), \(Int(rate)) Hz, dead zone \(deadZone)")
+                    }
+                    for (name, events) in gestureScenarios {
+                        let rig = ScrollClassicRig(duration: duration, rate: rate, deadZone: deadZone, form: .flick)
+                        for (clicks, time) in events { rig.input(clicks * 33.6 * 6.3, notch: 33.6 * 6.3, at: time) }
+                        rig.run(until: 30)
+                        runs += 1
+                        body(rig, "\(name), glide time \(duration), \(Int(rate)) Hz, dead zone \(deadZone)")
+                    }
+                }
+            }
+        }
+        return runs
+    }
+
+    /// "Began" is never a frame without distance: it is the first frame that moves the page,
+    /// as a trackpad's "began" carries its first pixel, and every frame of the touch moves
+    /// the page. (Gecko picks the scroller for the whole gesture from the first event and
+    /// finds none for an event without distance: it then keeps the innermost box under the
+    /// pointer, and the page under a box that scrolls only sideways does not move. Chromium
+    /// makes the later events of a gesture non-blocking only after a "began" with a distance.)
+    /// A scroll that moves nothing sends nothing.
+    func testTrackpadStyleFlick_beganIsTheFirstFrameThatMovesThePage() {
+        var failures: [String] = []
+        let runs = Self.flickSweep { rig, label in
+            for item in rig.recorded where item.frame.scrollPhase == 1 || item.frame.scrollPhase == 2 {
+                if item.frame.y == 0 {
+                    failures.append("\(label): a touch frame without distance at \(Int(((item.time - rig.start) * 1000).rounded())) ms")
+                    break
+                }
+            }
+            if rig.moving.isEmpty && !rig.recorded.isEmpty {
+                failures.append("\(label): frames for a scroll that moves nothing: \(rig.stream)")
+            }
+            if let first = rig.recorded.first, first.frame.scrollPhase != 1 {
+                failures.append("\(label): begins with \(rig.stream.first ?? "")")
+            }
+            if let broken = Self.brokenGesture(in: rig, mayBeEmpty: rig.moving.isEmpty) {
+                failures.append("\(label): \(broken)")
+            }
+        }
+        XCTAssertEqual(runs, 6 * 4 * 2 * (13 + Self.gestureScenarios.count))
+        XCTAssertTrue(failures.isEmpty, "\(failures.count):\n" + failures.prefix(30).joined(separator: "\n"))
+    }
+
+    /// "Ended" and "momentum began" go out in one display frame, "ended" first, at every
+    /// glide time, rate and size of scroll: Chromium drops a glide whose "momentum began"
+    /// comes more than 100 ms after "ended". ("Ended" used to go out when the touch was
+    /// over, while "momentum began" waited for the first frame that came to a whole pixel:
+    /// for a scroll of a few pixels at a long glide time that was eight frames or more.) An
+    /// "ended" with no glide after it is the last frame of its gesture.
+    func testTrackpadStyleFlick_endedGoesOutWithMomentumBegan() {
+        var failures: [String] = []
+        var glides = 0
+        var heldAcrossFrames = 0
+        let runs = Self.flickSweep { rig, label in
+            for (index, item) in rig.recorded.enumerated() where item.frame.scrollPhase == 4 {
+                guard index + 1 < rig.recorded.count, rig.recorded[index + 1].frame.momentumPhase == 1 else { continue }
+                let next = rig.recorded[index + 1]
+                glides += 1
+                if next.time != item.time {
+                    failures.append("\(label): \"momentum began\" \(Int(((next.time - item.time) * 1000).rounded())) ms after \"ended\"")
+                }
+                let apart = Double((next.frame.timestamp ?? 0) - (item.frame.timestamp ?? 0)) / 1e9
+                if !(apart > 0 && apart < 0.1) {
+                    failures.append("\(label): their times are \(apart) s apart")
+                }
+                if next.frame.y == 0 {
+                    failures.append("\(label): a \"momentum began\" without distance")
+                }
+                // The touch's last frame was more than a display frame before: the "ended" waited.
+                if index > 0, item.time - rig.recorded[index - 1].time > rig.frameInterval * 1.5 {
+                    heldAcrossFrames += 1
+                }
+            }
+        }
+        XCTAssertEqual(runs, 6 * 4 * 2 * (13 + Self.gestureScenarios.count))
+        XCTAssertGreaterThan(glides, 500)
+        XCTAssertGreaterThan(heldAcrossFrames, 0, "the sweep holds scrolls whose glide's first frame comes late")
+        XCTAssertTrue(failures.isEmpty, "\(failures.count):\n" + failures.prefix(30).joined(separator: "\n"))
+    }
+
+    /// The touch holds two frames that move the page whenever a glide follows it: an app
+    /// takes the speed for a bounce from two frames. On a slow display (or after a late first
+    /// frame) 45 ms were over after one.
+    func testTrackpadStyleFlick_theTouchHoldsTwoMovingFramesBeforeAGlide() {
+        var failures: [String] = []
+        var touchesWithAGlide = 0
+        let runs = Self.flickSweep { rig, label in
+            var inTouch = 0
+            for item in rig.recorded {
+                switch (item.frame.scrollPhase, item.frame.momentumPhase) {
+                case (1, _): inTouch = item.frame.y != 0 ? 1 : 0
+                case (2, _): inTouch += item.frame.y != 0 ? 1 : 0
+                case (_, 1):
+                    touchesWithAGlide += 1
+                    if inTouch < 2 { failures.append("\(label): a glide after a touch of \(inTouch) moving frames") }
+                default: break
+                }
+            }
+        }
+        XCTAssertEqual(runs, 6 * 4 * 2 * (13 + Self.gestureScenarios.count))
+        XCTAssertGreaterThan(touchesWithAGlide, 500)
+        XCTAssertTrue(failures.isEmpty, "\(failures.count):\n" + failures.prefix(30).joined(separator: "\n"))
+
+        // At 30 Hz: frames at 33 and 67 ms are the touch, the glide begins at 100 ms.
+        let slow = ScrollClassicRig(duration: 3.69, rate: 30, form: .flick)
+        slow.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0)
+        slow.run(until: 3)
+        XCTAssertEqual(Array(slow.phaseRuns.prefix(4)), ["began ×1", "changed ×1", "ended ×1", "momentumBegan ×1"])
+        XCTAssertEqual(slow.firstTime(of: "momentumBegan") ?? -1, 0.1, accuracy: 1e-6)
+    }
+
+    /// Wheel events that come before the first frame has moved the page (a quick turn, a
+    /// display link that starts late) all belong to the one touch that waits: one "began".
+    func testTrackpadStyleFlick_wheelEventsBeforeTheFirstFrame_areOneTouch() {
+        let rig = ScrollClassicRig(duration: 3.69, form: .flick)
+        rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0)
+        XCTAssertTrue(rig.recorded.isEmpty, "nothing goes out with the wheel event")
+        XCTAssertTrue(rig.phases.beganIsWaiting)
+        rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0.004)
+        rig.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0.009)
+        XCTAssertTrue(rig.recorded.isEmpty)
+        rig.run(until: 4)
+        XCTAssertEqual(rig.phaseSequence, ["began", "changed", "ended", "momentumBegan", "momentumChanged", "momentumEnded"])
+        XCTAssertEqual(rig.sessions.last?.touches, 1)
+        XCTAssertEqual(rig.postedY, 628, accuracy: 12, "all three clicks")
+
+        // A stop before any frame: the app got nothing and gets nothing.
+        let stopped = ScrollClassicRig(duration: 3.69, form: .flick)
+        stopped.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0)
+        stopped.poster.stop(reason: .leftClick)
+        XCTAssertTrue(stopped.recorded.isEmpty, "no \"began\" went out, so no \"ended\" does: \(stopped.stream)")
+        stopped.input(33.6 * 6.3, notch: 33.6 * 6.3, at: 0.1)
+        stopped.poster.stop(.TrackingEnd, reason: .tapRestarted)
+        XCTAssertTrue(stopped.recorded.isEmpty, "\(stopped.stream)")
     }
 
     /// Several clicks while the glide runs (the second batch 0.7 s later) keep one glide going.
@@ -1785,7 +1949,7 @@ final class ScrollClassicPathTests: XCTestCase {
         rig.run(until: 3)
 
         XCTAssertTrue(rig.targets.prefix(beforeTheTick).allSatisfy { $0 == 100 })
-        XCTAssertEqual(Array(rig.targetedStream.dropFirst(beforeTheTick).prefix(2)), ["100: momentumEnded 0", "200: began 0"])
+        XCTAssertEqual(Array(rig.targetedStream.dropFirst(beforeTheTick).prefix(2)), ["100: momentumEnded 0", "200: began 7"])
         XCTAssertTrue(rig.targets.dropFirst(beforeTheTick + 1).allSatisfy { $0 == 200 }, "everything after it goes to the other app")
         XCTAssertEqual(rig.targetedStream.last, "200: momentumEnded 0")
         // Each app got one whole gesture.

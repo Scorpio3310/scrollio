@@ -421,4 +421,45 @@ final class ScrollPhaseTests: XCTestCase {
         XCTAssertEqual(sut.phase, .MomentumOngoing)
         XCTAssertEqual(sut.onManualInputDetected(isSeparated: true).queue.map { $0.0 }, [.MomentumEnd, .TrackingBegin])
     }
+
+    /// As a flick "began" waits for the first frame that moves the page. While it waits the
+    /// app has nothing of the touch: a wheel event goes on with it, and nothing is ended.
+    func testWaitingBegan_takesWheelEventsAndIsNotEnded() {
+        sut.holdsWaitingBegan = true
+        sut.apply(phase: .TrackingBegin, autoAdvance: .TrackingOngoing)
+        XCTAssertTrue(sut.beganIsWaiting)
+
+        for separated in [true, false] {
+            let plan = sut.onManualInputDetected(isSeparated: separated)
+            XCTAssertTrue(plan.queue.isEmpty && plan.target == nil, "the touch that waits takes the wheel event")
+            XCTAssertFalse(plan.beginsTouch)
+            XCTAssertTrue(sut.beganIsWaiting)
+        }
+        let lifted = sut.onManualInputEnded()
+        XCTAssertTrue(lifted.queue.isEmpty && lifted.target == nil, "no \"ended\" for a touch the app never got")
+        XCTAssertTrue(sut.beganIsWaiting, "a frame that still comes carries \"began\"")
+
+        let stopped = sut.onMomentumFinish()
+        XCTAssertTrue(stopped.queue.isEmpty && stopped.target == nil, "nor at a stop")
+        XCTAssertEqual(sut.phase, .Idle)
+
+        // Once its frame has gone out the touch is the app's: it is ended as always.
+        sut.apply(phase: .TrackingBegin, autoAdvance: .TrackingOngoing)
+        sut.didDeliverFrame()
+        XCTAssertFalse(sut.beganIsWaiting)
+        XCTAssertEqual(sut.phase, .TrackingOngoing)
+        XCTAssertEqual(sut.onManualInputEnded().target?.0, .TrackingEnd)
+        XCTAssertEqual(sut.onMomentumFinish().target?.0, .TrackingEnd)
+    }
+
+    /// Without the flick's rule (every other form, and the switch off) the machine is what
+    /// it was: a wheel event in that state moves it on, and a stop ends the touch.
+    func testWithoutTheFlicksRule_theMachineIsWhatItWas() {
+        XCTAssertFalse(sut.holdsWaitingBegan)
+        sut.apply(phase: .TrackingBegin, autoAdvance: .TrackingOngoing)
+        XCTAssertEqual(sut.onManualInputDetected(isSeparated: false).target?.0, .TrackingOngoing)
+        XCTAssertEqual(sut.onManualInputDetected(isSeparated: true).queue.map { $0.0 }, [.TrackingBegin])
+        XCTAssertEqual(sut.onManualInputEnded().target?.0, .TrackingEnd)
+        XCTAssertEqual(sut.onMomentumFinish().target?.0, .TrackingEnd)
+    }
 }

@@ -216,10 +216,33 @@ class ScrollPoster {
     // and the rest of the glide is ignored. Sent as one long touch for as long as the wheel turned
     // (and 0.18 s more), a fast scroll dragged the page far past the edge and held it there, and a
     // tick that put the finger down again during the bounce made the page jump.
+    //
+    // The flick as an app gets it (Chromium, Gecko):
+    // - "began" is the first frame that moves the page, with that frame's distance, as a
+    //   trackpad's "began" carries its first pixel. It used to be a frame of its own without
+    //   distance, posted with the wheel event. Gecko picks the scroller for the whole gesture
+    //   from the first event and finds none for an event without distance: it then keeps the
+    //   innermost scrollable box under the pointer, whatever the direction, and a page under a
+    //   box that scrolls only sideways does not move (read in its source). Chromium marks the
+    //   later events of a gesture as not blocking only after a "began" that has a distance.
+    // - The touch lasts `trackpadStyleTouchTime` from the wheel event and until two frames
+    //   that move the page have gone out in it (when the motion has that many): an app takes
+    //   the speed for a bounce from two frames.
+    // - "ended" goes out in the same display frame as "momentum began", right before it: it
+    //   is held back until the glide's first frame is posted (`endedWaitsForGlide`). It used
+    //   to go out when the touch was over, and "momentum began" waited for the first frame
+    //   that came to a whole pixel: Chromium drops a glide whose "momentum began" comes more
+    //   than 100 ms after "ended" (a scroll of a few pixels at a long glide time). When no
+    //   frame of the glide ever comes, "ended" goes out alone when the scroll ends.
     /// The finger lifts this long after the touch began; the rest of the scroll is its glide.
     private let trackpadStyleTouchTime: CFTimeInterval = 0.045
     /// When the current touch began ("began" planned), for `fingerLiftedLocked`.
     private var touchBeganTime: CFTimeInterval = 0.0
+    /// Flick: how many frames that move the page have gone out in the current touch.
+    private var movingTouchFrames = 0
+    /// Flick: the touch is over for the machine, and its "ended" waits for the glide's first
+    /// frame (`flushHeldEndedLocked`).
+    private var endedWaitsForGlide = false
     /// A tick turned back during the glide; its touch begins with the first frame that moves its way.
     private var touchWaitsForTurn = false
     /// The direction of the touch and its glide: the last wheel input that did not ask for a turn.
@@ -651,6 +674,8 @@ extension ScrollPoster {
             // (The forms the machine posts. As the old long touch the glide's "momentum ended"
             // went out here although its "momentum began" had not: no frame of the glide had
             // been posted.)
+            // A flick's "ended" that still waited for that glide goes out first.
+            flushHeldEndedLocked()
             phases.dropWaitingMomentumBegan()
         }
         let phase = phases.phase
@@ -659,12 +684,13 @@ extension ScrollPoster {
         let plan = phases.onManualInputDetected(isSeparated: separated)
         if plan.beginsTouch && !scrollIsOneTouch {
             touchBeganTime = now
+            movingTouchFrames = 0
             touchPlace = place
             sessionLog.touches += 1
         }
         touchWaitsForTurn = false
         glideDelta = delta
-        perform(plan, emitTargetImmediately: false)
+        perform(plan, emitTargetImmediately: false, beganWaitsForItsFrame: config.flick)
         lastManualEventTime = now
         manualInputEnded = false
         momentumActive = false
@@ -706,9 +732,12 @@ extension ScrollPoster {
         glideDelta = delta
         touchPlace = lastInputPlace
         sessionLog.touches += 1
+        flushHeldEndedLocked()
         phases.dropWaitingMomentumBegan()
-        perform(phases.onManualInputDetected(isSeparated: true), emitTargetImmediately: false)
+        // "Momentum ended" goes out now; "began" goes out on this frame (`config.flick`).
+        perform(phases.onManualInputDetected(isSeparated: true), emitTargetImmediately: false, beganWaitsForItsFrame: config.flick)
         touchBeganTime = now
+        movingTouchFrames = 0
         manualInputEnded = false
         momentumActive = false
         momentumEndScheduledTime = nil
@@ -913,6 +942,8 @@ extension ScrollPoster {
         momentumActive = false
         lastManualEventTime = 0.0
         touchBeganTime = 0.0
+        movingTouchFrames = 0
+        endedWaitsForGlide = false
         touchWaitsForTurn = false
         glideDelta = ( y: 0.0, x: 0.0 )
         touchPlace = nil
@@ -1065,6 +1096,8 @@ extension ScrollPoster {
                 // it is still open.
                 endOneTouchLocked()
             } else {
+                // A flick's "ended" that waited for a glide of which no frame came: alone.
+                flushHeldEndedLocked()
                 perform(plan, emitTargetImmediately: true)
             }
         } else {
@@ -1334,12 +1367,19 @@ extension ScrollPoster {
 
 // MARK: - 数据处理及发送
 private extension ScrollPoster {
-    func perform(_ plan: ScrollPhase.TransitionPlan, emitTargetImmediately: Bool) {
+    /// `beganWaitsForItsFrame`: as a flick. A "began" in the plan is not posted as a frame of
+    /// its own: the machine takes it up, and the next frame that moves the page carries it
+    /// (`ScrollPhase.holdsWaitingBegan`).
+    func perform(_ plan: ScrollPhase.TransitionPlan, emitTargetImmediately: Bool, beganWaitsForItsFrame: Bool = false) {
         if plan.queue.isEmpty && plan.target == nil {
             return
         }
         for item in plan.queue {
-            emitPhase(item)
+            if beganWaitsForItsFrame && item.0 == .TrackingBegin {
+                phases.apply(phase: item.0, autoAdvance: item.1)
+            } else {
+                emitPhase(item)
+            }
         }
         if let target = plan.target {
             if emitTargetImmediately {
@@ -1421,7 +1461,13 @@ private extension ScrollPoster {
     /// (`oneTouchHasRunOutLocked`). Caller holds stateLock.
     func fingerLiftedLocked(now: CFTimeInterval, glideFollows: Bool, outputSettled: Bool) -> Bool {
         if config.flick {
-            return now - touchBeganTime >= trackpadStyleTouchTime && (glideFollows || outputSettled)
+            guard now - touchBeganTime >= trackpadStyleTouchTime else { return false }
+            if movingTouchFrames >= 2 {
+                return glideFollows || outputSettled
+            }
+            // Fewer than two frames have moved the page: the touch goes on for the frames
+            // that still come, and ends only when the scroll has nothing more to send.
+            return !glideFollows && outputSettled
         }
         let wheelIsStill = now - lastManualEventTime > manualContinuationThreshold
         // Without phases nothing of this reaches an app: exactly as it always was.
@@ -1470,7 +1516,11 @@ private extension ScrollPoster {
         if !manualInputEnded && lastManualEventTime > 0.0
             && fingerLiftedLocked(now: now, glideFollows: residualMagnitude > deadZone, outputSettled: outputMagnitude <= speedDeadZone) {
             let endPlan = phases.onManualInputEnded()
-            if !(endPlan.queue.isEmpty && endPlan.target == nil) {
+            if config.flick && residualMagnitude > deadZone, endPlan.queue.isEmpty, let target = endPlan.target, target.0 == .TrackingEnd {
+                // A glide follows: "ended" goes out with its first frame (`flushHeldEndedLocked`).
+                phases.apply(phase: target.0, autoAdvance: target.1)
+                endedWaitsForGlide = true
+            } else if !(endPlan.queue.isEmpty && endPlan.target == nil) {
                 perform(endPlan, emitTargetImmediately: true)
             }
             manualInputEnded = true
@@ -1615,6 +1665,16 @@ private extension ScrollPoster {
         // touch a glide whose first frame came to no whole pixel lost its "momentum began").
         // (Not as one touch: there the machine runs as with the switch off.)
         phases.holdsWaitingMomentumBegan = snapshot.simTrackpadEnabled && !snapshot.oneTouch
+        phases.holdsWaitingBegan = snapshot.flick
+    }
+
+    /// Flick: the "ended" that waited for the glide goes out now: right before the glide's
+    /// first frame ("momentum began", in the same display frame), before a new touch, or
+    /// alone when the scroll ends. Caller holds stateLock.
+    func flushHeldEndedLocked() {
+        guard endedWaitsForGlide else { return }
+        endedWaitsForGlide = false
+        post((y: 0.0, x: 0.0), phaseOverride: phaseValues(for: .TrackingEnd), fallbackToCurrentPhase: false, advancesPhase: false)
     }
 
     /// Trackpad-style: moves the frames' time grid on by one display frame. The grid starts
@@ -1682,6 +1742,11 @@ private extension ScrollPoster {
     /// does with every frame it posts or times. Not with the one touch's own "began" and
     /// "ended": the machine knows nothing of them and runs as with the switch off.
     func post(_ v: (y: Double, x: Double), phaseOverride: (scroll: Double, momentum: Double)? = nil, fallbackToCurrentPhase: Bool = true, advancesPhase: Bool = true, using preparedSnapshot: ScrollDispatchContext.PostingSnapshot? = nil) -> Bool {
+        let moves = v.y != 0.0 || v.x != 0.0
+        if moves && endedWaitsForGlide {
+            // The glide's first frame: its touch's "ended" goes out right before it.
+            flushHeldEndedLocked()
+        }
         var phaseValues = phaseOverride
         if phaseValues == nil && fallbackToCurrentPhase && config.simTrackpadEnabled {
             // One touch: every frame that moves the page is a "changed" of the open touch.
@@ -1692,7 +1757,10 @@ private extension ScrollPoster {
             // Its own time and its own line delta (`ScrollOutgoingFrame.write`). Not the
             // "ended" Chrome gets at a stop with the switch off: that one stays as it was.
             frame.isTrackpadStyle = true
-            frame.timestamp = stampLocked(moves: v.y != 0.0 || v.x != 0.0)
+            if moves && (frame.scrollPhase == 1.0 || frame.scrollPhase == 2.0) {
+                movingTouchFrames += 1
+            }
+            frame.timestamp = stampLocked(moves: moves)
             let lines = lineCarry.take((y: v.y / ScrollOutgoingFrame.pixelsPerLine, x: v.x / ScrollOutgoingFrame.pixelsPerLine))
             frame.lineY = Int64(lines.y)
             frame.lineX = Int64(lines.x)
