@@ -340,6 +340,7 @@ final class UpdateCenterTests: XCTestCase {
             "standardUserDriverWillHandleShowingUpdate:forUpdate:state:",
             "standardUserDriverDidReceiveUserAttentionForUpdate:",
             "standardUserDriverWillFinishUpdateSession",
+            "standardUserDriverWillShowModalAlert",
         ] {
             XCTAssertTrue(center.responds(to: NSSelectorFromString(name)), name)
         }
@@ -586,6 +587,31 @@ final class UpdateCenterTests: XCTestCase {
         XCTAssertEqual(ran["a later block of the main queue"], .afterItWasClosed)
         XCTAssertEqual(ran["a timer in the common modes"], .whileItWasOpen)
         XCTAssertEqual(ran["an event tap's source"], .whileItWasOpen)
+    }
+
+    /// When an alert is about to open, Scrollio comes to the front (the check took a
+    /// moment; the user may be in another app). The Dock is left alone: a menu bar app
+    /// that becomes a Dock app at that moment gets its alert on the desktop Space, out of
+    /// sight for someone in a full-screen app.
+    func testAnAlertBringsScrollioToTheFrontAndLeavesTheDockAlone() {
+        let world = World()
+        let center = makeCenter(world)
+        center.alertWillOpen()
+        XCTAssertEqual(world.activations, 1)
+        // As Sparkle says it.
+        center.perform(NSSelectorFromString("standardUserDriverWillShowModalAlert"))
+        XCTAssertEqual(world.activations, 2)
+        XCTAssertEqual(world.dockShown, 0)
+        XCTAssertEqual(world.dockReleased, 0)
+        XCTAssertEqual(world.badges, [])
+        XCTAssertFalse(center.holdsDockIcon)
+        XCTAssertEqual(center.reminder, UpdateReminder())
+        // While an update waits, its Dock icon stays through an alert (a failed download).
+        center.updateWillBeShown(version: "1.0.2", userInitiated: true)
+        center.alertWillOpen()
+        XCTAssertTrue(center.holdsDockIcon)
+        XCTAssertEqual(world.dockShown, 1)
+        XCTAssertEqual(world.dockReleased, 0)
     }
 
     /// Only the Update folder imports Sparkle; the rest of the app sees UpdateStatus.

@@ -429,6 +429,21 @@ final class UpdateCenter: NSObject {
         }
         statusDidChange()
     }
+
+    // MARK: - An alert
+
+    /// One of Sparkle's alerts is about to open ("You're up to date!", "Update Error!").
+    /// The check took a moment and Scrollio may be behind another app by now: it comes to
+    /// the front, and the alert with it (above Scrollio's own windows it is by its level).
+    ///
+    /// For an alert the Dock icon is not shown (for a found update it is). A menu bar app
+    /// that becomes a Dock app at that moment gets the alert on the desktop Space of the
+    /// display: someone who works in a full-screen app would not see it, and it would
+    /// have the keyboard all the same. As a menu bar app Scrollio opens the alert on the
+    /// Space in use, over a full-screen app too. (Measured on macOS 27.2.)
+    func alertWillOpen() {
+        activateApp()
+    }
 }
 
 // MARK: - Sparkle: the updater
@@ -534,5 +549,9 @@ extension UpdateCenter: SPUStandardUserDriverDelegate {
 
     func standardUserDriverWillFinishUpdateSession() {
         updateSessionEnded()
+    }
+
+    func standardUserDriverWillShowModalAlert() {
+        alertWillOpen()
     }
 }
