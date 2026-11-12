@@ -336,6 +336,12 @@ enum SettingsFile {
     /// "settings.json" held a plain open, on the main thread, until somebody wrote to it;
     /// a device would be read without end. A file's size is known before a byte is read.
     static func read(contentsOf url: URL) -> Result<Contents, Problem> {
+        return data(ofFileAt: url).flatMap(read)
+    }
+
+    /// The bytes of the file at `url`, under the rules of `read(contentsOf:)`: a regular
+    /// file, no larger than `maximumFileSize`.
+    static func data(ofFileAt url: URL) -> Result<Data, Problem> {
         func systemReason() -> String {
             return NSError(domain: NSPOSIXErrorDomain, code: Int(errno)).localizedDescription
         }
@@ -346,13 +352,23 @@ enum SettingsFile {
         guard fstat(descriptor, &info) == 0 else { return .failure(.cannotRead(systemReason())) }
         guard info.st_mode & S_IFMT == S_IFREG else { return .failure(.notASettingsFile) }
         guard info.st_size <= off_t(maximumFileSize) else { return .failure(.tooLarge) }
-        let data: Data
         do {
-            data = try handle.read(upToCount: maximumFileSize + 1) ?? Data()
+            let data = try handle.read(upToCount: maximumFileSize + 1) ?? Data()
+            return data.count <= maximumFileSize ? .success(data) : .failure(.tooLarge)
         } catch {
             return .failure(.cannotRead(error.localizedDescription))
         }
-        return read(data)
+    }
+
+    /// Whether two files hold the same settings, whoever wrote them and when: their
+    /// "settings" are equal as JSON. False when either is no file with settings.
+    static func holdSameSettings(_ first: Data, _ second: Data) -> Bool {
+        func settings(_ data: Data) -> NSDictionary? {
+            let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            return root?[Field.settings] as? NSDictionary
+        }
+        guard let one = settings(first), let other = settings(second) else { return false }
+        return one == other
     }
 
     /// Checks `data` and decodes what is on the allow-list. Pure: nothing is changed.

@@ -21,8 +21,9 @@
 //  - "Settings file": "Export…" writes all settings to a file the user names, "Import…"
 //    reads such a file, says in a sheet what it holds and asks before anything changes
 //    (SettingsFile, SettingsFileCenter, SettingsImportSheet). Under it, once an import
-//    was made, "Settings from before the last import" with "Restore…": the backup the
-//    import wrote, through the same sheet. The panels and the sheet are sheets on the
+//    was made, "Settings from before an import" with "Restore…": an open panel on the
+//    folder of the backups the imports wrote (the last five, named by their time); the
+//    chosen one goes through the same sheet. The panels and the sheet are sheets on the
 //    settings window, opened from the click; nothing here is modal for the app.
 //  The developer tools (scroll monitor, Logitech diagnostics) are not in the pane: the
 //  status-bar menu lists them while Option is held.
@@ -111,6 +112,24 @@ class PreferencesGeneralViewController: NSViewController {
                 panel.begin(completionHandler: finish)
             }
         }
+    /// Asks which of the settings kept before an import to go back to: an open panel, as
+    /// a sheet on the window, that starts in their folder; nil when cancelled. Under
+    /// XCTest nothing is asked unless a test answers.
+    var chooseBackupFile: (NSWindow?, URL, @escaping (URL?) -> Void) -> Void = AppRuntime.isRunningXCTest
+        ? { _, _, completion in completion(nil) }
+        : { window, folder, completion in
+            let panel = PreferencesGeneralViewController.makeRestorePanel(folder: folder)
+            let finish: (NSApplication.ModalResponse) -> Void = { response in
+                // The panel's sheet goes before the sheet about the file comes.
+                panel.orderOut(nil)
+                completion(response == .OK ? panel.url : nil)
+            }
+            if let window {
+                panel.beginSheetModal(for: window, completionHandler: finish)
+            } else {
+                panel.begin(completionHandler: finish)
+            }
+        }
     /// Shows the sheet about a file (what it holds, or why it cannot be used) on the
     /// pane's window, and takes it away again.
     var presentSettingsSheet: (SettingsImportSheetViewController, NSViewController) -> Void = { sheet, pane in
@@ -158,7 +177,7 @@ class PreferencesGeneralViewController: NSViewController {
     private(set) var settingsFileRow: PreferencesGroupRow!
     private(set) var exportSettingsButton: NSButton!
     private(set) var importSettingsButton: NSButton!
-    /// "Settings from before the last import" with "Restore…"; shown while a backup is there.
+    /// "Settings from before an import" with "Restore…"; shown while a backup is there.
     private(set) var previousSettingsRow: PreferencesGroupRow!
     private(set) var restoreSettingsButton: NSButton!
     /// The sheet about a file while it is up.
@@ -412,7 +431,7 @@ class PreferencesGeneralViewController: NSViewController {
         return row
     }
 
-    /// "Settings from before the last import" with "Restore…": the backup an import wrote.
+    /// "Settings from before an import" with "Restore…": the backups the imports wrote.
     private func makePreviousSettingsRow() -> PreferencesGroupRow {
         let button = PreferencesGroupedForm.makePushButton(
             title: text("general-settings-file-restore"),
@@ -760,13 +779,22 @@ class PreferencesGeneralViewController: NSViewController {
         return panel
     }
 
-    /// Shows "Settings from before the last import" while a backup is there, with its time.
+    /// The open panel of "Restore…": one JSON file, starting in the backups' folder.
+    static func makeRestorePanel(folder: URL) -> NSOpenPanel {
+        let panel = makeImportPanel()
+        panel.directoryURL = folder
+        panel.message = NSLocalizedString("general-settings-file-restore-message", comment: "")
+        return panel
+    }
+
+    /// Shows "Settings from before an import" while a backup is there, with how many are
+    /// kept and the time of the newest.
     func refreshSettingsFileState() {
         guard isViewLoaded else { return }
         let backup = settingsFiles.latestBackup()
         if let backup {
             previousSettingsRow.explanation = String(
-                format: text("general-settings-file-previous-hint"), SettingsFileText.moment(backup.date)
+                format: text("general-settings-file-previous-hint"), SettingsBackups.keepCount, SettingsFileText.moment(backup.date)
             )
         }
         guard previousSettingsRow.isHidden == (backup != nil) else { return }
@@ -799,11 +827,14 @@ class PreferencesGeneralViewController: NSViewController {
     }
 
     @objc func restoreSettingsClicked(_ sender: NSButton) {
-        guard let backup = settingsFiles.latestBackup() else {
+        guard let folder = settingsFiles.backupFolder() else {
             refreshSettingsFileState()
             return
         }
-        offerImport(of: backup.url)
+        chooseBackupFile(view.window, folder) { [weak self] url in
+            guard let self, let url else { return }
+            self.offerImport(of: url)
+        }
     }
 
     /// Reads the file and shows the sheet about it: what it holds, with "Import", or why

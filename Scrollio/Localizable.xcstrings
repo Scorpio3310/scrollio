@@ -6736,7 +6736,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Settings from before the last import"
+            "value": "Settings from before an import"
           }
         }
       }
@@ -6747,7 +6747,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Saved on %@."
+            "value": "Scrollio keeps the last %1$d. The newest is from %2$@."
           }
         }
       }
@@ -7353,6 +7353,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Scrollio could not store these settings, so nothing was changed."
+          }
+        }
+      }
+    },
+    "general-settings-file-restore-message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose the settings to go back to. Each file is named by the time (UTC) it was saved."
           }
         }
       }

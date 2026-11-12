@@ -182,6 +182,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-problem-not-settings", "general-settings-problem-newer", "general-settings-problem-damaged",
         "general-settings-problem-empty", "general-settings-problem-write", "general-settings-problem-backup",
         "general-settings-problem-store",
+        "general-settings-file-restore-message",
         "general-settings-problem-not-imported-title", "general-settings-problem-too-many",
         "general-settings-problem-not-stored",
     ]
@@ -283,7 +284,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "about-version-commit-date": "@@@@",
         "general-updates-last-checked": "@",
         "general-updates-waiting": "@",
-        "general-settings-file-previous-hint": "@",
+        "general-settings-file-previous-hint": "d@",
         "general-settings-file-default-name": "@",
         "general-settings-file-exported": "@",
         "general-settings-import-source": "@@@",

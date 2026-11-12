@@ -258,7 +258,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
             })
         }
 
-        // After an import: "Settings from before the last import" with "Restore…" under
+        // After an import: "Settings from before an import" with "Restore…" under
         // the settings file's row (`general-settings-restore-<appearance>.png`).
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("ScrollioTests-render-backups-\(UUID().uuidString)", isDirectory: true)

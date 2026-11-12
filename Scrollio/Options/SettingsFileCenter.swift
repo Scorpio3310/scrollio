@@ -9,8 +9,13 @@
 //
 //  The backups (`SettingsBackups`) are settings files like any other, kept in
 //  ~/Library/Application Support/<bundle id>/Settings Backups, named by the moment (UTC)
-//  they were written: the last five, older ones are deleted. General offers the newest ("Restore…"); it goes through the same import,
-//  with the same sheet before it, so going back can be undone the same way.
+//  they were written: the last five, older ones are deleted. No two of them hold the same
+//  settings: when the settings an import is about to replace are already in a backup,
+//  that backup becomes the newest and no second one is written. (Going back and forth
+//  between two states would otherwise fill the five places with copies of those two, and
+//  the user's own settings from before the first import would be the ones deleted.)
+//  General's "Restore…" opens the folder in an open panel; the chosen backup goes through
+//  the same import, with the same sheet before it, so going back can be undone the same way.
 //
 //  Under XCTest nothing real is touched unless a test hands it in: the app's preferences
 //  are closed to settings files (`Options.writesToDefaults`), and `SettingsBackups.live`
@@ -89,14 +94,25 @@ struct SettingsBackups {
         return max(second, newest.date.addingTimeInterval(1))
     }
 
-    /// Writes `data` as the newest backup, then deletes all but the newest `keepCount`
-    /// (never the one just written). Throws when the folder or the file cannot be made;
+    /// Keeps `data` as the newest backup, then deletes all but the newest `keepCount`
+    /// (never the newest itself). Throws when the folder or the file cannot be made;
     /// nothing else is touched then.
+    ///
+    /// `holdsTheSame` says of a backup that is already there whether it holds what `data`
+    /// holds. Then no second one is written: that backup becomes the newest, under the
+    /// name a new one would have got.
     @discardableResult
-    func write(_ data: Data, now: Date = Date()) throws -> URL {
+    func write(_ data: Data, now: Date = Date(), holdsTheSame: ((Data) -> Bool)? = nil) throws -> URL {
         guard let directory else { throw Failure.noFolder }
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = freeURL(in: directory, from: moment(for: now))
+        if let holdsTheSame, let twin = entries().first(where: { entry in
+            guard case .success(let kept) = SettingsFile.data(ofFileAt: entry.url) else { return false }
+            return holdsTheSame(kept)
+        }), (try? fileManager.moveItem(at: twin.url, to: url)) != nil {
+            prune(keeping: url)
+            return url
+        }
         try data.write(to: url, options: .atomic)
         prune(keeping: url)
         return url
@@ -209,7 +225,7 @@ final class SettingsFileCenter {
             return .failure(problem)
         case .success(let data):
             do {
-                backup = try backups.write(data, now: now())
+                backup = try backups.write(data, now: now(), holdsTheSame: { SettingsFile.holdSameSettings($0, data) })
             } catch {
                 log("Settings file: not imported (the current settings could not be saved first)")
                 return .failure(.backupFailed(Self.text(of: error)))
@@ -226,9 +242,14 @@ final class SettingsFileCenter {
         return .success(backup)
     }
 
-    /// The settings from before the last import, if a backup is there.
+    /// The newest of the settings kept from before an import, if there is one.
     func latestBackup() -> SettingsBackups.Entry? {
         return backups.latest
+    }
+
+    /// The folder the backups are in, when there is at least one: where "Restore…" opens.
+    func backupFolder() -> URL? {
+        return backups.latest == nil ? nil : backups.directory
     }
 
     private static func text(of error: Error) -> String {

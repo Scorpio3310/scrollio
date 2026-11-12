@@ -1603,6 +1603,66 @@ final class SettingsFileCenterTests: XCTestCase {
         XCTAssertThrowsError(try nowhere.write(Data()))
     }
 
+    /// No two backups hold the same settings. Going back and forth between two states
+    /// wrote a new backup each time: the five places filled with copies of those two, and
+    /// the user's own settings from before the first import were the ones deleted. Now
+    /// the backup that already holds the settings becomes the newest, and the user's own
+    /// stay until five other states were kept after them.
+    func testSettingsThatAreAlreadyKeptAreNotKeptTwice() throws {
+        let own = OwnSettings(for: self)
+        own.options.readOptions()
+        own.options.scroll.speed = 7.5
+        var moment = Date(timeIntervalSince1970: 1_794_476_527)
+        own.center.now = { moment }
+        func keptSpeeds() -> [Double] {
+            return own.center.backups.entries().compactMap { try? own.center.read($0.url).get().scrollNumbers["speed"] }
+        }
+        _ = try own.center.importSettings(try Fixture.contents(#""speed":3"#)).get()
+        moment += 60
+        _ = try own.center.importSettings(try Fixture.contents(#""speed":4"#)).get()
+        moment += 60
+        XCTAssertEqual(keptSpeeds(), [3, 7.5], "newest first")
+
+        // The newest backup, restored eight times: 3, 4, 3, 4 …
+        var seen: [Double] = []
+        for _ in 0..<8 {
+            let latest = try XCTUnwrap(own.center.latestBackup())
+            let backup = try own.center.importSettings(try own.center.read(latest.url).get()).get()
+            XCTAssertEqual(own.center.latestBackup()?.url.lastPathComponent, backup.lastPathComponent, "what was replaced is the newest")
+            seen.append(own.options.scroll.speed)
+            moment += 60
+        }
+        XCTAssertEqual(seen, [3, 4, 3, 4, 3, 4, 3, 4])
+        XCTAssertEqual(keptSpeeds(), [3, 4, 7.5], "three states, each kept once; the user's own is still there")
+        XCTAssertEqual(names(in: own.backupFolder).count, 3)
+
+        // And it comes back.
+        let oldest = try XCTUnwrap(own.center.backups.entries().last)
+        _ = try own.center.importSettings(try own.center.read(oldest.url).get()).get()
+        XCTAssertEqual(own.options.scroll.speed, 7.5)
+        XCTAssertEqual(keptSpeeds(), [4, 3, 7.5])
+
+        // The folder's own rule, without the settings: a twin becomes the newest, under a new name.
+        let folder = try temporaryFolder(for: self)
+        let backups = SettingsBackups(directory: folder)
+        let start = Date(timeIntervalSince1970: 1_794_476_527)
+        let first = try backups.write(Data("a".utf8), now: start)
+        _ = try backups.write(Data("b".utf8), now: start.addingTimeInterval(60))
+        let again = try backups.write(Data("a, said again".utf8), now: start.addingTimeInterval(120), holdsTheSame: { $0 == Data("a".utf8) })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path), "it moved")
+        XCTAssertEqual(again.lastPathComponent, "Scrollio Settings Backup 2026-11-12 09.44.07 UTC.json")
+        XCTAssertEqual(try String(contentsOf: again, encoding: .utf8), "a", "the backup that was there, not a second one")
+        XCTAssertEqual(backups.entries().count, 2)
+        XCTAssertEqual(backups.latest?.url.lastPathComponent, again.lastPathComponent)
+        // Settings are compared, not who wrote the file or when.
+        let one = Fixture.file(#""speed":3,"smooth":true"#, more: #","appVersion":"1.0","exported":"2026-01-01T00:00:00Z""#)
+        let other = Fixture.file(#""smooth":true,"speed":3"#, more: #","appVersion":"2.0""#)
+        XCTAssertTrue(SettingsFile.holdSameSettings(one, other))
+        XCTAssertFalse(SettingsFile.holdSameSettings(one, Fixture.file(#""speed":4,"smooth":true"#)))
+        XCTAssertFalse(SettingsFile.holdSameSettings(one, Data("not a file".utf8)))
+        XCTAssertFalse(SettingsFile.holdSameSettings(Data("{}".utf8), Data("{}".utf8)), "no settings: nothing to call the same")
+    }
+
     /// Under XCTest the app's own preferences are closed to settings files and its
     /// backups have no folder: a test that forgets to bring its own reads and writes nothing.
     func testTheAppsOwnSettingsAndFolderAreOutOfReachOfTheTests() throws {
@@ -1966,6 +2026,9 @@ final class PreferencesGeneralSettingsFileTests: XCTestCase {
         var offeredNames: [String] = []
         var importAnswer: URL?
         var importPanels = 0
+        /// The folders "Restore…" opened its panel in, and what the user chose there.
+        var restoreFolders: [URL] = []
+        var restoreAnswer: URL?
         var presented: [SettingsImportSheetViewController] = []
         var dismissed: [SettingsImportSheetViewController] = []
         var notices: [(text: String, style: Toast.Style)] = []
@@ -1996,6 +2059,10 @@ final class PreferencesGeneralSettingsFileTests: XCTestCase {
         pane.chooseImportFile = { _, completion in
             world.importPanels += 1
             completion(world.importAnswer)
+        }
+        pane.chooseBackupFile = { _, folder, completion in
+            world.restoreFolders.append(folder)
+            completion(world.restoreAnswer)
         }
         pane.presentSettingsSheet = { sheet, _ in
             _ = sheet.view
@@ -2130,7 +2197,8 @@ final class PreferencesGeneralSettingsFileTests: XCTestCase {
     }
 
     /// "Import" of the sheet: the settings are in effect, the pane shows them, a notice
-    /// says it is done and how to go back, and "Restore…" brings the old ones back.
+    /// says it is done and how to go back, and "Restore…" opens the folder of what was
+    /// kept: the one the user chooses there comes back through the same sheet.
     func testImportPutsTheSettingsInEffectAndCanBeTakenBack() throws {
         let own = OwnSettings(for: self)
         own.options.readOptions()
@@ -2173,16 +2241,23 @@ final class PreferencesGeneralSettingsFileTests: XCTestCase {
         // The way back is in the pane.
         let previous = try XCTUnwrap(pane.previousSettingsRow)
         XCTAssertFalse(previous.isHidden)
-        XCTAssertEqual(previous.title, "Settings from before the last import")
+        XCTAssertEqual(previous.title, "Settings from before an import")
         let backup = try XCTUnwrap(own.center.latestBackup())
-        XCTAssertEqual(previous.explanation, "Saved on \(SettingsFileText.moment(backup.date)).")
+        XCTAssertEqual(previous.explanation, "Scrollio keeps the last 5. The newest is from \(SettingsFileText.moment(backup.date)).")
         XCTAssertEqual(pane.restoreSettingsButton.title, "Restore…")
         XCTAssertTrue(pane.restoreSettingsButton.accessibilityTitleUIElement() as? NSTextField === previous.titleLabel)
         XCTAssertGreaterThan(pane.view.fittingSize.height, heightBefore, "the pane makes room for the row")
         XCTAssertEqual(pane.settingsFileSection.box.visibleRows.count, 2)
 
-        // "Restore…" asks with the same sheet, about the backup.
+        // "Restore…" opens a panel in the folder of the backups; cancelled, nothing happens.
         click(pane.restoreSettingsButton)
+        XCTAssertEqual(world.restoreFolders.map(\.path), [own.backupFolder.path])
+        XCTAssertTrue(world.presented.last === sheet, "no sheet without a choice")
+        XCTAssertEqual(own.options.scroll.speed, 3)
+        // The chosen backup is asked about with the same sheet.
+        world.restoreAnswer = backup.url
+        click(pane.restoreSettingsButton)
+        XCTAssertEqual(world.restoreFolders.count, 2)
         let restore = try XCTUnwrap(world.presented.last)
         XCTAssertFalse(restore === sheet)
         XCTAssertEqual(restore.titleLabel.stringValue, "Import these settings?")
@@ -2193,10 +2268,21 @@ final class PreferencesGeneralSettingsFileTests: XCTestCase {
         XCTAssertFalse(own.options.general.hideStatusItem)
         XCTAssertEqual(pane.showInMenuBarSwitch.state, .on)
         XCTAssertEqual(world.notices.count, 2)
-        // And that can be taken back too: the newest backup is what was just replaced.
+        // And that can be taken back too: the newest backup is what was just replaced,
+        // and the one that was restored is still there.
         let newest = try XCTUnwrap(own.center.latestBackup())
         XCTAssertNotEqual(newest.url.lastPathComponent, backup.url.lastPathComponent)
         XCTAssertEqual(try own.center.read(newest.url).get().scrollNumbers["speed"], 3)
+        XCTAssertEqual(own.center.backups.entries().count, 2)
+        XCTAssertEqual(previous.explanation, "Scrollio keeps the last 5. The newest is from \(SettingsFileText.moment(newest.date)).")
+
+        // The panel "Restore…" shows: one JSON file, in that folder, with what to do.
+        let panel = PreferencesGeneralViewController.makeRestorePanel(folder: own.backupFolder)
+        XCTAssertEqual(panel.directoryURL?.standardizedFileURL.path, own.backupFolder.standardizedFileURL.path)
+        XCTAssertEqual(panel.message, "Choose the settings to go back to. Each file is named by the time (UTC) it was saved.")
+        XCTAssertEqual(panel.allowedContentTypes.map(\.identifier), ["public.json"])
+        XCTAssertFalse(panel.allowsMultipleSelection)
+        XCTAssertEqual(panel.prompt, "Choose")
     }
 
     /// A pane that opens later finds the backup of an earlier import.
