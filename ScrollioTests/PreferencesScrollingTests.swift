@@ -652,6 +652,40 @@ final class PreferencesScrollingTests: XCTestCase {
 
     // MARK: - Trackpad-style events
 
+    /// The main switch and the two places cannot contradict each other: the last place
+    /// switched off switches the Beta off (and the rows go), and the Beta switched on with
+    /// both places off comes on in browsers.
+    func testTheBetaSwitchAndItsTwoPlaces_neverSayOnWithNothingOn() {
+        let before = (Options.shared.trackpadStyleInBrowsers, Options.shared.trackpadStyleInMacApps)
+        defer {
+            (Options.shared.trackpadStyleInBrowsers, Options.shared.trackpadStyleInMacApps) = before
+            Options.shared.scroll.smoothSimTrackpad = false
+        }
+        Options.shared.trackpadStyleInBrowsers = true
+        Options.shared.trackpadStyleInMacApps = false
+        let controller = makeController(advanced: true)
+        let rows = [controller.trackpadBrowsersRow!, controller.trackpadMacAppsRow!]
+        set(controller.trackpadEventsSwitch, true)
+
+        set(controller.trackpadBrowsersRow.toggle, false)
+        XCTAssertFalse(Options.shared.scroll.smoothSimTrackpad, "the last place off switches the Beta off")
+        XCTAssertEqual(controller.trackpadEventsSwitch.state, .off)
+        XCTAssertTrue(rows.allSatisfy(\.isHidden))
+
+        set(controller.trackpadEventsSwitch, true)
+        XCTAssertTrue(Options.shared.trackpadStyleInBrowsers, "on again: in browsers")
+        XCTAssertFalse(Options.shared.trackpadStyleInMacApps)
+        XCTAssertEqual(rows.map(\.isOn), [true, false])
+        XCTAssertFalse(rows.contains(where: \.isHidden))
+
+        set(controller.trackpadMacAppsRow.toggle, true)
+        set(controller.trackpadBrowsersRow.toggle, false)
+        XCTAssertTrue(Options.shared.scroll.smoothSimTrackpad, "Mac apps alone keep it on")
+        set(controller.trackpadEventsSwitch, false)
+        set(controller.trackpadEventsSwitch, true)
+        XCTAssertEqual(rows.map(\.isOn), [false, true], "a choice that is not empty is kept")
+    }
+
     /// "In browsers" and "In Mac apps" stand under the Beta switch only while it is on (and
     /// Advanced is open), and write the two settings of their own.
     func testTheTwoRowsUnderTheBetaSwitch_showOnlyWhileItIsOn_andWriteTheirSettings() {
@@ -676,7 +710,10 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertTrue(Options.shared.trackpadStyleInMacApps)
         set(controller.trackpadBrowsersRow.toggle, false)
         XCTAssertFalse(Options.shared.trackpadStyleInBrowsers)
-        XCTAssertTrue(Options.shared.scroll.smoothSimTrackpad, "the main switch is its own")
+        XCTAssertTrue(Options.shared.scroll.smoothSimTrackpad, "one place is still on")
+        XCTAssertGreaterThan(controller.trackpadBrowsersRow.leadingInset, controller.trackpadEventsRow.leadingInset,
+                             "the two rows stand further in than the switch they depend on")
+        XCTAssertEqual(controller.trackpadMacAppsRow.leadingInset, controller.trackpadBrowsersRow.leadingInset)
 
         controller.setAdvancedExpanded(false)
         XCTAssertTrue(rows.allSatisfy(\.isHidden), "closed with Advanced")
@@ -1737,10 +1774,13 @@ final class PreferencesScrollingTests: XCTestCase {
             XCTAssertEqual(box.minX, margin, accuracy: 0.5)
             XCTAssertEqual(box.maxX, boxRight, accuracy: 0.5)
         }
-        // Titles start at the box's inset; controls end at it.
+        // Titles start at the box's inset; controls end at it. The two rows that depend on
+        // the Beta switch stand further in.
         let rows: [PreferencesGroupRow] = controller.sections.flatMap(\.box.rows).filter { !($0 is PreferencesDisclosureRow) }
+        let dependent: [PreferencesGroupRow] = [controller.trackpadBrowsersRow, controller.trackpadMacAppsRow]
         for row in rows {
-            XCTAssertEqual(frame(of: row.titleLabel, in: controller).minX, margin + inset, accuracy: 0.5, row.title)
+            let indent = dependent.contains { $0 === row } ? PreferencesGroupedForm.dependentRowIndent : 0
+            XCTAssertEqual(frame(of: row.titleLabel, in: controller).minX, margin + inset + indent, accuracy: 0.5, row.title)
         }
         var rightEdges: [NSView] = [
             controller.smoothSwitch, controller.reverseSwitch, controller.trackpadEventsSwitch,

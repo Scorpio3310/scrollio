@@ -33,6 +33,9 @@ enum PreferencesGroupedForm {
     /// Between a box's edges and the content of its rows, left and right. The hairlines
     /// between the rows are inset by the same amount.
     static let rowHorizontalInset: CGFloat = 10
+    /// How much further in a row stands that depends on the row above it (a switch that
+    /// only counts while the switch above is on), as dependent controls stand on the Mac.
+    static let dependentRowIndent: CGFloat = 18
     /// Above and below the text of a row.
     static let rowVerticalInset: CGFloat = 10
     /// The least room above and below a control that is taller than the title line.
@@ -632,9 +635,17 @@ final class PreferencesSwitchRow: PreferencesGroupRow {
 
     let toggle: NSSwitch
 
-    init(title: String, explanation: String? = nil, target: AnyObject?, action: Selector?) {
+    /// - Parameter leadingInset: more than the row's own for a switch that depends on the
+    ///   switch above it (`PreferencesGroupedForm.dependentRowIndent` further in).
+    init(
+        title: String,
+        explanation: String? = nil,
+        target: AnyObject?,
+        action: Selector?,
+        leadingInset: CGFloat = PreferencesGroupedForm.rowHorizontalInset
+    ) {
         toggle = PreferencesGroupedForm.makeSwitch(target: target, action: action)
-        super.init(title: title, explanation: explanation, accessory: toggle)
+        super.init(title: title, explanation: explanation, accessory: toggle, leadingInset: leadingInset)
     }
 
     required init?(coder: NSCoder) {

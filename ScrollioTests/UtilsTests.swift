@@ -68,8 +68,8 @@ final class UtilsTests: XCTestCase {
     func testTheAppNamesThePurpleOfItsIconAsItsAccentColour() throws {
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "NSAccentColorName") as? String, AppAccent.assetName)
         let accent = try XCTUnwrap(NSColor(named: AppAccent.assetName))
-        XCTAssertEqual(try hex(accent, in: .aqua), "#5F44B3")
-        XCTAssertEqual(try hex(accent, in: .darkAqua), "#7F62D9")
+        XCTAssertEqual(try hex(accent, in: .aqua), "#563CA6")
+        XCTAssertEqual(try hex(accent, in: .darkAqua), "#6A4EC2")
     }
 
     /// White on the accent (a selected row's text, the number on a lit button, a key that is

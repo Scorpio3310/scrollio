@@ -688,16 +688,33 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
 
     /// A plain switch: it leaves Duration alone.
     @objc func trackpadEventsClick(_ sender: NSSwitch) {
-        getTargetApplicationScrollOptions().smoothSimTrackpad = sender.state == .on
+        let on = sender.state == .on
+        getTargetApplicationScrollOptions().smoothSimTrackpad = on
+        // On with both places off would be on in name only: the Beta comes on in browsers.
+        if on, currentTargetApplication == nil,
+           !Options.shared.trackpadStyleInBrowsers, !Options.shared.trackpadStyleInMacApps {
+            Options.shared.trackpadStyleInBrowsers = true
+        }
         syncViewWithOptions()
     }
 
     @objc func trackpadBrowsersClick(_ sender: NSSwitch) {
         Options.shared.trackpadStyleInBrowsers = sender.state == .on
+        trackpadScopeDidChange()
     }
 
     @objc func trackpadMacAppsClick(_ sender: NSSwitch) {
         Options.shared.trackpadStyleInMacApps = sender.state == .on
+        trackpadScopeDidChange()
+    }
+
+    /// The last place switched off switches the Beta off: with neither place on there is
+    /// nothing left for the main switch to mean, and it must not stay lit.
+    private func trackpadScopeDidChange() {
+        guard currentTargetApplication == nil,
+              !Options.shared.trackpadStyleInBrowsers, !Options.shared.trackpadStyleInMacApps else { return }
+        getTargetApplicationScrollOptions().smoothSimTrackpad = false
+        syncViewWithOptions()
     }
 
     /// Starts recording the key of the clicked row. The recorder ignores a click that comes
@@ -1015,7 +1032,8 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
             title: text("scrolling-trackpad-browsers"),
             explanation: text("scrolling-trackpad-browsers-hint"),
             target: self,
-            action: #selector(trackpadBrowsersClick(_:))
+            action: #selector(trackpadBrowsersClick(_:)),
+            leadingInset: PreferencesGroupedForm.rowHorizontalInset + PreferencesGroupedForm.dependentRowIndent
         )
         row.toggle.identifier = Identifier.trackpadBrowsers
         row.isHidden = true
@@ -1028,7 +1046,8 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
             title: text("scrolling-trackpad-mac-apps"),
             explanation: text("scrolling-trackpad-mac-apps-hint"),
             target: self,
-            action: #selector(trackpadMacAppsClick(_:))
+            action: #selector(trackpadMacAppsClick(_:)),
+            leadingInset: PreferencesGroupedForm.rowHorizontalInset + PreferencesGroupedForm.dependentRowIndent
         )
         row.toggle.identifier = Identifier.trackpadMacApps
         row.isHidden = true

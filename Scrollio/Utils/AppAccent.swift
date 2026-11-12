@@ -3,7 +3,7 @@
 //  Mos
 //
 //  The app's accent colour: the purple of its icon, the colour set `AccentColor` in
-//  Assets.xcassets (light #5F44B3, dark #7F62D9: a violet, hue 255°), named by the build setting
+//  Assets.xcassets (light #563CA6, dark #6A4EC2: a violet, hue 255°), named by the build setting
 //  ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME, which puts `NSAccentColorName` in the
 //  app's Info.plist. macOS then draws the switches, sliders, pop-ups, selections, focus
 //  rings and default buttons in it, and `NSColor.controlAccentColor` returns it, while the

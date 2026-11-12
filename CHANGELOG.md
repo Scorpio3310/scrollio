@@ -95,6 +95,10 @@ it for the people who use the app, and give the version its part before you tag 
   choose "Update to Scrollio …" in its menu.
 - The disk image opens as a window that shows what to do: Scrollio's icon, an arrow and
   the Applications folder.
+- Under the Beta switch the two places stand a little further in, and the three switches
+  cannot contradict each other: the last place switched off switches the Beta off, and the
+  Beta switched on with both off comes on in browsers.
+- The purple of the app's switches, selection and buttons is a little darker.
 
 ## 1.0.1
 
