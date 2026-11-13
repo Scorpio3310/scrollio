@@ -10,6 +10,14 @@ it for the people who use the app, and give the version its part before you tag 
 
 ## Unreleased
 
+- **The Shortcut Ring is drops now.** The disc behind the ring is gone: each of the eight
+  places is a round drop of its own, with one more in the middle that names the shortcut
+  you point at. When the ring opens, the drops come out of the middle one after the
+  other and settle around the pointer; the one you point at grows and takes the accent
+  colour. You can choose from the first moment, as before, and the ring still goes away
+  at once. On macOS 26 and later the drops are Liquid Glass; on macOS 14 and 15 they are
+  the blurred material the ring had. With Reduce transparency or Increase contrast they
+  are drawn solid, and with Reduce motion the ring simply appears.
 - **Calendar is no longer put on your list of apps.** Version 1.0.4 added Calendar to
   Settings › Apps by itself, with Smooth scrolling off. Scrollio no longer adds an app to
   that list: only you do. If 1.0.4 added Calendar on your Mac and you do not want it,
