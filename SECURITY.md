@@ -109,8 +109,8 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
     blank or turn the text around are written out, and a run of them is one short
     mark, so that no part of a path or an argument is out of sight. Letters that look
     like other letters are not told apart: read a path, do not glance at it. Unless the
-    file gives no button or key an action and leaves the gestures and the Shortcut Ring
-    at their defaults, Return presses "Cancel".
+    file gives no button or key an action and leaves the actions of the gestures and of
+    the Shortcut Ring's places at their defaults, Return presses "Cancel".
   - Importing starts nothing. An imported action runs like any other, at a press of its
     button or key (or when its place is chosen in the open ring), under the rule above (a key only with ⌘, ⌥, ⌃ or ⇧ or as an F-key,
     never the left or right button), and a script is started as described above.

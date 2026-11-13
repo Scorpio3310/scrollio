@@ -67,6 +67,10 @@ nothing opens the ring until you do. The pane also sets what the eight places ho
   Near the edge of a screen the whole ring stays visible, a little away from the
   pointer, and while you hold the button it is still the direction of your hand that
   chooses.
+- "Freeze pointer while the ring is held" (off for a new ring) keeps the pointer where
+  it was while you hold the button, as the same switch of Gestures does for a gesture:
+  the direction of your hand chooses, and the pointer is where you left it when the
+  shortcut runs. A ring that stays open always has a free pointer, for the click.
 - A place holds what a button can: one of the listed keyboard shortcuts (Mission Control
   and Spaces, apps and windows, editing, Finder, system, screenshots, navigation), the
   Back or Forward click, a key combination you record ("Keyboard Shortcut…"), or an

@@ -192,6 +192,7 @@ final class RingPreferencesViewController: NSViewController {
     enum Identifier {
         static let preview = NSUserInterfaceItemIdentifier("ring-preview")
         static let triggerButton = NSUserInterfaceItemIdentifier("ring-trigger-button")
+        static let freezePointer = NSUserInterfaceItemIdentifier("ring-freeze-pointer")
         static let placesHint = NSUserInterfaceItemIdentifier("ring-places-hint")
 
         static func action(_ place: Int) -> NSUserInterfaceItemIdentifier {
@@ -254,6 +255,9 @@ final class RingPreferencesViewController: NSViewController {
     private(set) var previewView: ShortcutRingPreviewView!
     private(set) var triggerRow: PreferencesGroupRow!
     private(set) var triggerButton: NSButton!
+    /// "Freeze pointer while the ring is held" and its switch.
+    private(set) var freezeRow: PreferencesGroupRow!
+    private(set) var freezeToggle: NSControl!
     /// Top, Top right … Top left.
     private(set) var placeRows: [PreferencesGroupRow] = []
     private(set) var placePopUps: [ButtonActionPullDown] = []
@@ -287,7 +291,7 @@ final class RingPreferencesViewController: NSViewController {
         previewView = preview
 
         let width = Self.boxWidth
-        let trigger = PreferencesGroupSection(width: width, rows: [makeTriggerRow()])
+        let trigger = PreferencesGroupSection(width: width, rows: [makeTriggerRow(), makeFreezeRow()])
         placePopUps = (0..<ShortcutRingSettings.placeCount).map { makePopUp(for: $0) }
         placeRows = (0..<ShortcutRingSettings.placeCount).map { makePlaceRow($0) }
         let places = makePlacesSection(rows: placeRows)
@@ -329,6 +333,7 @@ final class RingPreferencesViewController: NSViewController {
         triggerButton.title = text(summary.hasTrigger ? "ring-trigger-change" : "ring-trigger-set-up")
 
         let ring = Options.shared.ring
+        (freezeToggle as? NSSwitch)?.state = ring.freezePointer ? .on : .off
         for (place, popUp) in placePopUps.enumerated() {
             // (A place that runs nothing shows "No Action", as the ring shows a dot.)
             popUp.configure(with: ring[place].asBinding(id: placeIDs[place]))
@@ -403,6 +408,14 @@ final class RingPreferencesViewController: NSViewController {
         }
     }
 
+    @objc func freezeToggled(_ sender: NSControl) {
+        let freezes = (sender as? NSSwitch)?.state == .on
+        guard Options.shared.ring.freezePointer != freezes else { return }
+        Options.shared.ring.freezePointer = freezes
+        // The face made for the ring on screen is kept for the ring as it is stored now.
+        reload()
+    }
+
     /// Puts `new` into `place`. What a place cannot hold (a recorded mouse button, a
     /// modifier key by itself) is not stored: the pull-down shows again what was there.
     func setPlace(_ new: ShortcutRingPlace, at place: Int) {
@@ -464,6 +477,21 @@ final class RingPreferencesViewController: NSViewController {
     }
 
     /// The pull-down of one place: the Buttons pane's, with the menu of a place.
+    /// "Freeze pointer while the ring is held": the ring's own switch, as Gestures has one
+    /// for a gesture. Off for a new ring.
+    private func makeFreezeRow() -> PreferencesGroupRow {
+        let toggle = PreferencesGroupedForm.makeSwitch(target: self, action: #selector(freezeToggled(_:)))
+        toggle.identifier = Identifier.freezePointer
+        freezeToggle = toggle
+        let row = PreferencesGroupRow(
+            title: text("ring-freeze-pointer"),
+            explanation: text("ring-freeze-pointer-hint"),
+            accessory: toggle
+        )
+        freezeRow = row
+        return row
+    }
+
     private func makePopUp(for place: Int) -> ButtonActionPullDown {
         let popUp = ButtonActionPullDown(
             binding: Options.shared.ring[place].asBinding(id: placeIDs[place]), forRingPlace: true

@@ -135,6 +135,10 @@ final class ShortcutRingController {
         var announce: (String) -> Void
         /// The held state changed: the pointer-movement tap follows it.
         var refreshMotionTap: () -> Void
+        /// Keeps the pointer where it is, and lets it go again: for a hold of a ring whose
+        /// "Freeze pointer while the ring is held" is on.
+        var lockPointer: () -> Void
+        var unlockPointer: () -> Void
         /// Whether the ring needs the keyboard changed: the keys tap follows it.
         var refreshKeyTap: () -> Void
         /// One line of the `app` log: a ring opened, was left open, ran something or
@@ -168,6 +172,8 @@ final class ShortcutRingController {
             playHaptic: { cue, code in LogiCenter.shared.playGestureHaptic(cue, forScrollioCode: code) },
             announce: { ShortcutRingController.announce($0) },
             refreshMotionTap: { MouseInteractionSessionController.shared.refreshMotionTapState() },
+            lockPointer: { MouseGesturePointerLock.shared.lock(for: .shortcutRing) },
+            unlockPointer: { MouseGesturePointerLock.shared.unlock(for: .shortcutRing) },
             refreshKeyTap: { ButtonCore.shared.keyTap.refresh() },
             log: { AppSystemLog.note($0) },
             logProblem: { AppSystemLog.problem($0) },
@@ -237,6 +243,10 @@ final class ShortcutRingController {
     private var timerPhase = ShortcutRingSession.Phase.closed
     private var lastPolledPointer: CGPoint?
     private var wasHeld = false
+    /// This hold keeps the pointer still (the ring's own switch).
+    private var holdsPointer = false
+    /// Where the pointer stood when the trigger went down.
+    private var pressPointer = CGPoint.zero
     private var neededKeys = false
     private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
     /// Hears of clicks that went to other apps, while a ring stands open.
@@ -311,6 +321,7 @@ final class ShortcutRingController {
         let pointer = Self.pointerLocation(of: event) ?? environment.pointerLocation()
         if !session.isOpen {
             screen = environment.screen(pointer)
+            pressPointer = pointer
         }
         perform(session.triggerPressed(
             at: environment.now(), pointer: pointer, screen: screen.usable, filled: filled
@@ -341,7 +352,11 @@ final class ShortcutRingController {
     /// The mouse moved while the trigger is held. Runs inside the motion tap's callback.
     func pointerMoved(by delta: CGPoint, to location: CGPoint) {
         guard session.phase == .held else { return }
-        perform(session.pointerMoved(by: delta, to: location, at: environment.now()))
+        // A pointer that is kept still stands where the press found it, whatever an event
+        // says that was made before the freeze took hold: a ring that is then left open
+        // must not take that event's place for the pointer's, and light what it is under.
+        let stands = holdsPointer ? pressPointer : location
+        perform(session.pointerMoved(by: delta, to: stands, at: environment.now()))
     }
 
     /// One look of the timer: where the pointer is over an open ring, and whether the
@@ -460,7 +475,8 @@ final class ShortcutRingController {
                     guard let self, self.showGeneration == generation, self.session.phase == .held else { return }
                     self.perform(self.session.timePassed(to: self.environment.now()))
                 }
-                environment.log("Shortcut Ring: opened by \(openedBy)")
+                environment.log("Shortcut Ring: opened by \(openedBy)"
+                    + (ring.freezePointer ? ", the pointer is kept still while it is held" : ""))
             case .light(let place):
                 presenter.light(place)
                 if let place {
@@ -541,6 +557,17 @@ final class ShortcutRingController {
     private func followTheSession() {
         let phase = session.phase
         let held = phase == .held
+        // The pointer is kept still for the hold alone: it is let go the moment the hold
+        // ends, however it ends, so a ring that stays open has a pointer to click with.
+        let freezes = held && ring.freezePointer
+        if freezes != holdsPointer {
+            holdsPointer = freezes
+            if freezes {
+                environment.lockPointer()
+            } else {
+                environment.unlockPointer()
+            }
+        }
         if held != wasHeld {
             wasHeld = held
             environment.refreshMotionTap()

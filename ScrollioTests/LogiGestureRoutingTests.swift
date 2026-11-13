@@ -399,7 +399,7 @@ final class LogiGestureRoutingTests: XCTestCase {
         runScheduledWork()
         advanceFrame()
 
-        InputProcessor.shared.handleMouseGestureMovement(deltaX: -500, deltaY: 0, location: pointerAnchor)
+        InputProcessor.shared.handlePointerMovement(deltaX: -500, deltaY: 0, location: pointerAnchor)
         let motion = makeMouseMoveEvent(deltaX: -500, deltaY: 0, location: pointerAnchor)
         MouseInteractionSessionController.shared.handleMotionTapEventForTests(motion)
         XCTAssertTrue(scheduledWork.isEmpty, "nothing was accumulated")

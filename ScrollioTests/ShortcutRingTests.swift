@@ -91,7 +91,8 @@ final class ShortcutRingSettingsTests: XCTestCase {
         // The format: one object with "places", each place an object with its action's
         // name as a button stores it, and what to open only where something is opened.
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(Array(object.keys), ["places"])
+        XCTAssertEqual(Set(object.keys), ["places", "freezePointer"])
+        XCTAssertEqual(object["freezePointer"] as? Bool, false)
         let places = try XCTUnwrap(object["places"] as? [[String: Any]])
         XCTAssertEqual(places.count, 8)
         XCTAssertEqual(places.map { $0["action"] as? String }, [
@@ -104,6 +105,31 @@ final class ShortcutRingSettingsTests: XCTestCase {
         let target = try XCTUnwrap(places[5]["openTarget"] as? [String: Any])
         XCTAssertEqual(target["path"] as? String, "/Applications/Notes.app")
         XCTAssertEqual(target["kind"] as? String, "application")
+    }
+
+    /// "Freeze pointer while the ring is held" is the ring's own switch: off for a new ring
+    /// and for data of the first version, which has no such key; stored with the places;
+    /// kept when a file's unknown actions are emptied; and data with the switch alone
+    /// keeps it and gets the places of a new ring.
+    func testTheFreezeSwitchIsOffUntilSetAndIsStoredWithThePlaces() throws {
+        XCTAssertFalse(ShortcutRingSettings.default.freezePointer)
+        XCTAssertFalse(try decoded(#"{"places": [{"action": "copy"}]}"#).freezePointer, "data of the first version")
+        XCTAssertFalse(try decoded(#"{"places": [], "freezePointer": "yes"}"#).freezePointer, "unreadable: off")
+
+        var ring = ShortcutRingSettings.default
+        ring.freezePointer = true
+        XCTAssertNotEqual(ring, .default)
+        let data = try JSONEncoder().encode(ring)
+        XCTAssertEqual(try JSONDecoder().decode(ShortcutRingSettings.self, from: data), ring)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["freezePointer"] as? Bool, true)
+
+        let alone = try decoded(#"{"freezePointer": true}"#)
+        XCTAssertTrue(alone.freezePointer)
+        XCTAssertEqual(alone.places, ShortcutRingSettings.default.places)
+
+        let strange = try decoded(#"{"places": [{"action": "somethingNewer"}], "freezePointer": true}"#)
+        XCTAssertTrue(strange.keepingOnlyWhatRuns().ring.freezePointer)
     }
 
     func testMissingOrUnreadableDataGivesTheDefaultRing() throws {
@@ -265,6 +291,7 @@ final class ShortcutRingSettingsTests: XCTestCase {
         var ring = ShortcutRingSettings.default
         ring[0] = ShortcutRingPlace(SystemShortcut.undo)
         ring[4] = .empty
+        ring.freezePointer = true
         options.ring = ring
         options.flushPendingSaves()
         XCTAssertNotNil(options.defaults.data(forKey: "shortcutRingSettings"))

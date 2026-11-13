@@ -7778,6 +7778,30 @@
           }
         }
       }
+    },
+    "ring-freeze-pointer": {
+      "comment": "Shortcut Ring pane: the switch that keeps the pointer in place while the ring's button or key is held",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Freeze pointer while the ring is held"
+          }
+        }
+      }
+    },
+    "ring-freeze-pointer-hint": {
+      "comment": "Shortcut Ring pane: what the freeze switch does",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The pointer stays where it is while you hold the button. The way your hand moves still chooses."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

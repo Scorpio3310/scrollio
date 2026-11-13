@@ -123,7 +123,7 @@ enum SettingsFile {
         case logiMouse
         /// `ThumbWheelSettings`, a JSON object.
         case thumbWheel
-        /// `ShortcutRingSettings`, a JSON object: the ring's eight places.
+        /// `ShortcutRingSettings`, a JSON object: the ring's eight places and its switch.
         case ring
     }
 
@@ -278,9 +278,10 @@ enum SettingsFile {
         var applications: [Application]?
         var bindings: [ButtonBinding]?
         var gesture: MouseGestureSettings?
-        /// The Shortcut Ring's places. A place can open an app or a file or run a script,
-        /// as a button can: such places are among `launchActions`, and the sheet shows
-        /// each one before an import.
+        /// The Shortcut Ring: its places, and whether the pointer stays still while its
+        /// button is held. A place can open an app or a file or run a script, as a button
+        /// can: such places are among `launchActions`, and the sheet shows each one before
+        /// an import.
         var ring: ShortcutRingSettings?
         /// Its "Let Scrollio manage this mouse" means nothing: `apply` puts this Mac's in.
         var logiWheel: LogiWheelSettings?
@@ -331,7 +332,7 @@ enum SettingsFile {
         /// the default one. The sheet then lists them, and Return does not import.
         var bringsActions: Bool {
             guard allBindings.isEmpty else { return true }
-            if let ring, ring != .default { return true }
+            if let ring, ring.places != ShortcutRingSettings.default.places { return true }
             guard let gesture else { return false }
             let defaults = MouseGestureSettings.default
             return [\MouseGestureSettings.upAction, \.downAction, \.leftAction, \.rightAction, \.clickAction]
