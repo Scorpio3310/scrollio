@@ -1470,20 +1470,27 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 if let old, let position = MouseArtworkModel.allCases.firstIndex(of: model) {
                     let bottom = old.size.height - CGFloat(position * 2 + 2) * cell
                     let partsWidth = CGFloat(parts.count) * cell
-                    for (from, to) in [(label, label), (label + partsWidth, label + partsWidth + cell)] {
-                        let width = from == label ? partsWidth : 2 * cell
+                    // A sheet made since the thumb wheel got its column has this sheet's
+                    // columns; an earlier one has none for it: its last two cells go one to
+                    // the right, and the thumb wheel's old picture comes from a file.
+                    let hasThumbWheel = old.size.width >= label + CGFloat(columns) * cell - 1
+                    let pieces: [(from: CGFloat, to: CGFloat, width: CGFloat)] = hasThumbWheel
+                        ? [(label, label, CGFloat(columns) * cell)]
+                        : [(label, label, partsWidth), (label + partsWidth, label + partsWidth + cell, 2 * cell)]
+                    for piece in pieces {
                         old.draw(
-                            in: NSRect(x: to, y: top + 18, width: width, height: 2 * cell),
-                            from: NSRect(x: from, y: bottom, width: width, height: 2 * cell),
+                            in: NSRect(x: piece.to, y: top + 18, width: piece.width, height: 2 * cell),
+                            from: NSRect(x: piece.from, y: bottom, width: piece.width, height: 2 * cell),
                             operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil
                         )
                     }
-                    PreferencesGroupedForm.boxFillColor.setFill()
-                    NSRect(x: label + partsWidth, y: top + 18, width: cell, height: cell).fill()
-                    NSColor.controlAccentColor.setFill()
-                    NSRect(x: label + partsWidth, y: top + 18 + cell, width: cell, height: cell).fill()
-                    // The thumb wheel's old picture, where there is one.
-                    for (row, selected) in ["", "-selected"].enumerated() {
+                    if !hasThumbWheel {
+                        PreferencesGroupedForm.boxFillColor.setFill()
+                        NSRect(x: label + partsWidth, y: top + 18, width: cell, height: cell).fill()
+                        NSColor.controlAccentColor.setFill()
+                        NSRect(x: label + partsWidth, y: top + 18 + cell, width: cell, height: cell).fill()
+                    }
+                    for (row, selected) in (hasThumbWheel ? [] : ["", "-selected"]).enumerated() {
                         let file = directory.appendingPathComponent("before/row-thumb-wheel\(selected)-\(suffix).png")
                         guard let wheel = NSImage(contentsOf: file) else { continue }
                         wheel.draw(
@@ -1597,13 +1604,14 @@ final class PreferencesWindowRenderTests: XCTestCase {
     }
 
     /// The rows' pictures: a row per drawing on the list's box and one on the selection;
-    /// each part the drawing has lit, then nothing lit, a numbered button and a part it
-    /// does not have (as the row shows it then).
+    /// each part the drawing has lit (a part it does not have as the row shows it then),
+    /// the thumb wheel's row picture, nothing lit and a numbered button.
     private func renderMiniatureSheet() throws {
         let cell: CGFloat = 32
         let label: CGFloat = 64
         let parts = ButtonsMousePart.allCases
-        let columns = parts.count + 2
+        // Each part, the thumb wheel, nothing lit, a numbered button.
+        let columns = parts.count + 3
         let bounds = NSRect(x: 0, y: 0, width: label + cell * CGFloat(columns), height: cell * CGFloat(2 * MouseArtworkModel.allCases.count))
         let size = ButtonsMouseMiniature.size
         for (suffix, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
@@ -1636,14 +1644,22 @@ final class PreferencesWindowRenderTests: XCTestCase {
                         var pictures: [ButtonTriggerPicture] = parts.map { part in
                             model.has(part.artworkPart) ? .mouse(part: part, number: nil) : .mouse(part: nil, number: 5)
                         }
-                        pictures += [.mouse(part: nil, number: nil), .mouse(part: nil, number: 6)]
-                        for (column, picture) in pictures.enumerated() {
-                            let frame = NSRect(
+                        func frame(_ column: Int) -> NSRect {
+                            return NSRect(
                                 x: label + CGFloat(column) * cell + (cell - size.width) / 2,
                                 y: y + (cell - size.height) / 2, width: size.width, height: size.height
                             )
-                            ButtonsMouseMiniature.draw(picture, mouse: model, in: frame, highlighted: highlighted)
                         }
+                        for (column, picture) in pictures.enumerated() {
+                            ButtonsMouseMiniature.draw(picture, mouse: model, in: frame(column), highlighted: highlighted)
+                        }
+                        // The thumb wheel's row picture, for a mouse that has one.
+                        if model.has(.thumbWheel) {
+                            ButtonsMouseMiniature.image(lighting: .thumbWheel, mouse: model, highlighted: highlighted)
+                                .draw(in: frame(parts.count))
+                        }
+                        ButtonsMouseMiniature.draw(.mouse(part: nil, number: nil), mouse: model, in: frame(parts.count + 1), highlighted: highlighted)
+                        ButtonsMouseMiniature.draw(.mouse(part: nil, number: 6), mouse: model, in: frame(parts.count + 2), highlighted: highlighted)
                     }
                 }
             }

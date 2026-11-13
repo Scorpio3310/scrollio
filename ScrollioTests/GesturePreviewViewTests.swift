@@ -461,9 +461,10 @@ final class GesturePreviewViewTests: XCTestCase {
         XCTAssertLessThan(distance(pressed, accent), 0.3)
     }
 
-    /// A mouse whose gesture button is on its thumb side (the MX Master 4) turns to the view
-    /// from there for the hold and back afterwards, as the loop says (`sideTurn`); under
-    /// Reduce Motion the still shows it turned, the button held. The other mice do not turn.
+    /// A mouse whose gesture button is on its thumb side (the MX Master 4 and 3) turns to
+    /// the view from there for the hold and back afterwards, as the loop says (`sideTurn`);
+    /// under Reduce Motion the still shows it turned, the button held. The plain mouse does
+    /// not turn.
     func testTheMasterFourTurnsToItsThumbSideForTheHold() {
         let view = makeView(mouse: .mxMaster4)
         let card = view.deviceCard
@@ -495,12 +496,17 @@ final class GesturePreviewViewTests: XCTestCase {
         card.show(loop.stillFrame)
         XCTAssertEqual(mouse.viewpoint, .thumbSide)
 
-        for model in [MouseArtworkModel.mxMaster3, .generic] {
-            let other = makeView(mouse: model)
-            other.deviceCard.show(other.loop.frame(at: (press + release) / 2))
-            XCTAssertEqual(other.deviceCard.mouse.turn, 0, "\(model) has one view")
-            XCTAssertEqual(other.deviceCard.mouse.viewpoint, .above)
-        }
+        // The MX Master 3's gesture button is its thumb rest, pressed down: it shows from
+        // above, so this mouse does not turn for the hold. The plain mouse has one view.
+        let three = makeView(mouse: .mxMaster3)
+        three.deviceCard.show(three.loop.frame(at: (press + release) / 2))
+        XCTAssertEqual(three.deviceCard.mouse.turn, 0)
+        XCTAssertEqual(three.deviceCard.mouse.viewpoint, .above)
+        XCTAssertTrue(three.deviceCard.mouse.outlineRect.contains(three.deviceCard.mouse.buttonRect))
+        let plain = makeView(mouse: .generic)
+        plain.deviceCard.show(plain.loop.frame(at: (press + release) / 2))
+        XCTAssertEqual(plain.deviceCard.mouse.turn, 0, "the plain mouse has one view")
+        XCTAssertEqual(plain.deviceCard.mouse.viewpoint, .above)
 
         // A mouse that connects while the frame shows: turned as the frame says, at once.
         var connected = MouseArtworkModel.generic
@@ -540,8 +546,8 @@ final class GesturePreviewViewTests: XCTestCase {
         NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
         XCTAssertEqual(mouse.model, .mxMaster3)
         XCTAssertNotEqual(mouse.buttonRect, four)
-        XCTAssertEqual(mouse.buttonViewpoint, .above)
-        XCTAssertLessThan(mouse.buttonRect.maxX, mouse.bodyRect.minX + 6, "in the thumb rest, on the side of the body")
+        XCTAssertEqual(mouse.buttonViewpoint, .above, "the thumb rest is the button, seen from above")
+        XCTAssertGreaterThan(mouse.buttonRect.height, four.height, "a pad, larger than the MX Master 4's button")
 
         connected = .generic
         NotificationCenter.default.post(name: LogiCenter.sessionChanged, object: nil)

@@ -10,9 +10,11 @@
 //  larger and further apart) and the Gestures preview.
 //
 //  A model can have a second view, from the thumb side (MouseArtworkViewpoint): what the
-//  thumb works is hidden under the body's overhang from above. The MX Master 4 has one
-//  (its two views are in MouseArtworkMaster4.swift); a part lights in one view, and the
-//  panes turn the drawing to it (MouseArtworkTurn).
+//  thumb works is hidden under the body's overhang from above. The MX Master 4 and the MX
+//  Master 3 have one (their two views are in MouseArtworkMaster4.swift and
+//  MouseArtworkMaster3.swift, painted by MouseArtworkTwoViews.swift); a part lights in one
+//  view, and the panes turn the drawing to it (MouseArtworkTurn). The plain mouse has the
+//  one view from above, and its shapes and painting are here.
 //
 //  An illustration, not a product render: no logo, no brand marks.
 //
@@ -74,7 +76,7 @@ enum MouseArtworkModel: CaseIterable {
     /// The views this mouse is drawn in: from above always, and from the thumb side where
     /// the drawing has that view.
     var viewpoints: [MouseArtworkViewpoint] {
-        return self == .mxMaster4 ? [.above, .thumbSide] : [.above]
+        return self == .generic ? [.above] : [.above, .thumbSide]
     }
 
     var hasSideView: Bool {
@@ -83,10 +85,15 @@ enum MouseArtworkModel: CaseIterable {
 
     /// The parts that light in the view from the thumb side: what the thumb works. From
     /// above they are under the body's overhang (the side buttons do not show there at
-    /// all; the thumb wheel and the thumb panel show, small and partly covered). Empty for
+    /// all; the thumb wheel and the thumb rest show, small and partly covered). Empty for
     /// a mouse drawn from above only.
     var sideParts: Set<MouseArtworkPart> {
-        return self == .mxMaster4 ? [.thumbWheel, .forward, .back, .gesture, .thumbPanel] : []
+        switch self {
+        case .mxMaster4: return [.thumbWheel, .forward, .back, .gesture, .thumbPanel]
+        // The MX Master 3's gesture button is its thumb rest, pressed down: it lights from above.
+        case .mxMaster3: return [.thumbWheel, .forward, .back]
+        case .generic: return []
+        }
     }
 
     /// The view `part` lights in. From above for everything the fingers work, for the
@@ -171,140 +178,92 @@ struct MouseArtworkShapes {
         return model.has(part) && model.viewpoint(lighting: part) == viewpoint
     }
 
-    /// The MX Master 4's drawing, which has shapes of its own in both views; nil for the
-    /// other models, whose shapes are below.
-    var master4: MouseArtworkMaster4? {
-        return model == .mxMaster4 ? MouseArtworkMaster4(viewpoint: viewpoint, schematic: schematic) : nil
-    }
-
-    private var isMaster: Bool {
-        return model != .generic
+    /// The drawing of a mouse that is drawn in two views, which has shapes of its own for
+    /// each (MouseArtworkMaster4.swift, MouseArtworkMaster3.swift); nil for the plain mouse,
+    /// whose one drawing is below.
+    var views: MouseArtworkTwoViews? {
+        switch model {
+        case .mxMaster4: return MouseArtworkMaster4(viewpoint: viewpoint, schematic: schematic)
+        case .mxMaster3: return MouseArtworkMaster3(viewpoint: viewpoint, schematic: schematic)
+        case .generic: return nil
+        }
     }
 
     // MARK: Body
 
-    /// The outline. The MX Master: narrow at the front (the left button reaching a little
-    /// further forward than the right), the right side one long curve, the thumb wing
-    /// flaring out low on the left. The plain mouse: symmetric, rounder at the back.
+    /// The outline. The plain mouse: symmetric, rounder at the back.
     func outline() -> NSBezierPath {
-        if let master4 { return master4.outline() }
+        if let views { return views.outline() }
         let path = NSBezierPath()
-        if isMaster {
-            path.move(to: p(38, 2.5))
-            path.curve(to: p(62.5, 6.5), controlPoint1: p(46, 1), controlPoint2: p(56, 2.5))
-            path.curve(to: p(74.5, 17), controlPoint1: p(68.5, 9), controlPoint2: p(72.5, 12.5))
-            path.curve(to: p(86, 66), controlPoint1: p(79.5, 30), controlPoint2: p(85, 48))
-            path.curve(to: p(81.5, 101), controlPoint1: p(86.8, 82), controlPoint2: p(86, 93))
-            path.curve(to: p(58, 119), controlPoint1: p(76.5, 110.5), controlPoint2: p(68, 119))
-            path.curve(to: p(30, 112.5), controlPoint1: p(47, 119), controlPoint2: p(37, 117))
-            path.curve(to: p(4, 89), controlPoint1: p(19, 106), controlPoint2: p(6.5, 99))
-            path.curve(to: p(1.5, 68), controlPoint1: p(2, 81), controlPoint2: p(0.8, 74))
-            path.curve(to: p(11, 47.5), controlPoint1: p(2.2, 60), controlPoint2: p(6, 52))
-            path.curve(to: p(19.5, 36), controlPoint1: p(15.5, 44), controlPoint2: p(18.5, 40.5))
-            path.curve(to: p(38, 2.5), controlPoint1: p(21, 22), controlPoint2: p(27, 4))
-        } else {
-            path.move(to: p(44, 2))
-            path.curve(to: p(74, 34), controlPoint1: p(61, 2), controlPoint2: p(72, 15))
-            path.curve(to: p(77, 84), controlPoint1: p(76, 50), controlPoint2: p(78, 68))
-            path.curve(to: p(44, 119), controlPoint1: p(76, 106), controlPoint2: p(62, 119))
-            path.curve(to: p(11, 84), controlPoint1: p(26, 119), controlPoint2: p(12, 106))
-            path.curve(to: p(14, 34), controlPoint1: p(10, 68), controlPoint2: p(12, 50))
-            path.curve(to: p(44, 2), controlPoint1: p(16, 15), controlPoint2: p(27, 2))
-        }
+        path.move(to: p(44, 2))
+        path.curve(to: p(74, 34), controlPoint1: p(61, 2), controlPoint2: p(72, 15))
+        path.curve(to: p(77, 84), controlPoint1: p(76, 50), controlPoint2: p(78, 68))
+        path.curve(to: p(44, 119), controlPoint1: p(76, 106), controlPoint2: p(62, 119))
+        path.curve(to: p(11, 84), controlPoint1: p(26, 119), controlPoint2: p(12, 106))
+        path.curve(to: p(14, 34), controlPoint1: p(10, 68), controlPoint2: p(12, 50))
+        path.curve(to: p(44, 2), controlPoint1: p(16, 15), controlPoint2: p(27, 2))
         path.close()
         return path
     }
 
     /// The body without the thumb wing, for centring the drawing.
     var mainBody: NSRect {
-        if let master4 { return master4.mainBody }
-        return isMaster ? NSRect(x: 18, y: 2, width: 69, height: 117) : NSRect(x: 10.5, y: 2, width: 67, height: 117)
+        if let views { return views.mainBody }
+        return NSRect(x: 10.5, y: 2, width: 67, height: 117)
     }
 
     /// Where the two buttons end (a curve across the body) and the split between them; the
     /// painter clips them to the outline.
     func seams() -> NSBezierPath {
-        if let master4 { return master4.seams() }
+        if let views { return views.seams() }
         let path = NSBezierPath()
-        if isMaster {
-            path.move(to: p(18.8, 49.5))
-            path.curve(to: p(90, 46), controlPoint1: p(36, 62), controlPoint2: p(64, 62))
-            path.move(to: p(50, -2))
-            path.line(to: p(50.5, 58))
-        } else {
-            path.move(to: p(6, 47))
-            path.curve(to: p(82, 47), controlPoint1: p(28, 57), controlPoint2: p(60, 57))
-            path.move(to: p(44, -2))
-            path.line(to: p(44, 53))
-        }
+        path.move(to: p(6, 47))
+        path.curve(to: p(82, 47), controlPoint1: p(28, 57), controlPoint2: p(60, 57))
+        path.move(to: p(44, -2))
+        path.line(to: p(44, 53))
         return path
     }
 
-    /// The line where the thumb rest meets the side of the body, behind the side buttons
-    /// (MX Master 3; the MX Master 4 has it among its seams).
-    func shoulder() -> NSBezierPath? {
-        guard model == .mxMaster3 else { return nil }
-        let path = NSBezierPath()
-        path.move(to: p(18.6, 41))
-        path.curve(to: p(21.2, 82), controlPoint1: p(18.2, 55), controlPoint2: p(18.8, 70))
-        path.curve(to: p(33.5, 110.8), controlPoint1: p(23, 95), controlPoint2: p(28, 105))
-        return path
-    }
-
-    /// The left (or right) button: the body in front of where the buttons end, on its side
-    /// of the split.
-    func buttonArea(left: Bool) -> NSBezierPath {
+    /// The plain mouse's left (or right) button: the body in front of where the buttons
+    /// end, on its side of the split.
+    private func buttonArea(left: Bool) -> NSBezierPath {
         let front = NSBezierPath()
-        let split: CGFloat = isMaster ? 50.25 : 44
-        if isMaster {
-            // Bounded on the left by the side of the body, where the thumb rest begins.
-            front.move(to: p(-4, 40.5))
-            front.line(to: p(18.6, 40.5))
-            front.line(to: p(18.8, 49.5))
-            front.curve(to: p(90, 46), controlPoint1: p(36, 62), controlPoint2: p(64, 62))
-            front.line(to: p(92, 46))
-        } else {
-            front.move(to: p(-4, 47))
-            front.line(to: p(6, 47))
-            front.curve(to: p(82, 47), controlPoint1: p(28, 57), controlPoint2: p(60, 57))
-            front.line(to: p(92, 47))
-        }
+        let split: CGFloat = 44
+        front.move(to: p(-4, 47))
+        front.line(to: p(6, 47))
+        front.curve(to: p(82, 47), controlPoint1: p(28, 57), controlPoint2: p(60, 57))
+        front.line(to: p(92, 47))
         front.line(to: p(92, -4))
         front.line(to: p(-4, -4))
         front.close()
         let side = NSBezierPath(rect: left
             ? NSRect(x: -4, y: -4, width: split + 4, height: 80)
             : NSRect(x: split, y: -4, width: 96 - split, height: 80))
-        var area = outline().cgPath.intersection(front.cgPath).intersection(side.cgPath)
-        // The thumb wheel at its edge is not part of the button.
-        if let roller = shape(of: .thumbWheel) {
-            area = area.subtracting(roller.cgPath)
-        }
-        return NSBezierPath(cgPath: area)
+        return NSBezierPath(cgPath: outline().cgPath.intersection(front.cgPath).intersection(side.cgPath))
     }
 
     // MARK: Wheel
 
     var wheelRect: NSRect {
-        if let master4 { return master4.wheelRect }
-        let rect = isMaster ? NSRect(x: 45.5, y: 10, width: 9.5, height: 25) : NSRect(x: 39.5, y: 11, width: 9, height: 24)
+        if let views { return views.wheelRect }
+        let rect = NSRect(x: 39.5, y: 11, width: 9, height: 24)
         return schematic ? grown(rect, width: 1.5, height: 1) : rect
     }
 
     /// The slot the wheel turns in.
     var wellRect: NSRect {
-        if let master4 { return master4.wellRect }
+        if let views { return views.wellRect }
         return wheelRect.insetBy(dx: -3, dy: -3)
     }
 
     // MARK: Parts
 
     /// The shape of `part` in this view of the drawing; nil when this mouse does not have
-    /// it, or when it does not show from here (the MX Master 4's side buttons from above,
-    /// its two buttons and the wheel from the side).
+    /// it, or when it does not show from here (the side buttons of a mouse drawn in two
+    /// views from above, its two buttons and the wheel from the side).
     func shape(of part: MouseArtworkPart) -> NSBezierPath? {
         guard model.has(part) else { return nil }
-        if let master4 { return master4.shape(of: part) }
+        if let views { return views.shape(of: part) }
         switch part {
         case .body:
             return outline()
@@ -314,85 +273,34 @@ struct MouseArtworkShapes {
             return buttonArea(left: false)
         case .wheel:
             return capsule(wheelRect)
-        case .modeShift:
-            var rect = NSRect(x: 47.25, y: 40.5, width: 6, height: 7)
-            if schematic { rect = grown(rect, width: 2, height: 1.6) }
-            let radius = min(rect.width, rect.height) * 0.35
-            return NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
-        case .thumbWheel:
-            let axis = thumbWheelAxis
-            return capsule(from: axis.start, to: axis.end, width: axis.width)
         case .back, .forward:
             return sideButton(part)
-        case .gesture:
-            return gesturePad()
-        case .thumbPanel:
-            // Only the MX Master 4 has one, and its shapes are its own.
+        case .modeShift, .thumbWheel, .gesture, .thumbPanel:
+            // The plain mouse has none of them.
             return nil
         }
     }
 
-    /// The side buttons, front to back, on the side of the body under the thumb wheel (the
-    /// MX Master 3) or on the left edge (the plain mouse).
+    /// The plain mouse's side buttons, front to back, on its left edge.
     private func sideButton(_ part: MouseArtworkPart) -> NSBezierPath? {
         typealias Button = (from: NSPoint, to: NSPoint, width: CGFloat)
-        let buttons: [MouseArtworkPart: Button]
-        switch (model, schematic) {
-        case (.mxMaster4, _):
-            // Its side buttons are in its view from the thumb side.
-            return nil
-        case (.mxMaster3, false):
-            buttons = [
-                .forward: (p(19.4, 47.6), p(19.2, 57.0), 5.6),
-                .back: (p(19.3, 64.0), p(20.0, 73.5), 5.6),
-            ]
-        case (.mxMaster3, true):
-            buttons = [
-                .forward: (p(16.6, 48.5), p(16.2, 55.5), 10),
-                .back: (p(16, 68.5), p(16.4, 75.5), 10),
-            ]
-        case (.generic, false):
-            buttons = [
-                .forward: (p(12.7, 45), p(12.1, 54.5), 5.6),
-                .back: (p(11.6, 61.5), p(11.3, 71), 5.6),
-            ]
-        case (.generic, true):
-            buttons = [
+        let buttons: [MouseArtworkPart: Button] = schematic
+            ? [
                 .forward: (p(11.8, 42), p(11.2, 49), 10),
                 .back: (p(10.4, 62), p(10.4, 69), 10),
             ]
-        }
+            : [
+                .forward: (p(12.7, 45), p(12.1, 54.5), 5.6),
+                .back: (p(11.6, 61.5), p(11.3, 71), 5.6),
+            ]
         guard let button = buttons[part] else { return nil }
         return capsule(from: button.from, to: button.to, width: button.width)
     }
 
-    /// The gesture button of the MX Master 3: the front of the thumb rest, pressed down with
-    /// the thumb.
-    private func gesturePad() -> NSBezierPath {
-        let path = NSBezierPath()
-        path.move(to: p(18.5, 49))
-        path.curve(to: p(18.9, 70), controlPoint1: p(18.2, 56), controlPoint2: p(18.4, 63))
-        path.curve(to: p(4.8, 73), controlPoint1: p(14, 73.5), controlPoint2: p(8, 74.5))
-        path.curve(to: p(7.4, 57.5), controlPoint1: p(4.2, 67), controlPoint2: p(5, 61.5))
-        path.curve(to: p(18.5, 49), controlPoint1: p(10, 53), controlPoint2: p(14.5, 49.5))
-        path.close()
-        return path
-    }
-
-    /// The short ridge at the front of the MX Master 3's thumb rest that marks its gesture
-    /// button.
-    func gestureRidge() -> NSBezierPath? {
-        guard model == .mxMaster3 else { return nil }
-        let path = NSBezierPath()
-        path.move(to: p(8.4, 58.5))
-        path.curve(to: p(16, 53.5), controlPoint1: p(10.5, 55.8), controlPoint2: p(13.2, 54.2))
-        return path
-    }
-
     /// Where the badge of a button the drawing cannot show sits: on the right edge, low.
     var badgeCentre: NSPoint {
-        if let master4 { return master4.badgeCentre }
-        return isMaster ? p(80, 96) : p(72, 98)
+        if let views { return views.badgeCentre }
+        return p(72, 98)
     }
 
     // MARK: Helpers
@@ -500,10 +408,11 @@ enum MouseArtworkPainter {
     /// The drawing is the one view `shapes` is of; a part that does not light in that view
     /// is drawn unlit.
     static func draw(_ shapes: MouseArtworkShapes, ink: MouseArtworkInk, lit: MouseArtworkPart? = nil, unit: CGFloat) {
-        if let master4 = shapes.master4 {
+        if let views = shapes.views {
             let lit = lit.flatMap { shapes.lights($0) ? $0 : nil }
-            return drawMaster4(master4, shapes: shapes, ink: ink, lit: lit, unit: unit)
+            return drawTwoViews(views, shapes: shapes, ink: ink, lit: lit, unit: unit)
         }
+        // The plain mouse.
         let outline = shapes.outline()
         if ink.shadow {
             drawShadow(of: outline)
@@ -511,10 +420,6 @@ enum MouseArtworkPainter {
         ink.bodyFill.setFill()
         outline.fill()
 
-        // The thumb rest, under everything else on it.
-        if shapes.model == .mxMaster3, let pad = shapes.shape(of: .gesture) {
-            drawPart(pad, lit: lit == .gesture, fill: ink.panel, opaque: false, ink: ink, unit: unit)
-        }
         if lit == .left || lit == .right, let area = shapes.shape(of: lit!) {
             ink.lit.setFill()
             area.fill()
@@ -523,34 +428,19 @@ enum MouseArtworkPainter {
         NSGraphicsContext.saveGraphicsState()
         outline.addClip()
         let lines = shapes.seams()
-        if let shoulder = shapes.shoulder() {
-            lines.append(shoulder)
-        }
         lines.lineWidth = ink.seamWidth / unit
         lines.lineCapStyle = .round
         ink.seam.setStroke()
         lines.stroke()
-        if let ridge = shapes.gestureRidge() {
-            ridge.lineWidth = 1.3 * ink.seamWidth / unit
-            ridge.lineCapStyle = .round
-            (lit == .gesture ? MouseArtworkPalette.litRidge : ink.outline).setStroke()
-            ridge.stroke()
-        }
         NSGraphicsContext.restoreGraphicsState()
 
         drawWheel(shapes, ink: ink, lit: lit == .wheel, unit: unit)
-        if let modeShift = shapes.shape(of: .modeShift) {
-            drawPart(modeShift, lit: lit == .modeShift, fill: ink.well, opaque: true, ink: ink, unit: unit)
-        }
 
         outline.lineWidth = ink.outlineWidth / unit
         ink.outline.setStroke()
         outline.stroke()
 
-        if let roller = shapes.shape(of: .thumbWheel) {
-            drawRoller(roller, along: shapes, ink: ink, lit: lit == .thumbWheel, unit: unit)
-        }
-        for part in [MouseArtworkPart.gesture, .forward, .back] where !(shapes.model == .mxMaster3 && part == .gesture) {
+        for part in [MouseArtworkPart.forward, .back] {
             guard let button = shapes.shape(of: part) else { continue }
             drawPart(button, lit: lit == part, fill: ink.well, opaque: true, ink: ink, unit: unit, edge: ink.outline)
         }
@@ -561,8 +451,8 @@ enum MouseArtworkPainter {
     /// light in the view `shapes` is of.
     static func drawHighlight(_ part: MouseArtworkPart, shapes: MouseArtworkShapes, unit: CGFloat) {
         guard shapes.lights(part), let shape = shapes.shape(of: part) else { return }
-        if let master4 = shapes.master4 {
-            return drawMaster4Highlight(part, of: master4, shapes: shapes, unit: unit)
+        if let views = shapes.views {
+            return drawTwoViewsHighlight(part, of: views, shapes: shapes, unit: unit)
         }
         let accent = NSColor.controlAccentColor
         NSGraphicsContext.saveGraphicsState()
@@ -585,34 +475,10 @@ enum MouseArtworkPainter {
         switch part {
         case .left, .right:
             drawWheel(shapes, ink: ink, lit: false, unit: unit)
-            if let modeShift = shapes.shape(of: .modeShift) {
-                drawPart(modeShift, lit: false, fill: ink.well, opaque: true, ink: ink, unit: unit)
-            }
         case .wheel:
             drawRidges(in: shapes.wheelRect, color: MouseArtworkPalette.litRidge, unit: unit)
-        case .thumbWheel:
-            drawRidges(along: shape, shapes: shapes, color: MouseArtworkPalette.litRidge, unit: unit)
-        case .thumbPanel:
+        case .body, .modeShift, .thumbWheel, .back, .forward, .gesture, .thumbPanel:
             break
-        case .gesture:
-            // The MX Master 3's: the pad in the thumb rest, under the side buttons' edge.
-            if let ridge = shapes.gestureRidge() {
-                ridge.lineWidth = 1.3 / unit
-                ridge.lineCapStyle = .round
-                MouseArtworkPalette.litRidge.setStroke()
-                ridge.stroke()
-                drawSideButtons(on: shapes, ink: ink, unit: unit)
-            }
-        case .body, .modeShift, .back, .forward:
-            break
-        }
-    }
-
-    /// The side buttons, unlit, over a lit thumb rest whose edge they sit on (MX Master 3).
-    static func drawSideButtons(on shapes: MouseArtworkShapes, ink: MouseArtworkInk, unit: CGFloat) {
-        for button in [MouseArtworkPart.forward, .back] {
-            guard let path = shapes.shape(of: button) else { continue }
-            drawPart(path, lit: false, fill: ink.well, opaque: true, ink: ink, unit: unit, edge: ink.outline)
         }
     }
 
@@ -691,27 +557,6 @@ enum MouseArtworkPainter {
         }
     }
 
-    /// The thumb wheel: a ribbed roller along the side.
-    private static func drawRoller(_ shape: NSBezierPath, along shapes: MouseArtworkShapes, ink: MouseArtworkInk, lit: Bool, unit: CGFloat) {
-        if lit {
-            ink.lit.setFill()
-            shape.fill()
-        } else if ink.fillsParts {
-            ink.bodyFill.setFill()
-            shape.fill()
-            ink.wheel.setFill()
-            shape.fill()
-        }
-        if ink.ridges {
-            drawRidges(along: shape, shapes: shapes, color: lit ? MouseArtworkPalette.litRidge : ink.wheelRidge, unit: unit)
-        }
-        if !lit {
-            shape.lineWidth = ink.partEdgeWidth / unit
-            ink.outline.setStroke()
-            shape.stroke()
-        }
-    }
-
     /// Ridges across the wheel, closer together towards its ends.
     static func drawRidges(in rect: NSRect, color: NSColor, unit: CGFloat) {
         let body = NSBezierPath(roundedRect: rect, xRadius: rect.width / 2, yRadius: rect.width / 2)
@@ -730,43 +575,6 @@ enum MouseArtworkPainter {
             ridge.stroke()
         }
         NSGraphicsContext.restoreGraphicsState()
-    }
-
-    /// Ridges across the thumb wheel (a capsule along the side), closer towards its ends.
-    private static func drawRidges(along shape: NSBezierPath, shapes: MouseArtworkShapes, color: NSColor, unit: CGFloat) {
-        // The roller's axis: the capsule drawn upright, then turned like the shape.
-        let bounds = shape.bounds
-        let centre = NSPoint(x: bounds.midX, y: bounds.midY)
-        let (start, end, width) = shapes.thumbWheelAxis
-        let dx = end.x - start.x, dy = end.y - start.y
-        let length = (dx * dx + dy * dy).squareRoot() + width
-        let angle = atan2(dy, dx)
-        NSGraphicsContext.saveGraphicsState()
-        shape.addClip()
-        for step in -3...3 {
-            let a = Double(step) * Double.pi / 8
-            let along = length / 2 * CGFloat(sin(a))
-            let facing = CGFloat(cos(a))
-            let mid = NSPoint(x: centre.x + along * cos(angle), y: centre.y + along * sin(angle))
-            let half = width / 2 - 1.2
-            let ridge = NSBezierPath()
-            ridge.move(to: NSPoint(x: mid.x - half * -sin(angle), y: mid.y - half * cos(angle)))
-            ridge.line(to: NSPoint(x: mid.x + half * -sin(angle), y: mid.y + half * cos(angle)))
-            ridge.lineWidth = 0.9 / unit
-            ridge.lineCapStyle = .round
-            color.withAlphaComponent(color.alphaComponent * facing).setStroke()
-            ridge.stroke()
-        }
-        NSGraphicsContext.restoreGraphicsState()
-    }
-}
-
-extension MouseArtworkShapes {
-    /// The thumb wheel's axis: the centres of its round ends, and its width.
-    var thumbWheelAxis: (start: NSPoint, end: NSPoint, width: CGFloat) {
-        return schematic
-            ? (NSPoint(x: 24, y: 15.5), NSPoint(x: 20.5, y: 32), 9)
-            : (NSPoint(x: 22.6, y: 21.5), NSPoint(x: 19.6, y: 37.5), 6.5)
     }
 }
 

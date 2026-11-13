@@ -15,6 +15,10 @@ it for the people who use the app, and give the version its part before you tag 
   row under it, the gesture button in front of them and the thumb panel beneath. The
   picture turns to that side when you point at one of those in Buttons or Mouse, and for
   the hold in Gestures, and the rows' small pictures show the same side.
+- **So is the MX Master 3** (3S, 3 for Mac): redrawn from above, with the same second
+  view from the thumb side: the thumb wheel on top, Forward and Back in a row under it,
+  and the thumb rest beneath. Its gesture button is the thumb rest itself, pressed
+  down: it lights from above, in the middle of the wing.
 - **Scroll slower**: a fourth key under Scrolling › While you hold a key, for fine work.
   While you hold it the wheel moves the page a fifth as far, as smoothly as ever. It has
   no key until you record one (⌥, ⇧ and ⌘ belong to the other three); a mouse button can
