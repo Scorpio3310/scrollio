@@ -98,7 +98,9 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   by" a mouse button, a key or a button over HID++; "left open"; then "closed, nothing
   ran" or "closed, ran" with the shortcut's name, or for a key combination or an app
   only what kind of thing it was), at launch which accent colour is
-  in effect, for "Trackpad-style scrolling (Experimental)" whether the wheel's hardware event is
+  in effect, at the first Mission Control or Show Desktop whether the Dock is asked for
+  them directly or they are sent as key presses (a macOS without the call), a sent
+  shortcut that left modifier keys set (once), for "Trackpad-style scrolling (Experimental)" whether the wheel's hardware event is
   taken off what an app is sent (once: at launch when the switch is on, in the Scrolling
   pane or for an app; else at the first scroll after you switch it on), what Safari gets
   and which form is under evaluation, and the updater: whether this copy updates itself, and one line per check
