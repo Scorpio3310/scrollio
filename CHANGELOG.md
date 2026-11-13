@@ -10,6 +10,12 @@ it for the people who use the app, and give the version its part before you tag 
 
 ## Unreleased
 
+- **Calendar is no longer put on your list of apps.** Version 1.0.4 added Calendar to
+  Settings › Apps by itself, with Smooth scrolling off. Scrollio no longer adds an app to
+  that list: only you do. If 1.0.4 added Calendar on your Mac and you do not want it,
+  select it in Settings › Apps and remove it; it does not come back. If Calendar's month
+  view scrolls badly with a smoothed wheel, add Calendar there yourself and turn Smooth
+  scrolling off.
 - **Mission Control and Show Desktop no longer stop working.** Scrollio sent them as key
   presses, and after some orders of use (Show Desktop, then another shortcut) macOS only
   flashed them, for a button, a gesture and the Shortcut Ring alike, until you used a

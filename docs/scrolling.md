@@ -21,14 +21,11 @@
   scrolling only in these apps" leaves every other app to macOS; buttons and gestures
   still work everywhere. "Smooth Scrolling in …" in the menu bar menu turns smoothing on
   or off for the app in front.
-- Calendar is on the list of apps from the start, with its own settings and Smooth
-  scrolling off: its month view aligns itself to weeks, and from a smoothed wheel a small
-  turn barely moves it and a little more runs away. The wheel's direction stays as in
-  every other app. It is an entry like any other: turn "Use settings from Scrolling" on
-  for it to have it smoothed again, or remove it; Scrollio does not put it back. It is
-  added once, when Calendar is not on your list yet (after the Welcome Guide for a new
-  user), and not while "Change scrolling only in these apps" is on, which leaves Calendar
-  to macOS anyway.
+- Calendar's month view aligns itself to weeks and takes a smoothed wheel badly (a small
+  turn barely moves it, a little more runs away). If that bothers you, add Calendar in
+  the Apps pane and turn Smooth scrolling off for it, or use "Smooth Scrolling in
+  Calendar" in the menu bar menu. Scrollio adds no app to the list by itself (version
+  1.0.4 added Calendar; an entry it made is yours to keep or remove).
 - Trackpads and the Magic Mouse are left alone. With several displays, the motion is
   timed to the display under the pointer.
 

@@ -142,82 +142,17 @@ enum AppSmoothing {
     }
 }
 
-// MARK: - Apps left to macOS unless the user says otherwise
+// MARK: - Apps that 1.0.4 put on the list by itself
 
-/// Apps that scroll badly when their wheel is smoothed get an entry on the per-app list by
-/// themselves, once: an ordinary entry with its own settings and "Smooth scrolling" off,
-/// the one "Smooth Scrolling in …" of the status-bar menu makes. The Apps pane lists it;
-/// the user switches it back ("Use settings from Scrolling", or "Smooth scrolling" on its
-/// page or in the menu) or removes it, and what he did stays (`offeredKey`).
+/// Version 1.0.4 put Calendar on the per-app list by itself, once, with smoothing off (its
+/// month view takes a smoothed wheel badly). The owner's verdict the day after: an app does
+/// not appear on a user's list unless the user puts it there. Nothing is added any more.
+///
+/// An entry that 1.0.4 made stays where it is: it cannot be told from one the user made,
+/// and it is an ordinary entry he can change or remove. What is left here is the name of
+/// the mark that version wrote on such a Mac, which a settings file still leaves out.
 enum AppsLeftToMacOS {
 
-    /// Bundle ids. An app goes in here only after it was seen to need it.
-    ///
-    /// - Calendar `com.apple.iCal`: its month view aligns itself to weeks and handles a
-    ///   smoothed stream badly: a small turn of the wheel barely moves it and a little
-    ///   more runs away, with or without Trackpad-style scrolling (the owner, 2026-11-12;
-    ///   also in 1.0.0).
-    static let bundleIdentifiers = ["com.apple.iCal"]
-
-    /// The stored list of the bundle ids that were offered on this Mac (an array of
-    /// strings). An id on it is never offered again, so an entry the user removed does not
-    /// come back; an id a later version adds to `bundleIdentifiers` is not on it and is
-    /// offered then. It stays on this Mac (`SettingsFile.leftOut`).
+    /// Written by 1.0.4 (an array of bundle ids). Nothing reads it.
     static let offeredKey = "appsLeftToMacOSOffered"
-
-    /// Where an app is on this Mac.
-    struct Location: Equatable {
-        /// What the entry stores, as "Choose in Finder…" does.
-        let bundlePath: String
-        let executablePath: String?
-    }
-
-    /// Offers each built-in app that was not offered yet. Run at launch once the settings
-    /// are read, and when the Welcome Guide is finished.
-    /// - Not installed (`locate` gives nil): nothing; it is tried again at a later launch.
-    /// - On the list already, under its bundle's or its program's path: the user's entry
-    ///   stays as he made it, and the app counts as offered.
-    /// - "Change scrolling only in these apps" is on: nothing, and it is tried again
-    ///   later. The app is left to macOS as it is, and an entry would start reversing in
-    ///   it (the menu's item is off there for the same reason, `AppSmoothing.decide`).
-    /// - Otherwise it is added: the Scrolling settings as its own, smoothing off.
-    ///
-    /// While a new user has not finished the Welcome Guide nothing is offered: the guide
-    /// sets the wheel's direction and the feel, and the entry's own settings are a copy of
-    /// what Scrolling has when it is made.
-    /// - Returns: the entries it added.
-    @discardableResult
-    static func offer(to options: Options, guideIsPending: Bool, locate: (String) -> Location?) -> [Application] {
-        guard !guideIsPending, options.writesToDefaults else { return [] }
-        let stored = options.defaults.stringArray(forKey: offeredKey) ?? []
-        var offered = stored
-        var added: [Application] = []
-        for identifier in bundleIdentifiers where !offered.contains(identifier) {
-            guard let location = locate(identifier) else { continue }
-            let app = AppSmoothing.App(name: "", bundlePath: location.bundlePath, executablePath: location.executablePath)
-            if AppSmoothing.entry(for: app, in: options.application.applications) == nil {
-                guard !options.application.allowlist else { continue }
-                added.append(AppSmoothing.addWithSmoothingOff(
-                    path: location.bundlePath, list: options.application, scrolling: options.scroll
-                ))
-            }
-            offered.append(identifier)
-        }
-        if offered != stored {
-            options.defaults.set(offered, forKey: offeredKey)
-        }
-        return added
-    }
-
-    /// The offer with the app's own settings and the apps of this Mac. Nothing under XCTest.
-    static func offerLive() {
-        guard !AppRuntime.isRunningXCTest else { return }
-        let added = offer(to: .shared, guideIsPending: WelcomeGuideProgress.live.isPending) { identifier in
-            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier) else { return nil }
-            return Location(bundlePath: url.path, executablePath: Bundle(url: url)?.executablePath)
-        }
-        if !added.isEmpty {
-            AppSystemLog.note("Apps: \(added.count) app(s) that scroll badly when smoothed were added to the list with smoothing off")
-        }
-    }
 }

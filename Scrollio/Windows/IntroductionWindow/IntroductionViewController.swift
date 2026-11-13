@@ -729,12 +729,9 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         setHelpShown(!isHelpShown)
     }
 
-    /// The guide is finished. The apps that are left to macOS by default are offered now,
-    /// with the wheel direction and the feel the guide left (`AppsLeftToMacOS`: nothing is
-    /// offered to a new user before).
+    /// The guide is finished.
     private func markGuideFinished() {
         progress.markFinished()
-        AppsLeftToMacOS.offerLive()
     }
 
     private func finish() {
