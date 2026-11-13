@@ -7590,7 +7590,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hold the button and move towards a shortcut, then let go. Or press and let go, then click one."
+            "value": "Hold the button and move towards a shortcut, then let go.\nOr press and let go, then click one."
           }
         }
       }

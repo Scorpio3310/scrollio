@@ -124,7 +124,9 @@ final class ShortcutRingRenderTests: XCTestCase {
     /// Eight frames of the demo side by side, for a look without a player.
     func testRenderTheDemosStrip() throws {
         let frames = RingDemo.frames()
-        let picks = [30, 40, 95, 140, 225, 300, 385, 420].map { min($0, frames.count - 1) }
+        // At rest, the press, a place lit, its action ran; the tap with its press mark, a
+        // place pointed at, "… and click it", the click's action ran.
+        let picks = [30, 43, 102, 150, 222, 324, 396, 436].map { min($0, frames.count - 1) }
         let scene = RingDemo.sceneSize
         let scale: CGFloat = 0.5
         let cellSize = CGSize(width: scene.width * scale, height: scene.height * scale)
@@ -266,6 +268,20 @@ final class ShortcutRingRenderTests: XCTestCase {
             ShortcutRingArtwork.draw(face, lit: lit, centre: centre, style: style)
         }
 
+        /// The trigger's press, made visible: two rings in the accent colour that widen
+        /// around the pointer and fade, the first at once, the second a little later.
+        static func drawPress(at tip: CGPoint, progress: CGFloat) {
+            for delay in [0, 0.25] as [CGFloat] {
+                let own = (progress - delay) / 0.6
+                guard own >= 0, own <= 1 else { continue }
+                let radius = 9 + 22 * own
+                let path = NSBezierPath(ovalIn: CGRect(x: tip.x - radius, y: tip.y - radius, width: radius * 2, height: radius * 2))
+                path.lineWidth = 3
+                NSColor.controlAccentColor.withAlphaComponent(0.9 * (1 - own)).setStroke()
+                path.stroke()
+            }
+        }
+
         /// A click: a ring around the pointer's tip.
         static func drawClick(at tip: CGPoint, progress: CGFloat = 0.5) {
             let radius = 6 + 12 * progress
@@ -338,6 +354,8 @@ final class ShortcutRingRenderTests: XCTestCase {
             var isTriggerHeld = false
             /// 0 … 1 while a click's ripple shows.
             var click: CGFloat?
+            /// 0 … 1 for a second after the trigger went down: the press, made visible.
+            var press: CGFloat?
         }
 
         private static func ease(_ t: CGFloat) -> CGFloat {
@@ -348,12 +366,12 @@ final class ShortcutRingRenderTests: XCTestCase {
         /// Where the pointer is at `time`: straight moves between the stops, eased.
         private static func pointer(at time: Double) -> CGPoint {
             let stops: [(time: Double, point: CGPoint)] = [
-                (0.0, CGPoint(x: 250, y: 190)), (0.75, CGPoint(x: 250, y: 190)),
-                (1.45, CGPoint(x: 202, y: 238)),            // towards "Copy", bottom left
-                (2.4, CGPoint(x: 202, y: 238)),
-                (3.3, CGPoint(x: 400, y: 200)), (4.1, CGPoint(x: 400, y: 200)),
-                (4.9, CGPoint(x: 466, y: 152)),             // over the top right place
-                (5.4, CGPoint(x: 466, y: 152)),
+                (0.0, CGPoint(x: 250, y: 190)), (0.85, CGPoint(x: 250, y: 190)),
+                (1.55, CGPoint(x: 202, y: 238)),            // towards "Copy", bottom left
+                (2.5, CGPoint(x: 202, y: 238)),
+                (3.3, CGPoint(x: 400, y: 200)), (4.7, CGPoint(x: 400, y: 200)),
+                (5.3, CGPoint(x: 466, y: 152)),             // over the top right place
+                (5.6, CGPoint(x: 466, y: 152)),
                 (6.1, CGPoint(x: 492, y: 210)),             // over the right place
                 (8.0, CGPoint(x: 492, y: 210)),
             ]
@@ -366,9 +384,11 @@ final class ShortcutRingRenderTests: XCTestCase {
         }
 
         static func frames() -> [Frame] {
-            let pressAt = 0.6, releaseAt = 2.2
-            let tapDownAt = 3.6, tapUpAt = 3.7
-            let clickDownAt = 6.6, clickUpAt = 6.72
+            let pressAt = 0.6, releaseAt = 2.3
+            let tapDownAt = 3.6, tapUpAt = 3.72
+            // "… and click it" stands for a second before the click comes.
+            let clickCaptionAt = 6.1, clickDownAt = 7.0, clickUpAt = 7.12
+            let pressMarkLasts = 1.0
             let screen = CGRect(origin: .zero, size: sceneSize)
             let filled = ShortcutRingSettings.default.filled
             var session = ShortcutRingSession()
@@ -415,10 +435,10 @@ final class ShortcutRingRenderTests: XCTestCase {
                 if happens(tapUpAt) {
                     handle(session.triggerReleased(at: time), at: time)
                 }
-                if happens(4.2) { caption = "Point at a shortcut …" }
+                if happens(tapDownAt + pressMarkLasts + 0.1) { caption = "Point at a shortcut …" }
+                if happens(clickCaptionAt) { caption = "… and click it" }
                 if happens(clickDownAt) {
                     handle(session.buttonPressed(0, at: now), at: time)
-                    caption = "… and click it"
                 }
                 if happens(clickUpAt) {
                     handle(session.buttonReleased(0), at: time)
@@ -439,6 +459,9 @@ final class ShortcutRingRenderTests: XCTestCase {
                 if time >= clickDownAt, time < clickDownAt + 0.35 {
                     frame.click = CGFloat((time - clickDownAt) / 0.35)
                 }
+                for down in [pressAt, tapDownAt] where time >= down && time < down + pressMarkLasts {
+                    frame.press = CGFloat((time - down) / pressMarkLasts)
+                }
                 frames.append(frame)
             }
             return frames
@@ -458,8 +481,12 @@ final class ShortcutRingRenderTests: XCTestCase {
             if let click = frame.click {
                 RingMock.drawClick(at: point(frame.pointer), progress: click)
             }
+            if let press = frame.press {
+                RingMock.drawPress(at: point(frame.pointer), progress: press)
+            }
             RingMock.drawPointer(at: point(frame.pointer))
-            drawCaption(frame.caption, held: frame.isTriggerHeld, in: scene, dark: dark)
+            // The dot before the caption: the trigger is down, or was pressed a moment ago.
+            drawCaption(frame.caption, held: frame.isTriggerHeld || frame.press != nil, in: scene, dark: dark)
         }
 
         /// The line at the bottom, with a dot while the trigger is held.

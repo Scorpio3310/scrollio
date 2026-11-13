@@ -303,7 +303,12 @@ final class PreferencesRingTests: XCTestCase {
         }
         let controller = makeController()
         let hint = controller.placesHintLabel.stringValue
-        XCTAssertEqual(hint, "Hold the button and move towards a shortcut, then let go. Or press and let go, then click one.")
+        // Two sentences, each on its own line (wrapped as one text, the second line was two words).
+        XCTAssertEqual(hint, "Hold the button and move towards a shortcut, then let go.\nOr press and let go, then click one.")
+        for line in hint.split(separator: "\n") {
+            XCTAssertLessThanOrEqual(height(String(line), width: RingPreferencesViewController.boxWidth - 2 * PreferencesGroupedForm.rowHorizontalInset),
+                                     twoLines / 2 + 1, String(line))
+        }
         let width = RingPreferencesViewController.boxWidth - 2 * PreferencesGroupedForm.rowHorizontalInset
         XCTAssertLessThanOrEqual(height(hint, width: width), twoLines, hint)
         // The rows of the places have a title and no explanation.
