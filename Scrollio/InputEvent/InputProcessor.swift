@@ -67,8 +67,26 @@ class InputProcessor: ModifierFlagsProviding {
         return ShortcutRingController.existing?.isHeld ?? false
     }
 
-    /// Hands the movement of one motion event to a ring that is held open. Runs inside the
-    /// motion tap's callback; nothing is posted from here.
+    /// One motion event of the pointer-movement tap, for everything that reads the hand
+    /// while something is held: the gesture holds and a Shortcut Ring that is held open.
+    /// `location` is the event's pointer location before the pointer lock rewrites it.
+    /// Runs inside the motion tap's callback; nothing is posted from here.
+    ///
+    /// The pointer freeze can add a false delta when it has to warp the pointer back. The
+    /// compensation keeps state, so it runs exactly once per motion event, here, and every
+    /// reader gets its result. (Unchanged while nothing keeps the pointer still.)
+    func handlePointerMovement(deltaX: CGFloat, deltaY: CGFloat, location: CGPoint) {
+        let ringIsHeld = hasHeldShortcutRing
+        guard pointerTrackedGestureCount > 0 || ringIsHeld else { return }
+        let delta = MouseGesturePointerLock.shared.physicalDelta(CGPoint(x: deltaX, y: deltaY), at: location)
+        handleMouseGestureMovement(deltaX: delta.x, deltaY: delta.y)
+        if ringIsHeld {
+            handleShortcutRingMovement(deltaX: delta.x, deltaY: delta.y, location: location)
+        }
+    }
+
+    /// Hands the movement of one motion event to a ring that is held open: the hand's
+    /// movement (`handlePointerMovement`) and where the event says the pointer is.
     func handleShortcutRingMovement(deltaX: CGFloat, deltaY: CGFloat, location: CGPoint) {
         guard let ring = ShortcutRingController.existing, ring.isHeld else { return }
         ring.pointerMoved(by: CGPoint(x: deltaX, y: deltaY), to: location)
@@ -619,20 +637,16 @@ class InputProcessor: ModifierFlagsProviding {
         return true
     }
 
-    /// Feeds pointer movement from the motion tap into every held gesture button.
-    /// `location` is the event's pointer location before the pointer lock rewrites it.
+    /// Feeds the hand's movement into every held gesture button: the movement of one
+    /// motion event as `handlePointerMovement` hands it on (the false delta of the pointer
+    /// freeze already taken out), which both kinds of hold (discrete and "follow the hand")
+    /// read.
     ///
     /// Holds the mouse tracks itself are skipped: their movement arrives through
     /// `handleDeviceGestureMovement`, and counting the pointer as well would double it.
-    func handleMouseGestureMovement(deltaX: CGFloat, deltaY: CGFloat, location: CGPoint? = nil) {
+    func handleMouseGestureMovement(deltaX: CGFloat, deltaY: CGFloat) {
         guard pointerTrackedGestureCount > 0 else { return }
-        // The pointer freeze can add a false delta when it has to warp the pointer back.
-        // The compensation keeps state, so it runs exactly once per motion event, and both
-        // kinds of hold (discrete and "follow the hand") read its result.
-        var delta = CGPoint(x: deltaX, y: deltaY)
-        if let location {
-            delta = MouseGesturePointerLock.shared.physicalDelta(delta, at: location)
-        }
+        let delta = CGPoint(x: deltaX, y: deltaY)
         if interactiveGestureKey != nil, interactiveGestureSource == .pointer {
             accumulateInteractiveMovement(delta)
         }

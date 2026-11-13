@@ -407,8 +407,7 @@ final class MouseInteractionSessionController {
 
         let deltaX = CGFloat(event.getDoubleValueField(.mouseEventDeltaX))
         let deltaY = CGFloat(event.getDoubleValueField(.mouseEventDeltaY))
-        InputProcessor.shared.handleMouseGestureMovement(deltaX: deltaX, deltaY: deltaY, location: event.location)
-        InputProcessor.shared.handleShortcutRingMovement(deltaX: deltaX, deltaY: deltaY, location: event.location)
+        InputProcessor.shared.handlePointerMovement(deltaX: deltaX, deltaY: deltaY, location: event.location)
         MouseGesturePointerLock.shared.constrain(event)
         rewriteMouseInteractionEvent(event)
         return Unmanaged.passUnretained(event)

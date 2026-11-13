@@ -64,6 +64,8 @@ final class RingHarness {
     /// What happened, in order: "show", "hide", "run copy", "pulse lockIn 1000" …
     private(set) var log: [String] = []
     private(set) var motionTapRefreshes = 0
+    /// What the pointer was asked, in order: "lock", "unlock".
+    private(set) var pointerLocks: [String] = []
     private(set) var keyTapRefreshes = 0
     private(set) var announced: [String] = []
     /// The lines for the `app` log.
@@ -106,6 +108,8 @@ final class RingHarness {
             playHaptic: { [unowned self] cue, code in self.log.append("pulse \(cue) \(code)") },
             announce: { [unowned self] in self.announced.append($0) },
             refreshMotionTap: { [unowned self] in self.motionTapRefreshes += 1 },
+            lockPointer: { [unowned self] in self.pointerLocks.append("lock") },
+            unlockPointer: { [unowned self] in self.pointerLocks.append("unlock") },
             refreshKeyTap: { [unowned self] in self.keyTapRefreshes += 1 },
             log: { [unowned self] in self.logLines.append($0) },
             logProblem: { [unowned self] in self.problems.append($0) },
@@ -240,6 +244,97 @@ final class ShortcutRingControllerTests: XCTestCase {
         XCTAssertEqual(harness.log, ["hide"])
         harness.runScheduled()
         XCTAssertEqual(harness.log, ["hide", "run paste"])
+    }
+
+    // MARK: Freeze pointer while the ring is held
+
+    /// The ring's own switch: the pointer is kept still from the press to the release and
+    /// not a moment longer, and the hand's movement chooses as before.
+    func testWithTheSwitchOnAHoldKeepsThePointerStillAndLetsItGoAtTheRelease() {
+        harness.ring.freezePointer = true
+        controller.triggerPressed(by: RingHarness.button(.down))
+        XCTAssertEqual(harness.pointerLocks, ["lock"], "from the press on")
+        harness.runScheduled()
+        harness.moveHand(by: CGPoint(x: -50, y: 50))
+        XCTAssertEqual(harness.presenter.lit.last, 5, "the hand still chooses")
+        XCTAssertEqual(harness.pointerLocks, ["lock"])
+        harness.clearLog()
+
+        controller.triggerReleased(isMadeUp: false)
+        XCTAssertEqual(harness.pointerLocks, ["lock", "unlock"], "free again before the action runs")
+        XCTAssertEqual(harness.log, ["hide"])
+        harness.runScheduled()
+        XCTAssertEqual(harness.log, ["hide", "run copy"])
+        XCTAssertEqual(harness.logLines.first, "Shortcut Ring: opened by a mouse button, the pointer is kept still while it is held")
+    }
+
+    /// Off, as for a new ring: nothing ever asks for the pointer, however the ring is used.
+    func testWithTheSwitchOffNothingEverHoldsThePointer() {
+        XCTAssertFalse(harness.ring.freezePointer)
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        harness.moveHand(by: CGPoint(x: 60, y: 0))
+        controller.triggerReleased(isMadeUp: false)
+        harness.runScheduled()
+        harness.tap()
+        controller.cancel()
+        XCTAssertEqual(harness.pointerLocks, [])
+        XCTAssertEqual(harness.logLines.first, "Shortcut Ring: opened by a mouse button")
+    }
+
+    /// Let go with nothing lit: the ring stays open and the pointer is free for the click.
+    /// The pointer stood where the press found it, whatever an event says that was made
+    /// before the freeze took hold: at a screen's edge, where the ring is drawn away from
+    /// the pointer, the place the pointer stands under does not light by itself.
+    func testAFrozenHoldLetGoWithNothingLitLeavesTheRingOpenWithAFreePointer() {
+        harness.ring.freezePointer = true
+        let press = CGPoint(x: 12, y: 500)
+        harness.pointer = press
+        controller.triggerPressed(by: RingHarness.button(.down, overHIDPP: true))
+        harness.runScheduled()
+        XCTAssertEqual(ShortcutRingGeometry.target(at: press, centre: controller.session.centre), .place(6),
+                       "the ring is drawn to the right of the pointer, which stands under Left")
+        harness.now += 0.5
+        // One event from before the freeze took hold: it shows the pointer 30 pt further down.
+        controller.pointerMoved(by: CGPoint(x: 0, y: 6), to: CGPoint(x: 12, y: 530))
+        XCTAssertNil(controller.session.lit)
+
+        controller.triggerReleased(isMadeUp: false)
+        XCTAssertTrue(controller.isOpen)
+        XCTAssertFalse(controller.isHeld)
+        XCTAssertEqual(harness.pointerLocks, ["lock", "unlock"], "the pointer is free for the click")
+        XCTAssertEqual(harness.presenter.takesClicks, true)
+
+        harness.now += 0.5
+        controller.tick()
+        XCTAssertNil(controller.session.lit, "the place under a pointer that never moved does not light")
+        harness.pointer = harness.place(3)
+        harness.now += 0.1
+        controller.tick()
+        XCTAssertEqual(controller.session.lit, 3, "moved by the hand, the pointer chooses")
+    }
+
+    /// Whatever ends a hold lets the pointer go.
+    func testHoweverAFrozenHoldEndsThePointerIsLetGo() {
+        let ends: [(String, (RingHarness) -> Void)] = [
+            ("Esc", { _ = $0.controller.escapePressed() }),
+            ("cancel", { $0.controller.cancel() }),
+            ("a release that was made up", { $0.controller.triggerReleased(isMadeUp: true) }),
+            ("the hold's limit", {
+                $0.now += ShortcutRingSession.holdLimit + 1
+                $0.controller.tick()
+            }),
+        ]
+        for (name, end) in ends {
+            harness = RingHarness()
+            harness.ring.freezePointer = true
+            controller.triggerPressed(by: RingHarness.button(.down))
+            harness.runScheduled()
+            XCTAssertEqual(harness.pointerLocks, ["lock"], name)
+            end(harness)
+            XCTAssertFalse(controller.isOpen, name)
+            XCTAssertEqual(harness.pointerLocks, ["lock", "unlock"], name)
+        }
     }
 
     func testAClickOutsideClosesAndRunsNothing() {
@@ -892,6 +987,124 @@ final class ShortcutRingInputTests: XCTestCase {
         XCTAssertEqual(stopped, 1, "and off again with it")
         harness.runScheduled()
         XCTAssertEqual(harness.log.last, "run appExpose")
+    }
+
+    // MARK: Freeze pointer while the ring is held
+
+    private func motion(deltaX: Double, deltaY: Double, at location: CGPoint) -> CGEvent {
+        let event = CGEvent(mouseEventSource: nil, mouseType: .otherMouseDragged, mouseCursorPosition: location, mouseButton: .center)!
+        event.setDoubleValueField(.mouseEventDeltaX, value: deltaX)
+        event.setDoubleValueField(.mouseEventDeltaY, value: deltaY)
+        return event
+    }
+
+    /// The harness's ring with the app's own pointer lock and motion tap, and a pointer
+    /// that only remembers what it was asked. Returns what it was asked.
+    private func useTheRealPointerLock(anchor: CGPoint) -> (associations: () -> [Bool], warps: () -> [CGPoint]) {
+        var associations: [Bool] = []
+        var warps: [CGPoint] = []
+        MouseGesturePointerLock.shared.setTestingDriver(MouseGesturePointerDriver(
+            currentLocation: { anchor },
+            setAssociated: { associations.append($0) },
+            warp: { warps.append($0) }
+        ))
+        addTeardownBlock { MouseGesturePointerLock.shared.clearTestingDriver() }
+        var environment = harness.controller.environment
+        environment.lockPointer = { MouseGesturePointerLock.shared.lock(for: .shortcutRing) }
+        environment.unlockPointer = { MouseGesturePointerLock.shared.unlock(for: .shortcutRing) }
+        environment.refreshMotionTap = { MouseInteractionSessionController.shared.refreshMotionTapState() }
+        harness.controller.environment = environment
+        return ({ associations }, { warps })
+    }
+
+    /// The whole path with the real lock: the press of a ring whose switch is on detaches
+    /// the pointer; a motion event that shows it off its place is put back for the apps,
+    /// and the event after it, which reports "hand + jump back" (macOS 27), counts as the
+    /// hand's movement alone; the release attaches the pointer again.
+    func testAFrozenHoldGoesThroughThePointerLockAndCountsOnlyTheHandsMovement() {
+        let anchor = CGPoint(x: 700, y: 500)
+        let pointer = useTheRealPointerLock(anchor: anchor)
+        harness.ring.freezePointer = true
+        bind(button: 4)
+
+        XCTAssertEqual(process(RingHarness.button(.down)), .consumed)
+        XCTAssertTrue(MouseGesturePointerLock.shared.isLocked)
+        XCTAssertEqual(pointer.associations(), [false])
+        harness.now += 0.5
+        for _ in 0..<2 {
+            let drifted = motion(deltaX: -6, deltaY: 0, at: CGPoint(x: 694, y: 500))
+            MouseInteractionSessionController.shared.handleMotionTapEventForTests(drifted)
+            XCTAssertEqual(drifted.location, anchor, "the apps see the pointer where it was")
+            let snappedBack = motion(deltaX: 0, deltaY: 0, at: anchor)
+            MouseInteractionSessionController.shared.handleMotionTapEventForTests(snappedBack)
+        }
+        XCTAssertEqual(pointer.warps(), [anchor, anchor])
+        XCTAssertEqual(controller.session.travel, CGPoint(x: -24, y: 0), "four steps of the hand, not two")
+        XCTAssertEqual(controller.session.lit, 6)
+
+        XCTAssertEqual(process(RingHarness.button(.up)), .consumed)
+        XCTAssertFalse(MouseGesturePointerLock.shared.isLocked)
+        XCTAssertEqual(pointer.associations().last, true)
+        harness.runScheduled()
+        XCTAssertEqual(harness.log.last, "run moveSpaceLeft")
+    }
+
+    /// The pointer lock has two owners. A gesture button that is let go does not free a
+    /// pointer the ring still holds; the ring's release then does.
+    func testAGestureButtonLetGoDoesNotFreeAPointerTheRingStillHolds() {
+        let savedGesture = Options.shared.gesture
+        var gesture = MouseGestureSettings.default   // "Freeze pointer during a gesture" is on
+        gesture.clickAction = ""                     // a hold without movement runs nothing
+        Options.shared.gesture = gesture
+        addTeardownBlock { Options.shared.gesture = savedGesture }
+        let pointer = useTheRealPointerLock(anchor: CGPoint(x: 700, y: 500))
+        harness.ring.freezePointer = true
+        bind(button: 4, others: [(3, SystemShortcut.mouseGestureNavigation.identifier)])
+
+        XCTAssertEqual(process(RingHarness.button(.down, code: 3)), .consumed)
+        XCTAssertEqual(pointer.associations(), [false], "the gesture hold keeps the pointer still")
+        XCTAssertEqual(process(RingHarness.button(.down)), .consumed)
+        XCTAssertTrue(controller.isHeld)
+        XCTAssertEqual(process(RingHarness.button(.up, code: 3)), .consumed)
+        XCTAssertTrue(controller.isHeld, "the ring is still held")
+        XCTAssertTrue(MouseGesturePointerLock.shared.isLocked, "and so is the pointer")
+        XCTAssertEqual(pointer.associations(), [false])
+
+        XCTAssertEqual(process(RingHarness.button(.up)), .consumed)
+        XCTAssertFalse(MouseGesturePointerLock.shared.isLocked)
+        XCTAssertEqual(pointer.associations(), [false, true])
+    }
+
+    /// The same from the lock's side, and the two things that free the pointer whoever
+    /// holds it: the safety timeout and the release at launch and quit.
+    func testThePointerLockIsFreeWhenNeitherOwnerHoldsIt() {
+        let pointer = useTheRealPointerLock(anchor: CGPoint(x: 700, y: 500))
+        let lock = MouseGesturePointerLock.shared
+        lock.lock()
+        lock.lock(for: .shortcutRing)
+        lock.unlock(for: .shortcutRing)
+        XCTAssertTrue(lock.isLocked, "a gesture hold goes on")
+        lock.unlock()
+        XCTAssertFalse(lock.isLocked)
+        XCTAssertEqual(pointer.associations(), [false, true])
+
+        lock.lock(for: .shortcutRing)
+        lock.forceRelease()
+        XCTAssertFalse(lock.isLocked)
+        lock.lock()
+        lock.unlock()
+        XCTAssertFalse(lock.isLocked, "nothing is left of the ring's hold")
+
+        lock.setTestingSafetyTimeout(0.02)
+        lock.lock()
+        lock.lock(for: .shortcutRing)
+        let timedOut = expectation(description: "the safety timeout")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { timedOut.fulfill() }
+        wait(for: [timedOut], timeout: 2)
+        XCTAssertFalse(lock.isLocked, "the timeout frees the pointer for both")
+        lock.lock()
+        lock.unlock()
+        XCTAssertFalse(lock.isLocked)
     }
 
     // MARK: Esc

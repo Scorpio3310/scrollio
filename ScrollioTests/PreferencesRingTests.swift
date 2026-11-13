@@ -314,6 +314,33 @@ final class PreferencesRingTests: XCTestCase {
 
     /// Every explanation of the pane is plain sentences that fit two lines where it
     /// stands: the row's beside its button, the hint across the box.
+    /// "Freeze pointer while the ring is held": a switch under what opens the ring, off for
+    /// a new ring, that shows and stores the ring's own setting (Gestures keeps its own).
+    func testTheFreezeSwitchShowsAndStoresTheRingsOwnSetting() throws {
+        let gestureFreeze = Options.shared.gesture.freezePointer
+        let controller = makeController()
+        XCTAssertEqual(controller.freezeRow.title, "Freeze pointer while the ring is held")
+        XCTAssertEqual(controller.freezeRow.explanation,
+                       "The pointer stays where it is while you hold the button. The way your hand moves still chooses.")
+        XCTAssertTrue(controller.freezeRow.accessory === controller.freezeToggle)
+        let toggle = try XCTUnwrap(controller.freezeToggle as? NSSwitch)
+        XCTAssertEqual(toggle.state, .off, "a new ring leaves the pointer alone")
+
+        toggle.state = .on
+        controller.freezeToggled(toggle)
+        XCTAssertTrue(Options.shared.ring.freezePointer)
+        XCTAssertEqual(Options.shared.ring.places, ShortcutRingSettings.default.places, "the places stay")
+        XCTAssertEqual(Options.shared.gesture.freezePointer, gestureFreeze, "Gestures keeps its own switch")
+        XCTAssertEqual(ShortcutRingController.preparedFace?.ring, Options.shared.ring,
+                       "the face kept for the ring on screen is the stored ring's")
+        XCTAssertEqual((makeController().freezeToggle as? NSSwitch)?.state, .on, "a pane made later shows it")
+
+        toggle.state = .off
+        controller.freezeToggled(toggle)
+        XCTAssertFalse(Options.shared.ring.freezePointer)
+        XCTAssertEqual(Options.shared.ring, .default)
+    }
+
     func testEveryExplanationFitsTwoLines() {
         let font = PreferencesGroupedForm.explanationFont
         let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
@@ -333,6 +360,10 @@ final class PreferencesRingTests: XCTestCase {
             XCTAssertLessThanOrEqual(height(text, width: label.frame.width), twoLines, "\(text) in \(label.frame.width) pt")
         }
         let controller = makeController()
+        controller.view.layoutSubtreeIfNeeded()
+        let freeze = controller.freezeRow.explanationLabel
+        XCTAssertGreaterThan(freeze.frame.width, 200)
+        XCTAssertLessThanOrEqual(height(freeze.stringValue, width: freeze.frame.width), twoLines, freeze.stringValue)
         let hint = controller.placesHintLabel.stringValue
         // Two sentences, each on its own line (wrapped as one text, the second line was two words).
         XCTAssertEqual(hint, "Hold the button and move towards a shortcut, then let go.\nOr press and let go, then click one.")

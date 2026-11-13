@@ -422,6 +422,7 @@ final class SettingsFileFormatTests: XCTestCase {
         var ring = ShortcutRingSettings.default
         ring[1] = ShortcutRingPlace(SystemShortcut.undo)
         ring[6] = .empty
+        ring.freezePointer = true
         source.options.ring = ring
         let data = try SettingsFile.export(from: source.options, now: Self.moment).get()
 
@@ -470,6 +471,29 @@ final class SettingsFileFormatTests: XCTestCase {
         } else {
             XCTFail("a ring that is a list was taken")
         }
+    }
+
+    /// The ring's switch "Freeze pointer while the ring is held" travels with the ring. By
+    /// itself it is no action: a file whose places are a new ring's does not get the
+    /// sheet's list of actions for it, and no place is listed as changed.
+    func testTheRingsFreezeSwitchComesWithTheRingAndIsNoAction() throws {
+        var ring = ShortcutRingSettings.default
+        ring.freezePointer = true
+        let json = try XCTUnwrap(String(data: try JSONEncoder().encode(ring), encoding: .utf8))
+        let contents = try Fixture.contents(#""shortcutRingSettings":"# + json)
+        XCTAssertEqual(contents.ring, ring)
+        XCTAssertFalse(contents.bringsActions)
+        XCTAssertEqual(SettingsFileText.ringLines(of: contents), [])
+
+        let target = OwnSettings(for: self)
+        target.options.readOptions()
+        XCTAssertFalse(target.options.ring.freezePointer)
+        XCTAssertTrue(SettingsFile.apply(contents, to: target.options))
+        XCTAssertTrue(target.options.ring.freezePointer)
+
+        // A file of the first version has no switch: it comes in off.
+        let first = try Fixture.contents(#""shortcutRingSettings":{"places":[{"action":"copy"}]}"#)
+        XCTAssertEqual(first.ring?.freezePointer, false)
     }
 
     /// A place of the Shortcut Ring that opens an app or a file or runs a script is never

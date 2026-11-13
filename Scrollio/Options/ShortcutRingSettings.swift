@@ -3,8 +3,9 @@
 //  Scrollio
 //
 //  What the Shortcut Ring holds: eight places around the pointer, clockwise from the top,
-//  each with one action or nothing. The user's choice, stored in Options (group `.ring`,
-//  UserDefaults key "shortcutRingSettings") and carried by a settings file.
+//  each with one action or nothing, and whether the pointer stays still while the ring's
+//  button is held. The user's choice, stored in Options (group `.ring`, UserDefaults key
+//  "shortcutRingSettings") and carried by a settings file.
 //
 //  A place stores its action as a button of the Buttons pane does (`ButtonBinding`): the
 //  action's name, and for "Open App or File…" what to open. It can hold
@@ -25,11 +26,13 @@
 //  Stored format:
 //
 //      {"places": [{"action": "missionControl"}, {"action": ""}, {"action": "custom::40:1179648"},
-//                  {"action": "openTarget", "openTarget": {"path": …, "arguments": …, "kind": …}}, …]}
+//                  {"action": "openTarget", "openTarget": {"path": …, "arguments": …, "kind": …}}, …],
+//       "freezePointer": false}
 //
 //  Read value by value: a missing or unreadable place is an empty one, a list that is too
 //  short is filled up with empty places and one that is too long is cut. Only data without
-//  a list of places at all gives the default ring. Do not rename the keys.
+//  a list of places at all gives the default places. A missing or unreadable
+//  "freezePointer" (data of the first version has none) is false. Do not rename the keys.
 //
 
 import Foundation
@@ -205,6 +208,10 @@ struct ShortcutRingSettings: Codable, Equatable {
 
     /// Always `placeCount` places.
     private(set) var places: [ShortcutRingPlace]
+    /// Keeps the pointer where it was while the ring's button or key is held: the hand's
+    /// direction still chooses. Off by default. A ring that is left open (the click way)
+    /// always has a free pointer.
+    var freezePointer: Bool
 
     /// What a new ring holds: Mission Control on top and Apps at the bottom (as the
     /// gestures' up and down), the desktops left and right, Copy and Paste beside Apps,
@@ -222,8 +229,9 @@ struct ShortcutRingSettings: Codable, Equatable {
         ShortcutRingPlace(SystemShortcut.showDesktop),          // top left
     ])
 
-    init(places: [ShortcutRingPlace]) {
+    init(places: [ShortcutRingPlace], freezePointer: Bool = false) {
         self.places = Self.filledUp(places)
+        self.freezePointer = freezePointer
     }
 
     subscript(index: Int) -> ShortcutRingPlace {
@@ -266,11 +274,11 @@ struct ShortcutRingSettings: Codable, Equatable {
             emptied += 1
             return .empty
         }
-        return (ShortcutRingSettings(places: kept), emptied)
+        return (ShortcutRingSettings(places: kept, freezePointer: freezePointer), emptied)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case places
+        case places, freezePointer
     }
 
     /// One place that may not be readable: empty instead of failing the ring.
@@ -284,10 +292,11 @@ struct ShortcutRingSettings: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        let freezes = ((try? c.decodeIfPresent(Bool.self, forKey: .freezePointer)) ?? nil) ?? false
         guard let stored = (try? c.decodeIfPresent([ReadablePlace].self, forKey: .places)) ?? nil else {
-            self = .default
+            self.init(places: Self.default.places, freezePointer: freezes)
             return
         }
-        self.init(places: stored.map { $0.place })
+        self.init(places: stored.map { $0.place }, freezePointer: freezes)
     }
 }

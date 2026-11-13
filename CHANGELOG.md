@@ -19,7 +19,9 @@ it for the people who use the app, and give the version its part before you tag 
   hold: a listed shortcut, a key combination you record, or an app or a file to open;
   a settings file carries it. If Logi Options+ manages your mouse, let a button
   send a keystroke there and record that keystroke as the ring's button. An MX Master 4
-  whose thumb panel Scrollio reads pulses when a shortcut lights and when it runs.
+  whose thumb panel Scrollio reads pulses when a shortcut lights and when it runs. With
+  "Freeze pointer while the ring is held" the pointer stays where it was while you hold
+  the button.
 
 ## 1.0.4
 

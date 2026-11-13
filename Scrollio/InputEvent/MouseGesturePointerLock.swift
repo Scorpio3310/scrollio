@@ -2,7 +2,9 @@
 //  MouseGesturePointerLock.swift
 //  Mos
 //
-//  Keeps the pointer in place while a Gesture Navigation button is held.
+//  Keeps the pointer in place while a Gesture Navigation button is held, or the button of a
+//  Shortcut Ring that was asked to keep it still. Each of the two asks for itself (`Owner`):
+//  the pointer is free again when neither holds it.
 //
 //  The pointer is detached from the mouse with CGAssociateMouseAndMouseCursorPosition(false);
 //  movement still arrives as event deltas, so gesture recognition keeps working. If the
@@ -105,7 +107,15 @@ final class MouseGesturePointerLock {
         return AppRuntime.isRunningXCTest ? .inert : .system
     }
 
+    /// Who keeps the pointer still. The gesture holds are one owner: `InputProcessor` counts
+    /// them and lets go when the last one ends.
+    enum Owner: Hashable {
+        case gestures
+        case shortcutRing
+    }
+
     private(set) var anchor: CGPoint?
+    private var owners: Set<Owner> = []
     private var safetyWorkItem: DispatchWorkItem?
     private var warpCompensator = MouseGestureWarpDeltaCompensator()
 
@@ -114,13 +124,14 @@ final class MouseGesturePointerLock {
     /// Freezes the pointer at its current position. Safe to call while already locked: the
     /// anchor stays, and the safety timeout starts over, so a hold that began later is not
     /// released at the first hold's timeout.
-    func lock() {
+    func lock(for owner: Owner = .gestures) {
         if anchor == nil {
             guard let location = driver.currentLocation() else { return }
             anchor = location
             warpCompensator.reset()
             driver.setAssociated(false)
         }
+        owners.insert(owner)
         armSafetyTimeout()
     }
 
@@ -128,15 +139,25 @@ final class MouseGesturePointerLock {
         safetyWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             AppSystemLog.problem("MouseGesturePointerLock: safety timeout, releasing the pointer")
-            self?.unlock()
+            self?.release()
         }
         safetyWorkItem = workItem
         let timeout = safetyTimeoutOverride ?? Self.safetyTimeout
         DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: workItem)
     }
 
-    /// Releases the pointer. Safe to call when not locked.
-    func unlock() {
+    /// This owner no longer keeps the pointer still: it is released unless the other one
+    /// still holds it (the safety timeout then goes on counting from that one's last
+    /// `lock`). Safe to call when not locked.
+    func unlock(for owner: Owner = .gestures) {
+        owners.remove(owner)
+        guard owners.isEmpty else { return }
+        release()
+    }
+
+    /// Releases the pointer, whoever holds it.
+    private func release() {
+        owners.removeAll()
         safetyWorkItem?.cancel()
         safetyWorkItem = nil
         guard anchor != nil else { return }
@@ -147,6 +168,7 @@ final class MouseGesturePointerLock {
     /// Re-attaches the pointer unconditionally (app launch / quit), in case a previous
     /// run ended while detached.
     func forceRelease() {
+        owners.removeAll()
         safetyWorkItem?.cancel()
         safetyWorkItem = nil
         anchor = nil
