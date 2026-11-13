@@ -60,7 +60,7 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(RingPreferencesViewController.tabIdentifier, "ring")
         XCTAssertEqual(controller.view.frame.width, 520)
         XCTAssertFalse(controller.view.hasAmbiguousLayout)
-        XCTAssertEqual(controller.sections.count, 4, "the drawing, what opens the ring, its line, the places")
+        XCTAssertEqual(controller.sections.count, 3, "the drawing, what opens the ring, the places")
     }
 
     /// Eight rows, clockwise from the top, each showing what the stored ring holds there.
@@ -224,7 +224,8 @@ final class PreferencesRingTests: XCTestCase {
     func testWithNothingBoundTheRowOffersToSetOneUp() {
         let controller = makeController()
         XCTAssertEqual(controller.triggerRow.title, "Button or key")
-        XCTAssertEqual(controller.triggerRow.explanation, "Nothing opens the ring yet. Set up a mouse button or a key combination.")
+        XCTAssertEqual(controller.triggerRow.explanation,
+                       "Nothing opens the ring yet. A key combination works too, even one that Logi Options+ sends for a button.")
         XCTAssertEqual(controller.triggerButton.title, "Set Up…")
         var requests: [Bool] = []
         controller.openButtonsPane = { requests.append($0) }
@@ -235,7 +236,8 @@ final class PreferencesRingTests: XCTestCase {
     func testWithATriggerTheRowNamesItAndLeadsToItsRow() {
         summary = ShortcutRingBindingSummary(triggerTitles: ["Thumb panel", "⌃⌥ Space"])
         let controller = makeController()
-        XCTAssertEqual(controller.triggerRow.explanation, "Thumb panel and ⌃⌥ Space.")
+        XCTAssertEqual(controller.triggerRow.explanation,
+                       "Thumb panel and ⌃⌥ Space. A key combination works too, even one that Logi Options+ sends for a button.")
         XCTAssertEqual(controller.triggerButton.title, "Change")
         var requests: [Bool] = []
         controller.openButtonsPane = { requests.append($0) }
@@ -243,13 +245,15 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(requests, [false])
     }
 
-    /// The line under the first box answers "can a key open it?": yes, also a keystroke
-    /// that Logi Options+ sends.
-    func testTheLineUnderTheBoxSaysThatAKeyCombinationWorks() {
-        let controller = makeController()
-        let note = controller.triggerNoteLabel.stringValue
-        XCTAssertTrue(note.contains("key combination"))
-        XCTAssertTrue(note.contains("Logi Options+"))
+    /// The row answers "can a key open it?" whether or not something opens the ring yet:
+    /// yes, also a keystroke that Logi Options+ sends for a button.
+    func testTheRowSaysThatAKeyCombinationWorks() {
+        for titles in [[], ["Thumb panel"]] {
+            summary = ShortcutRingBindingSummary(triggerTitles: titles)
+            let explanation = makeController().triggerRow.explanation ?? ""
+            XCTAssertTrue(explanation.contains("key combination works too"), explanation)
+            XCTAssertTrue(explanation.contains("Logi Options+"), explanation)
+        }
     }
 
     /// What opens the ring: enabled bindings with its action, a button or a key that can
@@ -277,28 +281,31 @@ final class PreferencesRingTests: XCTestCase {
 
     // MARK: Texts
 
-    /// Every explanation of the pane is plain sentences that fit two lines of its box.
+    /// Every explanation of the pane is plain sentences that fit two lines where it
+    /// stands: the row's beside its button, the hint across the box.
     func testEveryExplanationFitsTwoLines() {
-        summary = ShortcutRingBindingSummary(triggerTitles: ["Thumb panel", "⌃⌥ Space"])
-        let bound = makeController().triggerRow.explanation ?? ""
-        summary = ShortcutRingBindingSummary(triggerTitles: [])
-        let controller = makeController()
-        let width = RingPreferencesViewController.boxWidth - 2 * PreferencesGroupedForm.rowHorizontalInset
         let font = PreferencesGroupedForm.explanationFont
         let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
-        let texts = [
-            bound, controller.triggerRow.explanation ?? "",
-            controller.triggerNoteLabel.stringValue, controller.placesHintLabel.stringValue,
-        ]
-        for text in texts {
-            XCTAssertFalse(text.isEmpty)
-            XCTAssertTrue(text.hasSuffix("."), text)
-            XCTAssertLessThanOrEqual(text.count, 100, text)
-            let height = (text as NSString).boundingRect(
+        func height(_ text: String, width: CGFloat) -> CGFloat {
+            return (text as NSString).boundingRect(
                 with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
             ).height
-            XCTAssertLessThanOrEqual(height, twoLines, text)
         }
+        for titles in [[], ["Thumb panel", "⌃⌥ Space"], ["Middle button", "Thumb panel", "⌃⌥ Space"]] {
+            summary = ShortcutRingBindingSummary(triggerTitles: titles)
+            let controller = makeController()
+            controller.view.layoutSubtreeIfNeeded()
+            let label = controller.triggerRow.explanationLabel
+            let text = label.stringValue
+            XCTAssertTrue(text.hasSuffix("."), text)
+            XCTAssertGreaterThan(label.frame.width, 200)
+            XCTAssertLessThanOrEqual(height(text, width: label.frame.width), twoLines, "\(text) in \(label.frame.width) pt")
+        }
+        let controller = makeController()
+        let hint = controller.placesHintLabel.stringValue
+        XCTAssertEqual(hint, "Hold the button and move towards a shortcut, then let go. Or press and let go, then click one.")
+        let width = RingPreferencesViewController.boxWidth - 2 * PreferencesGroupedForm.rowHorizontalInset
+        XCTAssertLessThanOrEqual(height(hint, width: width), twoLines, hint)
         // The rows of the places have a title and no explanation.
         XCTAssertTrue(controller.placeRows.allSatisfy { $0.explanation == nil })
     }
@@ -315,11 +322,15 @@ final class PreferencesRingTests: XCTestCase {
 
         controller.placeHoverChanged(5, inside: true)
         XCTAssertEqual(preview.lit, 5)
+        // The row whose place is lit says so: its title is tinted, the others are not.
+        XCTAssertEqual(controller.placeRows[5].titleLabel.textColor, NSColor.controlAccentColor)
+        XCTAssertEqual(controller.placeRows[4].titleLabel.textColor, NSColor.labelColor)
         controller.placeHoverChanged(6, inside: true)
         controller.placeHoverChanged(5, inside: false)
         XCTAssertEqual(preview.lit, 6, "leaving the old row after entering the new one keeps the new one")
         controller.placeHoverChanged(6, inside: false)
         XCTAssertNil(preview.lit)
+        XCTAssertTrue(controller.placeRows.allSatisfy { $0.titleLabel.textColor == NSColor.labelColor })
         // Each row tells when the pointer is over it.
         for row in controller.placeRows {
             XCTAssertEqual(row.trackingAreas.filter { $0.owner === controller }.count, 1)

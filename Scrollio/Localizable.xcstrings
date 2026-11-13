@@ -7530,7 +7530,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nothing opens the ring yet. Set up a mouse button or a key combination."
+            "value": "Nothing opens the ring yet. A key combination works too, even one that Logi Options+ sends for a button."
           }
         }
       }
@@ -7542,7 +7542,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@."
+            "value": "%@. A key combination works too, even one that Logi Options+ sends for a button."
           }
         }
       }
@@ -7571,18 +7571,6 @@
         }
       }
     },
-    "ring-trigger-note": {
-      "comment": "Shortcut Ring pane: muted line under the first box",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A key combination works too, also one that Logi Options+ sends from a button it manages."
-          }
-        }
-      }
-    },
     "ring-places-header": {
       "comment": "Shortcut Ring pane: title of the eight places",
       "extractionState": "manual",
@@ -7602,7 +7590,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hold the button and move towards a shortcut, then let go. Or press it and click one."
+            "value": "Hold the button and move towards a shortcut, then let go. Or press and let go, then click one."
           }
         }
       }

@@ -1140,6 +1140,47 @@ final class ShortcutRingPanelTests: XCTestCase {
         XCTAssertEqual(ShortcutRingScreens.flipped(ShortcutRingScreens.flipped(rect, mainScreenHeight: 900), mainScreenHeight: 900), rect)
     }
 
+    /// The name in the middle: one or two lines as it is; a name that needs a third gets
+    /// it a little smaller instead of being cut. No offered shortcut needs more.
+    func testALongNameInTheMiddleGetsAThirdLineInsteadOfBeingCut() {
+        let width = ShortcutRingGeometry.hubRadius * 2 - 10
+        let short = ShortcutRingArtwork.titleLayout("Copy", width: width, pointSize: 13)
+        XCTAssertEqual(short.lines, 1)
+        XCTAssertEqual(short.pointSize, 13)
+        let two = ShortcutRingArtwork.titleLayout("Desktop on the Right", width: width, pointSize: 13)
+        XCTAssertEqual(two.lines, 2)
+        XCTAssertEqual(two.pointSize, 13)
+        let long = ShortcutRingArtwork.titleLayout("Screenshot and Recording Options", width: width, pointSize: 13)
+        XCTAssertEqual(long.lines, 3)
+        XCTAssertLessThan(long.pointSize, 13)
+        XCTAssertGreaterThanOrEqual(long.pointSize, 11)
+        XCTAssertLessThan(long.height, ShortcutRingGeometry.hubRadius * 2 - 30, "three lines stay inside the middle")
+        for category in SystemShortcut.shortcutsByCategory {
+            for shortcut in category.shortcuts where ShortcutRingPlace(shortcut).runs {
+                let layout = ShortcutRingArtwork.titleLayout(shortcut.localizedName, width: width, pointSize: 13)
+                XCTAssertLessThanOrEqual(layout.lines, 3, shortcut.localizedName)
+                let font = NSFont.systemFont(ofSize: layout.pointSize, weight: .semibold)
+                for word in shortcut.localizedName.split(separator: " ") {
+                    XCTAssertLessThanOrEqual((String(word) as NSString).size(withAttributes: [.font: font]).width, width, String(word))
+                }
+            }
+        }
+    }
+
+    /// What stands on a lit place can be read on any accent colour: white on the app's
+    /// purple and on blue, dark on the system's yellow.
+    func testTheLitPlacesSymbolCanBeReadOnALightAccent() {
+        let purple = NSColor(srgbRed: 0x56 / 255, green: 0x3C / 255, blue: 0xA6 / 255, alpha: 1)
+        let darkPurple = NSColor(srgbRed: 0x6A / 255, green: 0x4E / 255, blue: 0xC2 / 255, alpha: 1)
+        let blue = NSColor(srgbRed: 0, green: 0.48, blue: 1, alpha: 1)
+        let yellow = NSColor(srgbRed: 1, green: 0.8, blue: 0, alpha: 1)
+        for accent in [purple, darkPurple, blue] {
+            XCTAssertEqual(ShortcutRingArtwork.litInk(on: accent), .white)
+        }
+        XCTAssertNotEqual(ShortcutRingArtwork.litInk(on: yellow), .white)
+        XCTAssertLessThan(ShortcutRingArtwork.litInk(on: yellow).usingColorSpace(.sRGB)?.redComponent ?? 1, 0.2)
+    }
+
     /// The drawing: every place has its name and something to show: a listed action its
     /// symbol, an app its icon, a key combination its keys.
     func testEveryPlaceOfTheFaceHasItsNameAndSomethingToShow() {

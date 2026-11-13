@@ -55,11 +55,11 @@ nothing opens the ring until you do. The pane also sets what the eight places ho
     the direction of your hand, you need not land on it), and let go. The shortcut
     runs. Back in the middle and let go: the ring closes and nothing runs.
   - Click: press the button and let go without moving. The ring stays open: point at a
-    shortcut and click it. A click anywhere else, Esc, the button again, or ten seconds
-    without moving the pointer close the ring; nothing runs.
-- No timing decides between the two: letting go with a shortcut lit runs it, letting go
-  with nothing lit leaves the ring open, however long you pressed. The first moment of
-  movement after the press is ignored, so that the press itself does not choose.
+    shortcut and click it. A click anywhere else (an empty place too), Esc, the button
+    again, or ten seconds without moving the pointer close the ring; nothing runs.
+- Letting go with a shortcut lit runs it; letting go with nothing lit leaves the ring
+  open, however long you pressed. Right after the press a shortcut lights only after a
+  longer movement, so that the press itself does not choose.
 - The ring never takes the keyboard: the app you are in stays in front, so Copy, Paste
   and the other shortcuts go to it. The ring is gone before its shortcut runs (a
   screenshot does not show it).

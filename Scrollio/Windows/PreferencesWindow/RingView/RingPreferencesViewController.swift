@@ -11,8 +11,8 @@
 //  scrolled into view; the place stays lit). Then a box
 //  with what opens the ring: which button or key runs the Shortcut Ring is chosen in the
 //  Buttons pane, and the row names it and leads there ("Set Up…" records one, "Change"
-//  shows the Buttons pane with its row selected), as the Gestures pane does for its button.
-//  A muted line says that a key combination works too. Then the eight places, clockwise
+//  shows the Buttons pane with its row selected), as the Gestures pane does for its button;
+//  its explanation also says that a key combination works. Then the eight places, clockwise
 //  from the top, each with the pull-down a row of the Buttons pane has
 //  (`ButtonActionPullDown`, with the menu of what a place can hold): a listed action, a
 //  key combination recorded there ("Keyboard Shortcut…") or an app, a file or a script
@@ -60,7 +60,8 @@ struct ShortcutRingBindingSummary: Equatable {
     }
 
     /// The explanation of the pane's first row: the buttons and keys, joined as a list, or
-    /// that there is none yet.
+    /// that there is none yet; and, either way, that a key combination works too (also one
+    /// that Logi Options+ sends for a button).
     var explanation: String {
         guard hasTrigger else {
             return NSLocalizedString("ring-trigger-none", comment: "")
@@ -85,6 +86,8 @@ final class ShortcutRingPreviewView: NSView {
 
     /// The ring is drawn this much smaller than on screen.
     static let ringScale: CGFloat = 0.74
+    /// The name in its middle is not drawn that much smaller: it has to be read.
+    static let titlePointSize: CGFloat = 11
     static let preferredHeight: CGFloat = 206
     static let cornerRadius: CGFloat = 10
 
@@ -165,6 +168,7 @@ final class ShortcutRingPreviewView: NSView {
         var style = ShortcutRingArtwork.Style()
         style.backdrop = .drawn
         style.scale = Self.ringScale
+        style.titlePointSize = Self.titlePointSize
         style.increasesContrast = PreferencesGroupedForm.isHighContrast(effectiveAppearance)
         let centre = CGPoint(x: bounds.midX, y: bounds.midY)
         ShortcutRingArtwork.drawShadow(centre: centre, scale: Self.ringScale)
@@ -188,7 +192,6 @@ final class RingPreferencesViewController: NSViewController {
     enum Identifier {
         static let preview = NSUserInterfaceItemIdentifier("ring-preview")
         static let triggerButton = NSUserInterfaceItemIdentifier("ring-trigger-button")
-        static let triggerNote = NSUserInterfaceItemIdentifier("ring-trigger-note")
         static let placesHint = NSUserInterfaceItemIdentifier("ring-places-hint")
 
         static func action(_ place: Int) -> NSUserInterfaceItemIdentifier {
@@ -234,12 +237,23 @@ final class RingPreferencesViewController: NSViewController {
         return hoveredPlace ?? pointedPlace ?? selectedPlace
     }
 
+    /// Lights `litPlace` in the drawing and tints the title of its row, so that the
+    /// picture and the list say the same thing: this row is that place.
+    private func showLitPlace() {
+        let lit = litPlace
+        previewView?.lit = lit
+        for (place, row) in placeRows.enumerated() {
+            row.titleLabel.textColor = place == lit
+                ? NSColor.controlAccentColor
+                : PreferencesGroupedForm.titleColor(enabled: true)
+        }
+    }
+
     // MARK: - Views (read access for tests)
 
     private(set) var previewView: ShortcutRingPreviewView!
     private(set) var triggerRow: PreferencesGroupRow!
     private(set) var triggerButton: NSButton!
-    private(set) var triggerNoteLabel: NSTextField!
     /// Top, Top right … Top left.
     private(set) var placeRows: [PreferencesGroupRow] = []
     private(set) var placePopUps: [ButtonActionPullDown] = []
@@ -274,17 +288,13 @@ final class RingPreferencesViewController: NSViewController {
 
         let width = Self.boxWidth
         let trigger = PreferencesGroupSection(width: width, rows: [makeTriggerRow()])
-        triggerNoteLabel = Self.makeNote(text("ring-trigger-note"), identifier: Identifier.triggerNote)
-        let triggerNote = Self.inset(triggerNoteLabel)
         placePopUps = (0..<ShortcutRingSettings.placeCount).map { makePopUp(for: $0) }
         placeRows = (0..<ShortcutRingSettings.placeCount).map { makePlaceRow($0) }
         let places = makePlacesSection(rows: placeRows)
 
-        sections = [preview, trigger, triggerNote, places]
+        sections = [preview, trigger, places]
         PreferencesGroupedForm.add(sections, to: content)
-        // The muted line sits close under its box.
-        content.setCustomSpacing(PreferencesGroupedForm.noteSpacing, after: trigger)
-        content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: triggerNote)
+        content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: trigger)
 
         view = root
         reload()
@@ -302,7 +312,7 @@ final class RingPreferencesViewController: NSViewController {
         hoveredPlace = nil
         pointedPlace = nil
         selectedPlace = nil
-        previewView.lit = nil
+        showLitPlace()
         // A recording that still waits for a key, and the popover, go with the pane.
         placePopUps.forEach { $0.cancelShortcutRecording() }
         openTargetPopover?.hide()
@@ -324,7 +334,7 @@ final class RingPreferencesViewController: NSViewController {
             popUp.configure(with: ring[place].asBinding(id: placeIDs[place]))
         }
         previewView.face = ShortcutRingFace(ring)
-        previewView.lit = litPlace
+        showLitPlace()
         PreferencesForm.fitToContent(self)
     }
 
@@ -343,13 +353,13 @@ final class RingPreferencesViewController: NSViewController {
         } else if hoveredPlace == place {
             hoveredPlace = nil
         }
-        previewView?.lit = litPlace
+        showLitPlace()
     }
 
     /// The pointer is over `place` of the drawing (nil: over none).
     func placePointedAt(_ place: Int?) {
         pointedPlace = place
-        previewView?.lit = litPlace
+        showLitPlace()
     }
 
     /// A place of the drawing was clicked: its row is selected. The row's pull-down takes
@@ -357,7 +367,7 @@ final class RingPreferencesViewController: NSViewController {
     func selectPlace(_ place: Int) {
         guard placePopUps.indices.contains(place) else { return }
         selectedPlace = place
-        previewView?.lit = litPlace
+        showLitPlace()
         let popUp = placePopUps[place]
         popUp.scrollToVisible(popUp.bounds)
         view.window?.makeFirstResponder(popUp)
@@ -445,6 +455,8 @@ final class RingPreferencesViewController: NSViewController {
             explanation: text("ring-trigger-none"),
             accessory: button
         )
+        // Room for two lines whatever the row says, so naming a button does not move the rows.
+        row.reservedExplanations = [text("ring-trigger-none")]
         triggerRow = row
         return row
     }
@@ -520,20 +532,5 @@ final class RingPreferencesViewController: NSViewController {
         label.preferredMaxLayoutWidth = boxWidth - 2 * PreferencesGroupedForm.rowHorizontalInset
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
-    }
-
-    /// `label` inset like the text of the rows above it.
-    private static func inset(_ label: NSTextField) -> NSView {
-        let inset = PreferencesGroupedForm.rowHorizontalInset
-        let holder = NSView()
-        holder.translatesAutoresizingMaskIntoConstraints = false
-        holder.addSubview(label)
-        NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: holder.topAnchor),
-            label.bottomAnchor.constraint(equalTo: holder.bottomAnchor),
-            label.leadingAnchor.constraint(equalTo: holder.leadingAnchor, constant: inset),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: holder.trailingAnchor, constant: -inset),
-        ])
-        return holder
     }
 }

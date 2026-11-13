@@ -243,7 +243,7 @@ final class PreferencesLocalizationTests: XCTestCase {
     static let ringKeys = [
         "shortcutRing", "ring-menu-tooltip", "ring-tab-title",
         "ring-trigger", "ring-trigger-none", "ring-trigger-bound", "ring-trigger-set-up", "ring-trigger-change",
-        "ring-trigger-note", "ring-places-header", "ring-places-hint",
+        "ring-places-header", "ring-places-hint",
         "ring-place-top", "ring-place-top-right", "ring-place-right", "ring-place-bottom-right",
         "ring-place-bottom", "ring-place-bottom-left", "ring-place-left", "ring-place-top-left",
         "ring-action-none", "ring-preview-description", "buttons-note-shortcut-ring",

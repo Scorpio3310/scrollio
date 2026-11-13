@@ -105,6 +105,9 @@ enum ShortcutRingArtwork {
         var scale: CGFloat = 1
         /// Everything fainter: the ring as a whole fades in.
         var opacity: CGFloat = 1
+        /// The size of the name in the middle; nil: `titleFont`'s, times `scale`. (A ring
+        /// drawn small keeps a name one can read.)
+        var titlePointSize: CGFloat?
     }
 
     // MARK: Sizes
@@ -120,12 +123,30 @@ enum ShortcutRingArtwork {
     static let titleFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
     /// A lit place grows by this much.
     static let litScale: CGFloat = 1.08
+    /// A name too long for two lines of the middle gets three, this much smaller.
+    static let longTitleShrink: CGFloat = 0.88
 
     // MARK: Colours
 
     /// The lit place: the accent colour (the app's purple, or the user's own choice).
     static var litFill: NSColor { return NSColor.controlAccentColor }
-    static let litInk = NSColor.white
+
+    /// What stands on a lit place: white, or near black on an accent colour that is light
+    /// itself (white on the system's yellow cannot be read).
+    static var litInk: NSColor {
+        return litInk(on: litFill)
+    }
+
+    static func litInk(on fill: NSColor) -> NSColor {
+        guard let colour = fill.usingColorSpace(.sRGB) else { return .white }
+        func linear(_ value: CGFloat) -> CGFloat {
+            return value <= 0.03928 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linear(colour.redComponent) + 0.7152 * linear(colour.greenComponent)
+            + 0.0722 * linear(colour.blueComponent)
+        // Where black has the better contrast than white (WCAG's contrast ratio).
+        return luminance > 0.36 ? NSColor(white: 0, alpha: 0.85) : .white
+    }
 
     private static func isDark() -> Bool {
         return NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
@@ -200,7 +221,10 @@ enum ShortcutRingArtwork {
         }
 
         if let lit, face.places.indices.contains(lit), !face.places[lit].isEmpty {
-            drawTitle(face.places[lit].title, centre: centre, dark: dark, scale: scale)
+            drawTitle(
+                face.places[lit].title, centre: centre, dark: dark, scale: scale,
+                pointSize: style.titlePointSize ?? titleFont.pointSize * scale
+            )
         }
     }
 
@@ -303,25 +327,48 @@ enum ShortcutRingArtwork {
             .withSymbolConfiguration(configuration)
     }
 
-    /// The lit action's name in the free middle: one or two lines, cut with an ellipsis.
-    private static func drawTitle(_ title: String, centre: CGPoint, dark: Bool, scale: CGFloat) {
+    /// The lit action's name in the free middle: one or two lines; a name that needs a
+    /// third ("Screenshot and Recording Options") gets it, a little smaller. Only what is
+    /// longer still is cut with an ellipsis.
+    private static func drawTitle(_ title: String, centre: CGPoint, dark: Bool, scale: CGFloat, pointSize: CGFloat) {
+        let width = (ShortcutRingGeometry.hubRadius * 2 - 10) * scale
+        let layout = titleLayout(title, width: width, pointSize: pointSize)
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         paragraph.lineBreakMode = .byWordWrapping
-        let font = NSFont.systemFont(ofSize: titleFont.pointSize * scale, weight: .semibold)
         let text = NSAttributedString(string: title, attributes: [
-            .font: font,
+            .font: NSFont.systemFont(ofSize: layout.pointSize, weight: .semibold),
             .foregroundColor: ink(dark: dark),
             .paragraphStyle: paragraph,
         ])
-        let width = (ShortcutRingGeometry.hubRadius * 2 - 10) * scale
-        let lineHeight = ceil(font.ascender - font.descender + font.leading)
-        let options: NSString.DrawingOptions = [.usesLineFragmentOrigin, .truncatesLastVisibleLine]
-        let wanted = text.boundingRect(with: CGSize(width: width, height: lineHeight * 2 + 1), options: options)
-        let height = min(ceil(wanted.height), lineHeight * 2 + 1)
         text.draw(
-            with: CGRect(x: centre.x - width / 2, y: centre.y - height / 2, width: width, height: height),
-            options: options
+            with: CGRect(x: centre.x - width / 2, y: centre.y - layout.height / 2, width: width, height: layout.height),
+            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine]
         )
+    }
+
+    /// How a name stands in a middle `width` wide: at `pointSize` on up to two lines, else
+    /// smaller on up to three.
+    static func titleLayout(_ title: String, width: CGFloat, pointSize: CGFloat) -> (pointSize: CGFloat, lines: Int, height: CGFloat) {
+        func measure(_ size: CGFloat) -> (lines: Int, lineHeight: CGFloat) {
+            let font = NSFont.systemFont(ofSize: size, weight: .semibold)
+            let lineHeight = ceil(font.ascender - font.descender + font.leading)
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = .center
+            paragraph.lineBreakMode = .byWordWrapping
+            let needed = (title as NSString).boundingRect(
+                with: CGSize(width: width, height: 10_000), options: [.usesLineFragmentOrigin],
+                attributes: [.font: font, .paragraphStyle: paragraph]
+            ).height
+            return (max(1, Int((needed / lineHeight).rounded())), lineHeight)
+        }
+        let usual = measure(pointSize)
+        if usual.lines <= 2 {
+            return (pointSize, usual.lines, usual.lineHeight * CGFloat(usual.lines) + 1)
+        }
+        let smaller = pointSize * longTitleShrink
+        let shrunk = measure(smaller)
+        let lines = min(3, shrunk.lines)
+        return (smaller, lines, shrunk.lineHeight * CGFloat(lines) + 1)
     }
 }
