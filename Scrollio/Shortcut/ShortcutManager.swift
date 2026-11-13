@@ -38,7 +38,7 @@ class ShortcutManager {
     /// - 索引4+: 分类子菜单 (功能键,应用与窗口等), then Modifier Keys, Mouse Buttons,
     ///   Scrolling and, for a Logitech button, Logitech Mouse; every category with a symbol
     /// - last group, after a separator: "Gesture Navigation" (and "Show Gesture Settings"
-    ///   while it is the button's action), "Open App or File…" and "Keyboard Shortcut…",
+    ///   while it is the button's action), "Shortcut Ring", "Open App or File…" and "Keyboard Shortcut…",
     ///   the actions that are configured rather than picked from a list
     ///
     /// - Parameter menu: 目标菜单对象
@@ -184,6 +184,17 @@ class ShortcutManager {
             settingsItem.image = createSymbolImage("slider.horizontal.3")
             menu.addItem(settingsItem)
         }
+
+        // The Shortcut Ring: like Gesture Navigation an action that is no key, with a pane
+        // of its own for what it holds. A mouse button or a key can have it.
+        let ringShortcut = SystemShortcut.shortcutRing
+        let ringItem = NSMenuItem(title: ringShortcut.localizedName, action: action, keyEquivalent: "")
+        ringItem.target = target
+        ringItem.representedObject = ringShortcut
+        ringItem.toolTip = NSLocalizedString("ring-menu-tooltip", comment: "")
+        ringItem.image = createSymbolImage(ringShortcut.symbolName)
+        menu.addItem(ringItem)
+        totalShortcuts += 1
 
         // "Open App or File…"
         let openItem = NSMenuItem(

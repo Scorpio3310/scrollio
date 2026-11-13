@@ -130,7 +130,7 @@ final class SettingsFileFormatTests: XCTestCase {
             "smoothSimTrackpad", "trackpadStyleInBrowsers", "trackpadStyleInMacApps",
             "smoothVertical", "smoothHorizontal", "dash", "slow", "toggle", "block",
             "thumbWheelSettings", "allowlist", "applications", "buttonBindings", "mouseGestureSettings",
-            "logiWheelSettings", "logiMouseSettings", "hideStatusItem",
+            "shortcutRingSettings", "logiWheelSettings", "logiMouseSettings", "hideStatusItem",
         ])
         XCTAssertEqual(SettingsFile.leftOut.map { $0.key + ($0.isPrefix ? "*" : "") }, [
             "optionsExist", "welcomeGuideCompletedVersion", "appsLeftToMacOSOffered", "preferencesSelectedPane", "scrollingAdvancedExpanded",
@@ -345,6 +345,34 @@ final class SettingsFileFormatTests: XCTestCase {
           "trackingSpeed": 1,
           "upAction": "missionControl"
         },
+        "shortcutRingSettings": {
+          "places": [
+            {
+              "action": "missionControl"
+            },
+            {
+              "action": "screenshotSelection"
+            },
+            {
+              "action": "moveSpaceRight"
+            },
+            {
+              "action": "paste"
+            },
+            {
+              "action": "showDesktop"
+            },
+            {
+              "action": "copy"
+            },
+            {
+              "action": "moveSpaceLeft"
+            },
+            {
+              "action": "appExpose"
+            }
+          ]
+        },
         "logiWheelSettings": {
           "mode": "ratchet"
         },
@@ -384,6 +412,60 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertTrue(SettingsFile.apply(try SettingsFile.read(older).get(), to: target.options))
         XCTAssertTrue(target.options.trackpadStyleInBrowsers, "on unless it was turned off")
         XCTAssertFalse(target.options.trackpadStyleInMacApps, "off unless it was turned on")
+    }
+
+    /// The Shortcut Ring is in the file, in a group of its own: a file without it (one from
+    /// 1.0.4) leaves this Mac's ring alone, and a place whose action this version does not
+    /// run comes in empty and is counted.
+    func testTheShortcutRingIsInTheFile_andAFileWithoutItLeavesTheRingAlone() throws {
+        let source = makeSource()
+        var ring = ShortcutRingSettings.default
+        ring[1] = ShortcutRingPlace(SystemShortcut.undo)
+        ring[6] = .empty
+        source.options.ring = ring
+        let data = try SettingsFile.export(from: source.options, now: Self.moment).get()
+
+        let target = OwnSettings(for: self)
+        target.options.readOptions()
+        XCTAssertEqual(target.options.ring, .default)
+        var told: [OptionsGroup] = []
+        target.options.observe([.ring]) { told.append($0) }
+        let contents = try SettingsFile.read(data).get()
+        XCTAssertTrue(contents.groups.contains(.ring))
+        XCTAssertTrue(contents.bringsActions, "two places differ from a new ring")
+        XCTAssertTrue(SettingsFile.apply(contents, to: target.options))
+        XCTAssertEqual(target.options.ring, ring)
+        XCTAssertEqual(told, [.ring])
+        XCTAssertEqual(SettingsFileText.ringLines(of: contents), ["Ring Top right: Undo", "Ring Left: No Action"])
+        XCTAssertTrue(SettingsFileText.items(of: contents).contains { $0.text == "Shortcut Ring" })
+
+        // A file without the ring: the group is not in it, and the ring stays.
+        var file = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var settings = try XCTUnwrap(file["settings"] as? [String: Any])
+        settings["shortcutRingSettings"] = nil
+        file["settings"] = settings
+        let older = try SettingsFile.read(try JSONSerialization.data(withJSONObject: file)).get()
+        XCTAssertFalse(older.groups.contains(.ring))
+        XCTAssertNil(older.ring)
+        XCTAssertTrue(SettingsFile.apply(older, to: target.options))
+        XCTAssertEqual(target.options.ring, ring, "an older file does not reset the ring")
+
+        // What a place may hold is checked: a name of a later version, a click, a recorded
+        // key and a file to open all come in as empty places, counted as left out.
+        let strange = try Fixture.contents(
+            #""shortcutRingSettings":{"places":[{"action":"copy"},{"action":"somethingNewer"},{"action":"mouseLeftClick"},"#
+                + #"{"action":"custom::8:1048576"},{"action":"openTarget","openTarget":{"path":"/bin/sh","arguments":"","kind":"script"}}]}"#
+        )
+        XCTAssertEqual(strange.ring?.places.map { $0.action }, ["copy", "", "", "", "", "", "", ""])
+        XCTAssertEqual(strange.unknownActions, 4)
+        XCTAssertEqual(strange.leftOutCount, 4)
+        XCTAssertTrue(strange.launchActions.isEmpty, "nothing of a ring opens or runs anything")
+        // A ring that is no object is a damaged file, not a default ring.
+        if case .failure(let problem) = SettingsFile.read(Fixture.file(#""shortcutRingSettings":[1,2]"#)) {
+            XCTAssertEqual(problem, .damaged("shortcutRingSettings"))
+        } else {
+            XCTFail("a ring that is a list was taken")
+        }
     }
 
     /// A file read back gives the settings it was made from, on another Mac's settings.
@@ -2270,6 +2352,12 @@ final class SettingsImportSheetTests: XCTestCase {
             (ownButton, false, ["Forward button in A: Copy"]),
             (#""mouseGestureSettings":{"downAction":"missionControl"}"#, false, ["Gesture Down: Mission Control"]),
             (#""mouseGestureSettings":{"clickAction":""}"#, false, ["Gesture Click: No Action"]),
+            // The Shortcut Ring: as a new one is, it brings nothing; a place with another
+            // action, or without one, is listed.
+            (#""shortcutRingSettings":{}"#, true, []),
+            (#""shortcutRingSettings":{"places":[{"action":"missionControl"},{"action":"undo"},{"action":"moveSpaceRight"},"#
+                + #"{"action":""},{"action":"showDesktop"},{"action":"copy"},{"action":"moveSpaceLeft"},{"action":"appExpose"}]}"#,
+             false, ["Ring Top right: Undo", "Ring Bottom right: No Action"]),
         ]
         for (settings, importIsDefault, listed) in cases {
             let contents = try Fixture.contents(settings)

@@ -81,6 +81,9 @@ enum SettingsFileText {
         if contents.groups.contains(.gesture) {
             items.append(Item(symbolName: "hand.draw", text: text("general-settings-import-gestures")))
         }
+        if contents.groups.contains(.ring) {
+            items.append(Item(symbolName: SystemShortcut.shortcutRing.symbolName, text: text("general-settings-import-ring")))
+        }
         if contents.holdsLogitechValues {
             items.append(Item(symbolName: "computermouse", text: text("general-settings-import-logitech")))
         }
@@ -212,6 +215,18 @@ enum SettingsFileText {
             guard identifier != slot.value(in: defaults) else { return nil }
             let action = SystemShortcut.getShortcut(named: identifier)?.localizedName ?? text("gesture-action-none")
             return String(format: text("general-settings-import-gesture-line"), text(slot.labelKey), action)
+        }
+    }
+
+    /// One line per place of the Shortcut Ring whose action is not the default one: "Ring
+    /// Top right: Paste". None when the file leaves the ring as a new one is.
+    static func ringLines(of contents: SettingsFile.Contents) -> [String] {
+        guard let ring = contents.ring else { return [] }
+        let defaults = ShortcutRingSettings.default
+        return ring.places.indices.compactMap { index in
+            guard ring[index] != defaults[index] else { return nil }
+            let action = ring[index].shortcut?.localizedName ?? text("ring-action-none")
+            return String(format: text("general-settings-import-ring-line"), text(ShortcutRingPlaceName.key(of: index)), action)
         }
     }
 
@@ -625,6 +640,7 @@ final class SettingsImportSheetViewController: NSViewController {
             add(makeLaunchBox(for: launches), to: middle)
         }
         let lines = SettingsFileText.actionLines(of: contents) + SettingsFileText.gestureLines(of: contents)
+            + SettingsFileText.ringLines(of: contents)
         if !lines.isEmpty {
             add(makeActionsBox(for: lines), to: middle)
         }

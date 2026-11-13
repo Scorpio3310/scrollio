@@ -86,6 +86,7 @@ struct OptionsSnapshot {
     private let logiWheel = Options.shared.logiWheel
     private let logiMouse = Options.shared.logiMouse
     private let thumbWheel = Options.shared.thumbWheel
+    private let ring = Options.shared.ring
 
     func restore() {
         let options = Options.shared
@@ -100,6 +101,7 @@ struct OptionsSnapshot {
         options.logiWheel = logiWheel
         options.logiMouse = logiMouse
         options.thumbWheel = thumbWheel
+        options.ring = ring
     }
 }
 

@@ -45,6 +45,75 @@ class InputProcessor: ModifierFlagsProviding {
         return !activeMouseGestures.isEmpty
     }
 
+    // MARK: - Shortcut Ring
+    //
+    // The ring's trigger is a binding like Gesture Navigation's: `process` hands its press
+    // and its release to `ShortcutRingController`, which exists only once such a press has
+    // come. Everyone else pays one comparison with nil per button or key event, and
+    // nothing per pointer or wheel event.
+
+    /// The trigger whose press the ring took, until its release: every further down of it
+    /// is the ring's too (a held key repeats, and its repeats no longer match the binding
+    /// once the modifiers are let go), and so is its up.
+    private var ringTrigger: TriggerKey?
+
+    /// A ring is held open: the pointer-movement tap runs and its deltas go to the ring.
+    var hasHeldShortcutRing: Bool {
+        return ShortcutRingController.existing?.isHeld ?? false
+    }
+
+    /// Hands the movement of one motion event to a ring that is held open. Runs inside the
+    /// motion tap's callback; nothing is posted from here.
+    func handleShortcutRingMovement(deltaX: CGFloat, deltaY: CGFloat, location: CGPoint) {
+        guard let ring = ShortcutRingController.existing, ring.isHeld else { return }
+        ring.pointerMoved(by: CGPoint(x: deltaX, y: deltaY), to: location)
+    }
+
+    /// The release of the ring's trigger, or of Esc after it closed a ring.
+    private func releaseForShortcutRing(_ event: InputEvent) -> Bool {
+        let key = TriggerKey(type: event.type, code: event.code)
+        if ringTrigger == key {
+            ringTrigger = nil
+            ShortcutRingController.existing?.triggerReleased(isMadeUp: event.isSyntheticRelease)
+            return true
+        }
+        if event.type == .keyboard, event.code == KeyCode.escape,
+           let ring = ShortcutRingController.existing, ring.escapeReleased() {
+            return true
+        }
+        return false
+    }
+
+    /// A down that is the ring's before any binding is looked at: the held trigger again,
+    /// or Esc while a ring is open.
+    private func pressForOpenShortcutRing(_ event: InputEvent, key: TriggerKey) -> Bool {
+        if ringTrigger == key {
+            // A repeat of the held key, or a second down of the held button.
+            if event.isAutoRepeat || ShortcutRingController.existing?.isHeld == true {
+                return true
+            }
+            // A new press while the last one's release never came: it starts over.
+            ringTrigger = nil
+        }
+        if event.type == .keyboard, event.code == KeyCode.escape, !event.isAutoRepeat,
+           let ring = ShortcutRingController.existing, ring.isOpen {
+            return ring.escapePressed()
+        }
+        return false
+    }
+
+    /// The press of a button or key bound to the Shortcut Ring.
+    private func pressShortcutRingTrigger(_ event: InputEvent, key: TriggerKey) {
+        if let held = ringTrigger, held != key {
+            // A second trigger while the first is held: its press and release are taken
+            // and mean nothing.
+            swallowedTriggerPresses.insert(key)
+            return
+        }
+        ringTrigger = key
+        ShortcutRingController.shared.triggerPressed(by: event)
+    }
+
     /// Held gesture buttons that read pointer movement, the only ones that need the motion
     /// tap. A hold the mouse tracks itself gets its movement from `handleDeviceGestureMovement`.
     private var pointerTrackedGestureCount = 0
@@ -138,6 +207,8 @@ class InputProcessor: ModifierFlagsProviding {
     var needsKeyEvents: Bool {
         if activeModifierFlags != 0 { return true }
         if activeBindings.keys.contains(where: { $0.type == .keyboard }) { return true }
+        // Esc closes an open Shortcut Ring, whatever opened it.
+        if ShortcutRingController.existing?.needsKeys == true { return true }
         return ButtonUtils.shared.hasKeyboardTriggers
     }
 
@@ -278,6 +349,9 @@ class InputProcessor: ModifierFlagsProviding {
         }
         activeBindings.removeAll()
         swallowedTriggerPresses.removeAll()
+        // An open Shortcut Ring closes and runs nothing.
+        ringTrigger = nil
+        ShortcutRingController.existing?.cancel()
         cancelInteractiveGesture()
         for session in activeMouseGestures.values {
             session.watchdog?.cancel()
@@ -326,6 +400,9 @@ class InputProcessor: ModifierFlagsProviding {
         assertMainThread()
         if event.phase == .up {
             // Up 事件: 按 (type, code) 查表, 忽略 modifiers (用户可能已松开修饰键)
+            if releaseForShortcutRing(event) {
+                return .consumed
+            }
             if releaseBindingPressedAfterAnAbandonedGesture(for: event) {
                 return .consumed
             }
@@ -343,6 +420,9 @@ class InputProcessor: ModifierFlagsProviding {
 
         // Down 事件: 完整匹配 (type + code + modifiers + deviceFilter)
         let key = TriggerKey(type: event.type, code: event.code)
+        if pressForOpenShortcutRing(event, key: key) {
+            return .consumed
+        }
         // A gesture hold of this button that the watchdog abandoned lost its up. A new press
         // ends it, whatever the press binds, so it cannot swallow this press's up.
         if let stale = activeMouseGestures[key], stale.isAbandoned {
@@ -359,6 +439,16 @@ class InputProcessor: ModifierFlagsProviding {
         }
         guard let binding = ButtonUtils.shared.getBestMatchingBinding(for: event) else {
             return .passthrough
+        }
+        if binding.systemShortcutName == SystemShortcut.shortcutRing.identifier {
+            // A key's repeat never opens or closes the ring: checked first.
+            guard !event.isAutoRepeat else { return .consumed }
+            pressShortcutRingTrigger(event, key: key)
+            return .consumed
+        }
+        // Any other binding that fires closes an open ring, which runs nothing.
+        if let ring = ShortcutRingController.existing, ring.isOpen {
+            ring.cancel()
         }
         if binding.systemShortcutName == SystemShortcut.mouseGestureNavigation.identifier {
             guard event.type == .mouse else { return .passthrough }

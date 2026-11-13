@@ -42,8 +42,8 @@
 //  it), and what goes into the store afterwards is what those decoders understood, written
 //  by the app's own encoders: an entry or a name this version cannot read is left out,
 //  not kept for a later version. The same goes for an action: a button or key whose
-//  action this version does not run is left out, and a gesture direction with such an
-//  action gets none (`StoredAction`), or a later version that gives the name a meaning
+//  action this version does not run is left out, and a gesture direction or a place of
+//  the Shortcut Ring with such an action gets none (`StoredAction`, `ShortcutRingPlace`), or a later version that gives the name a meaning
 //  would run something the sheet never showed. The four numbers of Scrolling (and of each app's own
 //  settings) are brought into the range the panes and the engine work with
 //  (`range(ofScrollNumber:)`), and what was corrected is counted for the sheet: the
@@ -122,6 +122,8 @@ enum SettingsFile {
         case logiMouse
         /// `ThumbWheelSettings`, a JSON object.
         case thumbWheel
+        /// `ShortcutRingSettings`, a JSON object: the ring's eight places.
+        case ring
     }
 
     struct Key: Equatable {
@@ -162,6 +164,8 @@ enum SettingsFile {
         Key(name: OptionItem.Button.Bindings, group: .buttons, kind: .bindings),
         // Gestures
         Key(name: OptionItem.Gesture.Settings, group: .gesture, kind: .gesture),
+        // The Shortcut Ring: what its places hold. (What opens it is a button or key above.)
+        Key(name: OptionItem.Ring.Settings, group: .ring, kind: .ring),
         // Logitech: the wheel and the basics
         Key(name: OptionItem.MouseWheel.Settings, group: .logiWheel, kind: .logiWheel),
         Key(name: OptionItem.MouseBasics.Settings, group: .logiMouse, kind: .logiMouse),
@@ -262,13 +266,16 @@ enum SettingsFile {
         var applications: [Application]?
         var bindings: [ButtonBinding]?
         var gesture: MouseGestureSettings?
+        /// The Shortcut Ring's places. A place holds a listed keyboard shortcut or nothing
+        /// (`ShortcutRingPlace`): none of them opens an app or a file or runs a script.
+        var ring: ShortcutRingSettings?
         /// Its "Let Scrollio manage this mouse" means nothing: `apply` puts this Mac's in.
         var logiWheel: LogiWheelSettings?
         var logiMouse: LogiMouseSettings?
         /// Entries of the two lists that this version cannot read. They are left out.
         var unreadableEntries = 0
         /// Buttons and keys whose action this version does not run (left out), and gesture
-        /// directions with such an action (they got no action).
+        /// directions and places of the ring with such an action (they got no action).
         var unknownActions = 0
         /// What the sheet counts as left out: both of the above.
         var leftOutCount: Int {
@@ -299,10 +306,11 @@ enum SettingsFile {
         }
 
         /// The file gives a button or a key an action, or a direction of Gesture
-        /// Navigation (or its click) another action than the default one. The sheet then
-        /// lists them, and Return does not import.
+        /// Navigation (or its click) or a place of the Shortcut Ring another action than
+        /// the default one. The sheet then lists them, and Return does not import.
         var bringsActions: Bool {
             guard allBindings.isEmpty else { return true }
+            if let ring, ring != .default { return true }
             guard let gesture else { return false }
             let defaults = MouseGestureSettings.default
             return [\MouseGestureSettings.upAction, \.downAction, \.leftAction, \.rightAction, \.clickAction]
@@ -474,6 +482,12 @@ enum SettingsFile {
         case .thumbWheel:
             guard let thumbWheel: ThumbWheelSettings = decoded(value) else { return false }
             contents.thumbWheel = thumbWheel
+        case .ring:
+            guard let ring: ShortcutRingSettings = decoded(value) else { return false }
+            // A place whose action this version does not run comes in empty.
+            let kept = ring.keepingOnlyWhatRuns()
+            contents.unknownActions += kept.emptied
+            contents.ring = kept.ring
         }
         return true
     }
@@ -671,7 +685,7 @@ enum SettingsFile {
             guard let data = stored as? Data,
                   let list = (try? JSONSerialization.jsonObject(with: data)) as? [Any] else { return nil }
             return list
-        case .hotkey, .gesture, .logiMouse, .thumbWheel:
+        case .hotkey, .gesture, .logiMouse, .thumbWheel, .ring:
             guard let data = stored as? Data,
                   let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
             return object
@@ -747,6 +761,9 @@ enum SettingsFile {
             }
             if let gesture = contents.gesture {
                 values[OptionItem.Gesture.Settings] = try encoder.encode(gesture)
+            }
+            if let ring = contents.ring {
+                values[OptionItem.Ring.Settings] = try encoder.encode(ring)
             }
             if var wheel = contents.logiWheel {
                 wheel.managedByScrollio = managedByScrollio

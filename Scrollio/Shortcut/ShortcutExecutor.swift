@@ -509,6 +509,10 @@ class ShortcutExecutor {
         if shortcutName == SystemShortcut.mouseGestureNavigation.identifier {
             return nil
         }
+        // The Shortcut Ring likewise: its trigger's press and release go to the ring.
+        if shortcutName == SystemShortcut.shortcutRing.identifier {
+            return nil
+        }
         // An action this version does not know (settings of a newer version, a renamed
         // action) is no action: it used to count as a shortcut, which took the button (the
         // press and the release were swallowed) and sent nothing.
