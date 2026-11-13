@@ -13,16 +13,23 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   keyboard layout, and keys are named as your keyboard names them.
 - To record a button or a key, click + and press it. Esc, a left click, closing the
   popover or switching to another app ends the recording.
-- A drawing of the mouse lights the button each row is about. The MX Master 4 and the
-  MX Master 3 and 3S are drawn from above and from their thumb side, where the thumb
-  wheel, the side buttons and the thumb panel (or the gesture button in the thumb rest)
-  are: the drawing turns to the side the row's button is on. With an MX
-  Master, its buttons are listed in the order they sit on the mouse, and any other
-  buttons and keys under them:
+- A drawing of the mouse lights the button each row is about. The MX Master 4, the MX
+  Master 3 and 3S, the MX Anywhere 3 and 3S and the MX Vertical each have a drawing of
+  their own, from above and from their thumb side, where the side buttons are (on an MX
+  Master also the thumb wheel and the thumb panel, or the gesture button in the thumb
+  rest): the drawing turns to the side the row's button is on. Any other mouse is drawn
+  as a plain one. With one of these mice, its buttons are listed in the order they sit
+  on the mouse, and any other buttons and keys under them:
   - MX Master 4: Middle button, Mode shift button, Thumb wheel, Gesture button, Forward
     button, Back button, Thumb panel.
   - MX Master 3 and 3S: Middle button, Mode shift button, Thumb wheel, Forward button,
     Back button, Gesture button.
+  - MX Anywhere 3 and 3S: Middle button, Mode shift button, Forward button, Back button.
+  - MX Vertical: Middle button, Pointer speed button (the one on its top), Forward
+    button, Back button.
+
+  The MX Anywhere and the MX Vertical were drawn and set up from Logitech's descriptions
+  of them; they have not been tried on the mice themselves yet.
 - On a Logitech mouse, buttons that macOS does not report (such as the gesture button,
   the mode shift button and the thumb panel) can have actions too. With a Logitech mouse
   connected, a button, a key or a gesture can also run a Logitech action: switch the
