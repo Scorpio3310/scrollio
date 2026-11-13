@@ -346,6 +346,7 @@ final class SettingsFileFormatTests: XCTestCase {
           "upAction": "missionControl"
         },
         "shortcutRingSettings": {
+          "freezePointer": false,
           "places": [
             {
               "action": "missionControl"
