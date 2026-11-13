@@ -32,6 +32,11 @@
 //  `idleLimit` without the pointer moving over an open ring. It does not open while the
 //  left or the right button is down (a drag).
 //
+//  What a place that opens an app shows (its name, its icon) takes a look on disk. That
+//  never happens in the turn in which a ring is shown: the face is made at a quiet moment
+//  (`preparedFace`), and a ring for which none is there yet shows the file's name and a
+//  plain symbol once.
+//
 //  Nothing is drawn and nothing is posted inside an event callback: the panel is shown on
 //  the next turn of the main queue, and so is the chosen action, after the panel is gone.
 //  A place runs as a button's action runs: resolved by the executor from a binding built
@@ -58,6 +63,33 @@ final class ShortcutRingController {
         let controller = ShortcutRingController()
         existing = controller
         return controller
+    }
+
+    // MARK: The face, made at a quiet moment
+
+    /// A ring's face with what it took a look on disk to know (an app's name and icon),
+    /// made when no ring was held: by the Settings pane whenever it shows a ring, at
+    /// launch for a ring that opens something, and after a ring closed that had to be
+    /// shown without it.
+    private(set) static var preparedFace: (ring: ShortcutRingSettings, face: ShortcutRingFace)?
+
+    /// Keeps `face` for the next ring that is `ring`.
+    static func prepare(_ face: ShortcutRingFace, for ring: ShortcutRingSettings) {
+        preparedFace = (ring, face)
+    }
+
+    /// At launch: when something opens the ring and a place of it opens an app or a file,
+    /// the face is made on a later turn of the main queue, so that the first ring already
+    /// has the icons. For everyone else: one pass over the bindings, nothing more.
+    static func prepareFaceAtLaunch(options: Options = .shared) {
+        let ring = options.ring
+        guard ring.opensSomething,
+              options.buttons.binding.contains(where: {
+                  $0.isEnabled && $0.systemShortcutName == SystemShortcut.shortcutRing.identifier
+              }) else { return }
+        DispatchQueue.main.async {
+            prepare(ShortcutRingFace(ring), for: ring)
+        }
     }
 
     #if DEBUG
@@ -88,6 +120,9 @@ final class ShortcutRingController {
         var makeTimer: (TimeInterval, @escaping () -> Void) -> Timer?
         /// The ring this Mac's settings hold.
         var ring: () -> ShortcutRingSettings
+        /// The whole face of a ring, with a look on disk for what it opens. Only called
+        /// while no ring is open.
+        var makeFace: (ShortcutRingSettings) -> ShortcutRingFace
         /// Runs a place's action.
         var run: (ShortcutRingPlace) -> Void
         /// Whether a ring may ask a mouse for pulses: Gestures › Haptic feedback, the one
@@ -127,6 +162,7 @@ final class ShortcutRingController {
                 return CommonModesTimer.scheduled(withTimeInterval: interval, repeats: true) { _ in block() }
             },
             ring: { Options.shared.ring },
+            makeFace: { ShortcutRingFace($0) },
             run: { ShortcutRingController.run($0) },
             allowsHaptics: { Options.shared.gesture.hapticFeedback },
             playHaptic: { cue, code in LogiCenter.shared.playGestureHaptic(cue, forScrollioCode: code) },
@@ -182,6 +218,9 @@ final class ShortcutRingController {
     /// Which of its places run something, worked out when the ring changes, not per press.
     private var filled = ShortcutRingSettings.default.filled
     private var face: ShortcutRingFace?
+    /// `face` knows everything (an app's name and icon); false while it was made without
+    /// a look on disk, for a ring that had to be shown before a whole face was there.
+    private var faceIsComplete = false
     /// The screen the ring opened on.
     private var screen = ShortcutRingScreen(frame: .zero, usable: .zero)
     /// The button to name when asking for a pulse: set for a trigger that arrived over
@@ -260,6 +299,7 @@ final class ShortcutRingController {
                 ring = stored
                 filled = stored.filled
                 face = nil
+                faceIsComplete = false
             }
             if case .hidPP = event.source, environment.allowsHaptics() {
                 hapticCode = event.code
@@ -408,8 +448,7 @@ final class ShortcutRingController {
                 // on the main queue's next turn.
                 environment.schedule { [weak self] in
                     guard let self, self.showGeneration == generation, self.session.isOpen else { return }
-                    let face = self.face ?? ShortcutRingFace(self.ring)
-                    self.face = face
+                    let face = self.faceForShowing()
                     self.presenter.show(
                         face, centre: centre, screen: self.screen,
                         lit: self.session.lit, takesClicks: self.session.phase == .latched
@@ -448,8 +487,39 @@ final class ShortcutRingController {
         }
         if closed {
             environment.log(ran.map { "Shortcut Ring: closed, ran \($0)" } ?? "Shortcut Ring: closed, nothing ran")
+            if !faceIsComplete {
+                completeFaceLater()
+            }
         }
         followTheSession()
+    }
+
+    /// The face for a ring that is being shown now, without a look on disk: the one made
+    /// at a quiet moment if there is one for this ring, else names and plain symbols.
+    private func faceForShowing() -> ShortcutRingFace {
+        if let face { return face }
+        if let prepared = Self.preparedFace, prepared.ring == ring {
+            face = prepared.face
+            faceIsComplete = true
+            return prepared.face
+        }
+        let quick = ShortcutRingFace(ring, looksOnDisk: false)
+        face = quick
+        faceIsComplete = !ring.opensSomething
+        return quick
+    }
+
+    /// After a ring that was shown without its icons has closed (and after its action was
+    /// started): the whole face is made, for the next ring.
+    private func completeFaceLater() {
+        let wanted = ring
+        environment.schedule { [weak self] in
+            guard let self, !self.session.isOpen, self.ring == wanted, !self.faceIsComplete else { return }
+            let whole = self.environment.makeFace(wanted)
+            self.face = whole
+            self.faceIsComplete = true
+            Self.prepare(whole, for: wanted)
+        }
     }
 
     private func placeWasLit(_ place: Int) {

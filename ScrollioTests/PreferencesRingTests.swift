@@ -238,6 +238,9 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertNotNil(face.image, "the app's icon")
         XCTAssertEqual(popUp.menu?.items.first?.title, face.title, "the pull-down and the ring name it alike")
         XCTAssertNotNil(popUp.menu?.items.first?.image)
+        // The pane hands the face on to the ring on screen: no look on disk at a press.
+        XCTAssertTrue(ShortcutRingController.preparedFace?.ring == Options.shared.ring)
+        XCTAssertNotNil(ShortcutRingController.preparedFace?.face.places[4].image)
 
         // Asked again, the popover starts from what the place opens; Cancel changes nothing.
         popUp.shortcutSelected(try XCTUnwrap(item(marked: ShortcutManager.MenuMarker.openTarget, in: popUp)))

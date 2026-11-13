@@ -50,10 +50,13 @@ struct ShortcutRingFace {
 
     /// The face of a stored ring: each place as the Buttons pane shows that action (a
     /// listed action's name and symbol, an app's name and icon, a key combination's keys).
-    /// It looks an app's icon up on disk and asks the keyboard layout for a key's name:
-    /// not for an event callback (the ring's controller makes it when the ring is shown,
-    /// on the main queue, and keeps it until the ring changes).
-    init(_ ring: ShortcutRingSettings, resolver: ActionDisplayResolver = ActionDisplayResolver()) {
+    ///
+    /// An app's or a file's name and icon are looked up on disk (does the file exist,
+    /// Launch Services, the icon): never while a ring is held or is being shown, when the
+    /// event taps wait on the main thread. With `looksOnDisk` false such a place shows the
+    /// file's own name and a plain symbol instead; `ShortcutRingController` shows that
+    /// until a face made at a quiet moment is there (`prepare`, and after a ring closed).
+    init(_ ring: ShortcutRingSettings, looksOnDisk: Bool = true, resolver: ActionDisplayResolver = ActionDisplayResolver()) {
         self.init(places: ring.places.map { place in
             switch place.content {
             case .nothing:
@@ -66,7 +69,10 @@ struct ShortcutRingFace {
                     title: text, symbolName: "keyboard",
                     glyphs: Self.glyphLines(code: code, modifiers: modifiers), isEmpty: false
                 )
-            case .open:
+            case .open(let target):
+                guard looksOnDisk else {
+                    return Place(title: Self.plainName(of: target), symbolName: "arrow.up.forward.app", isEmpty: false)
+                }
                 let shown = resolver.resolve(state: CellActionState(binding: place.asBinding()))
                 return Place(
                     title: shown.title, symbolName: shown.symbolName ?? "arrow.up.forward.app",
@@ -74,6 +80,14 @@ struct ShortcutRingFace {
                 )
             }
         })
+    }
+
+    /// What a place that opens something is called without a look on disk: the file's
+    /// name as its path has it, an app's without ".app".
+    static func plainName(of target: OpenTargetPayload) -> String {
+        let file = (target.path as NSString).lastPathComponent
+        let name = target.kind == .application ? (file as NSString).deletingPathExtension : file
+        return name.isEmpty ? target.path : name
     }
 
     /// A key combination as it stands in a place: "⇧⌘K" on one line; the modifiers above

@@ -334,6 +334,8 @@ final class RingPreferencesViewController: NSViewController {
             popUp.configure(with: ring[place].asBinding(id: placeIDs[place]))
         }
         previewView.face = ShortcutRingFace(ring)
+        // The ring on screen shows this face too: it is made here, not at a press.
+        ShortcutRingController.prepare(previewView.face, for: ring)
         showLitPlace()
         PreferencesForm.fitToContent(self)
     }

@@ -241,6 +241,12 @@ struct ShortcutRingSettings: Codable, Equatable {
         return places.map { $0.runs }
     }
 
+    /// A place opens an app or a file or runs a script: showing the ring as the Buttons
+    /// pane would takes a look on disk (the file, its name, its icon).
+    var opensSomething: Bool {
+        return places.contains { $0.openTarget != nil }
+    }
+
     /// Exactly `placeCount` places: cut, or filled up with empty ones.
     static func filledUp(_ places: [ShortcutRingPlace]) -> [ShortcutRingPlace] {
         var result = Array(places.prefix(placeCount))

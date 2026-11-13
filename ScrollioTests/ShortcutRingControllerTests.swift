@@ -74,6 +74,8 @@ final class RingHarness {
     private(set) var clickWatches = 0
     private(set) var stoppedClickWatches: [String] = []
     private var scheduled: [() -> Void] = []
+    /// How often a whole face (with a look on disk) was made.
+    private(set) var wholeFacesMade = 0
     /// What was asked to run after a delay, with the time it is due.
     private var delayed: [(due: TimeInterval, block: () -> Void)] = []
 
@@ -95,6 +97,10 @@ final class RingHarness {
             scheduleAfter: { [unowned self] delay, block in self.delayed.append((self.now + delay, block)) },
             makeTimer: { _, _ in nil },
             ring: { [unowned self] in self.ring },
+            makeFace: { [unowned self] in
+                self.wholeFacesMade += 1
+                return ShortcutRingFace($0)
+            },
             run: { [unowned self] in self.log.append("run \(ShortcutRingController.logName(of: $0))") },
             allowsHaptics: { [unowned self] in self.hapticsAllowed },
             playHaptic: { [unowned self] cue, code in self.log.append("pulse \(cue) \(code)") },
@@ -321,6 +327,61 @@ final class ShortcutRingControllerTests: XCTestCase {
         harness.now += 0.3
         harness.runDelayed()
         XCTAssertTrue(controller.isHeld)
+    }
+
+    /// What an app's place shows takes a look on disk (the file, Launch Services, the
+    /// icon). That never happens in the turn in which a ring is shown, when the taps wait
+    /// on the main thread: a ring without a face made beforehand shows the app's file
+    /// name and a plain symbol once, the whole face is made after it has closed, and the
+    /// next ring has the icon.
+    func testNoLookOnDiskInTheTurnARingIsShown() {
+        ShortcutRingController.prepare(ShortcutRingFace(.default), for: .default)
+        harness.ring[1] = ShortcutRingPlace(openTarget: OpenTargetPayload(
+            path: "/System/Applications/Calculator.app", bundleID: "com.apple.calculator", arguments: "", kind: .application
+        ))
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        let first = harness.presenter.shown.last?.face.places[1]
+        XCTAssertEqual(harness.wholeFacesMade, 0, "shown without a look on disk")
+        XCTAssertEqual(first?.title, "Calculator", "the file's name, without .app")
+        XCTAssertNil(first?.image)
+        XCTAssertEqual(first?.isEmpty, false)
+        XCTAssertEqual(harness.presenter.shown.last?.face.filled, Array(repeating: true, count: 8))
+
+        controller.triggerReleased(isMadeUp: false)   // nothing lit: it stands open
+        XCTAssertEqual(harness.wholeFacesMade, 0, "not while it stands open either")
+        controller.cancel()
+        harness.runScheduled()
+        XCTAssertEqual(harness.wholeFacesMade, 1, "after it closed")
+
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        XCTAssertNotNil(harness.presenter.shown.last?.face.places[1].image, "the next ring has the icon")
+        XCTAssertEqual(harness.wholeFacesMade, 1)
+        controller.cancel()
+        harness.runScheduled()
+        XCTAssertEqual(harness.wholeFacesMade, 1, "a whole face is not made twice")
+    }
+
+    /// The Settings pane makes the face whenever it shows a ring, and hands it on: a ring
+    /// changed there is shown with its icons at the first press.
+    func testAFaceMadeAtAQuietMomentIsUsedAtThePress() {
+        var ring = ShortcutRingSettings.default
+        ring[4] = ShortcutRingPlace(openTarget: OpenTargetPayload(
+            path: "/System/Applications/Calculator.app", bundleID: "com.apple.calculator", arguments: "", kind: .application
+        ))
+        ShortcutRingController.prepare(ShortcutRingFace(ring), for: ring)
+        harness.ring = ring
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        XCTAssertNotNil(harness.presenter.shown.last?.face.places[4].image)
+        controller.cancel()
+        harness.runScheduled()
+        XCTAssertEqual(harness.wholeFacesMade, 0)
+        // A ring without anything to open needs no look on disk at all.
+        XCTAssertFalse(ShortcutRingSettings.default.opensSomething)
+        XCTAssertTrue(ring.opensSomething)
+        XCTAssertEqual(ShortcutRingFace.plainName(of: OpenTargetPayload(path: "/Users/someone/bin/sync.sh", bundleID: nil, arguments: "", kind: .script)), "sync.sh")
     }
 
     // MARK: The taps follow the ring
