@@ -76,7 +76,7 @@ final class RingHarness {
             schedule: { [unowned self] in self.scheduled.append($0) },
             makeTimer: { _, _ in nil },
             ring: { [unowned self] in self.ring },
-            run: { [unowned self] in self.log.append("run \($0.identifier)") },
+            run: { [unowned self] in self.log.append("run \(ShortcutRingController.logName(of: $0))") },
             playHaptic: { [unowned self] cue, code in self.log.append("pulse \(cue) \(code)") },
             announce: { [unowned self] in self.announced.append($0) },
             refreshMotionTap: { [unowned self] in self.motionTapRefreshes += 1 },
@@ -474,10 +474,62 @@ final class ShortcutRingControllerTests: XCTestCase {
         var sent: [(CGKeyCode, UInt64)] = []
         ShortcutExecutor.shared.setTestingKeyboardShortcutObserver { code, flags, _ in sent.append((code, flags)) }
         defer { ShortcutExecutor.shared.clearTestingKeyboardShortcutObserver() }
-        ShortcutRingController.run(SystemShortcut.screenshot)
+        ShortcutRingController.run(ShortcutRingPlace(SystemShortcut.screenshot))
         XCTAssertEqual(sent.count, 1)
         XCTAssertEqual(sent.first?.0, SystemShortcut.screenshot.code)
         XCTAssertEqual(sent.first?.1, UInt64(SystemShortcut.screenshot.modifiers.rawValue))
+    }
+
+    /// A recorded key combination is pressed and let go: one key down with its modifiers,
+    /// then its key up, marked as Scrollio's own so that no tap of the app takes it for
+    /// a key the user pressed.
+    func testRunningAKeyCombinationPressesAndReleasesIt() {
+        let saved = ShortcutExecutor.shared.post
+        defer { ShortcutExecutor.shared.post = saved }
+        var posted: [CGEvent] = []
+        ShortcutExecutor.shared.post = { posted.append($0) }
+        let flags = CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue
+        ShortcutRingController.run(ShortcutRingPlace(action: ButtonBinding.normalizedCustomBindingName(code: 40, modifiers: flags)))
+        XCTAssertEqual(posted.map { $0.type }, [.keyDown, .keyUp])
+        XCTAssertEqual(posted.map { $0.getIntegerValueField(.keyboardEventKeycode) }, [40, 40])
+        XCTAssertEqual((posted.first?.flags.rawValue ?? 0) & flags, flags)
+        for event in posted {
+            XCTAssertEqual(event.getIntegerValueField(.eventSourceUserData), ScrollioEventMarker.syntheticCustom)
+        }
+        // A place that runs nothing posts nothing.
+        posted = []
+        ShortcutRingController.run(.empty)
+        ShortcutRingController.run(ShortcutRingPlace(action: "mouseLeftClick"))
+        XCTAssertTrue(posted.isEmpty)
+    }
+
+    /// Choosing a place that opens an app goes the way a button's "Open App or File…"
+    /// goes (the executor, which opens nothing under XCTest), and the log names the kind
+    /// of thing, never its path or the keys of a combination.
+    func testAPlaceThatOpensAnAppOrSendsAKeyCombinationRunsAndIsLoggedByItsKind() {
+        let notes = OpenTargetPayload(path: "/Applications/Notes.app", bundleID: "com.apple.Notes", arguments: "", kind: .application)
+        harness.ring[0] = ShortcutRingPlace(openTarget: notes)
+        harness.ring[2] = ShortcutRingPlace(action: "custom::40:1179648")
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        XCTAssertEqual(harness.presenter.shown.first?.face.filled, Array(repeating: true, count: 8))
+        harness.moveHand(by: CGPoint(x: 0, y: -60))
+        controller.triggerReleased(isMadeUp: false)
+        harness.runScheduled()
+        XCTAssertEqual(harness.log.suffix(2), ["hide", "run an app to open"])
+        XCTAssertEqual(harness.logLines.last, "Shortcut Ring: closed, ran an app to open")
+
+        harness.pointer = CGPoint(x: 700, y: 500)
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        harness.moveHand(by: CGPoint(x: 60, y: 0))
+        controller.triggerReleased(isMadeUp: false)
+        harness.runScheduled()
+        XCTAssertEqual(harness.log.last, "run a recorded key combination")
+        XCTAssertFalse(harness.logLines.contains { $0.contains("Notes") || $0.contains("custom::") })
+        XCTAssertEqual(ShortcutRingController.logName(of: ShortcutRingPlace(openTarget: OpenTargetPayload(
+            path: "/Users/someone/bin/sync.sh", bundleID: nil, arguments: "", kind: .script
+        ))), "a script")
     }
 }
 
@@ -922,11 +974,20 @@ final class ShortcutRingPanelTests: XCTestCase {
         XCTAssertEqual(ShortcutRingScreens.flipped(ShortcutRingScreens.flipped(rect, mainScreenHeight: 900), mainScreenHeight: 900), rect)
     }
 
-    /// The drawing: every place of the default ring has a symbol that exists.
-    func testEveryPlaceOfTheFaceHasItsNameAndASymbol() {
+    /// The drawing: every place has its name and something to show: a listed action its
+    /// symbol, an app its icon, a key combination its keys.
+    func testEveryPlaceOfTheFaceHasItsNameAndSomethingToShow() {
         var ring = ShortcutRingSettings.default
+        ring[1] = ShortcutRingPlace(openTarget: OpenTargetPayload(
+            path: "/System/Applications/Calculator.app", bundleID: "com.apple.calculator", arguments: "", kind: .application
+        ))
+        ring[2] = ShortcutRingPlace(action: "custom::40:1179648")       // ⇧⌘K
         ring[3] = .empty
         ring[4] = ShortcutRingPlace(action: "somethingNewer")
+        ring[5] = ShortcutRingPlace(openTarget: OpenTargetPayload(
+            path: "/Users/someone/Gone.app", bundleID: nil, arguments: "", kind: .application
+        ))
+        ring[6] = ShortcutRingPlace(action: "custom::96:786432")        // ⌃⌥F5
         let face = ShortcutRingFace(ring)
         XCTAssertEqual(face.places.count, 8)
         XCTAssertEqual(face.filled, [true, true, true, false, false, true, true, true])
@@ -934,6 +995,25 @@ final class ShortcutRingPanelTests: XCTestCase {
             XCTAssertFalse(place.title.isEmpty)
             XCTAssertNotNil(ShortcutRingArtwork.symbolImage(named: place.symbolName, pointSize: 20, colour: .white), place.symbolName)
         }
+        // An app: its icon, and its name for the middle of the ring.
+        XCTAssertNotNil(face.places[1].image)
+        XCTAssertFalse(face.places[1].title.isEmpty)
+        XCTAssertFalse(face.places[1].title.contains("/"), "its name, not its path")
+        // A key combination: its keys in the place and in the middle.
+        XCTAssertNil(face.places[2].image)
+        XCTAssertEqual(face.places[2].glyphs.joined(), face.places[2].title)
+        XCTAssertTrue(face.places[2].title.hasPrefix("⇧⌘"), face.places[2].title)
+        XCTAssertEqual(face.places[2].glyphs.count, 1, "a letter stands on the modifiers' line")
+        // A key whose name is longer than a letter stands under its modifiers.
+        XCTAssertEqual(face.places[6].glyphs, ["⌃⌥", "F5"])
+        XCTAssertEqual(face.places[6].title, "⌃⌥F5")
+        // An app that is gone: a warning sign, and its file's name.
+        XCTAssertNil(face.places[5].image)
+        XCTAssertEqual(face.places[5].symbolName, "exclamationmark.triangle")
+        XCTAssertTrue(face.places[5].title.contains("Gone.app"))
+        // A listed action: its symbol, no icon, no keys.
+        XCTAssertNil(face.places[0].image)
+        XCTAssertTrue(face.places[0].glyphs.isEmpty)
         XCTAssertEqual(ShortcutRingFace(places: []).places.count, 8)
     }
 }

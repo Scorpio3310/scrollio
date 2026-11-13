@@ -47,12 +47,18 @@ class ShortcutManager {
     /// - Parameter showLogiActions: the trigger is a Logitech button: offer its actions.
     /// - Parameter showsGestureSettings: Gesture Navigation is the button's action: offer
     ///   "Show Gesture Settings" under it.
+    /// - Parameter forRingPlace: the menu of a place of the Shortcut Ring: only what a
+    ///   place can hold (`ShortcutRingPlace.shortcut(named:)`, "Open App or File…",
+    ///   "Keyboard Shortcut…"). The modifier keys, the scroll holds, the left, right and
+    ///   middle click, the Logitech actions, Gesture Navigation and the ring itself are
+    ///   left out.
     static func buildShortcutMenu(
         into menu: NSMenu,
         target: AnyObject,
         action: Selector,
         showLogiActions: Bool = false,
-        showsGestureSettings: Bool = false
+        showsGestureSettings: Bool = false,
+        forRingPlace: Bool = false
     ) {
         // 清空现有菜单项
         menu.removeAllItems()
@@ -79,7 +85,11 @@ class ShortcutManager {
         var totalShortcuts = 0
 
         // 按分类构建分级菜单（顺序由 shortcutsByCategory 数组定义）
-        for (categoryIdentifier, shortcuts) in SystemShortcut.shortcutsByCategory {
+        for (categoryIdentifier, allShortcuts) in SystemShortcut.shortcutsByCategory {
+            let shortcuts = forRingPlace
+                ? allShortcuts.filter { ShortcutRingPlace.shortcut(named: $0.identifier) != nil }
+                : allShortcuts
+            guard !shortcuts.isEmpty else { continue }
             // 创建分类主菜单项 (使用本地化名称)
             let categoryName = SystemShortcut.localizedCategoryName(categoryIdentifier)
             let categoryMenuItem = NSMenuItem(title: categoryName, action: nil, keyEquivalent: "")
@@ -121,34 +131,42 @@ class ShortcutManager {
         }
 
         // 修饰键分类 (始终显示)
-        addCategoryToMenu(
-            menu: menu,
-            category: SystemShortcut.modifierKeysCategory,
-            target: target,
-            action: action,
-            totalShortcuts: &totalShortcuts
-        )
+        if !forRingPlace {
+            addCategoryToMenu(
+                menu: menu,
+                category: SystemShortcut.modifierKeysCategory,
+                target: target,
+                action: action,
+                totalShortcuts: &totalShortcuts
+            )
+        }
 
-        // 鼠标按键分类 (始终显示)
+        // 鼠标按键分类 (始终显示). A place of the ring: Back and Forward only.
+        let mouseButtons = SystemShortcut.mouseButtonsCategory
         addCategoryToMenu(
             menu: menu,
-            category: SystemShortcut.mouseButtonsCategory,
+            category: forRingPlace
+                ? (category: mouseButtons.category,
+                   shortcuts: mouseButtons.shortcuts.filter { ShortcutRingPlace.shortcut(named: $0.identifier) != nil })
+                : mouseButtons,
             target: target,
             action: action,
             totalShortcuts: &totalShortcuts
         )
 
         // Scrolling: the hold actions of the Scrolling pane
-        addCategoryToMenu(
-            menu: menu,
-            category: SystemShortcut.mouseScrollCategory,
-            target: target,
-            action: action,
-            totalShortcuts: &totalShortcuts
-        )
+        if !forRingPlace {
+            addCategoryToMenu(
+                menu: menu,
+                category: SystemShortcut.mouseScrollCategory,
+                target: target,
+                action: action,
+                totalShortcuts: &totalShortcuts
+            )
+        }
 
         // Logitech Mouse: only for a Logitech button
-        if showLogiActions {
+        if showLogiActions && !forRingPlace {
             addCategoryToMenu(
                 menu: menu,
                 category: SystemShortcut.logiActionsCategory,
@@ -170,10 +188,12 @@ class ShortcutManager {
         gestureItem.representedObject = gestureShortcut
         gestureItem.toolTip = NSLocalizedString("gesture-navigation-menu-tooltip", comment: "")
         gestureItem.image = createSymbolImage(gestureShortcut.symbolName)
-        menu.addItem(gestureItem)
-        totalShortcuts += 1
+        if !forRingPlace {
+            menu.addItem(gestureItem)
+            totalShortcuts += 1
+        }
 
-        if showsGestureSettings {
+        if showsGestureSettings && !forRingPlace {
             let settingsItem = NSMenuItem(
                 title: NSLocalizedString("buttons-show-gesture-settings", comment: ""),
                 action: action,
@@ -193,8 +213,10 @@ class ShortcutManager {
         ringItem.representedObject = ringShortcut
         ringItem.toolTip = NSLocalizedString("ring-menu-tooltip", comment: "")
         ringItem.image = createSymbolImage(ringShortcut.symbolName)
-        menu.addItem(ringItem)
-        totalShortcuts += 1
+        if !forRingPlace {
+            menu.addItem(ringItem)
+            totalShortcuts += 1
+        }
 
         // "Open App or File…"
         let openItem = NSMenuItem(

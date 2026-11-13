@@ -35,15 +35,21 @@ final class PreferencesRingTests: XCTestCase {
         return controller
     }
 
+    /// The menu item of a listed action in a place's pull-down.
     private func item(_ identifier: String, in popUp: NSPopUpButton) -> NSMenuItem? {
         func find(_ menu: NSMenu?) -> NSMenuItem? {
             for item in menu?.items ?? [] {
-                if item.action != nil, item.representedObject as? String == identifier { return item }
+                if (item.representedObject as? SystemShortcut.Shortcut)?.identifier == identifier { return item }
                 if let found = find(item.submenu) { return found }
             }
             return nil
         }
         return find(popUp.menu)
+    }
+
+    /// "Open App or File…" or "Keyboard Shortcut…" of a place's pull-down.
+    private func item(marked marker: String, in popUp: NSPopUpButton) -> NSMenuItem? {
+        return popUp.menu?.items.first { $0.representedObject as? String == marker }
     }
 
     // MARK: The pane
@@ -82,17 +88,19 @@ final class PreferencesRingTests: XCTestCase {
         }
         XCTAssertNotNil(controller.placePopUps[0].menu?.items.first?.image, "the action's symbol")
         XCTAssertNil(controller.placePopUps[3].menu?.items.first?.image)
+        // The pull-down is the one of a row of the Buttons pane.
+        XCTAssertTrue(controller.placePopUps.allSatisfy { $0.isForRingPlace })
     }
 
     func testChoosingAnActionStoresItAndNoActionEmptiesThePlace() throws {
         let controller = makeController()
         let popUp = controller.placePopUps[1]
-        controller.actionSelected(try XCTUnwrap(item("undo", in: popUp)))
+        popUp.shortcutSelected(try XCTUnwrap(item("undo", in: popUp)))
         XCTAssertEqual(Options.shared.ring[1].action, "undo")
         XCTAssertEqual(popUp.menu?.items.first?.title, "Undo")
         XCTAssertEqual(controller.previewView.face.places[1].title, "Undo", "the drawing follows")
 
-        controller.actionSelected(try XCTUnwrap(item("", in: popUp)))
+        popUp.shortcutSelected(try XCTUnwrap(popUp.noActionItem))
         XCTAssertTrue(Options.shared.ring[1].isEmpty)
         XCTAssertEqual(popUp.menu?.items.first?.title, "No Action")
         XCTAssertTrue(controller.previewView.face.places[1].isEmpty)
@@ -101,25 +109,114 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(Options.shared.ring[2].action, "moveSpaceRight")
     }
 
-    /// A pull-down offers the keyboard shortcuts a place runs, by category, and nothing a
-    /// place must not hold: no click, no held action, no Logitech action, no Gesture
-    /// Navigation, not the ring itself, no app to open and no recorded key.
-    func testAPullDownOffersWhatAPlaceRunsAndNothingElse() {
+    /// A place's menu is the Buttons row's menu with what a place can hold: the listed
+    /// keyboard shortcuts by category, Back and Forward of the mouse buttons, "Open App or
+    /// File…" and "Keyboard Shortcut…". Not: the left, right and middle click, what is
+    /// only held, the Logitech actions, Gesture Navigation, the ring itself.
+    func testAPullDownOffersWhatAPlaceCanHoldAndNothingElse() throws {
         let controller = makeController()
-        let menu = controller.placePopUps[0].menu
-        let top = (menu?.items ?? []).dropFirst()
+        let menu = try XCTUnwrap(controller.placePopUps[0].menu)
+        let top = menu.items.dropFirst().filter { !$0.isSeparatorItem }
         XCTAssertEqual(top.first?.title, "No Action")
         let categories = top.filter { $0.submenu != nil }
-        XCTAssertEqual(categories.map { $0.title }, SystemShortcut.shortcutsByCategory.map { SystemShortcut.localizedCategoryName($0.category) })
-        let offered = categories.flatMap { $0.submenu?.items ?? [] }.compactMap { $0.representedObject as? String }
+        XCTAssertEqual(
+            categories.map { $0.title },
+            SystemShortcut.shortcutsByCategory.map { SystemShortcut.localizedCategoryName($0.category) } + ["Mouse Buttons"]
+        )
+        let offered = categories.flatMap { $0.submenu?.items ?? [] }.compactMap { ($0.representedObject as? SystemShortcut.Shortcut)?.identifier }
         XCTAssertTrue(offered.contains("copy"))
         XCTAssertTrue(offered.contains("screenshotSelection"))
-        XCTAssertEqual(offered.count, ShortcutRingPlace.offeredCategories.reduce(0) { $0 + $1.shortcuts.count })
         for identifier in offered {
             XCTAssertTrue(ShortcutRingPlace(action: identifier).runs, identifier)
         }
-        let leaves = top.filter { $0.submenu == nil && !$0.isSeparatorItem }
-        XCTAssertEqual(leaves.count, 1, "besides the categories only No Action")
+        let mouse = try XCTUnwrap(categories.last?.submenu)
+        XCTAssertEqual(mouse.items.compactMap { ($0.representedObject as? SystemShortcut.Shortcut)?.identifier }, ["mouseBackClick", "mouseForwardClick"])
+        let leaves = top.filter { $0.submenu == nil }.map { $0.title }
+        XCTAssertEqual(leaves, ["No Action", "Open App or File…", "Keyboard Shortcut…"])
+    }
+
+    // MARK: A key combination and an app in a place
+
+    /// "Keyboard Shortcut…" records a key combination with the Buttons pane's recorder;
+    /// the place stores it as a button does, the pull-down shows its keys and the drawing
+    /// writes them in the place.
+    func testKeyboardShortcutRecordsACombinationIntoThePlace() throws {
+        let controller = makeController()
+        controller.startShortcutRecorder = { _ in }
+        let popUp = controller.placePopUps[7]
+        XCTAssertNotNil(popUp.startShortcutRecorder, "the pane's recorder seam reaches every pull-down")
+        popUp.shortcutSelected(try XCTUnwrap(item(marked: ShortcutManager.MenuMarker.keyboardShortcut, in: popUp)))
+        XCTAssertEqual(popUp.actionState, .recordingPrompt)
+        XCTAssertEqual(Options.shared.ring[7].action, "showDesktop", "nothing is stored until a key is pressed")
+
+        // ⇧⌘K was pressed: what the recorder hands the pull-down, and the pull-down the pane.
+        let shiftCommand = CGEventFlags(rawValue: CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue)
+        let pressed = InputEvent(type: .keyboard, code: 40, modifiers: shiftCommand, phase: .down, source: .hidPP, device: nil)
+        let name = ButtonActionPullDown.bindingName(forRecorded: pressed)
+        XCTAssertEqual(name, "custom::40:1179648")
+        popUp.onEventRecorded(KeyRecorder(), didRecordEvent: pressed, isDuplicate: false)
+        RunLoop.main.run(until: Date().addingTimeInterval(KeyRecorder.recordingFeedbackDelay(isDuplicate: false) + 0.2))
+        XCTAssertEqual(Options.shared.ring[7], ShortcutRingPlace(action: name))
+        XCTAssertEqual(controller.selectedPlace, 7)
+        let face = controller.previewView.face.places[7]
+        XCTAssertFalse(face.isEmpty)
+        XCTAssertEqual(face.glyphs.joined(), face.title)
+        XCTAssertTrue(face.title.hasPrefix("⇧⌘"))
+        XCTAssertEqual(popUp.menu?.items.first?.title, face.title, "the pull-down shows the keys")
+
+        // A recorded combination that is a listed action is stored as that action.
+        let command = InputEvent(type: .keyboard, code: 8, modifiers: .maskCommand, phase: .down, source: .hidPP, device: nil)
+        popUp.onCustomShortcutRecorded?(ButtonActionPullDown.bindingName(forRecorded: command))
+        XCTAssertEqual(Options.shared.ring[7].action, "copy")
+    }
+
+    /// What a place cannot hold is not stored when the recorder hands it over: a mouse
+    /// button (a click) and a modifier key by itself. The place keeps what it had.
+    func testARecordedMouseButtonOrModifierIsNotStored() {
+        let controller = makeController()
+        let popUp = controller.placePopUps[2]
+        for name in ["custom::mouse:5:0", "modifierShift", "mouseLeftClick", "custom::56:0"] {
+            popUp.onCustomShortcutRecorded?(name)
+            XCTAssertEqual(Options.shared.ring[2].action, "moveSpaceRight", name)
+            XCTAssertEqual(popUp.menu?.items.first?.title, SystemShortcut.moveSpaceRight.localizedName, name)
+        }
+    }
+
+    /// "Open App or File…" opens the Buttons pane's popover at the place's pull-down, with
+    /// what the place opens now; the app that is chosen is stored as a button stores it,
+    /// its icon stands in the place and its name in the middle of the ring.
+    func testOpenAppOrFilePutsAnAppIntoThePlace() throws {
+        let controller = makeController()
+        var shown: [(anchor: NSView, existing: OpenTargetPayload?)] = []
+        controller.presentOpenTarget = { _, anchor, existing in shown.append((anchor, existing)) }
+        let popUp = controller.placePopUps[4]
+        popUp.shortcutSelected(try XCTUnwrap(item(marked: ShortcutManager.MenuMarker.openTarget, in: popUp)))
+        XCTAssertEqual(shown.count, 1)
+        XCTAssertTrue(shown.first?.anchor === popUp)
+        XCTAssertNil(shown.first?.existing)
+        XCTAssertEqual(Options.shared.ring[4].action, "appExpose", "nothing is stored until an app is chosen")
+
+        let calculator = OpenTargetPayload(
+            path: "/System/Applications/Calculator.app", bundleID: "com.apple.calculator", arguments: "", kind: .application
+        )
+        try XCTUnwrap(controller.openTargetPopover).onCommit?(calculator)
+        XCTAssertNil(controller.openTargetPopover)
+        XCTAssertEqual(Options.shared.ring[4], ShortcutRingPlace(openTarget: calculator))
+        XCTAssertEqual(Options.shared.ring[4].action, "openTarget")
+        // (The app's name is the system's, in the language of whoever runs the tests.)
+        let face = controller.previewView.face.places[4]
+        XCTAssertFalse(face.title.isEmpty)
+        XCTAssertFalse(face.title.contains("/"), "its name, not its path")
+        XCTAssertNotNil(face.image, "the app's icon")
+        XCTAssertEqual(popUp.menu?.items.first?.title, face.title, "the pull-down and the ring name it alike")
+        XCTAssertNotNil(popUp.menu?.items.first?.image)
+
+        // Asked again, the popover starts from what the place opens; Cancel changes nothing.
+        popUp.shortcutSelected(try XCTUnwrap(item(marked: ShortcutManager.MenuMarker.openTarget, in: popUp)))
+        XCTAssertEqual(shown.last?.existing, calculator)
+        try XCTUnwrap(controller.openTargetPopover).onCancel?()
+        XCTAssertNil(controller.openTargetPopover)
+        XCTAssertEqual(Options.shared.ring[4], ShortcutRingPlace(openTarget: calculator))
     }
 
     // MARK: What opens the ring
@@ -267,9 +364,8 @@ final class PreferencesRingTests: XCTestCase {
         controller.placeHoverChanged(1, inside: false)
         XCTAssertEqual(preview.lit, 6)
         // Using another row's pull-down selects that row.
-        let menu = controller.placePopUps[3].menu
-        let undo = try XCTUnwrap(menu?.items.compactMap { $0.submenu?.items.first { $0.representedObject as? String == "undo" } }.first)
-        controller.actionSelected(undo)
+        let other = controller.placePopUps[3]
+        other.shortcutSelected(try XCTUnwrap(item("undo", in: other)))
         XCTAssertEqual(controller.selectedPlace, 3)
         XCTAssertEqual(preview.lit, 3)
     }

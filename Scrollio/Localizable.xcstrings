@@ -7754,6 +7754,18 @@
           }
         }
       }
+    },
+    "general-settings-import-ring-trigger": {
+      "comment": "Import sheet: a place of the ring in the box of actions that open or run something, %@ = the place (\"Top right\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shortcut Ring, %@"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

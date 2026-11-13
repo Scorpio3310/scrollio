@@ -59,8 +59,13 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         return CellActionState(binding: binding)
     }
 
-    init(binding: ButtonBinding) {
+    /// The pull-down of a place of the Shortcut Ring: its menu offers only what a place
+    /// can hold (`ShortcutManager.buildShortcutMenu(forRingPlace:)`).
+    let isForRingPlace: Bool
+
+    init(binding: ButtonBinding, forRingPlace: Bool = false) {
         self.binding = binding
+        self.isForRingPlace = forRingPlace
         super.init(frame: .zero, pullsDown: true)
         translatesAutoresizingMaskIntoConstraints = false
         widthAnchor.constraint(equalToConstant: Self.width).isActive = true
@@ -100,7 +105,8 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
             target: self,
             action: #selector(shortcutSelected(_:)),
             showLogiActions: isLogitechTrigger,
-            showsGestureSettings: true
+            showsGestureSettings: true,
+            forRingPlace: isForRingPlace
         )
         // Item 0 is the title of a pull-down; the separator after it would open the menu.
         if menu.items.count > 1, menu.items[1].isSeparatorItem {

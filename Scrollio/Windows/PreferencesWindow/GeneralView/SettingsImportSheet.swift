@@ -23,14 +23,16 @@
 //  What an imported setting can do when a button or key is pressed is the one thing a
 //  user has to see before the import (SECURITY.md). So the sheet lists every button and
 //  key of the file with its action, in the words of the Buttons pane, and the directions
-//  of Gesture Navigation whose action is not the default one: a Logitech action writes to
+//  of Gesture Navigation and the places of the Shortcut Ring whose action is not the
+//  default one: a Logitech action writes to
 //  the mouse whatever "Let Scrollio manage this mouse" says, a recorded shortcut can be
 //  any key combination, "Move to Trash" on ⇧E is not what anybody wants to find out by
 //  typing. Above that list, a box of its own for the actions that open an app or a file
-//  or run a script: how many, and every one with its whole path and arguments.
+//  or run a script (a button's, a key's, or a place's of the Shortcut Ring, named by
+//  where it is): how many, and every one with its whole path and arguments.
 //
 //  "Import" is the button Return presses only when the file gives no button or key an
-//  action and leaves the gestures as they are by default; otherwise Return is "Cancel"
+//  action and leaves the gestures and the ring as they are by default; otherwise Return is "Cancel"
 //  (Esc cancels as always), and importing takes a click on "Import".
 //
 //  The boxes are the middle part of the sheet and scroll together when they are taller
@@ -165,7 +167,11 @@ enum SettingsFileText {
         case .file: key = "general-settings-import-launch-file"
         case .script: key = "general-settings-import-launch-script"
         }
-        return String(format: text(key), ButtonTriggerNaming.title(for: action.trigger, logitech: logitech), target)
+        // A place of the Shortcut Ring is named by where it is ("Shortcut Ring, Top right").
+        let trigger = action.ringPlace.map {
+            String(format: text("general-settings-import-ring-trigger"), text(ShortcutRingPlaceName.key(of: $0)))
+        } ?? ButtonTriggerNaming.title(for: action.trigger, logitech: logitech)
+        return String(format: text(key), trigger, target)
     }
 
     // MARK: Every button, key and gesture
@@ -225,7 +231,9 @@ enum SettingsFileText {
         let defaults = ShortcutRingSettings.default
         return ring.places.indices.compactMap { index in
             guard ring[index] != defaults[index] else { return nil }
-            let action = ring[index].shortcut?.localizedName ?? text("ring-action-none")
+            // As a button's action is named: a listed action, a key combination as its
+            // keys, "Open App or File: <file>" (its whole path is in the box above).
+            let action = ring[index].runs ? actionName(of: ring[index].asBinding()) : text("ring-action-none")
             return String(format: text("general-settings-import-ring-line"), text(ShortcutRingPlaceName.key(of: index)), action)
         }
     }

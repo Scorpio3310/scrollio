@@ -33,6 +33,8 @@
 //
 //  Nothing is drawn and nothing is posted inside an event callback: the panel is shown on
 //  the next turn of the main queue, and so is the chosen action, after the panel is gone.
+//  A place runs as a button's action runs: resolved by the executor from a binding built
+//  from the place, down and then up for what is held (a recorded key, a click).
 //  A pulse (`MouseGestureHapticCue`) is played only for a trigger that arrived over HID++,
 //  on the mouse it belongs to: a light one when a place lights (at most one every
 //  `tickSpacing`, the others dropped), a firmer one when an action runs.
@@ -82,8 +84,8 @@ final class ShortcutRingController {
         var makeTimer: (TimeInterval, @escaping () -> Void) -> Timer?
         /// The ring this Mac's settings hold.
         var ring: () -> ShortcutRingSettings
-        /// Runs a place's shortcut.
-        var run: (SystemShortcut.Shortcut) -> Void
+        /// Runs a place's action.
+        var run: (ShortcutRingPlace) -> Void
         /// Plays a pulse on the mouse the button with this code was pressed on.
         var playHaptic: (MouseGestureHapticCue, UInt16) -> Void
         /// Says the lit action's name to VoiceOver.
@@ -147,6 +149,8 @@ final class ShortcutRingController {
     private(set) var session = ShortcutRingSession()
     /// The ring as it was when it opened: what is shown and what a place runs.
     private var ring = ShortcutRingSettings.default
+    /// Which of its places run something, worked out when the ring changes, not per press.
+    private var filled = ShortcutRingSettings.default.filled
     private var face: ShortcutRingFace?
     /// The screen the ring opened on.
     private var screen = ShortcutRingScreen(frame: .zero, usable: .zero)
@@ -214,8 +218,9 @@ final class ShortcutRingController {
             // In the middle of a drag the ring stays away.
             guard !environment.isPrimaryButtonDown() else { return }
             let stored = environment.ring()
-            if stored != ring || face == nil {
+            if stored != ring {
                 ring = stored
+                filled = stored.filled
                 face = nil
             }
             if case .hidPP = event.source {
@@ -230,7 +235,7 @@ final class ShortcutRingController {
             screen = environment.screen(pointer)
         }
         perform(session.triggerPressed(
-            at: environment.now(), pointer: pointer, screen: screen.usable, filled: ring.filled
+            at: environment.now(), pointer: pointer, screen: screen.usable, filled: filled
         ))
     }
 
@@ -380,8 +385,9 @@ final class ShortcutRingController {
                 presenter.hide()
                 closed = true
             case .run(let place):
-                guard let shortcut = ring[place].shortcut else { continue }
-                ran = shortcut.identifier
+                let chosen = ring[place]
+                guard chosen.runs else { continue }
+                ran = Self.logName(of: chosen)
                 if let code = hapticCode {
                     lastTick = environment.now()
                     let play = environment.playHaptic
@@ -389,7 +395,7 @@ final class ShortcutRingController {
                 }
                 // After the panel is gone, and after this callback has returned.
                 let run = environment.run
-                environment.schedule { run(shortcut) }
+                environment.schedule { run(chosen) }
             }
         }
         if closed {
@@ -405,7 +411,9 @@ final class ShortcutRingController {
             let play = environment.playHaptic
             environment.schedule { play(.lockIn, code) }
         }
-        if let title = face?.places[place].title ?? ring[place].shortcut?.localizedName {
+        // (The face is made when the ring is shown; a place that lights before that, in
+        // the same turn as the press, is not announced.)
+        if let title = face?.places[place].title {
             let announce = environment.announce
             environment.schedule { announce(title) }
         }
@@ -463,9 +471,28 @@ final class ShortcutRingController {
 
     // MARK: The system's side
 
-    /// Runs a shortcut as one press, as a direction of Gesture Navigation runs its action.
-    static func run(_ shortcut: SystemShortcut.Shortcut) {
-        guard let action = ShortcutExecutor.shared.resolveAction(named: shortcut.identifier) else { return }
+    /// What a place ran, for the log: a listed action by its identifier, anything else by
+    /// its kind (never a key the user chose, never a path).
+    static func logName(of place: ShortcutRingPlace) -> String {
+        switch place.content {
+        case .nothing: return "nothing"
+        case .shortcut(let shortcut): return shortcut.identifier
+        case .keyCombination: return "a recorded key combination"
+        case .open(let target):
+            switch target.kind {
+            case .application: return "an app to open"
+            case .file: return "a file to open"
+            case .script: return "a script"
+            }
+        }
+    }
+
+    /// Runs a place's action as one press, as a direction of Gesture Navigation runs its
+    /// action: through the executor, resolved from a binding built from the place (a
+    /// recorded key combination and what to open are read from the binding, not from the
+    /// name), down and then up for an action that is held (a key, a click).
+    static func run(_ place: ShortcutRingPlace) {
+        guard let action = place.resolvedAction else { return }
         let result = ShortcutExecutor.shared.execute(action: action, phase: .down)
         if action.executionMode == .stateful {
             ShortcutExecutor.shared.execute(action: action, phase: .up, mouseSessionID: result.mouseSessionID)

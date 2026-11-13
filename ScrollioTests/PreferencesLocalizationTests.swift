@@ -247,7 +247,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "ring-place-top", "ring-place-top-right", "ring-place-right", "ring-place-bottom-right",
         "ring-place-bottom", "ring-place-bottom-left", "ring-place-left", "ring-place-top-left",
         "ring-action-none", "ring-preview-description", "buttons-note-shortcut-ring",
-        "general-settings-import-ring", "general-settings-import-ring-line",
+        "general-settings-import-ring", "general-settings-import-ring-line", "general-settings-import-ring-trigger",
     ]
 
     static let keys = mouseKeys + scrollingKeys + buttonsKeys + gesturesKeys + ringKeys + appsKeys
@@ -319,6 +319,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-action-open": "@",
         "general-settings-import-gesture-line": "@@",
         "general-settings-import-ring-line": "@@",
+        "general-settings-import-ring-trigger": "@",
         "ring-trigger-bound": "@",
         "general-settings-problem-damaged": "@",
         "general-settings-problem-too-many": "d",

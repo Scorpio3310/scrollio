@@ -16,7 +16,8 @@ it for the people who use the app, and give the version its part before you tag 
   Shortcut Ring pane). Hold it and move towards a shortcut, then let go; or press it and
   let go, and click a shortcut in the ring that stays open. The app you are in keeps the
   keyboard, so Copy and Paste go where you were. The pane sets what the eight places
-  hold, and a settings file carries it. If Logi Options+ manages your mouse, let a button
+  hold: a listed shortcut, a key combination you record, or an app or a file to open;
+  a settings file carries it. If Logi Options+ manages your mouse, let a button
   send a keystroke there and record that keystroke as the ring's button. An MX Master 4
   whose thumb panel Scrollio reads pulses when a shortcut lights and when it runs.
 

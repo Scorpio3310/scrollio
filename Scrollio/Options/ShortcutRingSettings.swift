@@ -6,23 +6,30 @@
 //  each with one action or nothing. The user's choice, stored in Options (group `.ring`,
 //  UserDefaults key "shortcutRingSettings") and carried by a settings file.
 //
-//  A place holds the name of one of the listed keyboard shortcuts (`SystemShortcut`: Copy,
-//  Mission Control, a screenshot …), as a direction of Gesture Navigation does. Not in a
-//  place in this version: a recorded key combination, an app or a file to open, a mouse
-//  click (it would click where the hand ended up), a Logitech action (it belongs to the
-//  mouse whose button was pressed), and what only means something while held. So nothing
-//  a ring holds can start a program, and a settings file may carry it.
+//  A place stores its action as a button of the Buttons pane does (`ButtonBinding`): the
+//  action's name, and for "Open App or File…" what to open. It can hold
+//
+//  - one of the listed keyboard shortcuts (`SystemShortcut`: Copy, Mission Control …),
+//    or the Back or the Forward click;
+//  - a recorded key combination ("custom::<key>:<modifiers>");
+//  - an app, a file or a script to open ("openTarget" with its payload).
+//
+//  Not in a place: the ring itself and Gesture Navigation, what only means something
+//  while held (the modifier keys, the scroll holds), the left, right and middle click
+//  (they would click where the hand ended up) and the Logitech actions (they belong to
+//  the mouse whose button was pressed). A place whose action is one of those, or a name
+//  this version does not know, shows as empty and runs nothing (`runs`).
 //  What opens the ring is not in here: it is an action of its own
 //  (`SystemShortcut.shortcutRing`), bound in Buttons like any other.
 //
 //  Stored format:
 //
-//      {"places": [{"action": "missionControl"}, {"action": ""}, {"action": "copy"}, …]}
+//      {"places": [{"action": "missionControl"}, {"action": ""}, {"action": "custom::40:1179648"},
+//                  {"action": "openTarget", "openTarget": {"path": …, "arguments": …, "kind": …}}, …]}
 //
 //  Read value by value: a missing or unreadable place is an empty one, a list that is too
 //  short is filled up with empty places and one that is too long is cut. Only data without
-//  a list of places at all gives the default ring. A place is an object so that a later
-//  version can add to it. Do not rename the keys.
+//  a list of places at all gives the default ring. Do not rename the keys.
 //
 
 import Foundation
@@ -30,18 +37,33 @@ import Foundation
 /// One place of the ring: an action, or nothing.
 struct ShortcutRingPlace: Codable, Equatable {
 
-    /// The action's name, a `SystemShortcut` identifier. Empty: nothing. A name this
-    /// version does not run (a newer version's) is kept as stored and does nothing.
+    /// The action's stored name, as `ButtonBinding.systemShortcutName`. Empty: nothing.
+    /// A name this version does not run (a newer version's) is kept as stored.
     let action: String
+    /// What to open; set exactly when `action` is `ButtonBinding.openTargetSentinel`.
+    let openTarget: OpenTargetPayload?
 
     static let empty = ShortcutRingPlace(action: "")
 
-    init(action: String) {
+    /// A place whose two fields contradict each other (a name with a target, the "open"
+    /// name without one) holds nothing: a binding like that is not read either
+    /// (`ButtonBinding.init(from:)`), and it could show one thing and run another.
+    init(action: String, openTarget: OpenTargetPayload? = nil) {
+        guard (action == ButtonBinding.openTargetSentinel) == (openTarget != nil) else {
+            self.action = ""
+            self.openTarget = nil
+            return
+        }
         self.action = action
+        self.openTarget = openTarget
     }
 
     init(_ shortcut: SystemShortcut.Shortcut) {
         self.init(action: shortcut.identifier)
+    }
+
+    init(openTarget: OpenTargetPayload) {
+        self.init(action: ButtonBinding.openTargetSentinel, openTarget: openTarget)
     }
 
     var isEmpty: Bool {
@@ -49,46 +71,112 @@ struct ShortcutRingPlace: Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case action
+        case action, openTarget
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        action = ((try? c.decodeIfPresent(String.self, forKey: .action)) ?? nil) ?? ""
+        let action = ((try? c.decodeIfPresent(String.self, forKey: .action)) ?? nil) ?? ""
+        let target = (try? c.decodeIfPresent(OpenTargetPayload.self, forKey: .openTarget)) ?? nil
+        self.init(action: action, openTarget: target)
     }
 
     // MARK: What a place runs
+
+    /// What a place holds, as far as this version runs it.
+    enum Content: Equatable {
+        case nothing
+        /// A listed keyboard shortcut, or the Back or Forward click.
+        case shortcut(SystemShortcut.Shortcut)
+        /// A recorded key combination.
+        case keyCombination(code: UInt16, modifiers: UInt64)
+        /// An app or a file to open, or a script to run.
+        case open(OpenTargetPayload)
+    }
 
     /// The codes from here up stand for actions that are no key (`SystemShortcut`: the
     /// ring itself and Gesture Navigation, the scroll holds, the modifier keys, the
     /// Logitech actions, the mouse clicks).
     private static let firstPlaceholderCode: UInt16 = 0xFFFB
 
-    /// The shortcut a place with this name runs: a listed keyboard shortcut that is not
-    /// retired. Nil for everything else, the empty name included.
+    /// The two clicks a place may hold: they mean "back" and "forward" wherever the
+    /// pointer is. (Left, right and middle click where the hand ended up.)
+    private static let allowedClicks: Set<String> = [
+        SystemShortcut.mouseBackClick.identifier, SystemShortcut.mouseForwardClick.identifier,
+    ]
+
+    /// The listed action a place with this name runs: a keyboard shortcut that is not
+    /// retired, or the Back or Forward click. Nil for everything else.
     static func shortcut(named action: String) -> SystemShortcut.Shortcut? {
         guard let shortcut = SystemShortcut.getShortcut(named: action),
-              shortcut.code < firstPlaceholderCode,
+              shortcut.code < firstPlaceholderCode || allowedClicks.contains(action),
               !SystemShortcut.isRetired(action) else { return nil }
         return shortcut
     }
 
-    /// The shortcut this place runs; nil for an empty place and for a name that is no
-    /// keyboard shortcut of this version.
+    /// The key combination a place with this stored name sends: a recorded key with or
+    /// without modifiers. Nil for a recorded mouse button (a click) and for a modifier
+    /// key by itself (it only means something while held).
+    static func keyCombination(named action: String) -> (code: UInt16, modifiers: UInt64)? {
+        guard let recorded = ButtonBinding.normalizedCustomBindingDescriptor(from: action),
+              recorded.type == .keyboard,
+              !KeyCode.modifierKeys.contains(recorded.code) else { return nil }
+        return (recorded.code, recorded.modifiers)
+    }
+
+    var content: Content {
+        if let openTarget { return .open(openTarget) }
+        if let shortcut = Self.shortcut(named: action) { return .shortcut(shortcut) }
+        if let key = Self.keyCombination(named: action) { return .keyCombination(code: key.code, modifiers: key.modifiers) }
+        return .nothing
+    }
+
+    /// The listed action this place runs; nil for an empty place and for every other
+    /// kind of content.
     var shortcut: SystemShortcut.Shortcut? {
-        return Self.shortcut(named: action)
+        guard case .shortcut(let shortcut) = content else { return nil }
+        return shortcut
     }
 
     /// Whether choosing this place does something.
     var runs: Bool {
-        return shortcut != nil
+        return content != .nothing
     }
 
-    /// What the pane's menus offer, in their order: the categories of keyboard shortcuts.
-    static var offeredCategories: [(category: String, shortcuts: [SystemShortcut.Shortcut])] {
-        return SystemShortcut.shortcutsByCategory
-            .map { (category: $0.category, shortcuts: $0.shortcuts.filter { shortcut(named: $0.identifier) != nil }) }
-            .filter { !$0.shortcuts.isEmpty }
+    // MARK: As a button's action
+
+    /// The trigger of the stand-in binding below: the left button, which is never a
+    /// trigger and cannot be recorded. The binding is never stored with the buttons and
+    /// never matched against an event.
+    private static let standInTrigger = RecordedEvent(type: .mouse, code: 0, modifiers: 0, deviceFilter: nil)
+
+    /// This place's action as a binding, for the code that shows, names, records and
+    /// resolves a button's action (its cache of a recorded key is prepared). A place
+    /// that runs nothing gives a binding without an action.
+    func asBinding(id: UUID = UUID()) -> ButtonBinding {
+        var binding: ButtonBinding
+        if runs, let openTarget {
+            binding = ButtonBinding(id: id, triggerEvent: Self.standInTrigger, openTarget: openTarget, isEnabled: true)
+        } else {
+            binding = ButtonBinding(
+                id: id, triggerEvent: Self.standInTrigger, systemShortcutName: runs ? action : "", isEnabled: runs
+            )
+        }
+        binding.prepareCustomCache()
+        return binding
+    }
+
+    /// The action of a binding as a place (the pane's rows use the buttons' pull-down).
+    init(actionOf binding: ButtonBinding) {
+        self.init(action: binding.systemShortcutName, openTarget: binding.openTarget)
+    }
+
+    /// What choosing this place runs, as the executor resolves a button's action; nil
+    /// when the place runs nothing.
+    var resolvedAction: ResolvedAction? {
+        guard runs else { return nil }
+        let binding = asBinding()
+        return ShortcutExecutor.shared.resolveAction(named: binding.systemShortcutName, binding: binding)
     }
 }
 

@@ -72,22 +72,38 @@ final class ShortcutRingSettingsTests: XCTestCase {
         XCTAssertEqual(ShortcutRingSettings.default[6].action, "moveSpaceLeft")
     }
 
+    private static let keyCombination = ButtonBinding.normalizedCustomBindingName(
+        code: 40, modifiers: CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue
+    )
+    private static let notes = OpenTargetPayload(
+        path: "/Applications/Notes.app", bundleID: "com.apple.Notes", arguments: "", kind: .application
+    )
+
     func testTheRingSurvivesBeingStored() throws {
         var ring = ShortcutRingSettings.default
         ring[1] = .empty
         ring[2] = ShortcutRingPlace(SystemShortcut.undo)
+        ring[3] = ShortcutRingPlace(action: Self.keyCombination)
+        ring[5] = ShortcutRingPlace(openTarget: Self.notes)
         let data = try JSONEncoder().encode(ring)
         XCTAssertEqual(try JSONDecoder().decode(ShortcutRingSettings.self, from: data), ring)
 
-        // The format: one object with "places", each place an object with its action's name.
+        // The format: one object with "places", each place an object with its action's
+        // name as a button stores it, and what to open only where something is opened.
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(Array(object.keys), ["places"])
         let places = try XCTUnwrap(object["places"] as? [[String: Any]])
         XCTAssertEqual(places.count, 8)
         XCTAssertEqual(places.map { $0["action"] as? String }, [
-            "missionControl", "", "undo", "paste", "appExpose", "copy", "moveSpaceLeft", "showDesktop",
+            "missionControl", "", "undo", Self.keyCombination, "appExpose", "openTarget", "moveSpaceLeft", "showDesktop",
         ])
-        XCTAssertTrue(places.allSatisfy { $0.count == 1 })
+        XCTAssertEqual(Self.keyCombination, "custom::40:1179648")
+        for (index, place) in places.enumerated() where index != 5 {
+            XCTAssertEqual(place.count, 1, "place \(index) has only its action")
+        }
+        let target = try XCTUnwrap(places[5]["openTarget"] as? [String: Any])
+        XCTAssertEqual(target["path"] as? String, "/Applications/Notes.app")
+        XCTAssertEqual(target["kind"] as? String, "application")
     }
 
     func testMissingOrUnreadableDataGivesTheDefaultRing() throws {
@@ -113,32 +129,114 @@ final class ShortcutRingSettingsTests: XCTestCase {
         XCTAssertEqual(long[40], .empty, "a place that is not there is empty")
     }
 
-    /// A place runs a listed keyboard shortcut and nothing else: not what is only held, not
-    /// a click, not a Logitech action, not the ring, not a recorded key, not a file.
-    func testAPlaceRunsOnlyAListedKeyboardShortcut() {
-        for name in ["copy", "missionControl", "screenshot", "navigateBack", "escapeKey", "spotlightSys"] {
+    /// What a place can hold: a listed keyboard shortcut, the Back or Forward click, a
+    /// recorded key combination, an app, a file or a script. Not: the ring itself, what is
+    /// only held, the left, right and middle click, a Logitech action, a recorded mouse
+    /// button, a retired or unknown action.
+    func testWhatAPlaceRunsAndWhatItDoesNot() {
+        for name in ["copy", "missionControl", "screenshot", "navigateBack", "escapeKey", "spotlightSys", "mouseBackClick", "mouseForwardClick"] {
             XCTAssertTrue(ShortcutRingPlace(action: name).runs, name)
+            XCTAssertEqual(ShortcutRingPlace(action: name).shortcut?.identifier, name)
         }
+        let combination = ShortcutRingPlace(action: Self.keyCombination)
+        XCTAssertEqual(combination.content, .keyCombination(code: 40, modifiers: CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue))
+        XCTAssertNil(combination.shortcut)
+        XCTAssertEqual(ShortcutRingPlace(action: "custom::49:0").content, .keyCombination(code: 49, modifiers: 0), "a key without modifiers")
+        XCTAssertEqual(ShortcutRingPlace(openTarget: Self.notes).content, .open(Self.notes))
+
         let others = [
-            "", "shortcutRing", "mouseGestureNavigation", "modifierShift", "scrollDash",
-            "mouseLeftClick", "mouseBackClick", "logiSmartShiftToggle", "shutdownDialog",
-            "custom::8:1048576", "openTarget", "somethingNewer",
+            "", "shortcutRing", "mouseGestureNavigation", "modifierShift", "scrollDash", "scrollSlow",
+            "mouseLeftClick", "mouseRightClick", "mouseMiddleClick", "logiSmartShiftToggle", "logiHost2",
+            "shutdownDialog", "somethingNewer",
+            "custom::mouse:3:0",     // a recorded mouse button: a click
+            "custom::56:0",          // Shift by itself: only means something while held
+            "custom::55:131072",     // ⇧ with ⌘ as the key: modifiers only
         ]
         for name in others {
             XCTAssertFalse(ShortcutRingPlace(action: name).runs, name)
-            XCTAssertNil(ShortcutRingPlace(action: name).shortcut, name)
+            XCTAssertEqual(ShortcutRingPlace(action: name).content, .nothing, name)
+            XCTAssertNil(ShortcutRingPlace(action: name).resolvedAction, name)
         }
     }
 
-    /// The pane's menus offer exactly what runs, and every default is among it.
-    func testThePaneOffersWhatRuns() {
-        let offered = ShortcutRingPlace.offeredCategories.flatMap { $0.shortcuts }
-        XCTAssertFalse(offered.isEmpty)
-        XCTAssertTrue(offered.allSatisfy { ShortcutRingPlace($0).runs })
-        XCTAssertFalse(offered.contains { $0.identifier.hasPrefix("mouse") || $0.identifier.hasPrefix("logi") })
-        for place in ShortcutRingSettings.default.places {
-            XCTAssertTrue(offered.contains { $0.identifier == place.action }, place.action)
+    /// A name with a target, or the "open" name without one, could show one thing and run
+    /// another: such a place holds nothing, as such a binding is not read.
+    func testAPlaceWhoseFieldsContradictEachOtherHoldsNothing() throws {
+        let target = #"{"path": "/bin/sh", "arguments": "-c true", "kind": "script"}"#
+        let ring = try decoded(#"{"places": [{"action": "copy", "openTarget": "# + target + #"}, {"action": "openTarget"}, "#
+            + #"{"action": "openTarget", "openTarget": "# + target + #"}, {"action": "openTarget", "openTarget": {"path": 7}}]}"#)
+        XCTAssertTrue(ring[0].isEmpty)
+        XCTAssertNil(ring[0].openTarget)
+        XCTAssertTrue(ring[1].isEmpty)
+        XCTAssertEqual(ring[2].openTarget?.path, "/bin/sh")
+        XCTAssertEqual(ring[2].openTarget?.kind, .script)
+        XCTAssertTrue(ring[3].isEmpty, "a target that cannot be read")
+        XCTAssertEqual(ring.filled, [false, false, true, false, false, false, false, false])
+    }
+
+    /// A place runs through a binding built from it, as a button's action is resolved: a
+    /// recorded key combination and what to open are in the binding, not in the name.
+    func testAPlaceResolvesToWhatAButtonWouldRun() {
+        guard case .systemShortcut(let identifier)? = ShortcutRingPlace(SystemShortcut.copy).resolvedAction else {
+            return XCTFail("Copy is a system shortcut")
         }
+        XCTAssertEqual(identifier, "copy")
+
+        guard case .customKey(let code, let modifiers)? = ShortcutRingPlace(action: Self.keyCombination).resolvedAction else {
+            return XCTFail("a recorded key combination is a key")
+        }
+        XCTAssertEqual(code, 40)
+        XCTAssertEqual(modifiers, CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue)
+
+        guard case .openTarget(let opened)? = ShortcutRingPlace(openTarget: Self.notes).resolvedAction else {
+            return XCTFail("an app to open is an open target")
+        }
+        XCTAssertEqual(opened, Self.notes)
+
+        guard case .mouseButton(let kind)? = ShortcutRingPlace(SystemShortcut.mouseBackClick).resolvedAction else {
+            return XCTFail("the Back click is a mouse button")
+        }
+        XCTAssertEqual(kind, .back)
+
+        // The stand-in binding: the place's action, a trigger that is never matched.
+        let binding = ShortcutRingPlace(action: Self.keyCombination).asBinding()
+        XCTAssertEqual(binding.systemShortcutName, Self.keyCombination)
+        XCTAssertEqual(binding.cachedCustomCode, 40)
+        XCTAssertFalse(ButtonUtils.isRunnable(binding.triggerEvent), "the stand-in trigger can never fire")
+        XCTAssertEqual(ShortcutRingPlace(actionOf: binding), ShortcutRingPlace(action: Self.keyCombination))
+        XCTAssertEqual(ShortcutRingPlace(action: "mouseLeftClick").asBinding().systemShortcutName, "", "what does not run shows as no action")
+    }
+
+    /// The menu of a place offers what a place runs and nothing else.
+    func testThePlacesMenuOffersWhatRuns() {
+        let menu = NSMenu()
+        let target = NSObject()
+        ShortcutManager.buildShortcutMenu(
+            into: menu, target: target, action: NSSelectorFromString("noop:"), showLogiActions: true,
+            showsGestureSettings: true, forRingPlace: true
+        )
+        var offered: [SystemShortcut.Shortcut] = []
+        func collect(_ menu: NSMenu) {
+            for item in menu.items {
+                if let shortcut = item.representedObject as? SystemShortcut.Shortcut { offered.append(shortcut) }
+                if let submenu = item.submenu { collect(submenu) }
+            }
+        }
+        collect(menu)
+        XCTAssertGreaterThan(offered.count, 40)
+        for shortcut in offered {
+            XCTAssertTrue(ShortcutRingPlace(shortcut).runs, shortcut.identifier)
+        }
+        let names = Set(offered.map { $0.identifier })
+        XCTAssertTrue(names.isSuperset(of: ["copy", "missionControl", "mouseBackClick", "mouseForwardClick"]))
+        for place in ShortcutRingSettings.default.places {
+            XCTAssertTrue(names.contains(place.action), place.action)
+        }
+        let titles = menu.items.map { $0.title }
+        for absent in ["Modifier Keys", "Scrolling", "Logitech Mouse", "Gesture Navigation", "Show Gesture Settings", "Shortcut Ring"] {
+            XCTAssertFalse(titles.contains(absent), absent)
+        }
+        XCTAssertEqual(Array(titles.suffix(2)), ["Open App or File…", "Keyboard Shortcut…"])
     }
 
     /// A name of a newer version stays stored at launch and runs nothing; a settings file
@@ -149,6 +247,11 @@ final class ShortcutRingSettingsTests: XCTestCase {
         XCTAssertEqual(ring.filled, [false, true, false, false, false, false, false, false])
         let kept = ring.keepingOnlyWhatRuns()
         XCTAssertEqual(kept.emptied, 2)
+        var mine = ShortcutRingSettings.default
+        mine[1] = ShortcutRingPlace(action: Self.keyCombination)
+        mine[2] = ShortcutRingPlace(openTarget: Self.notes)
+        XCTAssertEqual(mine.keepingOnlyWhatRuns().emptied, 0, "a key combination and an app run")
+        XCTAssertEqual(mine.keepingOnlyWhatRuns().ring, mine)
         XCTAssertEqual(kept.ring.places.map { $0.action }, ["", "copy", "", "", "", "", "", ""])
         XCTAssertEqual(ShortcutRingSettings.default.keepingOnlyWhatRuns().emptied, 0)
     }

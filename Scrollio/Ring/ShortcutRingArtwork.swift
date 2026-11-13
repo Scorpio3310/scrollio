@@ -3,7 +3,7 @@
 //  Scrollio
 //
 //  How the Shortcut Ring looks: what its places show (`ShortcutRingFace`, made from the
-//  stored ring) and the drawing itself, one
+//  stored ring as the Buttons pane shows an action) and the drawing itself, one
 //  function for the ring on screen, the ring in the Settings pane and the pictures the
 //  render tests make. The sizes are `ShortcutRingGeometry`'s.
 //
@@ -22,6 +22,11 @@ struct ShortcutRingFace {
         var title: String
         /// The action's SF Symbol.
         var symbolName: String
+        /// A picture instead of the symbol: the icon of an app or a file.
+        var image: NSImage?
+        /// Text instead of the symbol: a recorded key combination as its keys ("⇧⌘K"),
+        /// on one line or two (the modifiers above a key with a long name).
+        var glyphs: [String] = []
         /// Nothing is here, or nothing this version runs: a faint dot.
         var isEmpty: Bool
 
@@ -43,12 +48,42 @@ struct ShortcutRingFace {
         self.places = places
     }
 
-    /// The face of a stored ring: the name and the symbol of each place's shortcut.
-    init(_ ring: ShortcutRingSettings) {
+    /// The face of a stored ring: each place as the Buttons pane shows that action (a
+    /// listed action's name and symbol, an app's name and icon, a key combination's keys).
+    /// It looks an app's icon up on disk and asks the keyboard layout for a key's name:
+    /// not for an event callback (the ring's controller makes it when the ring is shown,
+    /// on the main queue, and keeps it until the ring changes).
+    init(_ ring: ShortcutRingSettings, resolver: ActionDisplayResolver = ActionDisplayResolver()) {
         self.init(places: ring.places.map { place in
-            guard let shortcut = place.shortcut else { return .empty }
-            return Place(title: shortcut.localizedName, symbolName: shortcut.symbolName, isEmpty: false)
+            switch place.content {
+            case .nothing:
+                return .empty
+            case .shortcut(let shortcut):
+                return Place(title: shortcut.localizedName, symbolName: shortcut.symbolName, isEmpty: false)
+            case .keyCombination(let code, let modifiers):
+                let text = ButtonTriggerNaming.shortcutText(type: .keyboard, code: code, modifiers: modifiers)
+                return Place(
+                    title: text, symbolName: "keyboard",
+                    glyphs: Self.glyphLines(code: code, modifiers: modifiers), isEmpty: false
+                )
+            case .open:
+                let shown = resolver.resolve(state: CellActionState(binding: place.asBinding()))
+                return Place(
+                    title: shown.title, symbolName: shown.symbolName ?? "arrow.up.forward.app",
+                    image: shown.image, isEmpty: false
+                )
+            }
         })
+    }
+
+    /// A key combination as it stands in a place: "⇧⌘K" on one line; the modifiers above
+    /// the key when the key's name is a word ("⌃⌥" over "Space").
+    static func glyphLines(code: UInt16, modifiers: UInt64) -> [String] {
+        let whole = ButtonTriggerNaming.shortcutText(type: .keyboard, code: code, modifiers: modifiers)
+        let key = ButtonTriggerNaming.keyName(code, modifiers: modifiers)
+        guard key.count > 1, whole.hasSuffix(key), whole.count > key.count else { return [whole] }
+        let symbols = String(whole.dropLast(key.count)).trimmingCharacters(in: .whitespaces)
+        return symbols.isEmpty ? [whole] : [symbols, key]
     }
 }
 
@@ -75,6 +110,12 @@ enum ShortcutRingArtwork {
     // MARK: Sizes
 
     static let symbolPointSize: CGFloat = 20
+    /// An app's or a file's icon in a place.
+    static let iconSide: CGFloat = 34
+    /// A key combination's text in a place: at most this large, smaller when it is long,
+    /// and never wider than this part of the place.
+    static let glyphPointSize: CGFloat = 15
+    static let glyphWidth: CGFloat = 40
     static let emptyDotDiameter: CGFloat = 7
     static let titleFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
     /// A lit place grows by this much.
@@ -202,7 +243,21 @@ enum ShortcutRingArtwork {
             outline.stroke()
         }
 
+        let grown = scale * (isLit ? litScale : 1)
+        if let image = place.image {
+            let side = iconSide * grown
+            image.draw(
+                in: CGRect(x: middle.x - side / 2, y: middle.y - side / 2, width: side, height: side),
+                from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
+                hints: [.interpolation: NSNumber(value: NSImageInterpolation.high.rawValue)]
+            )
+            return
+        }
         let colour = isLit ? litInk : ink(dark: dark)
+        if !place.glyphs.isEmpty {
+            drawGlyphs(place.glyphs, at: middle, colour: colour, scale: grown)
+            return
+        }
         guard let symbol = symbolImage(named: place.symbolName, pointSize: symbolPointSize * scale * (isLit ? litScale : 1), colour: colour) else {
             return
         }
@@ -211,6 +266,33 @@ enum ShortcutRingArtwork {
             in: CGRect(x: middle.x - size.width / 2, y: middle.y - size.height / 2, width: size.width, height: size.height),
             from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil
         )
+    }
+
+    /// A key combination's keys in the middle of a place, as large as fits.
+    private static func drawGlyphs(_ lines: [String], at middle: CGPoint, colour: NSColor, scale: CGFloat) {
+        let lines = Array(lines.prefix(2))
+        let base = (lines.count > 1 ? glyphPointSize - 3 : glyphPointSize) * scale
+        let texts: [NSAttributedString] = lines.map { line in
+            var size = base
+            let width = (line as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size, weight: .semibold)]).width
+            let room = glyphWidth * scale
+            if width > room {
+                size = max(7 * scale, size * room / width)
+            }
+            return NSAttributedString(string: line, attributes: [
+                .font: NSFont.systemFont(ofSize: size, weight: .semibold),
+                .foregroundColor: colour,
+            ])
+        }
+        let heights = texts.map { ceil($0.size().height) }
+        let gap: CGFloat = -2 * scale
+        let total = heights.reduce(0, +) + gap * CGFloat(texts.count - 1)
+        var top = middle.y + total / 2
+        for (text, height) in zip(texts, heights) {
+            let width = text.size().width
+            text.draw(at: CGPoint(x: middle.x - width / 2, y: top - height))
+            top -= height + gap
+        }
     }
 
     /// An SF Symbol in one colour, at a size of its own.

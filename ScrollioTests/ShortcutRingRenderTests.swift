@@ -58,16 +58,22 @@ final class ShortcutRingRenderTests: XCTestCase {
             let offset = ShortcutRingGeometry.offset(ofPlace: place, radius: distance)
             return CGPoint(x: middle.x + offset.x, y: middle.y + offset.y)
         }
+        // A ring of one's own: an app, a recorded key combination, two empty places.
         var withGaps = ShortcutRingSettings.default
-        withGaps[1] = .empty
+        withGaps[1] = ShortcutRingPlace(openTarget: OpenTargetPayload(
+            path: "/System/Applications/Calculator.app", bundleID: "com.apple.calculator", arguments: "", kind: .application
+        ))
         withGaps[3] = .empty
+        withGaps[5] = .empty
+        withGaps[7] = ShortcutRingPlace(action: "custom::40:1179648")   // ⇧⌘K
         let corner = ShortcutRingGeometry.centre(
             forPointer: CGPoint(x: 5, y: 6), in: CGRect(origin: .zero, size: cellSize)
         )
         return [
             Cell(caption: "Just opened, at the pointer"),
             Cell(caption: "Hold and move towards a shortcut: it lights, let go runs it", pointer: towards(5, 52), lit: 5),
-            Cell(caption: "An empty place is a faint dot and does nothing", ring: withGaps, pointer: towards(1, 60), lit: nil),
+            Cell(caption: "A place can open an app or send your own key combination; an empty one is a faint dot",
+                 ring: withGaps, pointer: towards(1, 56), lit: 1),
             Cell(caption: "Left open after a press: point at a shortcut and click",
                  pointer: CGPoint(x: middle.x + 92, y: middle.y + 12), lit: 2),
             Cell(caption: "In a corner the whole ring stays on screen; the hand's direction chooses",

@@ -67,9 +67,12 @@ nothing opens the ring until you do. The pane also sets what the eight places ho
   Near the edge of a screen the whole ring stays visible, a little away from the
   pointer, and while you hold the button it is still the direction of your hand that
   chooses.
-- A place holds one of the listed keyboard shortcuts (Mission Control and Spaces, apps
-  and windows, editing, Finder, system, screenshots, navigation) or nothing; an empty
-  place is a faint dot. A new ring has Mission Control on top and Apps at the bottom, the
+- A place holds what a button can: one of the listed keyboard shortcuts (Mission Control
+  and Spaces, apps and windows, editing, Finder, system, screenshots, navigation), the
+  Back or Forward click, a key combination you record ("Keyboard Shortcut…"), or an
+  app, a file or a script to open ("Open App or File…"); or nothing. An app shows its
+  icon in the ring, a key combination its keys, and the middle of the ring names what is
+  lit. An empty place is a faint dot. A new ring has Mission Control on top and Apps at the bottom, the
   desktops on the left and right, Copy and Paste beside Apps, and a screenshot of a
   selection and Show Desktop beside Mission Control.
 - With Logi Options+: if Logi Options+ manages your mouse, give the button there a
@@ -85,10 +88,11 @@ nothing opens the ring until you do. The pane also sets what the eight places ho
 - The ring is a pointer tool: it cannot be reached with the keyboard or with VoiceOver's
   keys (VoiceOver is told the name of the shortcut that lights). Everything a place can
   hold can also be given to a button or a key directly.
-- Not in this version: a recorded key combination, an app, a file or a script in a
-  place; mouse clicks and Logitech actions in a place; a ring of its own for each app;
-  rings inside rings; your own symbols; more or fewer than eight places; a step of the
-  Welcome Guide.
+- Not in a place: the left, right and middle click (they would click where your hand
+  ended up), the modifier keys and the scroll keys (they only mean something while
+  held), Gesture Navigation, the Logitech actions and the ring itself.
+- Not in this version: a ring of its own for each app; rings inside rings; your own
+  symbols; more or fewer than eight places; a step of the Welcome Guide.
 
 ## Thumb wheel
 
@@ -185,8 +189,8 @@ move to another Mac, to keep a copy, or to pass a setup on.
 - "Import…" reads a file and shows what it holds before anything changes: which
   settings, how many apps, and every button and key with what it will do, in the words
   of the Buttons pane, with the gesture directions and the places of the Shortcut Ring
-  whose action is not the default one. For buttons and keys that open an app or a file, or run a script, a box of its
-  own lists each one's whole path and arguments. Read those lists when the file is not
+  whose action is not the default one. For buttons, keys and places of the Shortcut Ring that open an app or a file,
+  or run a script, a box of its own lists each one's whole path and arguments. Read those lists when the file is not
   your own: an action starts at a press of its button. Unless the file gives no button
   or key an action and leaves the gestures and the ring as they are by default, Return
   presses "Cancel". Importing itself starts nothing.

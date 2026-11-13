@@ -13,8 +13,10 @@
 //  Buttons pane, and the row names it and leads there ("Set Up…" records one, "Change"
 //  shows the Buttons pane with its row selected), as the Gestures pane does for its button.
 //  A muted line says that a key combination works too. Then the eight places, clockwise
-//  from the top, each with a pull-down of the keyboard shortcuts a place can hold
-//  (`ShortcutRingPlace.offeredCategories`).
+//  from the top, each with the pull-down a row of the Buttons pane has
+//  (`ButtonActionPullDown`, with the menu of what a place can hold): a listed action, a
+//  key combination recorded there ("Keyboard Shortcut…") or an app, a file or a script
+//  ("Open App or File…", the Buttons pane's popover).
 //
 //  The pane only edits Options.shared.ring.
 //
@@ -179,8 +181,8 @@ final class RingPreferencesViewController: NSViewController {
     static var boxWidth: CGFloat {
         return PreferencesGroupedForm.boxWidth(paneWidth: paneWidth)
     }
-    /// All pull-downs have this width, so they line up (the Gestures pane's).
-    static let popUpWidth: CGFloat = 240
+    /// All pull-downs have this width, so they line up (the Buttons pane's).
+    static let popUpWidth: CGFloat = ButtonActionPullDown.width
 
     /// Identifiers for the views of the pane (tests and accessibility tooling).
     enum Identifier {
@@ -202,6 +204,22 @@ final class RingPreferencesViewController: NSViewController {
     /// yet (true), records a button or key that gets the Shortcut Ring; with one (false),
     /// selects its row there. Tests replace it.
     var openButtonsPane: ((Bool) -> Void)?
+    /// Shows "Open App or File" at a place's pull-down, as the Buttons pane does. Tests
+    /// replace it: nothing is shown.
+    var presentOpenTarget: (OpenTargetConfigPopover, NSView, OpenTargetPayload?) -> Void = { popover, anchor, existing in
+        popover.show(at: anchor, existing: existing)
+    }
+    /// Starts the recorder of "Keyboard Shortcut…" at a place's pull-down. Tests replace
+    /// it: a real recorder taps the system's events.
+    var startShortcutRecorder: ((ButtonActionPullDown) -> Void)? {
+        didSet {
+            placePopUps.forEach { $0.startShortcutRecorder = startShortcutRecorder }
+        }
+    }
+    /// "Open App or File" while it is open for a place.
+    private(set) var openTargetPopover: OpenTargetConfigPopover?
+    /// The pull-downs' stand-in bindings keep their identity while the pane lives.
+    private let placeIDs = (0..<ShortcutRingSettings.placeCount).map { _ in UUID() }
 
     /// The place of the row under the pointer.
     private(set) var hoveredPlace: Int?
@@ -224,7 +242,7 @@ final class RingPreferencesViewController: NSViewController {
     private(set) var triggerNoteLabel: NSTextField!
     /// Top, Top right … Top left.
     private(set) var placeRows: [PreferencesGroupRow] = []
-    private(set) var placePopUps: [NSPopUpButton] = []
+    private(set) var placePopUps: [ButtonActionPullDown] = []
     private(set) var placesHintLabel: NSTextField!
     /// Everything in the content stack, top to bottom.
     private(set) var sections: [NSView] = []
@@ -285,6 +303,10 @@ final class RingPreferencesViewController: NSViewController {
         pointedPlace = nil
         selectedPlace = nil
         previewView.lit = nil
+        // A recording that still waits for a key, and the popover, go with the pane.
+        placePopUps.forEach { $0.cancelShortcutRecording() }
+        openTargetPopover?.hide()
+        openTargetPopover = nil
     }
 
     // MARK: - Refresh
@@ -298,7 +320,8 @@ final class RingPreferencesViewController: NSViewController {
 
         let ring = Options.shared.ring
         for (place, popUp) in placePopUps.enumerated() {
-            updateTitle(of: popUp, place: ring[place])
+            // (A place that runs nothing shows "No Action", as the ring shows a dot.)
+            popUp.configure(with: ring[place].asBinding(id: placeIDs[place]))
         }
         previewView.face = ShortcutRingFace(ring)
         previewView.lit = litPlace
@@ -368,26 +391,37 @@ final class RingPreferencesViewController: NSViewController {
         }
     }
 
-    /// A place's pull-down: an action's name, or "" for No Action.
-    @objc func actionSelected(_ sender: NSMenuItem) {
-        guard let identifier = sender.representedObject as? String,
-              placePopUps.indices.contains(sender.tag) else { return }
+    /// Puts `new` into `place`. What a place cannot hold (a recorded mouse button, a
+    /// modifier key by itself) is not stored: the pull-down shows again what was there.
+    func setPlace(_ new: ShortcutRingPlace, at place: Int) {
+        guard placePopUps.indices.contains(place) else { return }
         // The row whose pull-down was used is the selected one.
-        selectedPlace = sender.tag
-        setAction(identifier, ofPlace: sender.tag)
-    }
-
-    /// Stores `identifier` (a `SystemShortcut` identifier, or "" for nothing) in `place`.
-    func setAction(_ identifier: String, ofPlace place: Int) {
+        selectedPlace = place
         var ring = Options.shared.ring
-        let new = ShortcutRingPlace(action: identifier)
-        guard ring[place] != new else {
-            previewView?.lit = litPlace
+        guard new.isEmpty || new.runs, ring[place] != new else {
+            reload()
             return
         }
         ring[place] = new
         Options.shared.ring = ring
         reload()
+    }
+
+    /// "Open App or File…" of a place: the Buttons pane's popover at the pull-down, with
+    /// what the place opens now.
+    private func presentOpenTargetPopover(forPlace place: Int) {
+        guard placePopUps.indices.contains(place) else { return }
+        openTargetPopover?.hide()
+        let popover = OpenTargetConfigPopover()
+        openTargetPopover = popover
+        popover.onCommit = { [weak self] payload in
+            self?.openTargetPopover = nil
+            self?.setPlace(ShortcutRingPlace(openTarget: payload), at: place)
+        }
+        popover.onCancel = { [weak self] in
+            self?.openTargetPopover = nil
+        }
+        presentOpenTarget(popover, placePopUps[place], Options.shared.ring[place].openTarget)
     }
 
     // MARK: - Rows
@@ -415,67 +449,25 @@ final class RingPreferencesViewController: NSViewController {
         return row
     }
 
-    private func makePopUp(for place: Int) -> NSPopUpButton {
-        let popUp = NSPopUpButton(frame: .zero, pullsDown: true)
+    /// The pull-down of one place: the Buttons pane's, with the menu of a place.
+    private func makePopUp(for place: Int) -> ButtonActionPullDown {
+        let popUp = ButtonActionPullDown(
+            binding: Options.shared.ring[place].asBinding(id: placeIDs[place]), forRingPlace: true
+        )
         popUp.tag = place
         popUp.identifier = Identifier.action(place)
         popUp.setAccessibilityLabel(ShortcutRingPlaceName.localized(place))
-        popUp.translatesAutoresizingMaskIntoConstraints = false
-        popUp.widthAnchor.constraint(equalToConstant: Self.popUpWidth).isActive = true
-        popUp.menu = makeActionMenu(for: place)
+        popUp.startShortcutRecorder = startShortcutRecorder
+        popUp.onShortcutSelected = { [weak self] shortcut in
+            self?.setPlace(ShortcutRingPlace(action: shortcut?.identifier ?? ""), at: place)
+        }
+        popUp.onCustomShortcutRecorded = { [weak self] name in
+            self?.setPlace(ShortcutRingPlace(action: name), at: place)
+        }
+        popUp.onOpenTargetSelectionRequested = { [weak self] in
+            self?.presentOpenTargetPopover(forPlace: place)
+        }
         return popUp
-    }
-
-    /// "No Action", then the categories of keyboard shortcuts, each a submenu.
-    private func makeActionMenu(for place: Int) -> NSMenu {
-        let menu = NSMenu()
-        menu.autoenablesItems = false
-        // A pull-down always shows item 0 as its title.
-        menu.addItem(NSMenuItem(title: "", action: nil, keyEquivalent: ""))
-
-        let none = NSMenuItem(title: text("ring-action-none"), action: #selector(actionSelected(_:)), keyEquivalent: "")
-        none.target = self
-        none.tag = place
-        none.representedObject = "" as NSString
-        menu.addItem(none)
-        menu.addItem(NSMenuItem.separator())
-
-        for category in ShortcutRingPlace.offeredCategories {
-            let categoryItem = NSMenuItem(
-                title: SystemShortcut.localizedCategoryName(category.category), action: nil, keyEquivalent: ""
-            )
-            categoryItem.image = Self.symbolImage(SystemShortcut.categorySymbolName(category.category))
-            let submenu = NSMenu()
-            submenu.autoenablesItems = false
-            for shortcut in category.shortcuts {
-                let item = NSMenuItem(title: shortcut.localizedName, action: #selector(actionSelected(_:)), keyEquivalent: "")
-                item.target = self
-                item.tag = place
-                item.representedObject = shortcut.identifier as NSString
-                item.image = Self.symbolImage(shortcut.symbolName)
-                submenu.addItem(item)
-            }
-            categoryItem.submenu = submenu
-            menu.addItem(categoryItem)
-        }
-        // macOS 27 hides menu item images unless asked: every action keeps its symbol.
-        menu.keepItemImagesVisible()
-        return menu
-    }
-
-    private func updateTitle(of popUp: NSPopUpButton, place: ShortcutRingPlace) {
-        guard let titleItem = popUp.menu?.items.first else { return }
-        if let shortcut = place.shortcut {
-            titleItem.title = shortcut.localizedName
-            titleItem.image = Self.symbolImage(shortcut.symbolName)
-        } else {
-            titleItem.title = text("ring-action-none")
-            titleItem.image = nil
-        }
-    }
-
-    private static func symbolImage(_ name: String) -> NSImage? {
-        return NSImage(systemSymbolName: name, accessibilityDescription: nil)
     }
 
     /// One place with its pull-down. The row tells the drawing when the pointer is over it.

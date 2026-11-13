@@ -451,21 +451,71 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertEqual(target.options.ring, ring, "an older file does not reset the ring")
 
         // What a place may hold is checked: a name of a later version, a click, a recorded
-        // key and a file to open all come in as empty places, counted as left out.
+        // mouse button and a place whose fields contradict each other come in as empty
+        // places, counted as left out. A recorded key combination comes in as a listed
+        // shortcut does.
         let strange = try Fixture.contents(
             #""shortcutRingSettings":{"places":[{"action":"copy"},{"action":"somethingNewer"},{"action":"mouseLeftClick"},"#
-                + #"{"action":"custom::8:1048576"},{"action":"openTarget","openTarget":{"path":"/bin/sh","arguments":"","kind":"script"}}]}"#
+                + #"{"action":"custom::40:1179648"},{"action":"custom::mouse:5:0"},{"action":"logiHost2"}]}"#
         )
-        XCTAssertEqual(strange.ring?.places.map { $0.action }, ["copy", "", "", "", "", "", "", ""])
+        XCTAssertEqual(strange.ring?.places.map { $0.action }, ["copy", "", "", "custom::40:1179648", "", "", "", ""])
         XCTAssertEqual(strange.unknownActions, 4)
         XCTAssertEqual(strange.leftOutCount, 4)
-        XCTAssertTrue(strange.launchActions.isEmpty, "nothing of a ring opens or runs anything")
+        XCTAssertTrue(strange.launchActions.isEmpty)
+        XCTAssertEqual(SettingsFileText.ringLines(of: strange).count, 8, "every place differs from a new ring")
         // A ring that is no object is a damaged file, not a default ring.
         if case .failure(let problem) = SettingsFile.read(Fixture.file(#""shortcutRingSettings":[1,2]"#)) {
             XCTAssertEqual(problem, .damaged("shortcutRingSettings"))
         } else {
             XCTFail("a ring that is a list was taken")
         }
+    }
+
+    /// A place of the Shortcut Ring that opens an app or a file or runs a script is never
+    /// imported unseen: it stands in the sheet's box of such actions, named by its place,
+    /// with its whole path and arguments, like a button's.
+    func testAPlaceOfTheRingThatOpensOrRunsSomethingIsShownBeforeTheImport() throws {
+        let source = makeSource()
+        var ring = ShortcutRingSettings.default
+        let script = OpenTargetPayload(path: "/Users/someone/bin/sync.sh", bundleID: nil, arguments: "--all", kind: .script)
+        let notes = OpenTargetPayload(path: "/Applications/Notes.app", bundleID: "com.apple.Notes", arguments: "", kind: .application)
+        ring[1] = ShortcutRingPlace(openTarget: script)
+        ring[4] = ShortcutRingPlace(openTarget: notes)
+        ring[6] = ShortcutRingPlace(action: "custom::40:1179648")
+        source.options.ring = ring
+        let data = try SettingsFile.export(from: source.options, now: Self.moment).get()
+        let contents = try SettingsFile.read(data).get()
+        XCTAssertEqual(contents.ring, ring, "what was exported comes back")
+        XCTAssertEqual(contents.unknownActions, 0)
+
+        // The button of the file that runs the same script, then the ring's two places.
+        let launches = contents.launchActions
+        XCTAssertEqual(launches.map { $0.ringPlace }, [nil, 1, 4])
+        XCTAssertEqual(launches.map { $0.target }, [script, script, notes])
+        XCTAssertEqual(SettingsFileText.launchLine(for: launches[1]),
+                       "Shortcut Ring, Top right: runs the script /Users/someone/bin/sync.sh (arguments: --all)")
+        XCTAssertEqual(SettingsFileText.launchLine(for: launches[2]),
+                       "Shortcut Ring, Bottom: opens the app /Applications/Notes.app, or else the app with the ID com.apple.Notes")
+        XCTAssertEqual(SettingsFileText.launchTitle(count: launches.count), "3 actions open an app or a file, or run a script")
+        XCTAssertTrue(contents.bringsActions, "Return does not import such a file")
+        // The list of all actions names the places too, a key combination by its keys.
+        let lines = SettingsFileText.ringLines(of: contents)
+        XCTAssertEqual(lines.count, 3)
+        XCTAssertEqual(lines[0], "Ring Top right: Open App or File: sync.sh")
+        XCTAssertEqual(lines[1], "Ring Bottom: Open App or File: Notes.app")
+        XCTAssertTrue(lines[2].hasPrefix("Ring Left: ⇧⌘"), lines[2])
+
+        // A file from elsewhere with only a ring: the place is listed all the same.
+        let foreign = try Fixture.contents(
+            #""shortcutRingSettings":{"places":[{"action":"openTarget","openTarget":{"path":"/tmp/x.sh","arguments":"","kind":"script"}}]}"#
+        )
+        XCTAssertEqual(foreign.launchActions.count, 1)
+        XCTAssertEqual(SettingsFileText.launchLine(for: foreign.launchActions[0]), "Shortcut Ring, Top: runs the script /tmp/x.sh")
+        // Importing puts it in the ring, and runs nothing.
+        let target = OwnSettings(for: self)
+        target.options.readOptions()
+        XCTAssertTrue(SettingsFile.apply(contents, to: target.options))
+        XCTAssertEqual(target.options.ring, ring)
     }
 
     /// A file read back gives the settings it was made from, on another Mac's settings.
