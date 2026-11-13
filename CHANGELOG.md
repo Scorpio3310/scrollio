@@ -10,6 +10,12 @@ it for the people who use the app, and give the version its part before you tag 
 
 ## Unreleased
 
+- **Mission Control and Show Desktop no longer stop working.** Scrollio sent them as key
+  presses, and after some orders of use (Show Desktop, then another shortcut) macOS only
+  flashed them, for a button, a gesture and the Shortcut Ring alike, until you used a
+  trackpad gesture or the key yourself. Scrollio now asks the Dock for them directly.
+  Also, after a shortcut was sent, macOS could go on treating its modifier keys as held
+  until your next key or click; that no longer happens.
 - **A Logitech mouse on a receiver is found when it connects later.** Scrollio looked for
   mice on a Bolt or Unifying receiver once, when it started or the Mac woke up. A mouse
   that was asleep, switched off or out of range at that moment was not seen until you

@@ -2103,6 +2103,109 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertEqual(keptUp.getIntegerValueField(.eventSourceUserData), ScrollioEventMarker.syntheticCustom)
     }
 
+    // MARK: - Mission Control and Show Desktop are asked of the Dock
+
+    private func withDockModes(answering answer: Bool, _ body: (ShortcutExecutor) -> Void) -> [DockMode] {
+        var asked: [DockMode] = []
+        let executor = ShortcutExecutor.shared
+        let before = executor.toggleDockMode
+        executor.toggleDockMode = { mode in
+            asked.append(mode)
+            return answer
+        }
+        body(executor)
+        executor.toggleDockMode = before
+        return asked
+    }
+
+    /// Pressed as keys (the Mission Control key, F11) in one instant, the two put the Dock
+    /// out of step: it flashed the other mode and stayed like that until a real gesture.
+    /// The Dock is asked for the mode itself, and no key is sent.
+    func testMissionControlAndShowDesktopAreAskedOfTheDockNotPressedAsKeys() {
+        let executed = recordKeyboardShortcuts()
+        let asked = withDockModes(answering: true) { executor in
+            executor.execute(named: SystemShortcut.missionControl.identifier)
+            executor.execute(named: SystemShortcut.showDesktop.identifier)
+            // Every other action is still its key: the Dock is not asked.
+            executor.execute(named: SystemShortcut.appExpose.identifier)
+            executor.execute(named: SystemShortcut.escapeKey.identifier)
+        }
+        XCTAssertEqual(asked, [.missionControl, .showDesktop])
+        XCTAssertEqual(executed().map { $0.0 }, [SystemShortcut.appExpose.code, SystemShortcut.escapeKey.code])
+    }
+
+    /// Where the Dock cannot be asked (the call is not there), the key is sent as before.
+    func testTheKeyIsSentWhereTheDockCannotBeAsked() {
+        let executed = recordKeyboardShortcuts()
+        let asked = withDockModes(answering: false) { executor in
+            executor.execute(named: SystemShortcut.missionControl.identifier)
+            executor.execute(named: SystemShortcut.showDesktop.identifier)
+        }
+        XCTAssertEqual(asked, [.missionControl, .showDesktop])
+        XCTAssertEqual(executed().map { $0.0 }, [SystemShortcut.missionControl.code, SystemShortcut.showDesktop.code])
+    }
+
+    func testOnlyTheTwoDockModesHaveADockMode() {
+        XCTAssertEqual(DockMode(shortcutIdentifier: "missionControl"), .missionControl)
+        XCTAssertEqual(DockMode(shortcutIdentifier: "showDesktop"), .showDesktop)
+        XCTAssertEqual(DockMode.missionControl.rawValue, "com.apple.expose.awake")
+        XCTAssertEqual(DockMode.showDesktop.rawValue, "com.apple.showdesktop.awake")
+        for other in ["appExpose", "moveSpaceLeft", "moveSpaceRight", "copy", "shortcutRing", ""] {
+            XCTAssertNil(DockMode(shortcutIdentifier: other), other)
+        }
+    }
+
+    /// The call is in no public header: it is looked up by name, and a macOS without it
+    /// leaves the key press in place instead of crashing.
+    func testTheDockCallIsLookedUpByNameAndMayBeMissing() {
+        XCTAssertNil(DockModeSender.load(resolver: { _ in nil }))
+        var lookedUp: [String] = []
+        _ = DockModeSender.load(resolver: { name in
+            lookedUp.append(name)
+            return nil
+        })
+        XCTAssertEqual(lookedUp, ["CoreDockSendNotification"])
+        // This macOS has it. If this fails on a newer macOS, the two actions are sent as
+        // key presses there (which the Dock digests badly): look for the call's new name.
+        XCTAssertNotNil(DockModeSender.load(), "CoreDockSendNotification is gone from ApplicationServices")
+    }
+
+    // MARK: - A sent shortcut does not leave its modifiers pressed
+
+    /// The key up of a shortcut took over the flags its own key down had just set, so the
+    /// system reported Command and Shift as pressed after a screenshot shortcut (and "fn"
+    /// after Mission Control) until the next real input. It carries the modifier keys that
+    /// are really held; only a shortcut that asks for it keeps its own (⌘Tab).
+    func testTheKeyUpCarriesTheModifiersThatAreReallyHeld() throws {
+        let command = CGEventFlags.maskCommand.rawValue
+        let shift = CGEventFlags.maskShift.rawValue
+        let function = CGEventFlags.maskSecondaryFn.rawValue
+        XCTAssertEqual(ShortcutExecutor.keyUpFlags(shortcutFlags: command | shift, heldModifiers: 0, preserveFlagsOnKeyUp: false), 0)
+        XCTAssertEqual(ShortcutExecutor.keyUpFlags(shortcutFlags: command, heldModifiers: shift, preserveFlagsOnKeyUp: false), shift,
+                       "a Shift the user holds stays held")
+        XCTAssertEqual(ShortcutExecutor.keyUpFlags(shortcutFlags: function, heldModifiers: function | 0x2000_0000, preserveFlagsOnKeyUp: false), 0,
+                       "\"fn\" is a mark of the key, not a key that is held")
+        XCTAssertEqual(ShortcutExecutor.keyUpFlags(shortcutFlags: command, heldModifiers: 0, preserveFlagsOnKeyUp: true), command)
+
+        let up = try XCTUnwrap(ShortcutExecutor.shortcutKeyEvent(code: 21, flags: command | shift, keyDown: false,
+                                                                 preserveFlagsOnKeyUp: false, source: nil, heldModifiers: shift))
+        XCTAssertFalse(up.flags.contains(.maskCommand))
+        XCTAssertTrue(up.flags.contains(.maskShift))
+    }
+
+    func testModifiersLeftSetByAShortcutAreReportedOnce() {
+        let command = CGEventFlags.maskCommand.rawValue
+        let shift = CGEventFlags.maskShift.rawValue
+        XCTAssertNil(ShortcutExecutor.leftModifiersLine(session: 0, hardware: 0, expected: 0))
+        XCTAssertNil(ShortcutExecutor.leftModifiersLine(session: shift, hardware: 0, expected: shift), "held before and after")
+        XCTAssertNil(ShortcutExecutor.leftModifiersLine(session: command, hardware: command, expected: 0),
+                     "a key the user pressed meanwhile")
+        XCTAssertEqual(
+            ShortcutExecutor.leftModifiersLine(session: command | shift, hardware: 0, expected: 0),
+            "A sent shortcut left modifier keys set that nobody holds (0x120000)"
+        )
+    }
+
     /// What the mark is for: the button tap lets a posted shortcut through untouched. Before,
     /// a keyboard trigger bound to the shortcut it is itself ran again for its own output.
     func testTheButtonTapLetsAPostedShortcutThroughWithoutRunningABinding() throws {

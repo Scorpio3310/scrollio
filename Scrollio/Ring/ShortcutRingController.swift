@@ -331,49 +331,7 @@ final class ShortcutRingController {
     /// The trigger came up; `isMadeUp` for a release Scrollio made up itself.
     func triggerReleased(isMadeUp: Bool) {
         assertMainThread()
-        releasing = true
         perform(session.triggerReleased(at: environment.now(), isMadeUp: isMadeUp))
-        releasing = false
-    }
-
-    // MARK: TEMPORARY DIAGNOSTIC (2026-11-13)
-    //
-    // Mission Control and Show Desktop do not work when a held ring runs them: the Dock's
-    // own log shows it entering the other of the two modes and leaving it 1 to 2 ms later.
-    // Chosen with a click they work, and so does the same key from a gesture. What differs
-    // at that moment is not in the code, so the input state is written to the `app` log:
-    // while the ring is held, when it runs, and shortly after. Show Desktop from a held
-    // ring is sent 0.15 s late and Mission Control at once, to see whether the moment of
-    // the release is the cause. To be removed with the fix.
-
-    private var releasing = false
-    private var didLogHeldInput = false
-    private static let diagnosesRuns = !AppRuntime.isRunningXCTest
-    private static let diagnosticDelay: TimeInterval = 0.15
-
-    /// Modifier keys and mouse buttons as the hardware and the session have them, and how
-    /// long ago the last key and the last modifier change were. No key is named.
-    static func inputStateLine() -> String {
-        func buttons(_ state: CGEventSourceStateID) -> String {
-            return (0..<8).map {
-                CGEventSource.buttonState(state, button: unsafeBitCast(UInt32($0), to: CGMouseButton.self)) ? "1" : "0"
-            }.joined()
-        }
-        func since(_ state: CGEventSourceStateID, _ type: CGEventType) -> String {
-            return String(format: "%.0f", CGEventSource.secondsSinceLastEventType(state, eventType: type) * 1000)
-        }
-        return String(
-            format: "modifiers hid 0x%llX session 0x%llX; buttons hid %@ session %@; ms since key down hid %@ session %@, "
-                + "key up hid %@ session %@, modifier change hid %@ session %@, button down hid %@ session %@, moved hid %@",
-            CGEventSource.flagsState(.hidSystemState).rawValue,
-            CGEventSource.flagsState(.combinedSessionState).rawValue,
-            buttons(.hidSystemState), buttons(.combinedSessionState),
-            since(.hidSystemState, .keyDown), since(.combinedSessionState, .keyDown),
-            since(.hidSystemState, .keyUp), since(.combinedSessionState, .keyUp),
-            since(.hidSystemState, .flagsChanged), since(.combinedSessionState, .flagsChanged),
-            since(.hidSystemState, .otherMouseDown), since(.combinedSessionState, .otherMouseDown),
-            since(.hidSystemState, .mouseMoved)
-        )
     }
 
     /// What kind of trigger an event is, for the log.
@@ -409,10 +367,6 @@ final class ShortcutRingController {
             return
         }
         let now = environment.now()
-        if Self.diagnosesRuns, session.phase == .held, !didLogHeldInput {
-            didLogHeldInput = true
-            environment.log("Ring diagnostic: while held: \(Self.inputStateLine())")
-        }
         if session.phase == .latched {
             let pointer = environment.pointerLocation()
             if pointer != lastPolledPointer {
@@ -505,7 +459,6 @@ final class ShortcutRingController {
                 showGeneration += 1
                 let generation = showGeneration
                 lastPolledPointer = nil
-                didLogHeldInput = false
                 // Not inside the event callback this runs in: a panel is made and shown
                 // on the main queue's next turn.
                 environment.schedule { [weak self] in
@@ -545,28 +498,7 @@ final class ShortcutRingController {
                 }
                 // After the panel is gone, and after this callback has returned.
                 let run = environment.run
-                guard Self.diagnosesRuns else {
-                    environment.schedule { run(chosen) }
-                    continue
-                }
-                // TEMPORARY DIAGNOSTIC (see above).
-                let name = Self.logName(of: chosen)
-                let late = releasing && chosen.shortcut?.identifier == SystemShortcut.showDesktop.identifier
-                let log = environment.log
-                log("Ring diagnostic: \(name) chosen by \(releasing ? "letting go" : "a click")"
-                    + "\(late ? ", sent 0.15 s late" : ""): \(Self.inputStateLine())")
-                let send = {
-                    log("Ring diagnostic: \(name) is sent now: \(Self.inputStateLine())")
-                    run(chosen)
-                }
-                if late {
-                    environment.scheduleAfter(Self.diagnosticDelay, send)
-                } else {
-                    environment.schedule(send)
-                }
-                environment.scheduleAfter((late ? Self.diagnosticDelay : 0) + 0.06) {
-                    log("Ring diagnostic: 60 ms after \(name) was sent: \(Self.inputStateLine())")
-                }
+                environment.schedule { run(chosen) }
             }
         }
         if closed {

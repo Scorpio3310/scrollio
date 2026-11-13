@@ -347,6 +347,38 @@ class ShortcutExecutor {
         ? { _ in }
         : { $0.post(tap: .cghidEventTap) }
 
+    /// Asks the Dock for Mission Control or Show Desktop (DockModes.swift). False: it cannot
+    /// be asked here, and the action is sent as its key. Under XCTest the Dock is never
+    /// asked, whatever a test forgets to replace: it would act on the screen of whoever
+    /// runs the tests.
+    var toggleDockMode: (DockMode) -> Bool = AppRuntime.isRunningXCTest
+        ? { _ in false }
+        : { ShortcutExecutor.askDock(for: $0) }
+
+    /// Which way the Dock's modes go is written to the log once per run of the app.
+    private static var didLogDockModeWay = false
+
+    private static func askDock(for mode: DockMode) -> Bool {
+        guard let sender = DockModeSender.system else {
+            if !didLogDockModeWay {
+                didLogDockModeWay = true
+                AppSystemLog.problem("Mission Control and Show Desktop are sent as key presses: "
+                    + "this macOS has no \(DockModeSender.symbol)")
+            }
+            return false
+        }
+        if !didLogDockModeWay {
+            didLogDockModeWay = true
+            AppSystemLog.note("Mission Control and Show Desktop are asked of the Dock directly, not pressed as keys")
+        }
+        // Not inside the caller: a button's action runs in the event tap's callback, and
+        // this is a message to another process.
+        DispatchQueue.main.async {
+            sender.toggle(mode)
+        }
+        return true
+    }
+
     private var testingMouseEventObserver: ((CGEvent) -> Void)?
     private var testingKeyboardShortcutObserver: ((CGKeyCode, UInt64, Bool) -> Void)?
 
@@ -373,6 +405,10 @@ class ShortcutExecutor {
             return
         }
 
+        // The modifier keys as the hardware has them, read before the key down below
+        // changes what the system reports.
+        let held = CGEventSource.flagsState(.hidSystemState).rawValue & Self.modifierKeyMask
+
         // 发送按键按下事件
         if let keyDown = Self.shortcutKeyEvent(code: code, flags: flags, keyDown: true,
                                                preserveFlagsOnKeyUp: preserveFlagsOnKeyUp, source: source) {
@@ -381,9 +417,51 @@ class ShortcutExecutor {
 
         // 发送按键抬起事件
         if let keyUp = Self.shortcutKeyEvent(code: code, flags: flags, keyDown: false,
-                                             preserveFlagsOnKeyUp: preserveFlagsOnKeyUp, source: source) {
+                                             preserveFlagsOnKeyUp: preserveFlagsOnKeyUp, source: source,
+                                             heldModifiers: held) {
             post(keyUp)
         }
+        if !preserveFlagsOnKeyUp {
+            checkModifiersAfterShortcut(expected: held)
+        }
+    }
+
+    /// Shift, Control, Option and Command: the modifier keys a shortcut can add and a hand
+    /// can hold. (Caps Lock is a state, and "fn" and "keypad" are marks of the key itself.)
+    static let modifierKeyMask: UInt64 = CGEventFlags.maskShift.rawValue | CGEventFlags.maskControl.rawValue
+        | CGEventFlags.maskAlternate.rawValue | CGEventFlags.maskCommand.rawValue
+
+    /// The flags of a shortcut's key up. The shortcut's own modifiers only when it asks for
+    /// them (⌘Tab); else the modifier keys that are really held. Left to itself the key up
+    /// took over what the key down had just set, and the system went on reporting the
+    /// shortcut's modifiers as pressed until the next real input (measured 2026-11-13:
+    /// "fn" after Mission Control, Command and Shift after a screenshot shortcut).
+    static func keyUpFlags(shortcutFlags: UInt64, heldModifiers: UInt64, preserveFlagsOnKeyUp: Bool) -> UInt64 {
+        return preserveFlagsOnKeyUp ? shortcutFlags : heldModifiers & modifierKeyMask
+    }
+
+    private static var didLogLeftModifiers = false
+
+    /// A moment after a shortcut was sent: if the system still reports modifier keys that
+    /// nobody holds, one line in the log, once per run of the app.
+    private func checkModifiersAfterShortcut(expected: UInt64) {
+        guard !AppRuntime.isRunningXCTest, !Self.didLogLeftModifiers else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
+            guard !Self.didLogLeftModifiers else { return }
+            let session = CGEventSource.flagsState(.combinedSessionState).rawValue & Self.modifierKeyMask
+            let hardware = CGEventSource.flagsState(.hidSystemState).rawValue & Self.modifierKeyMask
+            guard let line = Self.leftModifiersLine(session: session, hardware: hardware, expected: expected) else { return }
+            Self.didLogLeftModifiers = true
+            AppSystemLog.problem(line)
+        }
+    }
+
+    /// The line for modifier keys that a sent shortcut left set; nil when all is as it was,
+    /// or when the hardware itself reports them (a key the user pressed meanwhile).
+    static func leftModifiersLine(session: UInt64, hardware: UInt64, expected: UInt64) -> String? {
+        let left = session & ~expected & ~hardware
+        guard left != 0 else { return nil }
+        return String(format: "A sent shortcut left modifier keys set that nobody holds (0x%llX)", left)
     }
 
     /// The key down or key up of a shortcut, marked as Scrollio's own (`ScrollioEventMarker`) like
@@ -391,12 +469,17 @@ class ShortcutExecutor {
     /// taps: a keyboard trigger bound to the shortcut it is itself ran again in a loop, and
     /// the button tap added held virtual modifiers to them.
     static func shortcutKeyEvent(code: CGKeyCode, flags: UInt64, keyDown: Bool,
-                                 preserveFlagsOnKeyUp: Bool, source: CGEventSource?) -> CGEvent? {
+                                 preserveFlagsOnKeyUp: Bool, source: CGEventSource?,
+                                 heldModifiers: UInt64 = 0) -> CGEvent? {
         guard let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: keyDown) else {
             return nil
         }
-        if keyDown || preserveFlagsOnKeyUp {
+        if keyDown {
             event.flags = CGEventFlags(rawValue: flags)
+        } else {
+            event.flags = CGEventFlags(rawValue: keyUpFlags(
+                shortcutFlags: flags, heldModifiers: heldModifiers, preserveFlagsOnKeyUp: preserveFlagsOnKeyUp
+            ))
         }
         event.setIntegerValueField(.eventSourceUserData, value: ScrollioEventMarker.syntheticCustom)
         return event
@@ -533,6 +616,11 @@ class ShortcutExecutor {
         if SystemShortcut.isSwitchedOffInSystemSettings(shortcutName) {
             let name = SystemShortcut.getShortcut(named: shortcutName)?.localizedName ?? shortcutName
             switchedOffNotice(name)
+            return
+        }
+        // Mission Control and Show Desktop are asked of the Dock itself; their key is only
+        // sent where that cannot be done (DockModes.swift).
+        if let mode = DockMode(shortcutIdentifier: shortcutName), toggleDockMode(mode) {
             return
         }
         // 优先使用系统实际配置 (对于Mission Control相关快捷键)
