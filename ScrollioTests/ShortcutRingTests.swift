@@ -635,6 +635,24 @@ final class ShortcutRingSessionTests: XCTestCase {
         XCTAssertEqual(slow.triggerReleased(at: pressed + 0.3), [.close, .run(2)])
     }
 
+    /// A flick lights its place and the hand settles back a little, all in the first
+    /// moments: the place stays lit (down to the dead zone, as later) and letting go runs
+    /// it. It must not go dark at 38 points and close the ring, where the same hand let
+    /// go a moment later would run the place.
+    func testAFlickThatSettlesBackALittleKeepsItsPlace() {
+        var session = opened()
+        XCTAssertEqual(move(&session, by: CGPoint(x: 42, y: 0), at: pressed + 0.1), [.light(2)])
+        XCTAssertEqual(move(&session, by: CGPoint(x: -4, y: 0), at: pressed + 0.12), [], "38 points: still lit")
+        XCTAssertEqual(session.lit, 2)
+        XCTAssertEqual(session.triggerReleased(at: pressed + 0.15), [.close, .run(2)])
+
+        // Back inside the dead zone it does go dark, and letting go there closes.
+        var back = opened()
+        move(&back, by: CGPoint(x: 42, y: 0), at: pressed + 0.1)
+        XCTAssertEqual(move(&back, by: CGPoint(x: -30, y: 0), at: pressed + 0.12), [.light(nil)])
+        XCTAssertEqual(back.triggerReleased(at: pressed + 0.15), [.close])
+    }
+
     /// A hand that stopped between the dead zone and twice of it in the first moments:
     /// its place lights when those moments are over, without another movement.
     func testAHandThatStoppedShortLightsItsPlaceWhenTheFirstMomentsAreOver() {

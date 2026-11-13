@@ -303,8 +303,25 @@ extension ButtonActionPullDown: KeyRecorderDelegate {
         }
     }
 
+    /// What a place of the Shortcut Ring cannot run is refused when it is pressed, not
+    /// taken and then dropped: a mouse button other than Back and Forward, a modifier key
+    /// by itself.
+    private func isRefusedForRingPlace(_ event: InputEvent) -> Bool {
+        return isForRingPlace && !ShortcutRingPlace(action: Self.bindingName(forRecorded: event)).runs
+    }
+
+    /// For a place of the ring the recorder asks for what a place takes.
+    func waitingHint(_ recorder: KeyRecorder, mode: KeyRecordingMode) -> String? {
+        return isForRingPlace ? NSLocalizedString("ring-recorder-waiting", comment: "") : nil
+    }
+
+    func refusalHint(_ recorder: KeyRecorder, event: InputEvent) -> String? {
+        return isRefusedForRingPlace(event) ? NSLocalizedString("ring-recorder-refused", comment: "") : nil
+    }
+
     /// The button cannot be its own shortcut.
     func validateRecordedEvent(_ recorder: KeyRecorder, event: InputEvent) -> Bool {
+        if isRefusedForRingPlace(event) { return false }
         let recorded = RecordedEvent(from: event)
         let trigger = binding.triggerEvent
         return (recorded.standardMouseAliasTriggerIfAvailable() ?? recorded)

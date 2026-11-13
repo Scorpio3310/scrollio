@@ -74,6 +74,15 @@ final class RingHarness {
     private(set) var clickWatches = 0
     private(set) var stoppedClickWatches: [String] = []
     private var scheduled: [() -> Void] = []
+    /// What was asked to run after a delay, with the time it is due.
+    private var delayed: [(due: TimeInterval, block: () -> Void)] = []
+
+    /// Runs what was asked to run after a delay and is due by now.
+    func runDelayed() {
+        let due = delayed.filter { $0.due <= now }
+        delayed.removeAll { $0.due <= now }
+        due.forEach { $0.block() }
+    }
 
     init() {
         presenter.log = { [unowned self] in self.log.append($0) }
@@ -83,6 +92,7 @@ final class RingHarness {
             screen: { [unowned self] _ in self.screen },
             isPrimaryButtonDown: { [unowned self] in self.primaryButtonDown },
             schedule: { [unowned self] in self.scheduled.append($0) },
+            scheduleAfter: { [unowned self] delay, block in self.delayed.append((self.now + delay, block)) },
             makeTimer: { _, _ in nil },
             ring: { [unowned self] in self.ring },
             run: { [unowned self] in self.log.append("run \(ShortcutRingController.logName(of: $0))") },
@@ -283,6 +293,34 @@ final class ShortcutRingControllerTests: XCTestCase {
         harness.runScheduled()
         XCTAssertTrue(harness.presenter.shown.isEmpty)
         XCTAssertEqual(harness.presenter.hides, 1)
+    }
+
+    /// A hand that moved 30 points in the first moments and stopped: its place lights the
+    /// moment those are over, by a look of its own, not at the timer's next one (a release
+    /// in between would leave the ring open where the place should run).
+    func testAHandThatStoppedShortLightsItsPlaceTheMomentTheFirstMomentsAreOver() {
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        harness.moveHand(by: CGPoint(x: 0, y: 30), after: 0.1)
+        XCTAssertTrue(harness.presenter.lit.isEmpty)
+        harness.now += 0.09
+        harness.runDelayed()
+        XCTAssertTrue(harness.presenter.lit.isEmpty, "not before the fifth of a second is over")
+        harness.now += 0.02
+        harness.runDelayed()
+        XCTAssertEqual(harness.presenter.lit.last, 4, "without a tick of the timer")
+        controller.triggerReleased(isMadeUp: false)
+        harness.runScheduled()
+        XCTAssertEqual(harness.log.last, "run appExpose")
+
+        // The look of a ring that is gone does nothing to the next one.
+        harness.pointer = CGPoint(x: 700, y: 500)
+        controller.triggerPressed(by: RingHarness.button(.down))
+        controller.cancel()
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.now += 0.3
+        harness.runDelayed()
+        XCTAssertTrue(controller.isHeld)
     }
 
     // MARK: The taps follow the ring
@@ -878,6 +916,21 @@ final class ShortcutRingInputTests: XCTestCase {
         _ = process(RingHarness.button(.down))
         XCTAssertEqual(process(key(53, down: true, repeating: true)), .passthrough)
         XCTAssertTrue(controller.isOpen)
+    }
+
+    /// Esc closed the ring and its release never came (the keys tap timed out, secure
+    /// keyboard entry began): the next press of Esc is a new one and the app's, not one
+    /// more Esc that does nothing.
+    func testAfterALostEscReleaseTheNextEscIsTheApps() {
+        bind(button: 4)
+        _ = process(RingHarness.button(.down))
+        _ = process(RingHarness.button(.up))
+        XCTAssertEqual(process(key(53, down: true)), .consumed)
+        XCTAssertTrue(InputProcessor.shared.needsKeyEvents, "its release is awaited")
+        XCTAssertEqual(process(key(53, down: true)), .passthrough, "a fresh press: the release was lost")
+        XCTAssertFalse(InputProcessor.shared.needsKeyEvents)
+        XCTAssertEqual(process(key(53, down: true, repeating: true)), .passthrough)
+        XCTAssertEqual(process(key(53, down: false)), .passthrough)
     }
 
     /// Two triggers bound. The button's release got lost and the ring gave up: the key

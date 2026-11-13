@@ -504,7 +504,13 @@ enum SettingsFile {
             guard let thumbWheel: ThumbWheelSettings = decoded(value) else { return false }
             contents.thumbWheel = thumbWheel
         case .ring:
-            guard let ring: ShortcutRingSettings = decoded(value) else { return false }
+            // Cut to the eight places before a single one is decoded (a file can list any
+            // number; only the first eight are ever kept, shown and stored).
+            guard var object = value as? [String: Any] else { return false }
+            if let places = object["places"] as? [Any], places.count > ShortcutRingSettings.placeCount {
+                object["places"] = Array(places.prefix(ShortcutRingSettings.placeCount))
+            }
+            guard let ring: ShortcutRingSettings = decoded(object) else { return false }
             // A place whose action this version does not run comes in empty.
             let kept = ring.keepingOnlyWhatRuns()
             contents.unknownActions += kept.emptied

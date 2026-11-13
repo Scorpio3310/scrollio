@@ -29,7 +29,8 @@
 //  What a clock does guard against is the jerk a press gives the mouse: the movement of
 //  the first `pressGrace` seconds is not counted, and for the first `quickRelease`
 //  seconds a place lights only once the hand went `quickReleaseReach` far, twice the
-//  dead zone (a hand that stopped short of that lights its place when that time is over).
+//  dead zone (a hand that stopped short of that lights its place when that time is over;
+//  a place that is lit stays lit down to the dead zone).
 //
 //  An empty place never lights and never runs.
 //  The ring is closed before an action runs: `.close` always comes before `.run`. A
@@ -184,9 +185,13 @@ struct ShortcutRingSession {
     }
 
     /// The place the hand's movement means at `time` of a hold: by direction, past the
-    /// dead zone, and in the first moments after the press only past twice the dead zone.
+    /// dead zone; in the first moments after the press a place only LIGHTS past twice the
+    /// dead zone. Once one is lit the dead zone alone decides, as later: a flick that
+    /// settles back a little keeps its place (it would otherwise go dark, and letting go
+    /// would close the ring where a moment later it runs the place).
     private func placeOfTravel(at time: TimeInterval) -> Int? {
-        let zone = time - pressTime < Self.quickRelease ? Self.quickReleaseReach : ShortcutRingGeometry.deadZone
+        let early = lit == nil && time - pressTime < Self.quickRelease
+        let zone = early ? Self.quickReleaseReach : ShortcutRingGeometry.deadZone
         return ShortcutRingGeometry.place(forOffset: travel, deadZone: zone, current: lit)
             .flatMap { isFilled($0) ? $0 : nil }
     }

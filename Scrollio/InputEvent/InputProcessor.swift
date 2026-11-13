@@ -108,10 +108,14 @@ class InputProcessor: ModifierFlagsProviding {
             }
         }
         if event.type == .keyboard, event.code == KeyCode.escape, let ring = ShortcutRingController.existing {
-            // The Esc that closed the ring is the ring's until it is up, repeats included:
-            // held a moment longer, it would reach the app in front after all.
+            // The Esc that closed the ring is the ring's until it is up, its repeats
+            // included: held a moment longer, it would reach the app in front after all.
+            // A fresh Esc down while its release is still awaited means that release was
+            // lost: the wait ends and this press is the app's.
             if ring.awaitsEscapeRelease {
-                return true
+                if event.isAutoRepeat { return true }
+                _ = ring.escapeReleased()
+                return false
             }
             if ring.isOpen, !event.isAutoRepeat {
                 return ring.escapePressed()

@@ -170,6 +170,34 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(Options.shared.ring[7].action, "copy")
     }
 
+    /// The recorder of a place asks for what a place takes and refuses the rest when it
+    /// is pressed: a mouse button other than Back and Forward, a modifier key by itself.
+    /// (It used to invite "a mouse button", show it as recorded and then drop it.)
+    func testTheRecorderOfAPlaceSaysWhatItTakesAndRefusesTheRest() {
+        let controller = makeController()
+        let popUp = controller.placePopUps[2]
+        let recorder = KeyRecorder()
+        XCTAssertEqual(popUp.waitingHint(recorder, mode: .adaptive), "Press a shortcut or a key")
+        func event(_ type: EventType, _ code: UInt16, _ modifiers: CGEventFlags = []) -> InputEvent {
+            return InputEvent(type: type, code: code, modifiers: modifiers, phase: .down, source: .hidPP, device: nil)
+        }
+        for refused in [event(.mouse, 2), event(.mouse, 5), event(.keyboard, KeyCode.shiftL)] {
+            XCTAssertFalse(popUp.validateRecordedEvent(recorder, event: refused), "\(refused.type) \(refused.code)")
+            XCTAssertEqual(popUp.refusalHint(recorder, event: refused), "A place takes a shortcut or a key")
+        }
+        let shiftCommand = CGEventFlags(rawValue: CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue)
+        for taken in [event(.keyboard, 40, shiftCommand), event(.keyboard, 96), event(.mouse, 3), event(.mouse, 4)] {
+            XCTAssertTrue(popUp.validateRecordedEvent(recorder, event: taken), "\(taken.type) \(taken.code)")
+            XCTAssertNil(popUp.refusalHint(recorder, event: taken))
+        }
+        // A row of the Buttons pane keeps the recorder's own words and takes a mouse button.
+        let trigger = RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil)
+        let button = ButtonActionPullDown(binding: ButtonBinding(triggerEvent: trigger, systemShortcutName: "copy"))
+        XCTAssertNil(button.waitingHint(recorder, mode: .adaptive))
+        XCTAssertTrue(button.validateRecordedEvent(recorder, event: event(.mouse, 2)))
+        XCTAssertNil(button.refusalHint(recorder, event: event(.mouse, 2)))
+    }
+
     /// What a place cannot hold is not stored when the recorder hands it over: a mouse
     /// button (a click) and a modifier key by itself. The place keeps what it had.
     func testARecordedMouseButtonOrModifierIsNotStored() {

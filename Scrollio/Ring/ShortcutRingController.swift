@@ -82,6 +82,8 @@ final class ShortcutRingController {
         var isPrimaryButtonDown: () -> Bool
         /// Runs the block on the next turn of the main queue, never inside the caller.
         var schedule: (@escaping () -> Void) -> Void
+        /// Runs the block on the main queue after this many seconds.
+        var scheduleAfter: (TimeInterval, @escaping () -> Void) -> Void
         /// A repeating timer, or nil when the caller drives `tick()` itself (tests).
         var makeTimer: (TimeInterval, @escaping () -> Void) -> Timer?
         /// The ring this Mac's settings hold.
@@ -118,6 +120,7 @@ final class ShortcutRingController {
             screen: { ShortcutRingScreens.screen(containing: $0) },
             isPrimaryButtonDown: { NSEvent.pressedMouseButtons & 0b11 != 0 },
             schedule: { DispatchQueue.main.async(execute: $0) },
+            scheduleAfter: { delay, block in DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: block) },
             makeTimer: { interval, block in
                 // Under XCTest no timer runs; a test calls `tick()`.
                 guard !AppRuntime.isRunningXCTest else { return nil }
@@ -411,6 +414,12 @@ final class ShortcutRingController {
                         face, centre: centre, screen: self.screen,
                         lit: self.session.lit, takesClicks: self.session.phase == .latched
                     )
+                }
+                // A hand that stopped between the dead zone and twice of it lights its
+                // place the moment the first moments are over, not at the timer's next look.
+                environment.scheduleAfter(ShortcutRingSession.quickRelease + 0.005) { [weak self] in
+                    guard let self, self.showGeneration == generation, self.session.phase == .held else { return }
+                    self.perform(self.session.timePassed(to: self.environment.now()))
                 }
                 environment.log("Shortcut Ring: opened by \(openedBy)")
             case .light(let place):

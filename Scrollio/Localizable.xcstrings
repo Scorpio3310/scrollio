@@ -7754,6 +7754,30 @@
           }
         }
       }
+    },
+    "ring-recorder-waiting": {
+      "comment": "Key recorder at a place of the Shortcut Ring: what it waits for",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press a shortcut or a key"
+          }
+        }
+      }
+    },
+    "ring-recorder-refused": {
+      "comment": "Key recorder at a place of the Shortcut Ring: a mouse button or a modifier alone was pressed",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A place takes a shortcut or a key"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

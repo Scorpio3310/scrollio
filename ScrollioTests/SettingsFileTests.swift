@@ -451,9 +451,10 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertEqual(target.options.ring, ring, "an older file does not reset the ring")
 
         // What a place may hold is checked: a name of a later version, a click, a recorded
-        // mouse button and a place whose fields contradict each other come in as empty
-        // places, counted as left out. A recorded key combination comes in as a listed
-        // shortcut does.
+        // mouse button and a Logitech action come in as empty places, counted as left
+        // out. A recorded key combination comes in as a listed shortcut does. (A place
+        // whose two fields contradict each other is empty as it is read, and not counted:
+        // the test after the next has one.)
         let strange = try Fixture.contents(
             #""shortcutRingSettings":{"places":[{"action":"copy"},{"action":"somethingNewer"},{"action":"mouseLeftClick"},"#
                 + #"{"action":"custom::40:1179648"},{"action":"custom::mouse:5:0"},{"action":"logiHost2"}]}"#
@@ -516,6 +517,53 @@ final class SettingsFileFormatTests: XCTestCase {
         target.options.readOptions()
         XCTAssertTrue(SettingsFile.apply(contents, to: target.options))
         XCTAssertEqual(target.options.ring, ring)
+    }
+
+    /// A ring as a file from elsewhere can spell it, read through the whole import: a name
+    /// together with a target, the old spelling of an app, a file with arguments, and a
+    /// ninth place that runs a script. Every place that is stored with something to open
+    /// has its line in the sheet's list, and what is stored is exactly those.
+    func testEveryPlaceOfAFileThatOpensSomethingIsListedAndNothingElseIsStored() throws {
+        let contents = try Fixture.contents(
+            #""shortcutRingSettings":{"places":["#
+                + #"{"action":"copy","openTarget":{"path":"/tmp/a.sh","arguments":"","kind":"script"}},"#
+                + #"{"action":"openTarget","openTarget":{"path":"/Applications/Old.app","arguments":"","isApplication":true}},"#
+                + #"{"action":"openTarget","openTarget":{"path":"/Users/someone/notes.txt","arguments":"--x","kind":"file"}},"#
+                + #"{"action":"paste"},{"action":""},{"action":""},{"action":""},{"action":"undo"},"#
+                + #"{"action":"openTarget","openTarget":{"path":"/tmp/ninth.sh","arguments":"","kind":"script"}}]}"#
+        )
+        let ring = try XCTUnwrap(contents.ring)
+        XCTAssertEqual(ring.places.map { $0.action }, ["", "openTarget", "openTarget", "paste", "", "", "", "undo"])
+        XCTAssertNil(ring[0].openTarget, "a name with a target holds nothing")
+        XCTAssertEqual(ring[1].openTarget?.kind, .application, "the old spelling of an app")
+        XCTAssertEqual(ring[2].openTarget?.arguments, "", "a file takes no arguments")
+        XCTAssertEqual(contents.unknownActions, 0)
+
+        // The sheet's list: one line for each place that opens something, and no other.
+        let withTarget = ring.places.indices.filter { ring[$0].openTarget != nil }
+        XCTAssertEqual(withTarget, [1, 2])
+        XCTAssertEqual(contents.launchActions.map { $0.ringPlace }, [1, 2])
+        XCTAssertEqual(contents.launchActions.map { $0.target }, withTarget.compactMap { ring[$0].openTarget })
+        XCTAssertEqual(contents.launchActions.map { SettingsFileText.launchLine(for: $0) }, [
+            "Shortcut Ring, Top right: opens the app /Applications/Old.app",
+            "Shortcut Ring, Right: opens the file /Users/someone/notes.txt",
+        ])
+
+        // What an import would put into the store: the same ring, with exactly those targets.
+        let values = try XCTUnwrap(SettingsFile.storeValues(of: contents, managedByScrollio: false))
+        let data = try XCTUnwrap(values[OptionItem.Ring.Settings] as? Data)
+        let stored = try JSONDecoder().decode(ShortcutRingSettings.self, from: data)
+        XCTAssertEqual(stored, ring)
+        XCTAssertEqual(stored.places.compactMap { $0.openTarget }, contents.launchActions.map { $0.target })
+        let text = String(decoding: data, as: UTF8.self)
+        XCTAssertFalse(text.contains("ninth"), "the ninth place is neither shown nor stored")
+        XCTAssertFalse(text.contains("a.sh"), "nor is the target of the place that contradicts itself")
+
+        // A list of any length is cut to eight before it is decoded.
+        let many = Array(repeating: #"{"action":"copy"}"#, count: 5000).joined(separator: ",")
+        let long = try Fixture.contents(#""shortcutRingSettings":{"places":["# + many + "]}")
+        XCTAssertEqual(long.ring?.places.count, 8)
+        XCTAssertEqual(long.ring?.places.allSatisfy { $0.action == "copy" }, true)
     }
 
     /// A file read back gives the settings it was made from, on another Mac's settings.
