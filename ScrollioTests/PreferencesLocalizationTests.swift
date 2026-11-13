@@ -137,6 +137,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-empty-title", "apps-empty-hint", "apps-choose-in-finder", "apps-open-panel-prompt",
         "apps-undo-remove", "apps-detail-inherit",
         "apps-detail-inherit-on", "apps-detail-inherit-off", "apps-limit-empty",
+        "apps-detail-ring-general", "apps-detail-ring-general-on", "apps-detail-ring-general-off",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).
@@ -249,6 +250,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "ring-action-none", "ring-preview-description", "buttons-note-shortcut-ring",
         "ring-recorder-waiting", "ring-recorder-refused",
         "general-settings-import-ring", "general-settings-import-ring-line", "general-settings-import-ring-trigger",
+        "general-settings-import-ring-line-app", "general-settings-import-ring-trigger-app",
+        "general-settings-import-app-rings-one", "general-settings-import-app-rings-other",
         "ring-undo-reset",
     ]
 
@@ -294,6 +297,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         // Apps pane
         "apps-detail-inherit-on": "@",
         "apps-detail-inherit-off": "@",
+        "apps-detail-ring-general-on": "@",
+        "apps-detail-ring-general-off": "@",
         // General pane
         "about-version": "@@",
         "about-version-commit": "@@@",
@@ -322,6 +327,9 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-gesture-line": "@@",
         "general-settings-import-ring-line": "@@",
         "general-settings-import-ring-trigger": "@",
+        "general-settings-import-ring-line-app": "@@@",
+        "general-settings-import-ring-trigger-app": "@@",
+        "general-settings-import-app-rings-other": "d",
         "ring-trigger-bound": "@",
         "general-settings-problem-damaged": "@",
         "general-settings-problem-too-many": "d",

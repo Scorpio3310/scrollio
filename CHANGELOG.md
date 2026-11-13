@@ -8,6 +8,13 @@ it for the people who use the app, and give the version its part before you tag 
 `## Unreleased` collects what the next version brings; it becomes that version's part
 (the heading gets the version) before the tag.
 
+## Unreleased
+
+### New
+
+- **A Shortcut Ring for each app.** On an app's page in Apps, give the app eight shortcuts
+  of its own: that ring opens while the app is in front.
+
 ## 1.0.5
 
 **The Shortcut Ring arrives:** eight shortcuts around your pointer, one button away.

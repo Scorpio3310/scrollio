@@ -91,6 +91,18 @@ nothing opens the ring until you do. The pane also sets what the eight places ho
   names what is lit. An empty place is a small faint drop. A new ring has Mission Control on top and Apps at the bottom, the
   desktops on the left and right, Copy and Paste beside Apps, and a screenshot of a
   selection and Show Desktop beside Mission Control.
+- An app can have a ring of its own. Its page in Apps (add the app there, or open it
+  in the list) ends with "Shortcut Ring". "Use the general ring" is on for every app;
+  turn it off and the app gets eight places of its own, which start as a copy of the
+  ring as it is at that moment and are set like the pane's. That ring opens while the
+  app is in front (the app in front, not the one under the pointer: the shortcuts go to
+  it); while Scrollio's own Settings are in front, the general ring opens. The ring that
+  opened stays until it closes. The button or key that opens the ring and "Freeze
+  pointer while the ring is held" are the same for every app. Turn the switch on again
+  and the app's ring is kept for later. While "Change scrolling only in these apps" is
+  on, every app on the list has its scrolling changed, also one you added only for its
+  ring: to leave its scrolling to macOS, turn off "Use settings from Scrolling" on its
+  page and, in its own settings, "Smooth scrolling" and "Reverse wheel direction".
 - "Reset to Defaults" at the bottom of the Shortcut Ring pane puts that new ring back:
   its eight places, and "Freeze pointer while the ring is held" off. The button or key
   that opens the ring stays as it is. The reset can be taken back: for a few seconds
@@ -125,8 +137,8 @@ nothing opens the ring until you do. The pane also sets what the eight places ho
 - Not in a place: the left, right and middle click (they would click where your hand
   ended up), the modifier keys and the scroll keys (they only mean something while
   held), Gesture Navigation, the Logitech actions and the ring itself.
-- Not in this version: a ring of its own for each app; rings inside rings; your own
-  symbols; more or fewer than eight places; a step of the Welcome Guide.
+- Not in this version: rings inside rings; your own symbols; more or fewer than eight
+  places; an app's icon in the middle of its ring; a step of the Welcome Guide.
 
 ## Thumb wheel
 
@@ -209,7 +221,7 @@ move to another Mac, to keep a copy, or to pass a setup on.
 - "Export…" writes one JSON file ("Scrollio Settings 2026-11-12.json") that any text
   editor opens. It holds what you set in Scrollio's panes: the scroll settings and the
   thumb wheel, the buttons and keys with their actions, the gestures, what the
-  Shortcut Ring holds, the apps with their own settings and "Change scrolling only in these apps", the Logitech values, and
+  Shortcut Ring holds, the apps with their own settings (an app's own ring among them) and "Change scrolling only in these apps", the Logitech values, and
   "Show in menu bar".
 - It does not hold, and an import never changes: "Let Scrollio manage this mouse" (it
   stays as it is on each Mac: the Logitech values of a file are imported, but they are
@@ -223,10 +235,10 @@ move to another Mac, to keep a copy, or to pass a setup on.
 - "Import…" reads a file and shows what it holds before anything changes: which
   settings, how many apps, and every button and key with what it will do, in the words
   of the Buttons pane, with the gesture directions and the places of the Shortcut Ring
-  whose action is not the default one. For buttons, keys and places of the Shortcut Ring that open an app or a file,
+  (and of each app's own ring) whose action is not the default one. For buttons, keys and places of a ring that open an app or a file,
   or run a script, a box of its own lists each one's whole path and arguments. Read those lists when the file is not
   your own: an action starts at a press of its button. Unless the file gives no button
-  or key an action and leaves the gestures and the ring as they are by default, Return
+  or key an action and leaves the gestures and every ring as they are by default, Return
   presses "Cancel". Importing itself starts nothing.
 - An import replaces the kinds of settings the file holds and leaves the others as they
   are; a file made by "Export…" holds them all. (A file from a version before the

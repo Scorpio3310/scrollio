@@ -51,7 +51,9 @@
 //  1e300 is a wheel that does nothing in a setting no pane shows. What a file can make the app do is therefore exactly
 //  what `Contents` holds, and the sheet shown before the import is drawn from it
 //  (`launchActions`: every app, file and script a button, a key or a place of the
-//  Shortcut Ring would open or run).
+//  Shortcut Ring would open or run). An app's own Shortcut Ring, stored inside the app's
+//  entry, is checked and shown as the general ring is (`applicationRing`,
+//  `applicationRings`).
 //
 //  Importing (`apply`): the settings come in group by group (OptionsGroup). A group the
 //  file holds replaces that group as a whole: a name of the group that the file does not
@@ -242,12 +244,13 @@ enum SettingsFile {
     struct LaunchAction: Equatable {
         let trigger: RecordedEvent
         let target: OpenTargetPayload
-        /// The app whose own buttons the action is stored with; nil for the buttons of
-        /// every app. (No version runs an app's own buttons yet; they are listed anyway.)
+        /// The app whose own buttons, or whose own Shortcut Ring, the action is stored
+        /// with; nil for the buttons and the ring of every app. (No version runs an app's
+        /// own buttons yet; they are listed anyway.)
         let applicationPath: String?
         /// The place of the Shortcut Ring that holds the action (0 the top one, clockwise);
         /// nil for a button or key. `trigger` means nothing then: a place is chosen in
-        /// the ring, not pressed.
+        /// the ring, not pressed. With `applicationPath`: a place of that app's own ring.
         let ringPlace: Int?
 
         init(trigger: RecordedEvent, target: OpenTargetPayload, applicationPath: String?, ringPlace: Int? = nil) {
@@ -309,30 +312,45 @@ enum SettingsFile {
             return all
         }
 
+        /// The apps of the file that have a Shortcut Ring of their own stored, in use or
+        /// kept for later ("Use the general ring" on), each with its eight places.
+        var applicationRings: [(application: Application, places: [ShortcutRingPlace])] {
+            return (applications ?? []).compactMap { application in
+                application.ring.map { (application, $0.places) }
+            }
+        }
+
         /// Every action of the file that opens an app or a file, or runs a script: of the
-        /// buttons and keys, switched on or off, of each app's own buttons, and of the
-        /// places of the Shortcut Ring.
+        /// buttons and keys, switched on or off, of each app's own buttons, of the
+        /// places of the Shortcut Ring, and of the places of each app's own ring (one
+        /// that is kept for later too: a switch on the app's page brings it into use).
         var launchActions: [LaunchAction] {
             var actions: [LaunchAction] = allBindings.compactMap { entry in
                 entry.binding.openTarget.map {
                     LaunchAction(trigger: entry.binding.triggerEvent, target: $0, applicationPath: entry.application?.path)
                 }
             }
-            for (place, held) in (ring?.places ?? []).enumerated() {
-                guard let target = held.openTarget else { continue }
-                actions.append(LaunchAction(
-                    trigger: held.asBinding().triggerEvent, target: target, applicationPath: nil, ringPlace: place
-                ))
+            let rings: [(path: String?, places: [ShortcutRingPlace])] = [(nil, ring?.places ?? [])]
+                + applicationRings.map { ($0.application.path, $0.places) }
+            for ring in rings {
+                for (place, held) in ring.places.enumerated() {
+                    guard let target = held.openTarget else { continue }
+                    actions.append(LaunchAction(
+                        trigger: held.asBinding().triggerEvent, target: target, applicationPath: ring.path, ringPlace: place
+                    ))
+                }
             }
             return actions
         }
 
         /// The file gives a button or a key an action, or a direction of Gesture
-        /// Navigation (or its click) or a place of the Shortcut Ring another action than
-        /// the default one. The sheet then lists them, and Return does not import.
+        /// Navigation (or its click) or a place of the Shortcut Ring, or of an app's own
+        /// ring, another action than the default one. The sheet then lists them, and
+        /// Return does not import.
         var bringsActions: Bool {
             guard allBindings.isEmpty else { return true }
             if let ring, ring.places != ShortcutRingSettings.default.places { return true }
+            if applicationRings.contains(where: { $0.places != ShortcutRingSettings.default.places }) { return true }
             guard let gesture else { return false }
             let defaults = MouseGestureSettings.default
             return [\MouseGestureSettings.upAction, \.downAction, \.leftAction, \.rightAction, \.clickAction]
@@ -557,7 +575,8 @@ enum SettingsFile {
     /// decoded object would tell the app's observers of a change):
     /// - the numbers of its own scroll settings are brought into range;
     /// - of its own buttons, those that cannot be read or whose action this version does
-    ///   not run are left out, one by one (as a whole they would take the app with them).
+    ///   not run are left out, one by one (as a whole they would take the app with them);
+    /// - its own Shortcut Ring is checked as the ring of every app is (`applicationRing`).
     /// Anything else is left for the decoder to judge. `counts` says what was changed.
     private static func applicationEntry(_ entry: Any, counts: inout EntryCounts) -> Any {
         guard var object = entry as? [String: Any] else { return entry }
@@ -587,6 +606,28 @@ enum SettingsFile {
             }
             buttons["binding"] = kept
             object["buttons"] = buttons
+        }
+        if let ring = object["ring"] {
+            object["ring"] = applicationRing(ring, counts: &counts)
+        }
+        return object
+    }
+
+    /// An app's own Shortcut Ring as it goes to the decoder, checked as the general ring
+    /// is: cut to the eight places before a single one is decoded, and a place whose
+    /// action this version does not run comes in empty and is counted. What is no ring (no
+    /// object, no list of places) is left out and counted as an entry that cannot be
+    /// read: the app then uses the general ring.
+    private static func applicationRing(_ value: Any, counts: inout EntryCounts) -> Any? {
+        guard var object = value as? [String: Any], let places = object["places"] as? [Any] else {
+            counts.unreadable += 1
+            return nil
+        }
+        object["places"] = places.prefix(ShortcutRingSettings.placeCount).map { entry -> Any in
+            // (A place that cannot be read is an empty one for the decoder, as at launch.)
+            guard let place: ShortcutRingPlace = decoded(entry), !place.isEmpty, !place.runs else { return entry }
+            counts.unknownActions += 1
+            return ["action": ""]
         }
         return object
     }

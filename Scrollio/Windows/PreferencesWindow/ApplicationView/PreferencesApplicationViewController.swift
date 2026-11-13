@@ -621,12 +621,14 @@ struct ApplicationSettings {
     let inherit: Bool
     let scroll: OPTIONS_SCROLL_DEFAULT
     let buttons: OPTIONS_BUTTONS_DEFAULT?
+    let ring: ApplicationRing?
 
     init(of application: Application) {
         displayName = application.displayName
         inherit = application.inherit
         scroll = application.scroll
         buttons = application.buttons
+        ring = application.ring
     }
 
     func apply(to application: Application) {
@@ -634,6 +636,7 @@ struct ApplicationSettings {
         application.inherit = inherit
         application.scroll = scroll
         application.buttons = buttons
+        application.ring = ring
     }
 }
 

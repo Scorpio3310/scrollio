@@ -8,12 +8,17 @@
 //  (icon, name, where it is) and "Use settings from Scrolling"; under it the Scrolling
 //  settings themselves, editing the app's own options (PreferencesScrollingViewController
 //  with a target application: no preview, dimmed while the app uses the Scrolling settings,
-//  its own "Reset to Defaults").
+//  its own "Reset to Defaults"). At the end "Shortcut Ring": the switch "Use the general
+//  ring" and, while it is off, the app's own ring: the drawing and the eight rows of the
+//  Shortcut Ring pane (RingPreferencesViewController with this app), which open while the
+//  app is in front. What opens the ring and its freeze switch are the same for every app
+//  and stay in the Shortcut Ring pane.
 //
-//  The page only edits the app it was opened for: `inherit` and its scroll options. When
-//  the switch goes off while its own options were never edited, they become a copy of the
-//  Scrolling settings first. The Apps pane puts the page in place of the list and takes
-//  it away again.
+//  The page only edits the app it was opened for: `inherit` and its scroll options, and
+//  its `ring`. When the switch goes off while its own options were never edited, they
+//  become a copy of the Scrolling settings first; when "Use the general ring" goes off
+//  for an app that never had a ring, its ring starts as a copy of the general one. The
+//  Apps pane puts the page in place of the list and takes it away again.
 //
 
 import Cocoa
@@ -24,6 +29,7 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
     enum Identifier {
         static let header = NSUserInterfaceItemIdentifier("apps-detail-header")
         static let inherit = NSUserInterfaceItemIdentifier("apps-detail-inherit")
+        static let generalRing = NSUserInterfaceItemIdentifier("apps-detail-general-ring")
     }
 
     /// As wide as the Scrolling settings under the header.
@@ -45,8 +51,18 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
     private(set) var inheritRow: PreferencesSwitchRow!
     private(set) var headerSection: PreferencesGroupSection!
     private(set) var scrollingController: PreferencesScrollingViewController!
+    /// "Shortcut Ring": the box with "Use the general ring".
+    private(set) var ringSection: PreferencesGroupSection!
+    private(set) var generalRingRow: PreferencesSwitchRow!
+    /// The app's own ring, its drawing and its eight rows: there only while "Use the
+    /// general ring" is off.
+    private(set) var ringController: RingPreferencesViewController?
+    /// The page ends under the switch's box (no own ring), or under the own ring.
+    private var endsUnderRingSection: NSLayoutConstraint!
+    private var ownRingConstraints: [NSLayoutConstraint] = []
 
     var inheritSwitch: NSSwitch { return inheritRow.toggle }
+    var generalRingSwitch: NSSwitch { return generalRingRow.toggle }
 
     // MARK: - Lifecycle
 
@@ -101,10 +117,28 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
         let settings = scrolling.view
         settings.translatesAutoresizingMaskIntoConstraints = false
 
-        for view in [header, settings] {
+        // The Shortcut Ring of this app: the general one, or its own.
+        let generalRing = PreferencesSwitchRow(
+            title: text("apps-detail-ring-general"),
+            explanation: nil,
+            target: self,
+            action: #selector(generalRingClick(_:))
+        )
+        generalRing.toggle.identifier = Identifier.generalRing
+        generalRing.reservedExplanations = [true, false].map { Self.generalRingExplanation(on: $0, name: name) }
+        generalRingRow = generalRing
+        let ring = PreferencesGroupSection(
+            title: text("ring-tab-title"),
+            width: PreferencesGroupedForm.boxWidth(paneWidth: Self.paneWidth),
+            rows: [generalRing]
+        )
+        ringSection = ring
+
+        for view in [header, settings, ring] {
             root.addSubview(view)
         }
         let margin = PreferencesGroupedForm.margin
+        endsUnderRingSection = ring.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -margin)
         NSLayoutConstraint.activate([
             // The app's box begins where the first box of every pane does.
             header.topAnchor.constraint(equalTo: root.topAnchor, constant: margin),
@@ -115,7 +149,11 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
             settings.topAnchor.constraint(equalTo: header.bottomAnchor),
             settings.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             settings.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            settings.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            // Their margin under "Reset to Defaults" is the space above the ring's title.
+            ring.topAnchor.constraint(equalTo: settings.bottomAnchor),
+            ring.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: margin),
+            ring.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -margin),
+            endsUnderRingSection,
         ])
 
         view = root
@@ -136,6 +174,49 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
         inheritRow.isOn = application.inherit
         inheritRow.explanation = Self.inheritExplanation(on: application.inherit, name: application.getName())
         scrollingController.syncViewWithOptions()
+        let usesGeneralRing = application.usesGeneralRing
+        generalRingRow.isOn = usesGeneralRing
+        generalRingRow.explanation = Self.generalRingExplanation(on: usesGeneralRing, name: application.getName())
+        showOwnRing(!usesGeneralRing)
+        ringController?.reload()
+    }
+
+    /// "While Safari is in front, the general ring opens." / "While Safari is in front,
+    /// the ring below opens." (The app in front decides, not the one under the pointer.)
+    static func generalRingExplanation(on: Bool, name: String) -> String {
+        let format = NSLocalizedString(on ? "apps-detail-ring-general-on" : "apps-detail-ring-general-off", comment: "")
+        return String(format: format, name)
+    }
+
+    /// Puts the app's own ring (the drawing and the eight rows) under the switch's box, or
+    /// takes it away again: it is there exactly while "Use the general ring" is off.
+    private func showOwnRing(_ shows: Bool) {
+        guard shows != (ringController != nil) else { return }
+        if let ring = ringController {
+            ring.endEditing()
+            NSLayoutConstraint.deactivate(ownRingConstraints)
+            ownRingConstraints = []
+            ring.view.removeFromSuperview()
+            ring.removeFromParent()
+            ringController = nil
+            endsUnderRingSection.isActive = true
+            return
+        }
+        let ring = RingPreferencesViewController(application: application)
+        addChild(ring)
+        let ringView = ring.view
+        ringView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(ringView)
+        endsUnderRingSection.isActive = false
+        // The ring's view brings its own margins, as the Scrolling settings do.
+        ownRingConstraints = [
+            ringView.topAnchor.constraint(equalTo: ringSection.bottomAnchor),
+            ringView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            ringView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            ringView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ]
+        NSLayoutConstraint.activate(ownRingConstraints)
+        ringController = ring
     }
 
     /// "Changes under Scrolling apply to Safari too." / "Safari keeps its own settings below."
@@ -160,6 +241,15 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
         application.setUsesScrollingSettings(sender.state == .on, scrolling: Options.shared.scroll)
         syncViewWithOptions()
         onInheritChange?()
+    }
+
+    /// On: the ring of the Shortcut Ring pane opens while the app is in front; the app's
+    /// own ring stays stored for later. Off: the app's own ring, which starts as a copy of
+    /// the general ring as it is now when the app never had one.
+    @objc func generalRingClick(_ sender: NSSwitch) {
+        application.setUsesGeneralRing(sender.state == .on, general: Options.shared.ring)
+        syncViewWithOptions()
+        onHeightChange?()
     }
 
     /// Esc, when a control of the page passes it on as a command.

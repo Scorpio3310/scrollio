@@ -7827,6 +7827,90 @@
           }
         }
       }
+    },
+    "general-settings-import-app-rings-one": {
+      "comment": "Import sheet: one app of the file has a Shortcut Ring of its own in use",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 app with a Shortcut Ring of its own"
+          }
+        }
+      }
+    },
+    "general-settings-import-app-rings-other": {
+      "comment": "Import sheet: %d apps of the file have a Shortcut Ring of their own in use",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d apps with a Shortcut Ring of their own"
+          }
+        }
+      }
+    },
+    "general-settings-import-ring-trigger-app": {
+      "comment": "Import sheet: a place of an app's own ring in the box of actions that open or run something, %1$@ = the app (\"Notes\"), %2$@ = the place (\"Top right\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shortcut Ring in %1$@, %2$@"
+          }
+        }
+      }
+    },
+    "general-settings-import-ring-line-app": {
+      "comment": "Import sheet: one place of an app's own ring, %1$@ = the app (\"Notes\"), %2$@ = the place (\"Top right\"), %3$@ = its action",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ring in %1$@, %2$@: %3$@"
+          }
+        }
+      }
+    },
+    "apps-detail-ring-general": {
+      "comment": "App page, section \"Shortcut Ring\": the switch; on, the app has no ring of its own",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the general ring"
+          }
+        }
+      }
+    },
+    "apps-detail-ring-general-on": {
+      "comment": "App page: explanation while \"Use the general ring\" is on; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "While %@ is in front, the general ring opens."
+          }
+        }
+      }
+    },
+    "apps-detail-ring-general-off": {
+      "comment": "App page: explanation while \"Use the general ring\" is off; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "While %@ is in front, the ring below opens."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

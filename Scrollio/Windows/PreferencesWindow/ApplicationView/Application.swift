@@ -28,6 +28,12 @@ class Application: Codable, Equatable {
     var buttons: OPTIONS_BUTTONS_DEFAULT? {
         didSet { Options.shared.markChanged(.application) }
     }
+    // The app's own Shortcut Ring and its "Use the general ring" (`ApplicationRing.swift`).
+    // Nil: the app never had a ring of its own and uses the general one; nothing is
+    // stored for it then, so an entry from before stays as it was.
+    var ring: ApplicationRing? {
+        didSet { Options.shared.markChanged(.application) }
+    }
     // 初始化
     init(path: String) {
         self.path = path
@@ -52,6 +58,9 @@ class Application: Codable, Equatable {
         }
         // 按钮绑定
         buttons = try container.decodeIfPresent(OPTIONS_BUTTONS_DEFAULT.self, forKey: .buttons)
+        // A ring that cannot be read does not take the app's entry with it: the app then
+        // uses the general ring.
+        ring = (try? container.decodeIfPresent(ApplicationRing.self, forKey: .ring)) ?? nil
     }
     
     // Equatable

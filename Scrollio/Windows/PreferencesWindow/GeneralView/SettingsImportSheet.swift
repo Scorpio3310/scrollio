@@ -29,7 +29,8 @@
 //  any key combination, "Move to Trash" on ⇧E is not what anybody wants to find out by
 //  typing. Above that list, a box of its own for the actions that open an app or a file
 //  or run a script (a button's, a key's, or a place's of the Shortcut Ring, named by
-//  where it is): how many, and every one with its whole path and arguments.
+//  where it is, and for an app's own ring by the app too): how many, and every one with
+//  its whole path and arguments.
 //
 //  "Import" is the button Return presses only when the file gives no button or key an
 //  action and leaves the gestures and the ring as they are by default; otherwise Return is "Cancel"
@@ -94,6 +95,14 @@ enum SettingsFileText {
                 symbolName: "square.grid.2x2",
                 text: counted(contents.applications?.count ?? 0, "general-settings-import-apps")
             ))
+            // Apps whose own Shortcut Ring is in use ("Use the general ring" off).
+            let ownRings = (contents.applications ?? []).filter { !$0.usesGeneralRing }.count
+            if ownRings > 0 {
+                items.append(Item(
+                    symbolName: SystemShortcut.shortcutRing.symbolName,
+                    text: counted(ownRings, "general-settings-import-app-rings")
+                ))
+            }
             if contents.allowlist == true {
                 items.append(Item(symbolName: "line.3.horizontal.decrease", text: text("general-settings-import-apps-limit")))
             }
@@ -167,9 +176,14 @@ enum SettingsFileText {
         case .file: key = "general-settings-import-launch-file"
         case .script: key = "general-settings-import-launch-script"
         }
-        // A place of the Shortcut Ring is named by where it is ("Shortcut Ring, Top right").
-        let trigger = action.ringPlace.map {
-            String(format: text("general-settings-import-ring-trigger"), text(ShortcutRingPlaceName.key(of: $0)))
+        // A place of the Shortcut Ring is named by where it is ("Shortcut Ring, Top right"),
+        // one of an app's own ring with the app ("Shortcut Ring in Notes, Top right").
+        let trigger = action.ringPlace.map { place -> String in
+            let name = text(ShortcutRingPlaceName.key(of: place))
+            guard let path = action.applicationPath else {
+                return String(format: text("general-settings-import-ring-trigger"), name)
+            }
+            return String(format: text("general-settings-import-ring-trigger-app"), fileName(ofApplicationAt: path), name)
         } ?? ButtonTriggerNaming.title(for: action.trigger, logitech: logitech)
         return String(format: text(key), trigger, target)
     }
@@ -207,8 +221,14 @@ enum SettingsFileText {
         if let name = application.displayName, !name.isEmpty {
             return visible(name)
         }
-        let file = ((application.path as NSString).lastPathComponent as NSString).deletingPathExtension
-        return visible(file.isEmpty ? application.path : file)
+        return fileName(ofApplicationAt: application.path)
+    }
+
+    /// An app by its file's name ("Notes" for /Applications/Notes.app), the whole path
+    /// when there is none.
+    static func fileName(ofApplicationAt path: String) -> String {
+        let file = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
+        return visible(file.isEmpty ? path : file)
     }
 
     /// One line per direction of Gesture Navigation (and its click) whose action is not
@@ -225,17 +245,31 @@ enum SettingsFileText {
     }
 
     /// One line per place of the Shortcut Ring whose action is not the default one: "Ring
-    /// Top right: Paste". None when the file leaves the ring as a new one is.
+    /// Top right: Paste". None when the file leaves the ring as a new one is. Then the
+    /// same for each app's own ring (one kept for later too), with the app: "Ring in
+    /// Notes, Top right: Paste".
     static func ringLines(of contents: SettingsFile.Contents) -> [String] {
-        guard let ring = contents.ring else { return [] }
         let defaults = ShortcutRingSettings.default
-        return ring.places.indices.compactMap { index in
-            guard ring[index] != defaults[index] else { return nil }
-            // As a button's action is named: a listed action, a key combination as its
-            // keys, "Open App or File: <file>" (its whole path is in the box above).
-            let action = ring[index].runs ? actionName(of: ring[index].asBinding()) : text("ring-action-none")
-            return String(format: text("general-settings-import-ring-line"), text(ShortcutRingPlaceName.key(of: index)), action)
+        // As a button's action is named: a listed action, a key combination as its
+        // keys, "Open App or File: <file>" (its whole path is in the box above).
+        func action(_ place: ShortcutRingPlace) -> String {
+            return place.runs ? actionName(of: place.asBinding()) : text("ring-action-none")
         }
+        var lines: [String] = (contents.ring?.places ?? []).enumerated().compactMap { index, place in
+            guard place != defaults[index] else { return nil }
+            return String(format: text("general-settings-import-ring-line"), text(ShortcutRingPlaceName.key(of: index)), action(place))
+        }
+        for ring in contents.applicationRings {
+            let name = name(of: ring.application)
+            lines += ring.places.enumerated().compactMap { index, place in
+                guard place != defaults[index] else { return nil }
+                return String(
+                    format: text("general-settings-import-ring-line-app"),
+                    name, text(ShortcutRingPlaceName.key(of: index)), action(place)
+                )
+            }
+        }
+        return lines
     }
 
     /// "3 values were out of range and were corrected."

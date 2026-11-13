@@ -281,8 +281,9 @@ struct ShortcutRingSettings: Codable, Equatable {
         case places, freezePointer
     }
 
-    /// One place that may not be readable: empty instead of failing the ring.
-    private struct ReadablePlace: Decodable {
+    /// One place that may not be readable: empty instead of failing the ring. (An app's
+    /// own ring reads its places the same way, `ApplicationRing`.)
+    struct ReadablePlace: Decodable {
         let place: ShortcutRingPlace
 
         init(from decoder: Decoder) throws {
