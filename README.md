@@ -21,6 +21,9 @@ Download the latest disk image from the
 to check it, is under [Download and first launch](#-download-and-first-launch). Or
 [build it from source](docs/development.md#build-from-source).
 
+The website, [scrollio.klemenc.dev](https://scrollio.klemenc.dev/), shows Scrollio at a
+glance, with the features, help and what is new.
+
 ---
 
 ## ✨ Features
@@ -153,6 +156,8 @@ of scrolling and the menu bar icon. The details are in `docs/`:
 - [Building and releasing](docs/development.md): building from source, the project's
   layout and how a release is made.
 - [CHANGELOG.md](CHANGELOG.md): what changed in each version.
+- [scrollio.klemenc.dev](https://scrollio.klemenc.dev/): the website, with the features
+  at a glance, help, what is new and the privacy policy.
 
 ---
 
