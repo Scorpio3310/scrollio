@@ -40,7 +40,7 @@ final class InertPointerMotionTap: PointerMotionTap {
 }
 
 /// The pointer-movement tap is made on demand: by the first gesture hold that reads pointer
-/// movement, a synthetic mouse drag or a virtual modifier. Between those it is paused. When
+/// movement, a Shortcut Ring that is held open, a synthetic mouse drag or a virtual modifier. Between those it is paused. When
 /// the cores stop (AppRunController) it is released and the next use makes a new one; a
 /// tap that is off right after it was started is replaced once (`startRunningMotionTap`).
 final class MouseInteractionSessionController {
@@ -76,6 +76,8 @@ final class MouseInteractionSessionController {
     /// Only gesture holds that read pointer movement need the tap; a hold the mouse
     /// tracks itself (raw XY over HID++) does not.
     private var hasActiveMouseGestures: Bool { InputProcessor.shared.hasPointerTrackedMouseGestureSessions }
+    /// A Shortcut Ring that is held open reads the hand's movement, as a gesture hold does.
+    private var hasHeldShortcutRing: Bool { InputProcessor.shared.hasHeldShortcutRing }
 
     init(
         startMotionTap: (() -> Void)? = nil,
@@ -169,6 +171,7 @@ final class MouseInteractionSessionController {
     /// released.
     func releaseMotionTap() {
         if InputProcessor.shared.hasActiveMouseGestureSessions
+            || hasHeldShortcutRing
             || hasActiveVirtualModifiers
             || !activeSessions.isEmpty
             || MouseGesturePointerLock.shared.isLocked {
@@ -253,7 +256,7 @@ final class MouseInteractionSessionController {
     }
 
     private var shouldKeepMotionTapRunning: Bool {
-        !activeSessions.isEmpty || hasActiveVirtualModifiers || hasActiveMouseGestures
+        !activeSessions.isEmpty || hasActiveVirtualModifiers || hasActiveMouseGestures || hasHeldShortcutRing
     }
 
     private func rewrite(_ event: CGEvent, as target: SyntheticMouseTarget) {
@@ -402,11 +405,10 @@ final class MouseInteractionSessionController {
             return Unmanaged.passUnretained(event)
         }
 
-        InputProcessor.shared.handleMouseGestureMovement(
-            deltaX: CGFloat(event.getDoubleValueField(.mouseEventDeltaX)),
-            deltaY: CGFloat(event.getDoubleValueField(.mouseEventDeltaY)),
-            location: event.location
-        )
+        let deltaX = CGFloat(event.getDoubleValueField(.mouseEventDeltaX))
+        let deltaY = CGFloat(event.getDoubleValueField(.mouseEventDeltaY))
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: deltaX, deltaY: deltaY, location: event.location)
+        InputProcessor.shared.handleShortcutRingMovement(deltaX: deltaX, deltaY: deltaY, location: event.location)
         MouseGesturePointerLock.shared.constrain(event)
         rewriteMouseInteractionEvent(event)
         return Unmanaged.passUnretained(event)

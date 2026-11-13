@@ -2672,11 +2672,13 @@ final class PreferencesButtonsTests: XCTestCase {
             // longer offered: they left the mouse changed after Pause and Quit.
             "Next Pointer Speed",
         ])
-        // The last group: Gesture Navigation, its settings (hidden: not its action), Open
-        // App or File…, Keyboard Shortcut….
-        let last = Array(menu.items.suffix(4))
-        XCTAssertTrue(menu.items[menu.items.count - 5].isSeparatorItem)
-        XCTAssertEqual(last.map(\.title), ["Gesture Navigation", "Show Gesture Settings", "Open App or File…", "Keyboard Shortcut…"])
+        // The last group: Gesture Navigation, its settings (hidden: not its action), the
+        // Shortcut Ring, Open App or File…, Keyboard Shortcut….
+        let last = Array(menu.items.suffix(5))
+        XCTAssertTrue(menu.items[menu.items.count - 6].isSeparatorItem)
+        XCTAssertEqual(last.map(\.title), [
+            "Gesture Navigation", "Show Gesture Settings", "Shortcut Ring", "Open App or File…", "Keyboard Shortcut…",
+        ])
         XCTAssertTrue(last[1].isHidden)
 
         // A standard button gets no Logitech actions.

@@ -60,8 +60,10 @@ struct LogiButtonStateTracker {
 /// - **Button actions** (`LogiButtonAction`: SmartShift toggle, pointer speed up and down,
 ///   Easy-Switch, next pointer speed). The user pressed a button for exactly that, so they
 ///   write whatever the switch says; each write is one line in the system log.
-/// - **A haptic pulse** for a gesture cue, and switching the haptics on for it after a
-///   fresh read of their state, unless the user switched them off (`LogiGestureController`).
+/// - **A haptic pulse** for a gesture cue or for the Shortcut Ring (a place lights, an
+///   action runs; the ring asks for the same two cues, for a button that arrived over
+///   HID++), and switching the haptics on for it after a fresh read of their state, unless
+///   the user switched them off (`LogiGestureController`).
 /// - **The diagnostics window** writes in Debug builds only (`diagnosticsMayWrite`).
 class LogiDeviceSession {
 

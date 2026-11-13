@@ -8,6 +8,19 @@ it for the people who use the app, and give the version its part before you tag 
 `## Unreleased` collects what the next version brings; it becomes that version's part
 (the heading gets the version) before the tag.
 
+## Unreleased
+
+- **Shortcut Ring**: a ring of eight shortcuts that opens around the pointer, for any
+  mouse. Give a mouse button, a Logitech button such as the MX Master 4's thumb panel, or
+  a key combination the new action "Shortcut Ring" (Buttons, or "Set Up…" in the new
+  Shortcut Ring pane). Hold it and move towards a shortcut, then let go; or press it and
+  let go, and click a shortcut in the ring that stays open. The app you are in keeps the
+  keyboard, so Copy and Paste go where you were. The pane sets what the eight places
+  hold: a listed shortcut, a key combination you record, or an app or a file to open;
+  a settings file carries it. If Logi Options+ manages your mouse, let a button
+  send a keystroke there and record that keystroke as the ring's button. An MX Master 4
+  whose thumb panel Scrollio reads pulses when a shortcut lights and when it runs.
+
 ## 1.0.4
 
 - **The MX Master 4 is drawn as it is.** Its picture in Settings is redrawn from above,

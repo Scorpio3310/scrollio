@@ -875,6 +875,29 @@ class PreferencesButtonsViewController: NSViewController {
         return true
     }
 
+    // MARK: - The Shortcut Ring
+
+    /// The button or key that opens the Shortcut Ring (an enabled binding of any kind of
+    /// trigger): the first of several.
+    var ringTriggerBinding: ButtonBinding? {
+        return buttonBindings.first {
+            $0.isEnabled && $0.systemShortcutName == SystemShortcut.shortcutRing.identifier
+        }
+    }
+
+    /// Shortcut Ring › Change: selects the row of what opens the ring, as
+    /// `selectGestureButton` does for Gestures. False when nothing opens it.
+    @discardableResult
+    func selectRingTrigger() -> Bool {
+        _ = view
+        reload()
+        guard let binding = ringTriggerBinding else { return false }
+        list.select(rowID(forBinding: binding.id))
+        focusList()
+        updateHeader()
+        return true
+    }
+
     /// "Show Gesture Settings": the Gestures pane.
     func showGesturesPane() {
         let identifier = GesturesPreferencesViewController.tabIdentifier

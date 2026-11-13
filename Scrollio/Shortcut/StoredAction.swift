@@ -32,6 +32,10 @@ enum StoredAction {
         if name == SystemShortcut.mouseGestureNavigation.identifier {
             return true
         }
+        // Nor is the Shortcut Ring: its trigger opens the ring.
+        if name == SystemShortcut.shortcutRing.identifier {
+            return true
+        }
         var prepared = binding
         prepared.prepareCustomCache()
         return runs(ShortcutExecutor.shared.resolveAction(named: name, binding: prepared), named: name)

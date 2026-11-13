@@ -211,8 +211,9 @@ See `.agents/docs/code-map.md` for the map. The rules:
 - Diagnostics go to the system log (`ScrollSystemLog`, category `scroll`; `LogiSystemLog`,
   category `logi`; `AppSystemLog`, category `app`: the app's own health: starts and stops,
   event taps that macOS turned off or that could not be created, recoveries): state
-  changes, decisions and one line per scroll (or per roll of the thumb wheel, or per hold
-  of a gesture button the mouse tracks), never a line per wheel, pointer or key event, and
+  changes, decisions and one line per scroll (or per roll of the thumb wheel, per hold
+  of a gesture button the mouse tracks, or two or three per use of the Shortcut Ring),
+  never a line per wheel, pointer or key event, and
   no string built per event. Nothing a user types, and no path of a user's file, goes
   into a log. Use these, not `NSLog`: only they write to the app's subsystem.
   Reading it: `docs/troubleshooting.md`, "Diagnostics".
@@ -224,8 +225,8 @@ See `.agents/docs/code-map.md` for the map. The rules:
   (`Options.shared.logiMouseManaged`) is on, the user set that value and the value
   freshly read from the mouse differs. Apart from settings: a button is diverted for a
   binding and while a button is recorded, and given back when Scrollio pauses or quits; a
-  Logitech button action writes when its button is pressed; a gesture cue plays a pulse
-  and may switch the haptics on. Reading needs no switch. The header of
+  Logitech button action writes when its button is pressed; a cue of a gesture or of the
+  Shortcut Ring plays a pulse and may switch the haptics on. Reading needs no switch. The header of
   `LogiDeviceSession` has the whole list; the Logitech Diagnostics window writes in debug
   builds only. A new kind of write needs a line in that header and in
   `docs/features.md`, "Logitech MX mice".
@@ -236,7 +237,8 @@ See `.agents/docs/code-map.md` for the map. The rules:
   switching, lost Accessibility access, "Pause Scrollio", quit. An active event tap that
   is not serviced freezes input system-wide: never leave one installed while the cores
   count as stopped, and never block the main thread while one runs. The pointer-movement
-  tap of gesture holds is made on demand while the cores run; their stop releases it.
+  tap of gesture holds (and of a Shortcut Ring that is held open) is made on demand
+  while the cores run; their stop releases it.
   ButtonCore's keys tap too: it exists only while a key is bound, a button holds a
   modifier or a key-started action is held.
 
@@ -247,7 +249,7 @@ that must stay separate:
 
 | File | Strings | Keys |
 | --- | --- | --- |
-| `Scrollio/Localizable.xcstrings` | Used from Swift with `NSLocalizedString` | Readable phrases (older keys) or identifiers: those of `SystemShortcut.Shortcut`, and by area `general-*`, `scrolling-*`, `buttons-*`, `mouse-*`, `gesture-*` / `gestures-*`, `apps-*`, `about-*`, `preferences-*`, `main-menu-*`, `status-menu-*` / `status-item-*`, `intro-*`, `toast-*` |
+| `Scrollio/Localizable.xcstrings` | Used from Swift with `NSLocalizedString` | Readable phrases (older keys) or identifiers: those of `SystemShortcut.Shortcut`, and by area `general-*`, `scrolling-*`, `buttons-*`, `mouse-*`, `gesture-*` / `gestures-*`, `ring-*`, `apps-*`, `about-*`, `preferences-*`, `main-menu-*`, `status-menu-*` / `status-item-*`, `intro-*`, `toast-*` |
 | `Scrollio/mul.lproj/Main.xcstrings` | The storyboard (`Scrollio/Base.lproj/Main.storyboard`) | Interface Builder object ids (`AYu-sK-qS6.title`) |
 
 - Every user-visible string is localized. In Swift use `NSLocalizedString(_:comment:)`,
@@ -269,7 +271,7 @@ that must stay separate:
 - `PreferencesLocalizationTests` checks, for each locale in `locales` (`["en"]`), that
   the keys of the preference panes, the sidebar, the menus and the Welcome Guide exist,
   are not empty and are not shown as raw keys (one array per area: `generalKeys`,
-  `scrollingKeys`, `buttonsKeys`, `gesturesKeys`, `mouseKeys`, `appsKeys`, `windowKeys`,
+  `scrollingKeys`, `buttonsKeys`, `gesturesKeys`, `ringKeys`, `mouseKeys`, `appsKeys`, `windowKeys`,
   `menuKeys`, `introKeys`), and that each string formatted with `String(format:)` takes
   the arguments its call site passes (`formatArguments`). Add a new key to the array of
   its area, and a formatted one to `formatArguments` too: several keys are built from
@@ -293,6 +295,7 @@ Choose by risk, and run it: reading the code is not verification.
 | App lifecycle (`AppRunController`, `AppDelegate`, status-bar menu) | `AppRunControllerTests`, `StatusMenuTests` | by hand: sleep and wake, another user, Pause / Resume, Accessibility turned off and on |
 | Logi, HID | the `ScrollioTests/Logi*` tests and the boundary lint | real-device tests and the `logi` log, by hand |
 | Preferences panes | the pane's `Preferences*Tests` / `MousePreferencesTests`, `PreferencesWindowTests` | by hand: look at the pane (its render test can draw it); previews stop when it is hidden |
+| The Shortcut Ring (`Scrollio/Ring/`, its hooks in `InputProcessor`) | the classes of `ShortcutRingTests.swift` and `ShortcutRingControllerTests.swift`, `InputProcessorTests`, `PreferencesRingTests` | by hand, on a screen: open it with a button and with a key, both ways of choosing, at a screen edge, over a full-screen app; that the app in front keeps the keyboard (`ShortcutRingRenderTests` only draws it) |
 | UI text | catalogs in sync, `PreferencesLocalizationTests` | long text, dark mode |
 | `scripts/`, licence and notices, `Acknowledgements.txt`, the DGCharts exclusion | `ReleaseReadinessTests`, `bash -n` on the script, `scripts/install.sh --check` | a Release build; `scripts/release.sh --check` when the owner asked (it signs with the Developer ID) |
 | The updater (`Scrollio/Update/`, the Sparkle keys of `Info.plist`, `scripts/release-lib.sh`) | `UpdateCenterTests`, `PreferencesGeneralTests`, `StatusMenuTests`, `MainMenuTests`, `ReleaseReadinessTests` | the library's functions on a copy of a Release build with the "Apple Development" certificate; a real update can only be seen with a released copy and a newer release |

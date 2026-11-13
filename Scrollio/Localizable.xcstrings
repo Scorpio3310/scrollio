@@ -7475,6 +7475,309 @@
           }
         }
       }
+    },
+    "shortcutRing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shortcut Ring"
+          }
+        }
+      }
+    },
+    "ring-menu-tooltip": {
+      "comment": "Action menu: tooltip of Shortcut Ring",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opens a ring of eight shortcuts at the pointer. Hold and move to choose, or press and then click."
+          }
+        }
+      }
+    },
+    "ring-tab-title": {
+      "comment": "Sidebar and window title of the Shortcut Ring pane",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shortcut Ring"
+          }
+        }
+      }
+    },
+    "ring-trigger": {
+      "comment": "Shortcut Ring pane: row title",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Button or key"
+          }
+        }
+      }
+    },
+    "ring-trigger-none": {
+      "comment": "Shortcut Ring pane: under Button or key, nothing bound",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing opens the ring yet. A key combination works too, even one that Logi Options+ sends for a button."
+          }
+        }
+      }
+    },
+    "ring-trigger-bound": {
+      "comment": "Shortcut Ring pane: under Button or key, %@ = the buttons and keys that open the ring (\"Thumb panel and ⌃⌥ Space\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@. A key combination works too, even one that Logi Options+ sends for a button."
+          }
+        }
+      }
+    },
+    "ring-trigger-set-up": {
+      "comment": "Shortcut Ring pane: push button, nothing opens the ring yet",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set Up…"
+          }
+        }
+      }
+    },
+    "ring-trigger-change": {
+      "comment": "Shortcut Ring pane: push button",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change"
+          }
+        }
+      }
+    },
+    "ring-places-header": {
+      "comment": "Shortcut Ring pane: title of the eight places",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shortcuts"
+          }
+        }
+      }
+    },
+    "ring-places-hint": {
+      "comment": "Shortcut Ring pane: under Shortcuts",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold the button and move towards a shortcut, then let go.\nOr press and let go, then click one."
+          }
+        }
+      }
+    },
+    "ring-place-top": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top"
+          }
+        }
+      }
+    },
+    "ring-place-top-right": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top right"
+          }
+        }
+      }
+    },
+    "ring-place-right": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right"
+          }
+        }
+      }
+    },
+    "ring-place-bottom-right": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bottom right"
+          }
+        }
+      }
+    },
+    "ring-place-bottom": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bottom"
+          }
+        }
+      }
+    },
+    "ring-place-bottom-left": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bottom left"
+          }
+        }
+      }
+    },
+    "ring-place-left": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Left"
+          }
+        }
+      }
+    },
+    "ring-place-top-left": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top left"
+          }
+        }
+      }
+    },
+    "ring-action-none": {
+      "comment": "Shortcut Ring pane: a place that holds nothing",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Action"
+          }
+        }
+      }
+    },
+    "ring-preview-description": {
+      "comment": "Shortcut Ring pane: accessibility label of the drawing",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The ring as it opens at the pointer"
+          }
+        }
+      }
+    },
+    "buttons-note-shortcut-ring": {
+      "comment": "Buttons pane: under a button or key with Shortcut Ring",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opens the ring at the pointer. Set its shortcuts under Shortcut Ring."
+          }
+        }
+      }
+    },
+    "general-settings-import-ring": {
+      "comment": "Import sheet: the file holds the ring",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shortcut Ring"
+          }
+        }
+      }
+    },
+    "general-settings-import-ring-line": {
+      "comment": "Import sheet: one place of the ring, %1$@ = the place (\"Top right\"), %2$@ = its action",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ring %1$@: %2$@"
+          }
+        }
+      }
+    },
+    "general-settings-import-ring-trigger": {
+      "comment": "Import sheet: a place of the ring in the box of actions that open or run something, %@ = the place (\"Top right\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shortcut Ring, %@"
+          }
+        }
+      }
+    },
+    "ring-recorder-waiting": {
+      "comment": "Key recorder at a place of the Shortcut Ring: what it waits for",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press a shortcut or a key"
+          }
+        }
+      }
+    },
+    "ring-recorder-refused": {
+      "comment": "Key recorder at a place of the Shortcut Ring: a mouse button or a modifier alone was pressed",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A place takes a shortcut or a key"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

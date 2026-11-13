@@ -76,6 +76,7 @@ struct PreferencesPane: Equatable {
         PreferencesPane(identifier: PANEL_IDENTIFIER.scrolling, symbolName: "arrow.up.and.down", tileColor: Tile.blue, startsGroup: false),
         PreferencesPane(identifier: PANEL_IDENTIFIER.buttons, symbolName: "button.horizontal.top.press.fill", tileColor: Tile.orange, startsGroup: false),
         PreferencesPane(identifier: GesturesPreferencesViewController.tabIdentifier, symbolName: "hand.draw.fill", tileColor: Tile.pink, startsGroup: false),
+        PreferencesPane(identifier: RingPreferencesViewController.tabIdentifier, symbolName: "circle.grid.cross.fill", tileColor: Tile.teal, startsGroup: false),
         PreferencesPane(identifier: MousePreferencesViewController.tabIdentifier, symbolName: "computermouse.fill", tileColor: Tile.gray, startsGroup: false),
         PreferencesPane(identifier: PANEL_IDENTIFIER.application, symbolName: "square.grid.2x2.fill", tileColor: Tile.indigo, startsGroup: true),
         PreferencesPane(identifier: PANEL_IDENTIFIER.general, symbolName: "gearshape.fill", tileColor: Tile.gray, startsGroup: true),
@@ -90,6 +91,7 @@ struct PreferencesPane: Equatable {
         static let blue = NSColor(srgbRed: 0.04, green: 0.48, blue: 1.0, alpha: 1)
         static let orange = NSColor(srgbRed: 1.0, green: 0.58, blue: 0.0, alpha: 1)
         static let pink = NSColor(srgbRed: 1.0, green: 0.22, blue: 0.37, alpha: 1)
+        static let teal = NSColor(srgbRed: 0.19, green: 0.69, blue: 0.78, alpha: 1)
         static let gray = NSColor(srgbRed: 0.55, green: 0.55, blue: 0.58, alpha: 1)
         static let indigo = NSColor(srgbRed: 0.35, green: 0.34, blue: 0.84, alpha: 1)
     }
@@ -100,6 +102,8 @@ struct PreferencesPane: Equatable {
         switch identifier {
         case GesturesPreferencesViewController.tabIdentifier:
             return GesturesPreferencesViewController()
+        case RingPreferencesViewController.tabIdentifier:
+            return RingPreferencesViewController()
         case MousePreferencesViewController.tabIdentifier:
             return MousePreferencesViewController()
         default:

@@ -24,6 +24,8 @@ struct ButtonRowNote: Equatable {
         case gestureNavigation
         /// Gesture Navigation on a key (from before): a key cannot run it.
         case keyGestureNavigation
+        /// The Shortcut Ring: what it holds is under Shortcut Ring.
+        case shortcutRing
         /// A scroll action works while the button is held.
         case holdAction
         /// No action yet.
@@ -53,7 +55,7 @@ struct ButtonRowNote: Equatable {
 
     var tone: Tone {
         switch kind {
-        case .gestureNavigation, .holdAction, .noAction, .extraButton, .defaultAction:
+        case .gestureNavigation, .shortcutRing, .holdAction, .noAction, .extraButton, .defaultAction:
             return .plain
         case .alsoScrollKey, .keyGestureNavigation:
             return .problem
@@ -77,7 +79,7 @@ struct ButtonRowNote: Equatable {
         case .alsoScrollKey: return Self.text("buttons-scroll-key-title")
         case .keyGestureNavigation: return Self.text("buttons-gesture-needs-mouse-button")
         case .capture(let status): return Self.text(status.titleKey)
-        case .gestureNavigation, .holdAction, .noAction, .extraButton, .defaultAction: return text
+        case .gestureNavigation, .shortcutRing, .holdAction, .noAction, .extraButton, .defaultAction: return text
         }
     }
 
@@ -86,7 +88,7 @@ struct ButtonRowNote: Equatable {
         case .alsoScrollKey: return Self.text("buttons-scroll-key-detail")
         case .keyGestureNavigation: return Self.text("buttons-gesture-needs-mouse-button-detail")
         case .capture(let status): return Self.text(status.detailKey)
-        case .gestureNavigation, .holdAction, .noAction, .extraButton, .defaultAction: return ""
+        case .gestureNavigation, .shortcutRing, .holdAction, .noAction, .extraButton, .defaultAction: return ""
         }
     }
 
@@ -164,6 +166,9 @@ struct ButtonRowNote: Equatable {
                     return ButtonRowNote(kind: .keyGestureNavigation, text: text("buttons-note-key-gesture-navigation"))
                 }
                 return ButtonRowNote(kind: .gestureNavigation, text: text("buttons-note-gesture-navigation"))
+            }
+            if shortcut.identifier == SystemShortcut.shortcutRing.identifier {
+                return ButtonRowNote(kind: .shortcutRing, text: text("buttons-note-shortcut-ring"))
             }
             if SystemShortcut.mouseScrollCategory.shortcuts.contains(where: { $0.identifier == shortcut.identifier }) {
                 return ButtonRowNote(kind: .holdAction, text: text("buttons-note-hold-action"))

@@ -58,6 +58,10 @@ struct OptionItem {
         static let Settings = "thumbWheelSettings"
     }
 
+    struct Ring {
+        static let Settings = "shortcutRingSettings"
+    }
+
     struct Application {
         static let Allowlist = "allowlist"
         static let Applications = "applications"
@@ -66,7 +70,7 @@ struct OptionItem {
 
 /// 配置分组: 变更通知与脏组写入的粒度
 enum OptionsGroup: CaseIterable {
-    case general, scroll, buttons, application, gesture, logiWheel, logiMouse, thumbWheel
+    case general, scroll, buttons, application, gesture, logiWheel, logiMouse, thumbWheel, ring
 }
 
 class Options {
@@ -139,6 +143,11 @@ class Options {
     // the scroll engine only; nothing is written to a mouse.
     var thumbWheel = ThumbWheelSettings.default {
         didSet { markChanged(.thumbWheel) }
+    }
+    // What the Shortcut Ring holds: the eight places and their actions (ShortcutRingSettings).
+    // What opens the ring is a binding of Buttons, not a setting of its own.
+    var ring = ShortcutRingSettings.default {
+        didSet { markChanged(.ring) }
     }
     /// "Let Scrollio manage this mouse": the one switch for everything Scrollio writes to a
     /// Logitech mouse (wheel and basic settings). Stored as `logiWheel.managedByScrollio`.
@@ -318,6 +327,8 @@ extension Options {
         logiMouse = Self.decodeLogiMouseSettings(defaults.data(forKey: OptionItem.MouseBasics.Settings))
         // The sideways wheel
         thumbWheel = Self.decodeThumbWheelSettings(defaults.data(forKey: OptionItem.ThumbWheel.Settings))
+        // The Shortcut Ring
+        ring = Self.decodeShortcutRingSettings(defaults.data(forKey: OptionItem.Ring.Settings))
         // What the Scrolling tab can no longer show is brought in line (global and per app),
         // and the keys of retired settings are removed. Still inside the lock: nothing is
         // notified or saved, the next save writes it.
@@ -417,7 +428,23 @@ extension Options {
             } else {
                 AppSystemLog.problem("Settings: the thumb wheel settings could not be written")
             }
+        case .ring:
+            if let data = try? encoder.encode(ring) {
+                defaults.set(data, forKey: OptionItem.Ring.Settings)
+            } else {
+                AppSystemLog.problem("Settings: the Shortcut Ring could not be written")
+            }
         }
+    }
+
+    /// The Shortcut Ring from its stored JSON. Missing or unreadable data gives the default
+    /// ring; a single place that cannot be read is an empty one.
+    static func decodeShortcutRingSettings(_ data: Data?) -> ShortcutRingSettings {
+        guard let data = data,
+              let settings = try? JSONDecoder().decode(ShortcutRingSettings.self, from: data) else {
+            return .default
+        }
+        return settings
     }
 
     /// Logitech basic mouse settings from their stored JSON. Missing or unreadable data gives

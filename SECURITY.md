@@ -72,24 +72,27 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
 
 ## What to know before you rely on it
 
-- **A script a button runs is a program of its own.** A button or key can open an app or
-  a file, or run a script. Scrollio starts the script so that macOS judges it by itself:
+- **A script a button runs is a program of its own.** A button or key, or a place of the
+  Shortcut Ring, can open an app or a file, or run a script. Scrollio starts the script so that macOS judges it by itself:
   it has none of Scrollio's permissions, not its Accessibility access either, and macOS
   asks for the script's own when it needs one. On a macOS without the function for this,
   the script runs as Scrollio's child, with Scrollio's permissions, and the `app` log
   says so.
 - **Scrollio's settings are an ordinary preferences file**
   (`~/Library/Preferences/com.nikklemenc.Scrollio.plist`). Any program that runs as you
-  can change it, and with it what a button opens or runs. What it plants there is then
-  started at a press of that button: as you, like the program that planted it, and
+  can change it, and with it what a button or a place of the Shortcut Ring opens or
+  runs. What it plants there is then started at a press of that button, or when that
+  place is chosen in the open ring: as you, like the program that planted it, and
   without Scrollio's Accessibility access (with the exception named above). Scrollio
   does not check a script before it runs it. A planted binding cannot hang on ordinary
   typing or clicking: a key runs an action only with ⌘, ⌥, ⌃ or ⇧ held or when it is an
-  F-key, and the left and right mouse buttons never do.
+  F-key, and the left and right mouse buttons never do. (The ring opens only at its own
+  button or key, under the same rule; a click then runs only the place it is on.)
 - **A settings file can give a button a script.** General › Settings file › Import…
   takes a JSON file that can hold everything the panes can set: buttons and keys that
   open an app or a file or run a script, that press any key combination, that run a
-  system action such as Move to Trash, or that run a Logitech action. What Scrollio
+  system action such as Move to Trash, or that run a Logitech action; and places of the
+  Shortcut Ring that do the first three. What Scrollio
   does about it:
   - It reads only a regular file of at most 2 MB with at most 1000 buttons and keys and
     1000 apps. It takes only the settings on its list (anything else in the file is
@@ -99,16 +102,17 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
     is what was understood, written by Scrollio's own code.
   - Before anything changes, a sheet shows what the file holds: every button and key
     with what it will do, in the words of the Buttons pane, and every gesture direction
-    whose action is not the default one. For an action that opens or runs something it
+    and place of the Shortcut Ring whose action is not the default one. For an action
+    (of a button, a key or a place of the ring) that opens or runs something it
     also lists the whole path and the arguments, and for an app the identifier by which
     macOS would find it when nothing is at the path. Characters that draw nothing, are
     blank or turn the text around are written out, and a run of them is one short
     mark, so that no part of a path or an argument is out of sight. Letters that look
     like other letters are not told apart: read a path, do not glance at it. Unless the
-    file gives no button or key an action and leaves the gestures at their defaults,
-    Return presses "Cancel".
+    file gives no button or key an action and leaves the gestures and the Shortcut Ring
+    at their defaults, Return presses "Cancel".
   - Importing starts nothing. An imported action runs like any other, at a press of its
-    button or key, under the rule above (a key only with ⌘, ⌥, ⌃ or ⇧ or as an F-key,
+    button or key (or when its place is chosen in the open ring), under the rule above (a key only with ⌘, ⌥, ⌃ or ⇧ or as an F-key,
     never the left or right button), and a script is started as described above.
   - A file cannot switch on "Let Scrollio manage this mouse" or "Open at login", and
     cannot touch the updater's settings: none of them is read from a file. So the

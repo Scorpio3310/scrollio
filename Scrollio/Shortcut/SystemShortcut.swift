@@ -151,6 +151,7 @@ struct SystemShortcut {
                 case "mouseBackClick": return "chevron.backward"
                 case "mouseForwardClick": return "chevron.forward"
                 case "mouseGestureNavigation": return "arrow.up.and.down.and.arrow.left.and.right"
+                case "shortcutRing": return "circle.grid.cross"
                 // Mos 鼠标滚动
                 case "scrollDash": return "speedometer"
                 case "scrollSlow": return "tortoise"
@@ -350,6 +351,7 @@ struct SystemShortcut {
         "mouseLeftClick": mouseLeftClick, "mouseRightClick": mouseRightClick,
         "mouseMiddleClick": mouseMiddleClick, "mouseBackClick": mouseBackClick,
         "mouseForwardClick": mouseForwardClick, "mouseGestureNavigation": mouseGestureNavigation,
+        "shortcutRing": shortcutRing,
         // Mos 鼠标滚动
         "scrollDash": scrollDash,
         "scrollSlow": scrollSlow,
@@ -435,6 +437,17 @@ struct SystemShortcut {
         "mouseGestureNavigation",
         0xFFFB,
         NSEvent.ModifierFlags(rawValue: 0),
+        executionMode: .stateful
+    )
+
+    /// Opens the Shortcut Ring at the pointer (`ShortcutRingController`). Like Gesture
+    /// Navigation it is no key: `InputProcessor` hands the press and the release of its
+    /// trigger to the ring, and the action menu lists it on its own. The same placeholder
+    /// code as Gesture Navigation, told apart by the modifiers' raw value.
+    static let shortcutRing = Shortcut(
+        "shortcutRing",
+        0xFFFB,
+        NSEvent.ModifierFlags(rawValue: 1),
         executionMode: .stateful
     )
 

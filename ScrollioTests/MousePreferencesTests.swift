@@ -1970,7 +1970,9 @@ final class MousePreferencesTabPlacementTests: XCTestCase {
 
         let identifiers = preferences.panes.map(\.identifier)
         let mouse = try XCTUnwrap(identifiers.firstIndex(of: "mouse"))
-        XCTAssertEqual(identifiers[mouse - 1], "gestures")
+        // After what the buttons do with a hold: Gestures, then the Shortcut Ring.
+        XCTAssertEqual(identifiers[mouse - 2], "gestures")
+        XCTAssertEqual(identifiers[mouse - 1], "ring")
         let controller = try XCTUnwrap(preferences.controller(for: "mouse"))
         XCTAssertTrue(controller is MousePreferencesViewController)
         XCTAssertFalse(controller.title?.isEmpty ?? true)

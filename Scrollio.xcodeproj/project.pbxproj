@@ -34,6 +34,10 @@
 		C0DE4EA10000000000000302 /* ScrollioTests/ScrollCoreEnableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE4EA10000000000000301 /* ScrollioTests/ScrollCoreEnableTests.swift */; };
 		C0DE4EA10000000000000202 /* ScrollioTests/LogiDebugPanelTimestampTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE4EA10000000000000201 /* ScrollioTests/LogiDebugPanelTimestampTests.swift */; };
 		C0DE4EA10000000000000102 /* ScrollioTests/UtilsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE4EA10000000000000101 /* ScrollioTests/UtilsTests.swift */; };
+		F1D732CFDB3FB13FFE35F65B /* ScrollioTests/ShortcutRingRenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D632CFDB3FB13FFE35F65B /* ScrollioTests/ShortcutRingRenderTests.swift */; };
+		F1D75851B1B49B311450D9E8 /* ScrollioTests/PreferencesRingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D65851B1B49B311450D9E8 /* ScrollioTests/PreferencesRingTests.swift */; };
+		F1D749635974FA115FE5EBC4 /* ScrollioTests/ShortcutRingControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D649635974FA115FE5EBC4 /* ScrollioTests/ShortcutRingControllerTests.swift */; };
+		F1D7533CA63BB1838C8D2D04 /* ScrollioTests/ShortcutRingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D6533CA63BB1838C8D2D04 /* ScrollioTests/ShortcutRingTests.swift */; };
 		5BA2C1E00000000000000B02 /* ScrollioTests/UpdateCenterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BA2C1E00000000000000B01 /* ScrollioTests/UpdateCenterTests.swift */; };
 		5BA2C1E00000000000000C02 /* ScrollioTests/SettingsFileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BA2C1E00000000000000C01 /* ScrollioTests/SettingsFileTests.swift */; };
 		1A5E00000000000000000502 /* ScrollioTests/MouseGestureInteractiveModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5E00000000000000000501 /* ScrollioTests/MouseGestureInteractiveModeTests.swift */; };
@@ -154,6 +158,10 @@
 		C0DE4EA10000000000000301 /* ScrollioTests/ScrollCoreEnableTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ScrollCoreEnableTests.swift; sourceTree = SOURCE_ROOT; };
 		C0DE4EA10000000000000201 /* ScrollioTests/LogiDebugPanelTimestampTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiDebugPanelTimestampTests.swift; sourceTree = SOURCE_ROOT; };
 		C0DE4EA10000000000000101 /* ScrollioTests/UtilsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/UtilsTests.swift; sourceTree = SOURCE_ROOT; };
+		F1D632CFDB3FB13FFE35F65B /* ScrollioTests/ShortcutRingRenderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ShortcutRingRenderTests.swift; sourceTree = SOURCE_ROOT; };
+		F1D65851B1B49B311450D9E8 /* ScrollioTests/PreferencesRingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/PreferencesRingTests.swift; sourceTree = SOURCE_ROOT; };
+		F1D649635974FA115FE5EBC4 /* ScrollioTests/ShortcutRingControllerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ShortcutRingControllerTests.swift; sourceTree = SOURCE_ROOT; };
+		F1D6533CA63BB1838C8D2D04 /* ScrollioTests/ShortcutRingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ShortcutRingTests.swift; sourceTree = SOURCE_ROOT; };
 		5BA2C1E00000000000000B01 /* ScrollioTests/UpdateCenterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/UpdateCenterTests.swift; sourceTree = SOURCE_ROOT; };
 		5BA2C1E00000000000000C01 /* ScrollioTests/SettingsFileTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/SettingsFileTests.swift; sourceTree = SOURCE_ROOT; };
 		1A5E00000000000000000501 /* ScrollioTests/MouseGestureInteractiveModeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/MouseGestureInteractiveModeTests.swift; sourceTree = SOURCE_ROOT; };
@@ -309,6 +317,10 @@
 				C0DE4EA10000000000000301 /* ScrollioTests/ScrollCoreEnableTests.swift */,
 				C0DE4EA10000000000000201 /* ScrollioTests/LogiDebugPanelTimestampTests.swift */,
 				C0DE4EA10000000000000101 /* ScrollioTests/UtilsTests.swift */,
+				F1D632CFDB3FB13FFE35F65B /* ScrollioTests/ShortcutRingRenderTests.swift */,
+				F1D65851B1B49B311450D9E8 /* ScrollioTests/PreferencesRingTests.swift */,
+				F1D649635974FA115FE5EBC4 /* ScrollioTests/ShortcutRingControllerTests.swift */,
+				F1D6533CA63BB1838C8D2D04 /* ScrollioTests/ShortcutRingTests.swift */,
 				5BA2C1E00000000000000B01 /* ScrollioTests/UpdateCenterTests.swift */,
 				5BA2C1E00000000000000C01 /* ScrollioTests/SettingsFileTests.swift */,
 				1A5E00000000000000000501 /* ScrollioTests/MouseGestureInteractiveModeTests.swift */,
@@ -562,6 +574,10 @@
 				C0DE4EA10000000000000302 /* ScrollioTests/ScrollCoreEnableTests.swift in Sources */,
 				C0DE4EA10000000000000202 /* ScrollioTests/LogiDebugPanelTimestampTests.swift in Sources */,
 				C0DE4EA10000000000000102 /* ScrollioTests/UtilsTests.swift in Sources */,
+				F1D732CFDB3FB13FFE35F65B /* ScrollioTests/ShortcutRingRenderTests.swift in Sources */,
+				F1D75851B1B49B311450D9E8 /* ScrollioTests/PreferencesRingTests.swift in Sources */,
+				F1D749635974FA115FE5EBC4 /* ScrollioTests/ShortcutRingControllerTests.swift in Sources */,
+				F1D7533CA63BB1838C8D2D04 /* ScrollioTests/ShortcutRingTests.swift in Sources */,
 				5BA2C1E00000000000000B02 /* ScrollioTests/UpdateCenterTests.swift in Sources */,
 				5BA2C1E00000000000000C02 /* ScrollioTests/SettingsFileTests.swift in Sources */,
 				1A5E00000000000000000502 /* ScrollioTests/MouseGestureInteractiveModeTests.swift in Sources */,
