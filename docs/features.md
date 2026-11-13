@@ -42,6 +42,11 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   button.
 - With a Logitech MX Master, the mouse can track the gesture itself (Beta), and an MX
   Master 4 can pulse when a gesture locks in.
+- "Reset to Defaults" at the bottom of the Gestures pane puts every gesture setting back
+  to what a new installation has: the mode, the action of each direction and of the
+  click, and the pane's switches and swipe speed. The button to hold stays as it is. The
+  reset can be taken back: for a few seconds the button reads "Undo Reset" (Edit › Undo
+  does the same).
 
 ## Shortcut Ring
 
@@ -79,6 +84,10 @@ nothing opens the ring until you do. The pane also sets what the eight places ho
   names what is lit. An empty place is a small faint drop. A new ring has Mission Control on top and Apps at the bottom, the
   desktops on the left and right, Copy and Paste beside Apps, and a screenshot of a
   selection and Show Desktop beside Mission Control.
+- "Reset to Defaults" at the bottom of the Shortcut Ring pane puts that new ring back:
+  its eight places, and "Freeze pointer while the ring is held" off. The button or key
+  that opens the ring stays as it is. The reset can be taken back: for a few seconds
+  the button reads "Undo Reset" (Edit › Undo does the same).
 - How it looks: nine round drops and nothing behind them, one for each place and one in
   the middle. When the ring opens, the places' drops leave the middle one after the
   other, clockwise from the top, and are in their places after a third of a second; you

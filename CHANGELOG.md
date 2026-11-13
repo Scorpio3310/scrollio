@@ -18,6 +18,12 @@ it for the people who use the app, and give the version its part before you tag 
   at once. On macOS 26 and later the drops are Liquid Glass; on macOS 14 and 15 they are
   the blurred material the ring had. With Reduce transparency or Increase contrast they
   are drawn solid, and with Reduce motion the ring simply appears.
+- **"Reset to Defaults" in Shortcut Ring and in Gestures.** Both panes now end with the
+  button the Scrolling pane has. In Shortcut Ring it puts back the ring of a new
+  installation, in Gestures the actions of the directions and of the click and the
+  pane's other settings. The button or key that opens the ring, and the button you hold
+  for a gesture, stay as they are. For a few seconds after a reset the button reads
+  "Undo Reset" and takes it back; Edit › Undo does the same.
 - **Calendar is no longer put on your list of apps.** Version 1.0.4 added Calendar to
   Settings › Apps by itself, with Smooth scrolling off. Scrollio no longer adds an app to
   that list: only you do. If 1.0.4 added Calendar on your Mac and you do not want it,
