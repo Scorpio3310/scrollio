@@ -59,6 +59,11 @@ final class RingHarness {
     private(set) var announced: [String] = []
     /// The lines for the `app` log.
     private(set) var logLines: [String] = []
+    private(set) var problems: [String] = []
+    /// How often the controller started to hear of clicks in other apps, and which of
+    /// those it ended.
+    private(set) var clickWatches = 0
+    private(set) var stoppedClickWatches: [String] = []
     private var scheduled: [() -> Void] = []
 
     init() {
@@ -76,7 +81,14 @@ final class RingHarness {
             announce: { [unowned self] in self.announced.append($0) },
             refreshMotionTap: { [unowned self] in self.motionTapRefreshes += 1 },
             refreshKeyTap: { [unowned self] in self.keyTapRefreshes += 1 },
-            log: { [unowned self] in self.logLines.append($0) }
+            log: { [unowned self] in self.logLines.append($0) },
+            logProblem: { [unowned self] in self.problems.append($0) },
+            watchClicksElsewhere: { [unowned self] _ in
+                self.clickWatches += 1
+                return "watch \(self.clickWatches)"
+            },
+            // (weak: a controller that goes with its harness ends its listening on the way)
+            stopWatchingClicksElsewhere: { [weak self] in self?.stoppedClickWatches.append($0 as? String ?? "") }
         )
         controller = ShortcutRingController(environment: environment, presenter: presenter)
     }
@@ -342,6 +354,46 @@ final class ShortcutRingControllerTests: XCTestCase {
             harness.runScheduled()
             XCTAssertEqual(harness.log, ["hide"], name.rawValue)
         }
+    }
+
+    /// A click that went to another app while the ring stands open (on another screen,
+    /// where the panel is not) closes the ring. Clicks elsewhere are heard of only while a
+    /// ring stands open.
+    func testAClickThatWentToAnotherAppClosesTheRingAndRunsNothing() {
+        controller.triggerPressed(by: RingHarness.button(.down))
+        XCTAssertEqual(harness.clickWatches, 0, "held: nothing listens to the Mac's clicks")
+        controller.clickWentElsewhere()
+        XCTAssertTrue(controller.isOpen, "a click during a hold is not the ring's business")
+        controller.triggerReleased(isMadeUp: false)
+        harness.runScheduled()
+        XCTAssertEqual(harness.clickWatches, 1, "the ring stands open: now it does")
+
+        harness.pointer = CGPoint(x: 2400, y: 300)   // on a screen to the right
+        harness.clearLog()
+        controller.clickWentElsewhere()
+        harness.runScheduled()
+        XCTAssertFalse(controller.isOpen)
+        XCTAssertEqual(harness.log, ["hide"])
+        XCTAssertEqual(harness.stoppedClickWatches, ["watch 1"], "and with the ring the listening ends")
+        XCTAssertTrue(harness.problems.isEmpty)
+    }
+
+    /// The panel should take every click on its screen. If one reaches the app under the
+    /// ring all the same, the ring closes without running the place under the pointer
+    /// (the app got a click the user meant for the ring), and the log says so, once.
+    func testAClickThePanelDidNotTakeClosesTheRingAndIsLogged() {
+        for _ in 0..<2 {
+            harness.pointer = CGPoint(x: 700, y: 500)
+            harness.tap()
+            harness.pointer = harness.place(3)
+            harness.clearLog()
+            controller.clickWentElsewhere()
+            harness.runScheduled()
+            XCTAssertFalse(controller.isOpen)
+            XCTAssertEqual(harness.log, ["hide"], "the place under the pointer does not run")
+        }
+        XCTAssertEqual(harness.problems.count, 1)
+        XCTAssertTrue(harness.problems.first?.contains("the panel did not take it") ?? false)
     }
 
     // MARK: Pulses
@@ -736,6 +788,19 @@ final class ShortcutRingPanelTests: XCTestCase {
                 XCTAssertFalse(code.contains(call), "\(file) calls \(call)")
             }
         }
+    }
+
+    /// A ring shown by a presenter nobody prepared puts no window on the screen of whoever
+    /// runs the tests.
+    func testARingPutsNoWindowOnScreenUnderXCTest() throws {
+        let presenter = ShortcutRingPanelPresenter()
+        presenter.appearance = { ShortcutRingAppearance(reducesMotion: true) }
+        let screen = ShortcutRingScreen(
+            frame: CGRect(x: 0, y: 0, width: 1512, height: 982), usable: CGRect(x: 0, y: 0, width: 1512, height: 982)
+        )
+        presenter.show(ShortcutRingFace(.default), centre: CGPoint(x: 400, y: 300), screen: screen, lit: nil, takesClicks: true)
+        XCTAssertFalse(try XCTUnwrap(presenter.panel).isVisible)
+        presenter.hide()
     }
 
     private func shown(

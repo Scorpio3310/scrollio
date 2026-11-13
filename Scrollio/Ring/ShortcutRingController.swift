@@ -17,7 +17,10 @@
 //  - The pointer over a ring that stands open: no event tap. A timer looks where the
 //    pointer is, and stops with the ring. No pointer event of the Mac waits on Scrollio
 //    while a ring stands open.
-//  - The click that chooses or dismisses: the panel itself takes it.
+//  - The click that chooses or dismisses: the panel itself takes it. A click that goes
+//    to another app all the same (on another screen, where the panel is not; or on this
+//    one, should the panel not have taken it) closes the ring and runs nothing: while a
+//    ring stands open, and only then, a monitor hears of such clicks.
 //  - Esc: the keys tap, which is kept running while a ring is open
 //    (`InputProcessor.needsKeyEvents`).
 //
@@ -92,6 +95,12 @@ final class ShortcutRingController {
         /// One line of the `app` log: a ring opened, was left open, ran something or
         /// closed. A few lines per use of the ring, never one per pointer event.
         var log: (String) -> Void
+        /// Something that should not happen did: a line of the `app` log as a problem.
+        var logProblem: (String) -> Void
+        /// Starts to hear of mouse-downs that went to other apps; the result ends it
+        /// (`stopWatchingClicksElsewhere`). Nil: nothing was started (tests).
+        var watchClicksElsewhere: (@escaping () -> Void) -> Any?
+        var stopWatchingClicksElsewhere: (Any) -> Void
 
         static let system = Environment(
             now: { ProcessInfo.processInfo.systemUptime },
@@ -110,7 +119,16 @@ final class ShortcutRingController {
             announce: { ShortcutRingController.announce($0) },
             refreshMotionTap: { MouseInteractionSessionController.shared.refreshMotionTapState() },
             refreshKeyTap: { ButtonCore.shared.keyTap.refresh() },
-            log: { AppSystemLog.note($0) }
+            log: { AppSystemLog.note($0) },
+            logProblem: { AppSystemLog.problem($0) },
+            watchClicksElsewhere: { handler in
+                // Under XCTest nothing listens to the Mac's clicks.
+                guard !AppRuntime.isRunningXCTest else { return nil }
+                return NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { _ in
+                    handler()
+                }
+            },
+            stopWatchingClicksElsewhere: { NSEvent.removeMonitor($0) }
         )
     }
 
@@ -146,6 +164,10 @@ final class ShortcutRingController {
     private var wasHeld = false
     private var neededKeys = false
     private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
+    /// Hears of clicks that went to other apps, while a ring stands open.
+    private var clickWatch: Any?
+    /// The line about a click the panel did not take is written once per run.
+    private var didLogMissedClick = false
 
     init(environment: Environment = .system, presenter: ShortcutRingPresenting = ShortcutRingPanelPresenter()) {
         self.environment = environment
@@ -158,6 +180,9 @@ final class ShortcutRingController {
 
     deinit {
         timer?.invalidate()
+        if let clickWatch {
+            environment.stopWatchingClicksElsewhere(clickWatch)
+        }
         for observer in observers {
             observer.center.removeObserver(observer.token)
         }
@@ -263,6 +288,22 @@ final class ShortcutRingController {
         } else {
             perform(session.buttonReleased(button))
         }
+    }
+
+    /// A mouse button went down and the click went to another app, while a ring stands
+    /// open: the ring closes and runs nothing. On another screen that is how a click
+    /// beside the ring looks. On the ring's own screen the panel should have taken the
+    /// click: it did not, the app underneath got it, and choosing a shortcut on top of
+    /// that would act on a click the user did not make there; the log says so.
+    func clickWentElsewhere() {
+        assertMainThread()
+        guard session.phase == .latched else { return }
+        if screen.frame.contains(environment.pointerLocation()), !didLogMissedClick {
+            didLogMissedClick = true
+            environment.logProblem("Shortcut Ring: a click on the ring's screen went to the app under it "
+                + "(the panel did not take it); the ring closed without running anything")
+        }
+        cancel()
     }
 
     /// Esc went down. True: it was the ring's and goes no further.
@@ -386,6 +427,16 @@ final class ShortcutRingController {
         guard phase != timerPhase else { return }
         timerPhase = phase
         stopTimer()
+        if phase == .latched {
+            if clickWatch == nil {
+                clickWatch = environment.watchClicksElsewhere { [weak self] in
+                    self?.clickWentElsewhere()
+                }
+            }
+        } else if let watch = clickWatch {
+            clickWatch = nil
+            environment.stopWatchingClicksElsewhere(watch)
+        }
         switch phase {
         case .closed:
             break

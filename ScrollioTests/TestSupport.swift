@@ -203,6 +203,11 @@ final class TestIsolationTests: XCTestCase {
         // Interceptor (the cores do not start; the pointer-movement tap, the keys tap, the
         // buttons tap and the recorder's tap have seams).
         Effect(name: "makes an event tap", pattern: #"CGEvent\.tapCreate\(|CGEventTapCreate\("#, allowed: ["Scrollio/Utils/Interceptor.swift"]),
+        // Clicks in other apps: the Shortcut Ring hears of them while a ring stands open
+        // (ShortcutRingController.Environment.system starts no monitor under XCTest).
+        Effect(name: "listens to events of other apps", pattern: #"addGlobalMonitorForEvents\("#, allowed: [
+            "Scrollio/Ring/ShortcutRingController.swift",
+        ]),
         // The pointer: MouseGesturePointerDriver.inert under XCTest.
         Effect(name: "moves or detaches the pointer", pattern: #"CGWarpMouseCursorPosition\(|CGAssociateMouseAndMouseCursorPosition\("#, allowed: [
             "Scrollio/InputEvent/MouseGesturePointerLock.swift",
