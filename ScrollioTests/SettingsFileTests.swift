@@ -544,6 +544,77 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertEqual(target.options.ring, ring)
     }
 
+    /// An app's own Shortcut Ring travels with the app's entry, in use or kept for later,
+    /// and an import puts it in effect. Its places are checked as the general ring's are,
+    /// and one that opens or runs something is never imported unseen: it stands in the
+    /// sheet's box of such actions, named by its app and its place.
+    func testAnAppsOwnRingIsInTheFileAndItsPlacesAreShownBeforeTheImport() throws {
+        let source = makeSource()
+        let script = OpenTargetPayload(path: "/Users/someone/bin/sync.sh", bundleID: nil, arguments: "--all", kind: .script)
+        let notes = try XCTUnwrap(source.options.application.applications.get(by: "/Applications/Notes.app"))
+        notes.setUsesGeneralRing(false, general: .default)
+        notes.ring?[1] = ShortcutRingPlace(openTarget: script)
+        notes.ring?[6] = .empty
+        // A second app whose own ring is kept for later ("Use the general ring" on again).
+        let mail = Application(path: "/Applications/Mail.app")
+        mail.setUsesGeneralRing(false, general: .default)
+        mail.ring?[0] = ShortcutRingPlace(SystemShortcut.paste)
+        mail.setUsesGeneralRing(true, general: .default)
+        source.options.application.applications.append(mail)
+        let data = try SettingsFile.export(from: source.options, now: Self.moment).get()
+
+        let contents = try SettingsFile.read(data).get()
+        XCTAssertEqual(contents.applications?.map(\.ring), [notes.ring, mail.ring], "what was exported comes back")
+        XCTAssertEqual(contents.leftOutCount, 0)
+        XCTAssertTrue(contents.bringsActions)
+        // The button of the file that runs the script, then the place of the app's ring.
+        let launches = contents.launchActions
+        XCTAssertEqual(launches.map { $0.ringPlace }, [nil, 1])
+        XCTAssertEqual(launches.last?.applicationPath, "/Applications/Notes.app")
+        XCTAssertEqual(SettingsFileText.launchLine(for: try XCTUnwrap(launches.last)),
+                       "Shortcut Ring in Notes, Top right: runs the script /Users/someone/bin/sync.sh (arguments: --all)")
+        XCTAssertEqual(SettingsFileText.ringLines(of: contents), [
+            "Ring in Notes, Top right: Open App or File: sync.sh", "Ring in Notes, Left: No Action", "Ring in Mail, Top: Paste",
+        ])
+        let items = SettingsFileText.items(of: contents).map(\.text)
+        XCTAssertTrue(items.contains("2 apps with their own settings"), "\(items)")
+        XCTAssertTrue(items.contains("1 app with a Shortcut Ring of its own"), "the one in use: \(items)")
+
+        let target = OwnSettings(for: self)
+        target.options.readOptions()
+        XCTAssertTrue(SettingsFile.apply(contents, to: target.options))
+        let imported = try XCTUnwrap(target.options.application.applications.get(by: "/Applications/Notes.app"))
+        XCTAssertEqual(imported.ring, notes.ring)
+        XCTAssertFalse(imported.usesGeneralRing)
+        XCTAssertEqual(target.options.application.applications.get(by: "/Applications/Mail.app")?.ring, mail.ring)
+        XCTAssertEqual(target.options.ring, .default, "the general ring is another setting")
+
+        // A file from elsewhere: a ninth place is cut before it is read, a place whose
+        // action this version does not run comes in empty and is counted, and what is no
+        // ring is left out and counted while the app stays.
+        func app(_ name: String, ring: String) -> String {
+            return #"{"path":"/Applications/"# + name + #".app","ring":"# + ring + "}"
+        }
+        let foreign = try Fixture.contents(
+            #""applications":["#
+                + app("A", ring: #"{"inherit":false,"places":[{"action":"copy"},{"action":"somethingNewer"},{"action":"mouseLeftClick"},"#
+                    + #"{"action":""},{"action":""},{"action":""},{"action":""},{"action":""},"#
+                    + #"{"action":"openTarget","openTarget":{"path":"/tmp/ninth.sh","arguments":"","kind":"script"}}]}"#)
+                + "," + app("B", ring: #"{"inherit":false}"#) + "," + app("C", ring: #""places""#) + "]"
+        )
+        XCTAssertEqual(foreign.applications?.map(\.path), ["/Applications/A.app", "/Applications/B.app", "/Applications/C.app"])
+        XCTAssertEqual(foreign.applications?.first?.ownRingPlaces?.map { $0.action }, ["copy", "", "", "", "", "", "", ""])
+        XCTAssertEqual(foreign.unknownActions, 2)
+        XCTAssertEqual(foreign.unreadableEntries, 2, "two things that are no ring")
+        XCTAssertEqual(foreign.applications?.dropFirst().map(\.usesGeneralRing), [true, true])
+        XCTAssertTrue(foreign.launchActions.isEmpty, "the ninth place is not stored, and not listed")
+        // A file without a ring for an app (one from 1.0.5): the app uses the general ring.
+        let older = try Fixture.contents(#""applications":["# + StoredDataCanaryTests.readableApp + "]")
+        XCTAssertEqual(older.applications?.count, 1)
+        XCTAssertNil(older.applications?.first?.ring)
+        XCTAssertFalse(older.bringsActions)
+    }
+
     /// A ring as a file from elsewhere can spell it, read through the whole import: a name
     /// together with a target, the old spelling of an app, a file with arguments, and a
     /// ninth place that runs a script. Every place that is stored with something to open

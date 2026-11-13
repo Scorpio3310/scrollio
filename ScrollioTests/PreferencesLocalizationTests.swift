@@ -249,6 +249,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "ring-action-none", "ring-preview-description", "buttons-note-shortcut-ring",
         "ring-recorder-waiting", "ring-recorder-refused",
         "general-settings-import-ring", "general-settings-import-ring-line", "general-settings-import-ring-trigger",
+        "general-settings-import-ring-line-app", "general-settings-import-ring-trigger-app",
+        "general-settings-import-app-rings-one", "general-settings-import-app-rings-other",
         "ring-undo-reset",
     ]
 
@@ -322,6 +324,9 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-gesture-line": "@@",
         "general-settings-import-ring-line": "@@",
         "general-settings-import-ring-trigger": "@",
+        "general-settings-import-ring-line-app": "@@@",
+        "general-settings-import-ring-trigger-app": "@@",
+        "general-settings-import-app-rings-other": "d",
         "ring-trigger-bound": "@",
         "general-settings-problem-damaged": "@",
         "general-settings-problem-too-many": "d",
