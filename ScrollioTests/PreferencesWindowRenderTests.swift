@@ -227,6 +227,38 @@ final class PreferencesWindowRenderTests: XCTestCase {
         })
     }
 
+    /// "Reset to Defaults" under the boxes of the Shortcut Ring pane and of the Gestures
+    /// pane (`ring-pane-reset-<appearance>.png`, `gestures-pane-reset-<appearance>.png`):
+    /// each pane whole, with one setting off its default, so the button can be clicked.
+    func testRenderPaneResets() throws {
+        let savedRing = Options.shared.ring
+        defer { Options.shared.ring = savedRing }
+        var ring = ShortcutRingSettings.default
+        ring[1] = ShortcutRingPlace(action: "undo")
+        Options.shared.ring = ring
+        try renderPane(RingPreferencesViewController.tabIdentifier, name: "ring-pane-reset", replacement: {
+            let pane = RingPreferencesViewController()
+            pane.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: ["Thumb panel"]) }
+            return pane
+        })
+
+        var gesture = MouseGestureSettings.default
+        gesture.clickAction = SystemShortcut.appExpose.identifier
+        Options.shared.gesture = gesture
+        try renderPane(GesturesPreferencesViewController.tabIdentifier, name: "gestures-pane-reset", replacement: {
+            let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+            gestures.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+            gestures.bindingSummary = {
+                MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"])
+            }
+            return gestures
+        }, afterLoad: { controller in
+            guard let gestures = controller as? GesturesPreferencesViewController else { return }
+            gestures.previewView.prefersReducedMotion = { true }
+            gestures.previewView.reduceMotionDidChange()
+        })
+    }
+
     /// Access allowed and not, the login item waiting for approval, paused, and a build
     /// stamped by scripts/install.sh (the longest line: a commit with "+"). The login item
     /// and the permission are fixed, nothing is asked of the system.
