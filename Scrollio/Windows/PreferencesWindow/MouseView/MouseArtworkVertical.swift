@@ -109,7 +109,7 @@ struct MouseArtworkVertical: MouseArtworkTwoViews {
     /// The fine lines inside the outline; the painter clips them to it.
     /// From above: the split between the two buttons, the right button's outer edge, and
     /// where the buttons end (a line that runs back a little towards the right); and the
-    /// edge of the base where it shows behind the thumb.
+    /// edge of the base behind the thumb, from the outline up to the plate's rear end.
     /// From the side: the upper edge of the base, and the edge of the inner face where it
     /// meets the back.
     func seams() -> NSBezierPath {
@@ -125,9 +125,12 @@ struct MouseArtworkVertical: MouseArtworkTwoViews {
             path.line(to: p(77.2, 51.5))
             path.curve(to: Self.rightCorner, controlPoint1: p(77.2, 54.2), controlPoint2: p(76, 56.2))
             path.line(to: buttonsEndAtPlate)
-            // The base behind the thumb.
+            // The edge of the base behind the thumb: from the outline it runs in under the
+            // thumb's side and then turns up to the plate's rear end, which it meets at its
+            // lower left. (It used to stop short in the middle of the body.)
             path.move(to: p(10.5, 95))
-            path.curve(to: p(33, 88), controlPoint1: p(17, 92.5), controlPoint2: p(26, 89.5))
+            path.curve(to: p(29, 89.6), controlPoint1: p(16.5, 92.9), controlPoint2: p(23, 90.9))
+            path.curve(to: p(35.4, 72.2), controlPoint1: p(33.2, 88.7), controlPoint2: p(34.6, 80))
         case .thumbSide:
             // The base.
             path.move(to: p(-12.9, 83.8))
