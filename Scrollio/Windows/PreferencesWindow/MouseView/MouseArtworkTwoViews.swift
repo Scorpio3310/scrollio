@@ -33,8 +33,8 @@ protocol MouseArtworkTwoViews {
     var wheelRect: NSRect { get }
     /// The slot the wheel turns in.
     var wellRect: NSRect { get }
-    /// The thumb wheel: a ribbed roller in two halves.
-    var thumbWheel: MouseArtworkBar { get }
+    /// The thumb wheel, a ribbed roller in two halves; nil on a mouse without one.
+    var roller: MouseArtworkBar? { get }
     /// What holds the thumb wheel, drawn under it.
     var thumbWheelHousing: NSBezierPath? { get }
     /// The wheel as it shows over the buttons from the side.
@@ -45,8 +45,12 @@ protocol MouseArtworkTwoViews {
     var badgeCentre: NSPoint { get }
 
     /// The part that is the tinted area of the thumb rest, drawn under everything else:
-    /// the MX Master 4's thumb panel, the MX Master 3's gesture pad.
+    /// the MX Master 4's thumb panel, the MX Master 3's gesture pad. A mouse without one
+    /// names a part it does not have (it has no shape, so nothing is drawn).
     var restPart: MouseArtworkPart { get }
+    /// A tinted area of the body that is no part and never lights, drawn inside the
+    /// outline: the MX Vertical's top plate, the MX Anywhere's side grips. nil: none.
+    var trim: NSBezierPath? { get }
     /// Marks on that area: a ring of dots (filled), a short ridge (a line).
     var panelDots: NSBezierPath? { get }
     var restRidge: NSBezierPath? { get }
@@ -54,6 +58,19 @@ protocol MouseArtworkTwoViews {
     var light: NSBezierPath? { get }
     /// The two buttons have a clear rim along their edge (the MX Master 4).
     var hasClearRim: Bool { get }
+}
+
+extension MouseArtworkTwoViews {
+    var trim: NSBezierPath? { return nil }
+}
+
+// The MX Masters have a thumb wheel: it is their roller.
+extension MouseArtworkMaster4 {
+    var roller: MouseArtworkBar? { return thumbWheel }
+}
+
+extension MouseArtworkMaster3 {
+    var roller: MouseArtworkBar? { return thumbWheel }
 }
 
 /// A roller (the thumb wheel) or a button, as a bar along an axis: `length` along it,
@@ -155,6 +172,15 @@ extension MouseArtworkPainter {
         ink.bodyFill.setFill()
         outline.fill()
 
+        // A tinted area that is no part (the MX Vertical's top plate, the MX Anywhere's
+        // side grips): it ends at the body's edge.
+        if let trim = art.trim {
+            NSGraphicsContext.saveGraphicsState()
+            outline.addClip()
+            drawPart(trim, lit: false, fill: ink.panel, opaque: false, ink: ink, unit: unit)
+            NSGraphicsContext.restoreGraphicsState()
+        }
+
         // The thumb rest's part (the MX Master 4's thumb panel, the MX Master 3's gesture
         // pad), under everything else, with its marks.
         let rest = art.restPart
@@ -221,7 +247,9 @@ extension MouseArtworkPainter {
         if art.viewpoint == .above, let housing = art.thumbWheelHousing {
             drawPart(housing, lit: false, fill: ink.well, opaque: true, ink: ink, unit: unit)
         }
-        drawRoller(art.thumbWheel, ink: ink, lit: lit == .thumbWheel, unit: unit)
+        if let roller = art.roller {
+            drawRoller(roller, ink: ink, lit: lit == .thumbWheel, unit: unit)
+        }
         for part in [MouseArtworkPart.gesture, .forward, .back] {
             guard let button = art.shape(of: part) else { continue }
             drawPart(button, lit: lit == part, fill: ink.well, opaque: true, ink: ink, unit: unit, edge: ink.outline)
@@ -258,10 +286,17 @@ extension MouseArtworkPainter {
             if let modeShift = art.shape(of: .modeShift) {
                 drawPart(modeShift, lit: false, fill: ink.well, opaque: true, ink: ink, unit: unit)
             }
+            // A light inside the wheel's slot (the MX Anywhere's) was covered with the slot.
+            if let light = art.light, art.wellRect.contains(light.bounds) {
+                ink.seam.setFill()
+                light.fill()
+            }
         case .wheel:
             drawRidges(in: art.wheelRect, color: MouseArtworkPalette.litRidge, unit: unit)
         case .thumbWheel:
-            drawRollerRidges(art.thumbWheel, color: MouseArtworkPalette.litRidge, unit: unit)
+            if let roller = art.roller {
+                drawRollerRidges(roller, color: MouseArtworkPalette.litRidge, unit: unit)
+            }
         case art.restPart:
             if let dots = art.panelDots {
                 MouseArtworkPalette.litRidge.setFill()

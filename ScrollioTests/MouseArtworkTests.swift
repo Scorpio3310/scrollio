@@ -494,6 +494,25 @@ final class MouseArtworkTests: XCTestCase {
         XCTAssertEqual(MouseArtworkShapes(model: .generic).wheelRect.midX, outline.midX, accuracy: 0.5)
     }
 
+    /// A drawing in two views need not have a thumb wheel, and may have a tinted area that
+    /// is no part. The MX Masters have the first and not the second, and their light is
+    /// behind the wheel's slot, not in it (a light in the slot is drawn again over a lit
+    /// button, with the slot).
+    func testWhatADrawingInTwoViewsMayLeaveOut() throws {
+        for model in [MouseArtworkModel.mxMaster4, .mxMaster3] {
+            for viewpoint in model.viewpoints {
+                let shapes = MouseArtworkShapes(model: model, viewpoint: viewpoint)
+                let views = try XCTUnwrap(shapes.views)
+                XCTAssertEqual(views.roller?.path.bounds, shapes.shape(of: .thumbWheel)?.bounds, "\(model) \(viewpoint): the thumb wheel")
+                XCTAssertNotNil(views.roller, "\(model) \(viewpoint)")
+                XCTAssertNil(views.trim, "\(model) \(viewpoint)")
+                if let light = views.light {
+                    XCTAssertFalse(views.wellRect.contains(light.bounds), "\(model): the light is not in the slot")
+                }
+            }
+        }
+    }
+
     // MARK: - The drawings that did not change
 
     /// The drawings that are not being redrawn are pinned: every shape of theirs, at the
