@@ -22,6 +22,12 @@
 //  with "Reduce motion" it is simply there. It goes away at once, without a fade, so that
 //  an action which looks at the screen (a screenshot) never finds it.
 //
+//  The panel itself is never faded: its alpha is 1 from the moment it is ordered in. A
+//  window's alpha animation can stay at its start (it did, for two seconds and more, on a
+//  Mac whose display slept), and the ring would then take clicks without being seen. The
+//  opening only animates layers of the drawing, from values that are not the layers' own:
+//  where no animation runs, the ring is simply there.
+//
 
 import Cocoa
 
@@ -187,6 +193,9 @@ final class ShortcutRingStageView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
+        // A layer of its own from the start: the opening fades it.
+        shadowView.wantsLayer = true
+        shadowView.layerContentsRedrawPolicy = .onSetNeedsDisplay
         addSubview(shadowView)
         material.material = .hudWindow
         material.blendingMode = .behindWindow
@@ -316,6 +325,8 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
     static let openDuration: TimeInterval = 0.12
     /// The places start this much smaller.
     static let openScale: CGFloat = 0.94
+    static let fadeAnimationKey = "open-fade"
+    static let growAnimationKey = "open"
 
     var onButton: ((Int, Bool, CGPoint) -> Void)?
 
@@ -367,18 +378,22 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
 
         let duration = appearance.openDuration
         lastOpenDuration = duration
-        stage.faceView.layer?.removeAllAnimations()
-        guard duration > 0 else {
-            panel.alphaValue = 1
-            orderFront(panel)
-            return
-        }
-        panel.alphaValue = 0
+        let layers = [stage.faceView.layer, stage.shadowView.layer].compactMap { $0 }
+        layers.forEach { $0.removeAllAnimations() }
+        // Never faded as a window (see the top of the file).
+        panel.alphaValue = 1
         orderFront(panel)
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().alphaValue = 1
+        guard duration > 0 else { return }
+
+        let easeOut = CAMediaTimingFunction(name: .easeOut)
+        for layer in layers {
+            // The layer's own opacity stays 1: the animation only shows the way there.
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0
+            fade.toValue = 1
+            fade.duration = duration
+            fade.timingFunction = easeOut
+            layer.add(fade, forKey: Self.fadeAnimationKey)
         }
         if let layer = stage.faceView.layer {
             // Grows about its middle (an AppKit layer is anchored at its corner).
@@ -392,8 +407,8 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
             grow.fromValue = NSValue(caTransform3D: small)
             grow.toValue = NSValue(caTransform3D: CATransform3DIdentity)
             grow.duration = duration
-            grow.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            layer.add(grow, forKey: "open")
+            grow.timingFunction = easeOut
+            layer.add(grow, forKey: Self.growAnimationKey)
         }
     }
 
@@ -409,8 +424,9 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
     func hide() {
         guard let panel else { return }
         stage?.faceView.layer?.removeAllAnimations()
+        stage?.shadowView.layer?.removeAllAnimations()
         panel.ignoresMouseEvents = true
+        // At once, and with nothing to wait for.
         panel.orderOut(nil)
-        panel.alphaValue = 1
     }
 }

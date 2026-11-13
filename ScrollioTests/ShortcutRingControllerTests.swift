@@ -938,17 +938,43 @@ final class ShortcutRingPanelTests: XCTestCase {
         XCTAssertTrue(stage.hitTest(NSPoint(x: 1200, y: 100)) === stage)
     }
 
+    /// The ring must be seen from the moment it takes clicks: the panel is ordered in at
+    /// full alpha, always. (Faded in as a window, it stayed at alpha 0 for two seconds and
+    /// more on a Mac whose display slept, while it already took the mouse.) Only layers of
+    /// the drawing are animated, and their own values are the final ones.
+    func testThePanelIsNeverFadedAsAWindow() throws {
+        for appearance in [ShortcutRingAppearance(), ShortcutRingAppearance(reducesMotion: true)] {
+            let (presenter, ordered) = shown(appearance: appearance, takesClicks: true)
+            let panel = try XCTUnwrap(presenter.panel)
+            let stage = try XCTUnwrap(presenter.stage)
+            XCTAssertEqual(ordered.count, 1)
+            XCTAssertEqual(panel.alphaValue, 1, "reducesMotion \(appearance.reducesMotion)")
+            XCTAssertEqual(stage.faceView.layer?.opacity, 1)
+            XCTAssertEqual(stage.shadowView.layer?.opacity, 1)
+            XCTAssertFalse(stage.faceView.isHidden)
+            presenter.hide()
+            XCTAssertEqual(panel.alphaValue, 1)
+            XCTAssertNil(stage.faceView.layer?.animation(forKey: ShortcutRingPanelPresenter.fadeAnimationKey))
+        }
+    }
+
     func testWithReduceMotionTheRingSimplyAppears() throws {
         XCTAssertEqual(ShortcutRingAppearance().openDuration, 0.12, accuracy: 0.001)
         XCTAssertEqual(ShortcutRingAppearance(reducesMotion: true).openDuration, 0)
 
         let (moving, _) = shown()
         XCTAssertEqual(moving.lastOpenDuration, 0.12, accuracy: 0.001)
-        XCTAssertNotNil(moving.stage?.faceView.layer?.animation(forKey: "open"))
+        let face = try XCTUnwrap(moving.stage?.faceView.layer)
+        XCTAssertNotNil(face.animation(forKey: ShortcutRingPanelPresenter.growAnimationKey))
+        let fade = try XCTUnwrap(face.animation(forKey: ShortcutRingPanelPresenter.fadeAnimationKey) as? CABasicAnimation)
+        XCTAssertEqual(fade.keyPath, "opacity")
+        XCTAssertEqual(fade.duration, 0.12, accuracy: 0.001)
+        XCTAssertNotNil(moving.stage?.shadowView.layer?.animation(forKey: ShortcutRingPanelPresenter.fadeAnimationKey))
 
         let (still, _) = shown(appearance: ShortcutRingAppearance(reducesMotion: true))
         XCTAssertEqual(still.lastOpenDuration, 0)
-        XCTAssertNil(still.stage?.faceView.layer?.animation(forKey: "open"))
+        XCTAssertNil(still.stage?.faceView.layer?.animation(forKey: ShortcutRingPanelPresenter.growAnimationKey))
+        XCTAssertNil(still.stage?.faceView.layer?.animation(forKey: ShortcutRingPanelPresenter.fadeAnimationKey))
         XCTAssertEqual(still.panel?.alphaValue, 1)
     }
 

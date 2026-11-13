@@ -29,8 +29,10 @@ enum ShortcutRingGeometry {
     /// How far the hand moves before a place lights while the trigger is held. Small
     /// enough to choose with a flick, large enough that a press alone lights nothing.
     static let deadZone: CGFloat = 20
-    /// The click way: a point farther than this from the middle is outside the ring.
-    static let reach: CGFloat = outerRadius + 14
+    /// The click way: a point farther than this from the middle is outside the ring: the
+    /// drawn ring and a little more, and less than a pointer at the very edge of a screen
+    /// is from a ring that was moved inwards (`outerRadius + screenMargin`).
+    static let reach: CGFloat = outerRadius + 6
     /// The ring keeps this far from the edge of its screen.
     static let screenMargin: CGFloat = 10
     /// The hold way counts the hand's movement since the press, and no more of it than

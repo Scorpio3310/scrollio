@@ -405,6 +405,18 @@ final class ShortcutRingGeometryTests: XCTestCase {
         XCTAssertEqual(Geometry.target(at: CGPoint(x: CGFloat.nan, y: 0), centre: centre), .outside)
     }
 
+    /// The ring reaches only a little past what is drawn, and a pointer at the very edge of
+    /// a screen is outside a ring that was moved inwards for it.
+    func testTheRingReachesALittlePastWhatIsDrawnAndNotToTheScreensEdge() {
+        XCTAssertEqual(Geometry.reach, Geometry.outerRadius + 6)
+        XCTAssertLessThan(Geometry.reach, Geometry.outerRadius + Geometry.screenMargin)
+        let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
+        for pointer in [CGPoint(x: 0, y: 500), CGPoint(x: 1511, y: 500), CGPoint(x: 700, y: 0), CGPoint(x: 0, y: 0)] {
+            let centre = Geometry.centre(forPointer: pointer, in: screen)
+            XCTAssertEqual(Geometry.target(at: pointer, centre: centre), .outside, "\(pointer)")
+        }
+    }
+
     // MARK: Near the edge of a screen
 
     func testAwayFromTheEdgesTheRingStandsAtThePointer() {
@@ -596,27 +608,46 @@ final class ShortcutRingSessionTests: XCTestCase {
         var session = opened()
         XCTAssertEqual(move(&session, by: CGPoint(x: 30, y: 0), at: pressed + 0.02), [])
         XCTAssertEqual(session.travel, .zero)
-        XCTAssertEqual(move(&session, by: CGPoint(x: 30, y: 0), at: pressed + 0.05), [.light(2)])
+        XCTAssertEqual(move(&session, by: CGPoint(x: 30, y: 0), at: pressed + 0.3), [.light(2)])
     }
 
-    /// A release right after the press chooses only when the hand went far.
-    func testAQuickReleaseChoosesOnlyBeyondTwiceTheDeadZone() {
-        // Pushed 25 points to the right and let go at once: "Right" was lit, nothing runs,
+    /// What is lit when the trigger comes up is what runs, at any speed. So in the first
+    /// fifth of a second a place lights only from twice the dead zone: the little push a
+    /// press gives the mouse lights nothing, and a flick lights and runs.
+    func testInTheFirstMomentsAPlaceLightsOnlyFromTwiceTheDeadZoneAndWhatIsLitRuns() {
+        XCTAssertEqual(ShortcutRingSession.quickReleaseReach, ShortcutRingGeometry.deadZone * 2)
+        // Pushed 30 points to the right and let go at once: nothing was lit, nothing runs,
         // and the ring stays open.
         var jerk = opened()
-        XCTAssertEqual(move(&jerk, by: CGPoint(x: 25, y: 0), at: pressed + 0.06), [.light(2)])
-        XCTAssertEqual(jerk.triggerReleased(at: pressed + 0.12), [.light(nil)])
+        XCTAssertEqual(move(&jerk, by: CGPoint(x: 30, y: 0), at: pressed + 0.06), [])
+        XCTAssertNil(jerk.lit)
+        XCTAssertEqual(jerk.triggerReleased(at: pressed + 0.15), [])
         XCTAssertEqual(jerk.phase, .latched)
 
-        // A flick of 60 points in the same time is a choice.
+        // A flick of 50 points in the same time lights its place, and letting go runs it.
         var flick = opened()
-        move(&flick, by: CGPoint(x: 60, y: 0), at: pressed + 0.06)
-        XCTAssertEqual(flick.triggerReleased(at: pressed + 0.12), [.close, .run(2)])
+        XCTAssertEqual(move(&flick, by: CGPoint(x: 50, y: 0), at: pressed + 0.06), [.light(2)])
+        XCTAssertEqual(flick.triggerReleased(at: pressed + 0.15), [.close, .run(2)])
 
-        // The same 25 points held for a moment longer are a choice too.
+        // The same 30 points a moment later light the place: from then on the dead zone counts.
         var slow = opened()
-        move(&slow, by: CGPoint(x: 25, y: 0), at: pressed + 0.06)
-        XCTAssertEqual(slow.triggerReleased(at: pressed + 0.25), [.close, .run(2)])
+        XCTAssertEqual(move(&slow, by: CGPoint(x: 30, y: 0), at: pressed + 0.25), [.light(2)])
+        XCTAssertEqual(slow.triggerReleased(at: pressed + 0.3), [.close, .run(2)])
+    }
+
+    /// A hand that stopped between the dead zone and twice of it in the first moments:
+    /// its place lights when those moments are over, without another movement.
+    func testAHandThatStoppedShortLightsItsPlaceWhenTheFirstMomentsAreOver() {
+        var session = opened()
+        XCTAssertEqual(move(&session, by: CGPoint(x: 0, y: 30), at: pressed + 0.1), [])
+        XCTAssertEqual(session.timePassed(to: pressed + 0.15), [])
+        XCTAssertEqual(session.timePassed(to: pressed + 0.21), [.light(4)])
+        XCTAssertEqual(session.timePassed(to: pressed + 0.4), [], "it is lit already")
+        XCTAssertEqual(session.triggerReleased(at: pressed + 0.5), [.close, .run(4)])
+        // Without any movement, time lights nothing.
+        var still = opened()
+        XCTAssertEqual(still.timePassed(to: pressed + 3), [])
+        XCTAssertNil(still.lit)
     }
 
     // MARK: The edge of a screen
@@ -645,9 +676,16 @@ final class ShortcutRingSessionTests: XCTestCase {
         _ = session.triggerPressed(at: pressed, pointer: CGPoint(x: 2, y: 500), screen: screen, filled: allFilled)
         XCTAssertNil(session.lit)
         XCTAssertEqual(session.pointerMoved(by: CGPoint(x: 0, y: 1), to: CGPoint(x: 2, y: 501), at: pressed + 0.5), [])
-        // Let go: the ring stays open, and now the place under the pointer is lit.
-        XCTAssertEqual(session.triggerReleased(at: pressed + 0.6), [.light(6)])
+        // Let go: the ring stays open, and still nothing is lit: the pointer was not put
+        // there to choose. A click right there closes the ring and runs nothing.
+        XCTAssertEqual(session.triggerReleased(at: pressed + 0.6), [])
         XCTAssertEqual(session.phase, .latched)
+        XCTAssertEqual(session.pointerMoved(by: .zero, to: CGPoint(x: 4, y: 502), at: pressed + 0.7), [], "a tremble is no movement")
+        var clicked = session
+        XCTAssertEqual(clicked.buttonPressed(0, at: CGPoint(x: 4, y: 502)), [])
+        XCTAssertEqual(clicked.buttonReleased(0), [.close])
+        // Moved a little into the ring: now the place under the pointer lights.
+        XCTAssertEqual(session.pointerMoved(by: .zero, to: CGPoint(x: 12, y: 500), at: pressed + 0.8), [.light(6)])
     }
 
     // MARK: The click way
@@ -670,18 +708,19 @@ final class ShortcutRingSessionTests: XCTestCase {
 
     func testAClickOnAPlaceRunsItWhenTheButtonComesUp() {
         var session = latched()
-        _ = session.pointerMoved(by: .zero, to: place(1, of: session), at: 11)
+        XCTAssertEqual(session.pointerMoved(by: .zero, to: place(1, of: session), at: 11), [.light(1)])
         XCTAssertEqual(session.buttonPressed(0, at: place(1, of: session)), [])
         XCTAssertEqual(session.phase, .latched, "nothing runs while the button is down")
         XCTAssertEqual(session.buttonReleased(0), [.close, .run(1)])
         XCTAssertEqual(session.phase, .closed)
     }
 
-    /// The pointer need not have moved first (a ring at the edge of a screen stands under it).
-    func testAClickLightsAndChoosesWithoutAMoveBefore() {
+    /// A click before the pointer has moved since the ring was left open was not aimed at
+    /// anything: it closes the ring, whatever stands under the pointer.
+    func testAClickBeforeThePointerMovedChoosesNothing() {
         var session = latched()
-        XCTAssertEqual(session.buttonPressed(0, at: place(6, of: session)), [.light(6)])
-        XCTAssertEqual(session.buttonReleased(0), [.close, .run(6)])
+        XCTAssertEqual(session.buttonPressed(0, at: place(6, of: session)), [])
+        XCTAssertEqual(session.buttonReleased(0), [.close])
     }
 
     func testAClickOutsideOrInTheMiddleClosesWhenItComesUpAndRunsNothing() {
@@ -695,13 +734,15 @@ final class ShortcutRingSessionTests: XCTestCase {
         }
     }
 
-    func testAClickOnAnEmptyPlaceDoesNothing() {
+    /// A click anywhere but on a shortcut closes the ring: on an empty place too.
+    func testAClickOnAnEmptyPlaceClosesTheRing() {
         var filled = allFilled
         filled[0] = false
         var session = latched(filled: filled)
+        XCTAssertEqual(session.pointerMoved(by: .zero, to: place(0, of: session), at: 11), [], "an empty place does not light")
         XCTAssertEqual(session.buttonPressed(0, at: place(0, of: session)), [])
-        XCTAssertEqual(session.buttonReleased(0), [])
-        XCTAssertEqual(session.phase, .latched, "the ring stays open")
+        XCTAssertEqual(session.buttonReleased(0), [.close])
+        XCTAssertEqual(session.phase, .closed)
     }
 
     func testAnyOtherButtonClosesTheRing() {
@@ -712,6 +753,7 @@ final class ShortcutRingSessionTests: XCTestCase {
 
     func testAPlaceWhoseClickIsDownStaysChosenWhileThePointerMoves() {
         var session = latched()
+        _ = session.pointerMoved(by: .zero, to: place(2, of: session), at: 11)
         _ = session.buttonPressed(0, at: place(2, of: session))
         XCTAssertEqual(session.pointerMoved(by: .zero, to: place(4, of: session), at: 11), [])
         XCTAssertEqual(session.buttonReleased(0), [.close, .run(2)])
@@ -788,6 +830,7 @@ final class ShortcutRingSessionTests: XCTestCase {
 
     func testCancelClosesAndWaitsForNothing() {
         var session = latched()
+        _ = session.pointerMoved(by: .zero, to: place(2, of: session), at: 11)
         _ = session.buttonPressed(0, at: place(2, of: session))
         XCTAssertEqual(session.cancel(), [.close])
         XCTAssertFalse(session.needsKeys)
@@ -800,6 +843,7 @@ final class ShortcutRingSessionTests: XCTestCase {
         var held = opened()
         move(&held, by: CGPoint(x: 0, y: 60))
         var clicked = latched()
+        _ = clicked.pointerMoved(by: .zero, to: place(7, of: clicked), at: 11)
         _ = clicked.buttonPressed(0, at: place(7, of: clicked))
         for commands in [held.triggerReleased(at: pressed + 1), clicked.buttonReleased(0)] {
             let close = commands.firstIndex(of: .close)

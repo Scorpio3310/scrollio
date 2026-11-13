@@ -138,8 +138,10 @@ final class ShortcutRingController {
     static let tickSpacing: TimeInterval = 0.1
     /// How often the pointer is looked at while the ring stands open.
     static let pointerInterval: TimeInterval = 1.0 / 60.0
-    /// How often a held ring is checked against its limit.
-    static let holdCheckInterval: TimeInterval = 0.5
+    /// How often a held ring is looked at: its limit, and a hand that stopped between the
+    /// dead zone and twice of it in the first moments, whose place lights when those are
+    /// over although no movement arrives any more.
+    static let holdCheckInterval: TimeInterval = 0.1
 
     var environment: Environment
     let presenter: ShortcutRingPresenting

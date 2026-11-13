@@ -15,20 +15,23 @@
 //    The trigger goes up with a place lit: that place's action runs. Up in the middle
 //    after a place had been lit: the ring closes and nothing runs.
 //  - Click. The trigger goes up and nothing was ever lit, however long the press lasted:
-//    the ring stays open. Now the pointer chooses by where it is: a click on a place runs
-//    its action (when the button comes up, so that nothing is held while the action runs).
-//    A click in the middle or outside, another button, Esc or the trigger again close
-//    the ring and run nothing, and so do `idleLimit` seconds without the pointer moving.
-//    This is the way that suits a trigger that cannot be held: a keystroke another app
-//    sends as down and up at once.
+//    the ring stays open. Once the pointer has moved a little (`latchSlack`: a ring that
+//    was drawn away from the pointer at a screen edge must not light, or run, the place
+//    it happens to stand under) the pointer chooses by where it is: a click on a place
+//    runs its action (when the button comes up, so that nothing is held while the action
+//    runs). A click anywhere else (the middle, an empty place, outside), another button,
+//    Esc or the trigger again close the ring and run nothing, and so do `idleLimit`
+//    seconds without the pointer moving. This is the way that suits a trigger that cannot
+//    be held: a keystroke another app sends as down and up at once.
 //
-//  No clock decides between the two: a firm press of a stiff button can last as long as a
-//  short hold. What a clock does guard against is the jerk a press gives the mouse: the
-//  movement of the first `pressGrace` seconds is not counted, and a release sooner than
-//  `quickRelease` chooses only when the hand went `quickReleaseReach` far (else the ring
-//  stays open, as after a press without movement).
+//  What is lit when the trigger comes up is what runs, at any speed. No clock decides
+//  between the two ways: a firm press of a stiff button can last as long as a short hold.
+//  What a clock does guard against is the jerk a press gives the mouse: the movement of
+//  the first `pressGrace` seconds is not counted, and for the first `quickRelease`
+//  seconds a place lights only once the hand went `quickReleaseReach` far, twice the
+//  dead zone (a hand that stopped short of that lights its place when that time is over).
 //
-//  An empty place never lights and never runs; a click on one is taken and does nothing.
+//  An empty place never lights and never runs.
 //  The ring is closed before an action runs: `.close` always comes before `.run`. A
 //  release that is made up (the mouse went away mid-hold), a hold longer than `holdLimit`
 //  and `cancel` close the ring and run nothing.
@@ -71,16 +74,18 @@ struct ShortcutRingSession {
     private enum Press: Equatable {
         case choose(Int)
         case dismiss
-        case nothing
     }
 
     /// The movement of the first moments after the press is the press itself pushing
     /// the mouse: it is not counted.
     static let pressGrace: TimeInterval = 0.04
-    /// A release sooner than this after the press …
+    /// For this long after the press …
     static let quickRelease: TimeInterval = 0.2
-    /// … chooses only when the hand moved at least this far.
+    /// … a place lights only when the hand moved at least this far (later: the dead zone).
     static let quickReleaseReach: CGFloat = ShortcutRingGeometry.deadZone * 2
+    /// A ring that was left open lights nothing, and a click chooses nothing, until the
+    /// pointer has moved this far from where it stood.
+    static let latchSlack: CGFloat = 4
     /// A ring left open closes after this long without the pointer moving.
     static let idleLimit: TimeInterval = 10
     /// A held ring whose release never comes closes after this long (the limit of a
@@ -103,6 +108,8 @@ struct ShortcutRingSession {
     /// A place was lit at some point of this hold.
     private var hasLitAPlace = false
     private var pointer = CGPoint.zero
+    /// Where the pointer stood when the ring was left open, until it has moved away.
+    private var latchPointer: CGPoint?
     /// The pointer buttons that are down on the ring, each with what it will do.
     private var pressedButtons: [Int: Press] = [:]
     /// Esc's press closed the ring: its release is the ring's too, so that the app in
@@ -149,6 +156,7 @@ struct ShortcutRingSession {
             travel = .zero
             hasLitAPlace = false
             lit = nil
+            latchPointer = nil
             pressedButtons.removeAll()
             centre = ShortcutRingGeometry.centre(forPointer: pointer, in: screen)
             return [.open(centre: centre)]
@@ -160,20 +168,35 @@ struct ShortcutRingSession {
     mutating func triggerReleased(at time: TimeInterval, isMadeUp: Bool = false) -> [Command] {
         guard phase == .held else { return [] }
         guard !isMadeUp else { return close() }
-        // A place lit by the jerk of the press itself is no choice.
-        let isJerk = time - pressTime < Self.quickRelease
-            && hypot(travel.x, travel.y) < Self.quickReleaseReach
-        if let place = lit, !isJerk {
+        // What is lit runs.
+        if let place = lit {
             return close() + [.run(place)]
         }
-        if hasLitAPlace, !isJerk {
+        if hasLitAPlace {
             // Back in the middle (or on an empty place) after a place was lit: nothing.
             return close()
         }
         // Nothing was chosen: the ring stays open for the pointer and a click.
         phase = .latched
         lastMovement = time
-        return relight(placeUnderPointer())
+        latchPointer = pointer
+        return []
+    }
+
+    /// The place the hand's movement means at `time` of a hold: by direction, past the
+    /// dead zone, and in the first moments after the press only past twice the dead zone.
+    private func placeOfTravel(at time: TimeInterval) -> Int? {
+        let zone = time - pressTime < Self.quickRelease ? Self.quickReleaseReach : ShortcutRingGeometry.deadZone
+        return ShortcutRingGeometry.place(forOffset: travel, deadZone: zone, current: lit)
+            .flatMap { isFilled($0) ? $0 : nil }
+    }
+
+    private mutating func relightForTravel(at time: TimeInterval) -> [Command] {
+        let place = placeOfTravel(at: time)
+        if place != nil {
+            hasLitAPlace = true
+        }
+        return relight(place)
     }
 
     // MARK: The pointer
@@ -187,14 +210,13 @@ struct ShortcutRingSession {
         case .held:
             guard time - pressTime >= Self.pressGrace else { return [] }
             travel = ShortcutRingGeometry.travel(travel, movedBy: delta)
-            let place = ShortcutRingGeometry.place(forOffset: travel, current: lit)
-                .flatMap { isFilled($0) ? $0 : nil }
-            if place != nil {
-                hasLitAPlace = true
-            }
-            return relight(place)
+            return relightForTravel(at: time)
         case .latched:
             lastMovement = time
+            if let stood = latchPointer {
+                guard hypot(location.x - stood.x, location.y - stood.y) >= Self.latchSlack else { return [] }
+                latchPointer = nil
+            }
             // A place whose click is down stays lit until the button is up.
             guard pressedPlace == nil else { return [] }
             return relight(placeUnderPointer())
@@ -208,24 +230,17 @@ struct ShortcutRingSession {
     mutating func buttonPressed(_ button: Int, at location: CGPoint) -> [Command] {
         guard phase == .latched else { return [] }
         pointer = location
-        guard button == 0 else {
-            // Any other button closes the ring.
+        // Any other button closes the ring, and so does a click before the pointer has
+        // moved at all since the ring was left open (it was not aimed at anything).
+        guard button == 0, latchPointer == nil,
+              case .place(let place) = ShortcutRingGeometry.target(at: location, centre: centre, current: lit),
+              isFilled(place) else {
+            // The middle, an empty place, outside: a click anywhere but on a shortcut closes.
             pressedButtons[button] = .dismiss
-            return []
+            return relight(pressedPlace)
         }
-        switch ShortcutRingGeometry.target(at: location, centre: centre, current: lit) {
-        case .place(let place):
-            guard isFilled(place) else {
-                // An empty place: the click is the ring's and does nothing.
-                pressedButtons[button] = .nothing
-                return relight(nil)
-            }
-            pressedButtons[button] = .choose(place)
-            return relight(place)
-        case .middle, .outside:
-            pressedButtons[button] = .dismiss
-            return []
-        }
+        pressedButtons[button] = .choose(place)
+        return relight(place)
     }
 
     /// A pointer button came up: what its press meant happens now.
@@ -236,8 +251,6 @@ struct ShortcutRingSession {
             return close() + [.run(place)]
         case .dismiss:
             return close()
-        case .nothing:
-            return []
         }
     }
 
@@ -258,13 +271,14 @@ struct ShortcutRingSession {
     // MARK: Giving up
 
     /// Time went by: a held ring past `holdLimit`, or a ring left open for `idleLimit`
-    /// without the pointer moving, closes. Nothing runs.
+    /// without the pointer moving, closes. Nothing runs. And a hand that stopped between
+    /// the dead zone and twice of it lights its place once the first moments are over.
     mutating func timePassed(to time: TimeInterval) -> [Command] {
         switch phase {
         case .closed:
             return []
         case .held:
-            return time - pressTime >= Self.holdLimit ? close() : []
+            return time - pressTime >= Self.holdLimit ? close() : relightForTravel(at: time)
         case .latched:
             return time - lastMovement >= Self.idleLimit ? close() : []
         }
