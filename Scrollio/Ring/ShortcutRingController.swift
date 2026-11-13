@@ -32,10 +32,14 @@
 //  `idleLimit` without the pointer moving over an open ring. It does not open while the
 //  left or the right button is down (a drag).
 //
+//  Which ring opens is decided when the trigger goes down, by the app in front
+//  (`ShortcutRingChoice`): its own ring if it has one in use, else the general ring. That
+//  ring stays the ring until it closes, whatever comes to the front meanwhile.
+//
 //  What a place that opens an app shows (its name, its icon) takes a look on disk. That
 //  never happens in the turn in which a ring is shown: the face is made at a quiet moment
-//  (`preparedFace`), and a ring for which none is there yet shows the file's name and a
-//  plain symbol once.
+//  (`preparedFaces`, one per ring: the general one and each app's own), and a ring for
+//  which none is there yet shows the file's name and a plain symbol once.
 //
 //  Nothing is drawn and nothing is posted inside an event callback: the panel is shown on
 //  the next turn of the main queue, and so is the chosen action, after the panel is gone.
@@ -67,28 +71,61 @@ final class ShortcutRingController {
 
     // MARK: The face, made at a quiet moment
 
-    /// A ring's face with what it took a look on disk to know (an app's name and icon),
-    /// made when no ring was held: by the Settings pane whenever it shows a ring, at
-    /// launch for a ring that opens something, and after a ring closed that had to be
-    /// shown without it.
-    private(set) static var preparedFace: (ring: ShortcutRingSettings, face: ShortcutRingFace)?
+    /// Rings' faces with what it took a look on disk to know (an app's name and icon),
+    /// made when no ring was held: by Settings whenever it shows a ring (the pane the
+    /// general one, an app's page the app's own), at launch for the rings that open
+    /// something, and after a ring closed that had to be shown without it. The newest
+    /// first, one per ring: a face belongs to the eight places it was made for and is
+    /// never shown for others, so the ring of one app never shows another's.
+    private(set) static var preparedFaces: [(ring: ShortcutRingSettings, face: ShortcutRingFace)] = []
+
+    /// How many faces are kept (the general ring's and those of apps' own rings). A ring
+    /// beyond them is shown once without its icons and then takes the oldest one's place.
+    static let preparedFaceLimit = 12
+
+    /// The face that was made last.
+    static var preparedFace: (ring: ShortcutRingSettings, face: ShortcutRingFace)? {
+        return preparedFaces.first
+    }
+
+    /// The face made for a ring with the places of `ring`; nil when there is none. (A
+    /// face shows the places and nothing else: the freeze switch plays no part.)
+    static func preparedFace(for ring: ShortcutRingSettings) -> ShortcutRingFace? {
+        return preparedFaces.first { $0.ring.places == ring.places }?.face
+    }
 
     /// Keeps `face` for the next ring that is `ring`.
     static func prepare(_ face: ShortcutRingFace, for ring: ShortcutRingSettings) {
-        preparedFace = (ring, face)
+        preparedFaces.removeAll { $0.ring.places == ring.places }
+        preparedFaces.insert((ring, face), at: 0)
+        if preparedFaces.count > preparedFaceLimit {
+            preparedFaces.removeLast(preparedFaces.count - preparedFaceLimit)
+        }
     }
 
-    /// At launch: when something opens the ring and a place of it opens an app or a file,
-    /// the face is made on a later turn of the main queue, so that the first ring already
-    /// has the icons. For everyone else: one pass over the bindings, nothing more.
+    /// The rings whose face is made at launch: of those that can open (the general one
+    /// and each app's own), the ones with a place that opens an app or a file; none while
+    /// nothing opens the ring.
+    static func ringsToPrepareAtLaunch(options: Options = .shared) -> [ShortcutRingSettings] {
+        guard options.buttons.binding.contains(where: {
+            $0.isEnabled && $0.systemShortcutName == SystemShortcut.shortcutRing.identifier
+        }) else { return [] }
+        let rings = ShortcutRingChoice.rings(applications: options.application.applications, general: options.ring)
+        return Array(rings.filter { $0.opensSomething }.prefix(preparedFaceLimit))
+    }
+
+    /// At launch: when something opens the ring and a place of a ring opens an app or a
+    /// file, the faces are made on a later turn of the main queue, so that the first ring
+    /// already has the icons. For everyone else: one pass over the bindings and the apps,
+    /// nothing more.
     static func prepareFaceAtLaunch(options: Options = .shared) {
-        let ring = options.ring
-        guard ring.opensSomething,
-              options.buttons.binding.contains(where: {
-                  $0.isEnabled && $0.systemShortcutName == SystemShortcut.shortcutRing.identifier
-              }) else { return }
+        let rings = ringsToPrepareAtLaunch(options: options)
+        guard !rings.isEmpty else { return }
         DispatchQueue.main.async {
-            prepare(ShortcutRingFace(ring), for: ring)
+            // The general ring last, so that it is the newest.
+            for ring in rings.reversed() {
+                prepare(ShortcutRingFace(ring), for: ring)
+            }
         }
     }
 
@@ -98,6 +135,11 @@ final class ShortcutRingController {
     static func setTestingController(_ controller: ShortcutRingController?) {
         existing?.cancel()
         existing = controller
+    }
+
+    /// Tests: no face is prepared, as before the first ring.
+    static func forgetPreparedFaces() {
+        preparedFaces = []
     }
     #endif
 
@@ -118,8 +160,13 @@ final class ShortcutRingController {
         var scheduleAfter: (TimeInterval, @escaping () -> Void) -> Void
         /// A repeating timer, or nil when the caller drives `tick()` itself (tests).
         var makeTimer: (TimeInterval, @escaping () -> Void) -> Timer?
-        /// The ring this Mac's settings hold.
+        /// The general ring this Mac's settings hold.
         var ring: () -> ShortcutRingSettings
+        /// The ring that opens now, given the general one: the own ring of the app in
+        /// front, or the general ring. Asked once per ring, when the trigger goes down,
+        /// inside the event callback: nothing slow in it (no disk, no Launch Services).
+        /// By default the general ring (tests).
+        var choice: (ShortcutRingSettings) -> ShortcutRingChoice = { .general($0) }
         /// The whole face of a ring, with a look on disk for what it opens. Only called
         /// while no ring is open.
         var makeFace: (ShortcutRingSettings) -> ShortcutRingFace
@@ -166,6 +213,11 @@ final class ShortcutRingController {
                 return CommonModesTimer.scheduled(withTimeInterval: interval, repeats: true) { _ in block() }
             },
             ring: { Options.shared.ring },
+            choice: { general in
+                ShortcutRingChoice.make(
+                    front: .current(), applications: Options.shared.application.applications, general: general
+                )
+            },
             makeFace: { ShortcutRingFace($0) },
             run: { ShortcutRingController.run($0) },
             allowsHaptics: { Options.shared.gesture.hapticFeedback },
@@ -234,6 +286,8 @@ final class ShortcutRingController {
     private var hapticCode: UInt16?
     /// What opened the ring, for the log.
     private var openedBy = ""
+    /// The ring that opened is the own one of the app in front, for the log.
+    private var isAppsOwnRing = false
     private var lastTick = -TimeInterval.infinity
     /// When a place's action was last started.
     private var lastRun = -TimeInterval.infinity
@@ -304,8 +358,13 @@ final class ShortcutRingController {
         if !session.isOpen {
             // In the middle of a drag the ring stays away.
             guard !environment.isPrimaryButtonDown() else { return }
-            let stored = environment.ring()
+            // The app in front decides, now: this ring stays until it closes.
+            let choice = environment.choice(environment.ring())
+            let stored = choice.ring
+            isAppsOwnRing = choice.isAppsOwn
             if stored != ring {
+                // Another ring than last time (changed in Settings, or another app in
+                // front): the face of the last one is not this one's.
                 ring = stored
                 filled = stored.filled
                 face = nil
@@ -475,7 +534,9 @@ final class ShortcutRingController {
                     guard let self, self.showGeneration == generation, self.session.phase == .held else { return }
                     self.perform(self.session.timePassed(to: self.environment.now()))
                 }
+                // (Which app is in front is not said: the log never names an app.)
                 environment.log("Shortcut Ring: opened by \(openedBy)"
+                    + (isAppsOwnRing ? ", the own ring of the app in front" : "")
                     + (ring.freezePointer ? ", the pointer is kept still while it is held" : ""))
             case .light(let place):
                 presenter.light(place)
@@ -514,10 +575,10 @@ final class ShortcutRingController {
     /// at a quiet moment if there is one for this ring, else names and plain symbols.
     private func faceForShowing() -> ShortcutRingFace {
         if let face { return face }
-        if let prepared = Self.preparedFace, prepared.ring == ring {
-            face = prepared.face
+        if let prepared = Self.preparedFace(for: ring) {
+            face = prepared
             faceIsComplete = true
-            return prepared.face
+            return prepared
         }
         let quick = ShortcutRingFace(ring, looksOnDisk: false)
         face = quick

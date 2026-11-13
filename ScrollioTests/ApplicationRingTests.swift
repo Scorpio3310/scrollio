@@ -3,8 +3,8 @@
 //  ScrollioTests
 //
 //  A Shortcut Ring of an app's own: how it is stored with the app's entry and what an
-//  entry from before reads as, the switch "Use the general ring", and which ring opens
-//  for which app in front.
+//  entry from before reads as, the switch "Use the general ring", which ring opens for
+//  which app in front, and that the ring that opened stays the ring until it closes.
 //  (The app's page is in PreferencesApplicationTests, the settings file in
 //  SettingsFileTests.) Nothing is shown and nothing is posted.
 //
@@ -214,4 +214,180 @@ final class ShortcutRingChoiceTests: XCTestCase {
         XCTAssertNil(FrontApp.current(nil))
     }
 
+    /// The faces made at launch: the general ring's and each app's own, of those whose
+    /// places open an app or a file; none while no button or key opens the ring.
+    func testTheFacesMadeAtLaunchAreThoseOfTheRingsThatOpenSomething() {
+        let options = Options()
+        options.defaults = TestDefaults.make(for: self)
+        let textEdit = OpenTargetPayload(path: "/System/Applications/TextEdit.app", bundleID: "com.apple.TextEdit", arguments: "", kind: .application)
+        let opens = application(notesPath, top: SystemShortcut.copy)
+        opens.ring?[2] = ShortcutRingPlace(openTarget: textEdit)
+        let keptForLater = application("/Applications/Mail.app", top: SystemShortcut.copy)
+        keptForLater.ring?[2] = ShortcutRingPlace(openTarget: textEdit)
+        keptForLater.setUsesGeneralRing(true, general: .default)
+        options.application.applications = list([opens, application(calculatorPath, top: SystemShortcut.paste), keptForLater])
+        XCTAssertEqual(ShortcutRingController.ringsToPrepareAtLaunch(options: options), [], "nothing opens the ring")
+
+        let trigger = RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil)
+        options.buttons.binding = [
+            ButtonBinding(triggerEvent: trigger, systemShortcutName: SystemShortcut.shortcutRing.identifier, isEnabled: true),
+        ]
+        XCTAssertEqual(ShortcutRingController.ringsToPrepareAtLaunch(options: options), [opens.ringThatOpens(general: .default)])
+        var general = ShortcutRingSettings.default
+        general[5] = ShortcutRingPlace(openTarget: textEdit)
+        options.ring = general
+        XCTAssertEqual(
+            ShortcutRingController.ringsToPrepareAtLaunch(options: options),
+            [general, opens.ringThatOpens(general: general)]
+        )
+    }
+}
+
+// MARK: - The controller
+
+final class ShortcutRingPerAppControllerTests: XCTestCase {
+
+    private typealias FrontApp = ShortcutRingChoice.FrontApp
+
+    private var harness: RingHarness!
+    private var controller: ShortcutRingController { return harness.controller }
+    private var front: FrontApp?
+    private var applications = list([])
+
+    override func setUp() {
+        super.setUp()
+        ShortcutRingController.forgetPreparedFaces()
+        harness = RingHarness()
+        front = nil
+        applications = list([
+            application(notesPath, top: SystemShortcut.copy),
+            application(calculatorPath, top: SystemShortcut.paste),
+        ])
+        controller.environment.choice = { [unowned self] general in
+            ShortcutRingChoice.make(front: self.front, applications: self.applications, general: general)
+        }
+    }
+
+    override func tearDown() {
+        harness = nil
+        ShortcutRingController.forgetPreparedFaces()
+        super.tearDown()
+    }
+
+    private func topTitle() -> String? {
+        return harness.presenter.shown.last?.face.places[0].title
+    }
+
+    /// The app in front when the trigger goes down decides, and that ring stays until it
+    /// closes: another app that comes to the front while the ring is held changes neither
+    /// what is shown nor what the chosen place runs. The next ring is the other app's.
+    func testTheRingThatOpenedStaysWhenAnotherAppComesToTheFront() {
+        front = FrontApp(bundlePath: notesPath, executablePath: nil)
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        XCTAssertEqual(topTitle(), SystemShortcut.copy.localizedName)
+
+        front = FrontApp(bundlePath: calculatorPath, executablePath: nil)
+        harness.moveHand(by: CGPoint(x: 0, y: -70))
+        XCTAssertEqual(harness.presenter.lit.last, 0)
+        harness.clearLog()
+        controller.triggerReleased(isMadeUp: false)
+        harness.runScheduled()
+        XCTAssertEqual(harness.log, ["hide", "run copy"], "the place of the ring that opened")
+        XCTAssertEqual(harness.presenter.shown.count, 1, "nothing was shown again")
+
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        XCTAssertEqual(topTitle(), SystemShortcut.paste.localizedName, "the app in front now")
+        controller.cancel()
+
+        // A ring that stands open stays its app's too, through a second press.
+        front = FrontApp(bundlePath: notesPath, executablePath: nil)
+        harness.tap()
+        front = nil
+        harness.pointer = harness.place(0)
+        harness.now += 0.5
+        controller.tick()
+        harness.clearLog()
+        harness.presenter.onButton?(0, true, harness.place(0))
+        harness.presenter.onButton?(0, false, harness.place(0))
+        harness.runScheduled()
+        XCTAssertEqual(harness.log, ["hide", "run copy"])
+    }
+
+    /// The general ring for an app without a ring of its own, and for no app; the log says
+    /// when an app's own ring opened, and never which app.
+    func testTheLogSaysWhenAnAppsOwnRingOpenedAndNeverNamesTheApp() {
+        harness.tap()
+        XCTAssertEqual(topTitle(), SystemShortcut.missionControl.localizedName)
+        XCTAssertEqual(harness.logLines.first, "Shortcut Ring: opened by a mouse button")
+        controller.cancel()
+
+        front = FrontApp(bundlePath: notesPath, executablePath: nil)
+        harness.ring.freezePointer = true
+        harness.tap()
+        XCTAssertEqual(topTitle(), SystemShortcut.copy.localizedName)
+        XCTAssertTrue(harness.logLines.contains(
+            "Shortcut Ring: opened by a mouse button, the own ring of the app in front, the pointer is kept still while it is held"
+        ), "\(harness.logLines)")
+        XCTAssertEqual(harness.pointerLocks.first, "lock", "the freeze switch is the general ring's, for an app's ring too")
+        controller.cancel()
+        XCTAssertFalse(harness.logLines.contains { $0.contains("Notes") || $0.contains(notesPath) })
+
+        front = FrontApp(bundlePath: "/Applications/Preview.app", executablePath: nil)
+        harness.ring.freezePointer = false
+        harness.tap()
+        XCTAssertEqual(topTitle(), SystemShortcut.missionControl.localizedName)
+        XCTAssertEqual(harness.logLines.suffix(2).first, "Shortcut Ring: opened by a mouse button")
+    }
+
+    /// A face belongs to the places it was made for: the ring of one app is never shown
+    /// with another's, and each ring keeps its own face (an app's icon in a place) while
+    /// other rings were shown in between.
+    func testAFaceIsNeverShownForAnotherAppsRing() throws {
+        let textEdit = OpenTargetPayload(path: "/System/Applications/TextEdit.app", bundleID: "com.apple.TextEdit", arguments: "", kind: .application)
+        let notes = try XCTUnwrap(applications.get(by: notesPath))
+        notes.ring?[2] = ShortcutRingPlace(openTarget: textEdit)
+        let calculator = try XCTUnwrap(applications.get(by: calculatorPath))
+        calculator.ring?[2] = ShortcutRingPlace(openTarget: OpenTargetPayload(
+            path: calculatorPath, bundleID: "com.apple.calculator", arguments: "", kind: .application
+        ))
+        // The app's page made the face of the first app's ring; nobody made the second's.
+        let notesRing = notes.ringThatOpens(general: harness.ring)
+        ShortcutRingController.prepare(ShortcutRingFace(notesRing), for: notesRing)
+
+        func open(_ path: String?) -> ShortcutRingFace.Place? {
+            front = path.map { FrontApp(bundlePath: $0, executablePath: nil) }
+            controller.triggerPressed(by: RingHarness.button(.down))
+            harness.runScheduled()
+            let place = harness.presenter.shown.last?.face.places[2]
+            controller.cancel()
+            harness.runScheduled()
+            return place
+        }
+        XCTAssertNotNil(open(notesPath)?.image, "made at a quiet moment")
+        XCTAssertEqual(harness.wholeFacesMade, 0)
+
+        let second = open(calculatorPath)
+        XCTAssertEqual(second?.title, "Calculator")
+        XCTAssertNil(second?.image, "its own face is not there yet; the other app's is not taken for it")
+        XCTAssertEqual(harness.wholeFacesMade, 1, "made after that ring closed")
+
+        XCTAssertEqual(open(nil)?.title, SystemShortcut.moveSpaceRight.localizedName, "the general ring")
+        XCTAssertNotNil(open(notesPath)?.image, "the first app's face was kept")
+        XCTAssertNotNil(open(calculatorPath)?.image, "and the second app's is there now")
+        XCTAssertEqual(harness.wholeFacesMade, 1)
+        // The general ring's freeze switch changes no face.
+        harness.ring.freezePointer = true
+        XCTAssertNotNil(open(notesPath)?.image)
+        XCTAssertEqual(harness.wholeFacesMade, 1)
+        // Only a few faces are kept, the newest ones.
+        for index in 0..<(ShortcutRingController.preparedFaceLimit + 3) {
+            var ring = ShortcutRingSettings.default
+            ring[0] = ShortcutRingPlace(action: "custom::\(index):0")
+            ShortcutRingController.prepare(ShortcutRingFace(ring, looksOnDisk: false), for: ring)
+        }
+        XCTAssertEqual(ShortcutRingController.preparedFaces.count, ShortcutRingController.preparedFaceLimit)
+        XCTAssertNil(ShortcutRingController.preparedFace(for: notesRing))
+    }
 }

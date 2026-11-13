@@ -95,7 +95,8 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   could not be created or that macOS turned off, restarts, settings that could not be
   read or written, an app, a file or a script that could not be opened (never its name
   or path), a held action whose release never came, each use of the Shortcut Ring ("opened
-  by" a mouse button, a key or a button over HID++; "left open"; then "closed, nothing
+  by" a mouse button, a key or a button over HID++, and "the own ring of the app in
+  front" when it was an app's own, never which app; "left open"; then "closed, nothing
   ran" or "closed, ran" with the shortcut's name, or for a key combination or an app
   only what kind of thing it was), at launch which accent colour is
   in effect, at the first Mission Control or Show Desktop whether the Dock is asked for
