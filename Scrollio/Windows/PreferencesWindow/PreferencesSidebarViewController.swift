@@ -177,11 +177,19 @@ final class PreferencesSidebarViewController: NSViewController, NSTableViewDataS
 
     /// A rounded square in `color`, lighter at the top, with the symbol in white: the icons
     /// of System Settings. Drawn at whatever scale the screen asks for.
+    ///
+    /// The symbol is centred by what it draws, not by its image. An SF Symbol's image is the
+    /// box that sets it in a line of text (symbols are sized and placed against the cap
+    /// height of the system font), and the glyph is not in the middle of that box: in these
+    /// symbols it stands up to 0.75 pt low and 0.5 pt left of it. Centred by the box, the
+    /// glyphs stood visibly off the middle of their tiles; the tiles of System Settings have
+    /// theirs in the middle (measured on a screenshot: within a quarter of a point).
     static func tileImage(symbolName: String, color: NSColor, size: CGFloat = tileSize) -> NSImage {
         let configuration = NSImage.SymbolConfiguration(pointSize: size * 0.62, weight: .semibold)
             .applying(NSImage.SymbolConfiguration(paletteColors: [.white]))
         let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
             .withSymbolConfiguration(configuration)
+        let ink = symbol.flatMap { Self.inkBounds(of: $0) }
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
             let radius = rect.width * 0.225
             let tile = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
@@ -191,18 +199,55 @@ final class PreferencesSidebarViewController: NSViewController, NSTableViewDataS
                 let natural = symbol.size
                 let limit = rect.width * 0.76
                 let scale = min(1, limit / max(natural.width, natural.height, 1))
-                let glyph = NSSize(width: natural.width * scale, height: natural.height * scale)
+                // The middle of the glyph, in the symbol's own points (its box's middle if
+                // nothing could be measured), goes to the middle of the tile.
+                let middle = ink.map { NSPoint(x: $0.midX, y: $0.midY) }
+                    ?? NSPoint(x: natural.width / 2, y: natural.height / 2)
                 symbol.draw(in: NSRect(
-                    x: rect.midX - glyph.width / 2,
-                    y: rect.midY - glyph.height / 2,
-                    width: glyph.width,
-                    height: glyph.height
+                    x: rect.midX - middle.x * scale,
+                    y: rect.midY - middle.y * scale,
+                    width: natural.width * scale,
+                    height: natural.height * scale
                 ))
             }
             return true
         }
         image.isTemplate = false
         return image
+    }
+
+    /// Where `image` really draws, in its own points (origin bottom left): the box of the
+    /// pixels it covers at least half, drawn at 8× (so to an eighth of a point). nil when it
+    /// draws nothing.
+    static func inkBounds(of image: NSImage, scale: CGFloat = 8) -> NSRect? {
+        let size = image.size
+        let width = Int((size.width * scale).rounded(.up)), height = Int((size.height * scale).rounded(.up))
+        guard width > 0, height > 0,
+              let context = CGContext(
+                  data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              ) else { return nil }
+        context.scaleBy(x: scale, y: scale)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        image.draw(in: NSRect(origin: .zero, size: size))
+        NSGraphicsContext.restoreGraphicsState()
+        guard let data = context.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
+        // The bitmap's first row is the image's top row.
+        var minColumn = width, maxColumn = -1, minRow = height, maxRow = -1
+        for row in 0..<height {
+            for column in 0..<width where data[(row * width + column) * 4 + 3] >= 128 {
+                minColumn = min(minColumn, column); maxColumn = max(maxColumn, column)
+                minRow = min(minRow, row); maxRow = max(maxRow, row)
+            }
+        }
+        guard maxColumn >= 0 else { return nil }
+        return NSRect(
+            x: CGFloat(minColumn) / scale,
+            y: CGFloat(height - 1 - maxRow) / scale,
+            width: CGFloat(maxColumn - minColumn + 1) / scale,
+            height: CGFloat(maxRow - minRow + 1) / scale
+        )
     }
 }
 
