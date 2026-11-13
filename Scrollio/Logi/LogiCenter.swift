@@ -68,16 +68,17 @@ final class LogiCenter {
         return displayName.isEmpty ? nil : displayName
     }
     /// What a Logitech control is on the mouse, for the Buttons pane's drawing: the gesture
-    /// button, the MX Master 4's thumb panel, the mode shift button behind the wheel, or one
-    /// of the buttons a standard mouse has too. nil for any other control and for codes that
-    /// are not Logitech's.
+    /// button, the MX Master 4's thumb panel, the mode shift button behind the wheel, the
+    /// MX Vertical's pointer speed button, or one of the buttons a standard mouse has too.
+    /// nil for any other control and for codes that are not Logitech's.
     func controlRole(forScrollioCode code: UInt16) -> LogiControlRole? {
         guard let cid = LogiCIDDirectory.toCID(code) else { return nil }
         return LogiControlRole(cid: cid)
     }
     /// The code of the control with `role` on an MX Master (the control the role is named
     /// after: 0x52 middle, 0x53 back, 0x56 forward, 0xC3 gesture, 0xC4 mode shift, 0x1A0 the
-    /// MX Master 4's thumb panel): what a press of it is recorded as while it is diverted.
+    /// MX Master 4's thumb panel, 0xFD the MX Vertical's pointer speed button): what a press
+    /// of it is recorded as while it is diverted.
     /// Read-only; touches no device.
     func scrollioCode(for role: LogiControlRole) -> UInt16 {
         let cid: UInt16
@@ -88,6 +89,7 @@ final class LogiCenter {
         case .gesture: cid = 0x00C3
         case .modeShift: cid = 0x00C4
         case .thumbPanel: cid = 0x01A0
+        case .pointerSpeed: cid = 0x00FD
         }
         return LogiCIDDirectory.toScrollioCode(cid)
     }
@@ -326,6 +328,9 @@ enum LogiControlRole: Equatable {
     case middle
     case back
     case forward
+    /// The button on the top of the MX Vertical that switches the pointer speed (Logitech's
+    /// "DPI switch").
+    case pointerSpeed
 
     init?(cid: UInt16) {
         switch cid {
@@ -335,6 +340,7 @@ enum LogiControlRole: Equatable {
         case 0x0052: self = .middle
         case 0x0053, 0x0054, 0x0055: self = .back
         case 0x0056, 0x0057, 0x0058: self = .forward
+        case 0x00FD: self = .pointerSpeed
         default: return nil
         }
     }

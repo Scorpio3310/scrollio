@@ -10,6 +10,13 @@ it for the people who use the app, and give the version its part before you tag 
 
 ## Unreleased
 
+- **The MX Anywhere 3 and 3S and the MX Vertical have drawings of their own.** With one
+  of them connected, Settings shows that mouse instead of a plain one, from above and
+  from its thumb side, and Buttons lists its buttons in the order they sit on it: the
+  wheel's click, the button behind the wheel (MX Anywhere) or the pointer speed button on
+  the top (MX Vertical), then Forward and Back. The mouse is recognised by its name;
+  there is nothing to set. Both were drawn and set up from Logitech's descriptions of
+  these mice and have not been tried on the mice themselves yet.
 - **The Shortcut Ring is drops now.** The disc behind the ring is gone: each of the eight
   places is a round drop of its own, with one more in the middle that names the shortcut
   you point at. When the ring opens, the drops come out of the middle one after the

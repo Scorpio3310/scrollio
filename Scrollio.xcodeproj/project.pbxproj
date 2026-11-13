@@ -22,6 +22,7 @@
 		6E57A1C0000000000000A102 /* ScrollioTests/GesturePreviewMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E57A1C0000000000000A101 /* ScrollioTests/GesturePreviewMotionTests.swift */; };
 		6E57A1C0000000000000A202 /* ScrollioTests/GesturePreviewViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E57A1C0000000000000A201 /* ScrollioTests/GesturePreviewViewTests.swift */; };
 		6E57A1C0000000000000D702 /* ScrollioTests/MouseArtworkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E57A1C0000000000000D701 /* ScrollioTests/MouseArtworkTests.swift */; };
+		6E57A1C0000000000000D7A2 /* ScrollioTests/MouseArtworkMoreMiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E57A1C0000000000000D7A1 /* ScrollioTests/MouseArtworkMoreMiceTests.swift */; };
 		9D5E7AB10000000000000202 /* ScrollioTests/PreferencesWindowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D5E7AB10000000000000201 /* ScrollioTests/PreferencesWindowTests.swift */; };
 		7A11E5C00000000000000302 /* ScrollioTests/PreferencesWindowRenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11E5C00000000000000301 /* ScrollioTests/PreferencesWindowRenderTests.swift */; };
 		9D5E7AB20000000000000202 /* ScrollioTests/IntroductionWindowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D5E7AB20000000000000201 /* ScrollioTests/IntroductionWindowTests.swift */; };
@@ -147,6 +148,7 @@
 		6E57A1C0000000000000A101 /* ScrollioTests/GesturePreviewMotionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/GesturePreviewMotionTests.swift; sourceTree = SOURCE_ROOT; };
 		6E57A1C0000000000000A201 /* ScrollioTests/GesturePreviewViewTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/GesturePreviewViewTests.swift; sourceTree = SOURCE_ROOT; };
 		6E57A1C0000000000000D701 /* ScrollioTests/MouseArtworkTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/MouseArtworkTests.swift; sourceTree = SOURCE_ROOT; };
+		6E57A1C0000000000000D7A1 /* ScrollioTests/MouseArtworkMoreMiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/MouseArtworkMoreMiceTests.swift; sourceTree = SOURCE_ROOT; };
 		9D5E7AB10000000000000201 /* ScrollioTests/PreferencesWindowTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/PreferencesWindowTests.swift; sourceTree = SOURCE_ROOT; };
 		7A11E5C00000000000000301 /* ScrollioTests/PreferencesWindowRenderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/PreferencesWindowRenderTests.swift; sourceTree = SOURCE_ROOT; };
 		9D5E7AB20000000000000201 /* ScrollioTests/IntroductionWindowTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/IntroductionWindowTests.swift; sourceTree = SOURCE_ROOT; };
@@ -307,6 +309,7 @@
 				6E57A1C0000000000000A101 /* ScrollioTests/GesturePreviewMotionTests.swift */,
 				6E57A1C0000000000000A201 /* ScrollioTests/GesturePreviewViewTests.swift */,
 				6E57A1C0000000000000D701 /* ScrollioTests/MouseArtworkTests.swift */,
+				6E57A1C0000000000000D7A1 /* ScrollioTests/MouseArtworkMoreMiceTests.swift */,
 				9D5E7AB10000000000000201 /* ScrollioTests/PreferencesWindowTests.swift */,
 				7A11E5C00000000000000301 /* ScrollioTests/PreferencesWindowRenderTests.swift */,
 				9D5E7AB20000000000000201 /* ScrollioTests/IntroductionWindowTests.swift */,
@@ -565,6 +568,7 @@
 				6E57A1C0000000000000A102 /* ScrollioTests/GesturePreviewMotionTests.swift in Sources */,
 				6E57A1C0000000000000A202 /* ScrollioTests/GesturePreviewViewTests.swift in Sources */,
 				6E57A1C0000000000000D702 /* ScrollioTests/MouseArtworkTests.swift in Sources */,
+				6E57A1C0000000000000D7A2 /* ScrollioTests/MouseArtworkMoreMiceTests.swift in Sources */,
 				9D5E7AB10000000000000202 /* ScrollioTests/PreferencesWindowTests.swift in Sources */,
 				7A11E5C00000000000000302 /* ScrollioTests/PreferencesWindowRenderTests.swift in Sources */,
 				9D5E7AB20000000000000202 /* ScrollioTests/IntroductionWindowTests.swift in Sources */,

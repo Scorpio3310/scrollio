@@ -1414,6 +1414,114 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
+    /// The MX Anywhere 3 and the MX Vertical for looking at (`<mouse>-sheet.png`, three
+    /// times the cards' size, light above dark): both views plain, then each part lit in
+    /// the view it lights in, as the cards light it; and under them the rows' pictures of
+    /// its buttons and of nothing lit, on the card's colour and on the selection. And the
+    /// Buttons pane as it shows with that mouse connected: nothing chosen, the Forward
+    /// button's row chosen (the card turns to the thumb side), and the second row chosen
+    /// (`pane-buttons-<mouse>[-forward|-second]-<appearance>.png`).
+    func testRenderAnywhereAndVertical() throws {
+        let mice: [(model: MouseArtworkModel, deviceName: String)] = [
+            (.mxAnywhere3, "MX Anywhere 3S"), (.mxVertical, "MX Vertical"),
+        ]
+        for mouse in mice {
+            let name = Self.shortName(of: mouse.model)
+            try renderLookSheet(of: mouse.model)
+            Options.shared.buttons.binding = [
+                binding(3, SystemShortcut.navigateBack.identifier),
+                binding(4, SystemShortcut.navigateForward.identifier),
+                binding(2, SystemShortcut.missionControl.identifier),
+            ]
+            let source = ButtonsDeviceSource(
+                captureStatus: { _ in .normal }, deviceName: { mouse.deviceName }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+            )
+            try renderButtons(name: "pane-buttons-\(name)", source: source)
+            try renderButtons(name: "pane-buttons-\(name)-forward", source: source) { buttons in
+                buttons.list.select(AnyHashable(ButtonsMousePart.forward))
+            }
+            try renderButtons(name: "pane-buttons-\(name)-second", source: source) { buttons in
+                buttons.list.select(AnyHashable(ButtonsMousePart.listed(on: mouse.model)[1]))
+            }
+        }
+    }
+
+    private func renderLookSheet(of model: MouseArtworkModel) throws {
+        let unit = MouseArtworkView.unit
+        let tile = NSSize(width: 136, height: 150)
+        let caption: CGFloat = 22
+        var tiles: [(title: String, viewpoint: MouseArtworkViewpoint, lit: MouseArtworkPart?)] = [
+            ("from above", .above, nil), ("from the thumb side", .thumbSide, nil),
+        ]
+        let order: [MouseArtworkPart] = [.left, .right, .wheel, .modeShift, .pointerSpeed, .forward, .back, .body]
+        for part in order where model.has(part) {
+            tiles.append(("\(part)", model.viewpoint(lighting: part), part))
+        }
+        let columns = 5
+        let rows = (tiles.count + columns - 1) / columns
+        // The rows' pictures at twice their size (six pixels per point on the sheet).
+        let small: CGFloat = 2 * ButtonsMouseMiniature.size.height + 12
+        let pictures: [ButtonsMousePart?] = [.left, .right] + ButtonsMousePart.listed(on: model) + [nil]
+        let half = NSSize(width: tile.width * CGFloat(columns), height: tile.height * CGFloat(rows) + 2 * small)
+        let bounds = NSRect(x: 0, y: 0, width: half.width, height: 2 * half.height)
+        let light = try XCTUnwrap(NSAppearance(named: .aqua)), dark = try XCTUnwrap(NSAppearance(named: .darkAqua))
+        func drawHalf(at top: CGFloat) {
+            let area = NSRect(x: 0, y: top, width: half.width, height: half.height)
+            NSColor.windowBackgroundColor.setFill()
+            area.fill()
+            ScrollPreviewPalette.cardFill.setFill()
+            area.fill()
+            for (index, entry) in tiles.enumerated() {
+                let frame = NSRect(
+                    x: CGFloat(index % columns) * tile.width, y: top + CGFloat(index / columns) * tile.height,
+                    width: tile.width, height: tile.height
+                )
+                NSAttributedString(string: entry.title, attributes: [
+                    .font: NSFont.systemFont(ofSize: 10, weight: .medium), .foregroundColor: NSColor.secondaryLabelColor,
+                ]).draw(at: NSPoint(x: frame.minX + 8, y: frame.minY + 5))
+                let art = NSRect(x: frame.minX, y: frame.minY + caption, width: frame.width, height: frame.height - caption)
+                let shapes = MouseArtworkShapes(model: model, viewpoint: entry.viewpoint)
+                NSGraphicsContext.saveGraphicsState()
+                let transform = NSAffineTransform()
+                transform.translateX(
+                    by: art.midX - MouseArtworkShapes.centre.x * unit, yBy: art.midY - MouseArtworkShapes.centre.y * unit
+                )
+                transform.scale(by: unit)
+                transform.concat()
+                MouseArtworkPainter.draw(shapes, ink: .card, unit: unit)
+                if let lit = entry.lit {
+                    MouseArtworkPainter.drawHighlight(lit, shapes: shapes, unit: unit)
+                }
+                NSGraphicsContext.restoreGraphicsState()
+            }
+            let size = ButtonsMouseMiniature.size
+            for highlighted in [false, true] {
+                let y = top + tile.height * CGFloat(rows) + (highlighted ? small : 0)
+                if highlighted {
+                    NSColor.controlAccentColor.setFill()
+                    NSRect(x: 0, y: y, width: half.width, height: small).fill()
+                }
+                for (index, part) in pictures.enumerated() {
+                    NSGraphicsContext.saveGraphicsState()
+                    let transform = NSAffineTransform()
+                    transform.translateX(by: 16 + CGFloat(index) * (2 * size.width + 24), yBy: y + 6)
+                    transform.scale(by: 2)
+                    transform.concat()
+                    ButtonsMouseMiniature.draw(
+                        .mouse(part: part, number: nil), mouse: model, in: NSRect(origin: .zero, size: size), highlighted: highlighted
+                    )
+                    NSGraphicsContext.restoreGraphicsState()
+                }
+            }
+        }
+        try renderSheet(bounds: bounds, scale: 3, appearance: light, to: "\(Self.shortName(of: model))-sheet.png") {
+            drawHalf(at: 0)
+            dark.performAsCurrentDrawingAppearance {
+                drawHalf(at: half.height)
+            }
+        }
+    }
+
     private func renderViewsSheet(of model: MouseArtworkModel) throws {
         let name = Self.shortName(of: model)
         let unit = MouseArtworkView.unit
@@ -1424,7 +1532,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
             ("from above", .above, nil),
             ("from the thumb side", .thumbSide, nil),
         ]
-        let order: [MouseArtworkPart] = [.wheel, .modeShift, .left, .thumbWheel, .gesture, .forward, .back, .thumbPanel, .right]
+        let order: [MouseArtworkPart] = [.wheel, .modeShift, .pointerSpeed, .left, .thumbWheel, .gesture, .forward, .back, .thumbPanel, .right]
         for part in order where model.has(part) {
             tiles.append(("\(part)", model.viewpoint(lighting: part), part))
         }
@@ -1610,6 +1718,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
         switch model {
         case .mxMaster4: return "mx4"
         case .mxMaster3: return "mx3"
+        case .mxAnywhere3: return "anywhere"
+        case .mxVertical: return "vertical"
         case .generic: return "generic"
         }
     }

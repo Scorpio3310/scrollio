@@ -27,7 +27,7 @@ final class MouseArtworkTests: XCTestCase {
             ("mx master 3s", .mxMaster3),
             ("MX Master 2S", .generic),
             ("MX Master", .generic),
-            ("MX Anywhere 3S", .generic),
+            ("MX Anywhere 2S", .generic),
             ("MX Master 45", .generic),
             ("Master 4", .generic),
             ("M720 Triathlon", .generic),
@@ -42,8 +42,9 @@ final class MouseArtworkTests: XCTestCase {
     // MARK: - The parts of each drawing
 
     func testEachDrawingHasItsOwnParts() {
-        XCTAssertEqual(MouseArtworkModel.mxMaster4.parts, MouseArtworkPart.allCases)
-        XCTAssertEqual(Set(MouseArtworkModel.mxMaster3.parts), Set(MouseArtworkPart.allCases).subtracting([.thumbPanel]))
+        // (The button on the MX Vertical's top is that mouse's alone: MouseArtworkMoreMiceTests.)
+        XCTAssertEqual(MouseArtworkModel.mxMaster4.parts, MouseArtworkPart.allCases.filter { $0 != .pointerSpeed })
+        XCTAssertEqual(Set(MouseArtworkModel.mxMaster3.parts), Set(MouseArtworkPart.allCases).subtracting([.thumbPanel, .pointerSpeed]))
         XCTAssertEqual(Set(MouseArtworkModel.generic.parts), [.body, .left, .right, .wheel, .back, .forward])
         for model in MouseArtworkModel.allCases {
             for schematic in [false, true] {
@@ -494,6 +495,25 @@ final class MouseArtworkTests: XCTestCase {
         XCTAssertEqual(MouseArtworkShapes(model: .generic).wheelRect.midX, outline.midX, accuracy: 0.5)
     }
 
+    /// A drawing in two views need not have a thumb wheel, and may have a tinted area that
+    /// is no part. The MX Masters have the first and not the second, and their light is
+    /// behind the wheel's slot, not in it (a light in the slot is drawn again over a lit
+    /// button, with the slot).
+    func testWhatADrawingInTwoViewsMayLeaveOut() throws {
+        for model in [MouseArtworkModel.mxMaster4, .mxMaster3] {
+            for viewpoint in model.viewpoints {
+                let shapes = MouseArtworkShapes(model: model, viewpoint: viewpoint)
+                let views = try XCTUnwrap(shapes.views)
+                XCTAssertEqual(views.roller?.path.bounds, shapes.shape(of: .thumbWheel)?.bounds, "\(model) \(viewpoint): the thumb wheel")
+                XCTAssertNotNil(views.roller, "\(model) \(viewpoint)")
+                XCTAssertNil(views.trim, "\(model) \(viewpoint)")
+                if let light = views.light {
+                    XCTAssertFalse(views.wellRect.contains(light.bounds), "\(model): the light is not in the slot")
+                }
+            }
+        }
+    }
+
     // MARK: - The drawings that did not change
 
     /// The drawings that are not being redrawn are pinned: every shape of theirs, at the
@@ -559,7 +579,9 @@ final class MouseArtworkTests: XCTestCase {
             "well " + rect(shapes.wellRect),
             "badge " + number(shapes.badgeCentre.x) + "," + number(shapes.badgeCentre.y),
         ]
-        for part in MouseArtworkPart.allCases {
+        // The MX Vertical's top button came after these fingerprints were taken; none of the
+        // pinned drawings has it, and it is left out so that they stay the ones first taken.
+        for part in MouseArtworkPart.allCases where part != .pointerSpeed {
             let shape = shapes.shape(of: part)
             if part == .left || part == .right {
                 lines.append("\(part) " + (shape.map { rect($0.bounds, 1) } ?? "none"))

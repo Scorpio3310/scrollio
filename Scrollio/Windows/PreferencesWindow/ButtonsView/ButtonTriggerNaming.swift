@@ -84,6 +84,7 @@ enum ButtonTriggerNaming {
             case .middle?: return text("buttons-trigger-middle")
             case .back?: return text("buttons-trigger-back")
             case .forward?: return text("buttons-trigger-forward")
+            case .pointerSpeed?: return text("buttons-trigger-pointer-speed")
             case nil:
                 let name = logitech.name(code) ?? String(Int(code))
                 if let plain = plainLogitechNames[name] {

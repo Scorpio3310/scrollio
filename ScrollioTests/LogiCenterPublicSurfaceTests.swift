@@ -24,6 +24,32 @@ final class LogiCenterPublicSurfaceTests: XCTestCase {
         XCTAssertNil(LogiControlRole(cid: 0x01A3), "another control of the MX Master 4 has no role")
     }
 
+    /// The button on the top of the MX Vertical (CID 0x00FD, Logitech's "DPI switch") is the
+    /// pointer speed button: a control of its own, which no standard button stands for. No
+    /// mouse drawn so far has it, so it lights nothing yet; the pane calls it as it did
+    /// before it had a role. Another control about the pointer speed (0x00ED) has no role.
+    func testControlRole_pointerSpeed() {
+        let code: UInt16 = 2000 + 0x00FD
+        XCTAssertEqual(LogiControlRole(cid: 0x00FD), .pointerSpeed)
+        XCTAssertEqual(LogiCenter.shared.controlRole(forScrollioCode: code), .pointerSpeed)
+        XCTAssertEqual(LogiCenter.shared.scrollioCode(for: .pointerSpeed), code)
+        XCTAssertNil(LogiCenter.shared.nativeMouseButton(forScrollioCode: code))
+        XCTAssertNil(LogiControlRole(cid: 0x00ED))
+
+        let trigger = RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil)
+        XCTAssertEqual(ButtonsMousePart.part(for: trigger), .pointerSpeed)
+        XCTAssertEqual(ButtonsMousePart.pointerSpeed.logitechRole, .pointerSpeed)
+        XCTAssertEqual(ButtonTriggerNaming.buttonName(code: code), "Pointer speed button")
+        // It is not a place a numbered button can be said to be: the Mac never reports it
+        // by a number, so "Which Button Is This?" does not offer it and no stored value is new.
+        XCTAssertNil(PlacedMousePart(role: .pointerSpeed))
+        XCTAssertNil(PlacedMousePart.known(for: trigger))
+        for mouse in [MouseArtworkModel.mxMaster4, .mxMaster3, .generic] {
+            XCTAssertFalse(mouse.has(.pointerSpeed), "\(mouse)")
+            XCTAssertEqual(ButtonTriggerPicture.make(for: trigger, mouse: mouse), .mouse(part: nil, number: nil, notDrawn: .pointerSpeed), "\(mouse)")
+        }
+    }
+
     /// The code of the control of each role: the one its role is read from, so the two agree.
     func testScrollioCodeForRole_isTheControlOfThatRole() {
         let roles: [LogiControlRole] = [.middle, .back, .forward, .gesture, .modeShift, .thumbPanel]
