@@ -32,6 +32,7 @@ glance, with the features, help and what is new.
 - ✅ **Per-app settings** – an app follows the Scrolling settings or keeps its own, or is left to macOS.
 - ✅ **Buttons and keys** – give a mouse button, or a key with modifiers, a shortcut, a system action or an app to open.
 - ✅ **Mouse gestures** – hold a button and move the mouse to switch desktops, open Mission Control and more.
+- ✅ **Shortcut Ring** – a button or a key opens a ring of eight shortcuts around the pointer: hold and move, or press and click.
 - ✅ **Thumb wheel actions** – the sideways wheel can scroll, zoom, switch tabs or desktops, go back and forward, or set the volume.
 - ✅ **Logitech MX settings** – battery, pointer speed, wheel mode and haptics of a Logitech MX mouse.
 - ✅ **Menu bar item** – battery, Pause, and smoothing on or off for the app in front; the icon can be hidden.
@@ -140,15 +141,15 @@ codesign -dv --verbose=2 /Applications/Scrollio.app 2>&1 | grep -E "Authority|Te
 
 ## 📚 More
 
-Settings are in one window with a sidebar: Scrolling, Buttons, Gestures, Mouse, Apps and
-General. On the first launch a Welcome Guide leads through Accessibility access, the feel
+Settings are in one window with a sidebar: Scrolling, Buttons, Gestures, Shortcut Ring,
+Mouse, Apps and General. On the first launch a Welcome Guide leads through Accessibility access, the feel
 of scrolling and the menu bar icon. The details are in `docs/`:
 
 - [Smooth scrolling](docs/scrolling.md): the feels, per-app settings, the keys that change
   a scroll, and Trackpad-style scrolling (Experimental): where it works and where not.
-- [Buttons, gestures, the thumb wheel and the rest](docs/features.md): actions for buttons
-  and keys, mouse gestures, the thumb wheel, Logitech MX mice, the menu bar, the settings
-  file and updates.
+- [Buttons, gestures, the Shortcut Ring, the thumb wheel and the rest](docs/features.md):
+  actions for buttons and keys, mouse gestures, the Shortcut Ring, the thumb wheel,
+  Logitech MX mice, the menu bar, the settings file and updates.
 - [Permissions and privacy](docs/privacy.md): what Scrollio asks macOS for and why, and
   what it reads, keeps and sends.
 - [Uninstalling and diagnostics](docs/troubleshooting.md): removing Scrollio completely,

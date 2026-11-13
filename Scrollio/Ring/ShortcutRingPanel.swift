@@ -136,13 +136,29 @@ final class ShortcutRingPanel: NSPanel {
         panel.isMovableByWindowBackground = false
         panel.isReleasedWhenClosed = false
         panel.isExcludedFromWindowsMenu = true
+        panel.worksWhenModal = true
         panel.ignoresMouseEvents = true
         return panel
     }
 }
 
+/// The ring's shadow, around the disc of material.
+final class ShortcutRingShadowView: NSView {
+
+    override var isOpaque: Bool { return false }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        return nil
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        ShortcutRingArtwork.drawShadow(centre: CGPoint(x: bounds.midX, y: bounds.midY))
+    }
+}
+
 /// The panel's content: the almost invisible fill that takes the clicks, the ring's
-/// shadow, the material and the ring itself.
+/// shadow, the material and the ring itself. The stage draws nothing itself (it is as
+/// large as a screen: its fill is its layer's colour, which needs no bitmap).
 final class ShortcutRingStageView: NSView {
 
     /// The fill of the clear part while the ring stands open: enough for the window
@@ -153,6 +169,7 @@ final class ShortcutRingStageView: NSView {
     /// 0 the left button, 1 any other.
     var onButton: ((_ button: Int, _ isDown: Bool, _ location: CGPoint) -> Void)?
 
+    let shadowView = ShortcutRingShadowView()
     let material = NSVisualEffectView()
     let faceView = ShortcutRingFaceView()
 
@@ -163,14 +180,14 @@ final class ShortcutRingStageView: NSView {
 
     var takesClicks = false {
         didSet {
-            guard takesClicks != oldValue else { return }
-            needsDisplay = true
+            layer?.backgroundColor = takesClicks ? NSColor(white: 0, alpha: Self.clickFillAlpha).cgColor : nil
         }
     }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
+        addSubview(shadowView)
         material.material = .hudWindow
         material.blendingMode = .behindWindow
         // A window that is never key would otherwise show the material's inactive grey.
@@ -191,8 +208,11 @@ final class ShortcutRingStageView: NSView {
         let outer = ShortcutRingGeometry.outerRadius
         material.frame = NSRect(x: ringCentre.x - outer, y: ringCentre.y - outer, width: outer * 2, height: outer * 2)
         let side = ShortcutRingGeometry.canvasSide
-        faceView.frame = NSRect(x: ringCentre.x - side / 2, y: ringCentre.y - side / 2, width: side, height: side)
-        needsDisplay = true
+        let canvas = NSRect(x: ringCentre.x - side / 2, y: ringCentre.y - side / 2, width: side, height: side)
+        faceView.frame = canvas
+        // Room for the shadow's blur beyond the canvas.
+        shadowView.frame = canvas.insetBy(dx: -24, dy: -24)
+        shadowView.needsDisplay = true
     }
 
     /// A point of this view in event coordinates.
@@ -208,15 +228,14 @@ final class ShortcutRingStageView: NSView {
         }
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        if takesClicks {
-            NSColor(white: 0, alpha: Self.clickFillAlpha).setFill()
-            dirtyRect.fill()
-        }
-        ShortcutRingArtwork.drawShadow(centre: ringCentre)
-    }
-
     // MARK: The mouse
+
+    /// Every point of the panel is the stage's, the ring's included: the material and
+    /// the drawing take no click themselves (a view that is hit and does not accept the
+    /// first click of a window that is not key would let that click do nothing).
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        return super.hitTest(point) == nil ? nil : self
+    }
 
     /// The first click on a window that is not key is a click, not a way to make it key.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {

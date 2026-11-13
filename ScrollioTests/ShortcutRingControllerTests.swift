@@ -756,11 +756,13 @@ final class ShortcutRingPanelTests: XCTestCase {
         let stage = try XCTUnwrap(presenter.stage)
         XCTAssertFalse(panel.ignoresMouseEvents)
         XCTAssertTrue(stage.takesClicks)
+        XCTAssertNotNil(stage.layer?.backgroundColor, "the clear part is filled, almost invisibly")
         XCTAssertTrue(stage.acceptsFirstMouse(for: nil), "the first click on a window that is not key counts")
         XCTAssertGreaterThan(ShortcutRingStageView.clickFillAlpha, 0.004, "a pixel without alpha lets a click through")
         XCTAssertLessThanOrEqual(ShortcutRingStageView.clickFillAlpha, 0.02)
         presenter.setTakesClicks(false)
         XCTAssertTrue(panel.ignoresMouseEvents)
+        XCTAssertNil(stage.layer?.backgroundColor)
         presenter.setTakesClicks(true)
         presenter.hide()
         XCTAssertTrue(panel.ignoresMouseEvents)
@@ -788,6 +790,11 @@ final class ShortcutRingPanelTests: XCTestCase {
         XCTAssertEqual(reported.map { $0.1 }, [true, false, true, false])
         XCTAssertEqual(reported.first?.2, CGPoint(x: 482, y: 300))
         XCTAssertNil(stage.faceView.hitTest(NSPoint(x: 10, y: 10)), "the drawing takes no click itself")
+        // On the ring and beside it, the view that is hit is the stage, which accepts the
+        // first click of a window that is not key.
+        XCTAssertTrue(stage.hitTest(NSPoint(x: 400, y: 682)) === stage)
+        XCTAssertTrue(stage.hitTest(NSPoint(x: 400 + ShortcutRingGeometry.placeRadius, y: 682)) === stage)
+        XCTAssertTrue(stage.hitTest(NSPoint(x: 1200, y: 100)) === stage)
     }
 
     func testWithReduceMotionTheRingSimplyAppears() throws {

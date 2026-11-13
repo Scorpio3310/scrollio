@@ -815,10 +815,16 @@ final class ButtonBindingTests: XCTestCase {
         let openIndex = try XCTUnwrap(menu.items.firstIndex { ($0.representedObject as? String) == "__open__" })
         let customIndex = try XCTUnwrap(menu.items.firstIndex { ($0.representedObject as? String) == "__custom__" })
 
-        // One group after the last separator: Gesture Navigation, Open…, Custom….
+        let ringIndex = try XCTUnwrap(menu.items.firstIndex {
+            ($0.representedObject as? SystemShortcut.Shortcut)?.identifier == SystemShortcut.shortcutRing.identifier
+        })
+
+        // One group after the last separator: Gesture Navigation, the Shortcut Ring, Open…,
+        // Custom….
         XCTAssertTrue(menu.items[gestureIndex - 1].isSeparatorItem)
-        XCTAssertEqual(openIndex, gestureIndex + 1)
-        XCTAssertEqual(customIndex, gestureIndex + 2)
+        XCTAssertEqual(ringIndex, gestureIndex + 1)
+        XCTAssertEqual(openIndex, gestureIndex + 2)
+        XCTAssertEqual(customIndex, gestureIndex + 3)
         XCTAssertEqual(customIndex, menu.items.count - 1)
 
         let gestureItem = menu.items[gestureIndex]

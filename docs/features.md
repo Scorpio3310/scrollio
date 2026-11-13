@@ -1,4 +1,4 @@
-# Buttons, gestures, the thumb wheel and the rest
+# Buttons, gestures, the Shortcut Ring, the thumb wheel and the rest
 
 What each part of Scrollio does, beyond scrolling. Scrolling itself, with
 Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
@@ -7,8 +7,8 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
 
 - The actions: a system shortcut (Mission Control and Spaces, apps and windows, editing,
   Finder, screenshots, navigation and more), a keyboard shortcut you record, a modifier
-  key, another mouse button, one of the scroll keys, Gesture Navigation, or opening an
-  app, a file or a script.
+  key, another mouse button, one of the scroll keys, Gesture Navigation, the
+  [Shortcut Ring](#shortcut-ring), or opening an app, a file or a script.
 - The listed shortcuts (Select All, Undo, Copy and the rest) press the right key on every
   keyboard layout, and keys are named as your keyboard names them.
 - To record a button or a key, click + and press it. Esc, a left click, closing the
@@ -42,6 +42,52 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   button.
 - With a Logitech MX Master, the mouse can track the gesture itself (Beta), and an MX
   Master 4 can pulse when a gesture locks in.
+
+## Shortcut Ring
+
+A ring of eight shortcuts that opens around the pointer, for any mouse. Give a mouse
+button, a Logitech button such as the MX Master 4's thumb panel, or a key combination
+the action "Shortcut Ring" (in Buttons, or with "Set Up…" in the Shortcut Ring pane);
+nothing opens the ring until you do. The pane also sets what the eight places hold.
+
+- Two ways to choose, both always there:
+  - Hold: press and hold the button, move the mouse towards a shortcut (it lights by
+    the direction of your hand, you need not land on it), and let go. The shortcut
+    runs. Back in the middle and let go: the ring closes and nothing runs.
+  - Click: press the button and let go without moving. The ring stays open: point at a
+    shortcut and click it. A click anywhere else, Esc, the button again, or ten seconds
+    without moving the pointer close the ring; nothing runs.
+- No timing decides between the two: letting go with a shortcut lit runs it, letting go
+  with nothing lit leaves the ring open, however long you pressed. The first moment of
+  movement after the press is ignored, so that the press itself does not choose.
+- The ring never takes the keyboard: the app you are in stays in front, so Copy, Paste
+  and the other shortcuts go to it. The ring is gone before its shortcut runs (a
+  screenshot does not show it).
+- It opens on the display the pointer is on, over full-screen apps and on every Space.
+  Near the edge of a screen the whole ring stays visible, a little away from the
+  pointer, and while you hold the button it is still the direction of your hand that
+  chooses.
+- A place holds one of the listed keyboard shortcuts (Mission Control and Spaces, apps
+  and windows, editing, Finder, system, screenshots, navigation) or nothing; an empty
+  place is a faint dot. A new ring has Mission Control, a screenshot of a selection, the
+  desktops on the left and right, Copy, Paste, Show Desktop and Apps.
+- With Logi Options+: if Logi Options+ manages your mouse, give the button there a
+  keystroke (for example ⌃⌥Space), and record the same keystroke in Scrollio as the
+  ring's button ("Set Up…" in the Shortcut Ring pane, then press that button). The
+  ring then opens when you press the button and stays open for a click; if Options+
+  holds the key while you hold the button, moving and letting go works as well. Use a
+  key combination that no app needs.
+- On a mouse with a haptic motor whose button Scrollio reads itself (an MX Master 4's
+  thumb panel bound in Scrollio), the mouse pulses lightly when a shortcut lights and
+  more firmly when one runs. A button that reaches Scrollio as a keystroke gets no
+  pulse.
+- The ring is a pointer tool: it cannot be reached with the keyboard or with VoiceOver's
+  keys (VoiceOver is told the name of the shortcut that lights). Everything a place can
+  hold can also be given to a button or a key directly.
+- Not in this version: a recorded key combination, an app, a file or a script in a
+  place; mouse clicks and Logitech actions in a place; a ring of its own for each app;
+  rings inside rings; your own symbols; more or fewer than eight places; a step of the
+  Welcome Guide.
 
 ## Thumb wheel
 
@@ -78,8 +124,8 @@ Apart from those settings, and whatever that switch says:
   button it can send (never the left or the right one), so that it can tell which one
   you press, and gives them back when the recording ends.
 - A Logitech action changes the mouse when its button, key or gesture runs it.
-- The gesture pulse plays on the mouse and can switch its haptics on, unless Haptic
-  feedback is turned off.
+- The pulse of a gesture or of the Shortcut Ring plays on the mouse and can switch its
+  haptics on, unless Haptic feedback is turned off.
 
 A value written to the mouse is stored in the mouse: it stays after Scrollio quits or is
 removed. If a Logitech button stops working after Scrollio crashed or was force quit,
@@ -123,8 +169,8 @@ move to another Mac, to keep a copy, or to pass a setup on.
 
 - "Export…" writes one JSON file ("Scrollio Settings 2026-11-12.json") that any text
   editor opens. It holds what you set in Scrollio's panes: the scroll settings and the
-  thumb wheel, the buttons and keys with their actions, the gestures, the apps with
-  their own settings and "Change scrolling only in these apps", the Logitech values, and
+  thumb wheel, the buttons and keys with their actions, the gestures, what the
+  Shortcut Ring holds, the apps with their own settings and "Change scrolling only in these apps", the Logitech values, and
   "Show in menu bar".
 - It does not hold, and an import never changes: "Let Scrollio manage this mouse" (it
   stays as it is on each Mac: the Logitech values of a file are imported, but they are
@@ -137,14 +183,15 @@ move to another Mac, to keep a copy, or to pass a setup on.
   Logitech action of the file runs on the mouse when its button, key or gesture is used.
 - "Import…" reads a file and shows what it holds before anything changes: which
   settings, how many apps, and every button and key with what it will do, in the words
-  of the Buttons pane, with the gesture directions whose action is not the default
-  one. For buttons and keys that open an app or a file, or run a script, a box of its
+  of the Buttons pane, with the gesture directions and the places of the Shortcut Ring
+  whose action is not the default one. For buttons and keys that open an app or a file, or run a script, a box of its
   own lists each one's whole path and arguments. Read those lists when the file is not
   your own: an action starts at a press of its button. Unless the file gives no button
-  or key an action and leaves the gestures as they are by default, Return presses
-  "Cancel". Importing itself starts nothing.
+  or key an action and leaves the gestures and the ring as they are by default, Return
+  presses "Cancel". Importing itself starts nothing.
 - An import replaces the kinds of settings the file holds and leaves the others as they
-  are; a file made by "Export…" holds them all. The new settings are in effect at once.
+  are; a file made by "Export…" holds them all. (A file from a version before the
+  Shortcut Ring leaves your ring as it is.) The new settings are in effect at once.
 - The settings from before each import are kept, the last five (the same settings
   never twice), as settings files named by their time (UTC) in
   `~/Library/Application Support/com.nikklemenc.Scrollio/Settings Backups`.

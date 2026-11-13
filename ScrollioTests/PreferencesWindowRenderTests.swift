@@ -212,6 +212,21 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
+    /// The Shortcut Ring pane: a button and a key open the ring, the default ring, and the
+    /// pointer over the row of "Bottom left" (its place is lit in the drawing).
+    func testRenderRing() throws {
+        let savedRing = Options.shared.ring
+        defer { Options.shared.ring = savedRing }
+        Options.shared.ring = .default
+        try renderPane(RingPreferencesViewController.tabIdentifier, name: "ring-pane", titled: TitledCut(), replacement: {
+            let ring = RingPreferencesViewController()
+            ring.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: ["Thumb panel", "⌃⌥ Space"]) }
+            return ring
+        }, afterLoad: { controller in
+            (controller as? RingPreferencesViewController)?.placeHoverChanged(5, inside: true)
+        })
+    }
+
     /// Access allowed and not, the login item waiting for approval, paused, and a build
     /// stamped by scripts/install.sh (the longest line: a commit with "+"). The login item
     /// and the permission are fixed, nothing is asked of the system.
