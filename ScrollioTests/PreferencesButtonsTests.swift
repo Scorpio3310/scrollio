@@ -1484,7 +1484,7 @@ final class PreferencesButtonsTests: XCTestCase {
             // The accent colour as the same drawing gives it back.
             let accent = try pixels(of: nil, appearance: appearance)(NSPoint(x: 12, y: 12))
             let unlit = try pixels(of: .mouse(part: nil, number: nil), appearance: appearance)
-            for part in ButtonsMousePart.allCases {
+            for part in ButtonsMousePart.allCases where MouseArtworkModel.mxMaster4.has(part.artworkPart) {
                 let bounds = try XCTUnwrap(ButtonsMouseMiniature.shape(of: part, mouse: .mxMaster4, in: frame)).bounds
                 // The thumb panel is not a box: a point well inside it.
                 let middle = part == .thumbPanel

@@ -23,6 +23,8 @@ enum ButtonsMousePart: Int, CaseIterable {
     case modeShift
     /// The thumb rest of the MX Master 4, which clicks (its haptic sense panel).
     case thumbPanel
+    /// The button on the top of the MX Vertical, which switches the pointer speed.
+    case pointerSpeed
 
     /// Its shape in the drawing.
     var artworkPart: MouseArtworkPart {
@@ -35,6 +37,7 @@ enum ButtonsMousePart: Int, CaseIterable {
         case .gesture: return .gesture
         case .modeShift: return .modeShift
         case .thumbPanel: return .thumbPanel
+        case .pointerSpeed: return .pointerSpeed
         }
     }
 
@@ -66,6 +69,7 @@ enum ButtonsMousePart: Int, CaseIterable {
             case .middle: return .middle
             case .back: return .back
             case .forward: return .forward
+            case .pointerSpeed: return .pointerSpeed
             }
         }
     }
@@ -96,8 +100,10 @@ enum PlacedMousePart: String, Encodable, CaseIterable {
         }
     }
 
-    /// The part a Logitech control of `role` is.
-    init(role: LogiControlRole) {
+    /// The part a Logitech control of `role` is; nil for a control that is none of the
+    /// parts a numbered button can be said to be (the MX Vertical's top button: the Mac
+    /// never reports it by a number, so it is not offered).
+    init?(role: LogiControlRole) {
         switch role {
         case .gesture: self = .gestureButton
         case .thumbPanel: self = .thumbPanel
@@ -105,6 +111,7 @@ enum PlacedMousePart: String, Encodable, CaseIterable {
         case .middle: self = .middleButton
         case .back: self = .backButton
         case .forward: self = .forwardButton
+        case .pointerSpeed: return nil
         }
     }
 

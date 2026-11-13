@@ -41,6 +41,7 @@ extension ButtonsMousePart {
         case .gesture: return .gesture
         case .modeShift: return .modeShift
         case .thumbPanel: return .thumbPanel
+        case .pointerSpeed: return .pointerSpeed
         }
     }
 
@@ -76,7 +77,9 @@ extension ButtonsMousePart {
         case .forward: return "buttons-default-forward"
         case .middle: return "buttons-default-middle"
         case .modeShift: return "buttons-default-mode-shift"
-        case .left, .right, .gesture, .thumbPanel: return "buttons-default-own"
+        // The MX Vertical's top button: what it does by itself is known from Logitech's
+        // description only, so no more is claimed than for the others.
+        case .left, .right, .gesture, .thumbPanel, .pointerSpeed: return "buttons-default-own"
         }
     }
 }

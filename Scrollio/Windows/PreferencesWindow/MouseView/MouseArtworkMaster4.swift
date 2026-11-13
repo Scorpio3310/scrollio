@@ -353,6 +353,8 @@ struct MouseArtworkMaster4: MouseArtworkTwoViews {
             return sideButton(part)?.path
         case .thumbPanel:
             return thumbPanel()
+        case .pointerSpeed:
+            return nil
         }
     }
 

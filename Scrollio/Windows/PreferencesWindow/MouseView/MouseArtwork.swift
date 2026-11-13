@@ -55,8 +55,8 @@ enum MouseArtworkModel: CaseIterable {
     /// The parts this mouse has (each has a shape of its own in its drawing).
     var parts: [MouseArtworkPart] {
         switch self {
-        case .mxMaster4: return MouseArtworkPart.allCases
-        case .mxMaster3: return MouseArtworkPart.allCases.filter { $0 != .thumbPanel }
+        case .mxMaster4: return MouseArtworkPart.allCases.filter { $0 != .pointerSpeed }
+        case .mxMaster3: return MouseArtworkPart.allCases.filter { $0 != .thumbPanel && $0 != .pointerSpeed }
         case .generic: return [.body, .left, .right, .wheel, .back, .forward]
         }
     }
@@ -132,6 +132,8 @@ enum MouseArtworkPart: Int, CaseIterable {
     case gesture
     /// MX Master 4: the thumb rest, which clicks and pulses.
     case thumbPanel
+    /// MX Vertical: the button on the plate along its top, which switches the pointer speed.
+    case pointerSpeed
 }
 
 // MARK: - The shapes
@@ -275,7 +277,7 @@ struct MouseArtworkShapes {
             return capsule(wheelRect)
         case .back, .forward:
             return sideButton(part)
-        case .modeShift, .thumbWheel, .gesture, .thumbPanel:
+        case .modeShift, .thumbWheel, .gesture, .thumbPanel, .pointerSpeed:
             // The plain mouse has none of them.
             return nil
         }
@@ -477,7 +479,7 @@ enum MouseArtworkPainter {
             drawWheel(shapes, ink: ink, lit: false, unit: unit)
         case .wheel:
             drawRidges(in: shapes.wheelRect, color: MouseArtworkPalette.litRidge, unit: unit)
-        case .body, .modeShift, .thumbWheel, .back, .forward, .gesture, .thumbPanel:
+        case .body, .modeShift, .thumbWheel, .back, .forward, .gesture, .thumbPanel, .pointerSpeed:
             break
         }
     }

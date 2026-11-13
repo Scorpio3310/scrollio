@@ -42,8 +42,9 @@ final class MouseArtworkTests: XCTestCase {
     // MARK: - The parts of each drawing
 
     func testEachDrawingHasItsOwnParts() {
-        XCTAssertEqual(MouseArtworkModel.mxMaster4.parts, MouseArtworkPart.allCases)
-        XCTAssertEqual(Set(MouseArtworkModel.mxMaster3.parts), Set(MouseArtworkPart.allCases).subtracting([.thumbPanel]))
+        // (The button on the MX Vertical's top is that mouse's alone.)
+        XCTAssertEqual(MouseArtworkModel.mxMaster4.parts, MouseArtworkPart.allCases.filter { $0 != .pointerSpeed })
+        XCTAssertEqual(Set(MouseArtworkModel.mxMaster3.parts), Set(MouseArtworkPart.allCases).subtracting([.thumbPanel, .pointerSpeed]))
         XCTAssertEqual(Set(MouseArtworkModel.generic.parts), [.body, .left, .right, .wheel, .back, .forward])
         for model in MouseArtworkModel.allCases {
             for schematic in [false, true] {
@@ -578,7 +579,9 @@ final class MouseArtworkTests: XCTestCase {
             "well " + rect(shapes.wellRect),
             "badge " + number(shapes.badgeCentre.x) + "," + number(shapes.badgeCentre.y),
         ]
-        for part in MouseArtworkPart.allCases {
+        // The MX Vertical's top button came after these fingerprints were taken; none of the
+        // pinned drawings has it, and it is left out so that they stay the ones first taken.
+        for part in MouseArtworkPart.allCases where part != .pointerSpeed {
             let shape = shapes.shape(of: part)
             if part == .left || part == .right {
                 lines.append("\(part) " + (shape.map { rect($0.bounds, 1) } ?? "none"))

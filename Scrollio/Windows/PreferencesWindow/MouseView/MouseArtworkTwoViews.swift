@@ -239,6 +239,10 @@ extension MouseArtworkPainter {
                 light.fill()
             }
         }
+        // The button on the MX Vertical's top plate shows in both views.
+        if let top = art.shape(of: .pointerSpeed) {
+            drawPart(top, lit: lit == .pointerSpeed, fill: ink.well, opaque: true, ink: ink, unit: unit)
+        }
 
         outline.lineWidth = ink.outlineWidth / unit
         ink.outline.setStroke()
@@ -308,7 +312,7 @@ extension MouseArtworkPainter {
                 MouseArtworkPalette.litRidge.setStroke()
                 ridge.stroke()
             }
-        case .body, .modeShift, .back, .forward, .gesture, .thumbPanel:
+        case .body, .modeShift, .back, .forward, .gesture, .thumbPanel, .pointerSpeed:
             break
         }
     }
