@@ -347,6 +347,7 @@ final class LogiWriteTimingTests: XCTestCase {
         )
         XCTAssertEqual(LogiWriteTiming.Request.receiverRegister(0xB5, long: true).text, "receiver register 0xB5 long read")
         XCTAssertEqual(LogiWriteTiming.Request.receiverRegister(0xB5, long: false).text, "receiver register 0xB5 read")
+        XCTAssertEqual(LogiWriteTiming.Request.receiverRegisterWrite(0x00).text, "receiver register 0x00 write")
     }
 
     /// At most one line a second; the next one counts the slow writes in between.
