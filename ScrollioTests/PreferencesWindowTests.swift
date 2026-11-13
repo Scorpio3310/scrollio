@@ -285,11 +285,11 @@ final class PreferencesSidebarTests: XCTestCase {
         let sidebar = preferences.sidebar
         XCTAssertEqual(
             sidebar.rowIdentifiers,
-            ["scrolling", "buttons", "gestures", "mouse", nil, "application", nil, "general"]
+            ["scrolling", "buttons", "gestures", "ring", "mouse", nil, "application", nil, "general"]
         )
         XCTAssertEqual(
             titles(in: sidebar),
-            ["Scrolling", "Buttons", "Gestures", "Mouse", nil, "Apps", nil, "General"]
+            ["Scrolling", "Buttons", "Gestures", "Shortcut Ring", "Mouse", nil, "Apps", nil, "General"]
         )
         let table = sidebar.tableView!
         XCTAssertEqual(table.style, .sourceList)

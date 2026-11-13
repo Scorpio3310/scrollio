@@ -239,7 +239,18 @@ final class PreferencesLocalizationTests: XCTestCase {
         "intro-open-app-settings-button", "intro-done-button",
     ]
 
-    static let keys = mouseKeys + scrollingKeys + buttonsKeys + gesturesKeys + appsKeys
+    /// The Shortcut Ring: its action, its pane and its lines elsewhere.
+    static let ringKeys = [
+        "shortcutRing", "ring-menu-tooltip", "ring-tab-title",
+        "ring-trigger", "ring-trigger-none", "ring-trigger-bound", "ring-trigger-set-up", "ring-trigger-change",
+        "ring-trigger-note", "ring-places-header", "ring-places-hint",
+        "ring-place-top", "ring-place-top-right", "ring-place-right", "ring-place-bottom-right",
+        "ring-place-bottom", "ring-place-bottom-left", "ring-place-left", "ring-place-top-left",
+        "ring-action-none", "ring-preview-description", "buttons-note-shortcut-ring",
+        "general-settings-import-ring", "general-settings-import-ring-line",
+    ]
+
+    static let keys = mouseKeys + scrollingKeys + buttonsKeys + gesturesKeys + ringKeys + appsKeys
         + generalKeys + windowKeys + menuKeys + introKeys
 
     // MARK: - Formatted strings
@@ -307,6 +318,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-action-line-app": "@@@",
         "general-settings-import-action-open": "@",
         "general-settings-import-gesture-line": "@@",
+        "general-settings-import-ring-line": "@@",
+        "ring-trigger-bound": "@",
         "general-settings-problem-damaged": "@",
         "general-settings-problem-too-many": "d",
         // Welcome Guide
