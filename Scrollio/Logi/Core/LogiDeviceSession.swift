@@ -1247,6 +1247,13 @@ class LogiDeviceSession {
         return enumPhase != 1 && !awaitingFirstSelection
     }
 
+    /// The queue of slots that wait for their discovery, after a slot's link changed: a slot
+    /// that disconnected leaves it. Left queued, it was discovered later although nothing
+    /// was there, and while the queue was held it kept its own reconnect from counting.
+    static func receiverTakeoverQueue(_ queue: [UInt8], afterLinkOf slot: UInt8, connected: Bool) -> [UInt8] {
+        return connected ? queue : queue.filter { $0 != slot }
+    }
+
     /// The slot a "device disconnection" notification names (`10 slot 40 02 …`: the device
     /// was taken off the receiver); nil for any other report.
     static func receiverDisconnectionSlot<Bytes: RandomAccessCollection>(_ report: Bytes) -> UInt8?
@@ -2572,6 +2579,11 @@ class LogiDeviceSession {
         guard let inspectionSlot = Self.chooseReceiverTargetSlot(devices: receiverPairedDevices) else {
             // 选择窗口内全部断开 -> 无目标, 清 inflight 防止 spinner 卡住.
             receiverEnumPhase = 0
+            // Nothing is connected, so nothing that was queued while the choice was pending
+            // can be discovered (as in finishPingPhase).
+            if !receiverSweepActive {
+                pendingDivertSlots.removeAll()
+            }
             LogiDebugPanel.log("[\(deviceInfo.name)] No connected devices at target selection")
             setDiscoveryInFlight(false)
             NotificationCenter.default.post(name: LogiSessionManager.sessionChangedNotification, object: nil)
@@ -2831,6 +2843,8 @@ class LogiDeviceSession {
         if wasConnected != connected {
             LogiSystemLog.note("\(logTag(slot: devIdx)) \(connected ? "Connected" : "Disconnected") (\(source))")
         }
+        // A slot that disconnected does not wait for a discovery any more.
+        pendingDivertSlots = Self.receiverTakeoverQueue(pendingDivertSlots, afterLinkOf: devIdx, connected: connected)
 
         // 多设备热插拔(Phase 4): 每个 slot 的 0x41 各自决策, 不再单目标抢占式 retarget.
         // Taken over whatever the bindings say (they only decide what applyUsage diverts).
@@ -2938,8 +2952,14 @@ class LogiDeviceSession {
 
     /// 某 divert 候选 slot(重新)连接: 入接管队列并尝试排空.
     private func handleReceiverSlotTakeover(slot: UInt8) {
-        // 已排队 / 正在发现该 slot -> 不重复.
-        if pendingDivertSlots.contains(slot) { return }
+        // 已排队 / 正在发现该 slot -> 不重复. A slot that is queued already is not queued twice,
+        // but the queue is looked at again: an entry that was held while the first choice of
+        // slots was pending, and that nothing came back for, used to keep its slot from
+        // ever being discovered (every later reconnect ended here).
+        if pendingDivertSlots.contains(slot) {
+            pumpPendingDivertQueue()
+            return
+        }
         if receiverSweepActive && deviceIndex == slot { return }
         pendingDivertSlots.append(slot)
         LogiDebugPanel.log("[\(deviceInfo.name)] Slot \(slot) (re)connected; queued for takeover")
