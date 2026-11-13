@@ -934,6 +934,44 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
+    /// An app's page with its "Shortcut Ring" section (`app-page-ring-<case>-<appearance>.png`):
+    /// `off`, the app uses the general ring and the section is its switch alone; `own`,
+    /// the switch is off and the app's own ring stands under it, the drawing and the
+    /// eight rows, one of them an app to open, one a recorded key combination, one empty
+    /// and the top one pointed at.
+    func testRenderAppPageRing() throws {
+        let stored = Options.shared.application.applications
+        let savedRing = Options.shared.ring
+        addTeardownBlock {
+            Options.shared.application.applications = stored
+            Options.shared.ring = savedRing
+            ShortcutRingController.forgetPreparedFaces()
+        }
+        Options.shared.ring = .default
+        for own in [false, true] {
+            let calculator = Application(path: "/System/Applications/Calculator.app")
+            if own {
+                calculator.setUsesGeneralRing(false, general: .default)
+                calculator.ring?[0] = ShortcutRingPlace(SystemShortcut.copy)
+                calculator.ring?[2] = ShortcutRingPlace(openTarget: OpenTargetPayload(
+                    path: "/System/Applications/TextEdit.app", bundleID: "com.apple.TextEdit", arguments: "", kind: .application
+                ))
+                calculator.ring?[5] = ShortcutRingPlace(action: "custom::40:1179648")
+                calculator.ring?[6] = .empty
+            }
+            Options.shared.application.applications = EnhanceArray<Application>(withArray: [calculator], matchKey: "path")
+            let defaults = uiDefaults(advanced: false)
+            try renderPane(PANEL_IDENTIFIER.application, name: "app-page-ring-\(own ? "own" : "off")", prepare: { preferences in
+                (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                    .uiStateDefaults = defaults
+            }, afterLoad: { controller in
+                let apps = controller as? PreferencesApplicationViewController
+                apps?.openApplication(withID: calculator.path)
+                apps?.detailController?.ringController?.placeHoverChanged(0, inside: true)
+            })
+        }
+    }
+
     // MARK: - States for the final visual check
 
     /// The tallest panes at the window's minimum height: the column as the window shows it.

@@ -7,7 +7,8 @@
 //  opened at once, duplicates, remove with undo, also from another pane and after the app
 //  was added again), an app's page opened in place of the list and back again, "Use
 //  settings from Scrolling" dimming the settings and, switched off, starting from them,
-//  and the stored apps loading and saving unchanged. Nothing is shown on screen: the menu,
+//  the page's "Shortcut Ring" section (the general ring, or the app's own with its eight
+//  rows), and the stored apps loading and saving unchanged. Nothing is shown on screen: the menu,
 //  the open panel and the running apps go through seams, windows are never ordered in.
 //
 
@@ -997,5 +998,196 @@ final class PreferencesApplicationTests: XCTestCase {
         let loaded = try EnhanceArray<Application>(withData: saved, matchKey: "path")
         XCTAssertNotNil(loaded.get(by: Self.calculatorProgram))
         XCTAssertNotNil(loaded.get(by: Self.textEdit))
+    }
+
+    // MARK: - An app's own Shortcut Ring
+
+    /// The general ring for a test of the page's section, put back afterwards.
+    private func setGeneralRing(_ ring: ShortcutRingSettings) {
+        let saved = Options.shared.ring
+        addTeardownBlock {
+            Options.shared.ring = saved
+            ShortcutRingController.forgetPreparedFaces()
+        }
+        Options.shared.ring = ring
+    }
+
+    /// The page ends with "Shortcut Ring". While "Use the general ring" is on (as for
+    /// every app until the user turns it off) there is the switch and nothing else: no
+    /// drawing, no rows, and nothing new is stored for the app.
+    func testTheShortcutRingSectionHasOnlyItsSwitchWhileTheAppUsesTheGeneralRing() throws {
+        setGeneralRing(.default)
+        let calculator = application(Self.calculator, inherit: true)
+        Options.shared.application.applications = Self.makeStore([calculator])
+        let controller = makeController()
+        controller.openApplication(withID: Self.calculator)
+        let page = try XCTUnwrap(controller.detailController)
+
+        XCTAssertEqual(page.ringSection.titleLabel?.stringValue, "Shortcut Ring")
+        XCTAssertEqual(page.ringSection.box.visibleRows.count, 1)
+        XCTAssertEqual(page.generalRingRow.title, "Use the general ring")
+        XCTAssertEqual(page.generalRingSwitch.state, .on)
+        XCTAssertEqual(page.generalRingSwitch.controlSize, PreferencesGroupedForm.switchControlSize)
+        XCTAssertEqual(page.generalRingRow.explanation, "While Calculator is in front, the general ring opens.")
+        XCTAssertNil(page.ringController, "no drawing and no rows")
+        XCTAssertFalse(allSubviews(of: page.view).contains { $0 is ShortcutRingPreviewView || $0 is ButtonActionPullDown })
+        // The section stands under the Scrolling settings, and the page ends under it.
+        page.view.layoutSubtreeIfNeeded()
+        XCTAssertFalse(page.view.hasAmbiguousLayout)
+        XCTAssertEqual(page.ringSection.frame.maxY, page.scrollingController.view.frame.minY, accuracy: 0.5)
+        XCTAssertEqual(page.ringSection.frame.minY, PreferencesGroupedForm.margin, accuracy: 0.5)
+        let stored = try XCTUnwrap(try storedObject()?.firstObject as? NSDictionary)
+        XCTAssertEqual(Set(stored.allKeys.compactMap { $0 as? String }), ["path", "displayName", "inherit", "scroll"])
+    }
+
+    /// Switched off, the app's ring starts as a copy of the general ring as it is at that
+    /// moment, and the page shows it with the pieces of the Shortcut Ring pane: the
+    /// drawing and the eight rows, without what is general. A row changes the app's ring
+    /// and not the general one. Switched on again the rows go and the app's ring is kept;
+    /// off again it comes back as it was left.
+    func testSwitchingOffUseTheGeneralRingShowsTheAppsOwnRingWhichItsRowsEdit() throws {
+        var general = ShortcutRingSettings.default
+        general[1] = ShortcutRingPlace(SystemShortcut.undo)
+        general[6] = .empty
+        setGeneralRing(general)
+        let calculator = application(Self.calculator, inherit: true)
+        Options.shared.application.applications = Self.makeStore([calculator])
+        let controller = makeController()
+        controller.openApplication(withID: Self.calculator)
+        let page = try XCTUnwrap(controller.detailController)
+        var heightChanges = 0
+        page.onHeightChange = { heightChanges += 1 }
+        let shortHeight = page.view.fittingSize.height
+
+        page.generalRingSwitch.state = .off
+        send(page.generalRingSwitch)
+        XCTAssertFalse(calculator.usesGeneralRing)
+        XCTAssertEqual(calculator.ownRingPlaces, general.places, "a copy of the general ring")
+        XCTAssertEqual(page.generalRingRow.explanation, "While Calculator is in front, the ring below opens.")
+        XCTAssertEqual(heightChanges, 1)
+        let ring = try XCTUnwrap(page.ringController)
+        XCTAssertTrue(ring.view.isDescendant(of: page.view))
+        XCTAssertTrue(page.children.contains(ring))
+        XCTAssertEqual(ring.sections.count, 2, "the drawing and the box of rows")
+        XCTAssertEqual(ring.placeRows.map(\.title), [
+            "Top", "Top right", "Right", "Bottom right", "Bottom", "Bottom left", "Left", "Top left",
+        ])
+        XCTAssertEqual(ring.placePopUps.map { $0.menu?.items.first?.title }[1], SystemShortcut.undo.localizedName)
+        XCTAssertEqual(ring.placePopUps[6].menu?.items.first?.title, "No Action")
+        XCTAssertEqual(ring.previewView.face.places[1].title, SystemShortcut.undo.localizedName)
+        XCTAssertEqual(ring.previewView.face.filled[6], false)
+        // What is general stays in the Shortcut Ring pane.
+        XCTAssertNil(ring.triggerRow)
+        XCTAssertNil(ring.freezeRow)
+        XCTAssertNil(ring.resetToDefaults)
+        XCTAssertNil(ring.placesHintLabel)
+        page.view.layoutSubtreeIfNeeded()
+        XCTAssertFalse(page.view.hasAmbiguousLayout)
+        XCTAssertEqual(ring.view.frame.maxY, page.ringSection.frame.minY, accuracy: 0.5, "under the switch's box")
+        XCTAssertEqual(ring.view.frame.minY, 0, accuracy: 0.5, "the page ends with it")
+        XCTAssertEqual(page.view.fittingSize.height, shortHeight + ring.view.fittingSize.height - PreferencesGroupedForm.margin, accuracy: 0.5)
+
+        // A row's pull-down: the app's ring changes, the general ring does not.
+        ring.placePopUps[0].onShortcutSelected?(SystemShortcut.paste)
+        ring.placePopUps[3].onShortcutSelected?(nil)
+        XCTAssertEqual(calculator.ownRingPlaces?[0].action, "paste")
+        XCTAssertEqual(calculator.ownRingPlaces?[3], .empty)
+        XCTAssertEqual(Options.shared.ring, general, "the general ring is untouched")
+        XCTAssertEqual(ring.previewView.face.places[0].title, SystemShortcut.paste.localizedName)
+        XCTAssertEqual(ring.placePopUps[0].menu?.items.first?.title, SystemShortcut.paste.localizedName)
+        XCTAssertEqual(ring.selectedPlace, 3)
+        // The face of the ring on screen is made here, for the ring as it opens for the app.
+        XCTAssertTrue(ShortcutRingController.preparedFace?.ring == calculator.ringThatOpens(general: general))
+        // The general ring changes later: the app's own does not follow.
+        Options.shared.ring[2] = ShortcutRingPlace(SystemShortcut.copy)
+        page.syncViewWithOptions()
+        XCTAssertEqual(calculator.ownRingPlaces?[2], general[2])
+        XCTAssertEqual(ring.placePopUps[2].menu?.items.first?.title, SystemShortcut.moveSpaceRight.localizedName)
+
+        // Stored with the app's entry.
+        let stored = try XCTUnwrap(try storedObject()?.firstObject as? NSDictionary)
+        let storedRing = try XCTUnwrap(stored["ring"] as? NSDictionary)
+        XCTAssertEqual(storedRing["inherit"] as? Bool, false)
+        XCTAssertEqual((storedRing["places"] as? NSArray)?.count, 8)
+
+        // On again: the rows go, the ring is kept and not used.
+        page.generalRingSwitch.state = .on
+        send(page.generalRingSwitch)
+        XCTAssertTrue(calculator.usesGeneralRing)
+        XCTAssertNil(page.ringController)
+        XCTAssertNil(ring.view.superview)
+        XCTAssertFalse(page.children.contains(ring))
+        XCTAssertEqual(calculator.ring?[0].action, "paste", "kept in storage")
+        XCTAssertEqual(page.view.fittingSize.height, shortHeight, accuracy: 0.5)
+        XCTAssertEqual(heightChanges, 2)
+        // Off again: the app's ring as it was left, not a new copy.
+        page.generalRingSwitch.state = .off
+        send(page.generalRingSwitch)
+        XCTAssertEqual(calculator.ownRingPlaces?[0].action, "paste")
+        XCTAssertEqual(page.ringController?.placePopUps[0].menu?.items.first?.title, SystemShortcut.paste.localizedName)
+        XCTAssertEqual(Options.shared.ring[0], general[0])
+    }
+
+    /// An app whose own ring is in use opens its page with the rows there; "Open App or
+    /// File" of a row goes into the app's ring.
+    func testAnAppsPageOpensWithItsOwnRingAndARowCanOpenAnApp() throws {
+        setGeneralRing(.default)
+        let calculator = application(Self.calculator, inherit: true)
+        calculator.setUsesGeneralRing(false, general: .default)
+        calculator.ring?[4] = ShortcutRingPlace(SystemShortcut.copy)
+        Options.shared.application.applications = Self.makeStore([calculator])
+        let controller = makeController()
+        controller.openApplication(withID: Self.calculator)
+        let page = try XCTUnwrap(controller.detailController)
+        XCTAssertEqual(page.generalRingSwitch.state, .off)
+        let ring = try XCTUnwrap(page.ringController)
+        XCTAssertEqual(ring.placePopUps[4].menu?.items.first?.title, SystemShortcut.copy.localizedName)
+
+        var presented: [OpenTargetPayload?] = []
+        ring.presentOpenTarget = { _, _, existing in presented.append(existing) }
+        ring.placePopUps[4].onOpenTargetSelectionRequested?()
+        let textEdit = OpenTargetPayload(path: Self.textEdit, bundleID: "com.apple.TextEdit", arguments: "", kind: .application)
+        try XCTUnwrap(ring.openTargetPopover).onCommit?(textEdit)
+        XCTAssertEqual(presented.count, 1)
+        XCTAssertEqual(calculator.ownRingPlaces?[4], ShortcutRingPlace(openTarget: textEdit))
+        XCTAssertEqual(Options.shared.ring, .default)
+        XCTAssertNotNil(ring.previewView.face.places[4].image, "the app's icon in the drawing")
+
+        // Removed and brought back by Undo onto an entry added again: the ring comes along.
+        let again = application(Self.calculator, inherit: true)
+        ApplicationSettings(of: calculator).apply(to: again)
+        XCTAssertEqual(again.ring, calculator.ring)
+    }
+
+    /// Both explanations of the switch are plain sentences that fit two lines, also for an
+    /// app with a long name, and switching never moves the rows under it.
+    func testTheRingSwitchsExplanationsFitTwoLines() throws {
+        setGeneralRing(.default)
+        let font = PreferencesGroupedForm.explanationFont
+        let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
+        let long = application(Self.calculator, inherit: true)
+        // (Long enough to need the second line whatever the switch's width is taken to be.)
+        long.displayName = "An Application With A Remarkably Long Name For Its Kind"
+        Options.shared.application.applications = Self.makeStore([long])
+        let controller = makeController()
+        controller.openApplication(withID: Self.calculator)
+        let page = try XCTUnwrap(controller.detailController)
+        page.view.layoutSubtreeIfNeeded()
+        let rowHeight = page.generalRingRow.frame.height
+        for on in [true, false] {
+            page.generalRingSwitch.state = on ? .on : .off
+            send(page.generalRingSwitch)
+            page.view.layoutSubtreeIfNeeded()
+            let label = page.generalRingRow.explanationLabel
+            let text = label.stringValue
+            XCTAssertTrue(text.hasSuffix("."), text)
+            XCTAssertTrue(text.contains("An Application With A Remarkably Long Name For Its Kind"), text)
+            XCTAssertGreaterThan(label.frame.width, 200)
+            let height = (text as NSString).boundingRect(
+                with: NSSize(width: label.frame.width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
+            ).height
+            XCTAssertLessThanOrEqual(height, twoLines, "\(text) in \(label.frame.width) pt")
+            XCTAssertEqual(page.generalRingRow.frame.height, rowHeight, accuracy: 0.5, "the other line takes the same room")
+        }
     }
 }

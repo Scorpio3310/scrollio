@@ -7875,6 +7875,42 @@
           }
         }
       }
+    },
+    "apps-detail-ring-general": {
+      "comment": "App page, section \"Shortcut Ring\": the switch; on, the app has no ring of its own",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the general ring"
+          }
+        }
+      }
+    },
+    "apps-detail-ring-general-on": {
+      "comment": "App page: explanation while \"Use the general ring\" is on; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "While %@ is in front, the general ring opens."
+          }
+        }
+      }
+    },
+    "apps-detail-ring-general-off": {
+      "comment": "App page: explanation while \"Use the general ring\" is off; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "While %@ is in front, the ring below opens."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

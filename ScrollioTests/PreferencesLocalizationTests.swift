@@ -137,6 +137,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-empty-title", "apps-empty-hint", "apps-choose-in-finder", "apps-open-panel-prompt",
         "apps-undo-remove", "apps-detail-inherit",
         "apps-detail-inherit-on", "apps-detail-inherit-off", "apps-limit-empty",
+        "apps-detail-ring-general", "apps-detail-ring-general-on", "apps-detail-ring-general-off",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).
@@ -296,6 +297,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         // Apps pane
         "apps-detail-inherit-on": "@",
         "apps-detail-inherit-off": "@",
+        "apps-detail-ring-general-on": "@",
+        "apps-detail-ring-general-off": "@",
         // General pane
         "about-version": "@@",
         "about-version-commit": "@@@",

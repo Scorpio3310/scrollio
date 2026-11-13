@@ -22,6 +22,12 @@
 //
 //  The pane only edits Options.shared.ring.
 //
+//  An app's page under Apps shows the same drawing and the same eight rows for the app's
+//  own ring (`init(application:)`, as the Scrolling settings there get a target
+//  application): then the rows edit only that app's ring, and what is general is left
+//  out: what opens the ring, the freeze switch, the two lines on how to choose and
+//  "Reset to Defaults".
+//
 
 import Cocoa
 
@@ -200,6 +206,17 @@ final class RingPreferencesViewController: NSViewController {
 
     // MARK: - State
 
+    /// The app whose own ring the rows edit, on that app's page under Apps; nil in the
+    /// pane, which edits the general ring.
+    let application: Application?
+
+    /// The ring the drawing and the rows show: the general one, or the app's own as it
+    /// opens (its eight places; the freeze switch is the general ring's).
+    private var shownRing: ShortcutRingSettings {
+        let general = Options.shared.ring
+        return application?.ringThatOpens(general: general) ?? general
+    }
+
     /// What opens the ring; tests and pictures replace it with fixtures.
     var bindingSummary: () -> ShortcutRingBindingSummary = { .current }
     /// "Set Up…" or "Change": shows the Buttons pane and, with nothing that opens the ring
@@ -273,12 +290,16 @@ final class RingPreferencesViewController: NSViewController {
 
     // MARK: - Lifecycle
 
-    init() {
+    /// - Parameter application: an app whose own ring is in use ("Use the general ring"
+    ///   off), for its page; nil for the pane.
+    init(application: Application? = nil) {
+        self.application = application
         super.init(nibName: nil, bundle: nil)
         title = NSLocalizedString("ring-tab-title", comment: "")
     }
 
     required init?(coder: NSCoder) {
+        application = nil
         super.init(coder: coder)
         title = NSLocalizedString("ring-tab-title", comment: "")
     }
@@ -297,15 +318,21 @@ final class RingPreferencesViewController: NSViewController {
         previewView = preview
 
         let width = Self.boxWidth
-        let trigger = PreferencesGroupSection(width: width, rows: [makeTriggerRow(), makeFreezeRow()])
         placePopUps = (0..<ShortcutRingSettings.placeCount).map { makePopUp(for: $0) }
         placeRows = (0..<ShortcutRingSettings.placeCount).map { makePlaceRow($0) }
-        let places = makePlacesSection(rows: placeRows)
-        resetToDefaults = makeReset()
+        if application != nil {
+            // An app's own ring: the drawing and the eight rows, nothing of what is general.
+            sections = [preview, PreferencesGroupBox(width: width, rows: placeRows)]
+            PreferencesGroupedForm.add(sections, to: content)
+        } else {
+            let trigger = PreferencesGroupSection(width: width, rows: [makeTriggerRow(), makeFreezeRow()])
+            let places = makePlacesSection(rows: placeRows)
+            resetToDefaults = makeReset()
 
-        sections = [preview, trigger, places, PreferencesGroupFooter(trailing: [resetToDefaults.button])]
-        PreferencesGroupedForm.add(sections, to: content)
-        content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: trigger)
+            sections = [preview, trigger, places, PreferencesGroupFooter(trailing: [resetToDefaults.button])]
+            PreferencesGroupedForm.add(sections, to: content)
+            content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: trigger)
+        }
 
         view = root
         reload()
@@ -325,10 +352,16 @@ final class RingPreferencesViewController: NSViewController {
         selectedPlace = nil
         showLitPlace()
         // A recording that still waits for a key, and the popover, go with the pane.
+        endEditing()
+        resetToDefaults?.endUndoOffer()
+    }
+
+    /// Ends a recording that still waits for a key and closes "Open App or File": the
+    /// rows are about to go (the pane is left, or an app's page takes its ring away).
+    func endEditing() {
         placePopUps.forEach { $0.cancelShortcutRecording() }
         openTargetPopover?.hide()
         openTargetPopover = nil
-        resetToDefaults.endUndoOffer()
     }
 
     // MARK: - Refresh
@@ -336,12 +369,13 @@ final class RingPreferencesViewController: NSViewController {
     /// Puts the stored ring and what opens it into the rows and the drawing.
     func reload() {
         guard isViewLoaded, previewView != nil else { return }
-        let summary = bindingSummary()
-        triggerRow.explanation = summary.explanation
-        triggerButton.title = text(summary.hasTrigger ? "ring-trigger-change" : "ring-trigger-set-up")
-
-        let ring = Options.shared.ring
-        (freezeToggle as? NSSwitch)?.state = ring.freezePointer ? .on : .off
+        let ring = shownRing
+        if application == nil {
+            let summary = bindingSummary()
+            triggerRow.explanation = summary.explanation
+            triggerButton.title = text(summary.hasTrigger ? "ring-trigger-change" : "ring-trigger-set-up")
+            (freezeToggle as? NSSwitch)?.state = ring.freezePointer ? .on : .off
+        }
         for (place, popUp) in placePopUps.enumerated() {
             // (A place that runs nothing shows "No Action", as the ring shows a dot.)
             popUp.configure(with: ring[place].asBinding(id: placeIDs[place]))
@@ -351,7 +385,10 @@ final class RingPreferencesViewController: NSViewController {
         ShortcutRingController.prepare(previewView.face, for: ring)
         showLitPlace()
         resetToDefaults?.settingsDidChange()
-        PreferencesForm.fitToContent(self)
+        // (On an app's page the rows never change their height, and the page sizes itself.)
+        if application == nil {
+            PreferencesForm.fitToContent(self)
+        }
     }
 
     // MARK: - The row under the pointer
@@ -431,13 +468,19 @@ final class RingPreferencesViewController: NSViewController {
         guard placePopUps.indices.contains(place) else { return }
         // The row whose pull-down was used is the selected one.
         selectedPlace = place
-        var ring = Options.shared.ring
+        var ring = shownRing
         guard new.isEmpty || new.runs, ring[place] != new else {
             reload()
             return
         }
-        ring[place] = new
-        Options.shared.ring = ring
+        if let application {
+            // The app's own ring and nothing else; the general ring stays as it is.
+            guard application.ownRingPlaces != nil else { return }
+            application.ring?[place] = new
+        } else {
+            ring[place] = new
+            Options.shared.ring = ring
+        }
         reload()
     }
 
@@ -455,7 +498,7 @@ final class RingPreferencesViewController: NSViewController {
         popover.onCancel = { [weak self] in
             self?.openTargetPopover = nil
         }
-        presentOpenTarget(popover, placePopUps[place], Options.shared.ring[place].openTarget)
+        presentOpenTarget(popover, placePopUps[place], shownRing[place].openTarget)
     }
 
     // MARK: - Reset
@@ -530,7 +573,7 @@ final class RingPreferencesViewController: NSViewController {
 
     private func makePopUp(for place: Int) -> ButtonActionPullDown {
         let popUp = ButtonActionPullDown(
-            binding: Options.shared.ring[place].asBinding(id: placeIDs[place]), forRingPlace: true
+            binding: shownRing[place].asBinding(id: placeIDs[place]), forRingPlace: true
         )
         popUp.tag = place
         popUp.identifier = Identifier.action(place)
