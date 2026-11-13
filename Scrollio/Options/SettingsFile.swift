@@ -197,7 +197,7 @@ enum SettingsFile {
     static let leftOut: [LeftOut] = [
         LeftOut(OptionItem.General.OptionsExist, "marks that settings were saved once; the app writes it itself"),
         LeftOut(OptionItem.General.WelcomeGuideCompletedVersion, "the Welcome Guide's progress on this Mac"),
-        LeftOut(AppsLeftToMacOS.offeredKey, "which apps were once put on the list by Scrollio itself on this Mac; the list of apps is in the file"),
+        LeftOut(AppsLeftToMacOS.offeredKey, "written by version 1.0.4, which put Calendar on the list of apps by itself; nothing reads it, and the list of apps is in the file"),
         LeftOut("preferencesSelectedPane", "window state: the pane that was open last"),
         LeftOut("scrollingAdvancedExpanded", "window state: whether Advanced is open"),
         LeftOut("generalAdvancedExpanded", "retired window state; nothing reads it"),

@@ -148,9 +148,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 读取用户设置
         Options.shared.readOptions()
-        // The apps that are left to macOS unless the user says otherwise (Calendar): each
-        // is offered once, as an ordinary entry of the Apps list.
-        AppsLeftToMacOS.offerLive()
         
         // DEBUG: 直接弹出设置窗口 (not when the Welcome Guide opens at launch)
         #if DEBUG
