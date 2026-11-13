@@ -676,6 +676,18 @@ final class LogiReceiverConnectionStateTests: XCTestCase {
                       "nothing was connected at the start: a mouse that connects later is discovered")
     }
 
+    /// A mouse that connected and lost its link again while the first choice of slots was
+    /// pending stayed in the queue; nothing looked at the queue again, and each later
+    /// reconnect found the slot "queued already": the mouse was never discovered. A slot
+    /// that disconnects leaves the queue.
+    func testASlotThatDisconnectsNoLongerWaitsForItsDiscovery() {
+        XCTAssertEqual(LogiDeviceSession.receiverTakeoverQueue([2, 4], afterLinkOf: 2, connected: false), [4])
+        XCTAssertEqual(LogiDeviceSession.receiverTakeoverQueue([2], afterLinkOf: 2, connected: false), [])
+        XCTAssertEqual(LogiDeviceSession.receiverTakeoverQueue([2, 4], afterLinkOf: 2, connected: true), [2, 4],
+                       "a slot that connects is queued by its takeover, not here")
+        XCTAssertEqual(LogiDeviceSession.receiverTakeoverQueue([4], afterLinkOf: 2, connected: false), [4])
+    }
+
     /// "Device disconnection" (0x40) is the receiver's word that a device was taken off it.
     /// It was read as a report of the device, which marked an offline slot as connected.
     func testADeviceTakenOffTheReceiverIsADisconnection() {
