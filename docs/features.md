@@ -83,8 +83,8 @@ nothing opens the ring until you do. The pane also sets what the eight places ho
   key combination that no app needs.
 - On a mouse with a haptic motor whose button Scrollio reads itself (an MX Master 4's
   thumb panel bound in Scrollio), the mouse pulses lightly when a shortcut lights and
-  more firmly when one runs. A button that reaches Scrollio as a keystroke gets no
-  pulse.
+  more firmly when one runs. "Haptic feedback" in the Gestures pane is the switch for
+  these pulses too. A button that reaches Scrollio as a keystroke gets no pulse.
 - The ring is a pointer tool: it cannot be reached with the keyboard or with VoiceOver's
   keys (VoiceOver is told the name of the shortcut that lights). Everything a place can
   hold can also be given to a button or a key directly.

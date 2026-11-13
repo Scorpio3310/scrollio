@@ -49,15 +49,18 @@ class InputProcessor: ModifierFlagsProviding {
     //
     // The ring's trigger is a binding like Gesture Navigation's: `process` hands its press
     // and its release to `ShortcutRingController`, which exists only once such a press has
-    // come. Everyone else pays, per button or key event, a comparison of `ringTrigger`
-    // with nil (and for Esc one more, of the controller with nil); nothing per wheel
-    // event; and per pointer event one comparison with nil, only while the
-    // pointer-movement tap runs at all (a gesture hold, a synthetic drag, a held modifier).
+    // come. Everyone else pays, per button or key event, a look at an empty set (and for
+    // Esc a comparison of the controller with nil); nothing per wheel event; and per
+    // pointer event one comparison with nil, only while the pointer-movement tap runs at
+    // all (a gesture hold, a synthetic drag, a held modifier).
 
-    /// The trigger whose press the ring took, until its release: every further down of it
-    /// is the ring's too (a held key repeats, and its repeats no longer match the binding
-    /// once the modifiers are let go), and so is its up.
+    /// The trigger whose press the ring took and whose release ends the hold.
     private var ringTrigger: TriggerKey?
+    /// Every ring trigger that is down: `ringTrigger`, and a second one that was pressed
+    /// while the first held the ring (it means nothing). Until its release every further
+    /// down of such a trigger is swallowed: a held key repeats, and its repeats no longer
+    /// match the binding once the modifiers are let go.
+    private var heldRingTriggers: Set<TriggerKey> = []
 
     /// A ring is held open: the pointer-movement tap runs and its deltas go to the ring.
     var hasHeldShortcutRing: Bool {
@@ -71,13 +74,17 @@ class InputProcessor: ModifierFlagsProviding {
         ring.pointerMoved(by: CGPoint(x: deltaX, y: deltaY), to: location)
     }
 
-    /// The release of the ring's trigger, or of Esc after it closed a ring.
+    /// The release of a ring trigger, or of Esc after it closed a ring.
     private func releaseForShortcutRing(_ event: InputEvent) -> Bool {
-        let key = TriggerKey(type: event.type, code: event.code)
-        if ringTrigger == key {
-            ringTrigger = nil
-            ShortcutRingController.existing?.triggerReleased(isMadeUp: event.isSyntheticRelease)
-            return true
+        if !heldRingTriggers.isEmpty {
+            let key = TriggerKey(type: event.type, code: event.code)
+            if heldRingTriggers.remove(key) != nil {
+                if ringTrigger == key {
+                    ringTrigger = nil
+                    ShortcutRingController.existing?.triggerReleased(isMadeUp: event.isSyntheticRelease)
+                }
+                return true
+            }
         }
         if event.type == .keyboard, event.code == KeyCode.escape,
            let ring = ShortcutRingController.existing, ring.escapeReleased() {
@@ -86,32 +93,42 @@ class InputProcessor: ModifierFlagsProviding {
         return false
     }
 
-    /// A down that is the ring's before any binding is looked at: the held trigger again,
-    /// or Esc while a ring is open.
+    /// A down that is the ring's before any binding is looked at: a held trigger again,
+    /// or Esc while a ring is open or until the Esc that closed one is up.
     private func pressForOpenShortcutRing(_ event: InputEvent, key: TriggerKey) -> Bool {
-        if ringTrigger == key {
-            // A repeat of the held key, or a second down of the held button.
-            if event.isAutoRepeat || ShortcutRingController.existing?.isHeld == true {
+        if !heldRingTriggers.isEmpty, heldRingTriggers.contains(key) {
+            // A repeat of a held key, or a second down of the button that holds the ring.
+            if event.isAutoRepeat || (ringTrigger == key && ShortcutRingController.existing?.isHeld == true) {
                 return true
             }
             // A new press while the last one's release never came: it starts over.
-            ringTrigger = nil
+            heldRingTriggers.remove(key)
+            if ringTrigger == key {
+                ringTrigger = nil
+            }
         }
-        if event.type == .keyboard, event.code == KeyCode.escape, !event.isAutoRepeat,
-           let ring = ShortcutRingController.existing, ring.isOpen {
-            return ring.escapePressed()
+        if event.type == .keyboard, event.code == KeyCode.escape, let ring = ShortcutRingController.existing {
+            // The Esc that closed the ring is the ring's until it is up, repeats included:
+            // held a moment longer, it would reach the app in front after all.
+            if ring.awaitsEscapeRelease {
+                return true
+            }
+            if ring.isOpen, !event.isAutoRepeat {
+                return ring.escapePressed()
+            }
         }
         return false
     }
 
     /// The press of a button or key bound to the Shortcut Ring.
     private func pressShortcutRingTrigger(_ event: InputEvent, key: TriggerKey) {
-        if let held = ringTrigger, held != key {
-            // A second trigger while the first is held: its press and release are taken
-            // and mean nothing.
-            swallowedTriggerPresses.insert(key)
+        heldRingTriggers.insert(key)
+        if let held = ringTrigger, held != key, ShortcutRingController.existing?.isHeld == true {
+            // A second trigger while the first really holds a ring: its press, its repeats
+            // and its release are taken and mean nothing.
             return
         }
+        // (After a release that never came, the other trigger opens a ring like any press.)
         ringTrigger = key
         ShortcutRingController.shared.triggerPressed(by: event)
     }
@@ -209,8 +226,10 @@ class InputProcessor: ModifierFlagsProviding {
     var needsKeyEvents: Bool {
         if activeModifierFlags != 0 { return true }
         if activeBindings.keys.contains(where: { $0.type == .keyboard }) { return true }
-        // Esc closes an open Shortcut Ring, whatever opened it.
+        // Esc closes an open Shortcut Ring, whatever opened it; and a key that opened one
+        // is the ring's until it is up.
         if ShortcutRingController.existing?.needsKeys == true { return true }
+        if heldRingTriggers.contains(where: { $0.type == .keyboard }) { return true }
         return ButtonUtils.shared.hasKeyboardTriggers
     }
 
@@ -351,8 +370,14 @@ class InputProcessor: ModifierFlagsProviding {
         }
         activeBindings.removeAll()
         swallowedTriggerPresses.removeAll()
-        // An open Shortcut Ring closes and runs nothing.
-        ringTrigger = nil
+        // An open Shortcut Ring closes and runs nothing. A key that holds it stays the
+        // ring's until it is up: its repeats match no binding once the modifiers are let
+        // go, and would be typed into the document. (A button's release may pass, as a
+        // gesture button's does.)
+        heldRingTriggers = heldRingTriggers.filter { $0.type == .keyboard }
+        if let held = ringTrigger, held.type != .keyboard {
+            ringTrigger = nil
+        }
         ShortcutRingController.existing?.cancel()
         cancelInteractiveGesture()
         for session in activeMouseGestures.values {

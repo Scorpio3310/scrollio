@@ -37,6 +37,13 @@ final class RingPresenterDouble: ShortcutRingPresenting {
         hides += 1
         log("hide")
     }
+
+    /// The window that stands for the ring's own panel.
+    var ownWindow: NSWindow?
+
+    func owns(_ window: NSWindow?) -> Bool {
+        return window != nil && window === ownWindow
+    }
 }
 
 /// A controller whose every need is the test's: the clock, the pointer, the queue.
@@ -51,6 +58,8 @@ final class RingHarness {
         usable: CGRect(x: 0, y: 32, width: 1512, height: 950)
     )
     var primaryButtonDown = false
+    /// Gestures › Haptic feedback.
+    var hapticsAllowed = true
     var ring = ShortcutRingSettings.default
     /// What happened, in order: "show", "hide", "run copy", "pulse lockIn 1000" …
     private(set) var log: [String] = []
@@ -77,6 +86,7 @@ final class RingHarness {
             makeTimer: { _, _ in nil },
             ring: { [unowned self] in self.ring },
             run: { [unowned self] in self.log.append("run \(ShortcutRingController.logName(of: $0))") },
+            allowsHaptics: { [unowned self] in self.hapticsAllowed },
             playHaptic: { [unowned self] cue, code in self.log.append("pulse \(cue) \(code)") },
             announce: { [unowned self] in self.announced.append($0) },
             refreshMotionTap: { [unowned self] in self.motionTapRefreshes += 1 },
@@ -396,6 +406,52 @@ final class ShortcutRingControllerTests: XCTestCase {
         XCTAssertTrue(harness.problems.first?.contains("the panel did not take it") ?? false)
     }
 
+    /// A place moved to another Space, or opened an app: the notification of that change
+    /// can arrive when the next ring is already held (the trigger pressed again to go one
+    /// further). For a second after a place ran, such a change does not close a ring.
+    func testTheEchoOfWhatAPlaceJustDidDoesNotCloseTheNextRing() {
+        let workspace = NSWorkspace.shared.notificationCenter
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        harness.moveHand(by: CGPoint(x: 60, y: 0))
+        controller.triggerReleased(isMadeUp: false)
+        harness.runScheduled()
+        XCTAssertEqual(harness.log.last, "run moveSpaceRight")
+
+        harness.now += 0.3
+        harness.pointer = CGPoint(x: 700, y: 500)
+        controller.triggerPressed(by: RingHarness.button(.down))
+        workspace.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        workspace.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        XCTAssertTrue(controller.isHeld, "the Space change of the place that just ran")
+        // The screens changing is no such echo.
+        NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        XCTAssertFalse(controller.isOpen)
+
+        // A second later a Space change is the user's again.
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.now += ShortcutRingController.quietAfterRun
+        workspace.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        XCTAssertFalse(controller.isOpen)
+    }
+
+    /// A click in a window of Scrollio's own (its Settings on another screen) closes an
+    /// open ring too; a click on the ring's own panel is the panel's to report.
+    func testAClickInAWindowOfScrolliosOwnClosesTheRingButNotOneOnThePanel() {
+        let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10), styleMask: [.borderless], backing: .buffered, defer: true)
+        let settings = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10), styleMask: [.borderless], backing: .buffered, defer: true)
+        panel.isReleasedWhenClosed = false
+        settings.isReleasedWhenClosed = false
+        harness.presenter.ownWindow = panel
+        harness.tap()
+        harness.pointer = CGPoint(x: 2400, y: 300)
+        controller.clickWentElsewhere(in: panel)
+        XCTAssertTrue(controller.isOpen, "the panel's own click")
+        controller.clickWentElsewhere(in: settings)
+        XCTAssertFalse(controller.isOpen)
+        XCTAssertTrue(harness.problems.isEmpty)
+    }
+
     // MARK: Pulses
 
     /// Only a button that arrived over HID++ has a mouse to pulse: a light pulse when a
@@ -410,6 +466,19 @@ final class ShortcutRingControllerTests: XCTestCase {
         controller.triggerReleased(isMadeUp: false)
         harness.runScheduled()
         XCTAssertEqual(harness.log.suffix(3), ["hide", "pulse commit 1006", "run missionControl"])
+    }
+
+    /// The pulses of a hold have one switch, Gestures › Haptic feedback: with it off the
+    /// ring asks no mouse for a pulse (a cue can switch a mouse's haptics on).
+    func testNoPulseWhileHapticFeedbackIsOffUnderGestures() {
+        harness.hapticsAllowed = false
+        controller.triggerPressed(by: RingHarness.button(.down, code: 1006, overHIDPP: true))
+        harness.runScheduled()
+        harness.moveHand(by: CGPoint(x: 0, y: -50))
+        controller.triggerReleased(isMadeUp: false)
+        harness.runScheduled()
+        XCTAssertEqual(harness.log.last, "run missionControl")
+        XCTAssertFalse(harness.log.contains { $0.hasPrefix("pulse") })
     }
 
     func testNoPulseForAPlainButtonOrAKey() {
@@ -788,6 +857,77 @@ final class ShortcutRingInputTests: XCTestCase {
         XCTAssertEqual(process(RingHarness.button(.down)), .consumed)
         XCTAssertTrue(controller.isHeld)
         XCTAssertEqual(process(RingHarness.button(.up)), .consumed)
+    }
+
+    /// Esc held a moment longer than a tap repeats: every Esc down until its release is
+    /// the ring's, or the app in front would get Esc after all (a full-screen video would
+    /// leave full screen).
+    func testEscHeldAfterItClosedTheRingDoesNotReachTheApp() {
+        bind(button: 4)
+        _ = process(RingHarness.button(.down))
+        _ = process(RingHarness.button(.up))
+        XCTAssertTrue(controller.isOpen)
+        XCTAssertEqual(process(key(53, down: true)), .consumed)
+        XCTAssertFalse(controller.isOpen)
+        XCTAssertEqual(process(key(53, down: true, repeating: true)), .consumed)
+        XCTAssertEqual(process(key(53, down: true, repeating: true)), .consumed)
+        XCTAssertEqual(process(key(53, down: false)), .consumed)
+        XCTAssertEqual(process(key(53, down: true)), .passthrough, "the next Esc is the app's")
+        XCTAssertEqual(process(key(53, down: false)), .passthrough)
+        // An Esc that was held before the ring opened does not close it by repeating.
+        _ = process(RingHarness.button(.down))
+        XCTAssertEqual(process(key(53, down: true, repeating: true)), .passthrough)
+        XCTAssertTrue(controller.isOpen)
+    }
+
+    /// Two triggers bound. The button's release got lost and the ring gave up: the key
+    /// trigger still opens a ring (it is "a second trigger during a hold" only while a
+    /// ring really is held).
+    func testAfterALostReleaseTheOtherTriggerStillWorks() {
+        bind(button: 4, key: true)
+        _ = process(RingHarness.button(.down))
+        harness.now += ShortcutRingSession.holdLimit
+        controller.tick()
+        XCTAssertFalse(controller.isOpen)
+        for attempt in 1...3 {
+            XCTAssertEqual(process(key(Self.ringKey, down: true, flags: Self.ringKeyFlags)), .consumed)
+            XCTAssertTrue(controller.isOpen, "press \(attempt) of the key trigger")
+            XCTAssertEqual(process(key(Self.ringKey, down: false, flags: Self.ringKeyFlags)), .consumed)
+            controller.cancel()
+        }
+    }
+
+    /// A key trigger pressed while a button trigger holds the ring is kept like the ring's
+    /// own: its repeats, also once the modifiers are let go, and its release are taken.
+    func testASecondKeyTriggerHeldDuringAHoldTypesNothing() {
+        bind(button: 4, key: true)
+        _ = process(RingHarness.button(.down))
+        XCTAssertEqual(process(key(Self.ringKey, down: true, flags: Self.ringKeyFlags)), .consumed)
+        XCTAssertEqual(process(key(Self.ringKey, down: true, flags: Self.ringKeyFlags, repeating: true)), .consumed)
+        XCTAssertEqual(process(key(Self.ringKey, down: true, repeating: true)), .consumed, "a repeat without the modifiers")
+        XCTAssertEqual(process(key(Self.ringKey, down: false)), .consumed, "its key-up")
+        XCTAssertTrue(controller.isHeld, "the button still holds the ring")
+        XCTAssertEqual(process(RingHarness.button(.up)), .consumed)
+        XCTAssertFalse(controller.isHeld)
+        XCTAssertEqual(process(key(Self.ringKey, down: true)), .passthrough, "the key is free again")
+    }
+
+    /// The taps were restarted while a key held the ring: the ring is gone, but the key
+    /// is still down and repeats; until it is up it stays the ring's and types nothing.
+    func testAfterTheTapsRestartedTheHeldTriggerKeyTypesNothing() {
+        bind(key: true)
+        _ = process(key(Self.ringKey, down: true, flags: Self.ringKeyFlags))
+        XCTAssertTrue(controller.isHeld)
+        InputProcessor.shared.clearActiveBindings()
+        XCTAssertFalse(controller.isOpen)
+        XCTAssertTrue(InputProcessor.shared.needsKeyEvents, "its key-up must still arrive")
+        XCTAssertEqual(process(key(Self.ringKey, down: true, repeating: true)), .consumed)
+        XCTAssertEqual(process(key(Self.ringKey, down: false)), .consumed)
+        XCTAssertFalse(controller.isOpen)
+        // The next real press starts over.
+        XCTAssertEqual(process(key(Self.ringKey, down: true, flags: Self.ringKeyFlags)), .consumed)
+        XCTAssertTrue(controller.isHeld)
+        XCTAssertEqual(process(key(Self.ringKey, down: false)), .consumed)
     }
 
     /// Two triggers bound, the second pressed while the first is held: it is taken whole

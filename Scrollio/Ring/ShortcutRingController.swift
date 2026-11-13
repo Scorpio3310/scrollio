@@ -19,8 +19,9 @@
 //    while a ring stands open.
 //  - The click that chooses or dismisses: the panel itself takes it. A click that goes
 //    to another app all the same (on another screen, where the panel is not; or on this
-//    one, should the panel not have taken it) closes the ring and runs nothing: while a
-//    ring stands open, and only then, a monitor hears of such clicks.
+//    one, should the panel not have taken it), or to a window of Scrollio's own on another
+//    screen, closes the ring and runs nothing: while a ring stands open, and only then,
+//    two monitors hear of such clicks.
 //  - Esc: the keys tap, which is kept running while a ring is open
 //    (`InputProcessor.needsKeyEvents`).
 //
@@ -36,7 +37,8 @@
 //  A place runs as a button's action runs: resolved by the executor from a binding built
 //  from the place, down and then up for what is held (a recorded key, a click).
 //  A pulse (`MouseGestureHapticCue`) is played only for a trigger that arrived over HID++,
-//  on the mouse it belongs to: a light one when a place lights (at most one every
+//  on the mouse it belongs to, and only while Gestures › Haptic feedback is on (the one
+//  switch for the pulses of a hold): a light one when a place lights (at most one every
 //  `tickSpacing`, the others dropped), a firmer one when an action runs.
 //
 
@@ -86,6 +88,10 @@ final class ShortcutRingController {
         var ring: () -> ShortcutRingSettings
         /// Runs a place's action.
         var run: (ShortcutRingPlace) -> Void
+        /// Whether a ring may ask a mouse for pulses: Gestures › Haptic feedback, the one
+        /// switch for the pulses of a hold. (A cue can switch a mouse's haptics on; it is
+        /// only asked for while the user has that switch on.)
+        var allowsHaptics: () -> Bool
         /// Plays a pulse on the mouse the button with this code was pressed on.
         var playHaptic: (MouseGestureHapticCue, UInt16) -> Void
         /// Says the lit action's name to VoiceOver.
@@ -99,9 +105,11 @@ final class ShortcutRingController {
         var log: (String) -> Void
         /// Something that should not happen did: a line of the `app` log as a problem.
         var logProblem: (String) -> Void
-        /// Starts to hear of mouse-downs that went to other apps; the result ends it
+        /// Starts to hear of mouse-downs that did not go to the ring: those that went to
+        /// other apps, and those in windows of Scrollio's own (the handler gets that
+        /// window; nil for another app's). The result ends it
         /// (`stopWatchingClicksElsewhere`). Nil: nothing was started (tests).
-        var watchClicksElsewhere: (@escaping () -> Void) -> Any?
+        var watchClicksElsewhere: (@escaping (NSWindow?) -> Void) -> Any?
         var stopWatchingClicksElsewhere: (Any) -> Void
 
         static let system = Environment(
@@ -117,6 +125,7 @@ final class ShortcutRingController {
             },
             ring: { Options.shared.ring },
             run: { ShortcutRingController.run($0) },
+            allowsHaptics: { Options.shared.gesture.hapticFeedback },
             playHaptic: { cue, code in LogiCenter.shared.playGestureHaptic(cue, forScrollioCode: code) },
             announce: { ShortcutRingController.announce($0) },
             refreshMotionTap: { MouseInteractionSessionController.shared.refreshMotionTapState() },
@@ -126,16 +135,32 @@ final class ShortcutRingController {
             watchClicksElsewhere: { handler in
                 // Under XCTest nothing listens to the Mac's clicks.
                 guard !AppRuntime.isRunningXCTest else { return nil }
-                return NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { _ in
-                    handler()
-                }
+                let downs: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+                // Clicks in other apps, and clicks in Scrollio's own windows (its Settings
+                // on another screen): the global monitor does not hear of the second kind.
+                let monitors: [Any?] = [
+                    NSEvent.addGlobalMonitorForEvents(matching: downs) { _ in handler(nil) },
+                    NSEvent.addLocalMonitorForEvents(matching: downs) { event in
+                        handler(event.window)
+                        return event
+                    },
+                ]
+                return monitors.compactMap { $0 }
             },
-            stopWatchingClicksElsewhere: { NSEvent.removeMonitor($0) }
+            stopWatchingClicksElsewhere: { watch in
+                for monitor in watch as? [Any] ?? [] {
+                    NSEvent.removeMonitor(monitor)
+                }
+            }
         )
     }
 
     /// Between two light pulses; a place that lights sooner gets none.
     static let tickSpacing: TimeInterval = 0.1
+    /// For this long after a place's action was started, a change of Space or of the app
+    /// in front does not close a ring: it is what that action did ("Move right a space",
+    /// an app that opens), and it may arrive when the next ring is already held.
+    static let quietAfterRun: TimeInterval = 1.0
     /// How often the pointer is looked at while the ring stands open.
     static let pointerInterval: TimeInterval = 1.0 / 60.0
     /// How often a held ring is looked at: its limit, and a hand that stopped between the
@@ -162,6 +187,8 @@ final class ShortcutRingController {
     /// What opened the ring, for the log.
     private var openedBy = ""
     private var lastTick = -TimeInterval.infinity
+    /// When a place's action was last started.
+    private var lastRun = -TimeInterval.infinity
     /// Drops a show that was scheduled for a ring that is gone.
     private var showGeneration = 0
     private var timer: Timer?
@@ -211,6 +238,12 @@ final class ShortcutRingController {
         return session.needsKeys
     }
 
+    /// Esc closed the ring and is not up yet: until then every Esc down (its repeats) is
+    /// the ring's too.
+    var awaitsEscapeRelease: Bool {
+        return session.needsKeys && !session.isOpen
+    }
+
     // MARK: The trigger (InputProcessor)
 
     /// The ring's trigger went down. Never a key's auto-repeat.
@@ -225,7 +258,7 @@ final class ShortcutRingController {
                 filled = stored.filled
                 face = nil
             }
-            if case .hidPP = event.source {
+            if case .hidPP = event.source, environment.allowsHaptics() {
                 hapticCode = event.code
             } else {
                 hapticCode = nil
@@ -302,9 +335,10 @@ final class ShortcutRingController {
     /// beside the ring looks. On the ring's own screen the panel should have taken the
     /// click: it did not, the app underneath got it, and choosing a shortcut on top of
     /// that would act on a click the user did not make there; the log says so.
-    func clickWentElsewhere() {
+    func clickWentElsewhere(in window: NSWindow? = nil) {
         assertMainThread()
-        guard session.phase == .latched else { return }
+        // A click on the ring's own panel is the ring's (the panel reports it itself).
+        guard session.phase == .latched, !presenter.owns(window) else { return }
         if screen.frame.contains(environment.pointerLocation()), !didLogMissedClick {
             didLogMissedClick = true
             environment.logProblem("Shortcut Ring: a click on the ring's screen went to the app under it "
@@ -336,14 +370,16 @@ final class ShortcutRingController {
 
     private func observeWhatClosesTheRing() {
         let workspace = NSWorkspace.shared.notificationCenter
-        let names: [(NotificationCenter, Notification.Name)] = [
-            (workspace, NSWorkspace.activeSpaceDidChangeNotification),
-            (workspace, NSWorkspace.didActivateApplicationNotification),
-            (NotificationCenter.default, NSApplication.didChangeScreenParametersNotification),
+        // (center, name, whether it can be the late echo of what a place just did)
+        let names: [(NotificationCenter, Notification.Name, Bool)] = [
+            (workspace, NSWorkspace.activeSpaceDidChangeNotification, true),
+            (workspace, NSWorkspace.didActivateApplicationNotification, true),
+            (NotificationCenter.default, NSApplication.didChangeScreenParametersNotification, false),
         ]
-        for (center, name) in names {
+        for (center, name, followsARun) in names {
             let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 guard let self, self.session.isOpen else { return }
+                if followsARun, self.environment.now() - self.lastRun < Self.quietAfterRun { return }
                 self.cancel()
             }
             observers.append((center, token))
@@ -390,6 +426,7 @@ final class ShortcutRingController {
                 let chosen = ring[place]
                 guard chosen.runs else { continue }
                 ran = Self.logName(of: chosen)
+                lastRun = environment.now()
                 if let code = hapticCode {
                     lastTick = environment.now()
                     let play = environment.playHaptic
@@ -439,8 +476,8 @@ final class ShortcutRingController {
         stopTimer()
         if phase == .latched {
             if clickWatch == nil {
-                clickWatch = environment.watchClicksElsewhere { [weak self] in
-                    self?.clickWentElsewhere()
+                clickWatch = environment.watchClicksElsewhere { [weak self] window in
+                    self?.clickWentElsewhere(in: window)
                 }
             }
         } else if let watch = clickWatch {

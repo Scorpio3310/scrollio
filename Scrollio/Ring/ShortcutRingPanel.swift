@@ -317,6 +317,8 @@ protocol ShortcutRingPresenting: AnyObject {
     func setTakesClicks(_ takesClicks: Bool)
     /// Takes the ring off the screen at once.
     func hide()
+    /// Whether `window` is the ring's own panel.
+    func owns(_ window: NSWindow?) -> Bool
 }
 
 final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
@@ -419,6 +421,11 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
     func setTakesClicks(_ takesClicks: Bool) {
         panel?.ignoresMouseEvents = !takesClicks
         stage?.takesClicks = takesClicks
+    }
+
+    func owns(_ window: NSWindow?) -> Bool {
+        guard let window, let panel else { return false }
+        return window === panel
     }
 
     func hide() {
