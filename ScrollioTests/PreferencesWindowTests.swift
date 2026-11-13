@@ -309,6 +309,60 @@ final class PreferencesSidebarTests: XCTestCase {
         }
     }
 
+    /// The white symbol stands in the middle of its tile, as the symbols of System Settings'
+    /// tiles do: the middle of what it draws, not of its image (an SF Symbol's image is a box
+    /// for text, and the glyph stands low and left in it: up to 0.75 pt in these symbols).
+    /// Measured on the tile drawn at 8x: the box of its near-white pixels against the box
+    /// of the tile.
+    func testEveryTilesSymbolStandsInTheMiddleOfItsTile() throws {
+        let scale: CGFloat = 8
+        for pane in PreferencesPane.all {
+            let tile = PreferencesSidebarViewController.tileImage(symbolName: pane.symbolName, color: pane.tileColor)
+            let side = Int(tile.size.width * scale)
+            let rep = try XCTUnwrap(NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8, samplesPerPixel: 4,
+                hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+            ))
+            rep.size = tile.size
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            tile.draw(in: NSRect(origin: .zero, size: tile.size))
+            NSGraphicsContext.restoreGraphicsState()
+            var tileBox = (minX: side, maxX: -1, minY: side, maxY: -1)
+            var glyphBox = tileBox
+            var pixel = [Int](repeating: 0, count: 4)
+            for y in 0..<side {
+                for x in 0..<side {
+                    rep.getPixel(&pixel, atX: x, y: y)
+                    guard pixel[3] >= 128 else { continue }
+                    tileBox = (min(tileBox.minX, x), max(tileBox.maxX, x), min(tileBox.minY, y), max(tileBox.maxY, y))
+                    // White on every tile colour, whose lowest channel is 0.63 at most.
+                    if min(pixel[0], pixel[1], pixel[2]) >= 217 {
+                        glyphBox = (min(glyphBox.minX, x), max(glyphBox.maxX, x), min(glyphBox.minY, y), max(glyphBox.maxY, y))
+                    }
+                }
+            }
+            XCTAssertGreaterThan(glyphBox.maxX, glyphBox.minX, "\(pane.identifier): no symbol drawn")
+            let dx = CGFloat(glyphBox.minX + glyphBox.maxX - tileBox.minX - tileBox.maxX) / 2 / scale
+            let dy = CGFloat(glyphBox.minY + glyphBox.maxY - tileBox.minY - tileBox.maxY) / 2 / scale
+            XCTAssertEqual(dx, 0, accuracy: 0.13, "\(pane.identifier): the symbol stands \(dx) pt right of the middle")
+            XCTAssertEqual(dy, 0, accuracy: 0.13, "\(pane.identifier): the symbol stands \(dy) pt below the middle")
+        }
+    }
+
+    /// The box of what an image draws, used to centre the symbols: a square drawn inside a
+    /// larger image is found where it is.
+    func testInkBoundsFindWhatAnImageDraws() throws {
+        let image = NSImage(size: NSSize(width: 10, height: 8), flipped: false) { _ in
+            NSColor.white.setFill()
+            NSRect(x: 2, y: 1, width: 3, height: 4).fill()
+            return true
+        }
+        let ink = try XCTUnwrap(PreferencesSidebarViewController.inkBounds(of: image))
+        XCTAssertEqual(ink, NSRect(x: 2, y: 1, width: 3, height: 4))
+        XCTAssertNil(PreferencesSidebarViewController.inkBounds(of: NSImage(size: NSSize(width: 4, height: 4), flipped: false) { _ in true }))
+    }
+
     func testEveryPaneHasItsOwnController() throws {
         let (_, preferences) = try makeWindow()
         XCTAssertTrue(preferences.controller(for: "scrolling") is PreferencesScrollingViewController)

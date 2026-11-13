@@ -41,6 +41,8 @@ it for the people who use the app, and give the version its part before you tag 
   whose thumb panel Scrollio reads pulses when a shortcut lights and when it runs. With
   "Freeze pointer while the ring is held" the pointer stays where it was while you hold
   the button.
+- The symbols in the sidebar of the Settings window stand in the middle of their tiles,
+  as in System Settings. They stood up to 0.75 pt low and 0.5 pt to the left.
 
 ## 1.0.4
 
