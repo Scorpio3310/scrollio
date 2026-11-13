@@ -227,7 +227,51 @@ final class PreferencesRingTests: XCTestCase {
         for row in controller.placeRows {
             XCTAssertEqual(row.trackingAreas.filter { $0.owner === controller }.count, 1)
         }
-        XCTAssertNil(preview.hitTest(NSPoint(x: 10, y: 10)), "a picture")
+    }
+
+    /// The other way round: a place of the drawing under the pointer is lit, and a click
+    /// on it selects its row (the pull-down takes the keyboard, the place stays lit).
+    func testAPlaceOfTheDrawingCanBePointedAtAndClicked() throws {
+        let controller = makeController()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 900), styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        addTeardownBlock { window.close() }
+        controller.view.layoutSubtreeIfNeeded()
+        let preview = try XCTUnwrap(controller.previewView)
+
+        // Where the drawing has its places: by the screen's geometry, drawn smaller.
+        func point(ofPlace place: Int) -> NSPoint {
+            let offset = ShortcutRingGeometry.offset(ofPlace: place)
+            let scale = ShortcutRingPreviewView.ringScale
+            return NSPoint(x: preview.bounds.midX + offset.x * scale, y: preview.bounds.midY - offset.y * scale)
+        }
+        for place in 0..<8 {
+            XCTAssertEqual(preview.place(at: point(ofPlace: place)), place)
+        }
+        XCTAssertNil(preview.place(at: NSPoint(x: preview.bounds.midX, y: preview.bounds.midY)), "the middle is no place")
+        XCTAssertNil(preview.place(at: NSPoint(x: 12, y: 12)), "nor is the card beside the ring")
+
+        preview.onPlaceHovered?(2)
+        XCTAssertEqual(preview.lit, 2)
+        preview.onPlaceHovered?(nil)
+        XCTAssertNil(preview.lit)
+
+        preview.onPlaceClicked?(6)
+        XCTAssertEqual(controller.selectedPlace, 6)
+        XCTAssertEqual(preview.lit, 6, "the selected row's place stays lit")
+        XCTAssertTrue(window.firstResponder === controller.placePopUps[6], "its pull-down has the keyboard")
+        // Pointing elsewhere shows that place, and then the selected one again.
+        controller.placeHoverChanged(1, inside: true)
+        XCTAssertEqual(preview.lit, 1)
+        controller.placeHoverChanged(1, inside: false)
+        XCTAssertEqual(preview.lit, 6)
+        // Using another row's pull-down selects that row.
+        let menu = controller.placePopUps[3].menu
+        let undo = try XCTUnwrap(menu?.items.compactMap { $0.submenu?.items.first { $0.representedObject as? String == "undo" } }.first)
+        controller.actionSelected(undo)
+        XCTAssertEqual(controller.selectedPlace, 3)
+        XCTAssertEqual(preview.lit, 3)
     }
 }
 

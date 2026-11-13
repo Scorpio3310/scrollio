@@ -5,7 +5,10 @@
 //  PreferencesGroupedForm like the Gestures pane.
 //
 //  On top the ring as it opens at the pointer, drawn by the code that draws it on screen
-//  (`ShortcutRingArtwork`); the place of the row under the pointer is lit in it. Then a box
+//  (`ShortcutRingArtwork`). The drawing and the rows point at each other: the place of
+//  the row under the pointer is lit in the drawing, a place under the pointer is lit too,
+//  and a click on a place selects its row (its pull-down takes the keyboard and is
+//  scrolled into view; the place stays lit). Then a box
 //  with what opens the ring: which button or key runs the Shortcut Ring is chosen in the
 //  Buttons pane, and the row names it and leads there ("Set Up…" records one, "Change"
 //  shows the Buttons pane with its row selected), as the Gestures pane does for its button.
@@ -69,8 +72,14 @@ struct ShortcutRingBindingSummary: Equatable {
     }
 }
 
-/// The ring on a card, as it opens at the pointer.
+/// The ring on a card, as it opens at the pointer. A place can be pointed at and clicked.
 final class ShortcutRingPreviewView: NSView {
+
+    /// The pointer is over this place of the drawing, or over none (nil).
+    var onPlaceHovered: ((Int?) -> Void)?
+    /// A place of the drawing was clicked.
+    var onPlaceClicked: ((Int) -> Void)?
+
 
     /// The ring is drawn this much smaller than on screen.
     static let ringScale: CGFloat = 0.74
@@ -80,7 +89,8 @@ final class ShortcutRingPreviewView: NSView {
     var face = ShortcutRingFace(places: []) {
         didSet { needsDisplay = true }
     }
-    /// The lit place: the one of the row under the pointer.
+    /// The lit place: the one pointed at (in the rows or in the drawing), else the one
+    /// whose row is selected.
     var lit: Int? {
         didSet {
             guard lit != oldValue else { return }
@@ -102,15 +112,42 @@ final class ShortcutRingPreviewView: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
         setAccessibilityLabel(NSLocalizedString("ring-preview-description", comment: ""))
+        addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        ))
+    }
+
+    /// The place of the drawn ring at `point` of this view, an empty one too (its row can
+    /// then be filled); nil in the ring's middle and beside the ring.
+    func place(at point: NSPoint) -> Int? {
+        // The geometry is the screen's: unscaled, and with y growing downwards.
+        let offset = CGPoint(x: (point.x - bounds.midX) / Self.ringScale, y: -(point.y - bounds.midY) / Self.ringScale)
+        guard case .place(let place) = ShortcutRingGeometry.target(at: offset, centre: .zero),
+              hypot(offset.x, offset.y) <= ShortcutRingGeometry.outerRadius,
+              face.places.indices.contains(place) else { return nil }
+        return place
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        onPlaceHovered?(place(at: convert(event.locationInWindow, from: nil)))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onPlaceHovered?(nil)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let place = place(at: convert(event.locationInWindow, from: nil)) else {
+            return super.mouseDown(with: event)
+        }
+        onPlaceClicked?(place)
     }
 
     override var intrinsicContentSize: NSSize {
         return NSSize(width: NSView.noIntrinsicMetric, height: Self.preferredHeight)
-    }
-
-    /// A picture: nothing to click.
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        return nil
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -168,6 +205,16 @@ final class RingPreferencesViewController: NSViewController {
 
     /// The place of the row under the pointer.
     private(set) var hoveredPlace: Int?
+    /// The place under the pointer in the drawing.
+    private(set) var pointedPlace: Int?
+    /// The place that was clicked in the drawing, or whose pull-down was last used: its
+    /// row is the selected one.
+    private(set) var selectedPlace: Int?
+
+    /// What the drawing lights: what is pointed at, else the selected place.
+    var litPlace: Int? {
+        return hoveredPlace ?? pointedPlace ?? selectedPlace
+    }
 
     // MARK: - Views (read access for tests)
 
@@ -203,6 +250,8 @@ final class RingPreferencesViewController: NSViewController {
         preview.identifier = Identifier.preview
         preview.translatesAutoresizingMaskIntoConstraints = false
         preview.heightAnchor.constraint(equalToConstant: ShortcutRingPreviewView.preferredHeight).isActive = true
+        preview.onPlaceHovered = { [weak self] in self?.placePointedAt($0) }
+        preview.onPlaceClicked = { [weak self] in self?.selectPlace($0) }
         previewView = preview
 
         let width = Self.boxWidth
@@ -233,6 +282,8 @@ final class RingPreferencesViewController: NSViewController {
     override func viewDidDisappear() {
         super.viewDidDisappear()
         hoveredPlace = nil
+        pointedPlace = nil
+        selectedPlace = nil
         previewView.lit = nil
     }
 
@@ -250,7 +301,7 @@ final class RingPreferencesViewController: NSViewController {
             updateTitle(of: popUp, place: ring[place])
         }
         previewView.face = ShortcutRingFace(ring)
-        previewView.lit = hoveredPlace
+        previewView.lit = litPlace
         PreferencesForm.fitToContent(self)
     }
 
@@ -269,7 +320,24 @@ final class RingPreferencesViewController: NSViewController {
         } else if hoveredPlace == place {
             hoveredPlace = nil
         }
-        previewView?.lit = hoveredPlace
+        previewView?.lit = litPlace
+    }
+
+    /// The pointer is over `place` of the drawing (nil: over none).
+    func placePointedAt(_ place: Int?) {
+        pointedPlace = place
+        previewView?.lit = litPlace
+    }
+
+    /// A place of the drawing was clicked: its row is selected. The row's pull-down takes
+    /// the keyboard (Space opens it) and is scrolled into view, and the place stays lit.
+    func selectPlace(_ place: Int) {
+        guard placePopUps.indices.contains(place) else { return }
+        selectedPlace = place
+        previewView?.lit = litPlace
+        let popUp = placePopUps[place]
+        popUp.scrollToVisible(popUp.bounds)
+        view.window?.makeFirstResponder(popUp)
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -304,6 +372,8 @@ final class RingPreferencesViewController: NSViewController {
     @objc func actionSelected(_ sender: NSMenuItem) {
         guard let identifier = sender.representedObject as? String,
               placePopUps.indices.contains(sender.tag) else { return }
+        // The row whose pull-down was used is the selected one.
+        selectedPlace = sender.tag
         setAction(identifier, ofPlace: sender.tag)
     }
 
@@ -311,7 +381,10 @@ final class RingPreferencesViewController: NSViewController {
     func setAction(_ identifier: String, ofPlace place: Int) {
         var ring = Options.shared.ring
         let new = ShortcutRingPlace(action: identifier)
-        guard ring[place] != new else { return }
+        guard ring[place] != new else {
+            previewView?.lit = litPlace
+            return
+        }
         ring[place] = new
         Options.shared.ring = ring
         reload()
