@@ -346,10 +346,10 @@ final class ShortcutRingRenderTests: XCTestCase {
                 (1.45, CGPoint(x: 202, y: 238)),            // towards "Copy", bottom left
                 (2.4, CGPoint(x: 202, y: 238)),
                 (3.3, CGPoint(x: 400, y: 200)), (4.1, CGPoint(x: 400, y: 200)),
-                (4.9, CGPoint(x: 458, y: 142)),             // over the top right place
-                (5.4, CGPoint(x: 458, y: 142)),
-                (6.1, CGPoint(x: 482, y: 200)),             // over the right place
-                (8.0, CGPoint(x: 482, y: 200)),
+                (4.9, CGPoint(x: 466, y: 152)),             // over the top right place
+                (5.4, CGPoint(x: 466, y: 152)),
+                (6.1, CGPoint(x: 492, y: 210)),             // over the right place
+                (8.0, CGPoint(x: 492, y: 210)),
             ]
             guard let next = stops.firstIndex(where: { $0.time >= time }), next > 0 else {
                 return time <= 0 ? stops[0].point : stops[stops.count - 1].point

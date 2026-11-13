@@ -57,6 +57,8 @@ final class RingHarness {
     private(set) var motionTapRefreshes = 0
     private(set) var keyTapRefreshes = 0
     private(set) var announced: [String] = []
+    /// The lines for the `app` log.
+    private(set) var logLines: [String] = []
     private var scheduled: [() -> Void] = []
 
     init() {
@@ -73,7 +75,8 @@ final class RingHarness {
             playHaptic: { [unowned self] cue, code in self.log.append("pulse \(cue) \(code)") },
             announce: { [unowned self] in self.announced.append($0) },
             refreshMotionTap: { [unowned self] in self.motionTapRefreshes += 1 },
-            refreshKeyTap: { [unowned self] in self.keyTapRefreshes += 1 }
+            refreshKeyTap: { [unowned self] in self.keyTapRefreshes += 1 },
+            log: { [unowned self] in self.logLines.append($0) }
         )
         controller = ShortcutRingController(environment: environment, presenter: presenter)
     }
@@ -391,6 +394,27 @@ final class ShortcutRingControllerTests: XCTestCase {
         harness.moveHand(by: CGPoint(x: 0, y: -50))
         harness.runScheduled()
         XCTAssertEqual(harness.announced, [SystemShortcut.missionControl.localizedName])
+    }
+
+    /// The `app` log gets a few lines per use of the ring, none per pointer event: what
+    /// opened it, that it was left open, and how it closed.
+    func testTheLogSaysWhatTheRingDid() {
+        harness.tap()
+        harness.pointer = harness.place(3)
+        harness.now += 0.5
+        controller.tick()
+        harness.presenter.onButton?(0, true, harness.place(3))
+        harness.presenter.onButton?(0, false, harness.place(3))
+        XCTAssertEqual(harness.logLines, [
+            "Shortcut Ring: opened by a mouse button",
+            "Shortcut Ring: left open (the trigger was let go with nothing lit)",
+            "Shortcut Ring: closed, ran paste",
+        ])
+        controller.triggerPressed(by: RingHarness.button(.down, code: 1006, overHIDPP: true))
+        harness.moveHand(by: CGPoint(x: 0, y: -60))
+        harness.moveHand(by: CGPoint(x: 0, y: 55))
+        controller.triggerReleased(isMadeUp: false)
+        XCTAssertEqual(harness.logLines.suffix(2), ["Shortcut Ring: opened by a button over HID++", "Shortcut Ring: closed, nothing ran"])
     }
 
     /// A place's shortcut is sent as one press, through the executor the buttons use.

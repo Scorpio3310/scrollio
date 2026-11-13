@@ -84,7 +84,9 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   wake, another user, Pause, Accessibility access lost or back, quit), event taps that
   could not be created or that macOS turned off, restarts, settings that could not be
   read or written, an app, a file or a script that could not be opened (never its name
-  or path), a held action whose release never came, at launch which accent colour is
+  or path), a held action whose release never came, each use of the Shortcut Ring (what
+  opened it: a mouse button, a key or a button over HID++; that it was left open; how it
+  closed and which shortcut it ran), at launch which accent colour is
   in effect, for "Trackpad-style scrolling (Experimental)" whether the wheel's hardware event is
   taken off what an app is sent (once: at launch when the switch is on, in the Scrolling
   pane or for an app; else at the first scroll after you switch it on), what Safari gets

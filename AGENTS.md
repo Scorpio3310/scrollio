@@ -211,8 +211,9 @@ See `.agents/docs/code-map.md` for the map. The rules:
 - Diagnostics go to the system log (`ScrollSystemLog`, category `scroll`; `LogiSystemLog`,
   category `logi`; `AppSystemLog`, category `app`: the app's own health: starts and stops,
   event taps that macOS turned off or that could not be created, recoveries): state
-  changes, decisions and one line per scroll (or per roll of the thumb wheel, or per hold
-  of a gesture button the mouse tracks), never a line per wheel, pointer or key event, and
+  changes, decisions and one line per scroll (or per roll of the thumb wheel, per hold
+  of a gesture button the mouse tracks, or two or three per use of the Shortcut Ring),
+  never a line per wheel, pointer or key event, and
   no string built per event. Nothing a user types, and no path of a user's file, goes
   into a log. Use these, not `NSLog`: only they write to the app's subsystem.
   Reading it: `docs/troubleshooting.md`, "Diagnostics".

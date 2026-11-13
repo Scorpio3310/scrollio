@@ -42,7 +42,7 @@ final class ShortcutRingController {
     // MARK: The one controller
 
     /// The controller, once a ring was first asked for. Nil for everyone else: the paths
-    /// that ask "is a ring open?" cost them one comparison with nil.
+    /// that ask "is a ring open?" cost them a comparison with nil.
     private(set) static var existing: ShortcutRingController?
 
     /// The controller, made now if there is none yet.
@@ -89,6 +89,9 @@ final class ShortcutRingController {
         var refreshMotionTap: () -> Void
         /// Whether the ring needs the keyboard changed: the keys tap follows it.
         var refreshKeyTap: () -> Void
+        /// One line of the `app` log: a ring opened, was left open, ran something or
+        /// closed. A few lines per use of the ring, never one per pointer event.
+        var log: (String) -> Void
 
         static let system = Environment(
             now: { ProcessInfo.processInfo.systemUptime },
@@ -106,7 +109,8 @@ final class ShortcutRingController {
             playHaptic: { cue, code in LogiCenter.shared.playGestureHaptic(cue, forScrollioCode: code) },
             announce: { ShortcutRingController.announce($0) },
             refreshMotionTap: { MouseInteractionSessionController.shared.refreshMotionTapState() },
-            refreshKeyTap: { ButtonCore.shared.keyTap.refresh() }
+            refreshKeyTap: { ButtonCore.shared.keyTap.refresh() },
+            log: { AppSystemLog.note($0) }
         )
     }
 
@@ -131,6 +135,8 @@ final class ShortcutRingController {
     /// The button to name when asking for a pulse: set for a trigger that arrived over
     /// HID++, nil otherwise.
     private var hapticCode: UInt16?
+    /// What opened the ring, for the log.
+    private var openedBy = ""
     private var lastTick = -TimeInterval.infinity
     /// Drops a show that was scheduled for a ring that is gone.
     private var showGeneration = 0
@@ -192,6 +198,7 @@ final class ShortcutRingController {
             } else {
                 hapticCode = nil
             }
+            openedBy = Self.kind(of: event)
         }
         let pointer = Self.pointerLocation(of: event) ?? environment.pointerLocation()
         if !session.isOpen {
@@ -206,6 +213,12 @@ final class ShortcutRingController {
     func triggerReleased(isMadeUp: Bool) {
         assertMainThread()
         perform(session.triggerReleased(at: environment.now(), isMadeUp: isMadeUp))
+    }
+
+    /// What kind of trigger an event is, for the log.
+    private static func kind(of event: InputEvent) -> String {
+        if case .hidPP = event.source { return "a button over HID++" }
+        return event.type == .keyboard ? "a key" : "a mouse button"
     }
 
     /// Where the pointer was when a mouse button's event was made; nil for a key and for
@@ -292,6 +305,12 @@ final class ShortcutRingController {
     // MARK: Carrying out what the rules say
 
     private func perform(_ commands: [ShortcutRingSession.Command]) {
+        guard !commands.isEmpty else {
+            followTheSession()
+            return
+        }
+        var closed = false
+        var ran: String?
         for command in commands {
             switch command {
             case .open(let centre):
@@ -309,6 +328,7 @@ final class ShortcutRingController {
                         lit: self.session.lit, takesClicks: self.session.phase == .latched
                     )
                 }
+                environment.log("Shortcut Ring: opened by \(openedBy)")
             case .light(let place):
                 presenter.light(place)
                 if let place {
@@ -317,8 +337,10 @@ final class ShortcutRingController {
             case .close:
                 showGeneration += 1
                 presenter.hide()
+                closed = true
             case .run(let place):
                 guard let shortcut = ring[place].shortcut else { continue }
+                ran = shortcut.identifier
                 if let code = hapticCode {
                     lastTick = environment.now()
                     let play = environment.playHaptic
@@ -328,6 +350,9 @@ final class ShortcutRingController {
                 let run = environment.run
                 environment.schedule { run(shortcut) }
             }
+        }
+        if closed {
+            environment.log(ran.map { "Shortcut Ring: closed, ran \($0)" } ?? "Shortcut Ring: closed, nothing ran")
         }
         followTheSession()
     }
@@ -370,6 +395,7 @@ final class ShortcutRingController {
         case .latched:
             presenter.setTakesClicks(true)
             startTimer(every: Self.pointerInterval)
+            environment.log("Shortcut Ring: left open (the trigger was let go with nothing lit)")
         }
     }
 

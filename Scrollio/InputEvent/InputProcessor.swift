@@ -49,8 +49,10 @@ class InputProcessor: ModifierFlagsProviding {
     //
     // The ring's trigger is a binding like Gesture Navigation's: `process` hands its press
     // and its release to `ShortcutRingController`, which exists only once such a press has
-    // come. Everyone else pays one comparison with nil per button or key event, and
-    // nothing per pointer or wheel event.
+    // come. Everyone else pays, per button or key event, a comparison of `ringTrigger`
+    // with nil (and for Esc one more, of the controller with nil); nothing per wheel
+    // event; and per pointer event one comparison with nil, only while the
+    // pointer-movement tap runs at all (a gesture hold, a synthetic drag, a held modifier).
 
     /// The trigger whose press the ring took, until its release: every further down of it
     /// is the ring's too (a held key repeats, and its repeats no longer match the binding
