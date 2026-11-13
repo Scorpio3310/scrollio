@@ -8,7 +8,7 @@ it for the people who use the app, and give the version its part before you tag 
 `## Unreleased` collects what the next version brings; it becomes that version's part
 (the heading gets the version) before the tag.
 
-## Unreleased
+## 1.0.4
 
 - **The MX Master 4 is drawn as it is.** Its picture in Settings is redrawn from above,
   and has a second view from the thumb side: the thumb wheel on top, Forward and Back in a
