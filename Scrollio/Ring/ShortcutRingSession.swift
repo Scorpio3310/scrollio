@@ -43,7 +43,8 @@ struct ShortcutRingSession {
         case closed
         /// The trigger is down: the hand's movement since the press chooses.
         case held
-        /// The ring was left open by a short press: the pointer's place and a click choose.
+        /// The trigger was let go with nothing lit and the ring stands open: the pointer's
+        /// place and a click choose.
         case latched
     }
 
