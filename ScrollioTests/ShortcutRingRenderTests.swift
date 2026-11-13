@@ -239,11 +239,10 @@ final class ShortcutRingRenderTests: XCTestCase {
 
     /// The views the panel shows (`ShortcutRingDropsView`), not the artwork's drawing of
     /// the ring: what stands in each drop is a view of its own that is moved and scaled,
-    /// and this is the look at where those views are. Drawn in-process and therefore on
-    /// a plain ground, black or white as AppKit's cache gives it (such a picture has no
-    /// desktop behind the ring): the drawn drops are complete; the blurred material and
-    /// the glass are flat discs, and the lit glass drop's tint, which is the glass's, is
-    /// not there at all.
+    /// and this is the look at where those views are. Drawn in-process and laid over the
+    /// painted desktop: the drawn drops are complete; the blurred material and the glass
+    /// are flat discs, and the lit glass drop's tint, which is the glass's, is not there
+    /// at all.
     func testRenderThePanelsOwnViews() throws {
         var cells: [(caption: String, appearance: ShortcutRingAppearance, elapsed: TimeInterval, lit: Int?)] = [
             ("Drawn, 60 ms after it opened", ShortcutRingAppearance(reducesTransparency: true), 0.06, nil),
@@ -306,12 +305,12 @@ final class ShortcutRingRenderTests: XCTestCase {
             CGRect(origin: .zero, size: size).fill()
             guard let context = NSGraphicsContext.current?.cgContext else { return }
             RingMock.drawText(
-                "The panel's own views, drawn in-process on a plain ground (light above, dark below). A check of where the "
-                    + "views are, NOT how the ring looks on a screen.",
+                "The panel's own views, drawn in-process and laid over the painted desktop (light above, dark below). A check "
+                    + "of where the views are, NOT how glass or the blur look on a screen: both are flat discs here.",
                 in: CGRect(x: margin, y: size.height - margin - headerHeight, width: size.width - margin * 2, height: headerHeight - 8),
                 size: 13, weight: .semibold, alignment: .left, dark: false
             )
-            for row in names.indices {
+            for (row, name) in names.enumerated() {
                 for (column, item) in cells.enumerated() {
                     let rect = CGRect(
                         x: margin + CGFloat(column) * (cell.width + gap),
@@ -320,9 +319,15 @@ final class ShortcutRingRenderTests: XCTestCase {
                     )
                     context.saveGState()
                     NSBezierPath(roundedRect: rect, xRadius: 12, yRadius: 12).addClip()
-                    NSColor.black.setFill()
-                    rect.fill()
-                    pictures[row][column].draw(in: rect.insetBy(dx: 6, dy: 6))
+                    NSAppearance(named: name)?.performAsCurrentDrawingAppearance {
+                        RingMock.drawDesktop(in: rect, dark: name == .darkAqua)
+                    }
+                    // Over the desktop: a bitmap draws itself as a copy unless told otherwise,
+                    // and its clear ground would then cut a hole.
+                    pictures[row][column].draw(
+                        in: rect.insetBy(dx: 6, dy: 6), from: .zero, operation: .sourceOver,
+                        fraction: 1, respectFlipped: true, hints: nil
+                    )
                     context.restoreGState()
                     RingMock.drawText(
                         item.caption, in: CGRect(x: rect.minX, y: rect.minY - captionHeight, width: rect.width, height: captionHeight - 6),
