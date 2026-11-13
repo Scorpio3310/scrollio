@@ -417,7 +417,7 @@ final class ShortcutRingDropsPanelTests: XCTestCase {
         XCTAssertEqual(content.frame.midX, circle.midX, accuracy: 0.001)
         XCTAssertEqual(content.frame.midY, circle.midY, accuracy: 0.001)
         XCTAssertLessThan(content.frame.width, content.side)
-        XCTAssertEqual(content.bounds.width, content.side, accuracy: 0.001, "drawn once, scaled by its frame")
+        XCTAssertEqual(content.bounds.width, content.frame.width, accuracy: 0.001, "drawn at the size it is shown")
         XCTAssertEqual(content.side, 56)
         XCTAssertTrue(rig.presenter.isMoving)
 
@@ -689,5 +689,109 @@ final class ShortcutRingDropsPanelTests: XCTestCase {
         // The lit drop is larger and farther out: the material is under all of it.
         XCTAssertEqual(alpha(ShortcutRingGeometry.offset(ofPlace: 2, radius: 88 + 30)), 1, accuracy: 0.01)
         XCTAssertEqual(alpha(ShortcutRingGeometry.offset(ofPlace: 6, radius: 82 + 28)), 0, accuracy: 0.01)
+    }
+}
+
+// MARK: - What stands in a drop is sharp and in its middle
+
+/// Found on the owner's screen (2026-11-13): after the ring opened the symbols were soft and
+/// sat a little low until a place was lit.
+final class ShortcutRingDropContentTests: XCTestCase {
+
+    private func place(_ symbol: String) -> ShortcutRingFace.Place {
+        return ShortcutRingFace.Place(title: symbol, symbolName: symbol, isEmpty: false)
+    }
+
+    /// The picture is made at the size it is shown. It used to be drawn once, small, while
+    /// the drop travelled, and that small picture was stretched to the drop at rest.
+    func testWhatStandsInADropIsDrawnAgainWhenItsSizeChanges() {
+        let content = ShortcutRingDropContentView(side: 56)
+        content.content = .place(place("doc.on.doc"))
+
+        content.put(middle: CGPoint(x: 100, y: 100), grow: 0.4, opacity: 1)
+        XCTAssertEqual(content.bounds.size, content.frame.size, "no small picture stretched by the frame")
+        let small = content.picturesForANewSize
+        XCTAssertGreaterThan(small, 0)
+
+        content.put(middle: CGPoint(x: 120, y: 100), grow: 0.4, opacity: 1)
+        XCTAssertEqual(content.picturesForANewSize, small, "moved, not resized: the same picture")
+
+        content.put(middle: CGPoint(x: 120, y: 100), grow: 1, opacity: 1)
+        XCTAssertEqual(content.picturesForANewSize, small + 1, "at its full size the picture is drawn afresh")
+        XCTAssertEqual(content.bounds.size, NSSize(width: 56, height: 56))
+        XCTAssertEqual(content.frame.size, NSSize(width: 56, height: 56))
+    }
+
+    /// Where the ink of a place's content lies from `middle`, in points, when it is drawn
+    /// into a picture (y as the context has it).
+    private func inkOffset(of place: ShortcutRingFace.Place, flipped: Bool) throws -> CGPoint {
+        let side = 64, oversampling = 4
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: side * oversampling, pixelsHigh: side * oversampling, bitsPerSample: 8,
+            samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        bitmap.size = NSSize(width: side, height: side)
+        let base = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: bitmap))
+        NSGraphicsContext.saveGraphicsState()
+        if flipped {
+            let context = NSGraphicsContext(cgContext: base.cgContext, flipped: true)
+            NSGraphicsContext.current = context
+            context.cgContext.translateBy(x: 0, y: CGFloat(side))
+            context.cgContext.scaleBy(x: 1, y: -1)
+        } else {
+            NSGraphicsContext.current = base
+        }
+        ShortcutRingArtwork.drawContent(
+            of: place, at: CGPoint(x: CGFloat(side) / 2, y: CGFloat(side) / 2), scale: 1, colour: .black
+        )
+        NSGraphicsContext.restoreGraphicsState()
+
+        let data = try XCTUnwrap(bitmap.bitmapData)
+        let pixels = side * oversampling
+        var left = pixels, right = -1, top = pixels, bottom = -1
+        for row in 0..<pixels {
+            for column in 0..<pixels where data[row * bitmap.bytesPerRow + column * 4 + 3] > 24 {
+                left = min(left, column)
+                right = max(right, column)
+                top = min(top, row)
+                bottom = max(bottom, row)
+            }
+        }
+        XCTAssertGreaterThan(right, left, "\(place.symbolName) draws something")
+        let x = CGFloat(left + right + 1) / 2 / CGFloat(oversampling) - CGFloat(side) / 2
+        let y = CGFloat(top + bottom + 1) / 2 / CGFloat(oversampling) - CGFloat(side) / 2
+        return CGPoint(x: x, y: y)
+    }
+
+    /// The middle of what is seen of a symbol stands on the middle of its drop: every
+    /// symbol of a new ring, and whether the context counts y upwards (the ring) or
+    /// downwards. Placed by its image, the ink lay up to 0.25 pt low and 0.44 pt left; it
+    /// is placed by its ink and then on a pixel of the picture (a quarter point here).
+    func testEverySymbolOfANewRingStandsInTheMiddleOfItsDrop() throws {
+        let face = ShortcutRingFace(.default, looksOnDisk: false)
+        let symbols = face.places.filter { !$0.isEmpty && $0.image == nil && $0.glyphs.isEmpty }
+        XCTAssertEqual(symbols.count, ShortcutRingSettings.placeCount, "a new ring holds eight listed actions")
+        for place in symbols {
+            for flipped in [false, true] {
+                let offset = try inkOffset(of: place, flipped: flipped)
+                XCTAssertEqual(offset.x, 0, accuracy: 0.3, "\(place.symbolName), flipped \(flipped)")
+                XCTAssertEqual(offset.y, 0, accuracy: 0.3, "\(place.symbolName), flipped \(flipped)")
+            }
+        }
+    }
+
+    /// The measure itself: the ink of an image, from its middle, as a part of its size.
+    func testTheInkOfAnImageIsMeasuredFromItsMiddle() {
+        let image = NSImage(size: NSSize(width: 20, height: 20), flipped: false) { _ in
+            NSColor.black.setFill()
+            // A square in the lower right quarter: 5 right of the middle, 5 below it.
+            NSRect(x: 10, y: 0, width: 10, height: 10).fill()
+            return true
+        }
+        let offset = ShortcutRingArtwork.inkOffset(of: image)
+        XCTAssertEqual(offset.x, 0.25, accuracy: 0.02)
+        XCTAssertEqual(offset.y, -0.25, accuracy: 0.02)
+        let empty = NSImage(size: NSSize(width: 20, height: 20), flipped: false) { _ in true }
+        XCTAssertEqual(ShortcutRingArtwork.inkOffset(of: empty), .zero)
     }
 }

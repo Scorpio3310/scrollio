@@ -335,11 +335,79 @@ enum ShortcutRingArtwork {
         guard let symbol = symbolImage(named: place.symbolName, pointSize: symbolPointSize * scale, colour: colour) else {
             return
         }
+        // The middle of what is seen of the symbol goes on `middle`, not the middle of its
+        // image: a symbol's image leaves room that is not the same on all sides (measured
+        // for a new ring's symbols: the ink lies up to 0.25 pt low and 0.44 pt left). The
+        // corner then goes onto a pixel, so that the symbol's straight strokes stay crisp.
         let size = symbol.size
+        let off = symbolInkOffset(named: place.symbolName)
+        let flipped = NSGraphicsContext.current?.isFlipped ?? false
+        let corner = onPixel(CGPoint(
+            x: middle.x - size.width / 2 - off.x * size.width,
+            y: middle.y - size.height / 2 + (flipped ? off.y : -off.y) * size.height
+        ))
         symbol.draw(
-            in: CGRect(x: middle.x - size.width / 2, y: middle.y - size.height / 2, width: size.width, height: size.height),
+            in: CGRect(origin: corner, size: size),
             from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil
         )
+    }
+
+    /// `point` moved onto the nearest pixel of the picture that is being drawn (whatever
+    /// its scale: a Retina screen, a drop that is still small).
+    static func onPixel(_ point: CGPoint) -> CGPoint {
+        guard let context = NSGraphicsContext.current?.cgContext else { return point }
+        let device = context.convertToDeviceSpace(point)
+        return context.convertToUserSpace(CGPoint(x: device.x.rounded(), y: device.y.rounded()))
+    }
+
+    private static var inkOffsets: [String: CGPoint] = [:]
+    private static let inkOffsetsLock = NSLock()
+
+    /// How far the middle of a symbol's ink lies from the middle of its image, as a part of
+    /// the image's width and height (y upwards). Measured once per symbol.
+    static func symbolInkOffset(named name: String) -> CGPoint {
+        inkOffsetsLock.lock()
+        defer { inkOffsetsLock.unlock() }
+        if let known = inkOffsets[name] { return known }
+        let offset = symbolImage(named: name, pointSize: symbolPointSize, colour: .black).map(inkOffset(of:)) ?? .zero
+        inkOffsets[name] = offset
+        return offset
+    }
+
+    /// The offset of an image's ink (every pixel that is not clear) from its middle, as a
+    /// part of its width and height, y upwards. Zero for an image with nothing in it.
+    static func inkOffset(of image: NSImage) -> CGPoint {
+        let size = image.size
+        let oversampling: CGFloat = 4
+        let wide = Int((size.width * oversampling).rounded(.up))
+        let high = Int((size.height * oversampling).rounded(.up))
+        guard wide > 0, high > 0, let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: wide, pixelsHigh: high, bitsPerSample: 8, samplesPerPixel: 4,
+            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ) else { return .zero }
+        // The size in points comes first: the context takes its scale from it.
+        bitmap.size = NSSize(width: CGFloat(wide) / oversampling, height: CGFloat(high) / oversampling)
+        guard let context = NSGraphicsContext(bitmapImageRep: bitmap), let data = bitmap.bitmapData else { return .zero }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        image.draw(in: CGRect(origin: .zero, size: size), from: .zero, operation: .sourceOver, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+
+        var left = wide, right = -1, top = high, bottom = -1
+        let rowBytes = bitmap.bytesPerRow
+        for row in 0..<high {
+            for column in 0..<wide where data[row * rowBytes + column * 4 + 3] > 24 {
+                left = min(left, column)
+                right = max(right, column)
+                top = min(top, row)
+                bottom = max(bottom, row)
+            }
+        }
+        guard right >= left, bottom >= top else { return .zero }
+        // The bitmap's rows run downwards; the offset is given upwards.
+        let middleX = CGFloat(left + right + 1) / 2 / oversampling
+        let middleY = (CGFloat(high) - CGFloat(top + bottom + 1) / 2) / oversampling
+        return CGPoint(x: (middleX - size.width / 2) / size.width, y: (middleY - size.height / 2) / size.height)
     }
 
     /// A key combination's keys in the middle of a place, as large as fits.

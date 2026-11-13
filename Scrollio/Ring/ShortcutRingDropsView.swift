@@ -51,7 +51,8 @@ final class ShortcutRingDropContentView: NSView {
     static let placeSide = (ShortcutRingGeometry.placeDiameter * ShortcutRingDrops.litContentScale).rounded()
     static let hubSide = ShortcutRingDrops.hubDiameter
 
-    /// The side of the square this view draws in, whatever its frame.
+    /// The side of the square at rest. The view is as large as it is shown (`put`) and
+    /// draws its content at that size.
     let side: CGFloat
 
     var content = Content.nothing {
@@ -66,12 +67,16 @@ final class ShortcutRingDropContentView: NSView {
     }
     /// Inside glass: the system's label colour, which follows what the glass does.
     var usesLabelColour = false
+    /// How often a new picture was asked for because the size changed (tests read it).
+    private(set) var picturesForANewSize = 0
 
     init(side: CGFloat) {
         self.side = side
         super.init(frame: NSRect(x: 0, y: 0, width: side, height: side))
         wantsLayer = true
-        // Drawn once per look: moving and scaling the view shows the same picture.
+        // Drawn again whenever its look or its size changes (`put` asks for it): a picture
+        // drawn small while the drop travels and then stretched stayed soft and a little
+        // off its middle until the place was lit, which drew it afresh.
         layerContentsRedrawPolicy = .onSetNeedsDisplay
     }
 
@@ -92,11 +97,13 @@ final class ShortcutRingDropContentView: NSView {
         let shown = side * max(grow, 0.01)
         let target = NSRect(x: middle.x - shown / 2, y: middle.y - shown / 2, width: shown, height: shown)
         if frame != target {
+            let resized = frame.size != target.size
             frame = target
-        }
-        // The drawing keeps its own size: the frame scales it.
-        if abs(bounds.width - side) > 0.001 || abs(bounds.height - side) > 0.001 {
-            setBoundsSize(NSSize(width: side, height: side))
+            // The picture is made at the size it is shown: never a small one stretched.
+            if resized {
+                picturesForANewSize += 1
+                needsDisplay = true
+            }
         }
         let alpha = min(max(opacity, 0), 1)
         if alphaValue != alpha {
@@ -111,7 +118,15 @@ final class ShortcutRingDropContentView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let ink = usesLabelColour ? NSColor.labelColor : ShortcutRingArtwork.ink(dark: ShortcutRingArtwork.isDark())
-        let middle = CGPoint(x: bounds.midX, y: bounds.midY)
+        // Drawn in the square of `side`, at the size the view has now.
+        let grow = bounds.width / side
+        guard grow > 0 else { return }
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        let shrink = NSAffineTransform()
+        shrink.scale(by: grow)
+        shrink.concat()
+        let middle = CGPoint(x: side / 2, y: side / 2)
         switch content {
         case .nothing:
             break
