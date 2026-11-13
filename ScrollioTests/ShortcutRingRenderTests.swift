@@ -3,19 +3,24 @@
 //  ScrollioTests
 //
 //  Pictures of the Shortcut Ring, drawn off screen for a look at them: a contact sheet of
-//  its states (light and dark) and the frames of a short demo. Nothing is captured from a
-//  screen: the ring is drawn by the app's own code (`ShortcutRingArtwork`) over a painted
-//  desktop, and the demo's ring is driven by the app's own rules (`ShortcutRingSession`)
-//  along a scripted pointer path.
+//  its states in each of its three materials (light and dark), a strip of its opening and
+//  the frames of a short demo. Nothing is captured from a screen: the ring is drawn by the
+//  app's own code (`ShortcutRingArtwork`, at the moments `ShortcutRingDrops` gives) over a
+//  painted desktop, and the demo's ring is driven by the app's own rules
+//  (`ShortcutRingSession`) along a scripted pointer path.
 //
-//  What the pictures cannot show: the system material under the ring (only the window
-//  server draws it; the plain disc of "Reduce transparency" stands in), and anything of a
-//  real screen, a real app in front or a real mouse.
+//  What the pictures cannot show: Liquid Glass and the blurred material (only the window
+//  server draws them). Their rows are stand-ins, flat fills painted here and labelled so:
+//  where the drops are, how large, what stands in them and the lit colour are the app's;
+//  the glass itself (its bending of what is behind it, its highlights, drops flowing into
+//  each other) and the blur are not. The row of drawn drops is exact: it is what "Reduce
+//  transparency" and "Increase contrast" show. Nothing of a real screen, a real app in
+//  front or a real mouse is in any of them.
 //
 //  Only runs when asked to:
 //  `TEST_RUNNER_SCROLLIO_SHOTS_DIR=<folder> xcodebuild … test -only-testing:ScrollioTests/ShortcutRingRenderTests`.
-//  The sheets are written to the folder itself (`ring-sheet-light.png`, `ring-sheet-dark.png`),
-//  the demo's frames to `frames/` inside it.
+//  The sheets are written to the folder itself (`drops-sheet-light.png`, `drops-sheet-dark.png`,
+//  `drops-opening.png`), the demo's frames to `frames/` inside it.
 //
 
 import XCTest
@@ -36,24 +41,58 @@ final class ShortcutRingRenderTests: XCTestCase {
         super.tearDown()
     }
 
-    // MARK: - The contact sheet
+    // MARK: - The contact sheets
+
+    /// What a row of the sheet is made of.
+    private enum Look {
+        /// Liquid Glass, as a flat stand-in.
+        case glass
+        /// The blurred material, as a flat stand-in.
+        case blur
+        /// Drawn drops: exactly what the app paints.
+        case drawn
+
+        var title: String {
+            switch self {
+            case .glass: return "Liquid Glass (macOS 26 and later)  ·  STAND-IN: flat fills where the system draws glass"
+            case .blur: return "Blurred material (macOS 14 and 15)  ·  STAND-IN: flat fills where the system blurs the desktop"
+            case .drawn: return "Drawn (Reduce transparency, Increase contrast)  ·  EXACT: what the app paints"
+            }
+        }
+
+        var note: String {
+            switch self {
+            case .glass:
+                return "Stand-in. Real glass bends and brightens what is behind it, has its own highlights and "
+                    + "shadow, and lets drops flow into each other while they are close. None of that can be "
+                    + "drawn off screen. Exact here: where each drop is, its size, the symbols (in the label "
+                    + "colour inside the glass) and the lit drop's accent tint."
+            case .blur:
+                return "Stand-in. The real material blurs the desktop behind each drop (the same material the "
+                    + "ring's disc had). Exact here: the drops' places and sizes, the thin rim, the symbols and "
+                    + "the lit colour."
+            case .drawn:
+                return ""
+            }
+        }
+    }
 
     private struct Cell {
         var caption: String
         var ring = ShortcutRingSettings.default
         /// The ring's middle and the pointer's tip, from the cell's top left corner.
-        var centre = CGPoint(x: 190, y: 165)
-        var pointer = CGPoint(x: 190, y: 165)
+        var centre = CGPoint(x: 160, y: 140)
+        var pointer = CGPoint(x: 160, y: 140)
         var lit: Int?
         var isCorner = false
         var increasesContrast = false
         var showsClick = false
     }
 
-    private static let cellSize = CGSize(width: 380, height: 330)
+    private static let cellSize = CGSize(width: 320, height: 280)
 
     private static var cells: [Cell] {
-        let middle = CGPoint(x: 190, y: 165)
+        let middle = CGPoint(x: 160, y: 140)
         func towards(_ place: Int, _ distance: CGFloat) -> CGPoint {
             let offset = ShortcutRingGeometry.offset(ofPlace: place, radius: distance)
             return CGPoint(x: middle.x + offset.x, y: middle.y + offset.y)
@@ -70,43 +109,224 @@ final class ShortcutRingRenderTests: XCTestCase {
             forPointer: CGPoint(x: 5, y: 6), in: CGRect(origin: .zero, size: cellSize)
         )
         return [
-            Cell(caption: "Just opened, at the pointer"),
-            Cell(caption: "Hold and move towards a shortcut: it lights, let go runs it", pointer: towards(5, 52), lit: 5),
-            Cell(caption: "A place can open an app or send your own key combination; an empty one is a faint dot",
+            Cell(caption: "Just opened and settled, at the pointer"),
+            Cell(caption: "Hold and move towards a shortcut: its drop grows and lights", pointer: towards(5, 52), lit: 5),
+            Cell(caption: "An app, your own key combination; an empty place is a small faint drop",
                  ring: withGaps, pointer: towards(1, 56), lit: 1),
             Cell(caption: "Left open after a press: point at a shortcut and click",
-                 pointer: CGPoint(x: middle.x + 92, y: middle.y + 12), lit: 2),
-            Cell(caption: "In a corner the whole ring stays on screen; the hand's direction chooses",
+                 pointer: CGPoint(x: middle.x + 90, y: middle.y + 10), lit: 2, showsClick: true),
+            Cell(caption: "In a corner the whole ring stays on screen",
                  centre: corner, pointer: CGPoint(x: 5, y: 6), lit: 7, isCorner: true),
-            Cell(caption: "With Increase contrast", pointer: towards(0, 52), lit: 0, increasesContrast: true),
         ]
     }
 
-    func testRenderTheRingsContactSheets() throws {
-        let margin: CGFloat = 24, gap: CGFloat = 20, captionHeight: CGFloat = 40
+    func testRenderTheDropsSheets() throws {
+        let margin: CGFloat = 24, gap: CGFloat = 16, captionHeight: CGFloat = 36, headerHeight: CGFloat = 26
         let cell = Self.cellSize
-        let columns = 3, rows = 2
+        let looks: [Look] = [.glass, .blur, .drawn]
+        let columns = 6
+        let rowHeight = headerHeight + cell.height + captionHeight
         let size = CGSize(
             width: margin * 2 + CGFloat(columns) * cell.width + CGFloat(columns - 1) * gap,
-            height: margin * 2 + CGFloat(rows) * (cell.height + captionHeight) + CGFloat(rows - 1) * gap
+            height: margin * 2 + CGFloat(looks.count) * rowHeight + CGFloat(looks.count - 1) * gap
         )
         for (suffix, name) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             let dark = name == .darkAqua
-            try render(size: size, scale: 2, appearance: name, to: directory.appendingPathComponent("ring-sheet-\(suffix).png")) {
+            try render(size: size, scale: 2, appearance: name, to: directory.appendingPathComponent("drops-sheet-\(suffix).png")) {
                 (dark ? NSColor(white: 0.11, alpha: 1) : NSColor(white: 0.95, alpha: 1)).setFill()
                 CGRect(origin: .zero, size: size).fill()
-                for (index, item) in Self.cells.enumerated() {
-                    let column = index % columns, row = index / columns
+                for (row, look) in looks.enumerated() {
                     // The sheet is drawn with y upwards: the first row is the top one.
-                    let origin = CGPoint(
-                        x: margin + CGFloat(column) * (cell.width + gap),
-                        y: size.height - margin - CGFloat(row + 1) * cell.height - CGFloat(row) * (captionHeight + gap)
+                    let top = size.height - margin - CGFloat(row) * (rowHeight + gap)
+                    RingMock.drawText(
+                        look.title, in: CGRect(x: margin, y: top - headerHeight, width: size.width - margin * 2, height: headerHeight - 6),
+                        size: 13, weight: .semibold, alignment: .left, dark: dark
                     )
-                    RingMock.drawCell(item, in: CGRect(origin: origin, size: cell), dark: dark)
-                    RingMock.drawCaption(
-                        item.caption,
-                        in: CGRect(x: origin.x, y: origin.y - captionHeight, width: cell.width, height: captionHeight - 6),
-                        dark: dark
+                    var items = Self.cells
+                    if look == .drawn {
+                        let up = ShortcutRingGeometry.offset(ofPlace: 0, radius: 52)
+                        items.append(Cell(
+                            caption: "With Increase contrast: firm outlines",
+                            pointer: CGPoint(x: 160 + up.x, y: 140 + up.y), lit: 0, increasesContrast: true
+                        ))
+                    }
+                    for (column, item) in items.enumerated() {
+                        let origin = CGPoint(x: margin + CGFloat(column) * (cell.width + gap), y: top - headerHeight - cell.height)
+                        RingMock.drawCell(item, look: look, in: CGRect(origin: origin, size: cell), dark: dark)
+                        RingMock.drawText(
+                            item.caption,
+                            in: CGRect(x: origin.x, y: origin.y - captionHeight, width: cell.width, height: captionHeight - 6),
+                            size: 12, weight: .medium, alignment: .center, dark: dark
+                        )
+                    }
+                    if !look.note.isEmpty {
+                        let x = margin + CGFloat(columns - 1) * (cell.width + gap)
+                        RingMock.drawText(
+                            look.note,
+                            in: CGRect(x: x + 8, y: top - headerHeight - cell.height + 20, width: cell.width - 16, height: cell.height - 40),
+                            size: 13, weight: .regular, alignment: .left, dark: dark
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - The opening
+
+    /// The opening at six moments, each as the app has it then (`ShortcutRingDrops.frame`):
+    /// drawn drops (exact), the glass stand-in, and a ring whose top right place is lit
+    /// from 40 ms on: the ring is used while it opens.
+    func testRenderTheOpeningStrip() throws {
+        let moments: [TimeInterval] = [0, 0.040, 0.080, 0.120, 0.200, 0.350]
+        let margin: CGFloat = 24, gap: CGFloat = 14, headerHeight: CGFloat = 26, captionHeight: CGFloat = 24
+        let cell = CGSize(width: 290, height: 270)
+        let rows: [(title: String, look: Look, litFrom: TimeInterval?)] = [
+            ("Drawn drops  ·  EXACT", .drawn, nil),
+            ("Liquid Glass  ·  STAND-IN (real glass drops flow into each other while they are this close)", .glass, nil),
+            ("Drawn drops, the hand already moving: the top right place is lit from 40 ms on  ·  EXACT", .drawn, 0.040),
+        ]
+        let rowHeight = headerHeight + cell.height + captionHeight
+        let size = CGSize(
+            width: margin * 2 + CGFloat(moments.count) * cell.width + CGFloat(moments.count - 1) * gap,
+            height: margin * 2 + CGFloat(rows.count) * rowHeight + CGFloat(rows.count - 1) * gap
+        )
+        let face = ShortcutRingFace(.default)
+        try render(size: size, scale: 2, appearance: .aqua, to: directory.appendingPathComponent("drops-opening.png")) {
+            NSColor(white: 0.95, alpha: 1).setFill()
+            CGRect(origin: .zero, size: size).fill()
+            guard let context = NSGraphicsContext.current?.cgContext else { return }
+            for (row, item) in rows.enumerated() {
+                let top = size.height - margin - CGFloat(row) * (rowHeight + gap)
+                RingMock.drawText(
+                    item.title, in: CGRect(x: margin, y: top - headerHeight, width: size.width - margin * 2, height: headerHeight - 6),
+                    size: 13, weight: .semibold, alignment: .left, dark: false
+                )
+                for (column, moment) in moments.enumerated() {
+                    let rect = CGRect(
+                        x: margin + CGFloat(column) * (cell.width + gap), y: top - headerHeight - cell.height,
+                        width: cell.width, height: cell.height
+                    )
+                    var lighting = ShortcutRingDrops.Lighting()
+                    if let litFrom = item.litFrom, moment >= litFrom {
+                        lighting.light(1, at: litFrom, filled: face.filled)
+                    }
+                    let drops = ShortcutRingDrops.frame(at: moment, filled: face.filled, lit: lighting.amounts(at: moment))
+                    context.saveGState()
+                    NSBezierPath(roundedRect: rect, xRadius: 12, yRadius: 12).addClip()
+                    RingMock.drawDesktop(in: rect, dark: false)
+                    let centre = CGPoint(x: rect.midX, y: rect.midY)
+                    RingMock.drawRing(
+                        face, drops: drops, title: lighting.target.map { face.places[$0].title }, centre: centre, look: item.look
+                    )
+                    // Towards the lit place, beside the hub's name.
+                    let pointer = lighting.target == nil
+                        ? centre
+                        : CGPoint(x: centre.x + 36, y: centre.y + 36)
+                    RingMock.drawPointer(at: pointer)
+                    context.restoreGState()
+                    RingMock.drawText(
+                        "\(Int((moment * 1000).rounded())) ms",
+                        in: CGRect(x: rect.minX, y: rect.minY - captionHeight, width: rect.width, height: captionHeight - 4),
+                        size: 12, weight: .medium, alignment: .center, dark: false
+                    )
+                }
+            }
+        }
+    }
+
+    // MARK: - The panel's own views
+
+    /// The views the panel shows (`ShortcutRingDropsView`), not the artwork's drawing of
+    /// the ring: what stands in each drop is a view of its own that is moved and scaled,
+    /// and this is the look at where those views are. Drawn in-process and therefore on
+    /// a plain ground, black or white as AppKit's cache gives it (such a picture has no
+    /// desktop behind the ring): the drawn drops are complete; the blurred material and
+    /// the glass are flat discs, and the lit glass drop's tint, which is the glass's, is
+    /// not there at all.
+    func testRenderThePanelsOwnViews() throws {
+        var cells: [(caption: String, appearance: ShortcutRingAppearance, elapsed: TimeInterval, lit: Int?)] = [
+            ("Drawn, 60 ms after it opened", ShortcutRingAppearance(reducesTransparency: true), 0.06, nil),
+            ("Drawn, 60 ms, the top right place already lit", ShortcutRingAppearance(reducesTransparency: true), 0.06, 1),
+            ("Drawn, at rest, a place lit", ShortcutRingAppearance(reducesTransparency: true), 1, 5),
+            ("Increase contrast, at rest, a place lit", ShortcutRingAppearance(increasesContrast: true), 1, 0),
+            ("Blur: the material is a flat grey here; the mask of nine circles and the lit colour are real",
+             ShortcutRingAppearance(), 1, 5),
+        ]
+        if #available(macOS 26.0, *) {
+            cells.append((
+                "Glass: flat discs here, and the lit drop's tint is missing; where the drops and symbols are is real",
+                ShortcutRingAppearance(hasLiquidGlass: true), 1, 5
+            ))
+        }
+        let margin: CGFloat = 24, gap: CGFloat = 14, captionHeight: CGFloat = 50, headerHeight: CGFloat = 30
+        let side = ShortcutRingGeometry.canvasSide
+        let cell = CGSize(width: side + 12, height: side + 12)
+        let names: [NSAppearance.Name] = [.aqua, .darkAqua]
+        let size = CGSize(
+            width: margin * 2 + CGFloat(cells.count) * cell.width + CGFloat(cells.count - 1) * gap,
+            height: margin * 2 + headerHeight + CGFloat(names.count) * (cell.height + captionHeight) + gap
+        )
+        let screen = ShortcutRingScreen(
+            frame: CGRect(x: 0, y: 0, width: 1512, height: 982), usable: CGRect(x: 0, y: 0, width: 1512, height: 982)
+        )
+        // Each ring's views, drawn into a bitmap of their own.
+        var pictures: [[NSBitmapImageRep]] = []
+        for name in names {
+            var row: [NSBitmapImageRep] = []
+            for item in cells {
+                let presenter = ShortcutRingPanelPresenter()
+                var now: TimeInterval = 0
+                presenter.orderFront = { _ in }
+                presenter.after = { _, _ in }
+                presenter.clock = { now }
+                presenter.appearance = { item.appearance }
+                presenter.show(ShortcutRingFace(.default), centre: CGPoint(x: 600, y: 400), screen: screen, lit: item.lit, takesClicks: false)
+                now = item.elapsed
+                presenter.step()
+                let drops = try XCTUnwrap(presenter.stage?.dropsView)
+                drops.appearance = NSAppearance(named: name)
+                drops.layoutSubtreeIfNeeded()
+                drops.display()
+                // A bitmap of its own that starts clear: the ring has no ground.
+                let rep = try XCTUnwrap(NSBitmapImageRep(
+                    bitmapDataPlanes: nil, pixelsWide: Int(side * 2), pixelsHigh: Int(side * 2),
+                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+                ))
+                rep.size = drops.bounds.size
+                drops.cacheDisplay(in: drops.bounds, to: rep)
+                row.append(rep)
+                presenter.hide()
+            }
+            pictures.append(row)
+        }
+        try render(size: size, scale: 2, appearance: .aqua, to: directory.appendingPathComponent("drops-views.png")) {
+            NSColor(white: 0.95, alpha: 1).setFill()
+            CGRect(origin: .zero, size: size).fill()
+            guard let context = NSGraphicsContext.current?.cgContext else { return }
+            RingMock.drawText(
+                "The panel's own views, drawn in-process on a plain ground (light above, dark below). A check of where the "
+                    + "views are, NOT how the ring looks on a screen.",
+                in: CGRect(x: margin, y: size.height - margin - headerHeight, width: size.width - margin * 2, height: headerHeight - 8),
+                size: 13, weight: .semibold, alignment: .left, dark: false
+            )
+            for row in names.indices {
+                for (column, item) in cells.enumerated() {
+                    let rect = CGRect(
+                        x: margin + CGFloat(column) * (cell.width + gap),
+                        y: size.height - margin - headerHeight - CGFloat(row + 1) * cell.height - CGFloat(row) * (captionHeight + gap),
+                        width: cell.width, height: cell.height
+                    )
+                    context.saveGState()
+                    NSBezierPath(roundedRect: rect, xRadius: 12, yRadius: 12).addClip()
+                    NSColor.black.setFill()
+                    rect.fill()
+                    pictures[row][column].draw(in: rect.insetBy(dx: 6, dy: 6))
+                    context.restoreGState()
+                    RingMock.drawText(
+                        item.caption, in: CGRect(x: rect.minX, y: rect.minY - captionHeight, width: rect.width, height: captionHeight - 6),
+                        size: 12, weight: .medium, alignment: .center, dark: false
                     )
                 }
             }
@@ -252,20 +472,59 @@ final class ShortcutRingRenderTests: XCTestCase {
             path.fill()
         }
 
-        /// The ring as the app draws it, on the plain disc that stands in for the material.
+        /// The ring as the app draws it at one moment. Drawn drops are the app's own; for
+        /// glass and the blur a flat fill is painted here where the system would draw.
         static func drawRing(
-            _ face: ShortcutRingFace, lit: Int?, centre: CGPoint,
-            opacity: CGFloat = 1, scale: CGFloat = 1, increasesContrast: Bool = false
+            _ face: ShortcutRingFace, drops: ShortcutRingDrops.Frame, title: String?, centre: CGPoint,
+            look: Look, increasesContrast: Bool = false
         ) {
             var style = ShortcutRingArtwork.Style()
-            style.backdrop = .drawn
-            style.opacity = opacity
-            style.scale = scale
             style.increasesContrast = increasesContrast
-            if opacity > 0.5 {
-                ShortcutRingArtwork.drawShadow(centre: centre, scale: scale)
+            switch look {
+            case .drawn:
+                style.backdrop = .drawn
+            case .blur:
+                style.backdrop = .material
+                drawStandIn(drops, centre: centre, look: .blur)
+            case .glass:
+                style.backdrop = .glass
+                drawStandIn(drops, centre: centre, look: .glass)
             }
-            ShortcutRingArtwork.draw(face, lit: lit, centre: centre, style: style)
+            ShortcutRingArtwork.draw(face, drops: drops, title: title, centre: centre, style: style)
+        }
+
+        /// Flat fills where the system draws a material. Not the app's code.
+        static func drawStandIn(_ drops: ShortcutRingDrops.Frame, centre: CGPoint, look: Look) {
+            guard let context = NSGraphicsContext.current?.cgContext else { return }
+            let dark = ShortcutRingArtwork.isDark()
+            for drop in drops.all where drop.diameter > 0 {
+                let circle = ShortcutRingArtwork.circle(of: drop, centre: centre)
+                // Glass is never faded; the blurred material is as faint as its drop.
+                let alpha = look == .glass ? 1 : drop.opacity
+                guard alpha > 0 else { continue }
+                context.saveGState()
+                context.setAlpha(alpha)
+                context.beginTransparencyLayer(auxiliaryInfo: nil)
+                switch look {
+                case .glass:
+                    context.setShadow(offset: CGSize(width: 0, height: -2), blur: 8, color: NSColor(white: 0, alpha: 0.18).cgColor)
+                    let clear = dark ? NSColor(white: 0.32, alpha: 0.55) : NSColor(white: 1, alpha: 0.50)
+                    ShortcutRingArtwork.blend(clear, ShortcutRingArtwork.litFill.withAlphaComponent(0.88), drop.lit).setFill()
+                    NSBezierPath(ovalIn: circle).fill()
+                    context.setShadow(offset: .zero, blur: 0, color: nil)
+                    let edge = NSBezierPath(ovalIn: circle.insetBy(dx: 0.5, dy: 0.5))
+                    edge.lineWidth = 1
+                    NSColor(white: 1, alpha: dark ? 0.30 : 0.75).setStroke()
+                    edge.stroke()
+                case .blur:
+                    (dark ? NSColor(white: 0.17, alpha: 0.82) : NSColor(white: 0.95, alpha: 0.82)).setFill()
+                    NSBezierPath(ovalIn: circle).fill()
+                case .drawn:
+                    break
+                }
+                context.endTransparencyLayer()
+                context.restoreGState()
+            }
         }
 
         /// The trigger's press, made visible: two rings in the accent colour that widen
@@ -291,7 +550,7 @@ final class ShortcutRingRenderTests: XCTestCase {
             path.stroke()
         }
 
-        static func drawCell(_ cell: Cell, in rect: CGRect, dark: Bool) {
+        static func drawCell(_ cell: Cell, look: Look, in rect: CGRect, dark: Bool) {
             guard let context = NSGraphicsContext.current?.cgContext else { return }
             context.saveGState()
             NSBezierPath(roundedRect: rect, xRadius: 12, yRadius: 12).addClip()
@@ -312,7 +571,13 @@ final class ShortcutRingRenderTests: XCTestCase {
             func point(_ p: CGPoint) -> CGPoint {
                 return CGPoint(x: rect.minX + p.x, y: rect.maxY - p.y)
             }
-            drawRing(ShortcutRingFace(cell.ring), lit: cell.lit, centre: point(cell.centre), increasesContrast: cell.increasesContrast)
+            let face = ShortcutRingFace(cell.ring)
+            let lit = cell.lit.flatMap { face.filled[$0] ? $0 : nil }
+            drawRing(
+                face, drops: ShortcutRingDrops.settled(filled: face.filled, lit: lit),
+                title: lit.map { face.places[$0].title }, centre: point(cell.centre),
+                look: look, increasesContrast: cell.increasesContrast
+            )
             if cell.showsClick {
                 drawClick(at: point(cell.pointer))
             }
@@ -320,12 +585,14 @@ final class ShortcutRingRenderTests: XCTestCase {
             context.restoreGState()
         }
 
-        static func drawCaption(_ text: String, in rect: CGRect, dark: Bool) {
+        static func drawText(
+            _ text: String, in rect: CGRect, size: CGFloat, weight: NSFont.Weight, alignment: NSTextAlignment, dark: Bool
+        ) {
             let paragraph = NSMutableParagraphStyle()
-            paragraph.alignment = .center
+            paragraph.alignment = alignment
             paragraph.lineBreakMode = .byWordWrapping
             let string = NSAttributedString(string: text, attributes: [
-                .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+                .font: NSFont.systemFont(ofSize: size, weight: weight),
                 .foregroundColor: dark ? NSColor(white: 1, alpha: 0.78) : NSColor(white: 0, alpha: 0.70),
                 .paragraphStyle: paragraph,
             ])
@@ -348,8 +615,10 @@ final class ShortcutRingRenderTests: XCTestCase {
             var pointer = CGPoint.zero
             var ringCentre: CGPoint?
             var lit: Int?
-            /// 0 … 1: how far the ring's fade and growth have come.
-            var openProgress: CGFloat = 1
+            /// How long the ring has been open.
+            var openElapsed: TimeInterval = 0
+            /// How far each place is lit (`ShortcutRingDrops.Lighting`).
+            var litAmounts: [CGFloat] = []
             var caption = ""
             var isTriggerHeld = false
             /// 0 … 1 while a click's ripple shows.
@@ -398,11 +667,14 @@ final class ShortcutRingRenderTests: XCTestCase {
             var caption = "Hold the button …"
             var ran: (title: String, at: Double)?
             let face = ShortcutRingFace(.default)
+            var lighting = ShortcutRingDrops.Lighting()
 
             func handle(_ commands: [ShortcutRingSession.Command], at time: Double) {
                 for command in commands {
                     switch command {
-                    case .open: openedAt = time
+                    case .open:
+                        openedAt = time
+                        lighting = ShortcutRingDrops.Lighting()
                     case .close: openedAt = nil
                     case .run(let place): ran = (face.places[place].title, time)
                     case .light: break
@@ -454,7 +726,9 @@ final class ShortcutRingRenderTests: XCTestCase {
                 frame.isTriggerHeld = session.phase == .held
                 if session.isOpen, let openedAt {
                     frame.ringCentre = session.centre
-                    frame.openProgress = CGFloat(min(1, (time - openedAt) / ShortcutRingPanelPresenter.openDuration))
+                    frame.openElapsed = time - openedAt
+                    lighting.light(session.lit, at: time, filled: filled)
+                    frame.litAmounts = lighting.amounts(at: time)
                 }
                 if time >= clickDownAt, time < clickDownAt + 0.35 {
                     frame.click = CGFloat((time - clickDownAt) / 0.35)
@@ -474,9 +748,12 @@ final class ShortcutRingRenderTests: XCTestCase {
             }
             RingMock.drawDesktop(in: scene, dark: dark)
             if let centre = frame.ringCentre {
-                let progress = ease(frame.openProgress)
-                let scale = ShortcutRingPanelPresenter.openScale + (1 - ShortcutRingPanelPresenter.openScale) * progress
-                RingMock.drawRing(ShortcutRingFace(.default), lit: frame.lit, centre: point(centre), opacity: progress, scale: scale)
+                let face = ShortcutRingFace(.default)
+                RingMock.drawRing(
+                    face,
+                    drops: ShortcutRingDrops.frame(at: frame.openElapsed, filled: face.filled, lit: frame.litAmounts),
+                    title: frame.lit.map { face.places[$0].title }, centre: point(centre), look: .drawn
+                )
             }
             if let click = frame.click {
                 RingMock.drawClick(at: point(frame.pointer), progress: click)

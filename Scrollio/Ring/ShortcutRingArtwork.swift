@@ -3,13 +3,17 @@
 //  Scrollio
 //
 //  How the Shortcut Ring looks: what its places show (`ShortcutRingFace`, made from the
-//  stored ring as the Buttons pane shows an action) and the drawing itself, one
-//  function for the ring on screen, the ring in the Settings pane and the pictures the
-//  render tests make. The sizes are `ShortcutRingGeometry`'s.
+//  stored ring as the Buttons pane shows an action) and the drawing itself, the same
+//  functions for the ring on screen, the ring in the Settings pane and the pictures the
+//  render tests make. The ring is nine drops and no disc (`ShortcutRingDrops` says where
+//  each is and how large); the sizes of the places are `ShortcutRingGeometry`'s.
 //
-//  On screen the ring lies on a system material (`ShortcutRingPanel`), which only the
-//  window server can draw; `Backdrop.drawn` paints a plain disc in its place, for the pane,
-//  for "Reduce transparency" and for pictures made without a screen.
+//  A drop has a body and what stands in it (a place's symbol, icon or keys; the hub's
+//  name of the lit action). The body depends on the material (`Backdrop`): drawn opaque
+//  by `drawBodies`; or the system's blurred material, which only the window server can
+//  draw, with `drawBodies` adding its rim and the lit colour and `drawMask` cutting it to
+//  the drops; or Liquid Glass, which is views of its own (`ShortcutRingPanel`) and gets
+//  nothing drawn here.
 //
 
 import Cocoa
@@ -103,25 +107,24 @@ struct ShortcutRingFace {
 
 enum ShortcutRingArtwork {
 
-    /// What lies under the places.
+    /// What the drops' bodies are.
     enum Backdrop {
-        /// Nothing is painted: the window's material shows.
-        case material
-        /// A plain disc in the colours of the material.
+        /// Opaque drops, drawn here: "Reduce transparency", "Increase contrast", the
+        /// Settings pane and pictures made without a screen.
         case drawn
+        /// The window's blurred material shows in each drop: only the rim and the lit
+        /// colour are drawn.
+        case material
+        /// Liquid Glass: the bodies are glass views, nothing of them is drawn.
+        case glass
     }
 
     struct Style {
         var backdrop = Backdrop.material
-        /// "Increase contrast": firmer outlines, no faint fills.
+        /// "Increase contrast": firmer outlines.
         var increasesContrast = false
         /// Drawn `scale` times as large (the pane shows the ring smaller than the screen).
         var scale: CGFloat = 1
-        /// Everything fainter: the ring as a whole fades in.
-        var opacity: CGFloat = 1
-        /// The size of the name in the middle; nil: `titleFont`'s, times `scale`. (A ring
-        /// drawn small keeps a name one can read.)
-        var titlePointSize: CGFloat?
     }
 
     // MARK: Sizes
@@ -133,11 +136,11 @@ enum ShortcutRingArtwork {
     /// and never wider than this part of the place.
     static let glyphPointSize: CGFloat = 15
     static let glyphWidth: CGFloat = 40
-    static let emptyDotDiameter: CGFloat = 7
-    static let titleFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
-    /// A lit place grows by this much.
-    static let litScale: CGFloat = 1.08
-    /// A name too long for two lines of the middle gets three, this much smaller.
+    /// The name in the hub. (13 in the free middle of the disc, which was wider.)
+    static let titleFont = NSFont.systemFont(ofSize: 12, weight: .semibold)
+    /// The room the name has in the hub: the drop without 6 points at either side.
+    static let titleWidth: CGFloat = ShortcutRingDrops.hubDiameter - 12
+    /// A name too long for two lines of the hub gets three, this much smaller.
     static let longTitleShrink: CGFloat = 0.88
 
     // MARK: Colours
@@ -162,128 +165,162 @@ enum ShortcutRingArtwork {
         return luminance > 0.36 ? NSColor(white: 0, alpha: 0.85) : .white
     }
 
-    private static func isDark() -> Bool {
+    static func isDark() -> Bool {
         return NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
     }
 
-    /// The disc that stands in for the material.
-    static func backdropFill(dark: Bool, contrast: Bool) -> NSColor {
+    /// A drawn drop's body.
+    static func dropFill(dark: Bool, contrast: Bool) -> NSColor {
         if contrast {
-            return dark ? NSColor(white: 0.10, alpha: 1) : NSColor(white: 0.97, alpha: 1)
+            return dark ? NSColor(white: 0.10, alpha: 1) : NSColor(white: 0.98, alpha: 1)
         }
-        return dark ? NSColor(white: 0.16, alpha: 0.92) : NSColor(white: 0.96, alpha: 0.92)
+        return dark ? NSColor(white: 0.19, alpha: 1) : NSColor(white: 0.97, alpha: 1)
     }
 
     static func rim(dark: Bool, contrast: Bool) -> NSColor {
         if contrast {
             return dark ? NSColor(white: 1, alpha: 0.75) : NSColor(white: 0, alpha: 0.65)
         }
-        return dark ? NSColor(white: 1, alpha: 0.16) : NSColor(white: 0, alpha: 0.12)
-    }
-
-    static func placeFill(dark: Bool, contrast: Bool) -> NSColor {
-        if contrast {
-            return dark ? NSColor(white: 1, alpha: 0.22) : NSColor(white: 0, alpha: 0.14)
-        }
-        return dark ? NSColor(white: 1, alpha: 0.11) : NSColor(white: 0, alpha: 0.065)
+        return dark ? NSColor(white: 1, alpha: 0.18) : NSColor(white: 0, alpha: 0.14)
     }
 
     static func ink(dark: Bool) -> NSColor {
         return dark ? NSColor(white: 1, alpha: 0.92) : NSColor(white: 0, alpha: 0.82)
     }
 
-    static func emptyDot(dark: Bool, contrast: Bool) -> NSColor {
-        let alpha: CGFloat = contrast ? 0.5 : 0.2
-        return dark ? NSColor(white: 1, alpha: alpha) : NSColor(white: 0, alpha: alpha)
+    /// `amount` of the way from one colour to another (0: `from`, 1: `to`).
+    static func blend(_ from: NSColor, _ to: NSColor, _ amount: CGFloat) -> NSColor {
+        guard amount > 0 else { return from }
+        guard amount < 1 else { return to }
+        return from.usingColorSpace(.sRGB)?.blended(withFraction: amount, of: to.usingColorSpace(.sRGB) ?? to) ?? to
     }
 
-    // MARK: Drawing
+    // MARK: Drawing the whole ring
 
-    /// Draws the ring with its middle at `centre` into the current context (y upwards),
-    /// in the current drawing appearance.
+    /// Draws the ring at rest with its middle at `centre` into the current context (y
+    /// upwards), in the current drawing appearance: the Settings pane and still pictures.
     static func draw(_ face: ShortcutRingFace, lit: Int?, centre: CGPoint, style: Style = Style()) {
+        let lit = lit.flatMap { face.places.indices.contains($0) && !face.places[$0].isEmpty ? $0 : nil }
+        draw(
+            face, drops: ShortcutRingDrops.settled(filled: face.filled, lit: lit),
+            title: lit.map { face.places[$0].title }, centre: centre, style: style
+        )
+    }
+
+    /// Draws the ring as `drops` has it: the bodies, what stands in the places and
+    /// `title` in the hub.
+    static func draw(_ face: ShortcutRingFace, drops: ShortcutRingDrops.Frame, title: String?, centre: CGPoint, style: Style = Style()) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         let dark = isDark()
-        let contrast = style.increasesContrast
         let scale = style.scale
-
-        context.saveGState()
-        context.setAlpha(style.opacity)
-        context.beginTransparencyLayer(auxiliaryInfo: nil)
-        defer {
+        drawBodies(drops, centre: centre, style: style)
+        for (place, drop) in zip(face.places, drops.places) where !place.isEmpty && drop.opacity > 0 {
+            context.saveGState()
+            context.setAlpha(drop.opacity)
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
+            drawContent(
+                of: place, at: middle(of: drop, centre: centre, scale: scale),
+                scale: scale * drop.contentScale, colour: blend(ink(dark: dark), litInk, drop.lit)
+            )
             context.endTransparencyLayer()
             context.restoreGState()
         }
-
-        let outer = ShortcutRingGeometry.outerRadius * scale
-        let disc = CGRect(x: centre.x - outer, y: centre.y - outer, width: outer * 2, height: outer * 2)
-        if style.backdrop == .drawn {
-            backdropFill(dark: dark, contrast: contrast).setFill()
-            NSBezierPath(ovalIn: disc).fill()
-        }
-        let rimWidth: CGFloat = contrast ? 1.5 : 1
-        let rimPath = NSBezierPath(ovalIn: disc.insetBy(dx: rimWidth / 2, dy: rimWidth / 2))
-        rimPath.lineWidth = rimWidth
-        rim(dark: dark, contrast: contrast).setStroke()
-        rimPath.stroke()
-
-        for (index, place) in face.places.enumerated() {
-            let offset = ShortcutRingGeometry.offset(ofPlace: index)
-            // The geometry's y grows downwards, the drawing's upwards.
-            let middle = CGPoint(x: centre.x + offset.x * scale, y: centre.y - offset.y * scale)
-            draw(place, at: middle, isLit: lit == index, dark: dark, contrast: contrast, scale: scale)
-        }
-
-        if let lit, face.places.indices.contains(lit), !face.places[lit].isEmpty {
+        if let title, !title.isEmpty {
+            let grow = drops.hub.contentScale
             drawTitle(
-                face.places[lit].title, centre: centre, dark: dark, scale: scale,
-                pointSize: style.titlePointSize ?? titleFont.pointSize * scale
+                title, centre: centre, colour: ink(dark: dark), width: titleWidth * scale * grow,
+                pointSize: titleFont.pointSize * scale * grow
             )
         }
     }
 
-    /// The ring's shadow, drawn around the disc and nowhere inside it (what lies under
-    /// the disc must show through the material).
-    static func drawShadow(centre: CGPoint, scale: CGFloat = 1) {
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        let outer = ShortcutRingGeometry.outerRadius * scale
-        let disc = CGRect(x: centre.x - outer, y: centre.y - outer, width: outer * 2, height: outer * 2)
-        context.saveGState()
-        let outside = CGMutablePath()
-        outside.addRect(disc.insetBy(dx: -60 * scale, dy: -60 * scale))
-        outside.addEllipse(in: disc)
-        context.addPath(outside)
-        context.clip(using: .evenOdd)
-        context.setShadow(
-            offset: CGSize(width: 0, height: -5 * scale), blur: 22 * scale,
-            color: NSColor(white: 0, alpha: 0.30).cgColor
-        )
-        context.setFillColor(NSColor.black.cgColor)
-        context.fillEllipse(in: disc)
-        context.restoreGState()
+    /// Where a drop's middle is in a drawing with its ring's middle at `centre`.
+    static func middle(of drop: ShortcutRingDrops.Drop, centre: CGPoint, scale: CGFloat = 1) -> CGPoint {
+        // The geometry's y grows downwards, the drawing's upwards.
+        return CGPoint(x: centre.x + drop.offset.x * scale, y: centre.y - drop.offset.y * scale)
     }
 
-    private static func draw(_ place: ShortcutRingFace.Place, at middle: CGPoint, isLit: Bool, dark: Bool, contrast: Bool, scale: CGFloat) {
-        guard !place.isEmpty else {
-            let side = emptyDotDiameter * scale
-            emptyDot(dark: dark, contrast: contrast).setFill()
-            NSBezierPath(ovalIn: CGRect(x: middle.x - side / 2, y: middle.y - side / 2, width: side, height: side)).fill()
-            return
-        }
-        let diameter = ShortcutRingGeometry.placeDiameter * scale * (isLit ? litScale : 1)
-        let circle = CGRect(x: middle.x - diameter / 2, y: middle.y - diameter / 2, width: diameter, height: diameter)
-        (isLit ? litFill : placeFill(dark: dark, contrast: contrast)).setFill()
-        NSBezierPath(ovalIn: circle).fill()
-        if contrast && !isLit {
-            let outline = NSBezierPath(ovalIn: circle.insetBy(dx: 0.5, dy: 0.5))
-            outline.lineWidth = 1
-            rim(dark: dark, contrast: true).setStroke()
-            outline.stroke()
+    static func circle(of drop: ShortcutRingDrops.Drop, centre: CGPoint, scale: CGFloat = 1) -> CGRect {
+        let middle = self.middle(of: drop, centre: centre, scale: scale)
+        let diameter = drop.diameter * scale
+        return CGRect(x: middle.x - diameter / 2, y: middle.y - diameter / 2, width: diameter, height: diameter)
+    }
+
+    // MARK: The bodies
+
+    /// The drops' bodies as far as they are drawn (see `Backdrop`), each with a soft shadow
+    /// around it and none under it: what lies under a drop of material must show through.
+    static func drawBodies(_ drops: ShortcutRingDrops.Frame, centre: CGPoint, style: Style = Style()) {
+        guard style.backdrop != .glass, let context = NSGraphicsContext.current?.cgContext else { return }
+        let dark = isDark()
+        let contrast = style.increasesContrast
+        let scale = style.scale
+        let visible = drops.stacked.filter { $0.opacity > 0 && $0.diameter > 0 }
+
+        for drop in visible {
+            let circle = self.circle(of: drop, centre: centre, scale: scale)
+            context.saveGState()
+            let outside = CGMutablePath()
+            outside.addRect(circle.insetBy(dx: -24 * scale, dy: -24 * scale))
+            outside.addEllipse(in: circle)
+            context.addPath(outside)
+            context.clip(using: .evenOdd)
+            context.setShadow(
+                offset: CGSize(width: 0, height: -2 * scale), blur: 9 * scale,
+                color: NSColor(white: 0, alpha: (dark ? 0.42 : 0.24) * drop.opacity).cgColor
+            )
+            context.setFillColor(NSColor.black.cgColor)
+            context.fillEllipse(in: circle)
+            context.restoreGState()
         }
 
-        let grown = scale * (isLit ? litScale : 1)
+        let rimWidth: CGFloat = contrast ? 1.5 : 1
+        for drop in visible {
+            let circle = self.circle(of: drop, centre: centre, scale: scale)
+            context.saveGState()
+            context.setAlpha(drop.opacity)
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
+            switch style.backdrop {
+            case .drawn:
+                blend(dropFill(dark: dark, contrast: contrast), litFill, drop.lit).setFill()
+                NSBezierPath(ovalIn: circle).fill()
+            case .material, .glass:
+                if drop.lit > 0 {
+                    litFill.withAlphaComponent(drop.lit).setFill()
+                    NSBezierPath(ovalIn: circle).fill()
+                }
+            }
+            // A lit drop needs no outline, except where outlines are asked for.
+            let rimAlpha = contrast ? 1 : 1 - drop.lit
+            if rimAlpha > 0, circle.width > rimWidth * 2 {
+                let outline = NSBezierPath(ovalIn: circle.insetBy(dx: rimWidth / 2, dy: rimWidth / 2))
+                outline.lineWidth = rimWidth
+                let colour = rim(dark: dark, contrast: contrast)
+                colour.withAlphaComponent(colour.alphaComponent * rimAlpha).setStroke()
+                outline.stroke()
+            }
+            context.endTransparencyLayer()
+            context.restoreGState()
+        }
+    }
+
+    /// Where the blurred material shows: every drop's circle, as opaque as the drop is
+    /// (an `NSVisualEffectView`'s `maskImage` is drawn with this).
+    static func drawMask(_ drops: ShortcutRingDrops.Frame, centre: CGPoint) {
+        for drop in drops.all where drop.opacity > 0 && drop.diameter > 0 {
+            NSColor(white: 0, alpha: drop.opacity).setFill()
+            NSBezierPath(ovalIn: circle(of: drop, centre: centre)).fill()
+        }
+    }
+
+    // MARK: What stands in a drop
+
+    /// A place's icon, keys or symbol with its middle at `middle`, `scale` times as large
+    /// as on screen at rest. Nothing for an empty place.
+    static func drawContent(of place: ShortcutRingFace.Place, at middle: CGPoint, scale: CGFloat, colour: NSColor) {
+        guard !place.isEmpty, scale > 0 else { return }
         if let image = place.image {
-            let side = iconSide * grown
+            let side = iconSide * scale
             image.draw(
                 in: CGRect(x: middle.x - side / 2, y: middle.y - side / 2, width: side, height: side),
                 from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
@@ -291,12 +328,11 @@ enum ShortcutRingArtwork {
             )
             return
         }
-        let colour = isLit ? litInk : ink(dark: dark)
         if !place.glyphs.isEmpty {
-            drawGlyphs(place.glyphs, at: middle, colour: colour, scale: grown)
+            drawGlyphs(place.glyphs, at: middle, colour: colour, scale: scale)
             return
         }
-        guard let symbol = symbolImage(named: place.symbolName, pointSize: symbolPointSize * scale * (isLit ? litScale : 1), colour: colour) else {
+        guard let symbol = symbolImage(named: place.symbolName, pointSize: symbolPointSize * scale, colour: colour) else {
             return
         }
         let size = symbol.size
@@ -341,18 +377,18 @@ enum ShortcutRingArtwork {
             .withSymbolConfiguration(configuration)
     }
 
-    /// The lit action's name in the free middle: one or two lines; a name that needs a
-    /// third ("Screenshot and Recording Options") gets it, a little smaller. Only what is
-    /// longer still is cut with an ellipsis.
-    private static func drawTitle(_ title: String, centre: CGPoint, dark: Bool, scale: CGFloat, pointSize: CGFloat) {
-        let width = (ShortcutRingGeometry.hubRadius * 2 - 10) * scale
+    /// The lit action's name in the hub, `width` wide: one or two lines; a name that
+    /// needs a third ("Screenshot and Recording Options") gets it, a little smaller. Only
+    /// what is longer still is cut with an ellipsis.
+    static func drawTitle(_ title: String, centre: CGPoint, colour: NSColor, width: CGFloat, pointSize: CGFloat) {
+        guard width > 0, pointSize > 0 else { return }
         let layout = titleLayout(title, width: width, pointSize: pointSize)
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         paragraph.lineBreakMode = .byWordWrapping
         let text = NSAttributedString(string: title, attributes: [
             .font: NSFont.systemFont(ofSize: layout.pointSize, weight: .semibold),
-            .foregroundColor: ink(dark: dark),
+            .foregroundColor: colour,
             .paragraphStyle: paragraph,
         ])
         text.draw(
@@ -361,7 +397,7 @@ enum ShortcutRingArtwork {
         )
     }
 
-    /// How a name stands in a middle `width` wide: at `pointSize` on up to two lines, else
+    /// How a name stands in a hub with `width` of room: at `pointSize` on up to two lines, else
     /// smaller on up to three.
     static func titleLayout(_ title: String, width: CGFloat, pointSize: CGFloat) -> (pointSize: CGFloat, lines: Int, height: CGFloat) {
         func measure(_ size: CGFloat) -> (lines: Int, lineHeight: CGFloat) {

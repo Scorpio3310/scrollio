@@ -2,8 +2,9 @@
 //  ShortcutRingDropsTests.swift
 //  ScrollioTests
 //
-//  The Shortcut Ring as drops: where each drop is at which moment of the opening and how
-//  the lit one grows.
+//  The Shortcut Ring as drops: what the drops are made of on which system, where each
+//  drop is at which moment of the opening, how the lit one grows, and that the panel
+//  shows exactly that, frame by frame, without ever waiting for it.
 //
 
 import XCTest
@@ -313,5 +314,380 @@ final class ShortcutRingDropsTests: XCTestCase {
         XCTAssertEqual(lighting.amounts(at: 100.01), lit(6))
         lighting.light(nil, at: 100.02, filled: allFilled, eased: false)
         XCTAssertEqual(lighting.amounts(at: 100.02), [CGFloat](repeating: 0, count: 8))
+    }
+}
+
+// MARK: - The drops on the panel
+
+final class ShortcutRingDropsPanelTests: XCTestCase {
+
+    /// Frames that come when the test says so.
+    private final class Frames: ShortcutRingFrames {
+        var stopped = false
+        func stop() { stopped = true }
+    }
+
+    private final class Rig {
+        let presenter = ShortcutRingPanelPresenter()
+        var now: TimeInterval = 0
+        var frames: [Frames] = []
+        var deadlines: [(delay: TimeInterval, work: () -> Void)] = []
+        var face = ShortcutRingFace(.default)
+
+        init(appearance: ShortcutRingAppearance) {
+            presenter.orderFront = { _ in }
+            presenter.appearance = { appearance }
+            presenter.clock = { [unowned self] in self.now }
+            presenter.startFrames = { [unowned self] _, _ in
+                let frames = Frames()
+                self.frames.append(frames)
+                return frames
+            }
+            presenter.after = { [unowned self] delay, work in
+                self.deadlines.append((delay, work))
+            }
+        }
+
+        func show(lit: Int? = nil) {
+            let screen = ShortcutRingScreen(
+                frame: CGRect(x: 0, y: 0, width: 1512, height: 982), usable: CGRect(x: 0, y: 32, width: 1512, height: 950)
+            )
+            presenter.show(face, centre: CGPoint(x: 400, y: 300), screen: screen, lit: lit, takesClicks: false)
+        }
+
+        var drops: ShortcutRingDropsView {
+            return presenter.stage!.dropsView!
+        }
+
+        /// The next frame of the screen, `seconds` later.
+        func frame(after seconds: TimeInterval) {
+            now += seconds
+            presenter.step()
+        }
+    }
+
+    private var filled: [Bool] { return ShortcutRingFace(.default).filled }
+
+    // MARK: What the drops are made of
+
+    /// Liquid Glass where the system has it, the blurred material before that; drawn
+    /// plainly whenever transparency is not wanted or outlines are, on every system.
+    func testTheMaterialFollowsTheSystemAndTheAccessibilitySettings() {
+        XCTAssertEqual(ShortcutRingAppearance(hasLiquidGlass: true).material, .glass)
+        XCTAssertEqual(ShortcutRingAppearance(hasLiquidGlass: false).material, .blur)
+        for hasLiquidGlass in [true, false] {
+            XCTAssertEqual(ShortcutRingAppearance(reducesTransparency: true, hasLiquidGlass: hasLiquidGlass).material, .drawn)
+            XCTAssertEqual(ShortcutRingAppearance(increasesContrast: true, hasLiquidGlass: hasLiquidGlass).material, .drawn)
+            XCTAssertEqual(
+                ShortcutRingAppearance(reducesTransparency: true, increasesContrast: true, hasLiquidGlass: hasLiquidGlass).material,
+                .drawn
+            )
+            // "Reduce motion" is about movement, not about what the drops are made of.
+            XCTAssertEqual(
+                ShortcutRingAppearance(reducesMotion: true, hasLiquidGlass: hasLiquidGlass).material,
+                hasLiquidGlass ? .glass : .blur
+            )
+        }
+        var onThisSystem = false
+        if #available(macOS 26.0, *) {
+            onThisSystem = true
+        }
+        XCTAssertEqual(ShortcutRingAppearance.system.hasLiquidGlass, onThisSystem)
+    }
+
+    /// What the panel shows is the pure function's answer for the time since it opened,
+    /// frame after frame; once the drops rest, no more frames are asked for.
+    func testThePanelShowsTheOpeningFrameByFrameAndThenStops() throws {
+        let rig = Rig(appearance: ShortcutRingAppearance())
+        rig.show()
+        XCTAssertEqual(rig.drops.drops, ShortcutRingDrops.frame(at: 0, filled: filled))
+        XCTAssertTrue(rig.presenter.isMoving)
+        XCTAssertEqual(rig.frames.count, 1)
+
+        rig.frame(after: 0.05)
+        XCTAssertEqual(rig.drops.drops, ShortcutRingDrops.frame(at: 0.05, filled: filled))
+        // The first place's drop is on its way up from the ring's middle, and what stands
+        // in it is with it, as small as the drop.
+        let canvas = ShortcutRingGeometry.canvasSide
+        let circle = try XCTUnwrap(rig.drops.circle(ofDrop: 0))
+        XCTAssertEqual(circle.midX, canvas / 2, accuracy: 0.001)
+        XCTAssertGreaterThan(circle.midY, canvas / 2 + 20)
+        XCTAssertLessThan(circle.midY, canvas / 2 + ShortcutRingGeometry.placeRadius)
+        let content = rig.drops.contents[0]
+        XCTAssertEqual(content.frame.midX, circle.midX, accuracy: 0.001)
+        XCTAssertEqual(content.frame.midY, circle.midY, accuracy: 0.001)
+        XCTAssertLessThan(content.frame.width, content.side)
+        XCTAssertEqual(content.bounds.width, content.side, accuracy: 0.001, "drawn once, scaled by its frame")
+        XCTAssertEqual(content.side, 56)
+        XCTAssertTrue(rig.presenter.isMoving)
+
+        rig.frame(after: 0.31)
+        XCTAssertEqual(rig.drops.drops, ShortcutRingDrops.settled(filled: filled))
+        XCTAssertFalse(rig.presenter.isMoving, "nothing runs once the drops rest")
+        XCTAssertTrue(rig.frames[0].stopped)
+        for (index, content) in rig.drops.contents.enumerated() {
+            let circle = try XCTUnwrap(rig.drops.circle(ofDrop: index))
+            XCTAssertEqual(content.frame.midX, circle.midX, accuracy: 0.001)
+            XCTAssertEqual(content.frame.midY, circle.midY, accuracy: 0.001)
+            XCTAssertEqual(content.frame.width, content.side, accuracy: 0.001)
+            XCTAssertEqual(content.alphaValue, 1)
+        }
+        // The top place stands above the middle on the screen (AppKit's y grows upwards).
+        XCTAssertEqual(try XCTUnwrap(rig.drops.circle(ofDrop: 0)).midY, canvas / 2 + ShortcutRingGeometry.placeRadius, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(rig.drops.circle(ofDrop: 8)).width, 88)
+        rig.presenter.hide()
+    }
+
+    /// A display that sends no frame (it sleeps) must not leave a ring that takes clicks
+    /// and is not seen: half a second after it opened everything is in its place.
+    func testWithoutAnyFrameTheRingStandsAfterHalfASecond() throws {
+        let rig = Rig(appearance: ShortcutRingAppearance())
+        rig.show()
+        XCTAssertEqual(rig.deadlines.count, 1)
+        XCTAssertEqual(rig.deadlines[0].delay, 0.5, accuracy: 0.001)
+        XCTAssertLessThanOrEqual(ShortcutRingDrops.openDuration, 0.5)
+        // No frame came, and the clock is of no help either.
+        rig.deadlines[0].work()
+        XCTAssertEqual(rig.drops.drops, ShortcutRingDrops.settled(filled: filled))
+        XCTAssertFalse(rig.presenter.isMoving)
+        XCTAssertTrue(rig.frames[0].stopped)
+        rig.presenter.hide()
+
+        // The deadline of a ring that is gone, or of the ring before this one, does nothing.
+        rig.show()
+        rig.presenter.hide()
+        rig.show()
+        let start = rig.drops.drops
+        rig.deadlines[1].work()
+        XCTAssertEqual(rig.drops.drops, start)
+        XCTAssertTrue(rig.presenter.isMoving)
+        rig.presenter.hide()
+        rig.deadlines[2].work()
+        XCTAssertFalse(rig.presenter.isMoving)
+    }
+
+    /// The ring is used from the first frame. Shown with a place lit, that place is lit at
+    /// once; lit a moment later, its drop is lit while it travels, and the hub names it.
+    func testAPlaceIsLitFromTheFirstFrameAndWhileItsDropTravels() throws {
+        let rig = Rig(appearance: ShortcutRingAppearance())
+        rig.show(lit: 2)
+        XCTAssertEqual(rig.drops.drops?.places[2].lit, 1)
+        XCTAssertEqual(rig.drops.title, rig.face.places[2].title)
+        XCTAssertEqual(rig.drops.contents[2].lit, 1)
+        rig.presenter.hide()
+
+        rig.show()
+        XCTAssertNil(rig.drops.title)
+        rig.frame(after: 0.04)
+        rig.presenter.light(0)
+        XCTAssertEqual(rig.drops.title, rig.face.places[0].title, "the name is there at once")
+        rig.frame(after: 0.03)
+        let travelling = try XCTUnwrap(rig.drops.drops?.places[0])
+        XCTAssertGreaterThan(travelling.lit, 0.5)
+        XCTAssertLessThan(travelling.grow, 1.05)
+        XCTAssertEqual(rig.drops.contents[0].lit, travelling.lit)
+        rig.frame(after: 0.40)
+        XCTAssertEqual(rig.drops.drops, ShortcutRingDrops.settled(filled: filled, lit: 0))
+        XCTAssertFalse(rig.presenter.isMoving)
+        rig.presenter.hide()
+    }
+
+    /// At rest a change of the lit place asks for frames again, for an eighth of a second,
+    /// and has its own deadline; the same place again asks for nothing.
+    func testLightingAPlaceMovesTheRingForAnEighthOfASecond() throws {
+        let rig = Rig(appearance: ShortcutRingAppearance())
+        rig.show()
+        rig.frame(after: 0.4)
+        XCTAssertFalse(rig.presenter.isMoving)
+        XCTAssertEqual(rig.frames.count, 1)
+
+        rig.presenter.light(5)
+        XCTAssertTrue(rig.presenter.isMoving)
+        XCTAssertEqual(rig.frames.count, 2)
+        XCTAssertEqual(rig.deadlines.count, 2)
+        XCTAssertLessThanOrEqual(rig.deadlines[1].delay, 0.25)
+        XCTAssertGreaterThan(rig.deadlines[1].delay, ShortcutRingDrops.litDuration)
+        rig.presenter.light(5)
+        XCTAssertEqual(rig.frames.count, 2)
+        XCTAssertEqual(rig.deadlines.count, 2, "the same place again: nothing new")
+
+        rig.frame(after: 0.05)
+        rig.presenter.light(6)
+        XCTAssertEqual(rig.frames.count, 2, "frames are already coming")
+        rig.frame(after: 0.02)
+        let between = try XCTUnwrap(rig.drops.drops)
+        XCTAssertGreaterThan(between.places[5].lit, 0)
+        XCTAssertGreaterThan(between.places[6].lit, 0)
+        XCTAssertEqual(rig.drops.title, rig.face.places[6].title)
+        rig.frame(after: 0.2)
+        XCTAssertEqual(rig.drops.drops, ShortcutRingDrops.settled(filled: filled, lit: 6))
+        XCTAssertFalse(rig.presenter.isMoving)
+        XCTAssertTrue(rig.frames[1].stopped)
+
+        // Without a frame the lit place still shows by its deadline.
+        rig.presenter.light(1)
+        rig.now += 0.3
+        try XCTUnwrap(rig.deadlines.last).work()
+        XCTAssertEqual(rig.drops.drops, ShortcutRingDrops.settled(filled: filled, lit: 1))
+        XCTAssertFalse(rig.presenter.isMoving)
+
+        // A ring that is gone lights nothing and asks for nothing.
+        rig.presenter.hide()
+        rig.presenter.light(3)
+        XCTAssertFalse(rig.presenter.isMoving)
+        XCTAssertEqual(rig.frames.count, 3)
+    }
+
+    /// "Reduce motion": everything is in its place when the ring appears, a place is lit
+    /// at once, and no frame and no deadline is ever asked for.
+    func testWithReduceMotionNothingMoves() {
+        let rig = Rig(appearance: ShortcutRingAppearance(reducesMotion: true))
+        rig.show()
+        XCTAssertEqual(rig.drops.drops, ShortcutRingDrops.settled(filled: filled))
+        rig.presenter.light(4)
+        XCTAssertEqual(rig.drops.drops, ShortcutRingDrops.settled(filled: filled, lit: 4))
+        XCTAssertEqual(rig.drops.title, rig.face.places[4].title)
+        rig.presenter.light(nil)
+        XCTAssertEqual(rig.drops.drops, ShortcutRingDrops.settled(filled: filled))
+        XCTAssertNil(rig.drops.title)
+        XCTAssertFalse(rig.presenter.isMoving)
+        XCTAssertTrue(rig.frames.isEmpty)
+        XCTAssertTrue(rig.deadlines.isEmpty)
+        rig.presenter.hide()
+    }
+
+    /// An empty place shows nothing in its drop and never lights on the panel either.
+    func testAnEmptyPlaceShowsNothingAndNeverLightsOnThePanel() {
+        var ring = ShortcutRingSettings.default
+        ring[3] = .empty
+        let rig = Rig(appearance: ShortcutRingAppearance(reducesMotion: true))
+        rig.face = ShortcutRingFace(ring)
+        rig.show(lit: 3)
+        XCTAssertTrue(rig.drops.contents[3].isHidden)
+        XCTAssertFalse(rig.drops.contents[2].isHidden)
+        XCTAssertNil(rig.presenter.lighting.target)
+        XCTAssertNil(rig.drops.title)
+        XCTAssertEqual(rig.drops.drops?.places[3].diameter, 14)
+        rig.presenter.light(3)
+        XCTAssertEqual(rig.drops.drops?.places[3].lit, 0)
+        rig.presenter.hide()
+    }
+
+    /// Each material is built of its own views and of nothing of the others; the drops
+    /// are made anew only when the system's settings changed between two rings.
+    func testEachMaterialHasItsOwnViews() throws {
+        let drawn = Rig(appearance: ShortcutRingAppearance(reducesTransparency: true, hasLiquidGlass: true))
+        drawn.show()
+        XCTAssertEqual(drawn.drops.material, .drawn)
+        XCTAssertNil(drawn.drops.blurView)
+        XCTAssertNil(drawn.drops.glassBodies)
+        XCTAssertEqual(drawn.drops.bodiesView?.style.backdrop, .drawn)
+        XCTAssertEqual(drawn.drops.bodiesView?.drops, drawn.drops.drops)
+        XCTAssertTrue(drawn.drops.contents.allSatisfy { $0.superview === drawn.drops && !$0.usesLabelColour })
+        let first = drawn.drops
+        drawn.presenter.hide()
+        drawn.show()
+        XCTAssertTrue(drawn.drops === first, "the same drops for the next ring")
+        drawn.presenter.hide()
+
+        let blur = Rig(appearance: ShortcutRingAppearance())
+        blur.show()
+        XCTAssertEqual(blur.drops.material, .blur)
+        let material = try XCTUnwrap(blur.drops.blurView)
+        XCTAssertEqual(material.material, .hudWindow)
+        XCTAssertEqual(material.blendingMode, .behindWindow)
+        XCTAssertEqual(material.state, .active)
+        XCTAssertEqual(material.frame, blur.drops.bounds, "one material view for all nine drops")
+        XCTAssertNotNil(material.maskImage, "cut to the drops")
+        XCTAssertEqual(blur.drops.bodiesView?.style.backdrop, .material)
+        XCTAssertNil(blur.drops.glassBodies)
+        // The mask follows the drops.
+        let atStart = material.maskImage
+        blur.frame(after: 0.05)
+        XCTAssertFalse(material.maskImage === atStart)
+        blur.frame(after: 0.4)
+        let atRest = material.maskImage
+        blur.presenter.step()
+        XCTAssertTrue(material.maskImage === atRest, "and is not made again while nothing changes")
+        blur.presenter.hide()
+
+        if #available(macOS 26.0, *) {
+            let glass = Rig(appearance: ShortcutRingAppearance(hasLiquidGlass: true))
+            glass.show(lit: 1)
+            XCTAssertEqual(glass.drops.material, .glass)
+            XCTAssertNil(glass.drops.blurView)
+            XCTAssertNil(glass.drops.bodiesView)
+            let bodies = try XCTUnwrap(glass.drops.glassBodies as? ShortcutRingGlassBodies)
+            XCTAssertEqual(bodies.container.spacing, ShortcutRingDrops.glassSpacing)
+            XCTAssertTrue(bodies.container.contentView === bodies.field)
+            XCTAssertEqual(bodies.drops.count, 9)
+            glass.frame(after: 0.4)
+            // Whatever the glass views do when they are laid out, the drops stay where
+            // they were put and their content views fill them.
+            glass.presenter.stage?.layoutSubtreeIfNeeded()
+            for (index, drop) in bodies.drops.enumerated() {
+                XCTAssertTrue(drop.isDescendant(of: try XCTUnwrap(bodies.container.contentView)))
+                let circle = try XCTUnwrap(glass.drops.circle(ofDrop: index))
+                XCTAssertEqual(drop.frame, circle)
+                XCTAssertEqual(drop.cornerRadius, circle.width / 2, "round")
+                XCTAssertEqual(drop.alphaValue, 1, "glass is never faded")
+                // What stands in the drop is in the glass's content view, in its middle.
+                let content = glass.drops.contents[index]
+                XCTAssertTrue(content.superview === drop.contentView)
+                XCTAssertEqual(drop.contentView?.frame, NSRect(origin: .zero, size: circle.size))
+                XCTAssertTrue(content.usesLabelColour)
+                XCTAssertEqual(content.frame.midX, circle.width / 2, accuracy: 0.001)
+                XCTAssertEqual(content.frame.midY, circle.height / 2, accuracy: 0.001)
+            }
+            XCTAssertNotNil(bodies.drops[1].tintColor, "the lit drop is tinted")
+            XCTAssertNil(bodies.drops[0].tintColor)
+            XCTAssertNil(bodies.drops[8].tintColor)
+            glass.presenter.light(nil)
+            glass.frame(after: 0.2)
+            XCTAssertNil(bodies.drops[1].tintColor)
+            glass.presenter.hide()
+
+            // The settings changed between two rings: other drops, and the old ones gone.
+            let first = glass.drops
+            glass.presenter.appearance = { ShortcutRingAppearance(increasesContrast: true, hasLiquidGlass: true) }
+            glass.show()
+            XCTAssertEqual(glass.drops.material, .drawn)
+            XCTAssertNil(first.superview)
+            XCTAssertEqual(glass.presenter.stage?.subviews.count, 1)
+            XCTAssertEqual(glass.drops.bodiesView?.style.increasesContrast, true)
+            glass.presenter.hide()
+        }
+    }
+
+    /// The mask of the blurred material is the nine circles of the moment and nothing else.
+    func testTheBlursMaskIsTheDropsCircles() throws {
+        let rest = ShortcutRingDrops.settled(filled: filled, lit: 2)
+        let side = ShortcutRingGeometry.canvasSide
+        let image = ShortcutRingDropsView.mask(rest, size: NSSize(width: side, height: side))
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: Int(side), pixelsHigh: Int(side), bitsPerSample: 8, samplesPerPixel: 4,
+            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+        image.draw(in: NSRect(x: 0, y: 0, width: side, height: side))
+        NSGraphicsContext.restoreGraphicsState()
+        /// The mask's alpha at an offset from the ring's middle (y downwards, as the geometry's).
+        func alpha(_ offset: CGPoint) -> CGFloat {
+            return bitmap.colorAt(x: Int(side / 2 + offset.x), y: Int(side / 2 + offset.y))?.alphaComponent ?? -1
+        }
+        XCTAssertEqual(alpha(.zero), 1, accuracy: 0.01, "the hub")
+        for place in 0..<8 {
+            XCTAssertEqual(alpha(rest.places[place].offset), 1, accuracy: 0.01, "place \(place)")
+        }
+        // Between the hub and a place, between two places and outside the ring: nothing.
+        XCTAssertEqual(alpha(CGPoint(x: 0, y: -50.5)), 0, accuracy: 0.01)
+        XCTAssertEqual(alpha(ShortcutRingGeometry.offset(ofPlace: 5, radius: 82 + 31)), 0, accuracy: 0.01)
+        let between = ShortcutRingGeometry.angle(ofPlace: 4) + .pi / 8
+        XCTAssertEqual(alpha(CGPoint(x: sin(between) * 82, y: -cos(between) * 82)), 0, accuracy: 0.01)
+        XCTAssertEqual(alpha(CGPoint(x: -130, y: 130)), 0, accuracy: 0.01)
+        // The lit drop is larger and farther out: the material is under all of it.
+        XCTAssertEqual(alpha(ShortcutRingGeometry.offset(ofPlace: 2, radius: 88 + 30)), 1, accuracy: 0.01)
+        XCTAssertEqual(alpha(ShortcutRingGeometry.offset(ofPlace: 6, radius: 82 + 28)), 0, accuracy: 0.01)
     }
 }
