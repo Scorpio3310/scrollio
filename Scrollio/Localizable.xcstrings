@@ -4253,6 +4253,7 @@
       }
     },
     "scrolling-reset": {
+      "comment": "Scrolling pane, an app's page, Shortcut Ring pane and Gestures pane: the button under the boxes that puts the pane's settings back to the defaults",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -4264,7 +4265,7 @@
       }
     },
     "scrolling-reset-undo": {
-      "comment": "Scrolling pane and an app's page: what the button \"Reset to Defaults\" reads for a few seconds after a reset; a click takes the reset back (as Edit › Undo Reset Scrolling does)",
+      "comment": "Scrolling pane, an app's page, Shortcut Ring pane and Gestures pane: what the button \"Reset to Defaults\" reads for a few seconds after a reset; a click takes the reset back (as Edit › Undo does, for example Undo Reset Scrolling)",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -7799,6 +7800,30 @@
           "stringUnit": {
             "state": "translated",
             "value": "The pointer stays where it is while you hold the button. The way your hand moves still chooses."
+          }
+        }
+      }
+    },
+    "ring-undo-reset": {
+      "comment": "Shortcut Ring pane: undo action name after \"Reset to Defaults\" (Edit › Undo Reset Shortcut Ring)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset Shortcut Ring"
+          }
+        }
+      }
+    },
+    "gestures-undo-reset": {
+      "comment": "Gestures pane: undo action name after \"Reset to Defaults\" (Edit › Undo Reset Gestures)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset Gestures"
           }
         }
       }

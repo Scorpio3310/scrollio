@@ -9,7 +9,9 @@
 //  of every direction and of Click, a box with how a gesture behaves (invert, freeze,
 //  swipe speed) and, when a connected mouse can do it, a box with what a Logitech mouse
 //  does itself; under it, while the mouse has its haptics off because the user switched
-//  them off under Mouse, a muted line that says so and leads there ("Open Mouse").
+//  them off under Mouse, a muted line that says so and leads there ("Open Mouse"). Last,
+//  "Reset to Defaults", as in the Scrolling pane (`PreferencesPaneReset`): every gesture
+//  setting of a new installation; the button to hold is a binding of Buttons and stays.
 //  Mode, actions, invert and freeze come from MouseGestureSettingsControls.
 //  The tab only edits Options.shared.gesture; which button runs Gesture Navigation is
 //  chosen in the Buttons tab, and the first row ("Button to hold") names it and leads there:
@@ -45,6 +47,7 @@ final class GesturesPreferencesViewController: NSViewController {
         static let logitechNeeds = NSUserInterfaceItemIdentifier("gestures-logitech-needs")
         static let hapticsOffNote = NSUserInterfaceItemIdentifier("gestures-haptics-off-note")
         static let openMouse = NSUserInterfaceItemIdentifier("gestures-open-mouse")
+        static let reset = NSUserInterfaceItemIdentifier("gestures-reset")
     }
 
     typealias Slot = MouseGestureSettingsControls.Slot
@@ -61,6 +64,8 @@ final class GesturesPreferencesViewController: NSViewController {
     var openButtonsPane: ((Bool) -> Void)?
     /// "Open Mouse": shows the Mouse pane. Tests replace it.
     var openMousePane: (() -> Void)?
+    /// Takes Undo and Redo of "Reset to Defaults"; the window's when nil.
+    var paneUndoManager: UndoManager?
 
     /// As last read from `deviceSource`.
     private(set) var gestureSupport = MouseGestureDeviceSupport.none
@@ -97,6 +102,13 @@ final class GesturesPreferencesViewController: NSViewController {
     private(set) var hapticsOffLabel: NSTextField!
     private(set) var openMouseButton: NSButton!
     private(set) var logitechNeedsLabel: NSTextField!
+    /// "Reset to Defaults" under everything else: all of `MouseGestureSettings` as a new
+    /// installation has it. Not the button to hold.
+    private(set) var resetToDefaults: PreferencesPaneReset!
+    var resetToDefaultsButton: NSButton {
+        return resetToDefaults.button
+    }
+    private(set) var footer: PreferencesGroupFooter!
     /// Everything in the content stack, top to bottom.
     private(set) var sections: [NSView] = []
     private var contentStack: NSStackView!
@@ -162,16 +174,19 @@ final class GesturesPreferencesViewController: NSViewController {
         hapticsOffNote = makeHapticsOffNote()
         logitechNeedsLabel = Self.makeNote(text("gestures-logitech-needs"), identifier: Identifier.logitechNeeds)
         let logitechNeeds = Self.inset(logitechNeedsLabel)
+        resetToDefaults = makeReset()
+        footer = PreferencesGroupFooter(trailing: [resetToDefaults.button])
 
-        sections = [preview, first, directions, behaviour, logitech, hapticsOffNote, logitechNeeds]
+        sections = [preview, first, directions, behaviour, logitech, hapticsOffNote, logitechNeeds, footer]
         PreferencesGroupedForm.add(sections, to: content)
         contentStack = content
         behaviourSection = behaviour
         // The directions carry their title in a view of their own. The muted lines sit
         // close under the boxes (only one of them shows: one needs the Logitech box, the
-        // other its absence).
+        // other its absence). The footer keeps its room above whichever view shows last:
+        // a muted line (here) or the Logitech box (`reload`).
         content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: first)
-        content.setCustomSpacing(PreferencesGroupedForm.noteSpacing, after: logitech)
+        content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: hapticsOffNote)
 
         view = root
         reload()
@@ -215,6 +230,7 @@ final class GesturesPreferencesViewController: NSViewController {
         hoveredSlot = nil
         focusedSlot = nil
         updatePreviewScene()
+        resetToDefaults.endUndoOffer()
     }
 
     @objc private func deviceStateDidChange(_ notification: Notification) {
@@ -267,6 +283,11 @@ final class GesturesPreferencesViewController: NSViewController {
             rules.showsOptions ? PreferencesGroupedForm.sectionSpacing : PreferencesGroupedForm.noteSpacing,
             after: behaviourSection
         )
+        // Under the Logitech box comes its muted line, close, or else the footer.
+        contentStack.setCustomSpacing(
+            rules.showsHapticsOffNote ? PreferencesGroupedForm.noteSpacing : PreferencesGroupedForm.sectionSpacing,
+            after: logitechSection
+        )
         deviceTrackingRow.isOn = gesture.deviceTracking
         deviceTrackingRow.isEnabled = rules.deviceTrackingEnabled
         deviceTrackingRow.explanation = text(rules.deviceTrackingHintKey)
@@ -275,6 +296,7 @@ final class GesturesPreferencesViewController: NSViewController {
         hapticsRow.explanation = text(rules.hapticsHintKey)
 
         updatePreviewScene()
+        resetToDefaults?.settingsDidChange()
         PreferencesForm.fitToContent(self)
     }
 
@@ -343,6 +365,7 @@ final class GesturesPreferencesViewController: NSViewController {
             Options.shared.gesture.trackingSpeed = value
         }
         updatePreviewScene()
+        resetToDefaults.settingsDidChange()
     }
 
     @objc func deviceTrackingToggled(_ sender: NSSwitch) {
@@ -368,6 +391,35 @@ final class GesturesPreferencesViewController: NSViewController {
         }
         PreferencesButtonsViewController.splitViewController(of: self)?
             .selectPane(withIdentifier: MousePreferencesViewController.tabIdentifier)
+    }
+
+    // MARK: - Reset
+
+    /// Where a reset registers its Undo: the window's undo manager while the pane is in
+    /// the window.
+    var undoTarget: UndoManager? {
+        return paneUndoManager ?? view.window?.undoManager
+    }
+
+    /// "Reset to Defaults": the gesture settings of a new installation, all of them (the
+    /// mode, the action of every direction and of Click, invert, freeze, the swipe speed,
+    /// and the two switches of a Logitech mouse, also while their box does not show). The
+    /// button to hold is a binding of the Buttons pane and is not touched; "Haptic feedback"
+    /// under Mouse is the Mouse pane's. Edit › Undo ("Undo Reset Gestures") brings back the
+    /// settings that were there.
+    private func makeReset() -> PreferencesPaneReset {
+        let reset = PreferencesPaneReset(
+            store: PreferencesPaneReset.Store(
+                defaults: MouseGestureSettings.default,
+                read: { Options.shared.gesture },
+                write: { Options.shared.gesture = $0 },
+                undoActionNameKey: "gestures-undo-reset"
+            ),
+            undoManager: { [weak self] in self?.undoTarget },
+            didChange: { [weak self] in self?.reload() }
+        )
+        reset.button.identifier = Identifier.reset
+        return reset
     }
 
     // MARK: - Rows

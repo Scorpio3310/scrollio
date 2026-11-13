@@ -128,7 +128,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "gestures-behaviour-header", "gestures-logitech-header", "gestures-logitech-needs",
         "mouse-gesture-device-tracking", "mouse-gesture-device-tracking-hint", "mouse-gesture-device-tracking-unavailable",
         "mouse-gesture-haptics", "mouse-gesture-haptics-hint", "mouse-gesture-haptics-unavailable",
-        "gestures-haptics-off-under-mouse", "gestures-open-mouse",
+        "gestures-haptics-off-under-mouse", "gestures-open-mouse", "gestures-undo-reset",
     ]
 
     /// Apps pane and an app's page.
@@ -249,6 +249,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "ring-action-none", "ring-preview-description", "buttons-note-shortcut-ring",
         "ring-recorder-waiting", "ring-recorder-refused",
         "general-settings-import-ring", "general-settings-import-ring-line", "general-settings-import-ring-trigger",
+        "ring-undo-reset",
     ]
 
     static let keys = mouseKeys + scrollingKeys + buttonsKeys + gesturesKeys + ringKeys + appsKeys

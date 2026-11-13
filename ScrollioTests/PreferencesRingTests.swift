@@ -4,8 +4,9 @@
 //
 //  The Shortcut Ring pane: its row for what opens the ring and its way to the Buttons
 //  pane, the eight places with their pull-downs, what the pull-downs offer and store, the
-//  drawing that follows the row pointed at; and the Buttons pane's side: the action in its
-//  menu, for a button and for a key. Nothing is shown on screen.
+//  drawing that follows the row pointed at, "Reset to Defaults" with its Undo; and the
+//  Buttons pane's side: the action in its menu, for a button and for a key. Nothing is
+//  shown on screen.
 //
 
 import XCTest
@@ -60,7 +61,7 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(RingPreferencesViewController.tabIdentifier, "ring")
         XCTAssertEqual(controller.view.frame.width, 520)
         XCTAssertFalse(controller.view.hasAmbiguousLayout)
-        XCTAssertEqual(controller.sections.count, 3, "the drawing, what opens the ring, the places")
+        XCTAssertEqual(controller.sections.count, 4, "the drawing, what opens the ring, the places, the footer")
     }
 
     /// Eight rows, clockwise from the top, each showing what the stored ring holds there.
@@ -446,6 +447,323 @@ final class PreferencesRingTests: XCTestCase {
         other.shortcutSelected(try XCTUnwrap(item("undo", in: other)))
         XCTAssertEqual(controller.selectedPlace, 3)
         XCTAssertEqual(preview.lit, 3)
+    }
+
+    // MARK: Reset to Defaults
+
+    private func send(_ control: NSControl) {
+        XCTAssertTrue(control.sendAction(control.action, to: control.target))
+    }
+
+    /// A ring that differs from a new one: another action, an empty place, an app, a
+    /// recorded key combination, and the pointer frozen.
+    private var changedRing: ShortcutRingSettings {
+        var ring = ShortcutRingSettings.default
+        ring[0] = ShortcutRingPlace(action: "undo")
+        ring[3] = .empty
+        ring[4] = ShortcutRingPlace(openTarget: OpenTargetPayload(
+            path: "/System/Applications/Calculator.app", bundleID: "com.apple.calculator", arguments: "", kind: .application
+        ))
+        ring[7] = ShortcutRingPlace(action: "custom::40:1179648")
+        ring.freezePointer = true
+        return ring
+    }
+
+    /// What the pull-downs show, top and clockwise.
+    private func shownActions(_ controller: RingPreferencesViewController) -> [String?] {
+        return controller.placePopUps.map { $0.menu?.items.first?.title }
+    }
+
+    /// A pane whose reset has an Undo to register. The offer lasts until the test ends it.
+    private func makeControllerWithUndo() -> (RingPreferencesViewController, UndoManager) {
+        let controller = makeController()
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        controller.paneUndoManager = undo
+        controller.resetToDefaults.undoOfferDuration = 60
+        return (controller, undo)
+    }
+
+    /// A click that resets, as one event: its Undo is one group.
+    private func click(_ button: NSButton, _ undo: UndoManager) {
+        undo.beginUndoGrouping()
+        send(button)
+        undo.endUndoGrouping()
+    }
+
+    /// The button is the Scrolling pane's: the same title, in a footer under the last box,
+    /// at the right edge and at the same distances.
+    func testResetToDefaultsSitsUnderTheBoxesAsInScrolling() throws {
+        let controller = makeController()
+        controller.view.layoutSubtreeIfNeeded()
+        let button = controller.resetToDefaultsButton
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertEqual(button.identifier, RingPreferencesViewController.Identifier.reset)
+        let footer = try XCTUnwrap(controller.sections.last as? PreferencesGroupFooter)
+        XCTAssertTrue(footer.views.count == 1 && footer.views.first === button)
+
+        func frame(_ view: NSView, in pane: NSViewController) -> NSRect {
+            return pane.view.convert(view.alignmentRect(forFrame: view.frame), from: view.superview)
+        }
+        let places = frame(controller.sections[2], in: controller)
+        // The root view is not flipped: lower on screen is a smaller y.
+        XCTAssertEqual(places.minY - frame(footer, in: controller).maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 0.5)
+        XCTAssertEqual(frame(footer, in: controller).minY, PreferencesGroupedForm.margin, accuracy: 0.5, "the last thing in the pane")
+        XCTAssertEqual(frame(button, in: controller).maxX, places.maxX, accuracy: 0.5, "at the boxes' right edge")
+        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+        XCTAssertFalse(controller.view.hasAmbiguousLayout)
+
+        // Side by side with the Scrolling pane's button.
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesScrollingViewController.self))
+        let scrolling = try XCTUnwrap(
+            storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController
+        )
+        scrolling.uiStateDefaults = TestDefaults.make(for: self)
+        scrolling.view.layoutSubtreeIfNeeded()
+        let model = try XCTUnwrap(scrolling.resetToDefaultsButton)
+        XCTAssertEqual(button.title, model.title)
+        XCTAssertEqual(button.bezelStyle, model.bezelStyle)
+        XCTAssertEqual(button.controlSize, model.controlSize)
+        XCTAssertEqual(button.font, model.font)
+        let mine = frame(button, in: controller)
+        let its = frame(model, in: scrolling)
+        XCTAssertEqual(mine.size.width, its.size.width, accuracy: 0.5)
+        XCTAssertEqual(mine.size.height, its.size.height, accuracy: 0.5)
+        XCTAssertEqual(mine.maxX, its.maxX, accuracy: 0.5)
+        XCTAssertEqual(mine.minY, its.minY, accuracy: 0.5, "as far from the pane's lower edge")
+    }
+
+    func testResetIsOnlyOfferedWhenTheRingDiffers() throws {
+        let controller = makeController()
+        let button = controller.resetToDefaultsButton
+        XCTAssertFalse(controller.resetToDefaults.hasSettingsToReset)
+        XCTAssertFalse(button.isEnabled, "a new ring has nothing to reset")
+
+        let popUp = controller.placePopUps[1]
+        popUp.shortcutSelected(try XCTUnwrap(item("undo", in: popUp)))
+        XCTAssertTrue(controller.resetToDefaults.hasSettingsToReset)
+        XCTAssertTrue(button.isEnabled)
+        popUp.shortcutSelected(try XCTUnwrap(item(SystemShortcut.screenshotSelection.identifier, in: popUp)))
+        XCTAssertFalse(button.isEnabled, "the place holds again what a new ring holds there")
+
+        let toggle = try XCTUnwrap(controller.freezeToggle as? NSSwitch)
+        toggle.state = .on
+        send(toggle)
+        XCTAssertTrue(button.isEnabled, "the switch counts")
+        toggle.state = .off
+        send(toggle)
+        XCTAssertFalse(button.isEnabled)
+
+        // A ring that changed while the pane was away (a settings file was imported).
+        Options.shared.ring = changedRing
+        controller.viewWillAppear()
+        XCTAssertTrue(button.isEnabled)
+        XCTAssertEqual(button.title, "Reset to Defaults")
+    }
+
+    /// The reset is the ring of a new installation, its eight places and the switch, shown
+    /// at once in the rows and the drawing. What opens the ring is a binding of the Buttons
+    /// pane: it stays, and the first row still names it.
+    func testResetPutsBackTheNewRingAndLeavesWhatOpensIt() throws {
+        let savedBindings = Options.shared.buttons.binding
+        defer {
+            Options.shared.buttons.binding = savedBindings
+            ButtonUtils.shared.invalidateCache()
+        }
+        func binding(_ type: EventType, _ code: UInt16, modifiers: UInt = 0, action: String) -> ButtonBinding {
+            return ButtonBinding(
+                triggerEvent: RecordedEvent(type: type, code: code, modifiers: modifiers, deviceFilter: nil),
+                systemShortcutName: action, isEnabled: true
+            )
+        }
+        let ringAction = SystemShortcut.shortcutRing.identifier
+        let bindings = [
+            binding(.mouse, 4, action: ringAction),
+            binding(.keyboard, 49, modifiers: UInt(CGEventFlags.maskControl.rawValue), action: ringAction),
+            binding(.mouse, 3, action: "copy"),
+        ]
+        Options.shared.buttons.binding = bindings
+        Options.shared.ring = changedRing
+        // The pane as the window has it: the first row reads the stored bindings.
+        let controller = RingPreferencesViewController()
+        _ = controller.view
+        let opens = try XCTUnwrap(controller.triggerRow.explanation)
+        XCTAssertEqual(controller.triggerButton.title, "Change")
+        XCTAssertEqual(shownActions(controller)[0], "Undo")
+        XCTAssertEqual(shownActions(controller)[3], "No Action")
+        XCTAssertEqual((controller.freezeToggle as? NSSwitch)?.state, .on)
+        XCTAssertTrue(controller.resetToDefaultsButton.isEnabled)
+
+        send(controller.resetToDefaultsButton)
+
+        let ring = Options.shared.ring
+        XCTAssertEqual(ring, .default)
+        XCTAssertEqual(ring.places.map(\.action), [
+            SystemShortcut.missionControl, SystemShortcut.screenshotSelection, SystemShortcut.moveSpaceRight,
+            SystemShortcut.paste, SystemShortcut.appExpose, SystemShortcut.copy,
+            SystemShortcut.moveSpaceLeft, SystemShortcut.showDesktop,
+        ].map(\.identifier), "the eight places of a new ring, clockwise from the top")
+        XCTAssertTrue(ring.places.allSatisfy { $0.openTarget == nil })
+        XCTAssertFalse(ring.freezePointer, "and its switch: off")
+
+        // The rows and the drawing follow at once.
+        XCTAssertEqual(shownActions(controller), [
+            SystemShortcut.missionControl, SystemShortcut.screenshotSelection, SystemShortcut.moveSpaceRight,
+            SystemShortcut.paste, SystemShortcut.appExpose, SystemShortcut.copy,
+            SystemShortcut.moveSpaceLeft, SystemShortcut.showDesktop,
+        ].map(\.localizedName))
+        XCTAssertEqual((controller.freezeToggle as? NSSwitch)?.state, .off)
+        XCTAssertEqual(controller.previewView.face.places.map(\.title), ShortcutRingFace(.default).places.map(\.title))
+        XCTAssertEqual(controller.previewView.face.filled, Array(repeating: true, count: 8))
+        XCTAssertNil(controller.previewView.face.places[4].image, "the app's icon is gone from the drawing")
+        XCTAssertEqual(ShortcutRingController.preparedFace?.ring, .default, "the ring on screen gets the same face")
+
+        // What opens the ring: as it was.
+        XCTAssertEqual(Options.shared.buttons.binding, bindings)
+        XCTAssertEqual(controller.triggerRow.explanation, opens)
+        XCTAssertEqual(controller.triggerButton.title, "Change")
+
+        XCTAssertFalse(controller.resetToDefaultsButton.isEnabled, "nothing differs any more")
+        XCTAssertEqual(controller.resetToDefaultsButton.title, "Reset to Defaults", "in no window there is no Undo to offer")
+    }
+
+    /// After a reset the button reads "Undo Reset" and brings back exactly the ring that
+    /// was there, places and switch; Edit › Undo and Redo ("Reset Shortcut Ring") do the
+    /// same. A change, or the pane going away, makes it "Reset to Defaults" again.
+    func testAfterAResetTheButtonOffersToUndoItAndUndoBringsBackTheRing() throws {
+        Options.shared.ring = changedRing
+        let before = Options.shared.ring
+        let (controller, undo) = makeControllerWithUndo()
+        let button = controller.resetToDefaultsButton
+        let shownBefore = shownActions(controller)
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertTrue(button.isEnabled)
+        XCTAssertFalse(controller.resetToDefaults.offersUndo)
+
+        click(button, undo)
+        XCTAssertEqual(Options.shared.ring, .default)
+        XCTAssertTrue(controller.resetToDefaults.offersUndo)
+        XCTAssertEqual(button.title, "Undo Reset")
+        XCTAssertTrue(button.isEnabled, "not greyed out although nothing differs")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Reset Shortcut Ring")
+
+        // "Undo Reset": every place and the switch are back, and shown.
+        send(button)
+        XCTAssertEqual(Options.shared.ring, before)
+        XCTAssertEqual(Options.shared.ring[4].openTarget?.path, "/System/Applications/Calculator.app")
+        XCTAssertTrue(Options.shared.ring.freezePointer)
+        XCTAssertEqual(shownActions(controller), shownBefore)
+        XCTAssertEqual((controller.freezeToggle as? NSSwitch)?.state, .on)
+        XCTAssertEqual(controller.previewView.face.places[0].title, "Undo")
+        XCTAssertTrue(controller.previewView.face.places[3].isEmpty)
+        XCTAssertFalse(controller.resetToDefaults.offersUndo)
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertTrue(button.isEnabled)
+        XCTAssertTrue(undo.canRedo)
+        XCTAssertEqual(undo.redoMenuItemTitle, "Redo Reset Shortcut Ring")
+
+        // Edit › Redo resets again, Edit › Undo takes that back too.
+        undo.redo()
+        XCTAssertEqual(Options.shared.ring, .default)
+        XCTAssertEqual(shownActions(controller)[0], "Mission Control")
+        XCTAssertFalse(button.isEnabled)
+        undo.undo()
+        XCTAssertEqual(Options.shared.ring, before)
+        XCTAssertTrue(button.isEnabled)
+
+        // A change after a reset ends the offer: the next click resets, it does not undo.
+        click(button, undo)
+        XCTAssertTrue(controller.resetToDefaults.offersUndo)
+        let popUp = controller.placePopUps[2]
+        popUp.shortcutSelected(try XCTUnwrap(item("undo", in: popUp)))
+        XCTAssertFalse(controller.resetToDefaults.offersUndo)
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertTrue(button.isEnabled)
+        click(button, undo)
+        XCTAssertEqual(Options.shared.ring, .default, "a reset")
+        XCTAssertTrue(controller.resetToDefaults.offersUndo)
+
+        // The ring changed behind the pane's back: the click still resets.
+        Options.shared.ring.freezePointer = true
+        click(button, undo)
+        XCTAssertEqual(Options.shared.ring, .default, "a reset, not an Undo of the one before")
+
+        // The pane goes away: the offer goes with it.
+        XCTAssertTrue(controller.resetToDefaults.offersUndo)
+        controller.viewDidDisappear()
+        XCTAssertFalse(controller.resetToDefaults.offersUndo)
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertFalse(button.isEnabled)
+    }
+
+    /// The offer lasts a moment (eight seconds, as in Scrolling) and ends by itself; the
+    /// reset stays under Edit › Undo.
+    func testTheUndoOfferEndsByItselfAndEditUndoStillWorks() {
+        Options.shared.ring = changedRing
+        let before = Options.shared.ring
+        XCTAssertEqual(makeController().resetToDefaults.undoOfferDuration, 8)
+        XCTAssertEqual(PreferencesScrollingViewController().undoOfferDuration, 8, "the same moment")
+        let (controller, undo) = makeControllerWithUndo()
+        controller.resetToDefaults.undoOfferDuration = 0.05
+        let button = controller.resetToDefaultsButton
+
+        click(button, undo)
+        XCTAssertEqual(button.title, "Undo Reset")
+        let deadline = Date().addingTimeInterval(10)
+        while controller.resetToDefaults.offersUndo, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        XCTAssertFalse(controller.resetToDefaults.offersUndo)
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertFalse(button.isEnabled, "nothing differs from a new ring")
+        XCTAssertEqual(Options.shared.ring, .default, "the reset stays")
+
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Reset Shortcut Ring")
+        undo.undo()
+        XCTAssertEqual(Options.shared.ring, before)
+        XCTAssertTrue(button.isEnabled)
+    }
+
+    /// In no window there is no undo manager and so no Undo to offer: the button stays
+    /// "Reset to Defaults", greyed out after a reset. In the window, the window's takes it.
+    func testWithoutUndoTheButtonOffersNoneAndInTheWindowTheWindowsTakesIt() {
+        Options.shared.ring = changedRing
+        let controller = makeController()
+        XCTAssertNil(controller.undoTarget)
+        send(controller.resetToDefaultsButton)
+        XCTAssertEqual(Options.shared.ring, .default)
+        XCTAssertFalse(controller.resetToDefaults.offersUndo)
+        XCTAssertEqual(controller.resetToDefaultsButton.title, "Reset to Defaults")
+        XCTAssertFalse(controller.resetToDefaultsButton.isEnabled)
+
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 800), styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(controller.view)
+        XCTAssertTrue(controller.undoTarget === window.undoManager)
+        controller.view.removeFromSuperview()
+        window.close()
+    }
+
+    /// "Undo Reset" takes back only the reset: with something else on top of the Undo stack
+    /// (a button removed under Buttons, in the same window) it does nothing.
+    func testUndoResetLeavesAnotherUndoAlone() {
+        Options.shared.ring = changedRing
+        let (controller, undo) = makeControllerWithUndo()
+        let button = controller.resetToDefaultsButton
+        click(button, undo)
+        XCTAssertTrue(controller.resetToDefaults.offersUndo)
+
+        var otherUndone = false
+        undo.beginUndoGrouping()
+        undo.registerUndo(withTarget: self) { _ in otherUndone = true }
+        undo.setActionName("Remove Button")
+        undo.endUndoGrouping()
+
+        send(button)
+        XCTAssertFalse(otherUndone, "not its Undo to take")
+        XCTAssertEqual(Options.shared.ring, .default, "the reset stays")
+        XCTAssertFalse(controller.resetToDefaults.offersUndo)
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Remove Button")
     }
 }
 

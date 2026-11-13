@@ -4,8 +4,8 @@
 //
 //  Gestures tab: its rows in the boxes of System Settings, every control writes its own
 //  field of Options.shared.gesture and follows the mode rules, the tracking speed, the
-//  "Gesture button" row and its way to the Buttons pane, and the preview following the
-//  settings and the row pointed at. The Logitech
+//  "Gesture button" row and its way to the Buttons pane, the preview following the
+//  settings and the row pointed at, and "Reset to Defaults" with its Undo. The Logitech
 //  box has its own tests (LogiGestureSectionTests). Nothing is shown on screen and no HID
 //  device is touched.
 //
@@ -20,12 +20,15 @@ final class PreferencesGesturesTests: XCTestCase {
     private var savedGesture = MouseGestureSettings.default
     private var isInteractiveAvailable = true
     private var summary = MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false)
+    /// What the connected mice can do: none is connected unless a test says so.
+    private var support = MouseGestureDeviceSupport.none
 
     override func setUp() {
         super.setUp()
         savedGesture = Options.shared.gesture
         Options.shared.gesture = .default
         isInteractiveAvailable = true
+        support = .none
         summary = MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false)
     }
 
@@ -38,7 +41,7 @@ final class PreferencesGesturesTests: XCTestCase {
         let controller = GesturesPreferencesViewController(isInteractiveAvailable: { [weak self] in
             self?.isInteractiveAvailable ?? true
         })
-        controller.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+        controller.deviceSource = MouseGestureDeviceSource(support: { [weak self] in self?.support ?? .none }, refresh: {})
         controller.bindingSummary = { [weak self] in
             self?.summary ?? MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false)
         }
@@ -836,6 +839,345 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(controller.previewView.scene.focus, .down)
         popup.onFocusChange?(false)
         XCTAssertNil(controller.previewView.scene.focus)
+    }
+
+    // MARK: - Reset to Defaults
+
+    private let master4 = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
+
+    /// Every gesture setting off its default (the speed off the slider's ticks too).
+    private var changedGesture: MouseGestureSettings {
+        return MouseGestureSettings(
+            upAction: SystemShortcut.copy.identifier,
+            downAction: SystemShortcut.paste.identifier,
+            leftAction: SystemShortcut.navigateBack.identifier,
+            rightAction: "",
+            clickAction: SystemShortcut.mouseMiddleClick.identifier,
+            invertHorizontal: true,
+            freezePointer: false,
+            mode: .interactive,
+            trackingSpeed: 2.2,
+            deviceTracking: true,
+            hapticFeedback: false
+        )
+    }
+
+    /// A pane whose reset has an Undo to register. The offer lasts until the test ends it.
+    private func makeControllerWithUndo() -> (GesturesPreferencesViewController, UndoManager) {
+        let controller = makeController()
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        controller.paneUndoManager = undo
+        controller.resetToDefaults.undoOfferDuration = 60
+        return (controller, undo)
+    }
+
+    /// A click that resets, as one event: its Undo is one group.
+    private func click(_ button: NSButton, _ undo: UndoManager) {
+        undo.beginUndoGrouping()
+        send(button)
+        undo.endUndoGrouping()
+    }
+
+    /// The button is the Scrolling pane's, in a footer that is the last thing in the pane,
+    /// with a section's room above it whatever shows last: the muted line (no Logitech
+    /// mouse), the Logitech box, or the line under that box.
+    func testResetToDefaultsSitsLastUnderWhateverShowsAboveIt() throws {
+        let savedMouse = Options.shared.logiMouse
+        defer { Options.shared.logiMouse = savedMouse }
+        Options.shared.logiMouse = .default
+        let controller = makeController()
+        let button = controller.resetToDefaultsButton
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertEqual(button.identifier, GesturesPreferencesViewController.Identifier.reset)
+        XCTAssertTrue(controller.sections.last === controller.footer)
+        XCTAssertTrue(controller.footer.views.count == 1 && controller.footer.views.first === button)
+
+        func rect(_ view: NSView) -> NSRect {
+            return controller.view.convert(view.alignmentRect(forFrame: view.frame), from: view.superview)
+        }
+        func check(under above: NSView, _ what: String, line: UInt = #line) {
+            controller.view.layoutSubtreeIfNeeded()
+            XCTAssertFalse(above.isHidden, what, line: line)
+            // The root view is not flipped: lower on screen is a smaller y.
+            XCTAssertEqual(rect(above).minY - rect(controller.footer).maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 0.5, what, line: line)
+            XCTAssertEqual(rect(controller.footer).minY, PreferencesGroupedForm.margin, accuracy: 0.5, what, line: line)
+            XCTAssertEqual(rect(button).maxX, rect(controller.trackingSpeedRow).maxX, accuracy: 0.5, what, line: line)
+            XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize, what, line: line)
+            XCTAssertFalse(controller.view.hasAmbiguousLayout, what, line: line)
+        }
+        check(under: try XCTUnwrap(controller.logitechNeedsLabel.superview), "no Logitech mouse: the muted line")
+
+        support = master4
+        controller.reload()
+        check(under: controller.logitechSection, "the Logitech box")
+
+        support = MouseGestureDeviceSupport(deviceTracking: true, haptics: true, hapticsOffOnMouse: true)
+        Options.shared.logiMouse.hapticsOn = false
+        controller.reload()
+        check(under: controller.hapticsOffNote, "the line under the Logitech box")
+        XCTAssertEqual(rect(controller.logitechSection).minY - rect(controller.hapticsOffNote).maxY,
+                       PreferencesGroupedForm.noteSpacing, accuracy: 0.5, "which stays close under its box")
+
+        // Side by side with the Scrolling pane's button.
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesScrollingViewController.self))
+        let scrolling = try XCTUnwrap(
+            storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController
+        )
+        scrolling.uiStateDefaults = TestDefaults.make(for: self)
+        scrolling.view.layoutSubtreeIfNeeded()
+        let model = try XCTUnwrap(scrolling.resetToDefaultsButton)
+        let its = scrolling.view.convert(model.alignmentRect(forFrame: model.frame), from: model.superview)
+        XCTAssertEqual(button.title, model.title)
+        XCTAssertEqual(button.bezelStyle, model.bezelStyle)
+        XCTAssertEqual(button.controlSize, model.controlSize)
+        XCTAssertEqual(button.font, model.font)
+        XCTAssertEqual(rect(button).size.width, its.size.width, accuracy: 0.5)
+        XCTAssertEqual(rect(button).size.height, its.size.height, accuracy: 0.5)
+        XCTAssertEqual(rect(button).maxX, its.maxX, accuracy: 0.5)
+        XCTAssertEqual(rect(button).minY, its.minY, accuracy: 0.5, "as far from the pane's lower edge")
+    }
+
+    /// Greyed out while every gesture setting is the default one; each control of the pane
+    /// that moves a setting off its default lights it, and back greys it out again.
+    func testResetIsOnlyOfferedWhenAGestureSettingDiffers() {
+        support = master4
+        let controller = makeController()
+        let controls = controller.controls!
+        let button = controller.resetToDefaultsButton
+        XCTAssertFalse(controller.resetToDefaults.hasSettingsToReset)
+        XCTAssertFalse(button.isEnabled, "a new installation has nothing to reset")
+
+        let mode = controls.modeControl
+        let changes: [(name: String, change: () -> Void, back: () -> Void)] = [
+            ("an action", { self.choose(SystemShortcut.copy.identifier, in: controls.actionPopUp(for: .click)) },
+             { self.choose(SystemShortcut.missionControl.identifier, in: controls.actionPopUp(for: .click)) }),
+            ("no action", { self.choose("", in: controls.actionPopUp(for: .up)) },
+             { self.choose(SystemShortcut.missionControl.identifier, in: controls.actionPopUp(for: .up)) }),
+            ("invert", { self.toggle(controls.invertToggle, on: true) }, { self.toggle(controls.invertToggle, on: false) }),
+            ("freeze", { self.toggle(controls.freezeToggle, on: false) }, { self.toggle(controls.freezeToggle, on: true) }),
+            ("the mode", { mode.selectedSegment = 1; self.send(mode) }, { mode.selectedSegment = 0; self.send(mode) }),
+            ("the mouse tracks", { self.toggle(controller.deviceTrackingSwitch, on: true) },
+             { self.toggle(controller.deviceTrackingSwitch, on: false) }),
+            ("haptic feedback", { self.toggle(controller.hapticsSwitch, on: false) }, { self.toggle(controller.hapticsSwitch, on: true) }),
+            // (The slider is off in this mode; its action is the pane's all the same.)
+            ("the swipe speed", { controller.trackingSpeedSlider.doubleValue = 1.5; self.send(controller.trackingSpeedSlider) },
+             { controller.trackingSpeedSlider.doubleValue = 1; self.send(controller.trackingSpeedSlider) }),
+        ]
+        for item in changes {
+            item.change()
+            XCTAssertNotEqual(Options.shared.gesture, .default, item.name)
+            XCTAssertTrue(button.isEnabled, item.name)
+            item.back()
+            XCTAssertEqual(Options.shared.gesture, .default, item.name)
+            XCTAssertFalse(button.isEnabled, "\(item.name), back")
+        }
+
+        // Settings that changed while the pane was away (the Buttons pane, a settings file).
+        Options.shared.gesture.downAction = ""
+        controller.viewWillAppear()
+        XCTAssertTrue(button.isEnabled)
+        XCTAssertEqual(button.title, "Reset to Defaults")
+    }
+
+    /// The reset is every gesture setting of a new installation, shown at once in the
+    /// rows and the preview. The button to hold is a binding of the Buttons pane, and
+    /// "Haptic feedback" under Mouse is the Mouse pane's: both stay.
+    func testResetPutsBackEveryGestureSettingAndLeavesTheButtonToHold() {
+        let savedBindings = Options.shared.buttons.binding
+        let savedMouse = Options.shared.logiMouse
+        defer {
+            Options.shared.buttons.binding = savedBindings
+            Options.shared.logiMouse = savedMouse
+            ButtonUtils.shared.invalidateCache()
+        }
+        func binding(_ code: UInt16, _ action: String) -> ButtonBinding {
+            return ButtonBinding(
+                triggerEvent: RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil),
+                systemShortcutName: action, isEnabled: true
+            )
+        }
+        let bindings = [binding(3, SystemShortcut.mouseGestureNavigation.identifier), binding(4, "copy")]
+        Options.shared.buttons.binding = bindings
+        Options.shared.logiMouse = LogiMouseSettings(hapticsOn: false)
+        Options.shared.gesture = changedGesture
+        support = master4
+        let controller = makeController()
+        // The first row reads the stored bindings, as in the window.
+        controller.bindingSummary = {
+            MouseGestureBindingSummary(bindings: Options.shared.buttons.binding, isLogitechCode: { _ in false })
+        }
+        controller.reload()
+        let controls = controller.controls!
+        let held = controller.gestureButtonRow.explanation
+        XCTAssertEqual(controller.gestureButtonButton.title, "Change")
+        XCTAssertEqual(controls.modeControl.selectedSegment, 1)
+        XCTAssertEqual(title(of: controls.actionPopUp(for: .up)), SystemShortcut.copy.localizedName)
+        XCTAssertEqual(controller.deviceTrackingSwitch.state, .on)
+        XCTAssertEqual(controller.hapticsSwitch.state, .off)
+        XCTAssertTrue(controller.resetToDefaultsButton.isEnabled)
+
+        send(controller.resetToDefaultsButton)
+
+        // Every setting, by name: what a new installation has.
+        let gesture = Options.shared.gesture
+        XCTAssertEqual(gesture, .default)
+        XCTAssertEqual(gesture.mode, .discrete)
+        XCTAssertEqual(gesture.upAction, SystemShortcut.missionControl.identifier)
+        XCTAssertEqual(gesture.downAction, SystemShortcut.appExpose.identifier)
+        XCTAssertEqual(gesture.leftAction, SystemShortcut.moveSpaceLeft.identifier)
+        XCTAssertEqual(gesture.rightAction, SystemShortcut.moveSpaceRight.identifier)
+        XCTAssertEqual(gesture.clickAction, SystemShortcut.missionControl.identifier)
+        XCTAssertFalse(gesture.invertHorizontal)
+        XCTAssertTrue(gesture.freezePointer)
+        XCTAssertEqual(gesture.trackingSpeed, 1)
+        XCTAssertFalse(gesture.deviceTracking)
+        XCTAssertTrue(gesture.hapticFeedback)
+
+        // The rows and the preview follow at once.
+        XCTAssertEqual(controls.modeControl.selectedSegment, 0)
+        XCTAssertEqual(controller.modeRow.explanation, text("gesture-mode-discrete-description"))
+        XCTAssertEqual(Slot.allCases.map { title(of: controls.actionPopUp(for: $0)) }, [
+            SystemShortcut.missionControl, SystemShortcut.appExpose, SystemShortcut.moveSpaceLeft,
+            SystemShortcut.moveSpaceRight, SystemShortcut.missionControl,
+        ].map(\.localizedName))
+        XCTAssertTrue(controls.actionPopUp(for: .left).isEnabled, "Left and Right are the user's again")
+        XCTAssertTrue(controls.actionPopUp(for: .right).isEnabled)
+        XCTAssertFalse(MouseGestureSettingsControls.isOn(controls.invertToggle))
+        XCTAssertTrue(MouseGestureSettingsControls.isOn(controls.freezeToggle))
+        XCTAssertEqual(controller.trackingSpeedSlider.doubleValue, 1, accuracy: 1e-9)
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, speedText(1))
+        XCTAssertFalse(controller.trackingSpeedSlider.isEnabled)
+        XCTAssertEqual(controller.deviceTrackingSwitch.state, .off)
+        XCTAssertEqual(controller.hapticsSwitch.state, .on)
+        XCTAssertEqual(controller.previewView.scene.gesture, .default)
+
+        // The button to hold, and the Mouse pane's switch: as they were.
+        XCTAssertEqual(Options.shared.buttons.binding, bindings)
+        XCTAssertEqual(controller.gestureButtonRow.explanation, held)
+        XCTAssertEqual(controller.gestureButtonButton.title, "Change")
+        XCTAssertEqual(Options.shared.logiMouse, LogiMouseSettings(hapticsOn: false))
+
+        XCTAssertFalse(controller.resetToDefaultsButton.isEnabled, "nothing differs any more")
+        XCTAssertEqual(controller.resetToDefaultsButton.title, "Reset to Defaults", "in no window there is no Undo to offer")
+        XCTAssertNil(controller.undoTarget)
+    }
+
+    /// The two switches of a Logitech mouse are gesture settings too: with no such mouse
+    /// connected their box does not show, and the reset still puts them back.
+    func testResetCoversTheLogitechSwitchesWhileTheirBoxDoesNotShow() {
+        Options.shared.gesture.deviceTracking = true
+        Options.shared.gesture.hapticFeedback = false
+        let controller = makeController()
+        XCTAssertTrue(controller.logitechSection.isHidden)
+        XCTAssertTrue(controller.resetToDefaultsButton.isEnabled)
+        send(controller.resetToDefaultsButton)
+        XCTAssertEqual(Options.shared.gesture, .default)
+        XCTAssertFalse(controller.resetToDefaultsButton.isEnabled)
+    }
+
+    /// After a reset the button reads "Undo Reset" and brings back exactly the settings
+    /// that were there, actions, switches and values; Edit › Undo and Redo ("Reset
+    /// Gestures") do the same. A change, or the pane going away, makes it "Reset to
+    /// Defaults" again.
+    func testAfterAResetTheButtonOffersToUndoItAndUndoBringsBackEverySetting() {
+        support = master4
+        Options.shared.gesture = changedGesture
+        let before = Options.shared.gesture
+        let (controller, undo) = makeControllerWithUndo()
+        let controls = controller.controls!
+        let button = controller.resetToDefaultsButton
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertTrue(button.isEnabled)
+        XCTAssertFalse(controller.resetToDefaults.offersUndo)
+
+        click(button, undo)
+        XCTAssertEqual(Options.shared.gesture, .default)
+        XCTAssertTrue(controller.resetToDefaults.offersUndo)
+        XCTAssertEqual(button.title, "Undo Reset")
+        XCTAssertTrue(button.isEnabled, "not greyed out although nothing differs")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Reset Gestures")
+
+        // "Undo Reset": every action, switch and value is back, and shown.
+        send(button)
+        XCTAssertEqual(Options.shared.gesture, before)
+        XCTAssertEqual(Options.shared.gesture.rightAction, "")
+        XCTAssertEqual(Options.shared.gesture.trackingSpeed, 2.2, "as stored, not moved onto a tick")
+        XCTAssertEqual(controls.modeControl.selectedSegment, 1)
+        XCTAssertEqual(title(of: controls.actionPopUp(for: .up)), SystemShortcut.copy.localizedName)
+        XCTAssertEqual(title(of: controls.actionPopUp(for: .click)), SystemShortcut.mouseMiddleClick.localizedName)
+        XCTAssertFalse(controls.actionPopUp(for: .left).isEnabled, "the swipe has Left and Right again")
+        XCTAssertTrue(MouseGestureSettingsControls.isOn(controls.invertToggle))
+        XCTAssertFalse(MouseGestureSettingsControls.isOn(controls.freezeToggle))
+        XCTAssertEqual(controller.trackingSpeedRow.valueText, speedText(2.2))
+        XCTAssertEqual(controller.deviceTrackingSwitch.state, .on)
+        XCTAssertEqual(controller.hapticsSwitch.state, .off)
+        XCTAssertEqual(controller.previewView.scene.gesture, before)
+        XCTAssertFalse(controller.resetToDefaults.offersUndo)
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertTrue(button.isEnabled)
+        XCTAssertTrue(undo.canRedo)
+        XCTAssertEqual(undo.redoMenuItemTitle, "Redo Reset Gestures")
+
+        // Edit › Redo resets again, Edit › Undo takes that back too.
+        undo.redo()
+        XCTAssertEqual(Options.shared.gesture, .default)
+        XCTAssertEqual(controls.modeControl.selectedSegment, 0)
+        XCTAssertFalse(button.isEnabled)
+        undo.undo()
+        XCTAssertEqual(Options.shared.gesture, before)
+        XCTAssertTrue(button.isEnabled)
+
+        // A change after a reset ends the offer: the next click resets, it does not undo.
+        click(button, undo)
+        XCTAssertTrue(controller.resetToDefaults.offersUndo)
+        toggle(controls.invertToggle, on: true)
+        XCTAssertFalse(controller.resetToDefaults.offersUndo)
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertTrue(button.isEnabled)
+        click(button, undo)
+        XCTAssertEqual(Options.shared.gesture, .default, "a reset")
+        XCTAssertTrue(controller.resetToDefaults.offersUndo)
+
+        // The settings changed behind the pane's back: the click still resets.
+        Options.shared.gesture.freezePointer = false
+        click(button, undo)
+        XCTAssertEqual(Options.shared.gesture, .default, "a reset, not an Undo of the one before")
+
+        // The pane goes away: the offer goes with it.
+        XCTAssertTrue(controller.resetToDefaults.offersUndo)
+        controller.viewDidDisappear()
+        XCTAssertFalse(controller.resetToDefaults.offersUndo)
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertFalse(button.isEnabled)
+    }
+
+    /// The offer lasts a moment (eight seconds, as in Scrolling) and ends by itself; the
+    /// reset stays under Edit › Undo.
+    func testTheUndoOfferEndsByItselfAndEditUndoStillWorks() {
+        Options.shared.gesture = changedGesture
+        let before = Options.shared.gesture
+        XCTAssertEqual(makeController().resetToDefaults.undoOfferDuration, 8)
+        XCTAssertEqual(PreferencesScrollingViewController().undoOfferDuration, 8, "the same moment")
+        let (controller, undo) = makeControllerWithUndo()
+        controller.resetToDefaults.undoOfferDuration = 0.05
+        let button = controller.resetToDefaultsButton
+
+        click(button, undo)
+        XCTAssertEqual(button.title, "Undo Reset")
+        let deadline = Date().addingTimeInterval(10)
+        while controller.resetToDefaults.offersUndo, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        XCTAssertFalse(controller.resetToDefaults.offersUndo)
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertFalse(button.isEnabled, "nothing differs from the defaults")
+        XCTAssertEqual(Options.shared.gesture, .default, "the reset stays")
+
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Reset Gestures")
+        undo.undo()
+        XCTAssertEqual(Options.shared.gesture, before)
+        XCTAssertTrue(button.isEnabled)
     }
 
     // MARK: - Strings
