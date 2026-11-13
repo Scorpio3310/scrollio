@@ -17,7 +17,7 @@
 //  This mouse has no thumb wheel, no gesture button and no thumb rest.
 //
 //  Both views are the same mouse at the same size, 114 units long. Where the parts are was
-//  measured on a model of the mouse; the lines are this app's own, and every point is a
+//  measured on reference pictures of the mouse; the lines are this app's own, and every point is a
 //  number below that can be moved. How the shapes are painted is in
 //  MouseArtworkTwoViews.swift.
 //
