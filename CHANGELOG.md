@@ -8,7 +8,7 @@ it for the people who use the app, and give the version its part before you tag 
 `## Unreleased` collects what the next version brings; it becomes that version's part
 (the heading gets the version) before the tag.
 
-## Unreleased
+## 1.0.5
 
 **The Shortcut Ring arrives:** eight shortcuts around your pointer, one button away.
 
