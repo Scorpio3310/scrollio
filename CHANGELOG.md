@@ -10,6 +10,13 @@ it for the people who use the app, and give the version its part before you tag 
 
 ## Unreleased
 
+- **A Logitech mouse on a receiver is found when it connects later.** Scrollio looked for
+  mice on a Bolt or Unifying receiver once, when it started or the Mac woke up. A mouse
+  that was asleep, switched off or out of range at that moment was not seen until you
+  restarted Scrollio, unless Logi Options+ was running. Scrollio now asks the receiver to
+  say when a device connects, and no longer gives up on a mouse because the receiver was
+  busy with the keyboard next to it. A mouse you switch off and on gets its buttons back.
+  The system log says what was found on the receiver (see "Uninstalling and diagnostics").
 - **Shortcut Ring**: a ring of eight shortcuts that opens around the pointer, for any
   mouse. Give a mouse button, a Logitech button such as the MX Master 4's thumb panel, or
   a key combination the new action "Shortcut Ring" (Buttons, or "Set Up…" in the new

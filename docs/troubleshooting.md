@@ -79,7 +79,17 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   write, requests the mouse refused or did not answer, gesture haptic cues, and slow
   writes. A gesture button that the mouse tracks itself writes one line per press
   (`raw XY: CID 0x01A0 released after 14 samples`). A mouse is named by its model, as the
-  mouse reports it; never by a name you gave it in the Bluetooth settings.
+  mouse reports it; never by a name you gave it in the Bluetooth settings. For a
+  receiver: whether its connection reports were on or had to be switched on, what each
+  of its six places answered when Scrollio started, where a mouse was found, and each
+  time a device connects or disconnects:
+
+  ```text
+  [USB Receiver] Receiver connection reports: were off, switched on
+  [USB Receiver] Receiver slots: connected: 2; not connected (asleep, off or out of range): 1; empty: 3, 4, 5, 6
+  [USB Receiver] Receiver: mouse in slot 2
+  [MX Master 3S slot 0x02] Disconnected (the receiver says so)
+  ```
 - `app`: Scrollio's own health: each start and stop with its cause (launch, sleep and
   wake, another user, Pause, Accessibility access lost or back, quit), event taps that
   could not be created or that macOS turned off, restarts, settings that could not be
