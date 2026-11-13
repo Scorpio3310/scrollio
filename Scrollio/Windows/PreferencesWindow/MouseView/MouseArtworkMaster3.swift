@@ -12,8 +12,8 @@
 //  From the thumb side (front to the left, the mouse on its base; wider than the grid,
 //  inside MouseArtworkShapes.canvas): the thumb wheel on top, Forward and Back in a row
 //  right under it, and the thumb rest beneath. This mouse has no gesture button of its
-//  own: the front of the thumb rest is pressed down, and that pad, with a short ridge, is
-//  what lights for it. It has no thumb panel.
+//  own: the thumb rest itself is the button, pressed straight down, so it lights from
+//  above, as the pad on the wing with a short ridge. It has no thumb panel.
 //
 //  Both views are the same mouse at the same size, 117 units long. Where the parts are was
 //  measured on the mouse; the lines are this app's own, and every point is a number below
@@ -31,8 +31,8 @@ struct MouseArtworkMaster3: MouseArtworkTwoViews {
     /// side the mouse is also drawn taller (`MouseArtworkBar.schematicRise`).
     var schematic = false
 
-    /// The gesture pad is the tinted area of the thumb rest. No clear rim, no light and no
-    /// ring of dots on this mouse.
+    /// The gesture pad is the tinted area of the thumb rest (from above). No clear rim, no
+    /// light and no ring of dots on this mouse.
     let restPart = MouseArtworkPart.gesture
     let hasClearRim = false
     var panelDots: NSBezierPath? { return nil }
@@ -261,35 +261,34 @@ struct MouseArtworkMaster3: MouseArtworkTwoViews {
 
     // MARK: - The gesture button
 
-    /// The gesture button: the front of the thumb rest, pressed down with the thumb. It
-    /// shows from the thumb side only, as a pad under Forward, inside the rest's edge.
+    /// The gesture button: the thumb rest itself. The whole ledge the thumb lies on is one
+    /// button, pressed straight down ("at the base of the thumb cradle", as reviews put it;
+    /// the owner, who has the mouse, placed it in the middle of the wing). So it shows and
+    /// lights from above, as the pad on the wing; from the side there is nothing to light.
     private func gesturePad() -> NSBezierPath? {
-        guard viewpoint == .thumbSide else { return nil }
+        guard viewpoint == .above else { return nil }
         let path = NSBezierPath()
-        path.move(to: p(27.2, 64.6))
-        // Its upper edge, under the Forward button.
-        path.curve(to: p(47.0, 62.0), controlPoint1: p(33.5, 66.6), controlPoint2: p(41, 64.4))
-        // Its rear edge.
-        path.curve(to: p(51.0, 70), controlPoint1: p(50.2, 62.6), controlPoint2: p(51.6, 66))
-        path.curve(to: p(47.5, 76.6), controlPoint1: p(50.8, 73.6), controlPoint2: p(49.8, 76.3))
-        // Along the rest's lower edge, and up round its front.
-        path.line(to: p(34.8, 76.8))
-        path.curve(to: p(25.7, 71.8), controlPoint1: p(30.4, 76.3), controlPoint2: p(27.2, 74.4))
-        path.curve(to: p(27.2, 64.6), controlPoint1: p(24.4, 69.4), controlPoint2: p(24.6, 66.2))
+        path.move(to: p(13.0, 58.5))
+        // Its front, under the wing's top edge, and down along the thumb wheel's slot.
+        path.curve(to: p(19.6, 62.5), controlPoint1: p(15.6, 56.8), controlPoint2: p(18.6, 58.8))
+        path.curve(to: p(21.6, 84.0), controlPoint1: p(20.2, 68.5), controlPoint2: p(20.4, 77.5))
+        // Round its rear, inside the lobe.
+        path.curve(to: p(19.0, 94.5), controlPoint1: p(22.4, 88.0), controlPoint2: p(21.6, 92.2))
+        path.curve(to: p(10.4, 91.5), controlPoint1: p(16.6, 96.6), controlPoint2: p(13.0, 95.0))
+        // Up the wing's outer side.
+        path.curve(to: p(7.6, 79.5), controlPoint1: p(8.6, 88.8), controlPoint2: p(7.4, 84.4))
+        path.curve(to: p(13.0, 58.5), controlPoint1: p(7.8, 71.0), controlPoint2: p(9.6, 62.0))
         path.close()
-        guard schematic else { return path }
-        // The small pictures' buttons are larger and need the room: the pad is lower.
-        path.transform(using: AffineTransform(translationByX: 0, byY: 6.5))
         return path
     }
 
-    /// The short ridge on the thumb rest that marks its gesture button (from the side; too
-    /// fine for the small pictures).
+    /// The short ridge on the thumb rest that marks its button (from above, along the
+    /// thumb; too fine for the small pictures).
     var restRidge: NSBezierPath? {
-        guard viewpoint == .thumbSide, !schematic else { return nil }
+        guard viewpoint == .above, !schematic else { return nil }
         let path = NSBezierPath()
-        path.move(to: p(31.5, 70.4))
-        path.curve(to: p(40.5, 70.6), controlPoint1: p(34.5, 71.6), controlPoint2: p(37.5, 71.6))
+        path.move(to: p(13.6, 73.0))
+        path.curve(to: p(14.2, 82.0), controlPoint1: p(13.2, 76.0), controlPoint2: p(13.6, 79.0))
         return path
     }
 

@@ -1189,13 +1189,13 @@ final class PreferencesButtonsTests: XCTestCase {
             XCTAssertFalse(base.isTurning, "no animation under Reduce Motion: \(content.title)")
         }
 
-        // An MX Master 3S turns the same way: for its side buttons, its thumb wheel and its
-        // gesture button (the pad in the thumb rest).
+        // An MX Master 3S turns the same way for its side buttons and its thumb wheel. Its
+        // gesture button is the thumb rest, which shows from above: no turn for it.
         header.mouse = .mxMaster3
         for (content, viewpoint) in [
             (ButtonsHeaderContent(title: "Back button", subtitle: "Copy", part: .back), MouseArtworkViewpoint.thumbSide),
             (ButtonsHeaderContent(title: "Mode shift button", subtitle: "Copy", part: .modeShift), .above),
-            (ButtonsHeaderContent(title: "Gesture button", subtitle: "Copy", part: .gesture), .thumbSide),
+            (ButtonsHeaderContent(title: "Gesture button", subtitle: "Copy", part: .gesture), .above),
             (ButtonsHeaderContent(title: "Thumb wheel", subtitle: "Default", part: nil, lightsThumbWheel: true), .thumbSide),
             (ButtonsHeaderContent(title: "MX Master 3S", subtitle: "1 button has an action.", part: nil), .above),
         ] {
@@ -1448,7 +1448,8 @@ final class PreferencesButtonsTests: XCTestCase {
 
     /// A row's picture of an MX Master is the view its part lights in: the mouse upright,
     /// seen from above, for the buttons and the wheel; lying across, seen from its thumb
-    /// side, for the side buttons, the gesture button, the thumb panel and the thumb wheel.
+    /// side, for the side buttons, the MX Master 4's gesture button, the thumb panel and the
+    /// thumb wheel (the MX Master 3's gesture button is its thumb rest: from above).
     /// Both fit the picture. The plain mouse is always seen from above.
     func testTheRowsPictureIsTheViewItsPartLightsIn() throws {
         let frame = NSRect(origin: .zero, size: ButtonsMouseMiniature.size)
@@ -1456,7 +1457,8 @@ final class PreferencesButtonsTests: XCTestCase {
         for part in ButtonsMousePart.allCases {
             for mouse in [MouseArtworkModel.mxMaster4, .mxMaster3] where mouse.has(part.artworkPart) {
                 let body = ButtonsMouseMiniature.bodyPath(of: mouse, lighting: part, in: frame).bounds
-                XCTAssertEqual(body.width > body.height, side.contains(part), "\(mouse) \(part)")
+                let fromTheSide = side.contains(part) && !(mouse == .mxMaster3 && part == .gesture)
+                XCTAssertEqual(body.width > body.height, fromTheSide, "\(mouse) \(part)")
                 XCTAssertTrue(frame.contains(body), "\(mouse) \(part): the mouse fits the picture")
                 let shape = try XCTUnwrap(ButtonsMouseMiniature.shape(of: part, mouse: mouse, in: frame)).bounds
                 XCTAssertTrue(body.insetBy(dx: -1, dy: -1).contains(shape), "\(mouse) \(part) is on the mouse")

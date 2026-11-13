@@ -72,9 +72,10 @@ final class MouseArtworkTests: XCTestCase {
     // MARK: - The views
 
     /// From above for every mouse; the MX Master 4 and 3 also from the thumb side. What the
-    /// thumb works lights there (on the MX Master 3 that is the thumb wheel, the two side
-    /// buttons and the gesture pad in the thumb rest; it has no thumb panel), the rest from
-    /// above; nothing lit, the whole mouse, or a part the mouse does not have: from above.
+    /// thumb works lights there (on the MX Master 3 that is the thumb wheel and the two side
+    /// buttons; its gesture button is the thumb rest itself, pressed down, and lights from
+    /// above; it has no thumb panel), the rest from above; nothing lit, the whole mouse, or
+    /// a part the mouse does not have: from above.
     func testAPartLightsInOneViewOfTheDrawing() {
         XCTAssertEqual(MouseArtworkModel.mxMaster4.viewpoints, [.above, .thumbSide])
         XCTAssertEqual(MouseArtworkModel.mxMaster3.viewpoints, [.above, .thumbSide])
@@ -86,10 +87,10 @@ final class MouseArtworkTests: XCTestCase {
         for part in MouseArtworkPart.allCases {
             XCTAssertEqual(MouseArtworkModel.mxMaster4.viewpoint(lighting: part), side.contains(part) ? .thumbSide : .above, "\(part)")
             XCTAssertEqual(MouseArtworkModel.mxMaster3.viewpoint(lighting: part),
-                           side.contains(part) && part != .thumbPanel ? .thumbSide : .above, "\(part)")
+                           side.contains(part) && part != .thumbPanel && part != .gesture ? .thumbSide : .above, "\(part)")
             XCTAssertEqual(MouseArtworkModel.generic.viewpoint(lighting: part), .above, "\(part)")
         }
-        XCTAssertEqual(MouseArtworkModel.mxMaster3.sideParts, [.thumbWheel, .forward, .back, .gesture])
+        XCTAssertEqual(MouseArtworkModel.mxMaster3.sideParts, [.thumbWheel, .forward, .back])
         for model in MouseArtworkModel.allCases {
             XCTAssertEqual(model.viewpoint(lighting: nil), .above)
             XCTAssertTrue(model.sideParts.isSubset(of: Set(model.parts)))
@@ -180,14 +181,29 @@ final class MouseArtworkTests: XCTestCase {
 
     /// The MX Master 3 from above: the wheel in its long slot between the two buttons, the
     /// small button behind the slot, the thumb wheel along the left shoulder under the left
-    /// button's end, and the thumb wing. Its side buttons and the gesture pad are under the
-    /// overhang: they are not in this view.
+    /// button's end, and the thumb wing with the gesture pad: the thumb rest itself is that
+    /// button, in the middle of the wing. Its side buttons are under the overhang: they are
+    /// not in this view.
     func testTheMasterThreeFromAbove() throws {
         for schematic in [false, true] {
             let above = MouseArtworkShapes(model: .mxMaster3, schematic: schematic)
-            for hidden in [MouseArtworkPart.back, .forward, .gesture, .thumbPanel] {
+            for hidden in [MouseArtworkPart.back, .forward, .thumbPanel] {
                 XCTAssertNil(above.shape(of: hidden), "\(hidden) does not show from above")
             }
+            // The gesture pad: on the wing, outside the thumb wheel, in the middle of the
+            // wing's length, and the large part of the thumb's side.
+            let pad = try XCTUnwrap(above.shape(of: .gesture))
+            let roller = try XCTUnwrap(above.shape(of: .thumbWheel))
+            let whole = above.outline()
+            XCTAssertLessThan(pad.bounds.maxX, above.mainBody.minX, "on the wing, not on the body")
+            XCTAssertTrue(pad.cgPath.intersection(roller.cgPath).isEmpty, "beside the thumb wheel, not under it")
+            for corner in [NSPoint(x: pad.bounds.midX, y: pad.bounds.minY + 1), NSPoint(x: pad.bounds.midX, y: pad.bounds.maxY - 1),
+                           NSPoint(x: pad.bounds.minX + 1, y: pad.bounds.midY), NSPoint(x: pad.bounds.maxX - 1, y: pad.bounds.midY)] {
+                XCTAssertTrue(whole.contains(corner), "the pad is on the mouse")
+            }
+            let wing = NSRect(x: whole.bounds.minX, y: 46, width: above.mainBody.minX - whole.bounds.minX, height: 57)
+            XCTAssertEqual(pad.bounds.midY, wing.midY, accuracy: 6, "in the middle of the wing, not at its front")
+            XCTAssertGreaterThan(pad.bounds.height, 0.5 * wing.height, "the whole rest is the button")
             let left = try XCTUnwrap(above.shape(of: .left)).bounds
             let right = try XCTUnwrap(above.shape(of: .right)).bounds
             let wheel = try XCTUnwrap(above.shape(of: .wheel)).bounds
@@ -214,12 +230,12 @@ final class MouseArtworkTests: XCTestCase {
     }
 
     /// The MX Master 3 from the thumb side, front to the left: the thumb wheel on top,
-    /// Forward (in front) and Back in a row right under it, and beneath them the thumb rest,
-    /// whose front is the gesture pad: no button of its own, a pad with a short ridge.
+    /// Forward (in front) and Back in a row right under it, and beneath them the thumb rest.
+    /// The gesture button is that rest, pressed down: it lights from above, not here.
     func testTheMasterThreeFromTheThumbSide() throws {
         for schematic in [false, true] {
             let side = MouseArtworkShapes(model: .mxMaster3, schematic: schematic, viewpoint: .thumbSide)
-            for hidden in [MouseArtworkPart.left, .right, .wheel, .modeShift, .thumbPanel] {
+            for hidden in [MouseArtworkPart.left, .right, .wheel, .modeShift, .gesture, .thumbPanel] {
                 XCTAssertNil(side.shape(of: hidden), "\(hidden) does not light from the side")
             }
             let outline = side.outline().bounds
@@ -227,33 +243,27 @@ final class MouseArtworkTests: XCTestCase {
             let thumbWheel = try XCTUnwrap(side.shape(of: .thumbWheel))
             let forward = try XCTUnwrap(side.shape(of: .forward))
             let back = try XCTUnwrap(side.shape(of: .back))
-            let pad = try XCTUnwrap(side.shape(of: .gesture))
             for (name, button) in [("Forward", forward), ("Back", back)] {
                 XCTAssertGreaterThan(button.bounds.midY, thumbWheel.bounds.midY, "\(name) under the thumb wheel")
                 XCTAssertGreaterThan(button.bounds.midX, thumbWheel.bounds.minX, "\(name) under the thumb wheel, not before it")
                 XCTAssertLessThan(button.bounds.minX, thumbWheel.bounds.maxX + (schematic ? 2 : 0), "\(name) under the thumb wheel, not behind it")
                 XCTAssertTrue(button.cgPath.intersection(thumbWheel.cgPath).isEmpty, "\(name) apart from the thumb wheel")
-                XCTAssertGreaterThan(pad.bounds.midY, button.bounds.midY, "the gesture pad beneath \(name)")
-                XCTAssertTrue(pad.cgPath.intersection(button.cgPath).isEmpty, "the pad is not under \(name)")
-                XCTAssertGreaterThan(pad.bounds.width * pad.bounds.height, 1.5 * button.bounds.width * button.bounds.height,
-                                     "the pad is the large one")
             }
             XCTAssertLessThan(forward.bounds.midX, back.bounds.midX, "Forward in front of Back")
             XCTAssertTrue(forward.cgPath.intersection(back.cgPath).isEmpty, "apart")
-            XCTAssertLessThan(pad.bounds.midX, back.bounds.midX, "the pad is the front of the thumb rest")
-            XCTAssertTrue(outline.contains(pad.bounds), "on the mouse")
             if schematic {
                 let unit = ButtonsMouseMiniature.mouseHeight / MouseArtworkShapes.grid.height
                 let distance = hypot(forward.bounds.midX - back.bounds.midX, forward.bounds.midY - back.bounds.midY) * unit
                 XCTAssertGreaterThanOrEqual(distance, 3, "front and rear apart in the small pictures")
             }
-            // The pad is this drawing's thumb rest part, with its ridge on the card.
+            // The pad is this drawing's thumb rest part; its ridge shows from above, on the card.
             let views = try XCTUnwrap(side.views)
             XCTAssertEqual(views.restPart, .gesture)
-            XCTAssertEqual(views.restRidge != nil, !schematic)
+            XCTAssertNil(views.restRidge, "nothing of the pad from the side")
             XCTAssertFalse(views.hasClearRim)
+            let above = try XCTUnwrap(MouseArtworkShapes(model: .mxMaster3, schematic: schematic).views)
+            XCTAssertEqual(above.restRidge != nil, !schematic)
         }
-        XCTAssertNil(MouseArtworkShapes(model: .mxMaster3).views?.restRidge, "nothing of the pad from above")
     }
 
     /// The two views are the same mouse at the same size, centred on the same point, so the
@@ -403,20 +413,25 @@ final class MouseArtworkTests: XCTestCase {
             XCTAssertEqual(artwork.turn, 0)
             XCTAssertFalse(artwork.isTurning, "\(part)")
         }
-        // The MX Master 3 turns as the MX Master 4 does: for its thumb wheel, its side
-        // buttons and its gesture pad; it has no thumb panel to turn for.
+        // The MX Master 3 turns as the MX Master 4 does, for its thumb wheel and its side
+        // buttons. Its gesture button is the thumb rest, pressed down: that lights from
+        // above and turns nothing. It has no thumb panel to turn for.
         artwork.model = .mxMaster3
         for (part, viewpoint): (MouseArtworkPart, MouseArtworkViewpoint) in [
-            (.back, .thumbSide), (.wheel, .above), (.gesture, .thumbSide), (.modeShift, .above),
+            (.back, .thumbSide), (.wheel, .above), (.gesture, .above), (.modeShift, .above),
             (.thumbWheel, .thumbSide), (.left, .above), (.forward, .thumbSide), (.thumbPanel, .above),
         ] {
             artwork.setEmphasis(part, animated: false)
             XCTAssertEqual(artwork.viewpoint, viewpoint, "MX Master 3 \(part)")
             XCTAssertEqual(artwork.turn, viewpoint == .thumbSide ? 1 : 0)
         }
-        artwork.setEmphasis(.gesture, animated: true)
+        artwork.setEmphasis(.forward, animated: true)
         XCTAssertTrue(artwork.isTurning, "the MX Master 3 turns too")
+        artwork.setEmphasis(.forward, animated: false)
+        artwork.setEmphasis(.gesture, animated: true)
+        XCTAssertTrue(artwork.isTurning, "and back, for its gesture pad on the wing")
         artwork.setEmphasis(.gesture, animated: false)
+        XCTAssertEqual(artwork.viewpoint, .above)
         // Back to the MX Master 4 with a side part lit: its side view, at once.
         artwork.setEmphasis(.back, animated: false)
         artwork.model = .mxMaster4
@@ -446,8 +461,8 @@ final class MouseArtworkTests: XCTestCase {
     }
 
     /// The MX Master 4's gesture button is a side button of its own and its thumb panel the
-    /// large thumb rest; the MX Master 3's gesture button is a pad in the thumb rest (all
-    /// in the views from the thumb side).
+    /// large thumb rest (in the view from the thumb side); the MX Master 3's gesture button
+    /// is its thumb rest, pressed down: the pad on the wing in the view from above.
     func testTheGestureButtonIsWhereTheModelHasIt() throws {
         let four = MouseArtworkShapes(model: .mxMaster4, lighting: .gesture)
         XCTAssertEqual(four.viewpoint, .thumbSide)
@@ -459,11 +474,13 @@ final class MouseArtworkTests: XCTestCase {
         XCTAssertNotEqual(gesture4, rest4)
 
         let three = MouseArtworkShapes(model: .mxMaster3, lighting: .gesture)
-        XCTAssertEqual(three.viewpoint, .thumbSide)
+        XCTAssertEqual(three.viewpoint, .above)
         let gesture3 = try XCTUnwrap(three.shape(of: .gesture)).bounds
-        let forward3 = try XCTUnwrap(three.shape(of: .forward)).bounds
-        XCTAssertGreaterThan(gesture3.midY, forward3.maxY - 1, "below the side buttons, in the thumb rest")
+        let roller3 = try XCTUnwrap(three.shape(of: .thumbWheel)).bounds
+        XCTAssertLessThan(gesture3.maxX, roller3.midX, "on the wing, outside the thumb wheel")
+        XCTAssertGreaterThan(gesture3.height, 2 * roller3.height - 6, "the whole rest, not a spot at its front")
         XCTAssertNotNil(three.views?.restRidge, "marked by a short ridge")
+        XCTAssertNil(MouseArtworkShapes(model: .mxMaster3, viewpoint: .thumbSide).shape(of: .gesture), "nothing to light from the side")
         XCTAssertNil(three.shape(of: .thumbPanel))
         XCTAssertEqual(MouseArtworkModel.mxMaster4.gesturePreviewPart, .gesture)
         XCTAssertEqual(MouseArtworkModel.mxMaster3.gesturePreviewPart, .gesture)

@@ -496,12 +496,12 @@ final class GesturePreviewViewTests: XCTestCase {
         card.show(loop.stillFrame)
         XCTAssertEqual(mouse.viewpoint, .thumbSide)
 
-        // The MX Master 3's gesture button is the pad in its thumb rest: it turns too. The
-        // plain mouse has one view.
+        // The MX Master 3's gesture button is its thumb rest, pressed down: it shows from
+        // above, so this mouse does not turn for the hold. The plain mouse has one view.
         let three = makeView(mouse: .mxMaster3)
         three.deviceCard.show(three.loop.frame(at: (press + release) / 2))
-        XCTAssertEqual(three.deviceCard.mouse.turn, 1)
-        XCTAssertEqual(three.deviceCard.mouse.viewpoint, .thumbSide)
+        XCTAssertEqual(three.deviceCard.mouse.turn, 0)
+        XCTAssertEqual(three.deviceCard.mouse.viewpoint, .above)
         XCTAssertTrue(three.deviceCard.mouse.outlineRect.contains(three.deviceCard.mouse.buttonRect))
         let plain = makeView(mouse: .generic)
         plain.deviceCard.show(plain.loop.frame(at: (press + release) / 2))
@@ -546,7 +546,7 @@ final class GesturePreviewViewTests: XCTestCase {
         NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
         XCTAssertEqual(mouse.model, .mxMaster3)
         XCTAssertNotEqual(mouse.buttonRect, four)
-        XCTAssertEqual(mouse.buttonViewpoint, .thumbSide, "the pad in the thumb rest, seen from the thumb side")
+        XCTAssertEqual(mouse.buttonViewpoint, .above, "the thumb rest is the button, seen from above")
         XCTAssertGreaterThan(mouse.buttonRect.height, four.height, "a pad, larger than the MX Master 4's button")
 
         connected = .generic

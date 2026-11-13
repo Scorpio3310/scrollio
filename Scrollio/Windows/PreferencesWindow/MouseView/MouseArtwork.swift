@@ -90,7 +90,8 @@ enum MouseArtworkModel: CaseIterable {
     var sideParts: Set<MouseArtworkPart> {
         switch self {
         case .mxMaster4: return [.thumbWheel, .forward, .back, .gesture, .thumbPanel]
-        case .mxMaster3: return [.thumbWheel, .forward, .back, .gesture]
+        // The MX Master 3's gesture button is its thumb rest, pressed down: it lights from above.
+        case .mxMaster3: return [.thumbWheel, .forward, .back]
         case .generic: return []
         }
     }
