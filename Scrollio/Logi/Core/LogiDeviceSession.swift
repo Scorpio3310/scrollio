@@ -65,6 +65,10 @@ struct LogiButtonStateTracker {
 ///   HID++), and switching the haptics on for it after a fresh read of their state, unless
 ///   the user switched them off (`LogiGestureController`).
 /// - **The diagnostics window** writes in Debug builds only (`diagnosticsMayWrite`).
+///
+/// One write goes to a receiver itself, not to a mouse: before its slots are pinged, the
+/// bit that makes it report connections and disconnections is switched on if it is off
+/// (`LogiReceiverConnectionReports`). It is left on at teardown.
 class LogiDeviceSession {
 
     // MARK: - Public
@@ -146,6 +150,20 @@ class LogiDeviceSession {
     private(set) var receiverPairedDevices: [ReceiverPairedDevice] = []
     private var pendingSlotPings: Set<UInt8> = []
     private var receiverEnumPhase: Int = 0  // 0=idle, 1=pinging, 2=querying info
+    /// How often each slot was pinged in this enumeration (a slot is pinged again when the
+    /// receiver answers "busy").
+    private var slotPingAttempts: [UInt8: Int] = [:]
+    static let slotPingAttemptLimit = 4
+    static let slotPingRetryDelay: TimeInterval = 0.25
+    private var slotPingTimeout: DispatchWorkItem?
+    static let slotPingPhaseTimeout: TimeInterval = 5.0
+
+    /// The exchange that switches the receiver's connection reports on, before the slots
+    /// are pinged (LogiReceiverConnectionReports). The slot pings wait for it, at most
+    /// `connectionReportsWait`.
+    private var connectionReports = LogiReceiverConnectionReports()
+    private var connectionReportsGate: DispatchWorkItem?
+    static let connectionReportsWait: TimeInterval = 1.0
     /// 启动枚举后, 巡检游标默认选择推迟到 device-info 到齐/超时再做一次 (prefer-mouse, 不锁最低号).
     private var pendingInitialTargetSelection: Bool = false
     private var pendingDeviceInfoSlots: Set<UInt8> = []
@@ -454,12 +472,23 @@ class LogiDeviceSession {
     static let hidppSoftwareId: UInt8 = 0x01
 
     // HID++ 1.0 sub-IDs (receiver register access)
+    private static let hidpp10SetRegister: UInt8 = 0x80
     private static let hidpp10GetRegister: UInt8 = 0x81
     private static let hidpp10GetLongRegister: UInt8 = 0x83
     private static let hidpp10ErrorMsg: UInt8 = 0x8F
+    private static let hidpp10DeviceDisconnection: UInt8 = 0x40
     private static let hidpp10DeviceConnection: UInt8 = 0x41
 
+    // HID++ 1.0 error codes (Logitech's HID++ 1.0 specification for receivers, 2.11)
+    static let hidpp10ErrorBusy: UInt8 = 0x07
+
+    /// Byte 3 of the slot ping: function 1 (ping) with the software id 0x0A. An error that
+    /// answers the ping names it with this byte.
+    static let slotPingFunctionByte: UInt8 = 0x1A
+
     // Receiver registers
+    /// HID++ reporting flags (see LogiReceiverConnectionReports).
+    private static let receiverReportingFlags: UInt8 = 0x00
     private static let receiverPairingInfo: UInt8 = 0xB5
     private static let pairingInfoDeviceInfo: UInt8 = 0x20
     private static let pairingInfoDeviceName: UInt8 = 0x40
@@ -1183,6 +1212,93 @@ class LogiDeviceSession {
         )
     }
 
+    // MARK: Finding the devices on a receiver (pure decisions)
+
+    /// Whether a HID++ 1.0 error answers this app's slot ping. An error names the request it
+    /// refuses by that request's bytes 2 and 3: for the ping the root feature (0x00) and
+    /// `slotPingFunctionByte`. An error for another program's request to the same slot, or
+    /// for another request of this app, says nothing about the ping.
+    static func hidpp10ErrorAnswersSlotPing(refusedSubId: UInt8, refusedAddress: UInt8) -> Bool {
+        return refusedSubId == 0x00 && refusedAddress == slotPingFunctionByte
+    }
+
+    enum SlotPingErrorStep: Equatable {
+        /// The receiver was busy with another device: this slot is asked again.
+        case askAgain(attempt: Int)
+        /// No device in the slot, or one that is not connected now.
+        case notConnected
+    }
+
+    /// What an error to a slot ping means. "Busy" says nothing about the slot: the receiver
+    /// was passing a message on to another device (a keyboard on the same receiver, another
+    /// program's request) and takes one at a time. It used to count as "no device", so a
+    /// mouse in that slot was never looked at. After `slotPingAttemptLimit` pings the slot
+    /// is given up like any other that does not answer.
+    static func slotPingErrorStep(errorCode: UInt8, attempt: Int) -> SlotPingErrorStep {
+        guard errorCode == hidpp10ErrorBusy, attempt < slotPingAttemptLimit else { return .notConnected }
+        return .askAgain(attempt: attempt + 1)
+    }
+
+    /// Whether a slot that (re)connected may be discovered now. Not while the slots are
+    /// still pinged, and not while the first choice of slots is pending: that choice
+    /// discovers every connected slot itself, and a second discovery beside it would mix up
+    /// the answers (the answer to a feature look-up names neither feature nor request).
+    static func receiverTakeoverMayStart(enumPhase: Int, awaitingFirstSelection: Bool) -> Bool {
+        return enumPhase != 1 && !awaitingFirstSelection
+    }
+
+    /// The slot a "device disconnection" notification names (`10 slot 40 02 …`: the device
+    /// was taken off the receiver); nil for any other report.
+    static func receiverDisconnectionSlot<Bytes: RandomAccessCollection>(_ report: Bytes) -> UInt8?
+    where Bytes.Element == UInt8, Bytes.Index == Int {
+        guard report.count >= 4 else { return nil }
+        let base = report.startIndex
+        guard report[base] == hidppShortReportId,
+              report[base + 2] == hidpp10DeviceDisconnection,
+              report[base + 3] == 0x02 else { return nil }
+        let slot = report[base + 1]
+        return slot >= 1 && slot <= 6 ? slot : nil
+    }
+
+    /// What the slot pings found, for the system log: the slots by what they answered, e.g.
+    /// "connected: 2; not connected (asleep, off or out of range): 1; empty: 3, 4, 5, 6".
+    /// No names: a log is pasted into bug reports.
+    static func receiverSlotsSummary(_ devices: [ReceiverPairedDevice]) -> String {
+        func state(_ device: ReceiverPairedDevice) -> String {
+            if device.isConnected { return "connected" }
+            switch device.lastError {
+            case "UnknownDevice": return "empty"
+            case "ResourceError": return "not connected (asleep, off or out of range)"
+            case "Busy": return "receiver busy"
+            case "Timeout", nil: return "no answer"
+            case let other?: return "refused (\(other))"
+            }
+        }
+        var order: [String] = []
+        var slots: [String: [UInt8]] = [:]
+        for device in devices.sorted(by: { $0.slot < $1.slot }) {
+            let key = state(device)
+            if slots[key] == nil { order.append(key) }
+            slots[key, default: []].append(device.slot)
+        }
+        // Connected first, empty last, the rest in slot order between them.
+        let rank: (String) -> Int = { $0 == "connected" ? 0 : ($0 == "empty" ? 2 : 1) }
+        return order
+            .enumerated()
+            .sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }
+            .map { "\($0.element): \(slots[$0.element]!.map { String($0) }.joined(separator: ", "))" }
+            .joined(separator: "; ")
+    }
+
+    /// What a finished look at the connected slots found, for the system log.
+    static func receiverSweepLine(mouseSlots: [UInt8]) -> String {
+        guard !mouseSlots.isEmpty else {
+            return "Receiver: no mouse among the connected devices (none has a left and a right button Scrollio can read)"
+        }
+        let slots = mouseSlots.map { String($0) }.joined(separator: ", ")
+        return "Receiver: \(mouseSlots.count == 1 ? "mouse in slot" : "mice in slots") \(slots)"
+    }
+
     #if DEBUG
     internal static func receiverTargetIsConnectedForTests(
         connectionMode: ConnectionMode,
@@ -1293,6 +1409,14 @@ class LogiDeviceSession {
         tornDownWithDeviceGone = deviceGone
         pendingInitialTargetSelection = false
         pendingDeviceInfoSlots.removeAll()
+        // Nothing of an enumeration under way may fire into a session that was torn down.
+        receiverEnumPhase = 0
+        pendingSlotPings.removeAll()
+        slotPingTimeout?.cancel()
+        slotPingTimeout = nil
+        connectionReportsGate?.cancel()
+        connectionReportsGate = nil
+        connectionReports.cancel()
         let managedSlots = receiverManagedSlots
         receiverManagedSlots.removeAll()
         pendingDivertSlots.removeAll()
@@ -2120,26 +2244,82 @@ class LogiDeviceSession {
     func enumerateReceiverDevices() {
         guard connectionMode == .receiver else { return }
         receiverPairedDevices = (1...6).map { ReceiverPairedDevice(slot: UInt8($0)) }
-        pendingSlotPings = Set((1 as UInt8)...(6 as UInt8))
+        pendingSlotPings.removeAll()
+        slotPingAttempts.removeAll()
+        slotPingTimeout?.cancel()
+        slotPingTimeout = nil
         receiverEnumPhase = 1
         LogiDebugPanel.log("[\(deviceInfo.name)] Enumerating receiver slots 1-6...")
+        // The receiver's connection reports first, then the slots: so nothing connects
+        // unseen between a slot's ping and the moment the reports are on.
+        switchOnReceiverConnectionReports()
+    }
+
+    // MARK: - The receiver's connection reports (register 0x00)
+
+    /// Reads the receiver's reporting flags and switches "wireless notifications" on when
+    /// they are off; the slot pings follow (why: LogiReceiverConnectionReports). The flag
+    /// stays on at teardown: another program may count on it, and it changes nothing for
+    /// the devices.
+    private func switchOnReceiverConnectionReports() {
+        connectionReports.start()
+        connectionReportsGate?.cancel()
+        let gate = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.carryOut(self.connectionReports.waitedLongEnough())
+        }
+        connectionReportsGate = gate
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.connectionReportsWait, execute: gate)
+        sendReceiverRegisterGet(register: Self.receiverReportingFlags, isLong: false)
+    }
+
+    private func carryOut(_ step: LogiReceiverConnectionReports.Step) {
+        switch step {
+        case .nothing:
+            break
+        case .write(let value):
+            sendReceiverRegisterSet(register: Self.receiverReportingFlags, value: value)
+        case .pingSlots(let outcome):
+            noteConnectionReports(outcome)
+            sendSlotPings()
+        case .note(let outcome):
+            noteConnectionReports(outcome)
+        }
+    }
+
+    private func noteConnectionReports(_ outcome: String) {
+        let message = "Receiver connection reports: \(outcome)"
+        LogiDebugPanel.log("[\(deviceInfo.name)] \(message)")
+        LogiSystemLog.note("\(sessionLogTag) \(message)")
+    }
+
+    /// The slot pings of an enumeration, when the exchange about the connection reports
+    /// says so (it says so once).
+    private func sendSlotPings() {
+        connectionReportsGate?.cancel()
+        connectionReportsGate = nil
+        guard connectionMode == .receiver, receiverEnumPhase == 1 else { return }
 
         for slot: UInt8 in 1...6 {
+            slotPingAttempts[slot] = 1
             pingReceiverSlot(slot)
         }
 
         // 超时: 5秒后自动完成 ping 阶段
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+        let timeout = DispatchWorkItem { [weak self] in
             guard let self = self, self.receiverEnumPhase == 1 else { return }
-            // 未响应的 slot 标记为未连接
+            // 未响应的 slot 标记为未连接 (a slot the receiver was busy for keeps "Busy")
             for slot in self.pendingSlotPings {
-                if let idx = self.receiverPairedDevices.firstIndex(where: { $0.slot == slot }) {
+                if let idx = self.receiverPairedDevices.firstIndex(where: { $0.slot == slot }),
+                   self.receiverPairedDevices[idx].lastError == nil {
                     self.receiverPairedDevices[idx].lastError = "Timeout"
                 }
             }
             self.pendingSlotPings.removeAll()
             self.finishPingPhase()
         }
+        slotPingTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.slotPingPhaseTimeout, execute: timeout)
     }
 
     /// Ping 特定 receiver slot (发送 IRoot.Ping)
@@ -2211,6 +2391,24 @@ class LogiDeviceSession {
         queueReport(report, .receiverRegister(register, long: isLong))
     }
 
+    /// HID++ 1.0 register SET on the receiver itself (a short register: three value bytes).
+    private func sendReceiverRegisterSet(register: UInt8, value: [UInt8]) {
+        var report = [UInt8](repeating: 0, count: 7)
+        report[0] = Self.hidppShortReportId
+        report[1] = 0xFF  // receiver device index
+        report[2] = Self.hidpp10SetRegister
+        report[3] = register
+        for (i, byte) in value.prefix(3).enumerated() {
+            report[4 + i] = byte
+        }
+
+        let hex = report.map { String(format: "%02X", $0) }.joined(separator: " ")
+        let valueHex = value.prefix(3).map { String(format: "%02X", $0) }.joined(separator: " ")
+        LogiDebugPanel.log(device: deviceInfo.name, type: .tx, message: "TX: \(hex)",
+                                  decoded: "SET_REGISTER(0x\(String(format: "%02X", register)), [\(valueHex)])")
+        queueReport(report, .receiverRegisterWrite(register))
+    }
+
     // MARK: - Receiver Response Handlers
 
     /// 处理 HID++ 1.0 错误响应 (sub-ID 0x8F)
@@ -2226,14 +2424,40 @@ class LogiDeviceSession {
         ]
         let errorName = hidpp10ErrorNames[errorCode] ?? "0x\(String(format: "%02X", errorCode))"
 
-        // 更新 receiver slot 状态 (如果是 ping 错误)
-        if devIdx >= 1 && devIdx <= 6 && pendingSlotPings.contains(devIdx) {
-            pendingSlotPings.remove(devIdx)
-            if let idx = receiverPairedDevices.firstIndex(where: { $0.slot == devIdx }) {
-                receiverPairedDevices[idx].isConnected = false
-                receiverPairedDevices[idx].lastError = errorName
+        // 更新 receiver slot 状态 (如果是 ping 错误). Only an error that names the ping: one
+        // for another request to the slot (another program's, say) is not the ping's answer.
+        if devIdx >= 1 && devIdx <= 6 && pendingSlotPings.contains(devIdx), report.count > 4,
+           Self.hidpp10ErrorAnswersSlotPing(refusedSubId: report[3], refusedAddress: report[4]) {
+            let slotIndex = receiverPairedDevices.firstIndex(where: { $0.slot == devIdx })
+            switch Self.slotPingErrorStep(errorCode: errorCode, attempt: slotPingAttempts[devIdx] ?? 1) {
+            case .askAgain(let attempt):
+                // The slot stays pending and is pinged again a moment later, when the
+                // receiver has passed on the message it was busy with.
+                slotPingAttempts[devIdx] = attempt
+                if let idx = slotIndex {
+                    receiverPairedDevices[idx].lastError = errorName
+                }
+                LogiDebugPanel.log(device: deviceInfo.name, type: .info,
+                    message: "Slot \(devIdx): receiver busy, ping \(attempt) of \(Self.slotPingAttemptLimit) follows")
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.slotPingRetryDelay) { [weak self] in
+                    guard let self = self, self.receiverEnumPhase == 1,
+                          self.pendingSlotPings.contains(devIdx) else { return }
+                    self.pingReceiverSlot(devIdx)
+                }
+            case .notConnected:
+                pendingSlotPings.remove(devIdx)
+                if let idx = slotIndex {
+                    receiverPairedDevices[idx].isConnected = false
+                    receiverPairedDevices[idx].lastError = errorName
+                }
+                checkPingPhaseComplete()
             }
-            checkPingPhaseComplete()
+        }
+
+        // The receiver refused the read or the write of its own reporting flags.
+        if devIdx == 0xFF, report.count > 4, report[4] == Self.receiverReportingFlags,
+           report[3] == Self.hidpp10GetRegister || report[3] == Self.hidpp10SetRegister {
+            carryOut(connectionReports.refused(errorName: errorName))
         }
 
         // GetControlCount of this app refused for the slot being discovered (the device went
@@ -2283,12 +2507,22 @@ class LogiDeviceSession {
 
     /// 完成 ping 阶段, 进入 info 查询阶段
     private func finishPingPhase() {
+        slotPingTimeout?.cancel()
+        slotPingTimeout = nil
         receiverEnumPhase = 2
         let connectedSlots = receiverPairedDevices.filter { $0.isConnected }
         LogiDebugPanel.log("[\(deviceInfo.name)] Ping complete: \(connectedSlots.count)/6 slots connected")
+        // What was found, in the system log: "my mouse is not seen" can then be read from
+        // a log the user sends, without the diagnostics window.
+        LogiSystemLog.note("\(sessionLogTag) Receiver slots: \(Self.receiverSlotsSummary(receiverPairedDevices))")
 
         guard !connectedSlots.isEmpty else {
             receiverEnumPhase = 0
+            // Nothing is connected, so nothing that was queued while the slots were pinged
+            // can be discovered.
+            if !receiverSweepActive {
+                pendingDivertSlots.removeAll()
+            }
             LogiDebugPanel.log("[\(deviceInfo.name)] No devices found on receiver")
             // 无设备 -> 不会进 peripheral discovery, 此处必须清 inflight 防止 spinner 一直转.
             setDiscoveryInFlight(false)
@@ -2499,6 +2733,7 @@ class LogiDeviceSession {
             }
         }
         LogiDebugPanel.log("[\(deviceInfo.name)] Takeover sweep complete: managed=\(receiverManagedSlots.sorted()) cursor=\(deviceIndex)\(mouseSlot != nil ? " (mouse)" : "")")
+        LogiSystemLog.note("\(sessionLogTag) \(Self.receiverSweepLine(mouseSlots: receiverManagedSlots.sorted()))")
         NotificationCenter.default.post(name: LogiSessionManager.sessionChangedNotification, object: nil)
         // sweep 结束后再排空一次: 消费其间因 0x41 新入队的 slot.
         pumpPendingDivertQueue()
@@ -2513,6 +2748,11 @@ class LogiDeviceSession {
     /// 处理 receiver register 响应
     private func handleReceiverRegisterResponse(_ report: UnsafeBufferPointer<UInt8>) {
         let register = report[3]
+
+        if register == Self.receiverReportingFlags && report[2] == Self.hidpp10GetRegister {
+            carryOut(connectionReports.flagsRead([report[4], report[5], report[6]]))
+            return
+        }
 
         if register == Self.receiverPairingInfo {
             let entityIdx = report[4]  // 0-based
@@ -2563,44 +2803,62 @@ class LogiDeviceSession {
             message: "Device \(connected ? "connected" : "disconnected") on slot \(devIdx) (protocol=\(String(format: "0x%02X", protocolType)))")
 
         if devIdx >= 1 && devIdx <= 6 {
-            if let idx = receiverPairedDevices.firstIndex(where: { $0.slot == devIdx }) {
-                receiverPairedDevices[idx].isConnected = connected
-            } else {
-                // 自动追加 (如果枚举尚未运行)
-                var dev = ReceiverPairedDevice(slot: devIdx)
-                dev.isConnected = connected
-                receiverPairedDevices.append(dev)
-                receiverPairedDevices.sort { $0.slot < $1.slot }
-            }
-
-            // 多设备热插拔(Phase 4): 每个 slot 的 0x41 各自决策, 不再单目标抢占式 retarget.
-            // Taken over whatever the bindings say (they only decide what applyUsage diverts).
-            let dev = receiverPairedDevices.first(where: { $0.slot == devIdx })
-            let isDivertCandidate = Self.receiverSlotIsTakeoverCandidate(
-                connected: connected, deviceType: dev?.deviceType ?? 0,
-                knownNotAMouse: receiverNonMouseSlots.contains(devIdx)
-            )
-            let action = Self.receiverSlotConnectionAction(
-                slot: devIdx,
-                connected: connected,
-                isDivertCandidate: isDivertCandidate,
-                alreadyManaged: receiverManagedSlots.contains(devIdx)
-            )
-            LogiDebugPanel.log(
-                "[\(deviceInfo.name)] SlotConnection slot=\(devIdx) connected=\(connected) candidate=\(isDivertCandidate) managed=\(receiverManagedSlots.contains(devIdx)) -> \(action)"
-            )
-
-            switch action {
-            case .ignore:
-                break
-            case .takeover(let slot):
-                scheduleReceiverSlotTakeover(slot: slot)
-            case .release(let slot):
-                cancelReceiverSlotTakeoverDebounce(slot: slot)
-                handleReceiverSlotRelease(slot: slot)
-            }
-            NotificationCenter.default.post(name: LogiSessionManager.sessionChangedNotification, object: nil)
+            applyReceiverSlotLink(slot: devIdx, connected: connected, source: "the receiver says so")
         }
+    }
+
+    /// Device disconnection (sub-ID 0x40): the device was taken off the receiver. The
+    /// notification used to be taken for a report of the device itself, which marked an
+    /// offline slot as connected and had it discovered.
+    private func handleDeviceDisconnectionNotification(slot: UInt8) {
+        LogiDebugPanel.log(device: deviceInfo.name, type: .info,
+            message: "Device taken off the receiver in slot \(slot)")
+        applyReceiverSlotLink(slot: slot, connected: false, source: "taken off the receiver")
+    }
+
+    /// A slot (1...6) connected or disconnected, as the receiver reports it.
+    private func applyReceiverSlotLink(slot devIdx: UInt8, connected: Bool, source: String) {
+        let wasConnected = receiverPairedDevices.first(where: { $0.slot == devIdx })?.isConnected
+        if let idx = receiverPairedDevices.firstIndex(where: { $0.slot == devIdx }) {
+            receiverPairedDevices[idx].isConnected = connected
+        } else {
+            // 自动追加 (如果枚举尚未运行)
+            var dev = ReceiverPairedDevice(slot: devIdx)
+            dev.isConnected = connected
+            receiverPairedDevices.append(dev)
+            receiverPairedDevices.sort { $0.slot < $1.slot }
+        }
+        if wasConnected != connected {
+            LogiSystemLog.note("\(logTag(slot: devIdx)) \(connected ? "Connected" : "Disconnected") (\(source))")
+        }
+
+        // 多设备热插拔(Phase 4): 每个 slot 的 0x41 各自决策, 不再单目标抢占式 retarget.
+        // Taken over whatever the bindings say (they only decide what applyUsage diverts).
+        let dev = receiverPairedDevices.first(where: { $0.slot == devIdx })
+        let isDivertCandidate = Self.receiverSlotIsTakeoverCandidate(
+            connected: connected, deviceType: dev?.deviceType ?? 0,
+            knownNotAMouse: receiverNonMouseSlots.contains(devIdx)
+        )
+        let action = Self.receiverSlotConnectionAction(
+            slot: devIdx,
+            connected: connected,
+            isDivertCandidate: isDivertCandidate,
+            alreadyManaged: receiverManagedSlots.contains(devIdx)
+        )
+        LogiDebugPanel.log(
+            "[\(deviceInfo.name)] SlotConnection slot=\(devIdx) connected=\(connected) candidate=\(isDivertCandidate) managed=\(receiverManagedSlots.contains(devIdx)) -> \(action)"
+        )
+
+        switch action {
+        case .ignore:
+            break
+        case .takeover(let slot):
+            scheduleReceiverSlotTakeover(slot: slot)
+        case .release(let slot):
+            cancelReceiverSlotTakeoverDebounce(slot: slot)
+            handleReceiverSlotRelease(slot: slot)
+        }
+        NotificationCenter.default.post(name: LogiSessionManager.sessionChangedNotification, object: nil)
     }
 
     /// 初始枚举时设备可能仍在休眠且之后不补发 0x41. 第一条真实 peripheral 报文将 slot
@@ -2629,6 +2887,7 @@ class LogiDeviceSession {
         LogiDebugPanel.log(
             "[\(deviceInfo.name)] Inferred slot \(slot) connection from peripheral activity; candidate=\(isDivertCandidate) -> \(action)"
         )
+        LogiSystemLog.note("\(logTag(slot: slot)) Connected (its first report; the receiver had not said so)")
         NotificationCenter.default.post(name: LogiSessionManager.sessionChangedNotification, object: nil)
 
         if case .takeover(let takeoverSlot) = action {
@@ -2693,6 +2952,11 @@ class LogiDeviceSession {
     /// (真机复现: mx4 重连时被 queued 后从未 discovery, 拇指键退回原生鼠标键).
     private func pumpPendingDivertQueue() {
         guard !receiverSweepActive, !pendingDivertSlots.isEmpty else { return }
+        // Held until the first choice of slots was made: it discovers every connected slot
+        // itself (a slot queued here is connected, so it is among them).
+        guard Self.receiverTakeoverMayStart(
+            enumPhase: receiverEnumPhase, awaitingFirstSelection: pendingInitialTargetSelection
+        ) else { return }
         // getFeature 在飞用 pendingDiscovery(权威集)判定, 不用超时 timer ——
         // 旧的共享 discoveryTimer 曾因完成后漏置 nil 变成"已失效但非 nil"永远误判在飞, 把 pump 毒死(见 29f3bd1).
         let anyDiscoveryInFlight = !pendingDiscovery.isEmpty
@@ -2808,6 +3072,14 @@ class LogiDeviceSession {
             default: regName = "0x\(String(format: "%02X", regAddr))"
             }
             return "Register \(featIdx == Self.hidpp10GetLongRegister ? "GET_LONG" : "GET"): \(regName)"
+        }
+
+        if connectionMode == .receiver && devIdx == 0xFF && featIdx == Self.hidpp10SetRegister {
+            return "Register SET taken: \(report[3] == Self.receiverReportingFlags ? "Notifications" : "0x\(String(format: "%02X", report[3]))")"
+        }
+
+        if connectionMode == .receiver, let slot = Self.receiverDisconnectionSlot(report) {
+            return "DeviceDisconnection: slot=\(slot) taken off the receiver"
         }
 
         // Device connection notification (sub-ID 0x41)
@@ -4518,6 +4790,20 @@ class LogiDeviceSession {
             // HID++ 1.0 register response from receiver (device index 0xFF)
             if devIdx == 0xFF && (featureIdx == Self.hidpp10GetRegister || featureIdx == Self.hidpp10GetLongRegister) {
                 handleReceiverRegisterResponse(report)
+                return
+            }
+
+            // The receiver took a register write (this app writes only its reporting flags).
+            if devIdx == 0xFF && featureIdx == Self.hidpp10SetRegister {
+                if report[3] == Self.receiverReportingFlags {
+                    carryOut(connectionReports.writeTaken())
+                }
+                return
+            }
+
+            // Device disconnection notification (sub-ID 0x40): taken off the receiver
+            if let slot = Self.receiverDisconnectionSlot(report) {
+                handleDeviceDisconnectionNotification(slot: slot)
                 return
             }
 

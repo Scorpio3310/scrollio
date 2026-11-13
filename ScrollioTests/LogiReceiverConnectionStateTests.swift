@@ -561,4 +561,169 @@ final class LogiReceiverConnectionStateTests: XCTestCase {
             "USB Receiver"
         )
     }
+
+    // MARK: - A mouse that was not connected when the slots were pinged
+
+    private typealias Reports = LogiReceiverConnectionReports
+
+    /// A receiver says when a device connects only after the host switched those reports
+    /// on; they are off when it gets power. Scrollio pinged the slots once and left the
+    /// flag alone, so a mouse that was asleep at that moment was not seen until the app
+    /// started again (unless Logi Options+ had set the flag).
+    func testTheReceiversConnectionReportsAreSwitchedOnBeforeTheSlotsArePinged() {
+        var reports = Reports()
+        reports.start()
+        XCTAssertEqual(reports.flagsRead([0x00, 0x00, 0x00]), .write([0x00, 0x01, 0x00]),
+                       "off: the write comes first, the slots wait")
+        XCTAssertEqual(reports.writeTaken(), .pingSlots(outcome: "were off, switched on"))
+        XCTAssertEqual(reports.waitedLongEnough(), .nothing, "the slots are pinged once")
+        XCTAssertEqual(reports.writeTaken(), .nothing, "another program's write is not this one's")
+    }
+
+    func testNothingIsWrittenWhenTheReportsAreOnAlready() {
+        var reports = Reports()
+        reports.start()
+        XCTAssertEqual(reports.flagsRead([0x00, 0x09, 0x00]), .pingSlots(outcome: "already on"))
+        XCTAssertEqual(reports.flagsRead([0x00, 0x00, 0x00]), .nothing, "another program's read of the register")
+    }
+
+    /// Only the one bit is set; what another program set in the register stays as it was.
+    func testOnlyTheConnectionReportsBitIsSet() {
+        XCTAssertEqual(Reports.flagsToWrite(current: [0x10, 0x08, 0x02]), [0x10, 0x09, 0x02])
+        XCTAssertNil(Reports.flagsToWrite(current: [0x00, 0x01, 0x00]))
+        XCTAssertNil(Reports.flagsToWrite(current: [0x00, 0x00]), "not the register's three bytes")
+        XCTAssertNil(Reports.flagsToWrite(current: []))
+    }
+
+    /// A receiver that refuses the register, or says nothing about it, still has its slots
+    /// pinged: its devices show as they did before.
+    func testTheSlotsArePingedWhateverTheReceiverSaysAboutItsFlags() {
+        var refusedRead = Reports()
+        refusedRead.start()
+        guard case .pingSlots(let readOutcome) = refusedRead.refused(errorName: "InvalidAddress") else {
+            return XCTFail("a refused read lets the slot pings go")
+        }
+        XCTAssertTrue(readOutcome.contains("refused the read (InvalidAddress)"), readOutcome)
+
+        var refusedWrite = Reports()
+        refusedWrite.start()
+        XCTAssertEqual(refusedWrite.flagsRead([0, 0, 0]), .write([0, 1, 0]))
+        guard case .pingSlots(let writeOutcome) = refusedWrite.refused(errorName: "InvalidValue") else {
+            return XCTFail("a refused write lets the slot pings go")
+        }
+        XCTAssertTrue(writeOutcome.contains("refused the write (InvalidValue)"), writeOutcome)
+        XCTAssertEqual(refusedWrite.refused(errorName: "Busy"), .nothing, "an error for something else")
+
+        var silent = Reports()
+        silent.start()
+        guard case .pingSlots = silent.waitedLongEnough() else {
+            return XCTFail("no answer within the wait: the slots are pinged anyway")
+        }
+        // The answer comes late: the flag is still switched on, the slots are not pinged twice.
+        XCTAssertEqual(silent.flagsRead([0, 0, 0]), .write([0, 1, 0]))
+        XCTAssertEqual(silent.writeTaken(), .note(outcome: "were off, switched on"))
+    }
+
+    func testNothingHappensBeforeAnEnumerationStartsOrAfterTeardown() {
+        var reports = Reports()
+        XCTAssertEqual(reports.flagsRead([0, 0, 0]), .nothing)
+        XCTAssertEqual(reports.waitedLongEnough(), .nothing)
+        reports.start()
+        reports.cancel()
+        XCTAssertEqual(reports.flagsRead([0, 0, 0]), .nothing)
+        XCTAssertEqual(reports.waitedLongEnough(), .nothing)
+        XCTAssertEqual(reports.refused(errorName: "Busy"), .nothing)
+    }
+
+    /// "Busy" is the receiver's state, not the slot's: it was passing a message on to
+    /// another device. It counted as "no device", so with a keyboard on the same receiver
+    /// (or another program talking to it) the mouse's slot could be given up at once.
+    func testASlotIsPingedAgainWhenTheReceiverWasBusy() {
+        XCTAssertEqual(LogiDeviceSession.slotPingErrorStep(errorCode: 0x07, attempt: 1), .askAgain(attempt: 2))
+        XCTAssertEqual(LogiDeviceSession.slotPingErrorStep(errorCode: 0x07, attempt: 3), .askAgain(attempt: 4))
+        XCTAssertEqual(LogiDeviceSession.slotPingErrorStep(errorCode: 0x07, attempt: LogiDeviceSession.slotPingAttemptLimit),
+                       .notConnected, "given up like a slot that does not answer")
+        // No device paired in the slot, and a device that is asleep or off: those are answers.
+        XCTAssertEqual(LogiDeviceSession.slotPingErrorStep(errorCode: 0x08, attempt: 1), .notConnected)
+        XCTAssertEqual(LogiDeviceSession.slotPingErrorStep(errorCode: 0x09, attempt: 1), .notConnected)
+        // Every further ping goes out well within the time the slots are waited for.
+        XCTAssertLessThan(
+            Double(LogiDeviceSession.slotPingAttemptLimit - 1) * LogiDeviceSession.slotPingRetryDelay,
+            LogiDeviceSession.slotPingPhaseTimeout / 2
+        )
+    }
+
+    /// An error names the request it refuses. Any error for a slot used to end that slot's
+    /// ping, another program's refused request included.
+    func testOnlyAnErrorThatNamesThePingAnswersIt() {
+        XCTAssertTrue(LogiDeviceSession.hidpp10ErrorAnswersSlotPing(refusedSubId: 0x00, refusedAddress: 0x1A))
+        XCTAssertFalse(LogiDeviceSession.hidpp10ErrorAnswersSlotPing(refusedSubId: 0x00, refusedAddress: 0x15),
+                       "a ping with another program's software id")
+        XCTAssertFalse(LogiDeviceSession.hidpp10ErrorAnswersSlotPing(refusedSubId: 0x00, refusedAddress: 0x01),
+                       "a feature look-up of this app")
+        XCTAssertFalse(LogiDeviceSession.hidpp10ErrorAnswersSlotPing(refusedSubId: 0x0A, refusedAddress: 0x1A),
+                       "a request to another feature")
+    }
+
+    /// With the reports on, a device can announce itself while the slots are still pinged.
+    /// Its discovery waits for the first choice of slots, which discovers every connected
+    /// slot: two discoveries at once would mix up their answers.
+    func testAReconnectedSlotWaitsForTheFirstChoiceOfSlots() {
+        XCTAssertFalse(LogiDeviceSession.receiverTakeoverMayStart(enumPhase: 1, awaitingFirstSelection: false))
+        XCTAssertFalse(LogiDeviceSession.receiverTakeoverMayStart(enumPhase: 2, awaitingFirstSelection: true))
+        XCTAssertTrue(LogiDeviceSession.receiverTakeoverMayStart(enumPhase: 2, awaitingFirstSelection: false))
+        XCTAssertTrue(LogiDeviceSession.receiverTakeoverMayStart(enumPhase: 0, awaitingFirstSelection: false),
+                      "nothing was connected at the start: a mouse that connects later is discovered")
+    }
+
+    /// "Device disconnection" (0x40) is the receiver's word that a device was taken off it.
+    /// It was read as a report of the device, which marked an offline slot as connected.
+    func testADeviceTakenOffTheReceiverIsADisconnection() {
+        XCTAssertEqual(LogiDeviceSession.receiverDisconnectionSlot([0x10, 0x02, 0x40, 0x02, 0x00, 0x00, 0x00]), 2)
+        XCTAssertNil(LogiDeviceSession.receiverDisconnectionSlot([0x10, 0xFF, 0x40, 0x02, 0x00, 0x00, 0x00]), "the receiver itself")
+        XCTAssertNil(LogiDeviceSession.receiverDisconnectionSlot([0x10, 0x07, 0x40, 0x02, 0x00, 0x00, 0x00]), "no such slot")
+        XCTAssertNil(LogiDeviceSession.receiverDisconnectionSlot([0x10, 0x02, 0x41, 0x04, 0x02, 0x82, 0x40]), "a connection")
+        XCTAssertNil(LogiDeviceSession.receiverDisconnectionSlot([0x10, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00]), "a reserved type")
+        XCTAssertNil(LogiDeviceSession.receiverDisconnectionSlot([0x11, 0x02, 0x40, 0x02, 0x00, 0x00, 0x00]),
+                     "a long report is a device's own")
+        XCTAssertNil(LogiDeviceSession.receiverDisconnectionSlot([0x10, 0x02]))
+        // What follows is what a lost link does: a slot that was taken over is let go.
+        XCTAssertEqual(
+            LogiDeviceSession.receiverSlotConnectionAction(slot: 2, connected: false, isDivertCandidate: false, alreadyManaged: true),
+            .release(2)
+        )
+    }
+
+    /// What the slot pings found goes to the system log, so that "my mouse is not seen"
+    /// can be read from a log someone sends. No name in it.
+    func testTheSystemLogSaysWhatTheSlotPingsFound() {
+        var asleep = LogiDeviceSession.ReceiverPairedDevice(slot: 1)
+        asleep.lastError = "ResourceError"
+        var mouse = LogiDeviceSession.ReceiverPairedDevice(slot: 2)
+        mouse.isConnected = true
+        mouse.name = "Anna's mouse"
+        let empty: [LogiDeviceSession.ReceiverPairedDevice] = (3...6).map {
+            var device = LogiDeviceSession.ReceiverPairedDevice(slot: UInt8($0))
+            device.lastError = "UnknownDevice"
+            return device
+        }
+        let summary = LogiDeviceSession.receiverSlotsSummary([asleep, mouse] + empty)
+        XCTAssertEqual(summary, "connected: 2; not connected (asleep, off or out of range): 1; empty: 3, 4, 5, 6")
+        XCTAssertFalse(summary.contains("Anna"))
+
+        var busy = LogiDeviceSession.ReceiverPairedDevice(slot: 1)
+        busy.lastError = "Busy"
+        var silent = LogiDeviceSession.ReceiverPairedDevice(slot: 2)
+        silent.lastError = "Timeout"
+        var odd = LogiDeviceSession.ReceiverPairedDevice(slot: 3)
+        odd.lastError = "InvalidSubID"
+        XCTAssertEqual(
+            LogiDeviceSession.receiverSlotsSummary([busy, silent, odd, LogiDeviceSession.ReceiverPairedDevice(slot: 4)]),
+            "receiver busy: 1; no answer: 2, 4; refused (InvalidSubID): 3"
+        )
+
+        XCTAssertEqual(LogiDeviceSession.receiverSweepLine(mouseSlots: [2]), "Receiver: mouse in slot 2")
+        XCTAssertEqual(LogiDeviceSession.receiverSweepLine(mouseSlots: [2, 5]), "Receiver: mice in slots 2, 5")
+        XCTAssertTrue(LogiDeviceSession.receiverSweepLine(mouseSlots: []).hasPrefix("Receiver: no mouse among the connected devices"))
+    }
 }

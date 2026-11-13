@@ -57,6 +57,8 @@ struct LogiWriteTiming {
         case ping(slot: UInt8)
         /// HID++ 1.0 register read on the receiver.
         case receiverRegister(UInt8, long: Bool)
+        /// HID++ 1.0 register write on the receiver (a short register).
+        case receiverRegisterWrite(UInt8)
 
         var text: String {
             switch self {
@@ -66,6 +68,8 @@ struct LogiWriteTiming {
                 return String(format: "ping of slot 0x%02X", slot)
             case let .receiverRegister(register, long):
                 return String(format: "receiver register 0x%02X ", register) + (long ? "long read" : "read")
+            case let .receiverRegisterWrite(register):
+                return String(format: "receiver register 0x%02X write", register)
             }
         }
     }
