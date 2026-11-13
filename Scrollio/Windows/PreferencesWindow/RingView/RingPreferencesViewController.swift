@@ -16,7 +16,9 @@
 //  from the top, each with the pull-down a row of the Buttons pane has
 //  (`ButtonActionPullDown`, with the menu of what a place can hold): a listed action, a
 //  key combination recorded there ("Keyboard Shortcut…") or an app, a file or a script
-//  ("Open App or File…", the Buttons pane's popover).
+//  ("Open App or File…", the Buttons pane's popover). Under the boxes "Reset to Defaults",
+//  as in the Scrolling pane (`PreferencesPaneReset`): the eight places and the freeze
+//  switch of a new ring; what opens the ring is a binding of Buttons and stays.
 //
 //  The pane only edits Options.shared.ring.
 //
@@ -189,6 +191,7 @@ final class RingPreferencesViewController: NSViewController {
         static let triggerButton = NSUserInterfaceItemIdentifier("ring-trigger-button")
         static let freezePointer = NSUserInterfaceItemIdentifier("ring-freeze-pointer")
         static let placesHint = NSUserInterfaceItemIdentifier("ring-places-hint")
+        static let reset = NSUserInterfaceItemIdentifier("ring-reset")
 
         static func action(_ place: Int) -> NSUserInterfaceItemIdentifier {
             return NSUserInterfaceItemIdentifier("ring-place-\(place)")
@@ -215,6 +218,8 @@ final class RingPreferencesViewController: NSViewController {
             placePopUps.forEach { $0.startShortcutRecorder = startShortcutRecorder }
         }
     }
+    /// Takes Undo and Redo of "Reset to Defaults"; the window's when nil.
+    var paneUndoManager: UndoManager?
     /// "Open App or File" while it is open for a place.
     private(set) var openTargetPopover: OpenTargetConfigPopover?
     /// The pull-downs' stand-in bindings keep their identity while the pane lives.
@@ -257,6 +262,12 @@ final class RingPreferencesViewController: NSViewController {
     private(set) var placeRows: [PreferencesGroupRow] = []
     private(set) var placePopUps: [ButtonActionPullDown] = []
     private(set) var placesHintLabel: NSTextField!
+    /// "Reset to Defaults" under the boxes: the places and the freeze switch of a new ring.
+    /// Not what opens the ring.
+    private(set) var resetToDefaults: PreferencesPaneReset!
+    var resetToDefaultsButton: NSButton {
+        return resetToDefaults.button
+    }
     /// Everything in the content stack, top to bottom.
     private(set) var sections: [NSView] = []
 
@@ -290,8 +301,9 @@ final class RingPreferencesViewController: NSViewController {
         placePopUps = (0..<ShortcutRingSettings.placeCount).map { makePopUp(for: $0) }
         placeRows = (0..<ShortcutRingSettings.placeCount).map { makePlaceRow($0) }
         let places = makePlacesSection(rows: placeRows)
+        resetToDefaults = makeReset()
 
-        sections = [preview, trigger, places]
+        sections = [preview, trigger, places, PreferencesGroupFooter(trailing: [resetToDefaults.button])]
         PreferencesGroupedForm.add(sections, to: content)
         content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: trigger)
 
@@ -316,6 +328,7 @@ final class RingPreferencesViewController: NSViewController {
         placePopUps.forEach { $0.cancelShortcutRecording() }
         openTargetPopover?.hide()
         openTargetPopover = nil
+        resetToDefaults.endUndoOffer()
     }
 
     // MARK: - Refresh
@@ -337,6 +350,7 @@ final class RingPreferencesViewController: NSViewController {
         // The ring on screen shows this face too: it is made here, not at a press.
         ShortcutRingController.prepare(previewView.face, for: ring)
         showLitPlace()
+        resetToDefaults?.settingsDidChange()
         PreferencesForm.fitToContent(self)
     }
 
@@ -442,6 +456,33 @@ final class RingPreferencesViewController: NSViewController {
             self?.openTargetPopover = nil
         }
         presentOpenTarget(popover, placePopUps[place], Options.shared.ring[place].openTarget)
+    }
+
+    // MARK: - Reset
+
+    /// Where a reset registers its Undo: the window's undo manager while the pane is in
+    /// the window.
+    var undoTarget: UndoManager? {
+        return paneUndoManager ?? view.window?.undoManager
+    }
+
+    /// "Reset to Defaults": the ring of a new installation, its eight places and "Freeze
+    /// pointer while the ring is held" off. The button or key that opens the ring is a
+    /// binding of the Buttons pane and is not touched. Edit › Undo ("Undo Reset Shortcut
+    /// Ring") brings back the ring that was there.
+    private func makeReset() -> PreferencesPaneReset {
+        let reset = PreferencesPaneReset(
+            store: PreferencesPaneReset.Store(
+                defaults: ShortcutRingSettings.default,
+                read: { Options.shared.ring },
+                write: { Options.shared.ring = $0 },
+                undoActionNameKey: "ring-undo-reset"
+            ),
+            undoManager: { [weak self] in self?.undoTarget },
+            didChange: { [weak self] in self?.reload() }
+        )
+        reset.button.identifier = Identifier.reset
+        return reset
     }
 
     // MARK: - Rows

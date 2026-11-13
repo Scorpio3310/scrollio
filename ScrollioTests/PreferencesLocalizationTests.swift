@@ -249,6 +249,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "ring-action-none", "ring-preview-description", "buttons-note-shortcut-ring",
         "ring-recorder-waiting", "ring-recorder-refused",
         "general-settings-import-ring", "general-settings-import-ring-line", "general-settings-import-ring-trigger",
+        "ring-undo-reset",
     ]
 
     static let keys = mouseKeys + scrollingKeys + buttonsKeys + gesturesKeys + ringKeys + appsKeys
