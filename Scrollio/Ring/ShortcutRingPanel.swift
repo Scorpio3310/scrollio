@@ -17,44 +17,65 @@
 //    part is filled almost invisibly for that: a pixel without any alpha lets a click
 //    through. A click acts when the button comes up.
 //
-//  The ring lies on a system material cut to a circle; with "Reduce transparency" a plain
-//  disc is drawn instead. It opens with a short fade and a small growth of its places;
-//  with "Reduce motion" it is simply there. It goes away at once, without a fade, so that
-//  an action which looks at the screen (a screenshot) never finds it.
+//  The ring is nine drops (`ShortcutRingDropsView`) of Liquid Glass, of the system's blurred
+//  material or drawn plainly, as the system offers and asks (`ShortcutRingAppearance`). It
+//  opens with its places' drops leaving the middle one after the other; with "Reduce
+//  motion" it is simply there. It goes away at once, without a fade, so that an action
+//  which looks at the screen (a screenshot) never finds it.
+//
+//  The opening never holds the ring up: the session and the lighting do not know of it,
+//  and a place that is lit while its drop still travels shows lit. What is shown at any
+//  moment is `ShortcutRingDrops.frame` for the time since the ring opened; a display link
+//  asks for it once per frame of the screen, only while something moves (a third of a
+//  second after the ring opens, an eighth after the lit place changes), and stops.
 //
 //  The panel itself is never faded: its alpha is 1 from the moment it is ordered in. A
 //  window's alpha animation can stay at its start (it did, for two seconds and more, on a
-//  Mac whose display slept), and the ring would then take clicks without being seen. The
-//  opening only animates layers of the drawing, from values that are not the layers' own:
-//  where no animation runs, the ring is simply there.
+//  Mac whose display slept), and the ring would then take clicks without being seen. A
+//  display link can stay silent in the same way, so the frames are not trusted either:
+//  the hub is there from the first moment, and a timer of the main queue puts everything
+//  in its place half a second after the ring opened (and after a change of the lit place)
+//  whether a frame came or not.
 //
 
 import Cocoa
 
 // MARK: - What the system asks for
 
-/// The accessibility settings the ring follows.
+/// What decides how the ring is made and whether it moves: the accessibility settings and
+/// what the system has.
 struct ShortcutRingAppearance: Equatable {
     var reducesMotion = false
     var reducesTransparency = false
     var increasesContrast = false
+    /// macOS 26 or later: Liquid Glass is there.
+    var hasLiquidGlass = false
 
     static var system: ShortcutRingAppearance {
         let workspace = NSWorkspace.shared
+        var hasLiquidGlass = false
+        if #available(macOS 26.0, *) {
+            hasLiquidGlass = true
+        }
         return ShortcutRingAppearance(
             reducesMotion: workspace.accessibilityDisplayShouldReduceMotion,
             reducesTransparency: workspace.accessibilityDisplayShouldReduceTransparency,
-            increasesContrast: workspace.accessibilityDisplayShouldIncreaseContrast
+            increasesContrast: workspace.accessibilityDisplayShouldIncreaseContrast,
+            hasLiquidGlass: hasLiquidGlass
         )
     }
 
-    /// How long the ring takes to appear; nothing with "Reduce motion".
+    /// How long the ring takes to open; nothing with "Reduce motion".
     var openDuration: TimeInterval {
-        return reducesMotion ? 0 : ShortcutRingPanelPresenter.openDuration
+        return reducesMotion ? 0 : ShortcutRingDrops.openDuration
     }
 
-    var backdrop: ShortcutRingArtwork.Backdrop {
-        return reducesTransparency ? .drawn : .material
+    /// What the drops are made of: drawn plainly where transparency is not wanted or
+    /// outlines are (glass and a blur have neither a solid ground nor a firm edge), else
+    /// Liquid Glass where the system has it, else the blurred material.
+    var material: ShortcutRingMaterial {
+        if reducesTransparency || increasesContrast { return .drawn }
+        return hasLiquidGlass ? .glass : .blur
     }
 }
 
@@ -132,7 +153,7 @@ final class ShortcutRingPanel: NSPanel {
         panel.level = .popUpMenu
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        // The ring draws its own shadow: the panel is as large as the screen.
+        // The drops have their own shadows: the panel is as large as the screen.
         panel.hasShadow = false
         // A panel hides when its app is not the active one; Scrollio never is.
         panel.hidesOnDeactivate = false
@@ -148,23 +169,9 @@ final class ShortcutRingPanel: NSPanel {
     }
 }
 
-/// The ring's shadow, around the disc of material.
-final class ShortcutRingShadowView: NSView {
-
-    override var isOpaque: Bool { return false }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        return nil
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        ShortcutRingArtwork.drawShadow(centre: CGPoint(x: bounds.midX, y: bounds.midY))
-    }
-}
-
-/// The panel's content: the almost invisible fill that takes the clicks, the ring's
-/// shadow, the material and the ring itself. The stage draws nothing itself (it is as
-/// large as a screen: its fill is its layer's colour, which needs no bitmap).
+/// The panel's content: the almost invisible fill that takes the clicks, and the ring's
+/// drops where the ring stands. The stage draws nothing itself (it is as large as a
+/// screen: its fill is its layer's colour, which needs no bitmap).
 final class ShortcutRingStageView: NSView {
 
     /// The fill of the clear part while the ring stands open: enough for the window
@@ -175,9 +182,8 @@ final class ShortcutRingStageView: NSView {
     /// 0 the left button, 1 any other.
     var onButton: ((_ button: Int, _ isDown: Bool, _ location: CGPoint) -> Void)?
 
-    let shadowView = ShortcutRingShadowView()
-    let material = NSVisualEffectView()
-    let faceView = ShortcutRingFaceView()
+    /// The ring's drops, made of what the last ring asked for.
+    private(set) var dropsView: ShortcutRingDropsView?
 
     /// The screen the panel covers, in event coordinates.
     private(set) var screenFrame = CGRect.zero
@@ -193,35 +199,29 @@ final class ShortcutRingStageView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        // A layer of its own from the start: the opening fades it.
-        shadowView.wantsLayer = true
-        shadowView.layerContentsRedrawPolicy = .onSetNeedsDisplay
-        addSubview(shadowView)
-        material.material = .hudWindow
-        material.blendingMode = .behindWindow
-        // A window that is never key would otherwise show the material's inactive grey.
-        material.state = .active
-        material.maskImage = Self.discMask(diameter: ShortcutRingGeometry.outerRadius * 2)
-        addSubview(material)
-        addSubview(faceView)
     }
 
     required init?(coder: NSCoder) {
         fatalError("ShortcutRingStageView is built in code")
     }
 
+    /// The drops made of `material`: those of the last ring, or new ones when the system's
+    /// settings changed in between.
+    func drops(of material: ShortcutRingMaterial) -> ShortcutRingDropsView {
+        if let dropsView, dropsView.material == material { return dropsView }
+        dropsView?.removeFromSuperview()
+        let view = ShortcutRingDropsView(material: material)
+        addSubview(view)
+        dropsView = view
+        return view
+    }
+
     /// Puts the ring at `centre` of `screen` (both in event coordinates).
     func place(centre: CGPoint, on screen: CGRect) {
         screenFrame = screen
         ringCentre = CGPoint(x: centre.x - screen.minX, y: screen.maxY - centre.y)
-        let outer = ShortcutRingGeometry.outerRadius
-        material.frame = NSRect(x: ringCentre.x - outer, y: ringCentre.y - outer, width: outer * 2, height: outer * 2)
         let side = ShortcutRingGeometry.canvasSide
-        let canvas = NSRect(x: ringCentre.x - side / 2, y: ringCentre.y - side / 2, width: side, height: side)
-        faceView.frame = canvas
-        // Room for the shadow's blur beyond the canvas.
-        shadowView.frame = canvas.insetBy(dx: -24, dy: -24)
-        shadowView.needsDisplay = true
+        dropsView?.frame = NSRect(x: ringCentre.x - side / 2, y: ringCentre.y - side / 2, width: side, height: side)
     }
 
     /// A point of this view in event coordinates.
@@ -229,18 +229,10 @@ final class ShortcutRingStageView: NSView {
         return CGPoint(x: screenFrame.minX + point.x, y: screenFrame.maxY - point.y)
     }
 
-    static func discMask(diameter: CGFloat) -> NSImage {
-        return NSImage(size: NSSize(width: diameter, height: diameter), flipped: false) { rect in
-            NSColor.black.setFill()
-            NSBezierPath(ovalIn: rect).fill()
-            return true
-        }
-    }
-
     // MARK: The mouse
 
-    /// Every point of the panel is the stage's, the ring's included: the material and
-    /// the drawing take no click themselves (a view that is hit and does not accept the
+    /// Every point of the panel is the stage's, the ring's included: the drops take no
+    /// click themselves (a view that is hit and does not accept the
     /// first click of a window that is not key would let that click do nothing).
     override func hitTest(_ point: NSPoint) -> NSView? {
         return super.hitTest(point) == nil ? nil : self
@@ -265,44 +257,6 @@ final class ShortcutRingStageView: NSView {
     override func scrollWheel(with event: NSEvent) {}
 }
 
-/// Draws the ring's places and the lit action's name (`ShortcutRingArtwork`).
-final class ShortcutRingFaceView: NSView {
-
-    var face = ShortcutRingFace(places: []) {
-        didSet { needsDisplay = true }
-    }
-    var lit: Int? {
-        didSet {
-            guard lit != oldValue else { return }
-            needsDisplay = true
-        }
-    }
-    var style = ShortcutRingArtwork.Style() {
-        didSet { needsDisplay = true }
-    }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layerContentsRedrawPolicy = .onSetNeedsDisplay
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("ShortcutRingFaceView is built in code")
-    }
-
-    override var isOpaque: Bool { return false }
-
-    /// Clicks are the stage's.
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        return nil
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        ShortcutRingArtwork.draw(face, lit: lit, centre: CGPoint(x: bounds.midX, y: bounds.midY), style: style)
-    }
-}
-
 // MARK: - The presenter
 
 /// What the ring's controller asks of the screen. The app's is the panel; tests pass one
@@ -321,14 +275,41 @@ protocol ShortcutRingPresenting: AnyObject {
     func owns(_ window: NSWindow?) -> Bool
 }
 
+/// Calls back once per frame of the screen until it is stopped.
+protocol ShortcutRingFrames: AnyObject {
+    func stop()
+}
+
+/// The frames of the screen a view is on.
+final class ShortcutRingDisplayLinkFrames: NSObject, ShortcutRingFrames {
+
+    private var link: CADisplayLink?
+    private let step: () -> Void
+
+    init(view: NSView, step: @escaping () -> Void) {
+        self.step = step
+        super.init()
+        let link = view.displayLink(target: self, selector: #selector(tick(_:)))
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        step()
+    }
+
+    func stop() {
+        link?.invalidate()
+        link = nil
+    }
+}
+
 final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
 
-    /// A small fade and growth.
-    static let openDuration: TimeInterval = 0.12
-    /// The places start this much smaller.
-    static let openScale: CGFloat = 0.94
-    static let fadeAnimationKey = "open-fade"
-    static let growAnimationKey = "open"
+    /// However the frames come, everything is in its place this long after the ring opened
+    static let openDeadline: TimeInterval = 0.5
+    /// and this long after the lit place changed.
+    static let lightDeadline: TimeInterval = ShortcutRingDrops.litDuration + 0.08
 
     var onButton: ((Int, Bool, CGPoint) -> Void)?
 
@@ -338,14 +319,37 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
     var orderFront: (NSPanel) -> Void = AppRuntime.isRunningXCTest
         ? { _ in }
         : { $0.orderFrontRegardless() }
-    /// The accessibility settings in effect. Tests replace it.
+    /// The accessibility settings in effect and what the system has. Tests replace it.
     var appearance: () -> ShortcutRingAppearance = { .system }
+    /// Asks for a call per frame of the screen the view is on. Under XCTest nobody is
+    /// asked (the panel is not on a screen there); tests pass their own and call `step`.
+    var startFrames: (NSView, @escaping () -> Void) -> ShortcutRingFrames? = AppRuntime.isRunningXCTest
+        ? { _, _ in nil }
+        : { ShortcutRingDisplayLinkFrames(view: $0, step: $1) }
+    /// The time the opening and the lighting are counted in. Tests replace it.
+    var clock: () -> TimeInterval = { CACurrentMediaTime() }
+    /// Runs `work` on the main queue after `delay`. Tests replace it.
+    var after: (TimeInterval, @escaping () -> Void) -> Void = { delay, work in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
 
     /// Made at the first ring, on the main queue, never inside an event callback.
     private(set) var panel: ShortcutRingPanel?
     private(set) var stage: ShortcutRingStageView?
-    /// How the ring last appeared: its fade's length (0: at once).
+    /// How the ring last appeared: how long its opening takes (0: at once).
     private(set) var lastOpenDuration: TimeInterval = 0
+    /// Which place is lit, and how far each has come.
+    private(set) var lighting = ShortcutRingDrops.Lighting()
+    /// Whether the drops are still on their way: frames are asked for.
+    private(set) var isMoving = false
+
+    private var face = ShortcutRingFace(places: [])
+    private var reducesMotion = false
+    private var openedAt: TimeInterval = 0
+    private var isShown = false
+    private var frames: ShortcutRingFrames?
+    /// Counts the rings shown and hidden: a deadline of an earlier ring does nothing.
+    private var generation = 0
 
     private func makePanelIfNeeded() -> (ShortcutRingPanel, ShortcutRingStageView) {
         if let panel, let stage { return (panel, stage) }
@@ -365,57 +369,85 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
         assertMainThread()
         let (panel, stage) = makePanelIfNeeded()
         let appearance = self.appearance()
+        stopMoving()
+        generation += 1
         let height = ShortcutRingScreens.mainScreenHeight
         panel.setFrame(ShortcutRingScreens.flipped(screen.frame, mainScreenHeight: height), display: false)
         stage.frame = NSRect(origin: .zero, size: screen.frame.size)
+        let drops = stage.drops(of: appearance.material)
         stage.place(centre: centre, on: screen.frame)
-        stage.material.isHidden = appearance.reducesTransparency
-        var style = ShortcutRingArtwork.Style()
-        style.backdrop = appearance.backdrop
-        style.increasesContrast = appearance.increasesContrast
-        stage.faceView.style = style
-        stage.faceView.face = face
-        stage.faceView.lit = lit
+        drops.increasesContrast = appearance.increasesContrast
+        drops.face = face
+        self.face = face
+        reducesMotion = appearance.reducesMotion
+        lastOpenDuration = appearance.openDuration
+        isShown = true
+        openedAt = clock()
+        // A ring that appears with a place lit shows it lit, however far its drop has come.
+        lighting = ShortcutRingDrops.Lighting()
+        lighting.light(lit, at: openedAt, filled: face.filled, eased: false)
+        render(at: openedAt)
         setTakesClicks(takesClicks)
-
-        let duration = appearance.openDuration
-        lastOpenDuration = duration
-        let layers = [stage.faceView.layer, stage.shadowView.layer].compactMap { $0 }
-        layers.forEach { $0.removeAllAnimations() }
         // Never faded as a window (see the top of the file).
         panel.alphaValue = 1
         orderFront(panel)
-        guard duration > 0 else { return }
-
-        let easeOut = CAMediaTimingFunction(name: .easeOut)
-        for layer in layers {
-            // The layer's own opacity stays 1: the animation only shows the way there.
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = 0
-            fade.toValue = 1
-            fade.duration = duration
-            fade.timingFunction = easeOut
-            layer.add(fade, forKey: Self.fadeAnimationKey)
-        }
-        if let layer = stage.faceView.layer {
-            // Grows about its middle (an AppKit layer is anchored at its corner).
-            let scale = Self.openScale
-            let size = stage.faceView.bounds.size
-            let small = CATransform3DScale(
-                CATransform3DMakeTranslation(size.width / 2 * (1 - scale), size.height / 2 * (1 - scale), 0),
-                scale, scale, 1
-            )
-            let grow = CABasicAnimation(keyPath: "transform")
-            grow.fromValue = NSValue(caTransform3D: small)
-            grow.toValue = NSValue(caTransform3D: CATransform3DIdentity)
-            grow.duration = duration
-            grow.timingFunction = easeOut
-            layer.add(grow, forKey: Self.growAnimationKey)
+        guard !reducesMotion else { return }
+        move(for: Self.openDeadline) { [weak self] in
+            // The opening is over, whatever the clock says.
+            self?.openedAt = -.infinity
         }
     }
 
     func light(_ place: Int?) {
-        stage?.faceView.lit = place
+        guard isShown else { return }
+        let now = clock()
+        let before = lighting.target
+        lighting.light(place, at: now, filled: face.filled, eased: !reducesMotion)
+        render(at: now)
+        guard !reducesMotion, lighting.target != before else { return }
+        move(for: Self.lightDeadline)
+    }
+
+    /// Shows the drops as they are at `time`, and the lit place's name in the hub.
+    private func render(at time: TimeInterval) {
+        guard let drops = stage?.dropsView else { return }
+        drops.title = lighting.target.map { face.places[$0].title }
+        drops.show(ShortcutRingDrops.frame(
+            at: time - openedAt, filled: face.filled, lit: lighting.amounts(at: time), reducesMotion: reducesMotion
+        ))
+    }
+
+    /// Asks for frames until everything rests, and makes sure it does by `deadline` from
+    /// now even if no frame comes.
+    private func move(for deadline: TimeInterval, atDeadline: @escaping () -> Void = {}) {
+        if !isMoving, let stage {
+            isMoving = true
+            frames = startFrames(stage) { [weak self] in
+                self?.step()
+            }
+        }
+        let generation = self.generation
+        after(deadline) { [weak self] in
+            guard let self, self.generation == generation, self.isShown else { return }
+            atDeadline()
+            self.step()
+        }
+    }
+
+    /// One frame: the drops as they are now. Stops asking for frames once they rest.
+    func step() {
+        guard isShown else { return }
+        let now = clock()
+        render(at: now)
+        if now - openedAt >= lastOpenDuration, lighting.isSettled(at: now) {
+            stopMoving()
+        }
+    }
+
+    private func stopMoving() {
+        frames?.stop()
+        frames = nil
+        isMoving = false
     }
 
     func setTakesClicks(_ takesClicks: Bool) {
@@ -430,8 +462,9 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
 
     func hide() {
         guard let panel else { return }
-        stage?.faceView.layer?.removeAllAnimations()
-        stage?.shadowView.layer?.removeAllAnimations()
+        stopMoving()
+        generation += 1
+        isShown = false
         panel.ignoresMouseEvents = true
         // At once, and with nothing to wait for.
         panel.orderOut(nil)

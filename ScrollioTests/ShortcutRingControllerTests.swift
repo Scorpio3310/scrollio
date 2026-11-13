@@ -1330,6 +1330,7 @@ final class ShortcutRingPanelTests: XCTestCase {
         var ordered: [NSPanel] = []
         presenter.orderFront = { ordered.append($0) }
         presenter.appearance = { appearance }
+        presenter.after = { _, _ in }
         let screen = ShortcutRingScreen(
             frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
             usable: CGRect(x: 0, y: 32, width: 1512, height: 950)
@@ -1347,11 +1348,11 @@ final class ShortcutRingPanelTests: XCTestCase {
         XCTAssertEqual(panel.frame.size, CGSize(width: 1512, height: 982))
         // 300 points from the top of the screen is 682 from its bottom.
         XCTAssertEqual(stage.ringCentre, CGPoint(x: 400, y: 682))
-        XCTAssertEqual(stage.material.frame.midX, 400, accuracy: 0.5)
-        XCTAssertEqual(stage.material.frame.midY, 682, accuracy: 0.5)
-        XCTAssertEqual(stage.material.frame.width, ShortcutRingGeometry.outerRadius * 2)
-        XCTAssertEqual(stage.material.state, .active, "a window that is never key would show the inactive grey")
-        XCTAssertEqual(stage.faceView.frame.midX, 400, accuracy: 0.5)
+        let drops = try XCTUnwrap(stage.dropsView)
+        XCTAssertEqual(drops.frame.midX, 400, accuracy: 0.5)
+        XCTAssertEqual(drops.frame.midY, 682, accuracy: 0.5)
+        XCTAssertEqual(drops.frame.width, ShortcutRingGeometry.canvasSide)
+        XCTAssertEqual(drops.blurView?.state, .active, "a window that is never key would show the inactive grey")
         XCTAssertEqual(stage.eventLocation(of: NSPoint(x: 400, y: 682)), CGPoint(x: 400, y: 300))
         XCTAssertTrue(panel.ignoresMouseEvents, "held: the mouse goes to what is underneath")
         XCTAssertFalse(stage.takesClicks)
@@ -1397,7 +1398,9 @@ final class ShortcutRingPanelTests: XCTestCase {
         XCTAssertEqual(reported.map { $0.0 }, [0, 0, 1, 1])
         XCTAssertEqual(reported.map { $0.1 }, [true, false, true, false])
         XCTAssertEqual(reported.first?.2, CGPoint(x: 482, y: 300))
-        XCTAssertNil(stage.faceView.hitTest(NSPoint(x: 10, y: 10)), "the drawing takes no click itself")
+        let drops = try XCTUnwrap(stage.dropsView)
+        XCTAssertNil(drops.hitTest(NSPoint(x: 10, y: 10)), "the drops take no click themselves")
+        XCTAssertNil(drops.contents[2].hitTest(NSPoint(x: 5, y: 5)))
         // On the ring and beside it, the view that is hit is the stage, which accepts the
         // first click of a window that is not key.
         XCTAssertTrue(stage.hitTest(NSPoint(x: 400, y: 682)) === stage)
@@ -1407,54 +1410,56 @@ final class ShortcutRingPanelTests: XCTestCase {
 
     /// The ring must be seen from the moment it takes clicks: the panel is ordered in at
     /// full alpha, always. (Faded in as a window, it stayed at alpha 0 for two seconds and
-    /// more on a Mac whose display slept, while it already took the mouse.) Only layers of
-    /// the drawing are animated, and their own values are the final ones.
+    /// more on a Mac whose display slept, while it already took the mouse.) Only the drops
+    /// move, and the hub is there, opaque, from the first moment.
     func testThePanelIsNeverFadedAsAWindow() throws {
         for appearance in [ShortcutRingAppearance(), ShortcutRingAppearance(reducesMotion: true)] {
             let (presenter, ordered) = shown(appearance: appearance, takesClicks: true)
             let panel = try XCTUnwrap(presenter.panel)
-            let stage = try XCTUnwrap(presenter.stage)
+            let drops = try XCTUnwrap(presenter.stage?.dropsView)
             XCTAssertEqual(ordered.count, 1)
             XCTAssertEqual(panel.alphaValue, 1, "reducesMotion \(appearance.reducesMotion)")
-            XCTAssertEqual(stage.faceView.layer?.opacity, 1)
-            XCTAssertEqual(stage.shadowView.layer?.opacity, 1)
-            XCTAssertFalse(stage.faceView.isHidden)
+            XCTAssertEqual(drops.alphaValue, 1)
+            XCTAssertFalse(drops.isHidden)
+            let hub = try XCTUnwrap(drops.drops?.hub)
+            XCTAssertEqual(hub.opacity, 1)
+            XCTAssertGreaterThan(hub.diameter, 50)
             presenter.hide()
             XCTAssertEqual(panel.alphaValue, 1)
-            XCTAssertNil(stage.faceView.layer?.animation(forKey: ShortcutRingPanelPresenter.fadeAnimationKey))
+            XCTAssertFalse(presenter.isMoving, "nothing runs once the ring is gone")
         }
     }
 
     func testWithReduceMotionTheRingSimplyAppears() throws {
-        XCTAssertEqual(ShortcutRingAppearance().openDuration, 0.12, accuracy: 0.001)
+        XCTAssertEqual(ShortcutRingAppearance().openDuration, 0.35, accuracy: 0.001)
         XCTAssertEqual(ShortcutRingAppearance(reducesMotion: true).openDuration, 0)
+        let filled = ShortcutRingFace(.default).filled
 
         let (moving, _) = shown()
-        XCTAssertEqual(moving.lastOpenDuration, 0.12, accuracy: 0.001)
-        let face = try XCTUnwrap(moving.stage?.faceView.layer)
-        XCTAssertNotNil(face.animation(forKey: ShortcutRingPanelPresenter.growAnimationKey))
-        let fade = try XCTUnwrap(face.animation(forKey: ShortcutRingPanelPresenter.fadeAnimationKey) as? CABasicAnimation)
-        XCTAssertEqual(fade.keyPath, "opacity")
-        XCTAssertEqual(fade.duration, 0.12, accuracy: 0.001)
-        XCTAssertNotNil(moving.stage?.shadowView.layer?.animation(forKey: ShortcutRingPanelPresenter.fadeAnimationKey))
+        XCTAssertEqual(moving.lastOpenDuration, 0.35, accuracy: 0.001)
+        XCTAssertTrue(moving.isMoving)
+        XCTAssertEqual(moving.stage?.dropsView?.drops, ShortcutRingDrops.frame(at: 0, filled: filled), "the drops start in the middle")
 
         let (still, _) = shown(appearance: ShortcutRingAppearance(reducesMotion: true))
         XCTAssertEqual(still.lastOpenDuration, 0)
-        XCTAssertNil(still.stage?.faceView.layer?.animation(forKey: ShortcutRingPanelPresenter.growAnimationKey))
-        XCTAssertNil(still.stage?.faceView.layer?.animation(forKey: ShortcutRingPanelPresenter.fadeAnimationKey))
+        XCTAssertFalse(still.isMoving)
+        XCTAssertEqual(still.stage?.dropsView?.drops, ShortcutRingDrops.settled(filled: filled), "every drop is in its place")
         XCTAssertEqual(still.panel?.alphaValue, 1)
     }
 
     func testReduceTransparencyAndIncreaseContrastAreFollowed() throws {
         let (plain, _) = shown(appearance: ShortcutRingAppearance(reducesTransparency: true, increasesContrast: true))
-        let stage = try XCTUnwrap(plain.stage)
-        XCTAssertTrue(stage.material.isHidden, "no material: a plain disc is drawn")
-        XCTAssertEqual(stage.faceView.style.backdrop, .drawn)
-        XCTAssertTrue(stage.faceView.style.increasesContrast)
+        let drops = try XCTUnwrap(plain.stage?.dropsView)
+        XCTAssertEqual(drops.material, .drawn)
+        XCTAssertNil(drops.blurView, "no material: plain drops are drawn")
+        XCTAssertNil(drops.glassBodies)
+        XCTAssertEqual(drops.bodiesView?.style.backdrop, .drawn)
+        XCTAssertEqual(drops.bodiesView?.style.increasesContrast, true)
 
         let (usual, _) = shown()
-        XCTAssertEqual(usual.stage?.material.isHidden, false)
-        XCTAssertEqual(usual.stage?.faceView.style.backdrop, .material)
+        XCTAssertEqual(usual.stage?.dropsView?.material, .blur)
+        XCTAssertNotNil(usual.stage?.dropsView?.blurView)
+        XCTAssertEqual(usual.stage?.dropsView?.bodiesView?.style.backdrop, .material)
     }
 
     /// Event coordinates grow downwards from the top of the main screen, AppKit's upwards
@@ -1467,28 +1472,45 @@ final class ShortcutRingPanelTests: XCTestCase {
         XCTAssertEqual(ShortcutRingScreens.flipped(ShortcutRingScreens.flipped(rect, mainScreenHeight: 900), mainScreenHeight: 900), rect)
     }
 
-    /// The name in the middle: one or two lines as it is; a name that needs a third gets
-    /// it a little smaller instead of being cut. No offered shortcut needs more.
-    func testALongNameInTheMiddleGetsAThirdLineInsteadOfBeingCut() {
-        let width = ShortcutRingGeometry.hubRadius * 2 - 10
-        let short = ShortcutRingArtwork.titleLayout("Copy", width: width, pointSize: 13)
+    /// The name in the hub: one or two lines as it is; a name that needs a third gets it
+    /// a little smaller instead of being cut. No offered shortcut needs more, on screen
+    /// (the hub is 88 points wide) or in the Settings pane's smaller drawing.
+    func testALongNameInTheHubGetsAThirdLineInsteadOfBeingCut() {
+        let width = ShortcutRingArtwork.titleWidth
+        let size = ShortcutRingArtwork.titleFont.pointSize
+        XCTAssertEqual(size, 12)
+        XCTAssertEqual(width, ShortcutRingDrops.hubDiameter - 12)
+        let short = ShortcutRingArtwork.titleLayout("Copy", width: width, pointSize: size)
         XCTAssertEqual(short.lines, 1)
-        XCTAssertEqual(short.pointSize, 13)
-        let two = ShortcutRingArtwork.titleLayout("Desktop on the Right", width: width, pointSize: 13)
+        XCTAssertEqual(short.pointSize, size)
+        let two = ShortcutRingArtwork.titleLayout("Desktop on the Right", width: width, pointSize: size)
         XCTAssertEqual(two.lines, 2)
-        XCTAssertEqual(two.pointSize, 13)
-        let long = ShortcutRingArtwork.titleLayout("Screenshot and Recording Options", width: width, pointSize: 13)
+        XCTAssertEqual(two.pointSize, size)
+        let long = ShortcutRingArtwork.titleLayout("Screenshot and Recording Options", width: width, pointSize: size)
         XCTAssertEqual(long.lines, 3)
-        XCTAssertLessThan(long.pointSize, 13)
-        XCTAssertGreaterThanOrEqual(long.pointSize, 11)
-        XCTAssertLessThan(long.height, ShortcutRingGeometry.hubRadius * 2 - 30, "three lines stay inside the middle")
-        for category in SystemShortcut.shortcutsByCategory {
-            for shortcut in category.shortcuts where ShortcutRingPlace(shortcut).runs {
-                let layout = ShortcutRingArtwork.titleLayout(shortcut.localizedName, width: width, pointSize: 13)
-                XCTAssertLessThanOrEqual(layout.lines, 3, shortcut.localizedName)
-                let font = NSFont.systemFont(ofSize: layout.pointSize, weight: .semibold)
-                for word in shortcut.localizedName.split(separator: " ") {
-                    XCTAssertLessThanOrEqual((String(word) as NSString).size(withAttributes: [.font: font]).width, width, String(word))
+        XCTAssertLessThan(long.pointSize, size)
+        XCTAssertGreaterThanOrEqual(long.pointSize, 10)
+
+        let paneScale = ShortcutRingPreviewView.ringScale
+        for (what, width, size, diameter) in [
+            ("on screen", width, size, ShortcutRingDrops.hubDiameter),
+            ("in the pane", width * paneScale, size * paneScale, ShortcutRingDrops.hubDiameter * paneScale),
+        ] {
+            for category in SystemShortcut.shortcutsByCategory {
+                for shortcut in category.shortcuts where ShortcutRingPlace(shortcut).runs {
+                    let name = shortcut.localizedName
+                    let layout = ShortcutRingArtwork.titleLayout(name, width: width, pointSize: size)
+                    XCTAssertLessThanOrEqual(layout.lines, 3, "\(name) \(what)")
+                    let font = NSFont.systemFont(ofSize: layout.pointSize, weight: .semibold)
+                    for word in name.split(separator: " ") {
+                        XCTAssertLessThanOrEqual(
+                            (String(word) as NSString).size(withAttributes: [.font: font]).width, width, "\(word) \(what)"
+                        )
+                    }
+                    // The block of lines stays inside the round drop: where its top and
+                    // bottom edges are, the drop is still as wide as the text may be.
+                    let chord = 2 * (pow(diameter / 2, 2) - pow(layout.height / 2 - 2, 2)).squareRoot()
+                    XCTAssertGreaterThanOrEqual(chord, width, "\(name) \(what): \(layout.lines) lines")
                 }
             }
         }

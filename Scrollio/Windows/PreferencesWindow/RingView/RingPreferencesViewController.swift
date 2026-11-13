@@ -4,8 +4,8 @@
 //  "Shortcut Ring" preferences pane: what the ring holds, built in code on
 //  PreferencesGroupedForm like the Gestures pane.
 //
-//  On top the ring as it opens at the pointer, drawn by the code that draws it on screen
-//  (`ShortcutRingArtwork`). The drawing and the rows point at each other: the place of
+//  On top the ring as it stands open at the pointer, drawn by the code that draws it on
+//  screen (`ShortcutRingArtwork`): its nine drops, at rest and drawn plainly. The drawing and the rows point at each other: the place of
 //  the row under the pointer is lit in the drawing, a place under the pointer is lit too,
 //  and a click on a place selects its row (its pull-down takes the keyboard and is
 //  scrolled into view; the place stays lit). Then a box
@@ -86,8 +86,6 @@ final class ShortcutRingPreviewView: NSView {
 
     /// The ring is drawn this much smaller than on screen.
     static let ringScale: CGFloat = 0.74
-    /// The name in its middle is not drawn that much smaller: it has to be read.
-    static let titlePointSize: CGFloat = 11
     static let preferredHeight: CGFloat = 206
     static let cornerRadius: CGFloat = 10
 
@@ -168,11 +166,8 @@ final class ShortcutRingPreviewView: NSView {
         var style = ShortcutRingArtwork.Style()
         style.backdrop = .drawn
         style.scale = Self.ringScale
-        style.titlePointSize = Self.titlePointSize
         style.increasesContrast = PreferencesGroupedForm.isHighContrast(effectiveAppearance)
-        let centre = CGPoint(x: bounds.midX, y: bounds.midY)
-        ShortcutRingArtwork.drawShadow(centre: centre, scale: Self.ringScale)
-        ShortcutRingArtwork.draw(face, lit: lit, centre: centre, style: style)
+        ShortcutRingArtwork.draw(face, lit: lit, centre: CGPoint(x: bounds.midX, y: bounds.midY), style: style)
     }
 }
 

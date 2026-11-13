@@ -75,10 +75,24 @@ nothing opens the ring until you do. The pane also sets what the eight places ho
   and Spaces, apps and windows, editing, Finder, system, screenshots, navigation), the
   Back or Forward click, a key combination you record ("Keyboard Shortcut…"), or an
   app, a file or a script to open ("Open App or File…"); or nothing. An app shows its
-  icon in the ring, a key combination its keys, and the middle of the ring names what is
-  lit. An empty place is a faint dot. A new ring has Mission Control on top and Apps at the bottom, the
+  icon in the ring, a key combination its keys, and the drop in the middle of the ring
+  names what is lit. An empty place is a small faint drop. A new ring has Mission Control on top and Apps at the bottom, the
   desktops on the left and right, Copy and Paste beside Apps, and a screenshot of a
   selection and Show Desktop beside Mission Control.
+- How it looks: nine round drops and nothing behind them, one for each place and one in
+  the middle. When the ring opens, the places' drops leave the middle one after the
+  other, clockwise from the top, and are in their places after a third of a second; you
+  need not wait for them, the ring chooses from the first moment. The drop of the
+  shortcut you point at grows, moves a little outwards and takes the accent colour. The
+  ring goes away at once.
+  - On macOS 26 and later the drops are Liquid Glass: they flow out of one drop as the
+    ring opens.
+  - On macOS 14 and 15 they are the blurred material the system uses for its own
+    panels. The movement is the same.
+  - With "Reduce transparency" or "Increase contrast" (System Settings › Accessibility ›
+    Display) the drops are drawn solid, with a firm outline for Increase contrast.
+  - With "Reduce motion" the ring simply appears with every drop in its place, and a
+    drop lights without growing gradually.
 - With Logi Options+: if Logi Options+ manages your mouse, give the button there a
   keystroke (for example ⌃⌥Space), and record the same keystroke in Scrollio as the
   ring's button ("Set Up…" in the Shortcut Ring pane, then press that button). The
