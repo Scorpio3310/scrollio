@@ -360,7 +360,7 @@ final class SettingsFileFormatTests: XCTestCase {
               "action": "paste"
             },
             {
-              "action": "showDesktop"
+              "action": "appExpose"
             },
             {
               "action": "copy"
@@ -369,7 +369,7 @@ final class SettingsFileFormatTests: XCTestCase {
               "action": "moveSpaceLeft"
             },
             {
-              "action": "appExpose"
+              "action": "showDesktop"
             }
           ]
         },
@@ -2356,7 +2356,7 @@ final class SettingsImportSheetTests: XCTestCase {
             // action, or without one, is listed.
             (#""shortcutRingSettings":{}"#, true, []),
             (#""shortcutRingSettings":{"places":[{"action":"missionControl"},{"action":"undo"},{"action":"moveSpaceRight"},"#
-                + #"{"action":""},{"action":"showDesktop"},{"action":"copy"},{"action":"moveSpaceLeft"},{"action":"appExpose"}]}"#,
+                + #"{"action":""},{"action":"appExpose"},{"action":"copy"},{"action":"moveSpaceLeft"},{"action":"showDesktop"}]}"#,
              false, ["Ring Top right: Undo", "Ring Bottom right: No Action"]),
         ]
         for (settings, importIsDefault, listed) in cases {

@@ -42,9 +42,34 @@ final class ShortcutRingSettingsTests: XCTestCase {
         XCTAssertEqual(ring.places.count, 8)
         XCTAssertEqual(ring.places.map { $0.action }, [
             "missionControl", "screenshotSelection", "moveSpaceRight", "paste",
-            "showDesktop", "copy", "moveSpaceLeft", "appExpose",
+            "appExpose", "copy", "moveSpaceLeft", "showDesktop",
         ])
         XCTAssertEqual(ring.filled, Array(repeating: true, count: 8))
+    }
+
+    /// At a glance two neighbours of a new ring are never the same kind of picture: the
+    /// two grids (Mission Control, Apps) are not side by side, nor are two of the sheets
+    /// (Copy, Paste, Show Desktop), and no symbol is there twice.
+    func testNoTwoNeighboursOfANewRingLookAlike() {
+        let lookAlike: [Set<String>] = [
+            ["square.grid.3x2", "square.grid.3x3"],
+            ["doc.on.doc", "doc.on.clipboard", "rectangle.on.rectangle"],
+            ["arrow.left.to.line", "arrow.right.to.line"],
+        ]
+        let symbols = ShortcutRingSettings.default.places.map { $0.shortcut?.symbolName ?? "" }
+        XCTAssertEqual(Set(symbols).count, 8)
+        for place in 0..<8 {
+            let neighbour = (place + 1) % 8
+            for group in lookAlike {
+                XCTAssertFalse(
+                    group.contains(symbols[place]) && group.contains(symbols[neighbour]),
+                    "\(symbols[place]) next to \(symbols[neighbour])"
+                )
+            }
+        }
+        XCTAssertEqual(ShortcutRingSettings.default[0].action, "missionControl", "Mission Control stays on top")
+        XCTAssertEqual(ShortcutRingSettings.default[2].action, "moveSpaceRight")
+        XCTAssertEqual(ShortcutRingSettings.default[6].action, "moveSpaceLeft")
     }
 
     func testTheRingSurvivesBeingStored() throws {
@@ -60,7 +85,7 @@ final class ShortcutRingSettingsTests: XCTestCase {
         let places = try XCTUnwrap(object["places"] as? [[String: Any]])
         XCTAssertEqual(places.count, 8)
         XCTAssertEqual(places.map { $0["action"] as? String }, [
-            "missionControl", "", "undo", "paste", "showDesktop", "copy", "moveSpaceLeft", "appExpose",
+            "missionControl", "", "undo", "paste", "appExpose", "copy", "moveSpaceLeft", "showDesktop",
         ])
         XCTAssertTrue(places.allSatisfy { $0.count == 1 })
     }

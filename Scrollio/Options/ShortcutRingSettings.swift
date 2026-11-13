@@ -118,17 +118,20 @@ struct ShortcutRingSettings: Codable, Equatable {
     /// Always `placeCount` places.
     private(set) var places: [ShortcutRingPlace]
 
-    /// What a new ring holds: Mission Control on top, the desktops left and right, Copy
-    /// and Paste below them, a screenshot, Apps and Show Desktop.
+    /// What a new ring holds: Mission Control on top and Apps at the bottom (as the
+    /// gestures' up and down), the desktops left and right, Copy and Paste beside Apps,
+    /// a screenshot and Show Desktop beside Mission Control. No two neighbours look alike:
+    /// the two grids (Mission Control, Apps) face each other, and so do the two pairs of
+    /// sheets (Copy and Paste; Show Desktop is not next to either).
     static let `default` = ShortcutRingSettings(places: [
         ShortcutRingPlace(SystemShortcut.missionControl),       // top
         ShortcutRingPlace(SystemShortcut.screenshotSelection),  // top right
         ShortcutRingPlace(SystemShortcut.moveSpaceRight),       // right
         ShortcutRingPlace(SystemShortcut.paste),                // bottom right
-        ShortcutRingPlace(SystemShortcut.showDesktop),          // bottom
+        ShortcutRingPlace(SystemShortcut.appExpose),            // bottom
         ShortcutRingPlace(SystemShortcut.copy),                 // bottom left
         ShortcutRingPlace(SystemShortcut.moveSpaceLeft),        // left
-        ShortcutRingPlace(SystemShortcut.appExpose),            // top left
+        ShortcutRingPlace(SystemShortcut.showDesktop),          // top left
     ])
 
     init(places: [ShortcutRingPlace]) {

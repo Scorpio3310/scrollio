@@ -671,7 +671,7 @@ final class ShortcutRingInputTests: XCTestCase {
         XCTAssertEqual(process(RingHarness.button(.up)), .consumed)
         XCTAssertEqual(stopped, 1, "and off again with it")
         harness.runScheduled()
-        XCTAssertEqual(harness.log.last, "run showDesktop")
+        XCTAssertEqual(harness.log.last, "run appExpose")
     }
 
     // MARK: Esc

@@ -69,8 +69,9 @@ nothing opens the ring until you do. The pane also sets what the eight places ho
   chooses.
 - A place holds one of the listed keyboard shortcuts (Mission Control and Spaces, apps
   and windows, editing, Finder, system, screenshots, navigation) or nothing; an empty
-  place is a faint dot. A new ring has Mission Control, a screenshot of a selection, the
-  desktops on the left and right, Copy, Paste, Show Desktop and Apps.
+  place is a faint dot. A new ring has Mission Control on top and Apps at the bottom, the
+  desktops on the left and right, Copy and Paste beside Apps, and a screenshot of a
+  selection and Show Desktop beside Mission Control.
 - With Logi Options+: if Logi Options+ manages your mouse, give the button there a
   keystroke (for example ⌃⌥Space), and record the same keystroke in Scrollio as the
   ring's button ("Set Up…" in the Shortcut Ring pane, then press that button). The
