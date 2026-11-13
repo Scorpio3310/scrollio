@@ -10,60 +10,28 @@ it for the people who use the app, and give the version its part before you tag 
 
 ## Unreleased
 
-- **The MX Anywhere 3 and 3S and the MX Vertical have drawings of their own.** With one
-  of them connected, Settings shows that mouse instead of a plain one, from above and
-  from its thumb side, and Buttons lists its buttons in the order they sit on it: the
-  wheel's click, the button behind the wheel (MX Anywhere) or the pointer speed button on
-  the top (MX Vertical), then Forward and Back. The mouse is recognised by its name;
-  there is nothing to set. Both were drawn and set up from Logitech's descriptions of
-  these mice and have not been tried on the mice themselves yet.
-- **The Shortcut Ring is drops now.** The disc behind the ring is gone: each of the eight
-  places is a round drop of its own, with one more in the middle that names the shortcut
-  you point at. When the ring opens, the drops come out of the middle one after the
-  other and settle around the pointer; the one you point at grows and takes the accent
-  colour. You can choose from the first moment, as before, and the ring still goes away
-  at once. On macOS 26 and later the drops are Liquid Glass; on macOS 14 and 15 they are
-  the blurred material the ring had. With Reduce transparency or Increase contrast they
-  are drawn solid, and with Reduce motion the ring simply appears.
-- **"Reset to Defaults" in Shortcut Ring and in Gestures.** Both panes now end with the
-  button the Scrolling pane has. In Shortcut Ring it puts back the ring of a new
-  installation, in Gestures the actions of the directions and of the click and the
-  pane's other settings. The button or key that opens the ring, and the button you hold
-  for a gesture, stay as they are. For a few seconds after a reset the button reads
-  "Undo Reset" and takes it back; Edit › Undo does the same.
-- **Calendar is no longer put on your list of apps.** Version 1.0.4 added Calendar to
-  Settings › Apps by itself, with Smooth scrolling off. Scrollio no longer adds an app to
-  that list: only you do. If 1.0.4 added Calendar on your Mac and you do not want it,
-  select it in Settings › Apps and remove it; it does not come back. If Calendar's month
-  view scrolls badly with a smoothed wheel, add Calendar there yourself and turn Smooth
-  scrolling off.
-- **Mission Control and Show Desktop no longer stop working.** Scrollio sent them as key
-  presses, and after some orders of use (Show Desktop, then another shortcut) macOS only
-  flashed them, for a button, a gesture and the Shortcut Ring alike, until you used a
-  trackpad gesture or the key yourself. Scrollio now asks the Dock for them directly.
-  Also, after a shortcut was sent, macOS could go on treating its modifier keys as held
-  until your next key or click; that no longer happens.
-- **A Logitech mouse on a receiver is found when it connects later.** Scrollio looked for
-  mice on a Bolt or Unifying receiver once, when it started or the Mac woke up. A mouse
-  that was asleep, switched off or out of range at that moment was not seen until you
-  restarted Scrollio, unless Logi Options+ was running. Scrollio now asks the receiver to
-  say when a device connects, and no longer gives up on a mouse because the receiver was
-  busy with the keyboard next to it. A mouse you switch off and on gets its buttons back.
-  The system log says what was found on the receiver (see "Uninstalling and diagnostics").
-- **Shortcut Ring**: a ring of eight shortcuts that opens around the pointer, for any
-  mouse. Give a mouse button, a Logitech button such as the MX Master 4's thumb panel, or
-  a key combination the new action "Shortcut Ring" (Buttons, or "Set Up…" in the new
-  Shortcut Ring pane). Hold it and move towards a shortcut, then let go; or press it and
-  let go, and click a shortcut in the ring that stays open. The app you are in keeps the
-  keyboard, so Copy and Paste go where you were. The pane sets what the eight places
-  hold: a listed shortcut, a key combination you record, or an app or a file to open;
-  a settings file carries it. If Logi Options+ manages your mouse, let a button
-  send a keystroke there and record that keystroke as the ring's button. An MX Master 4
-  whose thumb panel Scrollio reads pulses when a shortcut lights and when it runs. With
-  "Freeze pointer while the ring is held" the pointer stays where it was while you hold
-  the button.
-- The symbols in the sidebar of the Settings window stand in the middle of their tiles,
-  as in System Settings. They stood up to 0.75 pt low and 0.5 pt to the left.
+**The Shortcut Ring arrives:** eight shortcuts around your pointer, one button away.
+
+### New
+
+- **Shortcut Ring.** Hold a button and a ring of eight shortcuts opens around the pointer.
+  Move towards one and let go, or press once and click.
+- **Any button opens it:** a mouse button, a Logitech button such as the MX Master 4's
+  thumb panel, or a key combination. Set it up in the new Shortcut Ring pane.
+- **Each place is yours:** a listed shortcut, a key combination you record, or an app or
+  a file to open.
+- **Liquid Glass** on macOS 26 and later.
+- **MX Anywhere 3 / 3S and MX Vertical** have their own drawings and button lists in
+  Settings. *Not yet tried on the mice themselves.*
+- **Reset to Defaults** in Shortcut Ring and Gestures, with a few seconds to undo.
+
+### Fixed
+
+- **Mission Control and Show Desktop** no longer stop working after a while.
+- **Mice on a Logitech receiver** are found when they connect after Scrollio has started.
+- **Calendar** is no longer added to your list of apps. If 1.0.4 added it, remove it in
+  Settings › Apps; it stays away.
+- Sidebar symbols in Settings are centred.
 
 ## 1.0.4
 
