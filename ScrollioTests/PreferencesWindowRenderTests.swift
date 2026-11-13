@@ -1610,6 +1610,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
         switch model {
         case .mxMaster4: return "mx4"
         case .mxMaster3: return "mx3"
+        case .mxAnywhere3: return "anywhere"
+        case .mxVertical: return "vertical"
         case .generic: return "generic"
         }
     }

@@ -349,7 +349,7 @@ final class PreferencesButtonsTests: XCTestCase {
         let master3 = ButtonsListLayout.make(bindings: [], mouse: .mxMaster3)
         XCTAssertEqual(master3.rows.firstIndex(of: .thumbWheel), 2)
 
-        for name in [nil, "MX Anywhere 3S", "M720 Triathlon", "Lift"] as [String?] {
+        for name in [nil, "MX Anywhere 2S", "M720 Triathlon", "Lift"] as [String?] {
             let mouse = MouseArtworkModel.model(forDeviceName: name)
             let layout = ButtonsListLayout.make(bindings: bindings, mouse: mouse, logitechRole: roles)
             XCTAssertFalse(layout.hasThumbWheel, name ?? "no mouse")

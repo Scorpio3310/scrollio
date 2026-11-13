@@ -2,8 +2,9 @@
 //  MouseArtwork.swift
 //  Mos
 //  The mouse the Mouse, Buttons and Gestures panes draw, seen from above in line art, one
-//  drawing per model: the MX Master 4, the MX Master 3 and 3S, and a plain mouse for any
-//  other. Here are which drawing a connected mouse gets, the shapes of its parts on one
+//  drawing per model: the MX Master 4, the MX Master 3 and 3S, the MX Anywhere 3 and 3S,
+//  the MX Vertical, and a plain mouse for any other. Here are which drawing a connected
+//  mouse gets, the shapes of its parts on one
 //  grid (front at the top, the thumb side on the left) and the painter that draws them in
 //  the colours of the Scrolling preview (ScrollPreviewPalette), at any size: the cards'
 //  drawing, the rows' small pictures (a schematic variant whose small buttons are drawn
@@ -11,8 +12,9 @@
 //
 //  A model can have a second view, from the thumb side (MouseArtworkViewpoint): what the
 //  thumb works is hidden under the body's overhang from above. The MX Master 4 and the MX
-//  Master 3 have one (their two views are in MouseArtworkMaster4.swift and
-//  MouseArtworkMaster3.swift, painted by MouseArtworkTwoViews.swift); a part lights in one
+//  Master 3, the MX Anywhere 3 and the MX Vertical have one (their two views are in
+//  MouseArtworkMaster4.swift, MouseArtworkMaster3.swift, MouseArtworkAnywhere3.swift and
+//  MouseArtworkVertical.swift, painted by MouseArtworkTwoViews.swift); a part lights in one
 //  view, and the panes turn the drawing to it (MouseArtworkTurn). The plain mouse has the
 //  one view from above, and its shapes and painting are here.
 //
@@ -32,22 +34,38 @@ enum MouseArtworkModel: CaseIterable {
     /// Logitech MX Master 3, 3S and 3 for Mac: two side buttons under the thumb wheel, the
     /// gesture button hidden in the thumb rest.
     case mxMaster3
+    /// Logitech MX Anywhere 3 and 3S (also "for Mac", "for Business"): a small symmetric
+    /// mouse, the wheel and the button behind it in one long slot, two side buttons. No
+    /// thumb wheel, no gesture button. Drawn in two views.
+    case mxAnywhere3
+    /// Logitech MX Vertical: an upright mouse. The two buttons and the wheel are on its
+    /// outer face, Back and Forward under the thumb on the inner one, and a button on the
+    /// plate along its top switches the pointer speed. Drawn in two views.
+    case mxVertical
     /// Any other mouse: symmetric, a wheel and two side buttons.
     case generic
 
     /// The drawing for a mouse that calls itself `name` (as `LogiCenter` reports the
     /// connected Logitech mouse); nil, or a mouse without a drawing of its own: `generic`.
     /// "MX Master 4" → `mxMaster4`; "MX Master 3", "MX Master 3S", "MX Master 3 for Mac"
-    /// → `mxMaster3`.
+    /// → `mxMaster3`; "MX Anywhere 3", "MX Anywhere 3S", "MX Anywhere 3 for Business" →
+    /// `mxAnywhere3` (the MX Anywhere 2 and 2S are another mouse: `generic`); "MX Vertical",
+    /// "MX Vertical Advanced Ergonomic Mouse" → `mxVertical`.
     static func model(forDeviceName name: String?) -> MouseArtworkModel {
         guard let name else { return .generic }
         // Words of letters and digits: "MX Master 3S for Mac" → mx, master, 3s, for, mac.
         let words = name.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
-        guard let master = words.indices.first(where: { $0 > 0 && words[$0 - 1] == "mx" && words[$0] == "master" }),
-              master + 1 < words.count else { return .generic }
-        switch words[master + 1] {
-        case "4": return .mxMaster4
-        case "3", "3s": return .mxMaster3
+        // The word after "MX" is the family, the one after that its generation.
+        let families = ["master", "anywhere", "vertical"]
+        guard let family = words.indices.first(where: { $0 > 0 && words[$0 - 1] == "mx" && families.contains(words[$0]) })
+        else { return .generic }
+        let generation = family + 1 < words.count ? words[family + 1] : nil
+        switch (words[family], generation) {
+        case ("master", "4"): return .mxMaster4
+        case ("master", "3"), ("master", "3s"): return .mxMaster3
+        case ("anywhere", "3"), ("anywhere", "3s"): return .mxAnywhere3
+        // The one MX Vertical has no number; a later one that had would be another mouse.
+        case ("vertical", let next) where next?.first?.isNumber != true: return .mxVertical
         default: return .generic
         }
     }
@@ -57,6 +75,8 @@ enum MouseArtworkModel: CaseIterable {
         switch self {
         case .mxMaster4: return MouseArtworkPart.allCases.filter { $0 != .pointerSpeed }
         case .mxMaster3: return MouseArtworkPart.allCases.filter { $0 != .thumbPanel && $0 != .pointerSpeed }
+        case .mxAnywhere3: return [.body, .left, .right, .wheel, .modeShift, .back, .forward]
+        case .mxVertical: return [.body, .left, .right, .wheel, .back, .forward, .pointerSpeed]
         case .generic: return [.body, .left, .right, .wheel, .back, .forward]
         }
     }
@@ -85,13 +105,16 @@ enum MouseArtworkModel: CaseIterable {
 
     /// The parts that light in the view from the thumb side: what the thumb works. From
     /// above they are under the body's overhang (the side buttons do not show there at
-    /// all; the thumb wheel and the thumb rest show, small and partly covered). Empty for
-    /// a mouse drawn from above only.
+    /// all; the thumb wheel and the thumb rest show, small and partly covered). The MX
+    /// Anywhere's and the MX Vertical's are their two side buttons (the button on the MX
+    /// Vertical's top shows in both views and lights from above, where it is seen whole).
+    /// Empty for a mouse drawn from above only.
     var sideParts: Set<MouseArtworkPart> {
         switch self {
         case .mxMaster4: return [.thumbWheel, .forward, .back, .gesture, .thumbPanel]
         // The MX Master 3's gesture button is its thumb rest, pressed down: it lights from above.
         case .mxMaster3: return [.thumbWheel, .forward, .back]
+        case .mxAnywhere3, .mxVertical: return [.forward, .back]
         case .generic: return []
         }
     }
@@ -181,12 +204,14 @@ struct MouseArtworkShapes {
     }
 
     /// The drawing of a mouse that is drawn in two views, which has shapes of its own for
-    /// each (MouseArtworkMaster4.swift, MouseArtworkMaster3.swift); nil for the plain mouse,
-    /// whose one drawing is below.
+    /// each (MouseArtworkMaster4.swift, MouseArtworkMaster3.swift, MouseArtworkAnywhere3.swift,
+    /// MouseArtworkVertical.swift); nil for the plain mouse, whose one drawing is below.
     var views: MouseArtworkTwoViews? {
         switch model {
         case .mxMaster4: return MouseArtworkMaster4(viewpoint: viewpoint, schematic: schematic)
         case .mxMaster3: return MouseArtworkMaster3(viewpoint: viewpoint, schematic: schematic)
+        case .mxAnywhere3: return MouseArtworkAnywhere3(viewpoint: viewpoint, schematic: schematic)
+        case .mxVertical: return MouseArtworkVertical(viewpoint: viewpoint, schematic: schematic)
         case .generic: return nil
         }
     }

@@ -1,9 +1,10 @@
 //
 //  ButtonsListLayout.swift
 //  Mos
-//  Which rows the Buttons pane shows, top to bottom. With an MX Master connected: one row
-//  per button of that mouse, in the order they sit on it, each with the binding of that
-//  button without modifiers, or none ("Default"), and the thumb wheel's row after the mode
+//  Which rows the Buttons pane shows, top to bottom. With a mouse that has a drawing of its
+//  own connected (an MX Master, an MX Anywhere 3, the MX Vertical): one row per button of
+//  that mouse, in the order they sit on it, each with the binding of that button without
+//  modifiers, or none ("Default"), and on an MX Master the thumb wheel's row after the mode
 //  shift button; then every other binding, as stored, under "Other buttons and keys". With
 //  any other mouse: the bindings as stored, as before. Also the trigger a "Default" row
 //  stores once it gets an action, and what it says until then. Pure: the pane and its tests
@@ -20,12 +21,16 @@ extension ButtonsMousePart {
 
     /// The buttons of `mouse` that get a row of their own, in the order they sit on it: the
     /// wheel and the button behind it, the side buttons front to back, then the thumb rest.
-    /// Left and right clicks are not listed; a mouse without a drawing of its own has none.
+    /// On the MX Vertical the button on its top comes right after the wheel: what the
+    /// fingers work first (the view from above), then what the thumb works. Left and right
+    /// clicks are not listed; a mouse without a drawing of its own has none.
     static func listed(on mouse: MouseArtworkModel) -> [ButtonsMousePart] {
         let order: [ButtonsMousePart]
         switch mouse {
         case .mxMaster4: order = [.middle, .modeShift, .gesture, .forward, .back, .thumbPanel]
         case .mxMaster3: order = [.middle, .modeShift, .forward, .back, .gesture]
+        case .mxAnywhere3: order = [.middle, .modeShift, .forward, .back]
+        case .mxVertical: order = [.middle, .pointerSpeed, .forward, .back]
         case .generic: order = []
         }
         return order.filter { mouse.has($0.artworkPart) }

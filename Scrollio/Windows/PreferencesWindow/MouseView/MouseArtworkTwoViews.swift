@@ -3,16 +3,19 @@
 //  Scrollio
 //  A mouse drawn in two views (MouseArtworkViewpoint): what such a drawing gives its
 //  painter, the bar its rollers and side buttons are made of, and the painter, which draws
-//  either view in the ink, strokes and fills of the other drawings. The MX Master 4's and
-//  the MX Master 3's shapes are in MouseArtworkMaster4.swift and MouseArtworkMaster3.swift:
-//  both views of a mouse on the grid of MouseArtwork.swift, the same mouse at the same
-//  size (117 units long), so the drawing can turn from one to the other in place.
+//  either view in the ink, strokes and fills of the other drawings. The shapes are in one
+//  file per mouse (MouseArtworkMaster4.swift, MouseArtworkMaster3.swift,
+//  MouseArtworkAnywhere3.swift, MouseArtworkVertical.swift): both views of a mouse on the
+//  grid of MouseArtwork.swift, the same mouse at the same size (the MX Masters 117 units
+//  long, the other two 114), so the drawing can turn from one to the other in place.
 //
 //  From above (front at the top, thumb side on the left) such a drawing has the two
-//  buttons, the wheel and the button behind it, and the thumb wheel at the shoulder; what
-//  the thumb works is under the body's overhang. From the thumb side (front to the left,
-//  the mouse on its base, wider than the grid: MouseArtworkShapes.canvas) it has the thumb
-//  wheel on top, the side buttons under it and the thumb rest beneath.
+//  buttons, the wheel and the button behind it, and on an MX Master the thumb wheel at the
+//  shoulder; what the thumb works is under the body's overhang. From the thumb side (front
+//  to the left, the mouse on its base, wider than the grid: MouseArtworkShapes.canvas) it
+//  has the side buttons, and on an MX Master the thumb wheel over them and the thumb rest
+//  beneath. A mouse without a thumb wheel or a thumb rest (the MX Anywhere 3, the MX
+//  Vertical) leaves them out.
 //
 
 import Cocoa

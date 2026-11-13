@@ -27,7 +27,7 @@ final class MouseArtworkTests: XCTestCase {
             ("mx master 3s", .mxMaster3),
             ("MX Master 2S", .generic),
             ("MX Master", .generic),
-            ("MX Anywhere 3S", .generic),
+            ("MX Anywhere 2S", .generic),
             ("MX Master 45", .generic),
             ("Master 4", .generic),
             ("M720 Triathlon", .generic),
@@ -42,7 +42,7 @@ final class MouseArtworkTests: XCTestCase {
     // MARK: - The parts of each drawing
 
     func testEachDrawingHasItsOwnParts() {
-        // (The button on the MX Vertical's top is that mouse's alone.)
+        // (The button on the MX Vertical's top is that mouse's alone: MouseArtworkMoreMiceTests.)
         XCTAssertEqual(MouseArtworkModel.mxMaster4.parts, MouseArtworkPart.allCases.filter { $0 != .pointerSpeed })
         XCTAssertEqual(Set(MouseArtworkModel.mxMaster3.parts), Set(MouseArtworkPart.allCases).subtracting([.thumbPanel, .pointerSpeed]))
         XCTAssertEqual(Set(MouseArtworkModel.generic.parts), [.body, .left, .right, .wheel, .back, .forward])
