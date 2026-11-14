@@ -1106,6 +1106,36 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
         XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.scrolling])
     }
 
+    /// "−" on the Buttons part's thumb wheel row, then the Scrolling part, then Edit › Undo:
+    /// the action comes back, and the Scrolling part shown now shows it at once (with its
+    /// reset button), not only after another part was shown; Redo the same way.
+    func testUndoOfTheRemovedRowShowsOnTheScrollingPartShownNow() throws {
+        let calculator = addCalculator()
+        calculator.setUsesScrollingSettings(false, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
+        calculator.setOwnThumbWheelScrolling(speed: 1, swapsDirection: false)
+        calculator.setOwnThumbWheelFunction(.zoom)
+        let page = try page()
+        let tab = try XCTUnwrap(page.scrollingController)
+        let undo = try XCTUnwrap(page.buttonsPart.paneUndoManager)
+        undo.groupsByEvent = false
+        page.show(.buttons)
+        undo.beginUndoGrouping()
+        page.buttonsPart.removeOwnThumbWheel()
+        undo.endUndoGrouping()
+        page.show(.scrolling)
+        XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .tabs, "the general action")
+        XCTAssertFalse(tab.resetToDefaultsButton.isEnabled, "nothing to reset: 1×, no swap, no action of its own")
+
+        undo.undo()
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .zoom)
+        XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .zoom)
+        XCTAssertEqual(tab.thumbWheelFunctionRow.explanation, ThumbWheelFunction.zoom.localizedHint)
+        XCTAssertTrue(tab.resetToDefaultsButton.isEnabled, "the app's own action can be reset")
+        undo.redo()
+        XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .tabs)
+        XCTAssertFalse(tab.resetToDefaultsButton.isEnabled)
+    }
+
     /// The part's "Reset to Defaults" with the app's own settings: the scroll values, the
     /// thumb wheel's 1× and no swap, and no action of its own (the Buttons part's row goes,
     /// the list's mark too); the window's Undo brings everything back, also after the page

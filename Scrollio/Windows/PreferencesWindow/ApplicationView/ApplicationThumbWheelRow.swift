@@ -267,12 +267,17 @@ extension ApplicationButtonsViewController {
     }
 
     /// A removal, its Undo or its Redo changed the app's thumb wheel: the rows again, with
-    /// the wheel's row selected when it came back.
+    /// the wheel's row selected when it came back; and the part of the page shown now, if
+    /// another one (the Scrolling part's Thumb wheel › Action is the same value), as a
+    /// button's removal does (`showUndoableChange`).
     private func showThumbWheelChange(selecting: Bool) {
         guard isViewLoaded else { return }
         reloadRows()
         if selecting {
             list.select(ButtonsListLayout.thumbWheelRowID)
+        }
+        if let shown = (parent as? ApplicationDetailViewController)?.shownController, shown !== self {
+            shown.syncViewWithOptions()
         }
     }
 }
