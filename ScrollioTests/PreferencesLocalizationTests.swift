@@ -93,7 +93,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-note-gesture-navigation", "buttons-note-hold-action", "buttons-note-no-action",
         "buttons-note-scroll-key", "buttons-note-conflict", "buttons-note-contended", "buttons-note-bluetooth",
         "buttons-note-standard-button", "buttons-note-standard-button-no-pulse", "buttons-scroll-key-title", "buttons-scroll-key-detail",
-        "buttons-problem-info", "buttons-checking", "buttons-undo-remove", "buttons-show-gesture-settings",
+        "buttons-problem-info", "buttons-checking", "buttons-undo-remove", "buttons-show-gesture-settings", "buttons-thumb-wheel-settings",
         "buttons-trigger-placed", "buttons-header-place-this-one", "buttons-place-title", "buttons-place-help",
         "buttons-place-gesture", "buttons-place-thumb-panel", "buttons-place-back", "buttons-place-forward",
         "buttons-place-mode-shift", "buttons-place-middle", "buttons-place-none", "buttons-place-used-by",

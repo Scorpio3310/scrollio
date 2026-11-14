@@ -143,6 +143,15 @@ enum ThumbWheelPresentation {
     static func reverseHint(for function: ThumbWheelFunction) -> String {
         return NSLocalizedString("scrolling-thumb-wheel-reverse-hint-\(function.identifierName)", comment: "")
     }
+
+    // MARK: The row's menu
+
+    /// "Thumb Wheel Settings…" at the end of a thumb wheel row's menu (the Buttons pane's,
+    /// an app's Buttons part's): it opens Scrolling › Thumb wheel, as "Show Gesture
+    /// Settings" opens the Gestures pane.
+    static var settingsItemTitle: String {
+        return NSLocalizedString("buttons-thumb-wheel-settings", comment: "")
+    }
 }
 
 // MARK: - Changes

@@ -470,6 +470,31 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertNil(pane.storedBinding(ofRow: ButtonsListLayout.thumbWheelRowID))
     }
 
+    /// The row's menu ends with "Thumb Wheel Settings…" (after a separator, with its
+    /// symbol, never ticked): it opens the Scrolling pane and changes nothing.
+    func testTheThumbWheelRowsMenuOpensItsSettings() throws {
+        let pane = makePane([])
+        let row = try XCTUnwrap(pane.thumbWheelRow)
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .volume)
+        pane.syncThumbWheel()
+        let menu = try XCTUnwrap(row.pullDown.menu)
+        let item = try XCTUnwrap(row.pullDown.settingsItem)
+        XCTAssertTrue(menu.items.last === item, "last")
+        XCTAssertTrue(menu.items[menu.items.count - 2].isSeparatorItem)
+        XCTAssertEqual(item.title, "Thumb Wheel Settings…")
+        XCTAssertNotNil(item.image)
+        XCTAssertNil(ThumbWheelPresentation.function(of: item), "it picks no function")
+        XCTAssertEqual(row.pullDown.functionItems.count, ThumbWheelFunction.allCases.count)
+
+        shownPanes = []
+        let before = Options.shared.thumbWheel
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item))
+        XCTAssertEqual(shownPanes, [PANEL_IDENTIFIER.scrolling])
+        XCTAssertEqual(Options.shared.thumbWheel, before, "nothing changes")
+        XCTAssertEqual(shown(row.pullDown), "Volume")
+        XCTAssertEqual(item.state, .off)
+    }
+
     /// The row follows the mouse: an MX Master 3S has it, a mouse without a thumb wheel
     /// (or none) does not, and it comes back with the MX Master; the bindings stay.
     func testTheThumbWheelRowFollowsTheMouse() throws {

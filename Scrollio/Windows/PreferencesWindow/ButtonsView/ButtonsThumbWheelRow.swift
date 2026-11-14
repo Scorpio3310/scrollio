@@ -7,7 +7,9 @@
 //  with "Default" for scrolling sideways, as the rows of the buttons say "Default" for what
 //  a button does by itself. The small picture lights the thumb wheel; the line under the
 //  title says what a turn does. No recorder, no ⓘ, never removed with "−". Whoever owns the
-//  row stores the choice (`onFunctionSelected`) and shows the stored value (`update`).
+//  row stores the choice (`onFunctionSelected`) and shows the stored value (`update`). The
+//  menu ends with "Thumb Wheel Settings…" (`onSettingsRequested`), which opens Scrolling ›
+//  Thumb wheel, as "Show Gesture Settings" opens the Gestures pane.
 //
 
 import Cocoa
@@ -16,11 +18,17 @@ import Cocoa
 
 /// The six functions of the thumb wheel in a pull-down as wide as the buttons' action
 /// pull-downs, so the column lines up: "Default" (scrolls sideways), then the others with
-/// their symbols. The one in use is ticked. Choosing one only reports it.
+/// their symbols. The one in use is ticked. Choosing one only reports it. Last,
+/// "Thumb Wheel Settings…", which changes nothing and only asks for the settings.
 final class ThumbWheelPullDown: NSPopUpButton {
+
+    /// What the "Thumb Wheel Settings…" item carries.
+    static let settingsMarker = "thumb-wheel-settings"
 
     /// A function was chosen (also the one already in use).
     var onFunctionSelected: ((ThumbWheelFunction) -> Void)?
+    /// "Thumb Wheel Settings…" was chosen.
+    var onSettingsRequested: (() -> Void)?
 
     /// What the pull-down shows.
     private(set) var function: ThumbWheelFunction
@@ -57,9 +65,20 @@ final class ThumbWheelPullDown: NSPopUpButton {
                 menu.addItem(.separator())
             }
         }
+        menu.addItem(.separator())
+        let settings = NSMenuItem(title: ThumbWheelPresentation.settingsItemTitle, action: #selector(settingsChosen(_:)), keyEquivalent: "")
+        settings.target = self
+        settings.representedObject = Self.settingsMarker
+        settings.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: nil)
+        menu.addItem(settings)
         // macOS 27 hides menu item images unless asked: every function keeps its symbol.
         menu.keepItemImagesVisible()
         return menu
+    }
+
+    /// The "Thumb Wheel Settings…" item.
+    var settingsItem: NSMenuItem? {
+        return menu?.items.first { ($0.representedObject as? String) == Self.settingsMarker }
     }
 
     /// Shows `function` in the title and ticks its item. Sends nothing.
@@ -78,6 +97,12 @@ final class ThumbWheelPullDown: NSPopUpButton {
         guard let chosen = ThumbWheelPresentation.function(of: sender) else { return }
         show(chosen)
         onFunctionSelected?(chosen)
+    }
+
+    /// The title stays the function's; nothing is stored.
+    @objc func settingsChosen(_ sender: NSMenuItem) {
+        show(function)
+        onSettingsRequested?()
     }
 }
 

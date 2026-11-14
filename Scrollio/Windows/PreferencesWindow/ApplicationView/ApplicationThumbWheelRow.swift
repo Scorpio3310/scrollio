@@ -12,7 +12,9 @@
 //  it names the general one by its name in Scrolling › Thumb wheel ("Scroll Sideways").
 //  "−" (or Delete) gives the wheel back to Buttons, and the window's Undo takes it again,
 //  with an undo target that outlives the page, as for a button's row. Buttons and
-//  Scrolling › Thumb wheel are never touched.
+//  Scrolling › Thumb wheel are never touched. The menu's "Thumb Wheel Settings…" shows the
+//  app's Scrolling part (`onThumbWheelSettingsRequested`, the page's
+//  `showThumbWheelSettings`).
 //
 
 import Cocoa
@@ -128,6 +130,9 @@ extension ApplicationButtonsViewController {
         let row = ApplicationThumbWheelRow(function: function, general: general, mouse: mouse)
         row.pullDown.onFunctionSelected = { [weak self] chosen in
             self?.setOwnThumbWheelFunction(chosen)
+        }
+        row.pullDown.onSettingsRequested = { [weak self] in
+            self?.onThumbWheelSettingsRequested?()
         }
         return row
     }

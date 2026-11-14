@@ -427,6 +427,33 @@ final class ApplicationThumbWheelPageTests: XCTestCase {
         XCTAssertEqual(calculator.ownThumbWheelFunction, .scroll)
     }
 
+    /// The row's "Thumb Wheel Settings…" shows the app's Scrolling part, the app's
+    /// function unchanged: with the app's own settings its Thumb wheel box; while the app
+    /// uses the Scrolling settings the part's switch (the general pane would show the
+    /// general action's values, not this app's).
+    func testTheRowsSettingsItemShowsTheAppsScrollingPart() throws {
+        let calculator = addCalculator()
+        calculator.setOwnThumbWheelFunction(.zoom)
+        let pane = makePane()
+        let part = try buttonsPart(pane: pane)
+        let page = try XCTUnwrap(pane.detailController)
+        let item = try XCTUnwrap(part.thumbWheelRow?.pullDown.settingsItem)
+        XCTAssertEqual(item.title, "Thumb Wheel Settings…")
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item))
+        XCTAssertEqual(page.shownPart, .scrolling)
+        XCTAssertFalse(page.scrollingPart.showsSettings, "the app uses the Scrolling settings: the switch")
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .zoom)
+
+        calculator.setUsesScrollingSettings(false, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
+        page.show(.buttons)
+        part.reloadRows()
+        let again = try XCTUnwrap(part.thumbWheelRow?.pullDown.settingsItem)
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(again.action), to: again.target, from: again))
+        XCTAssertEqual(page.shownPart, .scrolling)
+        XCTAssertTrue(page.scrollingPart.showsSettings)
+        XCTAssertTrue(page.scrollingController.thumbWheelSection.isDescendant(of: page.view), "its Thumb wheel box")
+    }
+
     /// "−" gives the wheel back to Buttons (nothing stored); Undo takes it again with its
     /// function, selected; Redo gives it back.
     func testRemovingTheRowGivesTheWheelBackAndUndoTakesItAgain() throws {

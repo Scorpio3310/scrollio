@@ -865,6 +865,14 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         application.setOwnThumbWheelScrolling(settings)
     }
 
+    /// Brings the Thumb wheel box into view: "Thumb Wheel Settings…" of a thumb wheel row
+    /// opened this pane (or an app's Scrolling part).
+    func revealThumbWheel() {
+        guard isViewLoaded else { return }
+        view.layoutSubtreeIfNeeded()
+        thumbWheelSection.scrollToVisible(thumbWheelSection.bounds)
+    }
+
     /// Back to the scroll options of a new installation: the "Smooth" feel, the default
     /// speed and step, the three default keys, trackpad-style scrolling off; also the
     /// thumb wheel: on the tab it scrolls sideways at 1×, nothing reversed, desktops in

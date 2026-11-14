@@ -218,6 +218,7 @@ final class ApplicationDetailViewController: NSViewController {
                 buttons.partShowing = buttonsPartShowing
                 // "Show Gesture Settings" of a row: the gestures of this app, not the pane.
                 buttons.onGestureSettingsRequested = { [weak self] in self?.show(.gestures) }
+                buttons.onThumbWheelSettingsRequested = { [weak self] in self?.showThumbWheelSettings() }
             }
             (controller as? ApplicationRingPartViewController)?.partShowing = ringPartShowing
             (controller as? ApplicationGesturesPartViewController)?.partShowing = gesturesPartShowing
@@ -265,6 +266,19 @@ final class ApplicationDetailViewController: NSViewController {
     }
 
     // MARK: - Parts
+
+    /// "Thumb Wheel Settings…" of the Buttons part's thumb wheel row: the app's Scrolling
+    /// part, with its Thumb wheel box in view while the app has its own settings. While it
+    /// uses the Scrolling settings the part shows that switch and its line, and no box:
+    /// the general Scrolling pane would show the general action's values, not this app's
+    /// action, and one click on the switch here shows the app's own, with its action.
+    func showThumbWheelSettings() {
+        show(.scrolling)
+        guard let scrolling = scrollingPart else { return }
+        scrolling.syncViewWithOptions()
+        guard scrolling.showsSettings else { return }
+        scrolling.scrollingController.revealThumbWheel()
+    }
 
     /// Shows `part` in place of the one shown, remembers it for every app's page, and tells
     /// the pane the page's height changed.

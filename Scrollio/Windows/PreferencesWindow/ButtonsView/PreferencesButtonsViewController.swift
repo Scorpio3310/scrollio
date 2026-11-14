@@ -98,7 +98,7 @@ class PreferencesButtonsViewController: NSViewController {
         let below = anchor.isFlipped ? anchor.bounds.maxY + 4 : anchor.bounds.minY - 4
         menu.popUp(positioning: nil, at: NSPoint(x: anchor.bounds.minX, y: below), in: anchor)
     }
-    /// Shows another pane of the window (the Gestures pane).
+    /// Shows another pane of the window (the Gestures pane, the Scrolling pane).
     var showPane: ((String) -> Void)?
     /// Takes Undo and Redo of a removal; the window's when nil.
     var paneUndoManager: UndoManager?
@@ -393,7 +393,21 @@ class PreferencesButtonsViewController: NSViewController {
         row.pullDown.onFunctionSelected = { [weak self] function in
             self?.setThumbWheelFunction(function)
         }
+        row.pullDown.onSettingsRequested = { [weak self] in
+            self?.showThumbWheelSettings()
+        }
         return row
+    }
+
+    /// "Thumb Wheel Settings…" of the row: the Scrolling pane, its Thumb wheel box in view.
+    func showThumbWheelSettings() {
+        if let showPane {
+            showPane(PANEL_IDENTIFIER.scrolling)
+            return
+        }
+        guard let split = Self.splitViewController(of: self),
+              split.selectPane(withIdentifier: PANEL_IDENTIFIER.scrolling) else { return }
+        (split.controller(for: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)?.revealThumbWheel()
     }
 
     /// Stores what the thumb wheel does, only when it changes. Both panes then show it
