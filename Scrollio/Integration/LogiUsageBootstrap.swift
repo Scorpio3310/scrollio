@@ -54,6 +54,22 @@ enum LogiUsageBootstrap {
         installGestureObserver()
     }
 
+    #if DEBUG
+    /// Tests: whether the observer of the app in front is in.
+    static var hasFrontApplicationObserver: Bool {
+        return frontApplicationObserver != nil
+    }
+
+    /// Tests: takes away the observer of the app in front that `installOptionsObservers` put
+    /// in. Left there, it rewrote the Logitech usage from `Options.shared` at every real
+    /// switch of apps during the later tests of the run.
+    static func removeFrontApplicationObserverForTests() {
+        guard let observer = frontApplicationObserver else { return }
+        NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        frontApplicationObserver = nil
+    }
+    #endif
+
     static func refreshAll() {
         // 1. Button bindings (直读 Options, 不依赖 ButtonUtils 缓存失效的订阅顺序): those
         //    that count while the app in front is.

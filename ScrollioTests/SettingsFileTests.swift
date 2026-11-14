@@ -1971,10 +1971,19 @@ final class SettingsFileImportTests: XCTestCase {
         _ = ButtonUtils.shared
         ThumbWheelSettingsChange.removeObserver(ThumbWheelSettingsChange.addObserver {})
         let before = Options.shared.observerCountForTests
+        let hadFrontApplicationObserver = LogiUsageBootstrap.hasFrontApplicationObserver
         LogiUsageBootstrap.installOptionsObservers()
         let installed = Options.shared.observerCountForTests - before
-        defer { Options.shared.removeNewestObserversForTests(installed) }
+        defer {
+            Options.shared.removeNewestObserversForTests(installed)
+            // And the observer of the app in front, which a real switch of apps during a
+            // later test would answer.
+            if !hadFrontApplicationObserver {
+                LogiUsageBootstrap.removeFrontApplicationObserverForTests()
+            }
+        }
         XCTAssertEqual(installed, 4, "buttons, hold keys and apps; the wheel; the mouse; gestures")
+        XCTAssertTrue(LogiUsageBootstrap.hasFrontApplicationObserver, "the app in front is followed too")
         XCTAssertFalse(Options.shared.logiMouseManaged)
         XCTAssertFalse(LogiCenter.shared.usages(of: 1006).contains(.buttonBinding))
 
