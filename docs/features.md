@@ -283,17 +283,21 @@ wheel.
   panes say.
 - Speed and Swap direction are scroll settings of the app: they are its own while "Use
   settings from Scrolling" is off on its page (they start as what the wheel did in the
-  app at that moment, and stay for later while the switch is on), and dimmed while it is
-  on. An app whose own settings date from before keeps the speed and direction of
-  Scrolling › Thumb wheel until you change them on its page.
+  app at that moment, and stay for later while the switch is on). The Scrolling part
+  shows its settings, the Thumb wheel box among them, only while that switch is off: on,
+  it is the switch alone, as the Gestures and Shortcut Ring parts are with theirs. An
+  app whose own settings date from before keeps the speed and direction of Scrolling ›
+  Thumb wheel until you change them on its page.
 - The action is the app's own whatever that switch says: choose it in the Scrolling
-  part's box, or with "+" of the Buttons part, which offers "Thumb wheel" while the
-  connected mouse has one (an MX Master 4, 3 or 3S). The new row starts with what the
-  wheel does everywhere. Without a speed of its own, an app's action runs at the default
-  speed when it is of the other kind than what the wheel does everywhere (scrolling
-  against steps). "−" gives the action back to Buttons; Edit › Undo takes it again.
-- "Reset to Defaults" of the app's Scrolling part gives the wheel 1× and no swap there
-  and the action of every app again; that of its Buttons part takes the action away.
+  part's box while the switch is off, or, either way, with "+" of the Buttons part, which
+  offers "Thumb wheel" while the connected mouse has one (an MX Master 4, 3 or 3S). The
+  new row starts with what the wheel does everywhere. Without a speed of its own, an
+  app's action runs at the default speed when it is of the other kind than what the
+  wheel does everywhere (scrolling against steps). "−" gives the action back to Buttons;
+  Edit › Undo takes it again.
+- "Reset to Defaults" of the app's Scrolling part (there while the switch is off) gives
+  the wheel 1× and no swap there and the action of every app again; that of its Buttons
+  part takes the action away.
 
 ## Logitech MX mice
 

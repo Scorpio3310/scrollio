@@ -1300,8 +1300,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try renderPane(PANEL_IDENTIFIER.application, name: "apps-with-apps-not-key", key: false, afterLoad: selectCalculator)
     }
 
-    /// An app's page: with settings of its own and using the Scrolling settings, "Advanced"
-    /// closed and open, as the pane shows it in place of the list.
+    /// An app's page: with settings of its own and using the Scrolling settings (the switch
+    /// alone), "Advanced" closed and open, as the pane shows it in place of the list.
     func testRenderAppPage() throws {
         let stored = Options.shared.application.applications
         addTeardownBlock { Options.shared.application.applications = stored }
@@ -1326,8 +1326,9 @@ final class PreferencesWindowRenderTests: XCTestCase {
 
     /// An app's Scrolling part with its "Thumb wheel" box (`app-page-thumb-wheel-<case>-<appearance>.png`),
     /// Scrolling › Thumb wheel at "Switch Tabs", 1.5×, swapped: `inherit`, the app uses the
-    /// Scrolling settings and has its own action, Zoom (live) over the general speed and
-    /// swap (dimmed); `own`, its own settings with its own 2×, not swapped, and Volume.
+    /// Scrolling settings and has its own action, Zoom (the part is the switch alone: the
+    /// action is set in the Buttons part); `own`, its own settings with its own 2×, not
+    /// swapped, and Volume.
     func testRenderAppPageThumbWheel() throws {
         let stored = Options.shared.application.applications
         addTeardownBlock { Options.shared.application.applications = stored }
@@ -1348,6 +1349,29 @@ final class PreferencesWindowRenderTests: XCTestCase {
                     .uiStateDefaults = defaults
             }, afterLoad: { controller in
                 (controller as? PreferencesApplicationViewController)?.openApplication(withID: calculator.path, part: .scrolling)
+            })
+        }
+    }
+
+    /// An app's Scrolling part as the switch leaves it (`app-scrolling-<case>-<appearance>.png`),
+    /// the same app with its own thumb wheel action, Zoom: `on`, "Use settings from
+    /// Scrolling" on and its box alone under the app's, as the Gestures and Shortcut Ring
+    /// parts are with their switch on; `off`, the app's own settings under it, the Thumb
+    /// wheel box with its line and "Reset to Defaults" at the end.
+    func testRenderAppPageScrollingSwitch() throws {
+        let stored = Options.shared.application.applications
+        addTeardownBlock { Options.shared.application.applications = stored }
+        for inherit in [true, false] {
+            let safari = Application(path: "/Applications/Safari.app")
+            safari.setUsesScrollingSettings(inherit, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
+            safari.setOwnThumbWheelFunction(.zoom)
+            Options.shared.application.applications = EnhanceArray<Application>(withArray: [safari], matchKey: "path")
+            let defaults = uiDefaults(advanced: false)
+            try renderPane(PANEL_IDENTIFIER.application, name: "app-scrolling-\(inherit ? "on" : "off")", prepare: { preferences in
+                (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                    .uiStateDefaults = defaults
+            }, afterLoad: { controller in
+                (controller as? PreferencesApplicationViewController)?.openApplication(withID: safari.path, part: .scrolling)
             })
         }
     }

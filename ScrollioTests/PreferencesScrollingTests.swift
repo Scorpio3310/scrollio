@@ -1675,7 +1675,10 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertFalse(controller.resetToDefaultsButton.isEnabled)
     }
 
-    func testAnAppThatInheritsShowsTheGlobalValuesGreyedOut() {
+    /// An app that uses the Scrolling settings: its page keeps the settings out of sight
+    /// (`ApplicationPageTests`); should they be reached all the same, they hold the global
+    /// values and take no click, which would change the Scrolling settings.
+    func testAnAppThatInheritsHasTheGlobalValuesAndNoControlOn() {
         Options.shared.scroll.speed = 8.5
         Options.shared.scroll.duration = 4.35
         Options.shared.scroll.smoothSimTrackpad = true
@@ -1710,7 +1713,7 @@ final class PreferencesScrollingTests: XCTestCase {
 
     /// The page has no preview, and the thumb wheel's box in the same place as the tab,
     /// with a line of its own under it: the action is the app's Buttons part's, the speed
-    /// and the direction follow "Use settings from Scrolling".
+    /// and the direction are the app's own settings.
     func testThePerAppViewHasNoPreviewAndItsOwnThumbWheel() {
         let global = makeController()
         let perApp = makeController(target: makeApplication(inherit: false))
@@ -1723,7 +1726,7 @@ final class PreferencesScrollingTests: XCTestCase {
         }
         XCTAssertEqual(global.thumbWheelNote.stringValue, "For the sideways wheel: an MX Master's thumb wheel, or a wheel that tilts.")
         XCTAssertEqual(perApp.thumbWheelNote.stringValue,
-                       "The action is shared with this app's Buttons part and does not follow “Use settings from Scrolling”; speed and direction do.")
+                       "The action is also in this app's Buttons part and stays when “Use settings from Scrolling” is on; speed and direction then follow Scrolling.")
         XCTAssertEqual(perApp.thumbWheelSection.accessibilityHelp(), perApp.thumbWheelNote.stringValue)
         global.view.layoutSubtreeIfNeeded()
         perApp.view.layoutSubtreeIfNeeded()
@@ -1783,12 +1786,23 @@ final class PreferencesScrollingTests: XCTestCase {
         tab.setAdvancedExpanded(false)
         XCTAssertEqual(page.view.fittingSize.height, closed, accuracy: 0.5)
 
-        // "Use settings from Scrolling" greys the settings out.
+        // "Use settings from Scrolling" takes the settings out of the page (the tab stays its
+        // child), and the page hears of it.
+        let beforeSwitch = heightChanges
         page.inheritSwitch.state = .on
         page.scrollingPart.inheritClick(page.inheritSwitch)
         XCTAssertTrue(application.inherit)
+        XCTAssertFalse(tab.view.isDescendant(of: page.view))
+        XCTAssertTrue(page.scrollingPart.children.first === tab)
+        XCTAssertEqual(heightChanges, beforeSwitch + 1)
+        XCTAssertLessThan(page.view.fittingSize.height, header + 100, "the app's box and the switch's")
+        // Out of sight, the settings take no click: one would change the Scrolling settings.
         XCTAssertFalse(tab.scrollSpeedSlider.isEnabled)
         XCTAssertEqual(tab.scrollSpeedSlider.doubleValue, 6.5, accuracy: 1e-9, "the global value")
+        // "Advanced" out of sight changes nothing of the page's height.
+        tab.setAdvancedExpanded(true)
+        XCTAssertEqual(heightChanges, beforeSwitch + 1)
+        tab.setAdvancedExpanded(false)
     }
 
     // MARK: - Layout

@@ -5,7 +5,9 @@
 //  An app's page in parts (Scrolling, Buttons, Gestures, Shortcut Ring: one at a time
 //  under the app's box, the one shown last remembered for every app, a part that does not
 //  exist falling back to Scrolling, the page's height following the part), the marks of
-//  the list of apps, the Buttons part: only the app's own rows with what they do
+//  the list of apps, the Scrolling part: the switch's box alone while the app uses the
+//  Scrolling settings, its own settings and "Reset to Defaults" under it while it does
+//  not; the Buttons part: only the app's own rows with what they do
 //  everywhere, the "+" menu, changing, recording and removing a row, the Shortcut Ring and
 //  Gesture Navigation offered as everything else, "Show Gesture Settings" leading to the
 //  Gestures part; the Gestures part: the switch, the app's own five rows and invert switch,
@@ -220,12 +222,13 @@ final class ApplicationPageTests: XCTestCase {
     }
 
     /// The pane takes the height of the part shown, at each change. (A button runs the
-    /// gestures and one opens the ring: nothing folds.)
+    /// gestures and one opens the ring: nothing folds. The app has its own scrolling
+    /// settings: they show.)
     func testThePagesHeightFollowsThePartShown() throws {
         Options.shared.buttons.binding = [
             binding(3, SystemShortcut.mouseGestureNavigation.identifier), binding(5, SystemShortcut.shortcutRing.identifier),
         ]
-        addApp(Self.calculator)
+        addApp(Self.calculator, inherit: false)
         let pane = makePane()
         pane.openApplication(withID: Self.calculator)
         let page = try XCTUnwrap(pane.detailController)
@@ -261,6 +264,176 @@ final class ApplicationPageTests: XCTestCase {
 
         choose(0, on: page)
         XCTAssertEqual(pane.view.frame.height, scrolling, accuracy: 0.5)
+    }
+
+    // MARK: - The Scrolling part
+
+    /// While the app uses the Scrolling settings the part is the switch's box alone, as the
+    /// Gestures and Shortcut Ring parts are: no settings, no "Thumb wheel" box, no "Reset
+    /// to Defaults". The settings' controller is kept for when the switch goes off.
+    func testTheScrollingPartIsTheSwitchAloneWhileTheAppUsesTheScrollingSettings() throws {
+        addApp(Self.calculator)
+        let pane = makePane()
+        pane.openApplication(withID: Self.calculator, part: .scrolling)
+        let page = try XCTUnwrap(pane.detailController)
+        let part = try XCTUnwrap(page.scrollingPart)
+        page.view.layoutSubtreeIfNeeded()
+
+        XCTAssertTrue(part.inheritRow.isOn)
+        XCTAssertEqual(part.inheritRow.explanation, "Changes under Scrolling apply to Calculator too.")
+        XCTAssertFalse(part.showsSettings)
+        XCTAssertEqual(part.view.subviews, [part.inheritSection], "the switch's box alone")
+        let controls = allSubviews(of: part.view).filter { $0 is NSControl && !($0 is NSTextField) }
+        XCTAssertEqual(controls, [part.inheritRow.toggle], "the switch is the part's only control")
+        let settings = try XCTUnwrap(part.scrollingController)
+        XCTAssertTrue(settings.parent === part, "kept for when the switch goes off")
+        XCTAssertNil(settings.view.superview)
+        for view: NSView in [settings.smoothSwitch, settings.thumbWheelSection, settings.keysSection, settings.resetToDefaultsButton] {
+            XCTAssertFalse(view.isDescendant(of: page.view))
+        }
+        let margin = PreferencesGroupedForm.margin
+        XCTAssertEqual(part.view.fittingSize.height, part.inheritSection.fittingSize.height + 2 * margin, accuracy: 0.5)
+        XCTAssertFalse(page.view.hasAmbiguousLayout)
+        XCTAssertEqual(pane.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+    }
+
+    /// Off: the app's own settings stand under the switch's box, "Reset to Defaults" at
+    /// their end, the page measures again once and the list marks the app. On again: they
+    /// go, the page measures once more and is as short as before; the values are kept for
+    /// later and come back as they were left.
+    func testTurningTheScrollingSwitchOffShowsTheSettingsAndOnTakesThemAway() throws {
+        let calculator = addApp(Self.calculator)
+        let pane = makePane()
+        pane.openApplication(withID: Self.calculator, part: .scrolling)
+        let page = try XCTUnwrap(pane.detailController)
+        let part = try XCTUnwrap(page.scrollingPart)
+        let settings = try XCTUnwrap(part.scrollingController)
+        var heightChanges = 0
+        let original = page.onHeightChange
+        page.onHeightChange = {
+            heightChanges += 1
+            original?()
+        }
+        let short = pane.view.frame.height
+
+        page.inheritSwitch.state = .off
+        send(page.inheritSwitch)
+        XCTAssertFalse(calculator.inherit)
+        XCTAssertEqual(heightChanges, 1, "the page measures again, once")
+        XCTAssertTrue(part.showsSettings)
+        XCTAssertEqual(part.inheritRow.explanation, "Calculator keeps its own settings below.")
+        let shown: [NSView] = [
+            settings.smoothSwitch, settings.feelControl, settings.scrollSpeedSlider, settings.reverseSwitch,
+            settings.thumbWheelSection, settings.thumbWheelNote, settings.keysSection, settings.advancedButton,
+            settings.resetToDefaultsButton,
+        ]
+        for view in shown {
+            XCTAssertTrue(view.isDescendant(of: page.view))
+            XCTAssertFalse(view.isHiddenOrHasHiddenAncestor)
+        }
+        XCTAssertTrue(settings.smoothSwitch.isEnabled, "the app's own, editable")
+        XCTAssertTrue(settings.thumbWheelSpeedSlider.isEnabled)
+        XCTAssertGreaterThan(pane.view.frame.height, short + 300)
+        XCTAssertEqual(pane.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+        page.view.layoutSubtreeIfNeeded()
+        XCTAssertFalse(page.view.hasAmbiguousLayout)
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.scrolling], "the mark of the list")
+
+        settings.scrollSpeedSlider.doubleValue = 3
+        send(settings.scrollSpeedSlider)
+        page.inheritSwitch.state = .on
+        send(page.inheritSwitch)
+        XCTAssertTrue(calculator.inherit)
+        XCTAssertEqual(heightChanges, 2)
+        XCTAssertFalse(part.showsSettings)
+        XCTAssertNil(settings.view.superview)
+        XCTAssertEqual(pane.view.frame.height, short, accuracy: 0.5)
+        XCTAssertEqual(calculator.scroll.speed, 3, "kept for later")
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks ?? [], [])
+
+        page.inheritSwitch.state = .off
+        send(page.inheritSwitch)
+        XCTAssertEqual(heightChanges, 3)
+        XCTAssertEqual(settings.scrollSpeedSlider.doubleValue, 3, accuracy: 1e-9, "back as it was left")
+    }
+
+    /// "Reset to Defaults" is there only while the switch is off, at the end of the app's
+    /// own settings. Its Undo still takes the reset back after the switch went on (the
+    /// switch stays), and Redo shows on the settings once they are back.
+    func testTheScrollingPartsResetIsThereOnlyWhileTheSwitchIsOffAndItsUndoStays() throws {
+        let calculator = addApp(Self.calculator, inherit: false)
+        calculator.scroll.speed = 4.5
+        let pane = makePane()
+        pane.openApplication(withID: Self.calculator, part: .scrolling)
+        let page = try XCTUnwrap(pane.detailController)
+        let settings = try XCTUnwrap(page.scrollingController)
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        settings.paneUndoManager = undo
+        let reset = try XCTUnwrap(settings.resetToDefaultsButton)
+        XCTAssertTrue(reset.isDescendant(of: page.view))
+        XCTAssertTrue(reset.isEnabled)
+
+        undo.beginUndoGrouping()
+        send(reset)
+        undo.endUndoGrouping()
+        XCTAssertEqual(calculator.scroll, OPTIONS_SCROLL_DEFAULT())
+        XCTAssertTrue(settings.offersUndoOfReset)
+
+        page.inheritSwitch.state = .on
+        send(page.inheritSwitch)
+        XCTAssertFalse(reset.isDescendant(of: page.view), "no Reset while the app uses the Scrolling settings")
+        XCTAssertFalse(settings.offersUndoOfReset, "nor its offer")
+        undo.undo()
+        XCTAssertEqual(calculator.scroll.speed, 4.5, "Edit › Undo still takes the reset back")
+        XCTAssertTrue(calculator.inherit, "the switch stays")
+        XCTAssertFalse(page.scrollingPart.showsSettings)
+
+        page.inheritSwitch.state = .off
+        send(page.inheritSwitch)
+        XCTAssertTrue(reset.isDescendant(of: page.view))
+        XCTAssertEqual(settings.scrollSpeedSlider.doubleValue, 4.5, accuracy: 1e-9)
+        undo.redo()
+        XCTAssertEqual(calculator.scroll, OPTIONS_SCROLL_DEFAULT())
+        XCTAssertEqual(settings.scrollSpeedSlider.doubleValue, OPTIONS_SCROLL_DEFAULT().speed, accuracy: 1e-9, "Redo shows on the settings")
+    }
+
+    /// Undo of a removal while the page of the app added again is open on Scrolling: the
+    /// switch goes off as it was, the app's own settings come back under it and the pane
+    /// takes the page's new height; Redo takes them away again.
+    func testUndoOntoTheOpenPageShowsTheScrollingSettingsAndRefitsThePane() throws {
+        let calculator = addApp(Self.calculator, inherit: false)
+        calculator.scroll.speed = 4.5
+        ApplicationPagePart.scrolling.remember(in: uiDefaults)
+        let pane = makePane()
+        let window = makeWindow(for: pane)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        pane.list.select(Self.calculator)
+        undo.beginUndoGrouping()
+        pane.list.removeButton.performClick(nil)
+        undo.endUndoGrouping()
+        let again = pane.addApplication(path: Self.calculator, knownPaths: [Self.calculator])
+        let page = try XCTUnwrap(pane.detailController)
+        XCTAssertTrue(page.application === again)
+        XCTAssertEqual(page.shownPart, .scrolling)
+        XCTAssertTrue(again.inherit, "an app added anew uses the Scrolling settings")
+        XCTAssertFalse(page.scrollingPart.showsSettings)
+        let short = pane.view.frame.height
+
+        undo.undo()
+        XCTAssertFalse(again.inherit)
+        XCTAssertEqual(page.inheritSwitch.state, .off)
+        XCTAssertTrue(page.scrollingPart.showsSettings, "the app's own settings")
+        XCTAssertEqual(page.scrollingController.scrollSpeedSlider.doubleValue, 4.5, accuracy: 1e-9)
+        XCTAssertGreaterThan(pane.view.frame.height, short + 300)
+        XCTAssertEqual(pane.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+
+        undo.redo()
+        XCTAssertTrue(again.inherit)
+        XCTAssertEqual(page.inheritSwitch.state, .on)
+        XCTAssertFalse(page.scrollingPart.showsSettings)
+        XCTAssertEqual(pane.view.frame.height, short, accuracy: 0.5)
     }
 
     /// The Buttons part's line under the list is a plain sentence that fits two lines, also
