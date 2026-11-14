@@ -277,6 +277,12 @@ struct ButtonBinding: Codable, Equatable {
     /// "打开应用" 动作的结构化载荷; 仅当 systemShortcutName == openTargetSentinel 时非 nil.
     let openTarget: OpenTargetPayload?
 
+    /// The name and icon the user gave the recorded key combination this binding sends
+    /// (`ShortcutLabel`); nil for every other action. Display only: matching and
+    /// execution never read it. Stored under "label" only when set, so a binding without
+    /// one is written as before, and an older version reads the binding without it.
+    let label: ShortcutLabel?
+
     // MARK: - 瞬态缓存字段 (不参与编解码)
 
     /// 缓存的自定义按键码
@@ -291,7 +297,7 @@ struct ButtonBinding: Codable, Equatable {
     // MARK: - CodingKeys (仅编码持久化字段)
 
     enum CodingKeys: String, CodingKey {
-        case id, triggerEvent, systemShortcutName, isEnabled, createdAt, openTarget
+        case id, triggerEvent, systemShortcutName, isEnabled, createdAt, openTarget, label
     }
 
     // MARK: - 计算属性
@@ -312,13 +318,15 @@ struct ButtonBinding: Codable, Equatable {
          triggerEvent: RecordedEvent,
          systemShortcutName: String,
          isEnabled: Bool = true,
-         createdAt: Date = Date()) {
+         createdAt: Date = Date(),
+         label: ShortcutLabel? = nil) {
         self.id = id
         self.triggerEvent = triggerEvent
         self.systemShortcutName = systemShortcutName
         self.isEnabled = isEnabled
         self.createdAt = createdAt
         self.openTarget = nil
+        self.label = ShortcutLabel.kept(label, for: systemShortcutName)
     }
 
     /// "打开应用" 动作专用初始化器, 强制保证 sentinel 与 payload 一致.
@@ -333,6 +341,7 @@ struct ButtonBinding: Codable, Equatable {
         self.openTarget = openTarget
         self.isEnabled = isEnabled
         self.createdAt = createdAt
+        self.label = nil
     }
 
     func standardMouseAliasBindingIfAvailable() -> ButtonBinding? {
@@ -355,7 +364,22 @@ struct ButtonBinding: Codable, Equatable {
             triggerEvent: triggerEvent,
             systemShortcutName: systemShortcutName,
             isEnabled: isEnabled,
-            createdAt: createdAt
+            createdAt: createdAt,
+            label: label
+        )
+    }
+
+    /// The same binding with `label` for its recorded key combination (nil: none).
+    /// A binding with another kind of action stays as it is.
+    func labelled(_ label: ShortcutLabel?) -> ButtonBinding {
+        guard openTarget == nil else { return self }
+        return ButtonBinding(
+            id: id,
+            triggerEvent: triggerEvent,
+            systemShortcutName: systemShortcutName,
+            isEnabled: isEnabled,
+            createdAt: createdAt,
+            label: label
         )
     }
 
@@ -379,6 +403,10 @@ struct ButtonBinding: Codable, Equatable {
         self.createdAt = try c.decode(Date.self, forKey: .createdAt)
         let payload = try c.decodeIfPresent(OpenTargetPayload.self, forKey: .openTarget)
         self.openTarget = payload
+        // A label that cannot be read, or one on an action that takes none, is no label:
+        // it never fails the binding.
+        let label = (try? c.decodeIfPresent(ShortcutLabel.self, forKey: .label)) ?? nil
+        self.label = ShortcutLabel.kept(label, for: name)
 
         // 强制一致性: sentinel 与 payload 同时存在或同时不存在.
         let nameIsSentinel = (name == Self.openTargetSentinel)
@@ -483,7 +511,8 @@ struct ButtonBinding: Codable, Equatable {
                lhs.systemShortcutName == rhs.systemShortcutName &&
                lhs.isEnabled == rhs.isEnabled &&
                lhs.createdAt == rhs.createdAt &&
-               lhs.openTarget == rhs.openTarget
+               lhs.openTarget == rhs.openTarget &&
+               lhs.label == rhs.label
     }
 }
 
@@ -538,7 +567,8 @@ private extension ButtonBinding {
             triggerEvent: triggerEvent,
             systemShortcutName: donor.systemShortcutName,
             isEnabled: donor.isEnabled,
-            createdAt: createdAt
+            createdAt: createdAt,
+            label: donor.label
         )
     }
 }

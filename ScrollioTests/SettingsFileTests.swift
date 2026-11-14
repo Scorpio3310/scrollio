@@ -544,6 +544,70 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertEqual(target.options.ring, ring)
     }
 
+    /// The name and the icon of a recorded key combination travel with its place, its
+    /// app's place and its button: they are in the file, the sheet lists such a shortcut
+    /// by its keys with the name after them, and an import brings them in. A label on
+    /// anything else, or one that cannot be read, is left out and costs nothing else.
+    func testTheNameAndIconOfARecordedShortcutAreInTheFileAndComeBack() throws {
+        let source = makeSource()
+        let keys = "custom::15:1179648"
+        let reload = ShortcutLabel(name: "Reload", icon: .symbol("arrow.clockwise"))
+        let reply = ShortcutLabel(name: "Reply to All", icon: .character("↩"))
+        var ring = ShortcutRingSettings.default
+        ring[6] = ShortcutRingPlace(action: keys, label: reload)
+        source.options.ring = ring
+        let notes = try XCTUnwrap(source.options.application.applications.get(by: "/Applications/Notes.app"))
+        notes.setUsesGeneralRing(false, general: .default)
+        notes.ring?[2] = ShortcutRingPlace(action: keys, label: reply)
+        let button = ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 7, modifiers: 0, deviceFilter: nil),
+            systemShortcutName: keys, label: reload
+        )
+        source.options.buttons.binding.append(button)
+
+        let data = try SettingsFile.export(from: source.options, now: Self.moment).get()
+        let text = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertTrue(text.contains("arrow.clockwise"), "the file holds the icon")
+        XCTAssertTrue(text.contains("Reply to All"), "and the name")
+        let contents = try SettingsFile.read(data).get()
+        XCTAssertEqual(contents.ring, ring, "what was exported comes back")
+        XCTAssertEqual(contents.ring?[6].label, reload)
+        XCTAssertEqual(contents.bindings?.first { $0.id == button.id }?.label, reload)
+        XCTAssertEqual(contents.applications?.first { $0.path == "/Applications/Notes.app" }?.ring?[2].label, reply)
+        XCTAssertEqual(contents.unknownActions, 0)
+        XCTAssertEqual(contents.unreadableEntries, 0)
+
+        // The sheet says the keys first: they are what the shortcut does.
+        let ringLines = SettingsFileText.ringLines(of: contents)
+        XCTAssertTrue(ringLines.contains { $0.hasPrefix("Ring Left: ⇧⌘") && $0.hasSuffix("(named “Reload”)") }, "\(ringLines)")
+        XCTAssertTrue(ringLines.contains { $0.contains("⇧⌘") && $0.hasSuffix("(named “Reply to All”)") }, "\(ringLines)")
+        let actionLines = SettingsFileText.actionLines(of: contents)
+        XCTAssertTrue(actionLines.contains { $0.contains("⇧⌘") && $0.hasSuffix("(named “Reload”)") }, "\(actionLines)")
+        XCTAssertEqual(
+            SettingsFileText.actionName(of: ButtonBinding(triggerEvent: button.triggerEvent, systemShortcutName: keys)),
+            ButtonTriggerNaming.shortcutText(type: .keyboard, code: 15, modifiers: 1_179_648), "without a name: the keys, as before"
+        )
+
+        let target = OwnSettings(for: self)
+        target.options.readOptions()
+        XCTAssertTrue(SettingsFile.apply(contents, to: target.options))
+        XCTAssertEqual(target.options.ring, ring)
+        XCTAssertEqual(target.options.buttons.binding.first { $0.id == button.id }?.label, reload)
+        XCTAssertEqual(target.options.application.applications.get(by: "/Applications/Notes.app")?.ring?[2].label, reply)
+
+        // A file from elsewhere: a label on a listed action is not taken, one that cannot
+        // be read leaves the keys, and a name comes in as one line of what can be seen.
+        let foreign = try Fixture.contents(
+            #""shortcutRingSettings":{"places":[{"action":"copy","label":{"name":"Paste"}},"#
+                + #"{"action":"custom::15:1179648","label":7},"#
+                + #"{"action":"custom::15:1179648","label":{"name":"Re\nload‮","symbol":"../x"}}]}"#
+        )
+        XCTAssertEqual(foreign.ring?[0], ShortcutRingPlace(action: "copy"))
+        XCTAssertEqual(foreign.ring?[1], ShortcutRingPlace(action: keys))
+        XCTAssertEqual(foreign.ring?[2].label, ShortcutLabel(name: "Re load", icon: nil))
+        XCTAssertEqual(foreign.unknownActions, 0)
+    }
+
     /// An app's own Shortcut Ring travels with the app's entry, in use or kept for later,
     /// and an import puts it in effect. Its places are checked as the general ring's are,
     /// and one that opens or runs something is never imported unseen: it stands in the

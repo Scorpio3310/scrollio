@@ -489,8 +489,8 @@ class PreferencesButtonsViewController: NSViewController {
         pullDown.onShortcutSelected = { [weak self] shortcut in
             self?.setAction(ofRow: rowID, to: shortcut)
         }
-        pullDown.onCustomShortcutRecorded = { [weak self] name in
-            self?.setAction(ofRow: rowID, toShortcutNamed: name)
+        pullDown.onCustomShortcutRecorded = { [weak self] name, label in
+            self?.setAction(ofRow: rowID, toShortcutNamed: name, label: label)
         }
         pullDown.onOpenTargetSelectionRequested = { [weak self] in
             self?.presentOpenTargetPopover(forRow: rowID)
@@ -528,9 +528,13 @@ class PreferencesButtonsViewController: NSViewController {
         }
     }
 
-    func setAction(of id: UUID, toShortcutNamed name: String) {
+    /// `label`: the name and icon of a recorded key combination (nil: none).
+    func setAction(of id: UUID, toShortcutNamed name: String, label: ShortcutLabel? = nil) {
         update(id) { old in
-            ButtonBinding(id: old.id, triggerEvent: old.triggerEvent, systemShortcutName: name, isEnabled: true, createdAt: old.createdAt)
+            ButtonBinding(
+                id: old.id, triggerEvent: old.triggerEvent, systemShortcutName: name, isEnabled: true,
+                createdAt: old.createdAt, label: label
+            )
         }
     }
 
@@ -562,14 +566,14 @@ class PreferencesButtonsViewController: NSViewController {
         }
     }
 
-    func setAction(ofRow id: AnyHashable, toShortcutNamed name: String) {
+    func setAction(ofRow id: AnyHashable, toShortcutNamed name: String, label: ShortcutLabel? = nil) {
         if let stored = storedBinding(ofRow: id) {
-            setAction(of: stored.id, toShortcutNamed: name)
+            setAction(of: stored.id, toShortcutNamed: name, label: label)
             return
         }
         guard let part = id as? ButtonsMousePart else { return }
         addBinding(toPart: part) { trigger in
-            ButtonBinding(triggerEvent: trigger, systemShortcutName: name, isEnabled: true)
+            ButtonBinding(triggerEvent: trigger, systemShortcutName: name, isEnabled: true, label: label)
         }
     }
 

@@ -999,7 +999,7 @@ final class PreferencesButtonsTests: XCTestCase {
 
         let middle = try XCTUnwrap(pane.row(for: ButtonsMousePart.middle))
         let shortcut = "custom::40:\(UInt64(CGEventFlags.maskCommand.rawValue))"
-        middle.pullDown.onCustomShortcutRecorded?(shortcut)
+        middle.pullDown.onCustomShortcutRecorded?(shortcut, nil)
         XCTAssertEqual(Options.shared.buttons.binding.last?.systemShortcutName, shortcut)
         XCTAssertEqual(Options.shared.buttons.binding.last?.triggerEvent.code, 2)
         XCTAssertEqual(shown(middle.pullDown), "⌘K")

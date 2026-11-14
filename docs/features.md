@@ -13,6 +13,18 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   keyboard layout, and keys are named as your keyboard names them.
 - To record a button or a key, click + and press it. Esc, a left click, closing the
   popover or switching to another app ends the recording.
+- A keyboard shortcut you record ("Keyboard Shortcut…" in a row's menu) can have a name
+  and an icon, since "⇧⌘R" does not say what it does. Once the keys are recorded, the
+  same popover shows a field for the name and a button for the icon: one of about 130
+  symbols in seven groups, with a search over their names, or one character or emoji
+  you type instead. Both are optional. "Done", Return or a click elsewhere closes the
+  popover and keeps what you set. On a row that already has recorded keys, "Keyboard
+  Shortcut…" opens the name and icon at once; "Record Again" there asks for other keys
+  and keeps the name and the icon. The row then shows the icon and the name, and the
+  keys after them in grey. A listed shortcut, an app to open and a mouse button have
+  their own names and take none. The name and icon belong to that one button (or that
+  one place of a ring), not to the keys: the same keys can be called something else
+  elsewhere. A name is one line of at most 24 characters.
 - A drawing of the mouse lights the button each row is about. The MX Master 4, the MX
   Master 3 and 3S, the MX Anywhere 3 and 3S and the MX Vertical each have a drawing of
   their own, from above and from their thumb side, where the side buttons are (on an MX
@@ -88,7 +100,11 @@ nothing opens the ring until you do. The pane also sets what the eight places ho
   Back or Forward click, a key combination you record ("Keyboard Shortcut…"), or an
   app, a file or a script to open ("Open App or File…"); or nothing. An app shows its
   icon in the ring, a key combination its keys, and the drop in the middle of the ring
-  names what is lit. An empty place is a small faint drop. A new ring has Mission Control on top and Apps at the bottom, the
+  names what is lit. A key combination with a name and an icon (see
+  [Buttons and keys](#buttons-and-keys)) shows the icon in its drop, and in the middle
+  the name with the keys under it, smaller; with only a name its drop keeps the keys,
+  with only an icon the middle shows the keys. In an app's own ring the same keys can
+  have another name. An empty place is a small faint drop. A new ring has Mission Control on top and Apps at the bottom, the
   desktops on the left and right, Copy and Paste beside Apps, and a screenshot of a
   selection and Show Desktop beside Mission Control.
 - An app can have a ring of its own. Its page in Apps (add the app there, or open it
@@ -235,7 +251,8 @@ move to another Mac, to keep a copy, or to pass a setup on.
 - "Import…" reads a file and shows what it holds before anything changes: which
   settings, how many apps, and every button and key with what it will do, in the words
   of the Buttons pane, with the gesture directions and the places of the Shortcut Ring
-  (and of each app's own ring) whose action is not the default one. For buttons, keys and places of a ring that open an app or a file,
+  (and of each app's own ring) whose action is not the default one. A recorded keyboard
+  shortcut that the file gives a name is listed by its keys, with the name after them. For buttons, keys and places of a ring that open an app or a file,
   or run a script, a box of its own lists each one's whole path and arguments. Read those lists when the file is not
   your own: an action starts at a press of its button. Unless the file gives no button
   or key an action and leaves the gestures and every ring as they are by default, Return

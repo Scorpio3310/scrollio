@@ -7911,6 +7911,234 @@
           }
         }
       }
+    },
+    "key-recorder-name": {
+      "comment": "Key recorder popover, after a key combination was recorded: the label of the field for its name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name"
+          }
+        }
+      }
+    },
+    "key-recorder-name-placeholder": {
+      "comment": "Key recorder popover: placeholder of the name field",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What these keys do"
+          }
+        }
+      }
+    },
+    "key-recorder-icon": {
+      "comment": "Key recorder popover: the label of the icon choice of a recorded key combination",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Icon"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-none": {
+      "comment": "Key recorder popover: the icon button while no icon is chosen",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "None"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-remove": {
+      "comment": "Key recorder popover: the button that takes the chosen icon away",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Icon"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-search": {
+      "comment": "Key recorder popover: placeholder of the search field over the symbols",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search symbols"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-character": {
+      "comment": "Key recorder popover: before the small field that takes one character or emoji as the icon",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Or type a character:"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-no-match": {
+      "comment": "Key recorder popover: the search over the symbols found nothing",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No symbol with that name. A typed character can be the icon instead."
+          }
+        }
+      }
+    },
+    "key-recorder-label-note": {
+      "comment": "Key recorder popover: explanation under the name and the icon",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shown in the ring and in Settings. The keys stay beside it, smaller."
+          }
+        }
+      }
+    },
+    "key-recorder-record-again": {
+      "comment": "Key recorder popover: button that asks for other keys",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record Again"
+          }
+        }
+      }
+    },
+    "key-recorder-done": {
+      "comment": "Key recorder popover: button that closes it",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-group-arrows": {
+      "comment": "Key recorder popover: a group of symbols",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrows"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-group-editing": {
+      "comment": "Key recorder popover: a group of symbols",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editing"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-group-files": {
+      "comment": "Key recorder popover: a group of symbols",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files and Windows"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-group-media": {
+      "comment": "Key recorder popover: a group of symbols",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Media"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-group-people": {
+      "comment": "Key recorder popover: a group of symbols",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "People and Time"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-group-tools": {
+      "comment": "Key recorder popover: a group of symbols",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tools"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-group-signs": {
+      "comment": "Key recorder popover: a group of symbols",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signs"
+          }
+        }
+      }
+    },
+    "general-settings-import-action-named": {
+      "comment": "Import sheet: a recorded keyboard shortcut the file gives a name; the first %@ is its keys, the second the name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (named “%@”)"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

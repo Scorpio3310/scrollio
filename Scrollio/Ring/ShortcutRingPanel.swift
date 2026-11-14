@@ -411,6 +411,7 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
     /// Shows the drops as they are at `time`, and the lit place's name in the hub.
     private func render(at time: TimeInterval) {
         guard let drops = stage?.dropsView else { return }
+        drops.titleKeys = lighting.target.map { face.places[$0].keys } ?? ""
         drops.title = lighting.target.map { face.places[$0].title }
         drops.show(ShortcutRingDrops.frame(
             at: time - openedAt, filled: face.filled, lit: lighting.amounts(at: time), reducesMotion: reducesMotion

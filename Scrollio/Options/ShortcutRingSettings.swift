@@ -29,6 +29,10 @@
 //                  {"action": "openTarget", "openTarget": {"path": …, "arguments": …, "kind": …}}, …],
 //       "freezePointer": false}
 //
+//  A recorded key combination can carry what the user calls it, under "label"
+//  (`ShortcutLabel`: {"name": …, "symbol": …} or {"character": …}); a place without one
+//  is written as before, and no other kind of action keeps one.
+//
 //  Read value by value: a missing or unreadable place is an empty one, a list that is too
 //  short is filled up with empty places and one that is too long is cut. Only data without
 //  a list of places at all gives the default places. A missing or unreadable
@@ -45,20 +49,25 @@ struct ShortcutRingPlace: Codable, Equatable {
     let action: String
     /// What to open; set exactly when `action` is `ButtonBinding.openTargetSentinel`.
     let openTarget: OpenTargetPayload?
+    /// The name and icon the user gave this place's recorded key combination; nil for
+    /// every other kind of action (`ShortcutLabel.takes`).
+    let label: ShortcutLabel?
 
     static let empty = ShortcutRingPlace(action: "")
 
     /// A place whose two fields contradict each other (a name with a target, the "open"
     /// name without one) holds nothing: a binding like that is not read either
     /// (`ButtonBinding.init(from:)`), and it could show one thing and run another.
-    init(action: String, openTarget: OpenTargetPayload? = nil) {
+    init(action: String, openTarget: OpenTargetPayload? = nil, label: ShortcutLabel? = nil) {
         guard (action == ButtonBinding.openTargetSentinel) == (openTarget != nil) else {
             self.action = ""
             self.openTarget = nil
+            self.label = nil
             return
         }
         self.action = action
         self.openTarget = openTarget
+        self.label = ShortcutLabel.kept(label, for: action)
     }
 
     init(_ shortcut: SystemShortcut.Shortcut) {
@@ -74,14 +83,16 @@ struct ShortcutRingPlace: Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case action, openTarget
+        case action, openTarget, label
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let action = ((try? c.decodeIfPresent(String.self, forKey: .action)) ?? nil) ?? ""
         let target = (try? c.decodeIfPresent(OpenTargetPayload.self, forKey: .openTarget)) ?? nil
-        self.init(action: action, openTarget: target)
+        // (A label that cannot be read is no label: the place keeps its keys.)
+        let label = (try? c.decodeIfPresent(ShortcutLabel.self, forKey: .label)) ?? nil
+        self.init(action: action, openTarget: target, label: label)
     }
 
     // MARK: What a place runs
@@ -162,7 +173,8 @@ struct ShortcutRingPlace: Codable, Equatable {
             binding = ButtonBinding(id: id, triggerEvent: Self.standInTrigger, openTarget: openTarget, isEnabled: true)
         } else {
             binding = ButtonBinding(
-                id: id, triggerEvent: Self.standInTrigger, systemShortcutName: runs ? action : "", isEnabled: runs
+                id: id, triggerEvent: Self.standInTrigger, systemShortcutName: runs ? action : "", isEnabled: runs,
+                label: runs ? label : nil
             )
         }
         binding.prepareCustomCache()
@@ -171,7 +183,7 @@ struct ShortcutRingPlace: Codable, Equatable {
 
     /// The action of a binding as a place (the pane's rows use the buttons' pull-down).
     init(actionOf binding: ButtonBinding) {
-        self.init(action: binding.systemShortcutName, openTarget: binding.openTarget)
+        self.init(action: binding.systemShortcutName, openTarget: binding.openTarget, label: binding.label)
     }
 
     /// What choosing this place runs, as the executor resolves a button's action; nil
