@@ -10,11 +10,12 @@
 //  the speed and the direction. Under it "Thumb wheel": what the sideways wheel of a mouse
 //  does, its speed and its direction, with a line under the box on which wheel that is
 //  (VoiceOver hears it as a group of that name, so its "Speed" is not taken for the main
-//  wheel's). On an app's page the same box edits the app's own: its speed and direction
-//  are scroll values of the app (dimmed while it uses the Scrolling settings), its action
-//  is the app's own function, one value with the thumb wheel's row of the app's Buttons
-//  part, which no switch governs (it stays live), and the line under the box says so
-//  (`ApplicationThumbWheel.swift`). Then "While you hold a key" with the three
+//  wheel's). On an app's page (which shows these settings only while the app has its own,
+//  `ApplicationScrollingPartViewController`) the same box edits the app's own: its speed
+//  and direction are scroll values of the app, its action is the app's own function, one
+//  value with the thumb wheel's row of the app's Buttons part, which no switch governs
+//  (it stays when the app uses the Scrolling settings again), and the line under the box
+//  says so (`ApplicationThumbWheel.swift`). Then "While you hold a key" with the three
 //  keys, which work from the first launch, so they always show; they act on a smoothed wheel
 //  only, so while "Smooth scrolling" is off a muted line under their box says so. The last
 //  box starts with "Advanced" (closed by default), which opens the exact glide time, the
@@ -424,7 +425,9 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// Puts the scroll options (global, or the target application's) into every control.
     func syncViewWithOptions() {
         guard isViewLoaded else { return }
-        // An app that inherits shows the global values, greyed out.
+        // An app that inherits: its page keeps these settings out of sight. They show the
+        // global values all the same, and take no click (one would change the Scrolling
+        // settings, not the app's).
         let editable = !isTargetApplicationInheritOptions()
         let scroll = getTargetApplicationScrollOptions()
         // What only applies while the wheel is smoothed.
@@ -811,7 +814,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     }
 
     /// The app's own speed and swap, changed by `change` from what a turn runs with there
-    /// now. Only while the app's own settings are in use (the rows are dimmed otherwise).
+    /// now. Only while the app's own settings are in use (the page shows the rows only then).
     private func setOwnThumbWheelScrolling(of application: Application, _ change: (inout ThumbWheelSettings) -> Void) {
         guard !application.inherit else { return }
         var settings = application.thumbWheelThatRuns(general: Options.shared.thumbWheel)

@@ -8,7 +8,8 @@
 //  part, its name, its mark in the list of apps, whether the app has settings of that kind
 //  of its own, and how its controller is made. Another kind is one more entry.
 //
-//  Scrolling: "Use settings from Scrolling" and the Scrolling settings for the app.
+//  Scrolling: "Use settings from Scrolling" and, while it is off, the Scrolling settings
+//  for the app.
 //  Buttons: the app's own buttons (`ApplicationButtonsViewController`).
 //  Gestures: "Use the general gestures" and, while it is off, the app's own gestures
 //  (`ApplicationGesturesPartViewController`).
@@ -123,12 +124,17 @@ struct ApplicationPagePart: Equatable {
 
 // MARK: - Scrolling
 
-/// "Use settings from Scrolling" and, under it, the Scrolling settings editing the app's
-/// own options (PreferencesScrollingViewController with a target application: no preview,
-/// dimmed while the app uses the Scrolling settings, its own "Reset to Defaults"). Their
-/// "Thumb wheel" box has the app's own speed and swap (scroll values like the others) and
-/// its own action, which is the thumb wheel's row of the Buttons part and stays live while
-/// the switch is on.
+/// "Use settings from Scrolling" and, while it is off, the Scrolling settings editing the
+/// app's own options under the switch's box (PreferencesScrollingViewController with a
+/// target application: no preview, its own "Reset to Defaults"), as the Gestures and
+/// Shortcut Ring parts show what is under their switch: while it is on the part is the
+/// switch's box alone. The settings' "Thumb wheel" box has the app's own speed and swap
+/// (scroll values like the others) and its own action, which is the thumb wheel's row of
+/// the Buttons part: while the switch is on that row is where the action is set.
+///
+/// The settings' controller is made with the part and kept while the switch is on, its
+/// view out of the part: "Advanced", the reset's Undo (which shows on the controller that
+/// made it) and its "Undo Reset" stay with the one controller for the page's life.
 final class ApplicationScrollingPartViewController: NSViewController, ApplicationPagePartController, PreferencesScrollingContainer {
 
     enum Identifier {
@@ -149,7 +155,16 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
 
     private(set) var inheritRow: PreferencesSwitchRow!
     private(set) var inheritSection: PreferencesGroupSection!
+    /// The app's own settings: in the part only while "Use settings from Scrolling" is off
+    /// (`showsSettings`), kept while it is on.
     private(set) var scrollingController: PreferencesScrollingViewController!
+    /// The settings stand under the switch's box (the switch is off).
+    var showsSettings: Bool {
+        return isViewLoaded && scrollingController.view.superview === view
+    }
+    /// The part ends under the switch's box (the switch is on), or under the settings.
+    private var endsUnderInheritSection: NSLayoutConstraint!
+    private var settingsConstraints: [NSLayoutConstraint] = []
 
     init(application: Application, uiStateDefaults: UserDefaults) {
         self.application = application
@@ -182,58 +197,100 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
         inheritSection = section
 
         // Added as a child first: the settings tell their container their height as soon
-        // as they load.
+        // as they load. They load with the page, also while the switch keeps them out.
         let scrolling = PreferencesScrollingViewController()
         scrolling.uiStateDefaults = uiStateDefaults
         scrolling.currentTargetApplication = application
         scrolling.onApplicationThumbWheelChange = onOwnThumbWheelChange
         addChild(scrolling)
         scrollingController = scrolling
-        let settings = scrolling.view
-        settings.translatesAutoresizingMaskIntoConstraints = false
+        scrolling.view.translatesAutoresizingMaskIntoConstraints = false
 
         root.addSubview(section)
-        root.addSubview(settings)
         let margin = PreferencesGroupedForm.margin
+        endsUnderInheritSection = section.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -margin)
         NSLayoutConstraint.activate([
             section.topAnchor.constraint(equalTo: root.topAnchor, constant: margin),
             section.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: margin),
             section.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -margin),
-            // The settings bring their own margins.
-            settings.topAnchor.constraint(equalTo: section.bottomAnchor),
-            settings.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            settings.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            settings.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            endsUnderInheritSection,
         ])
         view = root
         syncViewWithOptions()
     }
 
     func syncViewWithOptions() {
-        guard isViewLoaded else { return }
-        inheritRow.isOn = application.inherit
-        inheritRow.explanation = ApplicationDetailViewController.inheritExplanation(on: application.inherit, name: application.getName())
+        if sync() {
+            onHeightChange?()
+        }
+    }
+
+    /// Shows the stored settings; true when the settings came or went while the part is on
+    /// screen (an Undo of the app's removal, a change made elsewhere): the page measures
+    /// again.
+    @discardableResult
+    private func sync() -> Bool {
+        guard isViewLoaded else { return false }
+        let inherits = application.inherit
+        inheritRow.isOn = inherits
+        inheritRow.explanation = ApplicationDetailViewController.inheritExplanation(on: inherits, name: application.getName())
+        // Out of the part before they change and into it after, so that the page hears of
+        // their height once, from here.
+        var moved = inherits && showSettings(false)
         scrollingController.syncViewWithOptions()
+        moved = (!inherits && showSettings(true)) || moved
+        return moved && view.superview != nil
     }
 
     func partWillHide() {}
 
-    /// The embedded settings changed their height (they loaded, Advanced opened or closed).
+    /// Puts the app's own settings under the switch's box, or takes them away again: they
+    /// are there exactly while "Use settings from Scrolling" is off. True when they came or
+    /// went.
+    private func showSettings(_ shows: Bool) -> Bool {
+        guard shows != showsSettings else { return false }
+        let settings = scrollingController.view
+        guard shows else {
+            // "Undo Reset" is not offered for settings out of sight.
+            scrollingController.endUndoOffer()
+            NSLayoutConstraint.deactivate(settingsConstraints)
+            settingsConstraints = []
+            settings.removeFromSuperview()
+            endsUnderInheritSection.isActive = true
+            return true
+        }
+        endsUnderInheritSection.isActive = false
+        view.addSubview(settings)
+        settingsConstraints = [
+            // The settings bring their own margins.
+            settings.topAnchor.constraint(equalTo: inheritSection.bottomAnchor),
+            settings.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            settings.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            settings.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ]
+        NSLayoutConstraint.activate(settingsConstraints)
+        return true
+    }
+
+    /// The embedded settings changed their height (Advanced opened or closed, a line came
+    /// or went). Out of the part, their height is not the page's.
     func fitToContent() {
-        guard isViewLoaded else { return }
+        guard showsSettings else { return }
         onHeightChange?()
     }
 
-    /// On: the app follows the Scrolling pane; its own options stay stored for later.
-    /// Off: the app's own options, which start as a copy of the Scrolling settings when
-    /// they were never edited, and the thumb wheel's speed and swap as the wheel runs with
-    /// them now when the app has none yet (so switching off changes nothing until the user
-    /// does).
+    /// On: the app follows the Scrolling pane; its own options stay stored for later, out
+    /// of sight. Off: the app's own options under the switch's box, which start as a copy
+    /// of the Scrolling settings when they were never edited, and the thumb wheel's speed
+    /// and swap as the wheel runs with them now when the app has none yet (so switching off
+    /// changes nothing until the user does).
     @objc func inheritClick(_ sender: NSSwitch) {
         application.setUsesScrollingSettings(
             sender.state == .on, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel
         )
-        syncViewWithOptions()
+        // (The settings came or went: the page measures again, once.)
+        sync()
+        onHeightChange?()
         onInheritChange?()
     }
 }

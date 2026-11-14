@@ -670,7 +670,7 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertNotNil(controller.detailController)
     }
 
-    func testUseSettingsFromScrollingDimsTheSettingsAndUpdatesTheList() throws {
+    func testUseSettingsFromScrollingHidesTheSettingsAndUpdatesTheList() throws {
         Options.shared.scroll.speed = 8.5
         let calculator = application(Self.calculator, inherit: false)
         calculator.scroll.speed = 1.5
@@ -687,26 +687,31 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertTrue(scrolling.smoothRow.isEnabled)
         XCTAssertTrue(scrolling.speedRow.isEnabled)
         XCTAssertEqual(scrolling.scrollSpeedSlider.doubleValue, 1.5, accuracy: 1e-9)
+        XCTAssertTrue(scrolling.view.isDescendant(of: page.view))
         let height = page.view.fittingSize.height
+        let switchHeight = page.inheritRow.fittingSize.height
 
         page.inheritSwitch.state = .on
         send(page.inheritSwitch)
         XCTAssertTrue(calculator.inherit)
         XCTAssertEqual(page.inheritRow.explanation, "Changes under Scrolling apply to Calculator too.")
-        let rows: [PreferencesGroupRow] = [scrolling.smoothRow, scrolling.feelRow, scrolling.speedRow, scrolling.reverseRow]
-            + scrolling.keyRows
-        XCTAssertTrue(rows.allSatisfy { !$0.isEnabled }, "dimmed while the app uses the Scrolling settings")
-        XCTAssertFalse(scrolling.resetToDefaultsButton.isEnabled)
-        XCTAssertEqual(scrolling.scrollSpeedSlider.doubleValue, 8.5, accuracy: 1e-9, "the Scrolling pane's value")
+        XCTAssertFalse(scrolling.view.isDescendant(of: page.view), "out of sight while the app uses the Scrolling settings")
+        XCTAssertFalse(scrolling.resetToDefaultsButton.isDescendant(of: page.view))
         XCTAssertEqual(calculator.scroll.speed, 1.5, "its own value is kept for later")
         XCTAssertEqual(controller.list.rows.first?.explanation, "Uses your scrolling settings.")
-        XCTAssertEqual(page.view.fittingSize.height, height, accuracy: 0.5, "the other line takes the same room")
+        XCTAssertEqual(page.inheritRow.fittingSize.height, switchHeight, accuracy: 0.5, "the other line takes the same room")
+        XCTAssertLessThan(page.view.fittingSize.height, height - 300, "the page is the switch's box under the app's")
+        XCTAssertEqual(controller.view.frame.height, page.view.fittingSize.height, accuracy: 0.5, "the pane follows")
 
         page.inheritSwitch.state = .off
         send(page.inheritSwitch)
         XCTAssertFalse(calculator.inherit)
-        XCTAssertTrue(rows.allSatisfy(\.isEnabled))
+        XCTAssertTrue(scrolling.view.isDescendant(of: page.view))
+        XCTAssertTrue(scrolling.smoothRow.isEnabled)
+        XCTAssertTrue(scrolling.speedRow.isEnabled)
         XCTAssertEqual(scrolling.scrollSpeedSlider.doubleValue, 1.5, accuracy: 1e-9)
+        XCTAssertEqual(page.view.fittingSize.height, height, accuracy: 0.5)
+        XCTAssertEqual(controller.view.frame.height, height, accuracy: 0.5)
         XCTAssertEqual(controller.list.rows.first?.explanation, "Uses its own scrolling settings.")
     }
 

@@ -1012,27 +1012,31 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
         send(popUp)
     }
 
-    /// While the app uses the Scrolling settings: the box shows what runs there (the general
-    /// speed and swap), dimmed as the rest of the part, and its action live. Switched off:
-    /// the speed and swap are the app's own, a copy of what ran, and editable; switched on
-    /// again they are kept for later and the general ones show, dimmed.
+    /// While the app uses the Scrolling settings the box is out of sight with the rest of
+    /// the part; its action stays the app's own and is set in the Buttons part's row.
+    /// Switched off: the box shows, the speed and swap are the app's own, a copy of what
+    /// ran, and editable, and the action can be set here too; switched on again they are
+    /// kept for later, out of sight.
     func testTheBoxFollowsTheSwitchAndItsActionStaysLive() throws {
         let calculator = addCalculator()
+        calculator.setOwnThumbWheelFunction(.zoom)
         let page = try page()
         let tab = try XCTUnwrap(page.scrollingController)
-        XCTAssertFalse(tab.thumbWheelSection.isHiddenOrHasHiddenAncestor)
-        XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .tabs)
-        XCTAssertEqual(tab.thumbWheelSpeedSlider.doubleValue, 1.5, accuracy: 1e-9)
-        XCTAssertEqual(tab.thumbWheelSwapSwitch.state, .on)
-        XCTAssertFalse(tab.thumbWheelSpeedRow.isEnabled, "dimmed with the rest of the part")
-        XCTAssertFalse(tab.thumbWheelSwapRow.isEnabled)
-        XCTAssertFalse(tab.smoothRow.isEnabled)
-        XCTAssertTrue(tab.thumbWheelFunctionPopUp.isEnabled, "the action is the app's own either way")
-        XCTAssertFalse(tab.resetToDefaultsButton.isEnabled)
+        XCTAssertFalse(tab.thumbWheelSection.isDescendant(of: page.view), "out of sight with the rest of the part")
+        XCTAssertFalse(tab.resetToDefaultsButton.isDescendant(of: page.view))
+        page.show(.buttons)
+        XCTAssertEqual(page.buttonsPart.thumbWheelRow?.function, .zoom, "the action is set in the Buttons part")
+        page.show(.scrolling)
 
         page.inheritSwitch.state = .off
         send(page.inheritSwitch)
         XCTAssertFalse(calculator.inherit)
+        XCTAssertTrue(tab.thumbWheelSection.isDescendant(of: page.view))
+        XCTAssertFalse(tab.thumbWheelSection.isHiddenOrHasHiddenAncestor)
+        XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .zoom)
+        XCTAssertTrue(tab.thumbWheelFunctionPopUp.isEnabled)
+        XCTAssertEqual(tab.thumbWheelSpeedSlider.doubleValue, 1.5, accuracy: 1e-9)
+        XCTAssertEqual(tab.thumbWheelSwapSwitch.state, .on)
         XCTAssertEqual(calculator.scroll.thumbWheel, ApplicationThumbWheelScrolling(speed: 1.5, swapsDirection: true))
         XCTAssertTrue(tab.thumbWheelSpeedRow.isEnabled)
         XCTAssertTrue(tab.thumbWheelSwapRow.isEnabled)
@@ -1048,36 +1052,37 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
 
         page.inheritSwitch.state = .on
         send(page.inheritSwitch)
-        XCTAssertEqual(tab.thumbWheelSpeedSlider.doubleValue, 1.5, accuracy: 1e-9, "the general one, dimmed")
-        XCTAssertEqual(tab.thumbWheelSwapSwitch.state, .on)
-        XCTAssertFalse(tab.thumbWheelSpeedRow.isEnabled)
+        XCTAssertFalse(tab.thumbWheelSection.isDescendant(of: page.view))
         XCTAssertEqual(calculator.scroll.thumbWheel?.speed, 0.75, "kept for later")
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .zoom, "the action stays the app's own")
         page.inheritSwitch.state = .off
         send(page.inheritSwitch)
         XCTAssertEqual(tab.thumbWheelSpeedSlider.doubleValue, 0.75, accuracy: 1e-9, "back as it was left")
         XCTAssertEqual(tab.thumbWheelSwapSwitch.state, .off)
     }
 
-    /// Thumb wheel › Action is the value of the Buttons part's thumb wheel row: chosen here,
-    /// the app gets its own function (also while it uses the Scrolling settings), the
-    /// Buttons part shows the row and the list the mark; changed or removed there, this
-    /// box shows it. The general function is not touched; choosing it for an app without
-    /// one stores nothing.
+    /// Thumb wheel › Action is the value of the Buttons part's thumb wheel row: chosen here
+    /// (the box shows while the app has its own scrolling settings), the app gets its own
+    /// function, the Buttons part shows the row and the list the mark; changed or removed
+    /// there, this box shows it. The general function is not touched; choosing it for an
+    /// app without one stores nothing.
     func testTheActionIsOneValueWithTheButtonsPartsRow() throws {
         let calculator = addCalculator()
         let pane = makePane()
         let page = try page(pane: pane)
         let tab = try XCTUnwrap(page.scrollingController)
+        page.inheritSwitch.state = .off
+        send(page.inheritSwitch)
+        XCTAssertTrue(tab.thumbWheelFunctionPopUp.isDescendant(of: page.view))
 
         try choose(.tabs, in: tab.thumbWheelFunctionPopUp)
         XCTAssertNil(calculator.thumbWheel, "the general function: nothing of its own")
 
         try choose(.zoom, in: tab.thumbWheelFunctionPopUp)
-        XCTAssertTrue(calculator.inherit, "while the app uses the Scrolling settings")
         XCTAssertEqual(calculator.ownThumbWheelFunction, .zoom)
         XCTAssertEqual(Options.shared.thumbWheel.function, .tabs)
         XCTAssertEqual(tab.thumbWheelFunctionRow.explanation, ThumbWheelFunction.zoom.localizedHint)
-        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.buttons], "the list shows it at once")
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.scrolling, .buttons], "the list shows it at once")
         page.show(.buttons)
         let row = try XCTUnwrap(page.buttonsPart.thumbWheelRow)
         XCTAssertEqual(row.function, .zoom)
@@ -1098,7 +1103,7 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
         Options.shared.thumbWheel.function = .desktops
         page.show(.scrolling)
         XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .desktops, "the general one again")
-        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks ?? [], [])
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.scrolling])
     }
 
     /// The part's "Reset to Defaults" with the app's own settings: the scroll values, the

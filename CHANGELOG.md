@@ -32,7 +32,9 @@ it for the people who use the app, and give the version its part before you tag 
 - **Your button in the picture.** Gestures and Shortcut Ring draw the button or key that
   really runs them, on your mouse; with none yet, a dashed outline shows where it goes.
 - **Quiet until it runs, and a way back per app.** Gestures and Shortcut Ring fold their
-  settings while nothing runs them; an app's Buttons, Gestures and Ring reset to defaults.
+  settings while nothing runs them; an app's Scrolling part shows its settings only while
+  it has its own, as its Gestures and Ring do; an app's Buttons, Gestures and Ring reset
+  to defaults.
 
 ## 1.0.5
 
