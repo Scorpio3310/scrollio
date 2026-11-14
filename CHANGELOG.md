@@ -28,6 +28,8 @@ it for the people who use the app, and give the version its part before you tag 
   combination you record, with a name and an icon, as a ring's place can.
 - **Your button in the picture.** Gestures and Shortcut Ring draw the button or key that
   really runs them, on your mouse; with none yet, a dashed outline shows where it goes.
+- **Quiet until it runs, and a way back per app.** Gestures and Shortcut Ring fold their
+  settings while nothing runs them; an app's Buttons, Gestures and Ring reset to defaults.
 
 ## 1.0.5
 
