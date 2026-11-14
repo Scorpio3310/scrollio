@@ -266,6 +266,21 @@ final class ShortcutLabelStorageTests: XCTestCase {
         XCTAssertEqual(ShortcutLabel.cleaned(.character("\u{200D}R")), .character("R"), "the first character that can be seen")
         XCTAssertEqual(ShortcutLabel.cleaned(.character("\u{0301}Rx")), .character("R"))
     }
+
+    /// The Apple logo (⌥⇧K) is a private-use character the system font draws: it stays in
+    /// a name, can be the icon, and comes back from a file.
+    func testAPrivateUseCharacterStaysInANameAndCanBeTheIcon() throws {
+        XCTAssertEqual(ShortcutLabel.cleanedName("\u{F8FF} Menu"), "\u{F8FF} Menu")
+        XCTAssertEqual(ShortcutLabel.cleanedName("\u{F8FF}"), "\u{F8FF}")
+        XCTAssertEqual(ShortcutLabel.cleaned(.character("\u{F8FF}")), .character("\u{F8FF}"))
+        XCTAssertEqual(ShortcutIconChoices.matching("\u{F8FF}").first, .character("\u{F8FF}"), "offered as “Use”")
+        let place = try decoded(ShortcutRingPlace.self, #"{"action":"custom::15:1179648","label":{"character":"","name":" Menu"}}"#)
+        XCTAssertEqual(place.label, ShortcutLabel(name: "\u{F8FF} Menu", icon: .character("\u{F8FF}")))
+        XCTAssertEqual(try json(place), #"{"action":"custom::15:1179648","label":{"character":"\#u{F8FF}","name":"\#u{F8FF} Menu"}}"#)
+        // Still no surrogate or unassigned code point.
+        XCTAssertEqual(ShortcutLabel.cleanedName("Menu\u{0378}"), "Menu")
+    }
+
     func testALabelWithNothingInItIsNoLabel() throws {
         XCTAssertNil(ShortcutLabel(name: nil, icon: nil))
         XCTAssertNil(ShortcutLabel(name: "   ", icon: .symbol("not a symbol")))

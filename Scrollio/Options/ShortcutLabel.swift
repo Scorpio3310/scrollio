@@ -90,7 +90,9 @@ struct ShortcutLabel: Codable, Equatable {
                 if scalar == "\u{200C}" || scalar == "\u{200D}" || (isTag && inFlag) {
                     visible.append(scalar)
                 }
-            case .surrogate, .privateUse, .unassigned:
+            case .surrogate, .unassigned:
+                // (Not a private-use character: the system font draws the Apple logo,
+                // typed with ⌥⇧K, and it stays.)
                 break
             default:
                 visible.append(scalar)
