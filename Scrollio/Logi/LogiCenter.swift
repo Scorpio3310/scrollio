@@ -245,6 +245,18 @@ final class LogiCenter {
         registry.scheduleReapply()
     }
 
+    /// The user turned a "Let the mouse track the gesture" switch on: a control a mouse
+    /// refused to track (it stays on the pointer path while that mouse is connected) is
+    /// asked for once more, in the next pass. A switch of apps never asks again. Main
+    /// thread only.
+    func retryRefusedGestureTracking() {
+        #if DEBUG
+        precondition(Thread.isMainThread, "LogiCenter is main-thread-only")
+        #endif
+        LogiGestureController.retryRefusedControls()
+        registry.scheduleReapply()
+    }
+
     /// Plays a haptic cue on the mouse `code` was last pressed on. Does nothing unless that
     /// mouse has haptics and the user has them switched on; never changes the mouse's
     /// intensity or power saving. Main thread only.

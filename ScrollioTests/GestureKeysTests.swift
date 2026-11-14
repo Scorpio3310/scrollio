@@ -174,6 +174,9 @@ final class GestureKeysRunTests: XCTestCase {
         // Every key goes out as an event, to `post`, which the test keeps: what a key up
         // carries is seen too.
         ShortcutExecutor.shared.post = { [weak self] in self?.posted.append($0) }
+        // No modifier key is held, whatever is held on the keyboard during the run (the
+        // key up of ⇧⌘R carries what is held).
+        ShortcutExecutor.shared.heldModifierFlags = { 0 }
         ShortcutExecutor.shared.setTestingMouseEventObserver()
         ShortcutExecutor.shared.clearTestingKeyboardShortcutObserver()
         MouseInteractionSessionController.shared.setTestingMotionTapHooks()
@@ -202,6 +205,7 @@ final class GestureKeysRunTests: XCTestCase {
         ShortcutExecutor.shared.clearTestingMouseEventObserver()
         ShortcutExecutor.shared.clearTestingKeyboardShortcutObserver()
         ShortcutExecutor.shared.post = savedPost
+        ShortcutExecutor.shared.heldModifierFlags = { CGEventSource.flagsState(.hidSystemState).rawValue }
         Options.shared.gesture = savedGesture
         Options.shared.buttons.binding = savedBindings
         ButtonUtils.shared.invalidateCache()

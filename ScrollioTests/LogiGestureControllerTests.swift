@@ -40,6 +40,8 @@ final class LogiGestureControllerTests: XCTestCase {
     private var changes = 0
     /// What the controller wrote to the system log (the session's `log`).
     private var logLines: [String] = []
+    /// What the controller wrote to the Logitech Diagnostics window (`trace`).
+    private var traceLines: [String] = []
     /// What the session remembers as diverted (`lastApplied`).
     private var diverted: Set<UInt16> = []
 
@@ -51,6 +53,7 @@ final class LogiGestureControllerTests: XCTestCase {
         timers = []
         changes = 0
         logLines = []
+        traceLines = []
         diverted = []
     }
 
@@ -69,6 +72,7 @@ final class LogiGestureControllerTests: XCTestCase {
             schedule: { [unowned self] delay, work in self.timers.append((delay, work)) },
             onChange: { [unowned self] in self.changes += 1 },
             log: { [unowned self] in self.logLines.append($0) },
+            trace: { [unowned self] in self.traceLines.append($0) },
             mayEnableHaptics: mayEnableHaptics
         )
         controller.setRawXYCapableControls(capable)
@@ -274,9 +278,12 @@ final class LogiGestureControllerTests: XCTestCase {
         XCTAssertTrue(controller.rejectedCIDs.isEmpty)
     }
 
+    /// An error while the arm is the one write waiting for its echo is the arm's: back to
+    /// the pointer path at once.
     func testAnErrorFromTheMouseFallsBackToPointerMovement() {
         let controller = makeController()
         applyUsage(controller, bound: [Self.gesture, Self.modeShift], tracking: [Self.gesture])
+        acknowledge(controller, Write(cid: Self.modeShift, flags: 0x03))
         writes = []
 
         controller.handleReportingError()
@@ -288,6 +295,35 @@ final class LogiGestureControllerTests: XCTestCase {
         XCTAssertEqual(writes.count, 1)
     }
 
+    /// An error names no control. With an unrelated divert write waiting next to the arm (an
+    /// app switch sends both in one pass) it cannot be placed: the arm is not refused for
+    /// it. Echoed, the arm is armed; refused, it gets no echo and falls back at its timeout.
+    func testAnErrorThatCannotBePlacedRefusesNoArm() {
+        let controller = makeController()
+        applyUsage(controller, bound: [Self.gesture, Self.modeShift], tracking: [Self.gesture])
+        writes = []
+        logLines = []
+
+        controller.handleReportingError()
+        XCTAssertEqual(writes, [])
+        XCTAssertTrue(controller.rejectedCIDs.isEmpty)
+        acknowledge(controller, Self.arm)
+        fireTimers()
+        XCTAssertEqual(controller.armedCIDs, [Self.gesture], "the error was the divert's")
+        XCTAssertEqual(logLines, [])
+
+        let refused = makeController()
+        diverted = []
+        applyUsage(refused, bound: [Self.gesture, Self.modeShift], tracking: [Self.gesture])
+        writes = []
+        refused.handleReportingError()
+        XCTAssertTrue(refused.rejectedCIDs.isEmpty)
+        acknowledge(refused, Write(cid: Self.modeShift, flags: 0x03))
+        fireTimers()
+        XCTAssertEqual(refused.rejectedCIDs, [Self.gesture], "no echo: the timeout falls back")
+        XCTAssertEqual(writes, [Write(cid: Self.gesture, flags: 0x23)])
+    }
+
     func testAnErrorWithNothingWaitingChangesNothing() {
         let controller = armedController()
         controller.handleReportingError()
@@ -297,9 +333,9 @@ final class LogiGestureControllerTests: XCTestCase {
 
     /// A control the mouse refused stays on the pointer path while the mouse stays
     /// connected, however often it leaves the request and comes back (the app in front
-    /// whose own binding takes the button out of the tracked set, and the next app; the
-    /// setting off and on): no write, no wait, no line. A mouse that connects again starts
-    /// with a new controller, which tries again.
+    /// whose own binding takes the button out of the tracked set, and the next app): no
+    /// write, no wait, no line. A mouse that connects again starts with a new controller,
+    /// which tries again.
     func testARejectedControlIsNotTriedAgainUntilTheMouseConnectsAgain() {
         let controller = makeController()
         applyUsage(controller, bound: [Self.gesture], tracking: [Self.gesture])
@@ -321,6 +357,33 @@ final class LogiGestureControllerTests: XCTestCase {
         diverted = []
         applyUsage(reconnected, bound: [Self.gesture], tracking: [Self.gesture])
         XCTAssertEqual(writes, [Self.arm])
+    }
+
+    /// The user turns a "Let the mouse track the gesture" switch on (off and on again): the
+    /// next request asks the mouse once more for the controls it refused, with one line.
+    /// Only that does; a controller made later has nothing to forget.
+    func testTurningATrackingSwitchOnAsksAgainForARefusedControl() {
+        let controller = makeController()
+        applyUsage(controller, bound: [Self.gesture], tracking: [Self.gesture])
+        fireTimers()
+        XCTAssertEqual(controller.rejectedCIDs, [Self.gesture])
+        writes = []
+        logLines = []
+
+        applyUsage(controller, bound: [Self.gesture], tracking: [])
+        LogiGestureController.retryRefusedControls()
+        applyUsage(controller, bound: [Self.gesture], tracking: [Self.gesture])
+        XCTAssertEqual(writes, [Self.arm], "armed once more")
+        XCTAssertTrue(controller.rejectedCIDs.isEmpty)
+        XCTAssertEqual(logLines, ["raw XY: 1 control(s) the mouse refused asked again: a tracking switch was turned on"])
+        acknowledge(controller, Self.arm)
+        XCTAssertEqual(controller.armedCIDs, [Self.gesture])
+
+        writes = []
+        logLines = []
+        applyUsage(controller, bound: [Self.gesture], tracking: [Self.gesture])
+        XCTAssertEqual(writes, [])
+        XCTAssertEqual(logLines, [], "said once per switch")
     }
 
     /// Writes that only follow the request (the app in front changes what is tracked) put
@@ -655,6 +718,46 @@ final class LogiGestureControllerTests: XCTestCase {
         logLines = []
         XCTAssertFalse(makeController().play(.commit))
         XCTAssertEqual(logLines, ["Haptic cue commit skipped: this mouse has no haptic feature"])
+    }
+
+    /// A ring sweep asks for a cue at every place it lights. Pulses that play go to the
+    /// Diagnostics window, not the system log; with the haptics off on the mouse and off in
+    /// Scrollio's mouse settings, the log says once that cues are skipped (the rest go to the
+    /// Diagnostics window), and once more only after a pulse played in between.
+    func testCuesWriteAtMostOneLineToTheSystemLog() {
+        let on = hapticController()
+        logLines = []
+        traceLines = []
+        for _ in 0..<5 {
+            XCTAssertTrue(on.play(.lockIn))
+        }
+        XCTAssertEqual(logLines, [])
+        XCTAssertEqual(traceLines.count, 5)
+
+        var mayEnable = false
+        let off = hapticController(enabledFlags: 0x00, mayEnableHaptics: { mayEnable })
+        logLines = []
+        traceLines = []
+        for _ in 0..<5 {
+            XCTAssertFalse(off.play(.lockIn))
+        }
+        let skipped = "Haptic cue lockIn skipped: haptics are off on the mouse and switched off in Scrollio's mouse settings"
+        XCTAssertEqual(logLines, [skipped])
+        XCTAssertEqual(traceLines, Array(repeating: skipped, count: 4))
+
+        // Allowed again: the next cue switches them on and plays; switched off on the mouse
+        // and in the settings once more, the skip is said again, once.
+        mayEnable = true
+        XCTAssertFalse(off.play(.lockIn))
+        off.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [0x00, 60]))
+        XCTAssertEqual(off.hapticsEnabled, true)
+        mayEnable = false
+        off.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [0x00, 60]))
+        logLines = []
+        for _ in 0..<3 {
+            XCTAssertFalse(off.play(.lockIn))
+        }
+        XCTAssertEqual(logLines, [skipped])
     }
 
     /// An MX Master 4 that never ran Options+ reports its haptics off at full intensity.

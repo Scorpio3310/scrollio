@@ -389,6 +389,11 @@ class ShortcutExecutor {
         return true
     }
 
+    /// The modifier keys the hardware holds now, as raw flags: what a shortcut's key up
+    /// carries (`keyUpFlags`). Tests give their own, so that a key someone holds on the
+    /// keyboard during a run changes nothing they see.
+    var heldModifierFlags: () -> UInt64 = { CGEventSource.flagsState(.hidSystemState).rawValue }
+
     private var testingMouseEventObserver: ((CGEvent) -> Void)?
     private var testingKeyboardShortcutObserver: ((CGKeyCode, UInt64, Bool) -> Void)?
 
@@ -417,7 +422,7 @@ class ShortcutExecutor {
 
         // The modifier keys as the hardware has them, read before the key down below
         // changes what the system reports.
-        let held = CGEventSource.flagsState(.hidSystemState).rawValue & Self.modifierKeyMask
+        let held = heldModifierFlags() & Self.modifierKeyMask
 
         // 发送按键按下事件
         if let keyDown = Self.shortcutKeyEvent(code: code, flags: flags, keyDown: true,

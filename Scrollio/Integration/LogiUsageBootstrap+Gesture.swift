@@ -27,6 +27,9 @@ extension LogiUsageBootstrap {
     /// Buttons whose tracking stays as it was only because they were down when the
     /// bindings that count changed: decided again at their release (`buttonWasReleased`).
     private(set) static var trackingKeptWhileHeld: Set<UInt16> = []
+    /// The "Let the mouse track the gesture" switches that were on at the last change of the
+    /// settings ("" the Gestures pane's, else an app's path); nil before the first.
+    private static var lastTrackingSwitchesOn: Set<String>?
 
     /// Pushes the current set once and again on every `.gesture` change. Binding and scroll
     /// hotkey changes arrive through `refreshAll`, a change of the app in front through
@@ -73,6 +76,15 @@ extension LogiUsageBootstrap {
         let codes = trackingCodes(wanted: wanted, last: lastGestureTrackingCodes, held: heldButtonCodes())
         trackingKeptWhileHeld = codes.symmetricDifference(wanted)
         LogiCenter.shared.setGestureTrackingCodes(codes)
+        // A switch turned on (off and on again) asks the mice once more for a button they
+        // refused to track; a switch of apps never does.
+        if afterASettingsChange {
+            let switchesOn = trackingSwitchesOn(gesture: gesture, applications: applications)
+            if let last = lastTrackingSwitchesOn, !switchesOn.isSubset(of: last) {
+                LogiCenter.shared.retryRefusedGestureTracking()
+            }
+            lastTrackingSwitchesOn = switchesOn
+        }
         lastGestureTrackingCodes = codes
 
         guard afterASettingsChange else { return }
@@ -129,6 +141,17 @@ extension LogiUsageBootstrap {
             if codes != generalCodes { apps += 1 }
         }
         return GestureTracking(buttons: generalCodes.count, apps: apps)
+    }
+
+    /// The "Let the mouse track the gesture" switches that are on: "" for the Gestures
+    /// pane's, an app's path for its own gestures'.
+    static func trackingSwitchesOn(gesture: MouseGestureSettings, applications: EnhanceArray<Application>) -> Set<String> {
+        var switches: Set<String> = gesture.deviceTracking ? [""] : []
+        for index in 0..<applications.count {
+            guard let entry = applications.get(by: index), entry.ownGestures?.deviceTracking == true else { continue }
+            switches.insert(entry.path)
+        }
+        return switches
     }
 
     /// "Let the mouse track the gesture" is on in the Gestures pane or for an app's own

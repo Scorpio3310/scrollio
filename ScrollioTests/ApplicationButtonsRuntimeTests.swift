@@ -413,6 +413,63 @@ final class ApplicationButtonsPressTests: XCTestCase {
         XCTAssertEqual(process(back(.up)), .passthrough)
         XCTAssertFalse(controller.isOpen)
     }
+
+    /// An app's own "Default" on a Logitech button that another binding keeps with
+    /// Scrollio: on a receiver every press of that button comes over HID++ and never reaches
+    /// the app by itself. Buttons gives Back a middle click and ⌘ + Back a forward click,
+    /// Safari's own Back is "Default", so Back stays diverted in Safari. There a plain press
+    /// reaches Safari as the standard back button (down at the press, up at the release),
+    /// ⌘ + Back is still Buttons' forward click, and in another app Back is a middle click.
+    /// Mode shift has no standard button: its own "Default" sends nothing.
+    func testAnAppsOwnDefaultOnACaughtLogitechButtonSendsTheStandardButton() {
+        let logitechBack = LogiCenter.shared.scrollioCode(for: .back)
+        let modeShift: UInt16 = 1001
+        let command = UInt(CGEventFlags.maskCommand.rawValue)
+        let bridge = LogiIntegrationBridge.shared
+        var sent: [String] = []
+        ShortcutExecutor.shared.setTestingMouseEventObserver { event in
+            let phase = event.type == .otherMouseDown ? "down" : event.type == .otherMouseUp ? "up" : "type \(event.type.rawValue)"
+            sent.append("\(phase) \(event.getIntegerValueField(.mouseEventButtonNumber))")
+        }
+        func press(_ phase: InputPhase, _ code: UInt16 = logitechBack, _ flags: CGEventFlags = []) -> InputEvent {
+            return InputEvent(type: .mouse, code: code, modifiers: flags, phase: phase, source: .hidPP, device: nil)
+        }
+        let safariEntry = Application(path: safari.bundlePath!)
+        safariEntry.setOwnButtonBindings([binding(logitechBack, ""), binding(modeShift, "")])
+        let general = [
+            binding(logitechBack, "mouseMiddleClick"),
+            binding(logitechBack, "mouseForwardClick", modifiers: command),
+            binding(modeShift, "mouseMiddleClick", modifiers: command),
+        ]
+        Options.shared.buttons.binding = general
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [safariEntry], matchKey: "path")
+        ButtonUtils.shared.invalidateCache()
+        let diverted = LogiUsageBootstrap.buttonBindingCodes(
+            general: general, frontAppOwn: safariEntry.ownButtonBindings, isLogiCode: { LogiCenter.shared.isLogiCode($0) }
+        )
+        XCTAssertEqual(diverted, [logitechBack, modeShift], "⌘ + Back and ⌘ + mode shift keep both buttons with Scrollio")
+
+        front = safari
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down)), .consumed)
+        XCTAssertEqual(sent, ["down 3"], "Safari gets the standard back button")
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.up)), .consumed)
+        XCTAssertEqual(sent, ["down 3", "up 3"])
+
+        sent = []
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down, logitechBack, .maskCommand)), .consumed)
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.up, logitechBack, .maskCommand)), .consumed)
+        XCTAssertEqual(sent, ["down 4", "up 4"], "⌘ + Back is Buttons' forward click")
+
+        sent = []
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down, modeShift)), .unhandled)
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.up, modeShift)), .unhandled)
+        XCTAssertEqual(sent, [], "mode shift has no standard button to send")
+
+        front = textEdit
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down)), .consumed)
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.up)), .consumed)
+        XCTAssertEqual(sent, ["down 2", "up 2"], "in TextEdit Back is Buttons' middle click")
+    }
 }
 
 // MARK: - The ring's faces

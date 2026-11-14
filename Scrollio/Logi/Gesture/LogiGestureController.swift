@@ -13,10 +13,13 @@
 //    the divert (0x33), at the time the binding is applied, never in the middle of a hold.
 //  - A hold is tracked by the device only when the mouse acknowledged the arm request
 //    before the button went down. No acknowledgement within `acknowledgeTimeout`, or an
-//    HID++ error, drops the control back to the pointer path until the mouse connects
-//    again (the session makes a new controller then): the request now changes with the
-//    app in front, and each visit to an app that takes the button out of it would try,
-//    wait and fall back once more.
+//    HID++ error that can only be about that arm (an error names no control: it counts
+//    only while that arm is the one write waiting for its echo), drops the control back to
+//    the pointer path until the mouse connects again (the session makes a new controller
+//    then) or the user turns a "Let the mouse track the gesture" switch on
+//    (`retryRefusedControls`): the request now changes with the app in front, and each
+//    visit to an app that takes the button out of it would try, wait and fall back once
+//    more.
 //  - The writes that only follow the request (and their echo) are routine: they go to the
 //    Logitech Diagnostics window (`trace`), as the divert's own writes do, not to the
 //    system log, which would get a line per switch of apps. A refusal is logged (`log`).
@@ -31,6 +34,9 @@
 //  saving are never changed: the switch-on is only ever written right after a fresh read of
 //  the state, with the flags and the intensity of that answer (never from the copy made at
 //  connect time, which the user may have changed elsewhere since).
+//  A ring asks for a cue at every place it lights: what each cue did goes to the Logitech
+//  Diagnostics window (`trace`); the system log gets only what changed, once (no haptic
+//  feature, switched on by a cue, a reason cues are skipped or dropped, until one plays).
 //
 //  Main thread only (HID++ callbacks run on the main run loop).
 //
@@ -114,6 +120,15 @@ final class LogiGestureController {
     /// and only to a control that has the capability (`hasLeftoverRawXY`).
     private var leftoverRawXY: Set<UInt16> = []
     private var armAttempt = 0
+    /// Controls with a reporting write whose echo has not come yet: every write goes through
+    /// `reportingFlags`, every echo through `handleReportingAcknowledgement`. An HID++ error
+    /// names no control; it is placed only while exactly one write waits.
+    private var awaitingEcho: Set<UInt16> = []
+    /// Bumped when the user turns a "Let the mouse track the gesture" switch on: each
+    /// controller forgets the controls the mouse refused at its next request, and the pass
+    /// that brought the request arms them once more. Main thread.
+    private(set) static var retryGeneration = 0
+    private var seenRetryGeneration = LogiGestureController.retryGeneration
     /// Usually zero or one entry; an array keeps the 125 Hz sample path free of allocations.
     private var trackedHolds: [TrackedHold] = []
 
@@ -138,9 +153,23 @@ final class LogiGestureController {
     }
 
     /// Stores the request; nothing is sent until the controls are written or reconciled. A
-    /// refused control stays refused when it leaves the request and comes back.
+    /// refused control stays refused when it leaves the request and comes back, unless a
+    /// tracking switch was turned on since (`retryRefusedControls`).
     func setRawXYRequest(_ cids: Set<UInt16>) {
+        if seenRetryGeneration != Self.retryGeneration {
+            seenRetryGeneration = Self.retryGeneration
+            if !rejectedCIDs.isEmpty {
+                log("raw XY: \(rejectedCIDs.count) control(s) the mouse refused asked again: a tracking switch was turned on")
+                rejectedCIDs = []
+            }
+        }
         rawXYRequest = cids
+    }
+
+    /// A "Let the mouse track the gesture" switch was turned on (not an app switch): every
+    /// controller asks the mouse again for the controls it refused, at its next request.
+    static func retryRefusedControls() {
+        retryGeneration += 1
     }
 
     private func wantsRawXY(_ cid: UInt16) -> Bool {
@@ -158,6 +187,7 @@ final class LogiGestureController {
     /// The flags for a divert change of one control, with raw XY folded in. The session
     /// sends them; calling this records the request, so call it exactly once per write.
     func reportingFlags(cid: UInt16, divert: Bool) -> UInt8 {
+        awaitingEcho.insert(cid)
         let change = nextChange(cid: cid, divert: divert)
         // Whatever goes out next states the raw XY bit Scrollio wants, so a leftover is settled.
         leftoverRawXY.remove(cid)
@@ -207,25 +237,32 @@ final class LogiGestureController {
 
     /// The echo of a setCidReporting request.
     func handleReportingAcknowledgement(cid: UInt16, flags: UInt8) {
+        awaitingEcho.remove(cid)
         guard case .arming? = rawXYPhases[cid], LogiGestureProtocol.acknowledgesRawXY(flags: flags) else { return }
         rawXYPhases[cid] = .armed
         trace(String(format: "raw XY: CID 0x%04X armed", cid))
     }
 
-    /// An HID++ error for setCidReporting. It does not name the control, so every arm
-    /// request still waiting counts as refused.
+    /// An HID++ error for setCidReporting. It does not name the control: it is the refusal
+    /// of an arm only when that arm is the one write still waiting for its echo. With other
+    /// writes waiting (an app switch sends an arm and an unrelated divert in one pass) it
+    /// cannot be placed: an arm the mouse refused gets no echo and falls back at its
+    /// timeout, one it took is echoed and armed.
     func handleReportingError() {
-        let waiting = rawXYPhases.filter { phase in
-            if case .arming = phase.value { return true }
-            return false
+        guard awaitingEcho.count == 1, let cid = awaitingEcho.first else {
+            if !awaitingEcho.isEmpty {
+                trace("raw XY: a reporting error with \(awaitingEcho.count) writes waiting, left to their echoes")
+            }
+            return
         }
-        for cid in waiting.keys.sorted() {
-            rejectArming(cid: cid, reason: "refused by the device")
-        }
+        awaitingEcho.removeAll()
+        guard case .arming? = rawXYPhases[cid] else { return }
+        rejectArming(cid: cid, reason: "refused by the device")
     }
 
     private func armingTimedOut(cid: UInt16, attempt: Int) {
         guard rawXYPhases[cid] == .arming(attempt: attempt) else { return }
+        awaitingEcho.remove(cid)
         rejectArming(cid: cid, reason: "not acknowledged")
     }
 
@@ -305,6 +342,10 @@ final class LogiGestureController {
     /// The log said that this mouse has no haptics: once while it is connected, not once
     /// per cue (a ring asks for one at every place it lights).
     private var saidNoHapticFeature = false
+    /// Why the last cue that did not play did not, as the log said it: the same reason
+    /// again goes to the Diagnostics window only (a ring sweep asks for a cue at every place
+    /// it lights). A pulse that plays, or a new haptic feature, clears it.
+    private var saidCueNotPlayed: String?
 
     /// The mouse has a haptic motor Scrollio can pulse.
     var supportsHaptics: Bool { hapticFeatureIndex != nil }
@@ -324,6 +365,7 @@ final class LogiGestureController {
         hapticState = nil
         hapticWaveformMask = nil
         pendingCue = nil
+        saidCueNotPlayed = nil
         if let index = index {
             log("Haptics: feature at index \(String(format: "0x%02X", index)), reading waveforms and state")
         } else {
@@ -384,7 +426,7 @@ final class LogiGestureController {
         }
         guard let enabled = hapticsEnabled, let mask = hapticWaveformMask else {
             // Not read yet, or an answer got lost: ask again and keep the cue for a moment.
-            log("Haptic cue \(cue) waits: state \(hapticsEnabled == nil ? "unknown" : "known"), waveforms \(hapticWaveformMask == nil ? "unknown" : "known")")
+            trace("Haptic cue \(cue) waits: state \(hapticsEnabled == nil ? "unknown" : "known"), waveforms \(hapticWaveformMask == nil ? "unknown" : "known")")
             waitForAnswers(cue)
             refreshHaptics()
             return false
@@ -394,10 +436,10 @@ final class LogiGestureController {
             // back with the on bit set, so it needs the state as it is now, not as it was
             // at connect time: read it, and decide when the answer is in.
             guard mayEnableHaptics() else {
-                log("Haptic cue \(cue) skipped: haptics are off on the mouse and switched off in Scrollio's mouse settings")
+                cueNotPlayed(cue, Self.hapticsKeptOff)
                 return false
             }
-            log("Haptic cue \(cue) waits: haptics were off when last read, reading the state again before switching them on")
+            trace("Haptic cue \(cue) waits: haptics were off when last read, reading the state again before switching them on")
             waitForAnswers(cue)
             sendHaptic(LogiGestureProtocol.hapticGetStateFunction, [])
             return false
@@ -414,7 +456,7 @@ final class LogiGestureController {
         schedule(Self.pendingCueLifetime) { [weak self] in
             guard let self = self, self.pendingCue?.token == token else { return }
             self.pendingCue = nil
-            self.log("Haptic cue \(cue) dropped: the mouse did not answer in time")
+            self.cueNotPlayed(cue, "dropped: the mouse did not answer in time")
         }
     }
 
@@ -433,12 +475,12 @@ final class LogiGestureController {
     @discardableResult
     private func send(_ cue: MouseGestureHapticCue, enabled: Bool, mask: UInt32) -> Bool {
         guard let waveform = LogiGestureProtocol.waveform(for: cue, mask: mask) else {
-            log("Haptic cue \(cue) skipped: no usable waveform in mask \(String(format: "0x%08X", mask))")
+            cueNotPlayed(cue, "skipped: no usable waveform in mask \(String(format: "0x%08X", mask))")
             return false
         }
         if !enabled {
             guard mayEnableHaptics() else {
-                log("Haptic cue \(cue) skipped: haptics are off on the mouse and switched off in Scrollio's mouse settings")
+                cueNotPlayed(cue, Self.hapticsKeptOff)
                 return false
             }
             // The user asked for cues, the mouse has its haptics off: switch them on, with
@@ -453,8 +495,23 @@ final class LogiGestureController {
             onChange()
         }
         sendHaptic(LogiGestureProtocol.hapticPlayFunction, [waveform])
-        log("Haptic cue \(cue): waveform \(String(format: "0x%02X", waveform)) sent")
+        saidCueNotPlayed = nil
+        trace("Haptic cue \(cue): waveform \(String(format: "0x%02X", waveform)) sent")
         return true
+    }
+
+    private static let hapticsKeptOff = "skipped: haptics are off on the mouse and switched off in Scrollio's mouse settings"
+
+    /// A cue that did not play: its reason goes to the system log once while it holds, and
+    /// to the Diagnostics window each time after that.
+    private func cueNotPlayed(_ cue: MouseGestureHapticCue, _ reason: String) {
+        let line = "Haptic cue \(cue) \(reason)"
+        guard reason != saidCueNotPlayed else {
+            trace(line)
+            return
+        }
+        saidCueNotPlayed = reason
+        log(line)
     }
 
     private static func hex(_ bytes: [UInt8]) -> String {
