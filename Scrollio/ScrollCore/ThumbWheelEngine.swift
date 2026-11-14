@@ -138,10 +138,16 @@ struct ThumbWheelTurn: Equatable {
     }
 
     /// The settings an event of the turn goes by: `general` with the app's function in it.
+    /// The general Speed is set for the general function: how far the wheel scrolls, or how
+    /// soon the next step comes. An app's function of the other kind runs at the default
+    /// speed; Swap direction is the hand's and stays as set.
     func settings(general: ThumbWheelSettings) -> ThumbWheelSettings {
         guard let ownFunction, ownFunction != general.function else { return general }
         var settings = general
         settings.function = ownFunction
+        if (ownFunction == .scroll) != (general.function == .scroll) {
+            settings.speed = ThumbWheelSettings.defaultSpeed
+        }
         return settings
     }
 }
