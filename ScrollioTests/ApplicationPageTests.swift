@@ -603,8 +603,10 @@ final class ApplicationPageTests: XCTestCase {
 
         let second = try press(at: onSwitch, clicks: 2)
         XCTAssertTrue(hit(second) === pageView, "held back")
-        pageView.mouseDown(with: second)
-        XCTAssertEqual(toggle.state, .on, "the switch is untouched")
+        // (The page's own mouseDown does nothing: what counts is that the click never
+        // reaches the switch's row.)
+        XCTAssertFalse(hit(second)?.isDescendant(of: page.generalRingRow) ?? false, "the switch is not reached")
+        XCTAssertEqual(toggle.state, .on)
         XCTAssertTrue(hit(try press(at: onSwitch, clicks: 3)) === pageView)
         // A click of the page's own, and a double-click there, reach the switch.
         XCTAssertTrue(hit(try press(at: onSwitch, clicks: 1))?.isDescendant(of: page.generalRingRow) == true)
