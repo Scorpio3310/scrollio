@@ -16,9 +16,18 @@ enum LogiUsageBootstrap {
     /// The app in front, whose own buttons count for what the mouse gives to Scrollio.
     /// Tests give one of their own.
     static var frontApplication: () -> ShortcutRingChoice.FrontApp? = { .current() }
-    /// What the buttons of the app in front changed in the divert the last time (for the
-    /// log: a line only when that changes).
+    /// What the buttons of the app in front changed in the divert at the last line of the
+    /// log (a line only after a change of the settings, and only when that changes).
     private static var lastFrontAppDifference: (taken: Int, givenBack: Int) = (0, 0)
+    /// Writes the line about the buttons of the app in front. Tests give their own.
+    static var log: (String) -> Void = { AppSystemLog.note($0) }
+    /// The Logitech buttons that are down now (`LogiIntegrationBridge`). Tests give their own.
+    static var heldButtonCodes: () -> Set<UInt16> = { LogiIntegrationBridge.shared.heldButtonCodes }
+    /// The buttons the bindings had of the mouse at the last refresh.
+    private static var lastButtonBindingCodes: Set<UInt16> = []
+    /// Buttons that stay with Scrollio only because they were down when the bindings that
+    /// count stopped needing them: given back at their release (`buttonWasReleased`).
+    private(set) static var keptWhileHeld: Set<UInt16> = []
     private static var frontApplicationObserver: NSObjectProtocol?
 
     /// 订阅 Options 变更, 集中刷新 Logi 用量 (替代偏好面板各处手动 setUsage)
@@ -48,7 +57,7 @@ enum LogiUsageBootstrap {
     static func refreshAll() {
         // 1. Button bindings (直读 Options, 不依赖 ButtonUtils 缓存失效的订阅顺序): those
         //    that count while the app in front is.
-        refreshButtonUsage(front: frontApplication())
+        refreshButtonUsage(front: frontApplication(), afterASettingsChange: true)
 
         // 2. Global scroll
         for role in ScrollRole.allCases {
@@ -89,25 +98,50 @@ enum LogiUsageBootstrap {
     /// front. Without an app of its own in front this is exactly the general set. The
     /// registry ignores a set that did not change; a change is written to the mouse off the
     /// main thread, as every divert is.
-    static func refreshButtonUsage(front: ShortcutRingChoice.FrontApp?) {
+    ///
+    /// A button that is down stays with Scrollio until it is up, even when the bindings
+    /// that count no longer need it: an app's own "Open App" on a button brings another
+    /// app forward while the button is still pressed, and a button given back in the middle
+    /// of its press could reach that app as half a press. Its release refreshes again.
+    ///
+    /// `afterASettingsChange`: the settings changed (the `Options` path), not the app in
+    /// front; only then a line in the log.
+    static func refreshButtonUsage(front: ShortcutRingChoice.FrontApp?, afterASettingsChange: Bool = false) {
         let general = Options.shared.buttons.binding
         let isLogiCode: (UInt16) -> Bool = { LogiCenter.shared.isLogiCode($0) }
         let entry = ApplicationButtons.entry(front: front, applications: Options.shared.application.applications)
-        let codes = buttonBindingCodes(general: general, frontAppOwn: entry?.ownButtonBindings ?? [], isLogiCode: isLogiCode)
+        let wanted = buttonBindingCodes(general: general, frontAppOwn: entry?.ownButtonBindings ?? [], isLogiCode: isLogiCode)
+        let kept = lastButtonBindingCodes.subtracting(wanted).intersection(heldButtonCodes())
+        let codes = wanted.union(kept)
+        keptWhileHeld = kept
+        lastButtonBindingCodes = codes
         LogiCenter.shared.setUsage(source: .buttonBinding, codes: codes)
 
-        // One line when what the app in front changes is not what it was (never which app).
+        // One line when what the app in front changes is not what the last line said
+        // (never which app), and only after a change of the settings: a line per switch of
+        // apps filled the log and kept a trail of the user's switches.
+        guard afterASettingsChange else { return }
         let generalCodes = buttonBindingCodes(general: general, frontAppOwn: [], isLogiCode: isLogiCode)
-        let difference = (taken: codes.subtracting(generalCodes).count, givenBack: generalCodes.subtracting(codes).count)
+        let difference = (taken: wanted.subtracting(generalCodes).count, givenBack: generalCodes.subtracting(wanted).count)
         guard difference != lastFrontAppDifference else { return }
         lastFrontAppDifference = difference
         if difference == (0, 0) {
-            AppSystemLog.note("Buttons: the Logitech buttons are as Buttons sets them (the app in front has no binding of its own for one)")
+            log("Buttons: the Logitech buttons are as Buttons sets them (the app in front has no binding of its own for one)")
         } else {
-            AppSystemLog.note(
+            log(
                 "Buttons: the app in front has its own binding: \(difference.taken) Logitech button(s) taken from the mouse "
                     + "and \(difference.givenBack) given back while it is in front"
             )
+        }
+    }
+
+    /// A Logitech button came up (`LogiIntegrationBridge`): if it stayed with Scrollio only
+    /// because it was down, the bindings that count now decide again, on the next turn of
+    /// the main queue (after its release went where its press went).
+    static func buttonWasReleased(_ code: UInt16) {
+        guard keptWhileHeld.contains(code) else { return }
+        DispatchQueue.main.async {
+            refreshButtonUsage(front: frontApplication())
         }
     }
 

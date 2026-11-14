@@ -171,9 +171,11 @@ final class GestureKeysRunTests: XCTestCase {
         savedPost = ShortcutExecutor.shared.post
         posted = []
         logLines = []
+        // Every key goes out as an event, to `post`, which the test keeps: what a key up
+        // carries is seen too.
         ShortcutExecutor.shared.post = { [weak self] in self?.posted.append($0) }
         ShortcutExecutor.shared.setTestingMouseEventObserver()
-        ShortcutExecutor.shared.setTestingKeyboardShortcutObserver()
+        ShortcutExecutor.shared.clearTestingKeyboardShortcutObserver()
         MouseInteractionSessionController.shared.setTestingMotionTapHooks()
         MouseInteractionSessionController.shared.clearAllSessions()
         InputProcessor.shared.setTestingMouseGestureLog { [weak self] in self?.logLines.append($0) }
@@ -237,6 +239,9 @@ final class GestureKeysRunTests: XCTestCase {
         XCTAssertEqual(posted.map { $0.type }, [.keyDown, .keyUp])
         XCTAssertEqual(posted.map { $0.getIntegerValueField(.keyboardEventKeycode) }, [15, 15])
         XCTAssertEqual((posted.first?.flags.rawValue ?? 0) & shiftCommand, shiftCommand)
+        // As a listed shortcut's: the key up carries the modifier keys that are held (none),
+        // not ⇧⌘, which the system would go on reporting as pressed.
+        XCTAssertEqual((posted.last?.flags.rawValue ?? 0) & shiftCommand, 0, "the key up leaves ⇧⌘ behind")
         for event in posted {
             XCTAssertEqual(event.getIntegerValueField(.eventSourceUserData), ScrollioEventMarker.syntheticCustom)
         }
@@ -281,6 +286,44 @@ final class GestureKeysRunTests: XCTestCase {
         waitForMainQueue()
         XCTAssertTrue(posted.isEmpty)
         XCTAssertTrue(logLines.isEmpty)
+    }
+
+    /// A listed action that sends nothing says so in its line, and why: a Spaces action
+    /// whose shortcut is switched off in System Settings (its toast tells the user), a
+    /// retired one. A Logitech action is asked for: the `logi` log says whether a mouse
+    /// could. Still one line per gesture.
+    func testTheLineSaysWhatTheActionDid() {
+        SystemShortcut.setTestingSystemShortcutState(SystemShortcut.SystemShortcutState(switchedOff: ["moveSpaceLeft"]))
+        let savedNotice = ShortcutExecutor.shared.switchedOffNotice
+        let savedPerformer = ShortcutExecutor.shared.logiActionPerformer
+        var notices: [String] = []
+        var asked: [String] = []
+        ShortcutExecutor.shared.switchedOffNotice = { notices.append($0) }
+        ShortcutExecutor.shared.logiActionPerformer = { asked.append($0) }
+        defer {
+            SystemShortcut.setTestingSystemShortcutState(nil)
+            ShortcutExecutor.shared.switchedOffNotice = savedNotice
+            ShortcutExecutor.shared.logiActionPerformer = savedPerformer
+        }
+        func swipeLeft(_ action: GestureAction) {
+            Options.shared.gesture.actions.left = action
+            XCTAssertEqual(InputProcessor.shared.process(button(.down)), .consumed)
+            InputProcessor.shared.handleMouseGestureMovement(deltaX: -45, deltaY: 0)
+            XCTAssertEqual(InputProcessor.shared.process(button(.up)), .consumed)
+            waitForMainQueue()
+        }
+
+        swipeLeft(GestureAction(SystemShortcut.moveSpaceLeft))
+        swipeLeft(GestureAction(SystemShortcut.shutdownDialog))
+        XCTAssertTrue(posted.isEmpty, "nothing was sent")
+        XCTAssertEqual(notices.count, 1)
+        swipeLeft(GestureAction(SystemShortcut.logiSmartShiftToggle))
+        XCTAssertEqual(asked, [SystemShortcut.logiSmartShiftToggle.identifier])
+        XCTAssertEqual(logLines, [
+            "Gestures: left sent nothing: moveSpaceLeft is switched off in System Settings",
+            "Gestures: left sent nothing: shutdownDialog is retired",
+            "Gestures: left asked for logiSmartShiftToggle",
+        ])
     }
 
     /// The line itself, for each part of a gesture.

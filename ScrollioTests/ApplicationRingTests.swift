@@ -330,6 +330,52 @@ final class ShortcutRingPerAppControllerTests: XCTestCase {
         XCTAssertEqual(harness.log, ["hide", "run copy"])
     }
 
+    /// A place moved to the next Space and the trigger was pressed again before the app
+    /// there came forward: the ring that opened is still the last app's. When the new app
+    /// comes forward inside the quiet moment after the run, that ring closes (its places
+    /// are not for this app); a ring that is the new app's too stays, as an echo of the run.
+    func testARingPressedBeforeTheNextAppCameForwardClosesWhenItIsNotThatAppsRing() {
+        let workspace = NSWorkspace.shared.notificationCenter
+        func runRightAndPressAgain() {
+            controller.triggerPressed(by: RingHarness.button(.down))
+            harness.runScheduled()
+            harness.moveHand(by: CGPoint(x: 60, y: 0))
+            controller.triggerReleased(isMadeUp: false)
+            harness.runScheduled()
+            XCTAssertEqual(harness.log.last, "run moveSpaceRight")
+            harness.now += 0.3
+            harness.pointer = CGPoint(x: 700, y: 500)
+            controller.triggerPressed(by: RingHarness.button(.down))
+            harness.runScheduled()
+        }
+
+        front = FrontApp(bundlePath: notesPath, executablePath: nil)
+        runRightAndPressAgain()
+        XCTAssertEqual(topTitle(), SystemShortcut.copy.localizedName, "Notes' ring, Notes still in front")
+        front = FrontApp(bundlePath: calculatorPath, executablePath: nil)
+        workspace.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        XCTAssertFalse(controller.isOpen, "Calculator came forward: Notes' ring closed")
+
+        // Within an app: the echo of the run keeps the ring.
+        harness.now += 2
+        front = FrontApp(bundlePath: notesPath, executablePath: nil)
+        runRightAndPressAgain()
+        workspace.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        workspace.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        XCTAssertTrue(controller.isHeld, "the app in front still has this ring")
+        controller.cancel()
+
+        // An app without a ring of its own after an app without one: the general ring
+        // both times, kept.
+        harness.now += 2
+        front = FrontApp(bundlePath: "/Applications/Preview.app", executablePath: nil)
+        runRightAndPressAgain()
+        front = FrontApp(bundlePath: "/Applications/Safari.app", executablePath: nil)
+        workspace.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        XCTAssertTrue(controller.isHeld)
+        controller.cancel()
+    }
+
     /// The general ring for an app without a ring of its own, and for no app; the log says
     /// when an app's own ring opened, and never which app.
     func testTheLogSaysWhenAnAppsOwnRingOpenedAndNeverNamesTheApp() {

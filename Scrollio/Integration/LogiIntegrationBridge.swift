@@ -14,7 +14,18 @@ final class LogiIntegrationBridge: LogiExternalBridge {
     static let shared = LogiIntegrationBridge()
     private init() {}
 
+    /// The Logitech buttons that are down: their press came through here, their release
+    /// (or the one Scrollio makes up) has not yet. The divert keeps such a button until it
+    /// is up (`LogiUsageBootstrap.refreshButtonUsage`). Main thread, as every event here.
+    private(set) var heldButtonCodes: Set<UInt16> = []
+
     func dispatchLogiButtonEvent(_ event: InputEvent) -> LogiDispatchResult {
+        if event.phase == .down {
+            heldButtonCodes.insert(event.code)
+        } else if heldButtonCodes.remove(event.code) != nil {
+            LogiUsageBootstrap.buttonWasReleased(event.code)
+        }
+
         // Recording mode: forward to KeyRecorder via the relay notification.
         // Hot-path post #1 (matches §11 cap: rawButtonEvent + buttonEventRelay).
         if LogiCenter.shared.isRecording {

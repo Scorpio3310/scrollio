@@ -518,7 +518,13 @@ final class ShortcutRingController {
         for (center, name, followsARun) in names {
             let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 guard let self, self.session.isOpen else { return }
-                if followsARun, self.environment.now() - self.lastRun < Self.quietAfterRun { return }
+                // The echo of what a place just did keeps the ring, unless the ring is no
+                // longer the one the app in front has: pressed again before that app came
+                // forward, it is the last app's, and its places are not for this one.
+                if followsARun, self.environment.now() - self.lastRun < Self.quietAfterRun,
+                   self.environment.choice(self.environment.ring()).ring == self.ring {
+                    return
+                }
                 self.cancel()
             }
             observers.append((center, token))
@@ -716,15 +722,13 @@ final class ShortcutRingController {
     }
 
     /// Runs a place's action as one press, as a direction of Gesture Navigation runs its
-    /// action: through the executor, resolved from a binding built from the place (a
-    /// recorded key combination and what to open are read from the binding, not from the
-    /// name), down and then up for an action that is held (a key, a click).
+    /// action (`ShortcutExecutor.executeOnePress`): resolved from a binding built from the
+    /// place (a recorded key combination and what to open are read from the binding, not
+    /// from the name), down and then up for a click, a recorded key combination as a listed
+    /// shortcut goes out.
     static func run(_ place: ShortcutRingPlace) {
         guard let action = place.resolvedAction else { return }
-        let result = ShortcutExecutor.shared.execute(action: action, phase: .down)
-        if action.executionMode == .stateful {
-            ShortcutExecutor.shared.execute(action: action, phase: .up, mouseSessionID: result.mouseSessionID)
-        }
+        ShortcutExecutor.shared.executeOnePress(action)
     }
 
     /// The ring takes no focus, so VoiceOver would never say what is lit: it is announced.

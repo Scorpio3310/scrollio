@@ -134,6 +134,28 @@ final class ApplicationButtonsTests: XCTestCase {
         XCTAssertEqual(action(3, in: byProgram), "undo")
     }
 
+    /// Two entries of one path (a settings file written by hand): the press goes by the
+    /// entry every other reader finds (`get(by:)`, the last), as the Logitech divert does,
+    /// never by the other one's buttons.
+    func testOfTwoEntriesOfOnePathThePressGoesByTheOneEveryReaderFinds() {
+        let first = Application(path: Self.safari.bundlePath!)
+        first.setOwnButtonBindings([binding(3, "undo"), binding(4, "redo")])
+        let last = Application(path: Self.safari.bundlePath!)
+        last.setOwnButtonBindings([binding(3, "cut")])
+        Options.shared.buttons.binding = [binding(3, "copy")]
+        Options.shared.application.applications = Self.makeStore([first, last])
+        ButtonUtils.shared.invalidateCache()
+        XCTAssertTrue(ApplicationButtons.entry(front: Self.safari, applications: Options.shared.application.applications) === last)
+
+        XCTAssertEqual(action(3, in: Self.safari), "cut")
+        XCTAssertNil(action(4, in: Self.safari), "the first entry's button is no binding of the app's")
+        let isLogi: (UInt16) -> Bool = { _ in true }
+        XCTAssertEqual(
+            LogiUsageBootstrap.buttonBindingCodes(general: Options.shared.buttons.binding, frontAppOwn: last.ownButtonBindings, isLogiCode: isLogi),
+            [3], "the divert goes by the same entry"
+        )
+    }
+
     /// The merge, pure: the general order, each replaced in its place, the new ones after;
     /// one binding per trigger; the trigger includes the modifier keys and the mouse.
     func testTheMergeReplacesInPlaceAndAddsAfter() {
@@ -246,6 +268,53 @@ final class ApplicationButtonsTests: XCTestCase {
         XCTAssertEqual(InputProcessor.shared.activeModifierFlags, 0, "no Shift from the general binding")
     }
 
+    /// A key the system repeats, as it sends it (`keyboardEventAutorepeat`).
+    private func key(_ code: CGKeyCode, flags: CGEventFlags, down: Bool = true, repeating: Bool = false) -> InputEvent {
+        let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)!
+        event.flags = flags
+        if repeating {
+            event.setIntegerValueField(.keyboardEventAutorepeat, value: 1)
+        }
+        return InputEvent(fromCGEvent: event)
+    }
+
+    /// A held key's repeats belong to its press: they go by the bindings the press went by,
+    /// whatever app that press brought to the front. Safari's own ⌘Q runs Copy and TextEdit
+    /// comes forward while ⌘Q is held: the repeats are swallowed, not handed to TextEdit
+    /// (where ⌘Q would quit it). The other way round, a general ⌘Q pressed in TextEdit keeps
+    /// its repeats when Safari, whose ⌘Q is "Default", comes forward. The next press asks
+    /// the app in front again.
+    func testAHeldKeysRepeatsGoByItsPressWhenAnotherAppComesToTheFront() {
+        let q: CGKeyCode = 12
+        let command = UInt(CGEventFlags.maskCommand.rawValue)
+        set(general: [], safari: [binding(q, "copy", modifiers: command, type: .keyboard)])
+
+        front = Self.safari
+        XCTAssertEqual(InputProcessor.shared.process(key(q, flags: .maskCommand)), .consumed)
+        XCTAssertEqual(executed.map(\.0), [shortcut(SystemShortcut.copy).code])
+        front = Self.textEdit
+        frontLookups = 0
+        XCTAssertEqual(InputProcessor.shared.process(key(q, flags: .maskCommand, repeating: true)), .consumed,
+                       "a repeat of Safari's press never reaches TextEdit")
+        XCTAssertEqual(InputProcessor.shared.process(key(q, flags: .maskCommand, repeating: true)), .consumed)
+        XCTAssertEqual(executed.count, 1, "a trigger action runs once per press")
+        XCTAssertEqual(frontLookups, 0, "a repeat does not ask which app is in front")
+        _ = InputProcessor.shared.process(key(q, flags: .maskCommand, down: false))
+        XCTAssertEqual(InputProcessor.shared.process(key(q, flags: .maskCommand)), .passthrough,
+                       "the next press goes by the app in front")
+        _ = InputProcessor.shared.process(key(q, flags: .maskCommand, down: false))
+
+        executed = []
+        set(general: [binding(q, "copy", modifiers: command, type: .keyboard)], safari: [binding(q, "", modifiers: command, type: .keyboard)])
+        front = Self.textEdit
+        XCTAssertEqual(InputProcessor.shared.process(key(q, flags: .maskCommand)), .consumed)
+        front = Self.safari
+        XCTAssertEqual(InputProcessor.shared.process(key(q, flags: .maskCommand, repeating: true)), .consumed,
+                       "Safari's \"Default\" does not take the repeats of a press made in TextEdit")
+        XCTAssertEqual(executed.count, 1)
+        _ = InputProcessor.shared.process(key(q, flags: .maskCommand, down: false))
+    }
+
     /// The Logitech probe goes by the same bindings as InputProcessor: an app's own
     /// Logitech action runs while it is in front, and its "Default" passes through.
     func testTheLogitechProbeSeesTheAppInFront() {
@@ -355,6 +424,55 @@ final class ApplicationButtonsTests: XCTestCase {
         XCTAssertEqual(read.ownButtonBindings.map(\.systemShortcutName), ["undo"])
     }
 
+    /// A binding of an app's own that this version cannot read (a newer version's: a kind
+    /// of trigger it does not know) is kept as stored and written back after the readable
+    /// ones at the next save, as Buttons keeps such bindings: after an edit of the app's
+    /// buttons and after all of them were removed too. A number in the list is dropped, as
+    /// Buttons drops one. Nothing runs it.
+    func testAnOwnBindingThisVersionCannotReadIsKeptForTheNextSave() throws {
+        let good = String(data: try JSONEncoder().encode(binding(3, "undo")), encoding: .utf8)!
+        let newer = #"{"triggerEvent":{"type":"pedal","code":7,"modifiers":0},"systemShortcutName":"copy","isEnabled":true}"#
+        let entry = #"{"path":"/Applications/A.app","buttons":{"binding":["# + good + "," + newer + #",42]}}"#
+        let read = try JSONDecoder().decode(Application.self, from: Data(entry.utf8))
+        XCTAssertEqual(read.ownButtonBindings.map(\.systemShortcutName), ["undo"])
+
+        func stored(_ application: Application) throws -> [[String: Any]] {
+            let object = try JSONSerialization.jsonObject(with: try JSONEncoder().encode(application)) as? [String: Any]
+            let buttons = try XCTUnwrap(object?["buttons"] as? [String: Any], "the buttons are stored")
+            return try XCTUnwrap(buttons["binding"] as? [[String: Any]])
+        }
+        func isTheNewerOne(_ element: [String: Any]?) -> Bool {
+            return (element?["triggerEvent"] as? [String: Any])?["type"] as? String == "pedal"
+                && element?["systemShortcutName"] as? String == "copy"
+        }
+        var list = try stored(read)
+        XCTAssertEqual(list.count, 2, "the readable one, then the newer one")
+        XCTAssertEqual(list.first?["systemShortcutName"] as? String, "undo")
+        XCTAssertTrue(isTheNewerOne(list.last))
+
+        read.setOwnButtonBindings([binding(4, "paste")])
+        list = try stored(read)
+        XCTAssertEqual(list.map { $0["systemShortcutName"] as? String }, ["paste", "copy"])
+        XCTAssertTrue(isTheNewerOne(list.last), "an edit of the app's buttons keeps it")
+
+        read.setOwnButtonBindings([])
+        XCTAssertFalse(read.hasOwnButtons)
+        list = try stored(read)
+        XCTAssertEqual(list.count, 1)
+        XCTAssertTrue(isTheNewerOne(list.first), "removing every binding the page shows keeps it")
+
+        let again = try JSONDecoder().decode(Application.self, from: try JSONEncoder().encode(read))
+        XCTAssertTrue(again.ownButtonBindings.isEmpty)
+        XCTAssertTrue(isTheNewerOne(try stored(again).first), "and so on, save after save")
+
+        // It never runs: the app has no buttons of its own for the input side.
+        Options.shared.buttons.binding = [binding(3, "copy")]
+        Options.shared.application.applications = Self.makeStore([again])
+        ButtonUtils.shared.invalidateCache()
+        let a = ShortcutRingChoice.FrontApp(bundlePath: "/Applications/A.app", executablePath: nil)
+        XCTAssertEqual(action(3, in: a), "copy")
+    }
+
     /// A settings file carries an app's own buttons; the sheet before an import says how
     /// many apps have some, and lists each with its app, "Default" for one without action.
     func testTheSettingsFileCarriesAnAppsOwnButtons() throws {
@@ -431,5 +549,67 @@ final class ApplicationButtonsTests: XCTestCase {
         scrollio.isScrollio = true
         LogiUsageBootstrap.refreshButtonUsage(front: scrollio)
         XCTAssertFalse(LogiCenter.shared.usages(of: gestureButton).contains(.buttonBinding), "Scrollio in front: Buttons")
+    }
+
+    /// A Logitech button that is down when another app comes to the front stays with
+    /// Scrollio until it is up (Safari's own action on it ran at the press, and brought
+    /// TextEdit forward): only then is it given back to the mouse.
+    func testALogitechButtonDownWhileAnotherAppComesForwardIsGivenBackOnlyWhenItIsUp() {
+        let gestureButton: UInt16 = 1000
+        set(general: [], safari: [binding(gestureButton, "copy")])
+        let savedFront = LogiUsageBootstrap.frontApplication
+        LogiUsageBootstrap.frontApplication = { Self.textEdit }
+        defer {
+            LogiUsageBootstrap.frontApplication = savedFront
+            Options.shared.application.applications = Self.makeStore([])
+            LogiUsageBootstrap.refreshButtonUsage(front: nil)
+        }
+        let bridge = LogiIntegrationBridge.shared
+        let down = InputEvent(type: .mouse, code: gestureButton, modifiers: [], phase: .down, source: .hidPP, device: nil)
+        let up = InputEvent(type: .mouse, code: gestureButton, modifiers: [], phase: .up, source: .hidPP, device: nil)
+        LogiUsageBootstrap.refreshButtonUsage(front: Self.safari)
+
+        front = Self.safari
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(down), .consumed)
+        XCTAssertEqual(executed.map(\.0), [shortcut(SystemShortcut.copy).code])
+        LogiUsageBootstrap.refreshButtonUsage(front: Self.textEdit)
+        XCTAssertTrue(LogiCenter.shared.usages(of: gestureButton).contains(.buttonBinding), "still down: still Scrollio's")
+        LogiUsageBootstrap.refreshButtonUsage(front: Self.textEdit)
+        XCTAssertTrue(LogiCenter.shared.usages(of: gestureButton).contains(.buttonBinding))
+
+        front = Self.textEdit
+        _ = bridge.dispatchLogiButtonEvent(up)
+        let drained = expectation(description: "main queue drained")
+        DispatchQueue.main.async { drained.fulfill() }
+        wait(for: [drained], timeout: 1)
+        XCTAssertFalse(LogiCenter.shared.usages(of: gestureButton).contains(.buttonBinding), "up: given back to the mouse")
+    }
+
+    /// Switching apps writes no line about the Logitech buttons, however often (it was a
+    /// line per switch, a trail of them); a change of the settings writes one when what the
+    /// app in front changes is not what the last line said.
+    func testOnlyAChangeOfTheSettingsWritesALineAboutTheLogitechButtons() {
+        let gestureButton: UInt16 = 1000
+        var lines: [String] = []
+        set(general: [], safari: [binding(gestureButton, "undo")])
+        LogiUsageBootstrap.log = { lines.append($0) }
+        defer {
+            LogiUsageBootstrap.log = { AppSystemLog.note($0) }
+            Options.shared.application.applications = Self.makeStore([])
+            LogiUsageBootstrap.refreshButtonUsage(front: nil)
+        }
+        for _ in 0..<3 {
+            LogiUsageBootstrap.refreshButtonUsage(front: Self.safari)
+            LogiUsageBootstrap.refreshButtonUsage(front: Self.textEdit)
+        }
+        XCTAssertEqual(lines, [], "switching apps")
+
+        LogiUsageBootstrap.refreshButtonUsage(front: Self.textEdit, afterASettingsChange: true)
+        lines = []
+        LogiUsageBootstrap.refreshButtonUsage(front: Self.safari, afterASettingsChange: true)
+        LogiUsageBootstrap.refreshButtonUsage(front: Self.safari, afterASettingsChange: true)
+        XCTAssertEqual(lines, [
+            "Buttons: the app in front has its own binding: 1 Logitech button(s) taken from the mouse and 0 given back while it is in front",
+        ])
     }
 }

@@ -40,6 +40,11 @@ class InputProcessor: ModifierFlagsProviding {
     /// button-up is swallowed too, so the app under the pointer never gets an up without its
     /// down. A new press of the button or `clearActiveBindings` forgets the entry.
     private var swallowedTriggerPresses: Set<TriggerKey> = []
+    /// Whose bindings a key's press went by (`ButtonUtils.scopeOfPress`), for that key's
+    /// auto-repeats: a repeat belongs to its press, whatever app the press brought to the
+    /// front (an app's own ⌘Q that hides it must not let the repeats quit the next app).
+    /// Set at a key's first down; its up and `clearActiveBindings` forget it.
+    private var keyPressScopes: [TriggerKey: ButtonBindingScope] = [:]
 
     var hasActiveMouseGestureSessions: Bool {
         return !activeMouseGestures.isEmpty
@@ -406,6 +411,7 @@ class InputProcessor: ModifierFlagsProviding {
         }
         activeBindings.removeAll()
         swallowedTriggerPresses.removeAll()
+        keyPressScopes.removeAll()
         // An open Shortcut Ring closes and runs nothing. A key that holds it stays the
         // ring's until it is up: its repeats match no binding once the modifiers are let
         // go, and would be typed into the document. (A button's release may pass, as a
@@ -460,12 +466,16 @@ class InputProcessor: ModifierFlagsProviding {
     /// - Parameter event: 统一输入事件
     /// - Parameter scope: whose bindings a press goes by, when the caller decided it for this
     ///   press already (the Logitech probe); nil: the app in front decides here, once, at the
-    ///   down (`ButtonUtils.scopeOfPress`). A release never looks: it ends what its press
-    ///   started, whatever app is in front by then.
+    ///   down (`ButtonUtils.scopeOfPress`); a key's auto-repeat goes by its press's. A
+    ///   release never looks: it ends what its press started, whatever app is in front by
+    ///   then.
     /// - Returns: .consumed 表示事件已处理, .passthrough 表示未匹配
     func process(_ event: InputEvent, scope: ButtonBindingScope? = nil) -> InputResult {
         assertMainThread()
         if event.phase == .up {
+            if event.type == .keyboard {
+                keyPressScopes.removeValue(forKey: TriggerKey(type: event.type, code: event.code))
+            }
             // Up 事件: 按 (type, code) 查表, 忽略 modifiers (用户可能已松开修饰键)
             if releaseForShortcutRing(event) {
                 return .consumed
@@ -504,9 +514,20 @@ class InputProcessor: ModifierFlagsProviding {
         if event.isAutoRepeat, let session = activeBindings[key], !Self.repeatsWhileHeld(session.action) {
             return .consumed
         }
-        guard let binding = ButtonUtils.shared.getBestMatchingBinding(
-            for: event, scope: scope ?? ButtonUtils.shared.scopeOfPress(for: event)
-        ) else {
+        // A trigger action holds nothing, so its repeats come this far: they go by the
+        // bindings of their press, not by those of the app that press brought forward.
+        let pressScope: ButtonBindingScope
+        if let scope {
+            pressScope = scope
+        } else if event.isAutoRepeat, let kept = keyPressScopes[key] {
+            pressScope = kept
+        } else {
+            pressScope = ButtonUtils.shared.scopeOfPress(for: event)
+        }
+        if event.type == .keyboard, !event.isAutoRepeat {
+            keyPressScopes[key] = pressScope
+        }
+        guard let binding = ButtonUtils.shared.getBestMatchingBinding(for: event, scope: pressScope) else {
             return .passthrough
         }
         if binding.systemShortcutName == SystemShortcut.shortcutRing.identifier {
@@ -759,18 +780,48 @@ class InputProcessor: ModifierFlagsProviding {
         }
     }
 
-    /// The one line a gesture's action leaves in the log: what ran, a listed action by its
-    /// identifier, a recorded key combination by its kind, and whether it was of the own
-    /// gestures of the app in front. Never its keys, never the name the user gave it, never
-    /// the app's name.
-    static func mouseGestureRunLine(_ action: GestureAction, part: MouseGesturePart, appsOwn: Bool = false) -> String {
-        return "Gestures: \(part.logName) ran \(action.logName)" + (appsOwn ? ", the app in front has its own gestures" : "")
+    /// What became of a gesture's action, for its line in the log.
+    enum MouseGestureOutcome: Equatable {
+        /// Sent: keys, a click, the Dock asked, an app or a file handed on to be opened.
+        case ran
+        /// A Logitech action, asked of the mouse (the `logi` log says whether one could).
+        case askedFor
+        /// A listed action that sent nothing.
+        case sentNothing(ShortcutRefusal)
+
+        init(_ action: ResolvedAction, _ result: ActionExecutionResult) {
+            if let refusal = result.refusal {
+                self = .sentNothing(refusal)
+            } else if case .logiAction = action {
+                self = .askedFor
+            } else {
+                self = .ran
+            }
+        }
     }
 
-    /// Runs one gesture action as a single press: trigger actions fire once, stateful ones
-    /// (mouse buttons, custom keys) get a down followed by an up. A recorded key combination
-    /// goes the way a place of the Shortcut Ring sends one (`ShortcutRingController.run`):
-    /// its keys were read when the settings were (`GestureAction.keys`), nothing is parsed
+    /// The one line a gesture's action leaves in the log: what it did, a listed action by
+    /// its identifier, a recorded key combination by its kind, and whether it was of the
+    /// own gestures of the app in front. Never its keys, never the name the user gave it,
+    /// never the app's name.
+    static func mouseGestureRunLine(
+        _ action: GestureAction, part: MouseGesturePart, appsOwn: Bool = false, outcome: MouseGestureOutcome = .ran
+    ) -> String {
+        let what: String
+        switch outcome {
+        case .ran: what = "ran \(action.logName)"
+        case .askedFor: what = "asked for \(action.logName)"
+        case .sentNothing(.retired): what = "sent nothing: \(action.logName) is retired"
+        case .sentNothing(.switchedOffInSystemSettings):
+            what = "sent nothing: \(action.logName) is switched off in System Settings"
+        }
+        return "Gestures: \(part.logName) \(what)" + (appsOwn ? ", the app in front has its own gestures" : "")
+    }
+
+    /// Runs one gesture action as a single press (`ShortcutExecutor.executeOnePress`, the
+    /// way a place of the Shortcut Ring runs one): trigger actions fire once, a click gets a
+    /// down followed by an up, a recorded key combination goes out as a listed shortcut does.
+    /// Its keys were read when the settings were (`GestureAction.keys`), nothing is parsed
     /// here.
     ///
     /// Posts after the CGEvent tap callback returns. Posting a synthetic event from inside
@@ -780,15 +831,10 @@ class InputProcessor: ModifierFlagsProviding {
         let log = mouseGestureLog
         DispatchQueue.main.async {
             guard let action = gestureAction.resolvedAction else { return }
-            let result = ShortcutExecutor.shared.execute(action: action, phase: .down)
-            if action.executionMode == .stateful {
-                ShortcutExecutor.shared.execute(
-                    action: action,
-                    phase: .up,
-                    mouseSessionID: result.mouseSessionID
-                )
-            }
-            log(InputProcessor.mouseGestureRunLine(gestureAction, part: part, appsOwn: appsOwn))
+            let result = ShortcutExecutor.shared.executeOnePress(action)
+            log(InputProcessor.mouseGestureRunLine(
+                gestureAction, part: part, appsOwn: appsOwn, outcome: MouseGestureOutcome(action, result)
+            ))
         }
     }
 

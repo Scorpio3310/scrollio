@@ -109,8 +109,18 @@ enum ResolvedAction {
 
 struct ActionExecutionResult {
     let mouseSessionID: UUID?
+    /// A listed action that sent nothing, and why (for the log); nil for everything else.
+    var refusal: ShortcutRefusal? = nil
 
     static let none = ActionExecutionResult(mouseSessionID: nil)
+}
+
+/// Why a listed action sent nothing.
+enum ShortcutRefusal: Equatable {
+    /// An action this version no longer runs (`SystemShortcut.isRetired`).
+    case retired
+    /// A Spaces action whose shortcut is switched off in System Settings (a toast says so).
+    case switchedOffInSystemSettings
 }
 
 struct MouseTapReplayContext {
@@ -550,9 +560,28 @@ class ShortcutExecutor {
             return .none
         case .systemShortcut(let identifier):
             guard phase == .down else { return .none }
-            executeResolvedSystemShortcut(named: identifier)
+            return ActionExecutionResult(mouseSessionID: nil, refusal: executeResolvedSystemShortcut(named: identifier))
+        }
+    }
+
+    /// Runs `action` as one press, as a direction of Gesture Navigation and a place of the
+    /// Shortcut Ring run theirs: what is held gets its down and then its up. A recorded key
+    /// combination (a key that is no modifier) goes out as a listed shortcut does
+    /// (`execute(code:flags:)`): its key up carries the modifier keys that are really held,
+    /// not its own, which the system would otherwise go on reporting as pressed
+    /// (`keyUpFlags`), and the check for modifiers left set runs. (A button bound to keys
+    /// holds them while it is down: `execute(action:phase:)`, down and up apart.)
+    @discardableResult
+    func executeOnePress(_ action: ResolvedAction) -> ActionExecutionResult {
+        if case .customKey(let code, let modifiers) = action, !KeyCode.modifierKeys.contains(code) {
+            execute(code: CGKeyCode(code), flags: modifiers)
             return .none
         }
+        let result = execute(action: action, phase: .down)
+        if action.executionMode == .stateful {
+            execute(action: action, phase: .up, mouseSessionID: result.mouseSessionID)
+        }
+        return result
     }
 
     func resolveAction(named shortcutName: String, binding: ButtonBinding? = nil) -> ResolvedAction? {
@@ -606,9 +635,10 @@ class ShortcutExecutor {
         return .systemShortcut(identifier: shortcutName)
     }
 
-    private func executeResolvedSystemShortcut(named shortcutName: String) {
+    /// Sends a listed action; the reason when it sent nothing.
+    private func executeResolvedSystemShortcut(named shortcutName: String) -> ShortcutRefusal? {
         // A retired action ("Shut Down…") sends nothing.
-        guard !SystemShortcut.isRetired(shortcutName) else { return }
+        guard !SystemShortcut.isRetired(shortcutName) else { return .retired }
         // "Move left a space" and "Move right a space" work through the user's shortcut for
         // them. Switched off in System Settings, the standard keys (⌃← / ⌃→) used to be sent
         // anyway: no Space changed and the app in front got them (the text cursor jumped a
@@ -616,25 +646,26 @@ class ShortcutExecutor {
         if SystemShortcut.isSwitchedOffInSystemSettings(shortcutName) {
             let name = SystemShortcut.getShortcut(named: shortcutName)?.localizedName ?? shortcutName
             switchedOffNotice(name)
-            return
+            return .switchedOffInSystemSettings
         }
         // Mission Control and Show Desktop are asked of the Dock itself; their key is only
         // sent where that cannot be done (DockModes.swift).
         if let mode = DockMode(shortcutIdentifier: shortcutName), toggleDockMode(mode) {
-            return
+            return nil
         }
         // 优先使用系统实际配置 (对于Mission Control相关快捷键)
         if let resolved = SystemShortcut.resolveSystemShortcut(shortcutName) {
             execute(code: resolved.code, flags: resolved.modifiers)
-            return
+            return nil
         }
 
         // Fallback到内置快捷键定义
         guard let shortcut = SystemShortcut.getShortcut(named: shortcutName) else {
-            return
+            return nil
         }
 
         execute(shortcut)
+        return nil
     }
 
     // MARK: - Custom Binding Execution

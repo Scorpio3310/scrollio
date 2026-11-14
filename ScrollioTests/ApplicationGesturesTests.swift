@@ -275,6 +275,8 @@ final class ApplicationGesturesHoldTests: XCTestCase {
     private var savedApplications: EnhanceArray<Application>!
     private var savedPost: ((CGEvent) -> Void)!
     private var posted: [CGEvent] = []
+    /// The keys sent as one press (a recorded combination, a listed shortcut).
+    private var keys: [(code: CGKeyCode, flags: UInt64)] = []
     private var logLines: [String] = []
     private var front: FrontApp?
     private var notes: Application!
@@ -286,11 +288,14 @@ final class ApplicationGesturesHoldTests: XCTestCase {
         savedApplications = Options.shared.application.applications
         savedPost = ShortcutExecutor.shared.post
         posted = []
+        keys = []
         logLines = []
         front = nil
         ShortcutExecutor.shared.post = { [weak self] in self?.posted.append($0) }
         ShortcutExecutor.shared.setTestingMouseEventObserver()
-        ShortcutExecutor.shared.setTestingKeyboardShortcutObserver()
+        ShortcutExecutor.shared.setTestingKeyboardShortcutObserver { [weak self] code, flags, _ in
+            self?.keys.append((code, flags))
+        }
         MouseInteractionSessionController.shared.setTestingMotionTapHooks()
         MouseInteractionSessionController.shared.clearAllSessions()
         InputProcessor.shared.setTestingMouseGestureLog { [weak self] in self?.logLines.append($0) }
@@ -373,16 +378,15 @@ final class ApplicationGesturesHoldTests: XCTestCase {
     /// set was the app's own, and never names the app.
     func testAHoldKeepsTheSetItBeganWithWhenAnotherAppComesToTheFront() {
         hold(Self.notes, then: Self.textEdit, moving: Self.up)
-        XCTAssertEqual(posted.map { $0.type }, [.keyDown, .keyUp], "Notes' ⇧⌘R")
-        XCTAssertEqual(posted.map { $0.getIntegerValueField(.keyboardEventKeycode) }, [15, 15])
+        XCTAssertEqual(keys.map(\.code), [15], "Notes' ⇧⌘R, one press")
         let shiftCommand = UInt64(CGEventFlags.maskShift.rawValue | CGEventFlags.maskCommand.rawValue)
-        XCTAssertEqual((posted.first?.flags.rawValue ?? 0) & shiftCommand, shiftCommand)
+        XCTAssertEqual((keys.first?.flags ?? 0) & shiftCommand, shiftCommand)
         XCTAssertEqual(logLines, ["Gestures: up ran a recorded key combination, the app in front has its own gestures"])
 
-        posted = []
+        keys = []
         logLines = []
         hold(Self.textEdit, then: Self.notes, moving: Self.up)
-        XCTAssertTrue(posted.isEmpty, "no ⇧⌘R")
+        XCTAssertFalse(keys.contains { $0.code == 15 }, "no ⇧⌘R")
         XCTAssertEqual(logLines, ["Gestures: up ran copy"], "the general set, kept while Notes came to the front")
 
         logLines = []
