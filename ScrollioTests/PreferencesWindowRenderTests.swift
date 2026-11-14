@@ -361,6 +361,66 @@ final class PreferencesWindowRenderTests: XCTestCase {
         })
     }
 
+    /// The Shortcut Ring and Gestures panes while nothing opens the ring and no button runs
+    /// the gestures, their sections folded under their titles and all of them opened
+    /// (`ring-pane-empty-folded`, `ring-pane-empty-unfolded`, `gestures-pane-empty-folded`,
+    /// `gestures-pane-empty-unfolded`), and as they are once a trigger is set
+    /// (`ring-pane-set`, `gestures-pane-set`), light and dark; an MX Master 4 is connected.
+    func testRenderQuietEmptyPanes() throws {
+        let savedRing = Options.shared.ring
+        defer { Options.shared.ring = savedRing }
+        Options.shared.ring = .default
+        var gesture = MouseGestureSettings.default
+        gesture.mode = .discrete
+        Options.shared.gesture = gesture
+        Options.shared.logiMouse = LogiMouseSettings(hapticsOn: nil)
+        let master4 = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
+        let thumbPanel = RecordedEvent(type: .mouse, code: LogiCenter.shared.scrollioCode(for: .thumbPanel), modifiers: 0, deviceFilter: nil)
+
+        for (state, opens, unfolds) in [("empty-folded", false, false), ("empty-unfolded", false, true), ("set", true, false)] {
+            try renderPane(RingPreferencesViewController.tabIdentifier, name: "ring-pane-\(state)", titled: TitledCut(), replacement: {
+                let ring = RingPreferencesViewController()
+                ring.bindingSummary = {
+                    opens
+                        ? ShortcutRingBindingSummary(triggerTitles: ["Thumb panel"], picture: TriggerPictureSource(event: thumbPanel))
+                        : ShortcutRingBindingSummary(triggerTitles: [])
+                }
+                return ring
+            }, afterLoad: { controller in
+                guard let ring = controller as? RingPreferencesViewController else { return }
+                Self.stillTriggerCard(of: ring, mouse: .mxMaster4)
+                if unfolds {
+                    ring.placesSection?.setExpanded(true)
+                    PreferencesForm.fitToContent(ring)
+                }
+            })
+
+            try renderPane(GesturesPreferencesViewController.tabIdentifier, name: "gestures-pane-\(state)", titled: TitledCut(), replacement: {
+                let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+                gestures.deviceSource = MouseGestureDeviceSource(support: { master4 }, refresh: {})
+                gestures.bindingSummary = {
+                    MouseGestureBindingSummary(
+                        hasGestureButton: opens,
+                        hasLogitechGestureButton: opens,
+                        buttonTitles: opens ? ["Gesture button"] : [],
+                        picture: opens ? self.gesturePicture(logitech: true) : .none
+                    )
+                }
+                return gestures
+            }, afterLoad: { controller in
+                guard let gestures = controller as? GesturesPreferencesViewController else { return }
+                gestures.previewView.prefersReducedMotion = { true }
+                gestures.previewView.reduceMotionDidChange()
+                gestures.previewView.mouseSource = { .mxMaster4 }
+                gestures.previewView.reloadMouse()
+                if unfolds {
+                    gestures.foldingSections.forEach { $0.setExpanded(true) }
+                    gestures.reload()
+                }
+            })
+        }
+    }
+
     /// The trigger card of a Shortcut Ring pane shows `mouse`, as Reduce Motion has it: no
     /// press, the light and the turn at once.
     private static func stillTriggerCard(of ring: RingPreferencesViewController, mouse: MouseArtworkModel) {

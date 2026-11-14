@@ -23,9 +23,13 @@
 //  from the top, each with the pull-down a row of the Buttons pane has
 //  (`ButtonActionPullDown`, with the menu of what a place can hold): a listed action, a
 //  key combination recorded there ("Keyboard Shortcut…") or an app, a file or a script
-//  ("Open App or File…", the Buttons pane's popover). Under the boxes "Reset to Defaults",
-//  as in the Scrolling pane (`PreferencesPaneReset`): the eight places and the freeze
-//  switch of a new ring; what opens the ring is a binding of Buttons and stays.
+//  ("Open App or File…", the Buttons pane's popover). While nothing opens the ring (no
+//  binding of Buttons, no app's own), the places are folded under their title
+//  ("Shortcuts ›", `PreferencesDisclosureSection`): a click opens them and they can be
+//  edited as ever, and a click on a place of the drawing opens them too; once something
+//  opens the ring they show by themselves, with a plain title. Under the boxes "Reset to
+//  Defaults", as in the Scrolling pane (`PreferencesPaneReset`): the eight places and the
+//  freeze switch of a new ring; what opens the ring is a binding of Buttons and stays.
 //
 //  The pane only edits Options.shared.ring.
 //
@@ -222,6 +226,7 @@ final class RingPreferencesViewController: NSViewController {
         static let triggerButton = NSUserInterfaceItemIdentifier("ring-trigger-button")
         static let freezePointer = NSUserInterfaceItemIdentifier("ring-freeze-pointer")
         static let placesHint = NSUserInterfaceItemIdentifier("ring-places-hint")
+        static let places = NSUserInterfaceItemIdentifier("ring-places")
         static let reset = NSUserInterfaceItemIdentifier("ring-reset")
 
         static func action(_ place: Int) -> NSUserInterfaceItemIdentifier {
@@ -315,6 +320,9 @@ final class RingPreferencesViewController: NSViewController {
     private(set) var placeRows: [PreferencesGroupRow] = []
     private(set) var placePopUps: [ButtonActionPullDown] = []
     private(set) var placesHintLabel: NSTextField!
+    /// "Shortcuts": the line on how to choose and the eight rows, folded while nothing
+    /// opens the ring; nil on an app's page.
+    private(set) var placesSection: PreferencesDisclosureSection?
     /// "Reset to Defaults" under the boxes: the places and the freeze switch of a new ring.
     /// Not what opens the ring.
     private(set) var resetToDefaults: PreferencesPaneReset!
@@ -371,6 +379,11 @@ final class RingPreferencesViewController: NSViewController {
             headerView = header
             let trigger = PreferencesGroupSection(width: width, rows: [makeTriggerRow(), makeFreezeRow()])
             let places = makePlacesSection(rows: placeRows)
+            places.onExpandedChange = { [weak self] _ in
+                guard let self else { return }
+                PreferencesForm.fitToContent(self)
+            }
+            placesSection = places
             resetToDefaults = makeReset()
 
             sections = [header, trigger, places, PreferencesGroupFooter(trailing: [resetToDefaults.button])]
@@ -427,6 +440,8 @@ final class RingPreferencesViewController: NSViewController {
             // (Opened only by an app's own button: "Change" leads to it, not "Set Up…".)
             let opens = summary.hasTrigger || summary.onlyInApps != nil
             triggerButton.title = text(opens ? "ring-trigger-change" : "ring-trigger-set-up")
+            // Nothing opens the ring: its places wait, folded, a click away.
+            placesSection?.isCollapsible = !opens
             (freezeToggle as? NSSwitch)?.state = ring.freezePointer ? .on : .off
         }
         for (place, popUp) in placePopUps.enumerated() {
@@ -477,8 +492,14 @@ final class RingPreferencesViewController: NSViewController {
 
     /// A place of the drawing was clicked: its row is selected. The row's pull-down takes
     /// the keyboard (Space opens it) and is scrolled into view, and the place stays lit.
+    /// Folded places open first.
     func selectPlace(_ place: Int) {
         guard placePopUps.indices.contains(place) else { return }
+        if let placesSection, !placesSection.showsBody {
+            placesSection.setExpanded(true, animated: true)
+            PreferencesForm.fitToContent(self)
+            view.layoutSubtreeIfNeeded()
+        }
         selectedPlace = place
         showLitPlace()
         let popUp = placePopUps[place]
@@ -683,31 +704,32 @@ final class RingPreferencesViewController: NSViewController {
         return row
     }
 
-    /// "Shortcuts": its title, one line on the two ways to choose, and the box of rows.
-    private func makePlacesSection(rows: [PreferencesGroupRow]) -> NSView {
+    /// "Shortcuts": its title, one line on the two ways to choose, and the box of rows. The
+    /// title folds the line and the box while nothing opens the ring (`reload`).
+    private func makePlacesSection(rows: [PreferencesGroupRow]) -> PreferencesDisclosureSection {
         let inset = PreferencesGroupedForm.rowHorizontalInset
-        let title = PreferencesGroupedForm.makeSectionTitle(text("ring-places-header"))
         let hint = Self.makeNote(text("ring-places-hint"), identifier: Identifier.placesHint)
         placesHintLabel = hint
         let box = PreferencesGroupBox(width: Self.boxWidth, rows: rows)
 
-        let section = NSView()
-        section.translatesAutoresizingMaskIntoConstraints = false
-        for view in [title, hint, box] as [NSView] {
-            section.addSubview(view)
+        let body = NSView()
+        body.translatesAutoresizingMaskIntoConstraints = false
+        for view in [hint, box] as [NSView] {
+            body.addSubview(view)
         }
         NSLayoutConstraint.activate([
-            title.topAnchor.constraint(equalTo: section.topAnchor),
-            title.leadingAnchor.constraint(equalTo: section.leadingAnchor, constant: inset),
-            title.trailingAnchor.constraint(lessThanOrEqualTo: section.trailingAnchor, constant: -inset),
-            hint.topAnchor.constraint(equalTo: title.bottomAnchor, constant: PreferencesGroupedForm.explanationSpacing),
-            hint.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            hint.trailingAnchor.constraint(lessThanOrEqualTo: section.trailingAnchor, constant: -inset),
+            hint.topAnchor.constraint(equalTo: body.topAnchor),
+            hint.leadingAnchor.constraint(equalTo: body.leadingAnchor, constant: inset),
+            hint.trailingAnchor.constraint(lessThanOrEqualTo: body.trailingAnchor, constant: -inset),
             box.topAnchor.constraint(equalTo: hint.bottomAnchor, constant: PreferencesGroupedForm.sectionTitleSpacing + 2),
-            box.leadingAnchor.constraint(equalTo: section.leadingAnchor),
-            box.trailingAnchor.constraint(equalTo: section.trailingAnchor),
-            box.bottomAnchor.constraint(equalTo: section.bottomAnchor),
+            box.leadingAnchor.constraint(equalTo: body.leadingAnchor),
+            box.trailingAnchor.constraint(equalTo: body.trailingAnchor),
+            box.bottomAnchor.constraint(equalTo: body.bottomAnchor),
         ])
+        let section = PreferencesDisclosureSection(
+            title: text("ring-places-header"), body: body, spacing: PreferencesGroupedForm.explanationSpacing
+        )
+        section.identifier = Identifier.places
         return section
     }
 
