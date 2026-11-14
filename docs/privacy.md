@@ -74,8 +74,9 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](../SECU
 - A [settings file](features.md#settings-file) is written only where you save it, and the settings
   from before an import only into Scrollio's folder in Application Support; neither is
   sent anywhere. Such a file holds the paths of the apps on your list and of the apps,
-  files and scripts your buttons open, and a path usually contains your account name:
-  look at a file before you pass it on.
+  files and scripts your buttons and the Shortcut Ring's places open (a path usually
+  contains your account name), and the names you gave key combinations: look at a file
+  before you pass it on.
 - Scrollio keeps no record of what you type. When key presses pass through it at all is
   under [Permissions](#permissions); what it logs is under [Diagnostics](troubleshooting.md#diagnostics).
 - Besides its own settings, Scrollio reads:
@@ -93,8 +94,11 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](../SECU
     app is built on Chromium or on Firefox's engine (the names in `Contents/Frameworks`,
     and whether `Contents/MacOS` holds a browser's app loader or Firefox's engine), and
     for an app built on Chromium whether its `Info.plist` names an application class
-    (`NSPrincipalClass`; nothing else of that file is used); only apps in the
-    Applications folders and in /System are looked into;
+    (`NSPrincipalClass`; nothing else of that file is used for this); for this only
+    apps in the Applications folders and in /System are looked into;
+  - the bundle identifier in the `Info.plist` of an app whose page you open under Apps,
+    wherever the app is, to find its suggested Shortcut Ring (in Settings only, never
+    while you use the mouse);
   - the running apps, with their names and icons, to offer them in the Apps pane;
   - the macOS pointer settings, which it shows, and changes only as described under
     [Logitech MX mice](features.md#logitech-mx-mice).
