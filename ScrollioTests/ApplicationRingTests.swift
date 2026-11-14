@@ -452,18 +452,27 @@ final class ShortcutRingPerAppControllerTests: XCTestCase {
         XCTAssertNil(ShortcutRingController.preparedFace(for: notesRing))
     }
 
-    /// At launch the faces are made one ring per turn of the main queue (the event taps
-    /// wait on it too), the general ring last, so that it is the newest; and never while
-    /// a ring is open: a turn that finds one open tries again a little later.
-    func testTheFacesAtLaunchAreMadeOneRingPerTurnAndNeverWhileARingIsOpen() throws {
+    /// At launch the faces are made one place per turn of the main queue (the event taps
+    /// wait on it too: a cold icon takes a while to draw, a ring of eight apps in one turn
+    /// held them 0.1–0.2 s): each turn looks up one place that opens an app or a file and
+    /// draws its icon, and a ring's face is kept once its last place is in. The general
+    /// ring comes last, so that it is the newest. Never while a ring is open: a turn that
+    /// finds one open tries again a little later and goes on where it stopped.
+    func testTheFacesAtLaunchAreMadeOnePlacePerTurnAndNeverWhileARingIsOpen() throws {
         let options = Options()
         options.defaults = TestDefaults.make(for: self)
-        let textEdit = OpenTargetPayload(path: "/System/Applications/TextEdit.app", bundleID: "com.apple.TextEdit", arguments: "", kind: .application)
+        func opens(_ path: String) -> ShortcutRingPlace {
+            return ShortcutRingPlace(openTarget: OpenTargetPayload(path: path, bundleID: nil, arguments: "", kind: .application))
+        }
+        let textEdit = "/System/Applications/TextEdit.app"
+        let preview = "/System/Applications/Preview.app"
         var general = ShortcutRingSettings.default
-        general[5] = ShortcutRingPlace(openTarget: textEdit)
+        general[5] = opens(textEdit)
         options.ring = general
         let notes = application(notesPath, top: SystemShortcut.copy)
-        notes.ring?[2] = ShortcutRingPlace(openTarget: textEdit)
+        notes.ring?[2] = opens(textEdit)
+        notes.ring?[3] = opens(calculatorPath)
+        notes.ring?[6] = opens(preview)
         options.application.applications = list([notes])
         options.buttons.binding = [ButtonBinding(
             triggerEvent: RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil),
@@ -472,32 +481,55 @@ final class ShortcutRingPerAppControllerTests: XCTestCase {
         let notesRing = notes.ringThatOpens(general: general)
 
         var turns: [(delay: TimeInterval, block: () -> Void)] = []
+        var lookedUp: [String] = []
+        var lookUpsPerTurn: [Int] = []
         func nextTurn() {
             guard !turns.isEmpty else { return XCTFail("no turn is due") }
+            let before = lookedUp.count
             turns.removeFirst().block()
+            lookUpsPerTurn.append(lookedUp.count - before)
         }
-        ShortcutRingController.prepareFaceAtLaunch(options: options, after: { turns.append(($0, $1)) })
+        ShortcutRingController.prepareFaceAtLaunch(options: options, after: { turns.append(($0, $1)) }, makePlace: {
+            lookedUp.append($0.openTarget?.path ?? "")
+            return ShortcutRingFace.place($0)
+        })
         XCTAssertEqual(turns.map(\.delay), [0], "nothing in the launch's own turn")
-        XCTAssertTrue(ShortcutRingController.preparedFaces.isEmpty)
+        XCTAssertTrue(lookedUp.isEmpty)
+
+        nextTurn()
+        XCTAssertEqual(lookedUp, [textEdit], "one place in a turn")
+        XCTAssertTrue(ShortcutRingController.preparedFaces.isEmpty, "a face is kept only when it is whole")
+        XCTAssertEqual(turns.map(\.delay), [0])
 
         ShortcutRingController.setTestingController(controller)
         defer { ShortcutRingController.setTestingController(nil) }
         controller.triggerPressed(by: RingHarness.button(.down))
         XCTAssertTrue(controller.isOpen)
         nextTurn()
-        XCTAssertTrue(ShortcutRingController.preparedFaces.isEmpty, "not while a ring is held")
+        XCTAssertEqual(lookedUp.count, 1, "nothing is looked up while a ring is held")
         XCTAssertEqual(turns.map(\.delay), [ShortcutRingController.launchFaceWait])
         controller.cancel()
         XCTAssertFalse(controller.isOpen)
         nextTurn()
+        XCTAssertEqual(turns.map(\.delay), [0])
 
-        XCTAssertEqual(turns.map(\.delay), [0])
         nextTurn()
-        XCTAssertEqual(ShortcutRingController.preparedFaces.map(\.ring), [notesRing], "one ring in a turn")
-        XCTAssertNotNil(ShortcutRingController.preparedFace(for: notesRing)?.places[2].image)
-        XCTAssertEqual(turns.map(\.delay), [0])
+        XCTAssertTrue(ShortcutRingController.preparedFaces.isEmpty)
         nextTurn()
+        XCTAssertEqual(lookedUp, [textEdit, calculatorPath, preview], "on where it stopped, each place once")
+        XCTAssertEqual(ShortcutRingController.preparedFaces.map(\.ring), [notesRing])
+        let face = try XCTUnwrap(ShortcutRingController.preparedFace(for: notesRing))
+        // The face made a place at a time is the face made in one go.
+        func look(_ face: ShortcutRingFace) -> [String] {
+            return face.places.map { "\($0.title) \($0.symbolName) \($0.image == nil ? "-" : "icon")" }
+        }
+        XCTAssertEqual(look(face), look(ShortcutRingFace(notesRing)))
+        XCTAssertEqual(face.places.map { $0.image != nil }, [false, false, true, true, false, false, true, false])
+
+        nextTurn()
+        XCTAssertEqual(lookedUp.last, textEdit)
         XCTAssertEqual(ShortcutRingController.preparedFaces.map(\.ring), [general, notesRing], "the general ring is the newest")
         XCTAssertTrue(turns.isEmpty)
+        XCTAssertEqual(lookUpsPerTurn, [1, 0, 0, 1, 1, 1], "never more than one place in a turn")
     }
 }

@@ -72,45 +72,81 @@ struct ShortcutRingFace {
     /// file's own name and a plain symbol instead; `ShortcutRingController` shows that
     /// until a face made at a quiet moment is there (`prepare`, and after a ring closed).
     init(_ ring: ShortcutRingSettings, looksOnDisk: Bool = true, resolver: ActionDisplayResolver = ActionDisplayResolver()) {
-        self.init(places: ring.places.map { place in
-            switch place.content {
-            case .nothing:
-                return .empty
-            case .shortcut(let shortcut):
-                return Place(title: shortcut.localizedName, symbolName: shortcut.symbolName, isEmpty: false)
-            case .keyCombination(let code, let modifiers):
-                let text = ButtonTriggerNaming.shortcutText(type: .keyboard, code: code, modifiers: modifiers)
-                var shown = Place(
-                    title: text, symbolName: "keyboard",
-                    glyphs: Self.glyphLines(code: code, modifiers: modifiers), isEmpty: false
-                )
-                if let name = place.label?.name {
-                    shown.title = name
-                    shown.keys = text
-                }
-                switch place.label?.icon {
-                case .symbol(let name)? where Self.hasSymbol(named: name):
-                    shown.symbolName = name
-                    shown.glyphs = []
-                case .character(let character)?:
-                    shown.glyphs = [character]
-                    shown.glyphIsIcon = true
-                case .symbol?, nil:
-                    // (A symbol this Mac does not have: the keys, as without an icon.)
-                    break
-                }
-                return shown
-            case .open(let target):
-                guard looksOnDisk else {
-                    return Place(title: Self.plainName(of: target), symbolName: "arrow.up.forward.app", isEmpty: false)
-                }
-                let shown = resolver.resolve(state: CellActionState(binding: place.asBinding()))
-                return Place(
-                    title: shown.title, symbolName: shown.symbolName ?? "arrow.up.forward.app",
-                    image: shown.image.map(Self.drawnIcon), isEmpty: false
-                )
+        self.init(places: ring.places.map { Self.place($0, looksOnDisk: looksOnDisk, resolver: resolver) })
+    }
+
+    /// One place of a ring's face, as `init` makes it.
+    static func place(
+        _ place: ShortcutRingPlace, looksOnDisk: Bool = true, resolver: ActionDisplayResolver = ActionDisplayResolver()
+    ) -> Place {
+        switch place.content {
+        case .nothing:
+            return .empty
+        case .shortcut(let shortcut):
+            return Place(title: shortcut.localizedName, symbolName: shortcut.symbolName, isEmpty: false)
+        case .keyCombination(let code, let modifiers):
+            let text = ButtonTriggerNaming.shortcutText(type: .keyboard, code: code, modifiers: modifiers)
+            var shown = Place(
+                title: text, symbolName: "keyboard",
+                glyphs: Self.glyphLines(code: code, modifiers: modifiers), isEmpty: false
+            )
+            if let name = place.label?.name {
+                shown.title = name
+                shown.keys = text
             }
-        })
+            switch place.label?.icon {
+            case .symbol(let name)? where Self.hasSymbol(named: name):
+                shown.symbolName = name
+                shown.glyphs = []
+            case .character(let character)?:
+                shown.glyphs = [character]
+                shown.glyphIsIcon = true
+            case .symbol?, nil:
+                // (A symbol this Mac does not have: the keys, as without an icon.)
+                break
+            }
+            return shown
+        case .open(let target):
+            guard looksOnDisk else {
+                return Place(title: Self.plainName(of: target), symbolName: "arrow.up.forward.app", isEmpty: false)
+            }
+            let shown = resolver.resolve(state: CellActionState(binding: place.asBinding()))
+            return Place(
+                title: shown.title, symbolName: shown.symbolName ?? "arrow.up.forward.app",
+                image: shown.image.map(Self.drawnIcon), isEmpty: false
+            )
+        }
+    }
+
+    /// A ring's whole face made one place at a time, for turns of the main queue (where
+    /// the event taps wait) that take no longer than one icon's drawing: begun without a
+    /// look on disk, then one place that opens something per `step`, looked up on disk and
+    /// its icon drawn. (Measured with icons the process had not drawn yet: a ring of eight
+    /// apps in one go 80–210 ms, one place 5–96 ms.)
+    struct InSteps {
+        let ring: ShortcutRingSettings
+        private var face: ShortcutRingFace
+        /// The places that open something and are not looked up yet, in order.
+        private var waiting: [Int]
+
+        init(_ ring: ShortcutRingSettings) {
+            self.ring = ring
+            face = ShortcutRingFace(ring, looksOnDisk: false)
+            waiting = face.places.indices.filter { ring[$0].openTarget != nil }
+        }
+
+        /// The whole face, once the last place is in; nil before.
+        var whole: ShortcutRingFace? {
+            return waiting.isEmpty ? face : nil
+        }
+
+        /// Looks up the next place that opens something (`makePlace`: one place with its
+        /// look on disk).
+        mutating func step(_ makePlace: (ShortcutRingPlace) -> Place) {
+            guard !waiting.isEmpty else { return }
+            let index = waiting.removeFirst()
+            face.places[index] = makePlace(ring[index])
+        }
     }
 
     /// An app's or a file's icon as pixels drawn now, at the size a lit place shows it on

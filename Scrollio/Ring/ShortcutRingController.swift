@@ -123,31 +123,44 @@ final class ShortcutRingController {
     static let launchFaceWait: TimeInterval = 0.5
 
     /// At launch: when something opens the ring and a place of a ring opens an app or a
-    /// file, the faces are made on later turns of the main queue, one ring per turn (the
-    /// event taps wait on the same queue) and never while a ring is open, so that the
-    /// first ring already has the icons. For everyone else: one pass over the bindings
-    /// and the apps, nothing more. `after` runs a block on the main queue after a delay.
+    /// file, the faces are made on later turns of the main queue, one place that opens
+    /// something per turn (`ShortcutRingFace.InSteps`: the event taps wait on the same
+    /// queue), a ring's face kept once its last place is in, and never while a ring is
+    /// open, so that the first ring already has the icons. For everyone else: one pass
+    /// over the bindings and the apps, nothing more. `after` runs a block on the main
+    /// queue after a delay; `makePlace` makes one place with its look on disk.
     static func prepareFaceAtLaunch(
         options: Options = .shared,
         after: @escaping (TimeInterval, @escaping () -> Void) -> Void = { delay, block in
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: block)
-        }
+        },
+        makePlace: @escaping (ShortcutRingPlace) -> ShortcutRingFace.Place = { ShortcutRingFace.place($0) }
     ) {
         // The general ring last, so that it is the newest.
-        prepareFaces(of: ringsToPrepareAtLaunch(options: options).reversed(), after: after)
+        prepareFaces(of: ringsToPrepareAtLaunch(options: options).reversed(), after: after, makePlace: makePlace)
     }
 
+    /// One turn: the next place of the first of `rings` (whose face `steps` holds once it
+    /// is begun), then a turn for what is left.
     private static func prepareFaces(
-        of rings: [ShortcutRingSettings], after: @escaping (TimeInterval, @escaping () -> Void) -> Void
+        of rings: [ShortcutRingSettings], steps: ShortcutRingFace.InSteps? = nil,
+        after: @escaping (TimeInterval, @escaping () -> Void) -> Void,
+        makePlace: @escaping (ShortcutRingPlace) -> ShortcutRingFace.Place
     ) {
         guard let ring = rings.first else { return }
         after(0) {
             guard existing?.isOpen != true else {
-                after(launchFaceWait) { prepareFaces(of: rings, after: after) }
+                after(launchFaceWait) { prepareFaces(of: rings, steps: steps, after: after, makePlace: makePlace) }
                 return
             }
-            prepare(ShortcutRingFace(ring), for: ring)
-            prepareFaces(of: Array(rings.dropFirst()), after: after)
+            var steps = steps ?? ShortcutRingFace.InSteps(ring)
+            steps.step(makePlace)
+            guard let whole = steps.whole else {
+                prepareFaces(of: rings, steps: steps, after: after, makePlace: makePlace)
+                return
+            }
+            prepare(whole, for: ring)
+            prepareFaces(of: Array(rings.dropFirst()), after: after, makePlace: makePlace)
         }
     }
 
