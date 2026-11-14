@@ -8,6 +8,15 @@
 //  On a button of the connected mouse (`offersDefault`) "No Action" is "Default": the
 //  button keeps doing what it does by itself, and the pane removes its binding.
 //
+//  "Keyboard Shortcut…" and a name: a recorded key combination can be called something
+//  and given an icon (`ShortcutLabel`). After a recording that caught one, the recorder's
+//  popover stays open and shows the name field and the icon choice under the keys
+//  (`takesPopover`); on a row that already holds one, "Keyboard Shortcut…" opens that
+//  state at once, with "Record Again" for other keys. The keys are stored when they are
+//  recorded, as ever; the name and icon when the popover closes, in whatever way.
+//  Recording other keys keeps the name and icon; a listed action, a mouse button or an
+//  app in their place drops them.
+//
 
 import Cocoa
 
@@ -21,8 +30,10 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
 
     /// A listed action was chosen, or No Action (nil).
     var onShortcutSelected: ((SystemShortcut.Shortcut?) -> Void)?
-    /// A keyboard shortcut was recorded: its stored name.
-    var onCustomShortcutRecorded: ((String) -> Void)?
+    /// A keyboard shortcut was recorded: its stored name, and the name and icon it has
+    /// (nil: none). Also called when only the name or the icon of the recorded shortcut
+    /// changed, with the same stored name.
+    var onCustomShortcutRecorded: ((String, ShortcutLabel?) -> Void)?
     /// "Open App or File…" was chosen.
     var onOpenTargetSelectionRequested: (() -> Void)?
     /// "Show Gesture Settings" was chosen.
@@ -53,6 +64,15 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
     /// Made the first time a shortcut is recorded.
     private var customRecorder: KeyRecorder?
 
+    /// The action a recording caught, until it is stored (after the recorder's moment of
+    /// feedback, or when the recorder hands its popover on, whichever comes first).
+    private var caughtAction: String?
+    /// The recorder's popover while it shows the name and icon of the recorded shortcut.
+    private(set) var detailsPopover: KeyPopover?
+    /// Makes the popover for the name and icon of a shortcut the row already holds.
+    /// Tests replace it with one that opens no window.
+    var makeDetailsPopover: () -> KeyPopover = { KeyPopover() }
+
     /// What the pull-down shows now.
     var actionState: CellActionState {
         if isCustomRecordingActive { return .recordingPrompt }
@@ -78,6 +98,8 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
 
     deinit {
         customRecorder?.stopRecording()
+        detailsPopover?.onClose = nil
+        detailsPopover?.hide()
     }
 
     /// Shows `binding`'s action. The menu is built for the trigger once (again only when
@@ -175,11 +197,14 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
     }
 
     /// "Keyboard Shortcut…": the title asks for a key, and the recorder starts.
-    func beginCustomShortcutSelection(startRecorder: Bool = true) {
+    /// With `openPopover` (the details, "Record Again") the recording uses that popover
+    /// where it is open.
+    func beginCustomShortcutSelection(startRecorder: Bool = true, in openPopover: KeyPopover? = nil) {
         isCustomRecordingActive = true
         refreshActionDisplay()
         guard startRecorder else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+        // (After a menu the recorder waits a moment for it to close.)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (openPopover == nil ? 0.15 : 0)) { [weak self] in
             guard let self, self.window != nil else { return }
             if let start = self.startShortcutRecorder {
                 start(self)
@@ -187,18 +212,97 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
                 let recorder = self.customRecorder ?? KeyRecorder()
                 recorder.delegate = self
                 self.customRecorder = recorder
-                recorder.startRecording(from: self, mode: .adaptive)
+                recorder.startRecording(from: self, mode: .adaptive, in: openPopover)
             }
         }
     }
 
     /// Ends a "Keyboard Shortcut…" recording that still waits for a key (the pane went
-    /// away): the recorder closes and the action shows again. A key already caught is kept.
+    /// away): the recorder closes and the action shows again. A key already caught is
+    /// kept, and so are a name and an icon that were being set.
     func cancelShortcutRecording() {
         customRecorder?.stopRecording()
+        detailsPopover?.hide()
         guard isCustomRecordingActive, !isShortcutCaught else { return }
         isCustomRecordingActive = false
         refreshActionDisplay()
+    }
+
+    // MARK: The name and icon of a recorded shortcut
+
+    /// The row holds a recorded key combination, which can have a name and an icon.
+    var holdsRecordedKeys: Bool {
+        return ShortcutLabel.takes(action: binding.systemShortcutName)
+    }
+
+    /// The keys of a recorded combination as the key slot shows them.
+    static func keyComponents(of action: String) -> [String] {
+        guard let recorded = ButtonBinding.normalizedCustomBindingDescriptor(from: action) else { return [] }
+        return InputEvent(
+            type: recorded.type, code: recorded.code, modifiers: CGEventFlags(rawValue: recorded.modifiers),
+            phase: .down, source: .hidPP, device: nil
+        ).displayComponents
+    }
+
+    /// "Keyboard Shortcut…" on a row that already holds a recorded key combination: the
+    /// popover with its keys, its name and its icon. Nothing is recorded until "Record
+    /// Again" is pressed there.
+    func openShortcutDetails() {
+        guard holdsRecordedKeys, detailsPopover == nil else { return }
+        let popover = makeDetailsPopover()
+        adoptDetails(popover)
+        presentShortcutDetails(popover, self, Self.keyComponents(of: binding.systemShortcutName), binding.label)
+    }
+
+    /// Shows the details at the pull-down. Tests replace it: nothing opens.
+    var presentShortcutDetails: (KeyPopover, NSView, [String], ShortcutLabel?) -> Void = { popover, anchor, keys, label in
+        guard anchor.window != nil else { return }
+        popover.showDetails(at: anchor, keys: keys, label: label)
+    }
+
+    private func adoptDetails(_ popover: KeyPopover) {
+        detailsPopover = popover
+        popover.onRecordAgain = { [weak self, weak popover] in
+            guard let self, let popover, self.detailsPopover === popover else { return }
+            // What was typed so far stays with the row, whatever the recording brings.
+            self.storeLabel(popover.editedLabel)
+            self.beginCustomShortcutSelection(in: popover)
+        }
+        popover.onClose = { [weak self, weak popover] in
+            guard let self, let popover, self.detailsPopover === popover else { return }
+            self.detailsPopover = nil
+            // (A popover that closes while keys are recorded into it has nothing new.)
+            guard popover.isShowingDetails else { return }
+            self.storeLabel(popover.editedLabel)
+        }
+    }
+
+    /// Gives the recorded shortcut `label` (nil: none) and tells the pane, when that is a
+    /// change.
+    private func storeLabel(_ label: ShortcutLabel?) {
+        guard holdsRecordedKeys, label != binding.label else { return }
+        configure(with: binding.labelled(label))
+        onCustomShortcutRecorded?(binding.systemShortcutName, binding.label)
+    }
+
+    /// Stores the shortcut a recording caught, once: the row shows it and the pane hears
+    /// of it. Other keys keep the name and icon the row had; anything else drops them.
+    private func storeCaughtShortcut() {
+        guard let actionName = caughtAction else { return }
+        caughtAction = nil
+        isCustomRecordingActive = false
+        isShortcutCaught = false
+        let old = binding
+        let recorded = ButtonBinding(
+            id: old.id,
+            triggerEvent: old.triggerEvent,
+            systemShortcutName: actionName,
+            isEnabled: true,
+            createdAt: old.createdAt,
+            label: old.label
+        )
+        configure(with: recorded)
+        onCustomShortcutRecorded?(actionName, recorded.label)
     }
 
     // MARK: Menu
@@ -210,7 +314,13 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
             onOpenTargetSelectionRequested?()
             return
         case ShortcutManager.MenuMarker.keyboardShortcut?:
-            beginCustomShortcutSelection()
+            // Keys that are there already: their name and icon first, other keys from there.
+            if holdsRecordedKeys {
+                refreshActionDisplay()
+                openShortcutDetails()
+            } else {
+                beginCustomShortcutSelection()
+            }
             return
         case ShortcutManager.MenuMarker.gestureSettings?:
             refreshActionDisplay()
@@ -290,22 +400,23 @@ extension ButtonActionPullDown: KeyRecorderDelegate {
             }
             return
         }
-        let actionName = Self.bindingName(forRecorded: event)
+        caughtAction = Self.bindingName(forRecorded: event)
         isShortcutCaught = true
         DispatchQueue.main.asyncAfter(deadline: .now() + KeyRecorder.recordingFeedbackDelay(isDuplicate: false)) { [weak self] in
-            guard let self else { return }
-            self.isCustomRecordingActive = false
-            self.isShortcutCaught = false
-            let old = self.binding
-            self.configure(with: ButtonBinding(
-                id: old.id,
-                triggerEvent: old.triggerEvent,
-                systemShortcutName: actionName,
-                isEnabled: true,
-                createdAt: old.createdAt
-            ))
-            self.onCustomShortcutRecorded?(actionName)
+            self?.storeCaughtShortcut()
         }
+    }
+
+    /// The recording is over and caught something. A key combination that can have a
+    /// name and an icon keeps the popover: it goes on to ask for them. Everything else (a
+    /// listed action, a mouse button) lets it close. A popover that is gone already (the
+    /// user clicked elsewhere during the moment of feedback) is not brought back.
+    func takesPopover(_ recorder: KeyRecorder, _ popover: KeyPopover) -> Bool {
+        storeCaughtShortcut()
+        guard popover.isOpen, holdsRecordedKeys else { return false }
+        adoptDetails(popover)
+        popover.turnToDetails(label: binding.label)
+        return true
     }
 
     /// What a place of the Shortcut Ring cannot run is refused when it is pressed, not

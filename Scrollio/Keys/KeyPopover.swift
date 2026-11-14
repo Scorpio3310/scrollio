@@ -13,7 +13,14 @@ import Cocoa
 /// it a small line: "Press Esc to cancel", replaced by why a press was refused, and gone
 /// (its room kept) once a press is recorded: nothing is left to cancel then. It grows to fit
 /// its texts, and VoiceOver hears the waiting hint when it opens.
-class KeyPopover: NSObject {
+///
+/// For the "Keyboard Shortcut…" action it has a second state, the details: once a key
+/// combination is recorded (or when the row already holds one) the key slot shows the
+/// keys and under it stands `ShortcutLabelEditorView`, where the combination gets a name
+/// and an icon, with "Record Again" and "Done". The waiting hint and the Esc line are gone
+/// then: nothing is being recorded, and the keyboard types into the name. Whoever uses
+/// the popover hears when it closes (`onClose`) and reads `editedLabel`.
+class KeyPopover: NSObject, NSPopoverDelegate {
     private enum RecordingHint {
         case escape
         case duplicate
@@ -41,6 +48,29 @@ class KeyPopover: NSObject {
     /// Says `text` to VoiceOver. Tests replace it.
     var announce: (String) -> Void = KeyPopover.postAnnouncement
 
+    // MARK: - The details (a name and an icon for the recorded keys)
+    /// Where the name and the icon are set; hidden while keys are recorded.
+    private(set) var labelEditor: ShortcutLabelEditorView?
+    /// The popover shows the details, not a recording.
+    private(set) var isShowingDetails = false
+    private var recordingConstraints: [NSLayoutConstraint] = []
+    private var detailsConstraints: [NSLayoutConstraint] = []
+    /// "Record Again" was pressed.
+    var onRecordAgain: (() -> Void)?
+    /// The popover closed, in whatever way ("Done", a click elsewhere, Esc, `hide`). Told
+    /// once, then forgotten: set it again for a popover that is used again.
+    var onClose: (() -> Void)?
+
+    /// The name and icon as the details hold them now; nil: neither, or no details.
+    var editedLabel: ShortcutLabel? {
+        return labelEditor?.label
+    }
+
+    /// The popover is on screen. (A stand-in of the tests says so without a window.)
+    var isOpen: Bool {
+        return popover?.isShown ?? false
+    }
+
     // MARK: - Constants
     /// The widest a text gets before it wraps.
     static let maxTextWidth: CGFloat = 260
@@ -67,18 +97,96 @@ class KeyPopover: NSObject {
     }
 
     // MARK: - Visibility
-    /// 显示录制 popover, asking for `waitingHint`
+    /// 显示录制 popover, asking for `waitingHint`. A popover that is open with the
+    /// details ("Record Again") goes back to asking for keys where it is, without closing.
     func show(at sourceView: NSView, waitingHint: String) {
-        hide() // 确保之前的 popover 被关闭
-        setupPopover(waitingHint: waitingHint)
-        popover?.show(relativeTo: sourceView.bounds, of: sourceView, preferredEdge: .maxY)
+        if isOpen, contentView != nil {
+            turnToRecording(waitingHint: waitingHint)
+        } else {
+            hide() // 确保之前的 popover 被关闭
+            setupPopover(waitingHint: waitingHint)
+            popover?.show(relativeTo: sourceView.bounds, of: sourceView, preferredEdge: .maxY)
+        }
         announce(Self.spokenText([waitingHint, RecordingHint.escape.localizedText]))
+    }
+
+    /// Opens the popover with keys that are already recorded: their name and icon can be
+    /// changed, and "Record Again" asks for other keys.
+    func showDetails(at sourceView: NSView, keys: [String], label: ShortcutLabel?) {
+        hide()
+        setupPopover(waitingHint: "")
+        keyPreview.update(from: keys, status: .normal)
+        turnToDetails(label: label)
+        popover?.show(relativeTo: sourceView.bounds, of: sourceView, preferredEdge: .maxY)
+        focusNameField()
     }
 
     /// 隐藏 popover
     func hide() {
-        popover?.close()
+        guard let closing = popover else { return }
         popover = nil
+        // (Told here, not by the system: a popover that was never on screen closes
+        // without a word.)
+        closing.delegate = nil
+        closing.close()
+        tellClosed()
+    }
+
+    /// The user closed the popover: a click elsewhere, Esc, the window going away.
+    func popoverDidClose(_ notification: Notification) {
+        guard let closed = notification.object as? NSPopover, closed === popover else { return }
+        popover = nil
+        tellClosed()
+    }
+
+    private func tellClosed() {
+        let handler = onClose
+        onClose = nil
+        handler?()
+    }
+
+    // MARK: - The two states
+
+    /// The keys are recorded and stand in the key slot: the popover goes on to their name
+    /// and icon, showing `label` (nil: none yet).
+    func turnToDetails(label: ShortcutLabel?) {
+        guard let editor = labelEditor else { return }
+        isShowingDetails = true
+        waitingLabel?.isHidden = true
+        hintLabel?.isHidden = true
+        editor.show(label)
+        editor.isHidden = false
+        NSLayoutConstraint.deactivate(recordingConstraints)
+        NSLayoutConstraint.activate(detailsConstraints)
+        contentView?.setAccessibilityLabel(NSLocalizedString("custom-shortcut", comment: ""))
+        updatePopoverContentSize()
+        focusNameField()
+        announce(Self.spokenText([
+            NSLocalizedString("key-recorder-name", comment: ""), NSLocalizedString("key-recorder-label-note", comment: ""),
+        ]))
+    }
+
+    /// Back to asking for keys, in the popover as it is open.
+    private func turnToRecording(waitingHint: String) {
+        isShowingDetails = false
+        labelEditor?.isHidden = true
+        waitingLabel?.stringValue = waitingHint
+        waitingLabel?.isHidden = false
+        hintLabel?.stringValue = RecordingHint.escape.localizedText
+        hintLabel?.isHidden = false
+        keyPreview.update(from: [KeyPreview.WAITING_WORDING], status: .recording)
+        NSLayoutConstraint.deactivate(detailsConstraints)
+        NSLayoutConstraint.activate(recordingConstraints)
+        contentView?.setAccessibilityLabel(Self.spokenText([waitingHint]))
+        // (The keyboard is the recording's now: nothing of the popover holds it.)
+        contentView?.window?.makeFirstResponder(nil)
+        updatePopoverContentSize()
+    }
+
+    /// The name field takes the keyboard, once the popover has its window.
+    private func focusNameField() {
+        guard let editor = labelEditor, let window = editor.window else { return }
+        window.makeFirstResponder(editor.nameField)
     }
 
     // MARK: - Public Methods
@@ -148,6 +256,26 @@ class KeyPopover: NSObject {
         popover?.contentSize
     }
 
+    /// The details without a window: the keys, their name and icon.
+    func testingPrepareDetails(keys: [String], label: ShortcutLabel?) {
+        hide()
+        setupPopover(waitingHint: "")
+        keyPreview.update(from: keys, status: .normal)
+        turnToDetails(label: label)
+    }
+
+    /// As if the user closed the popover (a click elsewhere).
+    func testingCloseAsTheUserDoes() {
+        guard popover != nil else { return }
+        popover = nil
+        tellClosed()
+    }
+
+    var testingWaitingIsVisible: Bool {
+        guard let label = waitingLabel else { return false }
+        return !label.isHidden
+    }
+
     /// The waiting hint, the key slot and the line under it, laid out in the content: the
     /// rects the constraints place (a text field's frame is 2 pt wider on each side).
     var testingRowFrames: [NSRect] {
@@ -200,14 +328,43 @@ class KeyPopover: NSObject {
         let hintLabel = Self.makeLabel(RecordingHint.escape.localizedText, fontSize: Self.hintFontSize, color: .secondaryLabelColor)
         self.hintLabel = hintLabel
 
+        // The name and icon of the recorded keys, for the state after the recording.
+        let editor = ShortcutLabelEditorView()
+        editor.isHidden = true
+        editor.onRecordAgain = { [weak self] in
+            self?.onRecordAgain?()
+        }
+        editor.onDone = { [weak self] in
+            self?.hide()
+        }
+        editor.onLayoutChange = { [weak self] in
+            self?.updatePopoverContentSize()
+        }
+        labelEditor = editor
+        isShowingDetails = false
+
         // A column, each centred and kept off the sides; the popover is as wide as the
         // widest (at least `minWidth`) and as tall as all three.
         let insets = Self.insets
-        var constraints: [NSLayoutConstraint] = [
+        recordingConstraints = [
             waitingLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: insets.top),
             keyPreview.topAnchor.constraint(equalTo: waitingLabel.bottomAnchor, constant: 8),
             hintLabel.topAnchor.constraint(equalTo: keyPreview.bottomAnchor, constant: 6),
             hintLabel.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -insets.bottom),
+        ]
+        // The details: the keys on top, the editor under them.
+        detailsConstraints = [
+            keyPreview.topAnchor.constraint(equalTo: view.topAnchor, constant: insets.top + 2),
+            editor.topAnchor.constraint(equalTo: keyPreview.bottomAnchor, constant: 14),
+            editor.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -insets.top),
+            editor.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: insets.left),
+            editor.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -insets.right),
+            // (The two lines of a recording are hidden then; they still need a place.)
+            waitingLabel.topAnchor.constraint(equalTo: view.topAnchor),
+            hintLabel.topAnchor.constraint(equalTo: view.topAnchor),
+        ]
+        view.addSubview(editor)
+        var constraints: [NSLayoutConstraint] = recordingConstraints + [
             // 内容视图宽度约束
             view.widthAnchor.constraint(greaterThanOrEqualToConstant: Self.minWidth),
         ]
@@ -239,6 +396,7 @@ class KeyPopover: NSObject {
         newPopover.contentViewController?.view = view
         newPopover.contentSize = view.frame.size
         newPopover.behavior = .transient
+        newPopover.delegate = self
         popover = newPopover
     }
 

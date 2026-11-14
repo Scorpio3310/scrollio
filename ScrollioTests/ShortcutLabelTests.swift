@@ -672,3 +672,628 @@ final class ShortcutLabelRowsTests: XCTestCase {
         XCTAssertNil(ShortcutExecutor.shared.resolveAction(named: shiftCommandR))
     }
 }
+
+// MARK: - The recorder's popover
+
+/// A popover that builds its content and counts as open, without a window.
+private final class QuietPopover: KeyPopover {
+    private(set) var standsOpen = false
+
+    override var isOpen: Bool {
+        return standsOpen
+    }
+
+    override func show(at sourceView: NSView, waitingHint: String) {
+        announce = { _ in }
+        if standsOpen {
+            // (Open already: it turns back to asking for keys where it is.)
+            super.show(at: sourceView, waitingHint: waitingHint)
+        } else {
+            testingPrepareContent(waitingHint: waitingHint)
+            standsOpen = true
+        }
+    }
+
+    override func showDetails(at sourceView: NSView, keys: [String], label: ShortcutLabel?) {
+        announce = { _ in }
+        testingPrepareDetails(keys: keys, label: label)
+        standsOpen = true
+    }
+
+    override func hide() {
+        standsOpen = false
+        super.hide()
+    }
+
+    func closeAsTheUserDoes() {
+        standsOpen = false
+        testingCloseAsTheUserDoes()
+    }
+}
+
+final class ShortcutLabelPopoverTests: XCTestCase {
+
+    private var savedRing = ShortcutRingSettings.default
+    private var savedBindings: [ButtonBinding] = []
+    private var stored: [(action: String, label: ShortcutLabel?)] = []
+    private var recorderStarts = 0
+    private var windows: [NSWindow] = []
+
+    override func setUp() {
+        super.setUp()
+        savedRing = Options.shared.ring
+        savedBindings = Options.shared.buttons.binding
+        Options.shared.ring = .default
+        Options.shared.buttons.binding = []
+        stored = []
+        recorderStarts = 0
+    }
+
+    override func tearDown() {
+        windows.forEach { $0.contentView = nil }
+        windows = []
+        Options.shared.ring = savedRing
+        Options.shared.buttons.binding = savedBindings
+        super.tearDown()
+    }
+
+    private let trigger = RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil)
+    private let reload = label("Reload", symbol: "arrow.clockwise")
+
+    private func pressed(_ code: UInt16, _ modifiers: CGEventFlags) -> InputEvent {
+        return InputEvent(type: .keyboard, code: code, modifiers: modifiers, phase: .down, source: .hidPP, device: nil)
+    }
+
+    private var shiftCommandRPressed: InputEvent {
+        return pressed(15, CGEventFlags(rawValue: CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue))
+    }
+
+    private func spin(_ seconds: TimeInterval) {
+        RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+    }
+
+    /// What typing `text` into `field` tells the editor.
+    private func type(_ text: String, into field: NSTextField, of editor: ShortcutLabelEditorView) {
+        field.stringValue = text
+        editor.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+    }
+
+    private func details(keys: [String] = ["⇧", "⌘", "R"], label: ShortcutLabel? = nil) throws -> (KeyPopover, ShortcutLabelEditorView) {
+        let popover = KeyPopover()
+        popover.announce = { _ in }
+        popover.testingPrepareDetails(keys: keys, label: label)
+        return (popover, try XCTUnwrap(popover.labelEditor))
+    }
+
+    /// The seams of a pull-down that would open a window or tap the system's events.
+    private func quiet(_ pullDown: ButtonActionPullDown) {
+        pullDown.makeDetailsPopover = { QuietPopover() }
+        pullDown.presentShortcutDetails = { popover, anchor, keys, label in
+            popover.showDetails(at: anchor, keys: keys, label: label)
+        }
+        pullDown.startShortcutRecorder = { [unowned self] _ in self.recorderStarts += 1 }
+    }
+
+    /// A pull-down in a window that is never shown (the recorder only starts from a
+    /// pull-down that is in a window), with what it tells its pane written down.
+    private func makePullDown(_ binding: ButtonBinding, forRingPlace: Bool = false) -> ButtonActionPullDown {
+        let pullDown = ButtonActionPullDown(binding: binding, forRingPlace: forRingPlace)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 200), styleMask: [.titled], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(pullDown)
+        windows.append(window)
+        quiet(pullDown)
+        pullDown.onCustomShortcutRecorded = { [unowned self] name, label in self.stored.append((name, label)) }
+        return pullDown
+    }
+
+    private func keyboardShortcutItem(of pullDown: ButtonActionPullDown) throws -> NSMenuItem {
+        return try XCTUnwrap(pullDown.menu?.items.first {
+            $0.representedObject as? String == ShortcutManager.MenuMarker.keyboardShortcut
+        })
+    }
+
+    /// The recorder's side of a recording that caught `event`: the delegate hears of it,
+    /// and at the end of the moment of feedback is asked whether it keeps the popover.
+    private func record(_ event: InputEvent, into pullDown: ButtonActionPullDown, popover: KeyPopover) -> Bool {
+        pullDown.onEventRecorded(KeyRecorder(), didRecordEvent: event, isDuplicate: false)
+        popover.keyPreview?.update(from: event.displayComponents, status: .recorded)
+        return pullDown.takesPopover(KeyRecorder(), popover)
+    }
+
+    // MARK: The popover itself
+
+    /// While it waits for keys the popover is what it was: the name and icon are not
+    /// there (every key belongs to the recording). Once keys are there, they are.
+    func testTheNameAndTheIconComeOnceKeysAreThere() throws {
+        let popover = KeyPopover()
+        popover.announce = { _ in }
+        popover.testingPrepareContent(waitingHint: KeyRecordingMode.adaptive.waitingHint)
+        let content = try XCTUnwrap(popover.testingContentView)
+        let editor = try XCTUnwrap(popover.labelEditor)
+        XCTAssertTrue(editor.isHidden)
+        XCTAssertFalse(popover.isShowingDetails)
+        XCTAssertTrue(popover.testingWaitingIsVisible)
+        XCTAssertTrue(popover.testingHintIsVisible)
+        XCTAssertNil(popover.editedLabel)
+        let waiting = content.fittingSize
+        XCTAssertLessThan(waiting.height, 110, "the waiting popover is as small as before")
+
+        popover.keyPreview.update(from: ["⇧", "⌘", "R"], status: .recorded)
+        popover.turnToDetails(label: nil)
+        XCTAssertTrue(popover.isShowingDetails)
+        XCTAssertFalse(editor.isHidden)
+        XCTAssertFalse(popover.testingWaitingIsVisible, "nothing asks for keys any more")
+        XCTAssertFalse(popover.testingHintIsVisible, "nor says how to cancel a recording")
+        content.layoutSubtreeIfNeeded()
+        let size = content.fittingSize
+        XCTAssertGreaterThan(size.height, waiting.height + 80)
+        XCTAssertEqual(size.width, ShortcutLabelEditorView.width + 32, accuracy: 1)
+        XCTAssertFalse(content.hasAmbiguousLayout)
+        content.setFrameSize(size)
+        content.layoutSubtreeIfNeeded()
+        XCTAssertGreaterThan(popover.keyPreview.frame.minY, editor.frame.maxY, "the keys stand over the name and the icon")
+        XCTAssertTrue(content.bounds.contains(editor.frame))
+        XCTAssertFalse(editor.isChoosingIcon, "the symbols open when asked for")
+        XCTAssertEqual(editor.nameField.placeholderString, "What these keys do")
+        XCTAssertEqual(editor.iconButton.title, "None")
+        XCTAssertEqual(editor.recordAgainButton.title, "Record Again")
+        XCTAssertEqual(editor.doneButton.title, "Done")
+        XCTAssertEqual(editor.doneButton.keyEquivalent, "\r")
+        // The explanation fits two lines.
+        let font = try XCTUnwrap(editor.noteLabel.font)
+        let lineHeight = ceil(font.ascender - font.descender + font.leading)
+        XCTAssertLessThanOrEqual(editor.noteLabel.frame.height, lineHeight * 2 + 2, editor.noteLabel.stringValue)
+    }
+
+    func testTheNameIsWhatWasTypedCleanedAndNeverTooLong() throws {
+        let (popover, editor) = try details()
+        XCTAssertNil(popover.editedLabel)
+        type("  Reload  ", into: editor.nameField, of: editor)
+        XCTAssertEqual(popover.editedLabel, label("Reload"))
+        type(String(repeating: "x", count: 40), into: editor.nameField, of: editor)
+        XCTAssertEqual(editor.nameField.stringValue.count, ShortcutLabel.maximumNameLength)
+        XCTAssertEqual(popover.editedLabel?.name?.count, ShortcutLabel.maximumNameLength)
+        // Clearing the field takes the name away.
+        type("", into: editor.nameField, of: editor)
+        XCTAssertNil(popover.editedLabel)
+    }
+
+    func testTheDetailsShowTheNameAndIconThatAreThere() throws {
+        let (popover, editor) = try details(label: reload)
+        XCTAssertEqual(editor.nameField.stringValue, "Reload")
+        XCTAssertEqual(editor.icon, .symbol("arrow.clockwise"))
+        XCTAssertNotNil(editor.iconButton.image)
+        XCTAssertEqual(editor.iconButton.title, "")
+        XCTAssertEqual(editor.grid.chosen, "arrow.clockwise")
+        XCTAssertEqual(editor.grid.buttons.filter { $0.isChosen }.map { $0.symbolName }, ["arrow.clockwise"])
+        XCTAssertEqual(popover.editedLabel, reload)
+
+        let (_, typed) = try details(label: label("Reload", character: "🔄"))
+        XCTAssertEqual(typed.characterField.stringValue, "🔄")
+        XCTAssertNil(typed.grid.chosen)
+        XCTAssertNotNil(typed.iconButton.image)
+    }
+
+    /// The icon: one of the chosen symbols, found by a search over their names, or one
+    /// typed character, or none.
+    func testTheIconIsASymbolFoundBySearchOrOneTypedCharacter() throws {
+        let (popover, editor) = try details()
+        XCTAssertFalse(editor.removeIconButton.isEnabled)
+        editor.iconButton.performClick(nil)
+        XCTAssertTrue(editor.isChoosingIcon)
+        XCTAssertEqual(editor.grid.buttons.map { $0.symbolName }, ShortcutIconSet.all.map { $0.name })
+        XCTAssertEqual(editor.grid.headers.map { $0.stringValue }, ShortcutIconSet.groups.map { $0.title })
+        XCTAssertTrue(editor.noMatchLabel.isHidden)
+
+        type("reload", into: editor.searchField, of: editor)
+        XCTAssertEqual(editor.grid.buttons.map { $0.symbolName }, ["arrow.clockwise", "arrow.triangle.2.circlepath"].filter { name in
+            ShortcutIconSet.all.first { $0.name == name }!.matches("reload")
+        })
+        XCTAssertEqual(editor.grid.headers.map { $0.stringValue }, ["Arrows"])
+        type("no such thing", into: editor.searchField, of: editor)
+        XCTAssertTrue(editor.grid.buttons.isEmpty)
+        XCTAssertTrue(editor.gridScroll.isHidden)
+        XCTAssertFalse(editor.noMatchLabel.isHidden)
+        type("", into: editor.searchField, of: editor)
+        XCTAssertEqual(editor.grid.buttons.count, ShortcutIconSet.all.count)
+
+        let clockwise = try XCTUnwrap(editor.grid.buttons.first { $0.symbolName == "arrow.clockwise" })
+        XCTAssertEqual(clockwise.toolTip, "arrow clockwise")
+        clockwise.performClick(nil)
+        XCTAssertEqual(popover.editedLabel, label(nil, symbol: "arrow.clockwise"))
+        XCTAssertFalse(editor.isChoosingIcon, "chosen: the symbols close")
+        XCTAssertNotNil(editor.iconButton.image)
+        XCTAssertTrue(editor.removeIconButton.isEnabled)
+
+        // One typed character instead: the first that can be seen.
+        type("🔄x", into: editor.characterField, of: editor)
+        XCTAssertEqual(popover.editedLabel, label(nil, character: "🔄"))
+        XCTAssertEqual(editor.characterField.stringValue, "🔄")
+        XCTAssertNil(editor.grid.chosen)
+        type("", into: editor.characterField, of: editor)
+        XCTAssertNil(popover.editedLabel)
+
+        // "No Icon" takes a chosen one away.
+        editor.chooseSymbol("star")
+        XCTAssertEqual(editor.icon, .symbol("star"))
+        editor.setChoosingIcon(true)
+        editor.removeIconButton.performClick(nil)
+        XCTAssertNil(editor.icon)
+        XCTAssertEqual(editor.iconButton.title, "None")
+        XCTAssertFalse(editor.isChoosingIcon)
+    }
+
+    /// With the symbols open the popover is taller, and still lays out without a doubt.
+    func testThePopoverGrowsForTheSymbols() throws {
+        let (popover, editor) = try details(label: reload)
+        let content = try XCTUnwrap(popover.testingContentView)
+        content.layoutSubtreeIfNeeded()
+        let closed = content.fittingSize
+        var changes = 0
+        let before = editor.onLayoutChange
+        editor.onLayoutChange = {
+            changes += 1
+            before?()
+        }
+        editor.setChoosingIcon(true)
+        content.layoutSubtreeIfNeeded()
+        let open = content.fittingSize
+        XCTAssertEqual(changes, 1)
+        XCTAssertGreaterThan(open.height, closed.height + ShortcutLabelEditorView.gridHeight)
+        XCTAssertEqual(open.width, closed.width, accuracy: 0.5)
+        XCTAssertFalse(content.hasAmbiguousLayout)
+        XCTAssertLessThanOrEqual(ShortcutIconGridView.contentWidth + 16, ShortcutLabelEditorView.width, "room for a scroll bar")
+    }
+
+    // MARK: The set of symbols
+
+    func testEverySymbolOfTheSetIsThereOnceAndCanBeStored() {
+        let names = ShortcutIconSet.all.map { $0.name }
+        XCTAssertEqual(Set(names).count, names.count, "no symbol twice")
+        XCTAssertGreaterThanOrEqual(names.count, 100)
+        XCTAssertEqual(ShortcutIconSet.groups.count, 7)
+        for symbol in ShortcutIconSet.all {
+            XCTAssertNotNil(NSImage(systemSymbolName: symbol.name, accessibilityDescription: nil), symbol.name)
+            XCTAssertEqual(ShortcutLabel.cleaned(.symbol(symbol.name)), .symbol(symbol.name), symbol.name)
+            XCTAssertNotNil(ShortcutIconSet.image(of: .symbol(symbol.name)), symbol.name)
+        }
+        for group in ShortcutIconSet.groups {
+            XCTAssertNotEqual(group.title, group.titleKey, "the group's name is in the catalog")
+            XCTAssertFalse(group.symbols.isEmpty)
+        }
+    }
+
+    func testTheSearchFindsASymbolByTheWordsOfItsNameAndByWhatItIsFor() {
+        func found(_ query: String) -> [String] {
+            return ShortcutIconSet.groups(matching: query).flatMap { $0.symbols }.map { $0.name }
+        }
+        XCTAssertEqual(found("").count, ShortcutIconSet.all.count)
+        XCTAssertEqual(found("   ").count, ShortcutIconSet.all.count)
+        XCTAssertTrue(found("clockwise").contains("arrow.clockwise"))
+        XCTAssertFalse(found("clockwise").contains("arrow.counterclockwise"), "a word is found by its beginning")
+        XCTAssertTrue(found("arrow up").contains("arrow.up"))
+        XCTAssertTrue(found("ARROW.UP").contains("arrow.up"))
+        XCTAssertTrue(found("undo").contains("arrow.uturn.backward"))
+        XCTAssertTrue(found("paste").contains("doc.on.clipboard"))
+        XCTAssertTrue(found("sett").contains("gearshape"))
+        XCTAssertEqual(found("qqqq"), [])
+        XCTAssertEqual(ShortcutIconSet.groups(matching: "gearshape").map { $0.titleKey }, ["key-recorder-icon-group-tools"])
+    }
+
+    // MARK: The pull-down: recording, then the name and the icon
+
+    /// A recording that caught a key combination stores the keys as ever, and its
+    /// popover stays for the name and the icon, which are stored when it closes.
+    func testAfterARecordingThePopoverStaysForTheNameAndTheIcon() throws {
+        let pullDown = makePullDown(ButtonBinding(triggerEvent: trigger, systemShortcutName: "copy"))
+        pullDown.shortcutSelected(try keyboardShortcutItem(of: pullDown))
+        XCTAssertEqual(pullDown.actionState, .recordingPrompt)
+        XCTAssertNil(pullDown.detailsPopover, "a row without recorded keys records first")
+        spin(0.3)
+        XCTAssertEqual(recorderStarts, 1)
+
+        let popover = QuietPopover()
+        popover.show(at: pullDown, waitingHint: KeyRecordingMode.adaptive.waitingHint)
+        XCTAssertTrue(record(shiftCommandRPressed, into: pullDown, popover: popover))
+        XCTAssertEqual(stored.map { $0.action }, [shiftCommandR], "the keys are stored at once")
+        XCTAssertNil(stored.last?.label)
+        XCTAssertTrue(popover.isShowingDetails)
+        XCTAssertTrue(popover.isOpen)
+        XCTAssertTrue(pullDown.detailsPopover === popover)
+        XCTAssertEqual(pullDown.actionState, .customBinding(name: shiftCommandR, label: nil))
+
+        let editor = try XCTUnwrap(popover.labelEditor)
+        type("Reload", into: editor.nameField, of: editor)
+        editor.chooseSymbol("arrow.clockwise")
+        XCTAssertEqual(stored.count, 1, "nothing more is stored while the popover is open")
+        editor.doneButton.performClick(nil)
+        XCTAssertFalse(popover.isOpen)
+        XCTAssertNil(pullDown.detailsPopover)
+        XCTAssertEqual(stored.count, 2)
+        XCTAssertEqual(stored.last?.action, shiftCommandR)
+        XCTAssertEqual(stored.last?.label, reload)
+        XCTAssertEqual(pullDown.binding.label, reload)
+        XCTAssertEqual(pullDown.menu?.items.first?.title.hasPrefix("Reload"), true)
+
+        // The moment of feedback passes: nothing is stored a second time.
+        spin(KeyRecorder.recordingFeedbackDelay(isDuplicate: false) + 0.2)
+        XCTAssertEqual(stored.count, 2)
+        XCTAssertEqual(pullDown.binding.label, reload)
+    }
+
+    /// Closing the popover in any other way keeps what was typed too; closing it
+    /// unchanged stores nothing.
+    func testAClickElsewhereKeepsWhatWasTyped() throws {
+        let pullDown = makePullDown(ButtonBinding(triggerEvent: trigger, systemShortcutName: shiftCommandR, label: reload))
+        pullDown.shortcutSelected(try keyboardShortcutItem(of: pullDown))
+        let popover = try XCTUnwrap(pullDown.detailsPopover as? QuietPopover)
+        popover.closeAsTheUserDoes()
+        XCTAssertTrue(stored.isEmpty, "nothing changed")
+        XCTAssertNil(pullDown.detailsPopover)
+
+        pullDown.shortcutSelected(try keyboardShortcutItem(of: pullDown))
+        let again = try XCTUnwrap(pullDown.detailsPopover as? QuietPopover)
+        let editor = try XCTUnwrap(again.labelEditor)
+        type("Reload All", into: editor.nameField, of: editor)
+        again.closeAsTheUserDoes()
+        XCTAssertEqual(stored.count, 1)
+        XCTAssertEqual(stored.last?.label, label("Reload All", symbol: "arrow.clockwise"))
+    }
+
+    /// "Keyboard Shortcut…" on a row that holds recorded keys opens their name and icon
+    /// and records nothing; "Record Again" records, and the other keys keep the name and
+    /// the icon.
+    func testRecordingOtherKeysKeepsTheNameAndTheIcon() throws {
+        let pullDown = makePullDown(ButtonBinding(triggerEvent: trigger, systemShortcutName: shiftCommandR, label: reload))
+        XCTAssertTrue(pullDown.holdsRecordedKeys)
+        pullDown.shortcutSelected(try keyboardShortcutItem(of: pullDown))
+        spin(0.3)
+        XCTAssertEqual(recorderStarts, 0, "nothing is recorded yet")
+        XCTAssertNotEqual(pullDown.actionState, .recordingPrompt)
+        let popover = try XCTUnwrap(pullDown.detailsPopover as? QuietPopover)
+        XCTAssertTrue(popover.isShowingDetails)
+        let editor = try XCTUnwrap(popover.labelEditor)
+        XCTAssertEqual(editor.nameField.stringValue, "Reload")
+        XCTAssertEqual(editor.icon, .symbol("arrow.clockwise"))
+
+        // The name is changed, then other keys are asked for: what was typed stays.
+        type("Reload Page", into: editor.nameField, of: editor)
+        editor.recordAgainButton.performClick(nil)
+        spin(0.1)
+        XCTAssertEqual(recorderStarts, 1)
+        XCTAssertEqual(pullDown.actionState, .recordingPrompt)
+        XCTAssertEqual(stored.last?.label, label("Reload Page", symbol: "arrow.clockwise"))
+        // (What the recorder does with the popover that is open: it asks for keys in it.)
+        popover.show(at: pullDown, waitingHint: KeyRecordingMode.adaptive.waitingHint)
+        XCTAssertTrue(popover.isOpen)
+        XCTAssertFalse(popover.isShowingDetails)
+        XCTAssertTrue(editor.isHidden)
+        XCTAssertTrue(popover.testingWaitingIsVisible)
+
+        // ⌃⌥⇧⌘J: no listed action has it.
+        let allFour = CGEventFlags(rawValue: CGEventFlags.maskCommand.rawValue | CGEventFlags.maskAlternate.rawValue
+            | CGEventFlags.maskShift.rawValue | CGEventFlags.maskControl.rawValue)
+        XCTAssertTrue(record(pressed(38, allFour), into: pullDown, popover: popover))
+        XCTAssertEqual(stored.last?.action, "custom::38:1966080")
+        XCTAssertEqual(stored.last?.label, label("Reload Page", symbol: "arrow.clockwise"))
+        XCTAssertEqual(pullDown.binding.systemShortcutName, "custom::38:1966080")
+        XCTAssertTrue(popover.isShowingDetails)
+        XCTAssertEqual(editor.nameField.stringValue, "Reload Page")
+        XCTAssertEqual(editor.icon, .symbol("arrow.clockwise"))
+    }
+
+    /// Clearing the name removes it; with the icon gone too nothing of a label is left,
+    /// and the binding is stored as one from before names.
+    func testClearingTheNameRemovesIt() throws {
+        let pullDown = makePullDown(ButtonBinding(triggerEvent: trigger, systemShortcutName: shiftCommandR, label: reload))
+        pullDown.shortcutSelected(try keyboardShortcutItem(of: pullDown))
+        var popover = try XCTUnwrap(pullDown.detailsPopover as? QuietPopover)
+        var editor = try XCTUnwrap(popover.labelEditor)
+        type("", into: editor.nameField, of: editor)
+        editor.doneButton.performClick(nil)
+        XCTAssertEqual(stored.last?.label, label(nil, symbol: "arrow.clockwise"), "the icon stays")
+        XCTAssertNil(pullDown.binding.label?.name)
+        XCTAssertNil(pullDown.menu?.items.first?.attributedTitle, "nothing grey without a name")
+
+        pullDown.shortcutSelected(try keyboardShortcutItem(of: pullDown))
+        popover = try XCTUnwrap(pullDown.detailsPopover as? QuietPopover)
+        editor = try XCTUnwrap(popover.labelEditor)
+        editor.setChoosingIcon(true)
+        editor.removeIconButton.performClick(nil)
+        popover.closeAsTheUserDoes()
+        XCTAssertEqual(stored.count, 2)
+        XCTAssertNil(stored.last?.label)
+        XCTAssertNil(pullDown.binding.label)
+        XCTAssertFalse(try json(pullDown.binding).contains("label"))
+    }
+
+    /// What takes no name lets the recorder's popover close, and drops a name that was
+    /// there: a recorded combination that is a listed action, a mouse button.
+    func testAListedShortcutAndAMouseButtonLetThePopoverClose() throws {
+        let pullDown = makePullDown(ButtonBinding(triggerEvent: trigger, systemShortcutName: shiftCommandR, label: reload))
+        let popover = QuietPopover()
+        popover.show(at: pullDown, waitingHint: "")
+        XCTAssertFalse(record(pressed(8, .maskCommand), into: pullDown, popover: popover), "⌘C is Copy")
+        XCTAssertEqual(stored.last?.action, "copy")
+        XCTAssertNil(stored.last?.label)
+        XCTAssertNil(pullDown.binding.label)
+        XCTAssertFalse(popover.isShowingDetails)
+        XCTAssertNil(pullDown.detailsPopover)
+        XCTAssertFalse(pullDown.holdsRecordedKeys)
+
+        let button = InputEvent(type: .mouse, code: 5, modifiers: [], phase: .down, source: .hidPP, device: nil)
+        XCTAssertFalse(record(button, into: pullDown, popover: popover))
+        XCTAssertNil(stored.last?.label)
+        XCTAssertFalse(popover.isShowingDetails)
+    }
+
+    /// A popover the user closed during the moment of feedback is not brought back; the
+    /// keys are stored all the same.
+    func testAPopoverThatIsGoneIsNotBroughtBack() {
+        let pullDown = makePullDown(ButtonBinding(triggerEvent: trigger, systemShortcutName: "copy"))
+        let popover = QuietPopover()
+        popover.show(at: pullDown, waitingHint: "")
+        popover.closeAsTheUserDoes()
+        XCTAssertFalse(record(shiftCommandRPressed, into: pullDown, popover: popover))
+        XCTAssertEqual(stored.map { $0.action }, [shiftCommandR])
+        XCTAssertNil(pullDown.detailsPopover)
+        XCTAssertFalse(popover.isShowingDetails)
+    }
+
+    // MARK: The panes store it
+
+    func testAPlaceOfTheRingStoresTheNameAndTheIcon() throws {
+        let controller = RingPreferencesViewController()
+        controller.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: []) }
+        controller.startShortcutRecorder = { _ in }
+        _ = controller.view
+        let popUp = controller.placePopUps[7]
+        quiet(popUp)
+        let popover = QuietPopover()
+        popover.show(at: popUp, waitingHint: "")
+        XCTAssertTrue(record(shiftCommandRPressed, into: popUp, popover: popover))
+        XCTAssertEqual(Options.shared.ring[7], ShortcutRingPlace(action: shiftCommandR))
+        let editor = try XCTUnwrap(popover.labelEditor)
+        type("Reload", into: editor.nameField, of: editor)
+        editor.chooseSymbol("arrow.clockwise")
+        editor.doneButton.performClick(nil)
+        XCTAssertEqual(Options.shared.ring[7], ShortcutRingPlace(action: shiftCommandR, label: reload))
+        XCTAssertEqual(controller.previewView.face.places[7].title, "Reload")
+        XCTAssertEqual(controller.previewView.face.places[7].symbolName, "arrow.clockwise")
+        XCTAssertEqual(popUp.menu?.items.first?.title.hasPrefix("Reload"), true)
+
+        // Another action in the place: the name goes with the keys.
+        controller.setPlace(ShortcutRingPlace(SystemShortcut.copy), at: 7)
+        XCTAssertNil(Options.shared.ring[7].label)
+        XCTAssertNil(popUp.binding.label)
+    }
+
+    func testAButtonStoresTheNameAndTheIcon() throws {
+        let back = ButtonBinding(triggerEvent: trigger, systemShortcutName: shiftCommandR)
+        Options.shared.buttons.binding = [back]
+        let pane = PreferencesButtonsViewController()
+        pane.deviceSource = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        pane.scrollHoldKeys = { [] }
+        pane.startRecording = { _ in }
+        pane.stopRecording = {}
+        pane.presentOpenTarget = { _, _, _ in }
+        pane.openActionMenu = { _ in }
+        pane.presentPlaceMenu = { _, _ in }
+        pane.showPane = { _ in }
+        pane.paneUndoManager = UndoManager()
+        _ = pane.view
+        let row = try XCTUnwrap(pane.rows.first { $0.binding.id == back.id })
+        quiet(row.pullDown)
+        row.pullDown.shortcutSelected(try keyboardShortcutItem(of: row.pullDown))
+        let popover = try XCTUnwrap(row.pullDown.detailsPopover as? QuietPopover)
+        let editor = try XCTUnwrap(popover.labelEditor)
+        type("Reload", into: editor.nameField, of: editor)
+        type("R", into: editor.characterField, of: editor)
+        popover.closeAsTheUserDoes()
+        let storedBinding = try XCTUnwrap(Options.shared.buttons.binding.first)
+        XCTAssertEqual(storedBinding.id, back.id)
+        XCTAssertEqual(storedBinding.systemShortcutName, shiftCommandR)
+        XCTAssertEqual(storedBinding.label, label("Reload", character: "R"))
+        XCTAssertEqual(storedBinding.triggerEvent, back.triggerEvent)
+        XCTAssertEqual(pane.rows.first { $0.binding.id == back.id }?.pullDown.menu?.items.first?.title.hasPrefix("Reload"), true)
+
+        // A listed action on the button: the name is gone from what is stored.
+        pane.setAction(of: back.id, to: SystemShortcut.copy)
+        XCTAssertNil(Options.shared.buttons.binding.first?.label)
+    }
+
+    // MARK: The recorder hands its popover on
+
+    private final class FakeTap: KeyRecordingTap {
+        private(set) var stops = 0
+        func stop() { stops += 1 }
+    }
+
+    private final class Delegate: KeyRecorderDelegate {
+        var keeps = true
+        var isNew = true
+        var log: [String] = []
+        func onRecordingStarted(_ recorder: KeyRecorder) { log.append("started") }
+        func onEventRecorded(_ recorder: KeyRecorder, didRecordEvent event: InputEvent, isDuplicate: Bool) {
+            log.append(isDuplicate ? "refused" : "recorded")
+        }
+        func onRecordingStopped(_ recorder: KeyRecorder, didRecord: Bool) { log.append("stopped \(didRecord)") }
+        func validateRecordedEvent(_ recorder: KeyRecorder, event: InputEvent) -> Bool { return isNew }
+        func takesPopover(_ recorder: KeyRecorder, _ popover: KeyPopover) -> Bool {
+            log.append("asked")
+            guard keeps else { return false }
+            popover.turnToDetails(label: nil)
+            return true
+        }
+    }
+
+    private func startRecorder(_ delegate: Delegate) -> (KeyRecorder, FakeTap, QuietPopover, NSView) {
+        let recorder = KeyRecorder()
+        let tap = FakeTap()
+        let popover = QuietPopover()
+        let anchor = NSView(frame: NSRect(x: 0, y: 0, width: 24, height: 22))
+        recorder.delegate = delegate
+        recorder.isSecureInputOn = { false }
+        recorder.makePopover = { popover }
+        recorder.makeEventTap = { _, _ in tap }
+        recorder.startRecording(from: anchor, mode: .adaptive)
+        addTeardownBlock { [weak self] in
+            recorder.stopRecording()
+            self?.spin(KeyRecorder.restartDelay + 0.1)
+        }
+        return (recorder, tap, popover, anchor)
+    }
+
+    /// After a recording the recorder asks its delegate once whether it keeps the
+    /// popover. Kept: the tap is gone (the keyboard types again), the popover stays open
+    /// with the details, and the next recording can start in it at once.
+    func testTheRecorderLeavesItsPopoverOpenForTheDelegateThatTakesIt() {
+        let delegate = Delegate()
+        let (recorder, tap, popover, anchor) = startRecorder(delegate)
+        XCTAssertTrue(popover.isOpen)
+        NotificationCenter.default.post(name: KeyRecorder.FINISH_NOTI_NAME, object: shiftCommandRPressed)
+        XCTAssertEqual(delegate.log, ["started", "recorded"])
+        XCTAssertEqual(tap.stops, 0, "the tap stays for the moment of feedback")
+        spin(KeyRecorder.recordingFeedbackDelay(isDuplicate: false) + 0.2)
+        XCTAssertEqual(delegate.log, ["started", "recorded", "asked", "stopped true"])
+        XCTAssertEqual(tap.stops, 1)
+        XCTAssertTrue(popover.isOpen, "not closed")
+        XCTAssertTrue(popover.isShowingDetails)
+
+        // "Record Again", right away: the same popover asks for keys again.
+        recorder.startRecording(from: anchor, mode: .adaptive, in: popover)
+        XCTAssertEqual(delegate.log.last, "started")
+        XCTAssertTrue(popover.isOpen)
+        XCTAssertFalse(popover.isShowingDetails)
+        XCTAssertEqual(popover.testingWaitingText, KeyRecordingMode.adaptive.waitingHint)
+        // Esc there ends the recording and closes the popover, as ever.
+        NotificationCenter.default.post(name: KeyRecorder.CANCEL_NOTI_NAME, object: nil)
+        XCTAssertEqual(delegate.log.last, "stopped false")
+        XCTAssertFalse(popover.isOpen)
+    }
+
+    /// A delegate that does not take it (every other use of the recorder), and a press
+    /// that was refused: the popover closes as before.
+    func testTheRecorderClosesItsPopoverOtherwise() {
+        let plain = Delegate()
+        plain.keeps = false
+        let (_, _, popover, _) = startRecorder(plain)
+        NotificationCenter.default.post(name: KeyRecorder.FINISH_NOTI_NAME, object: shiftCommandRPressed)
+        spin(KeyRecorder.recordingFeedbackDelay(isDuplicate: false) + 0.2)
+        XCTAssertEqual(plain.log, ["started", "recorded", "asked", "stopped true"])
+        XCTAssertFalse(popover.isOpen)
+
+        let refusing = Delegate()
+        refusing.isNew = false
+        let (_, _, refused, _) = startRecorder(refusing)
+        NotificationCenter.default.post(name: KeyRecorder.FINISH_NOTI_NAME, object: shiftCommandRPressed)
+        spin(KeyRecorder.recordingFeedbackDelay(isDuplicate: true) + 0.2)
+        XCTAssertEqual(refusing.log, ["started", "refused", "stopped true"], "never asked for a refused press")
+        XCTAssertFalse(refused.isOpen)
+    }
+}

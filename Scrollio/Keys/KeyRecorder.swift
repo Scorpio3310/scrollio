@@ -67,6 +67,12 @@ protocol KeyRecorderDelegate: AnyObject {
     /// What the recorder's popover asks for while it waits, when the caller takes less than
     /// `mode` does; nil: the mode's own text (`KeyRecordingMode.waitingHint`).
     func waitingHint(_ recorder: KeyRecorder, mode: KeyRecordingMode) -> String?
+
+    /// A recording that caught something new is over and its popover would close now.
+    /// True: the delegate keeps `popover` open and goes on with it (the name and icon of
+    /// a recorded key combination); the recorder lets go of it and is free for the next
+    /// recording at once. False (the default): the recorder closes it, as ever.
+    func takesPopover(_ recorder: KeyRecorder, _ popover: KeyPopover) -> Bool
 }
 
 /// 默认实现 (替代 @objc optional 语义)
@@ -85,6 +91,10 @@ extension KeyRecorderDelegate {
 
     func waitingHint(_ recorder: KeyRecorder, mode: KeyRecordingMode) -> String? {
         return nil
+    }
+
+    func takesPopover(_ recorder: KeyRecorder, _ popover: KeyPopover) -> Bool {
+        return false
     }
 }
 
@@ -107,6 +117,8 @@ class KeyRecorder: NSObject {
     private var interceptor: KeyRecordingTap?
     private var isRecording = false
     private var isRecorded = false // 是否已经记录过 (每次启动只记录一个按键
+    /// What was recorded was refused (a duplicate): its popover is never handed on.
+    private var recordedIsRefused = false
     /// `stopRecording` ran; `isRecording` stays true a little longer (the popover's closing
     /// animation). A second stop meanwhile (the timeout, the popover closing) does nothing:
     /// it used to tell the delegate "stopped" and end the Logitech recording twice.
@@ -183,7 +195,9 @@ class KeyRecorder: NSObject {
     /// - Parameters:
     ///   - sourceView: 触发录制的视图，用于显示 Popover
     ///   - mode: 录制模式，默认为组合键模式
-    func startRecording(from sourceView: NSView, mode: KeyRecordingMode = .combination) {
+    ///   - openPopover: a popover that is already open at `sourceView` (the details of
+    ///     a recorded shortcut, "Record Again"): the recording uses it instead of a new one.
+    func startRecording(from sourceView: NSView, mode: KeyRecordingMode = .combination, in openPopover: KeyPopover? = nil) {
         // Guard: 防止重复执行
         guard !isRecording else { return }
         // The event tap first. Without it nothing can be recorded (no Accessibility access):
@@ -202,13 +216,15 @@ class KeyRecorder: NSObject {
         interceptor = tap
         isRecording = true
         isStopping = false
+        isRecorded = false
+        recordedIsRefused = false
         recordingMode = mode
         delegate?.onRecordingStarted(self)
         // 确保清理任何存在的录制界面
         keyPopover?.hide()
         keyPopover = nil
         // 立即显示 Popover (不等待 HID++ divert), saying what to press from the start
-        let popover = makePopover()
+        let popover = openPopover ?? makePopover()
         keyPopover = popover
         popover.show(at: sourceView, waitingHint: waitingHint(for: mode))
         observeClosing(of: popover)
@@ -660,6 +676,7 @@ class KeyRecorder: NSObject {
 
         let isNew = self.delegate?.validateRecordedEvent(self, event: inputEvent) ?? true
         let isDuplicate = !isNew
+        recordedIsRefused = isDuplicate
         let status: KeyPreview.Status = isNew ? .recorded : .duplicate
 
         keyPopover?.keyPreview
@@ -702,8 +719,14 @@ class KeyRecorder: NSObject {
         let didRecord = isRecorded
         removeCloseObservers()
         stopSecureInputWatch()
-        // 隐藏录制界面
-        keyPopover?.hide()
+        // 隐藏录制界面, unless the delegate goes on with it (see `takesPopover`)
+        var handedOn = false
+        if didRecord, !recordedIsRefused, !isDeallocating, let popover = keyPopover {
+            handedOn = delegate?.takesPopover(self, popover) ?? false
+        }
+        if !handedOn {
+            keyPopover?.hide()
+        }
         keyPopover = nil
         // 取消超时定时器
         cancelTimeoutTimer()
@@ -729,6 +752,15 @@ class KeyRecorder: NSObject {
         LogiCenter.shared.endKeyRecording()
         // 重置状态 (添加延迟确保 Popover 结束动画完成, 避免多个 popover 重复出现导致卡住)
         guard !isDeallocating else { return }
+        guard !handedOn else {
+            // No popover is closing: "Record Again" in the one that stays may start the
+            // next recording at once.
+            isRecording = false
+            isRecorded = false
+            isStopping = false
+            invalidKeyPressCount = 0
+            return
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.restartDelay) { [weak self] in
             self?.isRecording = false
             self?.isRecorded = false

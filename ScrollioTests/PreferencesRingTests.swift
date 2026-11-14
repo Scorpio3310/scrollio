@@ -167,7 +167,7 @@ final class PreferencesRingTests: XCTestCase {
 
         // A recorded combination that is a listed action is stored as that action.
         let command = InputEvent(type: .keyboard, code: 8, modifiers: .maskCommand, phase: .down, source: .hidPP, device: nil)
-        popUp.onCustomShortcutRecorded?(ButtonActionPullDown.bindingName(forRecorded: command))
+        popUp.onCustomShortcutRecorded?(ButtonActionPullDown.bindingName(forRecorded: command), nil)
         XCTAssertEqual(Options.shared.ring[7].action, "copy")
     }
 
@@ -205,7 +205,7 @@ final class PreferencesRingTests: XCTestCase {
         let controller = makeController()
         let popUp = controller.placePopUps[2]
         for name in ["custom::mouse:5:0", "modifierShift", "mouseLeftClick", "custom::56:0"] {
-            popUp.onCustomShortcutRecorded?(name)
+            popUp.onCustomShortcutRecorded?(name, nil)
             XCTAssertEqual(Options.shared.ring[2].action, "moveSpaceRight", name)
             XCTAssertEqual(popUp.menu?.items.first?.title, SystemShortcut.moveSpaceRight.localizedName, name)
         }
