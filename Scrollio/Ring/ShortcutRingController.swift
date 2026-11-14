@@ -545,7 +545,7 @@ final class ShortcutRingController {
     private func button(_ button: Int, isDown: Bool, at location: CGPoint) {
         assertMainThread()
         if isDown {
-            perform(session.buttonPressed(button, at: location))
+            perform(session.buttonPressed(button, at: location, time: environment.now()))
         } else {
             perform(session.buttonReleased(button))
         }
