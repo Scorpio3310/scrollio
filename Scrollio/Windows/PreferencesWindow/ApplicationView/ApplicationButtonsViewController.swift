@@ -427,12 +427,13 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         return added.id
     }
 
-    /// A new binding of the app's own for `trigger`, with the action of the general binding
-    /// of that trigger (or "Default" when there is none). Never the ring or Gesture
-    /// Navigation.
+    /// A new binding of the app's own for `trigger`, with the action a press of it has
+    /// everywhere, the one its "Everywhere" line names (`everywhereNote`): the general
+    /// binding of that trigger, else the one such a press matches (a button bound without
+    /// modifier keys runs with them too); "Default" when there is none. Never the ring or
+    /// Gesture Navigation.
     static func newBinding(for trigger: RecordedEvent, general: [ButtonBinding]) -> ButtonBinding {
-        let same = ButtonBindingIdentity(trigger)
-        if let model = general.first(where: { $0.identity == same && $0.isEnabled }),
+        if let model = ApplicationButtons.generalBinding(for: trigger, in: general), model.isEnabled,
            !ApplicationButtons.isGeneralOnly(action: model.systemShortcutName) {
             if let payload = model.openTarget {
                 return ButtonBinding(triggerEvent: trigger, openTarget: payload)

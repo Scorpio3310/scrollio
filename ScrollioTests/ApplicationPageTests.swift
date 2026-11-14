@@ -455,6 +455,20 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(calculator.ownButtonBindings.last?.isEnabled, true)
     }
 
+    /// A button with modifier keys that Buttons has no binding of its own for runs the
+    /// binding without them everywhere: its new row starts with that action, as its
+    /// "Everywhere" line says, so nothing changes until another one is chosen.
+    func testANewRowForAButtonWithModifierKeysStartsWithWhatItDoesEverywhere() throws {
+        Options.shared.buttons.binding = [binding(3, "copy")]
+        let calculator = addApp(Self.calculator)
+        let (_, part) = try buttonsPart()
+        let commandBack = RecordedEvent(type: .mouse, code: 3, modifiers: UInt(CGEventFlags.maskCommand.rawValue), deviceFilter: nil)
+        part.addOwnBinding(for: commandBack)
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.triggerEvent), [commandBack])
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), ["copy"])
+        XCTAssertEqual(part.rows.first?.explanation, "Everywhere: " + SystemShortcut.copy.localizedName)
+    }
+
     /// A row's pull-down changes the app's binding only; "Default" stores no action (the
     /// button does what it does by itself here); the ring is refused.
     func testARowsPullDownChangesOnlyTheAppsBinding() throws {
