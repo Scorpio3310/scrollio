@@ -427,21 +427,21 @@ final class ShortcutRingPerAppControllerTests: XCTestCase {
             return place
         }
         XCTAssertNotNil(open(notesPath)?.image, "made at a quiet moment")
-        XCTAssertEqual(harness.wholeFacesMade, 0)
+        XCTAssertEqual(harness.placesLookedUp, 0)
 
         let second = open(calculatorPath)
         XCTAssertEqual(second?.title, "Calculator")
         XCTAssertNil(second?.image, "its own face is not there yet; the other app's is not taken for it")
-        XCTAssertEqual(harness.wholeFacesMade, 1, "made after that ring closed")
+        XCTAssertEqual(harness.placesLookedUp, 1, "made after that ring closed")
 
         XCTAssertEqual(open(nil)?.title, SystemShortcut.moveSpaceRight.localizedName, "the general ring")
         XCTAssertNotNil(open(notesPath)?.image, "the first app's face was kept")
         XCTAssertNotNil(open(calculatorPath)?.image, "and the second app's is there now")
-        XCTAssertEqual(harness.wholeFacesMade, 1)
+        XCTAssertEqual(harness.placesLookedUp, 1)
         // The general ring's freeze switch changes no face.
         harness.ring.freezePointer = true
         XCTAssertNotNil(open(notesPath)?.image)
-        XCTAssertEqual(harness.wholeFacesMade, 1)
+        XCTAssertEqual(harness.placesLookedUp, 1)
         // Only a few faces are kept, the newest ones.
         for index in 0..<(ShortcutRingController.preparedFaceLimit + 3) {
             var ring = ShortcutRingSettings.default

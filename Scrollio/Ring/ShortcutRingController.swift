@@ -202,9 +202,9 @@ final class ShortcutRingController {
         /// inside the event callback: nothing slow in it (no disk, no Launch Services).
         /// By default the general ring (tests).
         var choice: (ShortcutRingSettings) -> ShortcutRingChoice = { .general($0) }
-        /// The whole face of a ring, with a look on disk for what it opens. Only called
-        /// while no ring is open.
-        var makeFace: (ShortcutRingSettings) -> ShortcutRingFace
+        /// One place of a ring's face with its look on disk (an app's or a file's name
+        /// and icon, the icon drawn). Only called while no ring is open.
+        var makePlace: (ShortcutRingPlace) -> ShortcutRingFace.Place
         /// Runs a place's action.
         var run: (ShortcutRingPlace) -> Void
         /// Whether a ring may ask a mouse for pulses: Gestures › Haptic feedback, the one
@@ -253,7 +253,7 @@ final class ShortcutRingController {
                     front: .current(), applications: Options.shared.application.applications, general: general
                 )
             },
-            makeFace: { ShortcutRingFace($0) },
+            makePlace: { ShortcutRingFace.place($0) },
             run: { ShortcutRingController.run($0) },
             allowsHaptics: { Options.shared.gesture.hapticFeedback },
             playHaptic: { cue, code in LogiCenter.shared.playGestureHaptic(cue, forScrollioCode: code) },
@@ -628,12 +628,19 @@ final class ShortcutRingController {
     }
 
     /// After a ring that was shown without its icons has closed (and after its action was
-    /// started): the whole face is made, for the next ring.
-    private func completeFaceLater() {
-        let wanted = ring
+    /// started): the whole face is made, for the next ring, one place per turn of the main
+    /// queue as at launch (`steps`: what the turns before made). A ring that opens
+    /// meanwhile ends it; the next close of a ring without its icons begins it again.
+    private func completeFaceLater(_ steps: ShortcutRingFace.InSteps? = nil) {
+        let wanted = steps?.ring ?? ring
         environment.schedule { [weak self] in
             guard let self, !self.session.isOpen, self.ring == wanted, !self.faceIsComplete else { return }
-            let whole = self.environment.makeFace(wanted)
+            var steps = steps ?? ShortcutRingFace.InSteps(wanted)
+            steps.step(self.environment.makePlace)
+            guard let whole = steps.whole else {
+                self.completeFaceLater(steps)
+                return
+            }
             self.face = whole
             self.faceIsComplete = true
             Self.prepare(whole, for: wanted)
