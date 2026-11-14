@@ -35,6 +35,12 @@ class Application: Codable, Equatable {
     var ring: ApplicationRing? {
         didSet { Options.shared.markChanged(.application) }
     }
+    // The app's own gestures and its "Use the general gestures" (`ApplicationGestures.swift`).
+    // Nil: the app never had gestures of its own and uses the general ones; nothing is
+    // stored for it then, so an entry from before stays as it was.
+    var gestures: ApplicationGestures? {
+        didSet { Options.shared.markChanged(.application) }
+    }
     // 初始化
     init(path: String) {
         self.path = path
@@ -63,6 +69,9 @@ class Application: Codable, Equatable {
         // A ring that cannot be read does not take the app's entry with it: the app then
         // uses the general ring.
         ring = (try? container.decodeIfPresent(ApplicationRing.self, forKey: .ring)) ?? nil
+        // Gestures that cannot be read do not take the app's entry with them either: the app
+        // then uses the general gestures.
+        gestures = (try? container.decodeIfPresent(ApplicationGestures.self, forKey: .gestures)) ?? nil
     }
     
     // Equatable
