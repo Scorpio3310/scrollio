@@ -1017,7 +1017,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hold the gesture button and move the mouse. Let go without moving to run Click."
+            "value": "Hold the button and move the mouse. Let go without moving to run Click."
           }
         }
       }

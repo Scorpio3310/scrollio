@@ -764,9 +764,11 @@ final class PreferencesGesturesTests: XCTestCase {
         controller.reload()
         XCTAssertEqual(controller.gestureButtonRow.explanation, "Only in Calculator: Back button.")
         XCTAssertEqual(controller.gestureButtonButton.title, "Change")
-        // The picture shows the app's button, with the app.
+        // The picture shows the app's button, with the app; the pane hands it to the preview.
         XCTAssertEqual(MouseGestureBindingSummary.current.picture,
                        TriggerPictureSource(event: gesture.triggerEvent, onlyInAppPath: "/System/Applications/Calculator.app"))
+        XCTAssertEqual(controller.previewView.picture, MouseGestureBindingSummary.current.picture)
+        XCTAssertEqual(controller.previewView.deviceCard.picture.appPath, "/System/Applications/Calculator.app")
 
         Options.shared.buttons.binding = [gesture]
         XCTAssertEqual(MouseGestureBindingSummary.current, MouseGestureBindingSummary(

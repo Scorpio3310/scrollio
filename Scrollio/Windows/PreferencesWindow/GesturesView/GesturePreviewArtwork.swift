@@ -2,9 +2,9 @@
 //  GesturePreviewArtwork.swift
 //  Mos
 //  The drawing of GesturePreviewView: on the left the connected mouse seen from above with
-//  its gesture button, on the right a small desktop. Everything is drawn with paths, in the
-//  colours of the Scrolling preview (ScrollPreviewPalette), so the two panes look alike in
-//  light and in dark.
+//  the button that really runs the gestures (`TriggerPicture`), on the right a small
+//  desktop. Everything is drawn with paths, in the colours of the Scrolling preview
+//  (ScrollPreviewPalette), so the two panes look alike in light and in dark.
 //
 //  The mouse is a view of its own that is moved, and only redrawn when its button changes;
 //  the arrow ahead of it is a small view of its own too, so the device card is never
@@ -93,28 +93,82 @@ class GesturePreviewArtworkView: NSView {
 /// The left card: the mouse, moved by the hand, and an arrow ahead of it while it moves.
 /// The card itself only draws its background: the mouse and the arrow are views of their
 /// own, so a frame of the demo moves the mouse and redraws the arrow's small rectangle,
-/// never the whole card.
+/// never the whole card. With the trigger (`picture`) come the caps of the modifiers held
+/// with the button (lower left; they sink with it) and the icon of the app whose own
+/// button it is (top left): small views of their own, set only when the trigger changes.
 final class GesturePreviewDeviceCard: GesturePreviewArtworkView {
 
     static let cornerRadius: CGFloat = 10
     /// Between the mouse's edge and the arrow, and the arrow's length.
     static let arrowGap: CGFloat = 5
     static let arrowLength: CGFloat = 14
+    /// The modifiers' caps: their faces' height, how far in from the lower-left corner,
+    /// and between two.
+    static let capHeight: CGFloat = 20
+    static let capInset: CGFloat = 10
+    static let capSpacing: CGFloat = 4
+    /// The app chip, in from the top-left corner.
+    static let chipInset: CGFloat = 8
 
     let mouse = GesturePreviewMouse()
     /// The arrow, under the mouse as the card's own drawing would be.
     let arrowView = GesturePreviewArrow()
+    /// The modifiers held with the button, in order.
+    private(set) var caps: [TriggerKeyCap] = []
+    let chip = TriggerAppChip()
     private var offset = CGPoint.zero
     private var arrow = 0.0
     private var direction: MouseGestureDirection?
     private var atRest = true
+    private var buttonDepth = 0.0
 
     override init() {
         super.init()
         arrowView.isHidden = true
+        // The default picture until a trigger is set.
+        arrowView.colour = .secondaryLabelColor
+        chip.setFrameOrigin(NSPoint(x: Self.chipInset, y: Self.chipInset))
+        addSubview(chip)
         addSubview(arrowView)
         addSubview(mouse)
         mouse.setFrameSize(GesturePreviewMouse.size)
+    }
+
+    /// The trigger the mouse holds. A change redraws the mouse and the small views; the
+    /// demo goes on where it is.
+    var picture = TriggerPicture.none {
+        didSet {
+            guard picture != oldValue else { return }
+            mouse.hold = picture.hold
+            // The accent means "yours": the default picture has none, its arrow neither.
+            arrowView.colour = picture.hold == nil ? .secondaryLabelColor : .controlAccentColor
+            chip.path = picture.appPath
+            if picture.modifiers != oldValue.modifiers {
+                setCaps(picture.modifiers)
+            }
+            placeMouse()
+        }
+    }
+
+    /// One cap per modifier, in a row from the lower-left corner, under the mouse.
+    private func setCaps(_ labels: [String]) {
+        caps.forEach { $0.removeFromSuperview() }
+        caps = labels.map { TriggerKeyCap(label: $0, faceHeight: Self.capHeight) }
+        for cap in caps {
+            cap.depth = CGFloat(min(1, max(0, buttonDepth)))
+            addSubview(cap, positioned: .below, relativeTo: arrowView)
+        }
+        placeCaps()
+    }
+
+    /// The faces' left edge and their sides' bottom `capInset` in from the corner.
+    private func placeCaps() {
+        var x = Self.capInset - TriggerKeyCap.margin
+        for cap in caps {
+            let size = cap.frame.size
+            cap.setFrameOrigin(NSPoint(x: x, y: bounds.height - Self.capInset - (size.height - TriggerKeyCap.margin)))
+            x += size.width - 2 * TriggerKeyCap.margin + Self.capSpacing
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -124,10 +178,12 @@ final class GesturePreviewDeviceCard: GesturePreviewArtworkView {
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         placeMouse()
+        placeCaps()
         needsDisplay = true
     }
 
-    /// Which mouse is drawn; its body stays centred.
+    /// Which mouse is drawn; its body stays centred. (The picture is resolved for it by
+    /// the preview, `GesturePreviewView.reloadMouse`.)
     var model: MouseArtworkModel {
         get { return mouse.model }
         set {
@@ -149,6 +205,11 @@ final class GesturePreviewDeviceCard: GesturePreviewArtworkView {
 
     func show(_ frame: GesturePreviewLoop.Frame) {
         mouse.show(buttonDepth: frame.buttonDepth, pressPulse: frame.pressPulse, turn: frame.sideTurn)
+        buttonDepth = frame.buttonDepth
+        // (A cap redraws only while its depth changes.)
+        for cap in caps {
+            cap.depth = CGFloat(min(1, max(0, frame.buttonDepth)))
+        }
         let changed = frame.mouseOffset != offset || frame.arrow != arrow
             || frame.direction != direction || frame.isAtRest != atRest
         guard changed else { return }
@@ -271,21 +332,33 @@ final class GesturePreviewArrow: GesturePreviewArtworkView {
         return line
     }
 
+    /// The accent colour while a trigger is set; label grey for the default picture, which
+    /// has no accent anywhere.
+    var colour: NSColor = .controlAccentColor {
+        didSet { if colour != oldValue { needsDisplay = true } }
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         let line = Self.path(from: from, to: to)
         line.lineWidth = Self.lineWidth
         line.lineCapStyle = .round
         line.lineJoinStyle = .round
-        NSColor.controlAccentColor.withAlphaComponent(CGFloat(min(1, strength))).setStroke()
+        // Faded as a whole: the grey keeps its own transparency.
+        NSGraphicsContext.current?.cgContext.setAlpha(CGFloat(min(1, strength)))
+        colour.setStroke()
         line.stroke()
     }
 }
 
 /// The connected mouse seen from above, the drawing of the Mouse and Buttons panes
-/// (MouseArtwork.swift) a little smaller, with the button that runs Gesture Navigation where
-/// the model has it (MouseArtworkModel.gesturePreviewPart): it takes the accent colour while
-/// it is held. A mouse whose button is on its thumb side (the MX Master 4 and 3) turns to
-/// the view from that side for the hold, in the place of its body.
+/// (MouseArtwork.swift) a little smaller, holding the trigger that really runs Gesture
+/// Navigation (`TriggerPicture`): a part the drawing has is lit as the Buttons card lights
+/// it while it is held, with a ring when it goes down; a button the drawing cannot show is
+/// an accent badge at the body's right edge, pressed in; with no trigger, a dashed outline
+/// in label grey where "Set Up…" usually ends (the gesture button, else Back), never lit.
+/// A mouse whose part is on its thumb side (the MX Master 4's buttons and thumb panel, the
+/// side buttons of the others) turns to the view from that side for the hold, in the place
+/// of its body.
 final class GesturePreviewMouse: GesturePreviewArtworkView {
 
     /// The drawing's grid is drawn this many points per unit: the body 80 points tall.
@@ -301,6 +374,9 @@ final class GesturePreviewMouse: GesturePreviewArtworkView {
     )
     /// Whole points, so the grid falls where it does without them.
     static let sideRoom: CGFloat = 19
+    /// The badge of a button the drawing cannot show, and how small it gets pressed.
+    static let badgeHeight: CGFloat = 16
+    static let pressedBadgeScale: CGFloat = 0.92
 
     /// Which mouse is drawn.
     var model: MouseArtworkModel = .generic {
@@ -309,9 +385,34 @@ final class GesturePreviewMouse: GesturePreviewArtworkView {
         }
     }
 
-    /// The view the button that runs Gesture Navigation shows in.
+    /// What is held (`TriggerPicture.hold`); nil: the default picture.
+    var hold: TriggerPicture.Hold? {
+        didSet {
+            if hold != oldValue { needsDisplay = true }
+        }
+    }
+
+    /// The part of the drawing the hold is about: the lit part, or for the default picture
+    /// the placeholder's (the gesture button, else Back); nil for a badge.
+    var heldPart: MouseArtworkPart? {
+        switch hold {
+        case .part(let part)?: return part.artworkPart
+        case nil: return model.gesturePreviewPart
+        case .number?, .notDrawn?, .keys?: return nil
+        }
+    }
+
+    /// The hold is a badge (`.number`, `.notDrawn`).
+    var showsBadge: Bool {
+        switch hold {
+        case .number?, .notDrawn?: return true
+        case .part?, .keys?, nil: return false
+        }
+    }
+
+    /// The view the part held shows in; from above for a badge, which never turns.
     var buttonViewpoint: MouseArtworkViewpoint {
-        return model.viewpoint(lighting: model.gesturePreviewPart)
+        return model.viewpoint(lighting: heldPart)
     }
 
     /// The view that shows (the one the drawing has turned more than half-way to).
@@ -369,17 +470,30 @@ final class GesturePreviewMouse: GesturePreviewArtworkView {
         return inView(outline.bounds, viewpoint)
     }
 
-    /// The button that runs Gesture Navigation, in the mouse view (in the view of the
-    /// drawing it shows in).
+    /// What is held, in the mouse view: the part (in the view of the drawing it shows in),
+    /// the placeholder's part, or the badge at rest.
     var buttonRect: NSRect {
+        if showsBadge {
+            return badgeRect
+        }
         let path = buttonShape
         path.transform(using: placement(for: buttonViewpoint))
         return path.bounds
     }
 
-    /// That button on the grid.
+    /// That part on the grid.
     private var buttonShape: NSBezierPath {
-        return shapes(buttonViewpoint).shape(of: model.gesturePreviewPart) ?? NSBezierPath()
+        guard let part = heldPart else { return NSBezierPath() }
+        return shapes(buttonViewpoint).shape(of: part) ?? NSBezierPath()
+    }
+
+    /// The badge while up: centred where the drawing has its badge (on the body's right
+    /// edge, low), in the view from above.
+    var badgeRect: NSRect {
+        guard let hold, showsBadge else { return .zero }
+        let size = TriggerBadge.size(for: hold, height: Self.badgeHeight)
+        let centre = placement(for: .above).transform(shapes(.above).badgeCentre)
+        return NSRect(x: centre.x - size.width / 2, y: centre.y - size.height / 2, width: size.width, height: size.height)
     }
 
     private var buttonDepth = 0.0
@@ -388,7 +502,7 @@ final class GesturePreviewMouse: GesturePreviewArtworkView {
     private var frameTurn: CGFloat = 0
 
     /// How far the drawing has turned to the button's side: what the frame says for a mouse
-    /// whose button is in its view from the side, 0 for any other (it does not turn).
+    /// whose part is in its view from the side, 0 for any other (it does not turn).
     var turn: CGFloat {
         return buttonViewpoint == .above ? 0 : frameTurn
     }
@@ -407,42 +521,86 @@ final class GesturePreviewMouse: GesturePreviewArtworkView {
             MouseArtworkTurn.draw(face, placement: placement(for: face.viewpoint)) {
                 MouseArtworkPainter.draw(shapes(face.viewpoint), ink: .card, unit: Self.unit)
                 if face.viewpoint == buttonViewpoint {
-                    drawButton()
+                    drawHeldPart()
                 }
             }
         }
+        if showsBadge {
+            drawBadge()
+        }
     }
 
-    /// The gesture button: as drawn while up, the accent colour while held, and a ring that
-    /// opens up and fades when it goes down. Drawn on the grid; the widths are in points.
-    private func drawButton() {
+    /// The part held, on the grid (the widths are in points): lit as the Buttons card lights
+    /// it, faded by the depth, after a ring that opens up and fades when it goes down; or,
+    /// for the default picture, the dashed outline around the placeholder's part.
+    private func drawHeldPart() {
+        guard let part = heldPart else { return }
+        let shapes = shapes(buttonViewpoint)
+        guard hold != nil else {
+            return drawPlaceholder(around: buttonShape.bounds)
+        }
         let button = buttonShape
         let unit = Self.unit
-        let accent = NSColor.controlAccentColor
         let depth = CGFloat(min(1, max(0, buttonDepth)))
         let ring = CGFloat(min(1, max(0, pressPulse)))
         if ring > 0 {
+            // The ring leaves the buttons and the thumb wheel on and by the part alone
+            // (the thumb panel lies right under Forward and Back).
+            NSGraphicsContext.saveGraphicsState()
+            MouseArtworkPainter.clip(outside: MouseArtworkPainter.parts(over: part, in: shapes))
             let spread = 1.5 + (1 - ring) * 6
-            accent.withAlphaComponent(0.45 * ring).setStroke()
+            NSColor.controlAccentColor.withAlphaComponent(0.45 * ring).setStroke()
             button.lineWidth = 2 * spread / unit
             button.lineJoinStyle = .round
             button.stroke()
-        }
-        if depth > 0 {
-            // Held: lit with a glow, as the cards light a part.
-            NSGraphicsContext.saveGraphicsState()
-            let glow = NSShadow()
-            glow.shadowColor = accent.withAlphaComponent(0.65 * depth)
-            glow.shadowBlurRadius = 6
-            glow.shadowOffset = .zero
-            glow.set()
-            accent.withAlphaComponent(depth).setFill()
-            button.fill()
             NSGraphicsContext.restoreGraphicsState()
-            accent.mixed(0.3, with: .black).withAlphaComponent(depth).setStroke()
-            button.lineWidth = 1 / unit
-            button.stroke()
         }
+        guard depth > 0, let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        context.setAlpha(depth)
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        MouseArtworkPainter.drawHighlight(part, shapes: shapes, unit: unit)
+        context.endTransparencyLayer()
+        context.restoreGState()
+    }
+
+    /// The dashed outline of the default picture, `TriggerPlaceholder.outset` outside
+    /// `rect` (on the grid), drawn in points.
+    private func drawPlaceholder(around rect: NSRect) {
+        guard !rect.isEmpty else { return }
+        NSGraphicsContext.saveGraphicsState()
+        let points = NSAffineTransform()
+        points.translateX(by: rect.minX, yBy: rect.minY)
+        points.scale(by: 1 / Self.unit)
+        points.concat()
+        let size = NSRect(x: 0, y: 0, width: rect.width * Self.unit, height: rect.height * Self.unit)
+        TriggerPlaceholder.stroke(
+            TriggerPlaceholder.path(around: size), highContrast: PreferencesGroupedForm.isHighContrast(effectiveAppearance)
+        )
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// The badge, in the mouse view: pressed it gets a little smaller, and a ring opens
+    /// up around it and fades as around a part.
+    private func drawBadge() {
+        guard let hold else { return }
+        let depth = CGFloat(min(1, max(0, buttonDepth)))
+        let ring = CGFloat(min(1, max(0, pressPulse)))
+        let rest = badgeRect
+        let scale = 1 - (1 - Self.pressedBadgeScale) * depth
+        let badge = NSRect(
+            x: rest.midX - rest.width * scale / 2, y: rest.midY - rest.height * scale / 2,
+            width: rest.width * scale, height: rest.height * scale
+        )
+        if ring > 0 {
+            let radius = badge.height / 2
+            let outline = NSBezierPath(roundedRect: badge, xRadius: radius, yRadius: radius)
+            let spread = 1.5 + (1 - ring) * 6
+            NSColor.controlAccentColor.withAlphaComponent(0.45 * ring).setStroke()
+            outline.lineWidth = 2 * spread
+            outline.stroke()
+        }
+        TriggerBadge.draw(hold, in: badge)
     }
 }
 

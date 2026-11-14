@@ -2,7 +2,10 @@
 //  GesturePreviewView.swift
 //  Mos
 //  The picture at the top of the Gestures tab: on the left the connected mouse (its
-//  model's drawing, MouseArtwork.swift) whose gesture button is held while the hand moves it, on the right a small desktop that answers as the settings
+//  model's drawing, MouseArtwork.swift) holding the button that really runs Gesture
+//  Navigation (`picture`, the first the "Button to hold" row names; with none, a dashed
+//  outline where "Set Up…" usually ends) while the hand moves it, on the right a small
+//  desktop that answers as the settings
 //  say (the desktops follow the hand, Mission Control opens, the app grid shows, a Space
 //  changes, or the action's icon pulses). Built like the Scrolling tab's preview.
 //
@@ -48,6 +51,18 @@ final class GesturePreviewView: NSView {
     /// `reloadMouse()` after replacing it. The preview follows a mouse coming and going.
     var mouseSource: () -> MouseArtworkModel = {
         MouseArtworkModel.model(forDeviceName: MousePaneModel.shownMouse()?.deviceName)
+    }
+
+    /// The trigger the mouse holds (`MouseGestureBindingSummary.picture`), resolved against
+    /// the drawing here and again whenever the mouse changes. A change only redraws the
+    /// mouse: the demo goes on.
+    var picture = TriggerPictureSource.none {
+        didSet { showPicture() }
+    }
+
+    /// `picture` on the drawing shown.
+    private func showPicture() {
+        deviceCard.picture = TriggerPicture.make(picture, mouse: deviceCard.model)
     }
 
     private(set) var loop = GesturePreviewLoop(scene: GesturePreviewScene())
@@ -176,6 +191,7 @@ final class GesturePreviewView: NSView {
             return
         }
         deviceCard.model = mouseSource()
+        showPicture()
     }
 
     /// The display-synchronised timer is running.

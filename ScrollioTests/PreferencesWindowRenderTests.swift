@@ -200,7 +200,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
                     MouseGestureBindingSummary(
                         hasGestureButton: item.bound,
                         hasLogitechGestureButton: item.support.deviceTracking,
-                        buttonTitles: item.bound ? (item.support.deviceTracking ? ["Gesture button"] : ["Back button"]) : []
+                        buttonTitles: item.bound ? (item.support.deviceTracking ? ["Gesture button"] : ["Back button"]) : [],
+                        picture: item.bound ? self.gesturePicture(logitech: item.support.deviceTracking) : .none
                     )
                 }
                 return gestures
@@ -208,6 +209,73 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 guard let gestures = controller as? GesturesPreferencesViewController else { return }
                 gestures.previewView.prefersReducedMotion = { true }
                 gestures.previewView.reduceMotionDidChange()
+                gestures.previewView.mouseSource = { item.support.deviceTracking ? .mxMaster4 : .generic }
+                gestures.previewView.reloadMouse()
+            })
+        }
+    }
+
+    /// What the fixtures' "Gesture button" (a Logitech mouse) or "Back button" is.
+    private func gesturePicture(logitech: Bool) -> TriggerPictureSource {
+        let code = logitech ? LogiCenter.shared.scrollioCode(for: .gesture) : 3
+        return TriggerPictureSource(event: RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil))
+    }
+
+    /// The picture of the Gestures pane for each case of the trigger
+    /// (`gestures-trigger-<case>-<appearance>.png`): on each drawing the button that runs
+    /// the gestures, lit where the drawing has it and a badge where not; a numbered button,
+    /// placed or not; a modifier held with it; two buttons (the first shows); a button only
+    /// Notes has; nothing. The header and its first box, Reduce Motion on (the still frame).
+    func testRenderGesturesTriggerPicture() throws {
+        let gestures = SystemShortcut.mouseGestureNavigation.identifier
+        let option = UInt(CGEventFlags.maskAlternate.rawValue)
+        func logi(_ role: LogiControlRole) -> UInt16 { return LogiCenter.shared.scrollioCode(for: role) }
+        let notes = Application(path: "/System/Applications/Notes.app")
+        notes.buttons = OPTIONS_BUTTONS_DEFAULT()
+        notes.buttons?.binding = [binding(logi(.thumbPanel), gestures)]
+        let cases: [(name: String, model: MouseArtworkModel, bindings: [ButtonBinding], apps: [Application])] = [
+            ("mx4-gesture", .mxMaster4, [binding(logi(.gesture), gestures)], []),
+            ("mx4-thumb-panel", .mxMaster4, [binding(logi(.thumbPanel), gestures)], []),
+            ("mx4-middle", .mxMaster4, [binding(logi(.middle), gestures)], []),
+            ("mx4-mode-shift", .mxMaster4, [binding(logi(.modeShift), gestures)], []),
+            ("mx3-gesture", .mxMaster3, [binding(logi(.gesture), gestures)], []),
+            ("mx3-thumb-panel", .mxMaster3, [binding(logi(.thumbPanel), gestures)], []),
+            ("mx3-back", .mxMaster3, [binding(logi(.back), gestures)], []),
+            ("anywhere-forward", .mxAnywhere3, [binding(logi(.forward), gestures)], []),
+            ("vertical-pointer-speed", .mxVertical, [binding(logi(.pointerSpeed), gestures)], []),
+            ("generic-back", .generic, [binding(3, gestures)], []),
+            ("generic-gesture", .generic, [binding(logi(.gesture), gestures)], []),
+            ("button6", .mxMaster4, [binding(6, gestures)], []),
+            ("button6-placed-thumb-panel", .mxMaster4, [ButtonBinding(
+                triggerEvent: RecordedEvent(type: .mouse, code: 6, modifiers: 0, deviceFilter: nil, mousePart: .thumbPanel),
+                systemShortcutName: gestures
+            )], []),
+            ("option-back", .mxMaster4, [binding(3, gestures, modifiers: option)], []),
+            ("two-thumb-panel-back", .mxMaster4, [binding(logi(.thumbPanel), gestures), binding(3, gestures)], []),
+            ("only-in-notes", .mxMaster4, [binding(3, SystemShortcut.copy.identifier)], [notes]),
+            ("none-mx4", .mxMaster4, [], []),
+            ("none-generic", .generic, [], []),
+        ]
+        var gesture = MouseGestureSettings.default
+        gesture.mode = .discrete
+        Options.shared.gesture = gesture
+        Options.shared.logiMouse = LogiMouseSettings()
+        for item in cases {
+            let summary = MouseGestureBindingSummary(
+                bindings: item.bindings, applications: item.apps, isLogitechCode: { LogiCenter.shared.isLogiCode($0) }
+            )
+            try renderPane(GesturesPreferencesViewController.tabIdentifier, name: "gestures-trigger-\(item.name)", titled: TitledCut(boxes: 1), replacement: {
+                let pane = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+                // (With the Logitech box shown: a hidden box would count as the first one of the cut.)
+                pane.deviceSource = MouseGestureDeviceSource(support: { MouseGestureDeviceSupport(deviceTracking: true, haptics: true) }, refresh: {})
+                pane.bindingSummary = { summary }
+                return pane
+            }, afterLoad: { controller in
+                guard let pane = controller as? GesturesPreferencesViewController else { return }
+                pane.previewView.prefersReducedMotion = { true }
+                pane.previewView.reduceMotionDidChange()
+                pane.previewView.mouseSource = { item.model }
+                pane.previewView.reloadMouse()
             })
         }
     }
@@ -232,7 +300,10 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
                 gestures.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
                 gestures.bindingSummary = {
-                    MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"])
+                    MouseGestureBindingSummary(
+                        hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"],
+                        picture: self.gesturePicture(logitech: false)
+                    )
                 }
                 return gestures
             }, afterLoad: { controller in
@@ -391,7 +462,10 @@ final class PreferencesWindowRenderTests: XCTestCase {
             let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
             gestures.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
             gestures.bindingSummary = {
-                MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"])
+                MouseGestureBindingSummary(
+                    hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"],
+                    picture: self.gesturePicture(logitech: false)
+                )
             }
             return gestures
         }, afterLoad: { controller in
@@ -1334,7 +1408,10 @@ final class PreferencesWindowRenderTests: XCTestCase {
             let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
             gestures.deviceSource = MouseGestureDeviceSource(support: { MouseGestureDeviceSupport(deviceTracking: true, haptics: true) }, refresh: {})
             gestures.bindingSummary = {
-                MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: true, buttonTitles: ["Gesture button"])
+                MouseGestureBindingSummary(
+                    hasGestureButton: true, hasLogitechGestureButton: true, buttonTitles: ["Gesture button"],
+                    picture: self.gesturePicture(logitech: true)
+                )
             }
             return gestures
         }, afterLoad: { controller in
@@ -1604,7 +1681,10 @@ final class PreferencesWindowRenderTests: XCTestCase {
             let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
             gestures.deviceSource = MouseGestureDeviceSource(support: { MouseGestureDeviceSupport(deviceTracking: true, haptics: true) }, refresh: {})
             gestures.bindingSummary = {
-                MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: true, buttonTitles: ["Gesture button"])
+                MouseGestureBindingSummary(
+                    hasGestureButton: true, hasLogitechGestureButton: true, buttonTitles: ["Gesture button"],
+                    picture: self.gesturePicture(logitech: true)
+                )
             }
             return gestures
         }, afterLoad: { controller in
@@ -1742,7 +1822,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
                     MouseGestureBindingSummary(
                         hasGestureButton: true,
                         hasLogitechGestureButton: mouse.device != nil,
-                        buttonTitles: [mouse.device != nil ? "Gesture button" : "Back button"]
+                        buttonTitles: [mouse.device != nil ? "Gesture button" : "Back button"],
+                        picture: self.gesturePicture(logitech: mouse.device != nil)
                     )
                 }
                 return gestures
