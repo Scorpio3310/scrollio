@@ -253,6 +253,9 @@ enum ScrollSystemLog {
         var function: ThumbWheelFunction
         var speed: Double
         var swapsDirection: Bool
+        /// The function is the own one of the app in front (`ThumbWheelTurn`); the line never
+        /// names the app.
+        var isAppsOwn = false
         /// The events' own times of the first and the last event (the line's duration, gaps).
         var startedAt: TimeInterval
         var lastEventAt: TimeInterval
@@ -357,7 +360,8 @@ enum ScrollSystemLog {
 
     /// One line per roll, for example
     /// `thumb wheel: 14 events in 620 ms (longest gap 85 ms), lines -9, fixed -9.40 (largest 1.25), points -212 (largest 31), 1 direction change, not continuous, volume x3.00, travel 56.8: 7 steps next, 15 dropped`
-    /// ("dropped": steps the pacer did not run; only when there are any).
+    /// ("dropped": steps the pacer did not run; only when there are any; "volume (the app's
+    /// own) x3.00" when the function was the app in front's own).
     static func thumbWheelMessage(for roll: ThumbWheelRoll) -> String {
         let continuity: String
         if roll.continuousEvents == 0 {
@@ -387,7 +391,8 @@ enum ScrollSystemLog {
             roll.lines, roll.fixed, roll.largestFixed, roll.points, roll.largestPoints,
             roll.directionChanges, roll.directionChanges == 1 ? "direction change" : "direction changes",
             continuity,
-            roll.function.logName, roll.speed, roll.swapsDirection ? " swapped" : "",
+            roll.isAppsOwn ? roll.function.logName + " (the app's own)" : roll.function.logName,
+            roll.speed, roll.swapsDirection ? " swapped" : "",
             roll.travel,
             steps + dropped
         )
