@@ -75,15 +75,16 @@ struct ShortcutRingBindingSummary: Equatable {
 
     /// The explanation of the pane's first row: the buttons and keys, joined as a list; or
     /// in which apps only and with what ("Only in Figma: Thumb panel."); or that there is
-    /// none yet; and, either way, that a key combination works too (also one that Logi
-    /// Options+ sends for a button).
+    /// none yet; and, either way, that a key combination works too (but for the apps' line,
+    /// also one that Logi Options+ sends for a button).
     var explanation: String {
         if hasTrigger {
             let triggers = ListFormatter.localizedString(byJoining: triggerTitles)
             return String(format: NSLocalizedString("ring-trigger-bound", comment: ""), triggers)
         }
         if let onlyInApps {
-            return String(format: NSLocalizedString("ring-trigger-bound", comment: ""), onlyInApps.text)
+            // (Shorter after it: the apps and their buttons take room of their own.)
+            return String(format: NSLocalizedString("ring-trigger-apps", comment: ""), onlyInApps.text)
         }
         return NSLocalizedString("ring-trigger-none", comment: "")
     }

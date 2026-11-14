@@ -350,8 +350,14 @@ final class PreferencesRingTests: XCTestCase {
                 with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
             ).height
         }
-        for titles in [[], ["Thumb panel", "⌃⌥ Space"], ["Middle button", "Thumb panel", "⌃⌥ Space"]] {
-            summary = ShortcutRingBindingSummary(triggerTitles: titles)
+        // Also while only apps' own buttons open it ("Only in Figma: Thumb panel.").
+        let onlyInApps: [ApplicationTriggers?] = [
+            nil, nil, nil,
+            ApplicationTriggers(applicationNames: ["Figma"], triggerTitles: ["Thumb panel"]),
+            ApplicationTriggers(applicationNames: ["Figma", "Safari"], triggerTitles: ["Thumb panel", "⌃⌥ Space"]),
+        ]
+        for (titles, apps) in zip([[], ["Thumb panel", "⌃⌥ Space"], ["Middle button", "Thumb panel", "⌃⌥ Space"], [], []], onlyInApps) {
+            summary = ShortcutRingBindingSummary(triggerTitles: titles, onlyInApps: apps)
             let controller = makeController()
             controller.view.layoutSubtreeIfNeeded()
             let label = controller.triggerRow.explanationLabel

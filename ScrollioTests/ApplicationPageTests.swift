@@ -1344,9 +1344,10 @@ final class ApplicationPageTests: XCTestCase {
             _ = pane.view
             return pane
         }
-        let key = " A key combination works too, even one that Logi Options+ sends for a button."
-        XCTAssertEqual(pane().triggerRow.explanation, "Nothing opens the ring yet." + key)
+        XCTAssertEqual(pane().triggerRow.explanation,
+                       "Nothing opens the ring yet. A key combination works too, even one that Logi Options+ sends for a button.")
         XCTAssertEqual(pane().triggerButton.title, "Set Up…")
+        let key = " A key combination works too."
 
         calculator.setOwnButtonBindings([binding(thumbPanel, ringAction)])
         let panel = ButtonTriggerNaming.title(for: calculator.ownButtonBindings[0].triggerEvent)

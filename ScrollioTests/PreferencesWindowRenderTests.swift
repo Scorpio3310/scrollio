@@ -1203,8 +1203,9 @@ final class PreferencesWindowRenderTests: XCTestCase {
     /// menu drawn as a stand-in (`app-buttons-menu-<appearance>.png`), its Gestures part with
     /// the line that no button runs the gestures there (`app-gestures-part-note`), its
     /// Shortcut Ring part, where only its own button opens the ring
-    /// (`app-ring-part-note`), and an app whose own buttons take the ring's button
-    /// (`app-ring-part-note-replaced`).
+    /// (`app-ring-part-note`), another app's Shortcut Ring part then
+    /// (`app-ring-part-note-elsewhere`) and the Shortcut Ring pane (`ring-pane-only-in-app`),
+    /// and an app whose own buttons take the ring's button (`app-ring-part-note-replaced`).
     func testRenderAppPageFullControl() throws {
         let stored = Options.shared.application.applications
         let savedRing = Options.shared.ring
@@ -1252,6 +1253,10 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
         try page("app-gestures-part-note", app: figma, part: .gestures)
         try page("app-ring-part-note", app: figma, part: .ring)
+        // Calculator, while only Figma's own thumb panel opens the ring.
+        try page("app-ring-part-note-elsewhere", app: calculator, part: .ring)
+        // The Shortcut Ring pane then: where it opens, and "Change" (`ring-pane-only-in-app`).
+        try renderPane(RingPreferencesViewController.tabIdentifier, name: "ring-pane-only-in-app", titled: TitledCut())
         Options.shared.buttons.binding.append(binding(5, SystemShortcut.shortcutRing.identifier))
         calculator.setOwnButtonBindings([binding(5, SystemShortcut.missionControl.identifier)])
         try page("app-ring-part-note-replaced", app: calculator, part: .ring)

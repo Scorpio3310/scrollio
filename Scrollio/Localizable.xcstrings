@@ -8655,6 +8655,18 @@
           }
         }
       }
+    },
+    "ring-trigger-apps": {
+      "comment": "Shortcut Ring pane: explanation of \"Button or key\" while only apps' own buttons or keys open the ring; %@ is where and with what (\"Only in Figma: Thumb panel\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@. A key combination works too."
+          }
+        }
+      }
     }
   },
   "version": "1.1"
