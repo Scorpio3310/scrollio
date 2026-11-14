@@ -663,11 +663,25 @@ final class PreferencesRingTests: XCTestCase {
     /// The picture presses once when the pointer enters the "Button or key" row: a ring on
     /// the lit part's outline, then no other for 1.5 s; never under Reduce Motion, never off
     /// screen. A trigger that changes while shown presses after the drawing has turned.
+    /// The pointer enters as AppKit says so: an enter event of the row's tracking area,
+    /// handed to the controller that owns it.
     func testThePicturePressesWhenTheRowIsPointedAtAtMostEveryOneAndAHalfSeconds() throws {
         let (controller, card) = try makeController(showing: logitech(.middle), on: .mxMaster4)
-        XCTAssertEqual(controller.triggerRow.trackingAreas.filter { $0.owner === controller }.count, 1)
+        let areas = controller.triggerRow.trackingAreas.filter { $0.owner === controller }
+        XCTAssertEqual(areas.count, 1)
+        let area = try XCTUnwrap(areas.first)
+        var windowNumber = 0
+        func pointAtTheRow() throws {
+            // (An event of a tracking area carries the area as its tracking number.)
+            let entered = try XCTUnwrap(NSEvent.enterExitEvent(
+                with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: windowNumber, context: nil,
+                eventNumber: 0, trackingNumber: Int(bitPattern: Unmanaged.passUnretained(area).toOpaque()), userData: nil
+            ))
+            XCTAssertTrue(entered.trackingArea === area)
+            controller.mouseEntered(with: entered)
+        }
         card.prefersReducedMotion = { false }
-        controller.triggerRowEntered()
+        try pointAtTheRow()
         XCTAssertNil(card.pressLayer, "none off screen")
 
         var now: TimeInterval = 100
@@ -676,9 +690,10 @@ final class PreferencesRingTests: XCTestCase {
         window.isReleasedWhenClosed = false
         window.contentViewController = controller
         addTeardownBlock { window.close() }
+        windowNumber = window.windowNumber
 
         now += 2
-        controller.triggerRowEntered()
+        try pointAtTheRow()
         let first = try XCTUnwrap(card.pressLayer)
         XCTAssertTrue(first.superlayer === card.layer)
         let wheel = try XCTUnwrap(MouseArtworkView.shape(of: .wheel, model: .mxMaster4))
@@ -691,17 +706,17 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(first.lineWidth, 15)
 
         now += 1
-        controller.triggerRowEntered()
+        try pointAtTheRow()
         XCTAssertTrue(card.pressLayer === first, "not again within 1.5 s")
         now += 0.6
-        controller.triggerRowEntered()
+        try pointAtTheRow()
         let second = try XCTUnwrap(card.pressLayer)
         XCTAssertFalse(second === first)
         XCTAssertNil(first.superlayer)
 
         now += 2
         card.prefersReducedMotion = { true }
-        controller.triggerRowEntered()
+        try pointAtTheRow()
         XCTAssertTrue(card.pressLayer === second, "none under Reduce Motion")
 
         // Another trigger while shown: the drawing turns to the thumb panel, the press waits.
