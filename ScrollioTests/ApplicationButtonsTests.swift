@@ -149,11 +149,28 @@ final class ApplicationButtonsTests: XCTestCase {
 
         XCTAssertEqual(action(3, in: Self.safari), "cut")
         XCTAssertNil(action(4, in: Self.safari), "the first entry's button is no binding of the app's")
-        let isLogi: (UInt16) -> Bool = { _ in true }
-        XCTAssertEqual(
-            LogiUsageBootstrap.buttonBindingCodes(general: Options.shared.buttons.binding, frontAppOwn: last.ownButtonBindings, isLogiCode: isLogi),
-            [3], "the divert goes by the same entry"
-        )
+
+        // The divert and the buttons the mouse tracks go by the same entry: they choose it
+        // themselves (the first entry takes mode shift, the last the gesture button).
+        let gesture = SystemShortcut.mouseGestureNavigation.identifier
+        let savedGesture = Options.shared.gesture
+        defer {
+            Options.shared.gesture = savedGesture
+            Options.shared.buttons.binding = savedBindings
+            Options.shared.application.applications = savedApplications
+            LogiUsageBootstrap.refreshButtonUsage(front: nil)
+            LogiUsageBootstrap.refreshGestureTracking(front: nil)
+        }
+        first.setOwnButtonBindings([binding(1001, gesture), binding(1000, "undo")])
+        last.setOwnButtonBindings([binding(1000, gesture)])
+        Options.shared.buttons.binding = []
+        Options.shared.gesture.deviceTracking = true
+        ButtonUtils.shared.invalidateCache()
+        LogiUsageBootstrap.refreshButtonUsage(front: Self.safari)
+        XCTAssertTrue(LogiCenter.shared.usages(of: 1000).contains(.buttonBinding), "the divert goes by the same entry")
+        XCTAssertFalse(LogiCenter.shared.usages(of: 1001).contains(.buttonBinding))
+        LogiUsageBootstrap.refreshGestureTracking(front: Self.safari)
+        XCTAssertEqual(LogiSessionManager.shared.gestureTrackingCodes, [1000], "and so does the tracking")
     }
 
     /// The merge, pure: the general order, each replaced in its place, the new ones after;
