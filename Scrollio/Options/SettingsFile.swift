@@ -352,9 +352,7 @@ enum SettingsFile {
             if let ring, ring.places != ShortcutRingSettings.default.places { return true }
             if applicationRings.contains(where: { $0.places != ShortcutRingSettings.default.places }) { return true }
             guard let gesture else { return false }
-            let defaults = MouseGestureSettings.default
-            return [\MouseGestureSettings.upAction, \.downAction, \.leftAction, \.rightAction, \.clickAction]
-                .contains { gesture[keyPath: $0] != defaults[keyPath: $0] }
+            return gesture.actions != GestureActions.default
         }
 
         /// The file has Logitech values (the wheel's or the basics').
@@ -632,13 +630,13 @@ enum SettingsFile {
         return object
     }
 
-    /// Takes the action from every direction of Gesture Navigation (and its click) whose
-    /// action this version does not run. Returns how many.
+    /// Takes the action (and a label with it) from every direction of Gesture Navigation
+    /// (and its click) whose action this version does not run. Returns how many.
     private static func blankUnknownActions(of gesture: inout MouseGestureSettings) -> Int {
         var blanked = 0
-        for path in [\MouseGestureSettings.upAction, \.downAction, \.leftAction, \.rightAction, \.clickAction]
-        where !StoredAction.isKnown(gestureAction: gesture[keyPath: path]) {
-            gesture[keyPath: path] = ""
+        for path in [\GestureActions.up, \.down, \.left, \.right, \.click]
+        where !StoredAction.isKnown(gestureAction: gesture.actions[keyPath: path].action) {
+            gesture.actions[keyPath: path] = .none
             blanked += 1
         }
         return blanked

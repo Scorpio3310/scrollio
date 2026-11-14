@@ -230,6 +230,8 @@ class InputProcessor: ModifierFlagsProviding {
     private static let systemGestureHapticPlayer: (MouseGestureHapticCue, UInt16) -> Void = { cue, code in
         LogiCenter.shared.playGestureHaptic(cue, forScrollioCode: code)
     }
+    /// Writes the line of a gesture's action (`mouseGestureRunLine`). Replaced in tests.
+    private var mouseGestureLog: (String) -> Void = { AppSystemLog.note($0) }
 
     private struct ScrollActionTapReplay {
         let context: MouseTapReplayContext
@@ -631,7 +633,7 @@ class InputProcessor: ModifierFlagsProviding {
         } else if session.recognizer.shouldReplayClick {
             // A plain click without movement runs the click action (Mission Control by
             // default, like the gesture button in Logi Options+).
-            executeMouseGestureAction(named: session.settings.clickAction)
+            executeMouseGestureAction(session.settings.actions.click, part: .click)
         }
         MouseInteractionSessionController.shared.refreshMotionTapState()
         return true
@@ -652,19 +654,19 @@ class InputProcessor: ModifierFlagsProviding {
         }
         guard delta != .zero else { return }
 
-        var recognizedAction: String?
+        var recognized: (action: GestureAction, direction: MouseGestureDirection)?
         for session in activeMouseGestures.values
         where session.interactive == nil && session.movementSource == .pointer && !session.isAbandoned {
             if let direction = session.recognizer.append(deltaX: delta.x, deltaY: delta.y) {
-                let action = session.settings.actionIdentifier(for: direction)
+                let action = session.settings.action(for: direction)
                 playLockInHaptic(for: session, action: action)
-                if recognizedAction == nil {
-                    recognizedAction = action
+                if recognized == nil {
+                    recognized = (action, direction)
                 }
             }
         }
-        if let recognizedAction {
-            executeMouseGestureAction(named: recognizedAction)
+        if let recognized {
+            executeMouseGestureAction(recognized.action, part: .direction(recognized.direction))
         }
     }
 
@@ -687,9 +689,9 @@ class InputProcessor: ModifierFlagsProviding {
         }
         guard session.interactive == nil,
               let direction = session.recognizer.append(deltaX: deltaX, deltaY: deltaY) else { return }
-        let action = session.settings.actionIdentifier(for: direction)
+        let action = session.settings.action(for: direction)
         playLockInHaptic(for: session, action: action)
-        executeMouseGestureAction(named: action)
+        executeMouseGestureAction(action, part: .direction(direction))
     }
 
     // MARK: - Haptic cues
@@ -711,20 +713,47 @@ class InputProcessor: ModifierFlagsProviding {
     }
 
     /// A direction with "No Action" assigned fires nothing, so it gives no cue either.
-    private func playLockInHaptic(for session: ActiveMouseGestureSession, action: String) {
+    private func playLockInHaptic(for session: ActiveMouseGestureSession, action: GestureAction) {
         guard !action.isEmpty else { return }
         playGestureHaptic(.lockIn, for: session)
     }
 
+    /// What of a gesture ran an action, for the log.
+    enum MouseGesturePart: Equatable {
+        case direction(MouseGestureDirection)
+        case click
+
+        var logName: String {
+            switch self {
+            case .direction(.up): return "up"
+            case .direction(.down): return "down"
+            case .direction(.left): return "left"
+            case .direction(.right): return "right"
+            case .click: return "click"
+            }
+        }
+    }
+
+    /// The one line a gesture's action leaves in the log: what ran, a listed action by its
+    /// identifier, a recorded key combination by its kind. Never its keys, never the name
+    /// the user gave it.
+    static func mouseGestureRunLine(_ action: GestureAction, part: MouseGesturePart) -> String {
+        return "Gestures: \(part.logName) ran \(action.logName)"
+    }
+
     /// Runs one gesture action as a single press: trigger actions fire once, stateful ones
-    /// (mouse buttons, custom keys) get a down followed by an up.
+    /// (mouse buttons, custom keys) get a down followed by an up. A recorded key combination
+    /// goes the way a place of the Shortcut Ring sends one (`ShortcutRingController.run`):
+    /// its keys were read when the settings were (`GestureAction.keys`), nothing is parsed
+    /// here.
     ///
     /// Posts after the CGEvent tap callback returns. Posting a synthetic event from inside
     /// the callback re-enters the event pipeline and can time out the tap.
-    private func executeMouseGestureAction(named identifier: String) {
-        guard !identifier.isEmpty else { return }
+    private func executeMouseGestureAction(_ gestureAction: GestureAction, part: MouseGesturePart) {
+        guard !gestureAction.isEmpty else { return }
+        let log = mouseGestureLog
         DispatchQueue.main.async {
-            guard let action = ShortcutExecutor.shared.resolveAction(named: identifier) else { return }
+            guard let action = gestureAction.resolvedAction else { return }
             let result = ShortcutExecutor.shared.execute(action: action, phase: .down)
             if action.executionMode == .stateful {
                 ShortcutExecutor.shared.execute(
@@ -733,6 +762,7 @@ class InputProcessor: ModifierFlagsProviding {
                     mouseSessionID: result.mouseSessionID
                 )
             }
+            log(InputProcessor.mouseGestureRunLine(gestureAction, part: part))
         }
     }
 
@@ -922,11 +952,11 @@ class InputProcessor: ModifierFlagsProviding {
             case .cancel:
                 DockSwipeSynthesizer.shared.cancel()
             case .discrete(let direction):
-                let action = session.settings.actionIdentifier(for: direction)
+                let action = session.settings.action(for: direction)
                 playLockInHaptic(for: session, action: action)
-                executeMouseGestureAction(named: action)
+                executeMouseGestureAction(action, part: .direction(direction))
             case .click:
-                executeMouseGestureAction(named: session.settings.clickAction)
+                executeMouseGestureAction(session.settings.actions.click, part: .click)
             }
         }
     }
@@ -967,6 +997,11 @@ class InputProcessor: ModifierFlagsProviding {
 
     func clearTestingGestureHapticPlayer() {
         gestureHapticPlayer = InputProcessor.systemGestureHapticPlayer
+    }
+
+    /// nil writes to the system log again.
+    func setTestingMouseGestureLog(_ log: ((String) -> Void)?) {
+        mouseGestureLog = log ?? { AppSystemLog.note($0) }
     }
 
     /// The hardware the watchdog of held actions asks; nil: none (no timer, no look).

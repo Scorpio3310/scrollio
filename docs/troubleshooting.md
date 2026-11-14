@@ -98,7 +98,9 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   by" a mouse button, a key or a button over HID++, and "the own ring of the app in
   front" when it was an app's own, never which app; "left open"; then "closed, nothing
   ran" or "closed, ran" with the shortcut's name, or for a key combination or an app
-  only what kind of thing it was), at launch which accent colour is
+  only what kind of thing it was), each action a gesture runs (`Gestures: up ran
+  missionControl`; a key combination only as "a recorded key combination", never its
+  keys or its name), at launch which accent colour is
   in effect, at the first Mission Control or Show Desktop whether the Dock is asked for
   them directly or they are sent as key presses (a macOS without the call), a sent
   shortcut that left modifier keys set (once), for "Trackpad-style scrolling (Experimental)" whether the wheel's hardware event is

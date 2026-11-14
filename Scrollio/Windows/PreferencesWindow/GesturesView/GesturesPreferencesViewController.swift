@@ -29,8 +29,8 @@ final class GesturesPreferencesViewController: NSViewController {
     static var boxWidth: CGFloat {
         return PreferencesGroupedForm.boxWidth(paneWidth: paneWidth)
     }
-    /// All action pop-ups have this width, so they line up.
-    static let popUpWidth: CGFloat = 240
+    /// All action pop-ups have this width, so they line up (the Buttons pane's).
+    static let popUpWidth: CGFloat = ButtonActionPullDown.width
     /// Room for the widest tracking speed ("2.75×"): the kit's value column, so the slider
     /// stands where the Scrolling pane's sliders stand.
     static let trackingSpeedValueWidth: CGFloat = PreferencesGroupedForm.sliderValueWidth
@@ -230,6 +230,8 @@ final class GesturesPreferencesViewController: NSViewController {
         hoveredSlot = nil
         focusedSlot = nil
         updatePreviewScene()
+        // A recording that still waits for a key, and the popover, go with the pane.
+        controls.endEditing()
         resetToDefaults.endUndoOffer()
     }
 
@@ -485,8 +487,8 @@ final class GesturesPreferencesViewController: NSViewController {
     /// One direction (or Click) with its action pop-up. The row tells the preview when the
     /// pointer is over it.
     private func makeDirectionRow(_ slot: Slot) -> PreferencesGroupRow {
+        // (The pull-down is `popUpWidth` wide by itself.)
         let popup = controls.actionPopUp(for: slot)
-        popup.widthAnchor.constraint(equalToConstant: Self.popUpWidth).isActive = true
         let row = PreferencesGroupRow(title: text(slot.labelKey), accessory: popup)
         row.addTrackingArea(NSTrackingArea(
             rect: .zero,

@@ -16,6 +16,8 @@ it for the people who use the app, and give the version its part before you tag 
   of its own: that ring opens while the app is in front.
 - **Name your shortcuts.** A key combination you record can have a name and an icon: the
   ring and Settings show them, with the keys smaller beside them.
+- **Key combinations for gestures.** A gesture direction or its click can send a key
+  combination you record, with a name and an icon, as a ring's place can.
 
 ## 1.0.5
 

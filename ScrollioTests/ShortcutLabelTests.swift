@@ -652,11 +652,16 @@ final class ShortcutLabelRowsTests: XCTestCase {
 
     // MARK: Gestures
 
-    /// The Gestures pane has no recorder: a direction or the click takes a listed action
-    /// only, and a recorded key combination stored there runs nothing. So nothing there
-    /// can carry a name. When a direction learns to send a recorded combination, its
-    /// name and icon have to come with it: this test says where to look.
-    func testADirectionOfGestureNavigationTakesNoRecordedCombinationYet() {
+    /// A direction and the click of Gesture Navigation take a recorded key combination
+    /// with a name and an icon, as a place of the ring does: their rows offer "Keyboard
+    /// Shortcut…" and show the icon, the name and the keys in grey; the combination is an
+    /// action a gesture runs. (`GestureKeysTests` holds the rest.)
+    func testTheRowOfADirectionShowsTheIconTheNameAndTheKeysInGrey() throws {
+        var gesture = MouseGestureSettings.default
+        gesture.actions.up = GestureAction(action: shiftCommandR, label: label("Reload", symbol: "arrow.clockwise"))
+        gesture.actions.down = GestureAction(action: shiftCommandR, label: label("Reload"))
+        gesture.actions.click = GestureAction(action: shiftCommandR)
+        Options.shared.gesture = gesture
         let controls = MouseGestureSettingsControls(showLogiActions: true, isInteractiveAvailable: { true })
         func markers(_ menu: NSMenu?) -> [String] {
             return (menu?.items ?? []).flatMap { item -> [String] in
@@ -664,12 +669,29 @@ final class ShortcutLabelRowsTests: XCTestCase {
             }
         }
         for popUp in controls.actionPopUps {
-            let offered = markers(popUp.menu)
-            XCTAssertFalse(offered.contains(ShortcutManager.MenuMarker.keyboardShortcut), "no \"Keyboard Shortcut…\" here")
-            XCTAssertFalse(offered.contains { $0.hasPrefix("custom::") })
+            XCTAssertEqual(markers(popUp.menu), [ShortcutManager.MenuMarker.keyboardShortcut], "\"Keyboard Shortcut…\" here")
         }
-        XCTAssertFalse(StoredAction.isKnown(gestureAction: shiftCommandR), "a direction does not run a recorded combination")
-        XCTAssertNil(ShortcutExecutor.shared.resolveAction(named: shiftCommandR))
+
+        let both = try XCTUnwrap(controls.actionPopUp(for: .up).menu?.items.first)
+        XCTAssertEqual(both.title, "Reload  \(keys)")
+        XCTAssertEqual(try colour(of: keys, in: both.attributedTitle), .secondaryLabelColor)
+        XCTAssertNotNil(both.image)
+        XCTAssertEqual(controls.actionPopUp(for: .up).binding.label, gesture.actions.up.label, "the pull-down holds the label")
+
+        let named = try XCTUnwrap(controls.actionPopUp(for: .down).menu?.items.first)
+        XCTAssertEqual(named.title, "Reload  \(keys)")
+        XCTAssertNotNil(named.image, "the keyboard symbol stays")
+
+        let plain = try XCTUnwrap(controls.actionPopUp(for: .click).menu?.items.first)
+        XCTAssertEqual(plain.title, keys)
+        XCTAssertNil(plain.attributedTitle)
+
+        let listed = try XCTUnwrap(controls.actionPopUp(for: .right).menu?.items.first)
+        XCTAssertEqual(listed.title, SystemShortcut.moveSpaceRight.localizedName)
+        XCTAssertNil(listed.attributedTitle)
+
+        XCTAssertTrue(StoredAction.isKnown(gestureAction: shiftCommandR), "a direction runs a recorded combination")
+        XCTAssertNotNil(GestureAction(action: shiftCommandR).resolvedAction)
     }
 }
 

@@ -72,11 +72,17 @@ final class PreferencesGesturesTests: XCTestCase {
         return popup.menu?.items.first?.title
     }
 
-    /// The menu item of `popup` that stores `identifier` ("" is "No Action").
+    /// The menu item of `popup` that stores `identifier` ("" is "No Action"). The rows
+    /// have the Buttons pane's pull-down: an item holds its listed action, "No Action" none.
     private func item(_ identifier: String, in popup: NSPopUpButton) -> NSMenuItem? {
         let top = popup.menu?.items ?? []
         let nested = top.compactMap(\.submenu).flatMap(\.items)
-        return (top + nested).first { ($0.representedObject as? String) == identifier && $0.action != nil }
+        if identifier.isEmpty {
+            return (popup as? ButtonActionPullDown)?.noActionItem
+        }
+        return (top + nested).first { item in
+            item.action != nil && (item.representedObject as? SystemShortcut.Shortcut)?.identifier == identifier
+        }
     }
 
     private func choose(_ identifier: String, in popup: NSPopUpButton, file: StaticString = #filePath, line: UInt = #line) {

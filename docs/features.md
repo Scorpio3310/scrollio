@@ -26,8 +26,9 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   and keeps the name and the icon. The row then shows the icon and the name, and the
   keys after them in grey. A listed shortcut, an app to open and a mouse button have
   their own names and take none. The name and icon belong to that one button (or that
-  one place of a ring), not to the keys: the same keys can be called something else
-  elsewhere. A name is one line of at most 24 characters.
+  one place of a ring, or that one direction of a gesture), not to the keys: the same
+  keys can be called something else elsewhere. A name is one line of at most 24
+  characters.
 - A drawing of the mouse lights the button each row is about. The MX Master 4, the MX
   Master 3 and 3S, the MX Anywhere 3 and 3S and the MX Vertical each have a drawing of
   their own, from above and from their thumb side, where the side buttons are (on an MX
@@ -57,6 +58,13 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
 
 - Hold the button that has the action Gesture Navigation and move the mouse: up, down,
   left and right each run an action, and letting go without moving runs one more.
+- Each of the five takes one of the listed actions, or a key combination you record
+  there ("Keyboard Shortcut…"), with a name and an icon if you like, as a button's (see
+  [Buttons and keys](#buttons-and-keys)). It is sent as a place of the Shortcut Ring
+  sends it; the recorder takes what a place takes (a key combination, or the Back or
+  Forward button, which is the Back or Forward click). The preview shows its icon, or
+  else its keys. Version 1.0.5 and older shows such a direction as "No Action" and runs
+  nothing for it.
 - Two modes: "One action per hold", and "Follow the hand", in which moving sideways
   slides the desktops with your hand, like a trackpad swipe. "Follow the hand" uses a
   private macOS interface; where it is missing, the mode is not available.

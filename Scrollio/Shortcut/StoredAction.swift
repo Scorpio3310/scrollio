@@ -42,12 +42,13 @@ enum StoredAction {
     }
 
     /// Whether a direction (or the click) of Gesture Navigation with this action does
-    /// something this version knows. No action ("") is known.
+    /// something this version knows: a listed action, or a recorded key combination (as a
+    /// place of the Shortcut Ring sends one). No action ("") is known.
     static func isKnown(gestureAction identifier: String) -> Bool {
         if identifier.isEmpty {
             return true
         }
-        return runs(ShortcutExecutor.shared.resolveAction(named: identifier), named: identifier)
+        return runs(GestureAction(action: identifier).resolvedAction, named: identifier)
     }
 
     private static func runs(_ action: ResolvedAction?, named name: String) -> Bool {

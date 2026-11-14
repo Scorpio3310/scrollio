@@ -242,13 +242,14 @@ enum SettingsFileText {
 
     /// One line per direction of Gesture Navigation (and its click) whose action is not
     /// the default one: "Gesture Up: App Exposé". None when the file leaves them alone.
+    /// A recorded key combination as a button's: its keys, and a name after them.
     static func gestureLines(of contents: SettingsFile.Contents) -> [String] {
         guard let gesture = contents.gesture else { return [] }
         let defaults = MouseGestureSettings.default
         return MouseGestureSettingsControls.Slot.allCases.compactMap { slot in
-            let identifier = slot.value(in: gesture)
-            guard identifier != slot.value(in: defaults) else { return nil }
-            let action = SystemShortcut.getShortcut(named: identifier)?.localizedName ?? text("gesture-action-none")
+            let held = slot.action(in: gesture)
+            guard held != slot.action(in: defaults) else { return nil }
+            let action = held.isEmpty ? text("gesture-action-none") : actionName(of: held.asBinding())
             return String(format: text("general-settings-import-gesture-line"), text(slot.labelKey), action)
         }
     }
