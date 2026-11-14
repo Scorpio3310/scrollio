@@ -8392,18 +8392,6 @@
         }
       }
     },
-    "apps-buttons-recorder-general": {
-      "comment": "An app's page, Buttons: the recorder's hint for a button that opens the Shortcut Ring or runs Gesture Navigation",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This button stays as Buttons sets it"
-          }
-        }
-      }
-    },
     "apps-buttons-note-empty": {
       "comment": "An app's page, Buttons: the line under the empty list; %@ is the app's name",
       "extractionState": "manual",
@@ -8580,6 +8568,42 @@
           "stringUnit": {
             "state": "translated",
             "value": "Gestures in %@: left and right swapped"
+          }
+        }
+      }
+    },
+    "apps-detail-ring-replaced": {
+      "comment": "App page, Shortcut Ring part: explanation of \"Use the general ring\" while what opens the ring elsewhere does something else in this app (its own buttons); %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "While %@ is in front, nothing opens the ring: see its Buttons part."
+          }
+        }
+      }
+    },
+    "apps-detail-gestures-no-button": {
+      "comment": "App page, Gestures part: line under the switch while no button runs Gesture Navigation in this app because its own buttons gave that button another action; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "While %@ is in front, no button runs Gesture Navigation: see its Buttons part."
+          }
+        }
+      }
+    },
+    "apps-detail-gestures-button": {
+      "comment": "App page, Gestures part: line under the switch while the button that runs Gesture Navigation in this app is not the one of Buttons; %1$@ is the app's name, %2$@ the buttons, as the Buttons pane names them",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Button to hold while %1$@ is in front: %2$@."
           }
         }
       }

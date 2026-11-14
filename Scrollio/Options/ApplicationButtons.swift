@@ -64,19 +64,6 @@ extension ButtonBinding {
 /// page and their tests share them.
 enum ApplicationButtons {
 
-    /// Opening the Shortcut Ring and Gesture Navigation stay general: an app does not get
-    /// them, and cannot take them from a button.
-    static func isGeneralOnly(action name: String) -> Bool {
-        return name == SystemShortcut.shortcutRing.identifier
-            || name == SystemShortcut.mouseGestureNavigation.identifier
-    }
-
-    /// The buttons and keys that stay general: those an enabled general binding opens the
-    /// ring or runs Gesture Navigation with, whatever the modifier keys.
-    static func generalOnlyTriggers(in general: [ButtonBinding]) -> Set<ButtonBindingTriggerKey> {
-        return Set(general.filter { $0.isEnabled && isGeneralOnly(action: $0.systemShortcutName) }.map(\.triggerKey))
-    }
-
     /// The app's bindings that count: one per trigger (the first). The Shortcut Ring and
     /// Gesture Navigation count as any other action, on any button.
     static func usable(_ own: [ButtonBinding], general: [ButtonBinding]) -> [ButtonBinding] {
@@ -86,12 +73,6 @@ enum ApplicationButtons {
             result.append(binding)
         }
         return result
-    }
-
-    /// Whether `binding`, one of the app's own, is used (`usable`): always, now that
-    /// nothing stays general (kept for the app's page until it drops the dimming).
-    static func isUsable(_ binding: ButtonBinding, general: [ButtonBinding]) -> Bool {
-        return true
     }
 
     /// The bindings a press goes by while the app is in front: the general ones in their

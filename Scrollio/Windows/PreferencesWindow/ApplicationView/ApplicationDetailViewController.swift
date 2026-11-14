@@ -197,6 +197,8 @@ final class ApplicationDetailViewController: NSViewController {
             if let buttons = controller as? ApplicationButtonsViewController {
                 buttons.onOwnButtonsChange = onInheritChange
                 buttons.partShowing = buttonsPartShowing
+                // "Show Gesture Settings" of a row: the gestures of this app, not the pane.
+                buttons.onGestureSettingsRequested = { [weak self] in self?.show(.gestures) }
             }
             addChild(controller)
             controller.view.translatesAutoresizingMaskIntoConstraints = false
@@ -309,16 +311,40 @@ final class ApplicationDetailViewController: NSViewController {
         return Options.shared.application.allowlist
     }
 
+    /// What opens the Shortcut Ring while an app is in front, for the line of its switch.
+    enum RingTrigger: Equatable {
+        /// A button or key opens it there (Buttons', or one of the app's own).
+        case opens
+        /// Nothing opens it anywhere yet.
+        case noTrigger
+        /// Something opens it in other apps, but this app's own buttons give it (them)
+        /// other actions.
+        case replacedHere
+
+        /// What opens the ring while `application` is in front: Buttons' bindings with the
+        /// app's own in them (`ApplicationButtons.merged`), as a press goes by them.
+        static func of(_ application: Application, general: [ButtonBinding]) -> RingTrigger {
+            let here = ShortcutRingBindingSummary(bindings: ApplicationButtons.merged(general: general, own: application.ownButtonBindings))
+            if here.hasTrigger { return .opens }
+            return ShortcutRingBindingSummary(bindings: general).hasTrigger ? .replacedHere : .noTrigger
+        }
+    }
+
     /// "While Safari is in front, the general ring opens." / "While Safari is in front,
     /// the ring below opens." (The app in front decides, not the one under the pointer.)
-    /// While no button or key opens the ring (`opens` false), either way: that nothing
-    /// opens it yet, and where to set that up.
-    static func generalRingExplanation(on: Bool, name: String, opens: Bool = true) -> String {
-        guard opens else {
+    /// While no button or key opens the ring with the app in front, either way: that
+    /// nothing opens it yet and where to set that up, or that the app's own buttons took
+    /// what opens it elsewhere.
+    static func generalRingExplanation(on: Bool, name: String, opens: RingTrigger = .opens) -> String {
+        switch opens {
+        case .noTrigger:
             return NSLocalizedString("apps-detail-ring-no-trigger", comment: "")
+        case .replacedHere:
+            return String(format: NSLocalizedString("apps-detail-ring-replaced", comment: ""), name)
+        case .opens:
+            let format = NSLocalizedString(on ? "apps-detail-ring-general-on" : "apps-detail-ring-general-off", comment: "")
+            return String(format: format, name)
         }
-        let format = NSLocalizedString(on ? "apps-detail-ring-general-on" : "apps-detail-ring-general-off", comment: "")
-        return String(format: format, name)
     }
 
     /// "While Safari is in front, the general gestures run." / "While Safari is in front,

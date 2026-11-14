@@ -5,11 +5,11 @@
 //  Buttons of an app's own, only what differs from Buttons: how they are stored and read
 //  (also from entries without them and from values that cannot be read), how a press is
 //  resolved (the app in front, once at the down; the general binding of the same trigger
-//  replaced, a new one added, "Default" passing through; Scrollio itself and the ring and
-//  Gesture Navigation staying general), the release pairing with its press when the app
-//  in front changes meanwhile, the cache following a change of an app, the Logitech
-//  buttons that follow the app in front, and the settings file. Nothing reaches the Mac:
-//  the app in front is a seam, the executor's posts go to observers.
+//  replaced, a new one added, "Default" passing through; Scrollio itself staying general;
+//  the ring and Gesture Navigation as any other action), the release pairing with its
+//  press when the app in front changes meanwhile, the cache following a change of an app,
+//  the Logitech buttons that follow the app in front, and the settings file. Nothing
+//  reaches the Mac: the app in front is a seam, the executor's posts go to observers.
 //
 
 import XCTest
@@ -199,25 +199,28 @@ final class ApplicationButtonsTests: XCTestCase {
         XCTAssertEqual(ButtonUtils.shared.scopeOfPress(for: press(3)), .general)
     }
 
-    /// What opens the Shortcut Ring and what runs Gesture Navigation stay general: an app's
-    /// binding on such a button is not used, and an app's binding cannot open them.
-    func testTheRingAndGestureNavigationStayGeneral() {
+    /// Nothing stays general: an app's own binding may open the Shortcut Ring or run
+    /// Gesture Navigation, on any button, and may give the button that does one of them in
+    /// Buttons something else to do while the app is in front.
+    func testAnAppsOwnButtonsMayOpenTheRingAndRunGestureNavigation() {
         let ring = SystemShortcut.shortcutRing.identifier
         let gesture = SystemShortcut.mouseGestureNavigation.identifier
         let command = UInt(CGEventFlags.maskCommand.rawValue)
-        set(
+        let safari = set(
             general: [binding(6, ring), binding(7, gesture), binding(3, "copy")],
             safari: [binding(6, "undo"), binding(7, "undo", modifiers: command), binding(3, ring), binding(5, gesture)]
         )
-        XCTAssertEqual(action(6, in: Self.safari), ring)
-        XCTAssertEqual(action(7, in: Self.safari), gesture)
-        XCTAssertEqual(action(7, modifiers: .maskCommand, in: Self.safari), gesture, "the whole button stays general")
-        XCTAssertEqual(action(3, in: Self.safari), "copy", "an app cannot open the ring")
-        XCTAssertEqual(action(5, in: Self.safari), nil, "nor run Gesture Navigation")
+        XCTAssertEqual(action(6, in: Self.safari), "undo", "the ring's button does something else here")
+        XCTAssertEqual(action(6, in: Self.textEdit), ring)
+        XCTAssertEqual(action(7, in: Self.safari), gesture, "only the button with ⌘ is the app's own")
+        XCTAssertEqual(action(7, modifiers: .maskCommand, in: Self.safari), "undo")
+        XCTAssertEqual(action(3, in: Self.safari), ring, "an app's button opens the ring")
+        XCTAssertEqual(action(3, in: Self.textEdit), "copy")
+        XCTAssertEqual(action(5, in: Self.safari), gesture, "and runs Gesture Navigation")
+        XCTAssertNil(action(5, in: Self.textEdit))
         XCTAssertEqual(
-            ApplicationButtons.usable(Options.shared.application.applications.get(by: Self.safari.bundlePath)!.ownButtonBindings,
-                                      general: Options.shared.buttons.binding),
-            []
+            ApplicationButtons.usable(safari.ownButtonBindings, general: Options.shared.buttons.binding).map(\.systemShortcutName),
+            ["undo", "undo", ring, gesture]
         )
     }
 

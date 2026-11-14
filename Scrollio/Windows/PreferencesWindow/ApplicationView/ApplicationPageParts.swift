@@ -226,8 +226,9 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
 
 /// "Use the general ring" and, while it is off, the app's own ring: the drawing and the
 /// eight rows of the Shortcut Ring pane (RingPreferencesViewController with this app), which
-/// open while the app is in front. What opens the ring and its freeze switch are the same
-/// for every app and stay in the Shortcut Ring pane.
+/// open while the app is in front. What opens the ring is a binding of Buttons, or of the
+/// app's Buttons part (the switch's line says when nothing opens it with the app in
+/// front); the freeze switch is the same for every app and stays in the Shortcut Ring pane.
 final class ApplicationRingPartViewController: NSViewController, ApplicationPagePartController {
 
     enum Identifier {
@@ -267,7 +268,9 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         )
         generalRing.toggle.identifier = Identifier.generalRing
         generalRing.reservedExplanations = [true, false].map { ApplicationDetailViewController.generalRingExplanation(on: $0, name: name) }
-            + [ApplicationDetailViewController.generalRingExplanation(on: true, name: name, opens: false)]
+            + [ApplicationDetailViewController.RingTrigger.noTrigger, .replacedHere].map {
+                ApplicationDetailViewController.generalRingExplanation(on: true, name: name, opens: $0)
+            }
         generalRingRow = generalRing
         // (No title: the part's segment names it.)
         let section = PreferencesGroupSection(
@@ -292,10 +295,12 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         guard isViewLoaded else { return }
         let usesGeneralRing = application.usesGeneralRing
         generalRingRow.isOn = usesGeneralRing
-        // (What opens the ring is set in the Shortcut Ring pane, and the page has no row
-        // for it: without one, the line says so instead of promising a ring.)
+        // (What opens the ring is a binding of Buttons or of the app's Buttons part, and
+        // this part has no row for it: while nothing opens it with the app in front, the
+        // line says so instead of promising a ring.)
         generalRingRow.explanation = ApplicationDetailViewController.generalRingExplanation(
-            on: usesGeneralRing, name: application.getName(), opens: ShortcutRingBindingSummary.current.hasTrigger
+            on: usesGeneralRing, name: application.getName(),
+            opens: .of(application, general: Options.shared.buttons.binding)
         )
         showOwnRing(!usesGeneralRing)
         ringController?.reload()
