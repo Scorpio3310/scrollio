@@ -258,6 +258,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-ring", "general-settings-import-ring-line", "general-settings-import-ring-trigger",
         "general-settings-import-ring-line-app", "general-settings-import-ring-trigger-app",
         "general-settings-import-app-rings-one", "general-settings-import-app-rings-other",
+        "general-settings-import-app-buttons-one", "general-settings-import-app-buttons-other",
         "ring-undo-reset",
     ]
 
@@ -337,6 +338,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-ring-line-app": "@@@",
         "general-settings-import-ring-trigger-app": "@@",
         "general-settings-import-app-rings-other": "d",
+        "general-settings-import-app-buttons-other": "d",
         "ring-trigger-bound": "@",
         "general-settings-problem-damaged": "@",
         "general-settings-problem-too-many": "d",

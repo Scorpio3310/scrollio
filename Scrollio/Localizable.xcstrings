@@ -8139,6 +8139,30 @@
           }
         }
       }
+    },
+    "general-settings-import-app-buttons-one": {
+      "comment": "Import sheet: one app of the file has buttons of its own (only those that differ from Buttons)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 app with buttons of its own"
+          }
+        }
+      }
+    },
+    "general-settings-import-app-buttons-other": {
+      "comment": "Import sheet: how many apps of the file have buttons of their own; %d is the number",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d apps with buttons of their own"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

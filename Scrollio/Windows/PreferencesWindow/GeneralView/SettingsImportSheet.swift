@@ -103,6 +103,14 @@ enum SettingsFileText {
                     text: counted(ownRings, "general-settings-import-app-rings")
                 ))
             }
+            // Apps with buttons of their own (only what differs from Buttons).
+            let ownButtons = (contents.applications ?? []).filter(\.hasOwnButtons).count
+            if ownButtons > 0 {
+                items.append(Item(
+                    symbolName: "button.horizontal.top.press",
+                    text: counted(ownButtons, "general-settings-import-app-buttons")
+                ))
+            }
             if contents.allowlist == true {
                 items.append(Item(symbolName: "line.3.horizontal.decrease", text: text("general-settings-import-apps-limit")))
             }
@@ -192,14 +200,16 @@ enum SettingsFileText {
 
     /// One line per button and key of the file, in the order of the file: "⌥ F5: Mission
     /// Control", and for a button that is one app's own "⌥ F5 in Notes: Mission Control".
-    /// The trigger and the action are named as the Buttons pane names them.
+    /// The trigger and the action are named as the Buttons pane names them; an app's own
+    /// button without an action is "Default", as its page says (it does what it does by
+    /// itself while the app is in front).
     static func actionLines(of contents: SettingsFile.Contents, logitech: ButtonTriggerNaming.Logitech = .live) -> [String] {
         return contents.allBindings.map { entry in
             let trigger = ButtonTriggerNaming.title(for: entry.binding.triggerEvent, logitech: logitech)
-            let action = actionName(of: entry.binding)
             guard let application = entry.application else {
-                return String(format: text("general-settings-import-action-line"), trigger, action)
+                return String(format: text("general-settings-import-action-line"), trigger, actionName(of: entry.binding))
             }
+            let action = entry.binding.systemShortcutName.isEmpty ? text("buttons-default") : actionName(of: entry.binding)
             return String(format: text("general-settings-import-action-line-app"), trigger, name(of: application), action)
         }
     }

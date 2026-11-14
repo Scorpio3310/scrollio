@@ -355,6 +355,29 @@ final class ApplicationButtonsTests: XCTestCase {
         XCTAssertEqual(read.ownButtonBindings.map(\.systemShortcutName), ["undo"])
     }
 
+    /// A settings file carries an app's own buttons; the sheet before an import says how
+    /// many apps have some, and lists each with its app, "Default" for one without action.
+    func testTheSettingsFileCarriesAnAppsOwnButtons() throws {
+        let options = Options()
+        options.defaults = TestDefaults.make(for: self)
+        let notes = Application(path: "/Applications/Notes.app")
+        notes.setOwnButtonBindings([binding(3, "undo"), binding(4, "")])
+        options.application.applications.append(notes)
+        options.application.applications.append(Application(path: "/Applications/Mail.app"))
+        let data = try SettingsFile.export(from: options, now: Date(timeIntervalSinceReferenceDate: 800_000_000)).get()
+
+        let contents = try SettingsFile.read(data).get()
+        XCTAssertEqual(contents.applications?.first?.ownButtonBindings, notes.ownButtonBindings)
+        XCTAssertEqual(contents.applications?.last?.hasOwnButtons, false)
+        let items = SettingsFileText.items(of: contents).map(\.text)
+        XCTAssertTrue(items.contains("1 app with buttons of its own"), "\(items)")
+        let lines = SettingsFileText.actionLines(of: contents)
+        XCTAssertEqual(lines.count, 2)
+        XCTAssertTrue(lines[0].hasSuffix(" in Notes: Undo"), lines[0])
+        XCTAssertTrue(lines[1].hasSuffix(" in Notes: Default"), lines[1])
+        XCTAssertEqual(SettingsFileText.counted(3, "general-settings-import-app-buttons"), "3 apps with buttons of their own")
+    }
+
     // MARK: - Logitech buttons follow the app in front
 
     /// A Logitech button no general binding uses is taken from the mouse only while an app
