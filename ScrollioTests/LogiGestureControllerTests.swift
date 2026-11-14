@@ -295,17 +295,31 @@ final class LogiGestureControllerTests: XCTestCase {
         XCTAssertEqual(controller.armedCIDs, [Self.gesture])
     }
 
-    func testARejectedControlGetsANewAttemptWhenTheSettingIsTurnedOnAgain() {
+    /// A control the mouse refused stays on the pointer path while the mouse stays
+    /// connected, however often it leaves the request and comes back (the app in front
+    /// whose own binding takes the button out of the tracked set, and the next app; the
+    /// setting off and on): no write, no wait, no line. A mouse that connects again starts
+    /// with a new controller, which tries again.
+    func testARejectedControlIsNotTriedAgainUntilTheMouseConnectsAgain() {
         let controller = makeController()
         applyUsage(controller, bound: [Self.gesture], tracking: [Self.gesture])
         fireTimers()
         writes = []
+        logLines = []
 
-        applyUsage(controller, bound: [Self.gesture], tracking: [])
+        for _ in 0..<3 {
+            applyUsage(controller, bound: [Self.gesture], tracking: [])
+            applyUsage(controller, bound: [Self.gesture], tracking: [Self.gesture])
+        }
         XCTAssertEqual(writes, [], "already stated as diverted without raw XY")
-        XCTAssertTrue(controller.rejectedCIDs.isEmpty)
+        XCTAssertEqual(controller.rejectedCIDs, [Self.gesture])
+        XCTAssertTrue(timers.isEmpty)
+        XCTAssertEqual(logLines, [])
+        XCTAssertFalse(controller.buttonDown(cid: Self.gesture))
 
-        applyUsage(controller, bound: [Self.gesture], tracking: [Self.gesture])
+        let reconnected = makeController()
+        diverted = []
+        applyUsage(reconnected, bound: [Self.gesture], tracking: [Self.gesture])
         XCTAssertEqual(writes, [Self.arm])
     }
 

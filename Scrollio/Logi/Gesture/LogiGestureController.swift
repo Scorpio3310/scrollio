@@ -13,7 +13,10 @@
 //    the divert (0x33), at the time the binding is applied, never in the middle of a hold.
 //  - A hold is tracked by the device only when the mouse acknowledged the arm request
 //    before the button went down. No acknowledgement within `acknowledgeTimeout`, or an
-//    HID++ error, drops the control back to the pointer path until the request changes.
+//    HID++ error, drops the control back to the pointer path until the mouse connects
+//    again (the session makes a new controller then): the request now changes with the
+//    app in front, and each visit to an app that takes the button out of it would try,
+//    wait and fall back once more.
 //  - The writes that only follow the request (and their echo) are routine: they go to the
 //    Logitech Diagnostics window (`trace`), as the divert's own writes do, not to the
 //    system log, which would get a line per switch of apps. A refusal is logged (`log`).
@@ -99,8 +102,8 @@ final class LogiGestureController {
     private(set) var rawXYCapableCIDs: Set<UInt16> = []
     /// Controls Scrollio wants tracked by the device, whatever this device can do.
     private(set) var rawXYRequest: Set<UInt16> = []
-    /// Controls whose arm request failed; they stay on the pointer path until they leave
-    /// the request (setting off, binding removed) or the device is discovered again.
+    /// Controls whose arm request failed; they stay on the pointer path as long as this
+    /// controller lives: until the device is discovered again or connects again.
     private(set) var rejectedCIDs: Set<UInt16> = []
     /// Controls Scrollio set raw XY on. Absent: Scrollio never touched their raw XY bit.
     private var rawXYPhases: [UInt16: RawXYPhase] = [:]
@@ -134,11 +137,10 @@ final class LogiGestureController {
         if supported != supportsRawXY { onChange() }
     }
 
-    /// Stores the request; nothing is sent until the controls are written or reconciled.
+    /// Stores the request; nothing is sent until the controls are written or reconciled. A
+    /// refused control stays refused when it leaves the request and comes back.
     func setRawXYRequest(_ cids: Set<UInt16>) {
         rawXYRequest = cids
-        // A control that left the request gets a fresh attempt when it comes back.
-        rejectedCIDs.formIntersection(cids)
     }
 
     private func wantsRawXY(_ cid: UInt16) -> Bool {
