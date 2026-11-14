@@ -37,6 +37,7 @@
 		C0DE4EA10000000000000102 /* ScrollioTests/UtilsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE4EA10000000000000101 /* ScrollioTests/UtilsTests.swift */; };
 		F1D7D50B5A1C4E8F9A2B3C4D /* ScrollioTests/ShortcutRingDropsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D6D50B5A1C4E8F9A2B3C4D /* ScrollioTests/ShortcutRingDropsTests.swift */; };
 		F1D7D50B5A1C4E8F9A2B3C4E /* ScrollioTests/ApplicationRingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D6D50B5A1C4E8F9A2B3C4E /* ScrollioTests/ApplicationRingTests.swift */; };
+		DA451FBDB9ADEA1F969D64DB /* ScrollioTests/ShortcutRingSuggestionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 838EC657E4F693763B3E41BF /* ScrollioTests/ShortcutRingSuggestionsTests.swift */; };
 		1E4312A4CFA21BC9F39DAAED /* ScrollioTests/ApplicationGesturesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2693A34EADAB51B47AD0ED0E /* ScrollioTests/ApplicationGesturesTests.swift */; };
 		BC7842E531B6D96493982F60 /* ScrollioTests/ApplicationButtonsRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF82A2979CD09F9BB9067C0B /* ScrollioTests/ApplicationButtonsRuntimeTests.swift */; };
 		17DC281379D55245627CC8DD /* ScrollioTests/ApplicationThumbWheelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F983140934AFB93F811D174 /* ScrollioTests/ApplicationThumbWheelTests.swift */; };
@@ -172,6 +173,7 @@
 		C0DE4EA10000000000000101 /* ScrollioTests/UtilsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/UtilsTests.swift; sourceTree = SOURCE_ROOT; };
 		F1D6D50B5A1C4E8F9A2B3C4D /* ScrollioTests/ShortcutRingDropsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ShortcutRingDropsTests.swift; sourceTree = SOURCE_ROOT; };
 		F1D6D50B5A1C4E8F9A2B3C4E /* ScrollioTests/ApplicationRingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ApplicationRingTests.swift; sourceTree = SOURCE_ROOT; };
+		838EC657E4F693763B3E41BF /* ScrollioTests/ShortcutRingSuggestionsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ShortcutRingSuggestionsTests.swift; sourceTree = SOURCE_ROOT; };
 		2693A34EADAB51B47AD0ED0E /* ScrollioTests/ApplicationGesturesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ApplicationGesturesTests.swift; sourceTree = SOURCE_ROOT; };
 		CF82A2979CD09F9BB9067C0B /* ScrollioTests/ApplicationButtonsRuntimeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ApplicationButtonsRuntimeTests.swift; sourceTree = SOURCE_ROOT; };
 		2F983140934AFB93F811D174 /* ScrollioTests/ApplicationThumbWheelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ApplicationThumbWheelTests.swift; sourceTree = SOURCE_ROOT; };
@@ -342,6 +344,7 @@
 				C0DE4EA10000000000000101 /* ScrollioTests/UtilsTests.swift */,
 				F1D6D50B5A1C4E8F9A2B3C4D /* ScrollioTests/ShortcutRingDropsTests.swift */,
 				F1D6D50B5A1C4E8F9A2B3C4E /* ScrollioTests/ApplicationRingTests.swift */,
+				838EC657E4F693763B3E41BF /* ScrollioTests/ShortcutRingSuggestionsTests.swift */,
 				2693A34EADAB51B47AD0ED0E /* ScrollioTests/ApplicationGesturesTests.swift */,
 				CF82A2979CD09F9BB9067C0B /* ScrollioTests/ApplicationButtonsRuntimeTests.swift */,
 				2F983140934AFB93F811D174 /* ScrollioTests/ApplicationThumbWheelTests.swift */,
@@ -610,6 +613,7 @@
 				C0DE4EA10000000000000102 /* ScrollioTests/UtilsTests.swift in Sources */,
 				F1D7D50B5A1C4E8F9A2B3C4D /* ScrollioTests/ShortcutRingDropsTests.swift in Sources */,
 				F1D7D50B5A1C4E8F9A2B3C4E /* ScrollioTests/ApplicationRingTests.swift in Sources */,
+				DA451FBDB9ADEA1F969D64DB /* ScrollioTests/ShortcutRingSuggestionsTests.swift in Sources */,
 				1E4312A4CFA21BC9F39DAAED /* ScrollioTests/ApplicationGesturesTests.swift in Sources */,
 				BC7842E531B6D96493982F60 /* ScrollioTests/ApplicationButtonsRuntimeTests.swift in Sources */,
 				17DC281379D55245627CC8DD /* ScrollioTests/ApplicationThumbWheelTests.swift in Sources */,

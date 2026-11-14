@@ -1,0 +1,709 @@
+{
+  "format": "scrollio-ring-suggestions",
+  "version": 1,
+  "apps": [
+    {
+      "name": "Adobe After Effects",
+      "bundleIdentifiers": ["com.adobe.AfterEffects"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": ".", "modifiers": [], "modifierless": true},
+        {"name": "Pre-Compose", "symbol": "rectangle.on.rectangle", "character": "c", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": ",", "modifiers": [], "modifierless": true},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Split Layer", "symbol": "scissors", "character": "d", "modifiers": ["shift", "command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Adobe Illustrator",
+      "bundleIdentifiers": ["com.adobe.illustrator"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Group", "symbol": "square.grid.2x2", "character": "g", "modifiers": ["command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Fit Artboard", "symbol": "arrow.down.right.and.arrow.up.left", "character": "0", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Adobe InDesign",
+      "bundleIdentifiers": ["com.adobe.InDesign"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Place", "symbol": "photo", "character": "d", "modifiers": ["command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Fit Page", "symbol": "arrow.down.right.and.arrow.up.left", "character": "0", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Adobe Lightroom Classic",
+      "bundleIdentifiers": ["com.adobe.LightroomClassicCC7"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Auto Settings", "symbol": "wand.and.stars", "character": "u", "modifiers": ["command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste Settings", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy Settings", "symbol": "doc.on.doc", "character": "c", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Before/After", "symbol": "rectangle.split.2x1", "character": "\\", "modifiers": [], "modifierless": true}
+      ]
+    },
+    {
+      "name": "Adobe Photoshop",
+      "bundleIdentifiers": ["com.adobe.Photoshop"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Deselect", "symbol": "square.dashed", "character": "d", "modifiers": ["command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Free Transform", "symbol": "arrow.up.and.down.and.arrow.left.and.right", "character": "t", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Adobe Premiere Pro",
+      "bundleIdentifiers": ["com.adobe.PremierePro.26", "com.adobe.PremierePro.25", "com.adobe.PremierePro.24"],
+      "bundleIdentifierPrefixes": ["com.adobe.PremierePro."],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": [], "modifierless": true},
+        {"name": "Ripple Delete", "symbol": "trash", "character": "delete", "modifiers": ["option"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": [], "modifierless": true},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Split at Playhead", "symbol": "scissors", "character": "k", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Affinity",
+      "bundleIdentifiers": ["com.canva.affinity", "com.seriflabs.affinitydesigner2", "com.seriflabs.affinityphoto2", "com.seriflabs.affinitypublisher2"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Group", "symbol": "square.grid.2x2", "character": "g", "modifiers": ["command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Duplicate", "symbol": "plus.rectangle.on.rectangle", "character": "j", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Arc",
+      "bundleIdentifiers": ["company.thebrowser.Browser"],
+      "places": [
+        {"name": "New Tab", "symbol": "plus.rectangle.on.rectangle", "character": "t", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy URL", "symbol": "link", "character": "c", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Forward", "symbol": "chevron.right", "character": "]", "modifiers": ["command"], "modifierless": false, "alternative": {"action": "navigateForward"}},
+        {"name": "Next Tab", "symbol": "arrow.right", "character": "down", "modifiers": ["option", "command"], "modifierless": false},
+        {"name": "Close Tab", "symbol": "xmark", "character": "w", "modifiers": ["command"], "modifierless": false},
+        {"name": "Previous Tab", "symbol": "arrow.left", "character": "up", "modifiers": ["option", "command"], "modifierless": false},
+        {"name": "Back", "symbol": "chevron.left", "character": "[", "modifiers": ["command"], "modifierless": false, "alternative": {"action": "navigateBack"}},
+        {"name": "Reopen Closed Tab", "symbol": "arrow.uturn.backward", "character": "t", "modifiers": ["shift", "command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "AutoCAD for Mac",
+      "bundleIdentifiers": ["com.autodesk.AutoCAD2024", "com.autodesk.AutoCAD2025", "com.autodesk.AutoCAD2026", "com.autodesk.AutoCAD2027", "com.autodesk.AutoCADLT2023_StandAlone"],
+      "bundleIdentifierPrefixes": ["com.autodesk.AutoCAD"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Object Snap", "symbol": "scope", "character": "f", "modifiers": ["control"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Ortho Mode", "symbol": "arrow.up.and.down.and.arrow.left.and.right", "character": "l", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Autodesk Fusion",
+      "bundleIdentifiers": ["com.autodesk.fusion360", "com.autodesk.fusion", "com.autodesk.mas.fusion360"],
+      "places": [
+        {"name": "Fit to View", "symbol": "arrow.down.right.and.arrow.up.left", "character": "f6", "modifiers": [], "modifierless": true},
+        {"name": "Fillet", "symbol": "rectangle.roundedtop", "character": "f", "modifiers": [], "modifierless": true},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Toggle Visibility", "symbol": "eye.slash", "character": "v", "modifiers": [], "modifierless": true},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Extrude", "symbol": "cube", "character": "e", "modifiers": [], "modifierless": true}
+      ]
+    },
+    {
+      "name": "Blender",
+      "bundleIdentifiers": ["org.blenderfoundation.blender"],
+      "places": [
+        {"name": "Frame Selected", "symbol": "arrow.up.left.and.arrow.down.right", "character": "keypad-decimal", "modifiers": [], "modifierless": true},
+        {"name": "Camera View", "symbol": "camera", "character": "keypad-0", "modifiers": [], "modifierless": true},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Local View", "symbol": "scope", "character": "keypad-divide", "modifiers": [], "modifierless": true},
+        {"name": "Frame All", "symbol": "arrow.down.right.and.arrow.up.left", "character": "home", "modifiers": [], "modifierless": true},
+        {"name": "Toggle X-Ray", "symbol": "cube.transparent", "character": "z", "modifiers": ["option"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Toggle Edit Mode", "symbol": "pencil", "character": "tab", "modifiers": [], "modifierless": true}
+      ]
+    },
+    {
+      "name": "Canva",
+      "bundleIdentifiers": ["com.canva.CanvaDesktop"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Group", "symbol": "square.grid.2x2", "character": "g", "modifiers": ["command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "y", "modifiers": ["command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Duplicate", "symbol": "plus.rectangle.on.rectangle", "character": "d", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "ChatGPT",
+      "bundleIdentifiers": ["com.openai.codex"],
+      "places": [
+        {"name": "Bigger Text", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Toggle Sidebar", "symbol": "sidebar.left", "character": "b", "modifiers": ["command"], "modifierless": false},
+        {"name": "Next Chat", "symbol": "chevron.right", "character": "right", "modifiers": ["option", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Smaller Text", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Previous Chat", "symbol": "chevron.left", "character": "left", "modifiers": ["option", "command"], "modifierless": false},
+        {"name": "New Chat", "symbol": "square.and.pencil", "character": "n", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Cinema 4D",
+      "bundleIdentifiers": ["net.maxon.cinema4d"],
+      "places": [
+        {"name": "Frame Selected", "symbol": "arrow.up.left.and.arrow.down.right", "character": "o", "modifiers": [], "modifierless": true},
+        {"name": "Group", "symbol": "square.grid.2x2", "character": "g", "modifiers": ["option"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "y", "modifiers": ["command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Frame All", "symbol": "arrow.down.right.and.arrow.up.left", "character": "h", "modifiers": [], "modifierless": true},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Render View", "symbol": "camera", "character": "r", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Claude",
+      "bundleIdentifiers": ["com.anthropic.claudefordesktop"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Toggle Sidebar", "symbol": "sidebar.left", "character": "b", "modifiers": ["command"], "modifierless": false},
+        {"name": "Next Chat", "symbol": "chevron.right", "character": "]", "modifiers": ["shift", "command"], "modifierless": false, "alternative": {"character": "tab", "modifiers": ["control"]}},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Previous Chat", "symbol": "chevron.left", "character": "[", "modifiers": ["shift", "command"], "modifierless": false, "alternative": {"character": "tab", "modifiers": ["control", "shift"]}},
+        {"name": "New Chat", "symbol": "square.and.pencil", "character": "n", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Cursor",
+      "bundleIdentifiers": ["com.todesktop.230313mzl4w4u92"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Toggle Panel", "symbol": "terminal", "character": "j", "modifiers": ["command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Agent Panel", "symbol": "sparkles", "character": "i", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "DaVinci Resolve",
+      "bundleIdentifiers": ["com.blackmagic-design.DaVinciResolve", "com.blackmagic-design.DaVinciResolveStudio", "com.blackmagic-design.DaVinciResolveLite"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Ripple Delete", "symbol": "trash", "character": "delete", "modifiers": ["shift"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Split at Playhead", "symbol": "scissors", "character": "b", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Figma",
+      "bundleIdentifiers": ["com.figma.Desktop"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Group", "symbol": "square.grid.2x2", "character": "g", "modifiers": ["command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Add Auto Layout", "symbol": "rectangle.split.2x1", "character": "a", "modifiers": ["shift"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Final Cut Pro",
+      "bundleIdentifiers": ["com.apple.FinalCut", "com.apple.FinalCutTrial"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Ripple Delete", "symbol": "trash", "character": "delete", "modifiers": [], "modifierless": true},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Split at Playhead", "symbol": "scissors", "character": "b", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Finder",
+      "bundleIdentifiers": ["com.apple.finder"],
+      "places": [
+        {"name": "Enclosing Folder", "symbol": "arrow.up", "character": "up", "modifiers": ["command"], "modifierless": false},
+        {"name": "Move to Trash", "symbol": "trash", "character": "delete", "modifiers": ["command"], "modifierless": false},
+        {"name": "Forward", "symbol": "chevron.right", "character": "]", "modifiers": ["command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Quick Look", "symbol": "eye", "character": "y", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Back", "symbol": "chevron.left", "character": "[", "modifiers": ["command"], "modifierless": false},
+        {"name": "New Folder", "symbol": "folder", "character": "n", "modifiers": ["shift", "command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Firefox",
+      "bundleIdentifiers": ["org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly"],
+      "places": [
+        {"name": "New Tab", "symbol": "plus.rectangle.on.rectangle", "character": "t", "modifiers": ["command"], "modifierless": false},
+        {"name": "Reload", "symbol": "arrow.clockwise", "character": "r", "modifiers": ["command"], "modifierless": false},
+        {"name": "Forward", "symbol": "chevron.right", "character": "]", "modifiers": ["command"], "modifierless": false, "alternative": {"action": "navigateForward"}},
+        {"name": "Next Tab", "symbol": "arrow.right", "character": "right", "modifiers": ["option", "command"], "modifierless": false},
+        {"name": "Close Tab", "symbol": "xmark", "character": "w", "modifiers": ["command"], "modifierless": false},
+        {"name": "Previous Tab", "symbol": "arrow.left", "character": "left", "modifiers": ["option", "command"], "modifierless": false},
+        {"name": "Back", "symbol": "chevron.left", "character": "[", "modifiers": ["command"], "modifierless": false, "alternative": {"action": "navigateBack"}},
+        {"name": "Reopen Closed Tab", "symbol": "arrow.uturn.backward", "character": "t", "modifiers": ["shift", "command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Google Chrome",
+      "bundleIdentifiers": ["com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.dev", "com.google.Chrome.canary"],
+      "places": [
+        {"name": "New Tab", "symbol": "plus.rectangle.on.rectangle", "character": "t", "modifiers": ["command"], "modifierless": false},
+        {"name": "Reload", "symbol": "arrow.clockwise", "character": "r", "modifiers": ["command"], "modifierless": false},
+        {"name": "Forward", "symbol": "chevron.right", "character": "]", "modifiers": ["command"], "modifierless": false, "alternative": {"action": "navigateForward"}},
+        {"name": "Next Tab", "symbol": "arrow.right", "character": "right", "modifiers": ["option", "command"], "modifierless": false},
+        {"name": "Close Tab", "symbol": "xmark", "character": "w", "modifiers": ["command"], "modifierless": false},
+        {"name": "Previous Tab", "symbol": "arrow.left", "character": "left", "modifiers": ["option", "command"], "modifierless": false},
+        {"name": "Back", "symbol": "chevron.left", "character": "[", "modifiers": ["command"], "modifierless": false, "alternative": {"action": "navigateBack"}},
+        {"name": "Reopen Closed Tab", "symbol": "arrow.uturn.backward", "character": "t", "modifiers": ["shift", "command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "IntelliJ IDEA (and other JetBrains IDEs)",
+      "bundleIdentifiers": ["com.jetbrains.intellij", "com.jetbrains.intellij.ce", "com.jetbrains.pycharm", "com.jetbrains.pycharm.ce", "com.jetbrains.WebStorm", "com.jetbrains.PhpStorm", "com.jetbrains.goland", "com.jetbrains.CLion", "com.jetbrains.rubymine", "com.jetbrains.rider", "com.jetbrains.datagrip", "com.jetbrains.rustrover", "com.jetbrains.dataspell", "com.google.android.studio"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["control", "option"], "modifierless": false},
+        {"name": "Run", "symbol": "play", "character": "r", "modifiers": ["control"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["control", "option"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Show Context Actions", "symbol": "lightbulb", "character": "return", "modifiers": ["option"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Keynote",
+      "bundleIdentifiers": ["com.apple.Keynote", "com.apple.iWork.Keynote"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": ".", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Play Slideshow", "symbol": "play", "character": "p", "modifiers": ["option", "command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": ",", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "New Slide", "symbol": "plus.rectangle.on.rectangle", "character": "n", "modifiers": ["shift", "command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Logic Pro",
+      "bundleIdentifiers": ["com.apple.logic10"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "right", "modifiers": ["command"], "modifierless": false},
+        {"name": "Play/Stop", "symbol": "playpause", "character": "space", "modifiers": [], "modifierless": true},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "left", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Split at Playhead", "symbol": "scissors", "character": "t", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Mail",
+      "bundleIdentifiers": ["com.apple.mail"],
+      "places": [
+        {"name": "Reply", "symbol": "arrowshape.turn.up.left", "character": "r", "modifiers": ["command"], "modifierless": false},
+        {"name": "Reply All", "symbol": "arrowshape.turn.up.left.2", "character": "r", "modifiers": ["shift", "command"], "modifierless": false},
+        {"empty": "modifierless key in a mail app (types into a text field)"},
+        {"name": "Mark Read/Unread", "symbol": "envelope.badge", "character": "u", "modifiers": ["shift", "command"], "modifierless": false},
+        {"empty": "modifierless key in a mail app (types into a text field)"},
+        {"name": "Archive", "symbol": "archivebox", "character": "a", "modifiers": ["control", "command"], "modifierless": false},
+        {"empty": "modifierless key in a mail app (types into a text field)"},
+        {"name": "Forward Message", "symbol": "arrowshape.turn.up.right", "character": "f", "modifiers": ["shift", "command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Microsoft Edge",
+      "bundleIdentifiers": ["com.microsoft.edgemac", "com.microsoft.edgemac.Beta", "com.microsoft.edgemac.Dev", "com.microsoft.edgemac.Canary"],
+      "places": [
+        {"name": "New Tab", "symbol": "plus.rectangle.on.rectangle", "character": "t", "modifiers": ["command"], "modifierless": false},
+        {"name": "Reload", "symbol": "arrow.clockwise", "character": "r", "modifiers": ["command"], "modifierless": false},
+        {"name": "Forward", "symbol": "chevron.right", "character": "]", "modifiers": ["command"], "modifierless": false, "alternative": {"action": "navigateForward"}},
+        {"name": "Next Tab", "symbol": "arrow.right", "character": "right", "modifiers": ["option", "command"], "modifierless": false},
+        {"name": "Close Tab", "symbol": "xmark", "character": "w", "modifiers": ["command"], "modifierless": false},
+        {"name": "Previous Tab", "symbol": "arrow.left", "character": "left", "modifiers": ["option", "command"], "modifierless": false},
+        {"name": "Back", "symbol": "chevron.left", "character": "[", "modifiers": ["command"], "modifierless": false, "alternative": {"action": "navigateBack"}},
+        {"name": "Reopen Closed Tab", "symbol": "arrow.uturn.backward", "character": "t", "modifiers": ["shift", "command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Microsoft Excel",
+      "bundleIdentifiers": ["com.microsoft.Excel"],
+      "places": [
+        {"name": "Increase Font Size", "symbol": "textformat.size.larger", "character": ".", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "AutoSum", "symbol": "sum", "character": "t", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "y", "modifiers": ["command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Decrease Font Size", "symbol": "textformat.size.smaller", "character": ",", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Format Cells", "symbol": "slider.horizontal.3", "character": "1", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Microsoft Outlook",
+      "bundleIdentifiers": ["com.microsoft.Outlook"],
+      "places": [
+        {"name": "Reply", "symbol": "arrowshape.turn.up.left", "character": "r", "modifiers": ["command"], "modifierless": false},
+        {"name": "Reply All", "symbol": "arrowshape.turn.up.left.2", "character": "r", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Next Message", "symbol": "chevron.right", "character": "]", "modifiers": ["control"], "modifierless": false},
+        {"name": "Mark Unread", "symbol": "envelope.badge", "character": "t", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Delete", "symbol": "trash", "character": "delete", "modifiers": ["command"], "modifierless": false},
+        {"name": "Archive", "symbol": "archivebox", "character": "e", "modifiers": ["control"], "modifierless": false},
+        {"name": "Previous Message", "symbol": "chevron.left", "character": "[", "modifiers": ["control"], "modifierless": false},
+        {"name": "Forward Message", "symbol": "arrowshape.turn.up.right", "character": "j", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Microsoft PowerPoint",
+      "bundleIdentifiers": ["com.microsoft.Powerpoint"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Play from Start", "symbol": "play", "character": "return", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "y", "modifiers": ["command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "New Slide", "symbol": "plus.rectangle.on.rectangle", "character": "n", "modifiers": ["shift", "command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Microsoft Teams",
+      "bundleIdentifiers": ["com.microsoft.teams2", "com.microsoft.teams"],
+      "places": [
+        {"name": "Mute/Unmute", "symbol": "mic.slash", "character": "m", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Raise Hand", "symbol": "hand.raised", "character": "k", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Forward", "symbol": "chevron.right", "character": "]", "modifiers": ["command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Camera On/Off", "symbol": "video.slash", "character": "o", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Back", "symbol": "chevron.left", "character": "[", "modifiers": ["command"], "modifierless": false},
+        {"name": "Share Screen", "symbol": "square.and.arrow.up", "character": "e", "modifiers": ["shift", "command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Microsoft Word",
+      "bundleIdentifiers": ["com.microsoft.Word"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Insert Comment", "symbol": "bubble.left", "character": "a", "modifiers": ["option", "command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "y", "modifiers": ["command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Bold", "symbol": "bold", "character": "b", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Notes",
+      "bundleIdentifiers": ["com.apple.Notes"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": ".", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Checklist", "symbol": "checklist", "character": "l", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": ",", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "New Note", "symbol": "square.and.pencil", "character": "n", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Notion",
+      "bundleIdentifiers": ["notion.id"],
+      "places": [
+        {"name": "Search", "symbol": "magnifyingglass", "character": "p", "modifiers": ["command"], "modifierless": false},
+        {"name": "Forward", "symbol": "chevron.right", "character": "]", "modifiers": ["command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Toggle Sidebar", "symbol": "sidebar.left", "character": "\\", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Back", "symbol": "chevron.left", "character": "[", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Numbers",
+      "bundleIdentifiers": ["com.apple.Numbers", "com.apple.iWork.Numbers"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": ".", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Toggle Sidebar", "symbol": "sidebar.right", "character": "i", "modifiers": ["option", "command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": ",", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Add Row Below", "symbol": "rectangle.bottomthird.inset.filled", "character": "down", "modifiers": ["option"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Obsidian",
+      "bundleIdentifiers": ["md.obsidian"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Quick Switcher", "symbol": "doc", "character": "o", "modifiers": ["command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Command Palette", "symbol": "command", "character": "p", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Pages",
+      "bundleIdentifiers": ["com.apple.Pages", "com.apple.iWork.Pages"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": ".", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste and Match Style", "symbol": "doc.plaintext", "character": "v", "modifiers": ["option", "shift", "command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": ",", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Bold", "symbol": "bold", "character": "b", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Photos",
+      "bundleIdentifiers": ["com.apple.Photos"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Delete", "symbol": "trash", "character": "delete", "modifiers": [], "modifierless": true},
+        {"name": "Next Photo", "symbol": "chevron.right", "character": "right", "modifiers": [], "modifierless": true},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Previous Photo", "symbol": "chevron.left", "character": "left", "modifiers": [], "modifierless": true},
+        {"name": "Favorite", "symbol": "heart", "character": ".", "modifiers": [], "modifierless": true}
+      ]
+    },
+    {
+      "name": "Pixelmator Pro",
+      "bundleIdentifiers": ["com.pixelmatorteam.pixelmator.x", "com.pixelmatorteam.pixelmator.x.demo"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Deselect", "symbol": "square.dashed", "character": "d", "modifiers": ["command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Duplicate", "symbol": "plus.rectangle.on.rectangle", "character": "j", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Preview",
+      "bundleIdentifiers": ["com.apple.Preview"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Rotate Right", "symbol": "rotate.right", "character": "r", "modifiers": ["command"], "modifierless": false},
+        {"name": "Next Page", "symbol": "chevron.right", "character": "down", "modifiers": ["option"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Previous Page", "symbol": "chevron.left", "character": "up", "modifiers": ["option"], "modifierless": false},
+        {"name": "Rotate Left", "symbol": "rotate.left", "character": "l", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Rhinoceros",
+      "bundleIdentifiers": ["com.mcneel.rhinoceros.8", "com.mcneel.rhinoceros.7"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "pageup", "modifiers": [], "modifierless": true},
+        {"name": "Join", "symbol": "link", "character": "j", "modifiers": ["command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "pagedown", "modifiers": [], "modifierless": true},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Extents", "symbol": "arrow.down.right.and.arrow.up.left", "character": "e", "modifiers": ["shift", "command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Safari",
+      "bundleIdentifiers": ["com.apple.Safari", "com.apple.SafariTechnologyPreview"],
+      "places": [
+        {"name": "New Tab", "symbol": "plus.rectangle.on.rectangle", "character": "t", "modifiers": ["command"], "modifierless": false},
+        {"name": "Reload", "symbol": "arrow.clockwise", "character": "r", "modifiers": ["command"], "modifierless": false},
+        {"name": "Forward", "symbol": "chevron.right", "character": "]", "modifiers": ["command"], "modifierless": false, "alternative": {"action": "navigateForward"}},
+        {"name": "Next Tab", "symbol": "arrow.right", "character": "tab", "modifiers": ["control"], "modifierless": false},
+        {"name": "Close Tab", "symbol": "xmark", "character": "w", "modifiers": ["command"], "modifierless": false},
+        {"name": "Previous Tab", "symbol": "arrow.left", "character": "tab", "modifiers": ["control", "shift"], "modifierless": false},
+        {"name": "Back", "symbol": "chevron.left", "character": "[", "modifiers": ["command"], "modifierless": false, "alternative": {"action": "navigateBack"}},
+        {"name": "Reopen Closed Tab", "symbol": "arrow.uturn.backward", "character": "t", "modifiers": ["shift", "command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Sketch",
+      "bundleIdentifiers": ["com.bohemiancoding.sketch3"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Group", "symbol": "square.grid.2x2", "character": "g", "modifiers": ["command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Duplicate", "symbol": "plus.rectangle.on.rectangle", "character": "d", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "SketchUp",
+      "bundleIdentifiers": ["com.sketchup.SketchUp.2027", "com.sketchup.SketchUp.2026", "com.sketchup.SketchUp.2025", "com.sketchup.SketchUp.2024", "com.sketchup.SketchUp.2023", "com.sketchup.SketchUp.2022"],
+      "bundleIdentifierPrefixes": ["com.sketchup.SketchUp."],
+      "places": [
+        {"name": "Zoom Extents", "symbol": "arrow.down.right.and.arrow.up.left", "character": "z", "modifiers": ["shift"], "modifierless": false},
+        {"name": "Move", "symbol": "arrow.up.and.down.and.arrow.left.and.right", "character": "m", "modifiers": [], "modifierless": true},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Select Tool", "symbol": "cursorarrow", "character": "space", "modifiers": [], "modifierless": true},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Push/Pull", "symbol": "cube", "character": "p", "modifiers": [], "modifierless": true}
+      ]
+    },
+    {
+      "name": "Slack",
+      "bundleIdentifiers": ["com.tinyspeck.slackmacgap"],
+      "places": [
+        {"name": "Previous Unread", "symbol": "arrow.up", "character": "up", "modifiers": ["option", "shift"], "modifierless": false},
+        {"name": "Activity", "symbol": "bell", "character": "m", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Forward", "symbol": "chevron.right", "character": "]", "modifiers": ["command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Next Unread", "symbol": "arrow.down", "character": "down", "modifiers": ["option", "shift"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Back", "symbol": "chevron.left", "character": "[", "modifiers": ["command"], "modifierless": false},
+        {"name": "Jump To", "symbol": "number", "character": "k", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Spotify",
+      "bundleIdentifiers": ["com.spotify.client"],
+      "places": [
+        {"name": "Volume Up", "symbol": "speaker.wave.3", "character": "up", "modifiers": ["command"], "modifierless": false},
+        {"name": "Play/Pause", "symbol": "playpause", "character": "space", "modifiers": [], "modifierless": true},
+        {"name": "Next Track", "symbol": "forward.end", "character": "right", "modifiers": ["control", "command"], "modifierless": false},
+        {"name": "Forward", "symbol": "chevron.right", "character": "]", "modifiers": ["command"], "modifierless": false, "alternative": {"character": "right", "modifiers": ["option", "command"]}},
+        {"name": "Volume Down", "symbol": "speaker.wave.1", "character": "down", "modifiers": ["command"], "modifierless": false},
+        {"name": "Back", "symbol": "chevron.left", "character": "[", "modifiers": ["command"], "modifierless": false, "alternative": {"character": "left", "modifiers": ["option", "command"]}},
+        {"name": "Previous Track", "symbol": "backward.end", "character": "left", "modifiers": ["control", "command"], "modifierless": false},
+        {"name": "Like Song", "symbol": "heart", "character": "b", "modifiers": ["option", "shift"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Terminal",
+      "bundleIdentifiers": ["com.apple.Terminal"],
+      "places": [
+        {"name": "Bigger Text", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Clear to Start", "symbol": "eraser", "character": "k", "modifiers": ["command"], "modifierless": false},
+        {"name": "Next Tab", "symbol": "arrow.right", "character": "tab", "modifiers": ["control"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Smaller Text", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Previous Tab", "symbol": "arrow.left", "character": "tab", "modifiers": ["control", "shift"], "modifierless": false},
+        {"name": "New Tab", "symbol": "plus.rectangle.on.rectangle", "character": "t", "modifiers": ["command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Visual Studio Code",
+      "bundleIdentifiers": ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders"],
+      "places": [
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
+        {"name": "Toggle Panel", "symbol": "terminal", "character": "j", "modifiers": ["command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Command Palette", "symbol": "command", "character": "p", "modifiers": ["shift", "command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Xcode",
+      "bundleIdentifiers": ["com.apple.dt.Xcode"],
+      "places": [
+        {"name": "Run", "symbol": "play", "character": "r", "modifiers": ["command"], "modifierless": false},
+        {"name": "Forward", "symbol": "chevron.right", "character": "right", "modifiers": ["control", "command"], "modifierless": false},
+        {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
+        {"name": "Stop", "symbol": "stop", "character": ".", "modifiers": ["command"], "modifierless": false},
+        {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
+        {"name": "Undo", "symbol": "arrow.uturn.backward", "character": "z", "modifiers": ["command"], "modifierless": false},
+        {"name": "Back", "symbol": "chevron.left", "character": "left", "modifiers": ["control", "command"], "modifierless": false}
+      ]
+    },
+    {
+      "name": "Zoom Workplace",
+      "bundleIdentifiers": ["us.zoom.xos"],
+      "places": [
+        {"name": "Mute/Unmute", "symbol": "mic.slash", "character": "a", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Raise Hand", "symbol": "hand.raised", "character": "y", "modifiers": ["option"], "modifierless": false},
+        {"name": "Next Page", "symbol": "chevron.right", "character": "n", "modifiers": ["control"], "modifierless": false},
+        {"name": "Participants", "symbol": "person.2", "character": "u", "modifiers": ["command"], "modifierless": false},
+        {"name": "Camera On/Off", "symbol": "video.slash", "character": "v", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Chat", "symbol": "bubble.left", "character": "h", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Previous Page", "symbol": "chevron.left", "character": "p", "modifiers": ["control"], "modifierless": false},
+        {"name": "Share Screen", "symbol": "square.and.arrow.up", "character": "s", "modifiers": ["shift", "command"], "modifierless": false}
+      ]
+    }
+  ]
+}

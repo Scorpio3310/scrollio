@@ -145,6 +145,11 @@ struct KeyCode {
         126: "↑", 125: "↓", 123: "←", 124: "→",
         // Navigation (FN + Direction)
         116: "PageUp", 121: "PageDown", 115: "Home", 119: "End",
+        // The keypad (76, its Enter, is above): the same keys on every layout. A suggested
+        // ring of Blender uses three of them.
+        65: "Keypad .", 67: "Keypad *", 69: "Keypad +", 71: "Keypad Clear", 75: "Keypad /", 78: "Keypad -",
+        81: "Keypad =", 82: "Keypad 0", 83: "Keypad 1", 84: "Keypad 2", 85: "Keypad 3", 86: "Keypad 4",
+        87: "Keypad 5", 88: "Keypad 6", 89: "Keypad 7", 91: "Keypad 8", 92: "Keypad 9",
         // Modifier keys
         63: "Fn", 59: "⌃", 58: "⌥", 55: "⌘", 56: "⇧",
         62: "⌃ (R)", 61: "⌥ (R)", 54: "⌘ (R)", 60: "⇧ (R)", // 键盘不会直接触发这些右侧修饰键, 但是系统预留了
