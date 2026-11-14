@@ -69,8 +69,13 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   lets the button do what it does by itself in that app. − gives the button back to the
   Buttons pane. These rows count while the app is in front (the app in front, not the
   one under the pointer: the actions go to it); while Scrollio's own Settings are in
-  front, every button does what Buttons says. What opens the Shortcut Ring and what runs
-  Gesture Navigation are the same in every app: they are not offered there. A Logitech
+  front, every button does what Buttons says. Nothing stays general: + offers the button
+  that opens the Shortcut Ring or runs Gesture Navigation in the Buttons pane too (such
+  as the MX Master 4's thumb panel), and a row's menu is the Buttons pane's, the Shortcut
+  Ring and Gesture Navigation among it ("Show Gesture Settings" opens the app's Gestures
+  part). A button that opens the ring while the app is in front opens the app's own ring
+  if it has one, else the general one; one that runs Gesture Navigation runs the app's
+  own gestures if it has them, else the general ones. A Logitech
   button that no binding of the Buttons pane uses is taken from the mouse only while an
   app that gives it an action is in front, and is the mouse's own again in every other
   app. In the list of apps, small marks say what an app has of its own (scrolling
@@ -105,9 +110,12 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   in front when you press the button (the app in front, not the one under the pointer:
   the actions go to it); the gesture keeps them until you let go, whatever comes to the
   front meanwhile. While Scrollio's own Settings are in front, the pane's gestures run.
-  The button to hold, the mode, the swipe speed, "Freeze pointer" and what a Logitech
-  mouse does are the same for every app; in "Follow the hand" Left and Right on the
-  app's page say so, as in the pane. Turn the switch on again and the app's gestures are
+  The mode, the swipe speed, "Freeze pointer" and what a Logitech mouse does are the
+  same for every app; in "Follow the hand" Left and Right on the app's page say so, as
+  in the pane. The button to hold is the Buttons pane's, unless the app's Buttons part
+  gives it another action or gives another button Gesture Navigation: the app's
+  Gestures part then names the button to hold there, or says that none runs the
+  gestures. Turn the switch on again and the app's gestures are
   kept for later. An app added for its gestures has its scrolling changed too while
   "Change scrolling only in these apps" is on, as one added for its buttons (see
   [Buttons and keys](#buttons-and-keys)).
@@ -165,9 +173,11 @@ nothing opens the ring until you do. The pane also sets what the eight places ho
   ring as it is at that moment and are set like the pane's. That ring opens while the
   app is in front (the app in front, not the one under the pointer: the shortcuts go to
   it); while Scrollio's own Settings are in front, the general ring opens. The ring that
-  opened stays until it closes. The button or key that opens the ring and "Freeze
-  pointer while the ring is held" are the same for every app; while nothing opens the
-  ring, the app's page says so. Turn the switch on again and the app's ring is kept for
+  opened stays until it closes. "Freeze pointer while the ring is held" is the same for
+  every app. What opens the ring is set in the Buttons pane, or for one app in its
+  Buttons part: a button or key can open the ring only in that app, or do something
+  else there; while nothing opens the ring with the app in front, the app's page says
+  so. Turn the switch on again and the app's ring is kept for
   later. An app added for its ring has its scrolling changed too while "Change
   scrolling only in these apps" is on, as one added for its buttons (see
   [Buttons and keys](#buttons-and-keys)).
