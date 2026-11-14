@@ -1339,7 +1339,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 calculator.setOwnThumbWheelFunction(.zoom)
             } else {
                 calculator.setUsesScrollingSettings(false, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
-                calculator.setOwnThumbWheelScrolling(speed: 2, swapsDirection: false)
+                calculator.setOwnThumbWheelScrolling(ThumbWheelSettings(speed: 2, swapsDirection: false))
                 calculator.setOwnThumbWheelFunction(.volume)
             }
             Options.shared.application.applications = EnhanceArray<Application>(withArray: [calculator], matchKey: "path")

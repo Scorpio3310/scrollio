@@ -8799,6 +8799,126 @@
           }
         }
       }
+    },
+    "scrolling-thumb-wheel-reverse": {
+      "comment": "Scrolling pane, Thumb wheel group: the switch under Action; each action keeps its own",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reverse direction"
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-reverse-hint-scroll": {
+      "comment": "Scrolling pane, Thumb wheel group: under Reverse direction while the action is Scroll Sideways (at most two lines)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swaps the two directions: the wheel scrolls sideways the other way."
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-reverse-hint-zoom": {
+      "comment": "Scrolling pane, Thumb wheel group: under Reverse direction while the action is Zoom (at most two lines)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swaps the two directions: a turn that zoomed in zooms out."
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-reverse-hint-tabs": {
+      "comment": "Scrolling pane, Thumb wheel group: under Reverse direction while the action is Switch Tabs (at most two lines)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swaps the two directions: a turn to the next tab goes to the previous one."
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-reverse-hint-desktops": {
+      "comment": "Scrolling pane, Thumb wheel group: under Reverse direction while the action is Switch Desktops (at most two lines)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swaps the two directions: a turn to the desktop on the right goes left."
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-reverse-hint-back-forward": {
+      "comment": "Scrolling pane, Thumb wheel group: under Reverse direction while the action is Back and Forward (at most two lines)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swaps the two directions: a turn that went back goes forward."
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-reverse-hint-volume": {
+      "comment": "Scrolling pane, Thumb wheel group: under Reverse direction while the action is Volume (at most two lines)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swaps the two directions: a turn that raised the volume lowers it."
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-follow": {
+      "comment": "Scrolling pane, Thumb wheel group: a switch shown only while the action is Switch Desktops, like Gestures' “Follow the hand”",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Follow the wheel"
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-follow-hint": {
+      "comment": "Scrolling pane, Thumb wheel group: under Follow the wheel (at most two lines)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The desktop slides with the wheel like a trackpad swipe and settles when the wheel rests."
+          }
+        }
+      }
+    },
+    "scrolling-thumb-wheel-speed-hint-follow": {
+      "comment": "Scrolling pane, Thumb wheel group: under Speed while Switch Desktops follows the wheel",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How far a turn slides the desktop."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

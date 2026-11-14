@@ -672,8 +672,8 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(buttons.headerView.content.subtitle, "Back and Forward")
 
         // The speed and the direction are the Scrolling pane's; the row keeps its function.
-        scrolling.thumbWheelSwapSwitch.state = .on
-        XCTAssertTrue(scrolling.thumbWheelSwapSwitch.sendAction(scrolling.thumbWheelSwapSwitch.action, to: scrolling.thumbWheelSwapSwitch.target))
+        scrolling.thumbWheelReverseSwitch.state = .on
+        XCTAssertTrue(scrolling.thumbWheelReverseSwitch.sendAction(scrolling.thumbWheelReverseSwitch.action, to: scrolling.thumbWheelReverseSwitch.target))
         XCTAssertEqual(changes, 3)
         XCTAssertEqual(shown(row.pullDown), "Back and Forward")
 

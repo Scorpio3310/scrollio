@@ -43,6 +43,7 @@
 		1E4312A4CFA21BC9F39DAAED /* ScrollioTests/ApplicationGesturesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2693A34EADAB51B47AD0ED0E /* ScrollioTests/ApplicationGesturesTests.swift */; };
 		BC7842E531B6D96493982F60 /* ScrollioTests/ApplicationButtonsRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF82A2979CD09F9BB9067C0B /* ScrollioTests/ApplicationButtonsRuntimeTests.swift */; };
 		17DC281379D55245627CC8DD /* ScrollioTests/ApplicationThumbWheelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F983140934AFB93F811D174 /* ScrollioTests/ApplicationThumbWheelTests.swift */; };
+		7F8EE1C240D15496C18C7BC9 /* ScrollioTests/ThumbWheelFollowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 187D6F1BC6F35E619C3CD5F1 /* ScrollioTests/ThumbWheelFollowTests.swift */; };
 		639407909662807C68B6DF54 /* ScrollioTests/ApplicationPageResetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1129B100EF4AAB304CD41E05 /* ScrollioTests/ApplicationPageResetTests.swift */; };
 		F1D7D50C5A1C4E8F9A2B3C4E /* ScrollioTests/ShortcutLabelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D6D50C5A1C4E8F9A2B3C4E /* ScrollioTests/ShortcutLabelTests.swift */; };
 		F1D7D50D5A1C4E8F9A2B3C4E /* ScrollioTests/ShortcutIconChooserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D6D50D5A1C4E8F9A2B3C4E /* ScrollioTests/ShortcutIconChooserTests.swift */; };
@@ -182,6 +183,7 @@
 		2693A34EADAB51B47AD0ED0E /* ScrollioTests/ApplicationGesturesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ApplicationGesturesTests.swift; sourceTree = SOURCE_ROOT; };
 		CF82A2979CD09F9BB9067C0B /* ScrollioTests/ApplicationButtonsRuntimeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ApplicationButtonsRuntimeTests.swift; sourceTree = SOURCE_ROOT; };
 		2F983140934AFB93F811D174 /* ScrollioTests/ApplicationThumbWheelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ApplicationThumbWheelTests.swift; sourceTree = SOURCE_ROOT; };
+		187D6F1BC6F35E619C3CD5F1 /* ScrollioTests/ThumbWheelFollowTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ThumbWheelFollowTests.swift; sourceTree = SOURCE_ROOT; };
 		1129B100EF4AAB304CD41E05 /* ScrollioTests/ApplicationPageResetTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ApplicationPageResetTests.swift; sourceTree = SOURCE_ROOT; };
 		F1D6D50C5A1C4E8F9A2B3C4E /* ScrollioTests/ShortcutLabelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ShortcutLabelTests.swift; sourceTree = SOURCE_ROOT; };
 		F1D6D50D5A1C4E8F9A2B3C4E /* ScrollioTests/ShortcutIconChooserTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ShortcutIconChooserTests.swift; sourceTree = SOURCE_ROOT; };
@@ -356,6 +358,7 @@
 				2693A34EADAB51B47AD0ED0E /* ScrollioTests/ApplicationGesturesTests.swift */,
 				CF82A2979CD09F9BB9067C0B /* ScrollioTests/ApplicationButtonsRuntimeTests.swift */,
 				2F983140934AFB93F811D174 /* ScrollioTests/ApplicationThumbWheelTests.swift */,
+				187D6F1BC6F35E619C3CD5F1 /* ScrollioTests/ThumbWheelFollowTests.swift */,
 				1129B100EF4AAB304CD41E05 /* ScrollioTests/ApplicationPageResetTests.swift */,
 				F1D6D50C5A1C4E8F9A2B3C4E /* ScrollioTests/ShortcutLabelTests.swift */,
 				F1D6D50D5A1C4E8F9A2B3C4E /* ScrollioTests/ShortcutIconChooserTests.swift */,
@@ -628,6 +631,7 @@
 				1E4312A4CFA21BC9F39DAAED /* ScrollioTests/ApplicationGesturesTests.swift in Sources */,
 				BC7842E531B6D96493982F60 /* ScrollioTests/ApplicationButtonsRuntimeTests.swift in Sources */,
 				17DC281379D55245627CC8DD /* ScrollioTests/ApplicationThumbWheelTests.swift in Sources */,
+				7F8EE1C240D15496C18C7BC9 /* ScrollioTests/ThumbWheelFollowTests.swift in Sources */,
 				639407909662807C68B6DF54 /* ScrollioTests/ApplicationPageResetTests.swift in Sources */,
 				F1D7D50C5A1C4E8F9A2B3C4E /* ScrollioTests/ShortcutLabelTests.swift in Sources */,
 				F1D7D50D5A1C4E8F9A2B3C4E /* ScrollioTests/ShortcutIconChooserTests.swift in Sources */,

@@ -659,7 +659,7 @@ final class ThumbWheelTurnTests: XCTestCase {
         let figma = try XCTUnwrap(Options.shared.application.applications.get(by: Self.figma))
         figma.setOwnThumbWheelFunction(nil)
         figma.inherit = false
-        figma.setOwnThumbWheelScrolling(speed: 1, swapsDirection: true)
+        figma.setOwnThumbWheelScrolling(ThumbWheelSettings(speed: 1, swapsDirection: true))
         front = FrontApp(bundlePath: Self.figma)
         XCTAssertFalse(try turn(at: 0))
         front = FrontApp(bundlePath: Self.notes)
@@ -689,7 +689,7 @@ final class ThumbWheelTurnTests: XCTestCase {
         let figma = try XCTUnwrap(Options.shared.application.applications.get(by: Self.figma))
         figma.setOwnThumbWheelFunction(nil)
         figma.inherit = false
-        figma.setOwnThumbWheelScrolling(speed: 2, swapsDirection: false)
+        figma.setOwnThumbWheelScrolling(ThumbWheelSettings(speed: 2, swapsDirection: false))
         front = FrontApp(bundlePath: Self.notes)
         XCTAssertFalse(try turn(at: 0), "smoothed: the poster takes it")
         front = FrontApp(bundlePath: Self.figma)
@@ -709,12 +709,12 @@ final class ThumbWheelTurnTests: XCTestCase {
         let figma = try XCTUnwrap(Options.shared.application.applications.get(by: Self.figma))
         figma.setOwnThumbWheelFunction(nil)
         figma.inherit = false
-        figma.setOwnThumbWheelScrolling(speed: 1, swapsDirection: true)
+        figma.setOwnThumbWheelScrolling(ThumbWheelSettings(speed: 1, swapsDirection: true))
         front = FrontApp(bundlePath: Self.figma)
         XCTAssertFalse(try turn(at: 0))
         front = FrontApp(bundlePath: Self.notes)
         XCTAssertFalse(try turn(at: 0.3), "the same turn: still Figma's swap")
-        XCTAssertEqual(rig.engine.turn?.own, ThumbWheelOwn(function: nil, speed: 1, swapsDirection: true))
+        XCTAssertEqual(rig.engine.turn?.own, ThumbWheelOwn(speed: 1, reverses: ThumbWheelReversal(all: true), followsWheel: false))
         XCTAssertFalse(try turn(at: 1.5), "after a rest: Notes in front, not swapped")
         XCTAssertNil(rig.engine.turn?.own)
         XCTAssertEqual(asked, 2, "once per turn")
@@ -751,15 +751,15 @@ final class ApplicationThumbWheelScrollingTests: XCTestCase {
         let figma = Application(path: "/Applications/Figma.app")
         figma.inherit = false
         XCTAssertNil(try scrollOf(figma)["thumbWheel"], "nothing stored for an app without them")
-        figma.setOwnThumbWheelScrolling(speed: 1.5, swapsDirection: true)
-        XCTAssertEqual(try scrollOf(figma)["thumbWheel"] as? NSDictionary, ["speed": 1.5, "swapsDirection": true])
+        figma.setOwnThumbWheelScrolling(ThumbWheelSettings(speed: 1.5, swapsDirection: true))
+        XCTAssertEqual(try scrollOf(figma)["thumbWheel"] as? NSDictionary, ["speed": 1.5, "swapsDirection": true, "followsWheel": false])
         XCTAssertNil(try dictionary(figma)["thumbWheel"], "the function is another value: none")
         let again = try JSONDecoder().decode(Application.self, from: JSONEncoder().encode(figma))
-        XCTAssertEqual(again.scroll.thumbWheel, ApplicationThumbWheelScrolling(speed: 1.5, swapsDirection: true))
-        XCTAssertEqual(again.ownThumbWheel, ThumbWheelOwn(function: nil, speed: 1.5, swapsDirection: true))
+        XCTAssertEqual(again.scroll.thumbWheel, ApplicationThumbWheelScrolling(ThumbWheelSettings(speed: 1.5, swapsDirection: true)))
+        XCTAssertEqual(again.ownThumbWheel, ThumbWheelOwn(speed: 1.5, reverses: ThumbWheelReversal(all: true), followsWheel: false))
 
         // The speed stays in the slider's range, as the general one does.
-        figma.setOwnThumbWheelScrolling(speed: 9, swapsDirection: false)
+        figma.setOwnThumbWheelScrolling(ThumbWheelSettings(speed: 9, swapsDirection: false))
         XCTAssertEqual(figma.scroll.thumbWheel?.speed, ThumbWheelSettings.speedRange.upperBound)
         // They are not a scroll value that makes the app's settings "edited".
         XCTAssertEqual(figma.scroll, OPTIONS_SCROLL_DEFAULT())
@@ -806,7 +806,7 @@ final class ApplicationThumbWheelScrollingTests: XCTestCase {
         let general = ThumbWheelSettings(function: .volume, speed: 2)
         let figma = Application(path: "/Applications/Figma.app")
         figma.inherit = false
-        figma.setOwnThumbWheelScrolling(speed: 0.5, swapsDirection: true)
+        figma.setOwnThumbWheelScrolling(ThumbWheelSettings(speed: 0.5, swapsDirection: true))
         figma.setOwnThumbWheelFunction(.zoom)
         XCTAssertEqual(figma.thumbWheelThatRuns(general: general), ThumbWheelSettings(function: .zoom, speed: 0.5, swapsDirection: true))
         figma.inherit = true
@@ -829,20 +829,20 @@ final class ApplicationThumbWheelScrollingTests: XCTestCase {
         XCTAssertTrue(notes.inherit)
         let before = notes.thumbWheelThatRuns(general: general)
         notes.setUsesScrollingSettings(false, scrolling: OPTIONS_SCROLL_DEFAULT(), thumbWheel: general)
-        XCTAssertEqual(notes.scroll.thumbWheel, ApplicationThumbWheelScrolling(speed: 1.75, swapsDirection: true))
+        XCTAssertEqual(notes.scroll.thumbWheel, ApplicationThumbWheelScrolling(ThumbWheelSettings(speed: 1.75, swapsDirection: true)))
         XCTAssertEqual(notes.thumbWheelThatRuns(general: general), before, "switching off changes nothing")
 
-        notes.setOwnThumbWheelScrolling(speed: 0.5, swapsDirection: false)
+        notes.setOwnThumbWheelScrolling(ThumbWheelSettings(speed: 0.5, swapsDirection: false))
         notes.setUsesScrollingSettings(true, scrolling: OPTIONS_SCROLL_DEFAULT(), thumbWheel: general)
         XCTAssertEqual(notes.thumbWheelThatRuns(general: general), general)
         notes.setUsesScrollingSettings(false, scrolling: OPTIONS_SCROLL_DEFAULT(), thumbWheel: ThumbWheelSettings(speed: 3))
-        XCTAssertEqual(notes.scroll.thumbWheel, ApplicationThumbWheelScrolling(speed: 0.5, swapsDirection: false), "kept, not copied again")
+        XCTAssertEqual(notes.scroll.thumbWheel, ApplicationThumbWheelScrolling(ThumbWheelSettings(speed: 0.5, swapsDirection: false)), "kept, not copied again")
 
         // With an own function of the other kind, the speed it runs at: the default one.
         let figma = Application(path: "/Applications/Figma.app")
         figma.setOwnThumbWheelFunction(.scroll)
         figma.setUsesScrollingSettings(false, scrolling: OPTIONS_SCROLL_DEFAULT(), thumbWheel: ThumbWheelSettings(function: .volume, speed: 3))
-        XCTAssertEqual(figma.scroll.thumbWheel, ApplicationThumbWheelScrolling(speed: 1, swapsDirection: false))
+        XCTAssertEqual(figma.scroll.thumbWheel, ApplicationThumbWheelScrolling(ThumbWheelSettings(speed: 1, swapsDirection: false)))
     }
 
     /// The status menu's "Smooth Scrolling in …" turns an app's own settings on the same way.
@@ -852,17 +852,17 @@ final class ApplicationThumbWheelScrollingTests: XCTestCase {
         addTeardownBlock { Options.shared.thumbWheel = saved }
         Options.shared.thumbWheel = ThumbWheelSettings(speed: 2.5, swapsDirection: true)
         let added = AppSmoothing.addWithSmoothingOff(path: "/Applications/Mail.app", list: list, scrolling: OPTIONS_SCROLL_DEFAULT())
-        XCTAssertEqual(added.scroll.thumbWheel, ApplicationThumbWheelScrolling(speed: 2.5, swapsDirection: true))
+        XCTAssertEqual(added.scroll.thumbWheel, ApplicationThumbWheelScrolling(ThumbWheelSettings(speed: 2.5, swapsDirection: true)))
     }
 
     /// Undo of an app's removal gives the entry added again its speed and swap too.
     func testTheSettingsUndoMovesBetweenEntriesCarryThem() {
         let app = Application(path: "/Applications/Figma.app")
         app.inherit = false
-        app.setOwnThumbWheelScrolling(speed: 2, swapsDirection: true)
+        app.setOwnThumbWheelScrolling(ThumbWheelSettings(speed: 2, swapsDirection: true))
         let again = Application(path: "/Applications/Figma.app")
         ApplicationSettings(of: app).apply(to: again)
-        XCTAssertEqual(again.ownThumbWheel, ThumbWheelOwn(function: nil, speed: 2, swapsDirection: true))
+        XCTAssertEqual(again.ownThumbWheel, ThumbWheelOwn(speed: 2, reverses: ThumbWheelReversal(all: true), followsWheel: false))
     }
 
     /// The list marks an app with own speed and swap under Scrolling, as any own scroll
@@ -870,7 +870,7 @@ final class ApplicationThumbWheelScrollingTests: XCTestCase {
     func testTheMarkIsTheScrollingOne() {
         let app = Application(path: "/Applications/Figma.app")
         app.inherit = false
-        app.setOwnThumbWheelScrolling(speed: 2, swapsDirection: true)
+        app.setOwnThumbWheelScrolling(ThumbWheelSettings(speed: 2, swapsDirection: true))
         XCTAssertEqual(ApplicationPagePart.ownSettings(of: app), [.scrolling])
         app.inherit = true
         XCTAssertEqual(ApplicationPagePart.ownSettings(of: app), [])
@@ -891,7 +891,7 @@ final class ApplicationThumbWheelScrollingTests: XCTestCase {
         let source = ownOptions()
         let figma = Application(path: "/Applications/Figma.app")
         figma.inherit = false
-        figma.setOwnThumbWheelScrolling(speed: 1.5, swapsDirection: true)
+        figma.setOwnThumbWheelScrolling(ThumbWheelSettings(speed: 1.5, swapsDirection: true))
         let notes = Application(path: "/Applications/Notes.app")
         notes.inherit = false
         source.application.applications.append(figma)
@@ -900,11 +900,11 @@ final class ApplicationThumbWheelScrollingTests: XCTestCase {
         let root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         let entries = try XCTUnwrap((root["settings"] as? [String: Any])?["applications"] as? [[String: Any]])
         XCTAssertEqual(entries.map { ($0["scroll"] as? [String: Any])?["thumbWheel"] as? NSDictionary },
-                       [["speed": 1.5, "swapsDirection": true], nil])
+                       [["speed": 1.5, "swapsDirection": true, "followsWheel": false], nil])
 
         let contents = try SettingsFile.read(data).get()
         XCTAssertEqual(contents.applications?.map(\.scroll.thumbWheel),
-                       [ApplicationThumbWheelScrolling(speed: 1.5, swapsDirection: true), nil])
+                       [ApplicationThumbWheelScrolling(ThumbWheelSettings(speed: 1.5, swapsDirection: true)), nil])
         XCTAssertEqual(contents.leftOutCount, 0)
         XCTAssertEqual(contents.correctedValues, 0)
         XCTAssertTrue(SettingsFileText.items(of: contents).map(\.text).contains("2 apps with their own settings"), "\(SettingsFileText.items(of: contents).map(\.text))")
@@ -914,7 +914,7 @@ final class ApplicationThumbWheelScrollingTests: XCTestCase {
         target.readOptions()
         XCTAssertTrue(SettingsFile.apply(contents, to: target))
         XCTAssertEqual(target.application.applications.get(by: figma.path)?.scroll.thumbWheel,
-                       ApplicationThumbWheelScrolling(speed: 1.5, swapsDirection: true))
+                       ApplicationThumbWheelScrolling(ThumbWheelSettings(speed: 1.5, swapsDirection: true)))
         XCTAssertNil(target.application.applications.get(by: notes.path)?.scroll.thumbWheel)
         XCTAssertEqual(target.thumbWheel, .default, "the general thumb wheel is another setting")
 
@@ -927,7 +927,7 @@ final class ApplicationThumbWheelScrollingTests: XCTestCase {
             + "}," + StoredDataCanaryTests.readableApp + "]}}").utf8)
         let foreign = try SettingsFile.read(file).get()
         XCTAssertEqual(foreign.applications?.map(\.scroll.thumbWheel),
-                       [ApplicationThumbWheelScrolling(speed: ThumbWheelSettings.speedRange.upperBound, swapsDirection: true), nil])
+                       [ApplicationThumbWheelScrolling(speed: ThumbWheelSettings.speedRange.upperBound, reverses: .all, followsWheel: nil), nil])
         XCTAssertEqual(foreign.applications?.map(\.scroll.speed), [2.5, 2.5])
     }
 }
@@ -1036,18 +1036,21 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
         XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .zoom)
         XCTAssertTrue(tab.thumbWheelFunctionPopUp.isEnabled)
         XCTAssertEqual(tab.thumbWheelSpeedSlider.doubleValue, 1.5, accuracy: 1e-9)
-        XCTAssertEqual(tab.thumbWheelSwapSwitch.state, .on)
-        XCTAssertEqual(calculator.scroll.thumbWheel, ApplicationThumbWheelScrolling(speed: 1.5, swapsDirection: true))
+        XCTAssertEqual(tab.thumbWheelReverseSwitch.state, .on)
+        XCTAssertEqual(calculator.scroll.thumbWheel, ApplicationThumbWheelScrolling(ThumbWheelSettings(speed: 1.5, swapsDirection: true)))
         XCTAssertTrue(tab.thumbWheelSpeedRow.isEnabled)
-        XCTAssertTrue(tab.thumbWheelSwapRow.isEnabled)
+        XCTAssertTrue(tab.thumbWheelReverseRow.isEnabled)
         XCTAssertTrue(tab.resetToDefaultsButton.isEnabled, "1.5× and swapped are not the defaults")
 
         // The rows change the app's values, not the general ones.
         tab.thumbWheelSpeedSlider.doubleValue = 0.75
         send(tab.thumbWheelSpeedSlider)
-        tab.thumbWheelSwapSwitch.state = .off
-        send(tab.thumbWheelSwapSwitch)
-        XCTAssertEqual(calculator.scroll.thumbWheel, ApplicationThumbWheelScrolling(speed: 0.75, swapsDirection: false))
+        tab.thumbWheelReverseSwitch.state = .off
+        send(tab.thumbWheelReverseSwitch)
+        var expected = ThumbWheelReversal.all
+        expected[.zoom] = false
+        XCTAssertEqual(calculator.scroll.thumbWheel, ApplicationThumbWheelScrolling(speed: 0.75, reverses: expected, followsWheel: false),
+                       "the switch is Zoom's (the app's action); the other actions keep theirs")
         XCTAssertEqual(Options.shared.thumbWheel, ThumbWheelSettings(function: .tabs, speed: 1.5, swapsDirection: true))
 
         page.inheritSwitch.state = .on
@@ -1058,7 +1061,7 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
         page.inheritSwitch.state = .off
         send(page.inheritSwitch)
         XCTAssertEqual(tab.thumbWheelSpeedSlider.doubleValue, 0.75, accuracy: 1e-9, "back as it was left")
-        XCTAssertEqual(tab.thumbWheelSwapSwitch.state, .off)
+        XCTAssertEqual(tab.thumbWheelReverseSwitch.state, .off)
     }
 
     /// Thumb wheel › Action is the value of the Buttons part's thumb wheel row: chosen here
@@ -1112,7 +1115,7 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
     func testUndoOfTheRemovedRowShowsOnTheScrollingPartShownNow() throws {
         let calculator = addCalculator()
         calculator.setUsesScrollingSettings(false, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
-        calculator.setOwnThumbWheelScrolling(speed: 1, swapsDirection: false)
+        calculator.setOwnThumbWheelScrolling(ThumbWheelSettings(speed: 1, swapsDirection: false))
         calculator.setOwnThumbWheelFunction(.zoom)
         let page = try page()
         let tab = try XCTUnwrap(page.scrollingController)
@@ -1144,7 +1147,7 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
         let calculator = addCalculator()
         calculator.setUsesScrollingSettings(false, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
         calculator.scroll.speed = 4.5
-        calculator.setOwnThumbWheelScrolling(speed: 2, swapsDirection: false)
+        calculator.setOwnThumbWheelScrolling(ThumbWheelSettings(speed: 2, swapsDirection: false))
         calculator.setOwnThumbWheelFunction(.volume)
         let pane = makePane()
         let undo = UndoManager()
@@ -1171,7 +1174,7 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
         }
         undo.undo()
         XCTAssertEqual(calculator.scroll.speed, 4.5)
-        XCTAssertEqual(calculator.scroll.thumbWheel, ApplicationThumbWheelScrolling(speed: 2, swapsDirection: false))
+        XCTAssertEqual(calculator.scroll.thumbWheel, ApplicationThumbWheelScrolling(ThumbWheelSettings(speed: 2, swapsDirection: false)))
         XCTAssertEqual(calculator.ownThumbWheelFunction, .volume)
         XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.scrolling, .buttons], "the list follows")
     }

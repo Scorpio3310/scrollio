@@ -9,18 +9,22 @@
 //  - The function: set in the app's Buttons part (its "Thumb wheel" row) and in the app's
 //    Scrolling part (Thumb wheel › Action), one value. No switch governs it: it is the
 //    app's own whatever "Use settings from Scrolling" says.
-//  - The speed and "Swap direction": values of the app's own Scrolling settings, used while
-//    "Use settings from Scrolling" is off and kept for later while it is on, as the app's
-//    other scroll values (`ApplicationThumbWheelScrolling`).
+//  - The speed, each function's "Reverse direction" and Switch Desktops' "Follow the
+//    wheel": values of the app's own Scrolling settings, used while "Use settings from
+//    Scrolling" is off and kept for later while it is on, as the app's other scroll values
+//    (`ApplicationThumbWheelScrolling`).
 //
 //  The function is stored with the app's entry, under "thumbWheel", in the name of the
 //  general thumb wheel settings (`ThumbWheelSettings`), only while the app has a function
-//  of its own; the speed and the swap inside the app's "scroll", under "thumbWheel", in
-//  the same names, only once the app has them:
+//  of its own; the speed, the reverse and the follow switch inside the app's "scroll", under
+//  "thumbWheel", in the same names, only once the app has them:
 //
 //      {"path": …, "inherit": false,
 //       "scroll": {…, "thumbWheel": {"speed": 1.5, "swapsDirection": true}},
 //       "thumbWheel": {"function": "zoom"}}
+//
+//  ("swapsDirection" when every function has the same "Reverse direction", else
+//  "reverseDirection": {"<function>": Bool, …}; "followsWheel" once the app has it.)
 //
 //  - No "thumbWheel" (every entry from before an app could have one, and every app whose
 //    row was taken away with "−"): the wheel does what Buttons and Scrolling say. Such an
@@ -40,8 +44,8 @@
 //
 //  What a turn runs (`ThumbWheelChoice`): the app in front at the turn's first event
 //  decides, as for a button (the keys of zoom, tabs and back / forward go to the app in
-//  front, not to the one under the pointer); the turn keeps that app's function, speed and
-//  swap until the wheel rests (`ThumbWheelEngine`).
+//  front, not to the one under the pointer); the turn keeps that app's function, speed,
+//  reverse and follow switch until the wheel rests (`ThumbWheelEngine`).
 //
 
 import Foundation
@@ -75,8 +79,9 @@ struct ApplicationThumbWheel: Codable, Equatable {
     }
 }
 
-/// The thumb wheel's speed and "Swap direction" of an app's own Scrolling settings (inside
-/// the app's "scroll"). Each nil: the general value (missing, or not readable).
+/// The thumb wheel's speed, each function's "Reverse direction" and Switch Desktops' "Follow
+/// the wheel" of an app's own Scrolling settings (inside the app's "scroll"). Each nil: the
+/// general value (missing, or not readable).
 struct ApplicationThumbWheelScrolling: Codable, Equatable {
 
     /// Inside `ThumbWheelSettings.speedRange`.
@@ -87,60 +92,88 @@ struct ApplicationThumbWheelScrolling: Codable, Equatable {
             }
         }
     }
-    var swapsDirection: Bool?
+    var reverses: ThumbWheelReversal?
+    var followsWheel: Bool?
 
-    init(speed: Double?, swapsDirection: Bool?) {
+    init(speed: Double?, reverses: ThumbWheelReversal?, followsWheel: Bool?) {
         self.speed = speed.map(ThumbWheelSettings.clampedSpeed)
-        self.swapsDirection = swapsDirection
+        self.reverses = reverses
+        self.followsWheel = followsWheel
     }
 
-    /// What Scrolling › Thumb wheel's "Reset to Defaults" gives: 1×, not swapped.
-    static let defaults = ApplicationThumbWheelScrolling(
-        speed: ThumbWheelSettings.default.speed, swapsDirection: ThumbWheelSettings.default.swapsDirection
-    )
+    /// What an app's settings take of `settings`: the speed, the reverses, the follow switch.
+    init(_ settings: ThumbWheelSettings) {
+        self.init(speed: settings.speed, reverses: settings.reverses, followsWheel: settings.followsWheel)
+    }
+
+    /// What Scrolling › Thumb wheel's "Reset to Defaults" gives: 1×, nothing reversed,
+    /// desktops in steps.
+    static let defaults = ApplicationThumbWheelScrolling(ThumbWheelSettings.default)
 
     private enum CodingKeys: String, CodingKey {
-        case speed, swapsDirection
+        case speed, swapsDirection, reverseDirection, followsWheel
     }
 
     /// Never throws: what cannot be read is the general value, and the app's scroll
-    /// settings around it are read as before.
+    /// settings around it are read as before. "swapsDirection" (one switch for every
+    /// function, as an entry from before stores it) gives every function without an entry
+    /// of its own in "reverseDirection" its value.
     init(from decoder: Decoder) throws {
         guard let c = try? decoder.container(keyedBy: CodingKeys.self) else {
-            self.init(speed: nil, swapsDirection: nil)
+            self.init(speed: nil, reverses: nil, followsWheel: nil)
             return
         }
+        let swaps = (try? c.decodeIfPresent(Bool.self, forKey: .swapsDirection)) ?? nil
+        let byName = (try? c.decodeIfPresent([String: Bool].self, forKey: .reverseDirection)) ?? nil
         self.init(
             speed: (try? c.decodeIfPresent(Double.self, forKey: .speed)) ?? nil,
-            swapsDirection: (try? c.decodeIfPresent(Bool.self, forKey: .swapsDirection)) ?? nil
+            reverses: swaps == nil && byName == nil ? nil : ThumbWheelReversal(byName: byName, seed: swaps),
+            followsWheel: (try? c.decodeIfPresent(Bool.self, forKey: .followsWheel)) ?? nil
         )
     }
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encodeIfPresent(speed, forKey: .speed)
-        try c.encodeIfPresent(swapsDirection, forKey: .swapsDirection)
+        if let reverses {
+            if reverses.isUniform {
+                try c.encode(reverses[.scroll], forKey: .swapsDirection)
+            } else {
+                var byName = c.nestedContainer(keyedBy: ThumbWheelReversal.FunctionNameKey.self, forKey: .reverseDirection)
+                try reverses.encode(into: &byName)
+            }
+        }
+        try c.encodeIfPresent(followsWheel, forKey: .followsWheel)
     }
 }
 
 /// What the app in front has of its own for a turn of the thumb wheel: its function, and
-/// while its own Scrolling settings are in use its speed and swap. Each nil: the general
-/// one, read at every event as it always was.
+/// while its own Scrolling settings are in use its speed, reverses and follow switch. Each
+/// nil: the general one, read at every event as it always was.
 struct ThumbWheelOwn: Equatable {
     var function: ThumbWheelFunction?
     var speed: Double?
-    var swapsDirection: Bool?
+    var reverses: ThumbWheelReversal?
+    var followsWheel: Bool?
+
+    init(function: ThumbWheelFunction? = nil, speed: Double? = nil, reverses: ThumbWheelReversal? = nil, followsWheel: Bool? = nil) {
+        self.function = function
+        self.speed = speed
+        self.reverses = reverses
+        self.followsWheel = followsWheel
+    }
 
     /// Nothing of its own: the general settings.
     var isNone: Bool {
-        return function == nil && speed == nil && swapsDirection == nil
+        return function == nil && speed == nil && reverses == nil && followsWheel == nil
     }
 
     /// The settings an event goes by: `general` with what is the app's own in it. The
     /// general Speed is set for the general function (how far the wheel scrolls, or how
     /// soon the next step comes): an own function of the other kind runs at the default
     /// speed, unless the app has a speed of its own, which is set for its own function (the
-    /// app's page shows both). Swap direction is the hand's: the general one, or the app's.
+    /// app's page shows both). Each function's "Reverse direction", and the follow switch,
+    /// are the general ones or the app's.
     func settings(general: ThumbWheelSettings) -> ThumbWheelSettings {
         var settings = general
         if let function, function != general.function {
@@ -152,8 +185,11 @@ struct ThumbWheelOwn: Equatable {
         if let speed {
             settings.speed = speed
         }
-        if let swapsDirection {
-            settings.swapsDirection = swapsDirection
+        if let reverses {
+            settings.reverses = reverses
+        }
+        if let followsWheel {
+            settings.followsWheel = followsWheel
         }
         return settings
     }
@@ -169,12 +205,15 @@ extension Application {
         return thumbWheel?.function
     }
 
-    /// What the app has of its own for the thumb wheel now: the function, and the speed and
-    /// swap only while "Use settings from Scrolling" is off. A look at the entry, nothing
-    /// made: a turn's first event asks it.
+    /// What the app has of its own for the thumb wheel now: the function, and the speed,
+    /// reverses and follow switch only while "Use settings from Scrolling" is off. A look at
+    /// the entry, nothing made: a turn's first event asks it.
     var ownThumbWheel: ThumbWheelOwn {
         let scrolling = inherit ? nil : scroll.thumbWheel
-        return ThumbWheelOwn(function: ownThumbWheelFunction, speed: scrolling?.speed, swapsDirection: scrolling?.swapsDirection)
+        return ThumbWheelOwn(
+            function: ownThumbWheelFunction, speed: scrolling?.speed,
+            reverses: scrolling?.reverses, followsWheel: scrolling?.followsWheel
+        )
     }
 
     /// The settings a turn of the thumb wheel runs with while the app is in front (what its
@@ -183,24 +222,25 @@ extension Application {
         return ownThumbWheel.settings(general: general)
     }
 
-    /// Gives the app's own Scrolling settings a thumb wheel speed and swap (the app's
-    /// Scrolling part): both are stored, as its page shows them. Nothing happens when
-    /// nothing changes.
-    func setOwnThumbWheelScrolling(speed: Double, swapsDirection: Bool) {
-        let values = ApplicationThumbWheelScrolling(speed: speed, swapsDirection: swapsDirection)
+    /// Gives the app's own Scrolling settings the thumb wheel speed, reverses and follow
+    /// switch of `settings` (the app's Scrolling part): all of them are stored, as its page
+    /// shows them. Nothing happens when nothing changes.
+    func setOwnThumbWheelScrolling(_ settings: ThumbWheelSettings) {
+        let values = ApplicationThumbWheelScrolling(settings)
         guard scroll.thumbWheel != values else { return }
         scroll.thumbWheel = values
     }
 
     /// Before "Use settings from Scrolling" is switched off: an app whose own Scrolling
-    /// settings have no thumb wheel values yet gets the speed and swap the wheel runs with
-    /// in it now (`general`, with its own function), so switching off changes nothing until
-    /// the user does. Values it has are kept. Returns whether they were copied.
+    /// settings have no thumb wheel values yet gets the speed, reverses and follow switch
+    /// the wheel runs with in it now (`general`, with its own function), so switching off
+    /// changes nothing until the user does. Values it has are kept. Returns whether they
+    /// were copied.
     @discardableResult
     func adoptThumbWheelScrollingIfNone(from general: ThumbWheelSettings) -> Bool {
         guard scroll.thumbWheel == nil else { return false }
         let running = ThumbWheelOwn(function: ownThumbWheelFunction).settings(general: general)
-        scroll.thumbWheel = ApplicationThumbWheelScrolling(speed: running.speed, swapsDirection: running.swapsDirection)
+        scroll.thumbWheel = ApplicationThumbWheelScrolling(running)
         return true
     }
 

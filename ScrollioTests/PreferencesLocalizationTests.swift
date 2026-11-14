@@ -70,7 +70,11 @@ final class PreferencesLocalizationTests: XCTestCase {
         "thumb-wheel-function-volume-hint",
         "scrolling-thumb-wheel-function", "scrolling-thumb-wheel-speed",
         "scrolling-thumb-wheel-speed-hint-scroll", "scrolling-thumb-wheel-speed-hint-steps",
-        "scrolling-thumb-wheel-swap", "scrolling-thumb-wheel-swap-hint", "scrolling-thumb-wheel-note",
+        "scrolling-thumb-wheel-reverse", "scrolling-thumb-wheel-reverse-hint-scroll",
+        "scrolling-thumb-wheel-reverse-hint-zoom", "scrolling-thumb-wheel-reverse-hint-tabs",
+        "scrolling-thumb-wheel-reverse-hint-desktops", "scrolling-thumb-wheel-reverse-hint-back-forward",
+        "scrolling-thumb-wheel-reverse-hint-volume", "scrolling-thumb-wheel-follow",
+        "scrolling-thumb-wheel-follow-hint", "scrolling-thumb-wheel-speed-hint-follow", "scrolling-thumb-wheel-note",
     ]
 
     /// Buttons pane: the card, the list and its rows, the action menu, "Which Button Is
