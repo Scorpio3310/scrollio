@@ -158,11 +158,16 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         if offersDefault, presentation.kind == .unbound {
             presentation = ActionPresentation(kind: .unbound, title: NSLocalizedString("buttons-default", comment: ""))
         }
-        titleItem.title = presentation.title
+        // (A named keyboard shortcut: its name, then its keys in grey. The plain title
+        // holds both, for VoiceOver.)
+        titleItem.title = presentation.plainTitle
+        titleItem.attributedTitle = presentation.attributedTitle(font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize))
         if let image = presentation.image {
             let sized = image.copy() as? NSImage ?? image
             sized.size = NSSize(width: Self.imageSize, height: Self.imageSize)
             titleItem.image = sized
+        } else if let glyph = presentation.glyph {
+            titleItem.image = ShortcutIconSet.image(of: .character(glyph), side: Self.imageSize)
         } else {
             titleItem.image = presentation.symbolName.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }
         }

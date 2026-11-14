@@ -208,12 +208,21 @@ enum SettingsFileText {
     /// recorded shortcut as its keys, "No Action". An action that opens or runs something
     /// is named by its file here ("Open App or File: sync.sh"); its whole path is in the
     /// box above. Nothing on disk is looked at: the paths are a file's, not the user's.
+    /// A recorded shortcut the file gives a name is listed by its keys first, the name
+    /// after them: the keys are what it does, the name is only what the file calls it.
     static func actionName(of binding: ButtonBinding) -> String {
         if let target = binding.openTarget {
             let name = (target.path as NSString).lastPathComponent
             return String(format: text("general-settings-import-action-open"), visible(name.isEmpty ? target.path : name))
         }
-        return ActionDisplayResolver().actionName(of: binding) ?? text("unbound")
+        let shown = ActionDisplayResolver().resolve(state: CellActionState(binding: binding))
+        if shown.kind == .unbound {
+            return text("unbound")
+        }
+        if let keys = shown.detail {
+            return String(format: text("general-settings-import-action-named"), keys, visible(shown.title))
+        }
+        return shown.title
     }
 
     /// An app of the file's list by the name the file gives it, else by its file's name.

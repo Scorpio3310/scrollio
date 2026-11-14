@@ -455,3 +455,220 @@ final class ShortcutLabelRingTests: XCTestCase {
         }
     }
 }
+
+// MARK: - The rows of the panes
+
+final class ShortcutLabelRowsTests: XCTestCase {
+
+    private var savedRing = ShortcutRingSettings.default
+    private var savedBindings: [ButtonBinding] = []
+    private var savedGesture = MouseGestureSettings.default
+
+    override func setUp() {
+        super.setUp()
+        savedRing = Options.shared.ring
+        savedBindings = Options.shared.buttons.binding
+        savedGesture = Options.shared.gesture
+        Options.shared.ring = .default
+        Options.shared.buttons.binding = []
+    }
+
+    override func tearDown() {
+        Options.shared.ring = savedRing
+        Options.shared.buttons.binding = savedBindings
+        Options.shared.gesture = savedGesture
+        super.tearDown()
+    }
+
+    private var keys: String {
+        return ButtonTriggerNaming.shortcutText(type: .keyboard, code: 15, modifiers: 1_179_648)
+    }
+
+    private func shown(_ label: ShortcutLabel?) -> ActionPresentation {
+        return ActionDisplayResolver().resolve(state: .customBinding(name: shiftCommandR, label: label))
+    }
+
+    /// The colour of the title's part that says `part`.
+    private func colour(of part: String, in title: NSAttributedString?) throws -> NSColor? {
+        let title = try XCTUnwrap(title)
+        let range = (title.string as NSString).range(of: part)
+        XCTAssertNotEqual(range.location, NSNotFound, "\(part) in \(title.string)")
+        return title.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? NSColor
+    }
+
+    /// The four cases, as a row's pull-down shows them. Nothing: "⌨ ⇧⌘R" as before. A
+    /// name: the name, then the keys in grey. An icon: the icon where the keyboard was,
+    /// then the keys as before. Both: the icon, the name, the grey keys.
+    func testWhatARowShowsInEachOfTheFourCases() throws {
+        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+
+        let plain = shown(nil)
+        XCTAssertEqual(plain.kind, .keyCombo)
+        XCTAssertEqual(plain.title, keys)
+        XCTAssertNil(plain.detail)
+        XCTAssertEqual(plain.symbolName, "keyboard")
+        XCTAssertNil(plain.glyph)
+        XCTAssertEqual(plain.plainTitle, keys)
+        XCTAssertNil(plain.attributedTitle(font: font), "nothing grey without a name")
+
+        let named = shown(label("Reload"))
+        XCTAssertEqual(named.title, "Reload")
+        XCTAssertEqual(named.detail, keys)
+        XCTAssertEqual(named.symbolName, "keyboard")
+        XCTAssertEqual(named.plainTitle, "Reload  \(keys)")
+        let title = named.attributedTitle(font: font)
+        XCTAssertEqual(title?.string, "Reload  \(keys)")
+        XCTAssertEqual(try colour(of: keys, in: title), .secondaryLabelColor)
+        XCTAssertNil(try colour(of: "Reload", in: title), "the name in the control's own colour")
+
+        let withIcon = shown(label(nil, symbol: "arrow.clockwise"))
+        XCTAssertEqual(withIcon.title, keys)
+        XCTAssertNil(withIcon.detail)
+        XCTAssertEqual(withIcon.symbolName, "arrow.clockwise")
+        XCTAssertNil(withIcon.attributedTitle(font: font))
+
+        let both = shown(label("Reload", symbol: "arrow.clockwise"))
+        XCTAssertEqual(both.title, "Reload")
+        XCTAssertEqual(both.detail, keys)
+        XCTAssertEqual(both.symbolName, "arrow.clockwise")
+
+        let typed = shown(label("Reload", character: "R"))
+        XCTAssertNil(typed.symbolName)
+        XCTAssertEqual(typed.glyph, "R")
+        XCTAssertNotNil(ShortcutIconSet.image(of: .character("R")))
+
+        // A symbol this Mac does not have: the keyboard, as without an icon.
+        XCTAssertEqual(shown(label("Reload", symbol: "no.such.symbol.anywhere")).symbolName, "keyboard")
+        XCTAssertNil(ShortcutIconSet.image(of: .symbol("no.such.symbol.anywhere")))
+    }
+
+    /// A recorded ⌘C shows as "Copy"; called something by the user, it shows as that.
+    func testANameOfTheUsersOwnComesBeforeAListedActionsName() {
+        let commandC = "custom::8:1048576"
+        let resolver = ActionDisplayResolver()
+        XCTAssertEqual(resolver.resolve(state: .customBinding(name: commandC)).title, SystemShortcut.copy.localizedName)
+        let named = resolver.resolve(state: .customBinding(name: commandC, label: label("Copy Link")))
+        XCTAssertEqual(named.title, "Copy Link")
+        XCTAssertEqual(named.kind, .keyCombo)
+        XCTAssertNotNil(named.detail)
+        // A label never reaches a recorded mouse button's row.
+        let click = resolver.resolve(state: .customBinding(name: "custom::mouse:5:0", label: label("Reload", symbol: "star")))
+        XCTAssertNil(click.detail)
+        XCTAssertEqual(click.symbolName, "computermouse")
+    }
+
+    // MARK: Shortcut Ring
+
+    func testTheRowOfAPlaceShowsTheIconTheNameAndTheKeysInGrey() throws {
+        var ring = ShortcutRingSettings.default
+        ring[2] = ShortcutRingPlace(action: shiftCommandR, label: label("Reload", symbol: "arrow.clockwise"))
+        ring[4] = ShortcutRingPlace(action: shiftCommandR, label: label("Reload"))
+        ring[6] = ShortcutRingPlace(action: shiftCommandR)
+        Options.shared.ring = ring
+        let controller = RingPreferencesViewController()
+        controller.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: []) }
+        _ = controller.view
+
+        let both = try XCTUnwrap(controller.placePopUps[2].menu?.items.first)
+        XCTAssertEqual(both.title, "Reload  \(keys)")
+        XCTAssertEqual(both.attributedTitle?.string, "Reload  \(keys)")
+        XCTAssertEqual(try colour(of: keys, in: both.attributedTitle), .secondaryLabelColor)
+        XCTAssertNotNil(both.image)
+        XCTAssertEqual(controller.placePopUps[2].binding.label, ring[2].label, "the pull-down holds the place's label")
+
+        let named = try XCTUnwrap(controller.placePopUps[4].menu?.items.first)
+        XCTAssertEqual(named.title, "Reload  \(keys)")
+        XCTAssertNotNil(named.image, "the keyboard symbol stays")
+
+        let plain = try XCTUnwrap(controller.placePopUps[6].menu?.items.first)
+        XCTAssertEqual(plain.title, keys)
+        XCTAssertNil(plain.attributedTitle)
+
+        let listed = try XCTUnwrap(controller.placePopUps[0].menu?.items.first)
+        XCTAssertEqual(listed.title, SystemShortcut.missionControl.localizedName)
+        XCTAssertNil(listed.attributedTitle)
+
+        // The drawing above the rows shows the same place.
+        XCTAssertEqual(controller.previewView.face.places[2].symbolName, "arrow.clockwise")
+        XCTAssertEqual(controller.previewView.face.places[2].title, "Reload")
+
+        // A row that goes back to an action without a name loses the grey part.
+        controller.setPlace(ShortcutRingPlace(SystemShortcut.copy), at: 2)
+        XCTAssertEqual(both.title, SystemShortcut.copy.localizedName)
+        XCTAssertNil(both.attributedTitle)
+        XCTAssertNil(Options.shared.ring[2].label)
+    }
+
+    /// An app's own ring: the same rows, with the app's own names.
+    func testTheRowOfAnAppsPlaceShowsItsOwnName() throws {
+        Options.shared.ring[2] = ShortcutRingPlace(action: shiftCommandR, label: label("Reload", symbol: "arrow.clockwise"))
+        let mail = Application(path: "/System/Applications/Mail.app")
+        mail.setUsesGeneralRing(false, general: Options.shared.ring)
+        mail.ring?[2] = ShortcutRingPlace(action: shiftCommandR, label: label("Reply to All"))
+        let controller = RingPreferencesViewController(application: mail)
+        _ = controller.view
+        XCTAssertEqual(controller.placePopUps[2].menu?.items.first?.title, "Reply to All  \(keys)")
+        XCTAssertEqual(Options.shared.ring[2].label?.name, "Reload", "the general ring keeps its own")
+    }
+
+    // MARK: Buttons
+
+    func testTheRowOfAButtonShowsTheIconTheNameAndTheKeysInGrey() throws {
+        let back = ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil),
+            systemShortcutName: shiftCommandR, label: label("Reload", symbol: "arrow.clockwise")
+        )
+        let forward = ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil),
+            systemShortcutName: shiftCommandR
+        )
+        Options.shared.buttons.binding = [back, forward]
+        let pane = PreferencesButtonsViewController()
+        pane.deviceSource = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        pane.scrollHoldKeys = { [] }
+        pane.startRecording = { _ in }
+        pane.stopRecording = {}
+        pane.presentOpenTarget = { _, _, _ in }
+        pane.openActionMenu = { _ in }
+        pane.presentPlaceMenu = { _, _ in }
+        pane.showPane = { _ in }
+        pane.paneUndoManager = UndoManager()
+        _ = pane.view
+
+        let named = try XCTUnwrap(pane.rows.first { $0.binding.id == back.id })
+        let title = try XCTUnwrap(named.pullDown.menu?.items.first)
+        XCTAssertEqual(title.title, "Reload  \(keys)")
+        XCTAssertEqual(title.attributedTitle?.string, "Reload  \(keys)")
+        XCTAssertEqual(try colour(of: keys, in: title.attributedTitle), .secondaryLabelColor)
+        XCTAssertNotNil(title.image)
+        XCTAssertEqual(pane.focus(for: named).action, "Reload", "the card over the list says the name")
+
+        let plain = try XCTUnwrap(pane.rows.first { $0.binding.id == forward.id })
+        XCTAssertEqual(plain.pullDown.menu?.items.first?.title, keys)
+        XCTAssertNil(plain.pullDown.menu?.items.first?.attributedTitle)
+    }
+
+    // MARK: Gestures
+
+    /// The Gestures pane has no recorder: a direction or the click takes a listed action
+    /// only, and a recorded key combination stored there runs nothing. So nothing there
+    /// can carry a name. When a direction learns to send a recorded combination, its
+    /// name and icon have to come with it: this test says where to look.
+    func testADirectionOfGestureNavigationTakesNoRecordedCombinationYet() {
+        let controls = MouseGestureSettingsControls(showLogiActions: true, isInteractiveAvailable: { true })
+        func markers(_ menu: NSMenu?) -> [String] {
+            return (menu?.items ?? []).flatMap { item -> [String] in
+                return [item.representedObject as? String].compactMap { $0 } + markers(item.submenu)
+            }
+        }
+        for popUp in controls.actionPopUps {
+            let offered = markers(popUp.menu)
+            XCTAssertFalse(offered.contains(ShortcutManager.MenuMarker.keyboardShortcut), "no \"Keyboard Shortcut…\" here")
+            XCTAssertFalse(offered.contains { $0.hasPrefix("custom::") })
+        }
+        XCTAssertFalse(StoredAction.isKnown(gestureAction: shiftCommandR), "a direction does not run a recorded combination")
+        XCTAssertNil(ShortcutExecutor.shared.resolveAction(named: shiftCommandR))
+    }
+}
