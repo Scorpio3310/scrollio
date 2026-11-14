@@ -34,4 +34,42 @@ final class LogiUsageBootstrapTests: XCTestCase {
         XCTAssertFalse(LogiCenter.shared.usages(of: code).contains(.appScroll(key: key, role: .dash)),
                        "app 移除后用量应被清理")
     }
+
+    /// Turning "Let the mouse track the gesture" on (off and on again), in Gestures or for an
+    /// app's own gestures, asks the mice once more for a button they refused to track;
+    /// another change of the settings, turning it off, or a switch of apps does not.
+    func testTurningATrackingSwitchOnAsksTheMiceAgain() {
+        let savedGesture = Options.shared.gesture
+        let savedApplications = Options.shared.application.applications
+        LogiUsageBootstrap.log = { _ in }
+        defer {
+            Options.shared.gesture = savedGesture
+            Options.shared.application.applications = savedApplications
+            LogiUsageBootstrap.refreshGestureTracking(front: nil, afterASettingsChange: true)
+            LogiUsageBootstrap.log = { AppSystemLog.note($0) }
+        }
+        let figma = Application(path: "/Applications/Figma.app")
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [figma], matchKey: "path")
+        Options.shared.gesture.deviceTracking = true
+        LogiUsageBootstrap.refreshGestureTracking(front: nil, afterASettingsChange: true)
+        let before = LogiGestureController.retryGeneration
+
+        LogiUsageBootstrap.refreshGestureTracking(front: nil, afterASettingsChange: true)
+        Options.shared.gesture.deviceTracking = false
+        LogiUsageBootstrap.refreshGestureTracking(front: nil, afterASettingsChange: true)
+        LogiUsageBootstrap.frontApplicationChanged(to: nil)
+        XCTAssertEqual(LogiGestureController.retryGeneration, before, "nothing turned on")
+
+        Options.shared.gesture.deviceTracking = true
+        LogiUsageBootstrap.refreshGestureTracking(front: nil, afterASettingsChange: true)
+        XCTAssertEqual(LogiGestureController.retryGeneration, before + 1, "the Gestures pane's switch")
+
+        figma.setUsesGeneralGestures(false, general: Options.shared.gesture)
+        figma.changeOwnGestures { $0.deviceTracking = false }
+        LogiUsageBootstrap.refreshGestureTracking(front: nil, afterASettingsChange: true)
+        XCTAssertEqual(LogiGestureController.retryGeneration, before + 1)
+        figma.changeOwnGestures { $0.deviceTracking = true }
+        LogiUsageBootstrap.refreshGestureTracking(front: nil, afterASettingsChange: true)
+        XCTAssertEqual(LogiGestureController.retryGeneration, before + 2, "an app's own switch")
+    }
 }

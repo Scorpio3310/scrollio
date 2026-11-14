@@ -278,9 +278,12 @@ final class LogiGestureControllerTests: XCTestCase {
         XCTAssertTrue(controller.rejectedCIDs.isEmpty)
     }
 
+    /// An error while the arm is the one write waiting for its echo is the arm's: back to
+    /// the pointer path at once.
     func testAnErrorFromTheMouseFallsBackToPointerMovement() {
         let controller = makeController()
         applyUsage(controller, bound: [Self.gesture, Self.modeShift], tracking: [Self.gesture])
+        acknowledge(controller, Write(cid: Self.modeShift, flags: 0x03))
         writes = []
 
         controller.handleReportingError()
@@ -292,6 +295,35 @@ final class LogiGestureControllerTests: XCTestCase {
         XCTAssertEqual(writes.count, 1)
     }
 
+    /// An error names no control. With an unrelated divert write waiting next to the arm (an
+    /// app switch sends both in one pass) it cannot be placed: the arm is not refused for
+    /// it. Echoed, the arm is armed; refused, it gets no echo and falls back at its timeout.
+    func testAnErrorThatCannotBePlacedRefusesNoArm() {
+        let controller = makeController()
+        applyUsage(controller, bound: [Self.gesture, Self.modeShift], tracking: [Self.gesture])
+        writes = []
+        logLines = []
+
+        controller.handleReportingError()
+        XCTAssertEqual(writes, [])
+        XCTAssertTrue(controller.rejectedCIDs.isEmpty)
+        acknowledge(controller, Self.arm)
+        fireTimers()
+        XCTAssertEqual(controller.armedCIDs, [Self.gesture], "the error was the divert's")
+        XCTAssertEqual(logLines, [])
+
+        let refused = makeController()
+        diverted = []
+        applyUsage(refused, bound: [Self.gesture, Self.modeShift], tracking: [Self.gesture])
+        writes = []
+        refused.handleReportingError()
+        XCTAssertTrue(refused.rejectedCIDs.isEmpty)
+        acknowledge(refused, Write(cid: Self.modeShift, flags: 0x03))
+        fireTimers()
+        XCTAssertEqual(refused.rejectedCIDs, [Self.gesture], "no echo: the timeout falls back")
+        XCTAssertEqual(writes, [Write(cid: Self.gesture, flags: 0x23)])
+    }
+
     func testAnErrorWithNothingWaitingChangesNothing() {
         let controller = armedController()
         controller.handleReportingError()
@@ -301,9 +333,9 @@ final class LogiGestureControllerTests: XCTestCase {
 
     /// A control the mouse refused stays on the pointer path while the mouse stays
     /// connected, however often it leaves the request and comes back (the app in front
-    /// whose own binding takes the button out of the tracked set, and the next app; the
-    /// setting off and on): no write, no wait, no line. A mouse that connects again starts
-    /// with a new controller, which tries again.
+    /// whose own binding takes the button out of the tracked set, and the next app): no
+    /// write, no wait, no line. A mouse that connects again starts with a new controller,
+    /// which tries again.
     func testARejectedControlIsNotTriedAgainUntilTheMouseConnectsAgain() {
         let controller = makeController()
         applyUsage(controller, bound: [Self.gesture], tracking: [Self.gesture])
@@ -325,6 +357,33 @@ final class LogiGestureControllerTests: XCTestCase {
         diverted = []
         applyUsage(reconnected, bound: [Self.gesture], tracking: [Self.gesture])
         XCTAssertEqual(writes, [Self.arm])
+    }
+
+    /// The user turns a "Let the mouse track the gesture" switch on (off and on again): the
+    /// next request asks the mouse once more for the controls it refused, with one line.
+    /// Only that does; a controller made later has nothing to forget.
+    func testTurningATrackingSwitchOnAsksAgainForARefusedControl() {
+        let controller = makeController()
+        applyUsage(controller, bound: [Self.gesture], tracking: [Self.gesture])
+        fireTimers()
+        XCTAssertEqual(controller.rejectedCIDs, [Self.gesture])
+        writes = []
+        logLines = []
+
+        applyUsage(controller, bound: [Self.gesture], tracking: [])
+        LogiGestureController.retryRefusedControls()
+        applyUsage(controller, bound: [Self.gesture], tracking: [Self.gesture])
+        XCTAssertEqual(writes, [Self.arm], "armed once more")
+        XCTAssertTrue(controller.rejectedCIDs.isEmpty)
+        XCTAssertEqual(logLines, ["raw XY: 1 control(s) the mouse refused asked again: a tracking switch was turned on"])
+        acknowledge(controller, Self.arm)
+        XCTAssertEqual(controller.armedCIDs, [Self.gesture])
+
+        writes = []
+        logLines = []
+        applyUsage(controller, bound: [Self.gesture], tracking: [Self.gesture])
+        XCTAssertEqual(writes, [])
+        XCTAssertEqual(logLines, [], "said once per switch")
     }
 
     /// Writes that only follow the request (the app in front changes what is tracked) put
