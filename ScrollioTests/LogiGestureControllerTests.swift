@@ -40,6 +40,8 @@ final class LogiGestureControllerTests: XCTestCase {
     private var changes = 0
     /// What the controller wrote to the system log (the session's `log`).
     private var logLines: [String] = []
+    /// What the controller wrote to the Logitech Diagnostics window (`trace`).
+    private var traceLines: [String] = []
     /// What the session remembers as diverted (`lastApplied`).
     private var diverted: Set<UInt16> = []
 
@@ -51,6 +53,7 @@ final class LogiGestureControllerTests: XCTestCase {
         timers = []
         changes = 0
         logLines = []
+        traceLines = []
         diverted = []
     }
 
@@ -69,6 +72,7 @@ final class LogiGestureControllerTests: XCTestCase {
             schedule: { [unowned self] delay, work in self.timers.append((delay, work)) },
             onChange: { [unowned self] in self.changes += 1 },
             log: { [unowned self] in self.logLines.append($0) },
+            trace: { [unowned self] in self.traceLines.append($0) },
             mayEnableHaptics: mayEnableHaptics
         )
         controller.setRawXYCapableControls(capable)
@@ -655,6 +659,46 @@ final class LogiGestureControllerTests: XCTestCase {
         logLines = []
         XCTAssertFalse(makeController().play(.commit))
         XCTAssertEqual(logLines, ["Haptic cue commit skipped: this mouse has no haptic feature"])
+    }
+
+    /// A ring sweep asks for a cue at every place it lights. Pulses that play go to the
+    /// Diagnostics window, not the system log; with the haptics off on the mouse and off in
+    /// Scrollio's mouse settings, the log says once that cues are skipped (the rest go to the
+    /// Diagnostics window), and once more only after a pulse played in between.
+    func testCuesWriteAtMostOneLineToTheSystemLog() {
+        let on = hapticController()
+        logLines = []
+        traceLines = []
+        for _ in 0..<5 {
+            XCTAssertTrue(on.play(.lockIn))
+        }
+        XCTAssertEqual(logLines, [])
+        XCTAssertEqual(traceLines.count, 5)
+
+        var mayEnable = false
+        let off = hapticController(enabledFlags: 0x00, mayEnableHaptics: { mayEnable })
+        logLines = []
+        traceLines = []
+        for _ in 0..<5 {
+            XCTAssertFalse(off.play(.lockIn))
+        }
+        let skipped = "Haptic cue lockIn skipped: haptics are off on the mouse and switched off in Scrollio's mouse settings"
+        XCTAssertEqual(logLines, [skipped])
+        XCTAssertEqual(traceLines, Array(repeating: skipped, count: 4))
+
+        // Allowed again: the next cue switches them on and plays; switched off on the mouse
+        // and in the settings once more, the skip is said again, once.
+        mayEnable = true
+        XCTAssertFalse(off.play(.lockIn))
+        off.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [0x00, 60]))
+        XCTAssertEqual(off.hapticsEnabled, true)
+        mayEnable = false
+        off.handleHapticResponse(functionId: 1, report: hapticReport(functionId: 1, payload: [0x00, 60]))
+        logLines = []
+        for _ in 0..<3 {
+            XCTAssertFalse(off.play(.lockIn))
+        }
+        XCTAssertEqual(logLines, [skipped])
     }
 
     /// An MX Master 4 that never ran Options+ reports its haptics off at full intensity.

@@ -31,6 +31,9 @@
 //  saving are never changed: the switch-on is only ever written right after a fresh read of
 //  the state, with the flags and the intensity of that answer (never from the copy made at
 //  connect time, which the user may have changed elsewhere since).
+//  A ring asks for a cue at every place it lights: what each cue did goes to the Logitech
+//  Diagnostics window (`trace`); the system log gets only what changed, once (no haptic
+//  feature, switched on by a cue, a reason cues are skipped or dropped, until one plays).
 //
 //  Main thread only (HID++ callbacks run on the main run loop).
 //
@@ -305,6 +308,10 @@ final class LogiGestureController {
     /// The log said that this mouse has no haptics: once while it is connected, not once
     /// per cue (a ring asks for one at every place it lights).
     private var saidNoHapticFeature = false
+    /// Why the last cue that did not play did not, as the log said it: the same reason
+    /// again goes to the Diagnostics window only (a ring sweep asks for a cue at every place
+    /// it lights). A pulse that plays, or a new haptic feature, clears it.
+    private var saidCueNotPlayed: String?
 
     /// The mouse has a haptic motor Scrollio can pulse.
     var supportsHaptics: Bool { hapticFeatureIndex != nil }
@@ -324,6 +331,7 @@ final class LogiGestureController {
         hapticState = nil
         hapticWaveformMask = nil
         pendingCue = nil
+        saidCueNotPlayed = nil
         if let index = index {
             log("Haptics: feature at index \(String(format: "0x%02X", index)), reading waveforms and state")
         } else {
@@ -384,7 +392,7 @@ final class LogiGestureController {
         }
         guard let enabled = hapticsEnabled, let mask = hapticWaveformMask else {
             // Not read yet, or an answer got lost: ask again and keep the cue for a moment.
-            log("Haptic cue \(cue) waits: state \(hapticsEnabled == nil ? "unknown" : "known"), waveforms \(hapticWaveformMask == nil ? "unknown" : "known")")
+            trace("Haptic cue \(cue) waits: state \(hapticsEnabled == nil ? "unknown" : "known"), waveforms \(hapticWaveformMask == nil ? "unknown" : "known")")
             waitForAnswers(cue)
             refreshHaptics()
             return false
@@ -394,10 +402,10 @@ final class LogiGestureController {
             // back with the on bit set, so it needs the state as it is now, not as it was
             // at connect time: read it, and decide when the answer is in.
             guard mayEnableHaptics() else {
-                log("Haptic cue \(cue) skipped: haptics are off on the mouse and switched off in Scrollio's mouse settings")
+                cueNotPlayed(cue, Self.hapticsKeptOff)
                 return false
             }
-            log("Haptic cue \(cue) waits: haptics were off when last read, reading the state again before switching them on")
+            trace("Haptic cue \(cue) waits: haptics were off when last read, reading the state again before switching them on")
             waitForAnswers(cue)
             sendHaptic(LogiGestureProtocol.hapticGetStateFunction, [])
             return false
@@ -414,7 +422,7 @@ final class LogiGestureController {
         schedule(Self.pendingCueLifetime) { [weak self] in
             guard let self = self, self.pendingCue?.token == token else { return }
             self.pendingCue = nil
-            self.log("Haptic cue \(cue) dropped: the mouse did not answer in time")
+            self.cueNotPlayed(cue, "dropped: the mouse did not answer in time")
         }
     }
 
@@ -433,12 +441,12 @@ final class LogiGestureController {
     @discardableResult
     private func send(_ cue: MouseGestureHapticCue, enabled: Bool, mask: UInt32) -> Bool {
         guard let waveform = LogiGestureProtocol.waveform(for: cue, mask: mask) else {
-            log("Haptic cue \(cue) skipped: no usable waveform in mask \(String(format: "0x%08X", mask))")
+            cueNotPlayed(cue, "skipped: no usable waveform in mask \(String(format: "0x%08X", mask))")
             return false
         }
         if !enabled {
             guard mayEnableHaptics() else {
-                log("Haptic cue \(cue) skipped: haptics are off on the mouse and switched off in Scrollio's mouse settings")
+                cueNotPlayed(cue, Self.hapticsKeptOff)
                 return false
             }
             // The user asked for cues, the mouse has its haptics off: switch them on, with
@@ -453,8 +461,23 @@ final class LogiGestureController {
             onChange()
         }
         sendHaptic(LogiGestureProtocol.hapticPlayFunction, [waveform])
-        log("Haptic cue \(cue): waveform \(String(format: "0x%02X", waveform)) sent")
+        saidCueNotPlayed = nil
+        trace("Haptic cue \(cue): waveform \(String(format: "0x%02X", waveform)) sent")
         return true
+    }
+
+    private static let hapticsKeptOff = "skipped: haptics are off on the mouse and switched off in Scrollio's mouse settings"
+
+    /// A cue that did not play: its reason goes to the system log once while it holds, and
+    /// to the Diagnostics window each time after that.
+    private func cueNotPlayed(_ cue: MouseGestureHapticCue, _ reason: String) {
+        let line = "Haptic cue \(cue) \(reason)"
+        guard reason != saidCueNotPlayed else {
+            trace(line)
+            return
+        }
+        saidCueNotPlayed = reason
+        log(line)
     }
 
     private static func hex(_ bytes: [UInt8]) -> String {
