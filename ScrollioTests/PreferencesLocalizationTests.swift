@@ -151,7 +151,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-detail-gestures-general", "apps-detail-gestures-general-on", "apps-detail-gestures-general-off",
         "apps-buttons-empty", "apps-buttons-list-label", "apps-buttons-note", "apps-buttons-note-empty", "apps-buttons-everywhere",
         "apps-buttons-add-mouse", "apps-buttons-add-record", "apps-buttons-add-general", "apps-buttons-add-general-item",
-        "apps-buttons-recorder-general",
+        "apps-buttons-recorder-general", "apps-detail-ring-no-trigger",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).

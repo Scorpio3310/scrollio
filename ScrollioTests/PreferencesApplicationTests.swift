@@ -1003,14 +1003,39 @@ final class PreferencesApplicationTests: XCTestCase {
 
     // MARK: - An app's own Shortcut Ring
 
-    /// The general ring for a test of the page's section, put back afterwards.
-    private func setGeneralRing(_ ring: ShortcutRingSettings) {
+    /// The general ring for a test of the page's section, and whether a button opens it
+    /// (the part's line says what opens), put back afterwards.
+    private func setGeneralRing(_ ring: ShortcutRingSettings, opensWithAButton: Bool = true) {
         let saved = Options.shared.ring
+        let savedBindings = Options.shared.buttons.binding
         addTeardownBlock {
             Options.shared.ring = saved
+            Options.shared.buttons.binding = savedBindings
+            ButtonUtils.shared.invalidateCache()
             ShortcutRingController.forgetPreparedFaces()
         }
         Options.shared.ring = ring
+        let trigger = RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil)
+        Options.shared.buttons.binding = opensWithAButton
+            ? [ButtonBinding(triggerEvent: trigger, systemShortcutName: SystemShortcut.shortcutRing.identifier, isEnabled: true)]
+            : []
+        ButtonUtils.shared.invalidateCache()
+    }
+
+    /// Without a button or key that opens the ring, the switch's line says so in both
+    /// positions instead of promising a ring, and where to set one up.
+    func testTheRingPartSaysWhenNothingOpensTheRing() throws {
+        setGeneralRing(.default, opensWithAButton: false)
+        Options.shared.application.applications = Self.makeStore([application(Self.calculator, inherit: true)])
+        let controller = makeController()
+        controller.openApplication(withID: Self.calculator, part: .ring)
+        let page = try XCTUnwrap(controller.detailController)
+        let nothing = "Nothing opens the ring yet: set up a button or key for it in the Shortcut Ring pane."
+        XCTAssertEqual(page.generalRingRow.explanation, nothing)
+        page.generalRingSwitch.state = .off
+        send(page.generalRingSwitch)
+        XCTAssertNotNil(page.ringController)
+        XCTAssertEqual(page.generalRingRow.explanation, nothing)
     }
 
     /// The page's "Shortcut Ring" part. While "Use the general ring" is on (as for every

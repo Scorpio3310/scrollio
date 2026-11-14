@@ -264,7 +264,12 @@ final class ApplicationDetailViewController: NSViewController {
 
     /// "While Safari is in front, the general ring opens." / "While Safari is in front,
     /// the ring below opens." (The app in front decides, not the one under the pointer.)
-    static func generalRingExplanation(on: Bool, name: String) -> String {
+    /// While no button or key opens the ring (`opens` false), either way: that nothing
+    /// opens it yet, and where to set that up.
+    static func generalRingExplanation(on: Bool, name: String, opens: Bool = true) -> String {
+        guard opens else {
+            return NSLocalizedString("apps-detail-ring-no-trigger", comment: "")
+        }
         let format = NSLocalizedString(on ? "apps-detail-ring-general-on" : "apps-detail-ring-general-off", comment: "")
         return String(format: format, name)
     }

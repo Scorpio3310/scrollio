@@ -8511,6 +8511,18 @@
           }
         }
       }
+    },
+    "apps-detail-ring-no-trigger": {
+      "comment": "App page, Shortcut Ring part: explanation of \"Use the general ring\" while no button or key opens the ring",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing opens the ring yet: set up a button or key for it in the Shortcut Ring pane."
+          }
+        }
+      }
     }
   },
   "version": "1.1"
