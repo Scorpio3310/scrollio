@@ -114,10 +114,10 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   handles it can be taken in the middle of its press: the app's own action may then run
   without a new press, or macOS may not get its release), a line at launch and after a
   change of the settings when the count of Logitech buttons whose hold the mouse tracks
-  itself ("Let the mouse track the gesture"), or of the apps whose own bindings change
-  which while they are in front, is not what the last such line said ("Gestures: the
-  mouse tracks the hold of 1 Logitech button(s) itself; 1 app(s) change which by their
-  own bindings while in front", never which app; switching apps writes no line; a button
+  itself ("Let the mouse track the gesture"), or of the apps whose own bindings or
+  gestures change which while they are in front, is not what the last such line said
+  ("Gestures: the mouse tracks the hold of 1 Logitech button(s) itself; 1 app(s) change
+  which by their own settings while in front", never which app; switching apps writes no line; a button
   that is down keeps its tracking until it is up), at launch which accent colour
   is in effect, at the first Mission Control or Show Desktop whether the Dock is asked for
   them directly or they are sent as key presses (a macOS without the call), a sent

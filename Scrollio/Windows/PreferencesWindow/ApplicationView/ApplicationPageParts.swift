@@ -240,11 +240,11 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
 
 // MARK: - Shortcut Ring
 
-/// "Use the general ring" and, while it is off, the app's own ring: the drawing and the
-/// eight rows of the Shortcut Ring pane (RingPreferencesViewController with this app), which
-/// open while the app is in front. What opens the ring is a binding of Buttons, or of the
-/// app's Buttons part (the switch's line says when nothing opens it with the app in
-/// front); the freeze switch is the same for every app and stays in the Shortcut Ring pane.
+/// "Use the general ring" and, while it is off, the app's own ring: the drawing, the freeze
+/// switch and the eight rows of the Shortcut Ring pane (RingPreferencesViewController with
+/// this app), which open while the app is in front. What opens the ring is a binding of
+/// Buttons, or of the app's Buttons part (the switch's line says when nothing opens it with
+/// the app in front).
 ///
 /// For an app with suggested shortcuts (`ShortcutRingSuggestions`) the ring the switch
 /// makes starts with them, and while the app's own ring is in use a second row says so
@@ -254,8 +254,9 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
 /// Defaults".
 ///
 /// "Reset to Defaults" ends the own ring, there with it: the ring goes back to where it
-/// started (the suggestion, else a copy of the general ring as it is now), the switch
-/// stays; the window's Undo takes it back, also after the page closed.
+/// started (the suggestion, else a copy of the general ring as it is now; the freeze switch
+/// the general ring's as it is now), the switch stays; the window's Undo takes it back, also
+/// after the page closed.
 ///
 /// While nothing opens the ring with the app in front (`ApplicationTriggerRule`), the own
 /// ring and its button are folded under a "Shortcuts" title (`PreferencesDisclosureSection`,
@@ -298,8 +299,9 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
     private(set) var resetFooter: PreferencesGroupFooter!
     /// The own ring's view and "Reset to Defaults", as one view: there only while "Use the
     /// general ring" is off. Its width is the boxes'; the ring's view inside it reaches past
-    /// its edges by the margins the ring's view brings (clipped away), so it can stand
-    /// under the switch's box or as the body of `ownRingFold` alike.
+    /// its edges by the margins the ring's view brings (clipped away by a view of their
+    /// own, which holds the ring's view alone: the button's focus ring is not cut), so it
+    /// can stand under the switch's box or as the body of `ownRingFold` alike.
     private(set) var ownRingBody: NSView?
     /// "Shortcuts", which folds `ownRingBody`: there while the own ring is in use and
     /// nothing opens the ring with the app in front.
@@ -342,7 +344,7 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         suggested.isHidden = true
         suggestionRow = suggested
         let reset = PreferencesPaneReset(
-            undoActionNameKey: Self.resetActionNameKey,
+            undoActionName: Self.resetActionName(for: application),
             hasSettingsToReset: { [weak self] in self?.hasSettingsToReset ?? false },
             undoManager: { [weak self] in self?.undoTarget },
             reset: { [weak self] undo in self?.resetRing(undoManager: undo) }
@@ -455,8 +457,14 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
 
     // MARK: - Reset to Defaults
 
-    /// The undo action's name: the Shortcut Ring pane's ("Reset Shortcut Ring").
-    static let resetActionNameKey = "ring-undo-reset"
+    /// The undo action's name, its own, not the Shortcut Ring pane's: "Reset Shortcut Ring
+    /// in Calculator" (Edit › Undo says which reset it takes back, and "Undo Reset" never
+    /// takes back the pane's or another app's).
+    static let resetActionNameKey = "apps-undo-reset-ring"
+
+    static func resetActionName(for application: Application) -> String {
+        return String(format: NSLocalizedString(resetActionNameKey, comment: ""), application.getName())
+    }
 
     /// Where "Reset to Defaults" registers its Undo: the window's while the page is in it.
     var undoTarget: UndoManager? {
@@ -470,14 +478,16 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         return suggestedPlaces() ?? Options.shared.ring.places
     }
 
-    /// The app's own ring is in use and differs from where it started.
+    /// The app's own ring is in use and differs from where it started (its places, or its
+    /// freeze switch from the general ring's as it is now).
     var hasSettingsToReset: Bool {
         guard let own = application.ownRingPlaces else { return false }
-        return own != startPlaces()
+        let general = Options.shared.ring
+        return own != startPlaces() || application.ringThatOpens(general: general).freezePointer != general.freezePointer
     }
 
-    /// "Reset to Defaults": the own ring as it started, its eight places; the switch stays
-    /// off. Edit › Undo brings back the places that were there.
+    /// "Reset to Defaults": the own ring as it started, its eight places and the general
+    /// ring's freeze switch; the switch stays off. Edit › Undo brings back what was there.
     private func resetRing(undoManager undo: UndoManager?) {
         guard hasSettingsToReset else { return }
         let showing = partShowing ?? { [weak self] entry in
@@ -485,7 +495,8 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         }
         let suggested = suggestedPlaces()
         Self.fillRing(
-            of: application, with: suggested ?? Options.shared.ring.places, fromSuggestion: suggested != nil,
+            of: application, with: suggested ?? Options.shared.ring.places,
+            freezePointer: Options.shared.ring.freezePointer, fromSuggestion: suggested != nil,
             undoManager: undo, showing: showing
         )
     }
@@ -497,11 +508,13 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
     /// (`fromSuggestion`: the places are the app's suggested shortcuts; Undo gives the ring
     /// back what it knew of them before.)
     private static func fillRing(
-        of application: Application, with places: [ShortcutRingPlace], fromSuggestion: Bool, undoManager undo: UndoManager?,
-        showing: @escaping (Application) -> ApplicationRingPartViewController?
+        of application: Application, with places: [ShortcutRingPlace], freezePointer: Bool?, fromSuggestion: Bool,
+        undoManager undo: UndoManager?, showing: @escaping (Application) -> ApplicationRingPartViewController?
     ) {
-        guard let before = application.ring, before.places != places else { return }
-        application.setOwnRingPlaces(places, startedFromSuggestion: fromSuggestion)
+        guard let before = application.ring else { return }
+        application.replaceOwnRing(places: places, freezePointer: freezePointer, startedFromSuggestion: fromSuggestion)
+        guard let after = application.ring,
+              after != before || after.startedFromSuggestion != before.startedFromSuggestion else { return }
         showing(application)?.syncViewWithOptions()
         guard let undo else { return }
         let path = application.path
@@ -509,9 +522,12 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
             guard let entry = PreferencesApplicationViewController.existingApplication(
                 forPaths: PreferencesApplicationViewController.knownPaths(forStoredPath: path)
             ) else { return }
-            fillRing(of: entry, with: before.places, fromSuggestion: before.startedFromSuggestion, undoManager: undo, showing: showing)
+            fillRing(
+                of: entry, with: before.places, freezePointer: before.freezePointer,
+                fromSuggestion: before.startedFromSuggestion, undoManager: undo, showing: showing
+            )
         }
-        undo.setActionName(NSLocalizedString(resetActionNameKey, comment: ""))
+        undo.setActionName(resetActionName(for: application))
     }
 
     func partWillHide() {
@@ -563,6 +579,9 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         } else {
             ownRingFold?.removeFromSuperview()
             ownRingFold = nil
+            // A fold that was closed hid its body (and may have faded it): it shows here.
+            body.isHidden = false
+            body.alphaValue = 1
             placed = body
             // The room the ring's own top margin always made under the box.
             gap = margin
@@ -588,19 +607,27 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         let body = NSView()
         body.translatesAutoresizingMaskIntoConstraints = false
         // The ring's view reaches past the body by its own margins: they are cut off, so
-        // that nothing of it covers a title above the body.
-        body.clipsToBounds = true
+        // that nothing of it covers a title above the body. Only around the ring's view:
+        // the footer's button draws its focus ring past its own edges, which are the body's.
+        let ringClip = NSView()
+        ringClip.translatesAutoresizingMaskIntoConstraints = false
+        ringClip.clipsToBounds = true
         let ringView = ring.view
         ringView.translatesAutoresizingMaskIntoConstraints = false
-        body.addSubview(ringView)
+        ringClip.addSubview(ringView)
+        body.addSubview(ringClip)
         body.addSubview(resetFooter)
         let margin = PreferencesGroupedForm.margin
         NSLayoutConstraint.activate([
-            ringView.topAnchor.constraint(equalTo: body.topAnchor, constant: -margin),
-            ringView.leadingAnchor.constraint(equalTo: body.leadingAnchor, constant: -margin),
-            ringView.trailingAnchor.constraint(equalTo: body.trailingAnchor, constant: margin),
+            ringClip.topAnchor.constraint(equalTo: body.topAnchor),
+            ringClip.leadingAnchor.constraint(equalTo: body.leadingAnchor),
+            ringClip.trailingAnchor.constraint(equalTo: body.trailingAnchor),
+            ringView.topAnchor.constraint(equalTo: ringClip.topAnchor, constant: -margin),
+            ringView.leadingAnchor.constraint(equalTo: ringClip.leadingAnchor, constant: -margin),
+            ringView.trailingAnchor.constraint(equalTo: ringClip.trailingAnchor, constant: margin),
+            ringView.bottomAnchor.constraint(equalTo: ringClip.bottomAnchor),
             // Its margin under the rows is the room above a footer.
-            resetFooter.topAnchor.constraint(equalTo: ringView.bottomAnchor),
+            resetFooter.topAnchor.constraint(equalTo: ringClip.bottomAnchor),
             resetFooter.leadingAnchor.constraint(equalTo: body.leadingAnchor),
             resetFooter.trailingAnchor.constraint(equalTo: body.trailingAnchor),
             resetFooter.bottomAnchor.constraint(equalTo: body.bottomAnchor),

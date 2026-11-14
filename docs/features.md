@@ -109,27 +109,30 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   button.
 - An app can have gestures of its own. Its page in Apps (add the app there, or open it
   in the list) has a "Gestures" part. "Use the general gestures" is on for every app;
-  turn it off and the app gets the five rows of the Gestures pane and "Invert left and
-  right" of its own, which start as a copy of the pane's at that moment and are set the
+  turn it off and the app gets everything of the Gestures pane but the button to hold,
+  in the pane's order: the mode, the five directions, "Invert left and right", "Freeze
+  pointer", the swipe speed and, while a connected mouse can do them, the two switches
+  of a Logitech mouse. They start as a copy of the pane's at that moment and are set the
   same way ("Keyboard Shortcut…" with a name and an icon too). They run while the app is
   in front when you press the button (the app in front, not the one under the pointer:
   the actions go to it); the gesture keeps them until you let go, whatever comes to the
   front meanwhile. While Scrollio's own Settings are in front, the pane's gestures run.
-  The mode, the swipe speed, "Freeze pointer" and what a Logitech mouse does are the
-  same for every app; in "Follow the hand" Left and Right on the app's page say so, as
-  in the pane. The button to hold is the Buttons pane's, unless the app's Buttons part
-  gives it another action or gives another button Gesture Navigation: the app's
-  Gestures part then names the button to hold there, or says that none runs the
-  gestures. While only an app's own button runs Gesture Navigation, the Gestures pane
-  says in which apps and with which button, and its "Change" shows that app's Buttons
-  part. "Reset to Defaults" under the app's gestures puts them back to a copy of the
-  pane's as they are then (the actions with their names and icons, and "Invert left and
-  right"); the switch stays off, and Edit › Undo takes it back. While no button runs
-  Gesture Navigation with the app in front, "Directions" folds the app's gestures away: a
-  click on it opens them. Turn the switch on again and the app's gestures are
-  kept for later. An app added for its gestures has its scrolling changed too while
-  "Change scrolling only in these apps" is on, as one added for its buttons (see
-  [Buttons and keys](#buttons-and-keys)).
+  Whether the mouse tracks a button's hold itself follows the app in front too (a button
+  that is down keeps what it had until it is up). In "Follow the hand" (the app's own
+  mode) Left and Right on the app's page say so, as in the pane. The button to hold is
+  the Buttons pane's, unless the app's Buttons part gives it another action or gives
+  another button Gesture Navigation: the app's Gestures part then names the button to
+  hold there, or says that none runs the gestures. While only an app's own button runs
+  Gesture Navigation, the Gestures pane says in which apps and with which button, and
+  its "Change" shows that app's Buttons part. "Reset to Defaults" under the app's
+  gestures puts them back to a copy of the pane's as they are then (all of them, the
+  actions with their names and icons too); the switch stays off, and Edit › Undo takes
+  it back. While no button runs Gesture Navigation with the app in front, "Directions",
+  "Behavior" and "Logitech mouse" fold the app's gestures away, as in the pane: a click
+  on one opens it. Turn the switch on again and the app's gestures are kept for later.
+  An app added for its gestures has its scrolling changed too while "Change scrolling
+  only in these apps" is on, as one added for its buttons (see [Buttons and
+  keys](#buttons-and-keys)).
 - With a Logitech MX Master, the mouse can track the gesture itself (Beta), and an MX
   Master 4 can pulse when a gesture locks in.
 - "Reset to Defaults" at the bottom of the Gestures pane puts every gesture setting back
@@ -187,23 +190,23 @@ the eight places hold.
   have another name. An empty place is a small faint drop. A new ring has Mission Control on top and Apps at the bottom, the
   desktops on the left and right, Copy and Paste beside Apps, and a screenshot of a
   selection and Show Desktop beside Mission Control.
-- An app can have a ring of its own. Its page in Apps (add the app there, or open it
-  in the list) has a "Shortcut Ring" part. "Use the general ring" is on for every app;
-  turn it off and the app gets eight places of its own, which start as a copy of the
-  ring as it is at that moment and are set like the pane's. That ring opens while the
-  app is in front (the app in front, not the one under the pointer: the shortcuts go to
-  it); while Scrollio's own Settings are in front, the general ring opens. The ring that
-  opened stays until it closes. "Freeze pointer while the ring is held" is the same for
-  every app. What opens the ring is set in the Buttons pane, or for one app in its
-  Buttons part: a button or key can open the ring only in that app, or do something
-  else there; while nothing opens the ring with the app in front, the app's page says
-  so, and "Shortcuts" folds the app's ring away (a click on it opens it). "Reset to
-  Defaults" under the app's ring puts it back where it started (its suggested shortcuts,
-  see below, else a copy of the general ring as it is then); the switch stays off, and
-  Edit › Undo takes it back. Turn the switch on again and the app's ring is kept for
-  later. An app added for its ring has its scrolling changed too while "Change
-  scrolling only in these apps" is on, as one added for its buttons (see
-  [Buttons and keys](#buttons-and-keys)).
+- An app can have a ring of its own. Its page in Apps (add the app there, or open it in
+  the list) has a "Shortcut Ring" part. "Use the general ring" is on for every app; turn
+  it off and the app gets eight places of its own and its own "Freeze pointer while the
+  ring is held", which start as a copy of the ring as it is at that moment and are set
+  like the pane's. That ring opens while the app is in front (the app in front, not the
+  one under the pointer: the shortcuts go to it); while Scrollio's own Settings are in
+  front, the general ring opens. The ring that opened stays until it closes, with its
+  freeze switch. What opens the ring is set in the Buttons pane, or for one app in its
+  Buttons part: a button or key can open the ring only in that app, or do something else
+  there; while nothing opens the ring with the app in front, the app's page says so, and
+  "Shortcuts" folds the app's ring away (a click on it opens it). "Reset to Defaults"
+  under the app's ring puts it back where it started (its suggested shortcuts, see
+  below, else a copy of the general ring as it is then, and the general ring's freeze
+  switch as it is then); the switch stays off, and Edit › Undo takes it back. Turn the
+  switch on again and the app's ring is kept for later. An app added for its ring has
+  its scrolling changed too while "Change scrolling only in these apps" is on, as one
+  added for its buttons (see [Buttons and keys](#buttons-and-keys)).
 - Scrollio suggests shortcuts for 100 popular apps (Figma, Photoshop, Final Cut Pro,
   Safari, Word, Xcode, Discord, Zed, GitHub Desktop …: each app's most used ones, Undo
   and Redo on the left and right, zoom on top and bottom, Copy and Paste below). Nothing

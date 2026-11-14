@@ -19,6 +19,9 @@ it for the people who use the app, and give the version its part before you tag 
   each gesture direction and the click: they run while the app is in front.
 - **A Shortcut Ring for each app.** On an app's page in Apps, give the app eight shortcuts
   of its own: that ring opens while the app is in front.
+- **An app's page has everything the panes have.** The thumb wheel's speed and
+  direction, the gestures' mode, swipe speed and switches, and the ring's "Freeze
+  pointer" can be set for each app too.
 - **Suggested shortcuts for 100 apps.** Turn off "Use the general ring" for Figma,
   Photoshop, Safari, Word, Discord, Zed and many more, and the app's ring starts with
   its most used shortcuts, on your keyboard layout.

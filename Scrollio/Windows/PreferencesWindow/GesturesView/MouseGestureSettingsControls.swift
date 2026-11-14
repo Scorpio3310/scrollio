@@ -2,13 +2,14 @@
 //  MouseGestureSettingsControls.swift
 //  Mos
 //  The controls that edit Options.shared.gesture: mode, one action per direction and
-//  click, and the switches for invert left/right and freeze pointer. The Gestures pane lays
-//  them out in its rows; their rules live here. Changes apply immediately. (The tracking
-//  speed is the pane's own.)
+//  click, and the switches for invert left/right and freeze pointer, and where the swipe
+//  speed and the two switches of a Logitech mouse are written. The Gestures pane lays them
+//  out in its rows (`MouseGestureRows`, the rows themselves); their rules live here. Changes
+//  apply immediately.
 //
-//  An app's page edits the app's own gestures with the same controls (`Edited.application`):
-//  the five actions and "Invert left and right" are then the app's; the mode, which decides
-//  what the Left and Right rows show, and the freeze switch stay the Gestures pane's.
+//  An app's page edits the app's own gestures with the same controls and rows
+//  (`Edited.application`): every value is then the app's (`ApplicationGestures`), the mode
+//  too, which decides what the Left and Right rows show and whether the speed applies.
 //
 //  The action of a direction is chosen with the pull-down of a button's row
 //  (`ButtonActionPullDown`, as the Shortcut Ring pane's places): its menu offers the
@@ -113,6 +114,9 @@ final class MouseGestureSettingsControls: NSObject {
         static let modeNote = NSUserInterfaceItemIdentifier("gesture-mode-note")
         static let invertHorizontal = NSUserInterfaceItemIdentifier("gesture-invert-horizontal")
         static let freezePointer = NSUserInterfaceItemIdentifier("gesture-freeze-pointer")
+        static let trackingSpeed = NSUserInterfaceItemIdentifier("gesture-tracking-speed")
+        static let deviceTracking = NSUserInterfaceItemIdentifier("gesture-device-tracking")
+        static let haptics = NSUserInterfaceItemIdentifier("gesture-haptics")
 
         static func action(_ direction: String) -> NSUserInterfaceItemIdentifier {
             return NSUserInterfaceItemIdentifier("gesture-action-\(direction)")
@@ -187,7 +191,7 @@ final class MouseGestureSettingsControls: NSObject {
     enum Edited {
         /// Every app's, in the Gestures pane (`Options.shared.gesture`).
         case general
-        /// An app's own set, on its page: its five actions and its "Invert left and right".
+        /// An app's own set, on its page: all of it (`ApplicationGestures`).
         case application(Application)
     }
 
@@ -325,10 +329,40 @@ final class MouseGestureSettingsControls: NSObject {
         }
     }
 
-    /// What the mode control and the action rows show now.
+    /// Stores one value where the controls edit: the Gestures pane's, or the app's own (from
+    /// then on the app's, also while it equals the general one).
+    private func write<Value: Equatable>(
+        _ general: WritableKeyPath<MouseGestureSettings, Value>, _ own: WritableKeyPath<ApplicationGestures, Value?>, _ value: Value
+    ) {
+        switch edited {
+        case .general:
+            guard Options.shared.gesture[keyPath: general] != value else { return }
+            Options.shared.gesture[keyPath: general] = value
+        case .application(let application):
+            application.changeOwnGestures { $0[keyPath: own] = value }
+        }
+    }
+
+    /// The swipe speed (its row's slider, already on a tick).
+    func setTrackingSpeed(_ speed: Double) {
+        write(\.trackingSpeed, \.trackingSpeed, MouseGestureSettings.clampedTrackingSpeed(speed))
+    }
+
+    /// "Let the mouse track the gesture".
+    func setDeviceTracking(_ tracks: Bool) {
+        write(\.deviceTracking, \.deviceTracking, tracks)
+    }
+
+    /// "Pulse when a gesture locks in".
+    func setHapticFeedback(_ pulses: Bool) {
+        write(\.hapticFeedback, \.hapticFeedback, pulses)
+    }
+
+    /// What the mode control and the action rows show now: the mode of the settings the
+    /// controls edit (an app's own on its page).
     var modePresentation: MouseGestureModePresentation {
         return MouseGestureModePresentation.make(
-            storedMode: Options.shared.gesture.mode,
+            storedMode: editedSettings.mode,
             isInteractiveAvailable: isInteractiveAvailable()
         )
     }
@@ -431,7 +465,7 @@ final class MouseGestureSettingsControls: NSObject {
             applyModePresentation()
             return
         }
-        Options.shared.gesture.mode = mode
+        write(\.mode, \.mode, mode)
         applyModePresentation()
         onChange?()
     }
@@ -449,7 +483,120 @@ final class MouseGestureSettingsControls: NSObject {
     }
 
     @objc private func freezeToggled(_ sender: NSControl) {
-        Options.shared.gesture.freezePointer = Self.isOn(sender)
+        write(\.freezePointer, \.freezePointer, Self.isOn(sender))
         onChange?()
+    }
+}
+
+// MARK: - The rows
+
+/// The rows of the Gestures pane, made one way for the pane and for an app's page (its
+/// Gestures part shows the same rows, in the same order): the titles, the lines under them,
+/// the room they keep and the identifiers. What a row writes is the caller's action, which
+/// hands the value to its `MouseGestureSettingsControls`.
+enum MouseGestureRows {
+
+    private static func text(_ key: String) -> String {
+        return NSLocalizedString(key, comment: "")
+    }
+
+    /// "Mode": what the selected mode does under the title, the two modes across the box.
+    static func mode(_ control: NSSegmentedControl) -> PreferencesGroupRow {
+        control.segmentDistribution = .fillEqually
+        let row = PreferencesGroupRow(
+            title: text("gesture-mode-label"),
+            explanation: text(MouseGestureModePresentation.descriptionKeys[0]),
+            accessory: control,
+            placement: .below
+        )
+        // Room for the longest line, so picking the other mode never changes the height.
+        row.reservedExplanations = MouseGestureModePresentation.descriptionKeys.map(text)
+        row.explanationLabel.identifier = MouseGestureSettingsControls.Identifier.modeNote
+        return row
+    }
+
+    static func invert(_ toggle: NSControl) -> PreferencesGroupRow {
+        return PreferencesGroupRow(
+            title: text("gesture-invert-horizontal"),
+            explanation: text("gesture-invert-horizontal-hint"),
+            accessory: toggle
+        )
+    }
+
+    static func freeze(_ toggle: NSControl) -> PreferencesGroupRow {
+        return PreferencesGroupRow(
+            title: text("gesture-freeze-pointer"),
+            explanation: text("gesture-freeze-pointer-hint"),
+            accessory: toggle
+        )
+    }
+
+    /// "Swipe speed": the slider stands where the Scrolling pane's sliders stand.
+    static func trackingSpeed(target: AnyObject, action: Selector) -> PreferencesSliderRow {
+        let row = PreferencesSliderRow(
+            title: text("gesture-tracking-speed-label"),
+            explanation: text("gesture-tracking-speed-hint"),
+            range: MouseGestureSettings.trackingSpeedRange,
+            scale: MouseGestureTrackingSpeed.scale,
+            ends: (low: text("gesture-tracking-speed-slower"), high: text("gesture-tracking-speed-faster")),
+            valueWidth: PreferencesGroupedForm.sliderValueWidth,
+            target: target,
+            action: action
+        )
+        row.slider.identifier = MouseGestureSettingsControls.Identifier.trackingSpeed
+        row.reservedExplanations = [text("gesture-tracking-speed-hint"), text("gesture-tracking-speed-hint-discrete")]
+        return row
+    }
+
+    static func deviceTracking(target: AnyObject, action: Selector) -> PreferencesSwitchRow {
+        let row = PreferencesSwitchRow(
+            title: text("mouse-gesture-device-tracking"),
+            explanation: text("mouse-gesture-device-tracking-hint"),
+            target: target,
+            action: action
+        )
+        row.toggle.identifier = MouseGestureSettingsControls.Identifier.deviceTracking
+        row.reservedExplanations = [text("mouse-gesture-device-tracking-hint"), text("mouse-gesture-device-tracking-unavailable")]
+        return row
+    }
+
+    static func haptics(target: AnyObject, action: Selector) -> PreferencesSwitchRow {
+        let row = PreferencesSwitchRow(
+            title: text("mouse-gesture-haptics"),
+            explanation: text("mouse-gesture-haptics-hint"),
+            target: target,
+            action: action
+        )
+        row.toggle.identifier = MouseGestureSettingsControls.Identifier.haptics
+        row.reservedExplanations = [text("mouse-gesture-haptics-hint"), text("mouse-gesture-haptics-unavailable")]
+        return row
+    }
+
+    /// Puts the speed of `settings` into its row: on the nearer tick (a refresh while the
+    /// knob is dragged leaves the knob alone), editable only while the desktops follow the
+    /// hand, with the line that says so.
+    static func show(_ settings: MouseGestureSettings, presentation: MouseGestureModePresentation, in row: PreferencesSliderRow) {
+        if !row.isTracking {
+            row.showValue(settings.trackingSpeed)
+        }
+        row.valueText = MouseGestureTrackingSpeed.text(settings.trackingSpeed)
+        row.isEnabled = presentation.isTrackingSpeedEditable
+        row.explanation = text(
+            presentation.isTrackingSpeedEditable ? "gesture-tracking-speed-hint" : "gesture-tracking-speed-hint-discrete"
+        )
+    }
+
+    /// Puts the two switches of a Logitech mouse of `settings` into their rows, enabled and
+    /// explained by what the connected mice can do.
+    static func show(
+        _ settings: MouseGestureSettings, rules: MouseGestureControlRules,
+        deviceTracking: PreferencesSwitchRow, haptics: PreferencesSwitchRow
+    ) {
+        deviceTracking.isOn = settings.deviceTracking
+        deviceTracking.isEnabled = rules.deviceTrackingEnabled
+        deviceTracking.explanation = text(rules.deviceTrackingHintKey)
+        haptics.isOn = settings.hapticFeedback
+        haptics.isEnabled = rules.hapticsEnabled
+        haptics.explanation = text(rules.hapticsHintKey)
     }
 }

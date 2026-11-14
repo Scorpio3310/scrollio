@@ -1101,8 +1101,9 @@ final class PreferencesApplicationTests: XCTestCase {
 
     /// Switched off, the app's ring starts as a copy of the general ring as it is at that
     /// moment, and the page shows it with the pieces of the Shortcut Ring pane: the
-    /// drawing and the eight rows, without what is general. A row changes the app's ring
-    /// and not the general one. Switched on again the rows go and the app's ring is kept;
+    /// drawing, the freeze switch and the eight rows, in the pane's order, without what
+    /// opens the ring. A row, the freeze switch too, changes the app's ring and not the
+    /// general one. Switched on again the rows go and the app's ring is kept;
     /// off again it comes back as it was left.
     func testSwitchingOffUseTheGeneralRingShowsTheAppsOwnRingWhichItsRowsEdit() throws {
         var general = ShortcutRingSettings.default
@@ -1127,7 +1128,12 @@ final class PreferencesApplicationTests: XCTestCase {
         let ring = try XCTUnwrap(page.ringController)
         XCTAssertTrue(ring.view.isDescendant(of: page.view))
         XCTAssertTrue(page.ringPart.children.contains(ring))
-        XCTAssertEqual(ring.sections.count, 2, "the drawing and the box of rows")
+        XCTAssertEqual(ring.sections.count, 3, "the drawing, the freeze switch and the box of rows")
+        let freezeRow = try XCTUnwrap(ring.freezeRow)
+        XCTAssertEqual(freezeRow.title, "Freeze pointer while the ring is held")
+        XCTAssertTrue(freezeRow.isDescendant(of: ring.sections[1]))
+        let freeze = try XCTUnwrap(ring.freezeToggle as? NSSwitch)
+        XCTAssertEqual(freeze.state, .off, "a copy of the general ring's switch")
         XCTAssertEqual(ring.placeRows.map(\.title), [
             "Top", "Top right", "Right", "Bottom right", "Bottom", "Bottom left", "Left", "Top left",
         ])
@@ -1135,9 +1141,9 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(ring.placePopUps[6].menu?.items.first?.title, "No Action")
         XCTAssertEqual(ring.previewView.face.places[1].title, SystemShortcut.undo.localizedName)
         XCTAssertEqual(ring.previewView.face.filled[6], false)
-        // What is general stays in the Shortcut Ring pane.
+        // What opens the ring stays in the Shortcut Ring pane, and its reset (the part has
+        // its own).
         XCTAssertNil(ring.triggerRow)
-        XCTAssertNil(ring.freezeRow)
         XCTAssertNil(ring.resetToDefaults)
         XCTAssertNil(ring.placesHintLabel)
         page.view.layoutSubtreeIfNeeded()
@@ -1165,6 +1171,11 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(ring.previewView.face.places[0].title, SystemShortcut.paste.localizedName)
         XCTAssertEqual(ring.placePopUps[0].menu?.items.first?.title, SystemShortcut.paste.localizedName)
         XCTAssertEqual(ring.selectedPlace, 3)
+        freeze.state = .on
+        send(freeze)
+        XCTAssertEqual(calculator.ring?.freezePointer, true)
+        XCTAssertTrue(calculator.ringThatOpens(general: general).freezePointer)
+        XCTAssertFalse(Options.shared.ring.freezePointer, "the general ring's switch is untouched")
         // The face of the ring on screen is made here, for the ring as it opens for the app.
         XCTAssertTrue(ShortcutRingController.preparedFace?.ring == calculator.ringThatOpens(general: general))
         // The general ring changes later: the app's own does not follow.
@@ -1178,6 +1189,7 @@ final class PreferencesApplicationTests: XCTestCase {
         let storedRing = try XCTUnwrap(stored["ring"] as? NSDictionary)
         XCTAssertEqual(storedRing["inherit"] as? Bool, false)
         XCTAssertEqual((storedRing["places"] as? NSArray)?.count, 8)
+        XCTAssertEqual(storedRing["freezePointer"] as? Bool, true)
 
         // On again: the rows go, the ring is kept and not used.
         page.generalRingSwitch.state = .on

@@ -153,7 +153,7 @@ final class ApplicationPageResetTests: XCTestCase {
         XCTAssertEqual(Options.shared.ring, general, "the general ring is untouched")
         XCTAssertEqual(part.resetToDefaultsButton.title, "Undo Reset")
         XCTAssertTrue(part.resetToDefaultsButton.isEnabled)
-        XCTAssertEqual(undo.undoActionName, "Reset Shortcut Ring")
+        XCTAssertEqual(undo.undoActionName, "Reset Shortcut Ring in Calculator", "its own name, not the pane's")
 
         // "Undo Reset" is Edit › Undo (outside an undo group, as a real click).
         let button = part.resetToDefaultsButton
@@ -212,7 +212,107 @@ final class ApplicationPageResetTests: XCTestCase {
         XCTAssertEqual(marks(in: pane), [.ring], "the app keeps its own ring")
     }
 
+    /// The own ring's freeze switch goes back with it, to the general ring's as it is now;
+    /// the switch alone turns the button on, and Undo brings it back.
+    func testTheRingsResetTakesItsFreezeSwitchToTheGeneralRingsToo() throws {
+        let calculator = addCalculator()
+        calculator.setUsesGeneralRing(false, general: .default)
+        let pane = makePane()
+        let undo = undoManager()
+        let part = try XCTUnwrap(try open(.ring, in: pane, undo: undo).ringPart)
+        XCTAssertFalse(part.resetToDefaultsButton.isEnabled)
+        let freeze = try XCTUnwrap(part.ringController?.freezeToggle as? NSSwitch)
+        freeze.state = .on
+        XCTAssertTrue(freeze.sendAction(freeze.action, to: freeze.target))
+        XCTAssertEqual(calculator.ring?.freezePointer, true)
+        XCTAssertFalse(Options.shared.ring.freezePointer)
+        XCTAssertTrue(part.resetToDefaultsButton.isEnabled, "the switch alone turns it on")
+
+        click(part.resetToDefaultsButton, undo: undo)
+        XCTAssertEqual(calculator.ring?.freezePointer, false)
+        XCTAssertEqual(calculator.ownRingPlaces, ShortcutRingSettings.default.places)
+        XCTAssertEqual(freeze.state, .off, "the row shows it")
+        XCTAssertFalse(calculator.usesGeneralRing)
+        undo.undo()
+        XCTAssertEqual(calculator.ring?.freezePointer, true)
+        XCTAssertEqual(freeze.state, .on)
+    }
+
+    /// A click on a button that was not yet told that nothing differs any more (the
+    /// general ring reset and undone in its pane behind the page's back) resets nothing,
+    /// offers no "Undo Reset" and registers no Undo; the button then says so (R3-1 F3).
+    /// The same for the gestures.
+    func testAClickThatResetsNothingOffersNoUndo() throws {
+        let calculator = addCalculator()
+        calculator.setUsesGeneralRing(false, general: .default)
+        calculator.setUsesGeneralGestures(false, general: .default)
+        let pane = makePane()
+        let undo = undoManager()
+        let ring = try XCTUnwrap(try open(.ring, in: pane, undo: undo).ringPart)
+        var edited = ShortcutRingSettings.default
+        edited[0] = ShortcutRingPlace(SystemShortcut.find)
+        Options.shared.ring = edited
+        ring.syncViewWithOptions()
+        XCTAssertTrue(ring.resetToDefaultsButton.isEnabled, "the own ring differs from a copy of the general one")
+        // The general ring comes back to where the own ring is, and nobody tells the part.
+        Options.shared.ring = .default
+        click(ring.resetToDefaultsButton, undo: undo)
+        XCTAssertEqual(ring.resetToDefaultsButton.title, "Reset to Defaults")
+        XCTAssertFalse(ring.resetToDefaultsButton.isEnabled)
+        XCTAssertEqual(undo.undoActionName, "", "nothing was reset, nothing to undo")
+
+        let gestures = try XCTUnwrap(try open(.gestures, in: pane, undo: undo).gesturesPart)
+        var general = MouseGestureSettings.default
+        general.freezePointer = false
+        Options.shared.gesture = general
+        gestures.syncViewWithOptions()
+        XCTAssertTrue(gestures.resetToDefaultsButton.isEnabled)
+        Options.shared.gesture = .default
+        click(gestures.resetToDefaultsButton, undo: undo)
+        XCTAssertEqual(gestures.resetToDefaultsButton.title, "Reset to Defaults")
+        XCTAssertFalse(gestures.resetToDefaultsButton.isEnabled)
+        XCTAssertEqual(undo.undoActionName, "")
+        XCTAssertEqual(calculator.ownRingPlaces, ShortcutRingSettings.default.places)
+    }
+
     // MARK: - Gestures
+
+    /// The rest of the own set goes back with it: the mode, the speed, the freeze and a
+    /// Logitech mouse's two switches, each a copy of the general one as it is now; one of
+    /// them alone turns the button on, and Undo brings them back.
+    func testTheGesturesResetTakesTheModeSpeedFreezeAndTheMousesSwitchesToo() throws {
+        let calculator = addCalculator()
+        calculator.setUsesGeneralGestures(false, general: .default)
+        let pane = makePane()
+        let undo = undoManager()
+        let part = try XCTUnwrap(try open(.gestures, in: pane, undo: undo).gesturesPart)
+        XCTAssertFalse(part.resetToDefaultsButton.isEnabled)
+        let freeze = try XCTUnwrap(part.controls?.freezeToggle as? NSSwitch)
+        freeze.state = .off
+        XCTAssertTrue(freeze.sendAction(freeze.action, to: freeze.target))
+        XCTAssertEqual(calculator.ownGestures?.freezePointer, false)
+        XCTAssertTrue(part.resetToDefaultsButton.isEnabled, "one switch turns it on")
+        calculator.changeOwnGestures { own in
+            own.mode = .interactive
+            own.trackingSpeed = 2
+            own.deviceTracking = true
+            own.hapticFeedback = false
+        }
+        part.syncViewWithOptions()
+        let edited = try XCTUnwrap(calculator.ownGestures)
+        var general = MouseGestureSettings.default
+        general.trackingSpeed = 1.5
+        Options.shared.gesture = general
+
+        click(part.resetToDefaultsButton, undo: undo)
+        XCTAssertEqual(calculator.ownGestures, ApplicationGestures(inherit: false, copying: general))
+        XCTAssertEqual(Options.shared.gesture, general, "the general gestures are untouched")
+        XCTAssertEqual(freeze.state, .on, "the row shows it")
+        XCTAssertFalse(part.resetToDefaultsButton.title == "Reset to Defaults" && part.resetToDefaultsButton.isEnabled)
+        undo.undo()
+        XCTAssertEqual(calculator.ownGestures, edited)
+        XCTAssertEqual(freeze.state, .off)
+    }
 
     /// The own set goes back to a copy of the general gestures as they are now: the five
     /// actions with their names and icons, and the invert switch; the switch stays off,
@@ -252,7 +352,7 @@ final class ApplicationPageResetTests: XCTestCase {
         XCTAssertNotEqual(part.controls?.actionPopUp(for: .left).menu?.items.first?.title, SystemShortcut.paste.localizedName)
         XCTAssertEqual((part.controls?.invertToggle as? NSSwitch)?.state, .on, "the rows show the reset")
         XCTAssertEqual(part.resetToDefaultsButton.title, "Undo Reset")
-        XCTAssertEqual(undo.undoActionName, "Reset Gestures")
+        XCTAssertEqual(undo.undoActionName, "Reset Gestures in Calculator", "its own name, not the pane's")
 
         undo.undo()
         XCTAssertEqual(calculator.ownGestures, edited)

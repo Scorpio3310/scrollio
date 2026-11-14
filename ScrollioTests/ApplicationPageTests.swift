@@ -935,15 +935,17 @@ final class ApplicationPageTests: XCTestCase {
 
     // MARK: - The Gestures part
 
-    /// Calculator's page on its Gestures part, with the menus' Logitech actions off.
+    /// Calculator's page on its Gestures part, with the menus' Logitech actions off and
+    /// the connected mice able to do `mice`.
     private func gesturesPart(
-        interactiveAvailable: Bool = false
+        interactiveAvailable: Bool = false, mice: MouseGestureDeviceSupport = .none
     ) throws -> (PreferencesApplicationViewController, ApplicationGesturesPartViewController) {
         let pane = makePane()
         pane.openApplication(withID: Self.calculator, part: .gestures)
         let part = try XCTUnwrap(pane.detailController?.gesturesPart)
         part.showsLogiActions = { false }
         part.isInteractiveAvailable = { interactiveAvailable }
+        part.deviceSource = MouseGestureDeviceSource(support: { mice }, refresh: {})
         part.syncViewWithOptions()
         return (pane, part)
     }
@@ -1069,25 +1071,115 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertFalse(calculator.usesGeneralGestures)
     }
 
-    /// While the desktop follows the hand (the general mode), Left and Right are dimmed and
-    /// say so, as in the Gestures pane; what they hold stays and comes back in the other mode.
+    /// While the desktop follows the hand (the app's own mode), Left and Right are dimmed
+    /// and say so and the swipe speed applies, as in the Gestures pane; what they hold stays
+    /// and comes back in the other mode. The general mode changes nothing here.
     func testFollowingTheHandDimsLeftAndRightAsThePaneDoes() throws {
         let calculator = addApp(Self.calculator)
         calculator.setUsesGeneralGestures(false, general: .default)
         Options.shared.gesture.mode = .interactive
         let (_, part) = try gesturesPart(interactiveAvailable: true)
         let controls = try XCTUnwrap(part.controls)
+        let speed = try XCTUnwrap(part.trackingSpeedRow)
+        XCTAssertTrue(part.directionRows[MouseGestureSettingsControls.Slot.left.rawValue].isEnabled, "the app's own mode: one action")
+        XCTAssertFalse(speed.isEnabled)
+
+        controls.modeControl.selectedSegment = 1
+        send(controls.modeControl)
+        XCTAssertEqual(calculator.ownGestures?.mode, .interactive)
         for slot in MouseGestureSettingsControls.Slot.allCases {
             XCTAssertEqual(part.directionRows[slot.rawValue].isEnabled, !slot.isHorizontal, slot.name)
             XCTAssertEqual(controls.actionPopUp(for: slot).isEnabled, !slot.isHorizontal, slot.name)
         }
         XCTAssertEqual(controls.actionPopUp(for: .left).menu?.items.first?.title, "Desktop follows the hand")
         XCTAssertEqual(controls.actionPopUp(for: .right).menu?.items.first?.title, MouseGestureSettingsControls.followHorizontalValue)
+        XCTAssertTrue(speed.isEnabled, "the speed applies now")
+        XCTAssertEqual(part.modeRow?.explanation, NSLocalizedString("gesture-mode-interactive-description", comment: ""))
 
         Options.shared.gesture.mode = .discrete
         part.syncViewWithOptions()
+        XCTAssertFalse(part.directionRows[MouseGestureSettingsControls.Slot.left.rawValue].isEnabled, "the general mode is another")
+        calculator.changeOwnGestures { $0.mode = .discrete }
+        part.syncViewWithOptions()
         XCTAssertTrue(part.directionRows[MouseGestureSettingsControls.Slot.left.rawValue].isEnabled)
         XCTAssertEqual(controls.actionPopUp(for: .left).menu?.items.first?.title, SystemShortcut.moveSpaceLeft.localizedName)
+    }
+
+    /// The app's own set has every row of the Gestures pane but the button to hold, in
+    /// the pane's order and made the pane's way: "Mode", then "Directions", "Behavior"
+    /// (invert, freeze, speed) and "Logitech mouse" (there while a connected mouse can do
+    /// one of its switches, as in the pane), then "Reset to Defaults". Each row changes the
+    /// app's set and nothing of the general gestures.
+    func testTheAppsSetHasThePanesRowsInItsOrderAndTheyEditTheApp() throws {
+        let calculator = addApp(Self.calculator)
+        Options.shared.buttons.binding = [binding(3, SystemShortcut.mouseGestureNavigation.identifier)]
+        var general = MouseGestureSettings.default
+        general.trackingSpeed = 1.5
+        Options.shared.gesture = general
+        calculator.setUsesGeneralGestures(false, general: general)
+        let (pane, part) = try gesturesPart(interactiveAvailable: true, mice: MouseGestureDeviceSupport(deviceTracking: true, haptics: true))
+        let controls = try XCTUnwrap(part.controls)
+
+        // The order of the pane, under the switch's box.
+        let order: [NSView?] = [
+            part.generalSection, part.modeSection, part.directionsFold, part.behaviourFold, part.logitechFold, part.resetFooter,
+        ]
+        let shown = try order.map { try XCTUnwrap($0) }
+        let stack = try XCTUnwrap(part.generalSection.superview as? NSStackView)
+        XCTAssertEqual(stack.arrangedSubviews.filter { view in shown.contains { $0 === view } }.count, shown.count)
+        let indices = shown.compactMap { view in stack.arrangedSubviews.firstIndex { $0 === view } }
+        XCTAssertEqual(indices, indices.sorted())
+        XCTAssertEqual([part.directionsFold, part.behaviourFold, part.logitechFold].map { $0?.title }, ["Directions", "Behavior", "Logitech mouse"])
+        XCTAssertEqual(part.modeRow?.title, "Mode")
+        XCTAssertTrue(controls.modeControl.isDescendant(of: try XCTUnwrap(part.modeRow)))
+        let behaviour = try XCTUnwrap(part.behaviourFold?.body as? PreferencesGroupBox)
+        XCTAssertEqual(behaviour.rows.map(\.title), ["Invert left and right", "Freeze pointer during a gesture", "Swipe speed"])
+        let logitech = try XCTUnwrap(part.logitechFold?.body as? PreferencesGroupBox)
+        XCTAssertEqual(logitech.rows.map(\.title), ["Let the mouse track the gesture (Beta)", "Pulse when a gesture locks in"])
+        XCTAssertFalse(try XCTUnwrap(part.logitechFold).isHidden)
+        XCTAssertEqual(part.trackingSpeedRow?.slider.identifier, MouseGestureSettingsControls.Identifier.trackingSpeed)
+        XCTAssertEqual(part.trackingSpeedRow?.valueText, MouseGestureTrackingSpeed.text(1.5))
+        XCTAssertEqual(part.freezeRow?.explanation, "The pointer stays where it is while you hold the button.")
+        pane.detailController?.view.layoutSubtreeIfNeeded()
+        XCTAssertFalse(part.view.hasAmbiguousLayout)
+
+        // Each row writes the app's own value.
+        let freeze = try XCTUnwrap(controls.freezeToggle as? NSSwitch)
+        freeze.state = .off
+        send(freeze)
+        controls.modeControl.selectedSegment = 1
+        send(controls.modeControl)
+        let slider = try XCTUnwrap(part.trackingSpeedRow?.slider)
+        slider.doubleValue = 2.6
+        send(slider)
+        let tracking = try XCTUnwrap(part.deviceTrackingRow?.toggle)
+        tracking.state = .on
+        send(tracking)
+        let haptics = try XCTUnwrap(part.hapticsRow?.toggle)
+        haptics.state = .off
+        send(haptics)
+        let own = try XCTUnwrap(calculator.ownGestures)
+        XCTAssertEqual(own.freezePointer, false)
+        XCTAssertEqual(own.mode, .interactive)
+        XCTAssertEqual(own.trackingSpeed, 2.5, "on a tick")
+        XCTAssertEqual(own.deviceTracking, true)
+        XCTAssertEqual(own.hapticFeedback, false)
+        XCTAssertEqual(part.trackingSpeedRow?.valueText, MouseGestureTrackingSpeed.text(2.5))
+        XCTAssertEqual(Options.shared.gesture, general, "the general gestures are untouched")
+        XCTAssertTrue(part.resetToDefaultsButton.isEnabled)
+
+        // No mouse that can do either switch: the section goes, as in the pane; the values stay.
+        part.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+        part.syncViewWithOptions()
+        XCTAssertTrue(try XCTUnwrap(part.logitechFold).isHidden)
+        XCTAssertEqual(calculator.ownGestures?.deviceTracking, true)
+        // Only haptics: both rows, the other dimmed with the pane's line.
+        part.deviceSource = MouseGestureDeviceSource(support: { MouseGestureDeviceSupport(deviceTracking: false, haptics: true) }, refresh: {})
+        part.syncViewWithOptions()
+        XCTAssertFalse(try XCTUnwrap(part.logitechFold).isHidden)
+        XCTAssertEqual(part.deviceTrackingRow?.isEnabled, false)
+        XCTAssertEqual(part.deviceTrackingRow?.explanation, "No connected mouse supports this.")
+        XCTAssertEqual(part.hapticsRow?.isEnabled, true)
     }
 
     /// One wording: while no button runs Gesture Navigation with the app in front
@@ -1150,7 +1242,8 @@ final class ApplicationPageTests: XCTestCase {
         _ = makeWindow(for: pane)
         pane.view.layoutSubtreeIfNeeded()
         let holder = try XCTUnwrap(part.buttonNoteLabel.superview)
-        let directions = try XCTUnwrap(part.directionsFold)
+        // (The own set begins with "Mode", as the pane's first box ends with it.)
+        let ownSet = try XCTUnwrap(part.modeSection)
         let section = part.generalSection!
         func gap(_ upper: NSView, _ lower: NSView) -> CGFloat {
             let a = upper.convert(upper.bounds, to: nil), b = lower.convert(lower.bounds, to: nil)
@@ -1158,7 +1251,7 @@ final class ApplicationPageTests: XCTestCase {
         }
         XCTAssertFalse(holder.isHidden)
         XCTAssertEqual(gap(section, holder), PreferencesGroupedForm.noteSpacing, accuracy: 0.5)
-        XCTAssertEqual(gap(holder, directions), PreferencesGroupedForm.sectionSpacing, accuracy: 0.5)
+        XCTAssertEqual(gap(holder, ownSet), PreferencesGroupedForm.sectionSpacing, accuracy: 0.5)
         XCTAssertFalse(part.view.hasAmbiguousLayout)
     }
 
@@ -1528,6 +1621,74 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertNil(part.ringController)
     }
 
+    /// The own ring folded under "Shortcuts", never opened, and then something starts to
+    /// open the ring with the app in front (a binding added in Buttons, or in the app's
+    /// Buttons part): the ring and "Reset to Defaults" stand right under the switch's box,
+    /// in sight and reachable, not a blank of their height (R3-1 F1).
+    func testTheFoldedOwnRingShowsWhenSomethingStartsToOpenTheRing() throws {
+        let calculator = addApp(Self.calculator)
+        calculator.setUsesGeneralRing(false, general: .default)
+        let pane = makePane()
+        _ = makeWindow(for: pane)
+        pane.openApplication(withID: Self.calculator, part: .ring)
+        let part = try XCTUnwrap(pane.detailController?.ringPart)
+        let fold = try XCTUnwrap(part.ownRingFold)
+        XCTAssertFalse(fold.isExpanded, "folded, and left so")
+        XCTAssertTrue(try XCTUnwrap(part.ringController).view.isHiddenOrHasHiddenAncestor)
+
+        Options.shared.buttons.binding = [binding(5, SystemShortcut.shortcutRing.identifier)]
+        part.syncViewWithOptions()
+        XCTAssertNil(part.ownRingFold)
+        let body = try XCTUnwrap(part.ownRingBody)
+        XCTAssertFalse(body.isHidden)
+        XCTAssertEqual(body.alphaValue, 1)
+        XCTAssertFalse(try XCTUnwrap(part.ringController).view.isHiddenOrHasHiddenAncestor)
+        XCTAssertFalse(part.resetToDefaultsButton.isHiddenOrHasHiddenAncestor)
+        pane.view.layoutSubtreeIfNeeded()
+        let ringView = try XCTUnwrap(part.ringController).view
+        XCTAssertEqual(ringView.convert(ringView.bounds, to: part.view).maxY, part.ringSection.frame.minY, accuracy: 0.5)
+        XCTAssertFalse(part.view.hasAmbiguousLayout)
+    }
+
+    /// "Reset to Defaults" under an app's own ring keeps room for its focus ring (Full
+    /// Keyboard Access, Tab to it): no view between it and the part cuts what is drawn
+    /// around it, in the open fold or under the switch's box (R3-1 F2).
+    func testTheRingPartsResetButtonKeepsRoomForItsFocusRing() throws {
+        let calculator = addApp(Self.calculator)
+        calculator.setUsesGeneralRing(false, general: .default)
+        let pane = makePane()
+        _ = makeWindow(for: pane)
+        pane.openApplication(withID: Self.calculator, part: .ring)
+        let part = try XCTUnwrap(pane.detailController?.ringPart)
+        func checkRoom(_ place: String) {
+            pane.view.layoutSubtreeIfNeeded()
+            let button = part.resetToDefaultsButton
+            // The focus ring is drawn about 3 pt outside the button.
+            let focus = button.bounds.insetBy(dx: -4, dy: -4)
+            var view = button.superview
+            while let current = view {
+                if current.clipsToBounds {
+                    XCTAssertTrue(current.bounds.contains(current.convert(focus, from: button)), "\(place): \(type(of: current)) cuts it")
+                }
+                if current === part.view { break }
+                view = current.superview
+            }
+        }
+        try XCTUnwrap(part.ownRingFold).setExpanded(true)
+        checkRoom("in the open fold")
+        Options.shared.buttons.binding = [binding(5, SystemShortcut.shortcutRing.identifier)]
+        part.syncViewWithOptions()
+        XCTAssertNil(part.ownRingFold)
+        checkRoom("under the switch's box")
+        // The ring's view still reaches no further than the body: a title above it stays
+        // uncovered.
+        let body = try XCTUnwrap(part.ownRingBody)
+        let ringView = try XCTUnwrap(part.ringController).view
+        let shown = try XCTUnwrap(ringView.superview).convert(ringView.superview!.bounds, to: body)
+        XCTAssertGreaterThanOrEqual(shown.minY, body.bounds.minY - 0.5)
+        XCTAssertLessThanOrEqual(shown.maxY, body.bounds.maxY + 0.5)
+    }
+
     /// The app's own gestures while no button runs Gesture Navigation with the app in
     /// front: "Directions" folds the five rows, the invert switch and "Reset to Defaults";
     /// a click opens them, and the page measures again. Once a button runs the gestures
@@ -1540,19 +1701,25 @@ final class ApplicationPageTests: XCTestCase {
         let page = try XCTUnwrap(pane.detailController)
         let fold = try XCTUnwrap(part.directionsFold)
         XCTAssertEqual(fold.title, "Directions")
-        XCTAssertTrue(fold.isCollapsible)
-        XCTAssertFalse(fold.isExpanded)
-        XCTAssertTrue(fold.body.isHidden)
-        for view in [part.directionsSection, part.invertSection, part.resetFooter] as [NSView?] {
-            XCTAssertTrue(try XCTUnwrap(view).isDescendant(of: fold.body))
+        XCTAssertEqual(part.foldingSections.map(\.title), ["Directions", "Behavior", "Logitech mouse"])
+        for section in part.foldingSections {
+            XCTAssertTrue(section.isCollapsible, section.title)
+            XCTAssertFalse(section.isExpanded, section.title)
+            XCTAssertTrue(section.body.isHidden, section.title)
         }
-        // Folded, the title stands where a titled section does. (Not checked for an
+        XCTAssertTrue(try XCTUnwrap(part.directionsSection).isDescendant(of: fold.body))
+        XCTAssertTrue(try XCTUnwrap(part.invertRow).isDescendant(of: try XCTUnwrap(part.behaviourFold).body))
+        // "Mode" and "Reset to Defaults" stay in sight, as in the Gestures pane.
+        XCTAssertFalse(try XCTUnwrap(part.modeSection).isHiddenOrHasHiddenAncestor)
+        XCTAssertFalse(part.resetFooter.isHiddenOrHasHiddenAncestor)
+        // Folded, "Mode" stands where a titled section does. (Not checked for an
         // ambiguous layout: the test's window makes the pane taller than the part, which
         // a short part, as the switch alone, does not pin; the unfolded set is checked.)
         pane.view.layoutSubtreeIfNeeded()
         let section = try XCTUnwrap(part.generalSection)
+        let mode = try XCTUnwrap(part.modeSection)
         func gap() -> CGFloat {
-            return section.convert(section.bounds, to: nil).minY - fold.convert(fold.bounds, to: nil).maxY
+            return section.convert(section.bounds, to: nil).minY - mode.convert(mode.bounds, to: nil).maxY
         }
         XCTAssertEqual(gap(), PreferencesGroupedForm.sectionSpacing, accuracy: 0.5)
         let folded = page.view.fittingSize.height
@@ -1574,10 +1741,12 @@ final class ApplicationPageTests: XCTestCase {
         Options.shared.buttons.binding = [binding(3, SystemShortcut.mouseGestureNavigation.identifier)]
         part.syncViewWithOptions()
         XCTAssertTrue(part.directionsFold === fold)
-        XCTAssertFalse(fold.isCollapsible)
-        XCTAssertFalse(fold.titleLabel.isHidden)
-        XCTAssertTrue(fold.disclosure.isHidden)
-        XCTAssertFalse(fold.body.isHidden)
+        for section in part.foldingSections {
+            XCTAssertFalse(section.isCollapsible, section.title)
+            XCTAssertFalse(section.titleLabel.isHidden, section.title)
+            XCTAssertTrue(section.disclosure.isHidden, section.title)
+            XCTAssertFalse(section.body.isHidden, section.title)
+        }
         pane.view.layoutSubtreeIfNeeded()
         XCTAssertEqual(gap(), PreferencesGroupedForm.sectionSpacing, accuracy: 0.5)
         XCTAssertFalse(part.view.hasAmbiguousLayout)

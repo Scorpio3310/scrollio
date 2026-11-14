@@ -161,6 +161,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-detail-ring-suggested-reset",
         "apps-detail-ring-suggested-reset-empty-one", "apps-detail-ring-suggested-reset-empty-other",
         "apps-detail-thumb-wheel-note",
+        "apps-undo-reset-ring", "apps-undo-reset-gestures",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).
@@ -341,6 +342,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-detail-ring-suggested-reset": "@",
         "apps-detail-ring-suggested-reset-empty-other": "d",
         "apps-buttons-note-thumb-wheel": "@",
+        "apps-undo-reset-ring": "@",
+        "apps-undo-reset-gestures": "@",
         // General pane
         "about-version": "@@",
         "about-version-commit": "@@@",

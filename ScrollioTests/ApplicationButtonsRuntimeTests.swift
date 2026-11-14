@@ -334,11 +334,13 @@ final class ApplicationButtonsPressTests: XCTestCase {
         XCTAssertFalse(controller.isOpen)
     }
 
-    /// A ring an app's binding opens keeps the pointer still as the general ring's switch
-    /// says, for the hold alone.
-    func testARingAnAppsBindingOpensKeepsThePointerStillAsTheGeneralSwitchSays() {
-        set(general: [], figma: figmaEntry(own: [binding(thumbPanel, ringAction)], ring: true))
-        harness.ring.freezePointer = true
+    /// A ring an app's binding opens keeps the pointer still as the switch of the ring
+    /// that opens says (here the app's own ring's, the general one off), for the hold alone.
+    func testARingAnAppsBindingOpensKeepsThePointerStillAsItsRingsSwitchSays() {
+        let entry = figmaEntry(own: [binding(thumbPanel, ringAction)], ring: true)
+        entry.setOwnRingFreezePointer(true)
+        set(general: [], figma: entry)
+        harness.ring.freezePointer = false
         front = figma
         XCTAssertEqual(process(button(.down)), .consumed)
         XCTAssertEqual(harness.pointerLocks, ["lock"])
@@ -702,7 +704,7 @@ final class ApplicationButtonsLogitechTests: XCTestCase {
         LogiUsageBootstrap.refreshGestureTracking(front: figma, afterASettingsChange: true)
         XCTAssertEqual(tracked, [])
         XCTAssertEqual(lines, [
-            "Gestures: the mouse tracks the hold of 1 Logitech button(s) itself; 1 app(s) change which by their own bindings while in front",
+            "Gestures: the mouse tracks the hold of 1 Logitech button(s) itself; 1 app(s) change which by their own settings while in front",
         ])
         // The setting off: none, wherever, and one line.
         lines = []
@@ -717,6 +719,48 @@ final class ApplicationButtonsLogitechTests: XCTestCase {
         for line in lines {
             XCTAssertFalse(line.contains("Figma") || line.contains("/"), line)
         }
+    }
+
+    /// An app's own gestures carry their own "Let the mouse track the gesture": the set
+    /// handed to the mouse while the app is in front follows that switch, another app and
+    /// Scrollio itself get Buttons' set by the general switch, a button that is down keeps
+    /// its tracking until it is up, and the log counts such an app (never which).
+    func testTheAppsOwnTrackingSwitchCountsWhileItIsInFront() {
+        // Figma's own gestures, a copy of the defaults: the mouse does not track there.
+        let figmaApp = figmaEntry(own: [], gestures: true)
+        XCTAssertEqual(figmaApp.ownGestures?.deviceTracking, false)
+        set(general: [binding(thumbPanel, gestureAction)], figma: figmaApp)
+        LogiUsageBootstrap.frontApplicationChanged(to: safari)
+        XCTAssertEqual(tracked, [thumbPanel], "the general switch, on")
+        LogiUsageBootstrap.frontApplicationChanged(to: figma)
+        XCTAssertEqual(tracked, [], "Figma's own switch, off")
+        var scrollio = figma
+        scrollio.isScrollio = true
+        LogiUsageBootstrap.frontApplicationChanged(to: scrollio)
+        XCTAssertEqual(tracked, [thumbPanel], "Scrollio itself: the general switch")
+
+        // A hold that began in Safari keeps its tracking while Figma comes forward.
+        LogiUsageBootstrap.frontApplicationChanged(to: safari)
+        held = [thumbPanel]
+        LogiUsageBootstrap.frontApplicationChanged(to: figma)
+        XCTAssertEqual(tracked, [thumbPanel], "still down: still tracked")
+        held = []
+        LogiUsageBootstrap.frontApplication = { figma }
+        LogiUsageBootstrap.buttonWasReleased(thumbPanel)
+        waitForMainQueue()
+        XCTAssertEqual(tracked, [])
+
+        // The other way round: the general switch off, Figma's on.
+        lines = []
+        Options.shared.gesture.deviceTracking = false
+        figmaApp.changeOwnGestures { $0.deviceTracking = true }
+        LogiUsageBootstrap.refreshGestureTracking(front: figma, afterASettingsChange: true)
+        XCTAssertEqual(tracked, [thumbPanel])
+        LogiUsageBootstrap.frontApplicationChanged(to: textEdit)
+        XCTAssertEqual(tracked, [])
+        XCTAssertEqual(lines, [
+            "Gestures: the mouse tracks no Logitech button's hold itself; 1 app(s) change which by their own settings while in front",
+        ])
     }
 
     /// A button that is down keeps its tracking, either way, until it is up: a tracked hold

@@ -757,7 +757,7 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
         XCTAssertFalse(figma.usesGeneralRing, "the switch stays")
         XCTAssertEqual(part.resetToDefaultsButton.title, "Undo Reset")
-        XCTAssertEqual(undo.undoActionName, "Reset Shortcut Ring")
+        XCTAssertEqual(undo.undoActionName, "Reset Shortcut Ring in Figma")
 
         undo.undo()
         XCTAssertEqual(figma.ownRingPlaces, edited)

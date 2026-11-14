@@ -4,7 +4,8 @@
 //
 //  Gestures of an app's own: how they are stored with the app's entry and what an entry
 //  from before reads as, the switch "Use the general gestures", which gesture settings a
-//  hold begins with for which app in front, and that a hold keeps them until it ends.
+//  hold begins with for which app in front (the actions, the mode, the speed, the freeze
+//  and a Logitech mouse's switches), and that a hold keeps them until it ends.
 //  (The app's page is in ApplicationPageTests, the settings file in SettingsFileTests.)
 //  Nothing is shown, and what a gesture runs goes to the executor's observers.
 //
@@ -57,11 +58,17 @@ final class ApplicationGesturesStorageTests: XCTestCase {
     }
 
     /// The app's own set is stored with its entry, in the names of the general gesture
-    /// settings (the five actions, a label only where there is one, and the invert switch)
-    /// beside the switch, and comes back as it was stored, its recorded keys prepared.
+    /// settings (the five actions, a label only where there is one, the invert switch, the
+    /// mode, the speed, the freeze and a Logitech mouse's two switches) beside the switch,
+    /// and comes back as it was stored, its recorded keys prepared.
     func testAnAppsOwnGesturesAreStoredWithItsEntryAndComeBack() throws {
         let notes = Application(path: notesPath)
         notes.setUsesGeneralGestures(false, general: .default)
+        notes.changeOwnGestures { own in
+            own.mode = .interactive
+            own.trackingSpeed = 2.5
+            own.freezePointer = false
+        }
         var actions = GestureActions.default
         let reload = ShortcutLabel(name: "Reload", icon: .symbol("arrow.clockwise"))
         actions.up = GestureAction(action: "custom::15:1179648", label: reload)
@@ -74,7 +81,13 @@ final class ApplicationGesturesStorageTests: XCTestCase {
         let gestures = try XCTUnwrap(stored[0]["gestures"] as? [String: Any])
         XCTAssertEqual(Set(gestures.keys), [
             "inherit", "upAction", "upLabel", "downAction", "leftAction", "rightAction", "clickAction", "invertHorizontal",
-        ], "the mode, the speed, the freeze and the mouse's options are the general ones")
+            "mode", "trackingSpeed", "freezePointer", "deviceTracking", "hapticFeedback",
+        ])
+        XCTAssertEqual(gestures["mode"] as? String, "interactive")
+        XCTAssertEqual(gestures["trackingSpeed"] as? Double, 2.5)
+        XCTAssertEqual(gestures["freezePointer"] as? Bool, false)
+        XCTAssertEqual(gestures["deviceTracking"] as? Bool, false, "copied from the general gestures")
+        XCTAssertEqual(gestures["hapticFeedback"] as? Bool, true, "copied from the general gestures")
         XCTAssertEqual(gestures["inherit"] as? Bool, false)
         XCTAssertEqual(gestures["upAction"] as? String, "custom::15:1179648")
         XCTAssertEqual(gestures["leftAction"] as? String, "navigateBack")
@@ -90,11 +103,11 @@ final class ApplicationGesturesStorageTests: XCTestCase {
         XCTAssertEqual(back.ownGestures?.actions.up.keys, GestureAction.Keys(code: 15, modifiers: 1179648), "prepared when read")
         XCTAssertTrue(try XCTUnwrap(loaded.get(by: calculatorPath)).usesGeneralGestures)
 
-        // What runs: the app's actions and invert switch, the general rest.
+        // What runs: all of the app's own set, whatever the general gestures say now.
         var general = MouseGestureSettings.default
-        general.mode = .interactive
-        general.trackingSpeed = 2
-        general.freezePointer = false
+        general.mode = .discrete
+        general.trackingSpeed = 0.5
+        general.freezePointer = true
         general.deviceTracking = true
         general.hapticFeedback = false
         let runs = back.gesturesThatRun(general: general)
@@ -102,10 +115,57 @@ final class ApplicationGesturesStorageTests: XCTestCase {
         XCTAssertTrue(runs.invertHorizontal)
         XCTAssertEqual(runs.action(for: .right), GestureAction(SystemShortcut.navigateBack), "inverted")
         XCTAssertEqual(runs.mode, .interactive)
-        XCTAssertEqual(runs.trackingSpeed, 2)
+        XCTAssertEqual(runs.trackingSpeed, 2.5)
         XCTAssertFalse(runs.freezePointer)
-        XCTAssertTrue(runs.deviceTracking)
-        XCTAssertFalse(runs.hapticFeedback)
+        XCTAssertFalse(runs.deviceTracking)
+        XCTAssertTrue(runs.hapticFeedback)
+    }
+
+    /// A set stored before the mode, the speed, the freeze and a Logitech mouse's switches
+    /// were an app's reads as it ran until now: each is the general value, whatever that is
+    /// at the time, and the set is written as it was. A value the app's page sets becomes
+    /// the app's, alone; one that cannot be read is the general one, a speed out of range is
+    /// kept in it.
+    func testASetFromBeforeRunsTheGeneralRestUntilThePageSetsIt() throws {
+        let json = #"{"path":"/Applications/Notes.app","gestures":{"inherit":false,"upAction":"copy","invertHorizontal":true}}"#
+        let notes = try JSONDecoder().decode(Application.self, from: Data(json.utf8))
+        var general = MouseGestureSettings.default
+        general.mode = .interactive
+        general.trackingSpeed = 2
+        general.freezePointer = false
+        general.deviceTracking = true
+        general.hapticFeedback = false
+        var expected = general
+        expected.upAction = SystemShortcut.copy.identifier
+        expected.invertHorizontal = true
+        XCTAssertEqual(notes.gesturesThatRun(general: general), expected, "the general rest, as before")
+        general.mode = .discrete
+        expected.mode = .discrete
+        XCTAssertEqual(notes.gesturesThatRun(general: general), expected, "and it follows the general gestures")
+        let stored = try XCTUnwrap(try JSONSerialization.jsonObject(with: JSONEncoder().encode(notes)) as? [String: Any])
+        XCTAssertEqual(Set(try XCTUnwrap(stored["gestures"] as? [String: Any]).keys), [
+            "inherit", "upAction", "downAction", "leftAction", "rightAction", "clickAction", "invertHorizontal",
+        ], "written as before")
+
+        notes.changeOwnGestures { $0.freezePointer = true }
+        XCTAssertTrue(notes.gesturesThatRun(general: general).freezePointer)
+        XCTAssertEqual(notes.ownGestures?.mode, nil, "only what was set")
+        XCTAssertEqual(notes.gesturesThatRun(general: general).trackingSpeed, 2)
+
+        func set(_ gestures: String) throws -> ApplicationGestures {
+            let json = #"{"path":"/Applications/Notes.app","gestures":"# + gestures + "}"
+            return try XCTUnwrap(try JSONDecoder().decode(Application.self, from: Data(json.utf8)).gestures)
+        }
+        let odd = try set(#"{"inherit":false,"mode":"sideways","trackingSpeed":"fast","freezePointer":1,"deviceTracking":"on","hapticFeedback":null}"#)
+        XCTAssertFalse(odd.inherit, "the set is read")
+        XCTAssertNil(odd.mode)
+        XCTAssertNil(odd.trackingSpeed)
+        XCTAssertNil(odd.freezePointer)
+        XCTAssertNil(odd.deviceTracking)
+        XCTAssertNil(odd.hapticFeedback)
+        XCTAssertEqual(try set(#"{"trackingSpeed":40}"#).trackingSpeed, MouseGestureSettings.trackingSpeedRange.upperBound)
+        XCTAssertEqual(try set(#"{"trackingSpeed":-1}"#).trackingSpeed, MouseGestureSettings.trackingSpeedRange.lowerBound)
+        XCTAssertEqual(try set(#"{"mode":"interactive","hapticFeedback":false}"#).mode, .interactive)
     }
 
     /// Off: a copy of the general actions and invert switch as they are at that moment,
@@ -123,9 +183,16 @@ final class ApplicationGesturesStorageTests: XCTestCase {
         notes.setOwnGestures(actions: unused, invertHorizontal: false)
         XCTAssertNil(notes.gestures, "no set of its own to change")
 
+        general.mode = .interactive
+        general.trackingSpeed = 1.75
+        general.freezePointer = false
+        general.deviceTracking = true
+        general.hapticFeedback = false
         notes.setUsesGeneralGestures(false, general: general)
         XCTAssertEqual(notes.ownGestures?.actions, general.actions)
         XCTAssertEqual(notes.ownGestures?.invertHorizontal, true)
+        XCTAssertEqual(notes.ownGestures, ApplicationGestures(inherit: false, copying: general), "all of it, copied")
+        XCTAssertEqual(notes.gesturesThatRun(general: .default), general, "the copy runs, not the general gestures of later")
         var own = general.actions
         own.up = GestureAction(SystemShortcut.paste)
         notes.setOwnGestures(actions: own, invertHorizontal: false)
@@ -140,10 +207,15 @@ final class ApplicationGesturesStorageTests: XCTestCase {
         XCTAssertEqual(notes.gesturesThatRun(general: general), general)
         XCTAssertEqual(notes.gestures?.actions.up.action, "paste", "kept in storage")
 
-        notes.setUsesGeneralGestures(false, general: general)
+        notes.changeOwnGestures { $0.mode = .discrete }
+        XCTAssertEqual(notes.gestures?.mode, .interactive, "nothing changes a set kept for later")
+        notes.setUsesGeneralGestures(false, general: .default)
         XCTAssertEqual(notes.ownGestures?.actions.up.action, "paste", "its own set as it was left")
         XCTAssertEqual(notes.ownGestures?.actions.down.action, "copy", "not a new copy of the general gestures")
         XCTAssertEqual(notes.ownGestures?.invertHorizontal, false)
+        XCTAssertEqual(notes.ownGestures?.mode, .interactive)
+        XCTAssertEqual(notes.ownGestures?.trackingSpeed, 1.75)
+        XCTAssertEqual(notes.ownGestures?.freezePointer, false)
     }
 
     /// A stored set is read as the general gestures are; what is no set does not take the
@@ -217,14 +289,31 @@ final class MouseGestureChoiceTests: XCTestCase {
         return MouseGestureChoice.make(front: front, applications: applications, general: general)
     }
 
-    /// The app in front has gestures of its own: its actions run, with the general mode.
-    /// The entry is found by the bundle's path, then by the program's, as the ring's is.
-    func testAnAppWithGesturesOfItsOwnGetsThem() {
+    /// The app in front has gestures of its own: all of its set runs, its mode, speed,
+    /// freeze and a Logitech mouse's switches too. The entry is found by the bundle's path,
+    /// then by the program's, as the ring's is.
+    func testAnAppWithGesturesOfItsOwnGetsThem() throws {
         let notes = choice(FrontApp(bundlePath: notesPath, executablePath: notesPath + "/Contents/MacOS/Notes"))
         XCTAssertTrue(notes.isAppsOwn)
         XCTAssertEqual(notes.settings.actions.up.action, "copy")
         XCTAssertEqual(notes.settings.actions.click, GestureActions.default.click, "the app's own click, not the general one")
-        XCTAssertEqual(notes.settings.mode, .interactive, "the mode is the general one")
+        XCTAssertEqual(notes.settings.mode, .discrete, "the app's own mode, copied from the defaults")
+
+        let entry = try XCTUnwrap(applications.get(by: notesPath))
+        entry.changeOwnGestures { own in
+            own.mode = .interactive
+            own.trackingSpeed = 3
+            own.freezePointer = false
+            own.deviceTracking = true
+            own.hapticFeedback = false
+        }
+        let own = choice(FrontApp(bundlePath: notesPath, executablePath: nil)).settings
+        XCTAssertEqual(own.mode, .interactive)
+        XCTAssertEqual(own.trackingSpeed, 3)
+        XCTAssertFalse(own.freezePointer)
+        XCTAssertTrue(own.deviceTracking)
+        XCTAssertFalse(own.hapticFeedback)
+        XCTAssertEqual(choice(nil).settings, general, "another app: the general ones")
 
         let calculator = choice(FrontApp(bundlePath: calculatorPath, executablePath: calculatorProgram))
         XCTAssertTrue(calculator.isAppsOwn, "stored by its program, as a running app is added")
@@ -401,6 +490,47 @@ final class ApplicationGesturesHoldTests: XCTestCase {
         for line in logLines {
             XCTAssertFalse(line.contains("Notes") || line.contains("Reload") || line.contains("/"), line)
         }
+    }
+
+    /// The app's own "Freeze pointer during a gesture" and "Pulse when a gesture locks in"
+    /// count for a hold that began with the app in front, to its end, also when another
+    /// app comes forward meanwhile; a hold begun with another app in front, or with
+    /// Scrollio itself, has the general ones (here both off).
+    func testTheAppsFreezeAndPulseCountForItsHoldsToTheirEnd() throws {
+        MouseGesturePointerLock.shared.setTestingDriver(MouseGesturePointerDriver(
+            currentLocation: { CGPoint(x: 400, y: 300) }, setAssociated: { _ in }, warp: { _ in }
+        ))
+        var pulses: [MouseGestureHapticCue] = []
+        InputProcessor.shared.setTestingGestureHapticPlayer { cue, _ in pulses.append(cue) }
+        defer {
+            InputProcessor.shared.clearTestingGestureHapticPlayer()
+            MouseGesturePointerLock.shared.clearTestingDriver()
+        }
+        notes.changeOwnGestures { own in
+            own.freezePointer = true
+            own.hapticFeedback = true
+        }
+        var lockedMeanwhile: [Bool] = []
+        func hold(_ pressed: FrontApp?, then meanwhile: FrontApp?) {
+            front = pressed
+            XCTAssertEqual(InputProcessor.shared.process(button(.down)), .consumed)
+            front = meanwhile
+            lockedMeanwhile.append(MouseGesturePointerLock.shared.isLocked)
+            InputProcessor.shared.handleMouseGestureMovement(deltaX: Self.up.x, deltaY: Self.up.y)
+            XCTAssertEqual(InputProcessor.shared.process(button(.up)), .consumed)
+            waitForMainQueue()
+            XCTAssertFalse(MouseGesturePointerLock.shared.isLocked, "free again at the up")
+        }
+        hold(Self.notes, then: Self.textEdit)
+        XCTAssertEqual(lockedMeanwhile, [true], "Notes' freeze, kept while TextEdit came forward")
+        XCTAssertEqual(pulses, [.lockIn], "Notes' pulse")
+
+        pulses = []
+        hold(Self.textEdit, then: Self.notes)
+        let scrollio = try XCTUnwrap(FrontApp.current(NSRunningApplication.current))
+        hold(scrollio, then: Self.notes)
+        XCTAssertEqual(lockedMeanwhile, [true, false, false], "the general freeze, off")
+        XCTAssertEqual(pulses, [], "the general pulse, off")
     }
 
     /// An app's "Invert left and right" counts for its holds, the general one for every

@@ -33,11 +33,12 @@
 //
 //  The pane only edits Options.shared.ring.
 //
-//  An app's page under Apps shows the same drawing of the ring, across the whole width, and
-//  the same eight rows for the app's own ring (`init(application:)`, as the Scrolling
-//  settings there get a target application): then the rows edit only that app's ring, and
-//  what is general is left out: what opens the ring (and its card), the freeze switch, the
-//  two lines on how to choose and "Reset to Defaults".
+//  An app's page under Apps shows the same drawing of the ring, across the whole width, the
+//  same freeze switch and the same eight rows, in the pane's order, for the app's own ring
+//  (`init(application:)`, as the Scrolling settings there get a target application): then
+//  they edit only that app's ring, and what is not the ring's is left out: what opens the
+//  ring (and its card), the line on how to choose and "Reset to Defaults" (the part has
+//  its own).
 //
 
 import Cocoa
@@ -241,7 +242,7 @@ final class RingPreferencesViewController: NSViewController {
     let application: Application?
 
     /// The ring the drawing and the rows show: the general one, or the app's own as it
-    /// opens (its eight places; the freeze switch is the general ring's).
+    /// opens (its eight places and its freeze switch).
     private var shownRing: ShortcutRingSettings {
         let general = Options.shared.ring
         return application?.ringThatOpens(general: general) ?? general
@@ -313,7 +314,7 @@ final class RingPreferencesViewController: NSViewController {
     }
     private(set) var triggerRow: PreferencesGroupRow!
     private(set) var triggerButton: NSButton!
-    /// "Freeze pointer while the ring is held" and its switch.
+    /// "Freeze pointer while the ring is held" and its switch (the app's own on its page).
     private(set) var freezeRow: PreferencesGroupRow!
     private(set) var freezeToggle: NSControl!
     /// Top, Top right … Top left.
@@ -363,11 +364,13 @@ final class RingPreferencesViewController: NSViewController {
         placePopUps = (0..<ShortcutRingSettings.placeCount).map { makePopUp(for: $0) }
         placeRows = (0..<ShortcutRingSettings.placeCount).map { makePlaceRow($0) }
         if application != nil {
-            // An app's own ring: the drawing across the width and the eight rows, nothing of
-            // what is general.
+            // An app's own ring: the drawing across the width, its freeze switch and the
+            // eight rows, in the pane's order; nothing of what opens the ring.
             preview.translatesAutoresizingMaskIntoConstraints = false
             preview.heightAnchor.constraint(equalToConstant: ShortcutRingPreviewView.preferredHeight).isActive = true
-            sections = [preview, PreferencesGroupBox(width: width, rows: placeRows)]
+            sections = [
+                preview, PreferencesGroupBox(width: width, rows: [makeFreezeRow()]), PreferencesGroupBox(width: width, rows: placeRows),
+            ]
             PreferencesGroupedForm.add(sections, to: content)
         } else {
             // What opens the ring beside the ring.
@@ -442,8 +445,8 @@ final class RingPreferencesViewController: NSViewController {
             triggerButton.title = text(opens ? "ring-trigger-change" : "ring-trigger-set-up")
             // Nothing opens the ring: its places wait, folded, a click away.
             placesSection?.isCollapsible = !opens
-            (freezeToggle as? NSSwitch)?.state = ring.freezePointer ? .on : .off
         }
+        (freezeToggle as? NSSwitch)?.state = ring.freezePointer ? .on : .off
         for (place, popUp) in placePopUps.enumerated() {
             // (A place that runs nothing shows "No Action", as the ring shows a dot.)
             popUp.configure(with: ring[place].asBinding(id: placeIDs[place]))
@@ -549,10 +552,16 @@ final class RingPreferencesViewController: NSViewController {
 
     @objc func freezeToggled(_ sender: NSControl) {
         let freezes = (sender as? NSSwitch)?.state == .on
-        guard Options.shared.ring.freezePointer != freezes else { return }
-        Options.shared.ring.freezePointer = freezes
+        guard shownRing.freezePointer != freezes else { return }
+        if let application {
+            // The app's own ring's switch from now on; the general ring's stays as it is.
+            application.setOwnRingFreezePointer(freezes)
+        } else {
+            Options.shared.ring.freezePointer = freezes
+        }
         // The face made for the ring on screen is kept for the ring as it is stored now.
         reload()
+        onPlaceChange?()
     }
 
     /// Puts `new` into `place`. What a place cannot hold (a recorded mouse button, a
@@ -578,7 +587,8 @@ final class RingPreferencesViewController: NSViewController {
         onPlaceChange?()
     }
 
-    /// A row changed a place (the app's page: its "Reset to Defaults" follows).
+    /// A row changed a place or the freeze switch (the app's page: its "Reset to Defaults"
+    /// follows).
     var onPlaceChange: (() -> Void)?
 
     /// "Open App or File…" of a place: the Buttons pane's popover at the pull-down, with
@@ -660,9 +670,8 @@ final class RingPreferencesViewController: NSViewController {
         return row
     }
 
-    /// The pull-down of one place: the Buttons pane's, with the menu of a place.
     /// "Freeze pointer while the ring is held": the ring's own switch, as Gestures has one
-    /// for a gesture. Off for a new ring.
+    /// for a gesture. Off for a new ring; an app's own ring starts with the general one's.
     private func makeFreezeRow() -> PreferencesGroupRow {
         let toggle = PreferencesGroupedForm.makeSwitch(target: self, action: #selector(freezeToggled(_:)))
         toggle.identifier = Identifier.freezePointer

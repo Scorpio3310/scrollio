@@ -13,7 +13,8 @@
 //  them off under Mouse, a muted line that says so and leads there ("Open Mouse"). Last,
 //  "Reset to Defaults", as in the Scrolling pane (`PreferencesPaneReset`): every gesture
 //  setting of a new installation; the button to hold is a binding of Buttons and stays.
-//  Mode, actions, invert and freeze come from MouseGestureSettingsControls.
+//  Mode, actions, invert and freeze come from MouseGestureSettingsControls, the rows from
+//  `MouseGestureRows` (an app's Gestures part shows the same rows for the app's own set).
 //  The tab only edits Options.shared.gesture; which button runs Gesture Navigation is
 //  chosen in the Buttons tab, and the first row ("Button to hold") names it and leads there:
 //  "Set Up…" records one, "Change" shows the Buttons pane with that button's row selected.
@@ -49,9 +50,9 @@ final class GesturesPreferencesViewController: NSViewController {
         static let preview = NSUserInterfaceItemIdentifier("gestures-preview")
         static let gestureButton = NSUserInterfaceItemIdentifier("gestures-gesture-button")
         static let directionsHint = NSUserInterfaceItemIdentifier("gestures-directions-hint")
-        static let trackingSpeed = NSUserInterfaceItemIdentifier("gesture-tracking-speed")
-        static let deviceTracking = NSUserInterfaceItemIdentifier("gesture-device-tracking")
-        static let haptics = NSUserInterfaceItemIdentifier("gesture-haptics")
+        static let trackingSpeed = MouseGestureSettingsControls.Identifier.trackingSpeed
+        static let deviceTracking = MouseGestureSettingsControls.Identifier.deviceTracking
+        static let haptics = MouseGestureSettingsControls.Identifier.haptics
         static let logitechNeeds = NSUserInterfaceItemIdentifier("gestures-logitech-needs")
         static let hapticsOffNote = NSUserInterfaceItemIdentifier("gestures-haptics-off-note")
         static let openMouse = NSUserInterfaceItemIdentifier("gestures-open-mouse")
@@ -295,14 +296,7 @@ final class GesturesPreferencesViewController: NSViewController {
         // A refresh arriving while the user drags the knob must not snap it back. A stored
         // speed between two ticks shows on the nearer one and stays as stored until the
         // slider is moved.
-        if !trackingSpeedRow.isTracking {
-            trackingSpeedRow.showValue(gesture.trackingSpeed)
-        }
-        trackingSpeedRow.valueText = MouseGestureTrackingSpeed.text(gesture.trackingSpeed)
-        trackingSpeedRow.isEnabled = presentation.isTrackingSpeedEditable
-        trackingSpeedRow.explanation = text(
-            presentation.isTrackingSpeedEditable ? "gesture-tracking-speed-hint" : "gesture-tracking-speed-hint-discrete"
-        )
+        MouseGestureRows.show(gesture, presentation: presentation, in: trackingSpeedRow)
 
         gestureSupport = deviceSource.support()
         let rules = MouseGestureControlRules(support: gestureSupport, hapticsOnUnderMouse: Options.shared.logiMouse.hapticsOn)
@@ -322,12 +316,7 @@ final class GesturesPreferencesViewController: NSViewController {
             showsHapticsOffNote ? PreferencesGroupedForm.noteSpacing : PreferencesGroupedForm.sectionSpacing,
             after: logitechSection
         )
-        deviceTrackingRow.isOn = gesture.deviceTracking
-        deviceTrackingRow.isEnabled = rules.deviceTrackingEnabled
-        deviceTrackingRow.explanation = text(rules.deviceTrackingHintKey)
-        hapticsRow.isOn = gesture.hapticFeedback
-        hapticsRow.isEnabled = rules.hapticsEnabled
-        hapticsRow.explanation = text(rules.hapticsHintKey)
+        MouseGestureRows.show(gesture, rules: rules, deviceTracking: deviceTrackingRow, haptics: hapticsRow)
 
         updatePreviewScene()
         resetToDefaults?.settingsDidChange()
@@ -395,26 +384,18 @@ final class GesturesPreferencesViewController: NSViewController {
     @objc func trackingSpeedChanged(_ sender: NSSlider) {
         let value = MouseGestureTrackingSpeed.snapped(sender.doubleValue)
         trackingSpeedRow.valueText = MouseGestureTrackingSpeed.text(value)
-        if Options.shared.gesture.trackingSpeed != value {
-            Options.shared.gesture.trackingSpeed = value
-        }
+        controls.setTrackingSpeed(value)
         updatePreviewScene()
         resetToDefaults.settingsDidChange()
     }
 
     @objc func deviceTrackingToggled(_ sender: NSSwitch) {
-        let enabled = sender.state == .on
-        if Options.shared.gesture.deviceTracking != enabled {
-            Options.shared.gesture.deviceTracking = enabled
-        }
+        controls.setDeviceTracking(sender.state == .on)
         reload()
     }
 
     @objc func hapticsToggled(_ sender: NSSwitch) {
-        let enabled = sender.state == .on
-        if Options.shared.gesture.hapticFeedback != enabled {
-            Options.shared.gesture.hapticFeedback = enabled
-        }
+        controls.setHapticFeedback(sender.state == .on)
         reload()
     }
 
@@ -511,17 +492,7 @@ final class GesturesPreferencesViewController: NSViewController {
 
     /// "Mode": what the selected mode does under the title, the two modes across the box.
     private func makeModeRow() -> PreferencesGroupRow {
-        let mode = controls.modeControl
-        mode.segmentDistribution = .fillEqually
-        let row = PreferencesGroupRow(
-            title: text("gesture-mode-label"),
-            explanation: text(MouseGestureModePresentation.descriptionKeys[0]),
-            accessory: mode,
-            placement: .below
-        )
-        // Room for the longest line, so picking the other mode never changes the height.
-        row.reservedExplanations = MouseGestureModePresentation.descriptionKeys.map(text)
-        row.explanationLabel.identifier = MouseGestureSettingsControls.Identifier.modeNote
+        let row = MouseGestureRows.mode(controls.modeControl)
         modeRow = row
         return row
     }
@@ -575,51 +546,25 @@ final class GesturesPreferencesViewController: NSViewController {
     }
 
     private func makeInvertRow() -> PreferencesGroupRow {
-        let row = PreferencesGroupRow(
-            title: text("gesture-invert-horizontal"),
-            explanation: text("gesture-invert-horizontal-hint"),
-            accessory: controls.invertToggle
-        )
+        let row = MouseGestureRows.invert(controls.invertToggle)
         invertRow = row
         return row
     }
 
     private func makeFreezeRow() -> PreferencesGroupRow {
-        let row = PreferencesGroupRow(
-            title: text("gesture-freeze-pointer"),
-            explanation: text("gesture-freeze-pointer-hint"),
-            accessory: controls.freezeToggle
-        )
+        let row = MouseGestureRows.freeze(controls.freezeToggle)
         freezeRow = row
         return row
     }
 
     private func makeTrackingSpeedRow() -> PreferencesGroupRow {
-        let row = PreferencesSliderRow(
-            title: text("gesture-tracking-speed-label"),
-            explanation: text("gesture-tracking-speed-hint"),
-            range: MouseGestureSettings.trackingSpeedRange,
-            scale: MouseGestureTrackingSpeed.scale,
-            ends: (low: text("gesture-tracking-speed-slower"), high: text("gesture-tracking-speed-faster")),
-            valueWidth: Self.trackingSpeedValueWidth,
-            target: self,
-            action: #selector(trackingSpeedChanged(_:))
-        )
-        row.slider.identifier = Identifier.trackingSpeed
-        row.reservedExplanations = [text("gesture-tracking-speed-hint"), text("gesture-tracking-speed-hint-discrete")]
+        let row = MouseGestureRows.trackingSpeed(target: self, action: #selector(trackingSpeedChanged(_:)))
         trackingSpeedRow = row
         return row
     }
 
     private func makeDeviceTrackingRow() -> PreferencesGroupRow {
-        let row = PreferencesSwitchRow(
-            title: text("mouse-gesture-device-tracking"),
-            explanation: text("mouse-gesture-device-tracking-hint"),
-            target: self,
-            action: #selector(deviceTrackingToggled(_:))
-        )
-        row.toggle.identifier = Identifier.deviceTracking
-        row.reservedExplanations = [text("mouse-gesture-device-tracking-hint"), text("mouse-gesture-device-tracking-unavailable")]
+        let row = MouseGestureRows.deviceTracking(target: self, action: #selector(deviceTrackingToggled(_:)))
         deviceTrackingRow = row
         return row
     }
@@ -671,14 +616,7 @@ final class GesturesPreferencesViewController: NSViewController {
     }
 
     private func makeHapticsRow() -> PreferencesGroupRow {
-        let row = PreferencesSwitchRow(
-            title: text("mouse-gesture-haptics"),
-            explanation: text("mouse-gesture-haptics-hint"),
-            target: self,
-            action: #selector(hapticsToggled(_:))
-        )
-        row.toggle.identifier = Identifier.haptics
-        row.reservedExplanations = [text("mouse-gesture-haptics-hint"), text("mouse-gesture-haptics-unavailable")]
+        let row = MouseGestureRows.haptics(target: self, action: #selector(hapticsToggled(_:)))
         hapticsRow = row
         return row
     }
