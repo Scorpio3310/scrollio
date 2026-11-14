@@ -236,7 +236,7 @@ class PreferencesApplicationViewController: NSViewController {
     }
 
     /// The app the list holds under one of `paths`, if any.
-    func existingApplication(forPaths paths: [String]) -> Application? {
+    static func existingApplication(forPaths paths: [String]) -> Application? {
         let stored = Options.shared.application.applications
         for path in paths {
             if let application = stored.get(by: path) {
@@ -351,7 +351,7 @@ class PreferencesApplicationViewController: NSViewController {
                 icon.size = NSSize(width: Self.menuIconSize, height: Self.menuIconSize)
                 item.image = icon
             }
-            if existingApplication(forPaths: candidate.knownPaths + [candidate.path]) != nil {
+            if Self.existingApplication(forPaths: candidate.knownPaths + [candidate.path]) != nil {
                 item.isEnabled = false
                 item.state = .on
             }
@@ -435,7 +435,7 @@ class PreferencesApplicationViewController: NSViewController {
     }
 
     private func insertApplication(path: String, knownPaths: [String]) -> (Application, isNew: Bool) {
-        if let existing = existingApplication(forPaths: knownPaths + [path]) {
+        if let existing = Self.existingApplication(forPaths: knownPaths + [path]) {
             return (existing, false)
         }
         let application = Application(path: path)
@@ -481,7 +481,7 @@ class PreferencesApplicationViewController: NSViewController {
 
     private func restoreApplication(_ application: Application, at position: Int, undoManager undo: UndoManager?) {
         if index(of: application) == nil {
-            if let existing = existingApplication(forPaths: Self.knownPaths(forStoredPath: application.path)) {
+            if let existing = Self.existingApplication(forPaths: Self.knownPaths(forStoredPath: application.path)) {
                 apply(ApplicationSettings(of: application), to: existing, undoManager: undo)
                 return
             }
@@ -538,6 +538,12 @@ class PreferencesApplicationViewController: NSViewController {
         part?.remember(in: uiStateDefaults)
         detail.onBack = { [weak self] in self?.showList(focusList: true) }
         detail.onInheritChange = { [weak self] in self?.reloadRows() }
+        // An Undo of a removed button row shows on the page of its app that is open when it
+        // runs (the page that made it may be gone); the page then tells its new height.
+        detail.buttonsPartShowing = { [weak self] entry in
+            guard let open = self?.detailController, open.application === entry else { return nil }
+            return open.buttonsPart
+        }
         detail.onHeightChange = { [weak self] in self?.contentHeightDidChange() }
         addChild(detail)
         detailController = detail

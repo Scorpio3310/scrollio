@@ -587,29 +587,55 @@ final class ApplicationButtonsTests: XCTestCase {
 
     /// Switching apps writes no line about the Logitech buttons, however often (it was a
     /// line per switch, a trail of them); a change of the settings writes one when what the
-    /// app in front changes is not what the last line said.
+    /// apps' own bindings change, counted over the list, is not what the last line said,
+    /// whatever app is in front: the change is made in Scrollio's Settings, so Scrollio is.
     func testOnlyAChangeOfTheSettingsWritesALineAboutTheLogitechButtons() {
         let gestureButton: UInt16 = 1000
+        let modeShift: UInt16 = 1001
+        var scrollio = Self.safari
+        scrollio.isScrollio = true
         var lines: [String] = []
-        set(general: [], safari: [binding(gestureButton, "undo")])
         LogiUsageBootstrap.log = { lines.append($0) }
         defer {
             LogiUsageBootstrap.log = { AppSystemLog.note($0) }
             Options.shared.application.applications = Self.makeStore([])
             LogiUsageBootstrap.refreshButtonUsage(front: nil)
         }
+        // From what an earlier test left to nothing of the apps' own.
+        LogiUsageBootstrap.refreshButtonUsage(front: scrollio, afterASettingsChange: true)
+        lines = []
+
+        set(general: [binding(modeShift, "copy")], safari: [binding(gestureButton, "undo")])
         for _ in 0..<3 {
             LogiUsageBootstrap.refreshButtonUsage(front: Self.safari)
             LogiUsageBootstrap.refreshButtonUsage(front: Self.textEdit)
         }
         XCTAssertEqual(lines, [], "switching apps")
 
+        LogiUsageBootstrap.refreshButtonUsage(front: scrollio, afterASettingsChange: true)
         LogiUsageBootstrap.refreshButtonUsage(front: Self.textEdit, afterASettingsChange: true)
-        lines = []
-        LogiUsageBootstrap.refreshButtonUsage(front: Self.safari, afterASettingsChange: true)
         LogiUsageBootstrap.refreshButtonUsage(front: Self.safari, afterASettingsChange: true)
         XCTAssertEqual(lines, [
-            "Buttons: the app in front has its own binding: 1 Logitech button(s) taken from the mouse and 0 given back while it is in front",
+            "Buttons: 1 app(s) have their own binding for a Logitech button: 1 Logitech button(s) taken from the mouse "
+                + "and 0 given back while such an app is in front",
+        ], "one line, with Scrollio in front as with any other app")
+
+        // TextEdit takes the same button, and leaves the mode shift button to the mouse.
+        let textEdit = Application(path: Self.textEdit.bundlePath!)
+        textEdit.setOwnButtonBindings([binding(gestureButton, "redo"), binding(modeShift, "")])
+        Options.shared.application.applications.append(textEdit)
+        lines = []
+        LogiUsageBootstrap.refreshButtonUsage(front: scrollio, afterASettingsChange: true)
+        XCTAssertEqual(lines, [
+            "Buttons: 2 app(s) have their own binding for a Logitech button: 1 Logitech button(s) taken from the mouse "
+                + "and 1 given back while such an app is in front",
+        ])
+
+        Options.shared.application.applications = Self.makeStore([])
+        lines = []
+        LogiUsageBootstrap.refreshButtonUsage(front: scrollio, afterASettingsChange: true)
+        XCTAssertEqual(lines, [
+            "Buttons: no app has its own binding for a Logitech button: the Logitech buttons are as Buttons sets them in every app",
         ])
     }
 }

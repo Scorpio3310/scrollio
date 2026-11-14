@@ -43,6 +43,10 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// The app's own buttons changed (the list of apps shows a mark for them). An Undo of a
     /// removal keeps it and may run after the page is gone: it must not hold the page.
     var onOwnButtonsChange: (() -> Void)?
+    /// The Buttons part that shows an app's entry now, if any (the pane's answer). An Undo
+    /// or Redo of a removal asks it when it runs, maybe after this page closed and the
+    /// app's page opened again: it must not hold the page. nil: this part, while it is there.
+    var partShowing: ((Application) -> ApplicationButtonsViewController?)?
 
     // MARK: - Seams (tests and screenshots replace them)
 
@@ -451,51 +455,67 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
 
     /// Gives the button back to Buttons; the window's Undo takes it again.
     func removeOwnBinding(id: UUID) {
+        let showing = partShowing ?? { [weak self] entry in
+            self?.application === entry ? self : nil
+        }
         Self.removeOwnBinding(
-            id: id, of: application, undoManager: undoTarget, part: self, listDidChange: onOwnButtonsChange
+            id: id, of: application, undoManager: undoTarget, showing: showing, listDidChange: onOwnButtonsChange
         )
     }
 
     /// The undo target is the settings, not this controller (as the Scrolling reset's): the
     /// page and its parts are gone once the list shows again, and its Undo still works.
-    /// `part` shows the change while it is there; `listDidChange` tells the list of apps
-    /// (its marks), and must not hold the page.
+    /// Undo and Redo find the app's entry by its path when they run (an app removed and
+    /// added again is a new entry), and show the change on the part `showing` gives for it;
+    /// `listDidChange` tells the list of apps (its marks). Neither holds the page.
     private static func removeOwnBinding(
         id: UUID, of application: Application, undoManager undo: UndoManager?,
-        part: ApplicationButtonsViewController?, listDidChange: (() -> Void)?
+        showing: @escaping (Application) -> ApplicationButtonsViewController?, listDidChange: (() -> Void)?
     ) {
         var own = application.ownButtonBindings
         guard let index = own.firstIndex(where: { $0.id == id }) else { return }
         let removed = own.remove(at: index)
         application.setOwnButtonBindings(own)
-        part?.showUndoableChange(selecting: nil)
+        showing(application)?.showUndoableChange(selecting: nil)
         listDidChange?()
         guard let undo else { return }
-        undo.registerUndo(withTarget: Options.shared) { [weak undo, weak part] _ in
-            Self.restoreOwnBinding(removed, at: index, of: application, undoManager: undo, part: part, listDidChange: listDidChange)
+        let path = application.path
+        undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+            guard let entry = Self.entry(storedAs: path) else { return }
+            Self.restoreOwnBinding(removed, at: index, of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange)
         }
         undo.setActionName(NSLocalizedString("buttons-undo-remove", comment: ""))
     }
 
     private static func restoreOwnBinding(
         _ binding: ButtonBinding, at index: Int, of application: Application, undoManager undo: UndoManager?,
-        part: ApplicationButtonsViewController?, listDidChange: (() -> Void)?
+        showing: @escaping (Application) -> ApplicationButtonsViewController?, listDidChange: (() -> Void)?
     ) {
         var own = application.ownButtonBindings
         if let existing = own.first(where: { $0.identity == binding.identity }) {
             // Added again meanwhile: that one stays.
-            part?.showUndoableChange(selecting: existing.id)
+            showing(application)?.showUndoableChange(selecting: existing.id)
             return
         }
         own.insert(binding, at: min(max(0, index), own.count))
         application.setOwnButtonBindings(own)
-        part?.showUndoableChange(selecting: binding.id)
+        showing(application)?.showUndoableChange(selecting: binding.id)
         listDidChange?()
         guard let undo else { return }
-        undo.registerUndo(withTarget: Options.shared) { [weak undo, weak part] _ in
-            Self.removeOwnBinding(id: binding.id, of: application, undoManager: undo, part: part, listDidChange: listDidChange)
+        let path = application.path
+        undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+            guard let entry = Self.entry(storedAs: path) else { return }
+            Self.removeOwnBinding(id: binding.id, of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange)
         }
         undo.setActionName(NSLocalizedString("buttons-undo-remove", comment: ""))
+    }
+
+    /// The entry the list holds now for the app stored as `path`, as the Undo of an app's
+    /// removal finds it (`PreferencesApplicationViewController.restoreApplication`).
+    private static func entry(storedAs path: String) -> Application? {
+        return PreferencesApplicationViewController.existingApplication(
+            forPaths: PreferencesApplicationViewController.knownPaths(forStoredPath: path)
+        )
     }
 
     /// A removal, its Undo or its Redo changed the app's list: the rows again, with `id`
