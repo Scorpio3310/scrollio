@@ -8716,18 +8716,6 @@
         }
       }
     },
-    "apps-buttons-undo-reset": {
-      "comment": "Apps, an app's Buttons part: \"Reset to Defaults\" removes its own buttons; the Undo menu item reads \"Undo Reset Buttons\"",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reset Buttons"
-          }
-        }
-      }
-    },
     "apps-detail-ring-suggested-reset": {
       "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the app's own ring did not start from them (made before there were any, or by hand); %@ is the app's name; \"Reset to Defaults\" is the button under the ring; fits two lines",
       "extractionState": "manual",
@@ -10140,6 +10128,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ (%2$@)"
+          }
+        }
+      }
+    },
+    "apps-undo-reset-buttons": {
+      "comment": "Apps, an app's Buttons part: \"Reset to Defaults\" removes its own buttons; the Undo menu item reads \"Undo Reset Buttons in Calculator\"; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset Buttons in %@"
           }
         }
       }

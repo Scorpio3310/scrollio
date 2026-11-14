@@ -435,7 +435,7 @@ final class ApplicationPageResetTests: XCTestCase {
         XCTAssertEqual(Options.shared.buttons.binding, general, "Buttons is untouched")
         XCTAssertEqual(marks(in: pane), [], "the list's mark goes")
         XCTAssertEqual(part.resetToDefaultsButton.title, "Undo Reset")
-        XCTAssertEqual(undo.undoActionName, "Reset Buttons")
+        XCTAssertEqual(undo.undoActionName, "Reset Buttons in Calculator", "its own name, with the app's (F30)")
 
         undo.undo()
         XCTAssertEqual(calculator.ownButtonBindings, own, "every button, in its order")
