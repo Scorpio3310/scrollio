@@ -1115,9 +1115,14 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         XCTAssertNil(pullDown.detailsPopover)
         XCTAssertFalse(pullDown.holdsRecordedKeys)
 
+        // The named keys again, so that the mouse button has a name to drop.
+        pullDown.configure(with: ButtonBinding(triggerEvent: trigger, systemShortcutName: shiftCommandR, label: reload))
+        XCTAssertEqual(pullDown.binding.label, reload)
         let button = InputEvent(type: .mouse, code: 5, modifiers: [], phase: .down, source: .hidPP, device: nil)
         XCTAssertFalse(record(button, into: pullDown, popover: popover))
+        XCTAssertEqual(stored.last?.action, ButtonActionPullDown.bindingName(forRecorded: button))
         XCTAssertNil(stored.last?.label)
+        XCTAssertNil(pullDown.binding.label)
         XCTAssertFalse(popover.isShowingDetails)
     }
 
