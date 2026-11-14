@@ -8567,7 +8567,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Gestures in %@: left and right swapped"
+            "value": "Gestures in %@: Invert left and right is on"
           }
         }
       }

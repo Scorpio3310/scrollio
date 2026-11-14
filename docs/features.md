@@ -397,7 +397,7 @@ move to another Mac, to keep a copy, or to pass a setup on.
   of the Buttons pane, with the gesture directions and the places of the Shortcut Ring
   (and of each app's own gestures and ring) whose action is not the default one, and
   each app's own thumb wheel action; an app's own gestures in use with only the default
-  actions, or with left and right swapped, have a line too. What is an app's own is named with the app (by its file,
+  actions, or with “Invert left and right” on, have a line too. What is an app's own is named with the app (by its file,
   where it runs). A recorded keyboard
   shortcut that the file gives a name is listed by its keys, with the name after them. For buttons, keys and places of a ring that open an app or a file,
   or run a script, a box of its own lists each one's whole path and arguments. Read those lists when the file is not

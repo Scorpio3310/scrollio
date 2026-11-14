@@ -758,7 +758,7 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertEqual(lines.count, 4, "\(lines)")
         XCTAssertTrue(lines[0].hasPrefix("Gesture in Notes, Up: ⇧⌘") && lines[0].hasSuffix("(named “Reload”)"), lines[0])
         XCTAssertEqual(Array(lines.dropFirst()), [
-            "Gesture in Notes, Click: No Action", "Gestures in Notes: left and right swapped", "Gesture in Mail, Down: Paste",
+            "Gesture in Notes, Click: No Action", "Gestures in Notes: Invert left and right is on", "Gesture in Mail, Down: Paste",
         ])
         let items = SettingsFileText.items(of: contents).map(\.text)
         XCTAssertTrue(items.contains("1 app with gestures of its own"), "the one in use: \(items)")
@@ -2568,12 +2568,12 @@ final class SettingsFileTextTests: XCTestCase {
                        ["\(keyName) in Safari: runs the script /Users/someone/bin/other.sh (arguments: --all)"])
         XCTAssertEqual(SettingsFileText.actionLines(of: contents, logitech: names), ["\(keyName) in Safari: Open App or File: other.sh"])
         XCTAssertEqual(SettingsFileText.gestureLines(of: contents), [
-            "Gestures in Safari: the default actions", "Gestures in Safari: left and right swapped",
+            "Gestures in Safari: the default actions", "Gestures in Safari: Invert left and right is on",
             "Gestures in Mail: the default actions",
         ], "a set kept for later with the default actions changes nothing")
 
         let swapped = try Fixture.contents(#""applications":[{"path":"/Applications/Safari.app","gestures":{"inherit":true,"invertHorizontal":true}}]"#)
-        XCTAssertEqual(SettingsFileText.gestureLines(of: swapped), ["Gestures in Safari: left and right swapped"])
+        XCTAssertEqual(SettingsFileText.gestureLines(of: swapped), ["Gestures in Safari: Invert left and right is on"])
         XCTAssertTrue(swapped.bringsActions, "Return does not import a swap")
         let defaults = try Fixture.contents(#""applications":[{"path":"/Applications/Mail.app","gestures":{"inherit":false}}]"#)
         XCTAssertFalse(defaults.bringsActions)
