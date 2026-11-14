@@ -608,6 +608,56 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertEqual(foreign.unknownActions, 0)
     }
 
+    /// A direction of Gesture Navigation (or its click) with a recorded key combination,
+    /// and the name and icon of it, travel with the gesture settings: in the file, read
+    /// back, listed in the sheet by the keys with the name after them, imported. From a
+    /// file of elsewhere a combination a gesture cannot run (a modifier key by itself, a
+    /// mouse button) is left out and counted, and a label on a listed action is not taken.
+    func testAGesturesRecordedShortcutAndItsNameAreInTheFileAndComeBack() throws {
+        let source = makeSource()
+        let keys = "custom::15:1179648"
+        let reload = ShortcutLabel(name: "Reload", icon: .symbol("arrow.clockwise"))
+        source.options.gesture.actions.up = GestureAction(action: keys, label: reload)
+        source.options.gesture.actions.click = GestureAction(action: "custom::40:1179648")
+
+        let data = try SettingsFile.export(from: source.options, now: Self.moment).get()
+        let text = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertTrue(text.contains(#""upAction" : "custom::15:1179648""#) || text.contains(#""upAction": "custom::15:1179648""#), text)
+        XCTAssertTrue(text.contains("upLabel") && text.contains("Reload") && text.contains("arrow.clockwise"))
+        XCTAssertFalse(text.contains("clickLabel"), "keys without a name are written as before")
+        let contents = try SettingsFile.read(data).get()
+        XCTAssertEqual(contents.gesture?.actions.up, GestureAction(action: keys, label: reload))
+        XCTAssertEqual(contents.gesture?.actions.click, GestureAction(action: "custom::40:1179648"))
+        XCTAssertEqual(contents.unknownActions, 0, "a recorded key combination is an action a gesture runs")
+        XCTAssertTrue(contents.bringsActions)
+        XCTAssertTrue(StoredAction.isKnown(gestureAction: keys))
+
+        // The sheet: the keys first, the name after them.
+        let lines = SettingsFileText.gestureLines(of: contents)
+        XCTAssertTrue(lines.contains { $0.hasPrefix("Gesture Up: ⇧⌘") && $0.hasSuffix("(named “Reload”)") }, "\(lines)")
+        XCTAssertTrue(lines.contains { $0.hasPrefix("Gesture Click: ⇧⌘") && !$0.contains("named") }, "\(lines)")
+
+        let target = OwnSettings(for: self)
+        target.options.readOptions()
+        XCTAssertTrue(SettingsFile.apply(contents, to: target.options))
+        XCTAssertEqual(target.options.gesture.actions, source.options.gesture.actions)
+        XCTAssertEqual(target.options.gesture.actions.up.label, reload)
+
+        let foreign = try Fixture.contents(
+            #""mouseGestureSettings":{"upAction":"custom::56:0","upLabel":{"name":"Shift"},"#
+                + #""downAction":"copy","downLabel":{"name":"Paste"},"leftAction":"custom::mouse:5:0","#
+                + #""rightAction":"custom::15:1179648","rightLabel":7,"clickAction":"custom::15:1179648","#
+                + #""clickLabel":{"name":"Re\nload‮","symbol":"../x"}}"#
+        )
+        let gesture = try XCTUnwrap(foreign.gesture)
+        XCTAssertEqual(gesture.actions.up, .none, "a modifier key by itself runs nothing")
+        XCTAssertEqual(gesture.actions.down, GestureAction(SystemShortcut.copy), "a listed action takes no name")
+        XCTAssertEqual(gesture.actions.left, .none, "a recorded mouse button is not a gesture's")
+        XCTAssertEqual(gesture.actions.right, GestureAction(action: keys), "a label that cannot be read leaves the keys")
+        XCTAssertEqual(gesture.actions.click.label, ShortcutLabel(name: "Re load", icon: nil))
+        XCTAssertEqual(foreign.unknownActions, 2)
+    }
+
     /// An app's own Shortcut Ring travels with the app's entry, in use or kept for later,
     /// and an import puts it in effect. Its places are checked as the general ring's are,
     /// and one that opens or runs something is never imported unseen: it stands in the
