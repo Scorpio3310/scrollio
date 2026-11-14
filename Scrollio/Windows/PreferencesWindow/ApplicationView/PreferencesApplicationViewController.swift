@@ -633,6 +633,7 @@ struct ApplicationSettings {
     let scroll: OPTIONS_SCROLL_DEFAULT
     let buttons: OPTIONS_BUTTONS_DEFAULT?
     let ring: ApplicationRing?
+    let gestures: ApplicationGestures?
 
     init(of application: Application) {
         displayName = application.displayName
@@ -640,6 +641,7 @@ struct ApplicationSettings {
         scroll = application.scroll
         buttons = application.buttons
         ring = application.ring
+        gestures = application.gestures
     }
 
     func apply(to application: Application) {
@@ -648,6 +650,7 @@ struct ApplicationSettings {
         application.scroll = scroll
         application.buttons = buttons
         application.ring = ring
+        application.gestures = gestures
     }
 }
 

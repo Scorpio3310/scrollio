@@ -111,6 +111,11 @@ enum SettingsFileText {
                     text: counted(ownButtons, "general-settings-import-app-buttons")
                 ))
             }
+            // Apps whose own gestures are in use ("Use the general gestures" off).
+            let ownGestures = (contents.applications ?? []).filter { !$0.usesGeneralGestures }.count
+            if ownGestures > 0 {
+                items.append(Item(symbolName: "hand.draw", text: counted(ownGestures, "general-settings-import-app-gestures")))
+            }
             if contents.allowlist == true {
                 items.append(Item(symbolName: "line.3.horizontal.decrease", text: text("general-settings-import-apps-limit")))
             }
@@ -252,16 +257,31 @@ enum SettingsFileText {
 
     /// One line per direction of Gesture Navigation (and its click) whose action is not
     /// the default one: "Gesture Up: App Exposé". None when the file leaves them alone.
-    /// A recorded key combination as a button's: its keys, and a name after them.
+    /// A recorded key combination as a button's: its keys, and a name after them. Then the
+    /// same for each app's own gestures (a set kept for later too), with the app: "Gesture
+    /// in Notes, Up: Reload".
     static func gestureLines(of contents: SettingsFile.Contents) -> [String] {
-        guard let gesture = contents.gesture else { return [] }
-        let defaults = MouseGestureSettings.default
-        return MouseGestureSettingsControls.Slot.allCases.compactMap { slot in
-            let held = slot.action(in: gesture)
-            guard held != slot.action(in: defaults) else { return nil }
-            let action = held.isEmpty ? text("gesture-action-none") : actionName(of: held.asBinding())
-            return String(format: text("general-settings-import-gesture-line"), text(slot.labelKey), action)
+        let defaults = GestureActions.default
+        func action(_ held: GestureAction) -> String {
+            return held.isEmpty ? text("gesture-action-none") : actionName(of: held.asBinding())
         }
+        var lines: [String] = []
+        if let gesture = contents.gesture {
+            lines += MouseGestureSettingsControls.Slot.allCases.compactMap { slot in
+                let held = slot.action(in: gesture)
+                guard held != defaults[keyPath: slot.path] else { return nil }
+                return String(format: text("general-settings-import-gesture-line"), text(slot.labelKey), action(held))
+            }
+        }
+        for entry in contents.applicationGestures {
+            let name = name(of: entry.application)
+            lines += MouseGestureSettingsControls.Slot.allCases.compactMap { slot in
+                let held = entry.gestures.actions[keyPath: slot.path]
+                guard held != defaults[keyPath: slot.path] else { return nil }
+                return String(format: text("general-settings-import-gesture-line-app"), name, text(slot.labelKey), action(held))
+            }
+        }
+        return lines
     }
 
     /// One line per place of the Shortcut Ring whose action is not the default one: "Ring

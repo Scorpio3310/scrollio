@@ -14,6 +14,8 @@ it for the people who use the app, and give the version its part before you tag 
 
 - **Buttons for each app.** In Apps, give an app only the buttons that should do
   something else in it; every other button does what Buttons says.
+- **Gestures for each app.** On an app's page in Apps, give the app its own action for
+  each gesture direction and the click: they run while the app is in front.
 - **A Shortcut Ring for each app.** On an app's page in Apps, give the app eight shortcuts
   of its own: that ring opens while the app is in front.
 - **Name your shortcuts.** A key combination you record can have a name and an icon: the

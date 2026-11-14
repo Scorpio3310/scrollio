@@ -8415,6 +8415,102 @@
           }
         }
       }
+    },
+    "general-settings-import-app-gestures-one": {
+      "comment": "Import sheet: one app of the file has gestures of its own in use",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 app with gestures of its own"
+          }
+        }
+      }
+    },
+    "general-settings-import-app-gestures-other": {
+      "comment": "Import sheet: how many apps of the file have gestures of their own in use; %d is the number",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d apps with gestures of their own"
+          }
+        }
+      }
+    },
+    "general-settings-import-gesture-line-app": {
+      "comment": "Import sheet: one direction of an app's own gestures, %1$@ = the app (\"Notes\"), %2$@ = the direction (\"Up\"), %3$@ = its action",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesture in %1$@, %2$@: %3$@"
+          }
+        }
+      }
+    },
+    "apps-detail-part-gestures": {
+      "comment": "An app's page: the segment that shows the app's gestures",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gestures"
+          }
+        }
+      }
+    },
+    "apps-mark-gestures": {
+      "comment": "Apps list: tooltip and VoiceOver of the mark of an app with gestures of its own",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Own gestures"
+          }
+        }
+      }
+    },
+    "apps-detail-gestures-general": {
+      "comment": "App page, part \"Gestures\": the switch; on, the app has no gestures of its own",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the general gestures"
+          }
+        }
+      }
+    },
+    "apps-detail-gestures-general-on": {
+      "comment": "App page: explanation while \"Use the general gestures\" is on; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "While %@ is in front, the general gestures run."
+          }
+        }
+      }
+    },
+    "apps-detail-gestures-general-off": {
+      "comment": "App page: explanation while \"Use the general gestures\" is off; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "While %@ is in front, the gestures below run."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

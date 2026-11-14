@@ -6,6 +6,10 @@
 //  them out in its rows; their rules live here. Changes apply immediately. (The tracking
 //  speed is the pane's own.)
 //
+//  An app's page edits the app's own gestures with the same controls (`Edited.application`):
+//  the five actions and "Invert left and right" are then the app's; the mode, which decides
+//  what the Left and Right rows show, and the freeze switch stay the Gestures pane's.
+//
 //  The action of a direction is chosen with the pull-down of a button's row
 //  (`ButtonActionPullDown`, as the Shortcut Ring pane's places): its menu offers the
 //  pane's one-shot actions and "Keyboard Shortcut…", which records a key combination
@@ -179,8 +183,18 @@ final class MouseGestureSettingsControls: NSObject {
         }
     }
 
+    /// Whose gestures the controls edit.
+    enum Edited {
+        /// Every app's, in the Gestures pane (`Options.shared.gesture`).
+        case general
+        /// An app's own set, on its page: its five actions and its "Invert left and right".
+        case application(Application)
+    }
+
     /// Segment order of the mode control.
     static let modes: [MouseGestureMode] = [.discrete, .interactive]
+
+    let edited: Edited
 
     // MARK: - Controls
 
@@ -219,12 +233,16 @@ final class MouseGestureSettingsControls: NSObject {
 
     private let isInteractiveAvailable: () -> Bool
 
-    /// - Parameter showLogiActions: also offer Logi actions in the action popups.
+    /// - Parameters:
+    ///   - showLogiActions: also offer Logi actions in the action popups.
+    ///   - edits: whose gestures the action pop-ups and the invert switch edit.
     init(
         showLogiActions: Bool,
+        edits: Edited = .general,
         isInteractiveAvailable: @escaping () -> Bool = { DockSwipeSynthesizer.shared.isAvailable }
     ) {
         self.showLogiActions = showLogiActions
+        self.edited = edits
         self.isInteractiveAvailable = isInteractiveAvailable
 
         modeControl = NSSegmentedControl(
@@ -280,10 +298,31 @@ final class MouseGestureSettingsControls: NSObject {
 
     /// Puts the stored settings and the mode rules into every control.
     func sync() {
-        let settings = Options.shared.gesture
+        let settings = editedSettings
         Self.setOn(settings.invertHorizontal, invertToggle)
         Self.setOn(settings.freezePointer, freezeToggle)
         applyModePresentation()
+    }
+
+    /// The settings the controls show: the general ones, with the app's own set in them on
+    /// an app's page.
+    var editedSettings: MouseGestureSettings {
+        switch edited {
+        case .general:
+            return Options.shared.gesture
+        case .application(let application):
+            return application.gesturesThatRun(general: Options.shared.gesture)
+        }
+    }
+
+    /// Stores the actions and the invert switch of `settings` where the controls edit them.
+    private func write(_ settings: MouseGestureSettings) {
+        switch edited {
+        case .general:
+            Options.shared.gesture = settings
+        case .application(let application):
+            application.setOwnGestures(actions: settings.actions, invertHorizontal: settings.invertHorizontal)
+        }
     }
 
     /// What the mode control and the action rows show now.
@@ -302,7 +341,7 @@ final class MouseGestureSettingsControls: NSObject {
             modeControl.setEnabled(presentation.isInteractiveSelectable, forSegment: interactiveSegment)
         }
 
-        let settings = Options.shared.gesture
+        let settings = editedSettings
         for popup in actionPopUps {
             guard let slot = Slot(rawValue: popup.tag) else { continue }
             // (An action this version does not run shows "No Action", and stays stored.)
@@ -322,7 +361,7 @@ final class MouseGestureSettingsControls: NSObject {
 
     private func makeActionPopUp(for slot: Slot) -> MouseGestureActionPopUpButton {
         let popup = MouseGestureActionPopUpButton(
-            binding: slot.action(in: Options.shared.gesture).asBinding(id: slotIDs[slot.rawValue]),
+            binding: slot.action(in: editedSettings).asBinding(id: slotIDs[slot.rawValue]),
             use: .gesture(showsLogiActions: showLogiActions)
         )
         popup.onFocusChange = { [weak self] focused in
@@ -343,7 +382,7 @@ final class MouseGestureSettingsControls: NSObject {
     /// Puts `action` into `slot`. What a direction cannot run (a recorded mouse button, a
     /// modifier key by itself) is not stored: the pull-down shows again what was there.
     func store(_ action: GestureAction, in slot: Slot) {
-        var settings = Options.shared.gesture
+        var settings = editedSettings
         guard action.isEmpty || action.resolvedAction != nil else {
             applyModePresentation()
             return
@@ -353,7 +392,7 @@ final class MouseGestureSettingsControls: NSObject {
             return
         }
         slot.store(action, in: &settings)
-        Options.shared.gesture = settings
+        write(settings)
         applyModePresentation()
         onChange?()
     }
@@ -398,7 +437,14 @@ final class MouseGestureSettingsControls: NSObject {
     }
 
     @objc private func invertToggled(_ sender: NSControl) {
-        Options.shared.gesture.invertHorizontal = Self.isOn(sender)
+        switch edited {
+        case .general:
+            Options.shared.gesture.invertHorizontal = Self.isOn(sender)
+        case .application:
+            var settings = editedSettings
+            settings.invertHorizontal = Self.isOn(sender)
+            write(settings)
+        }
         onChange?()
     }
 
