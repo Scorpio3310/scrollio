@@ -478,14 +478,21 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
     /// the shortcuts suggested for Figma."; for one that did not: "Reset to Defaults fills
     /// the ring with the shortcuts suggested for Figma." When the keyboard layout leaves
     /// `emptyPlaces` places of the suggestion empty (their keys need Option there), the
-    /// line says so instead of naming the app.
-    static func suggestionExplanation(name: String, emptyPlaces: Int, startedFromIt: Bool) -> String {
+    /// line says so instead of naming the app, and then also how many more the suggestion
+    /// leaves empty on purpose (`emptyOnPurpose`), so that the places showing "No Action"
+    /// add up.
+    static func suggestionExplanation(name: String, emptyPlaces: Int, startedFromIt: Bool, emptyOnPurpose: Int = 0) -> String {
         let base = startedFromIt ? "apps-detail-ring-suggested-in-use" : "apps-detail-ring-suggested-reset"
         guard emptyPlaces > 0 else {
             return String(format: NSLocalizedString(base, comment: ""), name)
         }
         let key = base + "-empty" + (emptyPlaces == 1 ? "-one" : "-other")
-        return String(format: NSLocalizedString(key, comment: ""), emptyPlaces)
+        let line = String(format: NSLocalizedString(key, comment: ""), emptyPlaces)
+        guard emptyOnPurpose > 0 else { return line }
+        let more = emptyOnPurpose == 1
+            ? NSLocalizedString("apps-detail-ring-suggested-empty-on-purpose-one", comment: "")
+            : String(format: NSLocalizedString("apps-detail-ring-suggested-empty-on-purpose-other", comment: ""), emptyOnPurpose)
+        return line + " " + more
     }
 
     /// Whether the app's own ring started from its suggested shortcuts: it was filled from
@@ -512,7 +519,8 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         let line = Self.suggestionExplanation(
             name: application.getName(),
             emptyPlaces: started ? suggestion.placesStillEmpty(in: suggested, own: own) : suggestion.placesLeftEmpty(in: suggested),
-            startedFromIt: started
+            startedFromIt: started,
+            emptyOnPurpose: started ? suggestion.placesEmptyOnPurpose(own: own) : suggestion.placesEmptyOnPurpose()
         )
         if suggestionRow.explanation != line {
             suggestionRow.explanation = line

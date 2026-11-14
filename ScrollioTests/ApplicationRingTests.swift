@@ -662,4 +662,58 @@ final class ApplicationRingSuggestedRowTests: XCTestCase {
         _ = again.view
         XCTAssertTrue(try XCTUnwrap(again.suggestionRow.explanation).hasPrefix("Reset to Defaults fills the ring with them, except 2 places"))
     }
+
+    /// Where the layout leaves places empty, the row also says how many more the suggestion
+    /// leaves empty on purpose, so that the places showing "No Action" add up (F29); a
+    /// place of those filled by hand is not counted. The longest line fits two lines.
+    func testTheRowAlsoCountsThePlacesLeftEmptyOnPurpose() throws {
+        let (outlook, part) = try outlookPart()
+        XCTAssertEqual(outlook.ownRingPlaces?.filter { $0 == .empty }.count, 3)
+        XCTAssertEqual(
+            part.suggestionRow.explanation,
+            "The ring started from them. 2 places stay empty: their keys can't be typed on this keyboard layout. "
+                + "1 more is left empty on purpose."
+        )
+        try XCTUnwrap(part.ringController).setPlace(ShortcutRingPlace(SystemShortcut.copy), at: 4)
+        XCTAssertEqual(
+            part.suggestionRow.explanation,
+            "The ring started from them. 2 places stay empty: their keys can't be typed on this keyboard layout."
+        )
+
+        let read = try JSONDecoder().decode(Application.self, from: JSONEncoder().encode(outlook))
+        Options.shared.application.applications = list([read])
+        let again = ApplicationRingPartViewController(application: read)
+        _ = again.view
+        XCTAssertEqual(
+            again.suggestionRow.explanation,
+            "Reset to Defaults fills the ring with them, except 2 places whose keys can't be typed on this keyboard layout. "
+                + "1 more is left empty on purpose."
+        )
+        XCTAssertEqual(
+            ApplicationRingPartViewController.suggestionExplanation(name: "Outlook", emptyPlaces: 0, startedFromIt: true, emptyOnPurpose: 1),
+            "The ring started from the shortcuts suggested for Outlook.", "without the layout's count, nothing to add up"
+        )
+
+        // The longest lines fit the row's two lines.
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 900), styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        addTeardownBlock { window.close() }
+        window.contentView = part.view
+        part.view.layoutSubtreeIfNeeded()
+        let width = part.suggestionRow.titleColumnWidth
+        XCTAssertGreaterThan(width, 200)
+        let font = PreferencesGroupedForm.explanationFont
+        let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
+        for started in [true, false] {
+            for (empty, onPurpose) in [(1, 1), (3, 4), (8, 8)] {
+                let text = ApplicationRingPartViewController.suggestionExplanation(
+                    name: "Outlook", emptyPlaces: empty, startedFromIt: started, emptyOnPurpose: onPurpose
+                )
+                let height = (text as NSString).boundingRect(
+                    with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
+                ).height
+                XCTAssertLessThanOrEqual(height, twoLines, text)
+            }
+        }
+    }
 }
