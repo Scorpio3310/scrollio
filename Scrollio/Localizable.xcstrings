@@ -8763,6 +8763,18 @@
           }
         }
       }
+    },
+    "apps-buttons-undo-reset": {
+      "comment": "Apps, an app's Buttons part: \"Reset to Defaults\" removes its own buttons; the Undo menu item reads \"Undo Reset Buttons\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset Buttons"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

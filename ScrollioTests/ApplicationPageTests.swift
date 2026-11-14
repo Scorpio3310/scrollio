@@ -219,8 +219,12 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(ApplicationPagePart.all.map(\.id), ["scrolling", "buttons", "gestures", "ring"])
     }
 
-    /// The pane takes the height of the part shown, at each change.
+    /// The pane takes the height of the part shown, at each change. (A button runs the
+    /// gestures and one opens the ring: nothing folds.)
     func testThePagesHeightFollowsThePartShown() throws {
+        Options.shared.buttons.binding = [
+            binding(3, SystemShortcut.mouseGestureNavigation.identifier), binding(5, SystemShortcut.shortcutRing.identifier),
+        ]
         addApp(Self.calculator)
         let pane = makePane()
         pane.openApplication(withID: Self.calculator)
@@ -321,7 +325,9 @@ final class ApplicationPageTests: XCTestCase {
     /// Undo of a removal while the page of the app added again is open: the page shows the
     /// settings that come back (its own gestures and ring with their rows, its name in the
     /// header and the window's title), and the pane takes the page's new height; Redo too.
+    /// (A button runs the gestures: nothing folds.)
     func testUndoOntoTheOpenPageOfTheAppAddedAgainShowsItAndRefitsThePane() throws {
+        Options.shared.buttons.binding = [binding(3, SystemShortcut.mouseGestureNavigation.identifier)]
         let calculator = addApp(Self.calculator)
         calculator.displayName = "Numbers"
         calculator.setUsesGeneralGestures(false, general: .default)
@@ -982,7 +988,9 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(part.generalGesturesRow.explanation, "While Calculator is in front, the gestures below run.")
         let controls = try XCTUnwrap(part.controls)
         XCTAssertEqual(part.directionRows.map(\.title), ["Up", "Down", "Left", "Right", "Click"])
-        XCTAssertEqual(part.directionsSection?.titleLabel?.stringValue, "Directions")
+        XCTAssertEqual(part.directionsFold?.title, "Directions")
+        XCTAssertEqual(part.directionsFold?.isCollapsible, false, "a button runs the gestures here: a plain title")
+        XCTAssertNil(part.directionsSection?.titleLabel, "the box under it has none of its own")
         for slot in MouseGestureSettingsControls.Slot.allCases {
             let popup = controls.actionPopUp(for: slot)
             XCTAssertTrue(popup.isDescendant(of: part.directionRows[slot.rawValue]), slot.name)
@@ -1142,7 +1150,7 @@ final class ApplicationPageTests: XCTestCase {
         _ = makeWindow(for: pane)
         pane.view.layoutSubtreeIfNeeded()
         let holder = try XCTUnwrap(part.buttonNoteLabel.superview)
-        let directions = try XCTUnwrap(part.directionsSection)
+        let directions = try XCTUnwrap(part.directionsFold)
         let section = part.generalSection!
         func gap(_ upper: NSView, _ lower: NSView) -> CGFloat {
             let a = upper.convert(upper.bounds, to: nil), b = lower.convert(lower.bounds, to: nil)
@@ -1444,5 +1452,140 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(page.application.path, Self.calculator)
         XCTAssertEqual(page.shownPart, .buttons)
         XCTAssertEqual(page.buttonsPart.list.selectedID, AnyHashable(calculator.ownButtonBindings[1].id))
+    }
+
+    // MARK: - Folded while nothing runs them here
+
+    /// The app's own ring while nothing opens the ring with the app in front: under a
+    /// "Shortcuts" title that folds it, folded (the drawing, the rows and "Reset to
+    /// Defaults" out of sight); a click opens it and all of it can be used; the page
+    /// measures again each time. Once a button opens the ring there the title goes and the
+    /// ring stands under the switch's box as before; without one again it folds again. The
+    /// switch alone (the general ring) has nothing to fold.
+    func testTheRingPartFoldsTheOwnRingWhileNothingOpensTheRingHere() throws {
+        let calculator = addApp(Self.calculator)
+        let pane = makePane()
+        _ = makeWindow(for: pane)
+        pane.openApplication(withID: Self.calculator, part: .ring)
+        let page = try XCTUnwrap(pane.detailController)
+        let part = try XCTUnwrap(page.ringPart)
+        XCTAssertNil(part.ownRingFold, "the general ring: nothing below the switch")
+
+        var heightChanges = 0
+        page.onHeightChange = { heightChanges += 1 }
+        page.generalRingSwitch.state = .off
+        send(page.generalRingSwitch)
+        XCTAssertFalse(calculator.usesGeneralRing)
+        let fold = try XCTUnwrap(part.ownRingFold)
+        let body = try XCTUnwrap(part.ownRingBody)
+        XCTAssertTrue(fold.body === body)
+        XCTAssertEqual(fold.title, "Shortcuts")
+        XCTAssertTrue(fold.isCollapsible)
+        XCTAssertFalse(fold.isExpanded, "folded when it comes")
+        XCTAssertTrue(body.isHidden)
+        XCTAssertTrue(try XCTUnwrap(part.ringController).view.isDescendant(of: body))
+        XCTAssertTrue(part.resetToDefaultsButton.isDescendant(of: body))
+        XCTAssertEqual(fold.disclosure.accessibilityRole(), .disclosureTriangle)
+        XCTAssertEqual(fold.disclosure.accessibilityLabel(), "Shortcuts")
+        pane.view.layoutSubtreeIfNeeded()
+        XCTAssertFalse(part.view.hasAmbiguousLayout)
+        let folded = page.view.fittingSize.height
+
+        heightChanges = 0
+        XCTAssertTrue(fold.disclosure.accessibilityPerformPress())
+        XCTAssertTrue(fold.isExpanded)
+        XCTAssertFalse(body.isHidden)
+        XCTAssertEqual(heightChanges, 1, "the page measures again")
+        XCTAssertGreaterThan(page.view.fittingSize.height, folded)
+        // Everything in it can be used.
+        try XCTUnwrap(part.ringController).placePopUps[0].onShortcutSelected?(SystemShortcut.paste)
+        XCTAssertEqual(calculator.ownRingPlaces?[0].action, "paste")
+        XCTAssertTrue(part.resetToDefaultsButton.isEnabled)
+
+        // A button opens the ring: no title, the ring right under the switch's box.
+        Options.shared.buttons.binding = [binding(5, SystemShortcut.shortcutRing.identifier)]
+        part.syncViewWithOptions()
+        XCTAssertNil(part.ownRingFold)
+        XCTAssertFalse(body.isHidden)
+        XCTAssertTrue(body.superview === part.view)
+        pane.view.layoutSubtreeIfNeeded()
+        let ringView = try XCTUnwrap(part.ringController).view
+        XCTAssertEqual(ringView.convert(ringView.bounds, to: part.view).maxY, part.ringSection.frame.minY, accuracy: 0.5)
+        XCTAssertFalse(part.view.hasAmbiguousLayout)
+
+        // The app's own buttons take it here: folded again.
+        calculator.setOwnButtonBindings([binding(5, "copy")])
+        part.syncViewWithOptions()
+        XCTAssertEqual(part.ownRingFold?.isExpanded, false)
+        XCTAssertTrue(body.isHidden)
+        XCTAssertTrue(part.ownRingFold?.body === body)
+
+        // Back to the general ring: nothing is left below the switch.
+        page.generalRingSwitch.state = .on
+        send(page.generalRingSwitch)
+        XCTAssertNil(part.ownRingFold)
+        XCTAssertNil(part.ownRingBody)
+        XCTAssertNil(part.ringController)
+    }
+
+    /// The app's own gestures while no button runs Gesture Navigation with the app in
+    /// front: "Directions" folds the five rows, the invert switch and "Reset to Defaults";
+    /// a click opens them, and the page measures again. Once a button runs the gestures
+    /// there, "Directions" is a plain title over the set, as before, at the same place.
+    func testTheGesturesPartFoldsTheOwnSetWhileNoButtonRunsTheGesturesHere() throws {
+        let calculator = addApp(Self.calculator)
+        calculator.setUsesGeneralGestures(false, general: Options.shared.gesture)
+        let (pane, part) = try gesturesPart()
+        _ = makeWindow(for: pane)
+        let page = try XCTUnwrap(pane.detailController)
+        let fold = try XCTUnwrap(part.directionsFold)
+        XCTAssertEqual(fold.title, "Directions")
+        XCTAssertTrue(fold.isCollapsible)
+        XCTAssertFalse(fold.isExpanded)
+        XCTAssertTrue(fold.body.isHidden)
+        for view in [part.directionsSection, part.invertSection, part.resetFooter] as [NSView?] {
+            XCTAssertTrue(try XCTUnwrap(view).isDescendant(of: fold.body))
+        }
+        // Folded, the title stands where a titled section does. (Not checked for an
+        // ambiguous layout: the test's window makes the pane taller than the part, which
+        // a short part, as the switch alone, does not pin; the unfolded set is checked.)
+        pane.view.layoutSubtreeIfNeeded()
+        let section = try XCTUnwrap(part.generalSection)
+        func gap() -> CGFloat {
+            return section.convert(section.bounds, to: nil).minY - fold.convert(fold.bounds, to: nil).maxY
+        }
+        XCTAssertEqual(gap(), PreferencesGroupedForm.sectionSpacing, accuracy: 0.5)
+        let folded = page.view.fittingSize.height
+
+        var heightChanges = 0
+        page.onHeightChange = { heightChanges += 1 }
+        fold.toggle()
+        XCTAssertTrue(fold.isExpanded)
+        XCTAssertFalse(fold.body.isHidden)
+        XCTAssertEqual(heightChanges, 1)
+        XCTAssertGreaterThan(page.view.fittingSize.height, folded)
+        // Everything in it can be used.
+        try XCTUnwrap(part.controls).store(GestureAction(SystemShortcut.paste), in: .down)
+        XCTAssertEqual(calculator.ownGestures?.actions.down, GestureAction(SystemShortcut.paste))
+        XCTAssertTrue(part.resetToDefaultsButton.isEnabled)
+
+        // A button runs the gestures: a plain title, the set in sight, where a titled
+        // section stands.
+        Options.shared.buttons.binding = [binding(3, SystemShortcut.mouseGestureNavigation.identifier)]
+        part.syncViewWithOptions()
+        XCTAssertTrue(part.directionsFold === fold)
+        XCTAssertFalse(fold.isCollapsible)
+        XCTAssertFalse(fold.titleLabel.isHidden)
+        XCTAssertTrue(fold.disclosure.isHidden)
+        XCTAssertFalse(fold.body.isHidden)
+        pane.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(gap(), PreferencesGroupedForm.sectionSpacing, accuracy: 0.5)
+        XCTAssertFalse(part.view.hasAmbiguousLayout)
+
+        // None again: folded again.
+        Options.shared.buttons.binding = []
+        part.syncViewWithOptions()
+        XCTAssertTrue(fold.isCollapsible)
+        XCTAssertFalse(fold.isExpanded)
     }
 }

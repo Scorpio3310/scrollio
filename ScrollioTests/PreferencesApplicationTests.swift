@@ -1142,9 +1142,19 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertNil(ring.placesHintLabel)
         page.view.layoutSubtreeIfNeeded()
         XCTAssertFalse(page.view.hasAmbiguousLayout)
-        XCTAssertEqual(ring.view.frame.maxY, page.ringSection.frame.minY, accuracy: 0.5, "under the switch's box")
-        XCTAssertEqual(ring.view.frame.minY, 0, accuracy: 0.5, "the page ends with it")
-        XCTAssertEqual(page.view.fittingSize.height, shortHeight + ring.view.fittingSize.height - PreferencesGroupedForm.margin, accuracy: 0.5)
+        // (Something opens the ring with the app in front: nothing folds, no title.)
+        XCTAssertNil(page.ringPart.ownRingFold)
+        func frame(_ view: NSView) -> NSRect {
+            return view.convert(view.bounds, to: page.ringPart.view)
+        }
+        XCTAssertEqual(frame(ring.view).maxY, page.ringSection.frame.minY, accuracy: 0.5, "under the switch's box")
+        // Then "Reset to Defaults", and the page ends with it.
+        let footer = try XCTUnwrap(page.ringPart.resetFooter)
+        XCTAssertEqual(frame(footer).maxY, frame(ring.view).minY, accuracy: 0.5, "the ring's margin over the footer")
+        XCTAssertEqual(frame(footer).minY, PreferencesGroupedForm.margin, accuracy: 0.5, "the page ends with it")
+        XCTAssertEqual(
+            page.view.fittingSize.height, shortHeight + ring.view.fittingSize.height + footer.fittingSize.height, accuracy: 0.5
+        )
 
         // A row's pull-down: the app's ring changes, the general ring does not.
         ring.placePopUps[0].onShortcutSelected?(SystemShortcut.paste)

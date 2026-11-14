@@ -575,7 +575,11 @@ final class RingPreferencesViewController: NSViewController {
             Options.shared.ring = ring
         }
         reload()
+        onPlaceChange?()
     }
+
+    /// A row changed a place (the app's page: its "Reset to Defaults" follows).
+    var onPlaceChange: (() -> Void)?
 
     /// "Open App or File…" of a place: the Buttons pane's popover at the pull-down, with
     /// what the place opens now.

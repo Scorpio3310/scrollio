@@ -22,6 +22,10 @@
 //  Only the app's own list is edited (`Application.setOwnButtonBindings`); Buttons is
 //  never touched.
 //
+//  "Reset to Defaults" under the list removes every button of the app's own and its own
+//  thumb wheel function at once: every button does what Buttons says again. The window's
+//  Undo brings them all back, also after the page closed (as a row's removal).
+//
 
 import Cocoa
 
@@ -30,6 +34,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     enum Identifier {
         static let list = NSUserInterfaceItemIdentifier("apps-buttons-list")
         static let note = NSUserInterfaceItemIdentifier("apps-buttons-note")
+        static let reset = NSUserInterfaceItemIdentifier("apps-buttons-reset")
     }
 
     /// What a "+" item adds.
@@ -80,6 +85,12 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
 
     private(set) var list: PreferencesListBox!
     private(set) var noteLabel: NSTextField!
+    /// "Reset to Defaults" under the list: on while the app has a button or the thumb
+    /// wheel of its own.
+    private(set) var resetToDefaults: PreferencesPaneReset!
+    var resetToDefaultsButton: NSButton {
+        return resetToDefaults.button
+    }
     /// The rows, in the order of the app's list.
     private(set) var rows: [ButtonBindingRow] = []
     /// The drawing of the connected mouse, in every row's picture.
@@ -150,7 +161,18 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
             note.trailingAnchor.constraint(equalTo: holder.trailingAnchor, constant: -inset),
         ])
 
-        PreferencesGroupedForm.add([list, holder], to: content)
+        let reset = PreferencesPaneReset(
+            undoActionNameKey: Self.resetActionNameKey,
+            hasSettingsToReset: { [weak self] in self?.hasSettingsToReset ?? false },
+            undoManager: { [weak self] in self?.undoTarget },
+            reset: { [weak self] undo in self?.resetOwnButtons(undoManager: undo) }
+        )
+        // The recorder, a row's recorder and "Open App or File" close first.
+        reset.willReset = { [weak self] in self?.endEditing() }
+        reset.button.identifier = Identifier.reset
+        resetToDefaults = reset
+
+        PreferencesGroupedForm.add([list, holder, PreferencesGroupFooter(trailing: [reset.button])], to: content)
         content.setCustomSpacing(PreferencesGroupedForm.noteSpacing, after: list)
         view = root
         recorder.delegate = self
@@ -170,8 +192,14 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     }
 
     /// The page goes away or another part shows: the recorder, a row's recorder and "Open
-    /// App or File" close.
+    /// App or File" close, and "Undo Reset" is "Reset to Defaults" again.
     func partWillHide() {
+        endEditing()
+        resetToDefaults.endUndoOffer()
+    }
+
+    /// The recorder, a row's recorder and "Open App or File" close.
+    func endEditing() {
         if let popover = openTargetPopover {
             openTargetPopover = nil
             popover.hide()
@@ -233,6 +261,8 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
             for: application.getName(), isEmpty: own.isEmpty && thumbWheel == nil, listsThumbWheel: thumbWheel != nil
         )
         let listed: [PreferencesListRow] = (thumbWheel.map { [$0] } ?? []) + shown
+        // (Every change of the app's list passes here: "Reset to Defaults" follows.)
+        resetToDefaults.settingsDidChange()
         if listed.count != list.rows.count || zip(listed, list.rows).contains(where: { $0 !== $1 }) {
             list.setRows(listed)
             onHeightChange?()
@@ -498,6 +528,77 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
             Self.removeOwnBinding(id: binding.id, of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange)
         }
         undo.setActionName(NSLocalizedString("buttons-undo-remove", comment: ""))
+    }
+
+    // MARK: - Reset to Defaults, with Undo
+
+    /// The undo action's name ("Reset Buttons").
+    static let resetActionNameKey = "apps-buttons-undo-reset"
+
+    /// The app has a button or key, or the thumb wheel, of its own.
+    var hasSettingsToReset: Bool {
+        return application.hasOwnButtonsPart
+    }
+
+    /// "Reset to Defaults": every button of the app's own and its own thumb wheel function
+    /// go; every button does what Buttons says again. Edit › Undo brings them all back.
+    private func resetOwnButtons(undoManager undo: UndoManager?) {
+        guard hasSettingsToReset else { return }
+        let showing = partShowing ?? { [weak self] entry in
+            self?.application === entry ? self : nil
+        }
+        Self.resetOwnButtons(of: application, undoManager: undo, showing: showing, listDidChange: onOwnButtonsChange)
+    }
+
+    /// As a row's removal (`removeOwnBinding`): the undo target is the settings, not the
+    /// page; Undo and Redo find the app's entry by its path when they run, show the change
+    /// on the part `showing` gives for it and tell the list of apps (its marks).
+    private static func resetOwnButtons(
+        of application: Application, undoManager undo: UndoManager?,
+        showing: @escaping (Application) -> ApplicationButtonsViewController?, listDidChange: (() -> Void)?
+    ) {
+        let bindings = application.ownButtonBindings
+        let thumbWheel = application.ownThumbWheelFunction
+        guard !bindings.isEmpty || thumbWheel != nil else { return }
+        application.setOwnButtonBindings([])
+        application.setOwnThumbWheelFunction(nil)
+        showing(application)?.showUndoableChange(selecting: nil)
+        listDidChange?()
+        guard let undo else { return }
+        let path = application.path
+        undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+            guard let entry = Self.entry(storedAs: path) else { return }
+            Self.restoreOwnButtons(
+                bindings, thumbWheel: thumbWheel, of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange
+            )
+        }
+        undo.setActionName(NSLocalizedString(resetActionNameKey, comment: ""))
+    }
+
+    /// Undo of a reset: the buttons and the thumb wheel function from before it, in their
+    /// order. One added again meanwhile stays, in the place of the one of its trigger; a
+    /// thumb wheel function chosen meanwhile stays too. Redo resets again.
+    private static func restoreOwnButtons(
+        _ bindings: [ButtonBinding], thumbWheel: ThumbWheelFunction?, of application: Application,
+        undoManager undo: UndoManager?,
+        showing: @escaping (Application) -> ApplicationButtonsViewController?, listDidChange: (() -> Void)?
+    ) {
+        let current = application.ownButtonBindings
+        var restored = bindings.map { binding in current.first { $0.identity == binding.identity } ?? binding }
+        restored += current.filter { binding in !restored.contains { $0.identity == binding.identity } }
+        application.setOwnButtonBindings(restored)
+        if application.ownThumbWheelFunction == nil {
+            application.setOwnThumbWheelFunction(thumbWheel)
+        }
+        showing(application)?.showUndoableChange(selecting: nil)
+        listDidChange?()
+        guard let undo else { return }
+        let path = application.path
+        undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+            guard let entry = Self.entry(storedAs: path) else { return }
+            Self.resetOwnButtons(of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange)
+        }
+        undo.setActionName(NSLocalizedString(resetActionNameKey, comment: ""))
     }
 
     /// The entry the list holds now for the app stored as `path`, as the Undo of an app's

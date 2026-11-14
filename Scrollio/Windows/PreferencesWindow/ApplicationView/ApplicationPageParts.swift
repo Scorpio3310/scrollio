@@ -233,24 +233,34 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
 /// front); the freeze switch is the same for every app and stays in the Shortcut Ring pane.
 ///
 /// For an app with suggested shortcuts (`ShortcutRingSuggestions`) the ring the switch
-/// makes starts with them, and while the app's own ring is in use a second row offers them
-/// again ("Use Suggested Shortcuts", which the window's Undo takes back) and says when the
-/// ring holds them. Nothing is filled without one of those two clicks.
+/// makes starts with them, and while the app's own ring is in use a second row says so
+/// (and how many places the keyboard layout leaves empty). Nothing is filled without a
+/// click: the switch, or "Reset to Defaults".
+///
+/// "Reset to Defaults" ends the own ring, there with it: the ring goes back to where it
+/// started (the suggestion, else a copy of the general ring as it is now), the switch
+/// stays; the window's Undo takes it back, also after the page closed.
+///
+/// While nothing opens the ring with the app in front (`ApplicationTriggerRule`), the own
+/// ring and its button are folded under a "Shortcuts" title (`PreferencesDisclosureSection`,
+/// as the Shortcut Ring pane folds its places): a click opens them, all of it editable.
+/// Once something opens the ring there, they stand under the switch's box as before, with
+/// no title.
 final class ApplicationRingPartViewController: NSViewController, ApplicationPagePartController {
 
     enum Identifier {
         static let generalRing = NSUserInterfaceItemIdentifier("apps-detail-general-ring")
-        static let useSuggested = NSUserInterfaceItemIdentifier("apps-detail-ring-use-suggested")
+        static let reset = NSUserInterfaceItemIdentifier("apps-detail-ring-reset")
     }
 
     let application: Application
     var onHeightChange: (() -> Void)?
-    /// Takes Undo and Redo of "Use Suggested Shortcuts"; the window's when nil.
+    /// Takes Undo and Redo of "Reset to Defaults"; the window's when nil.
     var paneUndoManager: UndoManager?
     /// The Shortcut Ring part that shows an app's entry now, if any (the pane's answer).
-    /// An Undo or Redo of "Use Suggested Shortcuts" asks it when it runs, maybe after this
-    /// page closed and the app's page opened again: it must not hold the page. nil: this
-    /// part, while it is there.
+    /// An Undo or Redo of "Reset to Defaults" asks it when it runs, maybe after this page
+    /// closed and the app's page opened again: it must not hold the page. nil: this part,
+    /// while it is there.
     var partShowing: ((Application) -> ApplicationRingPartViewController?)?
     /// The app's suggested shortcuts, found by its bundle when the page was made; nil for
     /// an app without any.
@@ -258,13 +268,26 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
 
     private(set) var ringSection: PreferencesGroupSection!
     private(set) var generalRingRow: PreferencesSwitchRow!
-    /// "Suggested shortcuts" and its button: shown while the app has a suggestion and its
-    /// own ring is in use.
+    /// "Suggested shortcuts" and where the ring started: shown while the app has a
+    /// suggestion and its own ring is in use.
     private(set) var suggestionRow: PreferencesGroupRow!
-    private(set) var useSuggestedButton: NSButton!
     /// The app's own ring, its drawing and its eight rows: there only while "Use the
     /// general ring" is off.
     private(set) var ringController: RingPreferencesViewController?
+    /// "Reset to Defaults" under the own ring, there with it.
+    private(set) var resetToDefaults: PreferencesPaneReset!
+    var resetToDefaultsButton: NSButton {
+        return resetToDefaults.button
+    }
+    private(set) var resetFooter: PreferencesGroupFooter!
+    /// The own ring's view and "Reset to Defaults", as one view: there only while "Use the
+    /// general ring" is off. Its width is the boxes'; the ring's view inside it reaches past
+    /// its edges by the margins the ring's view brings (clipped away), so it can stand
+    /// under the switch's box or as the body of `ownRingFold` alike.
+    private(set) var ownRingBody: NSView?
+    /// "Shortcuts", which folds `ownRingBody`: there while the own ring is in use and
+    /// nothing opens the ring with the app in front.
+    private(set) var ownRingFold: PreferencesDisclosureSection?
     /// The part ends under the switch's box (no own ring), or under the own ring.
     private var endsUnderRingSection: NSLayoutConstraint!
     private var ownRingConstraints: [NSLayoutConstraint] = []
@@ -295,21 +318,24 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         // takes the room it needs, and the page measures again.
         generalRing.reservedExplanations = [true, false].map { ApplicationDetailViewController.generalRingExplanation(on: $0, name: name) }
         generalRingRow = generalRing
-        let useSuggested = PreferencesGroupedForm.makePushButton(
-            title: NSLocalizedString("apps-detail-ring-use-suggested", comment: ""),
-            target: self,
-            action: #selector(useSuggestedClick(_:))
-        )
-        useSuggested.identifier = Identifier.useSuggested
-        useSuggestedButton = useSuggested
         let suggested = PreferencesGroupRow(
             title: NSLocalizedString("apps-detail-ring-suggested", comment: ""),
-            explanation: nil,
-            accessory: useSuggested
+            explanation: nil
         )
-        // (Its room: the longer of its two lines, set when it shows.)
+        // (Its room: its line, set when it shows.)
         suggested.isHidden = true
         suggestionRow = suggested
+        let reset = PreferencesPaneReset(
+            undoActionNameKey: Self.resetActionNameKey,
+            hasSettingsToReset: { [weak self] in self?.hasSettingsToReset ?? false },
+            undoManager: { [weak self] in self?.undoTarget },
+            reset: { [weak self] undo in self?.resetRing(undoManager: undo) }
+        )
+        // What is being edited (a name typed in a row's popover) goes first.
+        reset.willReset = { [weak self] in self?.ringController?.endEditing() }
+        reset.button.identifier = Identifier.reset
+        resetToDefaults = reset
+        resetFooter = PreferencesGroupFooter(trailing: [reset.button])
         // (No title: the part's segment names it.)
         let section = PreferencesGroupSection(
             width: PreferencesGroupedForm.boxWidth(paneWidth: ApplicationDetailViewController.paneWidth),
@@ -346,15 +372,18 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         // (What opens the ring is a binding of Buttons or of the app's Buttons part, and
         // this part has no row for it: while nothing opens it with the app in front, the
         // line says so instead of promising a ring.)
+        let opens = ApplicationDetailViewController.RingTrigger.of(application, general: Options.shared.buttons.binding)
         let line = ApplicationDetailViewController.generalRingExplanation(
-            on: usesGeneralRing, name: application.getName(),
-            opens: .of(application, general: Options.shared.buttons.binding)
+            on: usesGeneralRing, name: application.getName(), opens: opens
         )
-        let remeasures = generalRingRow.explanation != line && view.superview != nil
+        var remeasures = generalRingRow.explanation != line && view.superview != nil
         generalRingRow.explanation = line
-        showOwnRing(!usesGeneralRing)
+        if showOwnRing(!usesGeneralRing, folds: opens != .opens) {
+            remeasures = remeasures || view.superview != nil
+        }
         let suggestionMoved = showSuggestion()
         ringController?.reload()
+        resetToDefaults.settingsDidChange()
         return remeasures || suggestionMoved
     }
 
@@ -366,64 +395,73 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         return suggestion?.places(on: ShortcutRingSuggestions.layout())
     }
 
-    /// "The ring started from the shortcuts suggested for Figma." while the ring holds
-    /// them; else what the button does. When the keyboard layout leaves `emptyPlaces`
-    /// places of the suggestion empty (their keys need Option there), the line says so
-    /// instead of naming the app.
-    static func suggestionExplanation(holdsIt: Bool, name: String, emptyPlaces: Int) -> String {
+    /// "The ring started from the shortcuts suggested for Figma." When the keyboard layout
+    /// leaves `emptyPlaces` places of the suggestion empty (their keys need Option there),
+    /// the line says so instead of naming the app.
+    static func suggestionExplanation(name: String, emptyPlaces: Int) -> String {
         guard emptyPlaces > 0 else {
-            let key = holdsIt ? "apps-detail-ring-suggested-in-use" : "apps-detail-ring-suggested-offer"
-            return String(format: NSLocalizedString(key, comment: ""), name)
+            return String(format: NSLocalizedString("apps-detail-ring-suggested-in-use", comment: ""), name)
         }
-        let key = (holdsIt ? "apps-detail-ring-suggested-in-use-empty" : "apps-detail-ring-suggested-offer-empty")
-            + (emptyPlaces == 1 ? "-one" : "-other")
+        let key = "apps-detail-ring-suggested-in-use-empty" + (emptyPlaces == 1 ? "-one" : "-other")
         return String(format: NSLocalizedString(key, comment: ""), emptyPlaces)
     }
 
     /// The row of the suggested shortcuts: there while the app has a suggestion and its own
-    /// ring is in use, its button off while the ring holds them, its line saying how many
-    /// places the layout leaves empty. True when the row came or went, or its room changed,
-    /// while the part is on screen (the page measures again).
+    /// ring is in use, its line saying how many places the layout leaves empty. True when
+    /// the row came or went, or its room changed, while the part is on screen (the page
+    /// measures again).
     private func showSuggestion() -> Bool {
         let shows = suggestion != nil && application.ownRingPlaces != nil
         var moved = suggestionRow.isHidden == shows && view.superview != nil
         suggestionRow.isHidden = !shows
         guard shows, let suggestion, let suggested = suggestedPlaces() else { return moved }
-        let holdsIt = application.ownRingPlaces == suggested
-        let name = application.getName()
-        let empty = suggestion.placesLeftEmpty(in: suggested)
-        // Room for the longer of its two lines, so a change of a place never moves the ring.
-        let reserved = [true, false].map { Self.suggestionExplanation(holdsIt: $0, name: name, emptyPlaces: empty) }
-        if suggestionRow.reservedExplanations != reserved {
-            suggestionRow.reservedExplanations = reserved
+        let line = Self.suggestionExplanation(
+            name: application.getName(), emptyPlaces: suggestion.placesLeftEmpty(in: suggested)
+        )
+        if suggestionRow.explanation != line {
+            suggestionRow.explanation = line
             moved = moved || view.superview != nil
         }
-        suggestionRow.explanation = Self.suggestionExplanation(holdsIt: holdsIt, name: name, emptyPlaces: empty)
-        useSuggestedButton.isEnabled = !holdsIt
         return moved
     }
 
-    /// Where "Use Suggested Shortcuts" registers its Undo: the window's while the page is
-    /// in it.
+    // MARK: - Reset to Defaults
+
+    /// The undo action's name: the Shortcut Ring pane's ("Reset Shortcut Ring").
+    static let resetActionNameKey = "ring-undo-reset"
+
+    /// Where "Reset to Defaults" registers its Undo: the window's while the page is in it.
     var undoTarget: UndoManager? {
         return paneUndoManager ?? view.window?.undoManager
     }
 
-    /// "Use Suggested Shortcuts": the app's suggested shortcuts in all eight places, on the
-    /// keyboard layout in use. Edit › Undo brings back the places that were there.
-    @objc func useSuggestedClick(_ sender: Any?) {
-        guard let places = suggestedPlaces() else { return }
-        // What is being edited (a name typed in a row's popover) goes first.
-        ringController?.endEditing()
+    /// Where the app's own ring starts, and where "Reset to Defaults" takes it: the app's
+    /// suggested shortcuts on the keyboard layout in use, else the general ring as it is
+    /// now (as the switch starts it, `setUsesGeneralRing`).
+    func startPlaces() -> [ShortcutRingPlace] {
+        return suggestedPlaces() ?? Options.shared.ring.places
+    }
+
+    /// The app's own ring is in use and differs from where it started.
+    var hasSettingsToReset: Bool {
+        guard let own = application.ownRingPlaces else { return false }
+        return own != startPlaces()
+    }
+
+    /// "Reset to Defaults": the own ring as it started, its eight places; the switch stays
+    /// off. Edit › Undo brings back the places that were there.
+    private func resetRing(undoManager undo: UndoManager?) {
+        guard hasSettingsToReset else { return }
         let showing = partShowing ?? { [weak self] entry in
             self?.application === entry ? self : nil
         }
-        Self.fillRing(of: application, with: places, undoManager: undoTarget, showing: showing)
+        Self.fillRing(of: application, with: startPlaces(), undoManager: undo, showing: showing)
     }
 
     /// As the removal of a thumb wheel (`ApplicationButtonsViewController`): the undo
     /// target is the settings, not the page; Undo and Redo find the app's entry by its path
-    /// when they run, and show the change on the part `showing` gives for it.
+    /// when they run, and show the change on the part `showing` gives for it. (A ring kept
+    /// for later takes them too: the switch is never touched.)
     private static func fillRing(
         of application: Application, with places: [ShortcutRingPlace], undoManager undo: UndoManager?,
         showing: @escaping (Application) -> ApplicationRingPartViewController?
@@ -439,42 +477,102 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
             ) else { return }
             fillRing(of: entry, with: before, undoManager: undo, showing: showing)
         }
-        undo.setActionName(NSLocalizedString("apps-detail-ring-use-suggested", comment: ""))
+        undo.setActionName(NSLocalizedString(resetActionNameKey, comment: ""))
     }
 
     func partWillHide() {
         ringController?.endEditing()
+        resetToDefaults.endUndoOffer()
     }
 
-    /// Puts the app's own ring (the drawing and the eight rows) under the switch's box, or
-    /// takes it away again: it is there exactly while "Use the general ring" is off.
-    private func showOwnRing(_ shows: Bool) {
-        guard shows != (ringController != nil) else { return }
-        if let ring = ringController {
+    /// Puts the app's own ring (the drawing and the eight rows) and "Reset to Defaults"
+    /// under the switch's box, or takes them away again: they are there exactly while "Use
+    /// the general ring" is off. While `folds`, under a "Shortcuts" title that folds them
+    /// (folded when it comes); else right under the box, as the part always had them. True
+    /// when something came, went or moved.
+    @discardableResult
+    private func showOwnRing(_ shows: Bool, folds: Bool) -> Bool {
+        guard shows else {
+            guard let ring = ringController else { return false }
             ring.endEditing()
+            resetToDefaults.endUndoOffer()
             NSLayoutConstraint.deactivate(ownRingConstraints)
             ownRingConstraints = []
+            ownRingFold?.removeFromSuperview()
+            ownRingFold = nil
+            ownRingBody?.removeFromSuperview()
+            ownRingBody = nil
+            resetFooter.removeFromSuperview()
             ring.view.removeFromSuperview()
             ring.removeFromParent()
             ringController = nil
             endsUnderRingSection.isActive = true
-            return
+            return true
         }
-        let ring = RingPreferencesViewController(application: application)
-        addChild(ring)
-        let ringView = ring.view
-        ringView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(ringView)
+        let isNew = ownRingBody == nil
+        let body = ownRingBody ?? makeOwnRingBody()
+        guard isNew || folds != (ownRingFold != nil) else { return false }
+        NSLayoutConstraint.deactivate(ownRingConstraints)
         endsUnderRingSection.isActive = false
-        // The ring's view brings its own margins, as the Scrolling settings do.
+        let margin = PreferencesGroupedForm.margin
+        let placed: NSView
+        let gap: CGFloat
+        if folds {
+            body.removeFromSuperview()
+            let fold = PreferencesDisclosureSection(title: NSLocalizedString("ring-places-header", comment: ""), body: body)
+            fold.isCollapsible = true
+            fold.onExpandedChange = { [weak self] _ in self?.onHeightChange?() }
+            ownRingFold = fold
+            placed = fold
+            // A titled section's room above it.
+            gap = PreferencesGroupedForm.sectionSpacing
+        } else {
+            ownRingFold?.removeFromSuperview()
+            ownRingFold = nil
+            placed = body
+            // The room the ring's own top margin always made under the box.
+            gap = margin
+        }
+        view.addSubview(placed)
         ownRingConstraints = [
-            ringView.topAnchor.constraint(equalTo: ringSection.bottomAnchor),
-            ringView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            ringView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            ringView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            placed.topAnchor.constraint(equalTo: ringSection.bottomAnchor, constant: gap),
+            placed.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: margin),
+            placed.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -margin),
+            placed.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -margin),
         ]
         NSLayoutConstraint.activate(ownRingConstraints)
+        return true
+    }
+
+    /// The own ring's controller and the view that holds its view and "Reset to Defaults"
+    /// (`ownRingBody`).
+    private func makeOwnRingBody() -> NSView {
+        let ring = RingPreferencesViewController(application: application)
+        ring.onPlaceChange = { [weak self] in self?.resetToDefaults.settingsDidChange() }
+        addChild(ring)
         ringController = ring
+        let body = NSView()
+        body.translatesAutoresizingMaskIntoConstraints = false
+        // The ring's view reaches past the body by its own margins: they are cut off, so
+        // that nothing of it covers a title above the body.
+        body.clipsToBounds = true
+        let ringView = ring.view
+        ringView.translatesAutoresizingMaskIntoConstraints = false
+        body.addSubview(ringView)
+        body.addSubview(resetFooter)
+        let margin = PreferencesGroupedForm.margin
+        NSLayoutConstraint.activate([
+            ringView.topAnchor.constraint(equalTo: body.topAnchor, constant: -margin),
+            ringView.leadingAnchor.constraint(equalTo: body.leadingAnchor, constant: -margin),
+            ringView.trailingAnchor.constraint(equalTo: body.trailingAnchor, constant: margin),
+            // Its margin under the rows is the room above a footer.
+            resetFooter.topAnchor.constraint(equalTo: ringView.bottomAnchor),
+            resetFooter.leadingAnchor.constraint(equalTo: body.leadingAnchor),
+            resetFooter.trailingAnchor.constraint(equalTo: body.trailingAnchor),
+            resetFooter.bottomAnchor.constraint(equalTo: body.bottomAnchor),
+        ])
+        ownRingBody = body
+        return body
     }
 
     /// On: the ring of the Shortcut Ring pane opens while the app is in front; the app's

@@ -9,7 +9,7 @@
 //  Nothing is filled by itself. A suggestion is used only when the user turns off "Use the
 //  general ring" on the page of an app that has one and never had a ring of its own (its
 //  ring starts with the suggestion instead of a copy of the general ring), and when the
-//  user clicks "Use Suggested Shortcuts" there. What it fills in are ordinary places: a
+//  user clicks "Reset to Defaults" under that ring. What it fills in are ordinary places: a
 //  listed action (Undo, Copy … where the suggestion is exactly that action) or a recorded
 //  key combination with the suggestion's name and symbol as its label. So the settings
 //  file, Undo and older versions read them as any other place.
