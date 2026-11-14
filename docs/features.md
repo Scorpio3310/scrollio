@@ -326,7 +326,10 @@ Apart from those settings, and whatever that switch says:
 
 - For a Logitech-only button that has an action, and for a gesture button the mouse
   tracks itself, Scrollio asks the mouse to send that button to Scrollio, and gives it
-  back when Scrollio pauses or quits.
+  back when Scrollio pauses or quits. A button that only an app gives an action, or that
+  an app sets to "Default", is taken or given back as that app comes to or leaves the
+  front (so is the mouse's tracking of a gesture button); a button that is down waits
+  until it is up.
 - While you record a button in the Buttons pane, Scrollio asks the mouse for every
   button it can send (never the left or the right one), so that it can tell which one
   you press, and gives them back when the recording ends.
