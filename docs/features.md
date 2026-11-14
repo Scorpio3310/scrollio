@@ -200,9 +200,10 @@ the eight places hold.
   that moment (on a German or Slovenian keyboard ⌘Z is still Undo and zoom is the + and
   − keys); a shortcut whose key your layout types only with Option ("[" on those
   layouts) takes Scrollio's own Back or Forward in a browser, or other keys the app has
-  for it, and else its place stays empty. Mail's arrow and Delete keys are not
-  suggested (they would type into a text field); where other apps zoom out, Outlook's
-  place stays empty rather than Delete, and Excel gets its font size.
+  for it, and else its place stays empty (the page says how many). Mail's arrow and
+  Delete keys are not suggested (they would type into a text field); where other apps
+  zoom out, Outlook's place stays empty rather than Delete, and Excel gets its font
+  size.
 - "Reset to Defaults" at the bottom of the Shortcut Ring pane puts that new ring back:
   its eight places, and "Freeze pointer while the ring is held" off. The button or key
   that opens the ring stays as it is. The reset can be taken back: for a few seconds

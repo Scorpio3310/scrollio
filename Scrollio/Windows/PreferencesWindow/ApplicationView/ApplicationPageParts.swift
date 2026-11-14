@@ -307,8 +307,7 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
             explanation: nil,
             accessory: useSuggested
         )
-        // Room for the longer of its two lines, so a change of a place never moves the ring.
-        suggested.reservedExplanations = [true, false].map { Self.suggestionExplanation(holdsIt: $0, name: name) }
+        // (Its room: the longer of its two lines, set when it shows.)
         suggested.isHidden = true
         suggestionRow = suggested
         // (No title: the part's segment names it.)
@@ -367,31 +366,40 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         return suggestion?.places(on: ShortcutRingSuggestions.layout())
     }
 
-    /// Whether the app's own ring holds exactly its suggested shortcuts now.
-    var ringHoldsSuggestion: Bool {
-        guard let places = application.ownRingPlaces, let suggested = suggestedPlaces() else { return false }
-        return places == suggested
-    }
-
     /// "The ring started from the shortcuts suggested for Figma." while the ring holds
-    /// them; else what the button does.
-    static func suggestionExplanation(holdsIt: Bool, name: String) -> String {
-        let key = holdsIt ? "apps-detail-ring-suggested-in-use" : "apps-detail-ring-suggested-offer"
-        return String(format: NSLocalizedString(key, comment: ""), name)
+    /// them; else what the button does. When the keyboard layout leaves `emptyPlaces`
+    /// places of the suggestion empty (their keys need Option there), the line says so
+    /// instead of naming the app.
+    static func suggestionExplanation(holdsIt: Bool, name: String, emptyPlaces: Int) -> String {
+        guard emptyPlaces > 0 else {
+            let key = holdsIt ? "apps-detail-ring-suggested-in-use" : "apps-detail-ring-suggested-offer"
+            return String(format: NSLocalizedString(key, comment: ""), name)
+        }
+        let key = (holdsIt ? "apps-detail-ring-suggested-in-use-empty" : "apps-detail-ring-suggested-offer-empty")
+            + (emptyPlaces == 1 ? "-one" : "-other")
+        return String(format: NSLocalizedString(key, comment: ""), emptyPlaces)
     }
 
     /// The row of the suggested shortcuts: there while the app has a suggestion and its own
-    /// ring is in use, its button off while the ring holds them. True when the row came
-    /// or went while the part is on screen (the page measures again).
+    /// ring is in use, its button off while the ring holds them, its line saying how many
+    /// places the layout leaves empty. True when the row came or went, or its room changed,
+    /// while the part is on screen (the page measures again).
     private func showSuggestion() -> Bool {
         let shows = suggestion != nil && application.ownRingPlaces != nil
-        let moved = suggestionRow.isHidden == shows && view.superview != nil
+        var moved = suggestionRow.isHidden == shows && view.superview != nil
         suggestionRow.isHidden = !shows
-        if shows {
-            let holdsIt = ringHoldsSuggestion
-            suggestionRow.explanation = Self.suggestionExplanation(holdsIt: holdsIt, name: application.getName())
-            useSuggestedButton.isEnabled = !holdsIt
+        guard shows, let suggestion, let suggested = suggestedPlaces() else { return moved }
+        let holdsIt = application.ownRingPlaces == suggested
+        let name = application.getName()
+        let empty = suggestion.placesLeftEmpty(in: suggested)
+        // Room for the longer of its two lines, so a change of a place never moves the ring.
+        let reserved = [true, false].map { Self.suggestionExplanation(holdsIt: $0, name: name, emptyPlaces: empty) }
+        if suggestionRow.reservedExplanations != reserved {
+            suggestionRow.reservedExplanations = reserved
+            moved = moved || view.superview != nil
         }
+        suggestionRow.explanation = Self.suggestionExplanation(holdsIt: holdsIt, name: name, emptyPlaces: empty)
+        useSuggestedButton.isEnabled = !holdsIt
         return moved
     }
 

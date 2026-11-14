@@ -25,9 +25,13 @@ enum SuggestionFixtures {
     static let figmaPath = "/Applications/Figma.app"
     static let safariPath = "/Applications/Safari.app"
     static let calculatorPath = "/System/Applications/Calculator.app"
+    static let finderPath = "/System/Library/CoreServices/Finder.app"
+    static let lightroomPath = "/Applications/Adobe Lightroom Classic/Adobe Lightroom Classic.app"
 
     static let identifiers: [String: String] = [
         figmaPath: "com.figma.Desktop",
+        finderPath: "com.apple.finder",
+        lightroomPath: "com.adobe.LightroomClassicCC7",
         safariPath: "com.apple.Safari",
         "/Applications/Adobe Photoshop 2026/Adobe Photoshop 2026.app": "com.adobe.Photoshop",
         "/Applications/Microsoft Word.app": "com.microsoft.Word",
@@ -635,6 +639,41 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         XCTAssertFalse(part.useSuggestedButton.isEnabled)
     }
 
+    /// Where the layout cannot type some suggested keys (German: "[" "]" "\" need Option)
+    /// and those places stay empty, the row's line says how many, while the ring holds the
+    /// suggestion and while it offers it; on a layout that types them all it says nothing
+    /// of it.
+    func testTheRowSaysHowManyPlacesTheLayoutLeavesEmpty() throws {
+        let german = try SuggestionFixtures.layout("com.apple.keylayout.German")
+        ShortcutRingSuggestions.layout = { german }
+        let finder = add(SuggestionFixtures.finderPath, name: "Finder")
+        let part = part(for: finder)
+        turn(part, general: false)
+        XCTAssertEqual(finder.ownRingPlaces?.filter { $0 == .empty }.count, 2, "Back and Forward")
+        XCTAssertEqual(
+            part.suggestionRow.explanation,
+            "The ring started from them. 2 places stay empty: their keys can't be typed on this keyboard layout."
+        )
+        finder.ring?[0] = ShortcutRingPlace(SystemShortcut.copy)
+        part.syncViewWithOptions()
+        XCTAssertEqual(
+            part.suggestionRow.explanation,
+            "Fills the ring with them. 2 places stay empty: their keys can't be typed on this keyboard layout."
+        )
+
+        let lightroom = add(SuggestionFixtures.lightroomPath, name: "Adobe Lightroom Classic")
+        let one = self.part(for: lightroom)
+        turn(one, general: false)
+        XCTAssertEqual(
+            one.suggestionRow.explanation,
+            "The ring started from them. 1 place stays empty: its keys can't be typed on this keyboard layout."
+        )
+
+        ShortcutRingSuggestions.layout = { .us }
+        part.syncViewWithOptions()
+        XCTAssertEqual(part.suggestionRow.explanation, "Fills all eight places with the shortcuts suggested for Finder.")
+    }
+
     /// Without a suggestion the part is as before: no row, and the switch copies the
     /// general ring.
     func testAnAppWithoutASuggestionGetsACopyOfTheGeneralRingAndNoRow() {
@@ -675,7 +714,8 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         XCTAssertNil(figma.ring)
     }
 
-    /// The row's line fits two lines, also for an app with a long name.
+    /// The row's line fits two lines, also for an app with a long name, and when it says
+    /// how many places the layout leaves empty.
     func testTheSuggestionLineFitsTwoLines() throws {
         let long = add(SuggestionFixtures.figmaPath, name: "Adobe Lightroom Classic Long Edition")
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 900), styleMask: [.titled], backing: .buffered, defer: true)
@@ -690,11 +730,15 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         let font = PreferencesGroupedForm.explanationFont
         let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
         for holdsIt in [true, false] {
-            let text = ApplicationRingPartViewController.suggestionExplanation(holdsIt: holdsIt, name: long.displayName!)
-            let height = (text as NSString).boundingRect(
-                with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
-            ).height
-            XCTAssertLessThanOrEqual(height, twoLines, text)
+            for empty in [0, 1, 3] {
+                let text = ApplicationRingPartViewController.suggestionExplanation(
+                    holdsIt: holdsIt, name: long.displayName!, emptyPlaces: empty
+                )
+                let height = (text as NSString).boundingRect(
+                    with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
+                ).height
+                XCTAssertLessThanOrEqual(height, twoLines, text)
+            }
         }
     }
 
