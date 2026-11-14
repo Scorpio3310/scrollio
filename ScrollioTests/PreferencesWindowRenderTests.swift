@@ -1440,6 +1440,72 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
+    /// The Shortcut Ring part of apps of the second fifty, right after "Use the general
+    /// ring" was turned off (`app-ring-suggested-<app>-<appearance>.png`, US layout): Dia,
+    /// Discord, GitHub Desktop (Fetch where it pushed), Zed and Calendar. Then Zed with a
+    /// ring of its own made before there were suggestions, a copy of the general ring
+    /// (`-zed-by-hand`): the row says what "Reset to Defaults" does instead of where the
+    /// ring started.
+    func testRenderAppPageRingSuggestedSecondFifty() throws {
+        let stored = Options.shared.application.applications
+        let savedRing = Options.shared.ring
+        let savedIdentifier = ShortcutRingSuggestions.bundleIdentifierOfApplication
+        let savedLayout = ShortcutRingSuggestions.layout
+        addTeardownBlock {
+            Options.shared.application.applications = stored
+            Options.shared.ring = savedRing
+            ShortcutRingSuggestions.bundleIdentifierOfApplication = savedIdentifier
+            ShortcutRingSuggestions.layout = savedLayout
+            ShortcutRingController.forgetPreparedFaces()
+            ButtonUtils.shared.invalidateCache()
+        }
+        Options.shared.ring = .default
+        // A button opens the ring, so the switch's line says which ring opens.
+        Options.shared.buttons.binding = [binding(1000, SystemShortcut.shortcutRing.identifier)]
+        ButtonUtils.shared.invalidateCache()
+        let apps: [(file: String, name: String, path: String, identifier: String)] = [
+            ("dia", "Dia", "/Applications/Dia.app", "company.thebrowser.dia"),
+            ("discord", "Discord", "/Applications/Discord.app", "com.hnc.Discord"),
+            ("github-desktop", "GitHub Desktop", "/Applications/GitHub Desktop.app", "com.github.GitHubClient"),
+            ("zed", "Zed", "/Applications/Zed.app", "dev.zed.Zed"),
+            ("calendar", "Calendar", "/System/Applications/Calendar.app", "com.apple.iCal"),
+        ]
+        let identifiers = Dictionary(uniqueKeysWithValues: apps.map { ($0.path, $0.identifier) })
+        ShortcutRingSuggestions.bundleIdentifierOfApplication = { identifiers[$0] }
+        ShortcutRingSuggestions.layout = { .us }
+
+        func render(_ app: (file: String, name: String, path: String, identifier: String), byHand: Bool = false) throws {
+            let entry = Application(path: app.path)
+            entry.displayName = app.name
+            Options.shared.application.applications = EnhanceArray<Application>(withArray: [entry], matchKey: "path")
+            let defaults = uiDefaults(advanced: false)
+            try renderPane(PANEL_IDENTIFIER.application, name: "app-ring-suggested-\(app.file)\(byHand ? "-by-hand" : "")", prepare: { preferences in
+                (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                    .uiStateDefaults = defaults
+            }, afterLoad: { controller in
+                let pane = controller as? PreferencesApplicationViewController
+                pane?.openApplication(withID: app.path, part: .ring)
+                guard let part = pane?.detailController?.ringPart else { return }
+                // Each appearance starts from the general ring, as the user finds it.
+                entry.ring = nil
+                part.syncViewWithOptions()
+                if byHand {
+                    // A ring of its own from before the suggestions: a copy of the general ring.
+                    entry.setUsesGeneralRing(false, general: Options.shared.ring, suggested: nil)
+                } else {
+                    part.generalRingRow.toggle.state = .off
+                    part.generalRingClick(part.generalRingRow.toggle)
+                }
+                part.syncViewWithOptions()
+            })
+        }
+
+        for app in apps {
+            try render(app)
+        }
+        try render(apps[3], byHand: true)
+    }
+
     /// An app's page in parts and the marks of the list (`app-page-<part>-<appearance>.png`,
     /// `apps-list-marks-<appearance>.png`): Scrolling with the app's own settings; Buttons
     /// with two rows of the app's own on an MX Master 3S (one with an action, one
