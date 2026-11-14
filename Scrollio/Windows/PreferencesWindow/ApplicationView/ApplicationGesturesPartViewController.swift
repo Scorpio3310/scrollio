@@ -17,6 +17,12 @@
 //  names and icons) and the invert switch go back to a copy of the general ones as they
 //  are now, the switch stays; the window's Undo takes it back, also after the page closed.
 //
+//  While no button runs the gestures with the app in front (`ApplicationTriggerRule`),
+//  the title "Directions" folds the own set and its button away
+//  (`PreferencesDisclosureSection`, as the Gestures pane folds its settings): a click opens
+//  them, all of it editable. Once a button runs them there, "Directions" is a plain title
+//  again and the set shows as before.
+//
 
 import Cocoa
 
@@ -57,6 +63,10 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     /// Up, Down, Left, Right, Click, in `Slot.allCases` order; empty while the app uses the
     /// general gestures.
     private(set) var directionRows: [PreferencesGroupRow] = []
+    /// "Directions" and under it the own set's boxes and "Reset to Defaults"; it folds
+    /// them while no button runs the gestures with the app in front.
+    private(set) var directionsFold: PreferencesDisclosureSection?
+    /// The box of the five rows (its title is `directionsFold`'s).
     private(set) var directionsSection: PreferencesGroupSection?
     private(set) var invertRow: PreferencesGroupRow?
     private(set) var invertSection: PreferencesGroupSection?
@@ -122,6 +132,8 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
             note.trailingAnchor.constraint(equalTo: holder.trailingAnchor, constant: -inset),
         ])
         PreferencesGroupedForm.add([section, holder], to: content)
+        // A titled section's room above "Directions", under the line too.
+        content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: holder)
         let reset = PreferencesPaneReset(
             undoActionNameKey: Self.resetActionNameKey,
             hasSettingsToReset: { [weak self] in self?.hasSettingsToReset ?? false },
@@ -195,14 +207,19 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         guard isViewLoaded else { return false }
         let usesGeneral = application.usesGeneralGestures
         generalGesturesRow.isOn = usesGeneral
+        let hasButton = Self.hasButton(for: application, general: Options.shared.buttons.binding)
         let line = ApplicationDetailViewController.generalGesturesExplanation(
-            on: usesGeneral, name: application.getName(),
-            hasButton: Self.hasButton(for: application, general: Options.shared.buttons.binding)
+            on: usesGeneral, name: application.getName(), hasButton: hasButton
         )
         var remeasures = generalGesturesRow.explanation != line && view.superview != nil
         generalGesturesRow.explanation = line
         remeasures = syncButtonNote() || remeasures
         showOwnSet(!usesGeneral)
+        // (Folds when it becomes foldable; the page measures again.)
+        if let fold = directionsFold, fold.isCollapsible == hasButton {
+            fold.isCollapsible = !hasButton
+            remeasures = remeasures || view.superview != nil
+        }
         resetToDefaults.settingsDidChange()
         guard let controls else { return remeasures }
         controls.showLogiActions = showsLogiActions()
@@ -294,12 +311,14 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         if let controls {
             controls.endEditing()
             resetToDefaults.endUndoOffer()
-            for section in ([directionsSection, invertSection, resetFooter] as [NSView?]).compactMap({ $0 }) {
-                content.removeArrangedSubview(section)
-                section.removeFromSuperview()
+            if let fold = directionsFold {
+                content.removeArrangedSubview(fold)
+                fold.removeFromSuperview()
             }
+            resetFooter.removeFromSuperview()
             self.controls = nil
             directionRows = []
+            directionsFold = nil
             directionsSection = nil
             invertRow = nil
             invertSection = nil
@@ -320,7 +339,7 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         directionRows = Slot.allCases.map { slot in
             PreferencesGroupRow(title: text(slot.labelKey), accessory: controls.actionPopUp(for: slot))
         }
-        let directions = PreferencesGroupSection(title: text("gestures-directions-header"), width: Self.boxWidth, rows: directionRows)
+        let directions = PreferencesGroupSection(width: Self.boxWidth, rows: directionRows)
         directionsSection = directions
         let invert = PreferencesGroupRow(
             title: text("gesture-invert-horizontal"),
@@ -330,7 +349,22 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         invertRow = invert
         let invertBox = PreferencesGroupSection(width: Self.boxWidth, rows: [invert])
         invertSection = invertBox
-        PreferencesGroupedForm.add([directions, invertBox, resetFooter], to: content)
+        // The two boxes and the footer as the pane's content stack spaces them, under one
+        // title that folds them (a plain title while it cannot).
+        let body = NSStackView()
+        body.orientation = .vertical
+        body.alignment = .leading
+        body.spacing = PreferencesGroupedForm.boxSpacing
+        // Edge to edge, so its height is its content's also while it is folded away (its
+        // bottom then holds on nothing).
+        body.distribution = .fill
+        body.detachesHiddenViews = true
+        PreferencesGroupedForm.add([directions, invertBox, resetFooter], to: body)
+        let fold = PreferencesDisclosureSection(title: text("gestures-directions-header"), body: body)
+        fold.isCollapsible = !Self.hasButton(for: application, general: Options.shared.buttons.binding)
+        fold.onExpandedChange = { [weak self] _ in self?.onHeightChange?() }
+        directionsFold = fold
+        PreferencesGroupedForm.add([fold], to: content)
     }
 
     // MARK: - Actions

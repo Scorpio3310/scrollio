@@ -1452,6 +1452,83 @@ final class PreferencesWindowRenderTests: XCTestCase {
         })
     }
 
+    /// "Reset to Defaults" at the bottom of an app's parts, and the parts folded while
+    /// nothing runs them with the app in front (`app-reset-<part>`, `app-fold-<case>`,
+    /// `-<appearance>.png`): Safari, whose own ring, gestures and buttons differ from where
+    /// they start, while a button of Buttons opens the ring and runs the gestures
+    /// (`app-reset-ring`, `-gestures`, `-buttons`: the button on, nothing folded);
+    /// Calculator's own ring and gestures while nothing opens the ring or runs the gestures
+    /// (`app-fold-ring`, `app-fold-gestures`: "Shortcuts ›" and "Directions ›" folded), the
+    /// ring opened by a click (`app-fold-ring-open`) and its Buttons part without buttons of
+    /// its own (`app-reset-buttons-empty`: the button off).
+    func testRenderAppPageResetAndFold() throws {
+        let stored = Options.shared.application.applications
+        let savedRing = Options.shared.ring
+        addTeardownBlock {
+            Options.shared.application.applications = stored
+            Options.shared.ring = savedRing
+            ShortcutRingController.forgetPreparedFaces()
+            ButtonUtils.shared.invalidateCache()
+        }
+        Options.shared.ring = .default
+        Options.shared.gesture = .default
+        let mouse = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { "MX Master 3S" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        let safari = Application(path: "/Applications/Safari.app")
+        safari.setOwnButtonBindings([
+            ButtonBinding(triggerEvent: RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil),
+                          systemShortcutName: SystemShortcut.appExpose.identifier),
+        ])
+        safari.setOwnThumbWheelFunction(.tabs)
+        safari.setUsesGeneralRing(false, general: .default)
+        safari.ring?[0] = ShortcutRingPlace(SystemShortcut.copy)
+        safari.setUsesGeneralGestures(false, general: .default)
+        var gestures = GestureActions.default
+        gestures.left = GestureAction(SystemShortcut.navigateBack)
+        gestures.right = GestureAction(SystemShortcut.navigateForward)
+        safari.setOwnGestures(actions: gestures, invertHorizontal: false)
+        let calculator = Application(path: "/System/Applications/Calculator.app")
+        calculator.setUsesGeneralRing(false, general: .default)
+        calculator.setUsesGeneralGestures(false, general: .default)
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [safari, calculator], matchKey: "path")
+
+        func page(_ name: String, app: Application, part: ApplicationPagePart,
+                  after: @escaping (ApplicationDetailViewController) -> Void = { _ in }) throws {
+            let defaults = uiDefaults(advanced: false)
+            try renderPane(PANEL_IDENTIFIER.application, name: name, prepare: { preferences in
+                (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                    .uiStateDefaults = defaults
+            }, afterLoad: { controller in
+                let apps = controller as? PreferencesApplicationViewController
+                apps?.openApplication(withID: app.path, part: part)
+                guard let detail = apps?.detailController else { return }
+                detail.buttonsPart.deviceSource = mouse
+                detail.buttonsPart.reloadRows()
+                after(detail)
+            })
+        }
+        // A button opens the ring and another runs the gestures: nothing folds.
+        Options.shared.buttons.binding = [
+            binding(3, SystemShortcut.mouseGestureNavigation.identifier),
+            binding(1001, SystemShortcut.shortcutRing.identifier),
+        ]
+        ButtonUtils.shared.invalidateCache()
+        try page("app-reset-ring", app: safari, part: .ring)
+        try page("app-reset-gestures", app: safari, part: .gestures)
+        try page("app-reset-buttons", app: safari, part: .buttons)
+        try page("app-reset-buttons-empty", app: calculator, part: .buttons)
+        // Nothing opens the ring or runs the gestures.
+        Options.shared.buttons.binding = []
+        ButtonUtils.shared.invalidateCache()
+        try page("app-fold-ring", app: calculator, part: .ring)
+        try page("app-fold-ring-open", app: calculator, part: .ring) { detail in
+            detail.ringPart.ownRingFold?.setExpanded(true)
+            detail.ringPart.onHeightChange?()
+        }
+        try page("app-fold-gestures", app: calculator, part: .gestures)
+    }
+
     /// Full control of the buttons per app, on an MX Master 4 whose thumb panel runs Gesture
     /// Navigation in Buttons and an app ("Figma") whose own binding gives it the Shortcut
     /// Ring: its Buttons part (`app-buttons-thumb-panel-ring-<appearance>.png`), that row's

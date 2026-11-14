@@ -1142,11 +1142,16 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertNil(ring.placesHintLabel)
         page.view.layoutSubtreeIfNeeded()
         XCTAssertFalse(page.view.hasAmbiguousLayout)
-        XCTAssertEqual(ring.view.frame.maxY, page.ringSection.frame.minY, accuracy: 0.5, "under the switch's box")
+        // (Something opens the ring with the app in front: nothing folds, no title.)
+        XCTAssertNil(page.ringPart.ownRingFold)
+        func frame(_ view: NSView) -> NSRect {
+            return view.convert(view.bounds, to: page.ringPart.view)
+        }
+        XCTAssertEqual(frame(ring.view).maxY, page.ringSection.frame.minY, accuracy: 0.5, "under the switch's box")
         // Then "Reset to Defaults", and the page ends with it.
         let footer = try XCTUnwrap(page.ringPart.resetFooter)
-        XCTAssertEqual(footer.frame.maxY, ring.view.frame.minY, accuracy: 0.5, "the ring's margin over the footer")
-        XCTAssertEqual(footer.frame.minY, PreferencesGroupedForm.margin, accuracy: 0.5, "the page ends with it")
+        XCTAssertEqual(frame(footer).maxY, frame(ring.view).minY, accuracy: 0.5, "the ring's margin over the footer")
+        XCTAssertEqual(frame(footer).minY, PreferencesGroupedForm.margin, accuracy: 0.5, "the page ends with it")
         XCTAssertEqual(
             page.view.fittingSize.height, shortHeight + ring.view.fittingSize.height + footer.fittingSize.height, accuracy: 0.5
         )
