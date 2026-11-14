@@ -4,7 +4,12 @@
 //  "Shortcut Ring" preferences pane: what the ring holds, built in code on
 //  PreferencesGroupedForm like the Gestures pane.
 //
-//  On top the ring as it stands open at the pointer, drawn by the code that draws it on
+//  On top two cards, as the Gestures pane has them (`ShortcutRingHeaderView`): on the left
+//  the button or key that opens the ring, on the connected mouse (`ShortcutRingTriggerCard`,
+//  by the rule the Gestures pane's picture shares: the first trigger the row names, a
+//  dashed blank key while nothing opens it; it presses once when the pane appears, when the
+//  trigger changes and when the pointer enters the "Button or key" row); on the right
+//  the ring as it stands open at the pointer, drawn by the code that draws it on
 //  screen (`ShortcutRingArtwork`): its nine drops, at rest and drawn plainly. The drawing and the rows point at each other: the place of
 //  the row under the pointer is lit in the drawing, a place under the pointer is lit too,
 //  and a click on a place selects its row (its pull-down takes the keyboard and is
@@ -24,11 +29,11 @@
 //
 //  The pane only edits Options.shared.ring.
 //
-//  An app's page under Apps shows the same drawing and the same eight rows for the app's
-//  own ring (`init(application:)`, as the Scrolling settings there get a target
-//  application): then the rows edit only that app's ring, and what is general is left
-//  out: what opens the ring, the freeze switch, the two lines on how to choose and
-//  "Reset to Defaults".
+//  An app's page under Apps shows the same drawing of the ring, across the whole width, and
+//  the same eight rows for the app's own ring (`init(application:)`, as the Scrolling
+//  settings there get a target application): then the rows edit only that app's ring, and
+//  what is general is left out: what opens the ring (and its card), the freeze switch, the
+//  two lines on how to choose and "Reset to Defaults".
 //
 
 import Cocoa
@@ -41,15 +46,18 @@ struct ShortcutRingBindingSummary: Equatable {
     /// With none of those: the apps whose own buttons or keys open it while they are in
     /// front (nil: none does).
     var onlyInApps: ApplicationTriggers?
+    /// The trigger the pane's picture shows: the first of the row's (`TriggerPictureSource`).
+    var picture: TriggerPictureSource
 
     /// A binding of the Buttons pane opens the ring.
     var hasTrigger: Bool {
         return !triggerTitles.isEmpty
     }
 
-    init(triggerTitles: [String], onlyInApps: ApplicationTriggers? = nil) {
+    init(triggerTitles: [String], onlyInApps: ApplicationTriggers? = nil, picture: TriggerPictureSource = .none) {
         self.triggerTitles = triggerTitles
         self.onlyInApps = triggerTitles.isEmpty ? onlyInApps : nil
+        self.picture = picture
     }
 
     /// - Parameters:
@@ -70,7 +78,9 @@ struct ShortcutRingBindingSummary: Equatable {
             }
         }
         triggerTitles = names
-        onlyInApps = ApplicationTriggers(rule.onlyInApps(general: bindings, applications: applications), titles: titles)
+        let onlyInApps = ApplicationTriggers(rule.onlyInApps(general: bindings, applications: applications), titles: titles)
+        self.onlyInApps = onlyInApps
+        picture = TriggerPictureSource.make(rule: rule, general: bindings, onlyInApps: onlyInApps)
     }
 
     /// The explanation of the pane's first row: the buttons and keys, joined as a list; or
@@ -206,6 +216,8 @@ final class RingPreferencesViewController: NSViewController {
 
     /// Identifiers for the views of the pane (tests and accessibility tooling).
     enum Identifier {
+        static let header = NSUserInterfaceItemIdentifier("ring-header")
+        static let triggerPicture = NSUserInterfaceItemIdentifier("ring-trigger-picture")
         static let preview = NSUserInterfaceItemIdentifier("ring-preview")
         static let triggerButton = NSUserInterfaceItemIdentifier("ring-trigger-button")
         static let freezePointer = NSUserInterfaceItemIdentifier("ring-freeze-pointer")
@@ -285,7 +297,15 @@ final class RingPreferencesViewController: NSViewController {
 
     // MARK: - Views (read access for tests)
 
+    /// The ring card: in the pane the right one of the header, on an app's page across the
+    /// whole width.
     private(set) var previewView: ShortcutRingPreviewView!
+    /// The two cards; nil on an app's page.
+    private(set) var headerView: ShortcutRingHeaderView?
+    /// The button or key that opens the ring, drawn; nil on an app's page.
+    var triggerCard: ShortcutRingTriggerCard? {
+        return headerView?.triggerCard
+    }
     private(set) var triggerRow: PreferencesGroupRow!
     private(set) var triggerButton: NSButton!
     /// "Freeze pointer while the ring is held" and its switch.
@@ -327,8 +347,6 @@ final class RingPreferencesViewController: NSViewController {
 
         let preview = ShortcutRingPreviewView()
         preview.identifier = Identifier.preview
-        preview.translatesAutoresizingMaskIntoConstraints = false
-        preview.heightAnchor.constraint(equalToConstant: ShortcutRingPreviewView.preferredHeight).isActive = true
         preview.onPlaceHovered = { [weak self] in self?.placePointedAt($0) }
         preview.onPlaceClicked = { [weak self] in self?.selectPlace($0) }
         previewView = preview
@@ -337,15 +355,25 @@ final class RingPreferencesViewController: NSViewController {
         placePopUps = (0..<ShortcutRingSettings.placeCount).map { makePopUp(for: $0) }
         placeRows = (0..<ShortcutRingSettings.placeCount).map { makePlaceRow($0) }
         if application != nil {
-            // An app's own ring: the drawing and the eight rows, nothing of what is general.
+            // An app's own ring: the drawing across the width and the eight rows, nothing of
+            // what is general.
+            preview.translatesAutoresizingMaskIntoConstraints = false
+            preview.heightAnchor.constraint(equalToConstant: ShortcutRingPreviewView.preferredHeight).isActive = true
             sections = [preview, PreferencesGroupBox(width: width, rows: placeRows)]
             PreferencesGroupedForm.add(sections, to: content)
         } else {
+            // What opens the ring beside the ring.
+            let header = ShortcutRingHeaderView(ringCard: preview)
+            header.identifier = Identifier.header
+            header.triggerCard.identifier = Identifier.triggerPicture
+            header.translatesAutoresizingMaskIntoConstraints = false
+            header.heightAnchor.constraint(equalToConstant: ShortcutRingHeaderView.preferredHeight).isActive = true
+            headerView = header
             let trigger = PreferencesGroupSection(width: width, rows: [makeTriggerRow(), makeFreezeRow()])
             let places = makePlacesSection(rows: placeRows)
             resetToDefaults = makeReset()
 
-            sections = [preview, trigger, places, PreferencesGroupFooter(trailing: [resetToDefaults.button])]
+            sections = [header, trigger, places, PreferencesGroupFooter(trailing: [resetToDefaults.button])]
             PreferencesGroupedForm.add(sections, to: content)
             content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: trigger)
         }
@@ -359,6 +387,12 @@ final class RingPreferencesViewController: NSViewController {
         super.viewWillAppear()
         // A button may have been bound under Buttons meanwhile, or a file imported.
         reload()
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        // The picture shows once what opens the ring.
+        triggerCard?.pulse()
     }
 
     override func viewDidDisappear() {
@@ -389,6 +423,7 @@ final class RingPreferencesViewController: NSViewController {
         if application == nil {
             let summary = bindingSummary()
             triggerRow.explanation = summary.explanation
+            triggerCard?.source = summary.picture
             // (Opened only by an app's own button: "Change" leads to it, not "Set Up…".)
             let opens = summary.hasTrigger || summary.onlyInApps != nil
             triggerButton.title = text(opens ? "ring-trigger-change" : "ring-trigger-set-up")
@@ -412,9 +447,16 @@ final class RingPreferencesViewController: NSViewController {
     // MARK: - The row under the pointer
 
     private static let hoverPlaceInfo = "ringPlace"
+    private static let hoverTriggerInfo = "ringTrigger"
 
     private static func place(of event: NSEvent) -> Int? {
         return event.trackingArea?.userInfo?[hoverPlaceInfo] as? Int
+    }
+
+    /// The pointer entered the "Button or key" row: the picture presses once (at most
+    /// every 1.5 s, `ShortcutRingTriggerCard.pulse`).
+    func triggerRowEntered() {
+        triggerCard?.pulse()
     }
 
     /// The pointer entered or left the row of `place`: its place is lit in the drawing.
@@ -445,6 +487,9 @@ final class RingPreferencesViewController: NSViewController {
     }
 
     override func mouseEntered(with event: NSEvent) {
+        if event.trackingArea?.userInfo?[Self.hoverTriggerInfo] != nil {
+            return triggerRowEntered()
+        }
         guard let place = Self.place(of: event) else { return super.mouseEntered(with: event) }
         placeHoverChanged(place, inside: true)
     }
@@ -579,6 +624,13 @@ final class RingPreferencesViewController: NSViewController {
         )
         // Room for two lines whatever the row says, so naming a button does not move the rows.
         row.reservedExplanations = [text("ring-trigger-none")]
+        // Pointed at, the picture above shows what it names.
+        row.addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self,
+            userInfo: [Self.hoverTriggerInfo: true]
+        ))
         triggerRow = row
         return row
     }

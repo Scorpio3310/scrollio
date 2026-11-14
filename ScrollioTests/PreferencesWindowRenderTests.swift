@@ -244,19 +244,97 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
-    /// The Shortcut Ring pane: a button and a key open the ring, the default ring, and the
-    /// pointer over the row of "Bottom left" (its place is lit in the drawing).
+    /// The Shortcut Ring pane: a button and a key open the ring (the picture shows the first,
+    /// the thumb panel of an MX Master 4), the default ring, and the pointer over the row of
+    /// "Bottom left" (its place is lit in the drawing).
     func testRenderRing() throws {
         let savedRing = Options.shared.ring
         defer { Options.shared.ring = savedRing }
         Options.shared.ring = .default
+        let thumbPanel = RecordedEvent(type: .mouse, code: LogiCenter.shared.scrollioCode(for: .thumbPanel), modifiers: 0, deviceFilter: nil)
         try renderPane(RingPreferencesViewController.tabIdentifier, name: "ring-pane", titled: TitledCut(), replacement: {
             let ring = RingPreferencesViewController()
-            ring.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: ["Thumb panel", "⌃⌥ Space"]) }
+            ring.bindingSummary = {
+                ShortcutRingBindingSummary(triggerTitles: ["Thumb panel", "⌃⌥ Space"], picture: TriggerPictureSource(event: thumbPanel))
+            }
             return ring
         }, afterLoad: { controller in
-            (controller as? RingPreferencesViewController)?.placeHoverChanged(5, inside: true)
+            guard let ring = controller as? RingPreferencesViewController else { return }
+            Self.stillTriggerCard(of: ring, mouse: .mxMaster4)
+            ring.placeHoverChanged(5, inside: true)
         })
+    }
+
+    /// The trigger card of a Shortcut Ring pane shows `mouse`, as Reduce Motion has it: no
+    /// press, the light and the turn at once.
+    private static func stillTriggerCard(of ring: RingPreferencesViewController, mouse: MouseArtworkModel) {
+        guard let card = ring.triggerCard else { return }
+        card.prefersReducedMotion = { true }
+        card.mouseSource = { mouse }
+        card.reloadMouse()
+    }
+
+    /// The picture of what opens the Shortcut Ring (`ring-trigger-<case>-<appearance>.png`):
+    /// the header and the first box, Reduce Motion on, for every case of the picture: a part
+    /// of each drawing (from the side and from above), a numbered button, a part the drawing
+    /// lacks, a button with a modifier, keys (a long combination drawn smaller), two triggers
+    /// (the first shows), a trigger only in Notes, and nothing on an MX Master 4 and on the
+    /// plain mouse.
+    func testRenderRingTriggerPicture() throws {
+        let savedRing = Options.shared.ring
+        defer { Options.shared.ring = savedRing }
+        Options.shared.ring = .default
+        func logitech(_ role: LogiControlRole) -> RecordedEvent {
+            return RecordedEvent(type: .mouse, code: LogiCenter.shared.scrollioCode(for: role), modifiers: 0, deviceFilter: nil)
+        }
+        func button(_ code: UInt16, modifiers: CGEventFlags = []) -> RecordedEvent {
+            return RecordedEvent(type: .mouse, code: code, modifiers: UInt(modifiers.rawValue), deviceFilter: nil)
+        }
+        func key(_ code: UInt16, modifiers: CGEventFlags) -> RecordedEvent {
+            return RecordedEvent(type: .keyboard, code: code, modifiers: UInt(modifiers.rawValue), deviceFilter: nil)
+        }
+        func ring(_ event: RecordedEvent) -> ButtonBinding {
+            return ButtonBinding(triggerEvent: event, systemShortcutName: SystemShortcut.shortcutRing.identifier, isEnabled: true)
+        }
+        let notes = "/System/Applications/Notes.app"
+        let controlOption: CGEventFlags = [.maskControl, .maskAlternate]
+        // What the pane is given: the bindings of Buttons, as the pane names and draws them.
+        let cases: [(name: String, mouse: MouseArtworkModel, bindings: [RecordedEvent], onlyInNotes: Bool)] = [
+            ("mx4-thumb-panel", .mxMaster4, [logitech(.thumbPanel)], false),
+            ("mx4-gesture", .mxMaster4, [logitech(.gesture)], false),
+            ("mx3-gesture", .mxMaster3, [logitech(.gesture)], false),
+            ("anywhere-back", .mxAnywhere3, [button(3)], false),
+            ("vertical-pointer-speed", .mxVertical, [logitech(.pointerSpeed)], false),
+            ("generic-middle", .generic, [button(2)], false),
+            ("generic-thumb-panel", .generic, [logitech(.thumbPanel)], false),
+            ("button6", .mxMaster4, [button(6)], false),
+            ("option-back", .mxMaster4, [button(3, modifiers: .maskAlternate)], false),
+            ("key-ctrl-opt-space", .mxMaster4, [key(49, modifiers: controlOption)], false),
+            ("key-f13", .mxMaster4, [key(105, modifiers: [])], false),
+            ("key-long", .mxMaster4, [key(121, modifiers: [.maskControl, .maskAlternate, .maskShift, .maskCommand])], false),
+            ("thumb-panel-and-key", .mxMaster4, [logitech(.thumbPanel), key(49, modifiers: controlOption)], false),
+            ("only-in-notes", .mxMaster4, [logitech(.thumbPanel)], true),
+            ("none-mx4", .mxMaster4, [], false),
+            ("none-generic", .generic, [], false),
+        ]
+        for item in cases {
+            let summary: ShortcutRingBindingSummary
+            if item.onlyInNotes {
+                let app = Application(path: notes)
+                app.setOwnButtonBindings(item.bindings.map(ring))
+                summary = ShortcutRingBindingSummary(bindings: [], applications: [app])
+            } else {
+                summary = ShortcutRingBindingSummary(bindings: item.bindings.map(ring))
+            }
+            try renderPane(RingPreferencesViewController.tabIdentifier, name: "ring-trigger-\(item.name)", titled: TitledCut(boxes: 1), replacement: {
+                let pane = RingPreferencesViewController()
+                pane.bindingSummary = { summary }
+                return pane
+            }, afterLoad: { controller in
+                guard let pane = controller as? RingPreferencesViewController else { return }
+                Self.stillTriggerCard(of: pane, mouse: item.mouse)
+            })
+        }
     }
 
     /// Recorded key combinations with a name and an icon (`ShortcutLabel`), as the rows

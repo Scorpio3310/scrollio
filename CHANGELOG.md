@@ -23,6 +23,8 @@ it for the people who use the app, and give the version its part before you tag 
   ring and Settings show them, with the keys smaller beside them.
 - **Key combinations for gestures.** A gesture direction or its click can send a key
   combination you record, with a name and an icon, as a ring's place can.
+- **Your button in the picture.** Gestures and Shortcut Ring draw the button or key that
+  really runs them, on your mouse; with none yet, a dashed outline shows where it goes.
 
 ## 1.0.5
 
