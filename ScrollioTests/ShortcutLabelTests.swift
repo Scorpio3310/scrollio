@@ -652,10 +652,10 @@ final class ShortcutLabelRowsTests: XCTestCase {
 
     // MARK: Gestures
 
-    /// The Gestures pane has no recorder: a direction or the click takes a listed action
-    /// only, and a recorded key combination stored there runs nothing. So nothing there
-    /// can carry a name. When a direction learns to send a recorded combination, its
-    /// name and icon have to come with it: this test says where to look.
+    /// The Gestures pane has no recorder yet: a direction or the click is given a listed
+    /// action only, though a recorded key combination stored there runs (as a ring's
+    /// place sends it). When the pane learns to record one, its name and icon have to
+    /// come with it: this test says where to look.
     func testADirectionOfGestureNavigationTakesNoRecordedCombinationYet() {
         let controls = MouseGestureSettingsControls(showLogiActions: true, isInteractiveAvailable: { true })
         func markers(_ menu: NSMenu?) -> [String] {
@@ -668,8 +668,6 @@ final class ShortcutLabelRowsTests: XCTestCase {
             XCTAssertFalse(offered.contains(ShortcutManager.MenuMarker.keyboardShortcut), "no \"Keyboard Shortcut…\" here")
             XCTAssertFalse(offered.contains { $0.hasPrefix("custom::") })
         }
-        XCTAssertFalse(StoredAction.isKnown(gestureAction: shiftCommandR), "a direction does not run a recorded combination")
-        XCTAssertNil(ShortcutExecutor.shared.resolveAction(named: shiftCommandR))
     }
 }
 
