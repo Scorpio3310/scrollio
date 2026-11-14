@@ -371,9 +371,35 @@ final class ApplicationDetailHeaderRow: PreferencesGroupRow {
 // MARK: - Page view
 
 /// The page's view. Esc (passed up from whatever has the focus on the page) and ⌘[ go back.
+///
+/// A click on a row's chevron or mark opens the page at once, and may be the first click
+/// of a double-click (a double-click on a row opens it too): the next mouse-down then
+/// lands on the page, where the part's first switch can sit right under the pointer. Such
+/// a continued click (one that began before the page opened) reaches nothing on the page;
+/// a click that begins on the page goes through as always.
 final class ApplicationDetailView: NSView {
 
     var onBack: (() -> Void)?
+    /// The event being handled. Tests give theirs.
+    var currentEvent: () -> NSEvent? = { NSApp.currentEvent }
+    /// When the page opened, on the clock of the events' timestamps.
+    private let openedAt = ProcessInfo.processInfo.systemUptime
+    /// Until a click begins on the page, a continued click is held back.
+    private var holdsBackContinuedClicks = true
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        guard holdsBackContinuedClicks, hit != nil, let event = currentEvent(),
+              event.type == .leftMouseDown, event.timestamp > openedAt else { return hit }
+        guard event.clickCount > 1 else {
+            holdsBackContinuedClicks = false
+            return hit
+        }
+        return self
+    }
+
+    /// A continued click held back (`hitTest`) ends here.
+    override func mouseDown(with event: NSEvent) {}
 
     /// The focus lands here when the page opens, so Esc works straight away.
     override var acceptsFirstResponder: Bool { return true }

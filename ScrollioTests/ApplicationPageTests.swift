@@ -344,6 +344,46 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.scrolling])
     }
 
+    /// A click on a row's chevron opens the page at once; when it is the first click of a
+    /// double-click, the second mouse-down lands on the page and reaches nothing there (not
+    /// the part's first switch under it). A click that begins on the page goes through,
+    /// and so does a double-click there.
+    func testTheSecondClickOfADoubleClickThatOpenedThePageReachesNothingOnIt() throws {
+        addApp(Self.calculator)
+        ApplicationPagePart.ring.remember(in: uiDefaults)
+        let pane = makePane()
+        let window = makeWindow(for: pane)
+        let row = try XCTUnwrap(pane.list.rows.first as? ApplicationListRow)
+        row.layoutSubtreeIfNeeded()
+        let chevron = try XCTUnwrap(row.chevronView)
+        func press(at point: NSPoint, clicks: Int) throws -> NSEvent {
+            return try XCTUnwrap(NSEvent.mouseEvent(
+                with: .leftMouseDown, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1
+            ))
+        }
+        row.mouseDown(with: try press(at: row.convert(NSPoint(x: chevron.frame.midX, y: chevron.frame.midY), to: nil), clicks: 1))
+        let page = try XCTUnwrap(pane.detailController)
+        XCTAssertEqual(page.shownPart, .ring)
+        let pageView = try XCTUnwrap(page.view as? ApplicationDetailView)
+        pane.view.layoutSubtreeIfNeeded()
+        let toggle = page.generalRingSwitch
+        let onSwitch = toggle.convert(NSPoint(x: toggle.bounds.midX, y: toggle.bounds.midY), to: nil)
+        func hit(_ event: NSEvent) -> NSView? {
+            pageView.currentEvent = { event }
+            return pageView.superview.flatMap { pageView.hitTest($0.convert(event.locationInWindow, from: nil)) }
+        }
+
+        let second = try press(at: onSwitch, clicks: 2)
+        XCTAssertTrue(hit(second) === pageView, "held back")
+        pageView.mouseDown(with: second)
+        XCTAssertEqual(toggle.state, .on, "the switch is untouched")
+        XCTAssertTrue(hit(try press(at: onSwitch, clicks: 3)) === pageView)
+        // A click of the page's own, and a double-click there, reach the switch.
+        XCTAssertTrue(hit(try press(at: onSwitch, clicks: 1))?.isDescendant(of: page.generalRingRow) == true)
+        XCTAssertTrue(hit(try press(at: onSwitch, clicks: 2))?.isDescendant(of: page.generalRingRow) == true)
+    }
+
     // MARK: - The Buttons part
 
     /// Only the app's own rows, each a row of the Buttons pane with what the button does
