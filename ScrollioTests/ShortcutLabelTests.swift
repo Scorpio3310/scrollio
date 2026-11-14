@@ -972,6 +972,29 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         XCTAssertNil(popover.editedLabel)
     }
 
+    /// At the limit, a key typed or text pasted inside the name gives way, not the end of
+    /// the name (F22): what does not fit of it is left out, and the caret stays after what
+    /// was kept.
+    func testTypingInsideAFullNameNeverCutsItsEnd() throws {
+        let full = "Reload Page Without Cach"
+        XCTAssertEqual(full.count, ShortcutLabel.maximumNameLength)
+        let (popover, editor) = try details(label: label(full))
+        type("Reload XPage Without Cach", into: editor.nameField, of: editor)
+        XCTAssertEqual(editor.nameField.stringValue, full, "the key is refused")
+        XCTAssertEqual(popover.editedLabel?.name, full)
+
+        type("Reload Page", into: editor.nameField, of: editor)
+        type("Reload ABCDEFGHIJKLMNOPQRSTUVPage", into: editor.nameField, of: editor)
+        XCTAssertEqual(editor.nameField.stringValue, "Reload ABCDEFGHIJKLMPage", "as much of the paste as fits")
+        XCTAssertEqual(
+            ShortcutLabelEditorView.fitted("Reload ABCDEFGHIJKLMNOPQRSTUVPage", after: "Reload Page").caret,
+            "Reload ABCDEFGHIJKLM".utf16.count
+        )
+        // Typed at the end, the same as before.
+        type("Reload ABCDEFGHIJKLMPageX", into: editor.nameField, of: editor)
+        XCTAssertEqual(editor.nameField.stringValue, "Reload ABCDEFGHIJKLMPage")
+    }
+
     func testTheDetailsShowTheNameAndIconThatAreThere() throws {
         let (popover, editor) = try details(label: reload)
         XCTAssertEqual(editor.nameField.stringValue, "Reload")
