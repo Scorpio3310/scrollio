@@ -223,21 +223,23 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSPopoverDeleg
         controller.focusSearch()
     }
 
-    /// Closes the chooser, if it is open; the keyboard goes back to the well.
-    func closeChooser() {
+    /// Closes the chooser, if it is open; the keyboard goes back to the well, unless
+    /// `refocus` is false: the card around the editor is going away, and its window must
+    /// not be made the key one again.
+    func closeChooser(refocus: Bool = true) {
         guard let popover = chooserPopover else { return }
         // (Told here, not by the system: a popover that was never on screen closes without
         // a word.)
         popover.delegate = nil
         popover.close()
-        chooserClosed(closesParent: false)
+        chooserClosed(closesParent: false, refocus: refocus)
     }
 
-    private func chooserClosed(closesParent: Bool) {
+    private func chooserClosed(closesParent: Bool, refocus: Bool) {
         chooser = nil
         chooserPopover = nil
         onChooserClose?(closesParent)
-        guard !closesParent, let window = iconWell.window else { return }
+        guard refocus, !closesParent, let window = iconWell.window else { return }
         window.makeFirstResponder(iconWell)
         if !window.isKeyWindow, window.canBecomeKey {
             window.makeKey()

@@ -20,6 +20,25 @@ import XCTest
 final class ShortcutIconChooserTests: XCTestCase {
 
     private let reload = ShortcutLabel(name: "Reload", icon: .symbol("arrow.clockwise"))
+    private var windows: [NSWindow] = []
+
+    override func tearDown() {
+        windows.forEach { $0.contentView = nil }
+        windows = []
+        super.tearDown()
+    }
+
+    /// The card in a window that is never shown, so that the keyboard has a place in it.
+    private func inWindow(_ popover: KeyPopover) throws -> NSWindow {
+        let content = try XCTUnwrap(popover.testingContentView)
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: content.fittingSize), styleMask: [.titled], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(content)
+        windows.append(window)
+        return window
+    }
 
     private func details(_ label: ShortcutLabel?) throws -> (KeyPopover, ShortcutLabelEditorView) {
         let popover = KeyPopover()
@@ -397,6 +416,28 @@ final class ShortcutIconChooserTests: XCTestCase {
         XCTAssertTrue(chooser.control(chooser.searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
         XCTAssertEqual(editor.icon, .symbol("hammer"))
     }
+
+    /// The card going away (a click in the settings window, Done, the pane leaving) closes
+    /// the chooser without giving the keyboard back to the card: its window is not made
+    /// the key one again while it closes.
+    func testTheCardClosingGivesNothingOfItTheKeyboard() throws {
+        let (popover, editor) = try details(reload)
+        let window = try inWindow(popover)
+        editor.openChooser()
+        window.makeFirstResponder(nil)
+        popover.testingCloseAsTheUserDoes()
+        XCTAssertFalse(editor.isChoosingIcon)
+        XCTAssertFalse(window.firstResponder === editor.iconWell, "closed by the system")
+
+        let (done, doneEditor) = try details(reload)
+        let doneWindow = try inWindow(done)
+        doneEditor.openChooser()
+        doneWindow.makeFirstResponder(nil)
+        done.hide()
+        XCTAssertFalse(doneEditor.isChoosingIcon)
+        XCTAssertFalse(doneWindow.firstResponder === doneEditor.iconWell, "closed by the app")
+    }
+
     // MARK: Layout of the chooser
 
     /// Eight columns of 32 pt cells; the grid's room ends in the middle of a row, so it

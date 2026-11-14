@@ -133,7 +133,8 @@ class KeyPopover: NSObject, NSPopoverDelegate {
 
     /// 隐藏 popover
     func hide() {
-        labelEditor?.closeChooser()
+        // (The card is going away: its window is not made the key one again.)
+        labelEditor?.closeChooser(refocus: false)
         guard let closing = popover else { return }
         popover = nil
         // (Told here, not by the system: a popover that was never on screen closes
@@ -147,7 +148,7 @@ class KeyPopover: NSObject, NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         guard let closed = notification.object as? NSPopover, closed === popover else { return }
         popover = nil
-        labelEditor?.closeChooser()
+        labelEditor?.closeChooser(refocus: false)
         tellClosed()
     }
 
@@ -314,12 +315,10 @@ class KeyPopover: NSObject, NSPopoverDelegate {
         turnToDetails(label: label)
     }
 
-    /// As if the user closed the popover (a click elsewhere).
+    /// As if the user closed the popover (a click elsewhere): what the system tells it.
     func testingCloseAsTheUserDoes() {
-        guard popover != nil else { return }
-        popover = nil
-        labelEditor?.closeChooser()
-        tellClosed()
+        guard let popover else { return }
+        popoverDidClose(Notification(name: NSPopover.didCloseNotification, object: popover))
     }
 
     var testingWaitingIsVisible: Bool {
