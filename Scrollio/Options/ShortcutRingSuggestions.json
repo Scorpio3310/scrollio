@@ -404,7 +404,7 @@
         {"name": "Reply All", "symbol": "arrowshape.turn.up.left.2", "character": "r", "modifiers": ["shift", "command"], "modifierless": false},
         {"name": "Next Message", "symbol": "chevron.right", "character": "]", "modifiers": ["control"], "modifierless": false},
         {"name": "Mark Unread", "symbol": "envelope.badge", "character": "t", "modifiers": ["shift", "command"], "modifierless": false},
-        {"name": "Delete", "symbol": "trash", "character": "delete", "modifiers": ["command"], "modifierless": false},
+        {"empty": "Delete where other apps zoom out (a flick down from habit would delete a message)"},
         {"name": "Archive", "symbol": "archivebox", "character": "e", "modifiers": ["control"], "modifierless": false},
         {"name": "Previous Message", "symbol": "chevron.left", "character": "[", "modifiers": ["control"], "modifierless": false},
         {"name": "Forward Message", "symbol": "arrowshape.turn.up.right", "character": "j", "modifiers": ["command"], "modifierless": false}

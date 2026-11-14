@@ -107,7 +107,9 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
                 }
             }
         }
-        XCTAssertEqual(empty, ["Mail ring-place-right", "Mail ring-place-bottom", "Mail ring-place-left"])
+        XCTAssertEqual(empty, [
+            "Mail ring-place-right", "Mail ring-place-bottom", "Mail ring-place-left", "Microsoft Outlook ring-place-bottom",
+        ])
         XCTAssertEqual(Set(identifiers).count, identifiers.count, "every bundle identifier names one app")
     }
 
@@ -161,15 +163,17 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
 
     /// Nothing destructive is suggested: no place that deletes what cannot be brought
     /// back, ends a call or quits; Excel's Delete Cells (where every other app zooms out)
-    /// gave way to the font size pair. The deletes left are each taken back by the app's
-    /// Undo or a bin, or asked about first.
+    /// gave way to the font size pair, and Outlook's Delete left that place empty, as
+    /// Mail's is: a flick down from habit would delete a message. The deletes left are
+    /// each taken back by the app's Undo or a bin, or asked about first, and none is on
+    /// the bottom place.
     func testNoPlaceIsDestructive() throws {
         let never: Set<String> = [
             "Delete Cells", "Insert Cells", "Leave Call", "Leave Meeting", "Delete Now", "Empty Trash", "Quit", "Force Quit",
             "Close Window",
         ]
         let recoverable: Set<String> = [
-            "Finder: Move to Trash", "Microsoft Outlook: Delete", "Photos: Delete",
+            "Finder: Move to Trash", "Photos: Delete",
             "Final Cut Pro: Ripple Delete", "Adobe Premiere Pro: Ripple Delete", "DaVinci Resolve: Ripple Delete",
         ]
         for app in catalog.apps {
@@ -178,9 +182,11 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
                 XCTAssertFalse(never.contains(place.name), what)
                 if place.name.contains("Delete") || place.name.contains("Trash") {
                     XCTAssertTrue(recoverable.contains(what), what)
+                    XCTAssertNotEqual(app.slots[4].place, place, "not where other apps zoom out: \(what)")
                 }
             }
         }
+        XCTAssertNil(try SuggestionFixtures.app("Microsoft Outlook").slots[4].place, "Outlook's bottom")
         let excel = try SuggestionFixtures.app("Microsoft Excel")
         XCTAssertEqual(excel.slots[0].place?.name, "Increase Font Size")
         XCTAssertEqual(excel.slots[4].place?.name, "Decrease Font Size")
