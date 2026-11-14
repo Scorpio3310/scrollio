@@ -19,11 +19,11 @@
 //    while a ring stands open.
 //  - The click that chooses or dismisses, held or left open: the panel itself takes it
 //    (the window server gives the panel the click's up with its down), so the app
-//    underneath gets neither. A click that goes to another app all the same (on another
-//    screen, where the panel is not; on this one before the panel is on screen, or should
-//    the panel not have taken it), or to a window of Scrollio's own on another screen,
-//    closes the ring and runs nothing: while a ring is open, and only then, two monitors
-//    hear of such clicks.
+//    underneath gets neither; on another screen, where a pointer that is not kept still
+//    can carry a held click, that screen's panel takes it. A click that goes to another
+//    app all the same (before the panels are on screen, or should a panel not have taken
+//    it), or to a window of Scrollio's own, closes the ring and runs nothing: while a ring
+//    is open, and only then, two monitors hear of such clicks.
 //  - Esc: the keys tap, which is kept running while a ring is open
 //    (`InputProcessor.needsKeyEvents`).
 //
@@ -561,19 +561,17 @@ final class ShortcutRingController {
     }
 
     /// A mouse button went down and the click went to another app, while a ring is open:
-    /// the ring closes and runs nothing. On another screen that is how a click beside the
-    /// ring looks (a pointer that is not kept still can get there during a hold), and so
-    /// does a click in the moment before a held ring is on the screen. On the ring's own
-    /// screen, once it is there, the panel should have taken the click: it did not, the
-    /// app underneath got it, and choosing a shortcut on top of that would act on a click
-    /// the user did not make there; the log says so.
+    /// the ring closes and runs nothing. That is how a click in the moment before a held
+    /// ring is on the screen looks. Once it is there, a panel on every screen should have
+    /// taken the click: it did not, the app underneath got it, and choosing a shortcut on
+    /// top of that would act on a click the user did not make there; the log says so.
     func clickWentElsewhere(in window: NSWindow? = nil) {
         assertMainThread()
-        // A click on the ring's own panel is the ring's (the panel reports it itself).
+        // A click on one of the ring's own panels is the ring's (the panel reports it).
         guard session.isOpen, !presenter.owns(window) else { return }
-        if isShown, screen.frame.contains(environment.pointerLocation()), !didLogMissedClick {
+        if isShown, !didLogMissedClick {
             didLogMissedClick = true
-            environment.logProblem("Shortcut Ring: a click on the ring's screen went to the app under it "
+            environment.logProblem("Shortcut Ring: a click went to the app under the ring's panels "
                 + "(the panel did not take it); the ring closed without running anything")
         }
         cancel()
