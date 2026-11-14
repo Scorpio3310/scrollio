@@ -185,11 +185,14 @@ final class ShortcutRingControllerTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        // No face is left from a test before (this one's own, run again, among them).
+        ShortcutRingController.forgetPreparedFaces()
         harness = RingHarness()
     }
 
     override func tearDown() {
         harness = nil
+        ShortcutRingController.forgetPreparedFaces()
         super.tearDown()
     }
 
