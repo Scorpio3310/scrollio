@@ -112,7 +112,12 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   apps writes no line; a Logitech button that Scrollio has and that is down when the app
   in front changes stays with Scrollio until it is up, but one held while the mouse
   handles it can be taken in the middle of its press: the app's own action may then run
-  without a new press, or macOS may not get its release), at launch which accent colour
+  without a new press, or macOS may not get its release), a line each time the set of
+  Logitech buttons whose hold the mouse tracks itself ("Let the mouse track the gesture")
+  changes ("Gestures: the mouse tracks the hold of 1 Logitech button(s) itself";
+  ", by the own bindings of the app in front" when the app in front made it differ from
+  Buttons, never which app; a button that is down keeps its tracking until it is up, so
+  the line may come at its release), at launch which accent colour
   is in effect, at the first Mission Control or Show Desktop whether the Dock is asked for
   them directly or they are sent as key presses (a macOS without the call), a sent
   shortcut that left modifier keys set (once), for "Trackpad-style scrolling (Experimental)" whether the wheel's hardware event is
