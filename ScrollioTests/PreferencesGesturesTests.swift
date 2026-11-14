@@ -730,8 +730,8 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(twins.buttonTitles, ["Back button", "Back button (Logitech)"])
     }
 
-    /// The "Gesture button" row counts only bindings that run: the Buttons pane's. Bindings
-    /// stored per app (`Application.buttons`) are never run, so they do not count.
+    /// The "Gesture button" row counts only bindings that run: the Buttons pane's, and an
+    /// app's own (`Application.buttons`), which run while the app is in front.
     func testTheGestureButtonRowCountsOnlyBindingsThatRun() {
         let savedBindings = Options.shared.buttons.binding
         let savedApplications = Options.shared.application.applications
@@ -750,12 +750,13 @@ final class PreferencesGesturesTests: XCTestCase {
         Options.shared.application.applications = EnhanceArray<Application>(withArray: [app], matchKey: "path")
         Options.shared.buttons.binding = []
 
-        XCTAssertFalse(MouseGestureBindingSummary.current.hasGestureButton, "only an app's dormant binding")
+        // An app's own binding runs while the app is in front: the row says where.
+        XCTAssertFalse(MouseGestureBindingSummary.current.hasGestureButton, "none of Buttons")
         let controller = makeController()
         controller.bindingSummary = { .current }
         controller.reload()
-        XCTAssertEqual(controller.gestureButtonRow.explanation, "No button yet. Set one up to use gestures.")
-        XCTAssertEqual(controller.gestureButtonButton.title, "Set Up…")
+        XCTAssertEqual(controller.gestureButtonRow.explanation, "Only in Calculator: Back button.")
+        XCTAssertEqual(controller.gestureButtonButton.title, "Change")
 
         Options.shared.buttons.binding = [gesture]
         XCTAssertEqual(MouseGestureBindingSummary.current,

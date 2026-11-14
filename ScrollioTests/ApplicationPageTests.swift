@@ -1160,6 +1160,12 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(try lines(), opens, "Buttons' button opens it here too")
         calculator.setOwnButtonBindings([binding(6, "")])
         XCTAssertEqual(try lines(), [replaced, replaced], "\"Default\" here: the button does what it does by itself")
+
+        // Nothing in Buttons, but another app's own button opens it: not "yet", and not here.
+        Options.shared.buttons.binding = []
+        calculator.setOwnButtonBindings([])
+        addApp(Self.textEdit).setOwnButtonBindings([binding(6, ring)])
+        XCTAssertEqual(try lines(), [replaced, replaced], "it opens in TextEdit, not with Calculator in front")
         XCTAssertTrue(calculator.usesGeneralRing, "the switch was only tried")
     }
 
@@ -1191,5 +1197,155 @@ final class ApplicationPageTests: XCTestCase {
             ).height
             XCTAssertLessThanOrEqual(height, twoLines, text)
         }
+    }
+
+    // MARK: - What opens the ring and runs the gestures, the apps' own buttons counted
+
+    /// One rule for the panes and the parts (`ApplicationTriggerRule`): with an app on the
+    /// list in front, Buttons' bindings with the app's own in them, as a press goes by them;
+    /// "only in apps" while nothing of Buttons does it.
+    func testOneRuleCountsTheAppsOwnButtonsForTheRingAndTheGestures() {
+        let ringAction = SystemShortcut.shortcutRing.identifier
+        let gestures = SystemShortcut.mouseGestureNavigation.identifier
+        let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
+        let general = [binding(thumbPanel, gestures), binding(3, "copy")]
+        let calculator = addApp(Self.calculator)
+        calculator.setOwnButtonBindings([binding(thumbPanel, ringAction)])
+        let textEdit = addApp(Self.textEdit)
+        textEdit.setOwnButtonBindings([binding(4, "paste")])
+        let ring = ApplicationTriggerRule.shortcutRing, gesture = ApplicationTriggerRule.gestureNavigation
+        let apps = [calculator, textEdit]
+
+        XCTAssertTrue(ring.bindings(general: general).isEmpty)
+        XCTAssertEqual(ring.bindings(general: general, own: calculator.ownButtonBindings).map(\.id), [calculator.ownButtonBindings[0].id])
+        XCTAssertTrue(ring.bindings(general: general, own: textEdit.ownButtonBindings).isEmpty)
+        XCTAssertEqual(gesture.bindings(general: general).map(\.id), [general[0].id])
+        XCTAssertTrue(gesture.bindings(general: general, own: calculator.ownButtonBindings).isEmpty, "the app took it")
+        let only = ring.onlyInApps(general: general, applications: apps)
+        XCTAssertEqual(only.map(\.application.path), [Self.calculator])
+        XCTAssertTrue(gesture.onlyInApps(general: general, applications: apps).isEmpty, "Buttons runs the gestures: not only in apps")
+        XCTAssertTrue(ring.onlyInApps(general: general + [binding(5, ringAction)], applications: apps).isEmpty)
+
+        // What runs: an enabled binding; for the ring a button or a key, for the gestures a button.
+        let command = UInt(CGEventFlags.maskCommand.rawValue)
+        XCTAssertTrue(ring.takes(binding(40, ringAction, modifiers: command, type: .keyboard)))
+        XCTAssertFalse(gesture.takes(binding(40, gestures, modifiers: command, type: .keyboard)))
+        var disabled = binding(6, ringAction)
+        disabled.isEnabled = false
+        XCTAssertFalse(ring.takes(disabled))
+        textEdit.setOwnButtonBindings([disabled])
+        XCTAssertEqual(ring.onlyInApps(general: general, applications: apps).map(\.application.path), [Self.calculator])
+    }
+
+    /// The Shortcut Ring pane counts the apps' own buttons: while only an app's own button
+    /// opens the ring, its row says where and with what (not "Nothing opens the ring yet"),
+    /// and its button reads "Change" and leads to that app's Buttons part, not "Set Up…".
+    func testTheRingPaneSaysWhereOnlyAnAppsOwnButtonOpensTheRing() throws {
+        let ringAction = SystemShortcut.shortcutRing.identifier
+        let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
+        Options.shared.buttons.binding = [binding(thumbPanel, SystemShortcut.mouseGestureNavigation.identifier)]
+        let calculator = addApp(Self.calculator)
+        let textEdit = addApp(Self.textEdit)
+        func pane() -> RingPreferencesViewController {
+            let pane = RingPreferencesViewController()
+            _ = pane.view
+            return pane
+        }
+        let key = " A key combination works too, even one that Logi Options+ sends for a button."
+        XCTAssertEqual(pane().triggerRow.explanation, "Nothing opens the ring yet." + key)
+        XCTAssertEqual(pane().triggerButton.title, "Set Up…")
+
+        calculator.setOwnButtonBindings([binding(thumbPanel, ringAction)])
+        let panel = ButtonTriggerNaming.title(for: calculator.ownButtonBindings[0].triggerEvent)
+        var ring = pane()
+        XCTAssertEqual(ring.triggerRow.explanation, "Only in Calculator: \(panel)." + key)
+        XCTAssertEqual(ring.triggerButton.title, "Change")
+        var shown: [ApplicationTriggers] = []
+        ring.openApplicationButtons = { shown.append($0) }
+        ring.openButtonsPane = { _ in XCTFail("not the Buttons pane") }
+        ring.triggerButton.performClick(nil)
+        XCTAssertEqual(shown.map(\.path), [Self.calculator])
+        XCTAssertEqual(shown.first?.bindingID, calculator.ownButtonBindings[0].id)
+
+        let control = UInt(CGEventFlags.maskControl.rawValue)
+        textEdit.setOwnButtonBindings([binding(49, ringAction, modifiers: control, type: .keyboard)])
+        let space = ButtonTriggerNaming.title(for: textEdit.ownButtonBindings[0].triggerEvent)
+        ring = pane()
+        XCTAssertEqual(ring.triggerRow.explanation, "Only in Calculator and TextEdit: \(panel) and \(space)." + key)
+
+        // With a binding of Buttons the row names that one alone, as before.
+        Options.shared.buttons.binding.append(binding(5, ringAction))
+        ring = pane()
+        XCTAssertEqual(ring.bindingSummary().onlyInApps, nil)
+        XCTAssertEqual(ring.triggerButton.title, "Change")
+        XCTAssertFalse(ring.triggerRow.explanation?.hasPrefix("Only in") ?? true)
+    }
+
+    /// The Gestures pane likewise: Gesture Navigation only on an app's own button. The
+    /// gesture actions offer the Logitech ones when a Logitech button runs the gestures
+    /// with some app in front.
+    func testTheGesturesPaneSaysWhereOnlyAnAppsOwnButtonRunsTheGestures() throws {
+        let gestures = SystemShortcut.mouseGestureNavigation.identifier
+        let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
+        Options.shared.buttons.binding = [binding(thumbPanel, SystemShortcut.shortcutRing.identifier)]
+        let calculator = addApp(Self.calculator)
+        calculator.setOwnButtonBindings([binding(3, gestures)])
+        let pane = GesturesPreferencesViewController(isInteractiveAvailable: { false })
+        pane.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+        _ = pane.view
+        pane.reload()
+        let back = ButtonTriggerNaming.title(for: calculator.ownButtonBindings[0].triggerEvent)
+        XCTAssertEqual(pane.gestureButtonRow.explanation, "Only in Calculator: \(back).")
+        XCTAssertEqual(pane.gestureButtonButton.title, "Change")
+        var shown: [ApplicationTriggers] = []
+        pane.openApplicationButtons = { shown.append($0) }
+        pane.openButtonsPane = { _ in XCTFail("not the Buttons pane") }
+        pane.gestureButtonButton.performClick(nil)
+        XCTAssertEqual(shown.map(\.path), [Self.calculator])
+        XCTAssertFalse(MouseGestureBindingSummary.current.hasLogitechGestureButton)
+
+        calculator.setOwnButtonBindings([binding(thumbPanel, gestures)])
+        XCTAssertTrue(MouseGestureBindingSummary.current.hasLogitechGestureButton, "the app's own Logitech button")
+        calculator.setOwnButtonBindings([])
+        pane.reload()
+        XCTAssertEqual(pane.gestureButtonRow.explanation, "No button yet. Set one up to use gestures.")
+        XCTAssertEqual(pane.gestureButtonButton.title, "Set Up…")
+    }
+
+    /// An app's Gestures part offers the Logitech actions when the button that runs the
+    /// gestures with that app in front is a Logitech one, whatever Buttons' is.
+    func testTheGesturesPartOffersLogitechActionsByTheButtonWithTheAppInFront() {
+        let gestures = SystemShortcut.mouseGestureNavigation.identifier
+        let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
+        Options.shared.buttons.binding = [binding(3, gestures)]
+        let calculator = addApp(Self.calculator)
+        calculator.setOwnButtonBindings([binding(thumbPanel, gestures)])
+        let textEdit = addApp(Self.textEdit)
+        XCTAssertTrue(ApplicationGesturesPartViewController(application: calculator).showsLogiActions())
+        XCTAssertFalse(ApplicationGesturesPartViewController(application: textEdit).showsLogiActions())
+        Options.shared.buttons.binding = [binding(thumbPanel, gestures)]
+        textEdit.setOwnButtonBindings([binding(thumbPanel, "copy"), binding(3, gestures)])
+        XCTAssertFalse(ApplicationGesturesPartViewController(application: textEdit).showsLogiActions(), "the app's own button is not one")
+    }
+
+    /// "Change" of the Shortcut Ring pane in the window, while only an app's own button
+    /// opens the ring: the Apps pane, that app's page on its Buttons part, the row selected.
+    func testChangeInTheRingPaneShowsTheAppsButtonsPartWithTheRowSelected() throws {
+        let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
+        let calculator = addApp(Self.calculator)
+        calculator.setOwnButtonBindings([binding(4, "copy"), binding(thumbPanel, SystemShortcut.shortcutRing.identifier)])
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        let preferences = PreferencesSplitViewController(storyboard: storyboard, uiStateDefaults: nil)
+        let apps = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)
+        apps.uiStateDefaults = uiDefaults
+        let ring = try XCTUnwrap(preferences.controller(for: RingPreferencesViewController.tabIdentifier) as? RingPreferencesViewController)
+        XCTAssertTrue(preferences.selectPane(withIdentifier: RingPreferencesViewController.tabIdentifier))
+        XCTAssertEqual(ring.triggerButton.title, "Change")
+        ring.triggerButton.performClick(nil)
+        XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application)
+        let page = try XCTUnwrap(apps.detailController)
+        XCTAssertEqual(page.application.path, Self.calculator)
+        XCTAssertEqual(page.shownPart, .buttons)
+        XCTAssertEqual(page.buttonsPart.list.selectedID, AnyHashable(calculator.ownButtonBindings[1].id))
     }
 }

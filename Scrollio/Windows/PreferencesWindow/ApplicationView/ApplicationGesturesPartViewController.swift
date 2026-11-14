@@ -26,9 +26,10 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
 
     let application: Application
     var onHeightChange: (() -> Void)?
-    /// Whether the menus offer Logitech actions (a Logitech button runs Gesture
-    /// Navigation), as in the Gestures pane. Tests replace it.
-    var showsLogiActions: () -> Bool = { MouseGestureBindingSummary.current.hasLogitechGestureButton }
+    /// Whether the menus offer Logitech actions: a Logitech button runs Gesture Navigation
+    /// while the app is in front (`ApplicationTriggerRule`), as the Gestures pane asks of
+    /// its buttons. Tests replace it.
+    var showsLogiActions: () -> Bool
     /// Whether "Follow the hand" can run at all (without it the mode is discrete). Tests
     /// replace it.
     var isInteractiveAvailable: () -> Bool = { DockSwipeSynthesizer.shared.isAvailable }
@@ -52,6 +53,11 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
 
     init(application: Application) {
         self.application = application
+        showsLogiActions = { [application] in
+            ApplicationTriggerRule.gestureNavigation
+                .bindings(general: Options.shared.buttons.binding, own: application.ownButtonBindings)
+                .contains { LogiCenter.shared.isLogiCode($0.triggerEvent.code) }
+        }
         super.init(nibName: nil, bundle: nil)
     }
 

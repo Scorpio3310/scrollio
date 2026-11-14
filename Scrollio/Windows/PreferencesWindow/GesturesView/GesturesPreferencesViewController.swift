@@ -16,6 +16,8 @@
 //  The tab only edits Options.shared.gesture; which button runs Gesture Navigation is
 //  chosen in the Buttons tab, and the first row ("Button to hold") names it and leads there:
 //  "Set Up…" records one, "Change" shows the Buttons pane with that button's row selected.
+//  While only an app's own button runs it, the row says where ("Only in Figma: Back
+//  button.") and "Change" shows that app's Buttons part (`ApplicationTriggerRule`).
 //
 
 import Cocoa
@@ -62,6 +64,9 @@ final class GesturesPreferencesViewController: NSViewController {
     /// (true), records one that gets Gesture Navigation; with one (false), selects its row
     /// there. Tests replace it.
     var openButtonsPane: ((Bool) -> Void)?
+    /// "Change" while only an app's own button runs Gesture Navigation: shows that app's
+    /// Buttons part, its row selected. Tests replace it.
+    var openApplicationButtons: ((ApplicationTriggers) -> Void)?
     /// "Open Mouse": shows the Mouse pane. Tests replace it.
     var openMousePane: (() -> Void)?
     /// Takes Undo and Redo of "Reset to Defaults"; the window's when nil.
@@ -256,7 +261,9 @@ final class GesturesPreferencesViewController: NSViewController {
         let presentation = controls.modePresentation
 
         gestureButtonRow.explanation = summary.gestureButtonExplanation
-        gestureButtonButton.title = text(summary.hasGestureButton ? "gestures-gesture-button-change" : "gestures-gesture-button-set-up")
+        // (Run only by an app's own button: "Change" leads to it, not "Set Up…".)
+        let runs = summary.hasGestureButton || summary.onlyInApps != nil
+        gestureButtonButton.title = text(runs ? "gestures-gesture-button-change" : "gestures-gesture-button-set-up")
         modeRow.explanation = text(presentation.descriptionKey)
 
         for slot in Slot.allCases where slot.isHorizontal {
@@ -452,7 +459,16 @@ final class GesturesPreferencesViewController: NSViewController {
     }
 
     @objc func gestureButtonClicked(_ sender: NSButton) {
-        let addsButton = !bindingSummary().hasGestureButton
+        let summary = bindingSummary()
+        if !summary.hasGestureButton, let apps = summary.onlyInApps {
+            if let openApplicationButtons {
+                openApplicationButtons(apps)
+            } else {
+                PreferencesApplicationViewController.showButtons(of: apps, from: self)
+            }
+            return
+        }
+        let addsButton = !summary.hasGestureButton
         if let openButtonsPane {
             openButtonsPane(addsButton)
             return

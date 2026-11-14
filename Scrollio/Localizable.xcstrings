@@ -8619,6 +8619,18 @@
           }
         }
       }
+    },
+    "apps-trigger-only-in": {
+      "comment": "Shortcut Ring and Gestures panes: what opens the ring or runs the gestures while no binding of Buttons does but an app's own button or key does; %1$@ is the apps' names, %2$@ the buttons and keys, as the Buttons pane names them (no full stop: the line goes on)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only in %1$@: %2$@"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

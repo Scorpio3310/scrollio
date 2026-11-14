@@ -75,62 +75,75 @@ struct MouseGestureControlRules: Equatable {
 
 /// What the stored button bindings mean for the Gestures tab.
 struct MouseGestureBindingSummary: Equatable {
-    /// An enabled mouse button is bound to Gesture Navigation, so the settings have an effect.
+    /// An enabled mouse button of the Buttons pane is bound to Gesture Navigation, so the
+    /// settings have an effect in every app.
     var hasGestureButton: Bool
-    /// One of those buttons is a Logitech control: Logi actions make sense as gesture actions.
+    /// A button that runs the gestures is a Logitech control, in the Buttons pane or with
+    /// an app in front: Logi actions make sense as gesture actions.
     var hasLogitechGestureButton: Bool
-    /// The names of those buttons, as the Buttons pane titles them ("Back button").
+    /// The names of the Buttons pane's buttons, as that pane titles them ("Back button").
     var buttonTitles: [String]
+    /// With none of those: the apps whose own buttons run the gestures while they are in
+    /// front (nil: none does).
+    var onlyInApps: ApplicationTriggers?
 
-    init(hasGestureButton: Bool, hasLogitechGestureButton: Bool, buttonTitles: [String] = []) {
+    init(
+        hasGestureButton: Bool, hasLogitechGestureButton: Bool, buttonTitles: [String] = [],
+        onlyInApps: ApplicationTriggers? = nil
+    ) {
         self.hasGestureButton = hasGestureButton
         self.hasLogitechGestureButton = hasLogitechGestureButton
         self.buttonTitles = buttonTitles
+        self.onlyInApps = hasGestureButton ? nil : onlyInApps
     }
 
     /// - Parameters:
-    ///   - bindings: the bindings that run (`Options.shared.buttons.binding`).
+    ///   - bindings: the Buttons pane's bindings (`Options.shared.buttons.binding`).
+    ///   - applications: the apps on the list, whose own bindings count while they are in
+    ///     front (`ApplicationTriggerRule`).
     ///   - titles: what the Buttons pane calls the triggers of `bindings`, in order.
     init(
         bindings: [ButtonBinding],
+        applications: [Application] = [],
         isLogitechCode: (UInt16) -> Bool,
         titles: ([RecordedEvent]) -> [String] = { ButtonTriggerNaming.titles(for: $0) }
     ) {
-        // What InputProcessor runs: an enabled binding of a mouse button (a key never
-        // starts a gesture).
-        let runs: (ButtonBinding) -> Bool = {
-            $0.isEnabled && $0.triggerEvent.type == .mouse
-                && $0.systemShortcutName == SystemShortcut.mouseGestureNavigation.identifier
-        }
-        let gestureBindings = bindings.filter(runs)
+        let rule = ApplicationTriggerRule.gestureNavigation
+        let gestureBindings = rule.bindings(general: bindings)
         hasGestureButton = !gestureBindings.isEmpty
-        hasLogitechGestureButton = gestureBindings.contains { isLogitechCode($0.triggerEvent.code) }
+        let inApps = applications.map { rule.bindings(general: bindings, own: $0.ownButtonBindings) }
+        hasLogitechGestureButton = (gestureBindings + inApps.joined()).contains { isLogitechCode($0.triggerEvent.code) }
         var names: [String] = []
-        for (binding, name) in zip(bindings, titles(bindings.map(\.triggerEvent))) where runs(binding) {
+        for (binding, name) in zip(bindings, titles(bindings.map(\.triggerEvent))) where rule.takes(binding) {
             if !names.contains(name) {
                 names.append(name)
             }
         }
         buttonTitles = names
+        onlyInApps = ApplicationTriggers(rule.onlyInApps(general: bindings, applications: applications), titles: titles)
     }
 
     /// The explanation of the Gestures pane's "Button to hold" row: the buttons, joined as
-    /// a list ("Back button and Gesture button."), or that there is none yet. The row's
-    /// title is not "Gesture button": under it an MX Master's own "Gesture button" would
-    /// read twice.
+    /// a list ("Back button and Gesture button."); or in which apps only and with which
+    /// ("Only in Figma: Back button."); or that there is none yet. The row's title is not
+    /// "Gesture button": under it an MX Master's own "Gesture button" would read twice.
     var gestureButtonExplanation: String {
-        guard hasGestureButton else {
-            return NSLocalizedString("gestures-gesture-button-none", comment: "")
+        if hasGestureButton {
+            let buttons = ListFormatter.localizedString(byJoining: buttonTitles)
+            return String(format: NSLocalizedString("gestures-gesture-button-bound", comment: ""), buttons)
         }
-        let buttons = ListFormatter.localizedString(byJoining: buttonTitles)
-        return String(format: NSLocalizedString("gestures-gesture-button-bound", comment: ""), buttons)
+        if let onlyInApps {
+            return String(format: NSLocalizedString("gestures-gesture-button-bound", comment: ""), onlyInApps.text)
+        }
+        return NSLocalizedString("gestures-gesture-button-none", comment: "")
     }
 
-    /// The summary of the bindings that run: the Buttons pane's. Bindings stored per app
-    /// (`Application.buttons`) are left out: nothing runs them.
+    /// The summary of the bindings that run: the Buttons pane's, and those an app's own
+    /// bindings make while it is in front.
     static var current: MouseGestureBindingSummary {
         return MouseGestureBindingSummary(
             bindings: Options.shared.buttons.binding,
+            applications: ApplicationTriggerRule.storedApplications,
             isLogitechCode: { LogiCenter.shared.isLogiCode($0) }
         )
     }

@@ -554,6 +554,21 @@ class PreferencesApplicationViewController: NSViewController {
         onSubpageChange?()
     }
 
+    /// "Change" of the Shortcut Ring or Gestures pane while only an app's own button or key
+    /// opens the ring or runs the gestures: the Apps pane, that app's page on its Buttons
+    /// part, with that binding's row selected.
+    static func showButtons(of triggers: ApplicationTriggers, from controller: NSViewController) {
+        guard let split = PreferencesButtonsViewController.splitViewController(of: controller),
+              split.selectPane(withIdentifier: PANEL_IDENTIFIER.application),
+              let apps = split.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController,
+              let application = apps.applications.first(where: { $0.path == triggers.path }),
+              let id = apps.rowID(for: application) else { return }
+        apps.openApplication(withID: id, part: .buttons)
+        if let binding = triggers.bindingID {
+            apps.detailController?.buttonsPart?.list.select(AnyHashable(binding))
+        }
+    }
+
     /// Back from an app's page to the list, with that app selected.
     func showList(focusList shouldFocus: Bool) {
         guard isViewLoaded, let detail = detailController else { return }

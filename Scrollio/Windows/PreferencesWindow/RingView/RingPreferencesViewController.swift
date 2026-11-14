@@ -12,6 +12,8 @@
 //  with what opens the ring: which button or key runs the Shortcut Ring is chosen in the
 //  Buttons pane, and the row names it and leads there ("Set Up…" records one, "Change"
 //  shows the Buttons pane with its row selected), as the Gestures pane does for its button;
+//  while only an app's own button or key opens it, the row says where ("Only in Figma:
+//  Thumb panel.") and "Change" shows that app's Buttons part (`ApplicationTriggerRule`);
 //  its explanation also says that a key combination works. Then the eight places, clockwise
 //  from the top, each with the pull-down a row of the Buttons pane has
 //  (`ButtonActionPullDown`, with the menu of what a place can hold): a listed action, a
@@ -33,53 +35,63 @@ import Cocoa
 
 /// What the stored button bindings mean for the pane: what opens the ring.
 struct ShortcutRingBindingSummary: Equatable {
-    /// The names of the buttons and keys that open the ring, as the Buttons pane titles
-    /// them ("Thumb panel", "⌃⌥ Space").
+    /// The names of the buttons and keys of the Buttons pane that open the ring, as that
+    /// pane titles them ("Thumb panel", "⌃⌥ Space").
     var triggerTitles: [String]
+    /// With none of those: the apps whose own buttons or keys open it while they are in
+    /// front (nil: none does).
+    var onlyInApps: ApplicationTriggers?
 
+    /// A binding of the Buttons pane opens the ring.
     var hasTrigger: Bool {
         return !triggerTitles.isEmpty
     }
 
-    init(triggerTitles: [String]) {
+    init(triggerTitles: [String], onlyInApps: ApplicationTriggers? = nil) {
         self.triggerTitles = triggerTitles
+        self.onlyInApps = triggerTitles.isEmpty ? onlyInApps : nil
     }
 
     /// - Parameters:
-    ///   - bindings: the bindings that run (`Options.shared.buttons.binding`).
+    ///   - bindings: the Buttons pane's bindings (`Options.shared.buttons.binding`).
+    ///   - applications: the apps on the list, whose own bindings count while they are in
+    ///     front (`ApplicationTriggerRule`).
     ///   - titles: what the Buttons pane calls the triggers of `bindings`, in order.
     init(
         bindings: [ButtonBinding],
+        applications: [Application] = [],
         titles: ([RecordedEvent]) -> [String] = { ButtonTriggerNaming.titles(for: $0) }
     ) {
-        // What InputProcessor runs: an enabled binding whose trigger can run at all, a
-        // mouse button or a key.
-        let opens: (ButtonBinding) -> Bool = {
-            $0.isEnabled && $0.systemShortcutName == SystemShortcut.shortcutRing.identifier
-                && ButtonUtils.isRunnable($0.triggerEvent)
-        }
+        let rule = ApplicationTriggerRule.shortcutRing
         var names: [String] = []
-        for (binding, name) in zip(bindings, titles(bindings.map(\.triggerEvent))) where opens(binding) {
+        for (binding, name) in zip(bindings, titles(bindings.map(\.triggerEvent))) where rule.takes(binding) {
             if !names.contains(name) {
                 names.append(name)
             }
         }
         triggerTitles = names
+        onlyInApps = ApplicationTriggers(rule.onlyInApps(general: bindings, applications: applications), titles: titles)
     }
 
-    /// The explanation of the pane's first row: the buttons and keys, joined as a list, or
-    /// that there is none yet; and, either way, that a key combination works too (also one
-    /// that Logi Options+ sends for a button).
+    /// The explanation of the pane's first row: the buttons and keys, joined as a list; or
+    /// in which apps only and with what ("Only in Figma: Thumb panel."); or that there is
+    /// none yet; and, either way, that a key combination works too (also one that Logi
+    /// Options+ sends for a button).
     var explanation: String {
-        guard hasTrigger else {
-            return NSLocalizedString("ring-trigger-none", comment: "")
+        if hasTrigger {
+            let triggers = ListFormatter.localizedString(byJoining: triggerTitles)
+            return String(format: NSLocalizedString("ring-trigger-bound", comment: ""), triggers)
         }
-        let triggers = ListFormatter.localizedString(byJoining: triggerTitles)
-        return String(format: NSLocalizedString("ring-trigger-bound", comment: ""), triggers)
+        if let onlyInApps {
+            return String(format: NSLocalizedString("ring-trigger-bound", comment: ""), onlyInApps.text)
+        }
+        return NSLocalizedString("ring-trigger-none", comment: "")
     }
 
     static var current: ShortcutRingBindingSummary {
-        return ShortcutRingBindingSummary(bindings: Options.shared.buttons.binding)
+        return ShortcutRingBindingSummary(
+            bindings: Options.shared.buttons.binding, applications: ApplicationTriggerRule.storedApplications
+        )
     }
 }
 
@@ -223,6 +235,9 @@ final class RingPreferencesViewController: NSViewController {
     /// yet (true), records a button or key that gets the Shortcut Ring; with one (false),
     /// selects its row there. Tests replace it.
     var openButtonsPane: ((Bool) -> Void)?
+    /// "Change" while only an app's own button or key opens the ring: shows that app's
+    /// Buttons part, its row selected. Tests replace it.
+    var openApplicationButtons: ((ApplicationTriggers) -> Void)?
     /// Shows "Open App or File" at a place's pull-down, as the Buttons pane does. Tests
     /// replace it: nothing is shown.
     var presentOpenTarget: (OpenTargetConfigPopover, NSView, OpenTargetPayload?) -> Void = { popover, anchor, existing in
@@ -373,7 +388,9 @@ final class RingPreferencesViewController: NSViewController {
         if application == nil {
             let summary = bindingSummary()
             triggerRow.explanation = summary.explanation
-            triggerButton.title = text(summary.hasTrigger ? "ring-trigger-change" : "ring-trigger-set-up")
+            // (Opened only by an app's own button: "Change" leads to it, not "Set Up…".)
+            let opens = summary.hasTrigger || summary.onlyInApps != nil
+            triggerButton.title = text(opens ? "ring-trigger-change" : "ring-trigger-set-up")
             (freezeToggle as? NSSwitch)?.state = ring.freezePointer ? .on : .off
         }
         for (place, popUp) in placePopUps.enumerated() {
@@ -439,7 +456,16 @@ final class RingPreferencesViewController: NSViewController {
     // MARK: - Actions
 
     @objc func triggerButtonClicked(_ sender: NSButton) {
-        let addsTrigger = !bindingSummary().hasTrigger
+        let summary = bindingSummary()
+        if !summary.hasTrigger, let apps = summary.onlyInApps {
+            if let openApplicationButtons {
+                openApplicationButtons(apps)
+            } else {
+                PreferencesApplicationViewController.showButtons(of: apps, from: self)
+            }
+            return
+        }
+        let addsTrigger = !summary.hasTrigger
         if let openButtonsPane {
             openButtonsPane(addsTrigger)
             return
