@@ -247,6 +247,11 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
     var onHeightChange: (() -> Void)?
     /// Takes Undo and Redo of "Use Suggested Shortcuts"; the window's when nil.
     var paneUndoManager: UndoManager?
+    /// The Shortcut Ring part that shows an app's entry now, if any (the pane's answer).
+    /// An Undo or Redo of "Use Suggested Shortcuts" asks it when it runs, maybe after this
+    /// page closed and the app's page opened again: it must not hold the page. nil: this
+    /// part, while it is there.
+    var partShowing: ((Application) -> ApplicationRingPartViewController?)?
     /// The app's suggested shortcuts, found by its bundle when the page was made; nil for
     /// an app without any.
     let suggestion: ShortcutRingSuggestion?
@@ -402,7 +407,7 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         guard let places = suggestedPlaces() else { return }
         // What is being edited (a name typed in a row's popover) goes first.
         ringController?.endEditing()
-        let showing: (Application) -> ApplicationRingPartViewController? = { [weak self] entry in
+        let showing = partShowing ?? { [weak self] entry in
             self?.application === entry ? self : nil
         }
         Self.fillRing(of: application, with: places, undoManager: undoTarget, showing: showing)

@@ -573,6 +573,68 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         XCTAssertEqual(figma.ring?.places, figmaSuggestion)
     }
 
+    /// The Apps pane as the window makes it, with nothing shown on screen.
+    private func makePane() -> PreferencesApplicationViewController {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        let pane = storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.application) as! PreferencesApplicationViewController
+        pane.uiStateDefaults = TestDefaults.make(for: self)
+        pane.runningApplications = { [] }
+        pane.presentMenu = { _, _ in }
+        pane.chooseApplications = { _, _ in XCTFail("no open panel was expected") }
+        _ = pane.view
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: PreferencesWindowLayout.contentWidth, height: 600),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentViewController = pane
+        addTeardownBlock { window.close() }
+        return pane
+    }
+
+    /// "Use Suggested Shortcuts", then the app's page is closed and opened again (new
+    /// parts), then Edit › Undo and Redo: the page open now shows each change, in its
+    /// rows, its line and its button. (The part that registered the Undo is gone; the
+    /// pane says which part shows the app now, as for the Buttons part.)
+    func testUndoOfUseSuggestedShortcutsShowsOnThePageOpenedAgain() throws {
+        let figma = add(SuggestionFixtures.figmaPath, name: "Figma")
+        figma.setUsesGeneralRing(false, general: .default, suggested: nil)
+        let general = try XCTUnwrap(figma.ownRingPlaces)
+        let pane = makePane()
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        pane.openApplication(withID: SuggestionFixtures.figmaPath, part: .ring)
+        let first = try XCTUnwrap(pane.detailController?.ringPart)
+        first.paneUndoManager = undo
+        undo.beginUndoGrouping()
+        XCTAssertTrue(first.useSuggestedButton.sendAction(first.useSuggestedButton.action, to: first.useSuggestedButton.target))
+        undo.endUndoGrouping()
+        XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
+
+        pane.leaveSubpage()
+        pane.openApplication(withID: SuggestionFixtures.figmaPath, part: .ring)
+        let part = try XCTUnwrap(pane.detailController?.ringPart)
+        XCTAssertFalse(part === first)
+        func rows() throws -> [String?] {
+            return try XCTUnwrap(part.ringController).placePopUps.map { $0.menu?.items.first?.title }
+        }
+        let suggestedRows = try rows()
+        XCTAssertEqual(suggestedRows[0]?.hasPrefix("Zoom In"), true)
+        XCTAssertFalse(part.useSuggestedButton.isEnabled)
+
+        undo.undo()
+        XCTAssertEqual(figma.ownRingPlaces, general)
+        XCTAssertNotEqual(try rows(), suggestedRows, "the open page shows the ring that came back")
+        XCTAssertEqual(part.suggestionRow.explanation, "Fills all eight places with the shortcuts suggested for Figma.")
+        XCTAssertTrue(part.useSuggestedButton.isEnabled)
+
+        undo.redo()
+        XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
+        XCTAssertEqual(try rows(), suggestedRows)
+        XCTAssertEqual(part.suggestionRow.explanation, "The ring started from the shortcuts suggested for Figma.")
+        XCTAssertFalse(part.useSuggestedButton.isEnabled)
+    }
+
     /// Without a suggestion the part is as before: no row, and the switch copies the
     /// general ring.
     func testAnAppWithoutASuggestionGetsACopyOfTheGeneralRingAndNoRow() {
