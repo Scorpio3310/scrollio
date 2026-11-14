@@ -223,6 +223,49 @@ final class ShortcutLabelStorageTests: XCTestCase {
         XCTAssertNil(ShortcutLabel.cleaned(.character(" \n")))
     }
 
+    /// What a name and a typed icon are made of is bounded too, not only what they show:
+    /// "R" with any number of accents is one character. A letter keeps its first few
+    /// marks, tags stay only in an emoji flag, and a joiner, a tag or a mark by itself is
+    /// no icon (nor a name). The emoji of today stay whole.
+    func testANameAndAnIconAreBoundedInWhatTheyAreMadeOf() {
+        let piled = ShortcutLabel.cleanedName("R" + String(repeating: "\u{0301}", count: 300_000))
+        XCTAssertEqual(piled?.count, 1)
+        XCTAssertEqual(piled?.unicodeScalars.first, "R")
+        XCTAssertEqual(piled?.unicodeScalars.count, ShortcutLabel.maximumScalarsPerCharacter)
+        XCTAssertEqual(ShortcutLabel.maximumScalarsPerCharacter, 16)
+        if case .character(let icon)? = ShortcutLabel.cleaned(.character("R" + String(repeating: "\u{0301}", count: 3_000))) {
+            XCTAssertEqual(icon.unicodeScalars.count, ShortcutLabel.maximumScalarsPerCharacter)
+        } else {
+            XCTFail("the R is the icon, with its first accents")
+        }
+        // Every character piled high: the name ends at a character before it is too long.
+        let everyOne = ShortcutLabel.cleanedName(String(repeating: "a" + String(repeating: "\u{0301}", count: 30), count: 24))
+        XCTAssertEqual(everyOne?.unicodeScalars.count, ShortcutLabel.maximumNameScalars)
+        XCTAssertEqual(everyOne?.count, ShortcutLabel.maximumNameScalars / ShortcutLabel.maximumScalarsPerCharacter)
+
+        // The longest emoji (a kiss of two people with their skin tones: ten scalars) and
+        // a flag with its tags stay whole, in a name and as the icon.
+        let kiss = "\u{1F469}\u{1F3FD}\u{200D}\u{2764}\u{FE0F}\u{200D}\u{1F48B}\u{200D}\u{1F468}\u{1F3FF}"
+        XCTAssertEqual(kiss.count, 1)
+        XCTAssertEqual(ShortcutLabel.cleanedName("\(kiss) Kiss"), "\(kiss) Kiss")
+        XCTAssertEqual(ShortcutLabel.cleaned(.character(kiss)), .character(kiss))
+        let scotland = "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}"
+        XCTAssertEqual(ShortcutLabel.cleanedName("Go \(scotland)")?.unicodeScalars.count, 3 + 7)
+        XCTAssertEqual(ShortcutLabel.cleaned(.character(scotland)), .character(scotland))
+        // Tags anywhere else are text that is stored and shown nowhere: they go.
+        let hidden = String(String.UnicodeScalarView("hidden".unicodeScalars.compactMap { Unicode.Scalar($0.value + 0xE0000) }))
+        XCTAssertEqual(ShortcutLabel.cleanedName("Copy" + hidden)?.unicodeScalars.count, 4)
+        XCTAssertEqual(ShortcutLabel.cleanedName("\u{1F3F4} Copy" + hidden)?.unicodeScalars.count, 6, "not after a flag's space")
+
+        for invisible in ["\u{200D}", "\u{200C}", "\u{E0041}", "\u{E007F}", "\u{0301}", "\u{FE0F}", "\u{200D}\u{200D} "] {
+            let spelled = invisible.unicodeScalars.map { String($0.value, radix: 16) }.joined(separator: " ")
+            XCTAssertNil(ShortcutLabel.cleaned(.character(invisible)), spelled)
+            XCTAssertNil(ShortcutLabel.cleanedName(invisible), spelled)
+            XCTAssertTrue(ShortcutIconChoices.matching(invisible).isEmpty, "nothing offered for \(spelled)")
+        }
+        XCTAssertEqual(ShortcutLabel.cleaned(.character("\u{200D}R")), .character("R"), "the first character that can be seen")
+        XCTAssertEqual(ShortcutLabel.cleaned(.character("\u{0301}Rx")), .character("R"))
+    }
     func testALabelWithNothingInItIsNoLabel() throws {
         XCTAssertNil(ShortcutLabel(name: nil, icon: nil))
         XCTAssertNil(ShortcutLabel(name: "   ", icon: .symbol("not a symbol")))
@@ -881,6 +924,11 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         type(String(repeating: "x", count: 40), into: editor.nameField, of: editor)
         XCTAssertEqual(editor.nameField.stringValue.count, ShortcutLabel.maximumNameLength)
         XCTAssertEqual(popover.editedLabel?.name?.count, ShortcutLabel.maximumNameLength)
+        // A letter with a pile of accents pasted in is one character: the field keeps
+        // what a name keeps of it.
+        type("R" + String(repeating: "\u{0301}", count: 3_000), into: editor.nameField, of: editor)
+        XCTAssertEqual(editor.nameField.stringValue.unicodeScalars.count, ShortcutLabel.maximumScalarsPerCharacter)
+        XCTAssertEqual(popover.editedLabel?.name, editor.nameField.stringValue)
         // Clearing the field takes the name away.
         type("", into: editor.nameField, of: editor)
         XCTAssertNil(popover.editedLabel)

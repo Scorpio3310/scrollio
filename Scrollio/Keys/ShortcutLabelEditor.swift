@@ -318,9 +318,11 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSPopoverDeleg
 
     func controlTextDidChange(_ notification: Notification) {
         guard let field = notification.object as? NSTextField, field === nameField else { return }
-        // Never longer than a name is stored.
-        if field.stringValue.count > ShortcutLabel.maximumNameLength {
-            field.stringValue = String(field.stringValue.prefix(ShortcutLabel.maximumNameLength))
+        // Never longer than a name is stored, in characters and in what they are made of.
+        let text = field.stringValue
+        let cut = ShortcutLabel.cut(text)
+        if cut.unicodeScalars.count != text.unicodeScalars.count {
+            field.stringValue = cut
         }
     }
 
