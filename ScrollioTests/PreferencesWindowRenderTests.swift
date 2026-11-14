@@ -227,6 +227,96 @@ final class PreferencesWindowRenderTests: XCTestCase {
         })
     }
 
+    /// Recorded key combinations with a name and an icon (`ShortcutLabel`), as the rows
+    /// show them: the Shortcut Ring pane (`ring-pane-named-<appearance>.png`: a place with
+    /// both lit, then one with a name only, one with an icon only, one with a typed
+    /// character, and plain keys beside them) and the Buttons pane
+    /// (`buttons-pane-named-<appearance>.png`: the same cases on buttons).
+    func testRenderNamedShortcuts() throws {
+        let savedRing = Options.shared.ring
+        defer {
+            Options.shared.ring = savedRing
+            ShortcutRingController.forgetPreparedFaces()
+        }
+        let shiftCommand = UInt64(CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue)
+        let optionCommand = UInt64(CGEventFlags.maskCommand.rawValue | CGEventFlags.maskAlternate.rawValue)
+        let reload = "custom::15:\(shiftCommand)"
+        let both = ShortcutLabel(name: "Reload", icon: .symbol("arrow.clockwise"))
+        let nameOnly = ShortcutLabel(name: "Toggle Sidebar", icon: nil)
+        let iconOnly = ShortcutLabel(name: nil, icon: .symbol("hammer"))
+        let typed = ShortcutLabel(name: "Reply to All", icon: .character("↩"))
+        let long = ShortcutLabel(name: "Paste and Match Style", icon: .symbol("doc.on.clipboard"))
+
+        var ring = ShortcutRingSettings.default
+        ring[1] = ShortcutRingPlace(action: reload, label: both)
+        ring[2] = ShortcutRingPlace(action: "custom::1:\(optionCommand)", label: nameOnly)
+        ring[3] = ShortcutRingPlace(action: "custom::11:\(shiftCommand)", label: iconOnly)
+        ring[5] = ShortcutRingPlace(action: "custom::15:\(optionCommand)", label: typed)
+        ring[6] = ShortcutRingPlace(action: "custom::40:\(shiftCommand)")
+        ring[7] = ShortcutRingPlace(action: "custom::9:\(optionCommand | shiftCommand)", label: long)
+        Options.shared.ring = ring
+        try renderPane(RingPreferencesViewController.tabIdentifier, name: "ring-pane-named", replacement: {
+            let pane = RingPreferencesViewController()
+            pane.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: ["Thumb panel"]) }
+            return pane
+        }, afterLoad: { controller in
+            (controller as? RingPreferencesViewController)?.placeHoverChanged(1, inside: true)
+        })
+
+        func button(_ code: UInt16, _ action: String, _ label: ShortcutLabel?) -> ButtonBinding {
+            return ButtonBinding(
+                triggerEvent: RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil),
+                systemShortcutName: action, label: label
+            )
+        }
+        Options.shared.buttons.binding = [
+            button(3, reload, both),
+            button(4, "custom::1:\(optionCommand)", nameOnly),
+            button(2, "custom::11:\(shiftCommand)", iconOnly),
+            button(5, "custom::15:\(optionCommand)", typed),
+            button(6, "custom::40:\(shiftCommand)", nil),
+            button(7, "custom::9:\(optionCommand | shiftCommand)", long),
+            button(8, SystemShortcut.copy.identifier, nil),
+        ]
+        let source = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { "MX Master 4" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        try renderButtons(name: "buttons-pane-named", source: source)
+    }
+
+    /// The recorder's popover after keys were recorded, with the name field and the icon
+    /// choice (`recorder-popover-<appearance>.png`: the symbols open, one chosen;
+    /// `recorder-popover-closed-…`: as it opens, the symbols closed; `recorder-popover-search-…`:
+    /// a search over the symbols; `recorder-popover-empty-…`: right after a recording,
+    /// nothing set yet). Drawn without the popover's arrow.
+    func testRenderRecorderPopoverWithNameAndIcon() throws {
+        let reload = ShortcutLabel(name: "Reload", icon: .symbol("arrow.clockwise"))
+        let cases: [(name: String, label: ShortcutLabel?, status: KeyPreview.Status, prepare: (ShortcutLabelEditorView) -> Void)] = [
+            ("recorder-popover", reload, .normal, { $0.setChoosingIcon(true) }),
+            ("recorder-popover-closed", reload, .normal, { _ in }),
+            ("recorder-popover-search", ShortcutLabel(name: "Send", icon: nil), .normal, { editor in
+                editor.setChoosingIcon(true)
+                editor.searchField.stringValue = "send"
+                editor.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: editor.searchField))
+            }),
+            ("recorder-popover-empty", nil, .recorded, { _ in }),
+        ]
+        for item in cases {
+            let popover = KeyPopover()
+            popover.announce = { _ in }
+            popover.testingPrepareContent(waitingHint: KeyRecordingMode.adaptive.waitingHint)
+            popover.keyPreview.update(from: ["⇧", "⌘", "R"], status: item.status)
+            popover.turnToDetails(label: item.label)
+            let editor = try XCTUnwrap(popover.labelEditor)
+            item.prepare(editor)
+            let view = try XCTUnwrap(popover.testingContentView)
+            view.layoutSubtreeIfNeeded()
+            view.setFrameSize(view.fittingSize)
+            try renderInPopoverMaterial(view, name: item.name)
+            popover.hide()
+        }
+    }
+
     /// "Reset to Defaults" under the boxes of the Shortcut Ring pane and of the Gestures
     /// pane (`ring-pane-reset-<appearance>.png`, `gestures-pane-reset-<appearance>.png`):
     /// each pane whole, with one setting off its default, so the button can be clicked.

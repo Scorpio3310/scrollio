@@ -172,6 +172,57 @@ final class ShortcutRingRenderTests: XCTestCase {
         }
     }
 
+    // MARK: - Named key combinations
+
+    /// A ring whose recorded key combinations have names and icons
+    /// (`ring-named-<appearance>.png`), in drawn drops (exact), four times with another
+    /// place lit. Top left: a place with an icon and a name (the icon in its drop, the
+    /// name over its keys in the middle). Top right: a name only (its drop keeps the
+    /// keys). Bottom left: a long name, two lines over the keys. Bottom right: an icon
+    /// only (the middle shows the keys, as without a label). Also in the ring: a typed
+    /// character as the icon, and plain keys.
+    func testRenderNamedPlaces() throws {
+        let shiftCommand = UInt64(CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue)
+        let optionCommand = UInt64(CGEventFlags.maskCommand.rawValue | CGEventFlags.maskAlternate.rawValue)
+        var ring = ShortcutRingSettings.default
+        ring[1] = ShortcutRingPlace(
+            action: "custom::15:\(shiftCommand)", label: ShortcutLabel(name: "Reload", icon: .symbol("arrow.clockwise"))
+        )
+        ring[2] = ShortcutRingPlace(
+            action: "custom::1:\(optionCommand)", label: ShortcutLabel(name: "Toggle Sidebar", icon: nil)
+        )
+        ring[3] = ShortcutRingPlace(
+            action: "custom::11:\(shiftCommand)", label: ShortcutLabel(name: nil, icon: .symbol("hammer"))
+        )
+        ring[5] = ShortcutRingPlace(
+            action: "custom::15:\(optionCommand)", label: ShortcutLabel(name: "Reply to All", icon: .character("↩"))
+        )
+        ring[6] = ShortcutRingPlace(action: "custom::40:\(shiftCommand)")
+        ring[7] = ShortcutRingPlace(
+            action: "custom::9:\(optionCommand | shiftCommand)",
+            label: ShortcutLabel(name: "Paste and Match Style", icon: .symbol("doc.on.clipboard"))
+        )
+        let face = ShortcutRingFace(ring, looksOnDisk: false)
+        let side = ShortcutRingGeometry.canvasSide + 40
+        let size = CGSize(width: side * 2, height: side * 2)
+        let lit = [[7, 3], [1, 2]]  // (rows from the bottom)
+        for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            try render(size: size, scale: 2, appearance: appearance, to: directory.appendingPathComponent("ring-named-\(suffix).png")) {
+                RingMock.drawDesktop(in: CGRect(origin: .zero, size: size), dark: ShortcutRingArtwork.isDark(), window: false)
+                var style = ShortcutRingArtwork.Style()
+                style.backdrop = .drawn
+                for (row, places) in lit.enumerated() {
+                    for (column, place) in places.enumerated() {
+                        ShortcutRingArtwork.draw(
+                            face, lit: place,
+                            centre: CGPoint(x: side * (CGFloat(column) + 0.5), y: side * (CGFloat(row) + 0.5)), style: style
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - The opening
 
     /// The opening at six moments, each as the app has it then (`ShortcutRingDrops.frame`):

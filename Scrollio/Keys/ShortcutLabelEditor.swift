@@ -202,7 +202,6 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSSearchFieldD
     func setChoosingIcon(_ choosing: Bool) {
         guard choosing != isChoosingIcon else { return }
         chooser.isHidden = !choosing
-        iconButton.state = choosing ? .on : .off
         onLayoutChange?()
         if choosing {
             window?.makeFirstResponder(searchField)
@@ -335,7 +334,9 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSSearchFieldD
         nameField.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         iconButton.bezelStyle = .rounded
-        iconButton.setButtonType(.pushOnPushOff)
+        // (A plain push button: lit like "Done" while the symbols are open, it read as
+        // the thing to press next.)
+        iconButton.setButtonType(.momentaryPushIn)
         iconButton.target = self
         iconButton.action = #selector(iconButtonClicked(_:))
         iconButton.identifier = Identifier.icon
