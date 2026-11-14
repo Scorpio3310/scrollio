@@ -214,6 +214,43 @@ final class ApplicationPageResetTests: XCTestCase {
 
     // MARK: - Gestures
 
+    /// The rest of the own set goes back with it: the mode, the speed, the freeze and a
+    /// Logitech mouse's two switches, each a copy of the general one as it is now; one of
+    /// them alone turns the button on, and Undo brings them back.
+    func testTheGesturesResetTakesTheModeSpeedFreezeAndTheMousesSwitchesToo() throws {
+        let calculator = addCalculator()
+        calculator.setUsesGeneralGestures(false, general: .default)
+        let pane = makePane()
+        let undo = undoManager()
+        let part = try XCTUnwrap(try open(.gestures, in: pane, undo: undo).gesturesPart)
+        XCTAssertFalse(part.resetToDefaultsButton.isEnabled)
+        let freeze = try XCTUnwrap(part.controls?.freezeToggle as? NSSwitch)
+        freeze.state = .off
+        XCTAssertTrue(freeze.sendAction(freeze.action, to: freeze.target))
+        XCTAssertEqual(calculator.ownGestures?.freezePointer, false)
+        XCTAssertTrue(part.resetToDefaultsButton.isEnabled, "one switch turns it on")
+        calculator.changeOwnGestures { own in
+            own.mode = .interactive
+            own.trackingSpeed = 2
+            own.deviceTracking = true
+            own.hapticFeedback = false
+        }
+        part.syncViewWithOptions()
+        let edited = try XCTUnwrap(calculator.ownGestures)
+        var general = MouseGestureSettings.default
+        general.trackingSpeed = 1.5
+        Options.shared.gesture = general
+
+        click(part.resetToDefaultsButton, undo: undo)
+        XCTAssertEqual(calculator.ownGestures, ApplicationGestures(inherit: false, copying: general))
+        XCTAssertEqual(Options.shared.gesture, general, "the general gestures are untouched")
+        XCTAssertEqual(freeze.state, .on, "the row shows it")
+        XCTAssertFalse(part.resetToDefaultsButton.title == "Reset to Defaults" && part.resetToDefaultsButton.isEnabled)
+        undo.undo()
+        XCTAssertEqual(calculator.ownGestures, edited)
+        XCTAssertEqual(freeze.state, .off)
+    }
+
     /// The own set goes back to a copy of the general gestures as they are now: the five
     /// actions with their names and icons, and the invert switch; the switch stays off,
     /// the general gestures are untouched. The button is there with the own set only, on

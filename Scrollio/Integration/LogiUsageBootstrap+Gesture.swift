@@ -11,7 +11,8 @@
 //  The set follows the app in front, as the divert does (`refreshButtonUsage`): an app's
 //  own bindings can give the button that runs Gesture Navigation in Buttons the Shortcut
 //  Ring (which needs the pointer's movement), or run Gesture Navigation on a button of
-//  their own. A button that is down keeps what it has until it is up.
+//  their own, and an app's own gestures have their own "Let the mouse track the gesture"
+//  (`ApplicationGestures`). A button that is down keeps what it has until it is up.
 //
 
 import Foundation
@@ -39,8 +40,11 @@ extension LogiUsageBootstrap {
 
     /// Tells the mice which Logitech buttons they track themselves for the bindings that
     /// count while `front` is in front: the general ones with the app's own merged over them
-    /// (`ApplicationButtons`). Without an app of its own in front this is exactly the set of
-    /// Buttons. A button that is down keeps its tracking, either way, until it is up: a
+    /// (`ApplicationButtons`), by the "Let the mouse track the gesture" that counts there:
+    /// the app's own gestures' while they are in use, else the Gestures pane's
+    /// (`MouseGestureChoice`, as a hold finds its settings). Without an app of its own in
+    /// front this is exactly the set of Buttons. A button that is down keeps its tracking,
+    /// either way, until it is up: a
     /// tracked hold whose swipe brings another app forward keeps its movement, and a ring
     /// held open keeps the pointer's. LogiCenter writes nothing for a set that did not
     /// change (switching between apps without buttons of their own costs nothing), and a
@@ -54,10 +58,13 @@ extension LogiUsageBootstrap {
         front: ShortcutRingChoice.FrontApp? = frontApplication(), afterASettingsChange: Bool = false
     ) {
         let general = Options.shared.buttons.binding
-        let deviceTracking = Options.shared.gesture.deviceTracking
+        let gesture = Options.shared.gesture
         let applications = Options.shared.application.applications
         let entry = ApplicationButtons.entry(front: front, applications: applications)
-        let hotkeys = deviceTracking ? scrollHotkeyCodes() : []
+        let deviceTracking = (entry?.gesturesThatRun(general: gesture) ?? gesture).deviceTracking
+        // (The log's count, after a change of the settings, needs them for every app.)
+        let needsHotkeys = deviceTracking || afterASettingsChange && tracksSomewhere(gesture: gesture, applications: applications)
+        let hotkeys = needsHotkeys ? scrollHotkeyCodes() : []
         let wanted = gestureTrackingCodes(
             deviceTracking: deviceTracking,
             bindings: ApplicationButtons.merged(general: general, own: entry?.ownButtonBindings ?? []),
@@ -69,9 +76,7 @@ extension LogiUsageBootstrap {
         lastGestureTrackingCodes = codes
 
         guard afterASettingsChange else { return }
-        let tracking = gestureTracking(
-            deviceTracking: deviceTracking, general: general, applications: applications, scrollHotkeyCodes: hotkeys
-        )
+        let tracking = gestureTracking(gesture: gesture, general: general, applications: applications, scrollHotkeyCodes: hotkeys)
         guard tracking != lastLoggedTracking else { return }
         lastLoggedTracking = tracking
         log(tracking.line)
@@ -84,8 +89,8 @@ extension LogiUsageBootstrap {
     }
 
     /// What the settings make the mice track: how many Logitech buttons with the bindings of
-    /// Buttons, and how many apps on the list change that set with bindings of their own
-    /// while they are in front (never which).
+    /// Buttons, and how many apps on the list change that set with bindings or gestures of
+    /// their own while they are in front (never which).
     struct GestureTracking: Equatable {
         static let none = GestureTracking(buttons: 0, apps: 0)
 
@@ -97,32 +102,43 @@ extension LogiUsageBootstrap {
             let what = buttons == 0
                 ? "Gestures: the mouse tracks no Logitech button's hold itself"
                 : "Gestures: the mouse tracks the hold of \(buttons) Logitech button(s) itself"
-            return apps == 0 ? what : what + "; \(apps) app(s) change which by their own bindings while in front"
+            return apps == 0 ? what : what + "; \(apps) app(s) change which by their own settings while in front"
         }
     }
 
     /// `GestureTracking` for the list: each entry that a press finds for its path (the last
-    /// of two entries of one path, `ApplicationButtons.entry`) against `general`.
+    /// of two entries of one path, `ApplicationButtons.entry`) against `general`, with the
+    /// tracking switch that counts while it is in front (its own gestures', else
+    /// `gesture`'s).
     static func gestureTracking(
-        deviceTracking: Bool,
+        gesture: MouseGestureSettings,
         general: [ButtonBinding],
         applications: EnhanceArray<Application>,
         scrollHotkeyCodes hotkeys: Set<UInt16>
     ) -> GestureTracking {
-        let generalCodes = gestureTrackingCodes(deviceTracking: deviceTracking, bindings: general, scrollHotkeyCodes: hotkeys)
-        guard deviceTracking else { return GestureTracking(buttons: generalCodes.count, apps: 0) }
+        let generalCodes = gestureTrackingCodes(deviceTracking: gesture.deviceTracking, bindings: general, scrollHotkeyCodes: hotkeys)
         var apps = 0
         for index in 0..<applications.count {
-            guard let entry = applications.get(by: index), entry.hasOwnButtons,
+            guard let entry = applications.get(by: index), entry.hasOwnButtons || entry.ownGestures != nil,
                   applications.get(by: entry.path) === entry else { continue }
             let codes = gestureTrackingCodes(
-                deviceTracking: true,
+                deviceTracking: entry.gesturesThatRun(general: gesture).deviceTracking,
                 bindings: ApplicationButtons.merged(general: general, own: entry.ownButtonBindings),
                 scrollHotkeyCodes: hotkeys
             )
             if codes != generalCodes { apps += 1 }
         }
         return GestureTracking(buttons: generalCodes.count, apps: apps)
+    }
+
+    /// "Let the mouse track the gesture" is on in the Gestures pane or for an app's own
+    /// gestures in use: only then are the scroll hotkeys looked up.
+    private static func tracksSomewhere(gesture: MouseGestureSettings, applications: EnhanceArray<Application>) -> Bool {
+        guard !gesture.deviceTracking else { return true }
+        for index in 0..<applications.count where applications.get(by: index)?.ownGestures?.deviceTracking == true {
+            return true
+        }
+        return false
     }
 
     /// The Logitech buttons the mouse should track itself.

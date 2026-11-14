@@ -3,25 +3,27 @@
 //  Scrollio
 //
 //  The Gestures part of an app's page: "Use the general gestures" and, while it is off,
-//  the app's own set: the five rows of the Gestures pane (Up, Down, Left, Right, Click, the
-//  same pull-downs, "Keyboard Shortcut…" with a name and an icon among them) and "Invert
-//  left and right". They run while the app is in front (`MouseGestureChoice`). The mode,
-//  the swipe speed, the freeze switch and what a Logitech mouse does are the same for every
-//  app and stay in the Gestures pane; in "Follow the hand" the Left and Right rows say so,
-//  as the pane's do. The button to hold is a binding of Buttons, or of the app's Buttons
-//  part: while none runs the gestures with the app in front, the switch's line says so
-//  instead (in both states); while it is another one than Buttons', a line under the
-//  switch's box names it.
+//  the app's own set, all of the Gestures pane but its preview and the button to hold, in
+//  the pane's rows and order (`MouseGestureRows`): "Mode", "Directions" (Up, Down, Left,
+//  Right, Click, the same pull-downs, "Keyboard Shortcut…" with a name and an icon among
+//  them), "Behavior" (invert, freeze, swipe speed) and "Logitech mouse" ("Let the mouse
+//  track the gesture", "Pulse when a gesture locks in"), the last there while a connected
+//  mouse can do one of them, as in the pane. They run while the app is in front
+//  (`MouseGestureChoice`). In "Follow the hand" the Left and Right rows say so and the
+//  speed applies, as the pane's do, by the app's own mode. The button to hold is a binding
+//  of Buttons, or of the app's Buttons part: while none runs the gestures with the app in
+//  front, the switch's line says so instead (in both states); while it is another one than
+//  Buttons', a line under the switch's box names it.
 //
-//  "Reset to Defaults" ends the own set, there with it: the five actions (with their
-//  names and icons) and the invert switch go back to a copy of the general ones as they
-//  are now, the switch stays; the window's Undo takes it back, also after the page closed.
+//  "Reset to Defaults" ends the own set, there with it: all of it goes back to a copy of
+//  the general gestures as they are now, the switch stays; the window's Undo takes it
+//  back, also after the page closed.
 //
 //  While no button runs the gestures with the app in front (`ApplicationTriggerRule`),
-//  the title "Directions" folds the own set and its button away
-//  (`PreferencesDisclosureSection`, as the Gestures pane folds its settings): a click opens
-//  them, all of it editable. Once a button runs them there, "Directions" is a plain title
-//  again and the set shows as before.
+//  the titles "Directions", "Behavior" and "Logitech mouse" fold what is under them
+//  (`PreferencesDisclosureSection`), as the Gestures pane folds its sections; "Mode" and
+//  "Reset to Defaults" stay, as there. A click opens a section, all of it editable. Once a
+//  button runs them there, the titles are plain titles again and the set shows as before.
 //
 
 import Cocoa
@@ -30,6 +32,7 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
 
     enum Identifier {
         static let generalGestures = NSUserInterfaceItemIdentifier("apps-detail-general-gestures")
+        static let mode = NSUserInterfaceItemIdentifier("apps-detail-gestures-mode")
         static let buttonNote = NSUserInterfaceItemIdentifier("apps-detail-gestures-button-note")
         static let reset = NSUserInterfaceItemIdentifier("apps-detail-gestures-reset")
     }
@@ -52,6 +55,9 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     /// Whether "Follow the hand" can run at all (without it the mode is discrete). Tests
     /// replace it.
     var isInteractiveAvailable: () -> Bool = { DockSwipeSynthesizer.shared.isAvailable }
+    /// What the connected mice can do: the "Logitech mouse" section shows as the Gestures
+    /// pane's does. Tests replace it.
+    var deviceSource: MouseGestureDeviceSource = .live
 
     private(set) var generalSection: PreferencesGroupSection!
     private(set) var generalGesturesRow: PreferencesSwitchRow!
@@ -60,16 +66,31 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     private(set) var buttonNoteLabel: NSTextField!
     /// The app's own set: there only while "Use the general gestures" is off.
     private(set) var controls: MouseGestureSettingsControls?
+    /// "Mode", in a box of its own above the sections (it never folds, as in the pane);
+    /// like everything below it, there only while "Use the general gestures" is off.
+    private(set) var modeSection: PreferencesGroupSection?
+    private(set) var modeRow: PreferencesGroupRow?
     /// Up, Down, Left, Right, Click, in `Slot.allCases` order; empty while the app uses the
     /// general gestures.
     private(set) var directionRows: [PreferencesGroupRow] = []
-    /// "Directions" and under it the own set's boxes and "Reset to Defaults"; it folds
-    /// them while no button runs the gestures with the app in front.
+    /// "Directions" and the box of the five rows; it folds them while no button runs the
+    /// gestures with the app in front.
     private(set) var directionsFold: PreferencesDisclosureSection?
     /// The box of the five rows (its title is `directionsFold`'s).
     private(set) var directionsSection: PreferencesGroupSection?
+    /// "Behavior": invert, freeze and the swipe speed.
+    private(set) var behaviourFold: PreferencesDisclosureSection?
     private(set) var invertRow: PreferencesGroupRow?
-    private(set) var invertSection: PreferencesGroupSection?
+    private(set) var freezeRow: PreferencesGroupRow?
+    private(set) var trackingSpeedRow: PreferencesSliderRow?
+    /// "Logitech mouse": there while a connected mouse can do one of its two switches.
+    private(set) var logitechFold: PreferencesDisclosureSection?
+    private(set) var deviceTrackingRow: PreferencesSwitchRow?
+    private(set) var hapticsRow: PreferencesSwitchRow?
+    /// The sections whose titles fold them while no button runs the gestures here.
+    var foldingSections: [PreferencesDisclosureSection] {
+        return [directionsFold, behaviourFold, logitechFold].compactMap { $0 }
+    }
     /// "Reset to Defaults" under the own set, there with it.
     private(set) var resetToDefaults: PreferencesPaneReset!
     var resetToDefaultsButton: NSButton {
@@ -92,6 +113,10 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
 
     required init?(coder: NSCoder) {
         fatalError("ApplicationGesturesPartViewController is built in code")
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     override func loadView() {
@@ -147,6 +172,23 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         resetFooter = PreferencesGroupFooter(trailing: [reset.button])
         view = root
         syncViewWithOptions()
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        // A mouse that can track gestures or has haptics connected or left: the "Logitech
+        // mouse" section follows, as the pane's does.
+        for name in [LogiCenter.gestureStateChanged, LogiCenter.mouseStateChanged] {
+            NotificationCenter.default.addObserver(self, selector: #selector(deviceStateDidChange(_:)), name: name, object: nil)
+        }
+    }
+
+    @objc private func deviceStateDidChange(_ notification: Notification) {
+        if Thread.isMainThread {
+            syncViewWithOptions()
+        } else {
+            DispatchQueue.main.async { [weak self] in self?.syncViewWithOptions() }
+        }
     }
 
     /// The line under the switch's box while another button than the one of Buttons runs
@@ -216,7 +258,7 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         remeasures = syncButtonNote() || remeasures
         showOwnSet(!usesGeneral)
         // (Folds when it becomes foldable; the page measures again.)
-        if let fold = directionsFold, fold.isCollapsible == hasButton {
+        for fold in foldingSections where fold.isCollapsible == hasButton {
             fold.isCollapsible = !hasButton
             remeasures = remeasures || view.superview != nil
         }
@@ -224,8 +266,20 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         guard let controls else { return remeasures }
         controls.showLogiActions = showsLogiActions()
         controls.sync()
-        applyModeRules()
+        if let logitechFold {
+            let rules = logitechRules
+            if logitechFold.isHidden == rules.showsOptions {
+                logitechFold.isHidden = !rules.showsOptions
+                remeasures = remeasures || view.superview != nil
+            }
+        }
+        showOwnValues()
         return remeasures
+    }
+
+    /// What the Gestures pane shows of a Logitech mouse's switches, by the connected mice.
+    private var logitechRules: MouseGestureControlRules {
+        return MouseGestureControlRules(support: deviceSource.support(), hapticsOnUnderMouse: Options.shared.logiMouse.hapticsOn)
     }
 
     func partWillHide() {
@@ -243,12 +297,13 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         return paneUndoManager ?? view.window?.undoManager
     }
 
-    /// The own set is in use and differs from a copy of the general one as it is now (the
-    /// five actions with their names and icons, and the invert switch).
+    /// The own set is in use and differs from a copy of the general one as it is now (any
+    /// of it: the five actions with their names and icons, the invert switch, the mode,
+    /// the speed, the freeze and a Logitech mouse's two switches).
     var hasSettingsToReset: Bool {
-        guard let own = application.ownGestures else { return false }
+        guard application.ownGestures != nil else { return false }
         let general = Options.shared.gesture
-        return own.actions != general.actions || own.invertHorizontal != general.invertHorizontal
+        return application.gesturesThatRun(general: general) != general
     }
 
     /// "Reset to Defaults": the own set as the switch starts it, a copy of the general one
@@ -258,11 +313,8 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         let showing = partShowing ?? { [weak self] entry in
             self?.application === entry ? self : nil
         }
-        let general = Options.shared.gesture
-        Self.putGestures(
-            of: application, actions: general.actions, invertHorizontal: general.invertHorizontal,
-            undoManager: undo, showing: showing
-        )
+        let copy = ApplicationGestures(inherit: false, copying: Options.shared.gesture)
+        Self.putGestures(of: application, set: copy, undoManager: undo, showing: showing)
     }
 
     /// As the ring's reset (`ApplicationRingPartViewController`): the undo target is the
@@ -270,12 +322,12 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     /// run, and show the change on the part `showing` gives for it. (A set kept for later
     /// takes them too: the switch is never touched.)
     private static func putGestures(
-        of application: Application, actions: GestureActions, invertHorizontal: Bool, undoManager undo: UndoManager?,
+        of application: Application, set: ApplicationGestures, undoManager undo: UndoManager?,
         showing: @escaping (Application) -> ApplicationGesturesPartViewController?
     ) {
-        guard let before = application.gestures,
-              before.actions != actions || before.invertHorizontal != invertHorizontal else { return }
-        application.replaceOwnGestureSet(actions: actions, invertHorizontal: invertHorizontal)
+        guard let before = application.gestures else { return }
+        application.replaceOwnGestureSet(with: set)
+        guard application.gestures != before else { return }
         showing(application)?.syncViewWithOptions()
         guard let undo else { return }
         let path = application.path
@@ -283,45 +335,59 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
             guard let entry = PreferencesApplicationViewController.existingApplication(
                 forPaths: PreferencesApplicationViewController.knownPaths(forStoredPath: path)
             ) else { return }
-            putGestures(
-                of: entry, actions: before.actions, invertHorizontal: before.invertHorizontal,
-                undoManager: undo, showing: showing
-            )
+            putGestures(of: entry, set: before, undoManager: undo, showing: showing)
         }
         undo.setActionName(NSLocalizedString(resetActionNameKey, comment: ""))
     }
 
     // MARK: - The app's own set
 
-    /// The Left and Right rows are dimmed while the desktop follows the hand (the general
-    /// mode), as in the Gestures pane; their pull-downs say so (`MouseGestureSettingsControls`).
-    private func applyModeRules() {
+    /// Puts the app's own values into the rows that are not the controls' own: the Left and
+    /// Right rows are dimmed while the desktop follows the hand (the app's own mode), as in
+    /// the Gestures pane, their pull-downs say so (`MouseGestureSettingsControls`); the
+    /// speed applies only then; a Logitech mouse's switches as the connected mice allow.
+    private func showOwnValues() {
         guard let controls else { return }
-        let editable = controls.modePresentation.areHorizontalActionsEditable
+        let presentation = controls.modePresentation
+        modeRow?.explanation = text(presentation.descriptionKey)
         for slot in Slot.allCases where slot.isHorizontal {
-            directionRows[slot.rawValue].isEnabled = editable
+            directionRows[slot.rawValue].isEnabled = presentation.areHorizontalActionsEditable
+        }
+        let settings = controls.editedSettings
+        if let trackingSpeedRow {
+            MouseGestureRows.show(settings, presentation: presentation, in: trackingSpeedRow)
+        }
+        if let deviceTrackingRow, let hapticsRow {
+            MouseGestureRows.show(settings, rules: logitechRules, deviceTracking: deviceTrackingRow, haptics: hapticsRow)
         }
     }
 
-    /// Puts the app's own set (the five rows and the invert switch) and "Reset to
-    /// Defaults" under the switch's box, or takes them away again: they are there exactly
+    /// Puts the app's own set (the pane's rows from "Mode" to "Logitech mouse") and "Reset
+    /// to Defaults" under the switch's box, or takes them away again: they are there exactly
     /// while "Use the general gestures" is off.
     private func showOwnSet(_ shows: Bool) {
         guard shows != (controls != nil) else { return }
         if let controls {
             controls.endEditing()
             resetToDefaults.endUndoOffer()
-            if let fold = directionsFold {
-                content.removeArrangedSubview(fold)
-                fold.removeFromSuperview()
+            for view in [modeSection, directionsFold, behaviourFold, logitechFold, resetFooter] as [NSView?] {
+                guard let view else { continue }
+                content.removeArrangedSubview(view)
+                view.removeFromSuperview()
             }
-            resetFooter.removeFromSuperview()
             self.controls = nil
+            modeSection = nil
+            modeRow = nil
             directionRows = []
             directionsFold = nil
             directionsSection = nil
+            behaviourFold = nil
             invertRow = nil
-            invertSection = nil
+            freezeRow = nil
+            trackingSpeedRow = nil
+            logitechFold = nil
+            deviceTrackingRow = nil
+            hapticsRow = nil
             return
         }
         let controls = MouseGestureSettingsControls(
@@ -330,48 +396,82 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
             isInteractiveAvailable: { [weak self] in self?.isInteractiveAvailable() ?? false }
         )
         controls.onChange = { [weak self] in
-            self?.applyModeRules()
+            self?.showOwnValues()
             // (A row moved the set off the general one, or back: "Reset to Defaults" follows.)
             self?.resetToDefaults.settingsDidChange()
         }
         self.controls = controls
+        let width = Self.boxWidth
+        let mode = MouseGestureRows.mode(controls.modeControl)
+        mode.identifier = Identifier.mode
+        modeRow = mode
+        let modeBox = PreferencesGroupSection(width: width, rows: [mode])
+        modeSection = modeBox
         // The rows of the Gestures pane, each with its pull-down (`popUpWidth` wide by itself).
         directionRows = Slot.allCases.map { slot in
             PreferencesGroupRow(title: text(slot.labelKey), accessory: controls.actionPopUp(for: slot))
         }
-        let directions = PreferencesGroupSection(width: Self.boxWidth, rows: directionRows)
+        let directions = PreferencesGroupSection(width: width, rows: directionRows)
         directionsSection = directions
-        let invert = PreferencesGroupRow(
-            title: text("gesture-invert-horizontal"),
-            explanation: text("gesture-invert-horizontal-hint"),
-            accessory: controls.invertToggle
-        )
+        let invert = MouseGestureRows.invert(controls.invertToggle)
         invertRow = invert
-        let invertBox = PreferencesGroupSection(width: Self.boxWidth, rows: [invert])
-        invertSection = invertBox
-        // The two boxes and the footer as the pane's content stack spaces them, under one
-        // title that folds them (a plain title while it cannot).
-        let body = NSStackView()
-        body.orientation = .vertical
-        body.alignment = .leading
-        body.spacing = PreferencesGroupedForm.boxSpacing
-        // Edge to edge, so its height is its content's also while it is folded away (its
-        // bottom then holds on nothing).
-        body.distribution = .fill
-        body.detachesHiddenViews = true
-        PreferencesGroupedForm.add([directions, invertBox, resetFooter], to: body)
-        let fold = PreferencesDisclosureSection(title: text("gestures-directions-header"), body: body)
-        fold.isCollapsible = !Self.hasButton(for: application, general: Options.shared.buttons.binding)
-        fold.onExpandedChange = { [weak self] _ in self?.onHeightChange?() }
-        directionsFold = fold
-        PreferencesGroupedForm.add([fold], to: content)
+        let freeze = MouseGestureRows.freeze(controls.freezeToggle)
+        freezeRow = freeze
+        let speed = MouseGestureRows.trackingSpeed(target: self, action: #selector(trackingSpeedChanged(_:)))
+        trackingSpeedRow = speed
+        let tracking = MouseGestureRows.deviceTracking(target: self, action: #selector(deviceTrackingToggled(_:)))
+        deviceTrackingRow = tracking
+        let haptics = MouseGestureRows.haptics(target: self, action: #selector(hapticsToggled(_:)))
+        hapticsRow = haptics
+        // Under titles that fold them (plain titles while they cannot), as the pane's.
+        let folds = [
+            PreferencesDisclosureSection(title: text("gestures-directions-header"), body: directions),
+            PreferencesDisclosureSection(
+                title: text("gestures-behaviour-header"), body: PreferencesGroupBox(width: width, rows: [invert, freeze, speed])
+            ),
+            PreferencesDisclosureSection(
+                title: text("gestures-logitech-header"), body: PreferencesGroupBox(width: width, rows: [tracking, haptics])
+            ),
+        ]
+        directionsFold = folds[0]
+        behaviourFold = folds[1]
+        logitechFold = folds[2]
+        let collapsible = !Self.hasButton(for: application, general: Options.shared.buttons.binding)
+        for fold in folds {
+            fold.isCollapsible = collapsible
+            fold.onExpandedChange = { [weak self] _ in self?.onHeightChange?() }
+        }
+        folds[2].isHidden = !logitechRules.showsOptions
+        PreferencesGroupedForm.add([modeBox] + folds + [resetFooter], to: content)
     }
 
     // MARK: - Actions
 
     /// On: the gestures of the Gestures pane run while the app is in front; the app's own
     /// set stays stored for later. Off: the app's own set, which starts as a copy of the
-    /// general actions and invert switch as they are now when the app never had one.
+    /// general gestures as they are now (all of them) when the app never had one.
+    /// The swipe speed's slider: the app's own speed, on a tick.
+    @objc func trackingSpeedChanged(_ sender: NSSlider) {
+        let value = MouseGestureTrackingSpeed.snapped(sender.doubleValue)
+        trackingSpeedRow?.valueText = MouseGestureTrackingSpeed.text(value)
+        controls?.setTrackingSpeed(value)
+        resetToDefaults.settingsDidChange()
+    }
+
+    /// "Let the mouse track the gesture" of the app's own set.
+    @objc func deviceTrackingToggled(_ sender: NSSwitch) {
+        controls?.setDeviceTracking(sender.state == .on)
+        showOwnValues()
+        resetToDefaults.settingsDidChange()
+    }
+
+    /// "Pulse when a gesture locks in" of the app's own set.
+    @objc func hapticsToggled(_ sender: NSSwitch) {
+        controls?.setHapticFeedback(sender.state == .on)
+        showOwnValues()
+        resetToDefaults.settingsDidChange()
+    }
+
     @objc func generalGesturesClick(_ sender: NSSwitch) {
         // First what is being edited (a name typed in a row's popover) goes into the set,
         // while it is still the app's own.
