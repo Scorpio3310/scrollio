@@ -35,6 +35,8 @@ it for the people who use the app, and give the version its part before you tag 
   settings while nothing runs them; an app's Scrolling part shows its settings only while
   it has its own, as its Gestures and Ring do; an app's Buttons, Gestures and Ring reset
   to defaults.
+- **Thumb wheel, your way round.** Each thumb wheel action has its own "Reverse
+  direction", and Switch Desktops can follow the wheel like a trackpad swipe.
 
 ## 1.0.5
 

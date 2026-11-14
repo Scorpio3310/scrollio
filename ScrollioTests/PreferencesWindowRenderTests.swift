@@ -1324,6 +1324,48 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
+    /// Each action's own "Reverse direction" and Switch Desktops' "Follow the wheel"
+    /// (`thumb-wheel-options-<case>-<appearance>.png`): Scrolling › Thumb wheel with Switch
+    /// Desktops, both switches on; with Volume, its reverse on (no follow row); the
+    /// Buttons row's menu with "Thumb Wheel Settings…" (a stand-in drawn from the menu the
+    /// row builds); an app's Scrolling part with its own Switch Desktops that follows.
+    func testRenderThumbWheelOptions() throws {
+        func scrolling(_ name: String) throws {
+            try renderPane(PANEL_IDENTIFIER.scrolling, name: name, prepare: { preferences in
+                (preferences.controller(for: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)?
+                    .uiStateDefaults = self.uiDefaults(advanced: false)
+            })
+        }
+        Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+        var desktops = ThumbWheelSettings(function: .desktops, followsWheel: true)
+        desktops.reverses[.desktops] = true
+        Options.shared.thumbWheel = desktops
+        try scrolling("thumb-wheel-options-desktops")
+        var volume = ThumbWheelSettings(function: .volume, speed: 1.5)
+        volume.reverses[.volume] = true
+        Options.shared.thumbWheel = volume
+        try scrolling("thumb-wheel-options-volume")
+
+        let row = ButtonsThumbWheelRow(function: .volume, mouse: .mxMaster4)
+        try renderMenuStandIn(Array((row.pullDown.menu?.items ?? []).dropFirst()), name: "thumb-wheel-options-buttons-menu")
+
+        let stored = Options.shared.application.applications
+        addTeardownBlock { Options.shared.application.applications = stored }
+        Options.shared.thumbWheel = .default
+        let calculator = Application(path: "/System/Applications/Calculator.app")
+        calculator.setUsesScrollingSettings(false, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
+        calculator.setOwnThumbWheelScrolling(ThumbWheelSettings(function: .desktops, followsWheel: true))
+        calculator.setOwnThumbWheelFunction(.desktops)
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [calculator], matchKey: "path")
+        let defaults = uiDefaults(advanced: false)
+        try renderPane(PANEL_IDENTIFIER.application, name: "thumb-wheel-options-app-page", prepare: { preferences in
+            (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                .uiStateDefaults = defaults
+        }, afterLoad: { controller in
+            (controller as? PreferencesApplicationViewController)?.openApplication(withID: calculator.path, part: .scrolling)
+        })
+    }
+
     /// An app's Scrolling part with its "Thumb wheel" box (`app-page-thumb-wheel-<case>-<appearance>.png`),
     /// Scrolling › Thumb wheel at "Switch Tabs", 1.5×, swapped: `inherit`, the app uses the
     /// Scrolling settings and has its own action, Zoom (the part is the switch alone: the
