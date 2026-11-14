@@ -1589,6 +1589,69 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try page("app-fold-gestures", app: calculator, part: .gestures)
     }
 
+    /// An app's page has everything the panes have (`app-parity-<case>-<appearance>.png`):
+    /// Calculator's own gestures with all their sections while a button runs them and a mouse
+    /// can track and pulse (`app-parity-gestures`: Mode in "follow the hand", Directions,
+    /// Behavior with the speed, Logitech mouse), the same while nothing runs them
+    /// (`app-parity-gestures-folded`: Mode, the three titles folded, Reset), and Calculator's
+    /// own ring with its freeze switch between the drawing and the places (`app-parity-ring`).
+    func testRenderAppPageParity() throws {
+        let stored = Options.shared.application.applications
+        let savedRing = Options.shared.ring
+        let savedGesture = Options.shared.gesture
+        addTeardownBlock {
+            Options.shared.application.applications = stored
+            Options.shared.ring = savedRing
+            Options.shared.gesture = savedGesture
+            ShortcutRingController.forgetPreparedFaces()
+            ButtonUtils.shared.invalidateCache()
+        }
+        Options.shared.ring = .default
+        Options.shared.gesture = .default
+        let calculator = Application(path: "/System/Applications/Calculator.app")
+        calculator.setUsesGeneralGestures(false, general: .default)
+        var gestures = GestureActions.default
+        gestures.up = GestureAction(action: "custom::15:1179648", label: ShortcutLabel(name: "Reload", icon: .symbol("arrow.clockwise")))
+        calculator.setOwnGestures(actions: gestures, invertHorizontal: false)
+        calculator.changeOwnGestures { own in
+            own.mode = .interactive
+            own.trackingSpeed = 1.5
+            own.freezePointer = false
+            own.deviceTracking = true
+        }
+        calculator.setUsesGeneralRing(false, general: .default)
+        calculator.ring?[0] = ShortcutRingPlace(SystemShortcut.copy)
+        calculator.setOwnRingFreezePointer(true)
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [calculator], matchKey: "path")
+        let mice = MouseGestureDeviceSource(support: { MouseGestureDeviceSupport(deviceTracking: true, haptics: true) }, refresh: {})
+
+        func page(_ name: String, part: ApplicationPagePart) throws {
+            let defaults = uiDefaults(advanced: false)
+            try renderPane(PANEL_IDENTIFIER.application, name: name, prepare: { preferences in
+                (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                    .uiStateDefaults = defaults
+            }, afterLoad: { controller in
+                let apps = controller as? PreferencesApplicationViewController
+                apps?.openApplication(withID: calculator.path, part: part)
+                guard let detail = apps?.detailController else { return }
+                detail.gesturesPart.isInteractiveAvailable = { true }
+                detail.gesturesPart.deviceSource = mice
+                detail.gesturesPart.syncViewWithOptions()
+                detail.onHeightChange?()
+            })
+        }
+        Options.shared.buttons.binding = [
+            binding(3, SystemShortcut.mouseGestureNavigation.identifier),
+            binding(1001, SystemShortcut.shortcutRing.identifier),
+        ]
+        ButtonUtils.shared.invalidateCache()
+        try page("app-parity-gestures", part: .gestures)
+        try page("app-parity-ring", part: .ring)
+        Options.shared.buttons.binding = []
+        ButtonUtils.shared.invalidateCache()
+        try page("app-parity-gestures-folded", part: .gestures)
+    }
+
     /// Full control of the buttons per app, on an MX Master 4 whose thumb panel runs Gesture
     /// Navigation in Buttons and an app ("Figma") whose own binding gives it the Shortcut
     /// Ring: its Buttons part (`app-buttons-thumb-panel-ring-<appearance>.png`), that row's
