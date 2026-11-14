@@ -155,6 +155,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-detail-ring-replaced", "apps-detail-gestures-no-button", "apps-detail-gestures-button",
         "apps-buttons-undo-remove-thumb-wheel",
         "apps-trigger-only-in", "apps-buttons-note-thumb-wheel",
+        "apps-detail-ring-suggested", "apps-detail-ring-use-suggested",
+        "apps-detail-ring-suggested-in-use", "apps-detail-ring-suggested-offer",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).
@@ -330,6 +332,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-detail-gestures-no-button": "@",
         "apps-detail-gestures-button": "@@",
         "apps-trigger-only-in": "@@",
+        "apps-detail-ring-suggested-in-use": "@",
+        "apps-detail-ring-suggested-offer": "@",
         "apps-buttons-note-thumb-wheel": "@",
         // General pane
         "about-version": "@@",

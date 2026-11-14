@@ -29,6 +29,7 @@
 //  `TEST_RUNNER_SCROLLIO_SHOTS_DIR=<folder> xcodebuild … test -only-testing:ScrollioTests/PreferencesWindowRenderTests`.
 //
 
+import Carbon.HIToolbox
 import ObjectiveC
 import XCTest
 @testable import Scrollio_Debug
@@ -1274,6 +1275,78 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 apps?.openApplication(withID: calculator.path, part: .ring)
                 apps?.detailController?.ringController?.placeHoverChanged(0, inside: true)
             })
+        }
+    }
+
+    /// The Shortcut Ring part of apps with suggested shortcuts, right after "Use the
+    /// general ring" was turned off (`app-ring-suggested-<app>-<appearance>.png`): the
+    /// ring holds the suggestion, on the US layout, and the row says so. Then Safari's on
+    /// German QWERTZ (`-safari-qwertz`, Back and Forward are Scrollio's own there) and
+    /// Figma's after one place was changed (`-figma-changed`, the row offers the
+    /// suggestion again). The apps need not be on this Mac: the entries get their bundle
+    /// identifiers through the seam.
+    func testRenderAppPageRingSuggested() throws {
+        let stored = Options.shared.application.applications
+        let savedRing = Options.shared.ring
+        let savedIdentifier = ShortcutRingSuggestions.bundleIdentifierOfApplication
+        let savedLayout = ShortcutRingSuggestions.layout
+        addTeardownBlock {
+            Options.shared.application.applications = stored
+            Options.shared.ring = savedRing
+            ShortcutRingSuggestions.bundleIdentifierOfApplication = savedIdentifier
+            ShortcutRingSuggestions.layout = savedLayout
+            ShortcutRingController.forgetPreparedFaces()
+            ButtonUtils.shared.invalidateCache()
+        }
+        Options.shared.ring = .default
+        // A button opens the ring, so the switch's line says which ring opens.
+        Options.shared.buttons.binding = [binding(1000, SystemShortcut.shortcutRing.identifier)]
+        ButtonUtils.shared.invalidateCache()
+        let apps: [(file: String, name: String, path: String, identifier: String)] = [
+            ("figma", "Figma", "/Applications/Figma.app", "com.figma.Desktop"),
+            ("photoshop", "Adobe Photoshop 2026", "/Applications/Adobe Photoshop 2026/Adobe Photoshop 2026.app", "com.adobe.Photoshop"),
+            ("safari", "Safari", "/Applications/Safari.app", "com.apple.Safari"),
+            ("word", "Microsoft Word", "/Applications/Microsoft Word.app", "com.microsoft.Word"),
+            ("final-cut-pro", "Final Cut Pro", "/Applications/Final Cut Pro.app", "com.apple.FinalCut"),
+        ]
+        let identifiers = Dictionary(uniqueKeysWithValues: apps.map { ($0.path, $0.identifier) })
+        ShortcutRingSuggestions.bundleIdentifierOfApplication = { identifiers[$0] }
+
+        func render(_ app: (file: String, name: String, path: String, identifier: String), suffix: String = "",
+                    afterSwitch: @escaping (Application) -> Void = { _ in }) throws {
+            let entry = Application(path: app.path)
+            entry.displayName = app.name
+            Options.shared.application.applications = EnhanceArray<Application>(withArray: [entry], matchKey: "path")
+            let defaults = uiDefaults(advanced: false)
+            try renderPane(PANEL_IDENTIFIER.application, name: "app-ring-suggested-\(app.file)\(suffix)", prepare: { preferences in
+                (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                    .uiStateDefaults = defaults
+            }, afterLoad: { controller in
+                let pane = controller as? PreferencesApplicationViewController
+                pane?.openApplication(withID: app.path, part: .ring)
+                guard let part = pane?.detailController?.ringPart else { return }
+                // Each appearance starts from the general ring, as the user finds it.
+                entry.ring = nil
+                part.syncViewWithOptions()
+                part.generalRingRow.toggle.state = .off
+                part.generalRingClick(part.generalRingRow.toggle)
+                afterSwitch(entry)
+                part.syncViewWithOptions()
+            })
+        }
+
+        ShortcutRingSuggestions.layout = { .us }
+        for app in apps {
+            try render(app)
+        }
+        try render(apps[0], suffix: "-changed") { entry in
+            entry.ring?[1] = ShortcutRingPlace(SystemShortcut.find)
+        }
+        if let german = TISCreateInputSourceList(
+            [kTISPropertyInputSourceID as String: "com.apple.keylayout.German"] as CFDictionary, true
+        )?.takeRetainedValue() as? [TISInputSource], let source = german.first, let layers = KeyboardLayoutLayers.of(source) {
+            ShortcutRingSuggestions.layout = { layers }
+            try render(apps[2], suffix: "-qwertz")
         }
     }
 

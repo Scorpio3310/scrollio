@@ -190,6 +190,19 @@ the eight places hold.
   later. An app added for its ring has its scrolling changed too while "Change
   scrolling only in these apps" is on, as one added for its buttons (see
   [Buttons and keys](#buttons-and-keys)).
+- Scrollio suggests shortcuts for 50 popular apps (Figma, Photoshop, Final Cut Pro,
+  Safari, Word, Xcode …: each app's most used ones, Undo and Redo on the left and right,
+  zoom on top and bottom, Copy and Paste below). Nothing changes by itself: only when you
+  turn "Use the general ring" off for such an app does its ring start with them instead
+  of the copy, and while its own ring is in use, "Use Suggested Shortcuts" on its page
+  puts them in all eight places again (Edit › Undo takes that back). They are ordinary
+  places afterwards: change any of them. The keys are those of your keyboard layout at
+  that moment (on a German or Slovenian keyboard ⌘Z is still Undo and zoom is the + and
+  − keys); a shortcut whose key your layout types only with Option ("[" on those
+  layouts) takes Scrollio's own Back or Forward in a browser, or other keys the app has
+  for it, and else its place stays empty. Mail's arrow and Delete keys are not
+  suggested (they would type into a text field), and Excel gets its font size where
+  other apps zoom.
 - "Reset to Defaults" at the bottom of the Shortcut Ring pane puts that new ring back:
   its eight places, and "Freeze pointer while the ring is held" off. The button or key
   that opens the ring stays as it is. The reset can be taken back: for a few seconds
