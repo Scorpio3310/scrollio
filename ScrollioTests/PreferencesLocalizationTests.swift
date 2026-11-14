@@ -88,7 +88,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-empty-title", "buttons-empty-hint", "buttons-list-label",
         "buttons-note-gesture-navigation", "buttons-note-hold-action", "buttons-note-no-action",
         "buttons-note-scroll-key", "buttons-note-conflict", "buttons-note-contended", "buttons-note-bluetooth",
-        "buttons-note-standard-button", "buttons-scroll-key-title", "buttons-scroll-key-detail",
+        "buttons-note-standard-button", "buttons-note-standard-button-no-pulse", "buttons-scroll-key-title", "buttons-scroll-key-detail",
         "buttons-problem-info", "buttons-checking", "buttons-undo-remove", "buttons-show-gesture-settings",
         "buttons-trigger-placed", "buttons-header-place-this-one", "buttons-place-title", "buttons-place-help",
         "buttons-place-gesture", "buttons-place-thumb-panel", "buttons-place-back", "buttons-place-forward",
@@ -154,6 +154,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-detail-ring-no-trigger", "apps-detail-allowlist-note",
         "apps-detail-ring-replaced", "apps-detail-gestures-no-button", "apps-detail-gestures-button",
         "apps-buttons-undo-remove-thumb-wheel",
+        "apps-trigger-only-in", "apps-buttons-note-thumb-wheel",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).
@@ -259,7 +260,7 @@ final class PreferencesLocalizationTests: XCTestCase {
     /// The Shortcut Ring: its action, its pane and its lines elsewhere.
     static let ringKeys = [
         "shortcutRing", "ring-menu-tooltip", "ring-tab-title",
-        "ring-trigger", "ring-trigger-none", "ring-trigger-bound", "ring-trigger-set-up", "ring-trigger-change",
+        "ring-trigger", "ring-trigger-none", "ring-trigger-bound", "ring-trigger-set-up", "ring-trigger-change", "ring-trigger-apps",
         "ring-places-header", "ring-places-hint",
         "ring-place-top", "ring-place-top-right", "ring-place-right", "ring-place-bottom-right",
         "ring-place-bottom", "ring-place-bottom-left", "ring-place-left", "ring-place-top-left",
@@ -314,6 +315,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-header-count": "d",
         "buttons-header-answer": "@",
         "buttons-note-standard-button": "@",
+        "buttons-note-standard-button-no-pulse": "@",
         "buttons-place-used-by": "d",
         // Gestures pane
         "gestures-gesture-button-bound": "@",
@@ -327,6 +329,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-detail-ring-replaced": "@",
         "apps-detail-gestures-no-button": "@",
         "apps-detail-gestures-button": "@@",
+        "apps-trigger-only-in": "@@",
+        "apps-buttons-note-thumb-wheel": "@",
         // General pane
         "about-version": "@@",
         "about-version-commit": "@@@",
@@ -371,6 +375,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-buttons-everywhere": "@",
         "apps-buttons-add-general-item": "@@",
         "ring-trigger-bound": "@",
+        "ring-trigger-apps": "@",
         "general-settings-problem-damaged": "@",
         "general-settings-problem-too-many": "d",
         // Welcome Guide

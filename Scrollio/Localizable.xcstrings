@@ -8585,13 +8585,13 @@
       }
     },
     "apps-detail-gestures-no-button": {
-      "comment": "App page, Gestures part: line under the switch while no button runs Gesture Navigation in this app because its own buttons gave that button another action; %@ is the app's name",
+      "comment": "App page, Gestures part: explanation of \"Use the general gestures\", in both states, while no button runs Gesture Navigation with this app in front (whatever Buttons has); %@ is the app's name",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "While %@ is in front, no button runs Gesture Navigation: see its Buttons part."
+            "value": "While %@ is in front, no button runs the gestures: see its Buttons part."
           }
         }
       }
@@ -8616,6 +8616,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Remove Thumb Wheel"
+          }
+        }
+      }
+    },
+    "apps-trigger-only-in": {
+      "comment": "Shortcut Ring and Gestures panes: what opens the ring or runs the gestures while no binding of Buttons does but an app's own button or key does; %1$@ is the apps' names, %2$@ the buttons and keys, as the Buttons pane names them (no full stop: the line goes on)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only in %1$@: %2$@"
+          }
+        }
+      }
+    },
+    "apps-buttons-note-thumb-wheel": {
+      "comment": "An app's page, Buttons: the line under the list while it holds the thumb wheel's row (the wheel is no button); %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These do this while %@ is in front; everything else does what Buttons says."
+          }
+        }
+      }
+    },
+    "buttons-note-standard-button-no-pulse": {
+      "comment": "Buttons pane: the hint under a Logitech button of an MX Master 4 that opens the Shortcut Ring or runs Gesture Navigation and has a standard twin; %@ is the standard button's name (\"Back button\"); the standard one arrives without the pulses",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can use the standard %@ (no pulse)."
+          }
+        }
+      }
+    },
+    "ring-trigger-apps": {
+      "comment": "Shortcut Ring pane: explanation of \"Button or key\" while only apps' own buttons or keys open the ring; %@ is where and with what (\"Only in Figma: Thumb panel\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@. A key combination works too."
           }
         }
       }

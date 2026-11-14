@@ -9,8 +9,9 @@
 //  the swipe speed, the freeze switch and what a Logitech mouse does are the same for every
 //  app and stay in the Gestures pane; in "Follow the hand" the Left and Right rows say so,
 //  as the pane's do. The button to hold is a binding of Buttons, or of the app's Buttons
-//  part: while it is another one with the app in front (or none), a line under the
-//  switch's box says so.
+//  part: while none runs the gestures with the app in front, the switch's line says so
+//  instead (in both states); while it is another one than Buttons', a line under the
+//  switch's box names it.
 //
 
 import Cocoa
@@ -26,17 +27,18 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
 
     let application: Application
     var onHeightChange: (() -> Void)?
-    /// Whether the menus offer Logitech actions (a Logitech button runs Gesture
-    /// Navigation), as in the Gestures pane. Tests replace it.
-    var showsLogiActions: () -> Bool = { MouseGestureBindingSummary.current.hasLogitechGestureButton }
+    /// Whether the menus offer Logitech actions: a Logitech button runs Gesture Navigation
+    /// while the app is in front (`ApplicationTriggerRule`), as the Gestures pane asks of
+    /// its buttons. Tests replace it.
+    var showsLogiActions: () -> Bool
     /// Whether "Follow the hand" can run at all (without it the mode is discrete). Tests
     /// replace it.
     var isInteractiveAvailable: () -> Bool = { DockSwipeSynthesizer.shared.isAvailable }
 
     private(set) var generalSection: PreferencesGroupSection!
     private(set) var generalGesturesRow: PreferencesSwitchRow!
-    /// The line under the switch's box: in sight only while the button to hold differs
-    /// with the app in front from the one of Buttons (`buttonNote(for:general:)`).
+    /// The line under the switch's box: in sight only while another button than Buttons'
+    /// runs the gestures with the app in front (`buttonNote(for:general:)`).
     private(set) var buttonNoteLabel: NSTextField!
     /// The app's own set: there only while "Use the general gestures" is off.
     private(set) var controls: MouseGestureSettingsControls?
@@ -52,6 +54,11 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
 
     init(application: Application) {
         self.application = application
+        showsLogiActions = { [application] in
+            ApplicationTriggerRule.gestureNavigation
+                .bindings(general: Options.shared.buttons.binding, own: application.ownButtonBindings)
+                .contains { LogiCenter.shared.isLogiCode($0.triggerEvent.code) }
+        }
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -101,42 +108,38 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         syncViewWithOptions()
     }
 
-    /// The line under the switch's box while the button that runs Gesture Navigation with
-    /// the app in front is not the one of Buttons: the app's own buttons gave that button
-    /// another action ("…no button runs Gesture Navigation…"), or gave another one Gesture
+    /// The line under the switch's box while another button than the one of Buttons runs
+    /// Gesture Navigation with the app in front: the app's own buttons gave one Gesture
     /// Navigation ("Button to hold while Figma is in front: Back button."). nil: the same
-    /// button as in Buttons. The bindings counted are what a press goes by
-    /// (`ApplicationButtons.merged`), with the Gestures pane's rule of what runs gestures.
+    /// button as in Buttons, or none at all (the switch's own line says that one). Counted
+    /// by the rule the Gestures pane counts by (`ApplicationTriggerRule`).
     static func buttonNote(for application: Application, general: [ButtonBinding]) -> String? {
-        let merged = ApplicationButtons.merged(general: general, own: application.ownButtonBindings)
-        let runs: (ButtonBinding) -> Bool = {
-            $0.isEnabled && $0.triggerEvent.type == .mouse
-                && $0.systemShortcutName == SystemShortcut.mouseGestureNavigation.identifier
-        }
-        guard merged.filter(runs).map(\.identity) != general.filter(runs).map(\.identity) else { return nil }
-        let name = application.getName()
-        let titles = MouseGestureBindingSummary(bindings: merged, isLogitechCode: { _ in false }).buttonTitles
-        guard !titles.isEmpty else {
-            return String(format: NSLocalizedString("apps-detail-gestures-no-button", comment: ""), name)
-        }
+        let rule = ApplicationTriggerRule.gestureNavigation
+        let here = rule.bindings(general: general, own: application.ownButtonBindings)
+        guard !here.isEmpty, here.map(\.identity) != rule.bindings(general: general).map(\.identity) else { return nil }
+        let titles = MouseGestureBindingSummary(bindings: here, isLogitechCode: { _ in false }).buttonTitles
         let buttons = ListFormatter.localizedString(byJoining: titles)
-        return String(format: NSLocalizedString("apps-detail-gestures-button", comment: ""), name, buttons)
+        return String(format: NSLocalizedString("apps-detail-gestures-button", comment: ""), application.getName(), buttons)
+    }
+
+    /// Whether a button runs Gesture Navigation while the app is in front.
+    static func hasButton(for application: Application, general: [ButtonBinding]) -> Bool {
+        return !ApplicationTriggerRule.gestureNavigation.bindings(general: general, own: application.ownButtonBindings).isEmpty
     }
 
     /// Shows the line, or takes it away: a line sits close under its box; without it the
-    /// titled box of the app's own set keeps its gap. The page's height follows.
-    private func syncButtonNote() {
-        guard let holder = buttonNoteLabel.superview else { return }
+    /// titled box of the app's own set keeps its gap. True when it came or went while the
+    /// part is on screen: the page's height follows.
+    private func syncButtonNote() -> Bool {
+        guard let holder = buttonNoteLabel.superview else { return false }
         let note = Self.buttonNote(for: application, general: Options.shared.buttons.binding)
         buttonNoteLabel.stringValue = note ?? ""
         content.setCustomSpacing(
             note == nil ? PreferencesGroupedForm.sectionSpacing : PreferencesGroupedForm.noteSpacing, after: generalSection
         )
-        guard holder.isHidden != (note == nil) else { return }
+        guard holder.isHidden != (note == nil) else { return false }
         holder.isHidden = note == nil
-        if view.superview != nil {
-            onHeightChange?()
-        }
+        return view.superview != nil
     }
 
     private static var boxWidth: CGFloat {
@@ -150,18 +153,32 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     // MARK: - ApplicationPagePartController
 
     func syncViewWithOptions() {
-        guard isViewLoaded else { return }
+        if sync() {
+            onHeightChange?()
+        }
+    }
+
+    /// Shows the stored settings; true when the page must measure again: the switch's line
+    /// or the line under the box changed while the part is on screen (an Undo in the app's
+    /// Buttons), and may take more or less room.
+    @discardableResult
+    private func sync() -> Bool {
+        guard isViewLoaded else { return false }
         let usesGeneral = application.usesGeneralGestures
         generalGesturesRow.isOn = usesGeneral
-        generalGesturesRow.explanation = ApplicationDetailViewController.generalGesturesExplanation(
-            on: usesGeneral, name: application.getName()
+        let line = ApplicationDetailViewController.generalGesturesExplanation(
+            on: usesGeneral, name: application.getName(),
+            hasButton: Self.hasButton(for: application, general: Options.shared.buttons.binding)
         )
-        syncButtonNote()
+        var remeasures = generalGesturesRow.explanation != line && view.superview != nil
+        generalGesturesRow.explanation = line
+        remeasures = syncButtonNote() || remeasures
         showOwnSet(!usesGeneral)
-        guard let controls else { return }
+        guard let controls else { return remeasures }
         controls.showLogiActions = showsLogiActions()
         controls.sync()
         applyModeRules()
+        return remeasures
     }
 
     func partWillHide() {
@@ -232,7 +249,8 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         // while it is still the app's own.
         controls?.endEditing()
         application.setUsesGeneralGestures(sender.state == .on, general: Options.shared.gesture)
-        syncViewWithOptions()
+        // (The own set came or went: the page measures again, once.)
+        sync()
         onHeightChange?()
     }
 }

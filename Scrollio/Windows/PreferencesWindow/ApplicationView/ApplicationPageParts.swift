@@ -268,10 +268,10 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
             action: #selector(generalRingClick(_:))
         )
         generalRing.toggle.identifier = Identifier.generalRing
+        // Room for the longer of the two lines the switch alternates, so switching never
+        // moves what is below; a line on what opens the ring (the same in both states)
+        // takes the room it needs, and the page measures again.
         generalRing.reservedExplanations = [true, false].map { ApplicationDetailViewController.generalRingExplanation(on: $0, name: name) }
-            + [ApplicationDetailViewController.RingTrigger.noTrigger, .replacedHere].map {
-                ApplicationDetailViewController.generalRingExplanation(on: true, name: name, opens: $0)
-            }
         generalRingRow = generalRing
         // (No title: the part's segment names it.)
         let section = PreferencesGroupSection(
@@ -293,18 +293,31 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
     }
 
     func syncViewWithOptions() {
-        guard isViewLoaded else { return }
+        if sync() {
+            onHeightChange?()
+        }
+    }
+
+    /// Shows the stored settings; true when the page must measure again: the line changed
+    /// while the part is on screen (an Undo in the app's Buttons), and may take more or
+    /// less room.
+    @discardableResult
+    private func sync() -> Bool {
+        guard isViewLoaded else { return false }
         let usesGeneralRing = application.usesGeneralRing
         generalRingRow.isOn = usesGeneralRing
         // (What opens the ring is a binding of Buttons or of the app's Buttons part, and
         // this part has no row for it: while nothing opens it with the app in front, the
         // line says so instead of promising a ring.)
-        generalRingRow.explanation = ApplicationDetailViewController.generalRingExplanation(
+        let line = ApplicationDetailViewController.generalRingExplanation(
             on: usesGeneralRing, name: application.getName(),
             opens: .of(application, general: Options.shared.buttons.binding)
         )
+        let remeasures = generalRingRow.explanation != line && view.superview != nil
+        generalRingRow.explanation = line
         showOwnRing(!usesGeneralRing)
         ringController?.reload()
+        return remeasures
     }
 
     func partWillHide() {
@@ -350,7 +363,8 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         // while it is still the app's own.
         ringController?.endEditing()
         application.setUsesGeneralRing(sender.state == .on, general: Options.shared.ring)
-        syncViewWithOptions()
+        // (The own ring came or went: the page measures again, once.)
+        sync()
         onHeightChange?()
     }
 }

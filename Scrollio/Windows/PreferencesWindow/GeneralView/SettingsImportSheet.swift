@@ -225,13 +225,14 @@ enum SettingsFileText {
         }
     }
 
-    /// One line per app whose thumb wheel has a function of its own, as its page names it:
-    /// "Thumb wheel in Notes: Zoom" ("Default" for scrolling sideways).
+    /// One line per app whose thumb wheel has a function of its own, by the names of
+    /// Scrolling › Thumb wheel: "Thumb wheel in Notes: Zoom", "Thumb wheel in Mail: Scroll
+    /// Sideways" (what the wheel does there, as its page's "Everywhere" line names it).
     static func thumbWheelLines(of contents: SettingsFile.Contents) -> [String] {
         return contents.applicationThumbWheels.map { entry in
             String(
                 format: text("general-settings-import-action-line-app"),
-                ThumbWheelPresentation.title, name(of: entry.application), ThumbWheelPresentation.buttonsTitle(for: entry.function)
+                ThumbWheelPresentation.title, name(of: entry.application), entry.function.localizedName
             )
         }
     }

@@ -158,9 +158,10 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     }
 
     /// The line under the list: with rows, that every other button does what Buttons
-    /// says; without (the list says that already), how to add one.
-    static func note(for name: String, isEmpty: Bool = false) -> String {
-        let key = isEmpty ? "apps-buttons-note-empty" : "apps-buttons-note"
+    /// says (with the thumb wheel's row among them, said of "these" and "everything else":
+    /// the wheel is no button); without (the list says that already), how to add one.
+    static func note(for name: String, isEmpty: Bool = false, listsThumbWheel: Bool = false) -> String {
+        let key = isEmpty ? "apps-buttons-note-empty" : listsThumbWheel ? "apps-buttons-note-thumb-wheel" : "apps-buttons-note"
         return String(format: NSLocalizedString(key, comment: ""), name)
     }
 
@@ -228,7 +229,9 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         rows = shown
         // The thumb wheel's row, first while the app has a function of its own (ApplicationThumbWheelRow.swift).
         let thumbWheel = makeThumbWheelRow()
-        noteLabel.stringValue = Self.note(for: application.getName(), isEmpty: own.isEmpty && thumbWheel == nil)
+        noteLabel.stringValue = Self.note(
+            for: application.getName(), isEmpty: own.isEmpty && thumbWheel == nil, listsThumbWheel: thumbWheel != nil
+        )
         let listed: [PreferencesListRow] = (thumbWheel.map { [$0] } ?? []) + shown
         if listed.count != list.rows.count || zip(listed, list.rows).contains(where: { $0 !== $1 }) {
             list.setRows(listed)
@@ -506,12 +509,16 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     }
 
     /// A removal, its Undo or its Redo changed the app's list: the rows again, with `id`
-    /// selected.
+    /// selected; and the part of the page shown now, if another one: the Gestures and
+    /// Shortcut Ring parts say what this app's buttons make of the gestures and the ring.
     private func showUndoableChange(selecting id: UUID?) {
         guard isViewLoaded else { return }
         reloadRows()
         if let id {
             list.select(AnyHashable(id))
+        }
+        if let shown = (parent as? ApplicationDetailViewController)?.shownController, shown !== self {
+            shown.syncViewWithOptions()
         }
     }
 
