@@ -1038,6 +1038,39 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(page.generalRingRow.explanation, nothing)
     }
 
+    /// While "Change scrolling only in these apps" is on, a muted line under the app's box
+    /// says that the app's scrolling changes too (also for an app added only for its
+    /// buttons, gestures or ring) and how to leave it to macOS; it fits two lines. Off: no
+    /// line, and the control stands where it did.
+    func testWithTheLimitOnThePageSaysTheAppsScrollingChangesToo() throws {
+        Options.shared.application.applications = Self.makeStore([application(Self.calculator, inherit: true)])
+        Options.shared.application.allowlist = false
+        let controller = makeController()
+        controller.openApplication(withID: Self.calculator, part: .buttons)
+        var page = try XCTUnwrap(controller.detailController)
+        page.view.layoutSubtreeIfNeeded()
+        XCTAssertTrue(page.allowlistNote.isHidden)
+        let controlWithout = page.partControl.frame
+        XCTAssertEqual(page.headerSection.frame.minY - controlWithout.maxY, PreferencesGroupedForm.boxSpacing, accuracy: 0.5)
+        controller.leaveSubpage()
+
+        Options.shared.application.allowlist = true
+        controller.openApplication(withID: Self.calculator, part: .buttons)
+        page = try XCTUnwrap(controller.detailController)
+        page.view.layoutSubtreeIfNeeded()
+        let note = try XCTUnwrap(page.allowlistNote)
+        XCTAssertFalse(note.isHidden)
+        XCTAssertEqual(note.stringValue, "“Change scrolling only in these apps” is on: this app scrolls as its Scrolling part says. "
+                       + "To leave its scrolling to macOS, turn off smoothing and reversing there.")
+        XCTAssertFalse(page.view.hasAmbiguousLayout)
+        XCTAssertEqual(page.headerSection.frame.minY - note.frame.maxY, PreferencesGroupedForm.noteSpacing, accuracy: 1)
+        XCTAssertEqual(note.frame.minY - page.partControl.frame.maxY, PreferencesGroupedForm.boxSpacing, accuracy: 0.5)
+        let font = PreferencesGroupedForm.explanationFont
+        let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
+        XCTAssertLessThanOrEqual(note.frame.height, twoLines)
+        XCTAssertEqual(controller.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+    }
+
     /// The page's "Shortcut Ring" part. While "Use the general ring" is on (as for every
     /// app until the user turns it off) there is the switch and nothing else: no drawing,
     /// no rows, and nothing new is stored for the app.

@@ -8523,6 +8523,18 @@
           }
         }
       }
+    },
+    "apps-detail-allowlist-note": {
+      "comment": "App page: muted line under the app's box while \"Change scrolling only in these apps\" is on",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“Change scrolling only in these apps” is on: this app scrolls as its Scrolling part says. To leave its scrolling to macOS, turn off smoothing and reversing there."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

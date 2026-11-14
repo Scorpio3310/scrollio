@@ -4,7 +4,9 @@
 //  The page of one app under Apps, opened from its row in the list (it replaces the old
 //  per-app popover). The way back is the window's: a back button in its title bar, beside
 //  the app's name (PreferencesWindowController), as in System Settings; Esc and ⌘[ go back
-//  too. A box shows the app (icon, name, where it is); under it a segmented control
+//  too. A box shows the app (icon, name, where it is), with a muted line under it while
+//  "Change scrolling only in these apps" is on (being on the list changes the app's
+//  scrolling, whatever it was added for); under it a segmented control
 //  chooses the part of the page that shows (`ApplicationPagePart`: Scrolling, Buttons,
 //  Gestures, Shortcut Ring), one at a time, so the page stays short. The part shown last is shown
 //  again, for every app alike (the UI state, beside Advanced of Scrolling); a part that
@@ -23,6 +25,7 @@ final class ApplicationDetailViewController: NSViewController {
     /// Identifiers for the controls (tests and accessibility tooling).
     enum Identifier {
         static let header = NSUserInterfaceItemIdentifier("apps-detail-header")
+        static let allowlistNote = NSUserInterfaceItemIdentifier("apps-detail-allowlist-note")
         static let parts = NSUserInterfaceItemIdentifier("apps-detail-parts")
         static let inherit = ApplicationScrollingPartViewController.Identifier.inherit
         static let generalRing = ApplicationRingPartViewController.Identifier.generalRing
@@ -52,6 +55,12 @@ final class ApplicationDetailViewController: NSViewController {
 
     private(set) var headerRow: ApplicationDetailHeaderRow!
     private(set) var headerSection: PreferencesGroupSection!
+    /// Under the app's box while "Change scrolling only in these apps" is on: being on the
+    /// list changes how the app scrolls, also for an app added only for its buttons,
+    /// gestures or ring.
+    private(set) var allowlistNote: NSTextField!
+    private var controlUnderHeader: NSLayoutConstraint!
+    private var controlUnderNote: NSLayoutConstraint!
     private(set) var partControl: NSSegmentedControl!
     /// Holds the view of the part shown.
     private(set) var partContainer: NSView!
@@ -135,16 +144,34 @@ final class ApplicationDetailViewController: NSViewController {
         container.translatesAutoresizingMaskIntoConstraints = false
         partContainer = container
 
-        for view in [header, control, container] {
+        let note = NSTextField(wrappingLabelWithString: NSLocalizedString("apps-detail-allowlist-note", comment: ""))
+        note.identifier = Identifier.allowlistNote
+        note.font = PreferencesGroupedForm.explanationFont
+        note.textColor = PreferencesGroupedForm.explanationColor(enabled: true)
+        note.isSelectable = false
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        note.preferredMaxLayoutWidth = PreferencesGroupedForm.boxWidth(paneWidth: Self.paneWidth) - 2 * inset
+        note.translatesAutoresizingMaskIntoConstraints = false
+        allowlistNote = note
+
+        for view in [header, note, control, container] {
             root.addSubview(view)
         }
         let margin = PreferencesGroupedForm.margin
+        controlUnderHeader = control.topAnchor.constraint(equalTo: header.bottomAnchor, constant: PreferencesGroupedForm.boxSpacing)
+        controlUnderNote = control.topAnchor.constraint(equalTo: note.bottomAnchor, constant: PreferencesGroupedForm.boxSpacing)
+        let showsNote = Self.showsAllowlistNote
+        note.isHidden = !showsNote
         NSLayoutConstraint.activate([
             // The app's box begins where the first box of every pane does.
             header.topAnchor.constraint(equalTo: root.topAnchor, constant: margin),
             header.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: margin),
             header.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -margin),
-            control.topAnchor.constraint(equalTo: header.bottomAnchor, constant: PreferencesGroupedForm.boxSpacing),
+            // A muted line close under the box, inset like the texts of its row.
+            note.topAnchor.constraint(equalTo: header.bottomAnchor, constant: PreferencesGroupedForm.noteSpacing),
+            note.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: inset),
+            note.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -inset),
+            showsNote ? controlUnderNote : controlUnderHeader,
             control.centerXAnchor.constraint(equalTo: root.centerXAnchor),
             control.leadingAnchor.constraint(greaterThanOrEqualTo: root.leadingAnchor, constant: margin),
             // The part brings its own margins: the space above its first box.
@@ -260,6 +287,20 @@ final class ApplicationDetailViewController: NSViewController {
         for controller in partControllers.values {
             controller.syncViewWithOptions()
         }
+        let showsNote = Self.showsAllowlistNote
+        if allowlistNote.isHidden == showsNote {
+            allowlistNote.isHidden = !showsNote
+            NSLayoutConstraint.deactivate([showsNote ? controlUnderHeader : controlUnderNote])
+            NSLayoutConstraint.activate([showsNote ? controlUnderNote : controlUnderHeader])
+            onHeightChange?()
+        }
+    }
+
+    /// The line under the app's box shows while "Change scrolling only in these apps" is
+    /// on: every app on the list then scrolls as its Scrolling part says, also one added
+    /// only for its buttons, gestures or ring.
+    static var showsAllowlistNote: Bool {
+        return Options.shared.application.allowlist
     }
 
     /// "While Safari is in front, the general ring opens." / "While Safari is in front,
