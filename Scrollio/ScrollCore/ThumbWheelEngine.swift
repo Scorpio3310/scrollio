@@ -7,8 +7,9 @@
 //  function, the event feeds the stepper, and the steps it decides run their actions on the
 //  main queue, never inside the tap callback. A function with a pacing (volume) runs them
 //  through `ThumbWheelPacer`: one at once, the others one per interval, a few waiting at most
-//  (the system does not keep up with volume keys); the others run at once. Every sideways
-//  event, at the defaults as well, goes into the roll's one log line.
+//  (the system does not keep up with volume keys); the others run at once. Switch Desktops
+//  with "Follow the wheel" drives a swipe of the desktops instead (`ThumbWheelFollower`).
+//  Every sideways event, at the defaults as well, goes into the roll's one log line.
 //
 
 import Cocoa
@@ -67,7 +68,8 @@ enum ThumbWheelAction: Equatable {
     static let previousTab = SystemShortcut.Shortcut("thumbWheelPreviousTab", 48, [.control, .shift])
 
     /// What a step does. Toward "next" is a negative X delta of the raw event, turned around
-    /// only by "Swap direction" (`ThumbWheelStepper`). Nil while the wheel scrolls.
+    /// only by the function's "Reverse direction" (`ThumbWheelStepper`). Nil while the wheel
+    /// scrolls.
     static func action(for function: ThumbWheelFunction, towardNext: Bool) -> ThumbWheelAction? {
         switch function {
         case .scroll:
@@ -123,9 +125,9 @@ struct ThumbWheelActionPerformer {
 /// One turn of the thumb wheel: its events until the wheel rests (`ThumbWheelTuning.turnRest`,
 /// by the events' own times). It runs with what the app that was in front at its first
 /// event has of its own (its function, and while its own Scrolling settings are in use its
-/// speed and swap: `ThumbWheelChoice`), whatever comes to the front meanwhile: a turn that
-/// switches desktops brings another app forward, and its next stroke still switches
-/// desktops at the same pace.
+/// speed, reverses and follow switch: `ThumbWheelChoice`), whatever comes to the front
+/// meanwhile: a turn that switches desktops brings another app forward, and its next stroke
+/// still switches desktops at the same pace, and follows the wheel or not as it began.
 struct ThumbWheelTurn: Equatable {
     /// What the app in front at the first event has of its own; nil: nothing. What is not
     /// the app's own is the general setting, read at every event (a change of it counts at
@@ -171,6 +173,11 @@ final class ThumbWheelEngine {
     private(set) var pacer = ThumbWheelPacer()
     /// The function whose steps the pacer holds.
     private var pacedFunction: ThumbWheelFunction?
+    /// Switch Desktops with "Follow the wheel": the swipe of a stroke. Its clock and main
+    /// queue are the engine's.
+    let follower = ThumbWheelFollower()
+    /// The roll the stroke under way began in (its line counts how the stroke ended).
+    private var strokeRollID: Int?
     /// A look at the pacer is scheduled: one at a time, none while no step waits.
     private var paceScheduled = false
     /// Runs a step's action this many times, on the main queue (tests replace it).
@@ -178,12 +185,16 @@ final class ThumbWheelEngine {
         ThumbWheelActionPerformer().perform(action, times: times)
     }
     /// Runs work on the main queue after a delay (0: as soon as the tap callback returned).
-    var schedule: (TimeInterval, @escaping () -> Void) -> Void = ThumbWheelEngine.scheduleOnMainQueue
+    var schedule: (TimeInterval, @escaping () -> Void) -> Void = ThumbWheelEngine.scheduleOnMainQueue {
+        didSet { follower.schedule = schedule }
+    }
     /// Writes a roll's log line.
     var writeLog: (Roll) -> Void = ScrollSystemLog.noteThumbWheelRoll
     /// Seconds on a monotonic clock: when the callback saw an event (the look at the open roll
     /// uses only these), and the time of an event without a timestamp.
-    var clock: () -> TimeInterval = { CACurrentMediaTime() }
+    var clock: () -> TimeInterval = { CACurrentMediaTime() } {
+        didSet { follower.clock = clock }
+    }
     /// Seconds per unit of `CGEvent.timestamp`.
     var secondsPerTimestampUnit = ThumbWheelEngine.appKitSecondsPerTimestampUnit
 
@@ -192,6 +203,12 @@ final class ThumbWheelEngine {
     /// Moves on with `reset()`: steps decided before it do not run.
     private var generation = 0
     private var nextRollID = 0
+
+    init() {
+        follower.onStrokeEnd = { [weak self] outcome, furthest in
+            self?.strokeEnded(outcome, furthest: furthest)
+        }
+    }
 
     /// The unit of `CGEvent.timestamp` as AppKit reads it, in seconds: nanoseconds, or mach
     /// ticks on some Macs (`CGEvent.uptimeSeconds` reads it through AppKit for that reason).
@@ -220,7 +237,7 @@ final class ThumbWheelEngine {
     /// The settings a sideways wheel event goes by, in the scroll tap's callback, before
     /// `handle`: `general` with what the event's turn has of an app's own. The turn's first
     /// event (the first ever, or one after the wheel rested) decides whose they are: the app
-    /// in front's own function, speed and swap, else the general ones (`ThumbWheelChoice`:
+    /// in front's own function, speed, reverses and follow switch, else the general ones (`ThumbWheelChoice`:
     /// the list looked at, the app in front read only while some app has something of its
     /// own; nothing on disk, no Launch Services). Every later event of the turn keeps them:
     /// one comparison of times.
@@ -241,23 +258,46 @@ final class ThumbWheelEngine {
     /// One sideways wheel event, in the scroll tap's callback. A few sums per event; a closure
     /// is made only when a step runs, a roll begins or its line is due. Nothing is logged here.
     /// - Parameters:
-    ///   - flipped: X is turned around once. While the wheel runs a function: "Swap
-    ///     direction" only. While it scrolls: "Reverse wheel direction" or "Swap direction".
-    /// - Returns: the steps this event decided (positive toward "next").
+    ///   - flipped: X is turned around once. While the wheel runs a function: the function's
+    ///     "Reverse direction" only. While it scrolls: "Reverse wheel direction" or its
+    ///     "Reverse direction".
+    /// - Returns: the steps this event decided (positive toward "next"; none while Switch
+    ///   Desktops follows the wheel).
     @discardableResult
     func handle(_ event: ThumbWheelEvent, settings: ThumbWheelSettings, flipped: Bool) -> Int {
         let seenAt = clock()
         let time = event.timestamp == 0 ? seenAt : Double(event.timestamp) * secondsPerTimestampUnit
         var steps = 0
         var travel = 0.0
-        if settings.function != .scroll {
-            travel = ThumbWheelStepper.travel(
+        var newStroke = false
+        var follows = false
+        if settings.followsWheelNow {
+            travel = ThumbWheelFollower.travel(
                 lineDelta: event.lineDelta, fixedDelta: event.fixedDelta, pointDelta: event.pointDelta,
-                flipped: flipped, speed: settings.speed, function: settings.function
+                flipped: flipped, speed: settings.speed
             )
-            steps = stepper.feed(travel: travel, function: settings.function, at: time)
+            if case .yes(let begins) = follower.add(travel, at: time, seenAt: seenAt) {
+                follows = true
+                newStroke = begins
+            }
+        }
+        if !follows {
+            // Another function, or Follow the wheel switched off in the middle of a stroke
+            // (or no swipe can be made here: the desktops go in steps).
+            if follower.isInStroke { follower.endStroke(at: time) }
+            if settings.function != .scroll {
+                travel = ThumbWheelStepper.travel(
+                    lineDelta: event.lineDelta, fixedDelta: event.fixedDelta, pointDelta: event.pointDelta,
+                    flipped: flipped, speed: settings.speed, function: settings.function
+                )
+                steps = stepper.feed(travel: travel, function: settings.function, at: time)
+            }
         }
         record(event, settings: settings, travel: travel, at: time, seenAt: seenAt)
+        if newStroke {
+            roll?.pendingSwipes += 1
+            strokeRollID = roll?.id
+        }
         guard steps != 0, roll != nil else { return steps }
         if let pacing = settings.function.pacing {
             pace(steps, function: settings.function, pacing: pacing, at: seenAt)
@@ -370,6 +410,18 @@ final class ThumbWheelEngine {
         writeLog(done)
     }
 
+    /// A stroke of Follow the wheel ended: the roll it began in counts it (written, it is
+    /// not counted again).
+    private func strokeEnded(_ outcome: ThumbWheelFollower.Outcome, furthest: Double) {
+        let rollID = strokeRollID
+        strokeRollID = nil
+        if roll != nil, roll?.id == rollID {
+            roll?.strokeEnded(outcome, furthest: furthest)
+        } else if ended != nil, ended?.id == rollID {
+            ended?.strokeEnded(outcome, furthest: furthest)
+        }
+    }
+
     private func stepsRan(_ steps: Int, rollID: Int?) {
         if roll?.id == rollID {
             roll?.stepsRan(steps)
@@ -386,7 +438,7 @@ final class ThumbWheelEngine {
         guard let open = roll else { return }
         let now = clock()
         let due = open.lineDueAt
-        if now >= due && open.pendingSteps == 0 {
+        if now >= due && !open.isWaiting {
             roll = nil
             writeLog(open)
             return
@@ -398,15 +450,20 @@ final class ThumbWheelEngine {
             // after the steps already queued; never a busy loop on the main queue.
             let nextPaced = pacedFunction?.pacing.flatMap { pacer.nextRunAt(pacing: $0) }
             delay = max(ThumbWheelTuning.pendingRecheck, (nextPaced ?? now) - now)
+            if open.pendingSteps == 0 {
+                // Only a stroke of Follow the wheel to end: it ends at the wheel's rest.
+                delay = max(delay, ThumbWheelTuning.followRest / 4)
+            }
         }
         schedule(delay) { [weak self] in self?.checkRoll() }
     }
 
     /// Scrollio's scroll handling stopped (`ScrollCore.disable`): steps already decided do not
-    /// run (waiting ones included), the next event starts a new roll and a new turn (which
-    /// looks at the app in front again), and the lines of the rolls so far are written now
-    /// with the steps that ran.
+    /// run (waiting ones included), a swipe of Follow the wheel is cancelled at once, the
+    /// next event starts a new roll and a new turn (which looks at the app in front again),
+    /// and the lines of the rolls so far are written now with the steps that ran.
     func reset() {
+        follower.cancel()
         generation &+= 1
         turn = nil
         stepper.reset()

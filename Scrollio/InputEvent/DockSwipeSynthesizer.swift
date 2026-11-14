@@ -393,6 +393,11 @@ final class DockSwipeSynthesizer {
 
     /// True between `begin` and the terminal call.
     private(set) var isActive = false
+    /// Counts the swipes begun. Two drivers share the one swipe the Dock can follow (a
+    /// gesture hold and the thumb wheel's "Follow the wheel"): a swipe is the caller's while
+    /// it is active and still has the number its `begin` gave it. A `begin` of the other
+    /// cancels it (below), and its owner then sends nothing more.
+    private(set) var swipeNumber = 0
 
     /// False when the events cannot be built on this system. Callers then stay discrete.
     var isAvailable: Bool {
@@ -403,7 +408,13 @@ final class DockSwipeSynthesizer {
         // A swipe that was never finished must not be left hanging in the Dock.
         if isActive { cancel() }
         isActive = true
+        swipeNumber &+= 1
         driver.begin(axis)
+    }
+
+    /// The swipe numbered `number` is the one running.
+    func isRunning(_ number: Int) -> Bool {
+        return isActive && swipeNumber == number
     }
 
     /// Cumulative progress; positive = towards the next Space.
