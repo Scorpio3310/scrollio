@@ -49,6 +49,22 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
 - A row says when its button is also a scroll key, or when another app (Logi Options+)
   may take it over.
 - Removing a button or an app can be undone (Edit › Undo).
+- Buttons for one app: an app's page in Apps (add the app there, or open it in the list)
+  has three parts, chosen at its top: Scrolling, Buttons and Shortcut Ring; the page
+  opens on the part you looked at last, for any app. In Buttons the app holds only the
+  buttons that do something else in it, and every other button does what the Buttons
+  pane says (as Logi Options+ does it). + offers the buttons of your mouse, "Record a
+  Button or Key…" and the buttons the Buttons pane gives an action; a new row starts
+  with the action it has everywhere, and the line under it says what that is. "Default"
+  lets the button do what it does by itself in that app. − gives the button back to the
+  Buttons pane. These rows count while the app is in front (the app in front, not the
+  one under the pointer: the actions go to it); while Scrollio's own Settings are in
+  front, every button does what Buttons says. What opens the Shortcut Ring and what runs
+  Gesture Navigation are the same in every app: they are not offered there. A Logitech
+  button that no binding of the Buttons pane uses is taken from the mouse only while an
+  app that gives it an action is in front, and is the mouse's own again in every other
+  app. In the list of apps, small marks say what an app has of its own (scrolling
+  settings, buttons, a ring); a click on one opens the page on that part.
 
 ## Mouse gestures
 
@@ -108,7 +124,7 @@ nothing opens the ring until you do. The pane also sets what the eight places ho
   desktops on the left and right, Copy and Paste beside Apps, and a screenshot of a
   selection and Show Desktop beside Mission Control.
 - An app can have a ring of its own. Its page in Apps (add the app there, or open it
-  in the list) ends with "Shortcut Ring". "Use the general ring" is on for every app;
+  in the list) has a "Shortcut Ring" part. "Use the general ring" is on for every app;
   turn it off and the app gets eight places of its own, which start as a copy of the
   ring as it is at that moment and are set like the pane's. That ring opens while the
   app is in front (the app in front, not the one under the pointer: the shortcuts go to
@@ -237,7 +253,7 @@ move to another Mac, to keep a copy, or to pass a setup on.
 - "Export…" writes one JSON file ("Scrollio Settings 2026-11-12.json") that any text
   editor opens. It holds what you set in Scrollio's panes: the scroll settings and the
   thumb wheel, the buttons and keys with their actions, the gestures, what the
-  Shortcut Ring holds, the apps with their own settings (an app's own ring among them) and "Change scrolling only in these apps", the Logitech values, and
+  Shortcut Ring holds, the apps with their own settings (an app's own buttons and ring among them) and "Change scrolling only in these apps", the Logitech values, and
   "Show in menu bar".
 - It does not hold, and an import never changes: "Let Scrollio manage this mouse" (it
   stays as it is on each Mac: the Logitech values of a file are imported, but they are
