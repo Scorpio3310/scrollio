@@ -550,4 +550,38 @@ final class ApplicationButtonsTests: XCTestCase {
         LogiUsageBootstrap.refreshButtonUsage(front: scrollio)
         XCTAssertFalse(LogiCenter.shared.usages(of: gestureButton).contains(.buttonBinding), "Scrollio in front: Buttons")
     }
+
+    /// A Logitech button that is down when another app comes to the front stays with
+    /// Scrollio until it is up (Safari's own action on it ran at the press, and brought
+    /// TextEdit forward): only then is it given back to the mouse.
+    func testALogitechButtonDownWhileAnotherAppComesForwardIsGivenBackOnlyWhenItIsUp() {
+        let gestureButton: UInt16 = 1000
+        set(general: [], safari: [binding(gestureButton, "copy")])
+        let savedFront = LogiUsageBootstrap.frontApplication
+        LogiUsageBootstrap.frontApplication = { Self.textEdit }
+        defer {
+            LogiUsageBootstrap.frontApplication = savedFront
+            Options.shared.application.applications = Self.makeStore([])
+            LogiUsageBootstrap.refreshButtonUsage(front: nil)
+        }
+        let bridge = LogiIntegrationBridge.shared
+        let down = InputEvent(type: .mouse, code: gestureButton, modifiers: [], phase: .down, source: .hidPP, device: nil)
+        let up = InputEvent(type: .mouse, code: gestureButton, modifiers: [], phase: .up, source: .hidPP, device: nil)
+        LogiUsageBootstrap.refreshButtonUsage(front: Self.safari)
+
+        front = Self.safari
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(down), .consumed)
+        XCTAssertEqual(executed.map(\.0), [shortcut(SystemShortcut.copy).code])
+        LogiUsageBootstrap.refreshButtonUsage(front: Self.textEdit)
+        XCTAssertTrue(LogiCenter.shared.usages(of: gestureButton).contains(.buttonBinding), "still down: still Scrollio's")
+        LogiUsageBootstrap.refreshButtonUsage(front: Self.textEdit)
+        XCTAssertTrue(LogiCenter.shared.usages(of: gestureButton).contains(.buttonBinding))
+
+        front = Self.textEdit
+        _ = bridge.dispatchLogiButtonEvent(up)
+        let drained = expectation(description: "main queue drained")
+        DispatchQueue.main.async { drained.fulfill() }
+        wait(for: [drained], timeout: 1)
+        XCTAssertFalse(LogiCenter.shared.usages(of: gestureButton).contains(.buttonBinding), "up: given back to the mouse")
+    }
 }
