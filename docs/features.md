@@ -265,22 +265,32 @@ the eight places hold.
 
 The sideways wheel (an MX Master's thumb wheel, or a wheel that tilts) has its own
 settings, under Scrolling › Thumb wheel and, with an MX Master, in the Thumb wheel row of
-the Buttons pane. They apply to every app, unless an app has an action of its own for the
+the Buttons pane. They apply to every app, unless an app has settings of its own for the
 wheel.
 
 - Action: Scroll Sideways (the default), Zoom, Switch Tabs, Switch Desktops, Back and
   Forward, or Volume.
 - Speed, and Swap direction.
-- An app can have an action of its own for the wheel. On its page in Apps, "+" of the
-  Buttons part offers "Thumb wheel" while the connected mouse has one (an MX Master 4, 3
-  or 3S); the new row starts with what the wheel does everywhere, and its menu sets what
-  it does while the app is in front (the app in front, not the one under the pointer: the
-  keys of Zoom, Switch Tabs and Back and Forward go to it). A turn keeps its action until
-  the wheel rests, whatever comes to the front meanwhile. While Scrollio's own Settings
-  are in front, the wheel does what Buttons says. Speed and Swap direction are the same
-  for every app, but an app's action runs at the default speed when it is of the other
-  kind than what the wheel does everywhere (scrolling against steps). "−" gives the wheel
-  back to Buttons; Edit › Undo takes it again.
+- An app can have all three of its own, on its page in Apps, where the wheel is the
+  same as in the panes: the Scrolling part has the Thumb wheel box, and the Buttons part
+  a Thumb wheel row whose action is the box's action. Its settings count while the app
+  is in front (not the one under the pointer: the keys of Zoom, Switch Tabs and Back and
+  Forward go to it); a turn keeps them until the wheel rests, whatever comes to the
+  front meanwhile. While Scrollio's own Settings are in front, the wheel does what the
+  panes say.
+- Speed and Swap direction are scroll settings of the app: they are its own while "Use
+  settings from Scrolling" is off on its page (they start as what the wheel did in the
+  app at that moment, and stay for later while the switch is on), and dimmed while it is
+  on. An app whose own settings date from before keeps the speed and direction of
+  Scrolling › Thumb wheel until you change them on its page.
+- The action is the app's own whatever that switch says: choose it in the Scrolling
+  part's box, or with "+" of the Buttons part, which offers "Thumb wheel" while the
+  connected mouse has one (an MX Master 4, 3 or 3S). The new row starts with what the
+  wheel does everywhere. Without a speed of its own, an app's action runs at the default
+  speed when it is of the other kind than what the wheel does everywhere (scrolling
+  against steps). "−" gives the action back to Buttons; Edit › Undo takes it again.
+- "Reset to Defaults" of the app's Scrolling part gives the wheel 1× and no swap there
+  and the action of every app again; that of its Buttons part takes the action away.
 
 ## Logitech MX mice
 

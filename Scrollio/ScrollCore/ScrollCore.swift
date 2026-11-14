@@ -174,9 +174,10 @@ class ScrollCore: ScrollActionPort {
                 timestamp: event.timestamp
             )
             : nil
-        // The function is its turn's: the own function of the app in front at the turn's
-        // first event, else the general one; kept until the wheel rests (a comparison per
-        // event, a look at the list per turn: `ThumbWheelEngine.settings(for:general:)`).
+        // The function, the speed and the swap are its turn's: what the app in front at the
+        // turn's first event has of its own, else the general ones; kept until the wheel
+        // rests (a comparison per event, a look at the list per turn:
+        // `ThumbWheelEngine.settings(for:general:)`).
         if let thumbWheelEvent = thumbWheelEvent {
             thumbWheel = ScrollCore.shared.thumbWheelEngine.settings(for: thumbWheelEvent, general: thumbWheel)
         }

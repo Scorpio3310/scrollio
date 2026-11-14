@@ -1123,9 +1123,12 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(Options.shared.thumbWheel, changed)
     }
 
-    /// An app's page has no thumb wheel: its reset and its Undo leave the thumb wheel
-    /// alone, and the thumb wheel's settings do not make the app's reset available.
-    func testAnAppsPageLeavesTheThumbWheelAlone() {
+    /// An app's page edits the app's own thumb wheel, never the general one: its reset gives
+    /// the app 1× and no swap and takes its own action away, its Undo brings back what the
+    /// app had (here: nothing of its own, so the general values run again); the general
+    /// thumb wheel is not touched by either. The speed a turn runs with in the app counts
+    /// for the reset button, as the values on the tab do.
+    func testAnAppsPageResetsTheAppsThumbWheelAndLeavesTheGeneralOneAlone() {
         let changed = ThumbWheelSettings(function: .zoom, speed: 0.5, swapsDirection: true)
         Options.shared.thumbWheel = changed
         let application = makeApplication(inherit: false)
@@ -1133,24 +1136,35 @@ final class PreferencesScrollingTests: XCTestCase {
         undo.groupsByEvent = false
         let controller = makeController(target: application, advanced: true)
         controller.paneUndoManager = undo
-        XCTAssertTrue(controller.thumbWheelSection.isHidden)
-        XCTAssertFalse(controller.hasSettingsToReset, "the app's own options are the defaults")
-        XCTAssertFalse(controller.resetToDefaultsButton.isEnabled)
+        XCTAssertFalse(controller.thumbWheelSection.isHiddenOrHasHiddenAncestor)
+        XCTAssertEqual(controller.thumbWheelSpeedSlider.doubleValue, 0.5, accuracy: 1e-9, "the general speed runs there")
+        XCTAssertTrue(controller.hasSettingsToReset, "1× and no swap are the defaults")
+        XCTAssertTrue(controller.resetToDefaultsButton.isEnabled)
 
         application.scroll.speed = 4.5
+        application.setOwnThumbWheelFunction(.volume)
         controller.syncViewWithOptions()
         undo.beginUndoGrouping()
         send(controller.resetToDefaultsButton)
         undo.endUndoGrouping()
         XCTAssertEqual(application.scroll, OPTIONS_SCROLL_DEFAULT())
+        XCTAssertEqual(application.scroll.thumbWheel, ApplicationThumbWheelScrolling(speed: 1, swapsDirection: false))
+        XCTAssertNil(application.thumbWheel, "the action is the general one again")
+        XCTAssertEqual(application.thumbWheelThatRuns(general: changed), ThumbWheelSettings(function: .zoom, speed: 1))
         XCTAssertEqual(Options.shared.thumbWheel, changed, "not the app's")
+        XCTAssertFalse(controller.hasSettingsToReset)
         undo.undo()
         XCTAssertEqual(application.scroll.speed, 4.5)
+        XCTAssertNil(application.scroll.thumbWheel)
+        XCTAssertEqual(application.ownThumbWheelFunction, .volume)
         XCTAssertEqual(Options.shared.thumbWheel, changed)
+        undo.redo()
+        XCTAssertNil(application.thumbWheel)
+        XCTAssertEqual(application.scroll.thumbWheel?.speed, 1)
 
-        // A change from elsewhere keeps the group hidden on the page.
+        // A change from elsewhere shows on the page; the section stays.
         Options.shared.thumbWheel = .default
-        XCTAssertTrue(controller.thumbWheelSection.isHidden)
+        XCTAssertFalse(controller.thumbWheelSection.isHidden)
     }
 
     /// A reset with the thumb wheel at its defaults writes the scroll options only: the
@@ -1694,38 +1708,38 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertTrue(controller.hasSettingsToReset)
     }
 
-    func testThePerAppViewHasNoPreviewAndNoThumbWheel() {
+    /// The page has no preview, and the thumb wheel's box in the same place as the tab,
+    /// with a line of its own under it: the action is the app's Buttons part's, the speed
+    /// and the direction follow "Use settings from Scrolling".
+    func testThePerAppViewHasNoPreviewAndItsOwnThumbWheel() {
         let global = makeController()
         let perApp = makeController(target: makeApplication(inherit: false))
         XCTAssertFalse(global.previewView.isHidden)
         XCTAssertTrue(perApp.previewView.isHidden)
-        XCTAssertFalse(global.thumbWheelSection.isHiddenOrHasHiddenAncestor)
-        XCTAssertFalse(global.thumbWheelNote.isHiddenOrHasHiddenAncestor)
-        XCTAssertTrue(perApp.thumbWheelSection.isHidden, "the thumb wheel has no settings of an app's own")
-        XCTAssertTrue(perApp.thumbWheelNote.isHiddenOrHasHiddenAncestor)
+        for controller in [global, perApp] {
+            XCTAssertFalse(controller.thumbWheelSection.isHiddenOrHasHiddenAncestor)
+            XCTAssertFalse(controller.thumbWheelNote.isHiddenOrHasHiddenAncestor)
+            XCTAssertTrue(controller.sections[1] === controller.thumbWheelSection, "under the main box")
+        }
+        XCTAssertEqual(global.thumbWheelNote.stringValue, "For the sideways wheel: an MX Master's thumb wheel, or a wheel that tilts.")
+        XCTAssertEqual(perApp.thumbWheelNote.stringValue,
+                       "The action is shared with this app's Buttons part and does not follow “Use settings from Scrolling”; speed and direction do.")
+        XCTAssertEqual(perApp.thumbWheelSection.accessibilityHelp(), perApp.thumbWheelNote.stringValue)
         global.view.layoutSubtreeIfNeeded()
-        let thumbWheel = global.thumbWheelSection.frame.height
-        let note = global.thumbWheelNote.superview?.frame.height ?? 0
-        XCTAssertGreaterThan(thumbWheel, 100)
-        XCTAssertGreaterThan(note, 10)
-        // Without the thumb wheel the keys and "Advanced" are a box's gap apart, as they
-        // were before the group existed.
+        perApp.view.layoutSubtreeIfNeeded()
+        // The line fits two lines of the box (the tab's takes one).
+        let oneLine = global.thumbWheelNote.fittingSize.height
+        XCTAssertGreaterThan(oneLine, 10)
+        XCTAssertLessThanOrEqual(perApp.thumbWheelNote.fittingSize.height, 2 * oneLine + 0.5)
+        // Shorter by the preview only (and the line's difference).
+        let noteDifference = (global.thumbWheelNote.superview?.fittingSize.height ?? 0)
+            - (perApp.thumbWheelNote.superview?.fittingSize.height ?? 0)
         XCTAssertEqual(
             global.view.fittingSize.height - perApp.view.fittingSize.height,
-            ScrollPreviewView.preferredHeight + PreferencesGroupedForm.boxSpacing
-                + PreferencesGroupedForm.sectionSpacing + thumbWheel + PreferencesGroupedForm.noteSpacing + note,
+            ScrollPreviewView.preferredHeight + PreferencesGroupedForm.boxSpacing + noteDifference,
             accuracy: 0.5,
-            "shorter by the preview, the thumb wheel and their spaces"
+            "shorter by the preview and its space"
         )
-        // On the page the keys' title sits a section's gap under the main box and "Advanced"
-        // a box's gap under the keys, as before the thumb wheel existed.
-        perApp.view.layoutSubtreeIfNeeded()
-        let basic = perApp.view.convert(perApp.sections[0].box.frame, from: perApp.sections[0])
-        let keysTitle = perApp.view.convert(perApp.keysSection.titleLabel!.frame, from: perApp.keysSection)
-        let keys = perApp.view.convert(perApp.keysSection.box.frame, from: perApp.keysSection)
-        let advanced = perApp.view.convert(perApp.advancedSection.box.frame, from: perApp.advancedSection)
-        XCTAssertEqual(basic.minY - keysTitle.maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 0.5)
-        XCTAssertEqual(keys.minY - advanced.maxY, PreferencesGroupedForm.boxSpacing, accuracy: 0.5)
     }
 
     func testAnAppsPageEmbedsTheTabWithItsApplication() throws {

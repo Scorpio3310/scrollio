@@ -253,8 +253,8 @@ enum ScrollSystemLog {
         var function: ThumbWheelFunction
         var speed: Double
         var swapsDirection: Bool
-        /// The function is the own one of the app in front (`ThumbWheelTurn`); the line never
-        /// names the app.
+        /// The settings are the app in front's own (its function, or its speed and swap:
+        /// `ThumbWheelTurn`); the line never names the app.
         var isAppsOwn = false
         /// The events' own times of the first and the last event (the line's duration, gaps).
         var startedAt: TimeInterval

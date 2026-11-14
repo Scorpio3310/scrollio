@@ -125,7 +125,10 @@ struct ApplicationPagePart: Equatable {
 
 /// "Use settings from Scrolling" and, under it, the Scrolling settings editing the app's
 /// own options (PreferencesScrollingViewController with a target application: no preview,
-/// dimmed while the app uses the Scrolling settings, its own "Reset to Defaults").
+/// dimmed while the app uses the Scrolling settings, its own "Reset to Defaults"). Their
+/// "Thumb wheel" box has the app's own speed and swap (scroll values like the others) and
+/// its own action, which is the thumb wheel's row of the Buttons part and stays live while
+/// the switch is on.
 final class ApplicationScrollingPartViewController: NSViewController, ApplicationPagePartController, PreferencesScrollingContainer {
 
     enum Identifier {
@@ -137,6 +140,12 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
     var onHeightChange: (() -> Void)?
     /// "Use settings from Scrolling" was switched (the list says which apps have their own).
     var onInheritChange: (() -> Void)?
+    /// The app's own thumb wheel function changed in these settings (its action, a reset or
+    /// the reset's Undo): the Buttons part and the list show it. Handed on to the settings
+    /// as it is, so that an Undo after the page closed still reaches the list.
+    var onOwnThumbWheelChange: (() -> Void)? {
+        didSet { scrollingController?.onApplicationThumbWheelChange = onOwnThumbWheelChange }
+    }
 
     private(set) var inheritRow: PreferencesSwitchRow!
     private(set) var inheritSection: PreferencesGroupSection!
@@ -177,6 +186,7 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
         let scrolling = PreferencesScrollingViewController()
         scrolling.uiStateDefaults = uiStateDefaults
         scrolling.currentTargetApplication = application
+        scrolling.onApplicationThumbWheelChange = onOwnThumbWheelChange
         addChild(scrolling)
         scrollingController = scrolling
         let settings = scrolling.view
@@ -216,9 +226,13 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
 
     /// On: the app follows the Scrolling pane; its own options stay stored for later.
     /// Off: the app's own options, which start as a copy of the Scrolling settings when
-    /// they were never edited (so switching off changes nothing until the user does).
+    /// they were never edited, and the thumb wheel's speed and swap as the wheel runs with
+    /// them now when the app has none yet (so switching off changes nothing until the user
+    /// does).
     @objc func inheritClick(_ sender: NSSwitch) {
-        application.setUsesScrollingSettings(sender.state == .on, scrolling: Options.shared.scroll)
+        application.setUsesScrollingSettings(
+            sender.state == .on, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel
+        )
         syncViewWithOptions()
         onInheritChange?()
     }

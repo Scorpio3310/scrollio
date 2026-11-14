@@ -20,7 +20,10 @@
 - Per app (the Apps pane): an app uses the Scrolling settings or keeps its own. "Change
   scrolling only in these apps" leaves every other app to macOS; buttons and gestures
   still work everywhere. "Smooth Scrolling in …" in the menu bar menu turns smoothing on
-  or off for the app in front. An app's page there also holds the app's own buttons
+  or off for the app in front. An app's own settings include the thumb wheel's speed and
+  direction, and its action ([Thumb wheel](features.md#thumb-wheel)); the two switches
+  under "Trackpad-style scrolling" stay those of every app, and apply where an app's own
+  switch is on. An app's page there also holds the app's own buttons
   ([Buttons and keys](features.md#buttons-and-keys)), its own gestures
   ([Mouse gestures](features.md#mouse-gestures)) and its own
   [Shortcut Ring](features.md#shortcut-ring), if you give it them. While "Change

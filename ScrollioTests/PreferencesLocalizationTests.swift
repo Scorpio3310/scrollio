@@ -160,6 +160,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-buttons-undo-reset",
         "apps-detail-ring-suggested-reset",
         "apps-detail-ring-suggested-reset-empty-one", "apps-detail-ring-suggested-reset-empty-other",
+        "apps-detail-thumb-wheel-note",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).

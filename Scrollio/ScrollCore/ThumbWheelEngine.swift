@@ -121,34 +121,33 @@ struct ThumbWheelActionPerformer {
 }
 
 /// One turn of the thumb wheel: its events until the wheel rests (`ThumbWheelTuning.turnRest`,
-/// by the events' own times). It runs the function of the app that was in front at its
-/// first event (an app's own, `ThumbWheelChoice`), whatever comes to the front meanwhile:
-/// a turn that switches desktops brings another app forward, and its next stroke still
-/// switches desktops.
+/// by the events' own times). It runs with what the app that was in front at its first
+/// event has of its own (its function, and while its own Scrolling settings are in use its
+/// speed and swap: `ThumbWheelChoice`), whatever comes to the front meanwhile: a turn that
+/// switches desktops brings another app forward, and its next stroke still switches
+/// desktops at the same pace.
 struct ThumbWheelTurn: Equatable {
-    /// The own function of the app in front at the first event; nil: the general function,
-    /// read at every event (a change of it counts at once, as it always did).
-    let ownFunction: ThumbWheelFunction?
+    /// What the app in front at the first event has of its own; nil: nothing. What is not
+    /// the app's own is the general setting, read at every event (a change of it counts at
+    /// once, as it always did).
+    let own: ThumbWheelOwn?
     /// The last event's own time.
     var lastEventAt: TimeInterval
+
+    /// The own function of the app in front at the first event; nil: the general one.
+    var ownFunction: ThumbWheelFunction? {
+        return own?.function
+    }
 
     /// The wheel has rested before an event at `time`: the turn is over.
     func hasRested(at time: TimeInterval) -> Bool {
         return time >= lastEventAt + ThumbWheelTuning.turnRest
     }
 
-    /// The settings an event of the turn goes by: `general` with the app's function in it.
-    /// The general Speed is set for the general function: how far the wheel scrolls, or how
-    /// soon the next step comes. An app's function of the other kind runs at the default
-    /// speed; Swap direction is the hand's and stays as set.
+    /// The settings an event of the turn goes by: `general` with what is the app's own in
+    /// it (`ThumbWheelOwn.settings`).
     func settings(general: ThumbWheelSettings) -> ThumbWheelSettings {
-        guard let ownFunction, ownFunction != general.function else { return general }
-        var settings = general
-        settings.function = ownFunction
-        if (ownFunction == .scroll) != (general.function == .scroll) {
-            settings.speed = ThumbWheelSettings.defaultSpeed
-        }
-        return settings
+        return own?.settings(general: general) ?? general
     }
 }
 
@@ -219,11 +218,12 @@ final class ThumbWheelEngine {
     }
 
     /// The settings a sideways wheel event goes by, in the scroll tap's callback, before
-    /// `handle`: `general` with the function of the event's turn. The turn's first event (the
-    /// first ever, or one after the wheel rested) decides whose function it is: the app in
-    /// front's own, else the general one (`ThumbWheelChoice`: the list looked at, the app in
-    /// front read only while some app has a function of its own; nothing on disk, no Launch
-    /// Services). Every later event of the turn keeps it: one comparison of times.
+    /// `handle`: `general` with what the event's turn has of an app's own. The turn's first
+    /// event (the first ever, or one after the wheel rested) decides whose they are: the app
+    /// in front's own function, speed and swap, else the general ones (`ThumbWheelChoice`:
+    /// the list looked at, the app in front read only while some app has something of its
+    /// own; nothing on disk, no Launch Services). Every later event of the turn keeps them:
+    /// one comparison of times.
     func settings(for event: ThumbWheelEvent, general: ThumbWheelSettings) -> ThumbWheelSettings {
         let time = event.timestamp == 0 ? clock() : Double(event.timestamp) * secondsPerTimestampUnit
         let current: ThumbWheelTurn
@@ -231,8 +231,8 @@ final class ThumbWheelEngine {
             open.lastEventAt = time
             current = open
         } else {
-            let own = ThumbWheelChoice.ownFunction(front: frontApplication, applications: Options.shared.application.applications)
-            current = ThumbWheelTurn(ownFunction: own, lastEventAt: time)
+            let own = ThumbWheelChoice.own(front: frontApplication, applications: Options.shared.application.applications)
+            current = ThumbWheelTurn(own: own, lastEventAt: time)
         }
         turn = current
         return current.settings(general: general)
@@ -339,8 +339,8 @@ final class ThumbWheelEngine {
         if roll == nil {
             nextRollID &+= 1
             roll = Roll(id: nextRollID, settings: settings, at: time, seenAt: seenAt)
-            // (The log says when it was an app's own function, never which app.)
-            roll?.isAppsOwn = turn?.ownFunction != nil
+            // (The log says when the settings were an app's own, never which app.)
+            roll?.isAppsOwn = turn?.own != nil
         }
         roll?.add(event, travel: travel, at: time, seenAt: seenAt)
         if !checkScheduled {
