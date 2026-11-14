@@ -29,6 +29,12 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   one place of a ring, or that one direction of a gesture), not to the keys: the same
   keys can be called something else elsewhere. A name is one line of at most 24
   characters.
+- Going back to version 1.0.5 keeps the recorded keys, but 1.0.5 knows nothing of names
+  and icons, of an app's own gestures or of an app's own ring. It drops the names and
+  icons the first time it saves the buttons, the ring or the gestures (a change in that
+  pane, or an import), and every app's own gestures and ring the first time it saves the
+  list of apps (a change in the Apps pane, or "Smooth Scrolling in …" in the menu bar
+  menu). Coming back to this version does not bring them back.
 - A drawing of the mouse lights the button each row is about. The MX Master 4, the MX
   Master 3 and 3S, the MX Anywhere 3 and 3S and the MX Vertical each have a drawing of
   their own, from above and from their thumb side, where the side buttons are (on an MX
@@ -69,6 +75,11 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   app that gives it an action is in front, and is the mouse's own again in every other
   app. In the list of apps, small marks say what an app has of its own (scrolling
   settings, buttons, gestures, a ring); a click on one opens the page on that part.
+  While "Change scrolling only in these apps" is on, every app on the list has its
+  scrolling changed, also one you added only for its buttons, gestures or ring, and its
+  page says so under the app's box: to leave its scrolling to macOS, turn off "Use
+  settings from Scrolling" on its page and, in its own settings, "Smooth scrolling" and
+  "Reverse wheel direction".
 
 ## Mouse gestures
 
@@ -80,7 +91,7 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   sends it; the recorder takes what a place takes (a key combination, or the Back or
   Forward button, which is the Back or Forward click). The preview shows its icon, or
   else its keys. Version 1.0.5 and older shows such a direction as "No Action" and runs
-  nothing for it.
+  nothing for it (what going back to 1.0.5 drops: [Buttons and keys](#buttons-and-keys)).
 - Two modes: "One action per hold", and "Follow the hand", in which moving sideways
   slides the desktops with your hand, like a trackpad swipe. "Follow the hand" uses a
   private macOS interface; where it is missing, the mode is not available.
@@ -97,7 +108,9 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   The button to hold, the mode, the swipe speed, "Freeze pointer" and what a Logitech
   mouse does are the same for every app; in "Follow the hand" Left and Right on the
   app's page say so, as in the pane. Turn the switch on again and the app's gestures are
-  kept for later.
+  kept for later. An app added for its gestures has its scrolling changed too while
+  "Change scrolling only in these apps" is on, as one added for its buttons (see
+  [Buttons and keys](#buttons-and-keys)).
 - With a Logitech MX Master, the mouse can track the gesture itself (Beta), and an MX
   Master 4 can pulse when a gesture locks in.
 - "Reset to Defaults" at the bottom of the Gestures pane puts every gesture setting back
@@ -153,11 +166,11 @@ nothing opens the ring until you do. The pane also sets what the eight places ho
   app is in front (the app in front, not the one under the pointer: the shortcuts go to
   it); while Scrollio's own Settings are in front, the general ring opens. The ring that
   opened stays until it closes. The button or key that opens the ring and "Freeze
-  pointer while the ring is held" are the same for every app. Turn the switch on again
-  and the app's ring is kept for later. While "Change scrolling only in these apps" is
-  on, every app on the list has its scrolling changed, also one you added only for its
-  ring: to leave its scrolling to macOS, turn off "Use settings from Scrolling" on its
-  page and, in its own settings, "Smooth scrolling" and "Reverse wheel direction".
+  pointer while the ring is held" are the same for every app; while nothing opens the
+  ring, the app's page says so. Turn the switch on again and the app's ring is kept for
+  later. An app added for its ring has its scrolling changed too while "Change
+  scrolling only in these apps" is on, as one added for its buttons (see
+  [Buttons and keys](#buttons-and-keys)).
 - "Reset to Defaults" at the bottom of the Shortcut Ring pane puts that new ring back:
   its eight places, and "Freeze pointer while the ring is held" off. The button or key
   that opens the ring stays as it is. The reset can be taken back: for a few seconds
@@ -290,12 +303,15 @@ move to another Mac, to keep a copy, or to pass a setup on.
 - "Import…" reads a file and shows what it holds before anything changes: which
   settings, how many apps, and every button and key with what it will do, in the words
   of the Buttons pane, with the gesture directions and the places of the Shortcut Ring
-  (and of each app's own gestures and ring) whose action is not the default one. A recorded keyboard
+  (and of each app's own gestures and ring) whose action is not the default one; an
+  app's own gestures in use with only the default actions, or with left and right
+  swapped, have a line too. What is an app's own is named with the app (by its file,
+  where it runs). A recorded keyboard
   shortcut that the file gives a name is listed by its keys, with the name after them. For buttons, keys and places of a ring that open an app or a file,
   or run a script, a box of its own lists each one's whole path and arguments. Read those lists when the file is not
   your own: an action starts at a press of its button. Unless the file gives no button
-  or key an action and leaves the gestures and every ring as they are by default, Return
-  presses "Cancel". Importing itself starts nothing.
+  or key an action and leaves the gestures (an app's own left and right too) and every
+  ring as they are by default, Return presses "Cancel". Importing itself starts nothing.
 - An import replaces the kinds of settings the file holds and leaves the others as they
   are; a file made by "Export…" holds them all. (A file from a version before the
   Shortcut Ring leaves your ring as it is.) The new settings are in effect at once.
