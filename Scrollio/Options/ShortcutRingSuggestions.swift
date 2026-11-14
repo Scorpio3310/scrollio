@@ -130,6 +130,13 @@ struct ShortcutRingSuggestion: Equatable {
         })
     }
 
+    /// How many suggested places `places` (this suggestion's places on a layout) leaves
+    /// empty: the layout cannot type their keys and they have no alternative there.
+    /// (Places the suggestion leaves empty on purpose are not counted.)
+    func placesLeftEmpty(in places: [ShortcutRingPlace]) -> Int {
+        return zip(slots, places).filter { $0.place != nil && $1 == .empty }.count
+    }
+
     /// A suggested shortcut as a place: the listed action it is exactly (Undo, Copy …:
     /// the same name, symbol, US key and modifiers), sent with the layout's key when it
     /// runs; else the key combination that sends it on `layout`, named and with its

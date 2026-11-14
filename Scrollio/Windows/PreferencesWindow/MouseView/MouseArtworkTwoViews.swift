@@ -275,15 +275,17 @@ extension MouseArtworkPainter {
         return over
     }
 
-    /// Clips what is drawn next to the outside of `paths` (which do not overlap).
+    /// Clips what is drawn next to the outside of every path of `paths`. One clip per path
+    /// (clips intersect): the paths may overlap, and the thumb wheel lies inside its slot,
+    /// where one even-odd path of both would let what is drawn onto the wheel again.
     static func clip(outside paths: [NSBezierPath]) {
-        guard !paths.isEmpty else { return }
-        let clip = NSBezierPath(rect: MouseArtworkShapes.canvas.insetBy(dx: -40, dy: -40))
+        let outer = MouseArtworkShapes.canvas.insetBy(dx: -40, dy: -40)
         for path in paths {
+            let clip = NSBezierPath(rect: outer)
             clip.append(path)
+            clip.windingRule = .evenOdd
+            clip.addClip()
         }
-        clip.windingRule = .evenOdd
-        clip.addClip()
     }
 
     /// `part` in the accent colour with a glow, as the cards light it over the drawing. The

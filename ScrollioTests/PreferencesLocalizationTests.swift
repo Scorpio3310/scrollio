@@ -157,6 +157,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-trigger-only-in", "apps-buttons-note-thumb-wheel",
         "apps-detail-ring-suggested", "apps-detail-ring-use-suggested",
         "apps-detail-ring-suggested-in-use", "apps-detail-ring-suggested-offer",
+        "apps-detail-ring-suggested-in-use-empty-one", "apps-detail-ring-suggested-in-use-empty-other",
+        "apps-detail-ring-suggested-offer-empty-one", "apps-detail-ring-suggested-offer-empty-other",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).
@@ -334,6 +336,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-trigger-only-in": "@@",
         "apps-detail-ring-suggested-in-use": "@",
         "apps-detail-ring-suggested-offer": "@",
+        "apps-detail-ring-suggested-in-use-empty-other": "d",
+        "apps-detail-ring-suggested-offer-empty-other": "d",
         "apps-buttons-note-thumb-wheel": "@",
         // General pane
         "about-version": "@@",

@@ -8715,6 +8715,54 @@
           }
         }
       }
+    },
+    "apps-detail-ring-suggested-in-use-empty-one": {
+      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the ring holds them, when the keyboard layout in use cannot type the keys of one of the suggested places (they stay empty); fits two lines",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The ring started from them. 1 place stays empty: its keys can't be typed on this keyboard layout."
+          }
+        }
+      }
+    },
+    "apps-detail-ring-suggested-in-use-empty-other": {
+      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the ring holds them, when the keyboard layout in use cannot type the keys of several of the suggested places (they stay empty); %d is how many; fits two lines",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The ring started from them. %d places stay empty: their keys can't be typed on this keyboard layout."
+          }
+        }
+      }
+    },
+    "apps-detail-ring-suggested-offer-empty-one": {
+      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the ring holds something else, when the keyboard layout in use cannot type the keys of one of the suggested places (they stay empty); fits two lines",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fills the ring with them. 1 place stays empty: its keys can't be typed on this keyboard layout."
+          }
+        }
+      }
+    },
+    "apps-detail-ring-suggested-offer-empty-other": {
+      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the ring holds something else, when the keyboard layout in use cannot type the keys of several of the suggested places (they stay empty); %d is how many; fits two lines",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fills the ring with them. %d places stay empty: their keys can't be typed on this keyboard layout."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

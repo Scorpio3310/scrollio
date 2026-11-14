@@ -25,9 +25,13 @@ enum SuggestionFixtures {
     static let figmaPath = "/Applications/Figma.app"
     static let safariPath = "/Applications/Safari.app"
     static let calculatorPath = "/System/Applications/Calculator.app"
+    static let finderPath = "/System/Library/CoreServices/Finder.app"
+    static let lightroomPath = "/Applications/Adobe Lightroom Classic/Adobe Lightroom Classic.app"
 
     static let identifiers: [String: String] = [
         figmaPath: "com.figma.Desktop",
+        finderPath: "com.apple.finder",
+        lightroomPath: "com.adobe.LightroomClassicCC7",
         safariPath: "com.apple.Safari",
         "/Applications/Adobe Photoshop 2026/Adobe Photoshop 2026.app": "com.adobe.Photoshop",
         "/Applications/Microsoft Word.app": "com.microsoft.Word",
@@ -107,7 +111,9 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
                 }
             }
         }
-        XCTAssertEqual(empty, ["Mail ring-place-right", "Mail ring-place-bottom", "Mail ring-place-left"])
+        XCTAssertEqual(empty, [
+            "Mail ring-place-right", "Mail ring-place-bottom", "Mail ring-place-left", "Microsoft Outlook ring-place-bottom",
+        ])
         XCTAssertEqual(Set(identifiers).count, identifiers.count, "every bundle identifier names one app")
     }
 
@@ -161,15 +167,17 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
 
     /// Nothing destructive is suggested: no place that deletes what cannot be brought
     /// back, ends a call or quits; Excel's Delete Cells (where every other app zooms out)
-    /// gave way to the font size pair. The deletes left are each taken back by the app's
-    /// Undo or a bin, or asked about first.
+    /// gave way to the font size pair, and Outlook's Delete left that place empty, as
+    /// Mail's is: a flick down from habit would delete a message. The deletes left are
+    /// each taken back by the app's Undo or a bin, or asked about first, and none is on
+    /// the bottom place.
     func testNoPlaceIsDestructive() throws {
         let never: Set<String> = [
             "Delete Cells", "Insert Cells", "Leave Call", "Leave Meeting", "Delete Now", "Empty Trash", "Quit", "Force Quit",
             "Close Window",
         ]
         let recoverable: Set<String> = [
-            "Finder: Move to Trash", "Microsoft Outlook: Delete", "Photos: Delete",
+            "Finder: Move to Trash", "Photos: Delete",
             "Final Cut Pro: Ripple Delete", "Adobe Premiere Pro: Ripple Delete", "DaVinci Resolve: Ripple Delete",
         ]
         for app in catalog.apps {
@@ -178,9 +186,11 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
                 XCTAssertFalse(never.contains(place.name), what)
                 if place.name.contains("Delete") || place.name.contains("Trash") {
                     XCTAssertTrue(recoverable.contains(what), what)
+                    XCTAssertNotEqual(app.slots[4].place, place, "not where other apps zoom out: \(what)")
                 }
             }
         }
+        XCTAssertNil(try SuggestionFixtures.app("Microsoft Outlook").slots[4].place, "Outlook's bottom")
         let excel = try SuggestionFixtures.app("Microsoft Excel")
         XCTAssertEqual(excel.slots[0].place?.name, "Increase Font Size")
         XCTAssertEqual(excel.slots[4].place?.name, "Decrease Font Size")
@@ -324,19 +334,29 @@ final class ShortcutRingSuggestionKeysTests: XCTestCase {
         XCTAssertEqual(try SuggestionFixtures.app("Adobe Lightroom Classic").places(on: german)[7], .empty, "\\")
     }
 
-    /// On every QWERTZ layout the system has: a letter is the key that types it, and a
-    /// place whose character needs Option takes its alternative or stays empty; nothing
-    /// is sent with a key that types another character.
-    func testOnQWERTZLayoutsNoPlaceSendsAnotherCharacter() throws {
+    /// On QWERTZ and the other layouts where signs and digits sit elsewhere (Swiss, Polish,
+    /// Turkish F and Q, Hungarian, Kurdish): every place sends a key that types what the
+    /// shortcut has, never another character. A letter is the key that types it; a sign
+    /// or a digit is a key that types it (or its US Shift pair: ">" for ⇧⌘., "+" for
+    /// zoom's ⌘=) with the modifiers it is sent with; a place whose character the layout
+    /// types only with Option takes its alternative or stays empty; Option is never added.
+    /// (Zoom was sent with the US key where the layout has no "+", "=" or "-" under
+    /// Command alone: ⌘^ on Swiss, ⌘X, Cut, for Zoom Out on Turkish F.)
+    func testOnOtherLayoutsNoPlaceSendsAnotherCharacter() throws {
+        let ids = [
+            "German", "Slovenian", "SwissGerman", "SwissFrench", "Polish", "Turkish", "Turkish-QWERTY-PC",
+            "Hungarian", "Hungarian-QWERTY", "Kurdish-Kurmanji",
+        ].map { "com.apple.keylayout.\($0)" }
         var checked = 0
-        for id in ["com.apple.keylayout.German", "com.apple.keylayout.Slovenian", "com.apple.keylayout.SwissGerman"] {
+        for id in ids {
             guard let source = SuggestionFixtures.inputSource(id), let layout = KeyboardLayoutLayers.of(source) else { continue }
             checked += 1
             for app in catalog.apps {
                 for (slot, place) in zip(app.slots, app.places(on: layout)) {
                     guard let suggested = slot.place else { continue }
                     let what = "\(id) \(app.appName): \(suggested.name)"
-                    if ["[", "]", "\\"].contains(suggested.keys.character) {
+                    let character = suggested.keys.character
+                    guard suggested.keys.combination(on: layout) != nil else {
                         switch suggested.alternative {
                         case .listed(let shortcut)?: XCTAssertEqual(place, ShortcutRingPlace(shortcut), what)
                         case .keys?: XCTAssertNotEqual(place.action, "", what)
@@ -344,17 +364,48 @@ final class ShortcutRingSuggestionKeysTests: XCTestCase {
                         }
                         continue
                     }
-                    guard let key = ShortcutRingPlace.keyCombination(named: place.action) else { continue }
-                    if KeyCode.usLetterKeyCodes[suggested.keys.character] != nil {
-                        let layer = suggested.keys.modifiers.contains(.maskCommand) ? layout.command : layout.plain
-                        XCTAssertEqual(layer[key.code]?.lowercased(), suggested.keys.character, what)
+                    // (A listed action is sent with the layout's key when it runs; a named
+                    // key is the same key on every layout.)
+                    guard ShortcutRingSuggestion.Keys.namedKeys[character] == nil,
+                          let key = ShortcutRingPlace.keyCombination(named: place.action) else { continue }
+                    let sent = CGEventFlags(rawValue: key.modifiers)
+                    XCTAssertEqual(sent.contains(.maskAlternate), suggested.keys.modifiers.contains(.maskAlternate), "no Option added: \(what)")
+                    let withCommand = sent.contains(.maskCommand)
+                    if KeyCode.usLetterKeyCodes[character] != nil {
+                        XCTAssertEqual((withCommand ? layout.command : layout.plain)[key.code]?.lowercased(), character, what)
+                        continue
                     }
-                    XCTAssertEqual(key.modifiers & CGEventFlags.maskAlternate.rawValue,
-                                   suggested.keys.modifiers.rawValue & CGEventFlags.maskAlternate.rawValue, "no Option added: \(what)")
+                    // What the key types with the modifiers it is sent with (with Shift and
+                    // Command, as without Command: under Command many layouts drop Shift).
+                    let typed: [String?] = sent.contains(.maskShift)
+                        ? (withCommand ? [layout.commandShift[key.code], layout.shift[key.code]] : [layout.shift[key.code]])
+                        : [(withCommand ? layout.command : layout.plain)[key.code]]
+                    var wanted: Set<String> = [character]
+                    if let shifted = KeyboardLayoutLayers.usShifted[character] {
+                        if suggested.keys.modifiers.contains(.maskShift) { wanted = [shifted] }
+                        if suggested.keys.modifiers == .maskCommand, character == "=" { wanted.insert(shifted) }
+                    }
+                    XCTAssertTrue(typed.contains { $0.map(wanted.contains) == true },
+                                  "\(what): key \(key.code) types \(typed.compactMap { $0 }), not \(wanted.sorted())")
                 }
             }
         }
-        guard checked > 0 else { throw XCTSkip("no QWERTZ layout on this Mac") }
+        guard checked > 0 else { throw XCTSkip("none of these layouts is on this Mac") }
+        // The cases of the review: zoom with Shift added where "=" or "-" needs it, and
+        // Hungarian's "0", which is left of 1.
+        if let turkish = try? SuggestionFixtures.layout("com.apple.keylayout.Turkish") {
+            let figma = try SuggestionFixtures.app("Figma").places(on: turkish)
+            XCTAssertEqual(figma[4].action, custom(44, [.maskShift, .maskCommand]), "Zoom Out: \"-\" is Shift and the , key")
+        }
+        if let swiss = try? SuggestionFixtures.layout("com.apple.keylayout.SwissGerman") {
+            let figma = try SuggestionFixtures.app("Figma").places(on: swiss)
+            XCTAssertEqual(figma[0].action, custom(29, [.maskShift, .maskCommand]), "Zoom In: \"=\" is Shift-0")
+        }
+        if let hungarian = try? SuggestionFixtures.layout("com.apple.keylayout.Hungarian") {
+            let illustrator = try SuggestionFixtures.app("Adobe Illustrator").places(on: hungarian)
+            let fit = try XCTUnwrap(ShortcutRingPlace.keyCombination(named: illustrator[7].action))
+            XCTAssertEqual(hungarian.command[fit.code], "0", "Fit Artboard ⌘0")
+        }
     }
 
     /// A layout that types "." only with Shift (French AZERTY): ⌘. is sent as ⇧⌘ and the
@@ -526,6 +577,103 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         XCTAssertEqual(figma.ring?.places, figmaSuggestion)
     }
 
+    /// The Apps pane as the window makes it, with nothing shown on screen.
+    private func makePane() -> PreferencesApplicationViewController {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        let pane = storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.application) as! PreferencesApplicationViewController
+        pane.uiStateDefaults = TestDefaults.make(for: self)
+        pane.runningApplications = { [] }
+        pane.presentMenu = { _, _ in }
+        pane.chooseApplications = { _, _ in XCTFail("no open panel was expected") }
+        _ = pane.view
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: PreferencesWindowLayout.contentWidth, height: 600),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentViewController = pane
+        addTeardownBlock { window.close() }
+        return pane
+    }
+
+    /// "Use Suggested Shortcuts", then the app's page is closed and opened again (new
+    /// parts), then Edit › Undo and Redo: the page open now shows each change, in its
+    /// rows, its line and its button. (The part that registered the Undo is gone; the
+    /// pane says which part shows the app now, as for the Buttons part.)
+    func testUndoOfUseSuggestedShortcutsShowsOnThePageOpenedAgain() throws {
+        let figma = add(SuggestionFixtures.figmaPath, name: "Figma")
+        figma.setUsesGeneralRing(false, general: .default, suggested: nil)
+        let general = try XCTUnwrap(figma.ownRingPlaces)
+        let pane = makePane()
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        pane.openApplication(withID: SuggestionFixtures.figmaPath, part: .ring)
+        let first = try XCTUnwrap(pane.detailController?.ringPart)
+        first.paneUndoManager = undo
+        undo.beginUndoGrouping()
+        XCTAssertTrue(first.useSuggestedButton.sendAction(first.useSuggestedButton.action, to: first.useSuggestedButton.target))
+        undo.endUndoGrouping()
+        XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
+
+        pane.leaveSubpage()
+        pane.openApplication(withID: SuggestionFixtures.figmaPath, part: .ring)
+        let part = try XCTUnwrap(pane.detailController?.ringPart)
+        XCTAssertFalse(part === first)
+        func rows() throws -> [String?] {
+            return try XCTUnwrap(part.ringController).placePopUps.map { $0.menu?.items.first?.title }
+        }
+        let suggestedRows = try rows()
+        XCTAssertEqual(suggestedRows[0]?.hasPrefix("Zoom In"), true)
+        XCTAssertFalse(part.useSuggestedButton.isEnabled)
+
+        undo.undo()
+        XCTAssertEqual(figma.ownRingPlaces, general)
+        XCTAssertNotEqual(try rows(), suggestedRows, "the open page shows the ring that came back")
+        XCTAssertEqual(part.suggestionRow.explanation, "Fills all eight places with the shortcuts suggested for Figma.")
+        XCTAssertTrue(part.useSuggestedButton.isEnabled)
+
+        undo.redo()
+        XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
+        XCTAssertEqual(try rows(), suggestedRows)
+        XCTAssertEqual(part.suggestionRow.explanation, "The ring started from the shortcuts suggested for Figma.")
+        XCTAssertFalse(part.useSuggestedButton.isEnabled)
+    }
+
+    /// Where the layout cannot type some suggested keys (German: "[" "]" "\" need Option)
+    /// and those places stay empty, the row's line says how many, while the ring holds the
+    /// suggestion and while it offers it; on a layout that types them all it says nothing
+    /// of it.
+    func testTheRowSaysHowManyPlacesTheLayoutLeavesEmpty() throws {
+        let german = try SuggestionFixtures.layout("com.apple.keylayout.German")
+        ShortcutRingSuggestions.layout = { german }
+        let finder = add(SuggestionFixtures.finderPath, name: "Finder")
+        let part = part(for: finder)
+        turn(part, general: false)
+        XCTAssertEqual(finder.ownRingPlaces?.filter { $0 == .empty }.count, 2, "Back and Forward")
+        XCTAssertEqual(
+            part.suggestionRow.explanation,
+            "The ring started from them. 2 places stay empty: their keys can't be typed on this keyboard layout."
+        )
+        finder.ring?[0] = ShortcutRingPlace(SystemShortcut.copy)
+        part.syncViewWithOptions()
+        XCTAssertEqual(
+            part.suggestionRow.explanation,
+            "Fills the ring with them. 2 places stay empty: their keys can't be typed on this keyboard layout."
+        )
+
+        let lightroom = add(SuggestionFixtures.lightroomPath, name: "Adobe Lightroom Classic")
+        let one = self.part(for: lightroom)
+        turn(one, general: false)
+        XCTAssertEqual(
+            one.suggestionRow.explanation,
+            "The ring started from them. 1 place stays empty: its keys can't be typed on this keyboard layout."
+        )
+
+        ShortcutRingSuggestions.layout = { .us }
+        part.syncViewWithOptions()
+        XCTAssertEqual(part.suggestionRow.explanation, "Fills all eight places with the shortcuts suggested for Finder.")
+    }
+
     /// Without a suggestion the part is as before: no row, and the switch copies the
     /// general ring.
     func testAnAppWithoutASuggestionGetsACopyOfTheGeneralRingAndNoRow() {
@@ -566,7 +714,8 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         XCTAssertNil(figma.ring)
     }
 
-    /// The row's line fits two lines, also for an app with a long name.
+    /// The row's line fits two lines, also for an app with a long name, and when it says
+    /// how many places the layout leaves empty.
     func testTheSuggestionLineFitsTwoLines() throws {
         let long = add(SuggestionFixtures.figmaPath, name: "Adobe Lightroom Classic Long Edition")
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 900), styleMask: [.titled], backing: .buffered, defer: true)
@@ -581,11 +730,15 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         let font = PreferencesGroupedForm.explanationFont
         let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
         for holdsIt in [true, false] {
-            let text = ApplicationRingPartViewController.suggestionExplanation(holdsIt: holdsIt, name: long.displayName!)
-            let height = (text as NSString).boundingRect(
-                with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
-            ).height
-            XCTAssertLessThanOrEqual(height, twoLines, text)
+            for empty in [0, 1, 3] {
+                let text = ApplicationRingPartViewController.suggestionExplanation(
+                    holdsIt: holdsIt, name: long.displayName!, emptyPlaces: empty
+                )
+                let height = (text as NSString).boundingRect(
+                    with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
+                ).height
+                XCTAssertLessThanOrEqual(height, twoLines, text)
+            }
         }
     }
 

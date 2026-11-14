@@ -538,11 +538,16 @@ class PreferencesApplicationViewController: NSViewController {
         part?.remember(in: uiStateDefaults)
         detail.onBack = { [weak self] in self?.showList(focusList: true) }
         detail.onInheritChange = { [weak self] in self?.reloadRows() }
-        // An Undo of a removed button row shows on the page of its app that is open when it
-        // runs (the page that made it may be gone); the page then tells its new height.
+        // An Undo of a removed button row, or of "Use Suggested Shortcuts", shows on the
+        // page of its app that is open when it runs (the page that made it may be gone);
+        // the page then tells its new height.
         detail.buttonsPartShowing = { [weak self] entry in
             guard let open = self?.detailController, open.application === entry else { return nil }
             return open.buttonsPart
+        }
+        detail.ringPartShowing = { [weak self] entry in
+            guard let open = self?.detailController, open.application === entry else { return nil }
+            return open.ringPart
         }
         detail.onHeightChange = { [weak self] in self?.contentHeightDidChange() }
         addChild(detail)

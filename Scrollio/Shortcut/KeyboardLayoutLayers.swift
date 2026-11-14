@@ -96,8 +96,13 @@ struct KeyboardLayoutLayers: Equatable {
     ///
     /// - A letter: the key that types it, with Command held when the shortcut has Command
     ///   (`KeyboardLayoutKeys`); the US key when the layout has none.
-    /// - A digit: its own key (the same on every layout, as for the listed shortcuts).
-    /// - ⌘= and ⌘- (zoom): the keys `AppZoomKeys` finds, "+" before "=" without Shift.
+    /// - A digit: the key that types it without Shift (its US key where that types it;
+    ///   Hungarian's "0" is left of 1); its US key where no key does (AZERTY types the
+    ///   digits with Shift, and ⌘1 is the US key there, as for the listed shortcuts).
+    /// - ⌘= and ⌘- (zoom): the keys `AppZoomKeys` finds, "+" before "=" without Shift,
+    ///   where the layout has them under Command alone; else as any other sign (its
+    ///   fallback, the US key, types another character there: "^" on Swiss, "x" on
+    ///   Turkish F).
     /// - Any other sign: the key that types it (with Shift as said).
     func key(for character: String, modifiers: CGEventFlags) -> (code: CGKeyCode, modifiers: CGEventFlags)? {
         let withCommand = modifiers.contains(.maskCommand)
@@ -113,11 +118,18 @@ struct KeyboardLayoutLayers: Equatable {
             return (code, modifiers)
         }
         if let digit = Self.usDigitKeyCodes[character] {
-            return (digit, modifiers)
+            guard unshiftedLayer[digit] != character, let code = Self.key(typing: character, in: unshiftedLayer) else {
+                return (digit, modifiers)
+            }
+            return (code, modifiers)
         }
         if modifiers == .maskCommand, character == "=" || character == "-" {
             let zoom = AppZoomKeys.codes(typing: unshiftedLayer)
-            return (character == "=" ? zoom.zoomIn : zoom.zoomOut, modifiers)
+            let code = character == "=" ? zoom.zoomIn : zoom.zoomOut
+            let zooms: Set<String> = character == "=" ? ["+", "="] : ["-"]
+            if let typed = unshiftedLayer[code], zooms.contains(typed) {
+                return (code, modifiers)
+            }
         }
 
         var wanted = character
