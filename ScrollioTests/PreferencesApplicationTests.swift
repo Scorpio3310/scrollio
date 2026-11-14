@@ -1114,6 +1114,10 @@ final class PreferencesApplicationTests: XCTestCase {
         var general = ShortcutRingSettings.default
         general[1] = ShortcutRingPlace(SystemShortcut.undo)
         general[6] = .empty
+        // (A place opens an app: only such a ring keeps a face made at a quiet moment.)
+        general[4] = ShortcutRingPlace(openTarget: OpenTargetPayload(
+            path: "/System/Applications/TextEdit.app", bundleID: "com.apple.TextEdit", arguments: "", kind: .application
+        ))
         setGeneralRing(general)
         let calculator = application(Self.calculator, inherit: true)
         Options.shared.application.applications = Self.makeStore([calculator])

@@ -223,6 +223,24 @@ final class ShortcutRingControllerTests: XCTestCase {
         XCTAssertEqual(shown?.face.filled, Array(repeating: true, count: 8))
     }
 
+    /// Browsing app pages prepares the face of every ring shown. Rings that open nothing
+    /// need none (their face is whole without a look on disk) and never push out the face
+    /// of a ring that opens an app.
+    func testRingsThatOpenNothingNeverPushOutAFaceWithAnAppsIcon() {
+        var opens = ShortcutRingSettings.default
+        opens[4] = ShortcutRingPlace(openTarget: OpenTargetPayload(
+            path: "/System/Applications/Calculator.app", bundleID: "com.apple.calculator", arguments: "", kind: .application
+        ))
+        ShortcutRingController.prepare(ShortcutRingFace(opens, looksOnDisk: false), for: opens)
+        for index in 0..<(ShortcutRingController.preparedFaceLimit + 3) {
+            var ring = ShortcutRingSettings.default
+            ring[0] = ShortcutRingPlace(action: "custom::\(index):0")
+            ShortcutRingController.prepare(ShortcutRingFace(ring, looksOnDisk: false), for: ring)
+        }
+        XCTAssertNotNil(ShortcutRingController.preparedFace(for: opens))
+        XCTAssertEqual(ShortcutRingController.preparedFaces.count, 1)
+    }
+
     func testHoldMoveAndLetGoRunsThePlaceAfterTheRingIsGone() {
         controller.triggerPressed(by: RingHarness.button(.down))
         harness.runScheduled()

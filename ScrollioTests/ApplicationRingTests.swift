@@ -501,10 +501,13 @@ final class ShortcutRingPerAppControllerTests: XCTestCase {
         harness.ring.freezePointer = true
         XCTAssertNotNil(open(notesPath)?.image)
         XCTAssertEqual(harness.placesLookedUp, 1)
-        // Only a few faces are kept, the newest ones.
+        // Only a few faces are kept, the newest ones (of rings that open something: no
+        // other ring keeps one).
         for index in 0..<(ShortcutRingController.preparedFaceLimit + 3) {
             var ring = ShortcutRingSettings.default
-            ring[0] = ShortcutRingPlace(action: "custom::\(index):0")
+            ring[0] = ShortcutRingPlace(openTarget: OpenTargetPayload(
+                path: "/Applications/App \(index).app", bundleID: nil, arguments: "", kind: .application
+            ))
             ShortcutRingController.prepare(ShortcutRingFace(ring, looksOnDisk: false), for: ring)
         }
         XCTAssertEqual(ShortcutRingController.preparedFaces.count, ShortcutRingController.preparedFaceLimit)

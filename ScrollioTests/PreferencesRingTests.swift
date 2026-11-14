@@ -496,8 +496,8 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertTrue(Options.shared.ring.freezePointer)
         XCTAssertEqual(Options.shared.ring.places, ShortcutRingSettings.default.places, "the places stay")
         XCTAssertEqual(Options.shared.gesture.freezePointer, gestureFreeze, "Gestures keeps its own switch")
-        XCTAssertEqual(ShortcutRingController.preparedFace?.ring, Options.shared.ring,
-                       "the face kept for the ring on screen is the stored ring's")
+        XCTAssertNil(ShortcutRingController.preparedFace(for: Options.shared.ring),
+                     "a ring that opens nothing keeps no face: at a press it is whole without a look on disk")
         XCTAssertEqual((makeController().freezeToggle as? NSSwitch)?.state, .on, "a pane made later shows it")
 
         toggle.state = .off
@@ -1067,6 +1067,8 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(shownActions(controller)[3], "No Action")
         XCTAssertEqual((controller.freezeToggle as? NSSwitch)?.state, .on)
         XCTAssertTrue(controller.resetToDefaultsButton.isEnabled)
+        XCTAssertNotNil(ShortcutRingController.preparedFace(for: changedRing)?.places[4].image,
+                        "the pane made the face of a ring that opens an app, its icon in")
 
         send(controller.resetToDefaultsButton)
 
@@ -1090,7 +1092,8 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(controller.previewView.face.places.map(\.title), ShortcutRingFace(.default).places.map(\.title))
         XCTAssertEqual(controller.previewView.face.filled, Array(repeating: true, count: 8))
         XCTAssertNil(controller.previewView.face.places[4].image, "the app's icon is gone from the drawing")
-        XCTAssertEqual(ShortcutRingController.preparedFace?.ring, .default, "the ring on screen gets the same face")
+        XCTAssertNil(ShortcutRingController.preparedFace(for: .default),
+                     "the new ring opens nothing: no face is kept, at a press it is whole without a look on disk")
 
         // What opens the ring: as it was.
         XCTAssertEqual(Options.shared.buttons.binding, bindings)
