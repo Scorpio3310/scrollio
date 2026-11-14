@@ -496,7 +496,13 @@ final class ShortcutRingController {
         for (center, name, followsARun) in names {
             let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 guard let self, self.session.isOpen else { return }
-                if followsARun, self.environment.now() - self.lastRun < Self.quietAfterRun { return }
+                // The echo of what a place just did keeps the ring, unless the ring is no
+                // longer the one the app in front has: pressed again before that app came
+                // forward, it is the last app's, and its places are not for this one.
+                if followsARun, self.environment.now() - self.lastRun < Self.quietAfterRun,
+                   self.environment.choice(self.environment.ring()).ring == self.ring {
+                    return
+                }
                 self.cancel()
             }
             observers.append((center, token))
