@@ -65,6 +65,9 @@ class KeyPopover: NSObject, NSPopoverDelegate {
     /// What the popover's behaviour was before the chooser opened; nil: it is not open.
     private var behaviorBeforeChooser: NSPopover.Behavior?
     private var appResignObserver: NSObjectProtocol?
+    /// The keys are a place's of the Shortcut Ring: the line under the name says it shows
+    /// in the ring too. A button's or a direction's name shows only in Settings.
+    var labelShowsInRing = false
     /// "Record Again" was pressed.
     var onRecordAgain: (() -> Void)?
     /// The popover closed, in whatever way ("Done", a click elsewhere, Esc, `hide`). Told
@@ -133,7 +136,8 @@ class KeyPopover: NSObject, NSPopoverDelegate {
 
     /// 隐藏 popover
     func hide() {
-        labelEditor?.closeChooser()
+        // (The card is going away: its window is not made the key one again.)
+        labelEditor?.closeChooser(refocus: false)
         guard let closing = popover else { return }
         popover = nil
         // (Told here, not by the system: a popover that was never on screen closes
@@ -147,7 +151,7 @@ class KeyPopover: NSObject, NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         guard let closed = notification.object as? NSPopover, closed === popover else { return }
         popover = nil
-        labelEditor?.closeChooser()
+        labelEditor?.closeChooser(refocus: false)
         tellClosed()
     }
 
@@ -193,6 +197,8 @@ class KeyPopover: NSObject, NSPopoverDelegate {
         isShowingDetails = true
         waitingLabel?.isHidden = true
         hintLabel?.isHidden = true
+        let note = ShortcutLabelEditorView.note(showsInRing: labelShowsInRing)
+        editor.noteLabel.stringValue = note
         editor.show(label)
         editor.isHidden = false
         NSLayoutConstraint.deactivate(recordingConstraints)
@@ -200,9 +206,7 @@ class KeyPopover: NSObject, NSPopoverDelegate {
         contentView?.setAccessibilityLabel(NSLocalizedString("custom-shortcut", comment: ""))
         updatePopoverContentSize()
         focusNameField()
-        announce(Self.spokenText([
-            NSLocalizedString("key-recorder-name", comment: ""), NSLocalizedString("key-recorder-label-note", comment: ""),
-        ]))
+        announce(Self.spokenText([NSLocalizedString("key-recorder-name", comment: ""), note]))
     }
 
     /// Back to asking for keys, in the popover as it is open.
@@ -314,12 +318,10 @@ class KeyPopover: NSObject, NSPopoverDelegate {
         turnToDetails(label: label)
     }
 
-    /// As if the user closed the popover (a click elsewhere).
+    /// As if the user closed the popover (a click elsewhere): what the system tells it.
     func testingCloseAsTheUserDoes() {
-        guard popover != nil else { return }
-        popover = nil
-        labelEditor?.closeChooser()
-        tellClosed()
+        guard let popover else { return }
+        popoverDidClose(Notification(name: NSPopover.didCloseNotification, object: popover))
     }
 
     var testingWaitingIsVisible: Bool {

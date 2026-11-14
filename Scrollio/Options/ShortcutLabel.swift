@@ -45,6 +45,13 @@ struct ShortcutLabel: Codable, Equatable {
     /// The longest name: two lines of the ring's middle hold about this much, and a row
     /// still has room for the keys after it.
     static let maximumNameLength = 24
+    /// What one character of a name (or the typed icon) is made of, at most: "R" with any
+    /// number of accents is one character. The longest emoji of today (a kiss of two
+    /// people with their skin tones) takes 10; a letter keeps its first marks.
+    static let maximumScalarsPerCharacter = 16
+    /// What a whole name is made of, at most: a name of nothing but long emoji ends at a
+    /// character before this.
+    static let maximumNameScalars = 128
     /// A symbol's name is letters, digits and dots ("arrow.clockwise", "1.circle").
     static let maximumSymbolNameLength = 64
 
@@ -59,11 +66,15 @@ struct ShortcutLabel: Codable, Equatable {
 
     /// A name as it is stored: one line, without control characters and without the
     /// invisible ones that turn the direction of a text around (the keys stand after the
-    /// name in a row, and must read as they are), no space at either end, at most
-    /// `maximumNameLength` characters. Nil: nothing left.
+    /// name in a row, and must read as they are), no space at either end, cut as `cut`
+    /// does. Nil: nothing left that can be seen.
     static func cleanedName(_ text: String) -> String? {
         var visible = String.UnicodeScalarView()
+        // Right after 🏴, and after each tag that follows it: an emoji flag's tags.
+        var inFlag = false
         for scalar in text.unicodeScalars {
+            let isTag = (0xE0020...0xE007F).contains(scalar.value)
+            defer { inFlag = scalar.value == 0x1F3F4 || (inFlag && isTag && scalar.value != 0xE007F) }
             switch scalar.properties.generalCategory {
             case .lineSeparator, .paragraphSeparator:
                 visible.append(" ")
@@ -74,19 +85,56 @@ struct ShortcutLabel: Codable, Equatable {
                 }
             case .format:
                 // What joins the parts of an emoji or of a word stays, and an emoji
-                // flag's tags; direction marks and overrides go.
-                if scalar == "\u{200C}" || scalar == "\u{200D}" || (0xE0020...0xE007F).contains(scalar.value) {
+                // flag's tags; direction marks, overrides and tags anywhere else (text
+                // that is kept and shown nowhere) go.
+                if scalar == "\u{200C}" || scalar == "\u{200D}" || (isTag && inFlag) {
                     visible.append(scalar)
                 }
-            case .surrogate, .privateUse, .unassigned:
+            case .surrogate, .unassigned:
+                // (Not a private-use character: the system font draws the Apple logo,
+                // typed with ⌥⇧K, and it stays.)
                 break
             default:
                 visible.append(scalar)
             }
         }
         let trimmed = String(visible).trimmingCharacters(in: .whitespaces)
-        let cut = String(trimmed.prefix(maximumNameLength)).trimmingCharacters(in: .whitespaces)
-        return cut.isEmpty ? nil : cut
+        let name = cut(trimmed).trimmingCharacters(in: .whitespaces)
+        return name.contains(where: canBeSeen) ? name : nil
+    }
+
+    /// `text` as long as a name may be: at most `maximumNameLength` characters, each of at
+    /// most `maximumScalarsPerCharacter` scalars (a letter keeps its first marks), and at
+    /// most `maximumNameScalars` in all; it ends at a character.
+    static func cut(_ text: String) -> String {
+        var kept = String.UnicodeScalarView()
+        var characters = 0
+        for character in text {
+            guard characters < maximumNameLength else { break }
+            let scalars = character.unicodeScalars.prefix(maximumScalarsPerCharacter)
+            guard kept.count + scalars.count <= maximumNameScalars else { break }
+            kept.append(contentsOf: scalars)
+            // (A character that was cut short may join the next one: never into one that
+            // is too long.)
+            if let last = String(kept).last, last.unicodeScalars.count > maximumScalarsPerCharacter {
+                kept.removeLast(scalars.count)
+                break
+            }
+            characters += 1
+        }
+        return String(kept)
+    }
+
+    /// Whether `character` shows something by itself: not a space, nor a joiner, a tag, a
+    /// variation selector or a mark with nothing before it to stand on.
+    private static func canBeSeen(_ character: Character) -> Bool {
+        guard !character.isWhitespace, let first = character.unicodeScalars.first else { return false }
+        switch first.properties.generalCategory {
+        case .nonspacingMark, .spacingMark, .enclosingMark:
+            return false
+        default:
+            return !first.properties.isDefaultIgnorableCodePoint
+        }
     }
 
     /// An icon as it is stored. A symbol: a name of lowercase letters, digits and dots
@@ -101,7 +149,7 @@ struct ShortcutLabel: Codable, Equatable {
             guard allowed, !name.isEmpty, name.count <= maximumSymbolNameLength else { return nil }
             return .symbol(name)
         case .character(let text):
-            guard let first = cleanedName(text)?.first else { return nil }
+            guard let first = cleanedName(text)?.first(where: canBeSeen) else { return nil }
             return .character(String(first))
         }
     }

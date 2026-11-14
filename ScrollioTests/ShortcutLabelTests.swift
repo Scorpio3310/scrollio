@@ -223,6 +223,64 @@ final class ShortcutLabelStorageTests: XCTestCase {
         XCTAssertNil(ShortcutLabel.cleaned(.character(" \n")))
     }
 
+    /// What a name and a typed icon are made of is bounded too, not only what they show:
+    /// "R" with any number of accents is one character. A letter keeps its first few
+    /// marks, tags stay only in an emoji flag, and a joiner, a tag or a mark by itself is
+    /// no icon (nor a name). The emoji of today stay whole.
+    func testANameAndAnIconAreBoundedInWhatTheyAreMadeOf() {
+        let piled = ShortcutLabel.cleanedName("R" + String(repeating: "\u{0301}", count: 300_000))
+        XCTAssertEqual(piled?.count, 1)
+        XCTAssertEqual(piled?.unicodeScalars.first, "R")
+        XCTAssertEqual(piled?.unicodeScalars.count, ShortcutLabel.maximumScalarsPerCharacter)
+        XCTAssertEqual(ShortcutLabel.maximumScalarsPerCharacter, 16)
+        if case .character(let icon)? = ShortcutLabel.cleaned(.character("R" + String(repeating: "\u{0301}", count: 3_000))) {
+            XCTAssertEqual(icon.unicodeScalars.count, ShortcutLabel.maximumScalarsPerCharacter)
+        } else {
+            XCTFail("the R is the icon, with its first accents")
+        }
+        // Every character piled high: the name ends at a character before it is too long.
+        let everyOne = ShortcutLabel.cleanedName(String(repeating: "a" + String(repeating: "\u{0301}", count: 30), count: 24))
+        XCTAssertEqual(everyOne?.unicodeScalars.count, ShortcutLabel.maximumNameScalars)
+        XCTAssertEqual(everyOne?.count, ShortcutLabel.maximumNameScalars / ShortcutLabel.maximumScalarsPerCharacter)
+
+        // The longest emoji (a kiss of two people with their skin tones: ten scalars) and
+        // a flag with its tags stay whole, in a name and as the icon.
+        let kiss = "\u{1F469}\u{1F3FD}\u{200D}\u{2764}\u{FE0F}\u{200D}\u{1F48B}\u{200D}\u{1F468}\u{1F3FF}"
+        XCTAssertEqual(kiss.count, 1)
+        XCTAssertEqual(ShortcutLabel.cleanedName("\(kiss) Kiss"), "\(kiss) Kiss")
+        XCTAssertEqual(ShortcutLabel.cleaned(.character(kiss)), .character(kiss))
+        let scotland = "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}"
+        XCTAssertEqual(ShortcutLabel.cleanedName("Go \(scotland)")?.unicodeScalars.count, 3 + 7)
+        XCTAssertEqual(ShortcutLabel.cleaned(.character(scotland)), .character(scotland))
+        // Tags anywhere else are text that is stored and shown nowhere: they go.
+        let hidden = String(String.UnicodeScalarView("hidden".unicodeScalars.compactMap { Unicode.Scalar($0.value + 0xE0000) }))
+        XCTAssertEqual(ShortcutLabel.cleanedName("Copy" + hidden)?.unicodeScalars.count, 4)
+        XCTAssertEqual(ShortcutLabel.cleanedName("\u{1F3F4} Copy" + hidden)?.unicodeScalars.count, 6, "not after a flag's space")
+
+        for invisible in ["\u{200D}", "\u{200C}", "\u{E0041}", "\u{E007F}", "\u{0301}", "\u{FE0F}", "\u{200D}\u{200D} "] {
+            let spelled = invisible.unicodeScalars.map { String($0.value, radix: 16) }.joined(separator: " ")
+            XCTAssertNil(ShortcutLabel.cleaned(.character(invisible)), spelled)
+            XCTAssertNil(ShortcutLabel.cleanedName(invisible), spelled)
+            XCTAssertTrue(ShortcutIconChoices.matching(invisible).isEmpty, "nothing offered for \(spelled)")
+        }
+        XCTAssertEqual(ShortcutLabel.cleaned(.character("\u{200D}R")), .character("R"), "the first character that can be seen")
+        XCTAssertEqual(ShortcutLabel.cleaned(.character("\u{0301}Rx")), .character("R"))
+    }
+
+    /// The Apple logo (⌥⇧K) is a private-use character the system font draws: it stays in
+    /// a name, can be the icon, and comes back from a file.
+    func testAPrivateUseCharacterStaysInANameAndCanBeTheIcon() throws {
+        XCTAssertEqual(ShortcutLabel.cleanedName("\u{F8FF} Menu"), "\u{F8FF} Menu")
+        XCTAssertEqual(ShortcutLabel.cleanedName("\u{F8FF}"), "\u{F8FF}")
+        XCTAssertEqual(ShortcutLabel.cleaned(.character("\u{F8FF}")), .character("\u{F8FF}"))
+        XCTAssertEqual(ShortcutIconChoices.matching("\u{F8FF}").first, .character("\u{F8FF}"), "offered as “Use”")
+        let place = try decoded(ShortcutRingPlace.self, #"{"action":"custom::15:1179648","label":{"character":"","name":" Menu"}}"#)
+        XCTAssertEqual(place.label, ShortcutLabel(name: "\u{F8FF} Menu", icon: .character("\u{F8FF}")))
+        XCTAssertEqual(try json(place), #"{"action":"custom::15:1179648","label":{"character":"\#u{F8FF}","name":"\#u{F8FF} Menu"}}"#)
+        // Still no surrogate or unassigned code point.
+        XCTAssertEqual(ShortcutLabel.cleanedName("Menu\u{0378}"), "Menu")
+    }
+
     func testALabelWithNothingInItIsNoLabel() throws {
         XCTAssertNil(ShortcutLabel(name: nil, icon: nil))
         XCTAssertNil(ShortcutLabel(name: "   ", icon: .symbol("not a symbol")))
@@ -798,8 +856,8 @@ final class ShortcutLabelPopoverTests: XCTestCase {
 
     /// A pull-down in a window that is never shown (the recorder only starts from a
     /// pull-down that is in a window), with what it tells its pane written down.
-    private func makePullDown(_ binding: ButtonBinding, forRingPlace: Bool = false) -> ButtonActionPullDown {
-        let pullDown = ButtonActionPullDown(binding: binding, forRingPlace: forRingPlace)
+    private func makePullDown(_ binding: ButtonBinding, use: ButtonActionPullDown.Use = .binding) -> ButtonActionPullDown {
+        let pullDown = ButtonActionPullDown(binding: binding, use: use)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: 200), styleMask: [.titled], backing: .buffered, defer: true
         )
@@ -881,6 +939,11 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         type(String(repeating: "x", count: 40), into: editor.nameField, of: editor)
         XCTAssertEqual(editor.nameField.stringValue.count, ShortcutLabel.maximumNameLength)
         XCTAssertEqual(popover.editedLabel?.name?.count, ShortcutLabel.maximumNameLength)
+        // A letter with a pile of accents pasted in is one character: the field keeps
+        // what a name keeps of it.
+        type("R" + String(repeating: "\u{0301}", count: 3_000), into: editor.nameField, of: editor)
+        XCTAssertEqual(editor.nameField.stringValue.unicodeScalars.count, ShortcutLabel.maximumScalarsPerCharacter)
+        XCTAssertEqual(popover.editedLabel?.name, editor.nameField.stringValue)
         // Clearing the field takes the name away.
         type("", into: editor.nameField, of: editor)
         XCTAssertNil(popover.editedLabel)
@@ -1115,9 +1178,14 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         XCTAssertNil(pullDown.detailsPopover)
         XCTAssertFalse(pullDown.holdsRecordedKeys)
 
+        // The named keys again, so that the mouse button has a name to drop.
+        pullDown.configure(with: ButtonBinding(triggerEvent: trigger, systemShortcutName: shiftCommandR, label: reload))
+        XCTAssertEqual(pullDown.binding.label, reload)
         let button = InputEvent(type: .mouse, code: 5, modifiers: [], phase: .down, source: .hidPP, device: nil)
         XCTAssertFalse(record(button, into: pullDown, popover: popover))
+        XCTAssertEqual(stored.last?.action, ButtonActionPullDown.bindingName(forRecorded: button))
         XCTAssertNil(stored.last?.label)
+        XCTAssertNil(pullDown.binding.label)
         XCTAssertFalse(popover.isShowingDetails)
     }
 
@@ -1132,6 +1200,32 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         XCTAssertEqual(stored.map { $0.action }, [shiftCommandR])
         XCTAssertNil(pullDown.detailsPopover)
         XCTAssertFalse(popover.isShowingDetails)
+    }
+
+    /// The line under the name says where it shows: a place's name in the Shortcut Ring
+    /// and in Settings, a button's or a direction's only in Settings (the ring never shows
+    /// it). The same whether the details open on keys that are there or after a recording.
+    func testTheNoteSaysWhereTheNameShows() throws {
+        let ring = "Shown in the Shortcut Ring and in Settings."
+        let settings = "Shown in Settings."
+        let named = ButtonBinding(triggerEvent: trigger, systemShortcutName: shiftCommandR, label: reload)
+        let uses: [(ButtonActionPullDown.Use, String)] = [
+            (.binding, settings), (.ringPlace, ring), (.gesture(showsLogiActions: false), settings),
+        ]
+        for (use, note) in uses {
+            let pullDown = makePullDown(named, use: use)
+            pullDown.shortcutSelected(try keyboardShortcutItem(of: pullDown))
+            let opened = try XCTUnwrap(pullDown.detailsPopover as? QuietPopover, "\(use)")
+            XCTAssertEqual(opened.labelEditor?.noteLabel.stringValue, note, "\(use)")
+            opened.closeAsTheUserDoes()
+
+            let recorded = makePullDown(ButtonBinding(triggerEvent: trigger, systemShortcutName: "copy"), use: use)
+            let popover = QuietPopover()
+            popover.show(at: recorded, waitingHint: "")
+            XCTAssertTrue(record(shiftCommandRPressed, into: recorded, popover: popover), "\(use)")
+            XCTAssertEqual(popover.labelEditor?.noteLabel.stringValue, note, "\(use)")
+            popover.hide()
+        }
     }
 
     // MARK: The panes store it

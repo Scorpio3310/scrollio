@@ -173,6 +173,12 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSPopoverDeleg
         return NSLocalizedString(key, comment: "")
     }
 
+    /// The line under the name: where the name and the icon show. A place's of the
+    /// Shortcut Ring in the ring and in Settings; a button's or a direction's in Settings.
+    static func note(showsInRing: Bool) -> String {
+        return text(showsInRing ? "key-recorder-label-note" : "key-recorder-label-note-settings")
+    }
+
     // MARK: Filling
 
     /// Shows `label` (nil: an empty name, no icon), with the chooser closed.
@@ -223,25 +229,36 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSPopoverDeleg
         controller.focusSearch()
     }
 
-    /// Closes the chooser, if it is open; the keyboard goes back to the well.
-    func closeChooser() {
+    /// Closes the chooser, if it is open; the keyboard goes back to the well, unless
+    /// `refocus` is false: the card around the editor is going away, and its window must
+    /// not be made the key one again.
+    func closeChooser(refocus: Bool = true) {
         guard let popover = chooserPopover else { return }
         // (Told here, not by the system: a popover that was never on screen closes without
         // a word.)
         popover.delegate = nil
         popover.close()
-        chooserClosed(closesParent: false)
+        chooserClosed(closesParent: false, refocus: refocus)
     }
 
-    private func chooserClosed(closesParent: Bool) {
+    private func chooserClosed(closesParent: Bool, refocus: Bool) {
         chooser = nil
         chooserPopover = nil
         onChooserClose?(closesParent)
-        guard !closesParent, let window = iconWell.window else { return }
+        guard refocus, !closesParent, let window = iconWell.window else { return }
         window.makeFirstResponder(iconWell)
         if !window.isKeyWindow, window.canBecomeKey {
             window.makeKey()
         }
+    }
+
+    /// The system closed the chooser. It says so after the chooser's animation: a click
+    /// in the card that closed it may have given the name field the keyboard by then, and
+    /// the field keeps it (typed keys must not go to the well, where Delete takes the icon
+    /// away). Otherwise the keyboard goes back to the well.
+    private func chooserClosedByTheSystem(closesParent: Bool) {
+        let elsewhere = (iconWell.window?.firstResponder as? NSView).map { $0 !== iconWell && $0.isDescendant(of: self) } ?? false
+        chooserClosed(closesParent: closesParent, refocus: !elsewhere)
     }
 
     /// Whether the chooser, closed by the system, takes the popover around the editor with
@@ -261,7 +278,7 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSPopoverDeleg
         guard let popover = chooserPopover else { return }
         popover.delegate = nil
         popover.close()
-        chooserClosed(closesParent: closesParent)
+        chooserClosedByTheSystem(closesParent: closesParent)
     }
 #endif
 
@@ -287,7 +304,7 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSPopoverDeleg
 
     func popoverDidClose(_ notification: Notification) {
         guard notification.object as? NSPopover === chooserPopover else { return }
-        chooserClosed(closesParent: chooserClosesParent)
+        chooserClosedByTheSystem(closesParent: chooserClosesParent)
     }
 
     // MARK: Actions
@@ -318,9 +335,11 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSPopoverDeleg
 
     func controlTextDidChange(_ notification: Notification) {
         guard let field = notification.object as? NSTextField, field === nameField else { return }
-        // Never longer than a name is stored.
-        if field.stringValue.count > ShortcutLabel.maximumNameLength {
-            field.stringValue = String(field.stringValue.prefix(ShortcutLabel.maximumNameLength))
+        // Never longer than a name is stored, in characters and in what they are made of.
+        let text = field.stringValue
+        let cut = ShortcutLabel.cut(text)
+        if cut.unicodeScalars.count != text.unicodeScalars.count {
+            field.stringValue = cut
         }
     }
 
@@ -351,7 +370,7 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSPopoverDeleg
         nameField.setAccessibilityLabel(text("key-recorder-name"))
         nameField.translatesAutoresizingMaskIntoConstraints = false
 
-        noteLabel.stringValue = text("key-recorder-label-note")
+        noteLabel.stringValue = Self.note(showsInRing: false)
         noteLabel.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         noteLabel.textColor = .secondaryLabelColor
         noteLabel.identifier = Identifier.note

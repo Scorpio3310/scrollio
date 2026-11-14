@@ -108,7 +108,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "key-recorder-name", "key-recorder-name-placeholder", "key-recorder-icon", "key-recorder-icon-choose",
         "key-recorder-icon-well", "key-recorder-icon-remove", "key-recorder-icon-search", "key-recorder-icon-emoji",
         "key-recorder-icon-use-character", "key-recorder-icon-no-match", "key-recorder-icon-no-match-hint",
-        "key-recorder-label-note", "key-recorder-record-again", "key-recorder-done",
+        "key-recorder-label-note", "key-recorder-label-note-settings", "key-recorder-record-again", "key-recorder-done",
         "key-recorder-icon-group-arrows", "key-recorder-icon-group-editing", "key-recorder-icon-group-files",
         "key-recorder-icon-group-common", "key-recorder-icon-group-media", "key-recorder-icon-group-tools",
         "open-target-mode-label", "open-target-mode-open", "open-target-mode-open-tooltip",

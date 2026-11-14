@@ -20,6 +20,31 @@ import XCTest
 final class ShortcutIconChooserTests: XCTestCase {
 
     private let reload = ShortcutLabel(name: "Reload", icon: .symbol("arrow.clockwise"))
+    private var windows: [NSWindow] = []
+
+    override func tearDown() {
+        windows.forEach { $0.contentView = nil }
+        windows = []
+        super.tearDown()
+    }
+
+    /// The card in a window that is never shown, so that the keyboard has a place in it.
+    private func inWindow(_ popover: KeyPopover) throws -> NSWindow {
+        let content = try XCTUnwrap(popover.testingContentView)
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: content.fittingSize), styleMask: [.titled], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(content)
+        windows.append(window)
+        return window
+    }
+
+    /// The name field is being typed into.
+    private func nameHoldsTheKeyboard(_ editor: ShortcutLabelEditorView, in window: NSWindow) -> Bool {
+        guard let fieldEditor = editor.nameField.currentEditor() else { return false }
+        return window.firstResponder === fieldEditor
+    }
 
     private func details(_ label: ShortcutLabel?) throws -> (KeyPopover, ShortcutLabelEditorView) {
         let popover = KeyPopover()
@@ -366,6 +391,88 @@ final class ShortcutIconChooserTests: XCTestCase {
         doneEditor.openChooser()
         done.hide()
         XCTAssertFalse(doneEditor.isChoosingIcon)
+    }
+
+    /// A click into the name field closes the chooser, and the same click gives the field
+    /// the keyboard; the system says the chooser closed only after its animation. The field
+    /// keeps the keyboard then: what is typed goes into the name, not to the well (where
+    /// Delete would take the icon away). Closed by Esc, a choice, or a click that left the
+    /// keyboard nowhere in the card, the chooser gives it back to the well.
+    func testAClickIntoTheNameKeepsTheKeyboardThere() throws {
+        let (popover, editor) = try details(reload)
+        let window = try inWindow(popover)
+        editor.openChooser()
+        XCTAssertTrue(window.makeFirstResponder(editor.nameField))
+        editor.testingCloseChooserAsTheSystemDoes(closesParent: false)
+        XCTAssertFalse(editor.isChoosingIcon)
+        XCTAssertTrue(nameHoldsTheKeyboard(editor, in: window), "the name field keeps the keyboard")
+        XCTAssertEqual(popover.editedLabel, reload)
+
+        // A click on the card where nothing takes the keyboard: back to the well.
+        editor.openChooser()
+        window.makeFirstResponder(nil)
+        editor.testingCloseChooserAsTheSystemDoes(closesParent: false)
+        XCTAssertTrue(window.firstResponder === editor.iconWell)
+
+        // Esc and a choice: back to the well, wherever the keyboard was.
+        editor.openChooser()
+        XCTAssertTrue(window.makeFirstResponder(editor.nameField))
+        try XCTUnwrap(editor.chooser).grid.keyDown(with: try key(53, "\u{1B}"))
+        XCTAssertTrue(window.firstResponder === editor.iconWell, "Esc")
+        editor.openChooser()
+        XCTAssertTrue(window.makeFirstResponder(editor.nameField))
+        try XCTUnwrap(editor.chooser).grid.onChooseAt?(IndexPath(item: 0, section: 0))
+        XCTAssertTrue(window.firstResponder === editor.iconWell, "a choice")
+    }
+
+    /// Return with nothing typed in the search and nothing selected (the icon is a typed
+    /// character, a symbol that is not among these, or there is none) chooses nothing: the
+    /// chooser closes as for Esc, and the icon stays. Something typed: Return takes the
+    /// first that was found.
+    func testReturnWithNothingChosenKeepsTheIcon() throws {
+        let icons: [ShortcutLabel.Icon?] = [.character("🔄"), .symbol("tortoise"), nil]
+        for icon in icons {
+            let (popover, editor) = try details(ShortcutLabel(name: "Reload", icon: icon))
+            var closed = 0
+            popover.onClose = { closed += 1 }
+            editor.openChooser()
+            let chooser = try XCTUnwrap(editor.chooser)
+            XCTAssertTrue(chooser.grid.selectionIndexPaths.isEmpty, "\(String(describing: icon)) is not among the symbols")
+            XCTAssertTrue(chooser.control(chooser.searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
+            XCTAssertEqual(editor.icon, icon, "the icon stays")
+            XCTAssertFalse(editor.isChoosingIcon, "the chooser closes")
+            XCTAssertEqual(closed, 0, "the card stays")
+            XCTAssertEqual(popover.testingBehavior, .transient)
+        }
+
+        let (_, editor) = try details(ShortcutLabel(name: "Reload", icon: .character("🔄")))
+        editor.openChooser()
+        let chooser = try XCTUnwrap(editor.chooser)
+        chooser.searchField.stringValue = "hammer"
+        chooser.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: chooser.searchField))
+        XCTAssertTrue(chooser.control(chooser.searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        XCTAssertEqual(editor.icon, .symbol("hammer"))
+    }
+
+    /// The card going away (a click in the settings window, Done, the pane leaving) closes
+    /// the chooser without giving the keyboard back to the card: its window is not made
+    /// the key one again while it closes.
+    func testTheCardClosingGivesNothingOfItTheKeyboard() throws {
+        let (popover, editor) = try details(reload)
+        let window = try inWindow(popover)
+        editor.openChooser()
+        window.makeFirstResponder(nil)
+        popover.testingCloseAsTheUserDoes()
+        XCTAssertFalse(editor.isChoosingIcon)
+        XCTAssertFalse(window.firstResponder === editor.iconWell, "closed by the system")
+
+        let (done, doneEditor) = try details(reload)
+        let doneWindow = try inWindow(done)
+        doneEditor.openChooser()
+        doneWindow.makeFirstResponder(nil)
+        done.hide()
+        XCTAssertFalse(doneEditor.isChoosingIcon)
+        XCTAssertFalse(doneWindow.firstResponder === doneEditor.iconWell, "closed by the app")
     }
 
     // MARK: Layout of the chooser
