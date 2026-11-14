@@ -4,32 +4,28 @@
 //  The page of one app under Apps, opened from its row in the list (it replaces the old
 //  per-app popover). The way back is the window's: a back button in its title bar, beside
 //  the app's name (PreferencesWindowController), as in System Settings; Esc and ⌘[ go back
-//  too. A box shows the app
-//  (icon, name, where it is) and "Use settings from Scrolling"; under it the Scrolling
-//  settings themselves, editing the app's own options (PreferencesScrollingViewController
-//  with a target application: no preview, dimmed while the app uses the Scrolling settings,
-//  its own "Reset to Defaults"). At the end "Shortcut Ring": the switch "Use the general
-//  ring" and, while it is off, the app's own ring: the drawing and the eight rows of the
-//  Shortcut Ring pane (RingPreferencesViewController with this app), which open while the
-//  app is in front. What opens the ring and its freeze switch are the same for every app
-//  and stay in the Shortcut Ring pane.
+//  too. A box shows the app (icon, name, where it is); under it a segmented control
+//  chooses the part of the page that shows (`ApplicationPagePart`: Scrolling, Buttons,
+//  Shortcut Ring), one at a time, so the page stays short. The part shown last is shown
+//  again, for every app alike (the UI state, beside Advanced of Scrolling); a part that
+//  does not exist falls back to Scrolling, and a mark of the list opens its own part.
 //
-//  The page only edits the app it was opened for: `inherit` and its scroll options, and
-//  its `ring`. When the switch goes off while its own options were never edited, they
-//  become a copy of the Scrolling settings first; when "Use the general ring" goes off
-//  for an app that never had a ring, its ring starts as a copy of the general one. The
-//  Apps pane puts the page in place of the list and takes it away again.
+//  The page only edits the app it was opened for: `inherit` and its scroll options, its
+//  own buttons and its `ring`. The Apps pane puts the page in place of the list and takes
+//  it away again; the page tells it when its height changed (the part, or the part's
+//  content).
 //
 
 import Cocoa
 
-final class ApplicationDetailViewController: NSViewController, PreferencesScrollingContainer {
+final class ApplicationDetailViewController: NSViewController {
 
     /// Identifiers for the controls (tests and accessibility tooling).
     enum Identifier {
         static let header = NSUserInterfaceItemIdentifier("apps-detail-header")
-        static let inherit = NSUserInterfaceItemIdentifier("apps-detail-inherit")
-        static let generalRing = NSUserInterfaceItemIdentifier("apps-detail-general-ring")
+        static let parts = NSUserInterfaceItemIdentifier("apps-detail-parts")
+        static let inherit = ApplicationScrollingPartViewController.Identifier.inherit
+        static let generalRing = ApplicationRingPartViewController.Identifier.generalRing
     }
 
     /// As wide as the Scrolling settings under the header.
@@ -37,40 +33,63 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
 
     let application: Application
     private let uiStateDefaults: UserDefaults
+    /// The parts of the page, in the order of the control.
+    let parts: [ApplicationPagePart]
 
     /// Esc or ⌘[ asked to go back to the list.
     var onBack: (() -> Void)?
-    /// "Use settings from Scrolling" was switched (the list says which apps have their own).
+    /// The app's own settings changed in a way the list shows (its line, its marks).
     var onInheritChange: (() -> Void)?
-    /// The page's height changed: the settings loaded, "Advanced" opened or closed.
+    /// The page's height changed: another part, the settings loaded, "Advanced" opened or
+    /// closed, a row came or went.
     var onHeightChange: (() -> Void)?
 
     // MARK: - Views (read access for tests)
 
     private(set) var headerRow: ApplicationDetailHeaderRow!
-    private(set) var inheritRow: PreferencesSwitchRow!
     private(set) var headerSection: PreferencesGroupSection!
-    private(set) var scrollingController: PreferencesScrollingViewController!
-    /// "Shortcut Ring": the box with "Use the general ring".
-    private(set) var ringSection: PreferencesGroupSection!
-    private(set) var generalRingRow: PreferencesSwitchRow!
-    /// The app's own ring, its drawing and its eight rows: there only while "Use the
-    /// general ring" is off.
-    private(set) var ringController: RingPreferencesViewController?
-    /// The page ends under the switch's box (no own ring), or under the own ring.
-    private var endsUnderRingSection: NSLayoutConstraint!
-    private var ownRingConstraints: [NSLayoutConstraint] = []
+    private(set) var partControl: NSSegmentedControl!
+    /// Holds the view of the part shown.
+    private(set) var partContainer: NSView!
+    private(set) var shownPart: ApplicationPagePart
+    /// Each part's controller, by the part's id: made with the page.
+    private(set) var partControllers: [String: ApplicationPagePartController] = [:]
 
+    var scrollingPart: ApplicationScrollingPartViewController! {
+        return partControllers[ApplicationPagePart.scrolling.id] as? ApplicationScrollingPartViewController
+    }
+    var buttonsPart: ApplicationButtonsViewController! {
+        return partControllers[ApplicationPagePart.buttons.id] as? ApplicationButtonsViewController
+    }
+    var ringPart: ApplicationRingPartViewController! {
+        return partControllers[ApplicationPagePart.ring.id] as? ApplicationRingPartViewController
+    }
+    var inheritRow: PreferencesSwitchRow! { return scrollingPart.inheritRow }
     var inheritSwitch: NSSwitch { return inheritRow.toggle }
+    var scrollingController: PreferencesScrollingViewController! { return scrollingPart.scrollingController }
+    var ringSection: PreferencesGroupSection! { return ringPart.ringSection }
+    var generalRingRow: PreferencesSwitchRow! { return ringPart.generalRingRow }
     var generalRingSwitch: NSSwitch { return generalRingRow.toggle }
+    var ringController: RingPreferencesViewController? { return ringPart.ringController }
 
     // MARK: - Lifecycle
 
-    /// - Parameter uiStateDefaults: where "Advanced" of the Scrolling settings is remembered
-    ///   (shared with the Scrolling pane); tests and screenshots give a store of their own.
-    init(application: Application, uiStateDefaults: UserDefaults = .standard) {
+    /// - Parameters:
+    ///   - uiStateDefaults: where the part shown last and "Advanced" of the Scrolling
+    ///     settings are remembered (shared with the Scrolling pane); tests and screenshots
+    ///     give a store of their own.
+    ///   - part: the part to open on (a mark of the list); nil: the one shown last.
+    init(
+        application: Application,
+        uiStateDefaults: UserDefaults = .standard,
+        part: ApplicationPagePart? = nil,
+        parts: [ApplicationPagePart] = ApplicationPagePart.all
+    ) {
         self.application = application
         self.uiStateDefaults = uiStateDefaults
+        self.parts = parts
+        let wanted = part ?? ApplicationPagePart.remembered(in: uiStateDefaults)
+        shownPart = parts.contains(wanted) ? wanted : (parts.first ?? .scrolling)
         super.init(nibName: nil, bundle: nil)
         title = application.getName()
     }
@@ -84,80 +103,73 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
         root.translatesAutoresizingMaskIntoConstraints = false
         root.onBack = { [weak self] in self?.goBack() }
 
-        let name = application.getName()
         headerRow = ApplicationDetailHeaderRow(
-            name: name,
+            name: application.getName(),
             path: application.path,
             icon: application.getIcon()
         )
         headerRow.identifier = Identifier.header
-        let inherit = PreferencesSwitchRow(
-            title: text("apps-detail-inherit"),
-            explanation: nil,
-            target: self,
-            action: #selector(inheritClick(_:))
-        )
-        inherit.toggle.identifier = Identifier.inherit
-        // Room for the longer of the two lines, so switching never changes the height.
-        inherit.reservedExplanations = [true, false].map { Self.inheritExplanation(on: $0, name: name) }
-        inheritRow = inherit
         let header = PreferencesGroupSection(
             width: PreferencesGroupedForm.boxWidth(paneWidth: Self.paneWidth),
-            rows: [headerRow, inherit]
+            rows: [headerRow]
         )
         headerSection = header
 
-        // The Scrolling settings, for this app. Added as a child first: they tell their
-        // container their height as soon as they load.
-        let scrolling = PreferencesScrollingViewController()
-        scrolling.uiStateDefaults = uiStateDefaults
-        scrolling.currentTargetApplication = application
-        addChild(scrolling)
-        scrollingController = scrolling
-        let settings = scrolling.view
-        settings.translatesAutoresizingMaskIntoConstraints = false
-
-        // The Shortcut Ring of this app: the general one, or its own.
-        let generalRing = PreferencesSwitchRow(
-            title: text("apps-detail-ring-general"),
-            explanation: nil,
-            target: self,
-            action: #selector(generalRingClick(_:))
+        let control = NSSegmentedControl(
+            labels: parts.map(\.title), trackingMode: .selectOne, target: self, action: #selector(partClick(_:))
         )
-        generalRing.toggle.identifier = Identifier.generalRing
-        generalRing.reservedExplanations = [true, false].map { Self.generalRingExplanation(on: $0, name: name) }
-        generalRingRow = generalRing
-        let ring = PreferencesGroupSection(
-            title: text("ring-tab-title"),
-            width: PreferencesGroupedForm.boxWidth(paneWidth: Self.paneWidth),
-            rows: [generalRing]
-        )
-        ringSection = ring
+        control.identifier = Identifier.parts
+        control.segmentStyle = .automatic
+        control.translatesAutoresizingMaskIntoConstraints = false
+        control.setAccessibilityLabel(NSLocalizedString("apps-detail-parts", comment: ""))
+        partControl = control
 
-        for view in [header, settings, ring] {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        partContainer = container
+
+        for view in [header, control, container] {
             root.addSubview(view)
         }
         let margin = PreferencesGroupedForm.margin
-        endsUnderRingSection = ring.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -margin)
         NSLayoutConstraint.activate([
             // The app's box begins where the first box of every pane does.
             header.topAnchor.constraint(equalTo: root.topAnchor, constant: margin),
             header.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: margin),
             header.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -margin),
-            // The settings bring their own margins: the space above their first box is the
-            // space between two sections.
-            settings.topAnchor.constraint(equalTo: header.bottomAnchor),
-            settings.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            settings.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            // Their margin under "Reset to Defaults" is the space above the ring's title.
-            ring.topAnchor.constraint(equalTo: settings.bottomAnchor),
-            ring.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: margin),
-            ring.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -margin),
-            endsUnderRingSection,
+            control.topAnchor.constraint(equalTo: header.bottomAnchor, constant: PreferencesGroupedForm.boxSpacing),
+            control.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            control.leadingAnchor.constraint(greaterThanOrEqualTo: root.leadingAnchor, constant: margin),
+            // The part brings its own margins: the space above its first box.
+            container.topAnchor.constraint(equalTo: control.bottomAnchor),
+            container.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            container.bottomAnchor.constraint(equalTo: root.bottomAnchor),
         ])
 
+        // Every part is made now (their controls answer at once), and one is shown.
+        for part in parts {
+            let controller = part.makeController(application, uiStateDefaults)
+            // (A part out of sight changes nothing on screen; the pane only measures again.)
+            controller.onHeightChange = { [weak self] in self?.onHeightChange?() }
+            if let scrolling = controller as? ApplicationScrollingPartViewController {
+                scrolling.onInheritChange = { [weak self] in self?.onInheritChange?() }
+            }
+            if let buttons = controller as? ApplicationButtonsViewController {
+                buttons.onOwnButtonsChange = { [weak self] in self?.onInheritChange?() }
+            }
+            addChild(controller)
+            controller.view.translatesAutoresizingMaskIntoConstraints = false
+            partControllers[part.id] = controller
+        }
+        // "Use the general ring" changes the app's mark in the list too.
+        ringPart?.onHeightChange = { [weak self] in
+            self?.onHeightChange?()
+            self?.onInheritChange?()
+        }
+
         view = root
-        syncViewWithOptions()
+        put(shownPart)
         root.setFrameSize(root.fittingSize)
     }
 
@@ -167,18 +179,67 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
         syncViewWithOptions()
     }
 
+    /// The controller of the part shown.
+    var shownController: ApplicationPagePartController? {
+        return partControllers[shownPart.id]
+    }
+
+    // MARK: - Parts
+
+    /// Shows `part` in place of the one shown, remembers it for every app's page, and tells
+    /// the pane the page's height changed.
+    func show(_ part: ApplicationPagePart) {
+        guard isViewLoaded, parts.contains(part) else { return }
+        guard part != shownPart else {
+            part.remember(in: uiStateDefaults)
+            return
+        }
+        shownController?.partWillHide()
+        shownPart = part
+        part.remember(in: uiStateDefaults)
+        put(part)
+        onHeightChange?()
+    }
+
+    /// Puts `part`'s view in the container (taking out the one there) and selects its
+    /// segment.
+    private func put(_ part: ApplicationPagePart) {
+        guard let controller = partControllers[part.id] else { return }
+        for subview in partContainer.subviews where subview !== controller.view {
+            subview.removeFromSuperview()
+        }
+        partControl.selectedSegment = parts.firstIndex(of: part) ?? 0
+        guard controller.view.superview !== partContainer else { return }
+        controller.syncViewWithOptions()
+        let partView = controller.view
+        partContainer.addSubview(partView)
+        NSLayoutConstraint.activate([
+            partView.topAnchor.constraint(equalTo: partContainer.topAnchor),
+            partView.leadingAnchor.constraint(equalTo: partContainer.leadingAnchor),
+            partView.trailingAnchor.constraint(equalTo: partContainer.trailingAnchor),
+            partView.bottomAnchor.constraint(equalTo: partContainer.bottomAnchor),
+        ])
+    }
+
+    @objc func partClick(_ sender: NSSegmentedControl) {
+        guard parts.indices.contains(sender.selectedSegment) else { return }
+        show(parts[sender.selectedSegment])
+    }
+
+    /// The page goes away: what a part opened closes.
+    func pageWillClose() {
+        for controller in partControllers.values {
+            controller.partWillHide()
+        }
+    }
+
     // MARK: - Refresh
 
     func syncViewWithOptions() {
         guard isViewLoaded else { return }
-        inheritRow.isOn = application.inherit
-        inheritRow.explanation = Self.inheritExplanation(on: application.inherit, name: application.getName())
-        scrollingController.syncViewWithOptions()
-        let usesGeneralRing = application.usesGeneralRing
-        generalRingRow.isOn = usesGeneralRing
-        generalRingRow.explanation = Self.generalRingExplanation(on: usesGeneralRing, name: application.getName())
-        showOwnRing(!usesGeneralRing)
-        ringController?.reload()
+        for controller in partControllers.values {
+            controller.syncViewWithOptions()
+        }
     }
 
     /// "While Safari is in front, the general ring opens." / "While Safari is in front,
@@ -188,69 +249,13 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
         return String(format: format, name)
     }
 
-    /// Puts the app's own ring (the drawing and the eight rows) under the switch's box, or
-    /// takes it away again: it is there exactly while "Use the general ring" is off.
-    private func showOwnRing(_ shows: Bool) {
-        guard shows != (ringController != nil) else { return }
-        if let ring = ringController {
-            ring.endEditing()
-            NSLayoutConstraint.deactivate(ownRingConstraints)
-            ownRingConstraints = []
-            ring.view.removeFromSuperview()
-            ring.removeFromParent()
-            ringController = nil
-            endsUnderRingSection.isActive = true
-            return
-        }
-        let ring = RingPreferencesViewController(application: application)
-        addChild(ring)
-        let ringView = ring.view
-        ringView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(ringView)
-        endsUnderRingSection.isActive = false
-        // The ring's view brings its own margins, as the Scrolling settings do.
-        ownRingConstraints = [
-            ringView.topAnchor.constraint(equalTo: ringSection.bottomAnchor),
-            ringView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            ringView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            ringView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ]
-        NSLayoutConstraint.activate(ownRingConstraints)
-        ringController = ring
-    }
-
     /// "Changes under Scrolling apply to Safari too." / "Safari keeps its own settings below."
     static func inheritExplanation(on: Bool, name: String) -> String {
         let format = NSLocalizedString(on ? "apps-detail-inherit-on" : "apps-detail-inherit-off", comment: "")
         return String(format: format, name)
     }
 
-    // MARK: - PreferencesScrollingContainer
-
-    func fitToContent() {
-        guard isViewLoaded else { return }
-        onHeightChange?()
-    }
-
     // MARK: - Actions
-
-    /// On: the app follows the Scrolling pane; its own options stay stored for later.
-    /// Off: the app's own options, which start as a copy of the Scrolling settings when
-    /// they were never edited (so switching off changes nothing until the user does).
-    @objc func inheritClick(_ sender: NSSwitch) {
-        application.setUsesScrollingSettings(sender.state == .on, scrolling: Options.shared.scroll)
-        syncViewWithOptions()
-        onInheritChange?()
-    }
-
-    /// On: the ring of the Shortcut Ring pane opens while the app is in front; the app's
-    /// own ring stays stored for later. Off: the app's own ring, which starts as a copy of
-    /// the general ring as it is now when the app never had one.
-    @objc func generalRingClick(_ sender: NSSwitch) {
-        application.setUsesGeneralRing(sender.state == .on, general: Options.shared.ring)
-        syncViewWithOptions()
-        onHeightChange?()
-    }
 
     /// Esc, when a control of the page passes it on as a command.
     override func cancelOperation(_ sender: Any?) {
@@ -262,10 +267,6 @@ final class ApplicationDetailViewController: NSViewController, PreferencesScroll
     }
 
     // MARK: - Views
-
-    private func text(_ key: String) -> String {
-        return NSLocalizedString(key, comment: "")
-    }
 
     /// Where the app is, for its header: the app bundle (not the program inside it that
     /// running apps are stored by), with `~` for the home folder.

@@ -207,6 +207,7 @@ enum SettingsFile {
         LeftOut(AppsLeftToMacOS.offeredKey, "written by version 1.0.4, which put Calendar on the list of apps by itself; nothing reads it, and the list of apps is in the file"),
         LeftOut("preferencesSelectedPane", "window state: the pane that was open last"),
         LeftOut("scrollingAdvancedExpanded", "window state: whether Advanced is open"),
+        LeftOut(ApplicationPagePart.shownDefaultsKey, "window state: the part of an app's page that was shown last"),
         LeftOut("generalAdvancedExpanded", "retired window state; nothing reads it"),
         LeftOut("durationForOtherTrackpadState", "retired scroll setting, removed at launch"),
         LeftOut("scrollTuning", "retired scroll settings, removed at launch"),

@@ -134,7 +134,7 @@ final class SettingsFileFormatTests: XCTestCase {
         ])
         XCTAssertEqual(SettingsFile.leftOut.map { $0.key + ($0.isPrefix ? "*" : "") }, [
             "optionsExist", "welcomeGuideCompletedVersion", "appsLeftToMacOSOffered", "preferencesSelectedPane", "scrollingAdvancedExpanded",
-            "generalAdvancedExpanded", "durationForOtherTrackpadState", "scrollTuning", "logitechFeatureCache",
+            "appsPageShownPart", "generalAdvancedExpanded", "durationForOtherTrackpadState", "scrollTuning", "logitechFeatureCache",
             "Logi*", "SU*", "NSStatusItem *", "NSWindow Frame *", "NSSplitView Subview Frames *",
             "NSNav*", "NSOSPLastRootDirectory",
         ])

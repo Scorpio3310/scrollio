@@ -249,7 +249,7 @@ final class ApplicationButtonsTests: XCTestCase {
     /// The Logitech probe goes by the same bindings as InputProcessor: an app's own
     /// Logitech action runs while it is in front, and its "Default" passes through.
     func testTheLogitechProbeSeesTheAppInFront() {
-        let gestureButton: UInt16 = 1005
+        let gestureButton: UInt16 = 1000
         set(general: [binding(gestureButton, "copy")], safari: [binding(gestureButton, "logiSmartShiftToggle")])
         let bridge = LogiIntegrationBridge.shared
         let down = InputEvent(type: .mouse, code: gestureButton, modifiers: [], phase: .down, source: .hidPP, device: nil)
@@ -384,8 +384,8 @@ final class ApplicationButtonsTests: XCTestCase {
     /// that has its own binding for it is in front; one the app sets to "Default" is the
     /// mouse's there unless another binding of that button still needs it.
     func testTheLogitechButtonsFollowTheAppInFront() {
-        let gestureButton: UInt16 = 1005
-        let modeShift: UInt16 = 1003
+        let gestureButton: UInt16 = 1000
+        let modeShift: UInt16 = 1001
         let isLogi: (UInt16) -> Bool = { $0 >= 1000 }
         let command = UInt(CGEventFlags.maskCommand.rawValue)
         let general = [binding(modeShift, "copy"), binding(3, "paste")]
@@ -417,7 +417,7 @@ final class ApplicationButtonsTests: XCTestCase {
 
     /// The registry is told: in the app the button is used, in another app it is not.
     func testTheRegistryFollowsTheAppInFront() {
-        let gestureButton: UInt16 = 1005
+        let gestureButton: UInt16 = 1000
         set(general: [], safari: [binding(gestureButton, "undo")])
         defer {
             Options.shared.application.applications = Self.makeStore([])

@@ -39,6 +39,8 @@ struct ButtonRowNote: Equatable {
         case capture(ButtonCapturePresentationStatus)
         /// A button of the connected mouse without an action: what it does by itself.
         case defaultAction
+        /// A button of an app's own (its page under Apps): what it does in every other app.
+        case everywhere
     }
 
     enum Tone: Equatable {
@@ -55,7 +57,7 @@ struct ButtonRowNote: Equatable {
 
     var tone: Tone {
         switch kind {
-        case .gestureNavigation, .shortcutRing, .holdAction, .noAction, .extraButton, .defaultAction:
+        case .gestureNavigation, .shortcutRing, .holdAction, .noAction, .extraButton, .defaultAction, .everywhere:
             return .plain
         case .alsoScrollKey, .keyGestureNavigation:
             return .problem
@@ -79,7 +81,7 @@ struct ButtonRowNote: Equatable {
         case .alsoScrollKey: return Self.text("buttons-scroll-key-title")
         case .keyGestureNavigation: return Self.text("buttons-gesture-needs-mouse-button")
         case .capture(let status): return Self.text(status.titleKey)
-        case .gestureNavigation, .shortcutRing, .holdAction, .noAction, .extraButton, .defaultAction: return text
+        case .gestureNavigation, .shortcutRing, .holdAction, .noAction, .extraButton, .defaultAction, .everywhere: return text
         }
     }
 
@@ -88,7 +90,7 @@ struct ButtonRowNote: Equatable {
         case .alsoScrollKey: return Self.text("buttons-scroll-key-detail")
         case .keyGestureNavigation: return Self.text("buttons-gesture-needs-mouse-button-detail")
         case .capture(let status): return Self.text(status.detailKey)
-        case .gestureNavigation, .shortcutRing, .holdAction, .noAction, .extraButton, .defaultAction: return ""
+        case .gestureNavigation, .shortcutRing, .holdAction, .noAction, .extraButton, .defaultAction, .everywhere: return ""
         }
     }
 
