@@ -340,6 +340,9 @@ final class ShortcutLabelRingTests: XCTestCase {
         ]
         let names = words + artificial
         let combinations = [keys, "Fn⌃⌥⇧⌘Space", "⌃⌥⇧⌘F19"]
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byWordWrapping
         let paneScale = ShortcutRingPreviewView.ringScale
         for (what, scale) in [("on screen", CGFloat(1)), ("in the pane", paneScale)] {
             let width = ShortcutRingArtwork.titleWidth * scale
@@ -352,10 +355,17 @@ final class ShortcutLabelRingTests: XCTestCase {
                     XCTAssertLessThanOrEqual(layout.nameLines, 2, about)
                     XCTAssertGreaterThanOrEqual(layout.nameLines, 1, about)
                     if words.contains(name) {
-                        // The whole name: at its size it needs no more lines than it gets.
-                        let whole = ShortcutRingArtwork.titleLayout(name, width: width, pointSize: layout.namePointSize)
-                        XCTAssertEqual(whole.pointSize, layout.namePointSize, "\(about): it fits two lines at that size")
-                        XCTAssertLessThanOrEqual(whole.lines, layout.nameLines, "\(about): nothing is cut")
+                        // The whole name, as the text system lays it out at its size, stands
+                        // in the room it is drawn in: nothing is cut.
+                        let whole = (name as NSString).boundingRect(
+                            with: CGSize(width: width, height: 10_000), options: [.usesLineFragmentOrigin],
+                            attributes: [
+                                .font: NSFont.systemFont(ofSize: layout.namePointSize, weight: .semibold),
+                                .paragraphStyle: paragraph,
+                            ]
+                        )
+                        XCTAssertLessThanOrEqual(whole.height, layout.nameHeight, "\(about): nothing is cut")
+                        XCTAssertLessThanOrEqual(whole.width, width + 0.5, about)
                     }
                     XCTAssertLessThan(layout.keysPointSize, layout.namePointSize, about)
                     XCTAssertGreaterThanOrEqual(layout.keysPointSize, 6 * scale, about)

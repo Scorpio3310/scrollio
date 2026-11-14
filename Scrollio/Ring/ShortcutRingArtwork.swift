@@ -582,17 +582,13 @@ enum ShortcutRingArtwork {
     ) -> (namePointSize: CGFloat, nameLines: Int, nameHeight: CGFloat, keysPointSize: CGFloat, gap: CGFloat, height: CGFloat) {
         let smallest = pointSize * namedTitleSmallest
         var size = pointSize
-        // (`titleLayout` keeps the size it is given when the name fits two lines at it.)
-        var fit = titleLayout(name, width: width, pointSize: size)
-        while fit.pointSize != size, size > smallest {
+        var measured = titleLines(name, width: width, pointSize: size)
+        while measured.lines > 2, size > smallest {
             size = max(smallest, size - pointSize * namedTitleStep)
-            fit = titleLayout(name, width: width, pointSize: size)
+            measured = titleLines(name, width: width, pointSize: size)
         }
-        let nameLines = fit.pointSize == size ? fit.lines : 2
-        // (As `titleLayout` measures a line.)
-        let nameFont = NSFont.systemFont(ofSize: size, weight: .semibold)
-        let lineHeight = ceil(nameFont.ascender - nameFont.descender + nameFont.leading)
-        let nameHeight = lineHeight * CGFloat(nameLines) + 1
+        let nameLines = min(2, measured.lines)
+        let nameHeight = measured.lineHeight * CGFloat(nameLines) + 1
         var keysSize = size * titleKeysShrink
         let keysWidth = (keys as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: keysSize, weight: .medium)]).width
         if keysWidth > width {
@@ -607,25 +603,34 @@ enum ShortcutRingArtwork {
     /// How a name stands in a hub with `width` of room: at `pointSize` on up to two lines, else
     /// smaller on up to three.
     static func titleLayout(_ title: String, width: CGFloat, pointSize: CGFloat) -> (pointSize: CGFloat, lines: Int, height: CGFloat) {
-        func measure(_ size: CGFloat) -> (lines: Int, lineHeight: CGFloat) {
-            let font = NSFont.systemFont(ofSize: size, weight: .semibold)
-            let lineHeight = ceil(font.ascender - font.descender + font.leading)
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.alignment = .center
-            paragraph.lineBreakMode = .byWordWrapping
-            let needed = (title as NSString).boundingRect(
-                with: CGSize(width: width, height: 10_000), options: [.usesLineFragmentOrigin],
-                attributes: [.font: font, .paragraphStyle: paragraph]
-            ).height
-            return (max(1, Int((needed / lineHeight).rounded())), lineHeight)
-        }
-        let usual = measure(pointSize)
+        let usual = titleLines(title, width: width, pointSize: pointSize)
         if usual.lines <= 2 {
             return (pointSize, usual.lines, usual.lineHeight * CGFloat(usual.lines) + 1)
         }
         let smaller = pointSize * longTitleShrink
-        let shrunk = measure(smaller)
+        let shrunk = titleLines(title, width: width, pointSize: smaller)
         let lines = min(3, shrunk.lines)
         return (smaller, lines, shrunk.lineHeight * CGFloat(lines) + 1)
+    }
+
+    /// How many lines a name takes in `width` at `pointSize`, and how high one line is, as
+    /// the text system lays them out. (The font's ascender and descender added up and
+    /// rounded are a point short of that at some sizes, such as 10.08 points: the room
+    /// then held one line less than the name needed, and its first line was cut.)
+    static func titleLines(_ title: String, width: CGFloat, pointSize: CGFloat) -> (lines: Int, lineHeight: CGFloat) {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byWordWrapping
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: pointSize, weight: .semibold), .paragraphStyle: paragraph,
+        ]
+        func height(in room: CGFloat) -> CGFloat {
+            return (title as NSString).boundingRect(
+                with: CGSize(width: room, height: 10_000), options: [.usesLineFragmentOrigin], attributes: attributes
+            ).height
+        }
+        // One line of this very name (a script drawn with another font has taller lines).
+        let lineHeight = max(1, ceil(height(in: 100_000)))
+        return (max(1, Int((height(in: width) / lineHeight).rounded())), lineHeight)
     }
 }
