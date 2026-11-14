@@ -293,7 +293,17 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
     }
 
     func syncViewWithOptions() {
-        guard isViewLoaded else { return }
+        if sync() {
+            onHeightChange?()
+        }
+    }
+
+    /// Shows the stored settings; true when the page must measure again: the line changed
+    /// while the part is on screen (an Undo in the app's Buttons), and may take more or
+    /// less room.
+    @discardableResult
+    private func sync() -> Bool {
+        guard isViewLoaded else { return false }
         let usesGeneralRing = application.usesGeneralRing
         generalRingRow.isOn = usesGeneralRing
         // (What opens the ring is a binding of Buttons or of the app's Buttons part, and
@@ -303,15 +313,11 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
             on: usesGeneralRing, name: application.getName(),
             opens: .of(application, general: Options.shared.buttons.binding)
         )
-        // A line that changes while the part is on screen (an Undo in the app's Buttons)
-        // may take more or less room: the page measures again.
         let remeasures = generalRingRow.explanation != line && view.superview != nil
         generalRingRow.explanation = line
         showOwnRing(!usesGeneralRing)
         ringController?.reload()
-        if remeasures {
-            onHeightChange?()
-        }
+        return remeasures
     }
 
     func partWillHide() {
@@ -357,7 +363,8 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         // while it is still the app's own.
         ringController?.endEditing()
         application.setUsesGeneralRing(sender.state == .on, general: Options.shared.ring)
-        syncViewWithOptions()
+        // (The own ring came or went: the page measures again, once.)
+        sync()
         onHeightChange?()
     }
 }

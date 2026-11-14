@@ -970,9 +970,12 @@ final class ApplicationPageTests: XCTestCase {
         Options.shared.gesture.actions.up = GestureAction(SystemShortcut.copy)
         Options.shared.gesture.invertHorizontal = true
         let (pane, part) = try gesturesPart()
+        var heightChanges = 0
+        pane.detailController?.onHeightChange = { heightChanges += 1 }
         part.generalGesturesSwitch.state = .off
         send(part.generalGesturesSwitch)
 
+        XCTAssertEqual(heightChanges, 1, "the page measures again, once")
         XCTAssertFalse(calculator.usesGeneralGestures)
         XCTAssertEqual(calculator.ownGestures?.actions, Options.shared.gesture.actions)
         XCTAssertEqual(calculator.ownGestures?.invertHorizontal, true)

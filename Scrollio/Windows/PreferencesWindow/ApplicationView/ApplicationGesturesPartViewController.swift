@@ -128,19 +128,18 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     }
 
     /// Shows the line, or takes it away: a line sits close under its box; without it the
-    /// titled box of the app's own set keeps its gap. The page's height follows.
-    private func syncButtonNote() {
-        guard let holder = buttonNoteLabel.superview else { return }
+    /// titled box of the app's own set keeps its gap. True when it came or went while the
+    /// part is on screen: the page's height follows.
+    private func syncButtonNote() -> Bool {
+        guard let holder = buttonNoteLabel.superview else { return false }
         let note = Self.buttonNote(for: application, general: Options.shared.buttons.binding)
         buttonNoteLabel.stringValue = note ?? ""
         content.setCustomSpacing(
             note == nil ? PreferencesGroupedForm.sectionSpacing : PreferencesGroupedForm.noteSpacing, after: generalSection
         )
-        guard holder.isHidden != (note == nil) else { return }
+        guard holder.isHidden != (note == nil) else { return false }
         holder.isHidden = note == nil
-        if view.superview != nil {
-            onHeightChange?()
-        }
+        return view.superview != nil
     }
 
     private static var boxWidth: CGFloat {
@@ -154,26 +153,32 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     // MARK: - ApplicationPagePartController
 
     func syncViewWithOptions() {
-        guard isViewLoaded else { return }
+        if sync() {
+            onHeightChange?()
+        }
+    }
+
+    /// Shows the stored settings; true when the page must measure again: the switch's line
+    /// or the line under the box changed while the part is on screen (an Undo in the app's
+    /// Buttons), and may take more or less room.
+    @discardableResult
+    private func sync() -> Bool {
+        guard isViewLoaded else { return false }
         let usesGeneral = application.usesGeneralGestures
         generalGesturesRow.isOn = usesGeneral
         let line = ApplicationDetailViewController.generalGesturesExplanation(
             on: usesGeneral, name: application.getName(),
             hasButton: Self.hasButton(for: application, general: Options.shared.buttons.binding)
         )
-        if generalGesturesRow.explanation != line {
-            generalGesturesRow.explanation = line
-            // (The no-button line may take another line's room: the page measures again.)
-            if view.superview != nil {
-                onHeightChange?()
-            }
-        }
-        syncButtonNote()
+        var remeasures = generalGesturesRow.explanation != line && view.superview != nil
+        generalGesturesRow.explanation = line
+        remeasures = syncButtonNote() || remeasures
         showOwnSet(!usesGeneral)
-        guard let controls else { return }
+        guard let controls else { return remeasures }
         controls.showLogiActions = showsLogiActions()
         controls.sync()
         applyModeRules()
+        return remeasures
     }
 
     func partWillHide() {
@@ -244,7 +249,8 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         // while it is still the app's own.
         controls?.endEditing()
         application.setUsesGeneralGestures(sender.state == .on, general: Options.shared.gesture)
-        syncViewWithOptions()
+        // (The own set came or went: the page measures again, once.)
+        sync()
         onHeightChange?()
     }
 }
