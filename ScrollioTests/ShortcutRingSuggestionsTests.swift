@@ -324,19 +324,29 @@ final class ShortcutRingSuggestionKeysTests: XCTestCase {
         XCTAssertEqual(try SuggestionFixtures.app("Adobe Lightroom Classic").places(on: german)[7], .empty, "\\")
     }
 
-    /// On every QWERTZ layout the system has: a letter is the key that types it, and a
-    /// place whose character needs Option takes its alternative or stays empty; nothing
-    /// is sent with a key that types another character.
-    func testOnQWERTZLayoutsNoPlaceSendsAnotherCharacter() throws {
+    /// On QWERTZ and the other layouts where signs and digits sit elsewhere (Swiss, Polish,
+    /// Turkish F and Q, Hungarian, Kurdish): every place sends a key that types what the
+    /// shortcut has, never another character. A letter is the key that types it; a sign
+    /// or a digit is a key that types it (or its US Shift pair: ">" for ⇧⌘., "+" for
+    /// zoom's ⌘=) with the modifiers it is sent with; a place whose character the layout
+    /// types only with Option takes its alternative or stays empty; Option is never added.
+    /// (Zoom was sent with the US key where the layout has no "+", "=" or "-" under
+    /// Command alone: ⌘^ on Swiss, ⌘X, Cut, for Zoom Out on Turkish F.)
+    func testOnOtherLayoutsNoPlaceSendsAnotherCharacter() throws {
+        let ids = [
+            "German", "Slovenian", "SwissGerman", "SwissFrench", "Polish", "Turkish", "Turkish-QWERTY-PC",
+            "Hungarian", "Hungarian-QWERTY", "Kurdish-Kurmanji",
+        ].map { "com.apple.keylayout.\($0)" }
         var checked = 0
-        for id in ["com.apple.keylayout.German", "com.apple.keylayout.Slovenian", "com.apple.keylayout.SwissGerman"] {
+        for id in ids {
             guard let source = SuggestionFixtures.inputSource(id), let layout = KeyboardLayoutLayers.of(source) else { continue }
             checked += 1
             for app in catalog.apps {
                 for (slot, place) in zip(app.slots, app.places(on: layout)) {
                     guard let suggested = slot.place else { continue }
                     let what = "\(id) \(app.appName): \(suggested.name)"
-                    if ["[", "]", "\\"].contains(suggested.keys.character) {
+                    let character = suggested.keys.character
+                    guard suggested.keys.combination(on: layout) != nil else {
                         switch suggested.alternative {
                         case .listed(let shortcut)?: XCTAssertEqual(place, ShortcutRingPlace(shortcut), what)
                         case .keys?: XCTAssertNotEqual(place.action, "", what)
@@ -344,17 +354,48 @@ final class ShortcutRingSuggestionKeysTests: XCTestCase {
                         }
                         continue
                     }
-                    guard let key = ShortcutRingPlace.keyCombination(named: place.action) else { continue }
-                    if KeyCode.usLetterKeyCodes[suggested.keys.character] != nil {
-                        let layer = suggested.keys.modifiers.contains(.maskCommand) ? layout.command : layout.plain
-                        XCTAssertEqual(layer[key.code]?.lowercased(), suggested.keys.character, what)
+                    // (A listed action is sent with the layout's key when it runs; a named
+                    // key is the same key on every layout.)
+                    guard ShortcutRingSuggestion.Keys.namedKeys[character] == nil,
+                          let key = ShortcutRingPlace.keyCombination(named: place.action) else { continue }
+                    let sent = CGEventFlags(rawValue: key.modifiers)
+                    XCTAssertEqual(sent.contains(.maskAlternate), suggested.keys.modifiers.contains(.maskAlternate), "no Option added: \(what)")
+                    let withCommand = sent.contains(.maskCommand)
+                    if KeyCode.usLetterKeyCodes[character] != nil {
+                        XCTAssertEqual((withCommand ? layout.command : layout.plain)[key.code]?.lowercased(), character, what)
+                        continue
                     }
-                    XCTAssertEqual(key.modifiers & CGEventFlags.maskAlternate.rawValue,
-                                   suggested.keys.modifiers.rawValue & CGEventFlags.maskAlternate.rawValue, "no Option added: \(what)")
+                    // What the key types with the modifiers it is sent with (with Shift and
+                    // Command, as without Command: under Command many layouts drop Shift).
+                    let typed: [String?] = sent.contains(.maskShift)
+                        ? (withCommand ? [layout.commandShift[key.code], layout.shift[key.code]] : [layout.shift[key.code]])
+                        : [(withCommand ? layout.command : layout.plain)[key.code]]
+                    var wanted: Set<String> = [character]
+                    if let shifted = KeyboardLayoutLayers.usShifted[character] {
+                        if suggested.keys.modifiers.contains(.maskShift) { wanted = [shifted] }
+                        if suggested.keys.modifiers == .maskCommand, character == "=" { wanted.insert(shifted) }
+                    }
+                    XCTAssertTrue(typed.contains { $0.map(wanted.contains) == true },
+                                  "\(what): key \(key.code) types \(typed.compactMap { $0 }), not \(wanted.sorted())")
                 }
             }
         }
-        guard checked > 0 else { throw XCTSkip("no QWERTZ layout on this Mac") }
+        guard checked > 0 else { throw XCTSkip("none of these layouts is on this Mac") }
+        // The cases of the review: zoom with Shift added where "=" or "-" needs it, and
+        // Hungarian's "0", which is left of 1.
+        if let turkish = try? SuggestionFixtures.layout("com.apple.keylayout.Turkish") {
+            let figma = try SuggestionFixtures.app("Figma").places(on: turkish)
+            XCTAssertEqual(figma[4].action, custom(44, [.maskShift, .maskCommand]), "Zoom Out: \"-\" is Shift and the , key")
+        }
+        if let swiss = try? SuggestionFixtures.layout("com.apple.keylayout.SwissGerman") {
+            let figma = try SuggestionFixtures.app("Figma").places(on: swiss)
+            XCTAssertEqual(figma[0].action, custom(29, [.maskShift, .maskCommand]), "Zoom In: \"=\" is Shift-0")
+        }
+        if let hungarian = try? SuggestionFixtures.layout("com.apple.keylayout.Hungarian") {
+            let illustrator = try SuggestionFixtures.app("Adobe Illustrator").places(on: hungarian)
+            let fit = try XCTUnwrap(ShortcutRingPlace.keyCombination(named: illustrator[7].action))
+            XCTAssertEqual(hungarian.command[fit.code], "0", "Fit Artboard ⌘0")
+        }
     }
 
     /// A layout that types "." only with Shift (French AZERTY): ⌘. is sent as ⇧⌘ and the
