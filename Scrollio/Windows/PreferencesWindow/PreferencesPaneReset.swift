@@ -40,6 +40,10 @@ final class PreferencesPaneReset: NSObject {
     var undoOfferDuration: TimeInterval = 8
     /// The button offers to take the reset back (it reads "Undo Reset").
     private(set) var offersUndo = false
+    /// Runs first at a click: the pane ends what is being edited (a name typed in a
+    /// popover is stored), so the reset takes it with what Undo gives back. The popover
+    /// starts closing at the click's mouse-down but may report it only after the action.
+    var willReset: () -> Void = {}
 
     private let differsFromDefaults: () -> Bool
     private let resetSettings: (UndoManager?) -> Void
@@ -82,6 +86,7 @@ final class PreferencesPaneReset: NSObject {
     /// the button reads "Undo Reset" and the settings are still the defaults, the click
     /// takes the reset back instead.
     @objc func click(_ sender: Any?) {
+        willReset()
         if offersUndo, !hasSettingsToReset {
             undoReset()
             return

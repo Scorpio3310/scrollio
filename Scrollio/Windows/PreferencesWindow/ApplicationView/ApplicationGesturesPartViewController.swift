@@ -164,6 +164,9 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     /// set stays stored for later. Off: the app's own set, which starts as a copy of the
     /// general actions and invert switch as they are now when the app never had one.
     @objc func generalGesturesClick(_ sender: NSSwitch) {
+        // First what is being edited (a name typed in a row's popover) goes into the set,
+        // while it is still the app's own.
+        controls?.endEditing()
         application.setUsesGeneralGestures(sender.state == .on, general: Options.shared.gesture)
         syncViewWithOptions()
         onHeightChange?()

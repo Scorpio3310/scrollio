@@ -335,6 +335,9 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
     /// own ring stays stored for later. Off: the app's own ring, which starts as a copy of
     /// the general ring as it is now when the app never had one.
     @objc func generalRingClick(_ sender: NSSwitch) {
+        // First what is being edited (a name typed in a row's popover) goes into the ring,
+        // while it is still the app's own.
+        ringController?.endEditing()
         application.setUsesGeneralRing(sender.state == .on, general: Options.shared.ring)
         syncViewWithOptions()
         onHeightChange?()

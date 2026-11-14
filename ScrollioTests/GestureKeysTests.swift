@@ -457,6 +457,102 @@ final class GestureKeysPaneTests: XCTestCase {
         XCTAssertNil(up.menu?.items.first?.attributedTitle)
     }
 
+    /// "Keyboard Shortcut…" on a row that holds keys: the popover with their name, typed
+    /// and not confirmed with Done.
+    private func typeName(_ name: String, into pullDown: ButtonActionPullDown) throws -> KeyPopover {
+        pullDown.makeDetailsPopover = { StillPopover() }
+        pullDown.presentShortcutDetails = { popover, anchor, keys, label in
+            popover.showDetails(at: anchor, keys: keys, label: label)
+        }
+        let item = try XCTUnwrap(everything(in: pullDown.menu).first {
+            $0.representedObject as? String == ShortcutManager.MenuMarker.keyboardShortcut
+        })
+        pullDown.shortcutSelected(item)
+        let details = try XCTUnwrap(pullDown.detailsPopover)
+        let editor = try XCTUnwrap(details.labelEditor)
+        type(name, into: editor.nameField, of: editor)
+        return details
+    }
+
+    /// A name typed in the popover is kept when the click that closes the popover is
+    /// "Reset to Defaults", whenever the popover reports its close: editing ends before
+    /// the reset takes what it can give back, so Undo brings the keys back with the name.
+    func testANameTypedBeforeResetToDefaultsComesBackWithUndo() throws {
+        Options.shared.gesture.actions.up = GestureAction(action: shiftCommandR)
+        let controller = makeController()
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        controller.paneUndoManager = undo
+        let details = try typeName("Reload", into: controller.controls.actionPopUp(for: .up))
+
+        undo.beginUndoGrouping()
+        controller.resetToDefaultsButton.performClick(nil)
+        undo.endUndoGrouping()
+        details.hide()
+        XCTAssertEqual(Options.shared.gesture, .default)
+        undo.undo()
+        XCTAssertEqual(Options.shared.gesture.actions.up, GestureAction(action: shiftCommandR, label: label("Reload")))
+    }
+
+    /// On an app's page the same for "Use the general gestures": the name typed into a row
+    /// of the app's own set is in that set when it comes back.
+    func testANameTypedBeforeUseTheGeneralGesturesIsKeptInTheAppsSet() throws {
+        let notes = Application(path: "/System/Applications/Notes.app")
+        notes.setUsesGeneralGestures(false, general: .default)
+        var actions = GestureActions.default
+        actions.up = GestureAction(action: shiftCommandR)
+        notes.setOwnGestures(actions: actions, invertHorizontal: false)
+        let part = ApplicationGesturesPartViewController(application: notes)
+        part.showsLogiActions = { false }
+        _ = part.view
+        let details = try typeName("Reload", into: try XCTUnwrap(part.controls).actionPopUp(for: .up))
+
+        part.generalGesturesSwitch.state = .on
+        XCTAssertTrue(part.generalGesturesSwitch.sendAction(part.generalGesturesSwitch.action, to: part.generalGesturesSwitch.target))
+        details.hide()
+        XCTAssertTrue(notes.usesGeneralGestures)
+        XCTAssertEqual(notes.gestures?.actions.up, GestureAction(action: shiftCommandR, label: label("Reload")), "kept for later with its name")
+        XCTAssertEqual(Options.shared.gesture, .default, "the general gestures are untouched")
+    }
+
+    /// The same in the Shortcut Ring: its pane's "Reset to Defaults" and an app's "Use the
+    /// general ring" keep a name typed into a place's popover.
+    func testANameTypedBeforeTheRingIsResetOrItsAppUsesTheGeneralRingIsKept() throws {
+        let savedRing = Options.shared.ring
+        addTeardownBlock {
+            Options.shared.ring = savedRing
+            ShortcutRingController.forgetPreparedFaces()
+        }
+        var ring = ShortcutRingSettings.default
+        ring[0] = ShortcutRingPlace(action: shiftCommandR)
+        Options.shared.ring = ring
+        let pane = RingPreferencesViewController()
+        pane.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: ["Thumb panel"]) }
+        _ = pane.view
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        pane.paneUndoManager = undo
+        let details = try typeName("Reload", into: pane.placePopUps[0])
+        undo.beginUndoGrouping()
+        pane.resetToDefaultsButton.performClick(nil)
+        undo.endUndoGrouping()
+        details.hide()
+        XCTAssertEqual(Options.shared.ring, .default)
+        undo.undo()
+        XCTAssertEqual(Options.shared.ring[0], ShortcutRingPlace(action: shiftCommandR, label: label("Reload")))
+
+        let notes = Application(path: "/System/Applications/Notes.app")
+        notes.setUsesGeneralRing(false, general: ring)
+        let part = ApplicationRingPartViewController(application: notes)
+        _ = part.view
+        let own = try typeName("Reload", into: try XCTUnwrap(part.ringController).placePopUps[0])
+        part.generalRingRow.toggle.state = .on
+        XCTAssertTrue(part.generalRingRow.toggle.sendAction(part.generalRingRow.toggle.action, to: part.generalRingRow.toggle.target))
+        own.hide()
+        XCTAssertTrue(notes.usesGeneralRing)
+        XCTAssertEqual(notes.ring?[0], ShortcutRingPlace(action: shiftCommandR, label: label("Reload")), "kept for later with its name")
+    }
+
     /// Keys without a name show as keys; a recorded listed shortcut is that action; what
     /// a direction cannot run is refused when it is pressed, with the gesture's own words.
     func testWhatARowTakesAndRefuses() throws {
