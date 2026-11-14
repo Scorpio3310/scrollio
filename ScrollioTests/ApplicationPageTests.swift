@@ -1355,6 +1355,51 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(part.hapticsRow?.isEnabled, true)
     }
 
+    /// As in the Gestures pane: while a mouse has its haptics off because they were switched
+    /// off under Mouse, the app's own "Logitech mouse" box has the line that says so, with
+    /// "Open Mouse", close under the box; it folds with the box (F18).
+    func testTheGesturesPartSaysWhenHapticsAreOffUnderMouse() throws {
+        let savedHaptics = Options.shared.logiMouse.hapticsOn
+        Options.shared.logiMouse.hapticsOn = false
+        addTeardownBlock { Options.shared.logiMouse.hapticsOn = savedHaptics }
+        Options.shared.buttons.binding = [binding(3, SystemShortcut.mouseGestureNavigation.identifier)]
+        let calculator = addApp(Self.calculator)
+        calculator.setUsesGeneralGestures(false, general: Options.shared.gesture)
+        let hapticsOff = MouseGestureDeviceSupport(deviceTracking: true, haptics: true, hapticsOffOnMouse: true)
+        let (pane, part) = try gesturesPart(mice: hapticsOff)
+        _ = makeWindow(for: pane)
+        let note = try XCTUnwrap(part.hapticsOffNote)
+        let fold = try XCTUnwrap(part.logitechFold)
+        XCTAssertFalse(note.isHidden)
+        XCTAssertEqual(part.hapticsOffLabel?.stringValue, "Haptic feedback is off under Mouse.")
+        XCTAssertEqual(part.openMouseButton?.title, "Open Mouse")
+        XCTAssertEqual(part.hapticsRow?.isOn, true, "the switch stays as it is")
+        var opened = 0
+        part.openMousePane = { opened += 1 }
+        try XCTUnwrap(part.openMouseButton).performClick(nil)
+        XCTAssertEqual(opened, 1)
+        pane.view.layoutSubtreeIfNeeded()
+        func frame(_ view: NSView) -> NSRect {
+            return part.view.convert(view.alignmentRect(forFrame: view.frame), from: view.superview)
+        }
+        let gap = max(frame(fold).minY - frame(note).maxY, frame(note).minY - frame(fold).maxY)
+        XCTAssertEqual(gap, PreferencesGroupedForm.noteSpacing, accuracy: 0.5, "close under the box")
+        XCTAssertFalse(part.view.hasAmbiguousLayout)
+
+        // Haptics on under Mouse: no line.
+        Options.shared.logiMouse.hapticsOn = true
+        part.syncViewWithOptions()
+        XCTAssertTrue(note.isHidden)
+        // Folded with its box while no button runs the gestures here; it opens with it.
+        Options.shared.logiMouse.hapticsOn = false
+        Options.shared.buttons.binding = []
+        part.syncViewWithOptions()
+        XCTAssertTrue(fold.isCollapsible)
+        XCTAssertTrue(note.isHidden)
+        XCTAssertTrue(fold.disclosure.accessibilityPerformPress())
+        XCTAssertFalse(note.isHidden, "opens with its box")
+    }
+
     /// One wording: while no button runs Gesture Navigation with the app in front
     /// (whatever Buttons has), the switch's own line says so, in both states, and there is
     /// no line under the box; the line under the box only names another button than

@@ -590,47 +590,12 @@ final class GesturesPreferencesViewController: NSViewController {
     /// "Haptic feedback is off under Mouse." at the rows' inset, "Open Mouse" (small) at the
     /// right edge of the box above, in the column of its switches.
     private func makeHapticsOffNote() -> NSView {
-        let label = Self.makeNote(text("gestures-haptics-off-under-mouse"), identifier: Identifier.hapticsOffNote)
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        hapticsOffLabel = label
-        let button = PreferencesGroupedForm.makePushButton(
-            title: text("gestures-open-mouse"),
-            target: self,
-            action: #selector(openMouseClicked(_:))
-        )
-        button.controlSize = .small
-        button.font = NSFont.systemFont(ofSize: NSFont.systemFontSize(for: .small))
-        button.identifier = Identifier.openMouse
-        button.setContentCompressionResistancePriority(.required, for: .horizontal)
-        // The button says where it goes; the line next to it says why.
-        button.setAccessibilityHelp(label.stringValue)
-        openMouseButton = button
-
-        let inset = PreferencesGroupedForm.rowHorizontalInset
-        let spacing = PreferencesGroupedForm.controlSpacing
-        label.preferredMaxLayoutWidth = max(0, Self.boxWidth - 2 * inset - button.fittingSize.width - spacing)
-        let holder = NSView()
-        holder.translatesAutoresizingMaskIntoConstraints = false
-        holder.isHidden = true
-        holder.addSubview(label)
-        holder.addSubview(button)
-        // Both on one middle line, the line as tall as the taller of the two.
-        let middle = label.centerYAnchor.constraint(equalTo: button.centerYAnchor)
-        middle.priority = .defaultHigh
-        let hug = holder.heightAnchor.constraint(equalToConstant: 0)
-        hug.priority = .fittingSizeCompression
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: holder.leadingAnchor, constant: inset),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: button.leadingAnchor, constant: -spacing),
-            label.topAnchor.constraint(greaterThanOrEqualTo: holder.topAnchor),
-            label.bottomAnchor.constraint(lessThanOrEqualTo: holder.bottomAnchor),
-            button.trailingAnchor.constraint(equalTo: holder.trailingAnchor, constant: -inset),
-            button.centerYAnchor.constraint(equalTo: holder.centerYAnchor),
-            button.topAnchor.constraint(greaterThanOrEqualTo: holder.topAnchor),
-            button.bottomAnchor.constraint(lessThanOrEqualTo: holder.bottomAnchor),
-            middle, hug,
-        ])
-        return holder
+        let note = MouseGestureRows.hapticsOffNote(boxWidth: Self.boxWidth, target: self, action: #selector(openMouseClicked(_:)))
+        note.label.identifier = Identifier.hapticsOffNote
+        note.button.identifier = Identifier.openMouse
+        hapticsOffLabel = note.label
+        openMouseButton = note.button
+        return note.holder
     }
 
     private func makeHapticsRow() -> PreferencesGroupRow {

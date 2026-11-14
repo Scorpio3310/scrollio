@@ -1746,7 +1746,10 @@ final class PreferencesWindowRenderTests: XCTestCase {
         calculator.ring?[0] = ShortcutRingPlace(SystemShortcut.copy)
         calculator.setOwnRingFreezePointer(true)
         Options.shared.application.applications = EnhanceArray<Application>(withArray: [calculator], matchKey: "path")
-        let mice = MouseGestureDeviceSource(support: { MouseGestureDeviceSupport(deviceTracking: true, haptics: true) }, refresh: {})
+        var hapticsOffOnMouse = false
+        let mice = MouseGestureDeviceSource(support: {
+            MouseGestureDeviceSupport(deviceTracking: true, haptics: true, hapticsOffOnMouse: hapticsOffOnMouse)
+        }, refresh: {})
 
         func page(_ name: String, part: ApplicationPagePart) throws {
             let defaults = uiDefaults(advanced: false)
@@ -1770,6 +1773,12 @@ final class PreferencesWindowRenderTests: XCTestCase {
         ButtonUtils.shared.invalidateCache()
         try page("app-parity-gestures", part: .gestures)
         try page("app-parity-ring", part: .ring)
+        // Haptics switched off under Mouse: the line under the Logitech box.
+        hapticsOffOnMouse = true
+        Options.shared.logiMouse.hapticsOn = false
+        try page("app-parity-gestures-haptics-off", part: .gestures)
+        hapticsOffOnMouse = false
+        Options.shared.logiMouse = savedMouse
         Options.shared.buttons.binding = []
         ButtonUtils.shared.invalidateCache()
         try page("app-parity-gestures-folded", part: .gestures)
