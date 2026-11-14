@@ -30,7 +30,8 @@ struct ShortcutRingFace {
         var keys: String = ""
         /// The action's SF Symbol.
         var symbolName: String
-        /// A picture instead of the symbol: the icon of an app or a file.
+        /// A picture instead of the symbol: the icon of an app or a file, already drawn
+        /// (`drawnIcon`).
         var image: NSImage?
         /// Text instead of the symbol: a recorded key combination as its keys ("⇧⌘K"),
         /// on one line or two (the modifiers above a key with a long name).
@@ -106,10 +107,34 @@ struct ShortcutRingFace {
                 let shown = resolver.resolve(state: CellActionState(binding: place.asBinding()))
                 return Place(
                     title: shown.title, symbolName: shown.symbolName ?? "arrow.up.forward.app",
-                    image: shown.image, isEmpty: false
+                    image: shown.image.map(Self.drawnIcon), isEmpty: false
                 )
             }
         })
+    }
+
+    /// An app's or a file's icon as pixels drawn now, at the size a lit place shows it on
+    /// a Retina screen. The workspace's icon renders its pixels only when it is first
+    /// drawn at a size (about 17 ms an icon, measured): drawn here, while the face is made
+    /// at a quiet moment, the ring that is held only scales a bitmap.
+    static func drawnIcon(_ icon: NSImage) -> NSImage {
+        let side = ShortcutRingArtwork.iconSide * ShortcutRingDrops.litContentScale
+        let pixels = Int((side * 2).rounded(.up))
+        guard let blank = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8, samplesPerPixel: 4,
+            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ), let bitmap = blank.retagging(with: .displayP3) else { return icon }
+        // The size in points comes first: the context takes its scale from it.
+        bitmap.size = NSSize(width: side, height: side)
+        guard let context = NSGraphicsContext(bitmapImageRep: bitmap) else { return icon }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        context.imageInterpolation = .high
+        icon.draw(in: CGRect(x: 0, y: 0, width: side, height: side), from: .zero, operation: .copy, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+        let drawn = NSImage(size: bitmap.size)
+        drawn.addRepresentation(bitmap)
+        return drawn
     }
 
     private static var knownSymbols: [String: Bool] = [:]
@@ -540,20 +565,31 @@ enum ShortcutRingArtwork {
         keysText.draw(at: CGPoint(x: centre.x - keysWidth / 2, y: keysY))
     }
 
+    /// A key combination's name too long for two lines of the hub gets smaller, a step of
+    /// this part of the size at a time, until it fits two lines; at most down to
+    /// `namedTitleSmallest` of the size.
+    static let namedTitleStep: CGFloat = 0.04
+    static let namedTitleSmallest: CGFloat = 0.72
+
     /// How a key combination's name stands in a hub with `width` of room when its keys
-    /// stand under it: the name at `pointSize` on one or two lines, or smaller when it
-    /// needs more (still two lines at most, the rest cut with an ellipsis); the keys on
-    /// one line, `titleKeysShrink` of the size and smaller still when they are wider
-    /// than the room. Never taller than three lines of a long name are today.
+    /// stand under it: the name at `pointSize` on one or two lines, or as much smaller as
+    /// it needs to be whole on two (only what is longer still at `namedTitleSmallest` is
+    /// cut with an ellipsis); the keys on one line, `titleKeysShrink` of the name's size
+    /// and smaller still when they are wider than the room. Never taller than three lines
+    /// of a long name are today.
     static func namedTitleLayout(
         _ name: String, keys: String, width: CGFloat, pointSize: CGFloat
     ) -> (namePointSize: CGFloat, nameLines: Int, nameHeight: CGFloat, keysPointSize: CGFloat, gap: CGFloat, height: CGFloat) {
-        let usual = titleLayout(name, width: width, pointSize: pointSize)
-        let nameLines = min(2, usual.lines)
-        // (`titleLayout` gives `lineHeight × lines + 1`.)
-        let lineHeight = (usual.height - 1) / CGFloat(usual.lines)
-        let nameHeight = lineHeight * CGFloat(nameLines) + 1
-        var keysSize = pointSize * titleKeysShrink
+        let smallest = pointSize * namedTitleSmallest
+        var size = pointSize
+        var measured = titleLines(name, width: width, pointSize: size)
+        while measured.lines > 2, size > smallest {
+            size = max(smallest, size - pointSize * namedTitleStep)
+            measured = titleLines(name, width: width, pointSize: size)
+        }
+        let nameLines = min(2, measured.lines)
+        let nameHeight = measured.lineHeight * CGFloat(nameLines) + 1
+        var keysSize = size * titleKeysShrink
         let keysWidth = (keys as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: keysSize, weight: .medium)]).width
         if keysWidth > width {
             keysSize = max(pointSize * 0.5, keysSize * width / keysWidth)
@@ -561,31 +597,40 @@ enum ShortcutRingArtwork {
         let keysFont = NSFont.systemFont(ofSize: keysSize, weight: .medium)
         let keysHeight = ceil(keysFont.ascender - keysFont.descender + keysFont.leading)
         let gap: CGFloat = 0
-        return (usual.pointSize, nameLines, nameHeight, keysSize, gap, nameHeight + gap + keysHeight)
+        return (size, nameLines, nameHeight, keysSize, gap, nameHeight + gap + keysHeight)
     }
 
     /// How a name stands in a hub with `width` of room: at `pointSize` on up to two lines, else
     /// smaller on up to three.
     static func titleLayout(_ title: String, width: CGFloat, pointSize: CGFloat) -> (pointSize: CGFloat, lines: Int, height: CGFloat) {
-        func measure(_ size: CGFloat) -> (lines: Int, lineHeight: CGFloat) {
-            let font = NSFont.systemFont(ofSize: size, weight: .semibold)
-            let lineHeight = ceil(font.ascender - font.descender + font.leading)
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.alignment = .center
-            paragraph.lineBreakMode = .byWordWrapping
-            let needed = (title as NSString).boundingRect(
-                with: CGSize(width: width, height: 10_000), options: [.usesLineFragmentOrigin],
-                attributes: [.font: font, .paragraphStyle: paragraph]
-            ).height
-            return (max(1, Int((needed / lineHeight).rounded())), lineHeight)
-        }
-        let usual = measure(pointSize)
+        let usual = titleLines(title, width: width, pointSize: pointSize)
         if usual.lines <= 2 {
             return (pointSize, usual.lines, usual.lineHeight * CGFloat(usual.lines) + 1)
         }
         let smaller = pointSize * longTitleShrink
-        let shrunk = measure(smaller)
+        let shrunk = titleLines(title, width: width, pointSize: smaller)
         let lines = min(3, shrunk.lines)
         return (smaller, lines, shrunk.lineHeight * CGFloat(lines) + 1)
+    }
+
+    /// How many lines a name takes in `width` at `pointSize`, and how high one line is, as
+    /// the text system lays them out. (The font's ascender and descender added up and
+    /// rounded are a point short of that at some sizes, such as 10.08 points: the room
+    /// then held one line less than the name needed, and its first line was cut.)
+    static func titleLines(_ title: String, width: CGFloat, pointSize: CGFloat) -> (lines: Int, lineHeight: CGFloat) {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byWordWrapping
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: pointSize, weight: .semibold), .paragraphStyle: paragraph,
+        ]
+        func height(in room: CGFloat) -> CGFloat {
+            return (title as NSString).boundingRect(
+                with: CGSize(width: room, height: 10_000), options: [.usesLineFragmentOrigin], attributes: attributes
+            ).height
+        }
+        // One line of this very name (a script drawn with another font has taller lines).
+        let lineHeight = max(1, ceil(height(in: 100_000)))
+        return (max(1, Int((height(in: width) / lineHeight).rounded())), lineHeight)
     }
 }

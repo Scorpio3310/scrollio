@@ -240,6 +240,21 @@ final class ShortcutRingChoiceTests: XCTestCase {
             ShortcutRingController.ringsToPrepareAtLaunch(options: options),
             [general, opens.ringThatOpens(general: general)]
         )
+
+        // An app's own ring starts as a copy of the general one: the same places are one
+        // face, made once, and copies never push a ring of other places off the list.
+        let copies = (0..<ShortcutRingController.preparedFaceLimit).map { index -> Application in
+            let copy = Application(path: "/Applications/Copy \(index).app")
+            copy.setUsesGeneralRing(false, general: general)
+            return copy
+        }
+        let last = application("/Applications/Last.app", top: SystemShortcut.paste)
+        last.ring?[2] = ShortcutRingPlace(openTarget: textEdit)
+        options.application.applications = list([opens] + copies + [last, keptForLater])
+        XCTAssertEqual(
+            ShortcutRingController.ringsToPrepareAtLaunch(options: options),
+            [general, opens.ringThatOpens(general: general), last.ringThatOpens(general: general)]
+        )
     }
 }
 
@@ -389,5 +404,54 @@ final class ShortcutRingPerAppControllerTests: XCTestCase {
         }
         XCTAssertEqual(ShortcutRingController.preparedFaces.count, ShortcutRingController.preparedFaceLimit)
         XCTAssertNil(ShortcutRingController.preparedFace(for: notesRing))
+    }
+
+    /// At launch the faces are made one ring per turn of the main queue (the event taps
+    /// wait on it too), the general ring last, so that it is the newest; and never while
+    /// a ring is open: a turn that finds one open tries again a little later.
+    func testTheFacesAtLaunchAreMadeOneRingPerTurnAndNeverWhileARingIsOpen() throws {
+        let options = Options()
+        options.defaults = TestDefaults.make(for: self)
+        let textEdit = OpenTargetPayload(path: "/System/Applications/TextEdit.app", bundleID: "com.apple.TextEdit", arguments: "", kind: .application)
+        var general = ShortcutRingSettings.default
+        general[5] = ShortcutRingPlace(openTarget: textEdit)
+        options.ring = general
+        let notes = application(notesPath, top: SystemShortcut.copy)
+        notes.ring?[2] = ShortcutRingPlace(openTarget: textEdit)
+        options.application.applications = list([notes])
+        options.buttons.binding = [ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil),
+            systemShortcutName: SystemShortcut.shortcutRing.identifier, isEnabled: true
+        )]
+        let notesRing = notes.ringThatOpens(general: general)
+
+        var turns: [(delay: TimeInterval, block: () -> Void)] = []
+        func nextTurn() {
+            guard !turns.isEmpty else { return XCTFail("no turn is due") }
+            turns.removeFirst().block()
+        }
+        ShortcutRingController.prepareFaceAtLaunch(options: options, after: { turns.append(($0, $1)) })
+        XCTAssertEqual(turns.map(\.delay), [0], "nothing in the launch's own turn")
+        XCTAssertTrue(ShortcutRingController.preparedFaces.isEmpty)
+
+        ShortcutRingController.setTestingController(controller)
+        defer { ShortcutRingController.setTestingController(nil) }
+        controller.triggerPressed(by: RingHarness.button(.down))
+        XCTAssertTrue(controller.isOpen)
+        nextTurn()
+        XCTAssertTrue(ShortcutRingController.preparedFaces.isEmpty, "not while a ring is held")
+        XCTAssertEqual(turns.map(\.delay), [ShortcutRingController.launchFaceWait])
+        controller.cancel()
+        XCTAssertFalse(controller.isOpen)
+        nextTurn()
+
+        XCTAssertEqual(turns.map(\.delay), [0])
+        nextTurn()
+        XCTAssertEqual(ShortcutRingController.preparedFaces.map(\.ring), [notesRing], "one ring in a turn")
+        XCTAssertNotNil(ShortcutRingController.preparedFace(for: notesRing)?.places[2].image)
+        XCTAssertEqual(turns.map(\.delay), [0])
+        nextTurn()
+        XCTAssertEqual(ShortcutRingController.preparedFaces.map(\.ring), [general, notesRing], "the general ring is the newest")
+        XCTAssertTrue(turns.isEmpty)
     }
 }

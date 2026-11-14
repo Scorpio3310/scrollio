@@ -780,6 +780,33 @@ final class ShortcutRingDropContentTests: XCTestCase {
         }
     }
 
+    /// An app's icon is drawn when the face is made, at a quiet moment, at the size a lit
+    /// place shows it on a Retina screen: the ring that is held only scales ready pixels.
+    /// (The workspace's icon renders its pixels at its first draw at each size, about
+    /// 17 ms an icon, and that draw came in the turn that showed the held ring.)
+    func testAnAppsIconIsDrawnWhenTheFaceIsMadeNotWhenTheRingIsShown() throws {
+        var ring = ShortcutRingSettings.default
+        ring[1] = ShortcutRingPlace(openTarget: OpenTargetPayload(
+            path: "/System/Applications/Calculator.app", bundleID: "com.apple.calculator", arguments: "", kind: .application
+        ))
+        let image = try XCTUnwrap(ShortcutRingFace(ring).places[1].image)
+        let side = ShortcutRingArtwork.iconSide * ShortcutRingDrops.litContentScale
+        XCTAssertEqual(image.size.width, side, accuracy: 0.01)
+        XCTAssertEqual(image.size.height, side, accuracy: 0.01)
+        XCTAssertEqual(image.representations.count, 1)
+        let bitmap = try XCTUnwrap(
+            image.representations.first as? NSBitmapImageRep,
+            "ready pixels, not \(image.representations.map { String(describing: type(of: $0)) })"
+        )
+        XCTAssertGreaterThanOrEqual(CGFloat(bitmap.pixelsWide), side * 2, "as sharp as a lit place on a Retina screen")
+        XCTAssertGreaterThanOrEqual(CGFloat(bitmap.pixelsHigh), side * 2)
+        // The icon is in it: its middle is not clear.
+        let middle = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2))
+        XCTAssertGreaterThan(middle.alphaComponent, 0.5)
+        // Without a look on disk there is no icon to draw.
+        XCTAssertNil(ShortcutRingFace(ring, looksOnDisk: false).places[1].image)
+    }
+
     /// The measure itself: the ink of an image, from its middle, as a part of its size.
     func testTheInkOfAnImageIsMeasuredFromItsMiddle() {
         let image = NSImage(size: NSSize(width: 20, height: 20), flipped: false) { _ in

@@ -104,28 +104,50 @@ final class ShortcutRingController {
     }
 
     /// The rings whose face is made at launch: of those that can open (the general one
-    /// and each app's own), the ones with a place that opens an app or a file; none while
+    /// and each app's own), the ones with a place that opens an app or a file, each set of
+    /// places once (an app's own ring starts as a copy of the general one); none while
     /// nothing opens the ring.
     static func ringsToPrepareAtLaunch(options: Options = .shared) -> [ShortcutRingSettings] {
         guard options.buttons.binding.contains(where: {
             $0.isEnabled && $0.systemShortcutName == SystemShortcut.shortcutRing.identifier
         }) else { return [] }
-        let rings = ShortcutRingChoice.rings(applications: options.application.applications, general: options.ring)
-        return Array(rings.filter { $0.opensSomething }.prefix(preparedFaceLimit))
+        var distinct: [ShortcutRingSettings] = []
+        for ring in ShortcutRingChoice.rings(applications: options.application.applications, general: options.ring)
+        where ring.opensSomething && !distinct.contains(where: { $0.places == ring.places }) {
+            distinct.append(ring)
+        }
+        return Array(distinct.prefix(preparedFaceLimit))
     }
 
+    /// How long a face that was due at launch waits while a ring is open.
+    static let launchFaceWait: TimeInterval = 0.5
+
     /// At launch: when something opens the ring and a place of a ring opens an app or a
-    /// file, the faces are made on a later turn of the main queue, so that the first ring
-    /// already has the icons. For everyone else: one pass over the bindings and the apps,
-    /// nothing more.
-    static func prepareFaceAtLaunch(options: Options = .shared) {
-        let rings = ringsToPrepareAtLaunch(options: options)
-        guard !rings.isEmpty else { return }
-        DispatchQueue.main.async {
-            // The general ring last, so that it is the newest.
-            for ring in rings.reversed() {
-                prepare(ShortcutRingFace(ring), for: ring)
+    /// file, the faces are made on later turns of the main queue, one ring per turn (the
+    /// event taps wait on the same queue) and never while a ring is open, so that the
+    /// first ring already has the icons. For everyone else: one pass over the bindings
+    /// and the apps, nothing more. `after` runs a block on the main queue after a delay.
+    static func prepareFaceAtLaunch(
+        options: Options = .shared,
+        after: @escaping (TimeInterval, @escaping () -> Void) -> Void = { delay, block in
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: block)
+        }
+    ) {
+        // The general ring last, so that it is the newest.
+        prepareFaces(of: ringsToPrepareAtLaunch(options: options).reversed(), after: after)
+    }
+
+    private static func prepareFaces(
+        of rings: [ShortcutRingSettings], after: @escaping (TimeInterval, @escaping () -> Void) -> Void
+    ) {
+        guard let ring = rings.first else { return }
+        after(0) {
+            guard existing?.isOpen != true else {
+                after(launchFaceWait) { prepareFaces(of: rings, after: after) }
+                return
             }
+            prepare(ShortcutRingFace(ring), for: ring)
+            prepareFaces(of: Array(rings.dropFirst()), after: after)
         }
     }
 
