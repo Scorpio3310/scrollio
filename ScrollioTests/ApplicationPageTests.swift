@@ -1779,12 +1779,12 @@ final class ApplicationPageTests: XCTestCase {
 
     // MARK: - Folded while nothing runs them here
 
-    /// The app's own ring while nothing opens the ring with the app in front: under a
-    /// "Shortcuts" title that folds it, folded (the drawing, the rows and "Reset to
-    /// Defaults" out of sight); a click opens it and all of it can be used; the page
-    /// measures again each time. Once a button opens the ring there the title goes and the
-    /// ring stands under the switch's box as before; without one again it folds again. The
-    /// switch alone (the general ring) has nothing to fold.
+    /// The app's own ring while nothing opens the ring with the app in front: its eight rows
+    /// under a "Shortcuts" title that folds them, folded; the drawing, the freeze switch and
+    /// "Reset to Defaults" in sight, as in the Shortcut Ring pane (F23). A click opens the
+    /// rows and all of it can be used; the page measures again each time. Once a button
+    /// opens the ring there, "Shortcuts" is a plain title; without one again the rows fold
+    /// again. The switch alone (the general ring) has nothing to fold.
     func testTheRingPartFoldsTheOwnRingWhileNothingOpensTheRingHere() throws {
         let calculator = addApp(Self.calculator)
         let pane = makePane()
@@ -1801,13 +1801,21 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertFalse(calculator.usesGeneralRing)
         let fold = try XCTUnwrap(part.ownRingFold)
         let body = try XCTUnwrap(part.ownRingBody)
-        XCTAssertTrue(fold.body === body)
+        let ring = try XCTUnwrap(part.ringController)
+        XCTAssertTrue(fold === ring.placesSection)
+        XCTAssertTrue(fold.isDescendant(of: body))
         XCTAssertEqual(fold.title, "Shortcuts")
         XCTAssertTrue(fold.isCollapsible)
         XCTAssertFalse(fold.isExpanded, "folded when it comes")
-        XCTAssertTrue(body.isHidden)
-        XCTAssertTrue(try XCTUnwrap(part.ringController).view.isDescendant(of: body))
+        XCTAssertTrue(fold.body.isHidden)
+        XCTAssertTrue(ring.placeRows[0].isHiddenOrHasHiddenAncestor)
+        XCTAssertTrue(ring.view.isDescendant(of: body))
         XCTAssertTrue(part.resetToDefaultsButton.isDescendant(of: body))
+        // What the pane keeps outside its fold stays in sight here too.
+        XCTAssertFalse(body.isHidden)
+        XCTAssertFalse(ring.previewView.isHiddenOrHasHiddenAncestor)
+        XCTAssertFalse(try XCTUnwrap(ring.freezeToggle).isHiddenOrHasHiddenAncestor)
+        XCTAssertFalse(part.resetToDefaultsButton.isHiddenOrHasHiddenAncestor)
         XCTAssertEqual(fold.disclosure.accessibilityRole(), .disclosureTriangle)
         XCTAssertEqual(fold.disclosure.accessibilityLabel(), "Shortcuts")
         pane.view.layoutSubtreeIfNeeded()
@@ -1817,7 +1825,7 @@ final class ApplicationPageTests: XCTestCase {
         heightChanges = 0
         XCTAssertTrue(fold.disclosure.accessibilityPerformPress())
         XCTAssertTrue(fold.isExpanded)
-        XCTAssertFalse(body.isHidden)
+        XCTAssertFalse(fold.body.isHidden)
         XCTAssertEqual(heightChanges, 1, "the page measures again")
         XCTAssertGreaterThan(page.view.fittingSize.height, folded)
         // Everything in it can be used.
@@ -1825,11 +1833,13 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(calculator.ownRingPlaces?[0].action, "paste")
         XCTAssertTrue(part.resetToDefaultsButton.isEnabled)
 
-        // A button opens the ring: no title, the ring right under the switch's box.
+        // A button opens the ring: a plain title, the ring right under the switch's box.
         Options.shared.buttons.binding = [binding(5, SystemShortcut.shortcutRing.identifier)]
         part.syncViewWithOptions()
         XCTAssertNil(part.ownRingFold)
-        XCTAssertFalse(body.isHidden)
+        XCTAssertFalse(fold.isCollapsible)
+        XCTAssertFalse(fold.titleLabel.isHidden, "Shortcuts")
+        XCTAssertFalse(fold.body.isHidden)
         XCTAssertTrue(body.superview === part.view)
         pane.view.layoutSubtreeIfNeeded()
         let ringView = try XCTUnwrap(part.ringController).view
@@ -1840,8 +1850,9 @@ final class ApplicationPageTests: XCTestCase {
         calculator.setOwnButtonBindings([binding(5, "copy")])
         part.syncViewWithOptions()
         XCTAssertEqual(part.ownRingFold?.isExpanded, false)
-        XCTAssertTrue(body.isHidden)
-        XCTAssertTrue(part.ownRingFold?.body === body)
+        XCTAssertTrue(fold.body.isHidden)
+        XCTAssertTrue(part.ownRingFold === fold)
+        XCTAssertFalse(part.resetToDefaultsButton.isHiddenOrHasHiddenAncestor)
 
         // Back to the general ring: nothing is left below the switch.
         page.generalRingSwitch.state = .on
@@ -1864,7 +1875,14 @@ final class ApplicationPageTests: XCTestCase {
         let part = try XCTUnwrap(pane.detailController?.ringPart)
         let fold = try XCTUnwrap(part.ownRingFold)
         XCTAssertFalse(fold.isExpanded, "folded, and left so")
-        XCTAssertTrue(try XCTUnwrap(part.ringController).view.isHiddenOrHasHiddenAncestor)
+        XCTAssertTrue(try XCTUnwrap(part.ringController).placeRows[0].isHiddenOrHasHiddenAncestor)
+        // A click on a place of the drawing opens the rows, and the page measures again.
+        var heightChanges = 0
+        pane.detailController?.onHeightChange = { heightChanges += 1 }
+        try XCTUnwrap(part.ringController).selectPlace(2)
+        XCTAssertTrue(fold.isExpanded)
+        XCTAssertEqual(heightChanges, 1)
+        fold.setExpanded(false)
 
         Options.shared.buttons.binding = [binding(5, SystemShortcut.shortcutRing.identifier)]
         part.syncViewWithOptions()

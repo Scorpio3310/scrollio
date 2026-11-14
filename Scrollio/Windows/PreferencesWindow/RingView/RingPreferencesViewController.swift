@@ -35,7 +35,8 @@
 //  The pane only edits Options.shared.ring.
 //
 //  An app's page under Apps shows the same drawing of the ring, across the whole width, the
-//  same freeze switch and the same eight rows, in the pane's order, for the app's own ring
+//  same freeze switch and the same eight rows under "Shortcuts" (which the app's part folds
+//  while nothing opens the ring with the app in front), in the pane's order, for the app's own ring
 //  (`init(application:)`, as the Scrolling settings there get a target application): then
 //  they edit only that app's ring, and what is not the ring's is left out: what opens the
 //  ring (and its card), the line on how to choose and "Reset to Defaults" (the part has
@@ -368,12 +369,13 @@ final class RingPreferencesViewController: NSViewController {
         placeRows = (0..<ShortcutRingSettings.placeCount).map { makePlaceRow($0) }
         if application != nil {
             // An app's own ring: the drawing across the width, its freeze switch and the
-            // eight rows, in the pane's order; nothing of what opens the ring.
+            // eight rows under "Shortcuts", in the pane's order; nothing of what opens the
+            // ring. (The app's part folds the rows while nothing opens the ring there.)
             preview.translatesAutoresizingMaskIntoConstraints = false
             preview.heightAnchor.constraint(equalToConstant: ShortcutRingPreviewView.preferredHeight).isActive = true
-            sections = [
-                preview, PreferencesGroupBox(width: width, rows: [makeFreezeRow()]), PreferencesGroupBox(width: width, rows: placeRows),
-            ]
+            let places = makePlacesSection(rows: placeRows, hint: false)
+            placesSection = places
+            sections = [preview, PreferencesGroupBox(width: width, rows: [makeFreezeRow()]), places]
             PreferencesGroupedForm.add(sections, to: content)
         } else {
             // What opens the ring beside the ring.
@@ -527,7 +529,8 @@ final class RingPreferencesViewController: NSViewController {
         guard placePopUps.indices.contains(place) else { return }
         if let placesSection, !placesSection.showsBody {
             placesSection.setExpanded(true, animated: true)
-            PreferencesForm.fitToContent(self)
+            // (The pane refits itself; an app's page measures again.)
+            placesSection.onExpandedChange?(true)
             view.layoutSubtreeIfNeeded()
         }
         selectedPlace = place
@@ -747,11 +750,18 @@ final class RingPreferencesViewController: NSViewController {
 
     /// "Shortcuts": its title, one line on the two ways to choose, and the box of rows. The
     /// title folds the line and the box while nothing opens the ring (`reload`).
-    private func makePlacesSection(rows: [PreferencesGroupRow]) -> PreferencesDisclosureSection {
+    /// - Parameter hint: the line on how to choose under the title (the pane's; an app's
+    ///   page leaves it out).
+    private func makePlacesSection(rows: [PreferencesGroupRow], hint withHint: Bool = true) -> PreferencesDisclosureSection {
+        let box = PreferencesGroupBox(width: Self.boxWidth, rows: rows)
+        guard withHint else {
+            let section = PreferencesDisclosureSection(title: text("ring-places-header"), body: box)
+            section.identifier = Identifier.places
+            return section
+        }
         let inset = PreferencesGroupedForm.rowHorizontalInset
         let hint = Self.makeNote(text("ring-places-hint"), identifier: Identifier.placesHint)
         placesHintLabel = hint
-        let box = PreferencesGroupBox(width: Self.boxWidth, rows: rows)
 
         let body = NSView()
         body.translatesAutoresizingMaskIntoConstraints = false

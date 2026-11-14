@@ -426,14 +426,18 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
     }
 
-    /// An app's page has its own switch for this (`ApplicationRingPartViewController`): the
-    /// rows of an app's own ring are no section of the pane's.
+    /// An app's page decides itself when its rows fold (`ApplicationRingPartViewController`):
+    /// the rows of an app's own ring stand under "Shortcuts", without the pane's line on how
+    /// to choose, and do not fold by what opens the general ring.
     func testAnAppsRingHasNoFoldingOfItsOwn() throws {
         let application = Application(path: "/System/Applications/Notes.app")
         let page = RingPreferencesViewController(application: application)
         page.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: []) }
         _ = page.view
-        XCTAssertNil(page.placesSection)
+        let places = try XCTUnwrap(page.placesSection)
+        XCTAssertEqual(places.title, "Shortcuts")
+        XCTAssertFalse(places.isCollapsible)
+        XCTAssertNil(page.placesHintLabel)
         XCTAssertFalse(page.placeRows[0].isHiddenOrHasHiddenAncestor)
     }
 
