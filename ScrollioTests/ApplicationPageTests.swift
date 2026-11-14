@@ -316,6 +316,52 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(again.accessibilityLabel(), "Calculator, Uses your scrolling settings., Own button settings")
     }
 
+    /// Undo of a removal while the page of the app added again is open: the page shows the
+    /// settings that come back (its own gestures and ring with their rows, its name in the
+    /// header and the window's title), and the pane takes the page's new height; Redo too.
+    func testUndoOntoTheOpenPageOfTheAppAddedAgainShowsItAndRefitsThePane() throws {
+        let calculator = addApp(Self.calculator)
+        calculator.displayName = "Numbers"
+        calculator.setUsesGeneralGestures(false, general: .default)
+        calculator.setUsesGeneralRing(false, general: .default)
+        ApplicationPagePart.gestures.remember(in: uiDefaults)
+        let pane = makePane()
+        let window = makeWindow(for: pane)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        pane.list.select(Self.calculator)
+        undo.beginUndoGrouping()
+        pane.list.removeButton.performClick(nil)
+        undo.endUndoGrouping()
+        let again = pane.addApplication(path: Self.calculator, knownPaths: [Self.calculator])
+        let page = try XCTUnwrap(pane.detailController)
+        XCTAssertTrue(page.application === again)
+        XCTAssertEqual(page.shownPart, .gestures)
+        XCTAssertNil(page.gesturesPart.controls)
+        let short = pane.view.frame.height
+        var titles: [String?] = []
+        pane.onSubpageChange = { titles.append(pane.subpageTitle) }
+
+        undo.undo()
+        XCTAssertFalse(again.usesGeneralGestures)
+        XCTAssertNotNil(page.gesturesPart.controls, "the app's own rows")
+        XCTAssertGreaterThan(pane.view.frame.height, short + 200)
+        XCTAssertEqual(pane.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+        XCTAssertEqual(page.headerRow.title, "Numbers")
+        XCTAssertEqual(page.title, "Numbers")
+        XCTAssertEqual(titles.last, "Numbers", "the window's title follows")
+        choose(3, on: page)
+        XCTAssertNotNil(page.ringController)
+        XCTAssertEqual(pane.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+
+        undo.redo()
+        XCTAssertTrue(again.usesGeneralRing)
+        XCTAssertNil(page.ringController)
+        XCTAssertEqual(pane.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+        XCTAssertEqual(page.headerRow.title, "Calculator")
+        XCTAssertEqual(titles.last, "Calculator")
+    }
+
     /// A click on a mark opens the app's page on that part; the marks follow a change made
     /// on the page when the list shows again.
     func testAClickOnAMarkOpensThePageOnItsPart() throws {

@@ -503,8 +503,13 @@ class PreferencesApplicationViewController: NSViewController {
         let previous = ApplicationSettings(of: application)
         settings.apply(to: application)
         reloadRows()
-        if detailController?.application === application {
-            detailController?.syncViewWithOptions()
+        if let detail = detailController, detail.application === application {
+            // The app's page is open: its parts may grow or shrink (an own ring or set of
+            // gestures comes or goes) and its name may change; the pane and the window's
+            // title follow.
+            detail.syncViewWithOptions()
+            contentHeightDidChange()
+            onSubpageChange?()
         }
         list.select(rowID(for: application))
         focusList()

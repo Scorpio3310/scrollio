@@ -249,6 +249,14 @@ final class ApplicationDetailViewController: NSViewController {
 
     func syncViewWithOptions() {
         guard isViewLoaded else { return }
+        // (Undo of a removal can bring back the name the app had.)
+        let name = application.getName()
+        if title != name {
+            title = name
+            headerRow.title = name
+            headerRow.toolTip = Self.toolTip(name: name, path: application.path)
+            headerRow.explanationLabel.toolTip = headerRow.toolTip
+        }
         for controller in partControllers.values {
             controller.syncViewWithOptions()
         }
