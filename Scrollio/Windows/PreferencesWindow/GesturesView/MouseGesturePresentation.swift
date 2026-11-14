@@ -86,15 +86,18 @@ struct MouseGestureBindingSummary: Equatable {
     /// With none of those: the apps whose own buttons run the gestures while they are in
     /// front (nil: none does).
     var onlyInApps: ApplicationTriggers?
+    /// The trigger the preview's mouse holds: the first of the row's (`TriggerPictureSource`).
+    var picture: TriggerPictureSource
 
     init(
         hasGestureButton: Bool, hasLogitechGestureButton: Bool, buttonTitles: [String] = [],
-        onlyInApps: ApplicationTriggers? = nil
+        onlyInApps: ApplicationTriggers? = nil, picture: TriggerPictureSource = .none
     ) {
         self.hasGestureButton = hasGestureButton
         self.hasLogitechGestureButton = hasLogitechGestureButton
         self.buttonTitles = buttonTitles
         self.onlyInApps = hasGestureButton ? nil : onlyInApps
+        self.picture = picture
     }
 
     /// - Parameters:
@@ -120,7 +123,9 @@ struct MouseGestureBindingSummary: Equatable {
             }
         }
         buttonTitles = names
-        onlyInApps = ApplicationTriggers(rule.onlyInApps(general: bindings, applications: applications), titles: titles)
+        let onlyInApps = ApplicationTriggers(rule.onlyInApps(general: bindings, applications: applications), titles: titles)
+        self.onlyInApps = onlyInApps
+        picture = TriggerPictureSource.make(rule: rule, general: bindings, onlyInApps: onlyInApps)
     }
 
     /// The explanation of the Gestures pane's "Button to hold" row: the buttons, joined as

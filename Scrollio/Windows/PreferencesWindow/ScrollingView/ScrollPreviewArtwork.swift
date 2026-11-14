@@ -425,27 +425,37 @@ final class ScrollPreviewKeyCap: ScrollPreviewArtworkView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let pressed = min(1, max(0, depth))
-        let sink = Self.height * pressed
-        let face = NSRect(
-            x: Self.margin, y: Self.margin + sink,
-            width: Self.faceSize.width, height: Self.faceSize.height
+        Self.draw(
+            glyph: glyph, depth: depth,
+            face: NSRect(origin: NSPoint(x: Self.margin, y: Self.margin), size: Self.faceSize),
+            travel: Self.height, cornerRadius: Self.cornerRadius,
+            font: NSFont.systemFont(ofSize: 17, weight: .medium)
         )
+    }
+
+    /// A key in this look, in a flipped view: `face` is its top while it is up, `travel`
+    /// how far it stands up (its side shows under the face) and sinks when pressed;
+    /// `depth` 0 up, 1 pressed (the accent colour, the glyph white). The trigger pictures'
+    /// keys (`TriggerKeyCap`) are drawn by it too, at other sizes.
+    static func draw(glyph: String, depth: CGFloat, face rest: NSRect, travel: CGFloat, cornerRadius: CGFloat, font: NSFont) {
+        let pressed = min(1, max(0, depth))
+        let sink = travel * pressed
+        let face = rest.offsetBy(dx: 0, dy: sink)
         let side = NSRect(
             x: face.minX, y: face.minY,
-            width: face.width, height: face.height + Self.height - sink
+            width: face.width, height: face.height + travel - sink
         )
         let accent = NSColor.controlAccentColor
         let edge = ScrollPreviewPalette.keyEdge.mixed(pressed, with: accent.mixed(0.25, with: .black))
 
-        let sidePath = NSBezierPath(roundedRect: side.insetBy(dx: 0.5, dy: 0.5), xRadius: Self.cornerRadius, yRadius: Self.cornerRadius)
+        let sidePath = NSBezierPath(roundedRect: side.insetBy(dx: 0.5, dy: 0.5), xRadius: cornerRadius, yRadius: cornerRadius)
         ScrollPreviewPalette.keySide.mixed(pressed, with: accent.mixed(0.3, with: .black)).setFill()
         sidePath.fill()
         edge.setStroke()
         sidePath.lineWidth = 1
         sidePath.stroke()
 
-        let facePath = NSBezierPath(roundedRect: face.insetBy(dx: 0.5, dy: 0.5), xRadius: Self.cornerRadius, yRadius: Self.cornerRadius)
+        let facePath = NSBezierPath(roundedRect: face.insetBy(dx: 0.5, dy: 0.5), xRadius: cornerRadius, yRadius: cornerRadius)
         ScrollPreviewPalette.keyFace.mixed(pressed, with: accent).setFill()
         facePath.fill()
         edge.setStroke()
@@ -453,7 +463,7 @@ final class ScrollPreviewKeyCap: ScrollPreviewArtworkView {
         facePath.stroke()
 
         let text = NSAttributedString(string: glyph, attributes: [
-            .font: NSFont.systemFont(ofSize: 17, weight: .medium),
+            .font: font,
             .foregroundColor: ScrollPreviewPalette.keyGlyph.mixed(pressed, with: .white),
         ])
         let size = text.size()
