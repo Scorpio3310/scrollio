@@ -371,6 +371,71 @@ final class ApplicationButtonsTests: XCTestCase {
         XCTAssertNil(action(logitechBack, in: Self.textEdit))
     }
 
+    /// The standard number (recorded over Bluetooth) and the Logitech code (recorded on the
+    /// receiver) of middle, back and forward are one trigger: an app's binding under one
+    /// code takes the place of Buttons' binding under the other, on either connection;
+    /// "Everywhere: …" finds Buttons' binding under the other code; the app keeps one
+    /// binding per button; its binding under the standard number gives back the Logitech
+    /// button Buttons diverts under the other code (the press then comes as the standard
+    /// button); and a standard press ranks the bindings under the two codes together (the
+    /// one with the press's modifier keys wins).
+    func testTheStandardNumberAndTheLogitechCodeOfAButtonAreOneTrigger() {
+        let logitechBack = LogiCenter.shared.scrollioCode(for: .back)
+        let command = UInt(CGEventFlags.maskCommand.rawValue)
+        let isLogi: (UInt16) -> Bool = { LogiCenter.shared.isLogiCode($0) }
+        XCTAssertEqual(binding(3, "copy").identity, binding(logitechBack, "undo").identity)
+        XCTAssertNotEqual(binding(3, "copy", modifiers: command).identity, binding(logitechBack, "undo").identity)
+        XCTAssertNotEqual(binding(5, "copy").identity, binding(logitechBack, "undo").identity)
+
+        // Buttons under the Logitech code, the app's own under the standard number.
+        set(general: [binding(logitechBack, "copy")], safari: [binding(3, "undo")])
+        XCTAssertEqual(action(3, in: Self.safari), "undo", "over Bluetooth, and on the receiver once the button is given back")
+        XCTAssertEqual(
+            LogiUsageBootstrap.buttonBindingCodes(general: [binding(logitechBack, "copy")], frontAppOwn: [binding(3, "undo")], isLogiCode: isLogi),
+            [], "given back to the mouse while Safari is in front"
+        )
+        XCTAssertEqual(action(3, in: Self.textEdit), "copy")
+        XCTAssertEqual(action(logitechBack, in: Self.textEdit), "copy")
+        XCTAssertEqual(
+            ApplicationButtons.generalBinding(for: binding(3, "").triggerEvent, in: Options.shared.buttons.binding)?.systemShortcutName,
+            "copy", "Everywhere: what Back does in Buttons"
+        )
+        XCTAssertEqual(
+            ApplicationButtons.generalBinding(for: binding(3, "", modifiers: command).triggerEvent,
+                                              in: Options.shared.buttons.binding)?.systemShortcutName,
+            "copy", "with ⌘ too"
+        )
+        XCTAssertEqual(
+            ApplicationButtons.usable([binding(3, "undo"), binding(logitechBack, "redo")], general: []).map(\.systemShortcutName),
+            ["undo"], "one binding per button"
+        )
+
+        // The reverse: Buttons under the standard number, the app's own under the Logitech code.
+        set(general: [binding(3, "copy")], safari: [binding(logitechBack, "undo")])
+        XCTAssertEqual(action(3, in: Self.safari), "undo", "over Bluetooth the app's own, not Buttons' standard binding")
+        XCTAssertEqual(action(logitechBack, in: Self.safari), "undo")
+        XCTAssertEqual(action(3, in: Self.textEdit), "copy")
+        set(general: [binding(3, "copy")], safari: [binding(logitechBack, "")])
+        XCTAssertEqual(action(3, in: Self.safari), "", "the app's own Default")
+
+        // Its "Default" gives the button back to the mouse while it is in front.
+        XCTAssertEqual(
+            LogiUsageBootstrap.buttonBindingCodes(general: [binding(logitechBack, "copy")], frontAppOwn: [binding(3, "")], isLogiCode: isLogi),
+            [], "the app's Default of the standard number"
+        )
+        XCTAssertEqual(
+            LogiUsageBootstrap.buttonBindingCodes(general: [binding(logitechBack, "copy")], frontAppOwn: [], isLogiCode: isLogi),
+            [logitechBack]
+        )
+
+        // Ranked together: ⌘ + Back in Buttons, plain Back in the app.
+        set(general: [binding(3, "paste", modifiers: command)], safari: [binding(logitechBack, "undo")])
+        XCTAssertEqual(action(3, modifiers: .maskCommand, in: Self.safari), "paste", "the binding with ⌘ matches better")
+        XCTAssertEqual(action(3, in: Self.safari), "undo")
+        set(general: [binding(3, "paste")], safari: [binding(logitechBack, "undo", modifiers: command)])
+        XCTAssertEqual(action(3, modifiers: .maskCommand, in: Self.safari), "undo", "the app's ⌘ + Back under the Logitech code")
+    }
+
     /// A change of an app's own buttons is seen at the next press without anyone asking for
     /// it (the cache follows the per-app list as it follows Buttons).
     func testAChangeOfAnAppsButtonsIsSeenAtTheNextPress() {

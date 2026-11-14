@@ -14,7 +14,8 @@
 //       "buttons": {"binding": [{"triggerEvent": {…}, "systemShortcutName": "copy", …}]}}
 //
 //  - A binding is the binding of its trigger (`ButtonBindingIdentity`: the kind, the code,
-//    the modifier keys and the mouse it is limited to). The app's binding replaces the
+//    the modifier keys and the mouse it is limited to; the standard number and the Logitech
+//    code of middle, back and forward are one code). The app's binding replaces the
 //    general binding of the same trigger, and one of a trigger Buttons does not have is
 //    added; every other general binding stays.
 //  - An action of "" ("Default") is the app's own too: while the app is in front the
@@ -38,6 +39,10 @@ import Cocoa
 /// mouse (`mousePart`) does not count.
 struct ButtonBindingIdentity: Equatable {
     let type: EventType
+    /// The button or key. The standard middle, back and forward buttons count under their
+    /// Logitech code: recorded over Bluetooth a button is stored under its standard number,
+    /// recorded on the receiver under the Logitech code, and both are one button (a
+    /// standard press also goes by its Logitech twin: `ButtonUtils.twin(of:)`).
     let code: UInt16
     /// The modifier keys only.
     let modifiers: UInt
@@ -45,7 +50,9 @@ struct ButtonBindingIdentity: Equatable {
 
     init(_ trigger: RecordedEvent) {
         type = trigger.type
-        code = trigger.code
+        code = trigger.type == .mouse
+            ? LogiStandardMouseButtonAlias.logitechCode(forNativeButton: trigger.code) ?? trigger.code
+            : trigger.code
         modifiers = trigger.modifiers & UInt(KeyCode.modifiersMask)
         deviceFilter = trigger.deviceFilter
     }
@@ -117,8 +124,9 @@ enum ApplicationButtons {
 
     /// What a press of exactly `trigger` does in an app without buttons of its own: the
     /// general binding of the same trigger, else the general binding such a press matches
-    /// best (a button bound without modifier keys also runs with them). Nil: none, the
-    /// button does what it does by itself.
+    /// best (a button bound without modifier keys also runs with them; a standard middle,
+    /// back or forward button and its Logitech code are one button). Nil: none, the button
+    /// does what it does by itself.
     static func generalBinding(for trigger: RecordedEvent, in general: [ButtonBinding]) -> ButtonBinding? {
         let identity = ButtonBindingIdentity(trigger)
         if let same = general.first(where: { $0.identity == identity }) {
@@ -128,14 +136,7 @@ enum ApplicationButtons {
             type: trigger.type, code: trigger.code, modifiers: CGEventFlags(rawValue: UInt64(trigger.modifiers)),
             phase: .down, source: .hidPP, device: nil
         )
-        var best: ButtonBinding?
-        var bestPriority = Int.min
-        for binding in general where binding.isEnabled && ButtonUtils.isRunnable(binding.triggerEvent) {
-            guard let priority = binding.triggerEvent.matchPriority(for: press), priority > bestPriority else { continue }
-            best = binding
-            bestPriority = priority
-        }
-        return best
+        return ButtonUtils.bestMatch(among: general, for: press, where: { ButtonUtils.isRunnable($0.triggerEvent) })
     }
 }
 
