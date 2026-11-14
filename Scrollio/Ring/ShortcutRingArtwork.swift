@@ -30,7 +30,8 @@ struct ShortcutRingFace {
         var keys: String = ""
         /// The action's SF Symbol.
         var symbolName: String
-        /// A picture instead of the symbol: the icon of an app or a file.
+        /// A picture instead of the symbol: the icon of an app or a file, already drawn
+        /// (`drawnIcon`).
         var image: NSImage?
         /// Text instead of the symbol: a recorded key combination as its keys ("⇧⌘K"),
         /// on one line or two (the modifiers above a key with a long name).
@@ -106,10 +107,34 @@ struct ShortcutRingFace {
                 let shown = resolver.resolve(state: CellActionState(binding: place.asBinding()))
                 return Place(
                     title: shown.title, symbolName: shown.symbolName ?? "arrow.up.forward.app",
-                    image: shown.image, isEmpty: false
+                    image: shown.image.map(Self.drawnIcon), isEmpty: false
                 )
             }
         })
+    }
+
+    /// An app's or a file's icon as pixels drawn now, at the size a lit place shows it on
+    /// a Retina screen. The workspace's icon renders its pixels only when it is first
+    /// drawn at a size (about 17 ms an icon, measured): drawn here, while the face is made
+    /// at a quiet moment, the ring that is held only scales a bitmap.
+    static func drawnIcon(_ icon: NSImage) -> NSImage {
+        let side = ShortcutRingArtwork.iconSide * ShortcutRingDrops.litContentScale
+        let pixels = Int((side * 2).rounded(.up))
+        guard let blank = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8, samplesPerPixel: 4,
+            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ), let bitmap = blank.retagging(with: .displayP3) else { return icon }
+        // The size in points comes first: the context takes its scale from it.
+        bitmap.size = NSSize(width: side, height: side)
+        guard let context = NSGraphicsContext(bitmapImageRep: bitmap) else { return icon }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        context.imageInterpolation = .high
+        icon.draw(in: CGRect(x: 0, y: 0, width: side, height: side), from: .zero, operation: .copy, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+        let drawn = NSImage(size: bitmap.size)
+        drawn.addRepresentation(bitmap)
+        return drawn
     }
 
     private static var knownSymbols: [String: Bool] = [:]
