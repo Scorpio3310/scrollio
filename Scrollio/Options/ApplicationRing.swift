@@ -7,8 +7,10 @@
 //  for the app in front.
 //
 //  An app has a whole ring of its own or none: eight places and nothing else. What opens
-//  the ring (a binding of Buttons) and "Freeze pointer while the ring is held" are the
-//  general ring's for every app.
+//  the ring is a binding, of Buttons or of the app's own buttons (`ApplicationButtons`),
+//  and whichever opened it, the ring is the one of the app in front: its own, else the
+//  general one. "Freeze pointer while the ring is held" is the general ring's for every
+//  app.
 //
 //  Stored with the app's entry, under "ring":
 //
@@ -152,17 +154,5 @@ struct ShortcutRingChoice: Equatable {
               let entry = applications.get(by: front.bundlePath) ?? applications.get(by: front.executablePath),
               entry.ownRingPlaces != nil else { return .general(general) }
         return ShortcutRingChoice(ring: entry.ringThatOpens(general: general), isAppsOwn: true)
-    }
-
-    /// Every ring that can open with the settings as they are: the general one, then the
-    /// own ring of each app that has one in use.
-    static func rings(
-        applications: EnhanceArray<Application>, general: ShortcutRingSettings
-    ) -> [ShortcutRingSettings] {
-        let own = (0..<applications.count).compactMap { index -> ShortcutRingSettings? in
-            guard let entry = applications.get(by: index), entry.ownRingPlaces != nil else { return nil }
-            return entry.ringThatOpens(general: general)
-        }
-        return [general] + own
     }
 }

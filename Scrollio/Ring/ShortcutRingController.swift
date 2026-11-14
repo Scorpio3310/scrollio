@@ -73,8 +73,9 @@ final class ShortcutRingController {
 
     /// Rings' faces with what it took a look on disk to know (an app's name and icon),
     /// made when no ring was held: by Settings whenever it shows a ring (the pane the
-    /// general one, an app's page the app's own), at launch for the rings that open
-    /// something, and after a ring closed that had to be shown without it. The newest
+    /// general one, an app's page the app's own), at launch and after a change of the
+    /// settings for the rings that can open and open something, and after a ring closed
+    /// that had to be shown without it. The newest
     /// first, one per ring: a face belongs to the eight places it was made for and is
     /// never shown for others, so the ring of one app never shows another's.
     private(set) static var preparedFaces: [(ring: ShortcutRingSettings, face: ShortcutRingFace)] = []
@@ -103,20 +104,45 @@ final class ShortcutRingController {
         }
     }
 
-    /// The rings whose face is made at launch: of those that can open (the general one
-    /// and each app's own), the ones with a place that opens an app or a file, each set of
-    /// places once (an app's own ring starts as a copy of the general one); none while
-    /// nothing opens the ring.
+    /// The rings whose face is made at launch and after a change of the settings: of those
+    /// that can open, the ones with a place that opens an app or a file, each set of places
+    /// once (an app's own ring starts as a copy of the general one); none while nothing
+    /// opens the ring. A ring can open when the bindings that count while some app is in
+    /// front open it: the general ring when Buttons opens it (any app without a ring of its
+    /// own) or when an app without a ring of its own opens it with a binding of its own;
+    /// an app's own ring when the app's bindings (Buttons with its own merged over them)
+    /// open it. So a ring that only an app's own button or key opens has its face too, and
+    /// an app whose own bindings take the ring's button away does not need one.
     static func ringsToPrepareAtLaunch(options: Options = .shared) -> [ShortcutRingSettings] {
-        guard options.buttons.binding.contains(where: {
-            $0.isEnabled && $0.systemShortcutName == SystemShortcut.shortcutRing.identifier
-        }) else { return [] }
+        let general = options.buttons.binding
+        let generalOpens = opensTheRing(general)
+        var generalCanOpen = generalOpens
+        var own: [ShortcutRingSettings] = []
+        let applications = options.application.applications
+        for index in 0..<applications.count {
+            // Of two entries of one path, the one a press finds (`get(by:)`, the last).
+            guard let entry = applications.get(by: index), applications.get(by: entry.path) === entry else { continue }
+            let opens = entry.hasOwnButtons
+                ? opensTheRing(ApplicationButtons.merged(general: general, own: entry.ownButtonBindings))
+                : generalOpens
+            guard opens else { continue }
+            if entry.ownRingPlaces != nil {
+                own.append(entry.ringThatOpens(general: options.ring))
+            } else {
+                generalCanOpen = true
+            }
+        }
         var distinct: [ShortcutRingSettings] = []
-        for ring in ShortcutRingChoice.rings(applications: options.application.applications, general: options.ring)
+        for ring in (generalCanOpen ? [options.ring] : []) + own
         where ring.opensSomething && !distinct.contains(where: { $0.places == ring.places }) {
             distinct.append(ring)
         }
         return Array(distinct.prefix(preparedFaceLimit))
+    }
+
+    /// An enabled binding of `bindings` opens the ring.
+    private static func opensTheRing(_ bindings: [ButtonBinding]) -> Bool {
+        return bindings.contains { $0.isEnabled && $0.systemShortcutName == SystemShortcut.shortcutRing.identifier }
     }
 
     /// How long a face that was due at launch waits while a ring is open.
@@ -140,8 +166,45 @@ final class ShortcutRingController {
         prepareFaces(of: ringsToPrepareAtLaunch(options: options).reversed(), after: after, makePlace: makePlace)
     }
 
+    /// After every change of the bindings (Buttons and the apps' own), of the per-app list
+    /// or of the general ring, the faces of the rings that can open now and have none yet
+    /// (`prepareMissingFaces`): a binding of an app's own that opens the ring, made while
+    /// no pane showed that ring, gets its face before its first ring. Called once, at
+    /// launch, after `prepareFaceAtLaunch`. (Options keeps its observers for the app's life.)
+    static func prepareFacesAfterChanges(options: Options = .shared) {
+        options.observe([.buttons, .application, .ring]) { [weak options] _ in
+            guard let options else { return }
+            prepareMissingFaces(options: options)
+        }
+    }
+
+    /// A pass of `prepareMissingFaces` waits for its turn: a burst of changes (a slider of
+    /// an app's page dragged) asks for one.
+    private static var missingFacesAreDue = false
+
+    /// The faces of the rings that can open (`ringsToPrepareAtLaunch`) and have none yet,
+    /// made as at launch: decided on the next turn of the main queue (what a pane made in
+    /// the meantime is not made again), then one place that opens something per turn,
+    /// never while a ring is open. Nothing more for a change that leaves every face there.
+    static func prepareMissingFaces(
+        options: Options = .shared,
+        after: @escaping (TimeInterval, @escaping () -> Void) -> Void = { delay, block in
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: block)
+        },
+        makePlace: @escaping (ShortcutRingPlace) -> ShortcutRingFace.Place = { ShortcutRingFace.place($0) }
+    ) {
+        guard !missingFacesAreDue else { return }
+        missingFacesAreDue = true
+        after(0) {
+            missingFacesAreDue = false
+            let missing = ringsToPrepareAtLaunch(options: options).filter { preparedFace(for: $0) == nil }
+            prepareFaces(of: missing.reversed(), after: after, makePlace: makePlace)
+        }
+    }
+
     /// One turn: the next place of the first of `rings` (whose face `steps` holds once it
-    /// is begun), then a turn for what is left.
+    /// is begun), then a turn for what is left. A ring whose face was made meanwhile (by a
+    /// pane, after a ring closed) is left out before its first place.
     private static func prepareFaces(
         of rings: [ShortcutRingSettings], steps: ShortcutRingFace.InSteps? = nil,
         after: @escaping (TimeInterval, @escaping () -> Void) -> Void,
@@ -151,6 +214,10 @@ final class ShortcutRingController {
         after(0) {
             guard existing?.isOpen != true else {
                 after(launchFaceWait) { prepareFaces(of: rings, steps: steps, after: after, makePlace: makePlace) }
+                return
+            }
+            if steps == nil, preparedFace(for: ring) != nil {
+                prepareFaces(of: Array(rings.dropFirst()), after: after, makePlace: makePlace)
                 return
             }
             var steps = steps ?? ShortcutRingFace.InSteps(ring)
@@ -172,9 +239,11 @@ final class ShortcutRingController {
         existing = controller
     }
 
-    /// Tests: no face is prepared, as before the first ring.
+    /// Tests: no face is prepared, as before the first ring (and no pass after a change is
+    /// waiting for its turn).
     static func forgetPreparedFaces() {
         preparedFaces = []
+        missingFacesAreDue = false
     }
     #endif
 

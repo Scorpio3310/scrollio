@@ -16,7 +16,8 @@ final class LogiIntegrationBridge: LogiExternalBridge {
 
     /// The Logitech buttons that are down: their press came through here, their release
     /// (or the one Scrollio makes up) has not yet. The divert keeps such a button until it
-    /// is up (`LogiUsageBootstrap.refreshButtonUsage`). Main thread, as every event here.
+    /// is up (`LogiUsageBootstrap.refreshButtonUsage`), and so does the mouse's tracking of
+    /// its hold (`refreshGestureTracking`). Main thread, as every event here.
     private(set) var heldButtonCodes: Set<UInt16> = []
 
     func dispatchLogiButtonEvent(_ event: InputEvent) -> LogiDispatchResult {

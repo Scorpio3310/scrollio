@@ -35,15 +35,15 @@ enum LogiUsageBootstrap {
         Options.shared.observe([.buttons, .scroll, .application]) { _ in
             refreshAll()
         }
-        // The buttons the mouse gives to Scrollio follow the app in front: an app with
-        // buttons of its own may need one the general bindings leave to the mouse, or give
-        // one back.
+        // The buttons the mouse gives to Scrollio, and those it tracks for Gesture
+        // Navigation, follow the app in front: an app with buttons of its own may need one
+        // the general bindings leave to the mouse, or give one back.
         if frontApplicationObserver == nil {
             frontApplicationObserver = NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
             ) { note in
                 let application = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-                refreshButtonUsage(front: ShortcutRingChoice.FrontApp.current(application))
+                frontApplicationChanged(to: ShortcutRingChoice.FrontApp.current(application))
             }
         }
         // Logitech 滚轮硬件设置 (SmartShift / 灵敏度 / 齿感力度), 见 LogiUsageBootstrap+Wheel
@@ -89,6 +89,13 @@ enum LogiUsageBootstrap {
     }
 
     // MARK: - Buttons of the app in front
+
+    /// Another app came to the front: the divert and the buttons the mouse tracks follow
+    /// it. Both write nothing to a mouse when their set did not change.
+    static func frontApplicationChanged(to front: ShortcutRingChoice.FrontApp?) {
+        refreshButtonUsage(front: front)
+        refreshGestureTracking(front: front)
+    }
 
     /// Tells the mice which of their Logitech buttons Scrollio takes for the bindings that
     /// count while `front` is in front: the general ones with the app's own merged over them
@@ -172,13 +179,14 @@ enum LogiUsageBootstrap {
         return OwnLogitechButtons(apps: apps, taken: taken.count, givenBack: givenBack.count)
     }
 
-    /// A Logitech button came up (`LogiIntegrationBridge`): if it stayed with Scrollio only
-    /// because it was down, the bindings that count now decide again, on the next turn of
-    /// the main queue (after its release went where its press went).
+    /// A Logitech button came up (`LogiIntegrationBridge`): if it stayed with Scrollio, or
+    /// kept its tracking, only because it was down, the bindings that count now decide
+    /// again, on the next turn of the main queue (after its release went where its press
+    /// went).
     static func buttonWasReleased(_ code: UInt16) {
-        guard keptWhileHeld.contains(code) else { return }
+        guard keptWhileHeld.contains(code) || trackingKeptWhileHeld.contains(code) else { return }
         DispatchQueue.main.async {
-            refreshButtonUsage(front: frontApplication())
+            frontApplicationChanged(to: frontApplication())
         }
     }
 
