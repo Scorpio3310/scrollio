@@ -500,7 +500,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         let general = Options.shared.thumbWheel
         let settings = currentTargetApplication?.thumbWheelThatRuns(general: general) ?? general
         let editable = !isTargetApplicationInheritOptions()
-        let note = text(currentTargetApplication == nil ? "scrolling-thumb-wheel-note" : "apps-detail-thumb-wheel-note")
+        let note = text(currentTargetApplication == nil ? "scrolling-thumb-wheel-note" : "apps-detail-thumb-wheel-shared")
         if thumbWheelNote.stringValue != note {
             thumbWheelNote.stringValue = note
             thumbWheelSection.setAccessibilityHelp(note)

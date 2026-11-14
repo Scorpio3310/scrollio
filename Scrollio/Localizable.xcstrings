@@ -8764,18 +8764,6 @@
         }
       }
     },
-    "apps-detail-thumb-wheel-note": {
-      "comment": "Apps, an app's Scrolling part: the muted line under its Thumb wheel box. Its Action is the same value as the thumb wheel's row of the app's Buttons part and is not dimmed by “Use settings from Scrolling”; its Speed and Swap direction are",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The action is shared with this app's Buttons part and does not follow “Use settings from Scrolling”; speed and direction do."
-          }
-        }
-      }
-    },
     "apps-undo-reset-ring": {
       "comment": "Apps, an app's Shortcut Ring part: \"Reset to Defaults\" puts its own ring back; the Undo menu item reads \"Undo Reset Shortcut Ring in Calculator\"; %@ is the app's name",
       "extractionState": "manual",
@@ -8796,6 +8784,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reset Gestures in %@"
+          }
+        }
+      }
+    },
+    "apps-detail-thumb-wheel-shared": {
+      "comment": "Apps, an app's Scrolling part: the muted line under its Thumb wheel box, shown only while “Use settings from Scrolling” is off. Its Action is the same value as the thumb wheel's row of the app's Buttons part and stays when the switch goes on (the box is then out of sight); its Speed and Swap direction then follow Scrolling",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The action is also in this app's Buttons part and stays when “Use settings from Scrolling” is on; speed and direction then follow Scrolling."
           }
         }
       }

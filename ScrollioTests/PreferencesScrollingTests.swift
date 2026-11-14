@@ -1726,7 +1726,7 @@ final class PreferencesScrollingTests: XCTestCase {
         }
         XCTAssertEqual(global.thumbWheelNote.stringValue, "For the sideways wheel: an MX Master's thumb wheel, or a wheel that tilts.")
         XCTAssertEqual(perApp.thumbWheelNote.stringValue,
-                       "The action is shared with this app's Buttons part and does not follow “Use settings from Scrolling”; speed and direction do.")
+                       "The action is also in this app's Buttons part and stays when “Use settings from Scrolling” is on; speed and direction then follow Scrolling.")
         XCTAssertEqual(perApp.thumbWheelSection.accessibilityHelp(), perApp.thumbWheelNote.stringValue)
         global.view.layoutSubtreeIfNeeded()
         perApp.view.layoutSubtreeIfNeeded()

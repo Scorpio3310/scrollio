@@ -160,7 +160,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-buttons-undo-reset",
         "apps-detail-ring-suggested-reset",
         "apps-detail-ring-suggested-reset-empty-one", "apps-detail-ring-suggested-reset-empty-other",
-        "apps-detail-thumb-wheel-note",
+        "apps-detail-thumb-wheel-shared",
         "apps-undo-reset-ring", "apps-undo-reset-gestures",
     ]
 
