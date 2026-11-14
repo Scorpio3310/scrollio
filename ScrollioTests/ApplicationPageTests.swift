@@ -634,6 +634,84 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [])
     }
 
+    /// "−" on the page, the page closes and the app's page opens again, then Edit › Undo:
+    /// the row shows on the page that is open now, selected, and the pane takes the page's
+    /// new height; Redo takes the row off that page again.
+    func testUndoOfARemovedRowShowsOnThePageOpenedAgain() throws {
+        let calculator = addApp(Self.calculator)
+        calculator.setOwnButtonBindings([binding(3, "appExpose"), binding(4, "copy")])
+        let removedID = calculator.ownButtonBindings[0].id
+        let pane = makePane()
+        _ = makeWindow(for: pane)
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        pane.openApplication(withID: Self.calculator, part: .buttons)
+        let first = try XCTUnwrap(pane.detailController?.buttonsPart)
+        first.paneUndoManager = undo
+        undo.beginUndoGrouping()
+        first.removeOwnBinding(id: removedID)
+        undo.endUndoGrouping()
+        pane.leaveSubpage()
+        pane.openApplication(withID: Self.calculator, part: .buttons)
+        let page = try XCTUnwrap(pane.detailController)
+        let part = try XCTUnwrap(page.buttonsPart)
+        XCTAssertFalse(part === first)
+        XCTAssertEqual(part.rows.count, 1)
+        let short = pane.view.frame.height
+
+        undo.undo()
+        XCTAssertEqual(part.rows.map(\.binding.systemShortcutName), ["appExpose", "copy"], "the open page shows the row")
+        XCTAssertEqual(part.list.selectedID, AnyHashable(removedID))
+        XCTAssertGreaterThan(pane.view.frame.height, short)
+        XCTAssertEqual(pane.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+
+        undo.redo()
+        XCTAssertEqual(part.rows.map(\.binding.systemShortcutName), ["copy"], "the row leaves the open page")
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), ["copy"])
+        XCTAssertEqual(pane.view.frame.height, short, accuracy: 0.5)
+    }
+
+    /// "−" on the page, then the app is removed from the list and added again (a new entry,
+    /// whose page opens), then two Undos: the first gives the new entry the app's settings,
+    /// the second its button, shown on its page, with the list's mark; the entry that was
+    /// removed is left alone. Redo takes the button off the new entry again.
+    func testUndoOfARemovedRowReachesTheAppAddedAgain() throws {
+        let calculator = addApp(Self.calculator)
+        calculator.setOwnButtonBindings([binding(3, "appExpose")])
+        let pane = makePane()
+        let window = makeWindow(for: pane)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        pane.openApplication(withID: Self.calculator, part: .buttons)
+        let first = try XCTUnwrap(pane.detailController?.buttonsPart)
+        first.paneUndoManager = undo
+        undo.beginUndoGrouping()
+        first.removeOwnBinding(id: calculator.ownButtonBindings[0].id)
+        undo.endUndoGrouping()
+        pane.leaveSubpage()
+        pane.list.select(Self.calculator)
+        undo.beginUndoGrouping()
+        pane.list.removeButton.performClick(nil)
+        undo.endUndoGrouping()
+        let again = pane.addApplication(path: Self.calculator, knownPaths: [Self.calculator])
+        XCTAssertFalse(again === calculator)
+        let part = try XCTUnwrap(pane.detailController?.buttonsPart)
+        XCTAssertEqual(pane.detailController?.shownPart, .buttons)
+        XCTAssertTrue(part.rows.isEmpty)
+
+        undo.undo()
+        undo.undo()
+        XCTAssertEqual(again.ownButtonBindings.map(\.systemShortcutName), ["appExpose"], "the entry on the list now")
+        XCTAssertFalse(calculator.hasOwnButtons, "not the entry that was removed")
+        XCTAssertEqual(part.rows.map(\.binding.systemShortcutName), ["appExpose"])
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.buttons])
+
+        undo.redo()
+        XCTAssertFalse(again.hasOwnButtons)
+        XCTAssertTrue(part.rows.isEmpty)
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [])
+    }
+
     /// "Record a Button or Key…": the Buttons pane's recorder; what it caught is added when
     /// it closes. A button the app has already is a duplicate; what opens the ring is
     /// refused, and the recorder says why.

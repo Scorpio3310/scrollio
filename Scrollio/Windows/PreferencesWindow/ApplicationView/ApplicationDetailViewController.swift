@@ -47,6 +47,11 @@ final class ApplicationDetailViewController: NSViewController {
     var onInheritChange: (() -> Void)? {
         didSet { buttonsPart?.onOwnButtonsChange = onInheritChange }
     }
+    /// The pane's answer to which Buttons part shows an app's entry now; the Buttons part
+    /// gets it as it is (an Undo there outlives the page).
+    var buttonsPartShowing: ((Application) -> ApplicationButtonsViewController?)? {
+        didSet { buttonsPart?.partShowing = buttonsPartShowing }
+    }
     /// The page's height changed: another part, the settings loaded, "Advanced" opened or
     /// closed, a row came or went.
     var onHeightChange: (() -> Void)?
@@ -191,6 +196,7 @@ final class ApplicationDetailViewController: NSViewController {
             }
             if let buttons = controller as? ApplicationButtonsViewController {
                 buttons.onOwnButtonsChange = onInheritChange
+                buttons.partShowing = buttonsPartShowing
             }
             addChild(controller)
             controller.view.translatesAutoresizingMaskIntoConstraints = false
