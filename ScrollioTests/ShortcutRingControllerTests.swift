@@ -616,9 +616,10 @@ final class ShortcutRingControllerTests: XCTestCase {
         }
     }
 
-    /// A click that went to another app while the ring stands open (on another screen,
-    /// where the panel is not) closes the ring. Clicks elsewhere are heard of only while a
-    /// ring is open: from the press on, one watch for the hold and the open ring.
+    /// A click that went to another app while the ring stands open (every screen has a
+    /// panel that should have taken it: the log says so) closes the ring. Clicks elsewhere
+    /// are heard of only while a ring is open: from the press on, one watch for the hold
+    /// and the open ring.
     func testAClickThatWentToAnotherAppClosesTheRingAndRunsNothing() {
         XCTAssertEqual(harness.clickWatches, 0, "no ring: nothing listens to the Mac's clicks")
         controller.triggerPressed(by: RingHarness.button(.down))
@@ -634,25 +635,27 @@ final class ShortcutRingControllerTests: XCTestCase {
         XCTAssertFalse(controller.isOpen)
         XCTAssertEqual(harness.log, ["hide"])
         XCTAssertEqual(harness.stoppedClickWatches, ["watch 1"], "and with the ring the listening ends")
-        XCTAssertTrue(harness.problems.isEmpty)
+        XCTAssertEqual(harness.problems.count, 1, "the panel of that screen should have taken it")
     }
 
-    /// During a hold the pointer (when it is not kept still) can reach another screen,
-    /// where the panel is not: a click there goes to the app there, and the ring closes
-    /// and runs nothing, the trigger's release neither. So does a click in the moment
-    /// before a held ring is on the screen; neither is the panel's fault.
-    func testAClickThatWentToAnotherAppDuringAHoldClosesTheRingAndRunsNothing() {
+    /// During a hold the pointer (when it is not kept still) can reach another screen.
+    /// That screen's panel takes the click there: it is the ring's, and the lit place runs
+    /// at its up, once, the trigger's release running nothing more. A click in the moment
+    /// before a held ring is on the screen goes to the app under the pointer: the ring
+    /// closes and runs nothing, and that is no panel's fault.
+    func testAHeldClickOnAnotherScreenIsTheRingsAndRunsTheLitPlace() {
         controller.triggerPressed(by: RingHarness.button(.down))
         harness.runScheduled()
         harness.moveHand(by: CGPoint(x: -50, y: 50))
         XCTAssertEqual(controller.session.lit, 5)
-        harness.pointer = CGPoint(x: 2400, y: 300)
+        harness.pointer = CGPoint(x: 2400, y: 300)   // on a screen to the right
         harness.clearLog()
-        controller.clickWentElsewhere()
+        harness.presenter.onButton?(0, true, harness.pointer)
+        harness.presenter.onButton?(0, false, harness.pointer)
         XCTAssertFalse(controller.isOpen)
         controller.triggerReleased(isMadeUp: false)
         harness.runScheduled()
-        XCTAssertEqual(harness.log, ["hide"], "nothing runs")
+        XCTAssertEqual(harness.log, ["hide", "run copy"], "the lit place runs, once")
         XCTAssertEqual(harness.stoppedClickWatches, ["watch 1"])
 
         harness.pointer = CGPoint(x: 700, y: 500)
@@ -805,8 +808,9 @@ final class ShortcutRingControllerTests: XCTestCase {
         XCTAssertFalse(controller.isOpen)
     }
 
-    /// A click in a window of Scrollio's own (its Settings on another screen) closes an
-    /// open ring too; a click on the ring's own panel is the panel's to report.
+    /// A click in a window of Scrollio's own (its Settings, should a panel not have taken
+    /// the click) closes an open ring too; a click on the ring's own panel is the panel's
+    /// to report.
     func testAClickInAWindowOfScrolliosOwnClosesTheRingButNotOneOnThePanel() {
         let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10), styleMask: [.borderless], backing: .buffered, defer: true)
         let settings = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10), styleMask: [.borderless], backing: .buffered, defer: true)
@@ -819,7 +823,6 @@ final class ShortcutRingControllerTests: XCTestCase {
         XCTAssertTrue(controller.isOpen, "the panel's own click")
         controller.clickWentElsewhere(in: settings)
         XCTAssertFalse(controller.isOpen)
-        XCTAssertTrue(harness.problems.isEmpty)
     }
 
     // MARK: Pulses
@@ -1534,13 +1537,15 @@ final class ShortcutRingPanelTests: XCTestCase {
 
     private func shown(
         appearance: ShortcutRingAppearance = ShortcutRingAppearance(),
-        takesClicks: Bool = false
+        takesClicks: Bool = false,
+        otherScreens: [CGRect] = []
     ) -> (ShortcutRingPanelPresenter, [NSPanel]) {
         let presenter = ShortcutRingPanelPresenter()
         var ordered: [NSPanel] = []
         presenter.orderFront = { ordered.append($0) }
         presenter.appearance = { appearance }
         presenter.after = { _, _ in }
+        presenter.otherScreens = { _ in otherScreens }
         let screen = ShortcutRingScreen(
             frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
             usable: CGRect(x: 0, y: 32, width: 1512, height: 950)
@@ -1616,6 +1621,59 @@ final class ShortcutRingPanelTests: XCTestCase {
         XCTAssertTrue(stage.hitTest(NSPoint(x: 400, y: 682)) === stage)
         XCTAssertTrue(stage.hitTest(NSPoint(x: 400 + ShortcutRingGeometry.placeRadius, y: 682)) === stage)
         XCTAssertTrue(stage.hitTest(NSPoint(x: 1200, y: 100)) === stage)
+    }
+
+    /// A pointer that is not kept still can carry a held click to another screen. Every
+    /// other screen gets a panel of its own that takes that click and reports it to the
+    /// ring where it was, shows no ring, and goes with the ring; a ring shown later on one
+    /// screen alone takes it away.
+    func testEveryOtherScreenHasAPanelThatTakesTheClickAndShowsNoRing() throws {
+        let right = CGRect(x: 1512, y: -100, width: 1920, height: 1080)
+        let (presenter, ordered) = shown(takesClicks: true, otherScreens: [right])
+        let panel = try XCTUnwrap(presenter.panel)
+        XCTAssertEqual(presenter.covers.count, 1)
+        let cover = try XCTUnwrap(presenter.covers.first)
+        XCTAssertEqual(ordered.count, 2)
+        XCTAssertTrue(ordered.contains { $0 === cover.panel })
+        XCTAssertEqual(cover.panel.alphaValue, 1)
+        let height = ShortcutRingScreens.mainScreenHeight
+        XCTAssertEqual(cover.panel.frame, ShortcutRingScreens.flipped(right, mainScreenHeight: height))
+        XCTAssertEqual(cover.panel.level, panel.level)
+        XCTAssertNil(cover.stage.dropsView, "the ring is drawn on its own screen alone")
+        XCTAssertFalse(cover.panel.ignoresMouseEvents)
+        XCTAssertTrue(cover.stage.takesClicks)
+        XCTAssertNotNil(cover.stage.layer?.backgroundColor, "filled almost invisibly, as the ring's")
+        XCTAssertTrue(presenter.owns(cover.panel), "its clicks are not clicks elsewhere")
+        XCTAssertTrue(presenter.owns(panel))
+
+        var reported: [(Int, Bool, CGPoint)] = []
+        presenter.onButton = { reported.append(($0, $1, $2)) }
+        func event(_ type: NSEvent.EventType) throws -> NSEvent {
+            return try XCTUnwrap(NSEvent.mouseEvent(
+                with: type, location: NSPoint(x: 100, y: 980), modifierFlags: [], timestamp: 0,
+                windowNumber: cover.panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+            ))
+        }
+        cover.stage.mouseDown(with: try event(.leftMouseDown))
+        cover.stage.mouseUp(with: try event(.leftMouseUp))
+        XCTAssertEqual(reported.map { $0.0 }, [0, 0])
+        XCTAssertEqual(reported.map { $0.1 }, [true, false])
+        // 980 points from the bottom of a screen whose top is at -100 is 0.
+        XCTAssertEqual(reported.first?.2, CGPoint(x: 1612, y: 0))
+
+        presenter.setTakesClicks(false)
+        XCTAssertTrue(cover.panel.ignoresMouseEvents)
+        presenter.setTakesClicks(true)
+        presenter.hide()
+        XCTAssertTrue(cover.panel.ignoresMouseEvents, "it goes with the ring")
+        XCTAssertFalse(cover.panel.isVisible)
+
+        presenter.otherScreens = { _ in [] }
+        let screen = ShortcutRingScreen(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), usable: CGRect(x: 0, y: 0, width: 1512, height: 982))
+        presenter.show(ShortcutRingFace(.default), centre: CGPoint(x: 400, y: 300), screen: screen, lit: nil, takesClicks: true)
+        XCTAssertTrue(cover.panel.ignoresMouseEvents, "one screen: no panel beside the ring's takes clicks")
+        XCTAssertFalse(panel.ignoresMouseEvents)
+        presenter.hide()
     }
 
     /// The ring must be seen from the moment it takes clicks: the panel is ordered in at

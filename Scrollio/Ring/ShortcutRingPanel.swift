@@ -16,6 +16,9 @@
 //    clear part is filled almost invisibly for that: a pixel without any alpha lets a
 //    click through. A click acts when the button comes up. The movement of a held ring
 //    comes from the motion tap, not from the panel; the wheel over the panel does nothing.
+//  - Every other screen gets a panel of its own with the same fill and no ring: a pointer
+//    that is not kept still can carry a click of a held ring there, and that click is the
+//    ring's too, reported where it was.
 //
 //  The ring is nine drops (`ShortcutRingDropsView`) of Liquid Glass, of the system's blurred
 //  material or drawn plainly, as the system offers and asks (`ShortcutRingAppearance`). It
@@ -216,6 +219,12 @@ final class ShortcutRingStageView: NSView {
         return view
     }
 
+    /// Covers `screen` (event coordinates) without a ring: a panel on another screen than
+    /// the ring's, whose clicks are reported where they were.
+    func cover(_ screen: CGRect) {
+        screenFrame = screen
+    }
+
     /// Puts the ring at `centre` of `screen` (both in event coordinates).
     func place(centre: CGPoint, on screen: CGRect) {
         screenFrame = screen
@@ -334,10 +343,24 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
     var after: (TimeInterval, @escaping () -> Void) -> Void = { delay, work in
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
+    /// The screens other than the ring's (event coordinates): each gets a panel that takes
+    /// clicks and shows nothing. Under XCTest there are none; tests pass their own.
+    var otherScreens: (_ ringScreen: CGRect) -> [CGRect] = AppRuntime.isRunningXCTest
+        ? { _ in [] }
+        : { ringScreen in
+            let height = ShortcutRingScreens.mainScreenHeight
+            return NSScreen.screens
+                .map { ShortcutRingScreens.flipped($0.frame, mainScreenHeight: height) }
+                .filter { $0 != ringScreen }
+        }
 
     /// Made at the first ring, on the main queue, never inside an event callback.
     private(set) var panel: ShortcutRingPanel?
     private(set) var stage: ShortcutRingStageView?
+    /// The panels of the other screens, made as they are first needed and kept; the first
+    /// `coversShown` are on screen with the ring.
+    private(set) var covers: [(panel: ShortcutRingPanel, stage: ShortcutRingStageView)] = []
+    private var coversShown = 0
     /// How the ring last appeared: how long its opening takes (0: at once).
     private(set) var lastOpenDuration: TimeInterval = 0
     /// Which place is lit, and how far each has come.
@@ -355,6 +378,14 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
 
     private func makePanelIfNeeded() -> (ShortcutRingPanel, ShortcutRingStageView) {
         if let panel, let stage { return (panel, stage) }
+        let (panel, stage) = makeStagedPanel()
+        self.panel = panel
+        self.stage = stage
+        return (panel, stage)
+    }
+
+    /// A panel whose stage reports its clicks to the ring.
+    private func makeStagedPanel() -> (panel: ShortcutRingPanel, stage: ShortcutRingStageView) {
         let panel = ShortcutRingPanel.make()
         let stage = ShortcutRingStageView(frame: panel.contentLayoutRect)
         stage.autoresizingMask = [.width, .height]
@@ -362,9 +393,25 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
             self?.onButton?(button, isDown, location)
         }
         panel.contentView = stage
-        self.panel = panel
-        self.stage = stage
         return (panel, stage)
+    }
+
+    /// Puts a panel without a ring on each screen in `frames` (event coordinates), and
+    /// takes those of screens that are gone off the screen.
+    private func cover(_ frames: [CGRect], mainScreenHeight height: CGFloat) {
+        while covers.count < frames.count {
+            covers.append(makeStagedPanel())
+        }
+        for cover in covers.dropFirst(frames.count) {
+            cover.panel.ignoresMouseEvents = true
+            cover.panel.orderOut(nil)
+        }
+        coversShown = frames.count
+        for (cover, frame) in zip(covers, frames) {
+            cover.panel.setFrame(ShortcutRingScreens.flipped(frame, mainScreenHeight: height), display: false)
+            cover.stage.frame = NSRect(origin: .zero, size: frame.size)
+            cover.stage.cover(frame)
+        }
     }
 
     func show(_ face: ShortcutRingFace, centre: CGPoint, screen: ShortcutRingScreen, lit: Int?, takesClicks: Bool) {
@@ -376,6 +423,7 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
         let height = ShortcutRingScreens.mainScreenHeight
         panel.setFrame(ShortcutRingScreens.flipped(screen.frame, mainScreenHeight: height), display: false)
         stage.frame = NSRect(origin: .zero, size: screen.frame.size)
+        cover(otherScreens(screen.frame), mainScreenHeight: height)
         let drops = stage.drops(of: appearance.material)
         stage.place(centre: centre, on: screen.frame)
         drops.increasesContrast = appearance.increasesContrast
@@ -393,6 +441,10 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
         // Never faded as a window (see the top of the file).
         panel.alphaValue = 1
         orderFront(panel)
+        for cover in covers.prefix(coversShown) {
+            cover.panel.alphaValue = 1
+            orderFront(cover.panel)
+        }
         guard !reducesMotion else { return }
         move(for: Self.openDeadline) { [weak self] in
             // The opening is over, whatever the clock says.
@@ -456,11 +508,16 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
     func setTakesClicks(_ takesClicks: Bool) {
         panel?.ignoresMouseEvents = !takesClicks
         stage?.takesClicks = takesClicks
+        for cover in covers.prefix(coversShown) {
+            cover.panel.ignoresMouseEvents = !takesClicks
+            cover.stage.takesClicks = takesClicks
+        }
     }
 
+    /// The ring's panel and those of the other screens.
     func owns(_ window: NSWindow?) -> Bool {
         guard let window, let panel else { return false }
-        return window === panel
+        return window === panel || covers.contains { $0.panel === window }
     }
 
     func hide() {
@@ -471,5 +528,6 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
         panel.ignoresMouseEvents = true
         // At once, and with nothing to wait for.
         panel.orderOut(nil)
+        cover([], mainScreenHeight: 0)
     }
 }
