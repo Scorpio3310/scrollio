@@ -54,7 +54,7 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   may take it over.
 - Removing a button or an app can be undone (Edit › Undo).
 - Buttons for one app: an app's page in Apps (add the app there, or open it in the list)
-  has three parts, chosen at its top: Scrolling, Buttons and Shortcut Ring; the page
+  has four parts, chosen at its top: Scrolling, Buttons, Gestures and Shortcut Ring; the page
   opens on the part you looked at last, for any app. In Buttons the app holds only the
   buttons that do something else in it, and every other button does what the Buttons
   pane says (as Logi Options+ does it). + offers the buttons of your mouse, "Record a
@@ -68,7 +68,7 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   button that no binding of the Buttons pane uses is taken from the mouse only while an
   app that gives it an action is in front, and is the mouse's own again in every other
   app. In the list of apps, small marks say what an app has of its own (scrolling
-  settings, buttons, a ring); a click on one opens the page on that part.
+  settings, buttons, gestures, a ring); a click on one opens the page on that part.
 
 ## Mouse gestures
 
@@ -86,6 +86,18 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   private macOS interface; where it is missing, the mode is not available.
 - "Freeze pointer during a gesture" keeps the pointer where it is while you hold the
   button.
+- An app can have gestures of its own. Its page in Apps (add the app there, or open it
+  in the list) has a "Gestures" part. "Use the general gestures" is on for every app;
+  turn it off and the app gets the five rows of the Gestures pane and "Invert left and
+  right" of its own, which start as a copy of the pane's at that moment and are set the
+  same way ("Keyboard Shortcut…" with a name and an icon too). They run while the app is
+  in front when you press the button (the app in front, not the one under the pointer:
+  the actions go to it); the gesture keeps them until you let go, whatever comes to the
+  front meanwhile. While Scrollio's own Settings are in front, the pane's gestures run.
+  The button to hold, the mode, the swipe speed, "Freeze pointer" and what a Logitech
+  mouse does are the same for every app; in "Follow the hand" Left and Right on the
+  app's page say so, as in the pane. Turn the switch on again and the app's gestures are
+  kept for later.
 - With a Logitech MX Master, the mouse can track the gesture itself (Beta), and an MX
   Master 4 can pulse when a gesture locks in.
 - "Reset to Defaults" at the bottom of the Gestures pane puts every gesture setting back
@@ -264,7 +276,7 @@ move to another Mac, to keep a copy, or to pass a setup on.
 - "Export…" writes one JSON file ("Scrollio Settings 2026-11-12.json") that any text
   editor opens. It holds what you set in Scrollio's panes: the scroll settings and the
   thumb wheel, the buttons and keys with their actions, the gestures, what the
-  Shortcut Ring holds, the apps with their own settings (an app's own buttons and ring among them) and "Change scrolling only in these apps", the Logitech values, and
+  Shortcut Ring holds, the apps with their own settings (an app's own buttons, gestures and ring among them) and "Change scrolling only in these apps", the Logitech values, and
   "Show in menu bar".
 - It does not hold, and an import never changes: "Let Scrollio manage this mouse" (it
   stays as it is on each Mac: the Logitech values of a file are imported, but they are
@@ -278,7 +290,7 @@ move to another Mac, to keep a copy, or to pass a setup on.
 - "Import…" reads a file and shows what it holds before anything changes: which
   settings, how many apps, and every button and key with what it will do, in the words
   of the Buttons pane, with the gesture directions and the places of the Shortcut Ring
-  (and of each app's own ring) whose action is not the default one. A recorded keyboard
+  (and of each app's own gestures and ring) whose action is not the default one. A recorded keyboard
   shortcut that the file gives a name is listed by its keys, with the name after them. For buttons, keys and places of a ring that open an app or a file,
   or run a script, a box of its own lists each one's whole path and arguments. Read those lists when the file is not
   your own: an action starts at a press of its button. Unless the file gives no button
