@@ -179,8 +179,12 @@ class InputProcessor: ModifierFlagsProviding {
     }
 
     private final class ActiveMouseGestureSession {
-        /// Snapshot at button-down, so editing settings mid-hold cannot mix two configurations.
+        /// Snapshot at button-down, so editing settings mid-hold cannot mix two configurations,
+        /// and a change of the app in front cannot either: the general settings, or those
+        /// with the own set of the app in front at the press (`MouseGestureChoice`).
         let settings: MouseGestureSettings
+        /// The set is the own one of the app in front (for the log, which never names an app).
+        let isAppsOwn: Bool
         /// Fixed for the whole hold: movement from the other source never reaches it.
         let movementSource: MouseGestureMovementSource
         /// The button to name when asking for a haptic cue: set for buttons that arrive
@@ -195,8 +199,11 @@ class InputProcessor: ModifierFlagsProviding {
         /// still swallowed, but it reads no movement and the next press starts over.
         var isAbandoned = false
 
-        init(settings: MouseGestureSettings, movementSource: MouseGestureMovementSource, hapticCode: UInt16?) {
+        init(
+            settings: MouseGestureSettings, isAppsOwn: Bool, movementSource: MouseGestureMovementSource, hapticCode: UInt16?
+        ) {
             self.settings = settings
+            self.isAppsOwn = isAppsOwn
             self.movementSource = movementSource
             self.hapticCode = hapticCode
         }
@@ -232,6 +239,11 @@ class InputProcessor: ModifierFlagsProviding {
     }
     /// Writes the line of a gesture's action (`mouseGestureRunLine`). Replaced in tests.
     private var mouseGestureLog: (String) -> Void = { AppSystemLog.note($0) }
+    /// The app in front when a gesture button goes down: whose gestures the hold runs
+    /// (`MouseGestureChoice`). Read once per hold, inside the event callback: what
+    /// `NSWorkspace` and the running app already hold, as for the ring's press, and then
+    /// two lookups in the per-app list; nothing on disk. Replaced in tests.
+    private var mouseGestureFrontApplication: () -> ShortcutRingChoice.FrontApp? = { .current() }
 
     private struct ScrollActionTapReplay {
         let context: MouseTapReplayContext
@@ -574,13 +586,20 @@ class InputProcessor: ModifierFlagsProviding {
             // (The motion tap is refreshed once, at the end, for the new hold.)
             abandonMouseGesture(existing, key: key, refreshMotionTap: false)
         }
-        let settings = Options.shared.gesture
+        // The app in front now decides whose actions the hold runs; the hold keeps them.
+        let choice = MouseGestureChoice.make(
+            front: mouseGestureFrontApplication(),
+            applications: Options.shared.application.applications,
+            general: Options.shared.gesture
+        )
+        let settings = choice.settings
         var hapticCode: UInt16?
         if settings.hapticFeedback, case .hidPP = event.source {
             hapticCode = event.code
         }
         let session = ActiveMouseGestureSession(
             settings: settings,
+            isAppsOwn: choice.isAppsOwn,
             // The event says what the mouse does for this hold; the setting only decides
             // whether the mouse was asked to (LogiUsageBootstrap).
             movementSource: event.tracksMovementOnDevice ? .device : .pointer,
@@ -639,7 +658,7 @@ class InputProcessor: ModifierFlagsProviding {
         } else if session.recognizer.shouldReplayClick {
             // A plain click without movement runs the click action (Mission Control by
             // default, like the gesture button in Logi Options+).
-            executeMouseGestureAction(session.settings.actions.click, part: .click)
+            executeMouseGestureAction(session.settings.actions.click, part: .click, appsOwn: session.isAppsOwn)
         }
         MouseInteractionSessionController.shared.refreshMotionTapState()
         return true
@@ -660,19 +679,19 @@ class InputProcessor: ModifierFlagsProviding {
         }
         guard delta != .zero else { return }
 
-        var recognized: (action: GestureAction, direction: MouseGestureDirection)?
+        var recognized: (action: GestureAction, direction: MouseGestureDirection, appsOwn: Bool)?
         for session in activeMouseGestures.values
         where session.interactive == nil && session.movementSource == .pointer && !session.isAbandoned {
             if let direction = session.recognizer.append(deltaX: delta.x, deltaY: delta.y) {
                 let action = session.settings.action(for: direction)
                 playLockInHaptic(for: session, action: action)
                 if recognized == nil {
-                    recognized = (action, direction)
+                    recognized = (action, direction, session.isAppsOwn)
                 }
             }
         }
         if let recognized {
-            executeMouseGestureAction(recognized.action, part: .direction(recognized.direction))
+            executeMouseGestureAction(recognized.action, part: .direction(recognized.direction), appsOwn: recognized.appsOwn)
         }
     }
 
@@ -697,7 +716,7 @@ class InputProcessor: ModifierFlagsProviding {
               let direction = session.recognizer.append(deltaX: deltaX, deltaY: deltaY) else { return }
         let action = session.settings.action(for: direction)
         playLockInHaptic(for: session, action: action)
-        executeMouseGestureAction(action, part: .direction(direction))
+        executeMouseGestureAction(action, part: .direction(direction), appsOwn: session.isAppsOwn)
     }
 
     // MARK: - Haptic cues
@@ -741,10 +760,11 @@ class InputProcessor: ModifierFlagsProviding {
     }
 
     /// The one line a gesture's action leaves in the log: what ran, a listed action by its
-    /// identifier, a recorded key combination by its kind. Never its keys, never the name
-    /// the user gave it.
-    static func mouseGestureRunLine(_ action: GestureAction, part: MouseGesturePart) -> String {
-        return "Gestures: \(part.logName) ran \(action.logName)"
+    /// identifier, a recorded key combination by its kind, and whether it was of the own
+    /// gestures of the app in front. Never its keys, never the name the user gave it, never
+    /// the app's name.
+    static func mouseGestureRunLine(_ action: GestureAction, part: MouseGesturePart, appsOwn: Bool = false) -> String {
+        return "Gestures: \(part.logName) ran \(action.logName)" + (appsOwn ? ", the app in front has its own gestures" : "")
     }
 
     /// Runs one gesture action as a single press: trigger actions fire once, stateful ones
@@ -755,7 +775,7 @@ class InputProcessor: ModifierFlagsProviding {
     ///
     /// Posts after the CGEvent tap callback returns. Posting a synthetic event from inside
     /// the callback re-enters the event pipeline and can time out the tap.
-    private func executeMouseGestureAction(_ gestureAction: GestureAction, part: MouseGesturePart) {
+    private func executeMouseGestureAction(_ gestureAction: GestureAction, part: MouseGesturePart, appsOwn: Bool) {
         guard !gestureAction.isEmpty else { return }
         let log = mouseGestureLog
         DispatchQueue.main.async {
@@ -768,7 +788,7 @@ class InputProcessor: ModifierFlagsProviding {
                     mouseSessionID: result.mouseSessionID
                 )
             }
-            log(InputProcessor.mouseGestureRunLine(gestureAction, part: part))
+            log(InputProcessor.mouseGestureRunLine(gestureAction, part: part, appsOwn: appsOwn))
         }
     }
 
@@ -960,9 +980,9 @@ class InputProcessor: ModifierFlagsProviding {
             case .discrete(let direction):
                 let action = session.settings.action(for: direction)
                 playLockInHaptic(for: session, action: action)
-                executeMouseGestureAction(action, part: .direction(direction))
+                executeMouseGestureAction(action, part: .direction(direction), appsOwn: session.isAppsOwn)
             case .click:
-                executeMouseGestureAction(session.settings.actions.click, part: .click)
+                executeMouseGestureAction(session.settings.actions.click, part: .click, appsOwn: session.isAppsOwn)
             }
         }
     }
@@ -1008,6 +1028,11 @@ class InputProcessor: ModifierFlagsProviding {
     /// nil writes to the system log again.
     func setTestingMouseGestureLog(_ log: ((String) -> Void)?) {
         mouseGestureLog = log ?? { AppSystemLog.note($0) }
+    }
+
+    /// The app in front for the next gesture holds; nil reads the real one again.
+    func setTestingMouseGestureFrontApplication(_ front: (() -> ShortcutRingChoice.FrontApp?)?) {
+        mouseGestureFrontApplication = front ?? { .current() }
     }
 
     /// The hardware the watchdog of held actions asks; nil: none (no timer, no look).

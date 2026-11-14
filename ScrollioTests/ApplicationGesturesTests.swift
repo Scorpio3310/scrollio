@@ -256,3 +256,163 @@ final class MouseGestureChoiceTests: XCTestCase {
         XCTAssertTrue(choice(FrontApp(bundlePath: bundle, executablePath: own.executablePath)).isAppsOwn)
     }
 }
+
+// MARK: - A hold
+
+final class ApplicationGesturesHoldTests: XCTestCase {
+
+    private typealias FrontApp = ShortcutRingChoice.FrontApp
+
+    /// ⇧⌘R, as the recorder stores it.
+    private static let shiftCommandR = "custom::15:1179648"
+    private static let notes = FrontApp(bundlePath: notesPath, executablePath: notesPath + "/Contents/MacOS/Notes")
+    private static let textEdit = FrontApp(
+        bundlePath: "/System/Applications/TextEdit.app", executablePath: "/System/Applications/TextEdit.app/Contents/MacOS/TextEdit"
+    )
+
+    private var savedGesture = MouseGestureSettings.default
+    private var savedBindings: [ButtonBinding] = []
+    private var savedApplications: EnhanceArray<Application>!
+    private var savedPost: ((CGEvent) -> Void)!
+    private var posted: [CGEvent] = []
+    private var logLines: [String] = []
+    private var front: FrontApp?
+    private var notes: Application!
+
+    override func setUp() {
+        super.setUp()
+        savedGesture = Options.shared.gesture
+        savedBindings = Options.shared.buttons.binding
+        savedApplications = Options.shared.application.applications
+        savedPost = ShortcutExecutor.shared.post
+        posted = []
+        logLines = []
+        front = nil
+        ShortcutExecutor.shared.post = { [weak self] in self?.posted.append($0) }
+        ShortcutExecutor.shared.setTestingMouseEventObserver()
+        ShortcutExecutor.shared.setTestingKeyboardShortcutObserver()
+        MouseInteractionSessionController.shared.setTestingMotionTapHooks()
+        MouseInteractionSessionController.shared.clearAllSessions()
+        InputProcessor.shared.setTestingMouseGestureLog { [weak self] in self?.logLines.append($0) }
+        InputProcessor.shared.setTestingMouseGestureFrontApplication { [weak self] in self?.front }
+        InputProcessor.shared.clearActiveBindings()
+        // The pointer stays free: nothing here locks the real one.
+        var gesture = MouseGestureSettings.default
+        gesture.freezePointer = false
+        gesture.hapticFeedback = false
+        gesture.upAction = SystemShortcut.copy.identifier
+        Options.shared.gesture = gesture
+        Options.shared.buttons.binding = [ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil),
+            systemShortcutName: SystemShortcut.mouseGestureNavigation.identifier,
+            isEnabled: true
+        )]
+        // Notes: a recorded ⇧⌘R up, Paste on the right, Undo on a click.
+        let notes = Application(path: notesPath)
+        notes.setUsesGeneralGestures(false, general: gesture)
+        var own = gesture.actions
+        own.up = GestureAction(action: Self.shiftCommandR, label: ShortcutLabel(name: "Reload Notes", icon: .symbol("arrow.clockwise")))
+        own.right = GestureAction(SystemShortcut.paste)
+        own.click = GestureAction(SystemShortcut.undo)
+        notes.setOwnGestures(actions: own, invertHorizontal: false)
+        self.notes = notes
+        Options.shared.application.applications = EnhanceArray<Application>(
+            withArray: [notes, Application(path: "/Applications/Safari.app")], matchKey: "path"
+        )
+        ButtonUtils.shared.invalidateCache()
+    }
+
+    override func tearDown() {
+        waitForMainQueue()
+        InputProcessor.shared.clearActiveBindings()
+        InputProcessor.shared.setTestingMouseGestureLog(nil)
+        InputProcessor.shared.setTestingMouseGestureFrontApplication(nil)
+        MouseInteractionSessionController.shared.clearAllSessions()
+        MouseInteractionSessionController.shared.clearTestingMotionTapHooks()
+        ShortcutExecutor.shared.clearTestingMouseEventObserver()
+        ShortcutExecutor.shared.clearTestingKeyboardShortcutObserver()
+        ShortcutExecutor.shared.post = savedPost
+        Options.shared.gesture = savedGesture
+        Options.shared.buttons.binding = savedBindings
+        Options.shared.application.applications = savedApplications
+        ButtonUtils.shared.invalidateCache()
+        savedApplications = nil
+        notes = nil
+        super.tearDown()
+    }
+
+    private func button(_ phase: InputPhase) -> InputEvent {
+        return InputEvent(type: .mouse, code: 3, modifiers: [], phase: phase, source: .hidPP, device: nil)
+    }
+
+    private func waitForMainQueue() {
+        let done = expectation(description: "main queue")
+        DispatchQueue.main.async { done.fulfill() }
+        wait(for: [done], timeout: 1)
+    }
+
+    /// One hold: the button goes down with `pressed` in front, `meanwhile` comes to the
+    /// front, the hand moves by `delta` (none: a click), the button goes up.
+    private func hold(_ pressed: FrontApp?, then meanwhile: FrontApp?, moving delta: CGPoint?) {
+        front = pressed
+        XCTAssertEqual(InputProcessor.shared.process(button(.down)), .consumed)
+        front = meanwhile
+        if let delta {
+            InputProcessor.shared.handleMouseGestureMovement(deltaX: delta.x, deltaY: delta.y)
+        }
+        XCTAssertEqual(InputProcessor.shared.process(button(.up)), .consumed)
+        waitForMainQueue()
+    }
+
+    private static let up = CGPoint(x: 0, y: -45)
+    private static let right = CGPoint(x: 45, y: 0)
+
+    /// The app in front at the press decides, and the hold keeps that set to its end:
+    /// another app that comes to the front meanwhile changes nothing. The recorded key
+    /// combination of the app's set is sent as one of the general set is; the log says the
+    /// set was the app's own, and never names the app.
+    func testAHoldKeepsTheSetItBeganWithWhenAnotherAppComesToTheFront() {
+        hold(Self.notes, then: Self.textEdit, moving: Self.up)
+        XCTAssertEqual(posted.map { $0.type }, [.keyDown, .keyUp], "Notes' ⇧⌘R")
+        XCTAssertEqual(posted.map { $0.getIntegerValueField(.keyboardEventKeycode) }, [15, 15])
+        let shiftCommand = UInt64(CGEventFlags.maskShift.rawValue | CGEventFlags.maskCommand.rawValue)
+        XCTAssertEqual((posted.first?.flags.rawValue ?? 0) & shiftCommand, shiftCommand)
+        XCTAssertEqual(logLines, ["Gestures: up ran a recorded key combination, the app in front has its own gestures"])
+
+        posted = []
+        logLines = []
+        hold(Self.textEdit, then: Self.notes, moving: Self.up)
+        XCTAssertTrue(posted.isEmpty, "no ⇧⌘R")
+        XCTAssertEqual(logLines, ["Gestures: up ran copy"], "the general set, kept while Notes came to the front")
+
+        logLines = []
+        hold(Self.notes, then: nil, moving: Self.right)
+        hold(Self.notes, then: Self.textEdit, moving: nil)
+        hold(nil, then: Self.notes, moving: nil)
+        XCTAssertEqual(logLines, [
+            "Gestures: right ran paste, the app in front has its own gestures",
+            "Gestures: click ran undo, the app in front has its own gestures",
+            "Gestures: click ran missionControl",
+        ])
+        for line in logLines {
+            XCTAssertFalse(line.contains("Notes") || line.contains("Reload") || line.contains("/"), line)
+        }
+    }
+
+    /// An app's "Invert left and right" counts for its holds, the general one for every
+    /// other app; with the switch on again the app runs the general set.
+    func testTheAppsInvertSwitchCountsAndTheGeneralSwitchTakesItsSetOutOfUse() {
+        notes.setOwnGestures(actions: try! XCTUnwrap(notes.ownGestures).actions, invertHorizontal: true)
+        hold(Self.notes, then: nil, moving: CGPoint(x: -45, y: 0))
+        XCTAssertEqual(logLines, ["Gestures: left ran paste, the app in front has its own gestures"], "moving left runs its Right")
+
+        logLines = []
+        hold(Self.textEdit, then: nil, moving: CGPoint(x: -45, y: 0))
+        XCTAssertEqual(logLines, ["Gestures: left ran moveSpaceLeft"])
+
+        logLines = []
+        notes.setUsesGeneralGestures(true, general: Options.shared.gesture)
+        hold(Self.notes, then: nil, moving: Self.up)
+        XCTAssertEqual(logLines, ["Gestures: up ran copy"])
+    }
+}
