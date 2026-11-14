@@ -34,8 +34,10 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   wheel. It drops the names and icons the first time it saves the buttons, the ring or
   the gestures (a change in that pane, or an import), and every app's own gestures, ring
   and thumb wheel the first time it saves the list of apps (a change in the Apps pane,
-  or "Smooth Scrolling in …" in the menu bar menu). Coming back to this version does not
-  bring them back.
+  or "Smooth Scrolling in …" in the menu bar menu). Export…, Import… and Restore… in
+  1.0.5 save every setting first, so they drop all of it at once, from the file Export…
+  writes too. Coming back to this version does not bring them back: export your settings
+  in this version before you go back, and importing that file here later does.
 - A drawing of the mouse lights the button each row is about. The MX Master 4, the MX
   Master 3 and 3S, the MX Anywhere 3 and 3S and the MX Vertical each have a drawing of
   their own, from above and from their thumb side, where the side buttons are (on an MX
@@ -216,11 +218,15 @@ the eight places hold.
   that back); the page says whether the ring started from them. They are ordinary
   places afterwards: change any of them. No suggested place deletes what cannot be
   brought back or changes something outside the Mac at one flick (a git app fetches
-  rather than pushes), and a place whose key the app does not document stays empty. The keys are those of your keyboard layout at
+  rather than pushes, a terminal splits its pane rather than clearing what it showed,
+  and a call app never turns your microphone or camera on), and a place whose key the app does not document stays empty. The keys are those of your keyboard layout at
   that moment (on a German or Slovenian keyboard ⌘Z is still Undo and zoom is the + and
   − keys); a shortcut whose key your layout types only with Option ("[" on those
   layouts) takes Scrollio's own Back or Forward in a browser, or other keys the app has
-  for it, and else its place stays empty (the page says how many). Mail's arrow and
+  for it, and else its place stays empty (the page says how many). So does a shortcut
+  that would be ⌘ or ⇧⌘ with the key beside the left Shift, which switches windows
+  there (⌘<): zoom in Notes, Pages, Keynote, Numbers and TextEdit, and Excel's font
+  size. Mail's arrow and
   Delete keys are not suggested (they would type into a text field); where other apps
   zoom out, Outlook's place stays empty rather than Delete, and Excel gets its font
   size.
@@ -253,8 +259,10 @@ the eight places hold.
   key combination that no app needs.
 - On a mouse with a haptic motor whose button Scrollio reads itself (an MX Master 4's
   thumb panel bound in Scrollio), the mouse pulses lightly when a shortcut lights and
-  more firmly when one runs. "Haptic feedback" in the Gestures pane is the switch for
-  these pulses too. A button that reaches Scrollio as a keystroke gets no pulse.
+  more firmly when one runs. "Pulse when a gesture locks in" in the Gestures pane (the
+  pane's, not an app's own) is the switch for these pulses too, and "Haptic feedback"
+  under Mouse turns all of them off. A button that reaches Scrollio as a keystroke gets
+  no pulse.
 - The ring is a pointer tool: it cannot be reached with the keyboard or with VoiceOver's
   keys (VoiceOver is told the name of the shortcut that lights). Everything a place can
   hold can also be given to a button or a key directly.
@@ -319,7 +327,10 @@ Apart from those settings, and whatever that switch says:
 
 - For a Logitech-only button that has an action, and for a gesture button the mouse
   tracks itself, Scrollio asks the mouse to send that button to Scrollio, and gives it
-  back when Scrollio pauses or quits.
+  back when Scrollio pauses or quits. A button that only an app gives an action, or that
+  an app sets to "Default", is taken or given back as that app comes to or leaves the
+  front (so is the mouse's tracking of a gesture button); a button that is down waits
+  until it is up.
 - While you record a button in the Buttons pane, Scrollio asks the mouse for every
   button it can send (never the left or the right one), so that it can tell which one
   you press, and gives them back when the recording ends.

@@ -6,7 +6,7 @@
       "name": "Ableton Live",
       "bundleIdentifiers": ["com.ableton.live"],
       "places": [
-        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": [], "modifierless": true},
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["shift"], "modifierless": true},
         {"name": "Play/Stop", "symbol": "playpause", "character": "space", "modifiers": [], "modifierless": true},
         {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
         {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
@@ -401,7 +401,7 @@
       "bundleIdentifiers": ["com.hnc.Discord", "com.hnc.DiscordPTB"],
       "places": [
         {"name": "Previous Unread", "symbol": "arrow.up", "character": "up", "modifiers": ["option", "shift"], "modifierless": false},
-        {"name": "Mute/Unmute", "symbol": "mic.slash", "character": "m", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Member List", "symbol": "person.2", "character": "u", "modifiers": ["command"], "modifierless": false},
         {"name": "Next Channel", "symbol": "chevron.right", "character": "down", "modifiers": ["option"], "modifierless": false},
         {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
         {"name": "Next Unread", "symbol": "arrow.down", "character": "down", "modifiers": ["option", "shift"], "modifierless": false},
@@ -625,7 +625,7 @@
       "bundleIdentifiers": ["com.googlecode.iterm2"],
       "places": [
         {"name": "Bigger Text", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
-        {"name": "Clear Buffer", "symbol": "eraser", "character": "k", "modifiers": ["command"], "modifierless": false},
+        {"name": "Split Vertically", "symbol": "rectangle.split.2x1", "character": "d", "modifiers": ["command"], "modifierless": false},
         {"name": "Next Tab", "symbol": "arrow.right", "character": "right", "modifiers": ["command"], "modifierless": false},
         {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
         {"name": "Smaller Text", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
@@ -653,7 +653,7 @@
       "bundleIdentifiers": ["org.libreoffice.script", "com.collabora.libreoffice-free"],
       "places": [
         {"name": "Increase Font Size", "symbol": "textformat.size.larger", "character": "]", "modifiers": ["command"], "modifierless": false},
-        {"name": "Paste Unformatted Text", "symbol": "doc.plaintext", "character": "v", "modifiers": ["option", "shift", "command"], "modifierless": false},
+        {"name": "Paste as Plain Text", "symbol": "doc.plaintext", "character": "v", "modifiers": ["option", "shift", "command"], "modifierless": false},
         {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
         {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
         {"name": "Decrease Font Size", "symbol": "textformat.size.smaller", "character": "[", "modifiers": ["command"], "modifierless": false},
@@ -806,11 +806,11 @@
       "name": "Microsoft Teams",
       "bundleIdentifiers": ["com.microsoft.teams2", "com.microsoft.teams"],
       "places": [
-        {"name": "Mute/Unmute", "symbol": "mic.slash", "character": "m", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
         {"name": "Raise Hand", "symbol": "hand.raised", "character": "k", "modifiers": ["shift", "command"], "modifierless": false},
         {"name": "Forward", "symbol": "chevron.right", "character": "]", "modifiers": ["command"], "modifierless": false},
         {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
-        {"name": "Camera On/Off", "symbol": "video.slash", "character": "o", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
         {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
         {"name": "Back", "symbol": "chevron.left", "character": "[", "modifiers": ["command"], "modifierless": false},
         {"name": "Share Screen", "symbol": "square.and.arrow.up", "character": "e", "modifiers": ["shift", "command"], "modifierless": false}
@@ -1186,7 +1186,7 @@
       "bundleIdentifiers": ["com.apple.Terminal"],
       "places": [
         {"name": "Bigger Text", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
-        {"name": "Clear to Start", "symbol": "eraser", "character": "k", "modifiers": ["command"], "modifierless": false},
+        {"name": "Split Pane", "symbol": "rectangle.split.1x2", "character": "d", "modifiers": ["command"], "modifierless": false},
         {"name": "Next Tab", "symbol": "arrow.right", "character": "tab", "modifiers": ["control"], "modifierless": false},
         {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
         {"name": "Smaller Text", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
@@ -1312,7 +1312,7 @@
       "bundleIdentifiers": ["dev.warp.Warp-Stable"],
       "places": [
         {"name": "Bigger Text", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
-        {"name": "Clear Blocks", "symbol": "eraser", "character": "k", "modifiers": ["command"], "modifierless": false},
+        {"name": "Split Pane", "symbol": "rectangle.split.2x1", "character": "d", "modifiers": ["command"], "modifierless": false},
         {"name": "Next Tab", "symbol": "arrow.right", "character": "tab", "modifiers": ["control"], "modifierless": false},
         {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
         {"name": "Smaller Text", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
@@ -1395,11 +1395,11 @@
       "name": "Zoom Workplace",
       "bundleIdentifiers": ["us.zoom.xos"],
       "places": [
-        {"name": "Mute/Unmute", "symbol": "mic.slash", "character": "a", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Full Screen", "symbol": "arrow.up.left.and.arrow.down.right", "character": "f", "modifiers": ["shift", "command"], "modifierless": false},
         {"name": "Raise Hand", "symbol": "hand.raised", "character": "y", "modifiers": ["option"], "modifierless": false},
         {"name": "Next Page", "symbol": "chevron.right", "character": "n", "modifiers": ["control"], "modifierless": false},
         {"name": "Participants", "symbol": "person.2", "character": "u", "modifiers": ["command"], "modifierless": false},
-        {"name": "Camera On/Off", "symbol": "video.slash", "character": "v", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Speaker / Gallery View", "symbol": "square.grid.2x2", "character": "w", "modifiers": ["shift", "command"], "modifierless": false},
         {"name": "Chat", "symbol": "bubble.left", "character": "h", "modifiers": ["shift", "command"], "modifierless": false},
         {"name": "Previous Page", "symbol": "chevron.left", "character": "p", "modifiers": ["control"], "modifierless": false},
         {"name": "Share Screen", "symbol": "square.and.arrow.up", "character": "s", "modifiers": ["shift", "command"], "modifierless": false}

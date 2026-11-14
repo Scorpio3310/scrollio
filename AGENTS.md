@@ -226,6 +226,9 @@ See `.agents/docs/code-map.md` for the map. The rules:
   (`Options.shared.logiMouseManaged`) is on, the user set that value and the value
   freshly read from the mouse differs. Apart from settings: a button is diverted for a
   binding and while a button is recorded, and given back when Scrollio pauses or quits; a
+  button that only an app binds, or that an app sets to "Default", is diverted or given
+  back as that app comes to or leaves the front (so is raw XY tracking of a gesture
+  button; `LogiUsageBootstrap`), and a button that is down waits until it is up; a
   Logitech button action writes when its button is pressed; a cue of a gesture or of the
   Shortcut Ring plays a pulse and may switch the haptics on. Reading needs no switch. The header of
   `LogiDeviceSession` has the whole list; the Logitech Diagnostics window writes in debug

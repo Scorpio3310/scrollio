@@ -131,6 +131,25 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
         XCTAssertEqual(gimp.keys, ShortcutRingSuggestion.Keys(character: "=", modifiers: .maskShift))
     }
 
+    /// Every suggested name stands whole in the middle of the ring when its place lights,
+    /// on screen and in the pane: at the size `namedTitleLayout` gives a name with its keys
+    /// under it, it takes at most two lines, so nothing is cut ("Paste Unformatted Text"
+    /// needed three and was cut to "Paste / Unformatted T…").
+    func testEverySuggestedNameStandsWholeInTheMiddleOfTheRing() {
+        for scale in [CGFloat(1), ShortcutRingPreviewView.ringScale] {
+            let width = ShortcutRingArtwork.titleWidth * scale
+            let size = ShortcutRingArtwork.titleFont.pointSize * scale
+            for app in catalog.apps {
+                for place in app.slots.compactMap(\.place) {
+                    let layout = ShortcutRingArtwork.namedTitleLayout(place.name, keys: "⌥⇧⌘V", width: width, pointSize: size)
+                    let lines = ShortcutRingArtwork.titleLines(place.name, width: width, pointSize: layout.namePointSize).lines
+                    XCTAssertLessThanOrEqual(lines, 2, "\(app.appName): \(place.name), scale \(scale)")
+                }
+            }
+        }
+        XCTAssertEqual(try SuggestionFixtures.place("Paste as Plain Text", of: "LibreOffice").keys.modifiers, [.maskAlternate, .maskShift, .maskCommand])
+    }
+
     /// Every bundle identifier names one app, case aside, and no app's prefix takes an
     /// identifier of another: Android Studio is found as itself, no longer as IntelliJ
     /// IDEA (whose ring is the same, place for place).
@@ -229,11 +248,14 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
     /// request); Excel's Delete Cells (where every other app zooms out) gave way to the
     /// font size pair, and Outlook's Delete left that place empty, as Mail's is: a flick
     /// down from habit would delete a message. The deletes left are each taken back by the
-    /// app's Undo or a bin, or asked about first, and none is on the bottom place.
+    /// app's Undo or a bin, or asked about first, and none is on the bottom place. No
+    /// terminal clears its scrollback (⌘K in Terminal, iTerm2 and Warp, which no Undo
+    /// brings back): their top right place splits the pane instead.
     func testNoPlaceIsDestructive() throws {
         let never: Set<String> = [
             "Delete Cells", "Insert Cells", "Leave Call", "Leave Meeting", "Delete Now", "Empty Trash", "Quit", "Force Quit",
             "Close Window", "Push", "Force Push", "Commit & Push", "Send Request", "Delete Chat",
+            "Clear", "Clear Buffer", "Clear to Start", "Clear Blocks", "Clear Scrollback",
         ]
         let recoverable: Set<String> = [
             "Finder: Move to Trash", "Photos: Delete",
@@ -254,6 +276,12 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
         let excel = try SuggestionFixtures.app("Microsoft Excel")
         XCTAssertEqual(excel.slots[0].place?.name, "Increase Font Size")
         XCTAssertEqual(excel.slots[4].place?.name, "Decrease Font Size")
+        for name in ["Terminal", "iTerm2", "Warp"] {
+            let terminal = try SuggestionFixtures.app(name)
+            XCTAssertFalse(terminal.slots.compactMap(\.place).contains { $0.keys == ShortcutRingSuggestion.Keys(character: "k", modifiers: .maskCommand) }, name)
+            XCTAssertEqual(terminal.slots[1].place?.keys, ShortcutRingSuggestion.Keys(character: "d", modifiers: .maskCommand), name)
+            XCTAssertNotEqual(terminal.slots[1].place?.symbol, "eraser", name)
+        }
     }
 
     /// A key without modifiers only in apps whose canvas, timeline or player takes it
@@ -323,6 +351,43 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
             for place in app.slots.compactMap(\.place) {
                 XCTAssertFalse(sends.contains(place.name), "\(app.appName): \(place.name)")
             }
+        }
+    }
+
+    /// No place turns a call's microphone or camera on: a flick up or down from the zoom
+    /// habit of the other rings opened the mic or the camera in Zoom and Teams, and
+    /// Discord's top right unmuted its voice. Teams zooms there as the other apps do; Zoom,
+    /// which has no zoom keys in a meeting, goes full screen and switches between speaker
+    /// and gallery view (both only on this Mac); Discord shows or hides its member list.
+    func testNoPlaceTurnsTheMicrophoneOrTheCameraOn() throws {
+        let never: Set<String> = [
+            "Mute/Unmute", "Mute / Unmute", "Camera On/Off", "Camera On / Off", "Start / Stop Video", "Deafen/Undeafen",
+        ]
+        for app in catalog.apps {
+            for place in app.slots.compactMap(\.place) {
+                XCTAssertFalse(never.contains(place.name), "\(app.appName): \(place.name)")
+            }
+        }
+        let teams = try SuggestionFixtures.app("Microsoft Teams")
+        XCTAssertEqual(teams.slots[0].place?.name, "Zoom In")
+        XCTAssertEqual(teams.slots[0].place?.keys, keys("=", .maskCommand))
+        XCTAssertEqual(teams.slots[4].place?.name, "Zoom Out")
+        XCTAssertEqual(teams.slots[4].place?.keys, keys("-", .maskCommand))
+        let zoom = try SuggestionFixtures.app("Zoom Workplace")
+        XCTAssertEqual(zoom.slots[0].place?.name, "Full Screen")
+        XCTAssertEqual(zoom.slots[0].place?.keys, keys("f", [.maskShift, .maskCommand]))
+        XCTAssertEqual(zoom.slots[4].place?.name, "Speaker / Gallery View")
+        XCTAssertEqual(zoom.slots[4].place?.keys, keys("w", [.maskShift, .maskCommand]))
+        let discord = try SuggestionFixtures.app("Discord")
+        XCTAssertEqual(discord.slots[1].place?.name, "Member List")
+        XCTAssertEqual(discord.slots[1].place?.keys, keys("u", .maskCommand))
+        let switches: [(app: ShortcutRingSuggestion, keys: ShortcutRingSuggestion.Keys)] = [
+            (teams, keys("m", [.maskShift, .maskCommand])), (teams, keys("o", [.maskShift, .maskCommand])),
+            (zoom, keys("a", [.maskShift, .maskCommand])), (zoom, keys("v", [.maskShift, .maskCommand])),
+            (discord, keys("m", [.maskShift, .maskCommand])), (discord, keys("d", [.maskShift, .maskCommand])),
+        ]
+        for that in switches {
+            XCTAssertFalse(that.app.slots.compactMap(\.place).contains { $0.keys == that.keys }, that.app.appName)
         }
     }
 
@@ -463,14 +528,12 @@ final class ShortcutRingSuggestionKeysTests: XCTestCase {
         let premiere = try SuggestionFixtures.app("Adobe Premiere Pro").places(on: german)
         XCTAssertEqual(premiere[0].action, custom(29, .maskShift), "Zoom In =: Shift-0")
 
-        // ⇧⌘. is ⌘> on US: ">" is Shift and the key left of Y on German; "<" needs no Shift.
+        // ⇧⌘. is ⌘> on US: ">" and "<" are the key left of Y on German, the key whose ⌘
+        // switches windows, so Notes' zoom stays empty there
+        // (`testOnISOLayoutsNoPlaceIsTheKeyThatSwitchesWindows`).
         let notes = try SuggestionFixtures.app("Notes").places(on: german)
-        let zoomIn = try XCTUnwrap(ShortcutRingPlace.keyCombination(named: notes[0].action))
-        XCTAssertEqual(german.commandShift[zoomIn.code], ">")
-        XCTAssertEqual(zoomIn.modifiers, CGEventFlags([.maskShift, .maskCommand]).rawValue)
-        let zoomOut = try XCTUnwrap(ShortcutRingPlace.keyCombination(named: notes[4].action))
-        XCTAssertEqual(german.command[zoomOut.code], "<")
-        XCTAssertEqual(zoomOut.modifiers, CGEventFlags.maskCommand.rawValue)
+        XCTAssertEqual(notes[0], .empty, "Zoom In ⇧⌘.")
+        XCTAssertEqual(notes[4], .empty, "Zoom Out ⇧⌘,")
 
         let safari = try SuggestionFixtures.app("Safari").places(on: german)
         XCTAssertEqual(safari[6], ShortcutRingPlace(SystemShortcut.navigateBack))
@@ -485,6 +548,46 @@ final class ShortcutRingSuggestionKeysTests: XCTestCase {
         XCTAssertEqual(try SuggestionFixtures.app("Notion").places(on: german)[4], .empty, "Toggle Sidebar ⌘\\")
         XCTAssertEqual(try SuggestionFixtures.app("Microsoft Outlook").places(on: german)[6], .empty, "⌃[")
         XCTAssertEqual(try SuggestionFixtures.app("Adobe Lightroom Classic").places(on: german)[7], .empty, "\\")
+    }
+
+    /// ⌘ and ⇧⌘ with the key that is "`" on US (code 50: beside left Shift on ISO, "<"
+    /// and ">" on German, Slovenian, Swiss, French, Swedish, Spanish) are macOS's "Move
+    /// focus to next window" and back, and a sent shortcut goes through them. ⇧⌘. and ⇧⌘,
+    /// (zoom in Notes, Pages, Keynote, Numbers and TextEdit, Excel's font size) would land
+    /// there as ⇧⌘> and ⌘<: those places stay empty, and the page counts them. On US they
+    /// are the "." and "," keys as before, and ⌘` is still that key where a shortcut asks
+    /// for it.
+    func testOnISOLayoutsNoPlaceIsTheKeyThatSwitchesWindows() throws {
+        let windowKeys: Set<UInt64> = [CGEventFlags.maskCommand.rawValue, CGEventFlags([.maskShift, .maskCommand]).rawValue]
+        let modifierKeys: CGEventFlags = [.maskControl, .maskAlternate, .maskShift, .maskCommand]
+        var checked = 0
+        for id in ["German", "Slovenian", "SwissGerman", "French", "Swedish-Pro", "Spanish-ISO"].map({ "com.apple.keylayout.\($0)" }) {
+            guard let source = SuggestionFixtures.inputSource(id), let layout = KeyboardLayoutLayers.of(source) else { continue }
+            checked += 1
+            for app in catalog.apps {
+                for (slot, place) in zip(app.slots, app.places(on: layout)) {
+                    guard let key = ShortcutRingPlace.keyCombination(named: place.action) else { continue }
+                    let modifiers = CGEventFlags(rawValue: key.modifiers).intersection(modifierKeys)
+                    XCTAssertFalse(key.code == 50 && windowKeys.contains(modifiers.rawValue),
+                                   "\(id) \(app.appName): \(slot.place?.name ?? place.action)")
+                }
+            }
+        }
+        guard checked > 0 else { throw XCTSkip("none of these layouts is on this Mac") }
+
+        let german = try SuggestionFixtures.layout("com.apple.keylayout.German")
+        XCTAssertEqual(german.plain[50], "<", "the layout this test is about")
+        for name in ["Notes", "Pages", "Keynote", "Numbers", "TextEdit", "Microsoft Excel"] {
+            let app = try SuggestionFixtures.app(name)
+            let places = app.places(on: german)
+            XCTAssertEqual(places[0], .empty, name)
+            XCTAssertEqual(places[4], .empty, name)
+            XCTAssertEqual(app.placesLeftEmpty(in: places), 2, name)
+        }
+        XCTAssertEqual(KeyboardLayoutLayers.us.key(for: ".", modifiers: [.maskShift, .maskCommand])?.code, 47)
+        XCTAssertEqual(KeyboardLayoutLayers.us.key(for: ",", modifiers: [.maskShift, .maskCommand])?.code, 43)
+        XCTAssertEqual(KeyboardLayoutLayers.us.key(for: "`", modifiers: .maskCommand)?.code, 50)
+        XCTAssertNil(german.key(for: ",", modifiers: [.maskShift, .maskCommand]))
     }
 
     /// On QWERTZ and the other layouts where signs and digits sit elsewhere (Swiss, Polish,
@@ -588,7 +691,7 @@ final class ShortcutRingSuggestionKeysTests: XCTestCase {
     /// The cases of the second fifty's report, through the same resolution: Telegram's ⌘0
     /// is the 0 key with Command alone (also on AZERTY, which types "0" with Shift);
     /// GIMP's "+" without a modifier is Shift and "=" on US and the "+" key without Shift
-    /// on German; Opera's bottom corners are Copy and Paste (its ⌃⇥ cycler switches when
+    /// on German, and so is Ableton Live's (it was "=", Shift-0 on German); Opera's bottom corners are Copy and Paste (its ⌃⇥ cycler switches when
     /// Control is let go, which a sent shortcut does not do as a key of its own); the new
     /// browsers' ⌘[ / ⌘] take Scrollio's Back and Forward where "[" needs Option, and
     /// BBEdit's four bracket places stay empty there.
@@ -614,6 +717,11 @@ final class ShortcutRingSuggestionKeysTests: XCTestCase {
         XCTAssertEqual(gimpGerman[0].action, custom(30, []), "Zoom In: the + key, without Shift")
         XCTAssertEqual(german.plain[30], "+")
         XCTAssertEqual(gimpGerman[2].action, custom(6, .maskCommand), "Redo ⌘Y: the key that types Y")
+        // Ableton Live zooms with "+" as GIMP does: stored as GIMP's, never Shift-0 ("=").
+        XCTAssertEqual(try SuggestionFixtures.place("Zoom In", of: "Ableton Live"), try SuggestionFixtures.place("Zoom In", of: "GIMP"))
+        XCTAssertEqual(try SuggestionFixtures.app("Ableton Live").places(on: german)[0].action, custom(30, []), "Zoom In: the + key")
+        XCTAssertEqual(try SuggestionFixtures.app("Ableton Live").places(on: .us)[0].action, custom(24, .maskShift), "Zoom In: +")
+        XCTAssertEqual(try SuggestionFixtures.app("Ableton Live").places(on: german)[4].action, custom(44, []), "Zoom Out: the - key")
         for name in ["Brave Browser", "ChatGPT Atlas", "Dia", "Orion", "Zen Browser"] {
             let places = try SuggestionFixtures.app(name).places(on: german)
             XCTAssertEqual(places[6], ShortcutRingPlace(SystemShortcut.navigateBack), name)

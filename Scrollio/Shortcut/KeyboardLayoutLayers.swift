@@ -104,7 +104,25 @@ struct KeyboardLayoutLayers: Equatable {
     ///   fallback, the US key, types another character there: "^" on Swiss, "x" on
     ///   Turkish F).
     /// - Any other sign: the key that types it (with Shift as said).
+    /// - Never ⌘ or ⇧⌘ with the key that is "`" on US (`windowSwitchingKeyCode`) unless
+    ///   the shortcut is that key on US too: those are macOS's "Move focus to next window"
+    ///   and back, and a sent shortcut goes through them. On ISO German or Slovenian that
+    ///   key types "<" and ">", so ⇧⌘, and ⇧⌘. (zoom in Notes) would switch windows.
     func key(for character: String, modifiers: CGEventFlags) -> (code: CGKeyCode, modifiers: CGEventFlags)? {
+        guard let key = resolvedKey(for: character, modifiers: modifiers) else { return nil }
+        let switchesWindows: [CGEventFlags] = [.maskCommand, [.maskShift, .maskCommand]]
+        if key.code == Self.windowSwitchingKeyCode, switchesWindows.contains(key.modifiers),
+           Self.us.plain[Self.windowSwitchingKeyCode] != character {
+            return nil
+        }
+        return key
+    }
+
+    /// The key macOS's "Move focus to next window" is on (⌘ with it; ⇧⌘ goes back): "`"
+    /// left of 1 on US, beside the left Shift on ISO keyboards.
+    static let windowSwitchingKeyCode: CGKeyCode = 50
+
+    private func resolvedKey(for character: String, modifiers: CGEventFlags) -> (code: CGKeyCode, modifiers: CGEventFlags)? {
         let withCommand = modifiers.contains(.maskCommand)
         let unshiftedLayer = withCommand && !command.isEmpty ? command : plain
         // (Under Command many layouts drop Shift's characters, US among them: ⇧⌘. reads
