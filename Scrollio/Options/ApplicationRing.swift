@@ -26,7 +26,8 @@
 //  - "places" is read as the general ring's list is: place by place, one that cannot be
 //    read is empty, a short list is filled up and a long one cut. A "ring" without a list
 //    of places is not a ring: the entry reads as one without "ring".
-//  Do not rename the keys.
+//  Do not rename the keys. Whether the ring was filled from the app's suggested shortcuts
+//  is not stored (`startedFromSuggestion`).
 //
 
 import Cocoa
@@ -38,10 +39,22 @@ struct ApplicationRing: Codable, Equatable {
     var inherit: Bool
     /// Always `ShortcutRingSettings.placeCount` places.
     private(set) var places: [ShortcutRingPlace]
+    /// The places were filled from the app's suggested shortcuts (`ShortcutRingSuggestions`:
+    /// the switch made the ring with them, or "Reset to Defaults" put them back), whatever
+    /// was changed since. Known while the app runs, for the line of the app's Shortcut Ring
+    /// part; not stored and not compared (a ring read from the settings or a settings file
+    /// does not know it, and its line then goes by what the places are).
+    var startedFromSuggestion = false
 
-    init(inherit: Bool, places: [ShortcutRingPlace]) {
+    init(inherit: Bool, places: [ShortcutRingPlace], startedFromSuggestion: Bool = false) {
         self.inherit = inherit
         self.places = ShortcutRingSettings.filledUp(places)
+        self.startedFromSuggestion = startedFromSuggestion
+    }
+
+    /// The stored part: the switch and the places.
+    static func == (a: ApplicationRing, b: ApplicationRing) -> Bool {
+        return a.inherit == b.inherit && a.places == b.places
     }
 
     subscript(index: Int) -> ShortcutRingPlace {
@@ -102,15 +115,19 @@ extension Application {
             own.inherit = uses
             ring = own
         } else {
-            ring = ApplicationRing(inherit: false, places: suggested ?? general.places)
+            ring = ApplicationRing(inherit: false, places: suggested ?? general.places, startedFromSuggestion: suggested != nil)
         }
     }
 
     /// Puts `places` into the app's own ring, in use or kept for later; "Use the general
     /// ring" stays as it is. Nothing happens for an app without a ring of its own.
-    func setOwnRingPlaces(_ places: [ShortcutRingPlace]) {
+    /// `startedFromSuggestion`: whether they are the app's suggested shortcuts (nil: as
+    /// the ring was).
+    func setOwnRingPlaces(_ places: [ShortcutRingPlace], startedFromSuggestion: Bool? = nil) {
         guard let own = ring else { return }
-        ring = ApplicationRing(inherit: own.inherit, places: places)
+        ring = ApplicationRing(
+            inherit: own.inherit, places: places, startedFromSuggestion: startedFromSuggestion ?? own.startedFromSuggestion
+        )
     }
 }
 

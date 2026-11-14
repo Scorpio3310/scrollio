@@ -8680,18 +8680,6 @@
         }
       }
     },
-    "apps-detail-ring-use-suggested": {
-      "comment": "An app's page, Shortcut Ring part: the button that fills the app's ring with its suggested shortcuts; also the name of its Undo (\"Undo Use Suggested Shortcuts\")",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Use Suggested Shortcuts"
-          }
-        }
-      }
-    },
     "apps-detail-ring-suggested-in-use": {
       "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the ring holds them; %@ is the app's name; fits two lines",
       "extractionState": "manual",
@@ -8700,18 +8688,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "The ring started from the shortcuts suggested for %@."
-          }
-        }
-      }
-    },
-    "apps-detail-ring-suggested-offer": {
-      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the ring holds something else; %@ is the app's name; fits two lines",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fills all eight places with the shortcuts suggested for %@."
           }
         }
       }
@@ -8740,30 +8716,6 @@
         }
       }
     },
-    "apps-detail-ring-suggested-offer-empty-one": {
-      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the ring holds something else, when the keyboard layout in use cannot type the keys of one of the suggested places (they stay empty); fits two lines",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fills the ring with them. 1 place stays empty: its keys can't be typed on this keyboard layout."
-          }
-        }
-      }
-    },
-    "apps-detail-ring-suggested-offer-empty-other": {
-      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the ring holds something else, when the keyboard layout in use cannot type the keys of several of the suggested places (they stay empty); %d is how many; fits two lines",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fills the ring with them. %d places stay empty: their keys can't be typed on this keyboard layout."
-          }
-        }
-      }
-    },
     "apps-buttons-undo-reset": {
       "comment": "Apps, an app's Buttons part: \"Reset to Defaults\" removes its own buttons; the Undo menu item reads \"Undo Reset Buttons\"",
       "extractionState": "manual",
@@ -8772,6 +8724,42 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reset Buttons"
+          }
+        }
+      }
+    },
+    "apps-detail-ring-suggested-reset": {
+      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the app's own ring did not start from them (made before there were any, or by hand); %@ is the app's name; \"Reset to Defaults\" is the button under the ring; fits two lines",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset to Defaults fills the ring with the shortcuts suggested for %@."
+          }
+        }
+      }
+    },
+    "apps-detail-ring-suggested-reset-empty-one": {
+      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the app's own ring did not start from them, when the keyboard layout in use cannot type the keys of one suggested place (it would stay empty); fits two lines",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset to Defaults fills the ring with them, except 1 place whose keys can't be typed on this keyboard layout."
+          }
+        }
+      }
+    },
+    "apps-detail-ring-suggested-reset-empty-other": {
+      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the app's own ring did not start from them, when the keyboard layout in use cannot type the keys of several suggested places (they would stay empty); %d is how many; fits two lines",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset to Defaults fills the ring with them, except %d places whose keys can't be typed on this keyboard layout."
           }
         }
       }

@@ -5,9 +5,10 @@
 //  The Shortcut Ring suggested for popular apps (`ShortcutRingSuggestions`): the shipped
 //  file and what is in it, finding an app by its bundle identifier, the keys a suggestion
 //  becomes on the US layout and on layouts where letters and signs sit elsewhere, the
-//  safety rules over the whole file, the switch "Use the general ring" and "Use
-//  Suggested Shortcuts" with its Undo on an app's page, that nothing is filled or added
-//  without the user, and a filled ring in a settings file.
+//  safety rules over the whole file and the lead's decisions on the second fifty, the
+//  switch "Use the general ring", "Reset to Defaults" with its Undo and the Suggested
+//  row's line on an app's page, that nothing is filled or added without the user, and a
+//  filled ring in a settings file.
 //
 //  The apps need not be on this Mac: entries get their bundle identifier through
 //  `ShortcutRingSuggestions.bundleIdentifierOfApplication`. Layouts the system has are
@@ -924,13 +925,82 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         XCTAssertGreaterThan(width, 200)
         let font = PreferencesGroupedForm.explanationFont
         let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
-        for empty in [0, 1, 3] {
-            let text = ApplicationRingPartViewController.suggestionExplanation(name: long.displayName!, emptyPlaces: empty)
-            let height = (text as NSString).boundingRect(
-                with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
-            ).height
-            XCTAssertLessThanOrEqual(height, twoLines, text)
+        for started in [true, false] {
+            for empty in [0, 1, 3] {
+                let text = ApplicationRingPartViewController.suggestionExplanation(
+                    name: long.displayName!, emptyPlaces: empty, startedFromIt: started
+                )
+                let height = (text as NSString).boundingRect(
+                    with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
+                ).height
+                XCTAssertLessThanOrEqual(height, twoLines, text)
+            }
         }
+    }
+
+    /// A ring of the app's own that did not start from the suggestion (made before there
+    /// were suggestions, as a copy of the general ring, or read from the settings and
+    /// changed): the row does not say it started from them, it says what "Reset to
+    /// Defaults" does. After the reset it started from them, also after a change; Undo
+    /// brings back the ring and its line; Redo the reset again.
+    func testTheRowOfARingMadeByHandSaysWhatResetToDefaultsDoes() throws {
+        let figma = add(SuggestionFixtures.figmaPath, name: "Figma")
+        figma.setUsesGeneralRing(false, general: .default, suggested: nil)
+        let byHand = try XCTUnwrap(figma.ownRingPlaces)
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        let part = part(for: figma, undo: undo)
+        XCTAssertFalse(part.suggestionRow.isHidden)
+        let reset = "Reset to Defaults fills the ring with the shortcuts suggested for Figma."
+        let started = "The ring started from the shortcuts suggested for Figma."
+        XCTAssertEqual(part.suggestionRow.explanation, reset)
+
+        undo.beginUndoGrouping()
+        XCTAssertTrue(part.resetToDefaultsButton.sendAction(part.resetToDefaultsButton.action, to: part.resetToDefaultsButton.target))
+        undo.endUndoGrouping()
+        XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
+        XCTAssertEqual(part.suggestionRow.explanation, started)
+        figma.ring?[0] = ShortcutRingPlace(SystemShortcut.find)
+        part.syncViewWithOptions()
+        XCTAssertEqual(part.suggestionRow.explanation, started, "filled from them, then changed")
+        figma.ring?[0] = figmaSuggestion[0]
+        part.syncViewWithOptions()
+
+        undo.undo()
+        XCTAssertEqual(figma.ownRingPlaces, byHand)
+        XCTAssertEqual(part.suggestionRow.explanation, reset)
+        undo.redo()
+        XCTAssertEqual(part.suggestionRow.explanation, started)
+
+        // A ring read from the settings knows only its places: the same as the suggestion,
+        // it started from them; changed, the row says what the reset does.
+        let read = try JSONDecoder().decode(Application.self, from: JSONEncoder().encode(figma))
+        XCTAssertEqual(read.ring, figma.ring)
+        XCTAssertFalse(try XCTUnwrap(read.ring).startedFromSuggestion)
+        Options.shared.application.applications = list([read])
+        let again = self.part(for: read)
+        XCTAssertEqual(again.suggestionRow.explanation, started)
+        read.ring?[3] = .empty
+        again.syncViewWithOptions()
+        XCTAssertEqual(again.suggestionRow.explanation, reset)
+    }
+
+    /// The same on a layout that leaves places of the suggestion empty: the line says how
+    /// many the reset would leave empty.
+    func testTheRowOfARingMadeByHandSaysHowManyPlacesTheResetLeavesEmpty() throws {
+        let german = try SuggestionFixtures.layout("com.apple.keylayout.German")
+        ShortcutRingSuggestions.layout = { german }
+        let finder = add(SuggestionFixtures.finderPath, name: "Finder")
+        finder.setUsesGeneralRing(false, general: .default, suggested: nil)
+        let part = part(for: finder)
+        XCTAssertEqual(
+            part.suggestionRow.explanation,
+            "Reset to Defaults fills the ring with them, except 2 places whose keys can't be typed on this keyboard layout."
+        )
+        XCTAssertEqual(
+            ApplicationRingPartViewController.suggestionExplanation(name: "Finder", emptyPlaces: 1, startedFromIt: false),
+            "Reset to Defaults fills the ring with them, except 1 place whose keys can't be typed on this keyboard layout."
+        )
     }
 
     /// A ring filled from a suggestion is ordinary places: it travels in a settings file

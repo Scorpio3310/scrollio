@@ -234,8 +234,10 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
 ///
 /// For an app with suggested shortcuts (`ShortcutRingSuggestions`) the ring the switch
 /// makes starts with them, and while the app's own ring is in use a second row says so
-/// (and how many places the keyboard layout leaves empty). Nothing is filled without a
-/// click: the switch, or "Reset to Defaults".
+/// (and how many places the keyboard layout leaves empty); for a ring that did not start
+/// with them (made before there were any, or by hand) the row says that "Reset to
+/// Defaults" puts them in. Nothing is filled without a click: the switch, or "Reset to
+/// Defaults".
 ///
 /// "Reset to Defaults" ends the own ring, there with it: the ring goes back to where it
 /// started (the suggestion, else a copy of the general ring as it is now), the switch
@@ -395,28 +397,40 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         return suggestion?.places(on: ShortcutRingSuggestions.layout())
     }
 
-    /// "The ring started from the shortcuts suggested for Figma." When the keyboard layout
-    /// leaves `emptyPlaces` places of the suggestion empty (their keys need Option there),
-    /// the line says so instead of naming the app.
-    static func suggestionExplanation(name: String, emptyPlaces: Int) -> String {
+    /// The row's line. For a ring that started from the suggestion: "The ring started from
+    /// the shortcuts suggested for Figma."; for one that did not: "Reset to Defaults fills
+    /// the ring with the shortcuts suggested for Figma." When the keyboard layout leaves
+    /// `emptyPlaces` places of the suggestion empty (their keys need Option there), the
+    /// line says so instead of naming the app.
+    static func suggestionExplanation(name: String, emptyPlaces: Int, startedFromIt: Bool) -> String {
+        let base = startedFromIt ? "apps-detail-ring-suggested-in-use" : "apps-detail-ring-suggested-reset"
         guard emptyPlaces > 0 else {
-            return String(format: NSLocalizedString("apps-detail-ring-suggested-in-use", comment: ""), name)
+            return String(format: NSLocalizedString(base, comment: ""), name)
         }
-        let key = "apps-detail-ring-suggested-in-use-empty" + (emptyPlaces == 1 ? "-one" : "-other")
+        let key = base + "-empty" + (emptyPlaces == 1 ? "-one" : "-other")
         return String(format: NSLocalizedString(key, comment: ""), emptyPlaces)
     }
 
+    /// Whether the app's own ring started from its suggested shortcuts: it was filled from
+    /// them in this run of the app (the switch or "Reset to Defaults"), or it holds them
+    /// now (a ring read from the settings knows only that).
+    func ringStartedFromSuggestion(suggested: [ShortcutRingPlace]) -> Bool {
+        guard let own = application.ownRingPlaces else { return false }
+        return application.ring?.startedFromSuggestion == true || own == suggested
+    }
+
     /// The row of the suggested shortcuts: there while the app has a suggestion and its own
-    /// ring is in use, its line saying how many places the layout leaves empty. True when
-    /// the row came or went, or its room changed, while the part is on screen (the page
-    /// measures again).
+    /// ring is in use, its line saying whether the ring started from them and how many
+    /// places the layout leaves empty. True when the row came or went, or its room changed,
+    /// while the part is on screen (the page measures again).
     private func showSuggestion() -> Bool {
         let shows = suggestion != nil && application.ownRingPlaces != nil
         var moved = suggestionRow.isHidden == shows && view.superview != nil
         suggestionRow.isHidden = !shows
         guard shows, let suggestion, let suggested = suggestedPlaces() else { return moved }
         let line = Self.suggestionExplanation(
-            name: application.getName(), emptyPlaces: suggestion.placesLeftEmpty(in: suggested)
+            name: application.getName(), emptyPlaces: suggestion.placesLeftEmpty(in: suggested),
+            startedFromIt: ringStartedFromSuggestion(suggested: suggested)
         )
         if suggestionRow.explanation != line {
             suggestionRow.explanation = line
@@ -455,19 +469,25 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         let showing = partShowing ?? { [weak self] entry in
             self?.application === entry ? self : nil
         }
-        Self.fillRing(of: application, with: startPlaces(), undoManager: undo, showing: showing)
+        let suggested = suggestedPlaces()
+        Self.fillRing(
+            of: application, with: suggested ?? Options.shared.ring.places, fromSuggestion: suggested != nil,
+            undoManager: undo, showing: showing
+        )
     }
 
     /// As the removal of a thumb wheel (`ApplicationButtonsViewController`): the undo
     /// target is the settings, not the page; Undo and Redo find the app's entry by its path
     /// when they run, and show the change on the part `showing` gives for it. (A ring kept
     /// for later takes them too: the switch is never touched.)
+    /// (`fromSuggestion`: the places are the app's suggested shortcuts; Undo gives the ring
+    /// back what it knew of them before.)
     private static func fillRing(
-        of application: Application, with places: [ShortcutRingPlace], undoManager undo: UndoManager?,
+        of application: Application, with places: [ShortcutRingPlace], fromSuggestion: Bool, undoManager undo: UndoManager?,
         showing: @escaping (Application) -> ApplicationRingPartViewController?
     ) {
-        guard let before = application.ring?.places, before != places else { return }
-        application.setOwnRingPlaces(places)
+        guard let before = application.ring, before.places != places else { return }
+        application.setOwnRingPlaces(places, startedFromSuggestion: fromSuggestion)
         showing(application)?.syncViewWithOptions()
         guard let undo else { return }
         let path = application.path
@@ -475,7 +495,7 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
             guard let entry = PreferencesApplicationViewController.existingApplication(
                 forPaths: PreferencesApplicationViewController.knownPaths(forStoredPath: path)
             ) else { return }
-            fillRing(of: entry, with: before, undoManager: undo, showing: showing)
+            fillRing(of: entry, with: before.places, fromSuggestion: before.startedFromSuggestion, undoManager: undo, showing: showing)
         }
         undo.setActionName(NSLocalizedString(resetActionNameKey, comment: ""))
     }
