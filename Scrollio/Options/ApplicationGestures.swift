@@ -8,9 +8,10 @@
 //
 //  An app has a whole set of its own or none: the five actions (each direction and the
 //  click, a recorded key combination with its name and icon) and "Invert left and right".
-//  The button that runs Gesture Navigation (a binding of Buttons), the mode, the swipe
-//  speed, "Freeze pointer", the mouse tracking the gesture and its haptic cues are the
-//  Gestures pane's for every app.
+//  The button that runs Gesture Navigation is a binding, of Buttons or of the app's own
+//  buttons (`ApplicationButtons`); whichever started a hold, it runs the set of the app in
+//  front: its own, else the general one. The mode, the swipe speed, "Freeze pointer", the
+//  mouse tracking the gesture and its haptic cues are the Gestures pane's for every app.
 //
 //  Stored with the app's entry, under "gestures", in the names of the general gesture
 //  settings (`GestureActions`, `MouseGestureSettings`):
