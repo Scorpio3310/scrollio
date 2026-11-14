@@ -12,8 +12,9 @@
 //  again, for every app alike (the UI state, beside Advanced of Scrolling); a part that
 //  does not exist falls back to Scrolling, and a mark of the list opens its own part.
 //
-//  The page only edits the app it was opened for: `inherit` and its scroll options, its
-//  own buttons, its `gestures` and its `ring`. The Apps pane puts the page in place of the list and takes
+//  The page only edits the app it was opened for: `inherit` and its scroll options (with
+//  its thumb wheel's speed and swap), its own buttons and thumb wheel action, its
+//  `gestures` and its `ring`. The Apps pane puts the page in place of the list and takes
 //  it away again; the page tells it when its height changed (the part, or the part's
 //  content).
 //
@@ -45,7 +46,10 @@ final class ApplicationDetailViewController: NSViewController {
     /// The app's own settings changed in a way the list shows (its line, its marks). The
     /// Buttons part gets it as it is (an Undo there outlives the page).
     var onInheritChange: (() -> Void)? {
-        didSet { buttonsPart?.onOwnButtonsChange = onInheritChange }
+        didSet {
+            buttonsPart?.onOwnButtonsChange = onInheritChange
+            scrollingPart?.onOwnThumbWheelChange = ownThumbWheelChange()
+        }
     }
     /// The pane's answer to which Buttons part shows an app's entry now; the Buttons part
     /// gets it as it is (an Undo there outlives the page).
@@ -201,6 +205,7 @@ final class ApplicationDetailViewController: NSViewController {
             controller.onHeightChange = { [weak self] in self?.onHeightChange?() }
             if let scrolling = controller as? ApplicationScrollingPartViewController {
                 scrolling.onInheritChange = { [weak self] in self?.onInheritChange?() }
+                scrolling.onOwnThumbWheelChange = ownThumbWheelChange()
             }
             if let buttons = controller as? ApplicationButtonsViewController {
                 buttons.onOwnButtonsChange = onInheritChange
@@ -239,6 +244,18 @@ final class ApplicationDetailViewController: NSViewController {
     /// The controller of the part shown.
     var shownController: ApplicationPagePartController? {
         return partControllers[shownPart.id]
+    }
+
+    /// What the Scrolling part calls when the app's own thumb wheel function changed there
+    /// (its Thumb wheel › Action, a reset, the reset's Undo): the Buttons part shows its row
+    /// again, and the list its mark through the pane's own `onInheritChange`, held here as
+    /// it is, so that an Undo after the page closed still reaches the list.
+    private func ownThumbWheelChange() -> () -> Void {
+        let list = onInheritChange
+        return { [weak self] in
+            self?.buttonsPart?.syncViewWithOptions()
+            list?()
+        }
     }
 
     // MARK: - Parts

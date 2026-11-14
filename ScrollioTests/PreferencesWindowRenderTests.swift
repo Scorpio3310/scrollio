@@ -1324,6 +1324,34 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
+    /// An app's Scrolling part with its "Thumb wheel" box (`app-page-thumb-wheel-<case>-<appearance>.png`),
+    /// Scrolling › Thumb wheel at "Switch Tabs", 1.5×, swapped: `inherit`, the app uses the
+    /// Scrolling settings and has its own action, Zoom (live) over the general speed and
+    /// swap (dimmed); `own`, its own settings with its own 2×, not swapped, and Volume.
+    func testRenderAppPageThumbWheel() throws {
+        let stored = Options.shared.application.applications
+        addTeardownBlock { Options.shared.application.applications = stored }
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .tabs, speed: 1.5, swapsDirection: true)
+        for inherit in [true, false] {
+            let calculator = Application(path: "/System/Applications/Calculator.app")
+            if inherit {
+                calculator.setOwnThumbWheelFunction(.zoom)
+            } else {
+                calculator.setUsesScrollingSettings(false, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
+                calculator.setOwnThumbWheelScrolling(speed: 2, swapsDirection: false)
+                calculator.setOwnThumbWheelFunction(.volume)
+            }
+            Options.shared.application.applications = EnhanceArray<Application>(withArray: [calculator], matchKey: "path")
+            let defaults = uiDefaults(advanced: false)
+            try renderPane(PANEL_IDENTIFIER.application, name: "app-page-thumb-wheel-\(inherit ? "inherit" : "own")", prepare: { preferences in
+                (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                    .uiStateDefaults = defaults
+            }, afterLoad: { controller in
+                (controller as? PreferencesApplicationViewController)?.openApplication(withID: calculator.path, part: .scrolling)
+            })
+        }
+    }
+
     /// An app's page with its "Shortcut Ring" section (`app-page-ring-<case>-<appearance>.png`):
     /// `off`, the app uses the general ring and the section is its switch alone; `own`,
     /// the switch is off and the app's own ring stands under it, the drawing and the

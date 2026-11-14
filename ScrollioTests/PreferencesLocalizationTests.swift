@@ -157,7 +157,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-trigger-only-in", "apps-buttons-note-thumb-wheel",
         "apps-detail-ring-suggested", "apps-detail-ring-suggested-in-use",
         "apps-detail-ring-suggested-in-use-empty-one", "apps-detail-ring-suggested-in-use-empty-other",
-        "apps-buttons-undo-reset",
+        "apps-buttons-undo-reset", "apps-detail-thumb-wheel-note",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).

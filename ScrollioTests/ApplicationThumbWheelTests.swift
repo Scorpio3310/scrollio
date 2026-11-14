@@ -931,3 +931,213 @@ final class ApplicationThumbWheelScrollingTests: XCTestCase {
         XCTAssertEqual(foreign.applications?.map(\.scroll.speed), [2.5, 2.5])
     }
 }
+
+// MARK: - The app's Scrolling part: its Thumb wheel box
+
+final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
+
+    private static let calculator = "/System/Applications/Calculator.app"
+
+    private var savedApplications: EnhanceArray<Application>!
+    private var savedBindings: [ButtonBinding] = []
+    private var savedThumbWheel = ThumbWheelSettings.default
+    private var savedScroll: OPTIONS_SCROLL_DEFAULT!
+    private var uiDefaults: UserDefaults!
+
+    override func setUp() {
+        super.setUp()
+        savedApplications = Options.shared.application.applications
+        savedBindings = Options.shared.buttons.binding
+        savedThumbWheel = Options.shared.thumbWheel
+        savedScroll = Options.shared.scroll
+        Options.shared.application.applications = EnhanceArray<Application>(
+            withArray: [], matchKey: "path", forObserver: { Options.shared.markChanged(.application) }
+        )
+        Options.shared.buttons.binding = []
+        Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .tabs, speed: 1.5, swapsDirection: true)
+        ButtonUtils.shared.invalidateCache()
+        uiDefaults = TestDefaults.make(for: self)
+        ApplicationPagePart.scrolling.remember(in: uiDefaults)
+    }
+
+    override func tearDown() {
+        Options.shared.application.applications = savedApplications
+        Options.shared.buttons.binding = savedBindings
+        Options.shared.thumbWheel = savedThumbWheel
+        Options.shared.scroll = savedScroll
+        ButtonUtils.shared.invalidateCache()
+        savedApplications = nil
+        savedScroll = nil
+        uiDefaults = nil
+        super.tearDown()
+    }
+
+    private func makePane() -> PreferencesApplicationViewController {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        let controller = storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.application) as! PreferencesApplicationViewController
+        controller.uiStateDefaults = uiDefaults
+        controller.runningApplications = { [] }
+        controller.presentMenu = { _, _ in }
+        controller.chooseApplications = { _, _ in XCTFail("no open panel was expected") }
+        _ = controller.view
+        return controller
+    }
+
+    @discardableResult
+    private func addCalculator() -> Application {
+        let application = Application(path: Self.calculator)
+        Options.shared.application.applications.append(application)
+        return application
+    }
+
+    /// Calculator's page, on its Scrolling part.
+    private func page(pane: PreferencesApplicationViewController? = nil) throws -> ApplicationDetailViewController {
+        let pane = pane ?? makePane()
+        pane.openApplication(withID: Self.calculator, part: .scrolling)
+        let page = try XCTUnwrap(pane.detailController)
+        page.buttonsPart.deviceSource = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { "MX Master 3S" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        page.buttonsPart.paneUndoManager = UndoManager()
+        return page
+    }
+
+    private func send(_ control: NSControl, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(control.sendAction(control.action, to: control.target), file: file, line: line)
+    }
+
+    private func choose(_ function: ThumbWheelFunction, in popUp: NSPopUpButton) throws {
+        popUp.selectItem(at: try XCTUnwrap(ThumbWheelFunction.allCases.firstIndex(of: function)))
+        send(popUp)
+    }
+
+    /// While the app uses the Scrolling settings: the box shows what runs there (the general
+    /// speed and swap), dimmed as the rest of the part, and its action live. Switched off:
+    /// the speed and swap are the app's own, a copy of what ran, and editable; switched on
+    /// again they are kept for later and the general ones show, dimmed.
+    func testTheBoxFollowsTheSwitchAndItsActionStaysLive() throws {
+        let calculator = addCalculator()
+        let page = try page()
+        let tab = try XCTUnwrap(page.scrollingController)
+        XCTAssertFalse(tab.thumbWheelSection.isHiddenOrHasHiddenAncestor)
+        XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .tabs)
+        XCTAssertEqual(tab.thumbWheelSpeedSlider.doubleValue, 1.5, accuracy: 1e-9)
+        XCTAssertEqual(tab.thumbWheelSwapSwitch.state, .on)
+        XCTAssertFalse(tab.thumbWheelSpeedRow.isEnabled, "dimmed with the rest of the part")
+        XCTAssertFalse(tab.thumbWheelSwapRow.isEnabled)
+        XCTAssertFalse(tab.smoothRow.isEnabled)
+        XCTAssertTrue(tab.thumbWheelFunctionPopUp.isEnabled, "the action is the app's own either way")
+        XCTAssertFalse(tab.resetToDefaultsButton.isEnabled)
+
+        page.inheritSwitch.state = .off
+        send(page.inheritSwitch)
+        XCTAssertFalse(calculator.inherit)
+        XCTAssertEqual(calculator.scroll.thumbWheel, ApplicationThumbWheelScrolling(speed: 1.5, swapsDirection: true))
+        XCTAssertTrue(tab.thumbWheelSpeedRow.isEnabled)
+        XCTAssertTrue(tab.thumbWheelSwapRow.isEnabled)
+        XCTAssertTrue(tab.resetToDefaultsButton.isEnabled, "1.5× and swapped are not the defaults")
+
+        // The rows change the app's values, not the general ones.
+        tab.thumbWheelSpeedSlider.doubleValue = 0.75
+        send(tab.thumbWheelSpeedSlider)
+        tab.thumbWheelSwapSwitch.state = .off
+        send(tab.thumbWheelSwapSwitch)
+        XCTAssertEqual(calculator.scroll.thumbWheel, ApplicationThumbWheelScrolling(speed: 0.75, swapsDirection: false))
+        XCTAssertEqual(Options.shared.thumbWheel, ThumbWheelSettings(function: .tabs, speed: 1.5, swapsDirection: true))
+
+        page.inheritSwitch.state = .on
+        send(page.inheritSwitch)
+        XCTAssertEqual(tab.thumbWheelSpeedSlider.doubleValue, 1.5, accuracy: 1e-9, "the general one, dimmed")
+        XCTAssertEqual(tab.thumbWheelSwapSwitch.state, .on)
+        XCTAssertFalse(tab.thumbWheelSpeedRow.isEnabled)
+        XCTAssertEqual(calculator.scroll.thumbWheel?.speed, 0.75, "kept for later")
+        page.inheritSwitch.state = .off
+        send(page.inheritSwitch)
+        XCTAssertEqual(tab.thumbWheelSpeedSlider.doubleValue, 0.75, accuracy: 1e-9, "back as it was left")
+        XCTAssertEqual(tab.thumbWheelSwapSwitch.state, .off)
+    }
+
+    /// Thumb wheel › Action is the value of the Buttons part's thumb wheel row: chosen here,
+    /// the app gets its own function (also while it uses the Scrolling settings), the
+    /// Buttons part shows the row and the list the mark; changed or removed there, this
+    /// box shows it. The general function is not touched; choosing it for an app without
+    /// one stores nothing.
+    func testTheActionIsOneValueWithTheButtonsPartsRow() throws {
+        let calculator = addCalculator()
+        let pane = makePane()
+        let page = try page(pane: pane)
+        let tab = try XCTUnwrap(page.scrollingController)
+
+        try choose(.tabs, in: tab.thumbWheelFunctionPopUp)
+        XCTAssertNil(calculator.thumbWheel, "the general function: nothing of its own")
+
+        try choose(.zoom, in: tab.thumbWheelFunctionPopUp)
+        XCTAssertTrue(calculator.inherit, "while the app uses the Scrolling settings")
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .zoom)
+        XCTAssertEqual(Options.shared.thumbWheel.function, .tabs)
+        XCTAssertEqual(tab.thumbWheelFunctionRow.explanation, ThumbWheelFunction.zoom.localizedHint)
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.buttons], "the list shows it at once")
+        page.show(.buttons)
+        let row = try XCTUnwrap(page.buttonsPart.thumbWheelRow)
+        XCTAssertEqual(row.function, .zoom)
+
+        let volume = try XCTUnwrap(row.pullDown.functionItems.first { ThumbWheelPresentation.function(of: $0) == .volume })
+        row.pullDown.functionChosen(volume)
+        page.show(.scrolling)
+        XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .volume)
+
+        // Chosen again here while the app has one: its own, also the general function.
+        try choose(.tabs, in: tab.thumbWheelFunctionPopUp)
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .tabs, "as the row's pull-down: the app's own")
+
+        page.show(.buttons)
+        page.buttonsPart.list.select(ButtonsListLayout.thumbWheelRowID)
+        page.buttonsPart.removeOwnThumbWheel()
+        XCTAssertNil(calculator.thumbWheel)
+        Options.shared.thumbWheel.function = .desktops
+        page.show(.scrolling)
+        XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .desktops, "the general one again")
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks ?? [], [])
+    }
+
+    /// The part's "Reset to Defaults" with the app's own settings: the scroll values, the
+    /// thumb wheel's 1× and no swap, and no action of its own (the Buttons part's row goes,
+    /// the list's mark too); the window's Undo brings everything back, also after the page
+    /// closed, and the list follows.
+    func testResetToDefaultsTakesTheAppsThumbWheelAndUndoBringsItBack() throws {
+        let calculator = addCalculator()
+        calculator.setUsesScrollingSettings(false, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
+        calculator.scroll.speed = 4.5
+        calculator.setOwnThumbWheelScrolling(speed: 2, swapsDirection: false)
+        calculator.setOwnThumbWheelFunction(.volume)
+        let pane = makePane()
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.scrolling, .buttons])
+        try autoreleasepool {
+            let page = try page(pane: pane)
+            let tab = try XCTUnwrap(page.scrollingController)
+            tab.paneUndoManager = undo
+            XCTAssertTrue(tab.hasSettingsToReset)
+            undo.beginUndoGrouping()
+            send(tab.resetToDefaultsButton)
+            undo.endUndoGrouping()
+            XCTAssertEqual(calculator.scroll, OPTIONS_SCROLL_DEFAULT())
+            XCTAssertEqual(calculator.scroll.thumbWheel, .defaults)
+            XCTAssertNil(calculator.thumbWheel)
+            XCTAssertFalse(calculator.inherit, "the switch stays")
+            XCTAssertEqual(tab.thumbWheelSpeedSlider.doubleValue, 1, accuracy: 1e-9)
+            XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .tabs)
+            XCTAssertNil(page.buttonsPart.thumbWheelRow)
+            XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.scrolling])
+            XCTAssertEqual(Options.shared.thumbWheel, ThumbWheelSettings(function: .tabs, speed: 1.5, swapsDirection: true))
+            pane.leaveSubpage()
+        }
+        undo.undo()
+        XCTAssertEqual(calculator.scroll.speed, 4.5)
+        XCTAssertEqual(calculator.scroll.thumbWheel, ApplicationThumbWheelScrolling(speed: 2, swapsDirection: false))
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .volume)
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.scrolling, .buttons], "the list follows")
+    }
+}

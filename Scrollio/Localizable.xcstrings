@@ -8775,6 +8775,18 @@
           }
         }
       }
+    },
+    "apps-detail-thumb-wheel-note": {
+      "comment": "Apps, an app's Scrolling part: the muted line under its Thumb wheel box. Its Action is the same value as the thumb wheel's row of the app's Buttons part and is not dimmed by “Use settings from Scrolling”; its Speed and Swap direction are",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The action is shared with this app's Buttons part and does not follow “Use settings from Scrolling”; speed and direction do."
+          }
+        }
+      }
     }
   },
   "version": "1.1"
