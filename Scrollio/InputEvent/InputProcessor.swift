@@ -788,10 +788,10 @@ class InputProcessor: ModifierFlagsProviding {
         return "Gestures: \(part.logName) ran \(action.logName)" + (appsOwn ? ", the app in front has its own gestures" : "")
     }
 
-    /// Runs one gesture action as a single press: trigger actions fire once, stateful ones
-    /// (mouse buttons, custom keys) get a down followed by an up. A recorded key combination
-    /// goes the way a place of the Shortcut Ring sends one (`ShortcutRingController.run`):
-    /// its keys were read when the settings were (`GestureAction.keys`), nothing is parsed
+    /// Runs one gesture action as a single press (`ShortcutExecutor.executeOnePress`, the
+    /// way a place of the Shortcut Ring runs one): trigger actions fire once, a click gets a
+    /// down followed by an up, a recorded key combination goes out as a listed shortcut does.
+    /// Its keys were read when the settings were (`GestureAction.keys`), nothing is parsed
     /// here.
     ///
     /// Posts after the CGEvent tap callback returns. Posting a synthetic event from inside
@@ -801,14 +801,7 @@ class InputProcessor: ModifierFlagsProviding {
         let log = mouseGestureLog
         DispatchQueue.main.async {
             guard let action = gestureAction.resolvedAction else { return }
-            let result = ShortcutExecutor.shared.execute(action: action, phase: .down)
-            if action.executionMode == .stateful {
-                ShortcutExecutor.shared.execute(
-                    action: action,
-                    phase: .up,
-                    mouseSessionID: result.mouseSessionID
-                )
-            }
+            ShortcutExecutor.shared.executeOnePress(action)
             log(InputProcessor.mouseGestureRunLine(gestureAction, part: part, appsOwn: appsOwn))
         }
     }

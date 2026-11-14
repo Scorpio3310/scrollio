@@ -555,6 +555,26 @@ class ShortcutExecutor {
         }
     }
 
+    /// Runs `action` as one press, as a direction of Gesture Navigation and a place of the
+    /// Shortcut Ring run theirs: what is held gets its down and then its up. A recorded key
+    /// combination (a key that is no modifier) goes out as a listed shortcut does
+    /// (`execute(code:flags:)`): its key up carries the modifier keys that are really held,
+    /// not its own, which the system would otherwise go on reporting as pressed
+    /// (`keyUpFlags`), and the check for modifiers left set runs. (A button bound to keys
+    /// holds them while it is down: `execute(action:phase:)`, down and up apart.)
+    @discardableResult
+    func executeOnePress(_ action: ResolvedAction) -> ActionExecutionResult {
+        if case .customKey(let code, let modifiers) = action, !KeyCode.modifierKeys.contains(code) {
+            execute(code: CGKeyCode(code), flags: modifiers)
+            return .none
+        }
+        let result = execute(action: action, phase: .down)
+        if action.executionMode == .stateful {
+            execute(action: action, phase: .up, mouseSessionID: result.mouseSessionID)
+        }
+        return result
+    }
+
     func resolveAction(named shortcutName: String, binding: ButtonBinding? = nil) -> ResolvedAction? {
         // 优先: 结构化 payload (在 cachedCustomCode 之前判定, 避免命名冲突)
         if let payload = binding?.openTarget,

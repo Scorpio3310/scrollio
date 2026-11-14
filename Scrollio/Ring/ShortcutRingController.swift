@@ -694,15 +694,13 @@ final class ShortcutRingController {
     }
 
     /// Runs a place's action as one press, as a direction of Gesture Navigation runs its
-    /// action: through the executor, resolved from a binding built from the place (a
-    /// recorded key combination and what to open are read from the binding, not from the
-    /// name), down and then up for an action that is held (a key, a click).
+    /// action (`ShortcutExecutor.executeOnePress`): resolved from a binding built from the
+    /// place (a recorded key combination and what to open are read from the binding, not
+    /// from the name), down and then up for a click, a recorded key combination as a listed
+    /// shortcut goes out.
     static func run(_ place: ShortcutRingPlace) {
         guard let action = place.resolvedAction else { return }
-        let result = ShortcutExecutor.shared.execute(action: action, phase: .down)
-        if action.executionMode == .stateful {
-            ShortcutExecutor.shared.execute(action: action, phase: .up, mouseSessionID: result.mouseSessionID)
-        }
+        ShortcutExecutor.shared.executeOnePress(action)
     }
 
     /// The ring takes no focus, so VoiceOver would never say what is lit: it is announced.

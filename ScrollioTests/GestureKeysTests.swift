@@ -171,9 +171,11 @@ final class GestureKeysRunTests: XCTestCase {
         savedPost = ShortcutExecutor.shared.post
         posted = []
         logLines = []
+        // Every key goes out as an event, to `post`, which the test keeps: what a key up
+        // carries is seen too.
         ShortcutExecutor.shared.post = { [weak self] in self?.posted.append($0) }
         ShortcutExecutor.shared.setTestingMouseEventObserver()
-        ShortcutExecutor.shared.setTestingKeyboardShortcutObserver()
+        ShortcutExecutor.shared.clearTestingKeyboardShortcutObserver()
         MouseInteractionSessionController.shared.setTestingMotionTapHooks()
         MouseInteractionSessionController.shared.clearAllSessions()
         InputProcessor.shared.setTestingMouseGestureLog { [weak self] in self?.logLines.append($0) }
@@ -237,6 +239,9 @@ final class GestureKeysRunTests: XCTestCase {
         XCTAssertEqual(posted.map { $0.type }, [.keyDown, .keyUp])
         XCTAssertEqual(posted.map { $0.getIntegerValueField(.keyboardEventKeycode) }, [15, 15])
         XCTAssertEqual((posted.first?.flags.rawValue ?? 0) & shiftCommand, shiftCommand)
+        // As a listed shortcut's: the key up carries the modifier keys that are held (none),
+        // not ⇧⌘, which the system would go on reporting as pressed.
+        XCTAssertEqual((posted.last?.flags.rawValue ?? 0) & shiftCommand, 0, "the key up leaves ⇧⌘ behind")
         for event in posted {
             XCTAssertEqual(event.getIntegerValueField(.eventSourceUserData), ScrollioEventMarker.syntheticCustom)
         }
