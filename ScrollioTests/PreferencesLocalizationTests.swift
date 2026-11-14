@@ -164,6 +164,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-undo-reset-ring", "apps-undo-reset-gestures",
         "apps-trigger-own-ring", "apps-trigger-own-rings", "apps-trigger-own-gestures", "apps-trigger-own-gestures-each",
         "apps-detail-ring-suggested-empty-on-purpose-one", "apps-detail-ring-suggested-empty-on-purpose-other",
+        "apps-trigger-only-in-each", "apps-trigger-app-with",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).
@@ -344,6 +345,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-trigger-own-gestures": "@",
         "apps-trigger-own-gestures-each": "@",
         "apps-detail-ring-suggested-empty-on-purpose-other": "d",
+        "apps-trigger-only-in-each": "@",
+        "apps-trigger-app-with": "@@",
         "apps-detail-ring-suggested-in-use": "@",
         "apps-detail-ring-suggested-in-use-empty-other": "d",
         "apps-detail-ring-suggested-reset": "@",

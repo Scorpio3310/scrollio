@@ -10119,6 +10119,30 @@
           }
         }
       }
+    },
+    "apps-trigger-only-in-each": {
+      "comment": "Shortcut Ring and Gestures panes: what opens the ring or runs the gestures while no binding of Buttons does, and apps' own buttons or keys do, different ones in different apps; %@ is each app with its own (\"Figma (Thumb panel) and Safari (Back button)\"); without a full stop",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only in %@"
+          }
+        }
+      }
+    },
+    "apps-trigger-app-with": {
+      "comment": "Shortcut Ring and Gestures panes: one app with what opens the ring or runs the gestures there, in \"Only in %@\" (apps-trigger-only-in-each); %1$@ is the app's name, %2$@ its buttons and keys (\"Figma (Thumb panel)\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ (%2$@)"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

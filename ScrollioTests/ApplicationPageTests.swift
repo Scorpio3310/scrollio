@@ -1687,7 +1687,21 @@ final class ApplicationPageTests: XCTestCase {
         textEdit.setOwnButtonBindings([binding(49, ringAction, modifiers: control, type: .keyboard)])
         let space = ButtonTriggerNaming.title(for: textEdit.ownButtonBindings[0].triggerEvent)
         ring = pane()
-        XCTAssertEqual(ring.triggerRow.explanation, "Only in Calculator and TextEdit: \(panel) and \(space)." + key)
+        // (Each app with its own: the row never reads as if both worked in both, F28.)
+        XCTAssertEqual(ring.triggerRow.explanation, "Only in Calculator (\(panel)) and TextEdit (\(space))." + key)
+        // The same in both: once, after the apps.
+        textEdit.setOwnButtonBindings([binding(thumbPanel, ringAction)])
+        XCTAssertEqual(pane().triggerRow.explanation, "Only in Calculator and TextEdit: \(panel)." + key)
+        // Each with its own ring too.
+        calculator.setUsesGeneralRing(false, general: Options.shared.ring)
+        textEdit.setOwnButtonBindings([binding(49, ringAction, modifiers: control, type: .keyboard)])
+        textEdit.setUsesGeneralRing(false, general: Options.shared.ring)
+        XCTAssertEqual(
+            pane().triggerRow.explanation,
+            "Only in Calculator (\(panel)) and TextEdit (\(space)), each with its own ring." + key
+        )
+        calculator.setUsesGeneralRing(true, general: Options.shared.ring)
+        textEdit.setUsesGeneralRing(true, general: Options.shared.ring)
 
         // With a binding of Buttons the row names that one alone, as before.
         Options.shared.buttons.binding.append(binding(5, ringAction))

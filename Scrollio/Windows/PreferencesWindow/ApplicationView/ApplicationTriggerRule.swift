@@ -91,6 +91,8 @@ struct ApplicationTriggers: Equatable {
     var applicationNames: [String]
     /// What does it there, named as the Buttons pane names it, each once.
     var triggerTitles: [String]
+    /// The same, app by app (in the order of `applicationNames`); empty when not known.
+    var appTriggerTitles: [[String]]
     /// The first app's stored path and its own binding that does it.
     var path: String
     var bindingID: UUID?
@@ -108,10 +110,11 @@ struct ApplicationTriggers: Equatable {
 
     init(
         applicationNames: [String], triggerTitles: [String], path: String = "", bindingID: UUID? = nil,
-        trigger: RecordedEvent? = nil, ownOnly: ApplicationTriggerRule? = nil
+        trigger: RecordedEvent? = nil, ownOnly: ApplicationTriggerRule? = nil, appTriggerTitles: [[String]] = []
     ) {
         self.applicationNames = applicationNames
         self.triggerTitles = triggerTitles
+        self.appTriggerTitles = appTriggerTitles
         self.path = path
         self.bindingID = bindingID
         self.trigger = trigger
@@ -125,8 +128,14 @@ struct ApplicationTriggers: Equatable {
     ) {
         guard let first = entries.first else { return nil }
         var names: [String] = []
+        var appNames: [[String]] = []
         for entry in entries {
-            for title in titles(entry.bindings.map(\.triggerEvent)) where !names.contains(title) {
+            var own: [String] = []
+            for title in titles(entry.bindings.map(\.triggerEvent)) where !own.contains(title) {
+                own.append(title)
+            }
+            appNames.append(own)
+            for title in own where !names.contains(title) {
                 names.append(title)
             }
         }
@@ -142,24 +151,38 @@ struct ApplicationTriggers: Equatable {
             // (Nothing of Buttons does it: every binding that does it there is the app's own.)
             bindingID: first.bindings.first?.id,
             trigger: first.bindings.first?.triggerEvent,
-            ownOnly: ownOnly
+            ownOnly: ownOnly,
+            appTriggerTitles: appNames
         )
     }
 
     /// "Only in Figma: Thumb panel" / "Only in Figma and Safari: Thumb panel and Back
-    /// button", without a full stop (the panes' lines go on). While every one of the apps
-    /// uses its own ring (or gestures), it says so: "Only in Figma, with its own ring:
-    /// Thumb panel".
+    /// button", without a full stop (the panes' lines go on); while the apps do it with
+    /// different buttons or keys, each with its own: "Only in Figma (Thumb panel) and
+    /// Safari (Back button)". While every one of the apps uses its own ring (or gestures),
+    /// it says so: "Only in Figma, with its own ring: Thumb panel".
     var text: String {
+        if appTriggerTitles.count > 1, Set(appTriggerTitles.map { $0.sorted() }).count > 1 {
+            let pairs = zip(applicationNames, appTriggerTitles).map { name, titles in
+                String(
+                    format: NSLocalizedString("apps-trigger-app-with", comment: ""),
+                    name, ListFormatter.localizedString(byJoining: titles)
+                )
+            }
+            return String(
+                format: NSLocalizedString("apps-trigger-only-in-each", comment: ""),
+                whereText(ListFormatter.localizedString(byJoining: pairs))
+            )
+        }
         return String(
             format: NSLocalizedString("apps-trigger-only-in", comment: ""),
-            whereText, ListFormatter.localizedString(byJoining: triggerTitles)
+            whereText(ListFormatter.localizedString(byJoining: applicationNames)),
+            ListFormatter.localizedString(byJoining: triggerTitles)
         )
     }
 
-    /// The apps, joined as a list, and with what of their own while `ownOnly`.
-    private var whereText: String {
-        let names = ListFormatter.localizedString(byJoining: applicationNames)
+    /// `names` (the apps, joined as a list), and with what of their own while `ownOnly`.
+    private func whereText(_ names: String) -> String {
         guard let ownOnly else { return names }
         let one = applicationNames.count == 1
         let key: String
