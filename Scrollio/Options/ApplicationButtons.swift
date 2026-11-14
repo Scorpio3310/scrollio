@@ -23,9 +23,9 @@
 //    (the entry stays readable). A binding of the list that cannot be read is left out by
 //    itself, and kept as stored for the next save (`OwnButtonsWithUnread`). An entry
 //    without buttons of its own is stored without the key, as before.
-//  - What stays general for every app: what opens the Shortcut Ring and what runs Gesture
-//    Navigation. An app's binding on such a button or key, and one whose action is the ring
-//    or Gesture Navigation, is not used.
+//  - Nothing stays general: an app's binding may open the Shortcut Ring or run Gesture
+//    Navigation, and may give a button that opens the ring or runs the gestures in Buttons
+//    something else to do while the app is in front.
 //  Do not rename the keys.
 //
 
@@ -77,23 +77,21 @@ enum ApplicationButtons {
         return Set(general.filter { $0.isEnabled && isGeneralOnly(action: $0.systemShortcutName) }.map(\.triggerKey))
     }
 
-    /// The app's bindings that count: one per trigger (the first), none on a button that
-    /// stays general, none with an action that stays general.
+    /// The app's bindings that count: one per trigger (the first). The Shortcut Ring and
+    /// Gesture Navigation count as any other action, on any button.
     static func usable(_ own: [ButtonBinding], general: [ButtonBinding]) -> [ButtonBinding] {
         guard !own.isEmpty else { return [] }
-        let kept = generalOnlyTriggers(in: general)
         var result: [ButtonBinding] = []
-        for binding in own where !isGeneralOnly(action: binding.systemShortcutName) && !kept.contains(binding.triggerKey) {
-            guard !result.contains(where: { $0.identity == binding.identity }) else { continue }
+        for binding in own where !result.contains(where: { $0.identity == binding.identity }) {
             result.append(binding)
         }
         return result
     }
 
-    /// Whether `binding`, one of the app's own, is used (`usable`).
+    /// Whether `binding`, one of the app's own, is used (`usable`): always, now that
+    /// nothing stays general (kept for the app's page until it drops the dimming).
     static func isUsable(_ binding: ButtonBinding, general: [ButtonBinding]) -> Bool {
-        return !isGeneralOnly(action: binding.systemShortcutName)
-            && !generalOnlyTriggers(in: general).contains(binding.triggerKey)
+        return true
     }
 
     /// The bindings a press goes by while the app is in front: the general ones in their
