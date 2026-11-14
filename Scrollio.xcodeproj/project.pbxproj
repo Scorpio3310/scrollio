@@ -11,6 +11,7 @@
 		0A5E7AB00000000000000012 /* ScrollioTests/StoryboardIntegrityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A5E7AB00000000000000011 /* ScrollioTests/StoryboardIntegrityTests.swift */; };
 		9D5E7AB10000000000000102 /* ScrollioTests/PreferencesFormTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D5E7AB10000000000000101 /* ScrollioTests/PreferencesFormTests.swift */; };
 		6B1D0A5C0000000000000102 /* ScrollioTests/PreferencesGroupedFormTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B1D0A5C0000000000000101 /* ScrollioTests/PreferencesGroupedFormTests.swift */; };
+		08077B3051EAE475DCFE683B /* ScrollioTests/PreferencesDisclosureSectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 231BABA2CDE0A83CBD18AE69 /* ScrollioTests/PreferencesDisclosureSectionTests.swift */; };
 		7A5C0DE0000000000000A102 /* ScrollioTests/PreferencesButtonsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5C0DE0000000000000A101 /* ScrollioTests/PreferencesButtonsTests.swift */; };
 		7A5C0DE0000000000000A202 /* ScrollioTests/PreferencesApplicationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5C0DE0000000000000A201 /* ScrollioTests/PreferencesApplicationTests.swift */; };
 		7A5C0DE0000000000000A302 /* ScrollioTests/PreferencesGeneralTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5C0DE0000000000000A301 /* ScrollioTests/PreferencesGeneralTests.swift */; };
@@ -149,6 +150,7 @@
 		0A5E7AB00000000000000011 /* ScrollioTests/StoryboardIntegrityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/StoryboardIntegrityTests.swift; sourceTree = SOURCE_ROOT; };
 		9D5E7AB10000000000000101 /* ScrollioTests/PreferencesFormTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/PreferencesFormTests.swift; sourceTree = SOURCE_ROOT; };
 		6B1D0A5C0000000000000101 /* ScrollioTests/PreferencesGroupedFormTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/PreferencesGroupedFormTests.swift; sourceTree = SOURCE_ROOT; };
+		231BABA2CDE0A83CBD18AE69 /* ScrollioTests/PreferencesDisclosureSectionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/PreferencesDisclosureSectionTests.swift; sourceTree = SOURCE_ROOT; };
 		7A5C0DE0000000000000A101 /* ScrollioTests/PreferencesButtonsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/PreferencesButtonsTests.swift; sourceTree = SOURCE_ROOT; };
 		7A5C0DE0000000000000A201 /* ScrollioTests/PreferencesApplicationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/PreferencesApplicationTests.swift; sourceTree = SOURCE_ROOT; };
 		7A5C0DE0000000000000A301 /* ScrollioTests/PreferencesGeneralTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/PreferencesGeneralTests.swift; sourceTree = SOURCE_ROOT; };
@@ -322,6 +324,7 @@
 				0A5E7AB00000000000000011 /* ScrollioTests/StoryboardIntegrityTests.swift */,
 				9D5E7AB10000000000000101 /* ScrollioTests/PreferencesFormTests.swift */,
 				6B1D0A5C0000000000000101 /* ScrollioTests/PreferencesGroupedFormTests.swift */,
+				231BABA2CDE0A83CBD18AE69 /* ScrollioTests/PreferencesDisclosureSectionTests.swift */,
 				7A5C0DE0000000000000A101 /* ScrollioTests/PreferencesButtonsTests.swift */,
 				7A5C0DE0000000000000A201 /* ScrollioTests/PreferencesApplicationTests.swift */,
 				7A5C0DE0000000000000A301 /* ScrollioTests/PreferencesGeneralTests.swift */,
@@ -593,6 +596,7 @@
 				0A5E7AB00000000000000012 /* ScrollioTests/StoryboardIntegrityTests.swift in Sources */,
 				9D5E7AB10000000000000102 /* ScrollioTests/PreferencesFormTests.swift in Sources */,
 				6B1D0A5C0000000000000102 /* ScrollioTests/PreferencesGroupedFormTests.swift in Sources */,
+				08077B3051EAE475DCFE683B /* ScrollioTests/PreferencesDisclosureSectionTests.swift in Sources */,
 				7A5C0DE0000000000000A102 /* ScrollioTests/PreferencesButtonsTests.swift in Sources */,
 				7A5C0DE0000000000000A202 /* ScrollioTests/PreferencesApplicationTests.swift in Sources */,
 				7A5C0DE0000000000000A302 /* ScrollioTests/PreferencesGeneralTests.swift in Sources */,
