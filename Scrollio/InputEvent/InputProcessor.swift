@@ -549,7 +549,7 @@ class InputProcessor: ModifierFlagsProviding {
         guard let action = ShortcutExecutor.shared.resolveAction(
                 named: binding.systemShortcutName,
                 binding: binding
-              ) else {
+              ) ?? Self.standardButton(forAppsOwnDefault: binding, of: event, scope: pressScope) else {
             return .passthrough
         }
 
@@ -595,6 +595,24 @@ class InputProcessor: ModifierFlagsProviding {
             return !KeyCode.modifierKeys.contains(code)
         }
         return false
+    }
+
+    /// What a Logitech press does when its binding is the app's own "Default" ("the button
+    /// does what it does by itself in this app"): a press that came over HID++ was caught by
+    /// Scrollio for another binding of the same button (on a receiver every caught press
+    /// does), and passed on it reached nobody. It goes on as the standard middle, back or
+    /// forward button it is, down at the press and up at the release, as an action would.
+    /// Nil for any other press, and for a control without a standard button (mode shift):
+    /// that one still does nothing.
+    static func standardButton(
+        forAppsOwnDefault binding: ButtonBinding, of event: InputEvent, scope: ButtonBindingScope
+    ) -> ResolvedAction? {
+        guard binding.systemShortcutName.isEmpty, case .hidPP = event.source, let path = scope.applicationPath,
+              let native = LogiStandardMouseButtonAlias.nativeButtonCode(forScrollioCode: event.code),
+              (2...4).contains(native), let kind = MouseButtonActionKind(buttonNumber: native),
+              let application = Options.shared.application.applications.get(by: path),
+              application.ownButtonBindings.contains(where: { $0.identity == binding.identity }) else { return nil }
+        return .mouseButton(kind: kind)
     }
 
     // MARK: - Mouse Gesture Navigation

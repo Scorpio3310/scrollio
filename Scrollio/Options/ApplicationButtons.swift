@@ -18,7 +18,9 @@
 //    general binding of the same trigger, and one of a trigger Buttons does not have is
 //    added; every other general binding stays.
 //  - An action of "" ("Default") is the app's own too: while the app is in front the
-//    button does what it does by itself (the press passes through).
+//    button does what it does by itself (the press passes through; a Logitech press that
+//    Scrollio caught for another binding goes on as the standard middle, back or forward
+//    button, `InputProcessor.standardButton(forAppsOwnDefault:of:scope:)`).
 //  - No "buttons", an empty list, or a value that cannot be read: no buttons of its own
 //    (the entry stays readable). A binding of the list that cannot be read is left out by
 //    itself, and kept as stored for the next save (`OwnButtonsWithUnread`). An entry
