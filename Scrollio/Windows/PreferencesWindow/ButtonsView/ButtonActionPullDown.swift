@@ -17,10 +17,32 @@
 //  Recording other keys keeps the name and icon; a listed action, a mouse button or an
 //  app in their place drops them.
 //
+//  The rows of the Shortcut Ring pane and of the Gestures pane use it too (`Use`): their
+//  menus offer what a place or a direction can hold, and their recorder takes only what a
+//  place of the ring can run (a key combination, the Back or the Forward button).
+//
 
 import Cocoa
 
-final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
+class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
+
+    /// What the pull-down chooses for: its menu, and what its recorder takes.
+    enum Use: Equatable {
+        /// A button's or a key's binding (the Buttons pane): every action.
+        case binding
+        /// A place of the Shortcut Ring: what a place can hold
+        /// (`ShortcutManager.buildShortcutMenu(forRingPlace:)`).
+        case ringPlace
+        /// A direction or the click of Gesture Navigation: the one-shot actions of the
+        /// Gestures pane (`MouseGestureSettingsControls.actionCategories`, with the
+        /// Logitech ones while a Logitech button runs the gestures) and "Keyboard Shortcut…".
+        case gesture(showsLogiActions: Bool)
+
+        /// The recorder takes only what a place of the ring runs.
+        var recordsWhatARingPlaceRuns: Bool {
+            return self != .binding
+        }
+    }
 
     static let width: CGFloat = 240
     /// Pictures before the title (an app's icon) are drawn this size.
@@ -79,17 +101,32 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         return CellActionState(binding: binding)
     }
 
+    /// What the pull-down chooses for. Changing it builds the menu anew.
+    var use: Use {
+        didSet {
+            guard use != oldValue else { return }
+            buildMenu()
+            refreshActionDisplay()
+        }
+    }
+
     /// The pull-down of a place of the Shortcut Ring: its menu offers only what a place
     /// can hold (`ShortcutManager.buildShortcutMenu(forRingPlace:)`).
-    let isForRingPlace: Bool
+    var isForRingPlace: Bool {
+        return use == .ringPlace
+    }
 
-    init(binding: ButtonBinding, forRingPlace: Bool = false) {
+    init(binding: ButtonBinding, use: Use) {
         self.binding = binding
-        self.isForRingPlace = forRingPlace
+        self.use = use
         super.init(frame: .zero, pullsDown: true)
         translatesAutoresizingMaskIntoConstraints = false
         widthAnchor.constraint(equalToConstant: Self.width).isActive = true
         configure(with: binding)
+    }
+
+    convenience init(binding: ButtonBinding, forRingPlace: Bool = false) {
+        self.init(binding: binding, use: forRingPlace ? .ringPlace : .binding)
     }
 
     required init?(coder: NSCoder) {
@@ -122,14 +159,24 @@ final class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
     private func buildMenu() {
         let menu = NSMenu()
         menu.delegate = self
-        ShortcutManager.buildShortcutMenu(
-            into: menu,
-            target: self,
-            action: #selector(shortcutSelected(_:)),
-            showLogiActions: isLogitechTrigger,
-            showsGestureSettings: true,
-            forRingPlace: isForRingPlace
-        )
+        switch use {
+        case .gesture(let showsLogiActions):
+            ShortcutManager.buildGestureActionMenu(
+                into: menu,
+                target: self,
+                action: #selector(shortcutSelected(_:)),
+                categories: MouseGestureSettingsControls.actionCategories(showLogiActions: showsLogiActions)
+            )
+        case .binding, .ringPlace:
+            ShortcutManager.buildShortcutMenu(
+                into: menu,
+                target: self,
+                action: #selector(shortcutSelected(_:)),
+                showLogiActions: isLogitechTrigger,
+                showsGestureSettings: true,
+                forRingPlace: isForRingPlace
+            )
+        }
         // Item 0 is the title of a pull-down; the separator after it would open the menu.
         if menu.items.count > 1, menu.items[1].isSeparatorItem {
             menu.items[1].isHidden = true
@@ -421,23 +468,29 @@ extension ButtonActionPullDown: KeyRecorderDelegate {
 
     /// What a place of the Shortcut Ring cannot run is refused when it is pressed, not
     /// taken and then dropped: a mouse button other than Back and Forward, a modifier key
-    /// by itself.
-    private func isRefusedForRingPlace(_ event: InputEvent) -> Bool {
-        return isForRingPlace && !ShortcutRingPlace(action: Self.bindingName(forRecorded: event)).runs
+    /// by itself. The same for a direction of Gesture Navigation, which runs what a place
+    /// runs.
+    private func isRefused(_ event: InputEvent) -> Bool {
+        return use.recordsWhatARingPlaceRuns && !ShortcutRingPlace(action: Self.bindingName(forRecorded: event)).runs
     }
 
-    /// For a place of the ring the recorder asks for what a place takes.
+    /// For a place of the ring, or a direction, the recorder asks for what it takes.
     func waitingHint(_ recorder: KeyRecorder, mode: KeyRecordingMode) -> String? {
-        return isForRingPlace ? NSLocalizedString("ring-recorder-waiting", comment: "") : nil
+        switch use {
+        case .binding: return nil
+        case .ringPlace: return NSLocalizedString("ring-recorder-waiting", comment: "")
+        case .gesture: return NSLocalizedString("gesture-recorder-waiting", comment: "")
+        }
     }
 
     func refusalHint(_ recorder: KeyRecorder, event: InputEvent) -> String? {
-        return isRefusedForRingPlace(event) ? NSLocalizedString("ring-recorder-refused", comment: "") : nil
+        guard isRefused(event) else { return nil }
+        return NSLocalizedString(use == .ringPlace ? "ring-recorder-refused" : "gesture-recorder-refused", comment: "")
     }
 
     /// The button cannot be its own shortcut.
     func validateRecordedEvent(_ recorder: KeyRecorder, event: InputEvent) -> Bool {
-        if isRefusedForRingPlace(event) { return false }
+        if isRefused(event) { return false }
         let recorded = RecordedEvent(from: event)
         let trigger = binding.triggerEvent
         return (recorded.standardMouseAliasTriggerIfAvailable() ?? recorded)

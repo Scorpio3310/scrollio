@@ -8139,6 +8139,30 @@
           }
         }
       }
+    },
+    "gesture-recorder-waiting": {
+      "comment": "Key recorder at a direction of Gesture Navigation (or its click): what it waits for",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press a shortcut or a key"
+          }
+        }
+      }
+    },
+    "gesture-recorder-refused": {
+      "comment": "Key recorder at a direction of Gesture Navigation: a mouse button or a modifier alone was pressed",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A gesture takes a shortcut or a key"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

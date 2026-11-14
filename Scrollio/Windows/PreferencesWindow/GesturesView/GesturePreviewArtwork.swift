@@ -488,7 +488,8 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
     /// Two frames that draw the same desktop.
     static func looksTheSame(_ a: GesturePreviewLoop.Frame, _ b: GesturePreviewLoop.Frame) -> Bool {
         return a.desktop == b.desktop && a.overview == b.overview && a.appGrid == b.appGrid
-            && a.pulse == b.pulse && a.pulseSymbol == b.pulseSymbol && a.pointerOffset == b.pointerOffset
+            && a.pulse == b.pulse && a.pulseSymbol == b.pulseSymbol && a.pulseText == b.pulseText
+            && a.pointerOffset == b.pointerOffset
             && a.isAtRest == b.isAtRest
     }
 
@@ -583,6 +584,8 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         }
         if let frame, frame.pulse > 0, let symbol = frame.pulseSymbol {
             drawPulse(CGFloat(frame.pulse), symbol: symbol)
+        } else if let frame, frame.pulse > 0, let text = frame.pulseText {
+            drawPulse(CGFloat(frame.pulse), text: text)
         }
         drawPointer(offset: frame?.pointerOffset ?? .zero, atRest: frame?.isAtRest ?? true)
 
@@ -819,8 +822,42 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
     /// Any other action: its icon in a small rounded panel that pops up and fades.
     private func drawPulse(_ progress: CGFloat, symbol: String) {
         let side = 44 * (0.86 + 0.14 * progress)
-        let centre = NSPoint(x: bounds.midX, y: (bounds.height + Self.menuBarHeight - Self.dockHeight) / 2)
-        let rect = NSRect(x: centre.x - side / 2, y: centre.y - side / 2, width: side, height: side)
+        let centre = pulseCentre
+        drawPulsePanel(NSRect(x: centre.x - side / 2, y: centre.y - side / 2, width: side, height: side), progress: progress) {
+            if let image = Self.symbolImage(symbol, pointSize: 19 * side / 44) {
+                let size = image.size
+                image.draw(
+                    in: NSRect(x: centre.x - size.width / 2, y: centre.y - size.height / 2, width: size.width, height: size.height),
+                    from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil
+                )
+            }
+        }
+    }
+
+    /// The pulse of a recorded key combination: the character of its icon, as large as a
+    /// symbol, or its keys a little smaller, on a panel as wide as they need.
+    private func drawPulse(_ progress: CGFloat, text: String) {
+        let side = 44 * (0.86 + 0.14 * progress)
+        let centre = pulseCentre
+        let isOneCharacter = text.count == 1
+        let font = NSFont.systemFont(ofSize: (isOneCharacter ? 20 : 14) * side / 44, weight: .medium)
+        let attributed = NSAttributedString(string: text, attributes: [
+            .font: font, .foregroundColor: GesturePreviewPalette.hudSymbol,
+        ])
+        let size = attributed.size()
+        let width = min(bounds.width - 16, max(side, size.width + 20 * side / 44))
+        let rect = NSRect(x: centre.x - width / 2, y: centre.y - side / 2, width: width, height: side)
+        drawPulsePanel(rect, progress: progress) {
+            attributed.draw(at: NSPoint(x: centre.x - size.width / 2, y: centre.y - size.height / 2))
+        }
+    }
+
+    private var pulseCentre: NSPoint {
+        return NSPoint(x: bounds.midX, y: (bounds.height + Self.menuBarHeight - Self.dockHeight) / 2)
+    }
+
+    /// The pulse's panel, faded in by `progress`, with `content` on it.
+    private func drawPulsePanel(_ rect: NSRect, progress: CGFloat, content: () -> Void) {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current?.cgContext.setAlpha(progress)
         let panel = NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10)
@@ -836,13 +873,7 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         GesturePreviewPalette.hudEdge.setStroke()
         panel.lineWidth = 0.5
         panel.stroke()
-        if let image = Self.symbolImage(symbol, pointSize: 19 * side / 44) {
-            let size = image.size
-            image.draw(
-                in: NSRect(x: centre.x - size.width / 2, y: centre.y - size.height / 2, width: size.width, height: size.height),
-                from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil
-            )
-        }
+        content()
         NSGraphicsContext.restoreGraphicsState()
     }
 

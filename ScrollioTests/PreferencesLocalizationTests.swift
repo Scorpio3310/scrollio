@@ -122,6 +122,7 @@ final class PreferencesLocalizationTests: XCTestCase {
     static let gesturesKeys = [
         "gesture-direction-up", "gesture-direction-down",
         "gesture-direction-left", "gesture-direction-right", "gesture-direction-click", "gesture-action-none",
+        "gesture-recorder-waiting", "gesture-recorder-refused",
         "gesture-invert-horizontal", "gesture-freeze-pointer",
         "gesture-mode-discrete", "gesture-mode-interactive",
         "gesture-mode-interactive-unavailable", "gesture-follow-horizontal-value",

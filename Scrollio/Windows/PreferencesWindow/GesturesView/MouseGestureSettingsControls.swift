@@ -6,6 +6,11 @@
 //  them out in its rows; their rules live here. Changes apply immediately. (The tracking
 //  speed is the pane's own.)
 //
+//  The action of a direction is chosen with the pull-down of a button's row
+//  (`ButtonActionPullDown`, as the Shortcut Ring pane's places): its menu offers the
+//  pane's one-shot actions and "Keyboard Shortcut…", which records a key combination
+//  there and can give it a name and an icon, as for a place of the ring.
+//
 
 import Cocoa
 
@@ -77,9 +82,9 @@ enum MouseGestureTrackingSpeed {
     }
 }
 
-/// An action pop-up that tells when it gains or loses the keyboard focus (the tab's
+/// An action pull-down that tells when it gains or loses the keyboard focus (the tab's
 /// preview shows the gesture of the focused row).
-final class MouseGestureActionPopUpButton: NSPopUpButton {
+final class MouseGestureActionPopUpButton: ButtonActionPullDown {
     var onFocusChange: ((Bool) -> Void)?
 
     override func becomeFirstResponder() -> Bool {
@@ -150,24 +155,27 @@ final class MouseGestureSettingsControls: NSObject {
             }
         }
 
-        func value(in settings: MouseGestureSettings) -> String {
+        /// Where the action of this row is (before "Invert left and right").
+        var path: WritableKeyPath<GestureActions, GestureAction> {
             switch self {
-            case .up: return settings.upAction
-            case .down: return settings.downAction
-            case .left: return settings.leftAction
-            case .right: return settings.rightAction
-            case .click: return settings.clickAction
+            case .up: return \.up
+            case .down: return \.down
+            case .left: return \.left
+            case .right: return \.right
+            case .click: return \.click
             }
         }
 
-        func store(_ identifier: String, in settings: inout MouseGestureSettings) {
-            switch self {
-            case .up: settings.upAction = identifier
-            case .down: settings.downAction = identifier
-            case .left: settings.leftAction = identifier
-            case .right: settings.rightAction = identifier
-            case .click: settings.clickAction = identifier
-            }
+        func action(in settings: MouseGestureSettings) -> GestureAction {
+            return settings.actions[keyPath: path]
+        }
+
+        func value(in settings: MouseGestureSettings) -> String {
+            return action(in: settings).action
+        }
+
+        func store(_ action: GestureAction, in settings: inout MouseGestureSettings) {
+            settings.actions[keyPath: path] = action
         }
     }
 
@@ -178,7 +186,9 @@ final class MouseGestureSettingsControls: NSObject {
 
     let modeControl: NSSegmentedControl
     /// One pull-down per `Slot`, in `Slot.allCases` order.
-    private(set) var actionPopUps: [NSPopUpButton] = []
+    private(set) var actionPopUps: [MouseGestureActionPopUpButton] = []
+    /// The pull-downs' stand-in bindings keep their identity while the controls live.
+    private let slotIDs = Slot.allCases.map { _ in UUID() }
     /// "Invert left and right" and "Freeze pointer": switches, named by the rows they sit in.
     let invertToggle: NSControl
     let freezeToggle: NSControl
@@ -188,13 +198,20 @@ final class MouseGestureSettingsControls: NSObject {
     /// Called when the pop-up of a slot gains (true) or loses the keyboard focus.
     var onFocusChange: ((Slot, Bool) -> Void)?
 
+    /// Starts the recorder of "Keyboard Shortcut…" at a row's pull-down. Tests replace it:
+    /// a real recorder taps the system's events.
+    var startShortcutRecorder: ((ButtonActionPullDown) -> Void)? {
+        didSet {
+            actionPopUps.forEach { $0.startShortcutRecorder = startShortcutRecorder }
+        }
+    }
+
     /// Also offer Logi actions in the action popups. Changing it rebuilds their menus.
     var showLogiActions: Bool {
         didSet {
             guard showLogiActions != oldValue else { return }
             for popup in actionPopUps {
-                guard let slot = Slot(rawValue: popup.tag) else { continue }
-                popup.menu = makeActionMenu(for: slot)
+                popup.use = .gesture(showsLogiActions: showLogiActions)
             }
             applyModePresentation()
         }
@@ -249,8 +266,14 @@ final class MouseGestureSettingsControls: NSObject {
     }
 
     /// The popup that edits `slot`.
-    func actionPopUp(for slot: Slot) -> NSPopUpButton {
+    func actionPopUp(for slot: Slot) -> MouseGestureActionPopUpButton {
         return actionPopUps[slot.rawValue]
+    }
+
+    /// Ends a recording that still waits for a key and closes the popover of a name: the
+    /// rows are about to go (the pane is left).
+    func endEditing() {
+        actionPopUps.forEach { $0.cancelShortcutRecording() }
     }
 
     // MARK: - Sync
@@ -282,15 +305,13 @@ final class MouseGestureSettingsControls: NSObject {
         let settings = Options.shared.gesture
         for popup in actionPopUps {
             guard let slot = Slot(rawValue: popup.tag) else { continue }
-            guard slot.isHorizontal else {
-                updateTitle(of: popup, identifier: slot.value(in: settings))
-                continue
-            }
+            // (An action this version does not run shows "No Action", and stays stored.)
+            popup.configure(with: slot.action(in: settings).asBinding(id: slotIDs[slot.rawValue]))
+            guard slot.isHorizontal else { continue }
             popup.isEnabled = presentation.areHorizontalActionsEditable
-            if presentation.areHorizontalActionsEditable {
-                updateTitle(of: popup, identifier: slot.value(in: settings))
-            } else if let titleItem = popup.menu?.items.first {
+            if !presentation.areHorizontalActionsEditable, let titleItem = popup.menu?.items.first {
                 // The configured action is kept for the discrete mode; it just does not apply now.
+                titleItem.attributedTitle = nil
                 titleItem.title = Self.followHorizontalValue
                 titleItem.image = nil
             }
@@ -299,63 +320,42 @@ final class MouseGestureSettingsControls: NSObject {
 
     // MARK: - Action popups
 
-    private func makeActionPopUp(for slot: Slot) -> NSPopUpButton {
-        let popup = MouseGestureActionPopUpButton(frame: .zero, pullsDown: true)
+    private func makeActionPopUp(for slot: Slot) -> MouseGestureActionPopUpButton {
+        let popup = MouseGestureActionPopUpButton(
+            binding: slot.action(in: Options.shared.gesture).asBinding(id: slotIDs[slot.rawValue]),
+            use: .gesture(showsLogiActions: showLogiActions)
+        )
         popup.onFocusChange = { [weak self] focused in
             self?.onFocusChange?(slot, focused)
         }
         popup.tag = slot.rawValue
         popup.identifier = Identifier.action(slot.name)
         popup.setAccessibilityLabel(NSLocalizedString(slot.labelKey, comment: ""))
-        popup.translatesAutoresizingMaskIntoConstraints = false
-        popup.menu = makeActionMenu(for: slot)
+        popup.onShortcutSelected = { [weak self] shortcut in
+            self?.store(GestureAction(action: shortcut?.identifier ?? ""), in: slot)
+        }
+        popup.onCustomShortcutRecorded = { [weak self] name, label in
+            self?.store(GestureAction(action: name, label: label), in: slot)
+        }
         return popup
     }
 
-    private func makeActionMenu(for slot: Slot) -> NSMenu {
-        let menu = NSMenu()
-        menu.autoenablesItems = false
-        // Pull-down popups always show item 0 as their title.
-        menu.addItem(NSMenuItem(title: "", action: nil, keyEquivalent: ""))
-
-        let none = NSMenuItem(
-            title: NSLocalizedString("gesture-action-none", comment: ""),
-            action: #selector(actionSelected(_:)),
-            keyEquivalent: ""
-        )
-        none.target = self
-        none.tag = slot.rawValue
-        none.representedObject = "" as NSString
-        menu.addItem(none)
-        menu.addItem(NSMenuItem.separator())
-
-        for category in Self.actionCategories(showLogiActions: showLogiActions) {
-            let categoryItem = NSMenuItem(
-                title: SystemShortcut.localizedCategoryName(category.category),
-                action: nil,
-                keyEquivalent: ""
-            )
-            categoryItem.image = Self.symbolImage(SystemShortcut.categorySymbolName(category.category))
-            let submenu = NSMenu()
-            submenu.autoenablesItems = false
-            for shortcut in category.shortcuts {
-                let item = NSMenuItem(
-                    title: shortcut.localizedName,
-                    action: #selector(actionSelected(_:)),
-                    keyEquivalent: ""
-                )
-                item.target = self
-                item.tag = slot.rawValue
-                item.representedObject = shortcut.identifier as NSString
-                item.image = Self.symbolImage(shortcut.symbolName)
-                submenu.addItem(item)
-            }
-            categoryItem.submenu = submenu
-            menu.addItem(categoryItem)
+    /// Puts `action` into `slot`. What a direction cannot run (a recorded mouse button, a
+    /// modifier key by itself) is not stored: the pull-down shows again what was there.
+    func store(_ action: GestureAction, in slot: Slot) {
+        var settings = Options.shared.gesture
+        guard action.isEmpty || action.resolvedAction != nil else {
+            applyModePresentation()
+            return
         }
-        // macOS 27 hides menu item images unless asked: every action keeps its symbol.
-        menu.keepItemImagesVisible()
-        return menu
+        guard slot.action(in: settings) != action else {
+            applyModePresentation()
+            return
+        }
+        slot.store(action, in: &settings)
+        Options.shared.gesture = settings
+        applyModePresentation()
+        onChange?()
     }
 
     /// Actions that make sense as a one-shot gesture: system shortcuts, mouse clicks and,
@@ -382,32 +382,7 @@ final class MouseGestureSettingsControls: NSObject {
         return NSLocalizedString("gesture-follow-horizontal-value", comment: "")
     }
 
-    private func updateTitle(of popup: NSPopUpButton, identifier: String) {
-        guard let titleItem = popup.menu?.items.first else { return }
-        if let shortcut = SystemShortcut.getShortcut(named: identifier) {
-            titleItem.title = shortcut.localizedName
-            titleItem.image = Self.symbolImage(shortcut.symbolName)
-        } else {
-            titleItem.title = NSLocalizedString("gesture-action-none", comment: "")
-            titleItem.image = nil
-        }
-    }
-
-    private static func symbolImage(_ name: String) -> NSImage? {
-        return NSImage(systemSymbolName: name, accessibilityDescription: nil)
-    }
-
     // MARK: - Actions
-
-    @objc private func actionSelected(_ sender: NSMenuItem) {
-        guard let slot = Slot(rawValue: sender.tag),
-              let identifier = sender.representedObject as? String else { return }
-        var settings = Options.shared.gesture
-        slot.store(identifier, in: &settings)
-        Options.shared.gesture = settings
-        updateTitle(of: actionPopUp(for: slot), identifier: identifier)
-        onChange?()
-    }
 
     @objc private func modeChanged(_ sender: NSSegmentedControl) {
         guard Self.modes.indices.contains(sender.selectedSegment) else { return }

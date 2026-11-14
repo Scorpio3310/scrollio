@@ -244,6 +244,55 @@ class ShortcutManager {
         menu.keepItemImagesVisible()
     }
 
+    /// The menu of a direction (or the click) of Gesture Navigation, in the form of the one
+    /// above: the title item, "No Action" (representedObject nil), the `categories` the
+    /// Gestures pane offers, one submenu each, and after a separator "Keyboard Shortcut…".
+    /// Every item of `categories` can be chosen (a gesture may click the left button).
+    static func buildGestureActionMenu(
+        into menu: NSMenu,
+        target: AnyObject,
+        action: Selector,
+        categories: [(category: String, shortcuts: [SystemShortcut.Shortcut])]
+    ) {
+        menu.removeAllItems()
+        menu.autoenablesItems = false
+        menu.addItem(NSMenuItem(title: "", action: nil, keyEquivalent: ""))
+        menu.addItem(NSMenuItem.separator())
+        let unboundItem = NSMenuItem(title: NSLocalizedString("unbound", comment: ""), action: action, keyEquivalent: "")
+        unboundItem.target = target
+        unboundItem.representedObject = nil
+        menu.addItem(unboundItem)
+        menu.addItem(NSMenuItem.separator())
+
+        for category in categories where !category.shortcuts.isEmpty {
+            let categoryName = SystemShortcut.localizedCategoryName(category.category)
+            let categoryMenuItem = NSMenuItem(title: categoryName, action: nil, keyEquivalent: "")
+            categoryMenuItem.image = createSymbolImage(SystemShortcut.categorySymbolName(category.category))
+            let subMenu = NSMenu(title: categoryName)
+            subMenu.autoenablesItems = false
+            for shortcut in category.shortcuts {
+                let keyEquivalent = shortcut.keyEquivalent
+                let item = NSMenuItem(title: shortcut.localizedName, action: action, keyEquivalent: keyEquivalent.keyEquivalent)
+                item.keyEquivalentModifierMask = keyEquivalent.modifierMask
+                item.target = target
+                item.representedObject = shortcut
+                item.image = createSymbolImage(shortcut.symbolName)
+                subMenu.addItem(item)
+            }
+            categoryMenuItem.submenu = subMenu
+            menu.addItem(categoryMenuItem)
+        }
+
+        menu.addItem(NSMenuItem.separator())
+        let customItem = NSMenuItem(title: NSLocalizedString("custom-shortcut", comment: ""), action: action, keyEquivalent: "")
+        customItem.target = target
+        customItem.representedObject = MenuMarker.keyboardShortcut as NSString
+        customItem.image = createSymbolImage("keyboard")
+        menu.addItem(customItem)
+
+        menu.keepItemImagesVisible()
+    }
+
     /// 将一个分类添加到菜单
     private static func addCategoryToMenu(
         menu: NSMenu,

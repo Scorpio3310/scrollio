@@ -30,6 +30,9 @@ enum GesturePreviewEffect: Equatable {
     case space(MouseGestureDirection)
     /// Anything else: a short pulse with the action's icon in the middle of the desktop.
     case pulse(symbolName: String)
+    /// A recorded key combination without a symbol for an icon: the same pulse with the
+    /// character the user chose for its icon, or else with its keys ("⇧⌘R").
+    case pulseText(String)
 
     /// The effect of a stored action identifier ("" is "No Action").
     init(action identifier: String) {
@@ -48,6 +51,28 @@ enum GesturePreviewEffect: Equatable {
             self = .space(.right)
         default:
             self = .pulse(symbolName: SystemShortcut.getShortcut(named: identifier)?.symbolName ?? Self.fallbackSymbol)
+        }
+    }
+
+    /// The effect of a direction's action: as above, and a recorded key combination by its
+    /// icon (a symbol this Mac has, or a character) or else by its keys, as the rows show
+    /// it. One that is a listed action's keys and has no label shows that action's symbol.
+    init(action: GestureAction) {
+        guard let keys = action.keys else {
+            self.init(action: action.action)
+            return
+        }
+        switch action.label?.icon {
+        case .symbol(let name)? where ShortcutRingFace.hasSymbol(named: name):
+            self = .pulse(symbolName: name)
+        case .character(let character)?:
+            self = .pulseText(character)
+        case .symbol?, nil:
+            if action.label == nil, let listed = SystemShortcut.displayShortcut(matchingBindingName: action.action) {
+                self = .pulse(symbolName: listed.symbolName)
+            } else {
+                self = .pulseText(ButtonTriggerNaming.shortcutText(type: .keyboard, code: keys.code, modifiers: keys.modifiers))
+            }
         }
     }
 
@@ -72,7 +97,7 @@ enum GesturePreviewEffect: Equatable {
         case .missionControl, .appGrid:
             return GesturePreviewLoop.overlayIn + GesturePreviewLoop.overlayHold + GesturePreviewLoop.overlayOut
         case .space: return GesturePreviewLoop.slideDuration
-        case .pulse:
+        case .pulse, .pulseText:
             return GesturePreviewLoop.pulseIn + GesturePreviewLoop.pulseHold + GesturePreviewLoop.pulseOut
         }
     }
@@ -173,7 +198,7 @@ struct GesturePreviewLeg: Equatable {
         case .none: return fallback
         case .missionControl, .appGrid: return fire + L.overlayIn + L.overlayHold / 2
         case .space: return fire + L.slideDuration / 2
-        case .pulse: return fire + L.pulseIn + L.pulseHold / 2
+        case .pulse, .pulseText: return fire + L.pulseIn + L.pulseHold / 2
         }
     }
 }
@@ -261,6 +286,8 @@ struct GesturePreviewLoop {
         var appGrid: Double
         var pulse: Double
         var pulseSymbol: String?
+        /// What the pulse shows instead of a symbol (`GesturePreviewEffect.pulseText`).
+        var pulseText: String?
         /// Where the pointer is from its place on the desktop (points, y down).
         var pointerOffset: CGPoint
         /// Actions that ran since the loop began.
@@ -315,7 +342,7 @@ struct GesturePreviewLoop {
             if isSideways && gesture.mode == .interactive {
                 return .follow(direction, invert: gesture.invertHorizontal)
             }
-            return .move(direction, effect: GesturePreviewEffect(action: gesture.actionIdentifier(for: direction)))
+            return .move(direction, effect: GesturePreviewEffect(action: gesture.action(for: direction)))
         }
         switch scene.focus {
         case nil:
@@ -325,7 +352,7 @@ struct GesturePreviewLoop {
         case .down?:
             return [hand(.down)]
         case .click?:
-            return [.click(effect: GesturePreviewEffect(action: gesture.clickAction))]
+            return [.click(effect: GesturePreviewEffect(action: gesture.actions.click))]
         case .left?, .right?:
             // The row's own action: with left and right inverted the other hand runs it.
             let row: MouseGestureDirection = scene.focus == .left ? .left : .right
@@ -404,7 +431,7 @@ struct GesturePreviewLoop {
             leg: index, mouseOffset: offset, buttonDepth: buttonDepth, pressPulse: pressPulse,
             arrow: leg.direction == nil ? 0 : buttonDepth * min(1, share / 0.3),
             direction: leg.direction, desktop: 0, swipeProgress: swipe,
-            overview: 0, appGrid: 0, pulse: 0, pulseSymbol: nil,
+            overview: 0, appGrid: 0, pulse: 0, pulseSymbol: nil, pulseText: nil,
             pointerOffset: scene.gesture.freezePointer
                 ? .zero
                 : CGPoint(x: offset.x * Self.pointerGain, y: offset.y * Self.pointerGain),
@@ -427,6 +454,9 @@ struct GesturePreviewLoop {
             case .pulse(let symbol):
                 frame.pulse = Self.envelope(since, in: Self.pulseIn, hold: Self.pulseHold, out: Self.pulseOut)
                 frame.pulseSymbol = symbol
+            case .pulseText(let text):
+                frame.pulse = Self.envelope(since, in: Self.pulseIn, hold: Self.pulseHold, out: Self.pulseOut)
+                frame.pulseText = text
             }
         }
         frame.desktop = Self.wrappedDesktop(position)

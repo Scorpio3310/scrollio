@@ -292,3 +292,238 @@ final class GestureKeysRunTests: XCTestCase {
         XCTAssertEqual(named.logName, GestureAction(action: shiftCommandR).logName)
     }
 }
+
+// MARK: - The pane
+
+/// A popover that builds its content and counts as open, without a window.
+private final class StillPopover: KeyPopover {
+    private(set) var standsOpen = false
+
+    override var isOpen: Bool {
+        return standsOpen
+    }
+
+    override func show(at sourceView: NSView, waitingHint: String) {
+        announce = { _ in }
+        testingPrepareContent(waitingHint: waitingHint)
+        standsOpen = true
+    }
+
+    override func showDetails(at sourceView: NSView, keys: [String], label: ShortcutLabel?) {
+        announce = { _ in }
+        testingPrepareDetails(keys: keys, label: label)
+        standsOpen = true
+    }
+
+    override func hide() {
+        standsOpen = false
+        super.hide()
+    }
+}
+
+final class GestureKeysPaneTests: XCTestCase {
+
+    typealias Slot = MouseGestureSettingsControls.Slot
+
+    private var savedGesture = MouseGestureSettings.default
+    private var logitech = false
+
+    override func setUp() {
+        super.setUp()
+        savedGesture = Options.shared.gesture
+        Options.shared.gesture = .default
+        logitech = false
+    }
+
+    override func tearDown() {
+        Options.shared.gesture = savedGesture
+        super.tearDown()
+    }
+
+    private var keys: String {
+        return ButtonTriggerNaming.shortcutText(type: .keyboard, code: 15, modifiers: shiftCommand)
+    }
+
+    private func makeController() -> GesturesPreferencesViewController {
+        let controller = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+        controller.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+        controller.bindingSummary = { [weak self] in
+            MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: self?.logitech ?? false)
+        }
+        _ = controller.view
+        controller.controls.startShortcutRecorder = { _ in }
+        for popUp in controller.controls.actionPopUps {
+            popUp.makeDetailsPopover = { StillPopover() }
+            popUp.presentShortcutDetails = { popover, anchor, keys, label in
+                popover.showDetails(at: anchor, keys: keys, label: label)
+            }
+        }
+        return controller
+    }
+
+    private func everything(in menu: NSMenu?) -> [NSMenuItem] {
+        return (menu?.items ?? []).flatMap { [$0] + everything(in: $0.submenu) }
+    }
+
+    private func pressed(_ code: UInt16, _ modifiers: CGEventFlags) -> InputEvent {
+        return InputEvent(type: .keyboard, code: code, modifiers: modifiers, phase: .down, source: .hidPP, device: nil)
+    }
+
+    private var shiftCommandRPressed: InputEvent {
+        return pressed(15, CGEventFlags(rawValue: shiftCommand))
+    }
+
+    /// The recorder's side of a recording that caught `event`.
+    private func record(_ event: InputEvent, into pullDown: ButtonActionPullDown, popover: KeyPopover) -> Bool {
+        pullDown.onEventRecorded(KeyRecorder(), didRecordEvent: event, isDuplicate: false)
+        popover.keyPreview?.update(from: event.displayComponents, status: .recorded)
+        return pullDown.takesPopover(KeyRecorder(), popover)
+    }
+
+    private func type(_ text: String, into field: NSTextField, of editor: ShortcutLabelEditorView) {
+        field.stringValue = text
+        editor.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+    }
+
+    /// Every direction and the click offer "Keyboard Shortcut…" after the pane's own
+    /// actions, which are all still there and nothing more: no "Open App or File…", no
+    /// Gesture Navigation, no Shortcut Ring, no modifier keys or scroll holds.
+    func testEveryDirectionAndTheClickOfferKeyboardShortcutBesideTheirOwnActions() {
+        let controller = makeController()
+        for showsLogitech in [false, true] {
+            logitech = showsLogitech
+            controller.reload()
+            let own = MouseGestureSettingsControls.actionCategories(showLogiActions: showsLogitech).flatMap { $0.shortcuts.map(\.identifier) }
+            for slot in Slot.allCases {
+                let items = everything(in: controller.controls.actionPopUp(for: slot).menu)
+                let listed = items.compactMap { ($0.representedObject as? SystemShortcut.Shortcut)?.identifier }
+                let markers = items.compactMap { $0.representedObject as? String }
+                XCTAssertEqual(listed, own, "\(slot.name), Logitech \(showsLogitech)")
+                XCTAssertEqual(markers, [ShortcutManager.MenuMarker.keyboardShortcut], slot.name)
+                XCTAssertEqual(items.last?.representedObject as? String, ShortcutManager.MenuMarker.keyboardShortcut)
+                XCTAssertNotNil(items.first { $0.representedObject == nil && $0.action != nil }, "No Action")
+            }
+        }
+    }
+
+    /// "Keyboard Shortcut…" in a row: the keys are stored at once, the popover stays for
+    /// the name and the icon, which are stored when it closes; the row then shows the
+    /// icon, the name and the keys in grey, and the preview the icon.
+    func testARowRecordsStoresAndShowsANamedCombination() throws {
+        let controller = makeController()
+        let up = controller.controls.actionPopUp(for: .up)
+        let popover = StillPopover()
+        popover.show(at: up, waitingHint: "")
+        XCTAssertTrue(record(shiftCommandRPressed, into: up, popover: popover))
+        XCTAssertEqual(Options.shared.gesture.actions.up, GestureAction(action: shiftCommandR), "the keys are stored at once")
+        XCTAssertTrue(popover.isShowingDetails)
+
+        let editor = try XCTUnwrap(popover.labelEditor)
+        type("Reload", into: editor.nameField, of: editor)
+        editor.chooseSymbol("arrow.clockwise")
+        editor.doneButton.performClick(nil)
+        let reload = label("Reload", symbol: "arrow.clockwise")
+        XCTAssertEqual(Options.shared.gesture.actions.up, GestureAction(action: shiftCommandR, label: reload))
+
+        let title = try XCTUnwrap(up.menu?.items.first)
+        XCTAssertEqual(title.title, "Reload  \(keys)")
+        XCTAssertEqual(title.attributedTitle?.string, "Reload  \(keys)")
+        let range = ((title.attributedTitle?.string ?? "") as NSString).range(of: keys)
+        XCTAssertEqual(title.attributedTitle?.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? NSColor,
+                       .secondaryLabelColor)
+        XCTAssertNotNil(title.image)
+
+        // The preview shows the icon when the row is pointed at.
+        controller.slotHoverChanged(.up, inside: true)
+        XCTAssertEqual(GesturePreviewLoop.legs(for: controller.previewView.scene).first?.effect, .pulse(symbolName: "arrow.clockwise"))
+
+        // "Keyboard Shortcut…" again: the name and the icon, nothing recorded.
+        let item = try XCTUnwrap(everything(in: up.menu).first {
+            $0.representedObject as? String == ShortcutManager.MenuMarker.keyboardShortcut
+        })
+        up.shortcutSelected(item)
+        let details = try XCTUnwrap(up.detailsPopover)
+        XCTAssertTrue(details.isShowingDetails)
+        XCTAssertEqual(details.labelEditor?.nameField.stringValue, "Reload")
+        details.hide()
+
+        // A listed action in its place: the name goes with the keys.
+        let copy = try XCTUnwrap(everything(in: up.menu).first {
+            ($0.representedObject as? SystemShortcut.Shortcut)?.identifier == SystemShortcut.copy.identifier
+        })
+        up.shortcutSelected(copy)
+        XCTAssertEqual(Options.shared.gesture.actions.up, GestureAction(SystemShortcut.copy))
+        XCTAssertEqual(up.menu?.items.first?.title, SystemShortcut.copy.localizedName)
+        XCTAssertNil(up.menu?.items.first?.attributedTitle)
+    }
+
+    /// Keys without a name show as keys; a recorded listed shortcut is that action; what
+    /// a direction cannot run is refused when it is pressed, with the gesture's own words.
+    func testWhatARowTakesAndRefuses() throws {
+        let controller = makeController()
+        let click = controller.controls.actionPopUp(for: .click)
+        let popover = StillPopover()
+        popover.show(at: click, waitingHint: "")
+        XCTAssertTrue(record(shiftCommandRPressed, into: click, popover: popover))
+        popover.hide()
+        XCTAssertEqual(Options.shared.gesture.actions.click, GestureAction(action: shiftCommandR))
+        XCTAssertEqual(click.menu?.items.first?.title, keys)
+        XCTAssertNil(click.menu?.items.first?.attributedTitle)
+
+        XCTAssertFalse(record(pressed(8, .maskCommand), into: click, popover: StillPopover()), "⌘C is Copy")
+        XCTAssertEqual(Options.shared.gesture.actions.click, GestureAction(SystemShortcut.copy))
+
+        let recorder = KeyRecorder()
+        let middle = InputEvent(type: .mouse, code: 2, modifiers: [], phase: .down, source: .hidPP, device: nil)
+        let shift = InputEvent(type: .keyboard, code: 56, modifiers: .maskShift, phase: .down, source: .hidPP, device: nil)
+        let back = InputEvent(type: .mouse, code: 3, modifiers: [], phase: .down, source: .hidPP, device: nil)
+        for refused in [middle, shift] {
+            XCTAssertFalse(click.validateRecordedEvent(recorder, event: refused))
+            XCTAssertEqual(click.refusalHint(recorder, event: refused), "A gesture takes a shortcut or a key")
+        }
+        XCTAssertTrue(click.validateRecordedEvent(recorder, event: back), "the Back button is the Back click")
+        XCTAssertTrue(click.validateRecordedEvent(recorder, event: shiftCommandRPressed))
+        XCTAssertEqual(click.waitingHint(recorder, mode: .adaptive), "Press a shortcut or a key")
+    }
+
+    /// While the desktop follows the hand, Left and Right say so, whatever they hold.
+    func testFollowingTheHandCoversANamedCombinationOnTheSides() {
+        Options.shared.gesture.actions.left = GestureAction(action: shiftCommandR, label: label("Reload"))
+        Options.shared.gesture.mode = .interactive
+        let controller = makeController()
+        let left = controller.controls.actionPopUp(for: .left)
+        XCTAssertFalse(left.isEnabled)
+        XCTAssertEqual(left.menu?.items.first?.title, "Desktop follows the hand")
+        XCTAssertNil(left.menu?.items.first?.attributedTitle)
+        XCTAssertNil(left.menu?.items.first?.image)
+
+        controller.controls.modeControl.selectedSegment = 0
+        _ = controller.controls.modeControl.sendAction(controller.controls.modeControl.action, to: controller.controls.modeControl.target)
+        XCTAssertTrue(left.isEnabled)
+        XCTAssertEqual(left.menu?.items.first?.title, "Reload  \(keys)", "the stored combination is the row's again")
+    }
+
+    /// The preview shows a recorded combination by its icon, else by its keys.
+    func testThePreviewShowsTheIconOrTheKeys() {
+        XCTAssertEqual(GesturePreviewEffect(action: GestureAction(action: shiftCommandR, label: label("Reload", symbol: "arrow.clockwise"))),
+                       .pulse(symbolName: "arrow.clockwise"))
+        XCTAssertEqual(GesturePreviewEffect(action: GestureAction(action: shiftCommandR, label: label(nil, character: "R"))),
+                       .pulseText("R"))
+        XCTAssertEqual(GesturePreviewEffect(action: GestureAction(action: shiftCommandR, label: label("Reload"))), .pulseText(keys))
+        XCTAssertEqual(GesturePreviewEffect(action: GestureAction(action: shiftCommandR)), .pulseText(keys))
+        XCTAssertEqual(GesturePreviewEffect(action: GestureAction(action: shiftCommandR, label: label(nil, symbol: "no.such.symbol.anywhere"))),
+                       .pulseText(keys))
+        XCTAssertEqual(GesturePreviewEffect(action: GestureAction(action: "custom::8:1048576")), .pulse(symbolName: SystemShortcut.copy.symbolName),
+                       "the keys of Copy without a name are Copy")
+        XCTAssertEqual(GesturePreviewEffect(action: GestureAction(SystemShortcut.missionControl)), .missionControl)
+
+        var scene = GesturePreviewScene()
+        scene.gesture.actions.click = GestureAction(action: shiftCommandR)
+        scene.focus = .click
+        let loop = GesturePreviewLoop(scene: scene)
+        let still = loop.frame(at: loop.legs[0].stillTime)
+        XCTAssertEqual(still.pulse, 1, accuracy: 1e-9)
+        XCTAssertEqual(still.pulseText, keys)
+        XCTAssertNil(still.pulseSymbol)
+    }
+}
