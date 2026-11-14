@@ -59,6 +59,28 @@ enum ApplicationTriggerRule {
         let stored = Options.shared.application.applications
         return (0..<stored.count).compactMap { stored.get(by: $0) }
     }
+
+    /// The rule a press of `binding` follows; nil for one that does neither.
+    init?(of binding: ButtonBinding) {
+        if Self.shortcutRing.takes(binding) {
+            self = .shortcutRing
+        } else if Self.gestureNavigation.takes(binding) {
+            self = .gestureNavigation
+        } else {
+            return nil
+        }
+    }
+
+    /// Whether, with `application` in front, what opens is the general ring (or what runs
+    /// is the general gestures), not the app's own.
+    func usesGeneralSettings(_ application: Application) -> Bool {
+        switch self {
+        case .shortcutRing:
+            return application.usesGeneralRing
+        case .gestureNavigation:
+            return application.usesGeneralGestures
+        }
+    }
 }
 
 /// While nothing of the Buttons pane opens the ring (or runs the gestures) but an app's own
@@ -74,16 +96,26 @@ struct ApplicationTriggers: Equatable {
     var bindingID: UUID?
     /// That binding's trigger: what the panes' pictures show (`TriggerPictureSource`).
     var trigger: RecordedEvent?
+    /// Set while every one of these apps opens its own ring (or runs its own gestures):
+    /// then nothing uses the general settings, and the panes fold them as when nothing
+    /// opens the ring. nil while one of them uses the general ones.
+    var ownOnly: ApplicationTriggerRule?
+
+    /// Whether one of these apps uses the general ring (or gestures).
+    var usesGeneralSettings: Bool {
+        return ownOnly == nil
+    }
 
     init(
         applicationNames: [String], triggerTitles: [String], path: String = "", bindingID: UUID? = nil,
-        trigger: RecordedEvent? = nil
+        trigger: RecordedEvent? = nil, ownOnly: ApplicationTriggerRule? = nil
     ) {
         self.applicationNames = applicationNames
         self.triggerTitles = triggerTitles
         self.path = path
         self.bindingID = bindingID
         self.trigger = trigger
+        self.ownOnly = ownOnly
     }
 
     /// - Parameter titles: what the Buttons pane calls the triggers, in order.
@@ -98,23 +130,45 @@ struct ApplicationTriggers: Equatable {
                 names.append(title)
             }
         }
+        // (The bindings tell which rule they follow: they all follow the one that listed them.)
+        let rule = first.bindings.first.flatMap(ApplicationTriggerRule.init(of:))
+        let ownOnly = rule.flatMap { rule in
+            entries.allSatisfy { !rule.usesGeneralSettings($0.application) } ? rule : nil
+        }
         self.init(
             applicationNames: entries.map { $0.application.getName() },
             triggerTitles: names,
             path: first.application.path,
             // (Nothing of Buttons does it: every binding that does it there is the app's own.)
             bindingID: first.bindings.first?.id,
-            trigger: first.bindings.first?.triggerEvent
+            trigger: first.bindings.first?.triggerEvent,
+            ownOnly: ownOnly
         )
     }
 
     /// "Only in Figma: Thumb panel" / "Only in Figma and Safari: Thumb panel and Back
-    /// button", without a full stop (the panes' lines go on).
+    /// button", without a full stop (the panes' lines go on). While every one of the apps
+    /// uses its own ring (or gestures), it says so: "Only in Figma, with its own ring:
+    /// Thumb panel".
     var text: String {
         return String(
             format: NSLocalizedString("apps-trigger-only-in", comment: ""),
-            ListFormatter.localizedString(byJoining: applicationNames),
-            ListFormatter.localizedString(byJoining: triggerTitles)
+            whereText, ListFormatter.localizedString(byJoining: triggerTitles)
         )
+    }
+
+    /// The apps, joined as a list, and with what of their own while `ownOnly`.
+    private var whereText: String {
+        let names = ListFormatter.localizedString(byJoining: applicationNames)
+        guard let ownOnly else { return names }
+        let one = applicationNames.count == 1
+        let key: String
+        switch ownOnly {
+        case .shortcutRing:
+            key = one ? "apps-trigger-own-ring" : "apps-trigger-own-rings"
+        case .gestureNavigation:
+            key = one ? "apps-trigger-own-gestures" : "apps-trigger-own-gestures-each"
+        }
+        return String(format: NSLocalizedString(key, comment: ""), names)
     }
 }

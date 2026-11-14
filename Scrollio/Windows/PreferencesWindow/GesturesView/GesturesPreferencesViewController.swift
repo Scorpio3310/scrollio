@@ -284,9 +284,11 @@ final class GesturesPreferencesViewController: NSViewController {
         let runs = summary.hasGestureButton || summary.onlyInApps != nil
         gestureButtonButton.title = text(runs ? "gestures-gesture-button-change" : "gestures-gesture-button-set-up")
         modeRow.explanation = text(presentation.descriptionKey)
-        // No button runs the gestures: what is under the first box waits, folded.
+        // No button runs these gestures (none at all, or only in apps that run their own):
+        // what is under the first box waits, folded.
+        let runsThese = summary.hasGestureButton || summary.onlyInApps?.usesGeneralSettings == true
         for section in foldingSections {
-            section.isCollapsible = !runs
+            section.isCollapsible = !runsThese
         }
 
         for slot in Slot.allCases where slot.isHorizontal {

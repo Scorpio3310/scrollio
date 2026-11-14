@@ -470,6 +470,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
             ("key-long", .mxMaster4, [key(121, modifiers: [.maskControl, .maskAlternate, .maskShift, .maskCommand])], false),
             ("thumb-panel-and-key", .mxMaster4, [logitech(.thumbPanel), key(49, modifiers: controlOption)], false),
             ("only-in-notes", .mxMaster4, [logitech(.thumbPanel)], true),
+            // (Notes opens its own ring there: this one's places fold.)
+            ("only-in-notes-own-ring", .mxMaster4, [logitech(.thumbPanel)], true),
             ("none-mx4", .mxMaster4, [], false),
             ("none-generic", .generic, [], false),
         ]
@@ -478,6 +480,9 @@ final class PreferencesWindowRenderTests: XCTestCase {
             if item.onlyInNotes {
                 let app = Application(path: notes)
                 app.setOwnButtonBindings(item.bindings.map(ring))
+                if item.name.hasSuffix("own-ring") {
+                    app.setUsesGeneralRing(false, general: .default)
+                }
                 summary = ShortcutRingBindingSummary(bindings: [], applications: [app])
             } else {
                 summary = ShortcutRingBindingSummary(bindings: item.bindings.map(ring))

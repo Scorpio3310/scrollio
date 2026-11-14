@@ -24,7 +24,8 @@
 //  (`ButtonActionPullDown`, with the menu of what a place can hold): a listed action, a
 //  key combination recorded there ("Keyboard Shortcut…") or an app, a file or a script
 //  ("Open App or File…", the Buttons pane's popover). While nothing opens the ring (no
-//  binding of Buttons, no app's own), the places are folded under their title
+//  binding of Buttons, no app's own, or only apps that open their own ring: "Only in
+//  Figma, with its own ring: Thumb panel."), the places are folded under their title
 //  ("Shortcuts ›", `PreferencesDisclosureSection`): a click opens them and they can be
 //  edited as ever, and a click on a place of the drawing opens them too; once something
 //  opens the ring they show by themselves, with a plain title. Under the boxes "Reset to
@@ -443,8 +444,10 @@ final class RingPreferencesViewController: NSViewController {
             // (Opened only by an app's own button: "Change" leads to it, not "Set Up…".)
             let opens = summary.hasTrigger || summary.onlyInApps != nil
             triggerButton.title = text(opens ? "ring-trigger-change" : "ring-trigger-set-up")
-            // Nothing opens the ring: its places wait, folded, a click away.
-            placesSection?.isCollapsible = !opens
+            // Nothing opens this ring (nothing at all, or only apps that open their own):
+            // its places wait, folded, a click away.
+            let opensThisRing = summary.hasTrigger || summary.onlyInApps?.usesGeneralSettings == true
+            placesSection?.isCollapsible = !opensThisRing
         }
         (freezeToggle as? NSSwitch)?.state = ring.freezePointer ? .on : .off
         for (place, popUp) in placePopUps.enumerated() {

@@ -1652,6 +1652,63 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertFalse(ring.triggerRow.explanation?.hasPrefix("Only in") ?? true)
     }
 
+    /// While the only apps whose own buttons open the ring (or run the gestures) use their
+    /// own ring (or gestures), nothing runs the general settings: the panes fold them as
+    /// when nothing opens the ring, and their rows say so; "Change" still leads to the app.
+    func testThePanesFoldTheGeneralSettingsWhileOnlyAnAppWithItsOwnUsesTheTrigger() throws {
+        let ringAction = SystemShortcut.shortcutRing.identifier
+        let gestureAction = SystemShortcut.mouseGestureNavigation.identifier
+        let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
+        Options.shared.buttons.binding = []
+        let calculator = addApp(Self.calculator)
+        calculator.setOwnButtonBindings([binding(thumbPanel, ringAction), binding(3, gestureAction)])
+        let panel = ButtonTriggerNaming.title(for: calculator.ownButtonBindings[0].triggerEvent)
+        let back = ButtonTriggerNaming.title(for: calculator.ownButtonBindings[1].triggerEvent)
+
+        calculator.setUsesGeneralRing(false, general: Options.shared.ring)
+        let ring = RingPreferencesViewController()
+        _ = ring.view
+        let places = try XCTUnwrap(ring.placesSection)
+        XCTAssertTrue(places.isCollapsible, "nothing opens the general ring")
+        XCTAssertFalse(places.showsBody)
+        XCTAssertEqual(ring.triggerRow.explanation, "Only in Calculator, with its own ring: \(panel). A key combination works too.")
+        XCTAssertEqual(ring.triggerButton.title, "Change")
+        var shown: [ApplicationTriggers] = []
+        ring.openApplicationButtons = { shown.append($0) }
+        ring.openButtonsPane = { _ in XCTFail("not the Buttons pane") }
+        ring.triggerButton.performClick(nil)
+        XCTAssertEqual(shown.map(\.path), [Self.calculator])
+        // With the general ring on again, it is the one that opens there.
+        calculator.setUsesGeneralRing(true, general: Options.shared.ring)
+        ring.reload()
+        XCTAssertFalse(places.isCollapsible)
+        XCTAssertEqual(ring.triggerRow.explanation, "Only in Calculator: \(panel). A key combination works too.")
+
+        calculator.setUsesGeneralGestures(false, general: Options.shared.gesture)
+        let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { false })
+        gestures.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+        _ = gestures.view
+        gestures.reload()
+        XCTAssertTrue(gestures.foldingSections.allSatisfy { $0.isCollapsible && !$0.showsBody }, "nothing runs the general gestures")
+        XCTAssertEqual(gestures.gestureButtonRow.explanation, "Only in Calculator, with its own gestures: \(back).")
+        XCTAssertEqual(gestures.gestureButtonButton.title, "Change")
+        calculator.setUsesGeneralGestures(true, general: Options.shared.gesture)
+        gestures.reload()
+        XCTAssertTrue(gestures.foldingSections.allSatisfy { !$0.isCollapsible })
+
+        // Two apps, one with the general ring: the general ring opens there.
+        calculator.setUsesGeneralRing(false, general: Options.shared.ring)
+        let textEdit = addApp(Self.textEdit)
+        textEdit.setOwnButtonBindings([binding(thumbPanel, ringAction)])
+        ring.reload()
+        XCTAssertFalse(places.isCollapsible)
+        XCTAssertNil(ring.bindingSummary().onlyInApps?.ownOnly)
+        textEdit.setUsesGeneralRing(false, general: Options.shared.ring)
+        ring.reload()
+        XCTAssertTrue(places.isCollapsible)
+        XCTAssertEqual(ring.triggerRow.explanation, "Only in Calculator and TextEdit, each with its own ring: \(panel). A key combination works too.")
+    }
+
     /// The Gestures pane likewise: Gesture Navigation only on an app's own button. The
     /// gesture actions offer the Logitech ones when a Logitech button runs the gestures
     /// with some app in front.

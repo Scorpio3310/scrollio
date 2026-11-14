@@ -8799,6 +8799,54 @@
           }
         }
       }
+    },
+    "apps-trigger-own-ring": {
+      "comment": "Shortcut Ring pane: in \"Only in %@: …\" (apps-trigger-only-in) while the one app whose own button or key opens the ring uses its own ring, so nothing opens the ring of the pane; %@ is the app's name (\"Only in Figma, with its own ring: Thumb panel\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, with its own ring"
+          }
+        }
+      }
+    },
+    "apps-trigger-own-rings": {
+      "comment": "Shortcut Ring pane: in \"Only in %@: …\" (apps-trigger-only-in) while every app whose own button or key opens the ring uses its own ring, so nothing opens the ring of the pane; %@ is the apps' names joined as a list",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, each with its own ring"
+          }
+        }
+      }
+    },
+    "apps-trigger-own-gestures": {
+      "comment": "Gestures pane: in \"Only in %@: …\" (apps-trigger-only-in) while the one app whose own button runs the gestures uses its own gestures, so nothing runs the pane's; %@ is the app's name (\"Only in Figma, with its own gestures: Back button\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, with its own gestures"
+          }
+        }
+      }
+    },
+    "apps-trigger-own-gestures-each": {
+      "comment": "Gestures pane: in \"Only in %@: …\" (apps-trigger-only-in) while every app whose own button runs the gestures uses its own gestures, so nothing runs the pane's; %@ is the apps' names joined as a list",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, each with its own gestures"
+          }
+        }
+      }
     }
   },
   "version": "1.1"
