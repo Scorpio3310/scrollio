@@ -40,6 +40,12 @@ final class ShortcutIconChooserTests: XCTestCase {
         return window
     }
 
+    /// The name field is being typed into.
+    private func nameHoldsTheKeyboard(_ editor: ShortcutLabelEditorView, in window: NSWindow) -> Bool {
+        guard let fieldEditor = editor.nameField.currentEditor() else { return false }
+        return window.firstResponder === fieldEditor
+    }
+
     private func details(_ label: ShortcutLabel?) throws -> (KeyPopover, ShortcutLabelEditorView) {
         let popover = KeyPopover()
         popover.announce = { _ in }
@@ -387,6 +393,37 @@ final class ShortcutIconChooserTests: XCTestCase {
         XCTAssertFalse(doneEditor.isChoosingIcon)
     }
 
+    /// A click into the name field closes the chooser, and the same click gives the field
+    /// the keyboard; the system says the chooser closed only after its animation. The field
+    /// keeps the keyboard then: what is typed goes into the name, not to the well (where
+    /// Delete would take the icon away). Closed by Esc, a choice, or a click that left the
+    /// keyboard nowhere in the card, the chooser gives it back to the well.
+    func testAClickIntoTheNameKeepsTheKeyboardThere() throws {
+        let (popover, editor) = try details(reload)
+        let window = try inWindow(popover)
+        editor.openChooser()
+        XCTAssertTrue(window.makeFirstResponder(editor.nameField))
+        editor.testingCloseChooserAsTheSystemDoes(closesParent: false)
+        XCTAssertFalse(editor.isChoosingIcon)
+        XCTAssertTrue(nameHoldsTheKeyboard(editor, in: window), "the name field keeps the keyboard")
+        XCTAssertEqual(popover.editedLabel, reload)
+
+        // A click on the card where nothing takes the keyboard: back to the well.
+        editor.openChooser()
+        window.makeFirstResponder(nil)
+        editor.testingCloseChooserAsTheSystemDoes(closesParent: false)
+        XCTAssertTrue(window.firstResponder === editor.iconWell)
+
+        // Esc and a choice: back to the well, wherever the keyboard was.
+        editor.openChooser()
+        XCTAssertTrue(window.makeFirstResponder(editor.nameField))
+        try XCTUnwrap(editor.chooser).grid.keyDown(with: try key(53, "\u{1B}"))
+        XCTAssertTrue(window.firstResponder === editor.iconWell, "Esc")
+        editor.openChooser()
+        XCTAssertTrue(window.makeFirstResponder(editor.nameField))
+        try XCTUnwrap(editor.chooser).grid.onChooseAt?(IndexPath(item: 0, section: 0))
+        XCTAssertTrue(window.firstResponder === editor.iconWell, "a choice")
+    }
 
     /// Return with nothing typed in the search and nothing selected (the icon is a typed
     /// character, a symbol that is not among these, or there is none) chooses nothing: the

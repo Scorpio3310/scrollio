@@ -246,6 +246,15 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSPopoverDeleg
         }
     }
 
+    /// The system closed the chooser. It says so after the chooser's animation: a click
+    /// in the card that closed it may have given the name field the keyboard by then, and
+    /// the field keeps it (typed keys must not go to the well, where Delete takes the icon
+    /// away). Otherwise the keyboard goes back to the well.
+    private func chooserClosedByTheSystem(closesParent: Bool) {
+        let elsewhere = (iconWell.window?.firstResponder as? NSView).map { $0 !== iconWell && $0.isDescendant(of: self) } ?? false
+        chooserClosed(closesParent: closesParent, refocus: !elsewhere)
+    }
+
     /// Whether the chooser, closed by the system, takes the popover around the editor with
     /// it: when the click that closed it was in neither popover (`mouseDownInWindow`: the
     /// window number of a mouse-down that closed it, nil for anything else), or when the
@@ -263,7 +272,7 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSPopoverDeleg
         guard let popover = chooserPopover else { return }
         popover.delegate = nil
         popover.close()
-        chooserClosed(closesParent: closesParent)
+        chooserClosedByTheSystem(closesParent: closesParent)
     }
 #endif
 
@@ -289,7 +298,7 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSPopoverDeleg
 
     func popoverDidClose(_ notification: Notification) {
         guard notification.object as? NSPopover === chooserPopover else { return }
-        chooserClosed(closesParent: chooserClosesParent)
+        chooserClosedByTheSystem(closesParent: chooserClosesParent)
     }
 
     // MARK: Actions
