@@ -197,6 +197,8 @@ final class ApplicationDetailViewController: NSViewController {
             if let buttons = controller as? ApplicationButtonsViewController {
                 buttons.onOwnButtonsChange = onInheritChange
                 buttons.partShowing = buttonsPartShowing
+                // "Show Gesture Settings" of a row: the gestures of this app, not the pane.
+                buttons.onGestureSettingsRequested = { [weak self] in self?.show(.gestures) }
             }
             addChild(controller)
             controller.view.translatesAutoresizingMaskIntoConstraints = false

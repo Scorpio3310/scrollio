@@ -6,10 +6,11 @@
 //  under the app's box, the one shown last remembered for every app, a part that does not
 //  exist falling back to Scrolling, the page's height following the part), the marks of
 //  the list of apps, the Buttons part: only the app's own rows with what they do
-//  everywhere, the "+" menu, changing, recording and removing a row, and what stays
-//  general; and the Gestures part: the switch, the app's own five rows and invert switch.
-//  Nothing is shown on screen: menus and recorders go through seams, windows are never
-//  ordered in.
+//  everywhere, the "+" menu, changing, recording and removing a row, the Shortcut Ring and
+//  Gesture Navigation offered as everything else, "Show Gesture Settings" leading to the
+//  Gestures part; and the Gestures part: the switch, the app's own five rows and invert
+//  switch. Nothing is shown on screen: menus and recorders go through seams, windows are
+//  never ordered in.
 //
 
 import XCTest
@@ -434,7 +435,6 @@ final class ApplicationPageTests: XCTestCase {
 
     /// Only the app's own rows, each a row of the Buttons pane with what the button does
     /// everywhere else under it; "Default" for one that does what it does by itself here.
-    /// The menus have neither the ring nor Gesture Navigation.
     func testTheButtonsPartShowsOnlyTheAppsOwnRowsWithWhatTheyDoEverywhere() throws {
         Options.shared.buttons.binding = [binding(3, "missionControl"), binding(4, "copy"), binding(5, "paste")]
         let calculator = addApp(Self.calculator)
@@ -448,10 +448,6 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(part.rows[1].pullDown.noActionItem?.title, "Default")
         XCTAssertTrue(part.rows.allSatisfy { $0.isRemovable && $0.isEnabled })
         XCTAssertTrue(part.rows.allSatisfy { $0.placeButton.isHidden }, "where a button is, Buttons says")
-        for row in part.rows {
-            let hidden = row.pullDown.menu?.items.filter(\.isHidden).compactMap { $0.representedObject as? SystemShortcut.Shortcut }.map(\.identifier)
-            XCTAssertEqual(Set(hidden ?? []), [SystemShortcut.shortcutRing.identifier, SystemShortcut.mouseGestureNavigation.identifier])
-        }
         XCTAssertEqual(part.list.rowsView.accessibilityLabel(), "Own buttons")
         XCTAssertEqual(part.noteLabel.stringValue,
                        "These buttons do this while Calculator is in front; every other button does what Buttons says.")
@@ -473,8 +469,8 @@ final class ApplicationPageTests: XCTestCase {
     }
 
     /// "+": the buttons of the connected mouse the app has no binding of its own for,
-    /// "Record a Button or Key…", then the bindings of Buttons not offered yet, never what
-    /// opens the ring or runs Gesture Navigation.
+    /// "Record a Button or Key…", then the bindings of Buttons not offered yet, also what
+    /// opens the ring or runs Gesture Navigation there.
     func testThePlusMenuOffersTheMouseRecordingAndTheBindingsOfButtons() throws {
         let command = UInt(CGEventFlags.maskCommand.rawValue)
         Options.shared.buttons.binding = [
@@ -489,7 +485,7 @@ final class ApplicationPageTests: XCTestCase {
         part.showAddMenu(from: part.list.addButton)
         let menu = try XCTUnwrap(shown)
         let names = titles(of: menu)
-        // The MX Master 3S: wheel button, mode shift button (the ring's: left out),
+        // The MX Master 3S: wheel button, mode shift button (the ring's in Buttons),
         // forward (the app's own already), back, gesture button.
         XCTAssertEqual(menu.items.first?.isSectionHeader, true)
         XCTAssertEqual(names.first, "Your Mouse")
@@ -497,13 +493,64 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertTrue(names.contains(ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil))))
         XCTAssertTrue(names.contains(ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: 1000, modifiers: 0, deviceFilter: nil))),
                       "a Logitech button no binding of Buttons uses: \(names)")
-        XCTAssertFalse(names.contains(ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: 1001, modifiers: 0, deviceFilter: nil))))
+        XCTAssertTrue(names.contains(ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: 1001, modifiers: 0, deviceFilter: nil))),
+                      "the button that opens the ring in Buttons: \(names)")
         XCTAssertFalse(names.contains(ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil))))
         XCTAssertTrue(names.contains("Record a Button or Key…"))
         let general = try XCTUnwrap(names.firstIndex(of: "In Buttons"))
         let rest = Array(names[(general + 1)...])
-        XCTAssertEqual(rest.count, 2, "⌘ and button 5, ⌘ and a key; not the back button (offered above), not the ring's or the gestures': \(rest)")
-        XCTAssertTrue(rest.allSatisfy { $0.hasSuffix(": " + SystemShortcut.copy.localizedName) || $0.hasSuffix(": " + SystemShortcut.paste.localizedName) }, "\(rest)")
+        XCTAssertEqual(rest.count, 3, "⌘ and button 5, button 6 (Gesture Navigation), ⌘ and a key; not the back button nor the mode shift button (offered above): \(rest)")
+        let actions = [SystemShortcut.copy, SystemShortcut.mouseGestureNavigation, SystemShortcut.paste].map { ": " + $0.localizedName }
+        XCTAssertEqual(rest.map { name in actions.first { name.hasSuffix($0) } }, actions, "\(rest)")
+    }
+
+    /// The owner's case: on an MX Master 4 whose thumb panel runs Gesture Navigation in
+    /// Buttons and whose forward button opens the ring, "+" offers both under "Your Mouse",
+    /// and a key that opens the ring under "In Buttons". Each new row starts with what it
+    /// does everywhere, named as the Buttons pane names it.
+    func testThePlusMenuOffersTheThumbPanelAndWhatOpensTheRingAndANewRowKeepsItsAction() throws {
+        let ring = SystemShortcut.shortcutRing.identifier
+        let gestures = SystemShortcut.mouseGestureNavigation.identifier
+        let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
+        let controlOption = UInt(CGEventFlags.maskControl.rawValue | CGEventFlags.maskAlternate.rawValue)
+        Options.shared.buttons.binding = [
+            binding(thumbPanel, gestures), binding(4, ring), binding(49, ring, modifiers: controlOption, type: .keyboard),
+        ]
+        let generals = Options.shared.buttons.binding
+        let calculator = addApp(Self.calculator)
+        var shown: NSMenu?
+        let (_, part) = try buttonsPart(menus: { shown = $0 })
+        part.deviceSource = mouse("MX Master 4")
+        part.reloadRows()
+        part.showAddMenu(from: part.list.addButton)
+        let names = titles(of: try XCTUnwrap(shown))
+        let thumbPanelTitle = ButtonTriggerNaming.title(for: generals[0].triggerEvent)
+        XCTAssertEqual(thumbPanelTitle, "Thumb panel")
+        let header = try XCTUnwrap(names.firstIndex(of: "Your Mouse"))
+        let record = try XCTUnwrap(names.firstIndex(of: "Record a Button or Key…"))
+        let mouseItems = Array(names[(header + 1)..<record])
+        XCTAssertTrue(mouseItems.contains(thumbPanelTitle), "\(mouseItems)")
+        XCTAssertTrue(mouseItems.contains(ButtonTriggerNaming.title(for: generals[1].triggerEvent)), "\(mouseItems)")
+        let inButtons = try XCTUnwrap(names.firstIndex(of: "In Buttons"))
+        XCTAssertEqual(Array(names[(inButtons + 1)...]),
+                       [ButtonTriggerNaming.title(for: generals[2].triggerEvent) + ": " + SystemShortcut.shortcutRing.localizedName])
+
+        for general in generals {
+            part.addOwnBinding(for: general.triggerEvent)
+        }
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.triggerEvent), generals.map(\.triggerEvent))
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), [gestures, ring, ring], "nothing changes until another is chosen")
+        XCTAssertTrue(calculator.ownButtonBindings.allSatisfy(\.isEnabled))
+        XCTAssertEqual(Options.shared.buttons.binding, generals)
+        for (row, general) in zip(part.rows, generals) {
+            // The Buttons pane's pull-down for the general binding names its action.
+            let buttonsTitle = try XCTUnwrap(ButtonActionPullDown(binding: general).menu?.items.first?.title)
+            XCTAssertEqual(row.explanation, "Everywhere: " + buttonsTitle)
+            XCTAssertEqual(row.pullDown.menu?.items.first?.title, buttonsTitle)
+            XCTAssertTrue(row.isEnabled)
+        }
+        XCTAssertEqual(part.rows.first?.explanation, "Everywhere: " + SystemShortcut.mouseGestureNavigation.localizedName)
+        XCTAssertEqual(part.rows.last?.explanation, "Everywhere: " + SystemShortcut.shortcutRing.localizedName)
     }
 
     /// Choosing a button adds its row with the action it has everywhere (nothing changes
@@ -556,7 +603,7 @@ final class ApplicationPageTests: XCTestCase {
     }
 
     /// A row's pull-down changes the app's binding only; "Default" stores no action (the
-    /// button does what it does by itself here); the ring is refused.
+    /// button does what it does by itself here); the ring is stored as any other action.
     func testARowsPullDownChangesOnlyTheAppsBinding() throws {
         Options.shared.buttons.binding = [binding(3, "missionControl")]
         let general = Options.shared.buttons.binding
@@ -575,10 +622,78 @@ final class ApplicationPageTests: XCTestCase {
         row.pullDown.onCustomShortcutRecorded?("custom::40:1048576", ShortcutLabel(name: "Find", icon: nil))
         XCTAssertEqual(calculator.ownButtonBindings.first?.label?.name, "Find")
         part.setAction(of: row.binding.id, named: SystemShortcut.shortcutRing.identifier)
-        XCTAssertEqual(calculator.ownButtonBindings.first?.systemShortcutName, "custom::40:1048576", "the ring stays general")
+        XCTAssertEqual(calculator.ownButtonBindings.first?.systemShortcutName, SystemShortcut.shortcutRing.identifier)
+        XCTAssertNil(calculator.ownButtonBindings.first?.label, "a listed action drops the name")
+        XCTAssertEqual(part.rows.first?.pullDown.menu?.items.first?.title, SystemShortcut.shortcutRing.localizedName)
         XCTAssertEqual(Options.shared.buttons.binding, general)
-        XCTAssertTrue(part.rows.first?.pullDown.menu?.items.first { ($0.representedObject as? SystemShortcut.Shortcut)?.identifier == SystemShortcut.shortcutRing.identifier }?.isHidden == true,
-                      "hidden again after the pull-down showed the new action")
+    }
+
+    /// A row's menu is the Buttons pane's for its trigger: "Default" first, the Shortcut
+    /// Ring, Gesture Navigation for a mouse button (not for a key), "Show Gesture Settings"
+    /// while Gesture Navigation is the action, the Logitech actions for a Logitech button,
+    /// "Open App or File…" and "Keyboard Shortcut…". Choosing the ring or Gesture
+    /// Navigation there stores it, for this app only.
+    func testARowsMenuIsTheButtonsPanesMenuAndTakesTheRingAndGestureNavigation() throws {
+        let command = UInt(CGEventFlags.maskCommand.rawValue)
+        let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
+        Options.shared.buttons.binding = [binding(thumbPanel, SystemShortcut.mouseGestureNavigation.identifier)]
+        let general = Options.shared.buttons.binding
+        let calculator = addApp(Self.calculator)
+        calculator.setOwnButtonBindings([
+            binding(3, "copy"), binding(thumbPanel, SystemShortcut.missionControl.identifier), binding(40, "paste", modifiers: command, type: .keyboard),
+        ])
+        let (_, part) = try buttonsPart()
+        XCTAssertEqual(part.rows.count, 3)
+        func item(_ shortcut: SystemShortcut.Shortcut, of pullDown: ButtonActionPullDown) -> NSMenuItem? {
+            return pullDown.menu?.items.first { ($0.representedObject as? SystemShortcut.Shortcut)?.identifier == shortcut.identifier }
+        }
+        func marker(_ marker: String, of pullDown: ButtonActionPullDown) -> NSMenuItem? {
+            return pullDown.menu?.items.first { $0.representedObject as? String == marker }
+        }
+        for row in part.rows {
+            let pullDown = row.pullDown
+            let shown = (pullDown.menu?.items ?? []).dropFirst().filter { !$0.isHidden && !$0.isSeparatorItem }
+            XCTAssertTrue(shown.first === pullDown.noActionItem, "Default first")
+            XCTAssertEqual(pullDown.noActionItem?.title, "Default")
+            XCTAssertEqual(item(SystemShortcut.shortcutRing, of: pullDown)?.isHidden, false, "the ring, on every row")
+            XCTAssertEqual(marker(ShortcutManager.MenuMarker.openTarget, of: pullDown)?.isHidden, false)
+            XCTAssertEqual(marker(ShortcutManager.MenuMarker.keyboardShortcut, of: pullDown)?.isHidden, false)
+            XCTAssertEqual(pullDown.gestureSettingsItem?.isHidden, true, "Gesture Navigation is not the action yet")
+        }
+        let (mouseRow, logitechRow, keyRow) = (part.rows[0].pullDown, part.rows[1].pullDown, part.rows[2].pullDown)
+        XCTAssertEqual(mouseRow.gestureNavigationItem?.isHidden, false)
+        XCTAssertEqual(logitechRow.gestureNavigationItem?.isHidden, false)
+        XCTAssertEqual(keyRow.gestureNavigationItem?.isHidden, true, "a key cannot run Gesture Navigation, as in Buttons")
+        let logitechActions = everything(in: logitechRow.menu).compactMap { $0.representedObject as? SystemShortcut.Shortcut }.map(\.identifier)
+        XCTAssertTrue(logitechActions.contains(SystemShortcut.logiSmartShiftToggle.identifier), "the Logitech actions on a Logitech button")
+        let mouseActions = everything(in: mouseRow.menu).compactMap { $0.representedObject as? SystemShortcut.Shortcut }.map(\.identifier)
+        XCTAssertFalse(mouseActions.contains(SystemShortcut.logiSmartShiftToggle.identifier))
+
+        // The ring on the key, Gesture Navigation on the back button.
+        keyRow.shortcutSelected(try XCTUnwrap(item(SystemShortcut.shortcutRing, of: keyRow)))
+        mouseRow.shortcutSelected(try XCTUnwrap(mouseRow.gestureNavigationItem))
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName),
+                       [SystemShortcut.mouseGestureNavigation.identifier, SystemShortcut.missionControl.identifier, SystemShortcut.shortcutRing.identifier])
+        XCTAssertTrue(calculator.ownButtonBindings.allSatisfy(\.isEnabled))
+        XCTAssertEqual(part.rows[0].pullDown.gestureSettingsItem?.isHidden, false, "Show Gesture Settings, while Gesture Navigation is the action")
+        XCTAssertEqual(part.rows[2].pullDown.menu?.items.first?.title, SystemShortcut.shortcutRing.localizedName)
+        XCTAssertEqual(Options.shared.buttons.binding, general, "Buttons is not touched")
+    }
+
+    /// "Show Gesture Settings" on a row shows the app's own Gestures part, not the Gestures
+    /// pane.
+    func testShowGestureSettingsOnARowShowsTheAppsGesturesPart() throws {
+        let calculator = addApp(Self.calculator)
+        calculator.setOwnButtonBindings([binding(3, SystemShortcut.mouseGestureNavigation.identifier)])
+        let (page, part) = try buttonsPart()
+        XCTAssertEqual(page.shownPart, .buttons)
+        let pullDown = try XCTUnwrap(part.rows.first?.pullDown)
+        let settings = try XCTUnwrap(pullDown.gestureSettingsItem)
+        XCTAssertFalse(settings.isHidden)
+        pullDown.shortcutSelected(settings)
+        XCTAssertEqual(page.shownPart, .gestures)
+        XCTAssertTrue(page.gesturesPart.view.isDescendant(of: page.partContainer))
+        XCTAssertEqual(calculator.ownButtonBindings.first?.systemShortcutName, SystemShortcut.mouseGestureNavigation.identifier, "the action stays")
     }
 
     /// "−" gives the button back to Buttons (nothing is stored once none is left); Undo
@@ -713,10 +828,12 @@ final class ApplicationPageTests: XCTestCase {
     }
 
     /// "Record a Button or Key…": the Buttons pane's recorder; what it caught is added when
-    /// it closes. A button the app has already is a duplicate; what opens the ring is
-    /// refused, and the recorder says why.
-    func testRecordingAddsAButtonAndRefusesWhatStaysGeneral() throws {
-        Options.shared.buttons.binding = [binding(6, SystemShortcut.shortcutRing.identifier)]
+    /// it closes. A button the app has already is a duplicate; one that opens the ring or
+    /// runs Gesture Navigation in Buttons is taken as any other, and starts with that action.
+    func testRecordingTakesAButtonThatOpensTheRingInButtons() throws {
+        Options.shared.buttons.binding = [
+            binding(6, SystemShortcut.shortcutRing.identifier), binding(7, SystemShortcut.mouseGestureNavigation.identifier),
+        ]
         let calculator = addApp(Self.calculator)
         calculator.setOwnButtonBindings([binding(3, "appExpose")])
         var started = 0
@@ -732,25 +849,37 @@ final class ApplicationPageTests: XCTestCase {
         part.onRecordingStarted(recorder)
         XCTAssertFalse(part.validateRecordedEvent(recorder, event: press(3)), "the app's already")
         XCTAssertNil(part.refusalHint(recorder, event: press(3)), "a duplicate")
-        XCTAssertFalse(part.validateRecordedEvent(recorder, event: press(6)))
-        XCTAssertEqual(part.refusalHint(recorder, event: press(6)), "This button stays as Buttons sets it")
-        XCTAssertTrue(part.validateRecordedEvent(recorder, event: press(5)))
+        for code: UInt16 in [6, 7, 5] {
+            XCTAssertTrue(part.validateRecordedEvent(recorder, event: press(code)), "button \(code)")
+            XCTAssertNil(part.refusalHint(recorder, event: press(code)), "button \(code)")
+        }
+        part.onEventRecorded(recorder, didRecordEvent: press(6), isDuplicate: false)
+        part.onRecordingStopped(recorder, didRecord: true)
+        XCTAssertFalse(part.isRecorderOpen)
+        part.onRecordingStarted(recorder)
         part.onEventRecorded(recorder, didRecordEvent: press(5), isDuplicate: false)
         part.onRecordingStopped(recorder, didRecord: true)
-        XCTAssertEqual(calculator.ownButtonBindings.map(\.triggerEvent.code), [3, 5])
-        XCTAssertEqual(calculator.ownButtonBindings.last?.systemShortcutName, "", "no action of Buttons: Default")
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.triggerEvent.code), [3, 6, 5])
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName),
+                       ["appExpose", SystemShortcut.shortcutRing.identifier, ""],
+                       "the ring as everywhere; no action of Buttons: Default")
         XCTAssertFalse(part.isRecorderOpen)
     }
 
-    /// A binding of the app's own on a button that Buttons later gave the ring stays
-    /// stored, dimmed, and is not used.
-    func testARowOnAButtonThatNowStaysGeneralIsDimmed() throws {
+    /// A binding of the app's own on a button that Buttons gave the ring or Gesture
+    /// Navigation is used as any other: its row is not dimmed, and says what the button
+    /// does everywhere.
+    func testARowOnAButtonThatRunsGestureNavigationInButtonsIsNotDimmed() throws {
         let calculator = addApp(Self.calculator)
-        calculator.setOwnButtonBindings([binding(3, "appExpose")])
-        Options.shared.buttons.binding = [binding(3, SystemShortcut.mouseGestureNavigation.identifier)]
+        calculator.setOwnButtonBindings([binding(3, "appExpose"), binding(4, "copy")])
+        Options.shared.buttons.binding = [
+            binding(3, SystemShortcut.mouseGestureNavigation.identifier), binding(4, SystemShortcut.shortcutRing.identifier),
+        ]
         let (_, part) = try buttonsPart()
-        XCTAssertEqual(part.rows.first?.isEnabled, false)
-        XCTAssertEqual(part.rows.first?.explanation, "Everywhere: " + SystemShortcut.mouseGestureNavigation.localizedName)
+        XCTAssertEqual(part.rows.map(\.isEnabled), [true, true])
+        XCTAssertEqual(part.rows.map(\.explanation), [
+            "Everywhere: " + SystemShortcut.mouseGestureNavigation.localizedName, "Everywhere: " + SystemShortcut.shortcutRing.localizedName,
+        ])
     }
 
     // MARK: - The Gestures part

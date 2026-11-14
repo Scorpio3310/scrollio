@@ -10,8 +10,10 @@
 //  connected mouse, "Record a Button or Key…" (the Buttons pane's recorder) and the
 //  buttons the Buttons pane has an action for; a new row starts with the action it has
 //  everywhere, and its menu opens. "−" (or Delete) gives the button back to Buttons, and
-//  the window's Undo takes it again. What opens the Shortcut Ring and Gesture Navigation
-//  stay general: their buttons are not offered, and the two actions are not in the menus.
+//  the window's Undo takes it again. Nothing stays general: every button of Buttons is
+//  offered, the one that opens the Shortcut Ring or runs Gesture Navigation there too, and
+//  a row's menu is the Buttons pane's ("Show Gesture Settings" shows the app's Gestures
+//  part).
 //
 //  A Logitech button that no binding of Buttons uses is the mouse's own in every other
 //  app: Scrollio asks the mouse for it only while this app is in front
@@ -47,6 +49,9 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// or Redo of a removal asks it when it runs, maybe after this page closed and the
     /// app's page opened again: it must not hold the page. nil: this part, while it is there.
     var partShowing: ((Application) -> ApplicationButtonsViewController?)?
+    /// "Show Gesture Settings" was chosen in a row's menu: the page shows the app's
+    /// Gestures part.
+    var onGestureSettingsRequested: (() -> Void)?
 
     // MARK: - Seams (tests and screenshots replace them)
 
@@ -216,10 +221,6 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
             } else {
                 row = makeRow(for: binding, title: title, note: note)
             }
-            Self.leaveOutGeneralOnlyActions(in: row.pullDown)
-            // A binding on a button that stays general (Buttons gave it the ring or Gesture
-            // Navigation since) is kept, and not used: dimmed.
-            row.isEnabled = ApplicationButtons.isUsable(binding, general: general)
             shown.append(row)
         }
         rows = shown
@@ -230,7 +231,8 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         }
     }
 
-    /// "Everywhere: Mission Control": what the button does in every other app.
+    /// "Everywhere: Mission Control": what the button does in every other app, named as
+    /// the Buttons pane names it ("Shortcut Ring" and "Gesture Navigation" too).
     func everywhereNote(for binding: ButtonBinding, general: [ButtonBinding]) -> ButtonRowNote {
         let generalBinding = ApplicationButtons.generalBinding(for: binding.triggerEvent, in: general)
         let action = generalBinding.flatMap { $0.isEnabled ? resolver.actionName(of: $0) : nil } ?? text("buttons-default")
@@ -249,26 +251,15 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         pullDown.onOpenTargetSelectionRequested = { [weak self] in
             self?.presentOpenTargetPopover(forRow: id)
         }
+        // The gestures this app runs are on its own page.
+        pullDown.onGestureSettingsRequested = { [weak self] in
+            self?.onGestureSettingsRequested?()
+        }
         // (No place menu here: where a numbered button is, the Buttons pane says.)
         let row = ButtonBindingRow(binding: binding, title: title, note: note, mouse: mouse, pullDown: pullDown, isStored: false)
         // Without an action the button does what it does by itself here: "Default".
         pullDown.offersDefault = true
         return row
-    }
-
-    /// The menu of an app's row has neither the Shortcut Ring nor Gesture Navigation (they
-    /// stay general) nor "Show Gesture Settings". Done again after the pull-down rebuilt
-    /// or re-showed its items.
-    static func leaveOutGeneralOnlyActions(in pullDown: ButtonActionPullDown) {
-        for item in pullDown.menu?.items ?? [] {
-            if let shortcut = item.representedObject as? SystemShortcut.Shortcut,
-               ApplicationButtons.isGeneralOnly(action: shortcut.identifier) {
-                item.isHidden = true
-            }
-            if item.representedObject as? String == ShortcutManager.MenuMarker.gestureSettings {
-                item.isHidden = true
-            }
-        }
     }
 
     // MARK: - Changing
@@ -280,14 +271,10 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         onOwnButtonsChange?()
     }
 
-    /// The action of the app's binding `id`: a listed one, a recorded key combination
-    /// (with its name and icon), or "" ("Default": the button does what it does by itself
-    /// here). The ring and Gesture Navigation are refused.
+    /// The action of the app's binding `id`: a listed one (the Shortcut Ring and Gesture
+    /// Navigation among them), a recorded key combination (with its name and icon), or ""
+    /// ("Default": the button does what it does by itself here).
     func setAction(of id: UUID, named name: String, label: ShortcutLabel? = nil) {
-        guard !ApplicationButtons.isGeneralOnly(action: name) else {
-            reloadRows()
-            return
-        }
         var own = ownBindings
         guard let index = own.firstIndex(where: { $0.id == id }) else { return }
         let old = own[index]
@@ -329,12 +316,6 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         return ownBindings.first { $0.identity == identity }
     }
 
-    /// `trigger` stays general (it opens the ring or runs Gesture Navigation in Buttons).
-    func staysGeneral(_ trigger: RecordedEvent) -> Bool {
-        return ApplicationButtons.generalOnlyTriggers(in: generalBindings)
-            .contains(ButtonBindingTriggerKey(type: trigger.type, code: trigger.code))
-    }
-
     /// What a button of the connected mouse stores: the trigger of its binding in Buttons,
     /// else what "+" of Buttons records for it on this mouse.
     func trigger(for part: ButtonsMousePart) -> RecordedEvent {
@@ -346,14 +327,15 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     }
 
     /// The "+" menu: the buttons of the connected mouse the app has no binding of its own
-    /// for, "Record a Button or Key…", then the bindings of Buttons not yet in the list.
+    /// for, "Record a Button or Key…", then the bindings of Buttons not yet in the list
+    /// (also what opens the ring or runs Gesture Navigation there).
     func makeAddMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
         var offered: [ButtonBindingIdentity] = []
         let parts = ButtonsMousePart.listed(on: mouse).compactMap { part -> (ButtonsMousePart, RecordedEvent)? in
             let trigger = trigger(for: part)
-            guard ownBinding(for: trigger) == nil, !staysGeneral(trigger), ButtonUtils.isRunnable(trigger) else { return nil }
+            guard ownBinding(for: trigger) == nil, ButtonUtils.isRunnable(trigger) else { return nil }
             return (part, trigger)
         }
         if !parts.isEmpty {
@@ -367,7 +349,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         menu.addItem(item(text("apps-buttons-add-record"), .record))
         let general = generalBindings.filter { binding in
             let trigger = binding.triggerEvent
-            return !offered.contains(binding.identity) && ownBinding(for: trigger) == nil && !staysGeneral(trigger)
+            return !offered.contains(binding.identity) && ownBinding(for: trigger) == nil
                 && ButtonUtils.isRunnable(trigger) && CellActionState(binding: binding).hasBoundAction
         }
         if !general.isEmpty {
@@ -415,7 +397,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
             list.flash(AnyHashable(existing.id))
             return existing.id
         }
-        guard !staysGeneral(trigger), ButtonUtils.isRunnable(trigger) else { return nil }
+        guard ButtonUtils.isRunnable(trigger) else { return nil }
         let added = Self.newBinding(for: trigger, general: generalBindings)
         store(ownBindings + [added])
         list.select(AnyHashable(added.id))
@@ -434,11 +416,10 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// A new binding of the app's own for `trigger`, with the action a press of it has
     /// everywhere, the one its "Everywhere" line names (`everywhereNote`): the general
     /// binding of that trigger, else the one such a press matches (a button bound without
-    /// modifier keys runs with them too); "Default" when there is none. Never the ring or
-    /// Gesture Navigation.
+    /// modifier keys runs with them too), the Shortcut Ring and Gesture Navigation too;
+    /// "Default" when there is none.
     static func newBinding(for trigger: RecordedEvent, general: [ButtonBinding]) -> ButtonBinding {
-        if let model = ApplicationButtons.generalBinding(for: trigger, in: general), model.isEnabled,
-           !ApplicationButtons.isGeneralOnly(action: model.systemShortcutName) {
+        if let model = ApplicationButtons.generalBinding(for: trigger, in: general), model.isEnabled {
             if let payload = model.openTarget {
                 return ButtonBinding(triggerEvent: trigger, openTarget: payload)
             }
@@ -562,15 +543,11 @@ extension ApplicationButtonsViewController: KeyRecorderDelegate {
         isRecorderOpen = true
     }
 
-    /// A button the app has already counts as a duplicate (the recorder says so); one that
-    /// stays general is refused, and the recorder says why.
+    /// A button the app has already counts as a duplicate (the recorder says so); every
+    /// other button or key is taken, also one that opens the ring or runs Gesture
+    /// Navigation in Buttons.
     func validateRecordedEvent(_ recorder: KeyRecorder, event: InputEvent) -> Bool {
-        let trigger = normalizedTrigger(for: event)
-        return ownBinding(for: trigger) == nil && !staysGeneral(trigger)
-    }
-
-    func refusalHint(_ recorder: KeyRecorder, event: InputEvent) -> String? {
-        return staysGeneral(normalizedTrigger(for: event)) ? text("apps-buttons-recorder-general") : nil
+        return ownBinding(for: normalizedTrigger(for: event)) == nil
     }
 
     func onEventRecorded(_ recorder: KeyRecorder, didRecordEvent event: InputEvent, isDuplicate: Bool) {
@@ -580,7 +557,7 @@ extension ApplicationButtonsViewController: KeyRecorderDelegate {
             list.flash(AnyHashable(existing.id))
             return
         }
-        pendingRecorded = isDuplicate || staysGeneral(trigger) ? nil : trigger
+        pendingRecorded = isDuplicate ? nil : trigger
     }
 
     /// The recorder closed, however: what it caught is added now.

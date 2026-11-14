@@ -8392,18 +8392,6 @@
         }
       }
     },
-    "apps-buttons-recorder-general": {
-      "comment": "An app's page, Buttons: the recorder's hint for a button that opens the Shortcut Ring or runs Gesture Navigation",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This button stays as Buttons sets it"
-          }
-        }
-      }
-    },
     "apps-buttons-note-empty": {
       "comment": "An app's page, Buttons: the line under the empty list; %@ is the app's name",
       "extractionState": "manual",
