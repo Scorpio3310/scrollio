@@ -10,12 +10,12 @@
 //  - Non-activating, borderless, never key or main (`ShortcutRingPanel`), shown with
 //    `orderFrontRegardless`, above the menu bar, the Dock and full-screen apps, on every
 //    Space, and not hidden when Scrollio is not the active app (a panel's default).
-//  - While the trigger is held the panel ignores the mouse: the hand's movement chooses
-//    (`ShortcutRingSession`) and a click goes where it would go without a ring.
-//  - Once the ring stands open the panel takes the mouse on its whole screen, so the click
-//    that chooses or dismisses reaches the ring and never the app underneath. Its clear
-//    part is filled almost invisibly for that: a pixel without any alpha lets a click
-//    through. A click acts when the button comes up.
+//  - While the ring is on the screen, held or left open, the panel takes the mouse on its
+//    whole screen, so the click that chooses or dismisses reaches the ring and never the
+//    app underneath (the window server sends the click's up where its down went). Its
+//    clear part is filled almost invisibly for that: a pixel without any alpha lets a
+//    click through. A click acts when the button comes up. The movement of a held ring
+//    comes from the motion tap, not from the panel; the wheel over the panel does nothing.
 //
 //  The ring is nine drops (`ShortcutRingDropsView`) of Liquid Glass, of the system's blurred
 //  material or drawn plainly, as the system offers and asks (`ShortcutRingAppearance`). It
@@ -174,7 +174,7 @@ final class ShortcutRingPanel: NSPanel {
 /// screen: its fill is its layer's colour, which needs no bitmap).
 final class ShortcutRingStageView: NSView {
 
-    /// The fill of the clear part while the ring stands open: enough for the window
+    /// The fill of the clear part while the ring takes clicks: enough for the window
     /// server to give the panel a click there, too little to see.
     static let clickFillAlpha: CGFloat = 0.015
 
@@ -253,7 +253,8 @@ final class ShortcutRingStageView: NSView {
     override func rightMouseUp(with event: NSEvent) { report(1, isDown: false, event) }
     override func otherMouseDown(with event: NSEvent) { report(1, isDown: true, event) }
     override func otherMouseUp(with event: NSEvent) { report(1, isDown: false, event) }
-    /// The wheel does nothing over an open ring (the panel covers what is underneath).
+    /// The wheel does nothing over a ring that is on the screen (the panel covers what is
+    /// underneath).
     override func scrollWheel(with event: NSEvent) {}
 }
 
@@ -267,7 +268,8 @@ protocol ShortcutRingPresenting: AnyObject {
     /// Shows the ring with its middle at `centre` on `screen` (event coordinates).
     func show(_ face: ShortcutRingFace, centre: CGPoint, screen: ShortcutRingScreen, lit: Int?, takesClicks: Bool)
     func light(_ place: Int?)
-    /// Whether the panel takes the mouse (the ring stands open) or ignores it (held).
+    /// Whether the panel takes the mouse (the ring's controller asks for it whenever a
+    /// ring is open) or ignores it.
     func setTakesClicks(_ takesClicks: Bool)
     /// Takes the ring off the screen at once.
     func hide()

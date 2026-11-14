@@ -138,6 +138,9 @@ nothing opens the ring until you do. The pane also sets what the eight places ho
   - Hold: press and hold the button, move the mouse towards a shortcut (it lights by
     the direction of your hand, you need not land on it), and let go. The shortcut
     runs. Back in the middle and let go: the ring closes and nothing runs.
+    While you hold the button a click is the ring's, never the app's under it: the lit
+    shortcut runs when the click comes up (nothing lit, or another mouse button: the
+    ring closes and nothing runs); a click right as you press the button does nothing.
   - Click: press the button and let go without moving. The ring stays open: point at a
     shortcut and click it. A click anywhere else (an empty place too), Esc, the button
     again, or ten seconds without moving the pointer close the ring; nothing runs.

@@ -14,6 +14,12 @@
 //    not land on a place, and it need not be able to move at all (the edge of a screen).
 //    The trigger goes up with a place lit: that place's action runs. Up in the middle
 //    after a place had been lit: the ring closes and nothing runs.
+//    A click while the trigger is held is the ring's, never the app's: it fixes what is
+//    lit when its button goes down, and when it comes up that place runs and the ring
+//    closes, as letting go would (nothing lit, or another button: it closes, nothing
+//    runs). A click that goes down in the first `quickRelease` seconds is the squeeze of
+//    the hand pressing the trigger: it means nothing and the hold goes on. A trigger let
+//    go while a click of the ring is down waits for that click: its up decides, once.
 //  - Click. The trigger goes up and nothing was ever lit, however long the press lasted:
 //    the ring stays open. Once the pointer has moved a little (`latchSlack`: a ring that
 //    was drawn away from the pointer at a screen edge must not light, or run, the place
@@ -75,6 +81,9 @@ struct ShortcutRingSession {
     private enum Press: Equatable {
         case choose(Int)
         case dismiss
+        /// Nothing: a click in the first moments of a hold (the squeeze of a hand that
+        /// presses the trigger).
+        case nothing
     }
 
     /// The movement of the first moments after the press is the press itself pushing
@@ -116,6 +125,10 @@ struct ShortcutRingSession {
     /// Esc's press closed the ring: its release is the ring's too, so that the app in
     /// front never sees an up without its down.
     private var swallowsEscapeRelease = false
+    /// The trigger came up during the hold while a click of the ring was down: that
+    /// click's up decides what the release would have (and when).
+    private var triggerWentUp = false
+    private var triggerWentUpAt: TimeInterval = 0
 
     var isOpen: Bool {
         return phase != .closed
@@ -135,6 +148,13 @@ struct ShortcutRingSession {
         return nil
     }
 
+    /// During a hold: a click of the ring is down that will close it, or the trigger is
+    /// up already. What is lit stays as it is, whatever the hand (or the click's own
+    /// jerk) does.
+    private var heldChoiceIsFixed: Bool {
+        return triggerWentUp || pressedButtons.values.contains { $0 != .nothing }
+    }
+
     // MARK: The trigger
 
     /// The trigger went down (never a key's auto-repeat: the caller drops those).
@@ -143,7 +163,9 @@ struct ShortcutRingSession {
     mutating func triggerPressed(at time: TimeInterval, pointer: CGPoint, screen: CGRect, filled: [Bool]) -> [Command] {
         switch phase {
         case .held:
-            // A second trigger, or a down that came twice: the hold goes on.
+            // A second trigger, or a down that came twice: the hold goes on (and a trigger
+            // that came up while a click was down is down again: its own release counts).
+            triggerWentUp = false
             return []
         case .latched:
             // The trigger again closes a ring that was left open.
@@ -159,6 +181,7 @@ struct ShortcutRingSession {
             lit = nil
             latchPointer = nil
             pressedButtons.removeAll()
+            triggerWentUp = false
             centre = ShortcutRingGeometry.centre(forPointer: pointer, in: screen)
             return [.open(centre: centre)]
         }
@@ -169,6 +192,19 @@ struct ShortcutRingSession {
     mutating func triggerReleased(at time: TimeInterval, isMadeUp: Bool = false) -> [Command] {
         guard phase == .held else { return [] }
         guard !isMadeUp else { return close() }
+        // A click of the ring is down: its up decides, and nothing runs while a button is
+        // down (a place can itself be a click).
+        guard pressedButtons.isEmpty else {
+            triggerWentUp = true
+            triggerWentUpAt = time
+            return []
+        }
+        return letGo(at: time)
+    }
+
+    /// The trigger is up and no click of the ring is down: what the release means.
+    private mutating func letGo(at time: TimeInterval) -> [Command] {
+        triggerWentUp = false
         // What is lit runs.
         if let place = lit {
             return close() + [.run(place)]
@@ -213,7 +249,7 @@ struct ShortcutRingSession {
         case .closed:
             return []
         case .held:
-            guard time - pressTime >= Self.pressGrace else { return [] }
+            guard time - pressTime >= Self.pressGrace, !heldChoiceIsFixed else { return [] }
             travel = ShortcutRingGeometry.travel(travel, movedBy: delta)
             return relightForTravel(at: time)
         case .latched:
@@ -230,10 +266,28 @@ struct ShortcutRingSession {
 
     // MARK: Clicks and Esc
 
-    /// A pointer button went down on the ring's panel at `location`: 0 the left button,
-    /// anything else another one. Nothing happens yet: a click acts when it comes up.
-    mutating func buttonPressed(_ button: Int, at location: CGPoint) -> [Command] {
-        guard phase == .latched else { return [] }
+    /// A pointer button went down on the ring's panel at `location` and `time`: 0 the
+    /// left button, anything else another one. Nothing happens yet: a click acts when it
+    /// comes up.
+    mutating func buttonPressed(_ button: Int, at location: CGPoint, time: TimeInterval) -> [Command] {
+        switch phase {
+        case .closed:
+            return []
+        case .held:
+            // Held, the hand chose, not the pointer (it may stand still in the middle, or
+            // off the ring): the left button takes what is lit, anything else closes. In
+            // the first moments a click is the squeeze of the press and means nothing.
+            if time - pressTime < Self.quickRelease {
+                pressedButtons[button] = .nothing
+            } else if button == 0, let place = lit {
+                pressedButtons[button] = .choose(place)
+            } else {
+                pressedButtons[button] = .dismiss
+            }
+            return []
+        case .latched:
+            break
+        }
         pointer = location
         // Any other button closes the ring, and so does a click before the pointer has
         // moved at all since the ring was left open (it was not aimed at anything).
@@ -248,14 +302,20 @@ struct ShortcutRingSession {
         return relight(place)
     }
 
-    /// A pointer button came up: what its press meant happens now.
+    /// A pointer button came up: what its press meant happens now. The up of a press the
+    /// ring did not see, or of one whose ring has closed since, means nothing.
     mutating func buttonReleased(_ button: Int) -> [Command] {
-        guard let press = pressedButtons.removeValue(forKey: button), phase == .latched else { return [] }
+        guard let press = pressedButtons.removeValue(forKey: button), isOpen else { return [] }
         switch press {
         case .choose(let place):
             return close() + [.run(place)]
         case .dismiss:
             return close()
+        case .nothing:
+            // The squeeze means nothing. A trigger that came up meanwhile has its say now
+            // that no click of the ring is down.
+            guard phase == .held, triggerWentUp, pressedButtons.isEmpty else { return [] }
+            return letGo(at: triggerWentUpAt)
         }
     }
 
@@ -283,7 +343,8 @@ struct ShortcutRingSession {
         case .closed:
             return []
         case .held:
-            return time - pressTime >= Self.holdLimit ? close() : relightForTravel(at: time)
+            if time - pressTime >= Self.holdLimit { return close() }
+            return heldChoiceIsFixed ? [] : relightForTravel(at: time)
         case .latched:
             return time - lastMovement >= Self.idleLimit ? close() : []
         }
@@ -320,6 +381,7 @@ struct ShortcutRingSession {
         phase = .closed
         lit = nil
         pressedButtons.removeAll()
+        triggerWentUp = false
         travel = .zero
         return [.close]
     }

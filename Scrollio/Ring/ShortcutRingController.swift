@@ -17,11 +17,13 @@
 //  - The pointer over a ring that stands open: no event tap. A timer looks where the
 //    pointer is, and stops with the ring. No pointer event of the Mac waits on Scrollio
 //    while a ring stands open.
-//  - The click that chooses or dismisses: the panel itself takes it. A click that goes
-//    to another app all the same (on another screen, where the panel is not; or on this
-//    one, should the panel not have taken it), or to a window of Scrollio's own on another
-//    screen, closes the ring and runs nothing: while a ring stands open, and only then,
-//    two monitors hear of such clicks.
+//  - The click that chooses or dismisses, held or left open: the panel itself takes it
+//    (the window server gives the panel the click's up with its down), so the app
+//    underneath gets neither. A click that goes to another app all the same (on another
+//    screen, where the panel is not; on this one before the panel is on screen, or should
+//    the panel not have taken it), or to a window of Scrollio's own on another screen,
+//    closes the ring and runs nothing: while a ring is open, and only then, two monitors
+//    hear of such clicks.
 //  - Esc: the keys tap, which is kept running while a ring is open
 //    (`InputProcessor.needsKeyEvents`).
 //
@@ -407,10 +409,15 @@ final class ShortcutRingController {
     private var pressPointer = CGPoint.zero
     private var neededKeys = false
     private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
-    /// Hears of clicks that went to other apps, while a ring stands open.
+    /// Hears of clicks that went to other apps, while a ring is open.
     private var clickWatch: Any?
     /// The line about a click the panel did not take is written once per run.
     private var didLogMissedClick = false
+    /// The ring that is open is on the screen (it is shown a turn after the press).
+    private var isShown = false
+    /// The ring closes at the up of a click that went down while the trigger was held:
+    /// the log says so.
+    private var closesByAHeldClick = false
 
     init(environment: Environment = .system, presenter: ShortcutRingPresenting = ShortcutRingPanelPresenter()) {
         self.environment = environment
@@ -545,22 +552,26 @@ final class ShortcutRingController {
     private func button(_ button: Int, isDown: Bool, at location: CGPoint) {
         assertMainThread()
         if isDown {
-            perform(session.buttonPressed(button, at: location))
+            perform(session.buttonPressed(button, at: location, time: environment.now()))
         } else {
+            closesByAHeldClick = session.phase == .held
             perform(session.buttonReleased(button))
+            closesByAHeldClick = false
         }
     }
 
-    /// A mouse button went down and the click went to another app, while a ring stands
-    /// open: the ring closes and runs nothing. On another screen that is how a click
-    /// beside the ring looks. On the ring's own screen the panel should have taken the
-    /// click: it did not, the app underneath got it, and choosing a shortcut on top of
-    /// that would act on a click the user did not make there; the log says so.
+    /// A mouse button went down and the click went to another app, while a ring is open:
+    /// the ring closes and runs nothing. On another screen that is how a click beside the
+    /// ring looks (a pointer that is not kept still can get there during a hold), and so
+    /// does a click in the moment before a held ring is on the screen. On the ring's own
+    /// screen, once it is there, the panel should have taken the click: it did not, the
+    /// app underneath got it, and choosing a shortcut on top of that would act on a click
+    /// the user did not make there; the log says so.
     func clickWentElsewhere(in window: NSWindow? = nil) {
         assertMainThread()
         // A click on the ring's own panel is the ring's (the panel reports it itself).
-        guard session.phase == .latched, !presenter.owns(window) else { return }
-        if screen.frame.contains(environment.pointerLocation()), !didLogMissedClick {
+        guard session.isOpen, !presenter.owns(window) else { return }
+        if isShown, screen.frame.contains(environment.pointerLocation()), !didLogMissedClick {
             didLogMissedClick = true
             environment.logProblem("Shortcut Ring: a click on the ring's screen went to the app under it "
                 + "(the panel did not take it); the ring closed without running anything")
@@ -633,10 +644,9 @@ final class ShortcutRingController {
                 environment.schedule { [weak self] in
                     guard let self, self.showGeneration == generation, self.session.isOpen else { return }
                     let face = self.faceForShowing()
-                    self.presenter.show(
-                        face, centre: centre, screen: self.screen,
-                        lit: self.session.lit, takesClicks: self.session.phase == .latched
-                    )
+                    // Held or left open, a click on its screen is the ring's.
+                    self.presenter.show(face, centre: centre, screen: self.screen, lit: self.session.lit, takesClicks: true)
+                    self.isShown = true
                 }
                 // A hand that stopped between the dead zone and twice of it lights its
                 // place the moment the first moments are over, not at the timer's next look.
@@ -656,6 +666,7 @@ final class ShortcutRingController {
             case .close:
                 showGeneration += 1
                 presenter.hide()
+                isShown = false
                 closed = true
             case .run(let place):
                 let chosen = ring[place]
@@ -673,7 +684,8 @@ final class ShortcutRingController {
             }
         }
         if closed {
-            environment.log(ran.map { "Shortcut Ring: closed, ran \($0)" } ?? "Shortcut Ring: closed, nothing ran")
+            let how = closesByAHeldClick ? " (a click during the hold)" : ""
+            environment.log((ran.map { "Shortcut Ring: closed, ran \($0)" } ?? "Shortcut Ring: closed, nothing ran") + how)
             if !faceIsComplete {
                 completeFaceLater()
             }
@@ -758,7 +770,7 @@ final class ShortcutRingController {
         guard phase != timerPhase else { return }
         timerPhase = phase
         stopTimer()
-        if phase == .latched {
+        if phase != .closed {
             if clickWatch == nil {
                 clickWatch = environment.watchClicksElsewhere { [weak self] window in
                     self?.clickWentElsewhere(in: window)
@@ -772,7 +784,7 @@ final class ShortcutRingController {
         case .closed:
             break
         case .held:
-            presenter.setTakesClicks(false)
+            presenter.setTakesClicks(true)
             startTimer(every: Self.holdCheckInterval)
         case .latched:
             presenter.setTakesClicks(true)

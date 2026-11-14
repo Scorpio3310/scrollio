@@ -727,7 +727,7 @@ final class ShortcutRingSessionTests: XCTestCase {
         XCTAssertEqual(session.phase, .latched)
         XCTAssertEqual(session.pointerMoved(by: .zero, to: CGPoint(x: 4, y: 502), at: pressed + 0.7), [], "a tremble is no movement")
         var clicked = session
-        XCTAssertEqual(clicked.buttonPressed(0, at: CGPoint(x: 4, y: 502)), [])
+        XCTAssertEqual(clicked.buttonPressed(0, at: CGPoint(x: 4, y: 502), time: 11), [])
         XCTAssertEqual(clicked.buttonReleased(0), [.close])
         // Moved a little into the ring: now the place under the pointer lights.
         XCTAssertEqual(session.pointerMoved(by: .zero, to: CGPoint(x: 12, y: 500), at: pressed + 0.8), [.light(6)])
@@ -754,7 +754,7 @@ final class ShortcutRingSessionTests: XCTestCase {
     func testAClickOnAPlaceRunsItWhenTheButtonComesUp() {
         var session = latched()
         XCTAssertEqual(session.pointerMoved(by: .zero, to: place(1, of: session), at: 11), [.light(1)])
-        XCTAssertEqual(session.buttonPressed(0, at: place(1, of: session)), [])
+        XCTAssertEqual(session.buttonPressed(0, at: place(1, of: session), time: 11), [])
         XCTAssertEqual(session.phase, .latched, "nothing runs while the button is down")
         XCTAssertEqual(session.buttonReleased(0), [.close, .run(1)])
         XCTAssertEqual(session.phase, .closed)
@@ -764,14 +764,14 @@ final class ShortcutRingSessionTests: XCTestCase {
     /// anything: it closes the ring, whatever stands under the pointer.
     func testAClickBeforeThePointerMovedChoosesNothing() {
         var session = latched()
-        XCTAssertEqual(session.buttonPressed(0, at: place(6, of: session)), [])
+        XCTAssertEqual(session.buttonPressed(0, at: place(6, of: session), time: 11), [])
         XCTAssertEqual(session.buttonReleased(0), [.close])
     }
 
     func testAClickOutsideOrInTheMiddleClosesWhenItComesUpAndRunsNothing() {
         for point in [CGPoint(x: 1300, y: 200), start] {
             var session = latched()
-            XCTAssertEqual(session.buttonPressed(0, at: point), [])
+            XCTAssertEqual(session.buttonPressed(0, at: point, time: 11), [])
             XCTAssertEqual(session.phase, .latched)
             XCTAssertEqual(session.buttonReleased(0), [.close])
             XCTAssertEqual(session.phase, .closed)
@@ -785,31 +785,187 @@ final class ShortcutRingSessionTests: XCTestCase {
         filled[0] = false
         var session = latched(filled: filled)
         XCTAssertEqual(session.pointerMoved(by: .zero, to: place(0, of: session), at: 11), [], "an empty place does not light")
-        XCTAssertEqual(session.buttonPressed(0, at: place(0, of: session)), [])
+        XCTAssertEqual(session.buttonPressed(0, at: place(0, of: session), time: 11), [])
         XCTAssertEqual(session.buttonReleased(0), [.close])
         XCTAssertEqual(session.phase, .closed)
     }
 
     func testAnyOtherButtonClosesTheRing() {
         var session = latched()
-        XCTAssertEqual(session.buttonPressed(1, at: place(2, of: session)), [])
+        XCTAssertEqual(session.buttonPressed(1, at: place(2, of: session), time: 11), [])
         XCTAssertEqual(session.buttonReleased(1), [.close])
     }
 
     func testAPlaceWhoseClickIsDownStaysChosenWhileThePointerMoves() {
         var session = latched()
         _ = session.pointerMoved(by: .zero, to: place(2, of: session), at: 11)
-        _ = session.buttonPressed(0, at: place(2, of: session))
+        _ = session.buttonPressed(0, at: place(2, of: session), time: 11)
         XCTAssertEqual(session.pointerMoved(by: .zero, to: place(4, of: session), at: 11), [])
         XCTAssertEqual(session.buttonReleased(0), [.close, .run(2)])
     }
 
-    /// While the trigger is held, a click is not the ring's.
-    func testAClickDuringAHoldMeansNothingToTheRing() {
+    // MARK: A click while the trigger is held
+
+    /// While the trigger is held a click is the ring's: when it comes up, what is lit runs
+    /// and the ring closes, as letting go would. The lit place, not the one under the
+    /// pointer (held, the pointer may stand still in the middle or anywhere else). The
+    /// trigger's release afterwards runs nothing more.
+    func testAClickDuringAHoldRunsWhatIsLitWhenItComesUp() {
         var session = opened()
-        XCTAssertEqual(session.buttonPressed(0, at: start), [])
+        move(&session, by: CGPoint(x: 60, y: 0))
+        XCTAssertEqual(session.lit, 2)
+        XCTAssertEqual(session.buttonPressed(0, at: place(6, of: session), time: pressed + 0.6), [])
+        XCTAssertEqual(session.phase, .held, "nothing runs while the button is down")
+        XCTAssertEqual(session.buttonReleased(0), [.close, .run(2)])
+        XCTAssertEqual(session.phase, .closed)
+        XCTAssertEqual(session.triggerReleased(at: pressed + 0.9), [], "the release does not run it again")
+        XCTAssertEqual(session.phase, .closed)
+    }
+
+    /// With nothing lit, a click during the hold closes the ring and runs nothing; so does
+    /// any other button, whatever is lit.
+    func testAClickDuringAHoldWithNothingLitOrAnotherButtonClosesAndRunsNothing() {
+        var still = opened()
+        XCTAssertEqual(still.buttonPressed(0, at: start, time: pressed + 0.5), [])
+        XCTAssertEqual(still.buttonReleased(0), [.close])
+        XCTAssertEqual(still.triggerReleased(at: pressed + 0.8), [], "it does not stay open")
+        XCTAssertEqual(still.phase, .closed)
+
+        var back = opened()
+        move(&back, by: CGPoint(x: 40, y: 0))
+        move(&back, by: CGPoint(x: -38, y: 0))
+        XCTAssertNil(back.lit)
+        _ = back.buttonPressed(0, at: start, time: pressed + 0.6)
+        XCTAssertEqual(back.buttonReleased(0), [.close])
+
+        var right = opened()
+        move(&right, by: CGPoint(x: 60, y: 0))
+        XCTAssertEqual(right.buttonPressed(1, at: start, time: pressed + 0.6), [])
+        XCTAssertEqual(right.lit, 2)
+        XCTAssertEqual(right.buttonReleased(1), [.close])
+        XCTAssertEqual(right.triggerReleased(at: pressed + 0.9), [])
+    }
+
+    /// From the click's down to its up what is lit stays lit: the hand moving on, the
+    /// click's own jerk and the time that lights a hand that stopped short change nothing.
+    func testWhatIsLitWhenAHeldClickGoesDownIsWhatRuns() {
+        var session = opened()
+        move(&session, by: CGPoint(x: 60, y: 0))
+        _ = session.buttonPressed(0, at: start, time: pressed + 0.6)
+        XCTAssertEqual(move(&session, by: CGPoint(x: -60, y: 70), at: pressed + 0.7), [])
+        XCTAssertEqual(session.timePassed(to: pressed + 0.8), [])
+        XCTAssertEqual(session.lit, 2)
+        XCTAssertEqual(session.buttonReleased(0), [.close, .run(2)])
+
+        // A hand that stopped short in the first moments: a click after them does not
+        // wait for the place to light, and the timer does not light it under the click.
+        var short = opened()
+        move(&short, by: CGPoint(x: 0, y: 30), at: pressed + 0.1)
+        XCTAssertNil(short.lit)
+        _ = short.buttonPressed(0, at: start, time: pressed + 0.21)
+        XCTAssertEqual(short.timePassed(to: pressed + 0.25), [])
+        XCTAssertEqual(short.buttonReleased(0), [.close])
+    }
+
+    /// A click that goes down in the first fifth of a second is the squeeze of the hand
+    /// that presses the trigger: it is taken, means nothing, and the hold goes on (the
+    /// hand still chooses, the release still runs). Whatever is lit, whatever the button.
+    func testAClickInTheFirstMomentsOfAHoldMeansNothing() {
+        var session = opened()
+        XCTAssertEqual(session.buttonPressed(0, at: start, time: pressed + 0.05), [])
+        XCTAssertEqual(session.buttonPressed(1, at: start, time: pressed + 0.19), [])
+        XCTAssertEqual(move(&session, by: CGPoint(x: 0, y: -50), at: pressed + 0.3), [.light(0)], "the hand still chooses")
         XCTAssertEqual(session.buttonReleased(0), [])
+        XCTAssertEqual(session.buttonReleased(1), [])
         XCTAssertEqual(session.phase, .held)
+        XCTAssertEqual(session.triggerReleased(at: pressed + 0.5), [.close, .run(0)])
+
+        // A flick lit a place already: the squeeze does not run it.
+        var flick = opened()
+        move(&flick, by: CGPoint(x: 50, y: 0), at: pressed + 0.06)
+        XCTAssertEqual(flick.lit, 2)
+        _ = flick.buttonPressed(0, at: start, time: pressed + 0.1)
+        XCTAssertEqual(flick.buttonReleased(0), [])
+        XCTAssertEqual(flick.phase, .held)
+        // A click once the first moments are over is a click.
+        _ = flick.buttonPressed(0, at: start, time: pressed + 0.21)
+        XCTAssertEqual(flick.buttonReleased(0), [.close, .run(2)])
+    }
+
+    /// The trigger let go while a click of the ring is down: the click's up decides, once.
+    /// Until then the ring stays held (nothing runs while a button is down) and what is
+    /// lit stays lit.
+    func testATriggerLetGoWhileAHeldClickIsDownWaitsForThatClick() {
+        var lit = opened()
+        move(&lit, by: CGPoint(x: 60, y: 0))
+        _ = lit.buttonPressed(0, at: start, time: pressed + 0.6)
+        XCTAssertEqual(lit.triggerReleased(at: pressed + 0.7), [])
+        XCTAssertEqual(lit.phase, .held)
+        XCTAssertEqual(move(&lit, by: CGPoint(x: 0, y: 60), at: pressed + 0.8), [])
+        XCTAssertEqual(lit.buttonReleased(0), [.close, .run(2)])
+
+        // Nothing lit: the click closes the ring; it does not stay open.
+        var still = opened()
+        _ = still.buttonPressed(0, at: start, time: pressed + 0.5)
+        XCTAssertEqual(still.triggerReleased(at: pressed + 0.6), [])
+        XCTAssertEqual(still.phase, .held)
+        XCTAssertEqual(still.buttonReleased(0), [.close])
+
+        // Another button: the same.
+        var right = opened()
+        move(&right, by: CGPoint(x: 60, y: 0))
+        _ = right.buttonPressed(1, at: start, time: pressed + 0.6)
+        XCTAssertEqual(right.triggerReleased(at: pressed + 0.7), [])
+        XCTAssertEqual(right.buttonReleased(1), [.close])
+    }
+
+    /// A squeeze that is still down when the trigger is let go: the release waits for its
+    /// up and then means what it would have meant (a place lit by a flick runs, nothing
+    /// lit leaves the ring open), so that nothing runs while a button is down.
+    func testATriggerLetGoDuringASqueezeTakesEffectAtItsUp() {
+        var still = opened()
+        _ = still.buttonPressed(0, at: start, time: pressed + 0.05)
+        XCTAssertEqual(still.triggerReleased(at: pressed + 0.1), [])
+        XCTAssertEqual(still.phase, .held)
+        XCTAssertEqual(still.buttonReleased(0), [])
+        XCTAssertEqual(still.phase, .latched, "nothing was lit: the ring stays open")
+
+        var flick = opened()
+        move(&flick, by: CGPoint(x: 50, y: 0), at: pressed + 0.06)
+        _ = flick.buttonPressed(0, at: start, time: pressed + 0.08)
+        XCTAssertEqual(flick.triggerReleased(at: pressed + 0.12), [])
+        XCTAssertEqual(move(&flick, by: CGPoint(x: -50, y: 60), at: pressed + 0.15), [], "the release chose already")
+        XCTAssertEqual(flick.buttonReleased(0), [.close, .run(2)])
+
+        // The trigger down again before the squeeze is up: its own release counts.
+        var again = opened()
+        _ = again.buttonPressed(0, at: start, time: pressed + 0.05)
+        _ = again.triggerReleased(at: pressed + 0.1)
+        XCTAssertEqual(again.triggerPressed(at: pressed + 0.15, pointer: start, screen: screen, filled: allFilled), [])
+        XCTAssertEqual(again.buttonReleased(0), [])
+        XCTAssertEqual(again.phase, .held)
+        move(&again, by: CGPoint(x: 60, y: 0))
+        XCTAssertEqual(again.triggerReleased(at: pressed + 1), [.close, .run(2)])
+    }
+
+    /// Whatever ends a hold while its click is down runs nothing, and that click's up
+    /// then means nothing either.
+    func testWhatEndsAHoldWhileItsClickIsDownLeavesItsUpNothingToDo() {
+        let ends: [(String, (inout ShortcutRingSession) -> [Command])] = [
+            ("a made-up release", { $0.triggerReleased(at: 10.7, isMadeUp: true) }),
+            ("Esc", { $0.escapePressed().commands }),
+            ("the hold's limit", { $0.timePassed(to: 10 + ShortcutRingSession.holdLimit) }),
+            ("cancel", { $0.cancel() }),
+        ]
+        for (name, end) in ends {
+            var session = opened()
+            move(&session, by: CGPoint(x: 60, y: 0))
+            _ = session.buttonPressed(0, at: start, time: pressed + 0.6)
+            XCTAssertEqual(end(&session), [.close], name)
+            XCTAssertEqual(session.buttonReleased(0), [], name)
+            XCTAssertEqual(session.triggerReleased(at: pressed + 1), [], name)
+            XCTAssertEqual(session.phase, .closed, name)
+        }
     }
 
     func testEscClosesAndItsReleaseIsSwallowedToo() {
@@ -876,7 +1032,7 @@ final class ShortcutRingSessionTests: XCTestCase {
     func testCancelClosesAndWaitsForNothing() {
         var session = latched()
         _ = session.pointerMoved(by: .zero, to: place(2, of: session), at: 11)
-        _ = session.buttonPressed(0, at: place(2, of: session))
+        _ = session.buttonPressed(0, at: place(2, of: session), time: 11)
         XCTAssertEqual(session.cancel(), [.close])
         XCTAssertFalse(session.needsKeys)
         XCTAssertEqual(session.cancel(), [], "a closed ring has nothing to close")
@@ -889,8 +1045,12 @@ final class ShortcutRingSessionTests: XCTestCase {
         move(&held, by: CGPoint(x: 0, y: 60))
         var clicked = latched()
         _ = clicked.pointerMoved(by: .zero, to: place(7, of: clicked), at: 11)
-        _ = clicked.buttonPressed(0, at: place(7, of: clicked))
-        for commands in [held.triggerReleased(at: pressed + 1), clicked.buttonReleased(0)] {
+        _ = clicked.buttonPressed(0, at: place(7, of: clicked), time: 11)
+        var heldClick = opened()
+        move(&heldClick, by: CGPoint(x: 60, y: 0))
+        _ = heldClick.buttonPressed(0, at: start, time: pressed + 0.6)
+        _ = heldClick.triggerReleased(at: pressed + 0.7)
+        for commands in [held.triggerReleased(at: pressed + 1), clicked.buttonReleased(0), heldClick.buttonReleased(0)] {
             let close = commands.firstIndex(of: .close)
             let run = commands.firstIndex { if case .run = $0 { return true } else { return false } }
             XCTAssertNotNil(close)

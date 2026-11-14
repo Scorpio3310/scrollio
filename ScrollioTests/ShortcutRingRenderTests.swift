@@ -766,7 +766,7 @@ final class ShortcutRingRenderTests: XCTestCase {
                 if happens(tapDownAt + pressMarkLasts + 0.1) { caption = "Point at a shortcut …" }
                 if happens(clickCaptionAt) { caption = "… and click it" }
                 if happens(clickDownAt) {
-                    handle(session.buttonPressed(0, at: now), at: time)
+                    handle(session.buttonPressed(0, at: now, time: time), at: time)
                 }
                 if happens(clickUpAt) {
                     handle(session.buttonReleased(0), at: time)

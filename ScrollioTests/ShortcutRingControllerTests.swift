@@ -205,7 +205,8 @@ final class ShortcutRingControllerTests: XCTestCase {
     }
 
     /// The press comes inside an event callback: the panel is shown on the next turn of
-    /// the main queue, with the stored ring, on the pointer's screen, not taking clicks.
+    /// the main queue, with the stored ring, on the pointer's screen, taking clicks (held,
+    /// a click is the ring's too).
     func testThePressShowsTheRingOnTheNextTurn() {
         controller.triggerPressed(by: RingHarness.button(.down))
         XCTAssertTrue(controller.isOpen)
@@ -216,7 +217,8 @@ final class ShortcutRingControllerTests: XCTestCase {
         XCTAssertEqual(harness.presenter.shown.count, 1)
         XCTAssertEqual(shown?.centre, CGPoint(x: 700, y: 500))
         XCTAssertEqual(shown?.screen, harness.screen)
-        XCTAssertEqual(shown?.takesClicks, false, "held: a click is not the ring's")
+        XCTAssertEqual(shown?.takesClicks, true, "held: a click is the ring's")
+        XCTAssertEqual(harness.presenter.takesClicks, true)
         XCTAssertEqual(shown?.face.places.map { $0.title }.first, SystemShortcut.missionControl.localizedName)
         XCTAssertEqual(shown?.face.filled, Array(repeating: true, count: 8))
     }
@@ -616,15 +618,14 @@ final class ShortcutRingControllerTests: XCTestCase {
 
     /// A click that went to another app while the ring stands open (on another screen,
     /// where the panel is not) closes the ring. Clicks elsewhere are heard of only while a
-    /// ring stands open.
+    /// ring is open: from the press on, one watch for the hold and the open ring.
     func testAClickThatWentToAnotherAppClosesTheRingAndRunsNothing() {
+        XCTAssertEqual(harness.clickWatches, 0, "no ring: nothing listens to the Mac's clicks")
         controller.triggerPressed(by: RingHarness.button(.down))
-        XCTAssertEqual(harness.clickWatches, 0, "held: nothing listens to the Mac's clicks")
-        controller.clickWentElsewhere()
-        XCTAssertTrue(controller.isOpen, "a click during a hold is not the ring's business")
+        XCTAssertEqual(harness.clickWatches, 1, "held: it does")
         controller.triggerReleased(isMadeUp: false)
         harness.runScheduled()
-        XCTAssertEqual(harness.clickWatches, 1, "the ring stands open: now it does")
+        XCTAssertEqual(harness.clickWatches, 1, "the same watch for the ring that stands open")
 
         harness.pointer = CGPoint(x: 2400, y: 300)   // on a screen to the right
         harness.clearLog()
@@ -634,6 +635,127 @@ final class ShortcutRingControllerTests: XCTestCase {
         XCTAssertEqual(harness.log, ["hide"])
         XCTAssertEqual(harness.stoppedClickWatches, ["watch 1"], "and with the ring the listening ends")
         XCTAssertTrue(harness.problems.isEmpty)
+    }
+
+    /// During a hold the pointer (when it is not kept still) can reach another screen,
+    /// where the panel is not: a click there goes to the app there, and the ring closes
+    /// and runs nothing, the trigger's release neither. So does a click in the moment
+    /// before a held ring is on the screen; neither is the panel's fault.
+    func testAClickThatWentToAnotherAppDuringAHoldClosesTheRingAndRunsNothing() {
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        harness.moveHand(by: CGPoint(x: -50, y: 50))
+        XCTAssertEqual(controller.session.lit, 5)
+        harness.pointer = CGPoint(x: 2400, y: 300)
+        harness.clearLog()
+        controller.clickWentElsewhere()
+        XCTAssertFalse(controller.isOpen)
+        controller.triggerReleased(isMadeUp: false)
+        harness.runScheduled()
+        XCTAssertEqual(harness.log, ["hide"], "nothing runs")
+        XCTAssertEqual(harness.stoppedClickWatches, ["watch 1"])
+
+        harness.pointer = CGPoint(x: 700, y: 500)
+        controller.triggerPressed(by: RingHarness.button(.down))
+        controller.clickWentElsewhere()
+        XCTAssertFalse(controller.isOpen)
+        harness.runScheduled()
+        XCTAssertEqual(harness.presenter.shown.count, 1, "the ring that is gone is not shown")
+        XCTAssertTrue(harness.problems.isEmpty)
+    }
+
+    // MARK: A click while the trigger is held
+
+    /// The owner's hand on an MX Master 4: the thumb holds the ring's button, the index
+    /// finger clicks. The click is the ring's: at its up the lit place runs (with the
+    /// pointer kept still, it stands in the middle, on no place) and the pointer is let go
+    /// then, not at the down; the trigger's release afterwards runs nothing more.
+    func testAClickDuringAHoldRunsTheLitPlaceAtItsUpAndOnlyOnce() {
+        harness.ring.freezePointer = true
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        harness.moveHand(by: CGPoint(x: -50, y: 50))
+        XCTAssertEqual(harness.presenter.lit.last, 5)
+        harness.clearLog()
+
+        harness.presenter.onButton?(0, true, CGPoint(x: 700, y: 500))
+        XCTAssertEqual(harness.log, [], "nothing happens while the button is down")
+        XCTAssertEqual(harness.pointerLocks, ["lock"])
+        harness.presenter.onButton?(0, false, CGPoint(x: 700, y: 500))
+        XCTAssertEqual(harness.log, ["hide"])
+        XCTAssertEqual(harness.pointerLocks, ["lock", "unlock"])
+        XCTAssertFalse(controller.isOpen)
+        harness.runScheduled()
+        XCTAssertEqual(harness.log, ["hide", "run copy"])
+        XCTAssertEqual(harness.logLines.last, "Shortcut Ring: closed, ran copy (a click during the hold)")
+
+        controller.triggerReleased(isMadeUp: false)
+        harness.runScheduled()
+        XCTAssertEqual(harness.log, ["hide", "run copy"], "the release runs nothing more")
+        XCTAssertFalse(controller.isOpen)
+    }
+
+    /// The trigger let go before the click is up: the ring stays held (the pointer kept
+    /// still, the movement still read) until the click's up, which runs the place once.
+    func testATriggerLetGoBeforeTheHeldClickIsUpWaitsForTheClick() {
+        harness.ring.freezePointer = true
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        harness.moveHand(by: CGPoint(x: -50, y: 50))
+        harness.clearLog()
+        harness.presenter.onButton?(0, true, CGPoint(x: 700, y: 500))
+        let refreshes = harness.motionTapRefreshes
+        controller.triggerReleased(isMadeUp: false)
+        XCTAssertTrue(controller.isHeld)
+        XCTAssertEqual(harness.log, [])
+        XCTAssertEqual(harness.pointerLocks, ["lock"])
+        XCTAssertEqual(harness.motionTapRefreshes, refreshes)
+        harness.moveHand(by: CGPoint(x: 60, y: 0))
+        harness.presenter.onButton?(0, false, CGPoint(x: 700, y: 500))
+        harness.runScheduled()
+        XCTAssertEqual(harness.log, ["hide", "run copy"])
+        XCTAssertEqual(harness.pointerLocks, ["lock", "unlock"])
+        XCTAssertFalse(controller.isOpen)
+    }
+
+    /// With nothing lit, or with another button, a click during the hold closes the ring
+    /// and runs nothing; the release then neither runs nor leaves a ring open.
+    func testAClickDuringAHoldWithNothingLitOrAnotherButtonRunsNothing() {
+        for (button, moves) in [(0, false), (1, true)] {
+            harness = RingHarness()
+            controller.triggerPressed(by: RingHarness.button(.down))
+            harness.runScheduled()
+            harness.now += 0.3
+            if moves {
+                harness.moveHand(by: CGPoint(x: -50, y: 50))
+            }
+            harness.clearLog()
+            harness.presenter.onButton?(button, true, CGPoint(x: 700, y: 500))
+            harness.presenter.onButton?(button, false, CGPoint(x: 700, y: 500))
+            XCTAssertFalse(controller.isOpen, "button \(button)")
+            controller.triggerReleased(isMadeUp: false)
+            harness.runScheduled()
+            XCTAssertEqual(harness.log, ["hide"], "button \(button)")
+            XCTAssertFalse(controller.isOpen, "button \(button)")
+            XCTAssertEqual(harness.logLines.last, "Shortcut Ring: closed, nothing ran (a click during the hold)")
+        }
+    }
+
+    /// The squeeze: the index finger clicks as the thumb presses the trigger. A click in
+    /// the first fifth of a second is taken and means nothing: the ring stays held, and
+    /// the hand and the release choose as before.
+    func testAClickInTheFirstMomentsOfAHoldIsTakenAndMeansNothing() {
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        harness.now += 0.05
+        harness.presenter.onButton?(0, true, CGPoint(x: 700, y: 500))
+        harness.presenter.onButton?(0, false, CGPoint(x: 700, y: 500))
+        XCTAssertTrue(controller.isHeld)
+        XCTAssertEqual(harness.log, ["show"])
+        harness.moveHand(by: CGPoint(x: -50, y: 50))
+        controller.triggerReleased(isMadeUp: false)
+        harness.runScheduled()
+        XCTAssertEqual(harness.log, ["show", "hide", "run copy"])
     }
 
     /// The panel should take every click on its screen. If one reaches the app under the
@@ -952,6 +1074,40 @@ final class ShortcutRingInputTests: XCTestCase {
         XCTAssertEqual(process(RingHarness.button(.up)), .consumed)
         XCTAssertTrue(controller.isOpen, "no movement: the ring stands open")
         XCTAssertFalse(InputProcessor.shared.hasHeldShortcutRing)
+    }
+
+    /// A click during the hold and the trigger's release, in either order: the trigger's
+    /// release is the ring's (the app never sees an up without its down), the place runs
+    /// once, and while the click is still down after the release the ring is held, its
+    /// movement read, until the click's up.
+    func testAHeldClickAndTheTriggersReleaseInEitherOrderRunThePlaceOnce() {
+        bind(button: 4)
+        let click = CGPoint(x: 700, y: 500)
+        // The click first, then the trigger's release.
+        XCTAssertEqual(process(RingHarness.button(.down)), .consumed)
+        harness.runScheduled()
+        harness.moveHand(by: CGPoint(x: -50, y: 50))
+        harness.presenter.onButton?(0, true, click)
+        harness.presenter.onButton?(0, false, click)
+        XCTAssertFalse(controller.isOpen)
+        XCTAssertFalse(InputProcessor.shared.hasHeldShortcutRing)
+        XCTAssertEqual(process(RingHarness.button(.up)), .consumed, "the release of the trigger whose ring a click closed")
+        XCTAssertFalse(controller.isOpen, "it neither runs again nor opens a ring")
+
+        // The trigger's release first, then the click's up.
+        XCTAssertEqual(process(RingHarness.button(.down)), .consumed)
+        harness.runScheduled()
+        harness.moveHand(by: CGPoint(x: -50, y: 50))
+        harness.presenter.onButton?(0, true, click)
+        XCTAssertEqual(process(RingHarness.button(.up)), .consumed)
+        XCTAssertTrue(InputProcessor.shared.hasHeldShortcutRing, "held until the click is up")
+        harness.presenter.onButton?(0, false, click)
+        XCTAssertFalse(controller.isOpen)
+        XCTAssertFalse(InputProcessor.shared.hasHeldShortcutRing)
+        harness.runScheduled()
+        XCTAssertEqual(harness.log.filter { $0.hasPrefix("run") }, ["run copy", "run copy"])
+        XCTAssertEqual(process(RingHarness.button(.down)), .consumed, "the next press is a new ring")
+        XCTAssertTrue(controller.isHeld)
     }
 
     func testAButtonOverHIDPPOpensTheRingAndAMadeUpReleaseClosesIt() {
