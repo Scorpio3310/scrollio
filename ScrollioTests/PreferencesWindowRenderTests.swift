@@ -1118,18 +1118,23 @@ final class PreferencesWindowRenderTests: XCTestCase {
     /// `apps-list-marks-<appearance>.png`): Scrolling with the app's own settings; Buttons
     /// with two rows of the app's own on an MX Master 3S (one with an action, one
     /// "Default" on a Logitech button no binding of Buttons uses); Buttons without own
-    /// rows; the Shortcut Ring part with the app's own ring; the list with an app that has
-    /// all three kinds of its own, one with scrolling only and one with none.
+    /// rows; the Gestures part with the app's own gestures (a named key combination up,
+    /// Back and Forward on the sides) and with the switch alone (`app-page-gestures-own`,
+    /// `-general`); the Shortcut Ring part with the app's own ring; the list with an app
+    /// that has all four kinds of its own, one with scrolling only and one with none.
     func testRenderAppPageParts() throws {
         let stored = Options.shared.application.applications
         let savedRing = Options.shared.ring
+        let savedGesture = Options.shared.gesture
         addTeardownBlock {
             Options.shared.application.applications = stored
             Options.shared.ring = savedRing
+            Options.shared.gesture = savedGesture
             ShortcutRingController.forgetPreparedFaces()
             ButtonUtils.shared.invalidateCache()
         }
         Options.shared.ring = .default
+        Options.shared.gesture = .default
         Options.shared.buttons.binding = [
             binding(3, SystemShortcut.navigateBack.identifier),
             binding(4, SystemShortcut.missionControl.identifier),
@@ -1147,6 +1152,12 @@ final class PreferencesWindowRenderTests: XCTestCase {
         ])
         safari.setUsesGeneralRing(false, general: .default)
         safari.ring?[0] = ShortcutRingPlace(SystemShortcut.copy)
+        safari.setUsesGeneralGestures(false, general: .default)
+        var gestures = GestureActions.default
+        gestures.up = GestureAction(action: "custom::15:1179648", label: ShortcutLabel(name: "Reload", icon: .symbol("arrow.clockwise")))
+        gestures.left = GestureAction(SystemShortcut.navigateBack)
+        gestures.right = GestureAction(SystemShortcut.navigateForward)
+        safari.setOwnGestures(actions: gestures, invertHorizontal: false)
         let calculator = Application(path: "/System/Applications/Calculator.app")
         calculator.inherit = false
         let textEdit = Application(path: "/System/Applications/TextEdit.app")
@@ -1167,6 +1178,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try page("app-page-scrolling", app: safari, part: .scrolling)
         try page("app-page-buttons", app: safari, part: .buttons)
         try page("app-page-buttons-empty", app: calculator, part: .buttons)
+        try page("app-page-gestures-own", app: safari, part: .gestures)
+        try page("app-page-gestures-general", app: calculator, part: .gestures)
         try page("app-page-ring", app: safari, part: .ring)
         try renderPane(PANEL_IDENTIFIER.application, name: "apps-list-marks", afterLoad: { controller in
             (controller as? PreferencesApplicationViewController)?.list.select(calculator.path)
