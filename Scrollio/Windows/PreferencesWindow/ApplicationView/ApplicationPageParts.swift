@@ -498,16 +498,21 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
 
     /// The row of the suggested shortcuts: there while the app has a suggestion and its own
     /// ring is in use, its line saying whether the ring started from them and how many
-    /// places the layout leaves empty. True when the row came or went, or its room changed,
-    /// while the part is on screen (the page measures again).
+    /// places the layout leaves empty (of a ring that started from them, those still empty
+    /// in it: a place filled by hand is not counted; else those the reset would leave
+    /// empty). True when the row came or went, or its room changed, while the part is on
+    /// screen (the page measures again).
     private func showSuggestion() -> Bool {
         let shows = suggestion != nil && application.ownRingPlaces != nil
         var moved = suggestionRow.isHidden == shows && view.superview != nil
         suggestionRow.isHidden = !shows
         guard shows, let suggestion, let suggested = suggestedPlaces() else { return moved }
+        let started = ringStartedFromSuggestion(suggested: suggested)
+        let own = application.ownRingPlaces ?? []
         let line = Self.suggestionExplanation(
-            name: application.getName(), emptyPlaces: suggestion.placesLeftEmpty(in: suggested),
-            startedFromIt: ringStartedFromSuggestion(suggested: suggested)
+            name: application.getName(),
+            emptyPlaces: started ? suggestion.placesStillEmpty(in: suggested, own: own) : suggestion.placesLeftEmpty(in: suggested),
+            startedFromIt: started
         )
         if suggestionRow.explanation != line {
             suggestionRow.explanation = line
@@ -645,7 +650,14 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
     /// (`ownRingBody`).
     private func makeOwnRingBody() -> NSView {
         let ring = RingPreferencesViewController(application: application)
-        ring.onPlaceChange = { [weak self] in self?.resetToDefaults.settingsDidChange() }
+        ring.onPlaceChange = { [weak self] in
+            guard let self else { return }
+            self.resetToDefaults.settingsDidChange()
+            // (A place filled by hand: the line counts one empty place less.)
+            if self.showSuggestion() {
+                self.onHeightChange?()
+            }
+        }
         addChild(ring)
         ringController = ring
         let body = NSView()

@@ -592,3 +592,74 @@ final class ShortcutRingPerAppControllerTests: XCTestCase {
         XCTAssertEqual(lookUpsPerTurn, [1, 0, 0, 1, 1, 1], "never more than one place in a turn")
     }
 }
+
+// MARK: - The Suggested row of an app's Shortcut Ring part
+
+final class ApplicationRingSuggestedRowTests: XCTestCase {
+
+    private static let outlookPath = "/Applications/Microsoft Outlook.app"
+    private var savedApplications: EnhanceArray<Application>!
+    private var savedRing = ShortcutRingSettings.default
+    private var savedBindings: [ButtonBinding] = []
+
+    override func setUp() {
+        super.setUp()
+        savedApplications = Options.shared.application.applications
+        savedRing = Options.shared.ring
+        savedBindings = Options.shared.buttons.binding
+        Options.shared.application.applications = list([])
+        Options.shared.ring = .default
+        Options.shared.buttons.binding = []
+        SuggestionFixtures.install(for: self)
+        ShortcutRingSuggestions.bundleIdentifierOfApplication = { path in
+            path == Self.outlookPath ? "com.microsoft.Outlook" : SuggestionFixtures.identifiers[path]
+        }
+    }
+
+    override func tearDown() {
+        Options.shared.application.applications = savedApplications
+        Options.shared.ring = savedRing
+        Options.shared.buttons.binding = savedBindings
+        ShortcutRingController.forgetPreparedFaces()
+        savedApplications = nil
+        super.tearDown()
+    }
+
+    /// Outlook on German: the suggestion's Previous and Next Message ("[" and "]") need
+    /// Option there and stay empty; its bottom is empty on purpose.
+    private func outlookPart() throws -> (Application, ApplicationRingPartViewController) {
+        let german = try SuggestionFixtures.layout("com.apple.keylayout.German")
+        ShortcutRingSuggestions.layout = { german }
+        let outlook = Application(path: Self.outlookPath)
+        outlook.displayName = "Outlook"
+        Options.shared.application.applications.append(outlook)
+        let part = ApplicationRingPartViewController(application: outlook)
+        _ = part.view
+        part.generalRingRow.toggle.state = .off
+        part.generalRingClick(part.generalRingRow.toggle)
+        return (outlook, part)
+    }
+
+    /// The row counts the places the layout leaves empty that are still empty in the
+    /// app's ring: filled by hand, they are no longer counted (F13).
+    func testTheRowCountsOnlyThePlacesStillEmpty() throws {
+        let (outlook, part) = try outlookPart()
+        XCTAssertEqual(outlook.ownRingPlaces?[2], .empty)
+        XCTAssertEqual(outlook.ownRingPlaces?[6], .empty)
+        let ring = try XCTUnwrap(part.ringController)
+        XCTAssertTrue(try XCTUnwrap(part.suggestionRow.explanation).hasPrefix("The ring started from them. 2 places stay empty"))
+
+        ring.setPlace(ShortcutRingPlace(SystemShortcut.copy), at: 2)
+        XCTAssertTrue(try XCTUnwrap(part.suggestionRow.explanation).hasPrefix("The ring started from them. 1 place stays empty"))
+        ring.setPlace(ShortcutRingPlace(SystemShortcut.paste), at: 6)
+        XCTAssertEqual(part.suggestionRow.explanation, "The ring started from the shortcuts suggested for Outlook.")
+
+        // A ring that did not start from them says what the reset would leave empty.
+        let read = try JSONDecoder().decode(Application.self, from: JSONEncoder().encode(outlook))
+        XCTAssertFalse(try XCTUnwrap(read.ring).startedFromSuggestion)
+        Options.shared.application.applications = list([read])
+        let again = ApplicationRingPartViewController(application: read)
+        _ = again.view
+        XCTAssertTrue(try XCTUnwrap(again.suggestionRow.explanation).hasPrefix("Reset to Defaults fills the ring with them, except 2 places"))
+    }
+}
