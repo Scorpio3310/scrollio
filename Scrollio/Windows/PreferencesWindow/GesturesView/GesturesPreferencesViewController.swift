@@ -19,6 +19,11 @@
 //  "Set Up…" records one, "Change" shows the Buttons pane with that button's row selected.
 //  While only an app's own button runs it, the row says where ("Only in Figma: Back
 //  button.") and "Change" shows that app's Buttons part (`ApplicationTriggerRule`).
+//  While no button runs it at all, everything under the first box is folded under its
+//  titles ("Directions ›", "Behavior ›", "Logitech mouse ›",
+//  `PreferencesDisclosureSection`), each with the muted line that belongs to it: one click
+//  opens a section and it can be edited as ever. Once a button runs the gestures the
+//  sections show by themselves, with plain titles.
 //
 
 import Cocoa
@@ -95,12 +100,18 @@ final class GesturesPreferencesViewController: NSViewController {
     /// Up, Down, Left, Right, Click, in `Slot.allCases` order, and the line under the title.
     private(set) var directionRows: [PreferencesGroupRow] = []
     private(set) var directionsHintLabel: NSTextField!
+    /// "Directions": the line on how a gesture is made and the box of rows.
+    private(set) var directionsSection: PreferencesDisclosureSection!
+    /// "Behavior": invert, freeze and the swipe speed. Its box is followed by the muted
+    /// line on what a Logitech mouse adds while none is connected.
+    private(set) var behaviourSection: PreferencesDisclosureSection!
     private(set) var invertRow: PreferencesGroupRow!
     private(set) var freezeRow: PreferencesGroupRow!
     private(set) var trackingSpeedRow: PreferencesSliderRow!
     /// "Logitech mouse": shown when a connected mouse supports one of its options; the
     /// muted line under the boxes says what is needed otherwise.
-    private(set) var logitechSection: PreferencesGroupSection!
+    private(set) var logitechSection: PreferencesDisclosureSection!
+    private(set) var logitechBox: PreferencesGroupBox!
     private(set) var deviceTrackingRow: PreferencesSwitchRow!
     private(set) var hapticsRow: PreferencesSwitchRow!
     /// "Haptic feedback is off under Mouse." with "Open Mouse", under the Logitech box.
@@ -117,8 +128,11 @@ final class GesturesPreferencesViewController: NSViewController {
     private(set) var footer: PreferencesGroupFooter!
     /// Everything in the content stack, top to bottom.
     private(set) var sections: [NSView] = []
+    /// The sections whose titles fold them while no button runs Gesture Navigation.
+    var foldingSections: [PreferencesDisclosureSection] {
+        return [directionsSection, behaviourSection, logitechSection]
+    }
     private var contentStack: NSStackView!
-    private var behaviourSection: NSView!
 
     var trackingSpeedSlider: NSSlider { return trackingSpeedRow.slider }
     var deviceTrackingSwitch: NSSwitch { return deviceTrackingRow.toggle }
@@ -166,17 +180,19 @@ final class GesturesPreferencesViewController: NSViewController {
         let first = PreferencesGroupSection(width: width, rows: [makeGestureButtonRow(), makeModeRow()])
         directionRows = Slot.allCases.map { makeDirectionRow($0) }
         let directions = makeDirectionsSection(rows: directionRows)
-        let behaviour = PreferencesGroupSection(
+        directionsSection = directions
+        let behaviour = PreferencesDisclosureSection(
             title: text("gestures-behaviour-header"),
-            width: width,
-            rows: [makeInvertRow(), makeFreezeRow(), makeTrackingSpeedRow()]
+            body: PreferencesGroupBox(width: width, rows: [makeInvertRow(), makeFreezeRow(), makeTrackingSpeedRow()])
         )
-        let logitech = PreferencesGroupSection(
-            title: text("gestures-logitech-header"),
-            width: width,
-            rows: [makeDeviceTrackingRow(), makeHapticsRow()]
-        )
+        behaviourSection = behaviour
+        logitechBox = PreferencesGroupBox(width: width, rows: [makeDeviceTrackingRow(), makeHapticsRow()])
+        let logitech = PreferencesDisclosureSection(title: text("gestures-logitech-header"), body: logitechBox)
         logitechSection = logitech
+        for section in [directions, behaviour, logitech] {
+            // (The muted lines and the spacing follow the section: `reload`.)
+            section.onExpandedChange = { [weak self] _ in self?.reload() }
+        }
         hapticsOffNote = makeHapticsOffNote()
         logitechNeedsLabel = Self.makeNote(text("gestures-logitech-needs"), identifier: Identifier.logitechNeeds)
         let logitechNeeds = Self.inset(logitechNeedsLabel)
@@ -186,11 +202,10 @@ final class GesturesPreferencesViewController: NSViewController {
         sections = [preview, first, directions, behaviour, logitech, hapticsOffNote, logitechNeeds, footer]
         PreferencesGroupedForm.add(sections, to: content)
         contentStack = content
-        behaviourSection = behaviour
-        // The directions carry their title in a view of their own. The muted lines sit
+        // The titled sections keep a section's room above them (`add`). The muted lines sit
         // close under the boxes (only one of them shows: one needs the Logitech box, the
-        // other its absence). The footer keeps its room above whichever view shows last:
-        // a muted line (here) or the Logitech box (`reload`).
+        // other its absence, and each folds with its box). The footer keeps its room above
+        // whichever view shows last: a muted line (here) or a section (`reload`).
         content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: first)
         content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: hapticsOffNote)
 
@@ -268,6 +283,10 @@ final class GesturesPreferencesViewController: NSViewController {
         let runs = summary.hasGestureButton || summary.onlyInApps != nil
         gestureButtonButton.title = text(runs ? "gestures-gesture-button-change" : "gestures-gesture-button-set-up")
         modeRow.explanation = text(presentation.descriptionKey)
+        // No button runs the gestures: what is under the first box waits, folded.
+        for section in foldingSections {
+            section.isCollapsible = !runs
+        }
 
         for slot in Slot.allCases where slot.isHorizontal {
             directionRows[slot.rawValue].isEnabled = presentation.areHorizontalActionsEditable
@@ -288,16 +307,19 @@ final class GesturesPreferencesViewController: NSViewController {
         gestureSupport = deviceSource.support()
         let rules = MouseGestureControlRules(support: gestureSupport, hapticsOnUnderMouse: Options.shared.logiMouse.hapticsOn)
         logitechSection.isHidden = !rules.showsOptions
-        hapticsOffNote.isHidden = !(rules.showsOptions && rules.showsHapticsOffNote)
-        logitechNeedsLabel.superview?.isHidden = rules.showsOptions
-        // A titled box keeps the room above its title; a muted line sits close.
+        // A muted line shows with the box it follows, and folds with it.
+        let showsHapticsOffNote = rules.showsOptions && rules.showsHapticsOffNote && logitechSection.showsBody
+        let showsLogitechNeeds = !rules.showsOptions && behaviourSection.showsBody
+        hapticsOffNote.isHidden = !showsHapticsOffNote
+        logitechNeedsLabel.superview?.isHidden = !showsLogitechNeeds
+        // A muted line sits close under its box; a titled section or the footer keeps the
+        // room above it.
         contentStack.setCustomSpacing(
-            rules.showsOptions ? PreferencesGroupedForm.sectionSpacing : PreferencesGroupedForm.noteSpacing,
+            showsLogitechNeeds ? PreferencesGroupedForm.noteSpacing : PreferencesGroupedForm.sectionSpacing,
             after: behaviourSection
         )
-        // Under the Logitech box comes its muted line, close, or else the footer.
         contentStack.setCustomSpacing(
-            rules.showsHapticsOffNote ? PreferencesGroupedForm.noteSpacing : PreferencesGroupedForm.sectionSpacing,
+            showsHapticsOffNote ? PreferencesGroupedForm.noteSpacing : PreferencesGroupedForm.sectionSpacing,
             after: logitechSection
         )
         deviceTrackingRow.isOn = gesture.deviceTracking
@@ -519,10 +541,10 @@ final class GesturesPreferencesViewController: NSViewController {
         return row
     }
 
-    /// "Directions": its title, one line on how a gesture is made, and the box of rows.
-    private func makeDirectionsSection(rows: [PreferencesGroupRow]) -> NSView {
+    /// "Directions": its title, one line on how a gesture is made, and the box of rows. The
+    /// title folds the line and the box while no button runs the gestures (`reload`).
+    private func makeDirectionsSection(rows: [PreferencesGroupRow]) -> PreferencesDisclosureSection {
         let inset = PreferencesGroupedForm.rowHorizontalInset
-        let title = PreferencesGroupedForm.makeSectionTitle(text("gestures-directions-header"))
         let hint = NSTextField(wrappingLabelWithString: text("gestures-directions-hint"))
         hint.identifier = Identifier.directionsHint
         hint.font = PreferencesGroupedForm.explanationFont
@@ -533,24 +555,23 @@ final class GesturesPreferencesViewController: NSViewController {
         directionsHintLabel = hint
         let box = PreferencesGroupBox(width: Self.boxWidth, rows: rows)
 
-        let section = NSView()
-        section.translatesAutoresizingMaskIntoConstraints = false
-        for view in [title, hint, box] as [NSView] {
-            section.addSubview(view)
+        let body = NSView()
+        body.translatesAutoresizingMaskIntoConstraints = false
+        for view in [hint, box] as [NSView] {
+            body.addSubview(view)
         }
         NSLayoutConstraint.activate([
-            title.topAnchor.constraint(equalTo: section.topAnchor),
-            title.leadingAnchor.constraint(equalTo: section.leadingAnchor, constant: inset),
-            title.trailingAnchor.constraint(lessThanOrEqualTo: section.trailingAnchor, constant: -inset),
-            hint.topAnchor.constraint(equalTo: title.bottomAnchor, constant: PreferencesGroupedForm.explanationSpacing),
-            hint.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            hint.trailingAnchor.constraint(lessThanOrEqualTo: section.trailingAnchor, constant: -inset),
+            hint.topAnchor.constraint(equalTo: body.topAnchor),
+            hint.leadingAnchor.constraint(equalTo: body.leadingAnchor, constant: inset),
+            hint.trailingAnchor.constraint(lessThanOrEqualTo: body.trailingAnchor, constant: -inset),
             box.topAnchor.constraint(equalTo: hint.bottomAnchor, constant: PreferencesGroupedForm.sectionTitleSpacing + 2),
-            box.leadingAnchor.constraint(equalTo: section.leadingAnchor),
-            box.trailingAnchor.constraint(equalTo: section.trailingAnchor),
-            box.bottomAnchor.constraint(equalTo: section.bottomAnchor),
+            box.leadingAnchor.constraint(equalTo: body.leadingAnchor),
+            box.trailingAnchor.constraint(equalTo: body.trailingAnchor),
+            box.bottomAnchor.constraint(equalTo: body.bottomAnchor),
         ])
-        return section
+        return PreferencesDisclosureSection(
+            title: text("gestures-directions-header"), body: body, spacing: PreferencesGroupedForm.explanationSpacing
+        )
     }
 
     private func makeInvertRow() -> PreferencesGroupRow {

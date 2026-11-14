@@ -540,6 +540,137 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertFalse(texts.contains("Choose the gesture button under Buttons."))
     }
 
+    // MARK: - Folded while no button runs the gestures
+
+    private func rect(_ view: NSView, in controller: NSViewController) -> NSRect {
+        return controller.view.convert(view.alignmentRect(forFrame: view.frame), from: view.superview)
+    }
+
+    /// No button runs Gesture Navigation: under the first box each section is folded to its
+    /// title, the muted lines with it; the preview, the button to hold, the mode and
+    /// "Reset to Defaults" stay. With a Logitech mouse its section is one more title.
+    func testWithNoButtonEverythingUnderTheFirstBoxIsFoldedUnderItsTitles() throws {
+        summary = MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false)
+        for connected in [MouseGestureDeviceSupport.none, MouseGestureDeviceSupport(deviceTracking: true, haptics: true, hapticsOffOnMouse: true)] {
+            support = connected
+            let savedMouse = Options.shared.logiMouse
+            defer { Options.shared.logiMouse = savedMouse }
+            Options.shared.logiMouse.hapticsOn = false
+            let controller = makeController()
+            controller.view.layoutSubtreeIfNeeded()
+
+            XCTAssertEqual(controller.foldingSections.map(\.title), ["Directions", "Behavior", "Logitech mouse"])
+            for section in controller.foldingSections {
+                XCTAssertTrue(section.isCollapsible, section.title)
+                XCTAssertFalse(section.showsBody, section.title)
+                XCTAssertTrue(section.titleLabel.isHidden, section.title)
+                XCTAssertEqual(section.disclosure.label.stringValue, section.title)
+            }
+            let folded: [NSView] = controller.directionRows + [
+                controller.directionsHintLabel, controller.invertRow, controller.freezeRow, controller.trackingSpeedRow,
+                controller.deviceTrackingRow, controller.hapticsRow,
+            ]
+            for view in folded {
+                XCTAssertTrue(view.isHiddenOrHasHiddenAncestor)
+            }
+            XCTAssertTrue(controller.hapticsOffNote.isHidden, "the muted lines fold with their box")
+            XCTAssertTrue(try XCTUnwrap(controller.logitechNeedsLabel.superview).isHidden)
+            XCTAssertEqual(controller.logitechSection.isHidden, connected == .none, "a Logitech title only with such a mouse")
+            for view in [controller.previewView!, controller.gestureButtonRow!, controller.modeRow!, controller.footer!] as [NSView] {
+                XCTAssertFalse(view.isHiddenOrHasHiddenAncestor)
+            }
+            // The titles a section's room apart, the footer as far under the last.
+            let titles = controller.foldingSections.filter { !$0.isHidden }.map { rect($0, in: controller) }
+            for (upper, lower) in zip(titles, titles.dropFirst()) {
+                XCTAssertEqual(upper.minY - lower.maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 0.5)
+            }
+            XCTAssertEqual(try XCTUnwrap(titles.last).minY - rect(controller.footer, in: controller).maxY,
+                           PreferencesGroupedForm.sectionSpacing, accuracy: 0.5)
+            XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+            XCTAssertFalse(controller.view.hasAmbiguousLayout)
+        }
+    }
+
+    /// Each title opens its own section, with its muted line, and what opens is edited as
+    /// ever; the others stay folded.
+    func testEachTitleOpensItsSectionWithItsMutedLineAndItCanBeEdited() throws {
+        summary = MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false)
+        let controller = makeController()
+        controller.foldingSections.forEach { $0.prefersReducedMotion = { true } }
+        let folded = controller.view.frame.height
+
+        // No Logitech mouse: "Behavior" opens with the line on what one adds under it.
+        XCTAssertTrue(controller.behaviourSection.disclosure.accessibilityPerformPress())
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertTrue(controller.behaviourSection.showsBody)
+        XCTAssertFalse(controller.directionsSection.showsBody)
+        let needs = try XCTUnwrap(controller.logitechNeedsLabel.superview)
+        XCTAssertFalse(needs.isHidden)
+        XCTAssertEqual(rect(controller.behaviourSection, in: controller).minY - rect(needs, in: controller).maxY,
+                       PreferencesGroupedForm.noteSpacing, accuracy: 0.5)
+        XCTAssertGreaterThan(controller.view.frame.height, folded)
+        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+        toggle(controller.controls.invertToggle, on: !Options.shared.gesture.invertHorizontal)
+        XCTAssertNotEqual(Options.shared.gesture.invertHorizontal, MouseGestureSettings.default.invertHorizontal)
+
+        controller.directionsSection.toggle()
+        XCTAssertTrue(controller.directionsSection.showsBody)
+        XCTAssertFalse(controller.directionRows[0].isHiddenOrHasHiddenAncestor)
+        choose(SystemShortcut.copy.identifier, in: controller.controls.actionPopUp(for: .up))
+        XCTAssertEqual(Options.shared.gesture.upAction, SystemShortcut.copy.identifier)
+        XCTAssertTrue(controller.directionsSection.showsBody, "editing keeps it open")
+
+        // A Logitech mouse with its haptics off under Mouse: its line opens with its box.
+        let savedMouse = Options.shared.logiMouse
+        defer { Options.shared.logiMouse = savedMouse }
+        Options.shared.logiMouse.hapticsOn = false
+        support = MouseGestureDeviceSupport(deviceTracking: true, haptics: true, hapticsOffOnMouse: true)
+        controller.reload()
+        XCTAssertTrue(needs.isHidden)
+        XCTAssertTrue(controller.hapticsOffNote.isHidden, "folded with its box")
+        controller.logitechSection.toggle()
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertFalse(controller.hapticsOffNote.isHidden)
+        XCTAssertEqual(rect(controller.logitechSection, in: controller).minY - rect(controller.hapticsOffNote, in: controller).maxY,
+                       PreferencesGroupedForm.noteSpacing, accuracy: 0.5)
+        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+
+        controller.logitechSection.toggle()
+        XCTAssertTrue(controller.hapticsOffNote.isHidden)
+        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+    }
+
+    /// Once a button runs the gestures, in Buttons or only in an app, the sections show by
+    /// themselves under plain titles; without one again they are folded.
+    func testOnceAButtonRunsTheGesturesTheSectionsShowUnderPlainTitles() {
+        summary = MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false)
+        let controller = makeController()
+        let folded = controller.view.frame.height
+        let notes = ApplicationTriggers(applicationNames: ["Notes"], triggerTitles: ["Back button"], path: "/System/Applications/Notes.app")
+        for runs in [
+            MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"]),
+            MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false, onlyInApps: notes),
+        ] {
+            summary = runs
+            controller.reload()
+            for section in controller.foldingSections {
+                XCTAssertFalse(section.isCollapsible, section.title)
+                XCTAssertTrue(section.showsBody, section.title)
+                XCTAssertFalse(section.titleLabel.isHidden, section.title)
+                XCTAssertTrue(section.disclosure.isHidden, section.title)
+            }
+            XCTAssertFalse(controller.directionRows[0].isHiddenOrHasHiddenAncestor)
+            XCTAssertFalse(controller.invertRow.isHiddenOrHasHiddenAncestor)
+            XCTAssertFalse(try XCTUnwrap(controller.logitechNeedsLabel.superview).isHidden, "no Logitech mouse: its line")
+            XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+        }
+
+        summary = MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false)
+        controller.reload()
+        XCTAssertTrue(controller.foldingSections.allSatisfy { $0.isCollapsible && !$0.showsBody })
+        XCTAssertEqual(controller.view.frame.height, folded, accuracy: 0.5)
+    }
+
     func testTheGestureButtonSummaryNamesEachButtonOnce() {
         func binding(_ code: UInt16, modifiers: UInt = 0) -> ButtonBinding {
             return ButtonBinding(

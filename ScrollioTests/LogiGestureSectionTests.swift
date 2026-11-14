@@ -244,7 +244,7 @@ final class LogiGestureSectionTests: XCTestCase {
         XCTAssertGreaterThan(frame(controller.deviceTrackingRow).minY, frame(controller.hapticsRow).maxY - 0.5)
         XCTAssertGreaterThan(frame(controller.trackingSpeedRow).minY, frame(title).maxY, "under the other boxes")
         XCTAssertEqual(frame(controller.deviceTrackingRow).minX, 20, accuracy: 0.5)
-        XCTAssertEqual(controller.logitechSection.box.rows.map(\.title), [text("mouse-gesture-device-tracking"), text("mouse-gesture-haptics")])
+        XCTAssertEqual(controller.logitechBox.rows.map(\.title), [text("mouse-gesture-device-tracking"), text("mouse-gesture-haptics")])
     }
 
     // MARK: - Haptics off under Mouse
