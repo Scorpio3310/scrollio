@@ -424,6 +424,55 @@ final class ApplicationButtonsTests: XCTestCase {
         XCTAssertEqual(read.ownButtonBindings.map(\.systemShortcutName), ["undo"])
     }
 
+    /// A binding of an app's own that this version cannot read (a newer version's: a kind
+    /// of trigger it does not know) is kept as stored and written back after the readable
+    /// ones at the next save, as Buttons keeps such bindings: after an edit of the app's
+    /// buttons and after all of them were removed too. A number in the list is dropped, as
+    /// Buttons drops one. Nothing runs it.
+    func testAnOwnBindingThisVersionCannotReadIsKeptForTheNextSave() throws {
+        let good = String(data: try JSONEncoder().encode(binding(3, "undo")), encoding: .utf8)!
+        let newer = #"{"triggerEvent":{"type":"pedal","code":7,"modifiers":0},"systemShortcutName":"copy","isEnabled":true}"#
+        let entry = #"{"path":"/Applications/A.app","buttons":{"binding":["# + good + "," + newer + #",42]}}"#
+        let read = try JSONDecoder().decode(Application.self, from: Data(entry.utf8))
+        XCTAssertEqual(read.ownButtonBindings.map(\.systemShortcutName), ["undo"])
+
+        func stored(_ application: Application) throws -> [[String: Any]] {
+            let object = try JSONSerialization.jsonObject(with: try JSONEncoder().encode(application)) as? [String: Any]
+            let buttons = try XCTUnwrap(object?["buttons"] as? [String: Any], "the buttons are stored")
+            return try XCTUnwrap(buttons["binding"] as? [[String: Any]])
+        }
+        func isTheNewerOne(_ element: [String: Any]?) -> Bool {
+            return (element?["triggerEvent"] as? [String: Any])?["type"] as? String == "pedal"
+                && element?["systemShortcutName"] as? String == "copy"
+        }
+        var list = try stored(read)
+        XCTAssertEqual(list.count, 2, "the readable one, then the newer one")
+        XCTAssertEqual(list.first?["systemShortcutName"] as? String, "undo")
+        XCTAssertTrue(isTheNewerOne(list.last))
+
+        read.setOwnButtonBindings([binding(4, "paste")])
+        list = try stored(read)
+        XCTAssertEqual(list.map { $0["systemShortcutName"] as? String }, ["paste", "copy"])
+        XCTAssertTrue(isTheNewerOne(list.last), "an edit of the app's buttons keeps it")
+
+        read.setOwnButtonBindings([])
+        XCTAssertFalse(read.hasOwnButtons)
+        list = try stored(read)
+        XCTAssertEqual(list.count, 1)
+        XCTAssertTrue(isTheNewerOne(list.first), "removing every binding the page shows keeps it")
+
+        let again = try JSONDecoder().decode(Application.self, from: try JSONEncoder().encode(read))
+        XCTAssertTrue(again.ownButtonBindings.isEmpty)
+        XCTAssertTrue(isTheNewerOne(try stored(again).first), "and so on, save after save")
+
+        // It never runs: the app has no buttons of its own for the input side.
+        Options.shared.buttons.binding = [binding(3, "copy")]
+        Options.shared.application.applications = Self.makeStore([again])
+        ButtonUtils.shared.invalidateCache()
+        let a = ShortcutRingChoice.FrontApp(bundlePath: "/Applications/A.app", executablePath: nil)
+        XCTAssertEqual(action(3, in: a), "copy")
+    }
+
     /// A settings file carries an app's own buttons; the sheet before an import says how
     /// many apps have some, and lists each with its app, "Default" for one without action.
     func testTheSettingsFileCarriesAnAppsOwnButtons() throws {

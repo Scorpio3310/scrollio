@@ -21,7 +21,8 @@
 //    button does what it does by itself (the press passes through).
 //  - No "buttons", an empty list, or a value that cannot be read: no buttons of its own
 //    (the entry stays readable). A binding of the list that cannot be read is left out by
-//    itself. An entry without buttons of its own is stored without the key, as before.
+//    itself, and kept as stored for the next save (`OwnButtonsWithUnread`). An entry
+//    without buttons of its own is stored without the key, as before.
 //  - What stays general for every app: what opens the Shortcut Ring and what runs Gesture
 //    Navigation. An app's binding on such a button or key, and one whose action is the ring
 //    or Gesture Navigation, is not used.
@@ -172,21 +173,63 @@ extension Application {
     }
 
     /// Stores `bindings` as the app's own. None stores nothing: the entry is written as an
-    /// entry without buttons of its own always was.
+    /// entry without buttons of its own always was. Bindings of the stored list this version
+    /// cannot read stay, whatever is stored (they were never shown, so no edit removed them).
     func setOwnButtonBindings(_ bindings: [ButtonBinding]) {
-        guard bindings != ownButtonBindings || (bindings.isEmpty && buttons != nil) else { return }
-        buttons = bindings.isEmpty ? nil : OPTIONS_BUTTONS_DEFAULT(binding: bindings)
+        let unread = (buttons as? OwnButtonsWithUnread)?.unread ?? []
+        guard bindings != ownButtonBindings || (bindings.isEmpty && unread.isEmpty && buttons != nil) else { return }
+        buttons = Self.ownButtons(bindings, unread: unread)
+    }
+
+    private static func ownButtons(_ bindings: [ButtonBinding], unread: [StoredJSON]) -> OPTIONS_BUTTONS_DEFAULT? {
+        if !unread.isEmpty {
+            return OwnButtonsWithUnread(binding: bindings, unread: unread)
+        }
+        return bindings.isEmpty ? nil : OPTIONS_BUTTONS_DEFAULT(binding: bindings)
     }
 
     /// What the entry holds under "buttons", read so that nothing in it takes the entry
     /// with it: a value that cannot be read is no buttons of its own, a binding that cannot
-    /// be read is left out by itself.
+    /// be read is left out by itself, and kept as stored for the next save (of a newer
+    /// version, it is there again when that version reads the entry), as the bindings of
+    /// Buttons that this version cannot read are.
     static func readOwnButtons<Key: CodingKey>(
         from container: KeyedDecodingContainer<Key>, forKey key: Key
     ) -> OPTIONS_BUTTONS_DEFAULT? {
         guard let stored = (try? container.decodeIfPresent(StoredOwnButtons.self, forKey: key)) ?? nil else { return nil }
-        let bindings = stored.binding.compactMap(\.binding)
-        return bindings.isEmpty ? nil : OPTIONS_BUTTONS_DEFAULT(binding: bindings)
+        return ownButtons(stored.binding.compactMap(\.binding), unread: stored.binding.compactMap(\.unread))
+    }
+}
+
+/// An app's own buttons with bindings this version cannot read: those it reads in
+/// `binding`, the others as they were stored, written back after them (the order of an
+/// object's keys aside). Nothing runs them and no pane shows them.
+final class OwnButtonsWithUnread: OPTIONS_BUTTONS_DEFAULT {
+    let unread: [StoredJSON]
+
+    init(binding: [ButtonBinding], unread: [StoredJSON]) {
+        self.unread = unread
+        super.init(binding: binding)
+    }
+
+    required init(from decoder: Decoder) throws {
+        unread = []
+        try super.init(from: decoder)
+    }
+
+    private enum Keys: String, CodingKey {
+        case binding
+    }
+
+    override func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: Keys.self)
+        var list = container.nestedUnkeyedContainer(forKey: .binding)
+        for element in self.binding {
+            try list.encode(element)
+        }
+        for element in unread {
+            try list.encode(element)
+        }
     }
 }
 
@@ -197,9 +240,99 @@ private struct StoredOwnButtons: Decodable {
     /// One binding, or nil when it cannot be read (the rest of the list still is).
     struct ReadableBinding: Decodable {
         let binding: ButtonBinding?
+        /// An element that is no binding this version reads, as stored, when it is an object
+        /// or a list (what the bindings of Buttons keep too); nil for a binding it reads and
+        /// for anything else (a number, a string, null), which is dropped.
+        let unread: StoredJSON?
 
         init(from decoder: Decoder) throws {
             binding = try? ButtonBinding(from: decoder)
+            guard binding == nil, let element = try? StoredJSON(from: decoder) else {
+                unread = nil
+                return
+            }
+            switch element {
+            case .object, .list: unread = element
+            default: unread = nil
+            }
+        }
+    }
+}
+
+/// A JSON value as it was read, to be written back as it was: a number keeps whether it
+/// was whole; the order of an object's keys is not kept.
+enum StoredJSON: Codable {
+    case null
+    case bool(Bool)
+    case integer(Int64)
+    case number(Double)
+    case string(String)
+    case list([StoredJSON])
+    case object([String: StoredJSON])
+
+    private struct Key: CodingKey {
+        let stringValue: String
+        var intValue: Int? { return nil }
+        init(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { return nil }
+    }
+
+    init(from decoder: Decoder) throws {
+        if let object = try? decoder.container(keyedBy: Key.self) {
+            var values: [String: StoredJSON] = [:]
+            for key in object.allKeys {
+                values[key.stringValue] = try object.decode(StoredJSON.self, forKey: key)
+            }
+            self = .object(values)
+        } else if var list = try? decoder.unkeyedContainer() {
+            var values: [StoredJSON] = []
+            while !list.isAtEnd {
+                values.append(try list.decode(StoredJSON.self))
+            }
+            self = .list(values)
+        } else {
+            let value = try decoder.singleValueContainer()
+            if value.decodeNil() {
+                self = .null
+            } else if let bool = try? value.decode(Bool.self) {
+                self = .bool(bool)
+            } else if let integer = try? value.decode(Int64.self) {
+                self = .integer(integer)
+            } else if let number = try? value.decode(Double.self) {
+                self = .number(number)
+            } else {
+                self = .string(try value.decode(String.self))
+            }
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        switch self {
+        case .null:
+            var value = encoder.singleValueContainer()
+            try value.encodeNil()
+        case .bool(let bool):
+            var value = encoder.singleValueContainer()
+            try value.encode(bool)
+        case .integer(let integer):
+            var value = encoder.singleValueContainer()
+            try value.encode(integer)
+        case .number(let number):
+            var value = encoder.singleValueContainer()
+            try value.encode(number)
+        case .string(let string):
+            var value = encoder.singleValueContainer()
+            try value.encode(string)
+        case .list(let values):
+            var list = encoder.unkeyedContainer()
+            for element in values {
+                try list.encode(element)
+            }
+        case .object(let values):
+            var object = encoder.container(keyedBy: Key.self)
+            for (key, element) in values {
+                try object.encode(element, forKey: Key(stringValue: key))
+            }
         }
     }
 }
