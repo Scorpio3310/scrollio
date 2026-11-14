@@ -805,8 +805,15 @@ final class PreferencesWindowRenderTests: XCTestCase {
         buttons.presentPlaceMenu = { _, _ in }
         _ = buttons.view
         let menu = try XCTUnwrap(buttons.placeMenu(for: Options.shared.buttons.binding[index].id))
+        try renderMenuStandIn(menu.items, name: name)
+    }
+
+    /// Draws `items` as a menu would show them (a section header, a tick, each picture,
+    /// the title, a submenu's chevron, the mark at the end, the separator), on the window
+    /// colour: AppKit's menu itself cannot be drawn off screen.
+    private func renderMenuStandIn(_ items: [NSMenuItem], name: String) throws {
         let width: CGFloat = 300
-        let heights = menu.items.map { item -> CGFloat in
+        let heights = items.map { item -> CGFloat in
             if item.isSeparatorItem { return 11 }
             if item.isSectionHeader { return 22 }
             return 30
@@ -833,7 +840,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 10, yRadius: 10).stroke()
                 var y: CGFloat = 5
                 let font = NSFont.menuFont(ofSize: 0)
-                for (item, height) in zip(menu.items, heights) {
+                for (item, height) in zip(items, heights) {
                     defer { y += height }
                     if item.isSeparatorItem {
                         NSColor.separatorColor.setFill()
@@ -860,6 +867,10 @@ final class PreferencesWindowRenderTests: XCTestCase {
                         }
                     }
                     title.draw(at: NSPoint(x: x, y: y + (height - title.size().height) / 2))
+                    if item.submenu != nil {
+                        let chevron = NSAttributedString(string: "›", attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
+                        chevron.draw(at: NSPoint(x: width - 14 - chevron.size().width, y: y + (height - chevron.size().height) / 2))
+                    }
                     if let mark = item.badge?.stringValue {
                         let badge = NSAttributedString(string: mark, attributes: [
                             .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize), .foregroundColor: NSColor.secondaryLabelColor,
@@ -1184,6 +1195,73 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try renderPane(PANEL_IDENTIFIER.application, name: "apps-list-marks", afterLoad: { controller in
             (controller as? PreferencesApplicationViewController)?.list.select(calculator.path)
         })
+    }
+
+    /// Full control of the buttons per app, on an MX Master 4 whose thumb panel runs Gesture
+    /// Navigation in Buttons and an app ("Figma") whose own binding gives it the Shortcut
+    /// Ring: its Buttons part (`app-buttons-thumb-panel-ring-<appearance>.png`), that row's
+    /// menu drawn as a stand-in (`app-buttons-menu-<appearance>.png`), its Gestures part with
+    /// the line that no button runs the gestures there (`app-gestures-part-note`), its
+    /// Shortcut Ring part, where only its own button opens the ring
+    /// (`app-ring-part-note`), and an app whose own buttons take the ring's button
+    /// (`app-ring-part-note-replaced`).
+    func testRenderAppPageFullControl() throws {
+        let stored = Options.shared.application.applications
+        let savedRing = Options.shared.ring
+        addTeardownBlock {
+            Options.shared.application.applications = stored
+            Options.shared.ring = savedRing
+            ShortcutRingController.forgetPreparedFaces()
+            ButtonUtils.shared.invalidateCache()
+        }
+        Options.shared.ring = .default
+        Options.shared.gesture = .default
+        let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
+        Options.shared.buttons.binding = [
+            binding(thumbPanel, SystemShortcut.mouseGestureNavigation.identifier),
+            binding(3, SystemShortcut.navigateBack.identifier),
+        ]
+        let mouse = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { "MX Master 4" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        let figma = Application(path: "/Applications/Figma.app")
+        figma.displayName = "Figma"
+        figma.setOwnButtonBindings([
+            binding(thumbPanel, SystemShortcut.shortcutRing.identifier),
+            binding(4, SystemShortcut.copy.identifier),
+        ])
+        let calculator = Application(path: "/System/Applications/Calculator.app")
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [figma, calculator], matchKey: "path")
+
+        func page(_ name: String, app: Application, part: ApplicationPagePart, after: @escaping (ApplicationDetailViewController) -> Void = { _ in }) throws {
+            let defaults = uiDefaults(advanced: false)
+            try renderPane(PANEL_IDENTIFIER.application, name: name, prepare: { preferences in
+                (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                    .uiStateDefaults = defaults
+            }, afterLoad: { controller in
+                let apps = controller as? PreferencesApplicationViewController
+                apps?.openApplication(withID: app.path, part: part)
+                guard let detail = apps?.detailController else { return }
+                detail.buttonsPart.deviceSource = mouse
+                detail.buttonsPart.reloadRows()
+                after(detail)
+            })
+        }
+        try page("app-buttons-thumb-panel-ring", app: figma, part: .buttons) { detail in
+            detail.buttonsPart.list.select(AnyHashable(figma.ownButtonBindings[0].id))
+        }
+        try page("app-gestures-part-note", app: figma, part: .gestures)
+        try page("app-ring-part-note", app: figma, part: .ring)
+        Options.shared.buttons.binding.append(binding(5, SystemShortcut.shortcutRing.identifier))
+        calculator.setOwnButtonBindings([binding(5, SystemShortcut.missionControl.identifier)])
+        try page("app-ring-part-note-replaced", app: calculator, part: .ring)
+
+        // The thumb panel row's menu, as the Buttons pane's.
+        let part = ApplicationButtonsViewController(application: figma)
+        part.deviceSource = mouse
+        _ = part.view
+        let pullDown = try XCTUnwrap(part.rows.first?.pullDown)
+        try renderMenuStandIn(Array((pullDown.menu?.items ?? []).dropFirst().filter { !$0.isHidden }), name: "app-buttons-menu")
     }
 
     // MARK: - States for the final visual check
